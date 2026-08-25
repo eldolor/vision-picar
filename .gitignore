@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+.DS_Store
+
+# Lambda deployment artifacts (rebuilt from source, don't commit)
+lambda/vision_analyze/package/
+lambda/vision_analyze/function.zip
+
+# Never commit secrets
+.env
+*.pem

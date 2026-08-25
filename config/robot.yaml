@@ -1,0 +1,20 @@
+# Backend selection for robot/factory.py
+# "sim"      -> sim/mock_robot.py (grid-world), no hardware needed
+# "hardware" -> robot/hardware_robot.py (added in Phase 11, real PiCar-X)
+mode: sim
+
+# Grid-world map to load when mode is "sim"
+sim_map: sim/maps/starter_house.py
+
+# Safety thresholds (used identically in sim and hardware phases --
+# see robot/safety.py)
+safety:
+  min_distance_cm: 20 # ultrasonic/simulated-distance floor before forced STOP
+  watchdog_timeout_s: 1.0 # max silence from MacBook before Pi stops motors
+
+server:
+  # Origins allowed to call robot/server.py's HTTP API (e.g. the web
+  # twin). "*" is fine for a server that only ever binds to a local/LAN
+  # address; tighten this if the server is ever exposed more broadly.
+  allowed_origins:
+    - "*"

@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>vision-picar digital twin</title>
+<style>
+  :root {
+    --bg: #12151A;
+    --surface: #1C2129;
+    --surface-raised: #232A33;
+    --floor: #232A33;
+    --floor-living: #262C36;
+    --floor-kitchen: #202832;
+    --wall: #05070A;
+    --door: #3A4250;
+    --accent-safe: #3ECF8E;
+    --accent-alert: #FF6B35;
+    --text: #E8ECEF;
+    --text-dim: #6B7480;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    min-height: 100vh;
+  }
+
+  .wrap { max-width: 420px; margin: 0 auto; padding: 14px 14px 32px; }
+
+  header { margin-bottom: 12px; }
+  header .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+    color: var(--accent-safe); text-transform: uppercase;
+  }
+  header h1 { font-size: 19px; margin: 2px 0 4px; font-weight: 650; }
+  header .mission-summary {
+    font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+    line-height: 1.4;
+  }
+
+  .panel {
+    background: var(--surface); border-radius: 12px; padding: 12px;
+    margin-bottom: 10px; border: 1px solid #262C35;
+  }
+
+  #canvas-wrap { display: flex; justify-content: center; padding: 8px; }
+  canvas { border-radius: 6px; display: block; }
+
+  .telemetry {
+    font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-top: 10px;
+  }
+  .telemetry .val { color: var(--text); }
+  .telemetry .full { grid-column: 1 / -1; }
+  .telemetry .safe { color: var(--accent-safe); }
+  .telemetry .alert { color: var(--accent-alert); }
+
+  .section-label {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;
+  }
+
+  .btn-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .btn-row:last-child { margin-bottom: 0; }
+  button {
+    font-family: var(--sans); font-size: 14px; font-weight: 600;
+    border: none; border-radius: 9px; padding: 12px 10px;
+    background: var(--surface-raised); color: var(--text);
+    cursor: pointer; min-height: 44px; flex: 1;
+    transition: background 0.12s, transform 0.08s;
+  }
+  button:active { transform: scale(0.96); }
+  button.primary { background: var(--accent-safe); color: #0A1410; }
+  button.danger { background: var(--accent-alert); color: #1A0A00; }
+  button.ghost { background: transparent; border: 1px solid #333B47; }
+  button.active-mode { background: var(--accent-safe); color: #0A1410; }
+  button:disabled { opacity: 0.4; cursor: default; }
+
+  .dpad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+  .dpad button { padding: 14px 0; font-size: 16px; }
+  .dpad .spacer { background: transparent; pointer-events: none; }
+
+  #log {
+    font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+    max-height: 130px; overflow-y: auto; line-height: 1.6;
+    background: #0E1116; border-radius: 8px; padding: 8px 10px;
+  }
+  #log .entry.veto { color: var(--accent-alert); }
+  #log .entry.found { color: var(--accent-safe); }
+
+  #photo-preview {
+    width: 100%; border-radius: 8px; margin-top: 8px; display: none;
+    max-height: 220px; object-fit: cover;
+  }
+  #photo-result { margin-top: 10px; font-family: var(--mono); font-size: 12px; display: none; }
+  #photo-result .banner {
+    padding: 8px 10px; border-radius: 8px; margin-bottom: 8px; font-weight: 600;
+  }
+  #photo-result .banner.found { background: rgba(62,207,142,0.15); color: var(--accent-safe); }
+  #photo-result .banner.not-found { background: rgba(255,107,53,0.1); color: var(--accent-alert); }
+
+  details summary {
+    font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+    cursor: pointer; padding: 4px 0;
+  }
+  details input {
+    width: 100%; margin-top: 6px; padding: 8px; border-radius: 6px;
+    border: 1px solid #333B47; background: #0E1116; color: var(--text);
+    font-family: var(--mono); font-size: 12px;
+  }
+  .hint { font-family: var(--mono); font-size: 10px; color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Digital twin &middot; sim mode</div>
+    <h1>vision-picar</h1>
+    <div class="mission-summary" id="mission-summary">No rooms searched yet.</div>
+  </header>
+
+  <div class="panel">
+    <div id="canvas-wrap"><canvas id="grid-canvas"></canvas></div>
+    <div class="telemetry">
+      <div>Room: <span class="val" id="tel-room">-</span></div>
+      <div>Facing: <span class="val" id="tel-facing">-</span></div>
+      <div>Free space: <span class="val" id="tel-free">-</span></div>
+      <div>Doorway: <span class="val" id="tel-door">-</span></div>
+      <div class="full">Objects: <span class="val" id="tel-objects">none visible</span></div>
+      <div class="full" id="tel-safety">Safety: <span class="safe">OK</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section-label">Robot server connection</div>
+    <div class="btn-row">
+      <input type="text" id="cfg-server-url" placeholder="http://192.168.1.x:8000" style="flex:2; padding:10px; border-radius:8px; border:1px solid #333B47; background:#0E1116; color:var(--text); font-family:var(--mono); font-size:12px;">
+      <button id="btn-connect" class="primary" style="flex:1;">Connect</button>
+    </div>
+    <div class="hint" id="connection-status">
+      Not connected. Run `uvicorn robot.server:app --host 0.0.0.0` on your
+      Mac and point this at its LAN address (Wi-Fi Settings &rarr; your
+      Mac's IP), e.g. http://192.168.1.42:8000.
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section-label">Manual control</div>
+    <div class="dpad">
+      <div class="spacer"></div><button id="btn-forward" disabled>&#9650; FWD</button><div class="spacer"></div>
+      <button id="btn-left" disabled>&#9664; LEFT</button><button id="btn-stop" class="danger" disabled>STOP</button><button id="btn-right" disabled>RIGHT &#9654;</button>
+      <div class="spacer"></div><button id="btn-reverse" disabled>&#9660; REV</button><div class="spacer"></div>
+    </div>
+    <div class="btn-row">
+      <button id="btn-look-left" disabled>&#128065;&#9664;</button>
+      <button id="btn-look-center" disabled>&#128065;&#9679;</button>
+      <button id="btn-look-right" disabled>&#128065;&#9654;</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="section-label">Autonomous</div>
+    <div class="btn-row">
+      <button id="btn-explore" disabled>Explore</button>
+      <button id="btn-find" disabled>Find backpack</button>
+      <button id="btn-reset" class="ghost">Reset mission</button>
+    </div>
+    <div id="log"></div>
+  </div>
+
+  <div class="panel">
+    <div class="section-label">Find the bag in a photo</div>
+    <div class="btn-row">
+      <button id="btn-take-photo" class="primary">Take photo</button>
+    </div>
+    <img id="photo-preview" alt="">
+    <div id="photo-result"></div>
+    <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
+
+    <details>
+      <summary>Cloud endpoint settings</summary>
+      <input type="text" id="cfg-url" placeholder="Lambda Function URL (https://...)">
+      <input type="text" id="cfg-secret" placeholder="x-app-secret value" style="margin-top:6px">
+      <div class="hint">
+        Not saved between sessions (no localStorage in this preview) --
+        re-enter after reloading. See lambda/vision_analyze/README.md for
+        how to get a Function URL and secret.
+      </div>
+    </details>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- static map data, for rendering only ----------
+  // The robot's actual state (position, heading, safety, sensing) now
+  // lives entirely server-side in robot/server.py -- this file no longer
+  // simulates physics. LAYOUT/OBJECTS below are just what the twin draws
+  // as background; they intentionally have no bearing on any decision
+  // logic. (Once real hardware exists, this whole map-rendering section
+  // is what changes -- there's no grid to draw for a real room.)
+
+  const LAYOUT = [
+    "#############",
+    "#...#.......#",
+    "#...D.......#",
+    "#...#.......#",
+    "#####.......#",
+    "#.......#####",
+    "#.......#...#",
+    "#.......D...#",
+    "#.......#...#",
+    "#############",
+  ];
+  const COLS = LAYOUT[0].length;
+  const ROWS = LAYOUT.length;
+
+  const OBJECTS = { "2,2": "sofa", "10,6": "refrigerator", "10,7": "red backpack" };
+
+  const HEADING_VEC = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
+  const RIGHT_OF = { N: "E", E: "S", S: "W", W: "N" };
+  const LEFT_OF = { N: "W", W: "S", S: "E", E: "N" };
+
+  const MIN_DISTANCE_CM = 30; // must match config/robot.yaml's safety.min_distance_cm
+  const CELL_CM = 30; // for display purposes only (cells -> cm in telemetry)
+
+  function inRange(x, y, x0, x1, y0, y1) {
+    return x >= x0 && x <= x1 && y >= y0 && y <= y1;
+  }
+  function roomAt(x, y) {
+    // Only used to color the static map background by room -- the
+    // robot's *actual* current room comes from the server's /frame.
+    if (inRange(x, y, 1, 3, 1, 3)) return "living room";
+    if (inRange(x, y, 9, 11, 6, 8)) return "kitchen";
+    if (inRange(x, y, 5, 11, 1, 7)) return "hallway";
+    if (inRange(x, y, 1, 4, 4, 4)) return "hallway";
+    if ((x === 4 && y === 2) || (x === 8 && y === 7)) return "hallway";
+    return "unknown";
+  }
+  function cellAt(x, y) {
+    if (y < 0 || y >= ROWS || x < 0 || x >= COLS) return "#";
+    return LAYOUT[y][x];
+  }
+
+  // ---------- twin state (mission bookkeeping only -- no physics) ----------
+
+  const state = {
+    serverUrl: "", connected: false, lastFrame: null,
+    visited: new Set(), searchedRooms: new Set(),
+    sightings: [], found: false, foundSighting: null,
+    log: [], step: 0,
+    autoRunning: false, autoTimerId: null, autoTarget: null, autoMaxSteps: 150,
+    safetyFlashUntil: 0,
+  };
+
+  // ---------- robot/server.py client -- the twin's "brain" side of the ----------
+  // ---------- MacBook<->Pi split, talking to the robot over HTTP just  ----------
+  // ---------- like brain/agent.py's MissionAgent talks to RobotInterface ----------
+
+  async function apiPost(path, body) {
+    const res = await fetch(state.serverUrl + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    return res.json();
+  }
+  async function apiGet(path) {
+    const res = await fetch(state.serverUrl + path);
+    return res.json();
+  }
+
+  async function sendAction(action) {
+    if (action === "STOP") return apiPost("/stop", {});
+    return apiPost("/action", { action: action });
+  }
+  async function fetchDistance() {
+    const data = await apiGet("/distance");
+    return data.distance_cm;
+  }
+  async function fetchFrame() {
+    const raw = await apiGet("/frame");
+    const frame = {
+      room: raw.room, facing: raw.facing,
+      freeSpaceCells: raw.free_space_cells, doorwayAhead: raw.doorway_ahead,
+      objectsVisible: raw.objects_visible, position: raw.position,
+    };
+    state.lastFrame = frame;
+    return frame;
+  }
+
+
+
+  // ---------- action execution -- talks to robot/server.py for movement,   ----------
+  // ---------- sensing, and safety; the twin no longer computes any of this ----------
+
+  function logEntry(action, executed, extra) {
+    state.step += 1;
+    const room = state.lastFrame ? state.lastFrame.room : "unknown";
+    state.log.push({ step: state.step, action: action, executed: executed, room: room, extra: extra || "" });
+    renderLog();
+  }
+
+  function recordObservation(frame) {
+    if (frame.room !== "unknown") {
+      state.searchedRooms.add(frame.room);
+    }
+    frame.objectsVisible.forEach(function (obj) {
+      state.sightings.push({ step: state.step, object: obj, room: frame.room });
+      if (state.autoTarget && !state.found && obj.toLowerCase().indexOf(state.autoTarget) !== -1) {
+        state.found = true;
+        state.foundSighting = { object: obj, room: frame.room, step: state.step, position: frame.position };
+      }
+    });
+  }
+
+  // Used by both the manual D-pad and the autonomous loop -- sends one
+  // action to the server, logs the (server-authoritative) executed/veto
+  // result, then refreshes the frame for rendering. Mirrors
+  // brain/agent.py's ConstrainedAgent.step(): execute, then observe.
+  async function commitAction(action) {
+    const resp = await sendAction(action);
+    const executed = resp.executed !== false;
+    if (!executed) state.safetyFlashUntil = Date.now() + 350;
+    logEntry(action, executed, executed ? "" : (resp.detail || "SAFETY VETO"));
+
+    const frame = await fetchFrame();
+    recordObservation(frame);
+    render(frame);
+    return { executed: executed, frame: frame };
+  }
+
+  async function manualAction(action) {
+    if (!state.connected) return;
+    await commitAction(action);
+  }
+
+  // ---------- frontier-preference autonomous exploration ----------
+  // Peeks right/left/forward via the server's look_*/distance endpoints
+  // (same as brain/agent.py's MissionAgent.decide()), prefers whichever
+  // clear direction leads to an unvisited cell, commits one action, then
+  // schedules the next step. This decision logic is the twin's "brain"
+  // role -- it's supposed to be separate from robot/server.py's "robot
+  // runtime" role, same as the MacBook/Pi split in the real architecture.
+
+  function missionComplete() {
+    return state.autoTarget ? state.found : false;
+  }
+
+  async function autoStep() {
+    if (!state.autoRunning) return;
+    if (missionComplete() || state.step >= state.autoMaxSteps) {
+      stopAuto();
+      return;
+    }
+
+    const frame = await fetchFrame();
+    recordObservation(frame);
+    if (missionComplete()) { stopAuto(); render(frame); return; }
+
+    const last = state.log[state.log.length - 1];
+    if (last && (last.action === "LEFT" || last.action === "RIGHT") && last.executed) {
+      await commitAction("FORWARD");
+      scheduleNext();
+      return;
+    }
+
+    const facing = frame.facing;
+    const position = frame.position;
+    state.visited.add(position[0] + "," + position[1]);
+
+    await sendAction("LOOK_RIGHT");
+    const rightDist = await fetchDistance();
+    await sendAction("LOOK_LEFT");
+    const leftDist = await fetchDistance();
+    await sendAction("LOOK_CENTER");
+    const forwardDist = await fetchDistance();
+
+    const rightHeading = RIGHT_OF[facing], leftHeading = LEFT_OF[facing];
+    const options = [];
+    if (forwardDist >= MIN_DISTANCE_CM) options.push(["FORWARD", facing]);
+    if (rightDist >= MIN_DISTANCE_CM) options.push(["RIGHT", rightHeading]);
+    if (leftDist >= MIN_DISTANCE_CM) options.push(["LEFT", leftHeading]);
+
+    const frontier = options.filter(function (opt) {
+      const h = opt[1];
+      const dx = HEADING_VEC[h][0], dy = HEADING_VEC[h][1];
+      const next = (position[0] + dx) + "," + (position[1] + dy);
+      return !state.visited.has(next);
+    });
+
+    const choice = frontier[0] || options[0];
+    await commitAction(choice ? choice[0] : "STOP");
+    scheduleNext();
+  }
+
+  function scheduleNext() {
+    if (state.autoRunning) state.autoTimerId = setTimeout(autoStep, 200);
+  }
+  function startAuto(target) {
+    stopAuto();
+    state.autoTarget = target || null;
+    state.autoRunning = true;
+    updateAutoButtons();
+    autoStep();
+  }
+  function stopAuto() {
+    state.autoRunning = false;
+    if (state.autoTimerId) clearTimeout(state.autoTimerId);
+    state.autoTimerId = null;
+    updateAutoButtons();
+  }
+  function updateAutoButtons() {
+    document.getElementById("btn-explore").classList.toggle("active-mode", state.autoRunning && !state.autoTarget);
+    document.getElementById("btn-find").classList.toggle("active-mode", state.autoRunning && !!state.autoTarget);
+  }
+
+  // "Reset" only clears the twin's own mission bookkeeping (visited
+  // cells, search memory, log) -- it does NOT teleport the robot back to
+  // a start position. robot/server.py has no such endpoint on purpose:
+  // real hardware can't be reset to a start pose either, so the twin
+  // doesn't pretend otherwise.
+  async function resetMission() {
+    stopAuto();
+    state.visited.clear(); state.searchedRooms.clear();
+    state.sightings = []; state.found = false; state.foundSighting = null;
+    state.log = []; state.step = 0; state.autoTarget = null;
+    const logEl = document.getElementById("log");
+    logEl.innerHTML = "";
+    delete logEl.dataset.foundLogged;
+    if (state.connected) {
+      const frame = await fetchFrame();
+      render(frame);
+    }
+  }
+
+  // ---------- connection ----------
+
+  function setControlsEnabled(enabled) {
+    ["btn-forward", "btn-reverse", "btn-left", "btn-right", "btn-stop",
+     "btn-look-left", "btn-look-right", "btn-look-center",
+     "btn-explore", "btn-find"].forEach(function (id) {
+      document.getElementById(id).disabled = !enabled;
+    });
+  }
+
+  async function connect() {
+    const url = document.getElementById("cfg-server-url").value.trim().replace(/\/$/, "");
+    const statusEl = document.getElementById("connection-status");
+    if (!url) {
+      statusEl.textContent = "Enter the robot server's URL first.";
+      return;
+    }
+    state.serverUrl = url;
+    statusEl.textContent = "Connecting\u2026";
+    try {
+      const frame = await fetchFrame();
+      state.connected = true;
+      setControlsEnabled(true);
+      statusEl.textContent = "Connected to " + url;
+      recordObservation(frame);
+      render(frame);
+    } catch (e) {
+      state.connected = false;
+      setControlsEnabled(false);
+      statusEl.textContent = "Could not reach " + url + " (" + e.message + "). " +
+        "Check the server is running, on the same network, and CORS/allowed_origins in config/robot.yaml permits this page's origin.";
+    }
+  }
+
+  // ---------- rendering ----------
+
+  const CELL = 26;
+  const canvas = document.getElementById("grid-canvas");
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = COLS * CELL * dpr;
+  canvas.height = ROWS * CELL * dpr;
+  canvas.style.width = (COLS * CELL) + "px";
+  canvas.style.height = (ROWS * CELL) + "px";
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+
+  function getCss(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  }
+  function floorColorFor(x, y) {
+    const room = roomAt(x, y);
+    if (room === "living room") return getCss("--floor-living");
+    if (room === "kitchen") return getCss("--floor-kitchen");
+    return getCss("--floor");
+  }
+
+  function render(frame) {
+    frame = frame || state.lastFrame;
+    if (!frame) return; // not connected yet -- nothing to draw
+    ctx.clearRect(0, 0, COLS * CELL, ROWS * CELL);
+
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        const c = cellAt(x, y);
+        if (c === "#") {
+          ctx.fillStyle = getCss("--wall");
+        } else if (c === "D") {
+          ctx.fillStyle = getCss("--door");
+        } else {
+          ctx.fillStyle = floorColorFor(x, y);
+        }
+        ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+
+        if (state.visited.has(x + "," + y)) {
+          ctx.fillStyle = "rgba(62,207,142,0.08)";
+          ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+        }
+      }
+    }
+
+    // objects
+    Object.keys(OBJECTS).forEach(function (key) {
+      const parts = key.split(",");
+      const ox = Number(parts[0]), oy = Number(parts[1]);
+      const name = OBJECTS[key];
+      const cx = ox * CELL + CELL / 2, cy = oy * CELL + CELL / 2;
+      ctx.fillStyle = name.indexOf("backpack") !== -1 ? getCss("--accent-alert") : "#546074";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = "8px " + getCss("--mono");
+      ctx.textAlign = "center";
+      ctx.fillText(name[0].toUpperCase(), cx, cy + 3);
+    });
+
+    // safety collar + robot -- position/heading come from the server's
+    // /frame response now, not any locally-simulated state
+    const [px, py] = frame.position;
+    const robotCx = px * CELL + CELL / 2, robotCy = py * CELL + CELL / 2;
+    const flashing = Date.now() < state.safetyFlashUntil;
+    ctx.strokeStyle = flashing ? getCss("--accent-alert") : "rgba(62,207,142,0.35)";
+    ctx.lineWidth = flashing ? 2.5 : 1.5;
+    ctx.beginPath();
+    ctx.arc(robotCx, robotCy, (MIN_DISTANCE_CM / CELL_CM) * CELL, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // robot (triangle pointing heading)
+    // Note: frame.facing is the *view* heading (chassis heading adjusted
+    // by camera pan), same ambiguity as sim/grid_world.py's
+    // frame_description(). During a manual LOOK_LEFT/RIGHT tap the
+    // triangle will reflect the camera's pan, not just chassis
+    // orientation -- cosmetic only, doesn't affect movement/safety.
+    const angleMap = { N: -Math.PI / 2, E: 0, S: Math.PI / 2, W: Math.PI };
+    const angle = angleMap[frame.facing] || 0;
+    ctx.save();
+    ctx.translate(robotCx, robotCy);
+    ctx.rotate(angle);
+    ctx.fillStyle = getCss("--text");
+    ctx.beginPath();
+    ctx.moveTo(9, 0);
+    ctx.lineTo(-6, -6);
+    ctx.lineTo(-6, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    if (flashing) requestAnimationFrame(function () { render(); });
+
+    renderTelemetry(frame);
+  }
+
+  function renderTelemetry(frame) {
+    document.getElementById("tel-room").textContent = frame.room;
+    document.getElementById("tel-facing").textContent = frame.facing;
+    document.getElementById("tel-free").textContent = frame.freeSpaceCells + " cells (" + (frame.freeSpaceCells * CELL_CM) + "cm)";
+    document.getElementById("tel-door").textContent = frame.doorwayAhead ? "yes" : "no";
+    document.getElementById("tel-objects").textContent = frame.objectsVisible.length ? frame.objectsVisible.join(", ") : "none visible";
+
+    const safetyEl = document.getElementById("tel-safety");
+    const vetoedRecently = Date.now() < state.safetyFlashUntil;
+    safetyEl.innerHTML = vetoedRecently
+      ? 'Safety: <span class="alert">VETOED</span>'
+      : 'Safety: <span class="safe">OK</span>';
+
+    const rooms = Array.from(state.searchedRooms).sort();
+    let summary = rooms.length ? rooms.join(", ") + " searched." : "No rooms searched yet.";
+    if (state.autoTarget) {
+      summary += state.found ? " Found." : (" No " + state.autoTarget + " found.");
+    }
+    document.getElementById("mission-summary").textContent = summary;
+  }
+
+  function renderLog() {
+    const el = document.getElementById("log");
+    const entry = state.log[state.log.length - 1];
+    const div = document.createElement("div");
+    div.className = "entry" + (entry.executed === false ? " veto" : "");
+    div.textContent = "#" + entry.step + " " + entry.room + " \u2192 " + entry.action + (entry.executed === false ? " [VETOED]" : "");
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+
+    if (state.found && !el.dataset.foundLogged) {
+      const foundDiv = document.createElement("div");
+      foundDiv.className = "entry found";
+      foundDiv.textContent = "\u2605 FOUND " + state.foundSighting.object + " in " + state.foundSighting.room + " at step " + state.foundSighting.step;
+      el.appendChild(foundDiv);
+      el.dataset.foundLogged = "1";
+    }
+  }
+
+  // ---------- controls ----------
+
+  document.getElementById("btn-connect").onclick = function () { connect(); };
+
+  document.getElementById("btn-forward").onclick = function () { manualAction("FORWARD"); };
+  document.getElementById("btn-reverse").onclick = function () { manualAction("REVERSE"); };
+  document.getElementById("btn-left").onclick = function () { manualAction("LEFT"); };
+  document.getElementById("btn-right").onclick = function () { manualAction("RIGHT"); };
+  document.getElementById("btn-stop").onclick = function () { manualAction("STOP"); };
+  document.getElementById("btn-look-left").onclick = function () { manualAction("LOOK_LEFT"); };
+  document.getElementById("btn-look-right").onclick = function () { manualAction("LOOK_RIGHT"); };
+  document.getElementById("btn-look-center").onclick = function () { manualAction("LOOK_CENTER"); };
+
+  document.getElementById("btn-explore").onclick = function () {
+    if (!state.connected) return;
+    if (state.autoRunning && !state.autoTarget) { stopAuto(); return; }
+    startAuto(null);
+  };
+  document.getElementById("btn-find").onclick = function () {
+    if (!state.connected) return;
+    if (state.autoRunning && state.autoTarget) { stopAuto(); return; }
+    startAuto("red backpack");
+  };
+  document.getElementById("btn-reset").onclick = function () { resetMission(); };
+
+  // ---------- photo analysis (calls the Lambda endpoint) ----------
+
+  const photoInput = document.getElementById("photo-input");
+  const photoPreview = document.getElementById("photo-preview");
+  const photoResult = document.getElementById("photo-result");
+
+  document.getElementById("btn-take-photo").onclick = function () { photoInput.click(); };
+
+  photoInput.onchange = function () {
+    const file = photoInput.files[0];
+    if (!file) return;
+
+    const url = document.getElementById("cfg-url").value.trim();
+    const secret = document.getElementById("cfg-secret").value.trim();
+
+    photoPreview.src = URL.createObjectURL(file);
+    photoPreview.style.display = "block";
+    photoResult.style.display = "block";
+    photoResult.innerHTML = '<div class="hint">Analyzing\u2026</div>';
+
+    if (!url) {
+      photoResult.innerHTML = '<div class="hint">Set the Lambda Function URL in "Cloud endpoint settings" below first.</div>';
+      return;
+    }
+
+    fileToBase64(file).then(function (base64) {
+      const headers = { "Content-Type": "application/json" };
+      if (secret) headers["x-app-secret"] = secret;
+
+      return fetch(url, {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify({ image_base64: base64, media_type: file.type || "image/jpeg" }),
+      }).then(function (resp) {
+        return resp.json().then(function (data) {
+          if (!resp.ok) {
+            photoResult.innerHTML = '<div class="hint">Error ' + resp.status + ': ' + (data.error || "unknown") + '</div>';
+            return;
+          }
+          renderPhotoResult(data);
+        });
+      });
+    }).catch(function (e) {
+      photoResult.innerHTML = '<div class="hint">Request failed: ' + e.message + '. If this is running as a local file in Safari, CORS or mixed-content rules may block it -- try hosting the twin over HTTPS.</div>';
+    });
+  };
+
+  function fileToBase64(file) {
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function () { resolve(reader.result.split(",")[1]); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function renderPhotoResult(data) {
+    const objs = data.important_objects || [];
+    const hasBackpack = objs.some(function (o) { return o.toLowerCase().indexOf("backpack") !== -1; });
+    const banner = hasBackpack
+      ? '<div class="banner found">Found a backpack in this photo.</div>'
+      : '<div class="banner not-found">No backpack spotted in this photo.</div>';
+
+    photoResult.innerHTML = banner +
+      '<div>Room guess: <b>' + (data.room_guess || "unknown") + '</b></div>' +
+      '<div>Objects: ' + (objs.join(", ") || "none") + '</div>' +
+      '<div>Free space: ' + (data.free_space || "unknown") + '</div>' +
+      '<div>Doorway visible: ' + (data.doorway_visible ? "yes" : "no") + '</div>' +
+      '<div>Safest direction: ' + (data.safest_direction || "-") + '</div>';
+  }
+
+  // ---------- init ----------
+  // No server connection yet at page load -- draw the static map only.
+  // render() itself no-ops the robot/telemetry parts until state.lastFrame
+  // exists (set once the user taps Connect).
+
+  function renderStaticMapOnly() {
+    ctx.clearRect(0, 0, COLS * CELL, ROWS * CELL);
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        const c = cellAt(x, y);
+        ctx.fillStyle = c === "#" ? getCss("--wall") : c === "D" ? getCss("--door") : floorColorFor(x, y);
+        ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      }
+    }
+  }
+  renderStaticMapOnly();
+})();
+</script>
+</body>
+</html>

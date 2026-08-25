@@ -1,0 +1,8 @@
+pyyaml
+pytest
+anthropic
+fastapi
+uvicorn
+pydantic
+httpx
+
