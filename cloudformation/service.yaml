@@ -115,10 +115,6 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-        - IpProtocol: tcp
-          FromPort: 8000
-          ToPort: 8000
-          CidrIp: 0.0.0.0/0
       SecurityGroupEgress:
         - IpProtocol: "-1"
           CidrIp: 0.0.0.0/0
@@ -293,6 +289,11 @@ Outputs:
     Value: !Ref InternalAlb
     Export:
       Name: !Sub "${AWS::StackName}-InternalAlbArn"
+  AlbListenerArn:
+    Description: For other stacks (e.g. vision-picar-twin) to add path-based ListenerRules to this shared port-80 listener
+    Value: !Ref AlbListener
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbListenerArn"
   AlbSecurityGroupId:
     Value: !Ref AlbSecurityGroup
     Export:

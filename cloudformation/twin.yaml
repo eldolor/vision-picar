@@ -2,9 +2,12 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: >
   vision-picar digital twin: robot/server.py + web-twin/index.html as an
   ECS Fargate service, sharing the vision-picar-service stack's NLB and
-  internal ALB on a second port (8000) rather than provisioning a second
-  pair of load balancers. Separate ECR repo, IAM roles, and secret from
-  the vision-analyze service -- "separate app," same cluster.
+  internal ALB on the same port 80 as the vision-analyze service, routed
+  by path (this stack's own paths -- /, /action, /stop, /distance,
+  /frame -- via a ListenerRule on the service stack's shared listener)
+  rather than a second port or a second pair of load balancers. Separate
+  ECR repo, IAM roles, and secret from the vision-analyze service --
+  "separate app," same cluster, same public port.
 
 Parameters:
   NetworkStackName:
@@ -116,44 +119,29 @@ Resources:
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 3
 
-  AlbListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
+  # Routes this stack's own paths, on the vision-picar-service stack's
+  # shared port-80 listener, to this service's target group -- everything
+  # else on that listener falls through to its DefaultActions (the
+  # vision-analyze target group). robot/server.py's full route set (see
+  # its @app.get/@app.post decorators) is exactly these five paths, so
+  # listing them exhaustively here is exact, not a guess.
+  AlbListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
-      LoadBalancerArn: !ImportValue
-        Fn::Sub: "${ServiceStackName}-InternalAlbArn"
-      Port: !Ref ContainerPort
-      Protocol: HTTP
-      DefaultActions:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 10
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /
+            - /action
+            - /stop
+            - /distance
+            - /frame
+      Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
-
-  NlbTargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    DependsOn: AlbListener
-    Properties:
-      Name: vision-picar-twin-nlb-tg
-      Port: !Ref ContainerPort
-      Protocol: TCP
-      VpcId: !ImportValue
-        Fn::Sub: "${NetworkStackName}-VpcId"
-      TargetType: alb
-      Targets:
-        - Id: !ImportValue
-            Fn::Sub: "${ServiceStackName}-InternalAlbArn"
-      HealthCheckEnabled: true
-      HealthCheckProtocol: HTTP
-      HealthCheckPath: /health
-
-  NlbListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      LoadBalancerArn: !ImportValue
-        Fn::Sub: "${ServiceStackName}-NlbArn"
-      Port: !Ref ContainerPort
-      Protocol: TCP
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref NlbTargetGroup
 
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -190,7 +178,7 @@ Resources:
 
   EcsService:
     Type: AWS::ECS::Service
-    DependsOn: AlbListener
+    DependsOn: AlbListenerRule
     Properties:
       ServiceName: vision-picar-twin-service
       Cluster: !ImportValue
@@ -217,13 +205,12 @@ Resources:
 Outputs:
   PublicUrlNote:
     Description: >
-      Same NLB as vision-picar-service, different port -- see that
-      stack's NlbDnsName output and append :8000
+      Same NLB and port as vision-picar-service -- routed by path, not
+      port. See that stack's NlbDnsName output.
     Value: !Sub
-      - "http://${NlbDnsName}:${ContainerPort}/"
+      - "http://${NlbDnsName}/"
       - NlbDnsName:
           Fn::ImportValue: !Sub "${ServiceStackName}-NlbDnsName"
-        ContainerPort: !Ref ContainerPort
   EcrRepositoryUri:
     Value: !GetAtt EcrRepo.RepositoryUri
   AppSharedSecretArn:

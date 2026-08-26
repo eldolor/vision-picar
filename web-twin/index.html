@@ -478,6 +478,7 @@
         <input type="text" id="guidance-target" value="red backpack" style="flex:2; padding:10px; border-radius:8px; border:1px solid #333B47; background:#0E1116; color:var(--text); font-family:var(--mono); font-size:12px;">
         <button id="btn-guidance" class="primary" style="flex:1;">Start</button>
       </div>
+      <div class="hint" id="guide-start-error" style="display:none; color:var(--accent-alert); margin-top:8px;"></div>
     </div>
   </div>
 
@@ -1695,11 +1696,26 @@
     if (state.guidanceRunning && !state.guidancePaused) state.guidanceTimerId = setTimeout(guidanceStep, GUIDANCE_THROTTLE_MS);
   }
 
+  function showGuideStartError(message) {
+    const el = document.getElementById("guide-start-error");
+    el.textContent = message;
+    el.style.display = "";
+  }
+
   async function startGuidance() {
+    document.getElementById("guide-start-error").style.display = "none";
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showGuideStartError(
+        "Camera access requires this page to be loaded over https:// or localhost -- " +
+        "browsers block it otherwise. This page is currently loaded over " +
+        location.protocol + "//" + location.host + "."
+      );
+      return;
+    }
     try {
       state.guidanceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
     } catch (e) {
-      renderGuidanceStatus({ guidance: "Camera access failed: " + e.message, target_visible: false }, false);
+      showGuideStartError("Camera access failed: " + e.message);
       return;
     }
     // Must happen inside this user-gesture-triggered handler -- iOS's

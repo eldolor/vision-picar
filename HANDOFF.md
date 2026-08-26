@@ -75,7 +75,7 @@ the original build plan phases, reordered simulation-first):
 | 9 (partial) | Manual WASD control client (`control/manual_control.py`) | NOT BUILT -- `control/` dir exists but is empty. Was planned, then deprioritized in favor of the web twin, which now supersedes this use case (see section 5). |
 | -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Discussed and partially designed in conversation (a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt) but never written to disk. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. |
-| extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 8000. Verified end-to-end from an actual phone on cellular data, not just curl. |
+| extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
 
 ---
@@ -126,8 +126,9 @@ vision-picar/
 │   ├── network.yaml            VPC, 2 AZs, no NAT -- VPC endpoints instead
 │   ├── service.yaml            vision service: ECR, ECS, NLB, ALB, IAM, secret
 │   └── twin.yaml               twin service: ECR, ECS, IAM, secret -- reuses
-│                               service.yaml's NLB/ALB on a second port (8000)
-│                               rather than provisioning a second pair
+│                               service.yaml's NLB/ALB on the same port 80
+│                               (path-based ListenerRule) rather than
+│                               provisioning a second pair or a second port
 │
 ├── web-twin/index.html       Mobile-first web UI, real client of robot/server.py.
 │                              Deployed via service/twin/ (see above) as well as
@@ -223,15 +224,23 @@ vision-picar/
   add a new movement path that bypasses it.
 
 - **`vision-picar-twin` (the digital twin) and `vision-picar-service`
-  (the vision endpoint) share one NLB and one internal ALB, on
-  different ports** (80 for vision, 8000 for the twin), rather than
-  each having its own pair -- provisioning a second NLB+ALB would have
-  cost roughly as much as everything else in this project combined.
-  `cloudformation/twin.yaml` imports the other stack's load balancer
-  ARNs and security group ID via `Fn::ImportValue`; it does *not* own
-  those resources. If you ever add a third public service, follow the
-  same pattern (new port, new listener + target group on the existing
-  NLB/ALB) rather than defaulting to new load balancers.
+  (the vision endpoint) share one NLB and one internal ALB, on the same
+  port 80**, routed by path via a `ListenerRule` on the ALB's shared
+  listener (the twin's exact route set -- `/`, `/action`, `/stop`,
+  `/distance`, `/frame` -- forwards to its target group; everything
+  else, including `/health`, falls through to vision-analyze's target
+  group) -- rather than each having its own pair, or a second port,
+  which would have cost roughly as much as everything else in this
+  project combined. `cloudformation/twin.yaml` imports the other
+  stack's load balancer/listener ARNs and security group ID via
+  `Fn::ImportValue`; it does *not* own those resources. If you ever add
+  a third public service, follow the same pattern (new `ListenerRule`
+  with its own exclusive path set, new target group, on the existing
+  NLB/ALB/listener) rather than defaulting to new load balancers or
+  ports. A target group's own health checks bypass listener routing
+  entirely (they hit the target IP:port directly), so leaving `/health`
+  out of a ListenerRule's paths doesn't affect that service's health
+  checks -- only the public reachability of that literal path.
 
 - **`robot/server.py`'s `require_secret()` gate is new** (added
   alongside the ECS deployment) and is a no-op when `APP_SHARED_SECRET`

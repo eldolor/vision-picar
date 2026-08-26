@@ -176,16 +176,23 @@ only `config/robot.yaml`'s `mode` does.
 - **Deployed to ECS Fargate** (`service/twin/`, `cloudformation/twin.yaml`)
   so it's reachable from a phone on any network, not just a Mac's LAN --
   same cluster as the vision service, sharing its NLB and internal ALB
-  on a second port (8000) instead of provisioning a second pair of load
-  balancers. Public URL: `http://<the vision service's NLB DNS
-  name>:8000/` (same DNS name as the `/analyze` endpoint below, just a
-  different port). `robot/server.py`'s `/action`, `/stop`, `/distance`,
-  `/frame` routes require an `x-app-secret` header once deployed
-  publicly (see `require_secret()` in that file) -- the secret lives in
-  Secrets Manager as `vision-picar-twin-shared-secret`. `/health` and
-  `/` (which now serves `web-twin/index.html` directly) stay open, since
-  the ALB health check can't send custom headers and the page has to
-  load before anyone can enter the secret.
+  on the *same port 80* instead of provisioning a second port or a
+  second pair of load balancers. A `ListenerRule` on the shared ALB
+  listener routes `robot/server.py`'s exact route set (`/`, `/action`,
+  `/stop`, `/distance`, `/frame`) to the twin's target group; everything
+  else on that listener falls through to the vision-analyze service.
+  Public URL: `http://<the vision service's NLB DNS name>/` (same DNS
+  name and port as the `/analyze` endpoint below -- routed by path, not
+  port). `/action`, `/stop`, `/distance`, `/frame` require an
+  `x-app-secret` header once deployed publicly (see `require_secret()`
+  in that file) -- the secret lives in Secrets Manager as
+  `vision-picar-twin-shared-secret`. `/` (which now serves
+  `web-twin/index.html` directly) stays open, since the page has to
+  load before anyone can enter the secret. (`/health` isn't in the
+  ListenerRule's path list -- it falls through to vision-analyze's own
+  `/health`; the twin target group's own health checks bypass listener
+  routing entirely and hit the container directly, so this doesn't
+  affect the twin's health checks.)
 - When served by `robot/server.py` itself (this deployment, or local
   `uvicorn robot.server:app`), the twin's "Robot server connection"
   field auto-fills to its own origin -- no more typing LAN IPs. Manual
