@@ -188,12 +188,13 @@
 
     <details>
       <summary>Cloud endpoint settings</summary>
-      <input type="text" id="cfg-url" placeholder="Lambda Function URL (https://...)">
+      <input type="text" id="cfg-url" placeholder="Vision service URL (https://...)">
       <input type="text" id="cfg-secret" placeholder="x-app-secret value" style="margin-top:6px">
       <div class="hint">
         Not saved between sessions (no localStorage in this preview) --
-        re-enter after reloading. See lambda/vision_analyze/README.md for
-        how to get a Function URL and secret.
+        re-enter after reloading. The URL is the NLB DNS name from the
+        cloudformation/service.yaml stack output; the secret is the
+        vision-picar-app-shared-secret value in Secrets Manager.
       </div>
     </details>
   </div>
@@ -642,7 +643,7 @@
   };
   document.getElementById("btn-reset").onclick = function () { resetMission(); };
 
-  // ---------- photo analysis (calls the Lambda endpoint) ----------
+  // ---------- photo analysis (calls the ECS Fargate vision service) ----------
 
   const photoInput = document.getElementById("photo-input");
   const photoPreview = document.getElementById("photo-preview");
@@ -663,7 +664,7 @@
     photoResult.innerHTML = '<div class="hint">Analyzing\u2026</div>';
 
     if (!url) {
-      photoResult.innerHTML = '<div class="hint">Set the Lambda Function URL in "Cloud endpoint settings" below first.</div>';
+      photoResult.innerHTML = '<div class="hint">Set the vision service URL in "Cloud endpoint settings" below first.</div>';
       return;
     }
 

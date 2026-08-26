@@ -14,9 +14,9 @@ iPhone (or any browser). No server, no install, no App Store.
   sensor read, and safety check. No physics or safety logic is
   duplicated in JS anymore.
 - **"Find the bag in a photo"** -- take a real photo with your phone
-  camera, send it to the Lambda vision-analysis endpoint
-  (`lambda/vision_analyze/`), and see the same structured scene
-  description the sim uses, plus a room guess.
+  camera, send it to the vision-analysis service
+  (`service/vision_analyze/`, running on ECS Fargate), and see the same
+  structured scene description the sim uses, plus a room guess.
 
 ## Architecture: this is now a real client of robot/server.py
 
@@ -51,7 +51,7 @@ inherent to visualizing a simulation, not duplicated decision logic.
 ## Known limitations
 
 - No persistence -- reloading the page loses the server URL, the
-  Lambda URL/secret fields, and all mission bookkeeping (visited cells,
+  vision service URL/secret fields, and all mission bookkeeping (visited cells,
   search memory). The *robot's* actual position persists server-side
   since it's not reset on reconnect.
 - "Reset mission" clears the twin's local bookkeeping only -- it does

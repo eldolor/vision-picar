@@ -8,34 +8,30 @@ full phase-by-phase build details.
 
 ## 1. First 5 minutes in Claude Code
 
-```bash
-# 1. Get the repo under version control
-git init
-git add .
-git commit -m "Initial import from claude.ai session"
+Git is already initialized (see `git log`). To pick up from a clean checkout:
 
-# 2. Set up the environment
+```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# 3. Confirm everything still works (should show 58 passed)
+# Confirm everything still works (should show 58 passed)
 pytest tests/ -v
-
-# 4. The Lambda handler has its own isolated test suite (packaged
-#    separately on purpose -- see lambda/vision_analyze/README.md)
-cd lambda/vision_analyze && pip install -r requirements.txt && pytest test_handler.py -v && cd ../..
 ```
 
-If both suites pass (58 + 10 = 68 tests), the handoff is clean and you're
-working from the exact state this session ended in.
+`service/vision_analyze/` (the ECS Fargate vision service) has no
+automated test suite of its own yet -- see section 5, item 1. It's
+verified working by manual `docker run` + curl, and against the live
+deployment, not by an automated suite the way `lambda/vision_analyze/`
+used to be before it was decommissioned.
 
-**Environment variable needed for anything vision-related:**
+**Environment variable needed for anything vision-related in the sim:**
 `ANTHROPIC_API_KEY` -- required by `brain/vision.py` (only for
 `tests/manual_describe_image.py`, which isn't in the automated suite
-since it costs a real API call) and by `lambda/vision_analyze/` once
-deployed. Nothing else in the automated test suite needs it (API calls
-are mocked in tests).
+since it costs a real API call). Nothing else in the automated test
+suite needs it (API calls are mocked in tests). `service/vision_analyze/`
+does *not* need this -- it authenticates to Amazon Bedrock via its ECS
+task role's IAM permissions, not an API key.
 
 ---
 
@@ -80,7 +76,7 @@ the original build plan phases, reordered simulation-first):
 | -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Discussed and partially designed in conversation (a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt) but never written to disk. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. |
 | extra | Web-based digital twin | Done (`web-twin/index.html`), real HTTP client of `robot/server.py`, verified end-to-end against a live server |
-| extra | Cloud photo-analysis endpoint | Done (`lambda/vision_analyze/`), not yet actually deployed to AWS (code is written and tested, but no live Function URL exists yet) |
+| extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
 
 ---
 
@@ -112,10 +108,16 @@ vision-picar/
 │
 ├── tests/                    58 tests + 5 runnable (non-automated) demo scripts
 │
-├── lambda/vision_analyze/    AWS Lambda: photo upload -> vision analysis (cloud)
-│   ├── handler.py, vision_core.py, rooms_core.py   (self-contained, own deps)
-│   ├── test_handler.py        10 tests, run separately from this folder
-│   └── README.md              deployment steps, cost guardrails
+├── service/vision_analyze/   ECS Fargate: photo upload -> vision analysis (cloud)
+│   ├── app.py                 FastAPI app -- /health, /analyze
+│   ├── vision_core.py         calls Amazon Bedrock (Claude, Converse API)
+│   ├── rooms_core.py          identify_room() -- same logic as brain/rooms.py
+│   ├── requirements.txt, Dockerfile
+│   └── NOTE: no automated test suite yet -- see section 6
+│
+├── cloudformation/            IaC for the vision service's AWS infra
+│   ├── network.yaml            VPC, 2 AZs, no NAT -- VPC endpoints instead
+│   └── service.yaml            ECR, ECS cluster/service/task, NLB, ALB, IAM, secret
 │
 ├── web-twin/index.html       Mobile-first web UI, real client of robot/server.py
 ├── requirements.txt
@@ -128,10 +130,12 @@ vision-picar/
 
 ## 5. Recommended next steps, in priority order
 
-1. **Deploy `lambda/vision_analyze/`** so the web twin's "find the bag in
-   a photo" feature actually works end-to-end (currently code-complete
-   and tested, but has no live Function URL). Steps are in
-   `lambda/vision_analyze/README.md`.
+1. **Write a test suite for `service/vision_analyze/app.py`.** The
+   Lambda version had one (`test_handler.py`, 10 tests) but its
+   Lambda-event-shaped fixtures don't carry over to a FastAPI app --
+   use FastAPI's `TestClient` instead, mocking `vision_core.describe_image_bytes`
+   the same way the old suite mocked the Anthropic client. This is the
+   one real gap left by the Lambda -> ECS Fargate migration.
 
 2. **Build `brain/planner.py`** if you want the real LLM-driven decision
    loop rather than the current rule-based frontier exploration. This
@@ -149,7 +153,7 @@ vision-picar/
    in conversation: AR-style overlay (not just text), timer-throttled
    analysis (not per-frame, for both cost and latency reasons -- see the
    cost breakdown in conversation history / README), reuses the same
-   Lambda endpoint's schema with a new prompt mode rather than a new
+   vision service's schema with a new prompt mode rather than a new
    function.
 
 4. **`control/manual_control.py`** -- probably skip. The web twin's
@@ -170,14 +174,23 @@ vision-picar/
 
 ## 6. Things to know before touching the code
 
-- **Two separate test suites, two separate dependency sets.**
-  `lambda/vision_analyze/` is deliberately self-contained (its own
-  `vision_core.py`/`rooms_core.py` copies, its own `requirements.txt`,
-  its own test file) so it can be packaged as a minimal Lambda
-  deployment zip without dragging in the whole repo. If you change the
+- **`service/vision_analyze/` has its own dependency-light copies of
+  `vision_core.py`/`rooms_core.py`, deliberately.** Same pattern the
+  Lambda version used, kept for the same reason (self-contained Docker
+  build context, no need to drag in the whole repo). If you change the
   vision prompt or room-feature logic in `brain/vision.py` or
-  `brain/rooms.py`, mirror the change in the lambda/ copies manually --
-  this is a known, accepted duplication, not an oversight.
+  `brain/rooms.py`, mirror the change here manually -- known, accepted
+  duplication, not an oversight. Note the model call itself is
+  *different* here, not just the copy: `service/vision_analyze/vision_core.py`
+  calls Amazon Bedrock's Converse API, not the direct Anthropic API
+  `brain/vision.py` uses -- see that file's docstring for why.
+
+- **`service/vision_analyze/` has no automated test suite yet** (see
+  section 5, item 1) -- the Lambda version's `test_handler.py` doesn't
+  carry over since it's shaped around Lambda's `handler(event, context)`
+  signature, not a FastAPI app. Verified manually instead: local
+  `docker run` + curl, then the same against the deployed NLB endpoint,
+  both with a real Bedrock call and a correct response.
 
 - **The web twin's exploration algorithm duplication is intentional,
   not a bug.** `web-twin/index.html`'s JS re-implements the
@@ -197,8 +210,15 @@ vision-picar/
   movement action through `robot/safety.py`'s `SafetyController`. Don't
   add a new movement path that bypasses it.
 
-- **Model string used throughout:** `claude-sonnet-5` (in
-  `brain/vision.py` and `lambda/vision_analyze/vision_core.py`). If a
-  newer/cheaper model becomes preferable for the frequent/throttled
-  calls the AR feature will need, that's a reasonable thing to
-  reconsider -- see the cost discussion referenced in section 5.3.
+- **Model strings differ between the sim and the cloud service, on
+  purpose.** `brain/vision.py` (direct Anthropic API) uses
+  `claude-sonnet-5`. `service/vision_analyze/vision_core.py` (Amazon
+  Bedrock) uses the `us.anthropic.claude-sonnet-4-5-20250929-v1:0`
+  inference profile instead -- `claude-sonnet-5` isn't enabled for
+  Bedrock on this account yet (confirmed via a real `converse` call
+  returning `AccessDeniedException`; Sonnet 4.5 was confirmed working).
+  Check `aws bedrock list-foundation-models` / `list-inference-profiles`
+  before assuming a given model ID works on Bedrock -- don't guess a
+  model string here. If a newer/cheaper model becomes preferable for the
+  frequent/throttled calls the AR feature will need, that's a reasonable
+  thing to reconsider -- see the cost discussion referenced in section 5.3.

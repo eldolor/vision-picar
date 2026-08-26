@@ -1,25 +1,37 @@
 """
 vision_core.py
 
-Lambda-local copy of the image-analysis logic from brain/vision.py,
+ECS-service copy of the image-analysis logic from brain/vision.py,
 adapted to accept image bytes directly (a photo taken in the browser)
-instead of a file path. Kept deliberately small and dependency-light so
-the Lambda deployment package doesn't need the whole repo bundled in.
+instead of a file path, and to call the model via Amazon Bedrock's
+Converse API instead of the direct Anthropic API -- this service runs
+in a private subnet with no internet egress, reaching Bedrock over a
+VPC interface endpoint. Auth is via the ECS task role's IAM permissions
+(bedrock:InvokeModel / bedrock:Converse), not an API key.
 
 If you change the prompt or output schema in brain/vision.py, mirror the
 change here -- these are meant to stay in sync but are packaged
-separately for deployment simplicity.
+separately for deployment simplicity (same pattern lambda/vision_analyze
+used before it was decommissioned).
+
+Model note: "claude-sonnet-5" (the model brain/vision.py and the old
+Lambda deployment used via the direct Anthropic API) is not yet enabled
+for this account on Bedrock -- verified via `aws bedrock-runtime converse`,
+which returned AccessDeniedException for both the base model ID and its
+inference profile. Using the cross-region inference profile for Claude
+Sonnet 4.5 instead, confirmed working (including image input) via a real
+`converse` call before wiring this in.
 """
 
-import base64
 import json
 import logging
+import os
 
-import anthropic
+import boto3
 
 logger = logging.getLogger()
 
-MODEL = "claude-sonnet-5"
+MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
 SCENE_PROMPT = """You are viewing a photo of a room, taken by the owner of a small indoor robot to help it understand the space.
 Describe:
@@ -52,32 +64,40 @@ _client = None
 def _get_client():
     global _client
     if _client is None:
-        _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from Lambda env
+        _client = boto3.client("bedrock-runtime")
     return _client
 
 
+def _bedrock_image_format(media_type: str) -> str:
+    # Bedrock's Converse API wants a short format token ("png", "jpeg"),
+    # not a MIME type.
+    return media_type.split("/")[-1].lower()
+
+
 def describe_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
-    data = base64.standard_b64encode(image_bytes).decode("utf-8")
     client = _get_client()
 
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=500,
+    response = client.converse(
+        modelId=MODEL_ID,
         messages=[
             {
                 "role": "user",
                 "content": [
                     {
-                        "type": "image",
-                        "source": {"type": "base64", "media_type": media_type, "data": data},
+                        "image": {
+                            "format": _bedrock_image_format(media_type),
+                            "source": {"bytes": image_bytes},
+                        }
                     },
-                    {"type": "text", "text": SCENE_PROMPT},
+                    {"text": SCENE_PROMPT},
                 ],
             }
         ],
+        inferenceConfig={"maxTokens": 500},
     )
 
-    text = "".join(b.text for b in response.content if b.type == "text")
+    content_blocks = response["output"]["message"]["content"]
+    text = "".join(b["text"] for b in content_blocks if "text" in b)
     return _parse_scene_json(text)
 
 

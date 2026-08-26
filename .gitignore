@@ -6,9 +6,8 @@ venv/
 *.egg-info/
 .DS_Store
 
-# Lambda deployment artifacts (rebuilt from source, don't commit)
-lambda/vision_analyze/package/
-lambda/vision_analyze/function.zip
+# Claude Code session-local state, not project content
+.claude/
 
 # Never commit secrets
 .env

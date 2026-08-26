@@ -170,7 +170,7 @@ only `config/robot.yaml`'s `mode` does.
   backpack" modes (a JS port of the frontier-preference algorithm in
   `brain/agent.py` -- verified to match the Python sim's behavior
   step-for-step), and the "take a photo, find the bag" feature calling
-  the Lambda endpoint below.
+  the cloud vision service below.
 - **Important caveat** — this is a standalone JS re-implementation of
   `sim/grid_world.py` / `brain/agent.py`, not a client of
   `robot/server.py`. See "Is this deviating from the hardware plan?"
@@ -178,23 +178,69 @@ only `config/robot.yaml`'s `mode` does.
 
 ## Cloud vision endpoint (photo analysis, reachable from anywhere)
 
-- `lambda/vision_analyze/` — an AWS Lambda Function URL wrapping the
-  same `describe_image()` logic as `brain/vision.py` (adapted to accept
+- `service/vision_analyze/` — a FastAPI app wrapping the same
+  `describe_image()` logic as `brain/vision.py` (adapted to accept
   photo bytes from a browser upload instead of a file path), plus a
   room guess via `identify_room()`. This is deliberately separate from
   `robot/server.py`: photo analysis benefits from being reachable from
-  anywhere (cellular, not just home Wi-Fi) and having the API key live
+  anywhere (cellular, not just home Wi-Fi) and having model access live
   in the cloud instead of on a device, but the actual drive/steer/stop
   control loop stays local once hardware exists -- safety-critical
   control shouldn't depend on a cloud hop being up.
-- Includes a shared-secret header check and configurable CORS, since a
-  public endpoint calling a paid API needs abuse protection -- see
-  `lambda/vision_analyze/README.md` for deployment steps and cost
-  guardrails (reserved concurrency, billing alarms).
+- Runs as an **ECS Fargate** service (not Lambda -- see history note
+  below) behind an internet-facing **NLB → internal ALB → ECS Fargate**
+  chain, provisioned by the CloudFormation templates in `cloudformation/`
+  (`network.yaml`: VPC across 2 AZs, no NAT Gateway; `service.yaml`:
+  ECR repo, ECS cluster/service/task, both load balancers, IAM roles,
+  the shared-secret in Secrets Manager). The private subnets have **no
+  internet route at all** -- everything the task needs (ECR image pull,
+  CloudWatch Logs, Secrets Manager, and the vision model call itself)
+  goes over VPC interface endpoints instead.
+- Vision inference calls **Amazon Bedrock** (Claude, via the Converse
+  API) rather than the direct Anthropic API `brain/vision.py` and the
+  sim use -- Bedrock supports a private VPC endpoint, so the service
+  never touches the public internet; auth is the ECS task role's IAM
+  permissions, not an API key. See `service/vision_analyze/vision_core.py`
+  for the model ID in use and why (not every Claude model is enabled for
+  Bedrock on every account -- check with `aws bedrock list-foundation-models`
+  before assuming a given model ID works).
+- Still has the same shared-secret header check and CORS handling as
+  before; `APP_SHARED_SECRET` lives in Secrets Manager, injected into
+  the task at launch.
 
 ```bash
-cd lambda/vision_analyze && pytest test_handler.py -v
+# local smoke test, no AWS needed except Bedrock credentials:
+cd service/vision_analyze
+docker build -t vision-picar-analyze:local .
+docker run -p 8080:8080 -e APP_SHARED_SECRET=test -e ALLOWED_ORIGINS='*' \
+  -e AWS_PROFILE=default -v ~/.aws:/root/.aws:ro vision-picar-analyze:local
 ```
+
+```bash
+# deploy (see cloudformation/ templates for the full resource list)
+aws cloudformation deploy --stack-name vision-picar-network \
+  --template-file cloudformation/network.yaml
+aws cloudformation deploy --stack-name vision-picar-service \
+  --template-file cloudformation/service.yaml --capabilities CAPABILITY_NAMED_IAM
+```
+
+### History: why not Lambda?
+
+This started as a Lambda Function URL (and, after that, an API Gateway
+HTTP API in front of the same Lambda) -- both code-complete and correct
+(verified via direct `aws lambda invoke`), but every public entry point
+into that specific AWS account was silently rejected before the
+function ever ran. Root cause: this account's Lambda concurrency quota
+was pinned at 10 instead of AWS's normal default of 1000, with no
+history of anyone requesting that reduction -- i.e. AWS had placed the
+account in some reduced-trust tier that blocked Lambda-based public
+ingress specifically. ECS Fargate behind a load balancer is a
+completely different invocation path (long-running container, not a
+Lambda-invoke permission), so it isn't subject to whatever that
+restriction was. The Lambda code and its API Gateway have been deleted;
+this is documented here rather than left to be rediscovered from git
+history, since it explains a real architectural choice, not just
+"we changed our minds."
 
 ## Is this deviating from the hardware integration plan?
 
@@ -225,9 +271,11 @@ does in Python -- two client implementations of the same role, which is
 normal (you'll likely also want a real `brain/planner.py` Python client
 eventually), not two implementations of the robot itself.
 
-**The Lambda photo-analysis feature remains additive, not a deviation**
+**The cloud photo-analysis feature remains additive, not a deviation**
 -- it's a different feature (analyze an uploaded photo) than Phase 1's
 streaming Vision LLM work, fully decoupled from the hardware phases.
+Its implementation (Lambda, then ECS Fargate) is an infrastructure
+choice, not a change to that boundary.
 
 **Net assessment:** hardware integration is unaffected and still a
 config change away, and the codebase no longer has two competing

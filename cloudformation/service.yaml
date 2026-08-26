@@ -1,0 +1,280 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  vision-picar photo-analysis service: ECR repo, ECS Fargate service in
+  the private subnets, fronted by an internal ALB, fronted in turn by an
+  internet-facing NLB (NLB -> ALB -> ECS Fargate). Vision inference runs
+  via Amazon Bedrock (reached over the VPC's bedrock-runtime interface
+  endpoint, no internet egress) instead of the direct Anthropic API.
+  Imports networking from the vision-picar-network stack (see
+  network.yaml).
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Default: vision-picar-network
+  ContainerImageTag:
+    Type: String
+    Default: latest
+  ContainerPort:
+    Type: Number
+    Default: 8080
+  BedrockModelId:
+    Type: String
+    Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+
+Resources:
+  EcrRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: vision-picar-analyze
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: vision-picar-cluster
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/vision-picar-analyze
+      RetentionInDays: 14
+
+  AppSharedSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: vision-picar-app-shared-secret
+      Description: >
+        Shared secret the web twin must send as the x-app-secret header.
+        Placeholder at creation -- real value set post-deploy via CLI.
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: placeholder
+        ExcludePunctuation: true
+        PasswordLength: 32
+
+  EcsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: vision-picar-ecs-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadOwnSecrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref AppSharedSecret
+
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: vision-picar-ecs-task-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeBedrockClaudeModels
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Cross-region inference profiles route to underlying
+              # foundation models in multiple regions, so this can't be
+              # scoped to a single model ARN the way the rest of this
+              # project's IAM is scoped -- accepted tradeoff, matches the
+              # apigatewayv2/ec2 precedent elsewhere in this project.
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:Converse
+                Resource: "*"
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Internal ALB -- public boundary (NLB preserves client IP through to here)
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS Fargate tasks -- inbound only from the internal ALB
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  InternalAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: vision-picar-alb
+      Scheme: internal
+      Type: application
+      Subnets:
+        - !ImportValue
+          Fn::Sub: "${NetworkStackName}-PrivateSubnetAId"
+        - !ImportValue
+          Fn::Sub: "${NetworkStackName}-PrivateSubnetBId"
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: vision-picar-tg
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 15
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  AlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref InternalAlb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  Nlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: vision-picar-nlb
+      Scheme: internet-facing
+      Type: network
+      Subnets:
+        - !ImportValue
+          Fn::Sub: "${NetworkStackName}-PublicSubnetAId"
+        - !ImportValue
+          Fn::Sub: "${NetworkStackName}-PublicSubnetBId"
+
+  NlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: AlbListener
+    Properties:
+      Name: vision-picar-nlb-tg
+      Port: 80
+      Protocol: TCP
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      TargetType: alb
+      Targets:
+        - Id: !Ref InternalAlb
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health
+
+  NlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Nlb
+      Port: 80
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref NlbTargetGroup
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: vision-picar-analyze
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      ContainerDefinitions:
+        - Name: vision-analyze
+          Image: !Sub "${EcrRepo.RepositoryUri}:${ContainerImageTag}"
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          Environment:
+            - Name: ALLOWED_ORIGINS
+              Value: "*"
+            - Name: BEDROCK_MODEL_ID
+              Value: !Ref BedrockModelId
+          Secrets:
+            - Name: APP_SHARED_SECRET
+              ValueFrom: !Ref AppSharedSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: vision-analyze
+
+  EcsService:
+    Type: AWS::ECS::Service
+    DependsOn: AlbListener
+    Properties:
+      ServiceName: vision-picar-service
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      HealthCheckGracePeriodSeconds: 30
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !ImportValue
+              Fn::Sub: "${NetworkStackName}-PrivateSubnetAId"
+            - !ImportValue
+              Fn::Sub: "${NetworkStackName}-PrivateSubnetBId"
+          SecurityGroups:
+            - !Ref EcsSecurityGroup
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: vision-analyze
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref AlbTargetGroup
+
+Outputs:
+  NlbDnsName:
+    Description: Public endpoint for the photo-analysis service
+    Value: !GetAtt Nlb.DNSName
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepo.RepositoryUri
+  AppSharedSecretArn:
+    Value: !Ref AppSharedSecret
