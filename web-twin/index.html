@@ -107,102 +107,485 @@
   #photo-result .banner.found { background: rgba(62,207,142,0.15); color: var(--accent-safe); }
   #photo-result .banner.not-found { background: rgba(255,107,53,0.1); color: var(--accent-alert); }
 
-  details summary {
-    font-family: var(--mono); font-size: 11px; color: var(--text-dim);
-    cursor: pointer; padding: 4px 0;
-  }
-  details input {
+  .settings-input {
     width: 100%; margin-top: 6px; padding: 8px; border-radius: 6px;
     border: 1px solid #333B47; background: #0E1116; color: var(--text);
     font-family: var(--mono); font-size: 12px;
   }
   .hint { font-family: var(--mono); font-size: 10px; color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
+
+  .fpv-wrap { display: flex; justify-content: center; margin-top: 8px; }
+  #fpv-canvas { border-radius: 8px; display: block; }
+  .fpv-hud {
+    font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+    margin-top: 8px; line-height: 1.6;
+  }
+  .fpv-hud .action { color: var(--text); font-weight: 600; }
+  .fpv-hud .visible { color: var(--accent-safe); }
+  .fpv-hud .not-visible { color: var(--text-dim); }
+  .call-counter { font-family: var(--mono); font-size: 11px; color: var(--text-dim); align-self: center; }
+  #autopilot-log {
+    font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+    max-height: 130px; overflow-y: auto; line-height: 1.6;
+    background: #0E1116; border-radius: 8px; padding: 8px 10px; margin-top: 8px;
+  }
+  #autopilot-log .entry.action-forward { color: var(--accent-safe); }
+  #autopilot-log .entry.action-stop { color: var(--accent-alert); }
+
+  /* ---------- Guide tab: idle state (before Start) ---------- */
+  /* Ambient preview of the real interaction -- a small mock "viewfinder"
+     with the same chevron the live feature uses, gently drifting and
+     pulsing, so the idle screen hints at what's about to happen instead
+     of a static placeholder icon. Pure CSS, no assets. */
+  .guide-preview {
+    position: relative; height: 160px; border-radius: 14px; overflow: hidden;
+    background: linear-gradient(135deg, #0D1712, #10201A);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .guide-preview::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(circle at 50% 50%, rgba(62,207,142,0.14), transparent 65%);
+  }
+  .guide-preview-chevron {
+    position: relative; width: 46px; height: 46px; color: var(--accent-safe);
+    filter: drop-shadow(0 0 8px rgba(62,207,142,0.55));
+    animation: guide-preview-drift 2.6s ease-in-out infinite;
+  }
+  .guide-preview-chevron svg { width: 100%; height: 100%; }
+  @keyframes guide-preview-drift {
+    0%, 100% { transform: translateX(-16px) scale(1); opacity: 0.8; }
+    50% { transform: translateX(16px) scale(1.14); opacity: 1; }
+  }
+
+  /* ---------- Guide tab: first-run onboarding modal ---------- */
+  #guide-onboarding {
+    display: none;
+    position: fixed; inset: 0; z-index: 150;
+    background: rgba(6,8,11,0.72);
+    align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  #guide-onboarding.visible { display: flex; }
+  .guide-onboarding-card {
+    background: var(--surface); border: 1px solid #262C35; border-radius: 16px;
+    padding: 20px; max-width: 340px; width: 100%;
+  }
+  .guide-onboarding-title {
+    font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px;
+  }
+  .guide-onboarding-sub {
+    font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-bottom: 16px;
+  }
+  .guide-onboarding-row {
+    display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px;
+  }
+  .guide-onboarding-row-icon {
+    font-size: 20px; line-height: 1.3; flex-shrink: 0; width: 24px; text-align: center;
+  }
+  .guide-onboarding-row-text {
+    font-family: var(--sans); font-size: 13px; color: var(--text); line-height: 1.4;
+  }
+  .guide-onboarding-row-text b { color: var(--accent-safe); }
+
+  /* ---------- Guide tab: fullscreen AR takeover ---------- */
+  /* CSS-simulated fullscreen (position:fixed over everything), not the
+     real Fullscreen API -- see PLAN-ar-guidance.md for why (iOS Safari's
+     requestFullscreen support for arbitrary elements is unreliable). */
+  #guide-fullscreen {
+    display: none;
+    position: fixed; inset: 0; z-index: 200;
+    background: #000;
+  }
+  #guide-fullscreen.active { display: block; }
+
+  #guidance-video {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; display: block;
+  }
+
+  #guidance-overlay {
+    position: absolute; inset: 0; pointer-events: none;
+    overflow: hidden;
+  }
+
+  .guide-topbar {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: calc(10px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 10px calc(12px + env(safe-area-inset-left));
+    background: linear-gradient(to bottom, rgba(0,0,0,0.55), transparent);
+    pointer-events: none;
+  }
+  .guide-topbar > * { pointer-events: auto; }
+  .guide-close-btn {
+    width: 38px; height: 38px; border-radius: 50%; min-height: unset;
+    background: rgba(20,24,30,0.55); color: var(--text);
+    font-size: 18px; padding: 0; flex: unset;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .guide-mute-btn {
+    width: 38px; height: 38px; border-radius: 50%; min-height: unset;
+    background: rgba(20,24,30,0.55); color: var(--text);
+    font-size: 16px; padding: 0; flex: unset;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .guide-call-count {
+    font-family: var(--mono); font-size: 11px; color: rgba(232,236,239,0.8);
+    background: rgba(20,24,30,0.55); padding: 6px 10px; border-radius: 999px;
+  }
+  .guide-topbar-right { display: flex; gap: 8px; align-items: center; }
+
+  .guide-bottombar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 16px calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+    background: linear-gradient(to top, rgba(0,0,0,0.55), transparent);
+    pointer-events: none;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  /* De-emphasized caption -- the edge glow + chevron pulse below carry the
+     primary "which way / how close" signal now; this is a small, optional,
+     glanceable readout for accessibility/clarity, not the main channel. */
+  .guide-caption {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--text);
+    background: rgba(20,24,30,0.6); padding: 6px 14px; border-radius: 999px;
+    max-width: 90%;
+  }
+  .guide-caption-icon { font-size: 13px; line-height: 1; flex-shrink: 0; }
+  .guide-caption-text {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Shown once found is confirmed for a couple consecutive ticks --
+     polling stops (no more paid API calls) while this is up, camera and
+     outline stay on screen frozen at the last position, tap to resume. */
+  .guide-resume-btn {
+    display: none;
+    pointer-events: auto;
+    font-family: var(--sans); font-size: 13px; font-weight: 600;
+    color: #0A1410; background: var(--accent-safe);
+    border: none; border-radius: 999px; padding: 10px 20px;
+    min-height: unset;
+  }
+  .guide-resume-btn.visible { display: block; }
+
+  /* ---------- overlay elements: DOM/SVG, CSS-transitioned for smooth motion ---------- */
+
+  /* Directional edge glow -- like a blind-spot indicator: brightens along
+     the side of the screen the user needs to turn toward, intensity
+     scaled by how far off-center the target is. This plus the chevron
+     pulse below are the primary "which way / how close" signal, meant to
+     be readable at a glance without reading the caption text. */
+  .guide-edge-glow {
+    position: absolute; top: 0; bottom: 0; width: 38%;
+    opacity: 0; transition: opacity 0.3s ease-out;
+  }
+  .guide-edge-glow-left { left: 0; background: linear-gradient(to right, rgba(62,207,142,0.55), transparent); }
+  .guide-edge-glow-right { right: 0; background: linear-gradient(to left, rgba(62,207,142,0.55), transparent); }
+
+  .guide-chevron {
+    position: absolute; width: 64px; height: 64px;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%) rotate(0deg) scale(1);
+    transition: left 0.25s ease-out, top 0.25s ease-out, transform 0.25s ease-out, opacity 0.25s ease-out;
+    opacity: 0;
+    --pulse-duration: 1.6s;
+  }
+  .guide-chevron.visible { opacity: 1; }
+  .guide-chevron-pulse {
+    width: 100%; height: 100%;
+    animation: guide-chevron-pulse var(--pulse-duration) ease-in-out infinite;
+  }
+  .guide-chevron-pulse svg { width: 100%; height: 100%; }
+  @keyframes guide-chevron-pulse {
+    0%, 100% { transform: scale(1); filter: drop-shadow(0 0 4px rgba(0,0,0,0.6)); }
+    50% { transform: scale(1.18); filter: drop-shadow(0 0 10px currentColor); }
+  }
+
+  .guide-outline {
+    position: absolute;
+    border: 3px solid var(--accent-safe);
+    border-radius: 14px;
+    box-shadow: 0 0 16px rgba(62,207,142,0.7), inset 0 0 16px rgba(62,207,142,0.25);
+    opacity: 0;
+    transition: left 0.3s ease-out, top 0.3s ease-out, width 0.3s ease-out, height 0.3s ease-out, opacity 0.3s ease-out;
+  }
+  .guide-outline.visible { opacity: 1; }
+
+  .guide-found-badge {
+    position: absolute; left: 50%; bottom: -30px; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--accent-safe);
+    background: rgba(10,20,16,0.75); padding: 4px 10px; border-radius: 999px;
+    white-space: nowrap; opacity: 0; transition: opacity 0.3s ease-out;
+  }
+  .guide-found-badge.visible { opacity: 1; }
+
+  /* ---------- tabs ---------- */
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; }
+  header .header-text { min-width: 0; }
+  .conn-dot {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .conn-dot .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim);
+    transition: background 0.2s;
+  }
+  .conn-dot.connected .dot { background: var(--accent-safe); }
+  .conn-dot.connected { color: var(--accent-safe); }
+
+  .wrap { padding-bottom: 84px; } /* room for the fixed tab bar */
+
+  .tab-page { display: none; }
+  .tab-page.active { display: block; }
+
+  .tab-bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: var(--surface);
+    border-top: 1px solid #262C35;
+    padding: 6px env(safe-area-inset-right) calc(6px + env(safe-area-inset-bottom)) env(safe-area-inset-left);
+    z-index: 10;
+  }
+  .tab-bar-inner { max-width: 420px; margin: 0 auto; display: flex; }
+  .tab-btn {
+    flex: 1; background: transparent; border: none; color: var(--text-dim);
+    font-family: var(--sans); font-size: 11px; font-weight: 600;
+    padding: 8px 4px 6px; border-radius: 10px; min-height: unset;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    cursor: pointer; transition: color 0.12s;
+  }
+  .tab-btn .tab-icon { font-size: 18px; line-height: 1; }
+  .tab-btn.active { color: var(--accent-safe); }
+  .tab-btn:active { transform: none; background: var(--surface-raised); }
+
+  .subsection-label {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-dim);
+    margin: 2px 0 8px; padding-top: 10px; border-top: 1px solid #262C35;
+  }
+  .panel > .subsection-label:first-child { padding-top: 0; border-top: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Digital twin &middot; sim mode</div>
-    <h1>vision-picar</h1>
-    <div class="mission-summary" id="mission-summary">No rooms searched yet.</div>
+    <div class="header-text">
+      <div class="eyebrow">Digital twin &middot; sim mode</div>
+      <h1>vision-picar</h1>
+      <div class="mission-summary" id="mission-summary">No rooms searched yet.</div>
+    </div>
+    <div class="conn-dot" id="header-conn-dot"><span class="dot"></span><span id="header-conn-text">Not connected</span></div>
   </header>
 
-  <div class="panel">
-    <div id="canvas-wrap"><canvas id="grid-canvas"></canvas></div>
-    <div class="telemetry">
-      <div>Room: <span class="val" id="tel-room">-</span></div>
-      <div>Facing: <span class="val" id="tel-facing">-</span></div>
-      <div>Free space: <span class="val" id="tel-free">-</span></div>
-      <div>Doorway: <span class="val" id="tel-door">-</span></div>
-      <div class="full">Objects: <span class="val" id="tel-objects">none visible</span></div>
-      <div class="full" id="tel-safety">Safety: <span class="safe">OK</span></div>
+  <div class="tab-page active" data-tab="drive">
+    <div class="panel">
+      <div id="canvas-wrap"><canvas id="grid-canvas"></canvas></div>
+      <div class="telemetry">
+        <div>Room: <span class="val" id="tel-room">-</span></div>
+        <div>Facing: <span class="val" id="tel-facing">-</span></div>
+        <div>Free space: <span class="val" id="tel-free">-</span></div>
+        <div>Doorway: <span class="val" id="tel-door">-</span></div>
+        <div class="full">Objects: <span class="val" id="tel-objects">none visible</span></div>
+        <div class="full" id="tel-safety">Safety: <span class="safe">OK</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Manual control</div>
+      <div class="dpad">
+        <div class="spacer"></div><button id="btn-forward" disabled>&#9650; FWD</button><div class="spacer"></div>
+        <button id="btn-left" disabled>&#9664; LEFT</button><button id="btn-stop" class="danger" disabled>STOP</button><button id="btn-right" disabled>RIGHT &#9654;</button>
+        <div class="spacer"></div><button id="btn-reverse" disabled>&#9660; REV</button><div class="spacer"></div>
+      </div>
+      <div class="btn-row">
+        <button id="btn-look-left" disabled>&#128065;&#9664;</button>
+        <button id="btn-look-center" disabled>&#128065;&#9679;</button>
+        <button id="btn-look-right" disabled>&#128065;&#9654;</button>
+      </div>
+      <div class="hint" id="drive-connect-hint">Not connected -- go to the Settings tab to connect to the robot server first.</div>
     </div>
   </div>
 
-  <div class="panel">
-    <div class="section-label">Robot server connection</div>
-    <div class="btn-row">
-      <input type="text" id="cfg-server-url" placeholder="http://192.168.1.x:8000" style="flex:2; padding:10px; border-radius:8px; border:1px solid #333B47; background:#0E1116; color:var(--text); font-family:var(--mono); font-size:12px;">
-      <button id="btn-connect" class="primary" style="flex:1;">Connect</button>
-    </div>
-    <input type="text" id="cfg-server-secret" placeholder="x-app-secret value (if this deployment requires one)" style="width:100%; margin-top:6px; padding:8px; border-radius:6px; border:1px solid #333B47; background:#0E1116; color:var(--text); font-family:var(--mono); font-size:12px;">
-    <div class="hint" id="connection-status">
-      Not connected. If this page was opened as a hosted deployment (not a
-      local file), the server URL above is prefilled to match -- just add
-      the shared secret if one is required and tap Connect. For local dev,
-      run `uvicorn robot.server:app --host 0.0.0.0` on your Mac and point
-      this at its LAN address instead, e.g. http://192.168.1.42:8000.
-    </div>
-  </div>
+  <div class="tab-page" data-tab="autonomous">
+    <div class="panel">
+      <div class="subsection-label">Rule-based &middot; free, no API calls</div>
+      <div class="btn-row">
+        <button id="btn-explore" disabled>Explore</button>
+        <button id="btn-find" disabled>Find backpack</button>
+        <button id="btn-reset" class="ghost">Reset mission</button>
+      </div>
+      <div id="log"></div>
 
-  <div class="panel">
-    <div class="section-label">Manual control</div>
-    <div class="dpad">
-      <div class="spacer"></div><button id="btn-forward" disabled>&#9650; FWD</button><div class="spacer"></div>
-      <button id="btn-left" disabled>&#9664; LEFT</button><button id="btn-stop" class="danger" disabled>STOP</button><button id="btn-right" disabled>RIGHT &#9654;</button>
-      <div class="spacer"></div><button id="btn-reverse" disabled>&#9660; REV</button><div class="spacer"></div>
-    </div>
-    <div class="btn-row">
-      <button id="btn-look-left" disabled>&#128065;&#9664;</button>
-      <button id="btn-look-center" disabled>&#128065;&#9679;</button>
-      <button id="btn-look-right" disabled>&#128065;&#9654;</button>
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="section-label">Autonomous</div>
-    <div class="btn-row">
-      <button id="btn-explore" disabled>Explore</button>
-      <button id="btn-find" disabled>Find backpack</button>
-      <button id="btn-reset" class="ghost">Reset mission</button>
-    </div>
-    <div id="log"></div>
-  </div>
-
-  <div class="panel">
-    <div class="section-label">Find the bag in a photo</div>
-    <div class="btn-row">
-      <button id="btn-take-photo" class="primary">Take photo</button>
-    </div>
-    <img id="photo-preview" alt="">
-    <div id="photo-result"></div>
-    <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
-
-    <details>
-      <summary>Cloud endpoint settings</summary>
-      <input type="text" id="cfg-url" placeholder="Vision service URL (https://...)">
-      <input type="text" id="cfg-secret" placeholder="x-app-secret value" style="margin-top:6px">
+      <div class="subsection-label">Vision autopilot &middot; live Claude Vision loop</div>
       <div class="hint">
-        Not saved between sessions (no localStorage in this preview) --
-        re-enter after reloading. The URL is the NLB DNS name from the
-        cloudformation/service.yaml stack output; the secret is the
+        Renders a first-person view of the sim and sends it to Claude Vision
+        every couple seconds to pick the next move -- real vision-in-the-loop
+        driving, not the rule-based Explore/Find above. Each tick is a real
+        paid API call against the vision service URL/secret set on the
+        Settings tab (same service, a sibling /navigate route) -- watch the
+        call counter. Movement still goes through robot/server.py's safety
+        veto, same as every other mode.
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <input type="text" id="autopilot-target" value="red backpack" style="flex:2; padding:10px; border-radius:8px; border:1px solid #333B47; background:#0E1116; color:var(--text); font-family:var(--mono); font-size:12px;">
+        <button id="btn-autopilot" style="flex:1;" disabled>Start</button>
+      </div>
+      <div class="fpv-wrap"><canvas id="fpv-canvas"></canvas></div>
+      <div class="fpv-hud" id="fpv-hud">Not running.</div>
+      <div class="btn-row" style="margin-top:8px; justify-content: flex-end;">
+        <span class="call-counter" id="autopilot-call-count">0 calls</span>
+      </div>
+      <div id="autopilot-log"></div>
+    </div>
+  </div>
+
+  <div class="tab-page" data-tab="camera">
+    <div class="panel">
+      <div class="subsection-label">Find the bag in a photo</div>
+      <div class="btn-row">
+        <button id="btn-take-photo" class="primary">Take photo</button>
+      </div>
+      <img id="photo-preview" alt="">
+      <div id="photo-result"></div>
+      <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
+      <div class="hint">Uses the vision service URL/secret set on the Settings tab.</div>
+    </div>
+  </div>
+
+  <div class="tab-page" data-tab="guide">
+    <div class="panel">
+      <div class="section-label">Guide me to... &middot; AR camera guidance</div>
+      <div class="hint">
+        Uses your phone's real camera (not the sim) -- points an arrow, then
+        an outline once found, toward a named object using a live Claude
+        Vision call every couple seconds against the vision service's
+        /guidance route. Opens fullscreen and works in both portrait and
+        landscape. Vibrates on Android; plays directional audio cues
+        everywhere (including iOS, which doesn't support web vibration at
+        all -- see web-twin/README.md). Requires this page to be loaded
+        over https:// or localhost (browsers block camera access
+        otherwise). Each tick is a real paid API call -- watch the call
+        counter.
+      </div>
+      <div class="guide-preview">
+        <div class="guide-preview-chevron">
+          <svg viewBox="0 0 64 64" fill="none">
+            <path d="M20 12 L46 32 L20 52" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <input type="text" id="guidance-target" value="red backpack" style="flex:2; padding:10px; border-radius:8px; border:1px solid #333B47; background:#0E1116; color:var(--text); font-family:var(--mono); font-size:12px;">
+        <button id="btn-guidance" class="primary" style="flex:1;">Start</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="guide-onboarding">
+    <div class="guide-onboarding-card">
+      <div class="guide-onboarding-title">How guidance works</div>
+      <div class="guide-onboarding-sub">A quick look before your camera turns on</div>
+      <div class="guide-onboarding-row">
+        <span class="guide-onboarding-row-icon">➡️</span>
+        <span class="guide-onboarding-row-text"><b>Chevron</b> points the way to turn or pan.</span>
+      </div>
+      <div class="guide-onboarding-row">
+        <span class="guide-onboarding-row-icon">🟢</span>
+        <span class="guide-onboarding-row-text"><b>Edge glow</b> brightens on the side to turn toward.</span>
+      </div>
+      <div class="guide-onboarding-row">
+        <span class="guide-onboarding-row-icon">💓</span>
+        <span class="guide-onboarding-row-text"><b>Pulse</b> speeds up the closer you get.</span>
+      </div>
+      <div class="guide-onboarding-row" style="margin-bottom: 4px;">
+        <span class="guide-onboarding-row-icon">🎯</span>
+        <span class="guide-onboarding-row-text"><b>Outline</b> means found -- polling then pauses automatically.</span>
+      </div>
+      <button id="btn-onboarding-start" class="primary" style="width:100%; margin-top:12px;">Got it, start</button>
+    </div>
+  </div>
+
+  <div id="guide-fullscreen">
+    <video id="guidance-video" autoplay playsinline muted></video>
+    <div id="guidance-overlay">
+      <div class="guide-edge-glow guide-edge-glow-left" id="guide-edge-glow-left"></div>
+      <div class="guide-edge-glow guide-edge-glow-right" id="guide-edge-glow-right"></div>
+      <div class="guide-chevron" id="guide-chevron">
+        <div class="guide-chevron-pulse">
+          <svg viewBox="0 0 64 64" fill="none">
+            <path d="M20 12 L46 32 L20 52" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+      <div class="guide-outline" id="guide-outline">
+        <div class="guide-found-badge" id="guide-found-badge"></div>
+      </div>
+    </div>
+    <div class="guide-topbar">
+      <button class="guide-close-btn" id="btn-guidance-close">&#10005;</button>
+      <div class="guide-topbar-right">
+        <button class="guide-mute-btn" id="btn-guidance-mute">&#128266;</button>
+        <span class="guide-call-count" id="guidance-call-count">0 calls</span>
+      </div>
+    </div>
+    <div class="guide-bottombar">
+      <div class="guide-caption">
+        <span class="guide-caption-icon" id="guide-caption-icon">&#128269;</span>
+        <span class="guide-caption-text" id="guide-caption-text">Analyzing&hellip;</span>
+      </div>
+      <button class="guide-resume-btn" id="btn-guidance-resume">Resume searching</button>
+    </div>
+  </div>
+
+  <div class="tab-page" data-tab="settings">
+    <div class="panel">
+      <div class="section-label">Robot server connection</div>
+      <div class="btn-row">
+        <input type="text" id="cfg-server-url" placeholder="http://192.168.1.x:8000" style="flex:2; padding:10px; border-radius:8px; border:1px solid #333B47; background:#0E1116; color:var(--text); font-family:var(--mono); font-size:12px;">
+        <button id="btn-connect" class="primary" style="flex:1;">Connect</button>
+      </div>
+      <input type="text" id="cfg-server-secret" placeholder="x-app-secret value (if this deployment requires one)" style="width:100%; margin-top:6px; padding:8px; border-radius:6px; border:1px solid #333B47; background:#0E1116; color:var(--text); font-family:var(--mono); font-size:12px;">
+      <div class="hint" id="connection-status">
+        Not connected. If this page was opened as a hosted deployment (not a
+        local file), the server URL above is prefilled to match -- just add
+        the shared secret if one is required and tap Connect. For local dev,
+        run `uvicorn robot.server:app --host 0.0.0.0` on your Mac and point
+        this at its LAN address instead, e.g. http://192.168.1.42:8000.
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Cloud endpoint settings</div>
+      <div class="hint">
+        Used by "Find the bag in a photo," Vision Autopilot, and "Guide me
+        to..." on the other tabs.
+      </div>
+      <input type="text" id="cfg-url" class="settings-input" placeholder="Vision service base URL (https://...)" style="margin-top:8px;">
+      <input type="text" id="cfg-secret" class="settings-input" placeholder="x-app-secret value">
+      <div class="hint">
+        Enter the <b>base</b> URL only -- e.g. <code>http://localhost:8080</code>
+        or the NLB DNS name from the cloudformation/service.yaml stack
+        output. Don't include a route like /analyze, /navigate, or
+        /guidance -- each feature appends its own automatically (though
+        pasting one of those in by mistake is harmless, it gets stripped
+        back off). Not saved between sessions (no localStorage in this
+        preview) -- re-enter after reloading. The secret is the
         vision-picar-app-shared-secret value in Secrets Manager.
       </div>
-    </details>
+    </div>
   </div>
 
 </div>
+
+<nav class="tab-bar">
+  <div class="tab-bar-inner">
+    <button class="tab-btn active" data-tab="drive"><span class="tab-icon">&#128663;</span>Drive</button>
+    <button class="tab-btn" data-tab="autonomous"><span class="tab-icon">&#129302;</span>Autonomous</button>
+    <button class="tab-btn" data-tab="camera"><span class="tab-icon">&#128247;</span>Camera</button>
+    <button class="tab-btn" data-tab="guide"><span class="tab-icon">&#128205;</span>Guide</button>
+    <button class="tab-btn" data-tab="settings"><span class="tab-icon">&#9881;&#65039;</span>Settings</button>
+  </div>
+</nav>
 
 <script>
 (function () {
@@ -237,6 +620,15 @@
   const RIGHT_OF = { N: "E", E: "S", S: "W", W: "N" };
   const LEFT_OF = { N: "W", W: "S", S: "E", E: "N" };
 
+  // ---------- first-person raycaster (Vision Autopilot's synthetic "camera") ----------
+  // Casts against the same LAYOUT/OBJECTS constants the top-down map draws
+  // from -- there's no separate 3D scene to keep in sync.
+  const HEADING_ANGLE = { N: -Math.PI / 2, E: 0, S: Math.PI / 2, W: Math.PI };
+  const FPV_FOV = Math.PI / 3; // 60 degrees
+  const FPV_MAX_DIST = 14; // cells
+  const FPV_STEP = 0.05; // ray march step, in cells
+  const FPV_WALL_RGB = { r: 118, g: 129, b: 150 };
+
   const MIN_DISTANCE_CM = 30; // must match config/robot.yaml's safety.min_distance_cm
   const CELL_CM = 30; // for display purposes only (cells -> cm in telemetry)
 
@@ -267,6 +659,12 @@
     log: [], step: 0,
     autoRunning: false, autoTimerId: null, autoTarget: null, autoMaxSteps: 150,
     safetyFlashUntil: 0,
+    autopilotRunning: false, autopilotTimerId: null, autopilotTarget: null,
+    autopilotInFlight: false, autopilotCallCount: 0, autopilotMaxCalls: 80,
+    guidanceRunning: false, guidanceTimerId: null, guidanceTarget: null,
+    guidanceInFlight: false, guidanceCallCount: 0, guidanceStream: null,
+    guidanceMuted: false, guidanceNotVisibleStreak: 0,
+    guidancePaused: false, guidanceFoundStreak: 0,
   };
 
   // ---------- robot/server.py client -- the twin's "brain" side of the ----------
@@ -291,6 +689,27 @@
     const res = await fetch(state.serverUrl + path, { headers: authHeaders() });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || ("HTTP " + res.status));
     return res.json();
+  }
+
+  // ---------- shared vision-service URL helper ----------
+  // The "Cloud endpoint settings" field is meant to hold the vision
+  // service's BASE URL, but it's reasonable for someone to paste in one of
+  // its specific route URLs instead (e.g. copied from a curl example, or
+  // left over from testing a different feature). Strip any of the three
+  // known route suffixes before appending the one this call actually
+  // needs, so all three features tolerate whatever shape was pasted in,
+  // not just "bare URL" or "URL ending in /analyze".
+  const VISION_SERVICE_ROUTES = ["/analyze", "/navigate", "/guidance"];
+  function deriveServiceUrl(rawUrl, targetRoute) {
+    let trimmed = rawUrl.trim().replace(/\/$/, "");
+    for (const route of VISION_SERVICE_ROUTES) {
+      const re = new RegExp(route.replace("/", "\\/") + "$", "i");
+      if (re.test(trimmed)) {
+        trimmed = trimmed.replace(re, "");
+        break;
+      }
+    }
+    return trimmed + targetRoute;
   }
 
   async function sendAction(action) {
@@ -328,9 +747,10 @@
     if (frame.room !== "unknown") {
       state.searchedRooms.add(frame.room);
     }
+    const activeTarget = state.autoTarget || state.autopilotTarget;
     frame.objectsVisible.forEach(function (obj) {
       state.sightings.push({ step: state.step, object: obj, room: frame.room });
-      if (state.autoTarget && !state.found && obj.toLowerCase().indexOf(state.autoTarget) !== -1) {
+      if (activeTarget && !state.found && obj.toLowerCase().indexOf(activeTarget) !== -1) {
         state.found = true;
         state.foundSighting = { object: obj, room: frame.room, step: state.step, position: frame.position };
       }
@@ -422,6 +842,7 @@
   }
   function startAuto(target) {
     stopAuto();
+    stopVisionAutopilot();
     state.autoTarget = target || null;
     state.autoRunning = true;
     updateAutoButtons();
@@ -445,12 +866,17 @@
   // doesn't pretend otherwise.
   async function resetMission() {
     stopAuto();
+    stopVisionAutopilot();
     state.visited.clear(); state.searchedRooms.clear();
     state.sightings = []; state.found = false; state.foundSighting = null;
     state.log = []; state.step = 0; state.autoTarget = null;
+    state.autopilotTarget = null; state.autopilotCallCount = 0;
     const logEl = document.getElementById("log");
     logEl.innerHTML = "";
     delete logEl.dataset.foundLogged;
+    document.getElementById("autopilot-log").innerHTML = "";
+    document.getElementById("autopilot-call-count").textContent = "0 calls";
+    document.getElementById("fpv-hud").textContent = "Not running.";
     if (state.connected) {
       const frame = await fetchFrame();
       render(frame);
@@ -462,9 +888,18 @@
   function setControlsEnabled(enabled) {
     ["btn-forward", "btn-reverse", "btn-left", "btn-right", "btn-stop",
      "btn-look-left", "btn-look-right", "btn-look-center",
-     "btn-explore", "btn-find"].forEach(function (id) {
+     "btn-explore", "btn-find", "btn-autopilot"].forEach(function (id) {
       document.getElementById(id).disabled = !enabled;
     });
+  }
+
+  function renderHeaderConnStatus() {
+    const dot = document.getElementById("header-conn-dot");
+    const text = document.getElementById("header-conn-text");
+    dot.classList.toggle("connected", state.connected);
+    text.textContent = state.connected ? "Connected" : "Not connected";
+    const hint = document.getElementById("drive-connect-hint");
+    if (hint) hint.style.display = state.connected ? "none" : "";
   }
 
   async function connect() {
@@ -490,6 +925,7 @@
       statusEl.textContent = "Could not reach " + url + " (" + e.message + "). " +
         "Check the server is running, on the same network, and CORS/allowed_origins in config/robot.yaml permits this page's origin.";
     }
+    renderHeaderConnStatus();
   }
 
   // ---------- rendering ----------
@@ -504,6 +940,16 @@
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr, dpr);
 
+  const FPV_W = 320, FPV_H = 200;
+  const fpvCanvas = document.getElementById("fpv-canvas");
+  const fpvDpr = window.devicePixelRatio || 1;
+  fpvCanvas.width = FPV_W * fpvDpr;
+  fpvCanvas.height = FPV_H * fpvDpr;
+  fpvCanvas.style.width = FPV_W + "px";
+  fpvCanvas.style.height = FPV_H + "px";
+  const fpvCtx = fpvCanvas.getContext("2d");
+  fpvCtx.scale(fpvDpr, fpvDpr);
+
   function getCss(varName) {
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   }
@@ -514,9 +960,96 @@
     return getCss("--floor");
   }
 
+  function normalizeAngle(a) {
+    while (a > Math.PI) a -= 2 * Math.PI;
+    while (a < -Math.PI) a += 2 * Math.PI;
+    return a;
+  }
+
+  // March a ray from (px,py) at `angle` until it hits a wall cell, or
+  // FPV_MAX_DIST -- doors ('D') are passable, same as real movement, so a
+  // ray keeps going through a doorway into whatever room is beyond it.
+  function fpvCastRay(px, py, angle) {
+    const dx = Math.cos(angle), dy = Math.sin(angle);
+    let dist = 0;
+    while (dist < FPV_MAX_DIST) {
+      dist += FPV_STEP;
+      const cx = Math.floor(px + dx * dist), cy = Math.floor(py + dy * dist);
+      if (cellAt(cx, cy) === "#") return dist;
+    }
+    return FPV_MAX_DIST;
+  }
+
+  // Renders the robot's synthetic first-person "camera photo" -- this is
+  // what actually gets captured and sent to Claude Vision by the autopilot
+  // loop below, not just a cosmetic view. Casts against the same
+  // LAYOUT/OBJECTS constants the top-down map uses.
+  function renderFPV(frame) {
+    frame = frame || state.lastFrame;
+    if (!frame) return;
+
+    const [gx, gy] = frame.position;
+    const px = gx + 0.5, py = gy + 0.5;
+    const baseAngle = HEADING_ANGLE[frame.facing] || 0;
+
+    fpvCtx.fillStyle = getCss("--wall");
+    fpvCtx.fillRect(0, 0, FPV_W, FPV_H / 2);
+    fpvCtx.fillStyle = getCss("--floor");
+    fpvCtx.fillRect(0, FPV_H / 2, FPV_W, FPV_H / 2);
+
+    for (let x = 0; x < FPV_W; x++) {
+      const t = x / (FPV_W - 1);
+      const rayAngle = baseAngle - FPV_FOV / 2 + FPV_FOV * t;
+      const dist = fpvCastRay(px, py, rayAngle);
+      const perp = Math.max(0.15, dist * Math.cos(rayAngle - baseAngle));
+      const wallHeight = Math.min(FPV_H, (FPV_H * 1.1) / perp);
+      const shade = Math.max(0.15, Math.min(1, 1.4 - perp / FPV_MAX_DIST));
+      fpvCtx.fillStyle = "rgb(" +
+        Math.round(FPV_WALL_RGB.r * shade) + "," +
+        Math.round(FPV_WALL_RGB.g * shade) + "," +
+        Math.round(FPV_WALL_RGB.b * shade) + ")";
+      fpvCtx.fillRect(x, (FPV_H - wallHeight) / 2, 1, wallHeight);
+    }
+
+    // object billboards, farthest first so nearer ones draw on top
+    const visible = [];
+    Object.keys(OBJECTS).forEach(function (key) {
+      const parts = key.split(",");
+      const ox = Number(parts[0]) + 0.5, oy = Number(parts[1]) + 0.5;
+      const ddx = ox - px, ddy = oy - py;
+      const distToObj = Math.sqrt(ddx * ddx + ddy * ddy);
+      const angleToObj = Math.atan2(ddy, ddx);
+      const relAngle = normalizeAngle(angleToObj - baseAngle);
+      if (Math.abs(relAngle) > FPV_FOV / 2 + 0.1) return;
+      const occluderDist = fpvCastRay(px, py, angleToObj);
+      if (occluderDist < distToObj - 0.3) return; // a wall is closer than the object
+      visible.push({ name: OBJECTS[key], relAngle: relAngle, dist: distToObj });
+    });
+    visible.sort(function (a, b) { return b.dist - a.dist; });
+    visible.forEach(function (obj) {
+      const t = (obj.relAngle + FPV_FOV / 2) / FPV_FOV;
+      const screenX = t * FPV_W;
+      const perp = Math.max(0.3, obj.dist * Math.cos(obj.relAngle));
+      const h = Math.min(FPV_H * 0.55, (FPV_H * 0.65) / perp);
+      const w = h * 0.7;
+      const cy = FPV_H / 2 + h * 0.08;
+      fpvCtx.fillStyle = obj.name.toLowerCase().indexOf("backpack") !== -1 ? getCss("--accent-alert") : "#546074";
+      fpvCtx.fillRect(screenX - w / 2, cy - h / 2, w, h);
+      fpvCtx.fillStyle = "#fff";
+      fpvCtx.font = Math.max(9, Math.min(14, h * 0.22)) + "px " + getCss("--mono");
+      fpvCtx.textAlign = "center";
+      fpvCtx.fillText(obj.name, screenX, cy + h / 2 + 12);
+    });
+  }
+
+  function captureFPVFrame() {
+    return fpvCanvas.toDataURL("image/jpeg", 0.82).split(",")[1];
+  }
+
   function render(frame) {
     frame = frame || state.lastFrame;
     if (!frame) return; // not connected yet -- nothing to draw
+    renderFPV(frame);
     ctx.clearRect(0, 0, COLS * CELL, ROWS * CELL);
 
     for (let y = 0; y < ROWS; y++) {
@@ -605,8 +1138,9 @@
 
     const rooms = Array.from(state.searchedRooms).sort();
     let summary = rooms.length ? rooms.join(", ") + " searched." : "No rooms searched yet.";
-    if (state.autoTarget) {
-      summary += state.found ? " Found." : (" No " + state.autoTarget + " found.");
+    const activeTarget = state.autoTarget || state.autopilotTarget;
+    if (activeTarget) {
+      summary += state.found ? " Found." : (" No " + activeTarget + " found.");
     }
     document.getElementById("mission-summary").textContent = summary;
   }
@@ -654,6 +1188,644 @@
   };
   document.getElementById("btn-reset").onclick = function () { resetMission(); };
 
+  // ---------- vision autopilot: real Claude Vision calls drive the sim ----------
+  // Renders the FPV raycaster frame, sends it to the vision service's
+  // /navigate route (sibling of /analyze, reusing the same "Cloud endpoint
+  // settings" URL/secret below), and executes whatever action comes back
+  // through the same commitAction() every other mode uses -- so safety
+  // vetoes and mission-complete detection (state.found, via
+  // recordObservation()) behave identically to the rule-based Explore/Find
+  // modes above. This is the "brain" role calling a real vision model
+  // instead of running the frontier-preference algorithm.
+
+  function callNavigateEndpoint(base64, targetObject) {
+    const url = document.getElementById("cfg-url").value.trim();
+    const secret = document.getElementById("cfg-secret").value.trim();
+    if (!url) throw new Error('Set the vision service URL in "Cloud endpoint settings" above first.');
+    const headers = { "Content-Type": "application/json" };
+    if (secret) headers["x-app-secret"] = secret;
+    return fetch(deriveServiceUrl(url, "/navigate"), {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify({ image_base64: base64, media_type: "image/jpeg", target_object: targetObject }),
+    }).then(function (resp) {
+      return resp.json().then(function (data) {
+        if (!resp.ok) throw new Error(data.detail || ("HTTP " + resp.status));
+        return data;
+      });
+    });
+  }
+
+  function updateAutopilotButton() {
+    const btn = document.getElementById("btn-autopilot");
+    btn.textContent = state.autopilotRunning ? "Stop" : "Start";
+    btn.classList.toggle("active-mode", state.autopilotRunning);
+  }
+
+  function renderAutopilotHud(decision, executed) {
+    const hud = document.getElementById("fpv-hud");
+    const visibleClass = decision.target_visible ? "visible" : "not-visible";
+    hud.innerHTML =
+      'Action: <span class="action">' + decision.action + '</span>' +
+      (executed === false ? ' <span style="color:var(--accent-alert)">[VETOED]</span>' : '') +
+      ' &middot; Target: <span class="' + visibleClass + '">' +
+      (decision.target_visible ? ("visible, " + decision.target_direction) : "not visible") +
+      '</span><br>' + (decision.reasoning || "");
+  }
+
+  function logAutopilotEntry(action, reasoning, executed) {
+    const el = document.getElementById("autopilot-log");
+    const div = document.createElement("div");
+    div.className = "entry" + (executed === false ? " action-stop" : action === "FORWARD" ? " action-forward" : "");
+    div.textContent = "#" + state.autopilotCallCount + " " + action +
+      (executed === false ? " [VETOED]" : "") + " -- " + (reasoning || "");
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function visionAutopilotStep() {
+    if (!state.autopilotRunning) return;
+    if (state.found) { stopVisionAutopilot(); return; }
+    if (state.autopilotCallCount >= state.autopilotMaxCalls) {
+      logAutopilotEntry("STOP", "Reached the call cap for this run.", true);
+      stopVisionAutopilot();
+      return;
+    }
+    if (state.autopilotInFlight) { scheduleAutopilotNext(); return; }
+
+    state.autopilotInFlight = true;
+    try {
+      renderFPV(state.lastFrame);
+      const frameB64 = captureFPVFrame();
+      const decision = await callNavigateEndpoint(frameB64, state.autopilotTarget);
+      state.autopilotCallCount += 1;
+      document.getElementById("autopilot-call-count").textContent = state.autopilotCallCount + " calls";
+
+      const { executed } = await commitAction(decision.action); // also re-renders the FPV view via render()
+      renderAutopilotHud(decision, executed);
+      logAutopilotEntry(decision.action, decision.reasoning, executed);
+
+      if (state.found) stopVisionAutopilot();
+    } catch (e) {
+      logAutopilotEntry("ERROR", e.message, true);
+    } finally {
+      state.autopilotInFlight = false;
+      scheduleAutopilotNext();
+    }
+  }
+
+  function scheduleAutopilotNext() {
+    if (state.autopilotRunning) state.autopilotTimerId = setTimeout(visionAutopilotStep, 2500);
+  }
+
+  function startVisionAutopilot() {
+    if (!state.connected) return;
+    stopAuto(); // rule-based and vision-driven autonomy shouldn't both drive at once
+    state.autopilotTarget = document.getElementById("autopilot-target").value.trim() || "red backpack";
+    state.autopilotRunning = true;
+    state.autopilotCallCount = 0;
+    document.getElementById("autopilot-call-count").textContent = "0 calls";
+    updateAutopilotButton();
+    visionAutopilotStep();
+  }
+
+  function stopVisionAutopilot() {
+    state.autopilotRunning = false;
+    if (state.autopilotTimerId) clearTimeout(state.autopilotTimerId);
+    state.autopilotTimerId = null;
+    updateAutopilotButton();
+  }
+
+  // Don't keep burning paid API calls once the tab is backgrounded --
+  // same rule PLAN-ar-guidance.md specifies for the phone-camera feature.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      if (state.autopilotTimerId) { clearTimeout(state.autopilotTimerId); state.autopilotTimerId = null; }
+    } else if (state.autopilotRunning && !state.autopilotTimerId && !state.autopilotInFlight) {
+      scheduleAutopilotNext();
+    }
+  });
+
+  document.getElementById("btn-autopilot").onclick = function () {
+    if (state.autopilotRunning) stopVisionAutopilot();
+    else startVisionAutopilot();
+  };
+
+  // ---------- AR camera guidance: real phone camera, human is the actuator ----------
+  // The inverse of Vision Autopilot -- here the *person* holding the phone
+  // walks around, and Claude Vision (via the vision service's /guidance
+  // route, a sibling of /navigate with a 5-zone position + proximity +
+  // human-readable instruction + an optional bounding box instead of a
+  // discrete robot action) tells them which way to turn. Never touches
+  // robot/server.py -- there's nothing to drive, just a live camera feed
+  // and an overlay. Requires a secure context (https:// or localhost) for
+  // getUserMedia -- see web-twin/README.md.
+  //
+  // Full-screen is CSS-simulated (#guide-fullscreen, position:fixed over
+  // everything) rather than the real Fullscreen API -- see
+  // PLAN-ar-guidance.md for why (iOS Safari support for arbitrary-element
+  // requestFullscreen() is unreliable). The overlay itself (chevron /
+  // reticle / found-outline) is DOM+SVG with CSS transitions, not
+  // canvas-drawn, specifically so state changes glide instead of
+  // snapping -- canvas would need a hand-rolled animation loop to get the
+  // same smoothness.
+
+  const GUIDANCE_THROTTLE_MS = 1000;
+  const GUIDANCE_MAX_CAPTURE_DIM = 960; // longest edge, px -- smaller upload + faster inference
+  const guidanceVideo = document.getElementById("guidance-video");
+  const guidanceFullscreen = document.getElementById("guide-fullscreen");
+  const guidanceChevron = document.getElementById("guide-chevron");
+  const guidanceOutline = document.getElementById("guide-outline");
+  const guidanceFoundBadge = document.getElementById("guide-found-badge");
+  const guidanceEdgeGlowLeft = document.getElementById("guide-edge-glow-left");
+  const guidanceEdgeGlowRight = document.getElementById("guide-edge-glow-right");
+  const guidanceCaptureCanvas = document.createElement("canvas");
+
+  // Downscales to GUIDANCE_MAX_CAPTURE_DIM on the long edge before encoding
+  // -- Bedrock doesn't need full sensor resolution to answer a coarse
+  // position/proximity/bounding-box question, and a smaller payload
+  // uploads and (typically) infers faster, which is most of what actually
+  // makes the guidance loop feel responsive (the fixed GUIDANCE_THROTTLE_MS
+  // gap is the other, smaller, lever).
+  function captureGuidanceFrame() {
+    const nativeW = guidanceVideo.videoWidth, nativeH = guidanceVideo.videoHeight;
+    const scale = Math.min(1, GUIDANCE_MAX_CAPTURE_DIM / Math.max(nativeW, nativeH));
+    const w = Math.round(nativeW * scale), h = Math.round(nativeH * scale);
+    guidanceCaptureCanvas.width = w;
+    guidanceCaptureCanvas.height = h;
+    const ctx2 = guidanceCaptureCanvas.getContext("2d");
+    ctx2.drawImage(guidanceVideo, 0, 0, w, h);
+    return guidanceCaptureCanvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+  }
+
+  function callGuidanceEndpoint(base64, targetObject) {
+    const url = document.getElementById("cfg-url").value.trim();
+    const secret = document.getElementById("cfg-secret").value.trim();
+    if (!url) throw new Error('Set the vision service URL in "Cloud endpoint settings" above first.');
+    const headers = { "Content-Type": "application/json" };
+    if (secret) headers["x-app-secret"] = secret;
+    return fetch(deriveServiceUrl(url, "/guidance"), {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify({ image_base64: base64, media_type: "image/jpeg", target_object: targetObject }),
+    }).then(function (resp) {
+      return resp.json().then(function (data) {
+        if (!resp.ok) throw new Error(data.detail || ("HTTP " + resp.status));
+        return data;
+      });
+    });
+  }
+
+  // ---- overlay rendering: DOM/SVG elements positioned via CSS, not canvas ----
+
+  const GUIDANCE_ZONE_OFFSET = { far_left: -34, left: -18, center: 0, right: 18, far_right: 34 };
+  const GUIDANCE_ZONE_ROTATION = { far_left: 180, left: 180, center: -90, right: 0, far_right: 0 };
+  const GUIDANCE_ZONE_SCALE = { far_left: 1.3, left: 1.0, center: 1.1, right: 1.0, far_right: 1.3 };
+
+  function hideAllGuidanceOverlays() {
+    guidanceChevron.classList.remove("visible");
+    guidanceOutline.classList.remove("visible");
+    guidanceFoundBadge.classList.remove("visible");
+    guidanceEdgeGlowLeft.style.opacity = 0;
+    guidanceEdgeGlowRight.style.opacity = 0;
+  }
+
+  // "Found" only required a strict position===center AND proximity===near
+  // AND-gate originally, matching the old checkmark design where there was
+  // no way to show *where* the object was, only a binary yes/no. Now that
+  // the outline shows the object's actual position via bounding_box, that
+  // strict gate is redundant and, in real-world testing, too narrow to
+  // reliably hit on any single ~2s tick -- an object can be close
+  // (proximity: near) without being framed dead-center, so "near" alone
+  // triggers found regardless of position.
+  //
+  // Also accept position===center && proximity===medium: after tightening
+  // GUIDANCE_PROMPT_TEMPLATE's "near" calibration (it was firing on
+  // almost anything visible), real-device testing showed the opposite
+  // problem -- a centered, clearly-arrived-at object sometimes gets
+  // classified "medium" and got stuck showing a chevron forever, never
+  // reaching the outline. Being dead-center already tells us the user
+  // aimed the camera right at it; "medium" close plus centered is a
+  // reasonable second definition of "found" without loosening the
+  // proximity calibration itself back to over-eager.
+  function isGuidanceFound(result) {
+    if (!result.target_visible) return false;
+    if (result.proximity === "near") return true;
+    if (result.proximity === "medium" && result.position === "center") return true;
+    return false;
+  }
+
+  // Each analysis tick is a completely independent vision call with no
+  // memory of the previous one -- the model re-locates the object from
+  // scratch every ~1s, so its exact bounding-box estimate can legitimately
+  // vary tick to tick even for a stationary object (LLM vision estimation
+  // noise, not a rendering bug). Blend consecutive found-state boxes
+  // (in normalized 0-1 space, so this stays correct across orientation
+  // changes) instead of snapping straight to each new raw estimate --
+  // damps jitter while staying responsive to genuine movement. Reset
+  // whenever the found state is exited so a stale box never drags a
+  // freshly-reacquired detection toward an unrelated old position.
+  let guidanceLastNormBox = null;
+  function smoothGuidanceBox(newBox) {
+    if (!guidanceLastNormBox) { guidanceLastNormBox = newBox; return newBox; }
+    const alpha = 0.55; // weight toward the new estimate
+    const blended = {
+      x_min: guidanceLastNormBox.x_min + (newBox.x_min - guidanceLastNormBox.x_min) * alpha,
+      y_min: guidanceLastNormBox.y_min + (newBox.y_min - guidanceLastNormBox.y_min) * alpha,
+      x_max: guidanceLastNormBox.x_max + (newBox.x_max - guidanceLastNormBox.x_max) * alpha,
+      y_max: guidanceLastNormBox.y_max + (newBox.y_max - guidanceLastNormBox.y_max) * alpha,
+    };
+    guidanceLastNormBox = blended;
+    return blended;
+  }
+
+  // Maps a (possibly smoothed) bounding_box, normalized 0-1 against the
+  // FULL, UNCROPPED captured frame -- see captureGuidanceFrame, which
+  // always sends the whole frame -- onto on-screen pixel coordinates
+  // within the <video> element's displayed (and CSS
+  // object-fit:cover-CROPPED) box.
+  // Naively multiplying by the displayed rect's width/height is wrong
+  // whenever the camera's native aspect ratio differs from the screen's
+  // (true almost all the time in portrait) -- `cover` scales the video up
+  // until it fills the container in both dimensions, then crops whichever
+  // axis overflows, centered. This reproduces that same scale+crop so the
+  // box lands exactly where the object actually is on screen.
+  function mapNormalizedBoxToScreen(box) {
+    const videoW = guidanceVideo.videoWidth, videoH = guidanceVideo.videoHeight;
+    const rect = guidanceVideo.getBoundingClientRect();
+    const scale = Math.max(rect.width / videoW, rect.height / videoH);
+    const scaledW = videoW * scale, scaledH = videoH * scale;
+    const offsetX = (scaledW - rect.width) / 2, offsetY = (scaledH - rect.height) / 2;
+    return {
+      left: box.x_min * scaledW - offsetX,
+      top: box.y_min * scaledH - offsetY,
+      width: (box.x_max - box.x_min) * scaledW,
+      height: (box.y_max - box.y_min) * scaledH,
+    };
+  }
+
+  const GUIDANCE_PULSE_DURATION = { far: "1.8s", medium: "1.15s", near: "0.65s", unknown: "1.8s" };
+  const GUIDANCE_EDGE_GLOW = { far_left: 0.95, left: 0.45, center: 0, right: 0.45, far_right: 0.95 };
+
+  // Systematic search sweep, shown while the target hasn't been spotted at
+  // all (target_visible: false) -- the model has zero information about
+  // where the object actually is in this state (it's not in the photo),
+  // so any directional suggestion here is a fixed UI convention to
+  // encourage full room coverage, not something derived from the vision
+  // response. Alternates a horizontal sweep (right, with an edge-glow
+  // assist reusing the same element the off-center chevron uses) with a
+  // vertical sweep (down -- no edge-glow, no top/bottom glow element
+  // exists) every GUIDANCE_SCAN_PHASE_TICKS ticks, so a user stuck
+  // scanning one row of the room gets nudged to try a different height.
+  const GUIDANCE_SCAN_PHASE_TICKS = 5; // ~5s per phase at the 1s throttle
+  const GUIDANCE_SCAN_PHASES = [
+    { rotation: 0, icon: "➡️", caption: "Pan right to search", edgeGlow: "right" },
+    { rotation: 90, icon: "⬇️", caption: "Tilt down, then keep panning", edgeGlow: null },
+  ];
+  function currentGuidanceScanPhase() {
+    const idx = Math.floor(state.guidanceNotVisibleStreak / GUIDANCE_SCAN_PHASE_TICKS) % GUIDANCE_SCAN_PHASES.length;
+    return GUIDANCE_SCAN_PHASES[idx];
+  }
+
+  // Renders per the position table: far_left/left/right/far_right get a
+  // progressively offset+scaled side chevron (plus a matching edge glow,
+  // the primary glanceable "which way" signal), center-but-not-near gets
+  // an up chevron, not_visible gets a spinning searching reticle, and
+  // found (proximity: near) gets a glowing outline around the model's
+  // bounding_box -- falling back to a centered pulse if the model didn't
+  // return a confident box that tick (stay graceful rather than show a
+  // wrong box). The chevron's pulse speed (CSS custom property, see
+  // .guide-chevron-pulse) is the "getting warmer" signal, driven by
+  // proximity independent of exact screen position.
+  function renderGuidanceOverlay(result) {
+    hideAllGuidanceOverlays();
+
+    if (result.position === "not_visible" || !result.target_visible) {
+      guidanceLastNormBox = null;
+      state.guidanceNotVisibleStreak++;
+      const scan = currentGuidanceScanPhase();
+      guidanceChevron.style.left = "50%";
+      guidanceChevron.style.top = "50%";
+      guidanceChevron.style.transform = "translate(-50%, -50%) rotate(" + scan.rotation + "deg) scale(1.15)";
+      guidanceChevron.style.color = getCss("--text");
+      guidanceChevron.style.setProperty("--pulse-duration", GUIDANCE_PULSE_DURATION.unknown);
+      guidanceChevron.classList.add("visible");
+      if (scan.edgeGlow === "right") guidanceEdgeGlowRight.style.opacity = 0.5;
+      else if (scan.edgeGlow === "left") guidanceEdgeGlowLeft.style.opacity = 0.5;
+      return;
+    }
+
+    state.guidanceNotVisibleStreak = 0;
+
+    if (isGuidanceFound(result)) {
+      let box;
+      if (result.bounding_box) {
+        box = mapNormalizedBoxToScreen(smoothGuidanceBox(result.bounding_box));
+      } else {
+        // No confident box this tick -- a generic centered pulse rather
+        // than a guessed rectangle, and don't let a future real box blend
+        // across this gap from whatever the last real box happened to be.
+        guidanceLastNormBox = null;
+        const rect = guidanceVideo.getBoundingClientRect();
+        const size = Math.min(rect.width, rect.height) * 0.35;
+        box = { left: rect.width / 2 - size / 2, top: rect.height / 2 - size / 2, width: size, height: size };
+      }
+      guidanceOutline.style.left = box.left + "px";
+      guidanceOutline.style.top = box.top + "px";
+      guidanceOutline.style.width = box.width + "px";
+      guidanceOutline.style.height = box.height + "px";
+      guidanceFoundBadge.textContent = "Found — " + (state.guidanceTarget || "target");
+      guidanceOutline.classList.add("visible");
+      guidanceFoundBadge.classList.add("visible");
+      return;
+    }
+
+    guidanceLastNormBox = null; // left the found state -- don't blend across this gap either
+    const offset = GUIDANCE_ZONE_OFFSET[result.position] || 0;
+    const rotation = GUIDANCE_ZONE_ROTATION[result.position] || -90;
+    const scale = GUIDANCE_ZONE_SCALE[result.position] || 1;
+    guidanceChevron.style.left = (50 + offset) + "%";
+    guidanceChevron.style.top = "50%";
+    guidanceChevron.style.transform = "translate(-50%, -50%) rotate(" + rotation + "deg) scale(" + scale + ")";
+    guidanceChevron.style.color = result.proximity === "medium" ? getCss("--accent-safe") : getCss("--text");
+    guidanceChevron.style.setProperty("--pulse-duration", GUIDANCE_PULSE_DURATION[result.proximity] || GUIDANCE_PULSE_DURATION.unknown);
+    guidanceChevron.classList.add("visible");
+
+    const glowSide = offset < 0 ? guidanceEdgeGlowLeft : offset > 0 ? guidanceEdgeGlowRight : null;
+    if (glowSide) glowSide.style.opacity = GUIDANCE_EDGE_GLOW[result.position] || 0;
+  }
+
+  const GUIDANCE_CAPTION_ICON = {
+    found: "🎯",
+    far_left: "⬅️", left: "⬅️",
+    right: "➡️", far_right: "➡️",
+    center: "⬆️",
+  };
+
+  function renderGuidanceStatus(result, analyzing) {
+    const iconEl = document.getElementById("guide-caption-icon");
+    const textEl = document.getElementById("guide-caption-text");
+    if (analyzing && !result) {
+      iconEl.textContent = "⏳";
+      textEl.textContent = "Analyzing…";
+      return;
+    }
+    if (!result) { iconEl.textContent = "🔍"; textEl.textContent = "Not running."; return; }
+    if (!result.target_visible || result.position === "not_visible") {
+      const scan = currentGuidanceScanPhase();
+      iconEl.textContent = scan.icon;
+      textEl.textContent = scan.caption;
+      return;
+    }
+    iconEl.textContent = isGuidanceFound(result) ? GUIDANCE_CAPTION_ICON.found : (GUIDANCE_CAPTION_ICON[result.position] || "🔎");
+    textEl.textContent = result.guidance || "";
+  }
+
+  // ---- haptic (Android-only in practice) + audio (all platforms) cues ----
+  // iOS Safari has never implemented the Vibration API (confirmed platform
+  // limitation, not a bug) -- navigator.vibrate() below is a real,
+  // feature-detected call that will work if this page is ever opened on
+  // Android Chrome, but on iOS it silently no-ops. The Web Audio tone
+  // system is what actually provides directional feedback on iOS. See
+  // PLAN-ar-guidance.md.
+
+  let guidanceAudioCtx = null;
+  function ensureGuidanceAudioCtx() {
+    if (!guidanceAudioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) guidanceAudioCtx = new Ctx();
+    }
+    if (guidanceAudioCtx && guidanceAudioCtx.state === "suspended") guidanceAudioCtx.resume();
+    return guidanceAudioCtx;
+  }
+
+  function playGuidanceTone(freq, pan, durationMs, opts) {
+    if (state.guidanceMuted) return;
+    const ctx2 = ensureGuidanceAudioCtx();
+    if (!ctx2) return;
+    try {
+      const osc = ctx2.createOscillator();
+      const gain = ctx2.createGain();
+      const panner = ctx2.createStereoPanner ? ctx2.createStereoPanner() : null;
+      osc.type = (opts && opts.type) || "sine";
+      osc.frequency.setValueAtTime(freq, ctx2.currentTime);
+      if (opts && opts.glideTo) osc.frequency.linearRampToValueAtTime(opts.glideTo, ctx2.currentTime + durationMs / 1000);
+      if (panner) panner.pan.setValueAtTime(pan, ctx2.currentTime);
+      gain.gain.setValueAtTime(0, ctx2.currentTime);
+      gain.gain.linearRampToValueAtTime(0.18, ctx2.currentTime + 0.02);
+      gain.gain.linearRampToValueAtTime(0, ctx2.currentTime + durationMs / 1000);
+      osc.connect(gain);
+      if (panner) { gain.connect(panner); panner.connect(ctx2.destination); }
+      else { gain.connect(ctx2.destination); }
+      osc.start();
+      osc.stop(ctx2.currentTime + durationMs / 1000 + 0.02);
+    } catch (e) { /* best-effort -- never break the guidance loop over audio */ }
+  }
+
+  const GUIDANCE_PAN = { far_left: -1, left: -0.5, center: 0, right: 0.5, far_right: 1 };
+
+  function playGuidanceCues(result) {
+    try {
+      if (navigator.vibrate) {
+        if (isGuidanceFound(result)) navigator.vibrate([40, 60, 40, 60, 90]);
+        else if (result.position !== "not_visible" && result.target_visible) navigator.vibrate(35);
+      }
+    } catch (e) { /* best-effort */ }
+
+    if (!result.target_visible || result.position === "not_visible") return;
+    const pan = GUIDANCE_PAN[result.position] || 0;
+    if (isGuidanceFound(result)) {
+      playGuidanceTone(660, 0, 140, { glideTo: 990 });
+    } else if (result.proximity === "near") {
+      playGuidanceTone(520, pan, 110);
+    } else {
+      playGuidanceTone(360, pan, 90);
+    }
+  }
+
+  // Once "found" holds for this many consecutive ticks, polling pauses
+  // entirely (no more paid API calls) -- requiring more than one tick
+  // avoids pausing on a single noisy detection that flips back to
+  // searching a moment later. Camera and the last outline stay on screen;
+  // "Resume searching" restarts polling explicitly.
+  const GUIDANCE_FOUND_STREAK_TO_PAUSE = 2;
+
+  function pauseGuidanceSearch() {
+    state.guidancePaused = true;
+    document.getElementById("btn-guidance-resume").classList.add("visible");
+  }
+
+  function resumeGuidanceSearch() {
+    state.guidancePaused = false;
+    state.guidanceFoundStreak = 0;
+    document.getElementById("btn-guidance-resume").classList.remove("visible");
+    guidanceStep();
+  }
+
+  async function guidanceStep() {
+    if (!state.guidanceRunning) return;
+    if (state.guidanceInFlight) { scheduleGuidanceNext(); return; }
+
+    state.guidanceInFlight = true;
+    renderGuidanceStatus(null, true);
+    try {
+      const base64 = captureGuidanceFrame();
+      const result = await callGuidanceEndpoint(base64, state.guidanceTarget);
+      state.guidanceCallCount += 1;
+      document.getElementById("guidance-call-count").textContent = state.guidanceCallCount + " calls";
+      renderGuidanceOverlay(result);
+      renderGuidanceStatus(result, false);
+      playGuidanceCues(result);
+
+      if (isGuidanceFound(result)) {
+        state.guidanceFoundStreak++;
+        if (state.guidanceFoundStreak >= GUIDANCE_FOUND_STREAK_TO_PAUSE) pauseGuidanceSearch();
+      } else {
+        state.guidanceFoundStreak = 0;
+      }
+    } catch (e) {
+      renderGuidanceStatus({ guidance: "Error: " + e.message, target_visible: false }, false);
+    } finally {
+      state.guidanceInFlight = false;
+      scheduleGuidanceNext();
+    }
+  }
+
+  function scheduleGuidanceNext() {
+    if (state.guidanceRunning && !state.guidancePaused) state.guidanceTimerId = setTimeout(guidanceStep, GUIDANCE_THROTTLE_MS);
+  }
+
+  async function startGuidance() {
+    try {
+      state.guidanceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    } catch (e) {
+      renderGuidanceStatus({ guidance: "Camera access failed: " + e.message, target_visible: false }, false);
+      return;
+    }
+    // Must happen inside this user-gesture-triggered handler -- iOS's
+    // autoplay policy blocks AudioContext creation/resume outside one.
+    ensureGuidanceAudioCtx();
+
+    guidanceVideo.srcObject = state.guidanceStream;
+    guidanceFullscreen.classList.add("active");
+    state.guidanceTarget = document.getElementById("guidance-target").value.trim() || "red backpack";
+    state.guidanceRunning = true;
+    state.guidanceCallCount = 0;
+    state.guidanceNotVisibleStreak = 0;
+    state.guidancePaused = false;
+    state.guidanceFoundStreak = 0;
+    document.getElementById("guidance-call-count").textContent = "0 calls";
+    document.getElementById("btn-guidance-resume").classList.remove("visible");
+    updateGuidanceButton();
+    // videoWidth/videoHeight are 0 until the stream's metadata actually
+    // loads -- capturing or mapping coordinates before then produces a
+    // blank frame / NaN math (0 * Infinity), so wait for it explicitly
+    // rather than assuming srcObject being set means the video is ready.
+    await waitForGuidanceVideoReady();
+    guidanceStep();
+  }
+
+  function waitForGuidanceVideoReady() {
+    if (guidanceVideo.videoWidth > 0 && guidanceVideo.videoHeight > 0) return Promise.resolve();
+    return new Promise(function (resolve) {
+      guidanceVideo.addEventListener("loadedmetadata", function onReady() {
+        guidanceVideo.removeEventListener("loadedmetadata", onReady);
+        resolve();
+      });
+    });
+  }
+
+  // Only releases the camera on explicit Stop / page unload -- backgrounding
+  // (visibilitychange) pauses the analysis timer below but leaves the
+  // camera live, per PLAN-ar-guidance.md.
+  function stopGuidance() {
+    state.guidanceRunning = false;
+    if (state.guidanceTimerId) clearTimeout(state.guidanceTimerId);
+    state.guidanceTimerId = null;
+    if (state.guidanceStream) {
+      state.guidanceStream.getTracks().forEach(function (t) { t.stop(); });
+      state.guidanceStream = null;
+    }
+    guidanceVideo.srcObject = null;
+    guidanceFullscreen.classList.remove("active");
+    guidanceLastNormBox = null;
+    state.guidanceNotVisibleStreak = 0;
+    state.guidancePaused = false;
+    state.guidanceFoundStreak = 0;
+    document.getElementById("btn-guidance-resume").classList.remove("visible");
+    hideAllGuidanceOverlays();
+    renderGuidanceStatus(null, false);
+    updateGuidanceButton();
+    if (guidanceAudioCtx && guidanceAudioCtx.state === "running") guidanceAudioCtx.suspend();
+  }
+
+  function updateGuidanceButton() {
+    const btn = document.getElementById("btn-guidance");
+    btn.textContent = state.guidanceRunning ? "Stop" : "Start";
+    btn.classList.toggle("active-mode", state.guidanceRunning);
+  }
+
+  function updateGuidanceMuteButton() {
+    document.getElementById("btn-guidance-mute").innerHTML = state.guidanceMuted ? "&#128263;" : "&#128266;";
+  }
+
+  // Re-sync overlay-dependent absolute positioning (the found-outline's
+  // px left/top/width/height) immediately on rotate/resize instead of
+  // waiting up to GUIDANCE_THROTTLE_MS for the next analysis tick --
+  // rotating the phone should feel instant. The chevron/reticle use %
+  // positioning so they're already orientation-safe with no code needed.
+  function resyncGuidanceOverlayOnResize() {
+    if (!state.guidanceRunning || !guidanceOutline.classList.contains("visible")) return;
+    // Re-run the last render with the last-known result would require
+    // caching it; simplest robust fix is to just let the next tick (at
+    // most GUIDANCE_THROTTLE_MS away) correct it, but hide the outline
+    // immediately so a stale/misaligned box is never shown mid-rotation.
+    guidanceOutline.classList.remove("visible");
+    guidanceFoundBadge.classList.remove("visible");
+  }
+  window.addEventListener("resize", resyncGuidanceOverlayOnResize);
+  window.addEventListener("orientationchange", resyncGuidanceOverlayOnResize);
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      if (state.guidanceTimerId) { clearTimeout(state.guidanceTimerId); state.guidanceTimerId = null; }
+    } else if (state.guidanceRunning && !state.guidanceTimerId && !state.guidanceInFlight) {
+      scheduleGuidanceNext();
+    }
+  });
+  window.addEventListener("beforeunload", function () {
+    if (state.guidanceStream) state.guidanceStream.getTracks().forEach(function (t) { t.stop(); });
+  });
+
+  // Shown once per page load (session-only, not persisted -- matches this
+  // file's existing "not saved between sessions" convention for its other
+  // settings) the first time Start is tapped, before the camera prompt
+  // fires, so the chevron/glow/pulse/outline language makes sense before
+  // it's actually seen live.
+  let guidanceOnboardingShown = false;
+
+  function showGuidanceOnboarding() {
+    document.getElementById("guide-onboarding").classList.add("visible");
+  }
+  function dismissGuidanceOnboarding() {
+    guidanceOnboardingShown = true;
+    document.getElementById("guide-onboarding").classList.remove("visible");
+    startGuidance();
+  }
+
+  document.getElementById("btn-guidance").onclick = function () {
+    if (state.guidanceRunning) { stopGuidance(); return; }
+    if (guidanceOnboardingShown) startGuidance();
+    else showGuidanceOnboarding();
+  };
+  document.getElementById("btn-onboarding-start").onclick = dismissGuidanceOnboarding;
+  document.getElementById("btn-guidance-close").onclick = function () { stopGuidance(); };
+  document.getElementById("btn-guidance-mute").onclick = function () {
+    state.guidanceMuted = !state.guidanceMuted;
+    updateGuidanceMuteButton();
+  };
+  document.getElementById("btn-guidance-resume").onclick = function () { resumeGuidanceSearch(); };
+
   // ---------- photo analysis (calls the ECS Fargate vision service) ----------
 
   const photoInput = document.getElementById("photo-input");
@@ -683,7 +1855,7 @@
       const headers = { "Content-Type": "application/json" };
       if (secret) headers["x-app-secret"] = secret;
 
-      return fetch(url, {
+      return fetch(deriveServiceUrl(url, "/analyze"), {
         method: "POST",
         headers: headers,
         body: JSON.stringify({ image_base64: base64, media_type: file.type || "image/jpeg" }),
@@ -725,6 +1897,23 @@
       '<div>Safest direction: ' + (data.safest_direction || "-") + '</div>';
   }
 
+  // ---------- tabs ----------
+  // Purely presentational -- toggles which .tab-page is visible and which
+  // .tab-btn is marked active. No element ids changed when the panels were
+  // grouped into tabs, so nothing else in this file needed to change.
+
+  function switchTab(name) {
+    document.querySelectorAll(".tab-page").forEach(function (el) {
+      el.classList.toggle("active", el.dataset.tab === name);
+    });
+    document.querySelectorAll(".tab-btn").forEach(function (el) {
+      el.classList.toggle("active", el.dataset.tab === name);
+    });
+  }
+  document.querySelectorAll(".tab-btn").forEach(function (btn) {
+    btn.onclick = function () { switchTab(btn.dataset.tab); };
+  });
+
   // ---------- init ----------
   // No server connection yet at page load -- draw the static map only.
   // render() itself no-ops the robot/telemetry parts until state.lastFrame
@@ -742,13 +1931,51 @@
   }
   renderStaticMapOnly();
 
+  fpvCtx.fillStyle = getCss("--surface");
+  fpvCtx.fillRect(0, 0, FPV_W, FPV_H);
+  fpvCtx.fillStyle = getCss("--text-dim");
+  fpvCtx.font = "12px " + getCss("--mono");
+  fpvCtx.textAlign = "center";
+  fpvCtx.fillText("Connect to see the camera view", FPV_W / 2, FPV_H / 2);
+
   // If this page is being served BY robot/server.py itself (the ECS
   // deployment, or local `uvicorn robot.server:app`), rather than opened
   // as a local file:// page, the robot server IS this page's own origin --
   // prefill the field instead of making the user type an IP.
   if (location.protocol !== "file:") {
     document.getElementById("cfg-server-url").value = location.origin;
+
+    // Best-effort default for the vision service URL too, based on this
+    // project's own documented conventions (README.md/HANDOFF.md), not a
+    // guess: local dev always runs vision-analyze on :8080 alongside the
+    // twin's :8000 (see "local smoke test" in README); the real ECS
+    // deployment shares one NLB/hostname between the twin (:8000) and the
+    // vision service (the shared ALB's default port, no suffix). Still
+    // just a starting point -- editable, and won't be right for one-off
+    // setups like a path-prefixed local reverse proxy.
+    const cfgUrlEl = document.getElementById("cfg-url");
+    if (!cfgUrlEl.value) {
+      // TEMPORARY, for active real-device testing via a specific free-tier
+      // ngrok tunnel + local dev-proxy (scratchpad dev_proxy.py) that
+      // multiplexes the twin and vision-analyze behind one port via an
+      // /api-vision path prefix -- not a real deployment convention, and
+      // this exact hostname is ephemeral (free ngrok tunnels get a new
+      // random URL every time they restart). Remove this branch once
+      // testing via this tunnel is done; the branches below are the
+      // durable, general-purpose defaults.
+      const isThisNgrokDevTunnel = location.hostname === "salami-turbulent-engorge.ngrok-free.dev";
+      const isLocalHost = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+      if (isThisNgrokDevTunnel) {
+        cfgUrlEl.value = location.origin + "/api-vision";
+      } else {
+        cfgUrlEl.value = isLocalHost
+          ? location.protocol + "//" + location.hostname + ":8080"
+          : location.protocol + "//" + location.hostname;
+      }
+    }
   }
+
+  renderHeaderConnStatus();
 })();
 </script>
 </body>

@@ -132,6 +132,193 @@ def describe_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> 
     return _parse_scene_json(text)
 
 
+NAVIGATE_PROMPT_TEMPLATE = """You are the camera of a small indoor robot searching for a {target_object}.
+Look at this image and decide the robot's single next move.
+Consider:
+1. Is the {target_object} visible in this image? If so, roughly which direction is it relative to the center of the frame?
+2. Is there an obstacle directly ahead that would block moving forward?
+3. Given the above, what is the single best next action to get closer to the {target_object} while not colliding with anything?
+
+Respond with ONLY a JSON object, no other text, matching this schema:
+{{
+  "target_visible": true | false,
+  "target_direction": "left" | "center" | "right" | "not_visible",
+  "obstacle_ahead": true | false,
+  "action": "FORWARD" | "LEFT" | "RIGHT" | "REVERSE" | "STOP",
+  "reasoning": "one short sentence explaining the choice"
+}}"""
+
+_NAVIGATE_EMPTY_SCHEMA = {
+    "target_visible": False,
+    "target_direction": "not_visible",
+    "obstacle_ahead": False,
+    "action": "STOP",
+    "reasoning": "Unable to analyze image.",
+}
+
+
+def describe_image_bytes_navigate(image_bytes: bytes, target_object: str, media_type: str = "image/jpeg") -> dict:
+    client = _get_client()
+
+    fmt = _bedrock_image_format(media_type)
+    if fmt not in ("gif", "jpeg", "png", "webp"):
+        image_bytes = _convert_to_jpeg(image_bytes)
+        fmt = "jpeg"
+
+    response = client.converse(
+        modelId=MODEL_ID,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "image": {
+                            "format": fmt,
+                            "source": {"bytes": image_bytes},
+                        }
+                    },
+                    {"text": NAVIGATE_PROMPT_TEMPLATE.format(target_object=target_object)},
+                ],
+            }
+        ],
+        inferenceConfig={"maxTokens": 300},
+    )
+
+    content_blocks = response["output"]["message"]["content"]
+    text = "".join(b["text"] for b in content_blocks if "text" in b)
+    return _parse_navigate_json(text)
+
+
+def _parse_navigate_json(text: str) -> dict:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:]
+    try:
+        parsed = json.loads(text)
+        merged = {**_NAVIGATE_EMPTY_SCHEMA, **parsed}
+        if merged["action"] not in ("FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP"):
+            merged["action"] = "STOP"
+        return merged
+    except json.JSONDecodeError:
+        logger.warning(f"Failed to parse VLM navigate response as JSON: {text!r}")
+        return {**_NAVIGATE_EMPTY_SCHEMA, "_raw": text}
+
+
+GUIDANCE_PROMPT_TEMPLATE = """You are helping someone find a {target_object} using their phone camera.
+Look at this photo and determine:
+1. Is the {target_object} visible in this image?
+2. If visible, where is it positioned horizontally in the frame?
+3. How far away does it appear? Judge this by how much of the frame the
+   object fills, not a guess at real-world distance:
+   - "near": the object fills a large portion of the frame (roughly a
+     third of the frame's width or height or more) -- close enough that a
+     couple of steps would reach it.
+   - "medium": the object is clearly visible and identifiable but still
+     small-to-moderate in the frame -- several steps away.
+   - "far": the object is visible but small/distant in the frame -- across
+     the room or further.
+   Be conservative about "near" -- only use it when the object is
+   genuinely large/close in frame, not just clearly recognizable. Most
+   newly-spotted objects across a room should be "medium" or "far".
+4. What direction should the person move or turn to get closer to it?
+5. If it is visible, clearly identifiable, and not significantly cut off
+   by the edge of the frame, estimate a bounding box around it as
+   fractions of the image width/height (0.0 = left/top edge, 1.0 =
+   right/bottom edge). Only provide this when you are reasonably
+   confident -- if you are unsure of its exact extent, return null
+   instead of guessing.
+
+Respond with ONLY a JSON object, no other text, matching this schema:
+{{
+  "target_visible": true | false,
+  "position": "far_left" | "left" | "center" | "right" | "far_right" | "not_visible",
+  "proximity": "near" | "medium" | "far" | "unknown",
+  "guidance": "short human-readable instruction, e.g. 'Turn right and walk forward'",
+  "bounding_box": {{"x_min": 0.0, "y_min": 0.0, "x_max": 1.0, "y_max": 1.0}} | null
+}}"""
+
+_GUIDANCE_EMPTY_SCHEMA = {
+    "target_visible": False,
+    "position": "not_visible",
+    "proximity": "unknown",
+    "guidance": "Unable to analyze image.",
+    "bounding_box": None,
+}
+
+_BBOX_KEYS = ("x_min", "y_min", "x_max", "y_max")
+
+
+def _validate_bounding_box(box) -> dict | None:
+    if not isinstance(box, dict):
+        return None
+    try:
+        values = {k: float(box[k]) for k in _BBOX_KEYS}
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(0.0 <= v <= 1.0 for v in values.values()):
+        return None
+    if values["x_min"] >= values["x_max"] or values["y_min"] >= values["y_max"]:
+        return None
+    return values
+
+_GUIDANCE_POSITIONS = ("far_left", "left", "center", "right", "far_right", "not_visible")
+_GUIDANCE_PROXIMITIES = ("near", "medium", "far", "unknown")
+
+
+def describe_image_bytes_guidance(image_bytes: bytes, target_object: str, media_type: str = "image/jpeg") -> dict:
+    client = _get_client()
+
+    fmt = _bedrock_image_format(media_type)
+    if fmt not in ("gif", "jpeg", "png", "webp"):
+        image_bytes = _convert_to_jpeg(image_bytes)
+        fmt = "jpeg"
+
+    response = client.converse(
+        modelId=MODEL_ID,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "image": {
+                            "format": fmt,
+                            "source": {"bytes": image_bytes},
+                        }
+                    },
+                    {"text": GUIDANCE_PROMPT_TEMPLATE.format(target_object=target_object)},
+                ],
+            }
+        ],
+        inferenceConfig={"maxTokens": 300},
+    )
+
+    content_blocks = response["output"]["message"]["content"]
+    text = "".join(b["text"] for b in content_blocks if "text" in b)
+    return _parse_guidance_json(text)
+
+
+def _parse_guidance_json(text: str) -> dict:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:]
+    try:
+        parsed = json.loads(text)
+        merged = {**_GUIDANCE_EMPTY_SCHEMA, **parsed}
+        if merged["position"] not in _GUIDANCE_POSITIONS:
+            merged["position"] = "not_visible"
+        if merged["proximity"] not in _GUIDANCE_PROXIMITIES:
+            merged["proximity"] = "unknown"
+        merged["bounding_box"] = _validate_bounding_box(merged["bounding_box"])
+        return merged
+    except json.JSONDecodeError:
+        logger.warning(f"Failed to parse VLM guidance response as JSON: {text!r}")
+        return {**_GUIDANCE_EMPTY_SCHEMA, "_raw": text}
+
+
 def _parse_scene_json(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):

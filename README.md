@@ -194,6 +194,55 @@ only `config/robot.yaml`'s `mode` does.
   `uvicorn robot.server:app --host 0.0.0.0` on a Mac, LAN IP in the
   connection field, no secret needed (unset `APP_SHARED_SECRET` makes
   `require_secret()` a no-op) -- see `web-twin/README.md`.
+- **Vision autopilot panel**: a third driving mode, alongside manual and
+  rule-based Explore/Find, where the twin actually drives itself with real
+  Claude Vision calls instead of the JS frontier algorithm. Since the
+  grid-world sim has no real camera, `web-twin/index.html` renders a
+  synthetic first-person view with a small canvas raycaster (against the
+  same `LAYOUT`/`OBJECTS` constants the top-down map already uses), POSTs
+  it to the vision service's new `/navigate` route every ~2.5s with a
+  target object, and executes whatever action comes back through the same
+  `commitAction()`/safety-veto path every other mode uses. Never
+  auto-starts (each tick is a real paid API call -- there's a visible call
+  counter and a step cap). See "Cloud vision endpoint" below for the new
+  route; this reuses that service's existing URL/secret fields, deriving
+  `/navigate` from the configured `/analyze` URL.
+- **"Guide" tab**: the inverse of Vision Autopilot -- the *person* holding
+  the phone walks around while Claude Vision, given the phone's real live
+  camera feed, guides them toward a named object. Its own top-level tab
+  (not nested in Camera), and tapping Start takes over the full screen
+  (CSS-simulated, not the real Fullscreen API -- more reliable on iOS
+  Safari) in both portrait and landscape. Built per `PLAN-ar-guidance.md`'s
+  spec, then redesigned per that doc's "Redesign" section -- see there for
+  the full detail. Uses `getUserMedia`, so it requires this page be loaded
+  over `https://` or `localhost` -- a plain `http://<lan-ip>` URL (the
+  twin's original LAN-testing setup) fails the browser's secure-context
+  check for camera access. Calls the vision service's `/navigate`-sibling
+  `/guidance` route roughly every ~1s (tightened from an initial ~2s after
+  real-device testing found the slower loop too laggy for panning around a
+  room -- see `PLAN-ar-guidance.md`'s changelog for the cost tradeoff);
+  never auto-starts the camera, and only releases it on Stop
+  (backgrounding the tab pauses analysis but keeps the camera live). The
+  captured frame is also downscaled to a 960px max dimension before
+  upload -- smaller payload, faster inference, no visible quality loss for
+  this coarse a question.
+  - Once found, draws a glowing outline around the object from the
+    response's `bounding_box` field (a real but approximate LLM-estimated
+    rectangle, not pixel segmentation, refreshed each tick), positioned
+    with `object-fit: cover`-aware coordinate mapping (the video is
+    cropped to fill the screen, so naive percentage math misplaces the
+    box -- see `mapNormalizedBoxToScreen()` in `web-twin/index.html`).
+  - Visual-first guidance: a directional edge glow (brightens along the
+    screen edge to turn toward, intensity scaled by how far off-center)
+    and a chevron whose pulse speeds up as proximity increases are the
+    primary "which way / how close" signal -- the caption text at the
+    bottom is a small, de-emphasized readout, not the main channel.
+  - Fires `navigator.vibrate()` patterns (works on Android Chrome) and
+    Web Audio directional tones (panned left/right, works everywhere
+    including iOS). **iOS Safari has never implemented the Vibration
+    API** -- this is a confirmed Apple/WebKit platform limitation, not a
+    bug, so the audio cues are the actual cross-platform feedback
+    mechanism; don't "fix" the iOS silence.
 
 ## Cloud vision endpoint (photo analysis, reachable from anywhere)
 
@@ -206,6 +255,30 @@ only `config/robot.yaml`'s `mode` does.
   in the cloud instead of on a device, but the actual drive/steer/stop
   control loop stays local once hardware exists -- safety-critical
   control shouldn't depend on a cloud hop being up.
+- **`POST /navigate`** — a second route alongside `/analyze`, added for
+  the twin's Vision Autopilot panel above: given a camera frame and a
+  `target_object`, returns a single next `action`
+  (`FORWARD`/`LEFT`/`RIGHT`/`REVERSE`/`STOP`) plus short `reasoning`,
+  instead of a full scene description. Same auth/size/decode handling as
+  `/analyze` (factored into a shared `_decode_image()` helper in
+  `app.py`), same Bedrock Converse plumbing in `vision_core.py`
+  (`describe_image_bytes_navigate()`), different prompt/schema. A
+  deliberately separate route rather than a flag on `/analyze`, to avoid
+  colliding with `/guidance` below, which uses the same `target_object`
+  field for a different, human-facing purpose. Not mirrored into
+  `brain/vision.py` -- this is a browser-only feature, unlike the rest of
+  the vision logic that mirror keeps in sync.
+- **`POST /guidance`** — a third route, added for the twin's "Guide me
+  to..." panel above: given a camera frame (a real phone photo this time,
+  not a synthetic sim render) and a `target_object`, returns
+  `target_visible`/`position` (5-zone: `far_left`...`far_right`/
+  `not_visible`)/`proximity`/a short human-readable `guidance` string, for
+  driving an AR overlay arrow rather than executing a robot action. Same
+  `_decode_image()`/Bedrock-plumbing pattern as `/navigate`
+  (`describe_image_bytes_guidance()` in `vision_core.py`). This is the
+  route `PLAN-ar-guidance.md` originally speced as an addition to
+  `/analyze`; built as its own route instead once `/navigate` already
+  existed, for the same target-object-field reason above.
 - Runs as an **ECS Fargate** service (not Lambda -- see history note
   below) behind an internet-facing **NLB → internal ALB → ECS Fargate**
   chain, provisioned by the CloudFormation templates in `cloudformation/`

@@ -1,7 +1,218 @@
 # Plan: AR-style "find the object" camera guidance
 
-**Status:** Not started. This is a spec for Claude Code to implement --
-nothing described here exists in the repo yet.
+**Status:** Built (2026-08-26), then redesigned (2026-08-26) into its own
+full-screen tab. Implemented as the "Guide" tab in `web-twin/index.html`,
+backed by `POST /guidance` in `service/vision_analyze/app.py` and
+`describe_image_bytes_guidance()` in `service/vision_analyze/vision_core.py`.
+The design below (AR overlay, timer-throttled analysis, 5-zone position +
+proximity schema, secure-context requirement) was followed as originally
+spec'd; implementation deviations from this doc are noted inline below
+where they occurred (e.g. a dedicated `/guidance` route instead of
+overloading `/analyze`, chosen for consistency with a sibling `/navigate`
+route added for a separate feature in the interim -- see `README.md`'s
+"Digital twin" section for both).
+
+**Redesign (2026-08-26):** the user asked for the feature to feel like a
+real app rather than an embedded panel:
+- Its own top-level tab (`Guide`, between `Camera` and `Settings` in the
+  bottom nav), not nested inside Camera next to photo upload
+- **Full-screen takeover** while active -- a CSS-simulated fullscreen
+  overlay (`#guide-fullscreen`, `position:fixed; inset:0`), deliberately
+  *not* the real Fullscreen API (`element.requestFullscreen()`), which has
+  a long history of unreliable support for arbitrary elements in iOS
+  Safari. Works in both portrait and landscape (`object-fit:cover` +
+  full-viewport sizing reframes automatically; an explicit
+  `resize`/`orientationchange` listener re-syncs the found-outline's pixel
+  position immediately on rotate rather than waiting for the next ~2s tick)
+- The overlay itself moved from hand-drawn `<canvas>` shapes to DOM/SVG
+  elements positioned via CSS `transform`/`left`/`top` with real
+  `transition`s -- this is what makes state changes glide instead of snap;
+  canvas would need a hand-rolled animation loop to get the same
+  smoothness
+- **Found state is now an outline, not a checkmark**: the `/guidance`
+  response gained an optional `bounding_box` field (normalized 0.0-1.0
+  coordinates), requested from the model only when it's confident of the
+  object's extent (`null` otherwise, validated server-side in
+  `_validate_bounding_box()`). This is a bounding box, not real
+  segmentation -- a text-generating vision-language model doesn't produce
+  pixel-accurate contours -- and it updates on the same ~2s throttle as
+  everything else, not live-tracked between ticks. Falls back to a
+  generic centered pulse (no box) if the model doesn't return one on a
+  given "found" tick, rather than showing a guessed rectangle.
+  - **`isGuidanceFound()` triggers on `proximity === "near"` alone**, not
+    `position === "center" && proximity === "near"`. The first shipped
+    version used that stricter AND-gate (a holdover from the old
+    checkmark design, which had no way to show *where* the object was, so
+    it needed the object dead-center to mean anything). Real-device
+    testing (iPhone 14 Pro Max, Chrome) showed this AND-gate essentially
+    never fired -- an object can be close without landing in the exact
+    "center" zone on any single ~2s tick. Since the outline now shows the
+    object's actual on-screen position via `bounding_box` regardless of
+    which zone it's in, requiring dead-center framing was both redundant
+    and the direct cause of the outline never appearing.
+- **Haptic feedback** via `navigator.vibrate()`, feature-detected and
+  fully implemented -- **but Apple has never implemented the Vibration
+  API in Safari, on any iOS version.** This is a confirmed platform
+  limitation, not a bug in this code, and not something a web page can
+  work around (a native wrapper was already ruled out earlier in this
+  project). The real, cross-platform substitute is a Web Audio API
+  directional tone system (panned left/right oscillator tones, a rising
+  chime on found, silence when not visible), which does work in iOS
+  Safari and is what actually provides feedback there. **Do not
+  "fix" the iOS vibration silence by trying to force it to work** -- it's
+  expected; the audio cues are the intended iOS experience. A mute toggle
+  in the fullscreen HUD gates the audio path only (vibration is
+  independently silent by nature, so nothing to mute there).
+
+**Polish pass (2026-08-26), after real-device feedback (iPhone 14 Pro
+Max, Chrome):** the outline didn't fully cover the object, the loop felt
+too slow for real-world panning, and the bottom text was the main way to
+understand what to do.
+
+- **Outline coordinate-mapping bug, found and fixed.** The video is
+  displayed with CSS `object-fit: cover`, which crops it to fill the
+  full-screen container -- but the bounding-box math was multiplying
+  normalized coordinates directly against the *displayed* (cropped) rect,
+  when the model computed them against the *full, uncropped* captured
+  frame. Whenever the camera's native aspect ratio differs from the
+  screen's (true almost always in portrait), `cover`'s crop silently
+  shifted everything. Fixed with a proper scale+crop-offset mapping
+  (`mapNormalizedBoxToScreen()` in `web-twin/index.html`) that reproduces
+  exactly what `cover` does to the video, so the box lands where the
+  object actually is. Fixing this surfaced a second, previously-latent
+  bug: `videoWidth`/`videoHeight` are `0` until the camera stream's
+  metadata actually loads, and the very first analysis tick could fire
+  before that -- `0 * Infinity = NaN` in the new coordinate math, silently
+  producing an invalid (and therefore invisible, since the browser
+  rejects "NaNpx") outline. Fixed by explicitly awaiting the video's
+  `loadedmetadata` event (`waitForGuidanceVideoReady()`) before the first
+  tick, rather than assuming `srcObject` being set means the video is
+  ready. The old buggy positioning code never touched `videoWidth`/
+  `videoHeight` at all, which is why this race was never triggered before.
+- **Speed**: `GUIDANCE_THROTTLE_MS` lowered from `2000` to `1000` (~2x API
+  cost, confirmed acceptable tradeoff), plus a free win --
+  `captureGuidanceFrame()` now downscales to a 960px max dimension before
+  encoding (smaller upload, typically faster inference too; Bedrock
+  doesn't need full sensor resolution for a coarse position/proximity/bbox
+  answer). `maxTokens` was left alone -- already tight, not a meaningful
+  lever. Bedrock's own inference latency (roughly 0.8-1.5s) remains a
+  floor no client-side change eliminates; 1s is close to the practical
+  sweet spot before ticks queue up behind a slow response.
+- **Visual-first guidance, confirmed with the user**: a screen-edge glow
+  (like a blind-spot indicator, brighter the further off-center the
+  target is) plus a chevron pulse whose *speed* scales with proximity
+  (independent of exact screen position) are now the primary "which way /
+  how close" signal. The bottom caption shrank from a two-line
+  sentence-plus-debug-readout into a small icon+text pill -- present for
+  clarity, no longer the main channel. `isGuidanceFound()`'s relaxed
+  proximity-only gate (from the redesign above) made this practical: since
+  the outline already shows exactly where the object is, the chevron only
+  ever needs to communicate "which way" and "how close," not "you found
+  it, here's a checkmark."
+- Also fixed while in the area: `isGuidanceFound()`'s "no confident box"
+  fallback and the edge-glow/pulse state are all reset together in
+  `hideAllGuidanceOverlays()` now (previously the edge glow had its own
+  separate, easy-to-miss reset call), so `stopGuidance()` can't leave a
+  glow lingering after Stop.
+
+**Box-jump follow-up (2026-08-26)**, after further real-device feedback:
+the outline math above is correct (independently hand-verified against
+mismatched-aspect-ratio test cases), but on-device the box still visibly
+"jumped" between ticks -- appearing off the object, then on it, then
+elsewhere again. Root cause is architectural, not a math bug: each
+analysis tick is a completely independent Bedrock call with zero memory
+of the previous tick, so the model re-locates the object from scratch
+every ~1s and its exact estimate can legitimately vary even for a
+stationary object (LLM vision estimation noise) -- compounded by natural
+hand movement over that second. Mitigation added:
+`smoothGuidanceBox()`/`guidanceLastNormBox` blend consecutive found-state
+boxes in normalized (0-1) space at a 55%-toward-the-new-estimate rate
+before mapping to screen pixels, damping jitter while staying responsive
+to real movement. Reset to `null` (no blending) whenever the found state
+is exited (`not_visible`, a non-found position, no confident
+`bounding_box` that tick, or Stop) so a stale box never drags a
+freshly-reacquired detection toward an unrelated old position. **This
+damps the visual jump, it does not and cannot fully eliminate it** -- a
+single wildly-wrong estimate is a limit of asking a general
+vision-language model to localize an object with no specialized
+detection/tracking model underneath, not something client-side smoothing
+can fully paper over. If jumpiness is still a problem after this, the
+next lever would be a stronger confidence bar in `GUIDANCE_PROMPT_TEMPLATE`
+(`service/vision_analyze/vision_core.py`) asking the model to return
+`null` more readily rather than a low-confidence guess -- not yet done,
+since it trades away legitimate detections too.
+
+**Search-sweep chevron + found-gate regression fix (2026-08-26):**
+
+- **New: systematic search sweep.** While the target hasn't been spotted
+  at all (`target_visible: false`), the app now shows a directional
+  chevron (reusing the same `.guide-chevron` element the off-center
+  "which way" cue uses) instructing the user to physically pan the camera
+  -- right for ~5 ticks (~5s at the 1s throttle), then down for ~5 ticks,
+  repeating (`GUIDANCE_SCAN_PHASES`/`currentGuidanceScanPhase()` in
+  `web-twin/index.html`). The right-phase also lights the right edge-glow;
+  there's no top/bottom glow element, so the down-phase has no glow
+  assist. Important: the model has zero information about where the
+  object actually is in this state (it's not in the photo at all) --
+  this is a fixed UI convention to encourage full room coverage, not a
+  model-informed suggestion. Replaced (and removed entirely --
+  `.guide-reticle`, its CSS, and JS references are gone) the previous
+  plain spinning "searching" reticle, which gave no actionable direction.
+- **Found-gate regression, fixed.** The proximity-calibration prompt
+  tightening above (making "near" conservative, since the model was
+  calling almost anything visible "near") had a side effect real-device
+  testing caught: a centered, clearly-arrived-at object could get
+  classified "medium" and never advance past a chevron to the outline.
+  `isGuidanceFound()` now also accepts `proximity === "medium" &&
+  position === "center"` as found, alongside the existing
+  `proximity === "near"` (any position) rule -- being dead-center already
+  signals the user aimed right at it, so "medium-close and centered" is a
+  reasonable second definition of "found" without loosening the proximity
+  prompt itself back toward over-eager.
+
+**Auto-pause on found (2026-08-26):** the user asked whether it should
+stop making API calls once the outline appears -- it didn't; it kept
+polling forever at the full throttle rate even after finding the object,
+burning real money for no benefit. Fixed: once `isGuidanceFound()` holds
+for `GUIDANCE_FOUND_STREAK_TO_PAUSE` (2) consecutive ticks -- not just
+one, to avoid pausing on a single noisy detection that flips back to
+searching a moment later -- polling stops entirely (`scheduleGuidanceNext()`
+now checks `state.guidancePaused`). The camera feed and the last-rendered
+outline stay on screen (frozen at that position, since nothing is
+updating it anymore -- a known, accepted tradeoff of not paying for
+continuous polling), with a "Resume searching" button
+(`pauseGuidanceSearch()`/`resumeGuidanceSearch()` in `web-twin/index.html`)
+to explicitly restart the loop. `stopGuidance()`/`startGuidance()` both
+reset the pause state and streak counter for a clean next session.
+
+**UX review + idle-screen/onboarding polish (2026-08-26):** the user asked
+for a UX review; two items from that review were picked to build:
+
+- **Idle-screen preview** (`.guide-preview`): the Guide tab's pre-Start
+  state used to be a plain 📷 emoji. Replaced with a small ambient
+  "viewfinder" card -- the same chevron SVG the live feature uses,
+  gently drifting side to side and pulsing (pure CSS `@keyframes`, no new
+  assets) -- so the idle screen previews the real interaction instead of
+  a static placeholder.
+- **First-run onboarding** (`#guide-onboarding`): the first time Start is
+  tapped, a dismissible card explains what chevron / edge glow / pulse /
+  outline each mean, *before* the camera permission prompt fires
+  (`showGuidanceOnboarding()` intercepts the click; `getUserMedia` isn't
+  requested until "Got it, start" is tapped, which calls
+  `dismissGuidanceOnboarding()` → `startGuidance()`). Shown once per page
+  load via a plain in-memory flag (`guidanceOnboardingShown`), not
+  localStorage -- this matches the convention already established
+  elsewhere in this file (the Cloud endpoint settings hint says "Not
+  saved between sessions (no localStorage in this preview)"); reloading
+  the page shows it again, same as those fields losing their value.
+
+Other items surfaced in the review but not yet built: an in-session
+target-object editor (currently locked once Start is tapped), unifying
+the rest of the app's visual polish to match Guide's (Drive/Autonomous
+tabs are still flat button rows by comparison), reframing the call
+counter as less of a debug artifact, and distinct visual treatment per
+error type (camera-denied vs. network vs. missing config all look
+identical today).
 
 **Origin:** Discussed in the claude.ai session that built the rest of
 this repo. The user's proposal: point the phone camera at a room, keep
