@@ -23,11 +23,16 @@ Sonnet 4.5 instead, confirmed working (including image input) via a real
 `converse` call before wiring this in.
 """
 
+import io
 import json
 import logging
 import os
 
 import boto3
+import pillow_heif
+from PIL import Image
+
+pillow_heif.register_heif_opener()
 
 logger = logging.getLogger()
 
@@ -68,14 +73,40 @@ def _get_client():
     return _client
 
 
+_BEDROCK_FORMAT_ALIASES = {"jpg": "jpeg"}
+
+
 def _bedrock_image_format(media_type: str) -> str:
-    # Bedrock's Converse API wants a short format token ("png", "jpeg"),
-    # not a MIME type.
-    return media_type.split("/")[-1].lower()
+    # Bedrock's Converse API wants a short format token from a strict enum
+    # (gif, jpeg, png, webp) -- not a MIME type, and NOT every real-world
+    # MIME type maps directly onto it: some cameras/browsers report JPEGs
+    # as "image/jpg" (non-standard but common), which Bedrock rejects with
+    # a ValidationException since only "jpeg" is in its enum. Normalize
+    # known aliases rather than passing the raw subtype straight through.
+    fmt = media_type.split("/")[-1].lower()
+    return _BEDROCK_FORMAT_ALIASES.get(fmt, fmt)
+
+
+def _convert_to_jpeg(image_bytes: bytes) -> bytes:
+    image = Image.open(io.BytesIO(image_bytes))
+    buf = io.BytesIO()
+    image.convert("RGB").save(buf, format="JPEG")
+    return buf.getvalue()
 
 
 def describe_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
     client = _get_client()
+
+    fmt = _bedrock_image_format(media_type)
+    if fmt not in ("gif", "jpeg", "png", "webp"):
+        # Most commonly HEIC/HEIF -- the default photo format on iPhone,
+        # which Bedrock's Converse API doesn't accept at all (unlike the
+        # jpg/jpeg naming quirk above, this isn't a labeling issue -- the
+        # actual bytes need transcoding). pillow-heif registers HEIC/HEIF
+        # support into Pillow's Image.open() so this one code path handles
+        # any input Pillow understands, not just HEIC specifically.
+        image_bytes = _convert_to_jpeg(image_bytes)
+        fmt = "jpeg"
 
     response = client.converse(
         modelId=MODEL_ID,
@@ -85,7 +116,7 @@ def describe_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> 
                 "content": [
                     {
                         "image": {
-                            "format": _bedrock_image_format(media_type),
+                            "format": fmt,
                             "source": {"bytes": image_bytes},
                         }
                     },

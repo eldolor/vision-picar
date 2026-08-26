@@ -146,10 +146,13 @@
       <input type="text" id="cfg-server-url" placeholder="http://192.168.1.x:8000" style="flex:2; padding:10px; border-radius:8px; border:1px solid #333B47; background:#0E1116; color:var(--text); font-family:var(--mono); font-size:12px;">
       <button id="btn-connect" class="primary" style="flex:1;">Connect</button>
     </div>
+    <input type="text" id="cfg-server-secret" placeholder="x-app-secret value (if this deployment requires one)" style="width:100%; margin-top:6px; padding:8px; border-radius:6px; border:1px solid #333B47; background:#0E1116; color:var(--text); font-family:var(--mono); font-size:12px;">
     <div class="hint" id="connection-status">
-      Not connected. Run `uvicorn robot.server:app --host 0.0.0.0` on your
-      Mac and point this at its LAN address (Wi-Fi Settings &rarr; your
-      Mac's IP), e.g. http://192.168.1.42:8000.
+      Not connected. If this page was opened as a hosted deployment (not a
+      local file), the server URL above is prefilled to match -- just add
+      the shared secret if one is required and tap Connect. For local dev,
+      run `uvicorn robot.server:app --host 0.0.0.0` on your Mac and point
+      this at its LAN address instead, e.g. http://192.168.1.42:8000.
     </div>
   </div>
 
@@ -258,7 +261,7 @@
   // ---------- twin state (mission bookkeeping only -- no physics) ----------
 
   const state = {
-    serverUrl: "", connected: false, lastFrame: null,
+    serverUrl: "", serverSecret: "", connected: false, lastFrame: null,
     visited: new Set(), searchedRooms: new Set(),
     sightings: [], found: false, foundSighting: null,
     log: [], step: 0,
@@ -270,16 +273,23 @@
   // ---------- MacBook<->Pi split, talking to the robot over HTTP just  ----------
   // ---------- like brain/agent.py's MissionAgent talks to RobotInterface ----------
 
+  function authHeaders(extra) {
+    const headers = Object.assign({}, extra);
+    if (state.serverSecret) headers["x-app-secret"] = state.serverSecret;
+    return headers;
+  }
   async function apiPost(path, body) {
     const res = await fetch(state.serverUrl + path, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(body || {}),
     });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || ("HTTP " + res.status));
     return res.json();
   }
   async function apiGet(path) {
-    const res = await fetch(state.serverUrl + path);
+    const res = await fetch(state.serverUrl + path, { headers: authHeaders() });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || ("HTTP " + res.status));
     return res.json();
   }
 
@@ -465,6 +475,7 @@
       return;
     }
     state.serverUrl = url;
+    state.serverSecret = document.getElementById("cfg-server-secret").value.trim();
     statusEl.textContent = "Connecting\u2026";
     try {
       const frame = await fetchFrame();
@@ -730,6 +741,14 @@
     }
   }
   renderStaticMapOnly();
+
+  // If this page is being served BY robot/server.py itself (the ECS
+  // deployment, or local `uvicorn robot.server:app`), rather than opened
+  // as a local file:// page, the robot server IS this page's own origin --
+  // prefill the field instead of making the user type an IP.
+  if (location.protocol !== "file:") {
+    document.getElementById("cfg-server-url").value = location.origin;
+  }
 })();
 </script>
 </body>

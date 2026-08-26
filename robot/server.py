@@ -8,6 +8,7 @@ change at all when Phase 11 swaps in the real backend -- only
 config/robot.yaml's `mode` does.
 
 Endpoints:
+    GET  /         serves web-twin/index.html (the digital twin UI)
     POST /action   {"action": "FORWARD", "speed": 50, "duration": 0.5}
     POST /stop     always-available stop
     GET  /distance
@@ -20,6 +21,14 @@ protection an AI decision does. This is a deliberate extension of "AI
 sits at the bottom of the safety hierarchy": nothing that can move the
 robot bypasses the safety layer, regardless of who's driving.
 
+Auth: /action, /stop, /distance, /frame require a matching x-app-secret
+header when APP_SHARED_SECRET is set in the environment (see
+require_secret() below) -- added when this server started being
+deployed publicly (ECS Fargate, service/twin/), not just run on a home
+LAN. /health stays open (the ALB health check can't send custom
+headers) and / stays open (the page has to load before a user can enter
+the secret in the UI).
+
 Watchdog (build plan Phase 9): if the MacBook stops sending commands for
 ~1 second, the Pi stops the motors. `last_command_at` is updated on
 every request; a background task polls it and calls robot.stop() once
@@ -29,20 +38,36 @@ loop itself needs a running event loop and is exercised by actually
 running the server (see README), not in the automated unit suite.
 """
 
+import os
 import time
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from robot.factory import get_robot, load_config
 from robot.safety import SafetyController, SafetyViolation
 
 logger = logging.getLogger("server")
+
+_TWIN_INDEX_HTML = Path(__file__).resolve().parent.parent / "web-twin" / "index.html"
+
+
+def require_secret(x_app_secret: str = Header(default="")):
+    """Gate for movement/sensing routes once this server is reachable from
+    the public internet (the ECS Fargate deployment), not just a home LAN.
+    /health is deliberately excluded -- the ALB health check can't send
+    custom headers. Inert (no-op) when APP_SHARED_SECRET is unset, which is
+    how local dev and the test suite run."""
+    expected = os.environ.get("APP_SHARED_SECRET")
+    if expected and x_app_secret != expected:
+        raise HTTPException(status_code=401, detail="Missing or invalid x-app-secret header.")
 
 
 class ActionRequest(BaseModel):
@@ -86,11 +111,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
     app = FastAPI(title="vision-picar robot server", lifespan=lifespan)
 
-    # This server is designed to be reached from a browser (the web twin,
-    # eventually a phone on the same Wi-Fi as the real Pi). Same reasoning
-    # as lambda/vision_analyze/handler.py's CORS handling, but permissive
-    # by default here since this only ever binds to a local/LAN address,
-    # not the public internet -- tighten allow_origins if that changes.
+    # This server is designed to be reached from a browser (the web twin --
+    # locally on the same LAN for real-hardware use, or the public
+    # service/twin/ ECS deployment). Same reasoning as
+    # service/vision_analyze/app.py's CORS handling: permissive origins by
+    # default, with require_secret() as the actual access control once this
+    # is reachable from the public internet, not CORS.
     allowed_origins = config.get("server", {}).get("allowed_origins", ["*"])
     app.add_middleware(
         CORSMiddleware,
@@ -99,7 +125,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.post("/action")
+    @app.get("/")
+    def twin_ui():
+        return FileResponse(_TWIN_INDEX_HTML)
+
+    @app.post("/action", dependencies=[Depends(require_secret)])
     def do_action(req: ActionRequest):
         state["last_command_at"] = time.monotonic()
         try:
@@ -112,16 +142,16 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @app.post("/stop")
+    @app.post("/stop", dependencies=[Depends(require_secret)])
     def stop():
         state["last_command_at"] = time.monotonic()
         return {"executed": True, "result": robot.stop()}
 
-    @app.get("/distance")
+    @app.get("/distance", dependencies=[Depends(require_secret)])
     def distance():
         return {"distance_cm": robot.get_distance()}
 
-    @app.get("/frame")
+    @app.get("/frame", dependencies=[Depends(require_secret)])
     def frame():
         return robot.get_camera_frame()
 

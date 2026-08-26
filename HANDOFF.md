@@ -75,7 +75,7 @@ the original build plan phases, reordered simulation-first):
 | 9 (partial) | Manual WASD control client (`control/manual_control.py`) | NOT BUILT -- `control/` dir exists but is empty. Was planned, then deprioritized in favor of the web twin, which now supersedes this use case (see section 5). |
 | -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Discussed and partially designed in conversation (a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt) but never written to disk. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. |
-| extra | Web-based digital twin | Done (`web-twin/index.html`), real HTTP client of `robot/server.py`, verified end-to-end against a live server |
+| extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 8000. Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
 
 ---
@@ -88,7 +88,9 @@ vision-picar/
 │   ├── interface.py         RobotInterface -- the ONE abstraction brain/ depends on
 │   ├── factory.py            picks sim vs. hardware backend from config/robot.yaml
 │   ├── safety.py              local safety layer; can veto any action, sim or real
-│   └── server.py              FastAPI Wi-Fi control API (Phase 9), CORS-enabled
+│   └── server.py              FastAPI Wi-Fi control API (Phase 9), CORS-enabled,
+│                               require_secret() gate once deployed publicly,
+│                               serves web-twin/index.html at GET /
 │
 ├── brain/                  "MacBook" role -- reasoning, hardware-agnostic
 │   ├── vision.py             Vision LLM scene understanding (Claude API)
@@ -115,11 +117,21 @@ vision-picar/
 │   ├── requirements.txt, Dockerfile
 │   └── NOTE: no automated test suite yet -- see section 6
 │
-├── cloudformation/            IaC for the vision service's AWS infra
-│   ├── network.yaml            VPC, 2 AZs, no NAT -- VPC endpoints instead
-│   └── service.yaml            ECR, ECS cluster/service/task, NLB, ALB, IAM, secret
+├── service/twin/              ECS Fargate: robot/server.py + web-twin/index.html
+│   ├── Dockerfile              built from the REPO ROOT (needs real robot/, sim/,
+│   │                           config/ -- not dependency-light copies)
+│   └── requirements.txt
 │
-├── web-twin/index.html       Mobile-first web UI, real client of robot/server.py
+├── cloudformation/            IaC for both ECS Fargate services
+│   ├── network.yaml            VPC, 2 AZs, no NAT -- VPC endpoints instead
+│   ├── service.yaml            vision service: ECR, ECS, NLB, ALB, IAM, secret
+│   └── twin.yaml               twin service: ECR, ECS, IAM, secret -- reuses
+│                               service.yaml's NLB/ALB on a second port (8000)
+│                               rather than provisioning a second pair
+│
+├── web-twin/index.html       Mobile-first web UI, real client of robot/server.py.
+│                              Deployed via service/twin/ (see above) as well as
+│                              usable locally (`uvicorn robot.server:app`)
 ├── requirements.txt
 ├── .gitignore
 ├── README.md                  full build-plan-referenced documentation
@@ -209,6 +221,27 @@ vision-picar/
   (`brain/agent.py`) and the Wi-Fi API (`robot/server.py`) route every
   movement action through `robot/safety.py`'s `SafetyController`. Don't
   add a new movement path that bypasses it.
+
+- **`vision-picar-twin` (the digital twin) and `vision-picar-service`
+  (the vision endpoint) share one NLB and one internal ALB, on
+  different ports** (80 for vision, 8000 for the twin), rather than
+  each having its own pair -- provisioning a second NLB+ALB would have
+  cost roughly as much as everything else in this project combined.
+  `cloudformation/twin.yaml` imports the other stack's load balancer
+  ARNs and security group ID via `Fn::ImportValue`; it does *not* own
+  those resources. If you ever add a third public service, follow the
+  same pattern (new port, new listener + target group on the existing
+  NLB/ALB) rather than defaulting to new load balancers.
+
+- **`robot/server.py`'s `require_secret()` gate is new** (added
+  alongside the ECS deployment) and is a no-op when `APP_SHARED_SECRET`
+  is unset -- which is how local dev and the test suite both run, so
+  existing usage patterns are unaffected. It only matters once this
+  server is reachable from the public internet. `/health` and `/`
+  (which now also serves `web-twin/index.html`) are deliberately left
+  unauthenticated -- the ALB health check can't send custom headers,
+  and a user has to be able to load the page before they can enter the
+  secret into it.
 
 - **Model strings differ between the sim and the cloud service, on
   purpose.** `brain/vision.py` (direct Anthropic API) uses

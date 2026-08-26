@@ -1,0 +1,411 @@
+# Plan: AR-style "find the object" camera guidance
+
+**Status:** Not started. This is a spec for Claude Code to implement --
+nothing described here exists in the repo yet.
+
+**Origin:** Discussed in the claude.ai session that built the rest of
+this repo. The user's proposal: point the phone camera at a room, keep
+it on continuously, and have the app show live directional guidance
+(overlaid on the camera feed) toward a named object -- e.g. "which way
+do I turn to find the red backpack." Two design decisions were made
+explicitly at that time and should be treated as settled, not
+re-litigated:
+
+1. **Guidance surfaces as an AR-style overlay on the live camera feed**
+   (not a text panel off to the side).
+2. **Analysis is timer-throttled automatically** (not per-frame, not
+   purely manual-tap-triggered).
+
+**Updated 2026-08-26:** the vision backend moved from AWS Lambda to ECS
+Fargate + Amazon Bedrock (Lambda's public entry points were blocked by
+an account-level restriction -- see `README.md`'s "History: why not
+Lambda?"). Every reference to `lambda/vision_analyze/` below has been
+updated to `service/vision_analyze/`, and the model call is now Bedrock's
+Converse API, not the direct Anthropic API. The plan's actual design
+(overlay, throttle, schema, UI) is unaffected -- only the backend
+integration points changed.
+
+---
+
+## 1. Why this doesn't deviate from the hardware plan
+
+Same reasoning as the rest of the web twin: this feature never touches
+`RobotInterface`, `robot/server.py`, or `robot/factory.py`. It's a
+phone-as-sensor, human-as-actuator feature living entirely in the
+vision service layer -- arguably a *better* validation of the Vision LLM
+pipeline than the grid-world sim, since it's real pixels instead of
+synthetic ground truth. Build it without worrying about hardware-phase
+implications.
+
+---
+
+## 2. Platform constraint to resolve first (read before writing code)
+
+Continuous live camera access on the web requires
+`navigator.mediaDevices.getUserMedia()`, which browsers only allow in a
+**secure context** -- `https://` or `http://localhost`. It will **not**
+work if `web-twin/index.html` is opened as a local `file://` page, and
+it will **not** work over a plain `http://<lan-ip>:port` URL either
+(the setup currently used to test the twin from a phone on the same
+Wi-Fi) -- both fail the secure-context check.
+
+This is a different constraint than the existing "take a photo" feature
+(`<input type="file" capture="environment">`), which opens the native
+camera picker and works fine over plain HTTP -- don't confuse the two
+when testing.
+
+**Before building the frontend half of this feature, resolve hosting.**
+This is the same fix needed for reliable phone access to the twin in
+general (LAN-based `http://<lan-ip>` testing is fragile -- router client
+isolation, firewall state, and network changes all break it, on top of
+failing the secure-context check for this feature specifically).
+Reasonable options, roughly cheapest/fastest first:
+- **GitHub Pages**, since the repo is already on GitHub (`eldolor/vision-picar`)
+  -- push `web-twin/index.html` to a `gh-pages` branch or enable Pages
+  from a `/docs` or `/web-twin` folder, free, automatic HTTPS, works
+  from any network (cellular included), no local-network dependency at
+  all. Recommended given the repo's already in place.
+- Netlify, Vercel, or Cloudflare Pages -- drag-and-drop deploy, free
+  tier is plenty, marginally more setup than GitHub Pages given this
+  repo's situation.
+- A local dev tunnel (ngrok, Cloudflare Tunnel) pointed at a simple
+  local static file server, if iterating locally is preferred over
+  redeploying to test each change.
+
+Note: hosting the twin's *static page* doesn't change how it reaches
+`robot/server.py` for D-pad/autonomous control -- that still needs your
+phone and Mac on the same LAN (or a tunnel to `robot/server.py` too, out
+of scope here). This section is specifically about satisfying the
+secure-context requirement for the camera; it's orthogonal to the robot
+connection.
+
+I checked current Safari/iOS support for WebXR (the "real" AR API) while
+writing this plan and got **materially conflicting results across
+sources** -- some claim Safari 18 shipped WebXR AR sessions on iOS via
+ARKit delegation, others explicitly state handheld WebXR AR still isn't
+exposed on iPhone as of 2026. Given that inconsistency, **don't build on
+WebXR**. Recommendation below uses `getUserMedia` + a 2D canvas overlay,
+which is guaranteed to work in every modern browser including iOS
+Safari today, doesn't gamble on an unsettled platform feature, and is
+enough to deliver the "AR-style" directional-arrow experience actually
+being asked for here (this isn't a request for 3D spatial anchoring). If
+WebXR's iOS status is worth rechecking at implementation time, do that
+as a fast follow, not a blocker.
+
+---
+
+## 3. Architecture
+
+```
+<video> (live camera, getUserMedia)
+       |
+       v
+<canvas> overlay, position:absolute on top of <video>
+       |
+       | every N seconds (throttle timer):
+       |   1. draw current <video> frame to an offscreen canvas
+       |   2. toDataURL() -> base64
+       |   3. POST to the vision service (same one as the existing
+       |      photo-analysis feature) with a target_object field
+       |   4. response -> update the overlay's arrow/reticle + text
+       v
+service/vision_analyze/ (ECS Fargate) -- extended, not replaced
+       |
+       | same describe_image_bytes()-style call, new prompt when
+       | target_object is present in the request
+       v
+Amazon Bedrock (Claude, Converse API)
+```
+
+No new AWS resources, no new CloudFormation -- this extends the
+existing `service/vision_analyze/app.py` with a second mode on the same
+`/analyze` route (or a new route -- see 4.2), keyed off an optional
+`target_object` field in the request body.
+
+---
+
+## 4. Backend changes
+
+### 4.1 `service/vision_analyze/vision_core.py`
+
+Add a second prompt + function alongside the existing
+`describe_image_bytes()`. Do not modify the existing function/schema --
+this is additive, and the general scene-description mode still needs to
+keep working for the current "find the bag in a photo" feature.
+
+```python
+GUIDANCE_PROMPT_TEMPLATE = """You are helping someone find a {target_object} using their phone camera.
+Look at this photo and determine:
+1. Is the {target_object} visible in this image?
+2. If visible, where is it positioned horizontally in the frame?
+3. How far away does it appear?
+4. What direction should the person move or turn to get closer to it?
+
+Respond with ONLY a JSON object, no other text, matching this schema:
+{{
+  "target_visible": true | false,
+  "position": "far_left" | "left" | "center" | "right" | "far_right" | "not_visible",
+  "proximity": "near" | "medium" | "far" | "unknown",
+  "guidance": "short human-readable instruction, e.g. 'Turn right and walk forward'"
+}}"""
+
+_GUIDANCE_EMPTY_SCHEMA = {
+    "target_visible": False,
+    "position": "not_visible",
+    "proximity": "unknown",
+    "guidance": "Unable to analyze image.",
+}
+
+def describe_image_bytes_guidance(image_bytes: bytes, target_object: str, media_type: str = "image/jpeg") -> dict:
+    # Same Bedrock Converse-API call pattern as describe_image_bytes()
+    # (see that function for the boto3 client / image-format handling),
+    # but with GUIDANCE_PROMPT_TEMPLATE.format(target_object=target_object)
+    # as the prompt text block, and _GUIDANCE_EMPTY_SCHEMA as the parse
+    # fallback in place of _EMPTY_SCHEMA.
+    ...
+```
+
+Deliberately uses a **discrete 5-zone horizontal position** rather than
+asking the model for pixel coordinates or a bounding box -- LLM vision
+output for exact spatial coordinates is unreliable; a coarse zone is
+something the model can answer consistently and is enough to drive a
+directional arrow.
+
+### 4.2 `service/vision_analyze/app.py`
+
+Add an optional `target_object` field to the existing `/analyze` request
+body schema (or add a new `/guidance` route if keeping the two modes
+more clearly separated -- either is fine, but pick one and be
+consistent; a single route with an optional field is slightly less
+frontend/backend surface to keep in sync). When present, call
+`describe_image_bytes_guidance()` instead of `describe_image_bytes()`.
+When absent, behavior is unchanged (existing "analyze photo" feature
+must keep working exactly as-is -- this is backward compatible, not a
+breaking change).
+
+```python
+body = await request.json()
+image_b64 = body["image_base64"]
+media_type = body.get("media_type", "image/jpeg")
+target_object = body.get("target_object")  # NEW, optional
+
+image_bytes = base64.b64decode(image_b64)
+
+if target_object:
+    result = describe_image_bytes_guidance(image_bytes, target_object, media_type)
+else:
+    result = describe_image_bytes(image_bytes, media_type)
+    result["room_guess"] = identify_room(result.get("important_objects", []))
+```
+
+(Follow the existing route's decode/size-limit/error-handling structure
+already in `app.py`'s `/analyze` handler -- this snippet only shows the
+part that changes.)
+
+### 4.3 `brain/vision.py`
+
+Mirror the same `describe_image_bytes_guidance` logic here too (as
+`describe_image_guidance(image_path, target_object)` following the
+existing file-path-based pattern in this module), for parity with how
+`service/vision_analyze/vision_core.py` intentionally duplicates
+`brain/vision.py` already -- see `HANDOFF.md` section 6 on why that
+duplication is accepted, not a bug. Note `brain/vision.py` stays on the
+direct Anthropic API (unchanged by the Lambda->ECS pivot, which only
+affected the cloud-deployed copy) -- don't switch this one to Bedrock
+without a separate, deliberate decision to do so.
+
+### 4.4 Tests
+
+`service/vision_analyze/` currently has **no automated test suite at
+all** (a gap left by the Lambda->ECS migration -- see `HANDOFF.md`
+section 5, item 1). Writing that base test suite is a prerequisite for
+this section, not something to build alongside it from scratch here.
+Once it exists (using FastAPI's `TestClient`, mocking
+`vision_core.describe_image_bytes`/`describe_image_bytes_guidance` the
+way the old Lambda suite mocked the Anthropic client), add:
+- `target_object` present -> `describe_image_bytes_guidance` is called,
+  not `describe_image_bytes`
+- `target_object` absent -> existing behavior unchanged (regression
+  check)
+- Guidance response schema round-trips correctly through the route
+- Malformed/garbage model response -> falls back to
+  `_GUIDANCE_EMPTY_SCHEMA` gracefully (same pattern as
+  `_parse_scene_json`'s existing fallback test)
+
+Add equivalent tests to `tests/test_vision.py` for
+`describe_image_guidance()`.
+
+---
+
+## 5. Frontend changes (`web-twin/index.html`)
+
+New section, e.g. "Guide me to..." -- additive, doesn't replace the
+existing "Find the bag in a photo" panel (that one-shot upload flow
+stays as-is; this is a new continuous-camera mode). **Requires the
+hosting fix in section 2** -- this section's UI will silently fail to
+get camera access (or throw a `getUserMedia` permission/security error)
+if tested over `file://` or plain `http://<lan-ip>`.
+
+### 5.1 UI elements
+
+- Text input for the target object name (default prefilled: "red
+  backpack", matching the sim's existing target object for consistency)
+- Start/Stop toggle button -- **do not auto-start the camera or the
+  analysis loop on page load.** The user must explicitly opt in, both
+  for the camera permission prompt and because each analysis call costs
+  money (see section 6).
+- `<video>` element, `autoplay playsinline muted` (playsinline is
+  required on iOS Safari or video attempts to go fullscreen), sourced
+  from `getUserMedia({video: {facingMode: "environment"}})`
+- `<canvas>` overlay, `position: absolute` directly on top of the
+  `<video>`, same dimensions, transparent background, non-interactive
+  (`pointer-events: none`) so it doesn't block any future tap
+  interactions on the video itself
+- Status text below the video: current guidance string from the last
+  response, plus a subtle "analyzing..." indicator during in-flight
+  requests (don't leave the UI silent for the 1-2s round trip)
+
+### 5.2 Overlay rendering (suggested v1 mapping -- adjust as needed)
+
+Draw on the overlay canvas based on the latest response's `position` /
+`proximity` / `target_visible`:
+
+| `position` | Arrow |
+|---|---|
+| `far_left` | large left-pointing chevron |
+| `left` | medium left-pointing chevron |
+| `center` | up/forward chevron (or a checkmark if `proximity: "near"`) |
+| `right` | medium right-pointing chevron |
+| `far_right` | large right-pointing chevron |
+| `not_visible` | a slowly rotating/pulsing "searching" reticle, plus guidance text like "turn slowly to search" |
+
+Color: reuse the twin's existing design tokens
+(`--accent-safe` #3ECF8E when `position: "center"` and
+`proximity: "near"` -- i.e. "you've basically found it"; `--text`
+#E8ECEF otherwise). Don't introduce new colors outside the existing
+palette -- see the `:root` CSS variables at the top of `index.html`.
+
+### 5.3 Throttle loop
+
+```js
+const THROTTLE_MS = 1500; // starting point -- see cost/latency tradeoff below
+let guidanceTimer = null;
+let guidanceInFlight = false;
+
+function startGuidance(targetObject) {
+  stopGuidance();
+  guidanceTimer = setInterval(async () => {
+    if (guidanceInFlight) return; // skip a tick rather than overlap requests
+    guidanceInFlight = true;
+    try {
+      const frameBase64 = captureVideoFrame(); // draw <video> to an offscreen canvas, toDataURL
+      const result = await callGuidanceEndpoint(frameBase64, targetObject);
+      renderOverlay(result);
+    } catch (e) {
+      // network/API failure -- show a brief error state, keep the loop running
+    } finally {
+      guidanceInFlight = false;
+    }
+  }, THROTTLE_MS);
+}
+```
+
+Key correctness points, not optional:
+- **Guard against overlapping requests** (`guidanceInFlight`) -- a slow
+  response shouldn't cause two in-flight calls stacking up.
+- **Pause when the tab/page isn't visible** -- listen for
+  `visibilitychange` and stop the timer when hidden, restart on
+  visible, so backgrounding the browser doesn't keep burning API calls.
+- **Stop the camera stream** (`track.stop()` on all tracks) when the
+  user taps Stop or navigates away -- don't leave the camera light on.
+
+---
+
+## 6. Cost and latency (already discussed, restated for reference)
+
+Each analysis call is a real Bedrock Claude vision call: roughly the
+same order of magnitude as the direct Anthropic API pricing this
+project's cost breakdown was originally based on (see `README.md`),
+though Bedrock's exact per-token pricing for the model in use
+(`us.anthropic.claude-sonnet-4-5-20250929-v1:0` -- see
+`service/vision_analyze/vision_core.py`'s docstring for why this model,
+not `claude-sonnet-5`) should be double-checked against current AWS
+Bedrock pricing before treating the number below as exact. Roughly
+1-2s round trip under normal conditions. At a 1.5s throttle interval, a
+5-minute active session is roughly 150-200 calls, i.e. **on the order of
+$0.50-0.80 per 5-minute session** (approximate, see above). That's fine
+for personal testing but worth showing the user -- consider surfacing a
+running call/cost counter in the UI so it's not a surprise, and
+definitely don't auto-start the loop on page load (see 5.1).
+
+This is separate from, and additive to, the **fixed monthly cost of the
+underlying ECS Fargate/ALB/NLB/VPC-endpoint infrastructure**, which now
+runs regardless of whether this feature is ever used (unlike the old
+Lambda's pay-per-invocation model). This feature doesn't change that
+fixed cost -- it only adds marginal per-call cost on top of it.
+
+`THROTTLE_MS = 1500` is a starting point, not a tuned value -- adjust
+based on how it feels in practice. Slower (2000-3000ms) trades
+responsiveness for cost; there's little point going faster than the
+model's own 1-2s response time, since requests would just queue up
+behind `guidanceInFlight`.
+
+---
+
+## 7. Testing plan
+
+Backend logic (schema parsing, request routing, fallback behavior) is
+straightforward to unit test with mocks, following the pattern that
+needs to be established first for `service/vision_analyze/` (see 4.4)
+and the existing pattern in `tests/test_vision.py` -- do that.
+
+The frontend camera/overlay loop is not practically unit-testable
+(depends on real camera hardware and a real secure-context browser).
+Manual QA checklist for whoever tests this on-device (requires the
+hosted-over-HTTPS twin from section 2, not a LAN IP or local file):
+- [ ] Camera permission prompt appears on Start, feed displays
+- [ ] Overlay arrow updates roughly every `THROTTLE_MS`, doesn't flicker
+      or stack up requests
+- [ ] Panning the phone away from the target correctly shows
+      `not_visible` / searching state
+- [ ] Panning back toward it recovers `position`/`proximity` sensibly
+- [ ] Stop button actually releases the camera (check the browser's
+      camera-in-use indicator disappears)
+- [ ] Backgrounding the browser pauses the loop; foregrounding resumes it
+- [ ] A network failure mid-session (e.g. airplane mode toggle) doesn't
+      crash the page -- loop should recover on the next tick
+
+---
+
+## 8. Open questions for the user, not yet decided
+
+Claude Code should either make a reasonable default choice and note it,
+or ask -- these weren't settled in the original design discussion:
+
+- Should the target object be free text, or a dropdown of known objects
+  (matching `sim/maps/starter_house.py`'s objects, for consistency
+  with the sim side of this project)?
+- Should there be a "found it" confirmation state (e.g. a persistent
+  green checkmark + haptic/sound) once `proximity: "near"` and
+  `position: "center"` hold for N consecutive polls, or is per-frame
+  guidance enough?
+- Should `THROTTLE_MS` be user-adjustable in the UI (a slider trading
+  cost for responsiveness), or fixed?
+
+---
+
+## 9. Non-goals for this task
+
+- Not building true 3D/spatial AR (WebXR, ARKit) -- see section 2.
+- Not replacing the existing one-shot "find the bag in a photo" upload
+  feature -- this is additive.
+- Not adding authentication/user accounts -- reuses the same
+  `x-app-secret` shared-secret pattern already in
+  `service/vision_analyze/app.py`.
+- Not deploying new AWS infrastructure -- this plan assumes
+  `service/vision_analyze/` is already deployed (it is -- see the live
+  NLB endpoint in `README.md`), and only adds a route/field to it.
+- Not solving the robot-server LAN-connection problem for D-pad/autonomous
+  control -- section 2's hosting fix is specifically about the camera
+  feature's secure-context requirement, not about `robot/server.py`
+  reachability.

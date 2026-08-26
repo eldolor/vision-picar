@@ -164,17 +164,36 @@ only `config/robot.yaml`'s `mode` does.
 
 ## Digital twin / web-based visualization
 
-- `web-twin/index.html` — self-contained, mobile-first web page. Opens
-  directly in Safari, no server or install needed. Canvas view of the
+- `web-twin/index.html` — mobile-first web page: canvas view of the
   starter house, manual D-pad control, autonomous "Explore"/"Find
   backpack" modes (a JS port of the frontier-preference algorithm in
   `brain/agent.py` -- verified to match the Python sim's behavior
   step-for-step), and the "take a photo, find the bag" feature calling
-  the cloud vision service below.
-- **Important caveat** — this is a standalone JS re-implementation of
-  `sim/grid_world.py` / `brain/agent.py`, not a client of
-  `robot/server.py`. See "Is this deviating from the hardware plan?"
-  below and `web-twin/README.md` for what that means going forward.
+  the cloud vision service below. It's a real HTTP client of
+  `robot/server.py` -- every move, sensor read, and safety check goes
+  through the actual server, not a duplicated simulation (see "Is this
+  deviating from the hardware plan?" below for how that was verified).
+- **Deployed to ECS Fargate** (`service/twin/`, `cloudformation/twin.yaml`)
+  so it's reachable from a phone on any network, not just a Mac's LAN --
+  same cluster as the vision service, sharing its NLB and internal ALB
+  on a second port (8000) instead of provisioning a second pair of load
+  balancers. Public URL: `http://<the vision service's NLB DNS
+  name>:8000/` (same DNS name as the `/analyze` endpoint below, just a
+  different port). `robot/server.py`'s `/action`, `/stop`, `/distance`,
+  `/frame` routes require an `x-app-secret` header once deployed
+  publicly (see `require_secret()` in that file) -- the secret lives in
+  Secrets Manager as `vision-picar-twin-shared-secret`. `/health` and
+  `/` (which now serves `web-twin/index.html` directly) stay open, since
+  the ALB health check can't send custom headers and the page has to
+  load before anyone can enter the secret.
+- When served by `robot/server.py` itself (this deployment, or local
+  `uvicorn robot.server:app`), the twin's "Robot server connection"
+  field auto-fills to its own origin -- no more typing LAN IPs. Manual
+  entry still works for pointing at a different server.
+- Also still runs the original way for local hardware-adjacent dev:
+  `uvicorn robot.server:app --host 0.0.0.0` on a Mac, LAN IP in the
+  connection field, no secret needed (unset `APP_SHARED_SECRET` makes
+  `require_secret()` a no-op) -- see `web-twin/README.md`.
 
 ## Cloud vision endpoint (photo analysis, reachable from anywhere)
 

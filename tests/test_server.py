@@ -79,6 +79,51 @@ def test_watchdog_should_stop_pure_logic():
     assert watchdog_should_stop(last_command_at=10.0, now=10.5, timeout_s=1.0) is False
 
 
+def test_protected_routes_require_secret_when_set(monkeypatch):
+    """require_secret() must be inert when APP_SHARED_SECRET is unset (all
+    tests above rely on that), but once set, movement/sensing routes must
+    reject requests with no or the wrong x-app-secret header -- this is
+    what makes it safe to deploy this server publicly (service/twin/)."""
+    monkeypatch.setenv("APP_SHARED_SECRET", "correct-horse-battery-staple")
+    with make_client() as client:
+        no_header = client.post("/action", json={"action": "STOP"})
+        assert no_header.status_code == 401
+
+        wrong_header = client.post(
+            "/action", json={"action": "STOP"}, headers={"x-app-secret": "wrong"}
+        )
+        assert wrong_header.status_code == 401
+
+        for method, path in [("post", "/action"), ("post", "/stop"), ("get", "/distance"), ("get", "/frame")]:
+            resp = getattr(client, method)(
+                path,
+                **({"json": {"action": "STOP"}} if path == "/action" else {}),
+                headers={"x-app-secret": "wrong"},
+            )
+            assert resp.status_code == 401, f"{path} did not reject a wrong secret"
+
+
+def test_protected_routes_accept_correct_secret(monkeypatch):
+    monkeypatch.setenv("APP_SHARED_SECRET", "correct-horse-battery-staple")
+    with make_client() as client:
+        resp = client.post(
+            "/action",
+            json={"action": "STOP"},
+            headers={"x-app-secret": "correct-horse-battery-staple"},
+        )
+        assert resp.status_code == 200
+
+
+def test_health_and_root_stay_open_even_when_secret_set(monkeypatch):
+    """The ALB health check can't send custom headers, and the page has to
+    load before a user can enter the secret in the UI -- both / and
+    /health must stay reachable with no header at all."""
+    monkeypatch.setenv("APP_SHARED_SECRET", "correct-horse-battery-staple")
+    with make_client() as client:
+        assert client.get("/health").status_code == 200
+        assert client.get("/").status_code == 200
+
+
 def test_cors_headers_present_for_browser_requests():
     """The web twin calls this API from a browser -- confirm the preflight
     and actual response both carry CORS headers, or fetch() from Safari
