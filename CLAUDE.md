@@ -180,6 +180,13 @@ tests the *loop*, which curated stills cannot.
 Hold the phone low, around 10cm -- the PiCar-X camera height. A
 chest-height view is not the robot's view.
 
+Robot view pauses when the service reports `target_reached`, so a walk
+ends at arrival instead of burning calls. **That field needs an ECS
+redeploy of `service/vision_analyze/` to take effect** -- against the
+currently deployed service the field is simply absent, the pause never
+fires, and everything else behaves as before. The 60-call cap (~2.5 min
+at the 2.5s cadence) bounds the cost either way.
+
 Secondary: `python -m tests.manual_replay_navigate <dir> "<target>"`
 replays a folder of photos and prints an action-spread summary. Use it to
 produce a recordable finding -- the failure that matters (the same action

@@ -137,20 +137,36 @@ Look at this image and decide the robot's single next move.
 Consider:
 1. Is the {target_object} visible in this image? If so, roughly which direction is it relative to the center of the frame?
 2. Is there an obstacle directly ahead that would block moving forward?
-3. Given the above, what is the single best next action to get closer to the {target_object} while not colliding with anything?
+3. Has the robot ARRIVED at the {target_object}? Arrived means it is directly
+   in front of the robot and close enough to touch -- filling a large part of
+   the frame, roughly a third or more of the width. Judge this by how much of
+   the frame it fills, not by guessing real-world distance. A {target_object}
+   that is clearly visible but still across the room has NOT been reached.
+4. Given the above, what is the single best next action to get closer to the
+   {target_object} while not colliding with anything?
+
+"action" is only about movement -- it never means "the search is over".
+Report arrival in "target_reached" instead, so that a STOP caused by an
+obstacle is never confused with a STOP caused by success.
 
 Respond with ONLY a JSON object, no other text, matching this schema:
 {{
   "target_visible": true | false,
   "target_direction": "left" | "center" | "right" | "not_visible",
+  "target_reached": true | false,
   "obstacle_ahead": true | false,
   "action": "FORWARD" | "LEFT" | "RIGHT" | "REVERSE" | "STOP",
   "reasoning": "one short sentence explaining the choice"
 }}"""
 
+# Note the default action is STOP, which is also a legitimate model answer
+# for "blocked". That overloading is exactly why arrival gets its own
+# `target_reached` field rather than being inferred from action == "STOP":
+# a caller must never confuse a parse failure or an obstacle with success.
 _NAVIGATE_EMPTY_SCHEMA = {
     "target_visible": False,
     "target_direction": "not_visible",
+    "target_reached": False,
     "obstacle_ahead": False,
     "action": "STOP",
     "reasoning": "Unable to analyze image.",
@@ -200,6 +216,13 @@ def _parse_navigate_json(text: str) -> dict:
         merged = {**_NAVIGATE_EMPTY_SCHEMA, **parsed}
         if merged["action"] not in ("FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP"):
             merged["action"] = "STOP"
+        # Coerce rather than trust: this field terminates missions, and a
+        # model returning the string "false" (or anything non-boolean) must
+        # not read as truthy to a caller. Reached also implies visible --
+        # the robot cannot have arrived at something it cannot see.
+        merged["target_reached"] = merged["target_reached"] is True
+        if merged["target_reached"] and not merged["target_visible"]:
+            merged["target_reached"] = False
         return merged
     except json.JSONDecodeError:
         logger.warning(f"Failed to parse VLM navigate response as JSON: {text!r}")

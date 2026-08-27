@@ -577,6 +577,7 @@
   .robot-action-target { font-size: 12px; color: var(--text-dim); }
   .robot-action-badge[data-action="FORWARD"] .robot-action-verb { color: var(--accent-safe); }
   .robot-action-badge[data-action="STOP"] .robot-action-verb { color: var(--accent-alert); }
+  .robot-action-badge[data-action="REACHED"] .robot-action-verb { color: var(--accent); }
   .robot-mode-row { display: flex; gap: 6px; margin-top: 10px; }
   .robot-mode-btn { flex: 1; }
   .robot-mode-btn.active-mode { border-color: var(--accent); color: var(--accent); }
@@ -2631,16 +2632,23 @@
     const action = ROBOT_ACTION_ROTATION.hasOwnProperty(result.action) || result.action === "STOP"
       ? result.action : "STOP";
 
-    robotActionBadge.dataset.action = action;
-    document.getElementById("robot-action-verb").textContent = action;
-    document.getElementById("robot-action-target").textContent = result.target_visible
-      ? (state.guidanceTarget || "target") + " visible" + (result.target_direction ? ", " + result.target_direction : "")
-      : "target not visible";
+    // Arrival gets its own badge state rather than showing the raw action.
+    // The run pauses here, and "STOP" on screen would leave you unable to
+    // tell success from a blocked path -- the exact confusion target_reached
+    // exists to remove.
+    const reached = result.target_reached === true;
+    robotActionBadge.dataset.action = reached ? "REACHED" : action;
+    document.getElementById("robot-action-verb").textContent = reached ? "REACHED" : action;
+    document.getElementById("robot-action-target").textContent = reached
+      ? (state.guidanceTarget || "target")
+      : (result.target_visible
+          ? (state.guidanceTarget || "target") + " visible" + (result.target_direction ? ", " + result.target_direction : "")
+          : "target not visible");
     robotActionBadge.classList.add("visible");
 
     // STOP is the absence of a direction, so showing a chevron for it would
-    // be actively misleading -- the badge carries it alone.
-    if (action === "STOP") return;
+    // be actively misleading -- the badge carries it alone. Same for arrival.
+    if (reached || action === "STOP") return;
 
     guidanceChevron.style.left = (50 + (ROBOT_ACTION_OFFSET[action] || 0)) + "%";
     guidanceChevron.style.top = "50%";
@@ -2658,6 +2666,12 @@
     if (analyzing && !result) { iconEl.innerHTML = ICON.clock; textEl.textContent = "Deciding…"; return; }
     if (!result) { iconEl.innerHTML = ICON.search; textEl.textContent = "Not running."; return; }
     if (result.error) { iconEl.innerHTML = ICON.warning; textEl.textContent = result.error; return; }
+    if (result.target_reached === true) {
+      iconEl.innerHTML = ICON.target;
+      textEl.textContent = "Reached " + (state.guidanceTarget || "the target") +
+        " -- paused. " + (result.reasoning || "");
+      return;
+    }
     iconEl.innerHTML = ICON[ROBOT_ACTION_ICON[result.action] || "search"];
     // The model's stated reason is the thing worth reading here: it is how
     // you tell a correct action from a right answer for a wrong reason.
@@ -2669,12 +2683,14 @@
   // itself continuously.
   let robotLastAnnouncedAction = null;
   function announceRobot(result) {
-    const key = result.error ? "error" : (result.action || "?");
+    const key = result.error ? "error" : (result.target_reached === true ? "reached" : (result.action || "?"));
     if (key === robotLastAnnouncedAction) return;
     robotLastAnnouncedAction = key;
     const msg = result.error
       ? "Decision unavailable. " + (result.error || "")
-      : key + ". " + (result.reasoning || "");
+      : key === "reached"
+        ? "Reached " + (state.guidanceTarget || "the target") + ". Search paused."
+        : key + ". " + (result.reasoning || "");
     announce(document.getElementById("guide-announce-polite"), msg);
   }
 
@@ -2894,6 +2910,10 @@
   // searching") for the outline actually sticking once shown. Camera and
   // the last outline stay on screen either way.
   const GUIDANCE_FOUND_STREAK_TO_PAUSE = 1;
+  // Two, not one: Guide's found state is corroborated by a bounding box and
+  // a human looking at the screen, while this one silently ends a run, so it
+  // is worth one extra tick of confirmation.
+  const ROBOT_REACHED_STREAK_TO_PAUSE = 2;
 
   function pauseGuidanceSearch() {
     state.guidancePaused = true;
@@ -2911,7 +2931,7 @@
     // A cap-triggered pause (see GUIDANCE_MAX_CALLS in guidanceStep) would
     // otherwise re-trigger on the very next tick -- resuming past it means
     // starting a fresh call budget, same as a brand new Guide session.
-    if (state.guidanceCallCount >= GUIDANCE_MAX_CALLS) {
+    if (state.guidanceCallCount >= guidanceCallCap()) {
       state.guidanceCallCount = 0;
       renderGuidanceBudget();
     }
@@ -2926,6 +2946,13 @@
   // pause/"Resume searching" flow rather than a hard stop, since that
   // plumbing already does exactly the right thing here.
   const GUIDANCE_MAX_CALLS = 200;
+  // Robot view runs at 2.5s, so 60 calls is ~2.5 minutes -- enough to walk a
+  // couple of rooms, short enough that a tab left open in a pocket cannot
+  // run up a bill. Resume extends it, same as Guide.
+  const ROBOT_MAX_CALLS = 60;
+  function guidanceCallCap() {
+    return state.guidanceMode === "robot" ? ROBOT_MAX_CALLS : GUIDANCE_MAX_CALLS;
+  }
 
   // Skip the paid API call entirely when the phone's orientation sensor
   // says it hasn't moved meaningfully since the last analyzed frame --
@@ -2943,13 +2970,14 @@
   // "N calls" textContent assignments scattered across start/resume/tick.
   function renderGuidanceBudget() {
     const used = state.guidanceCallCount;
-    const pct = Math.min(100, Math.round((used / GUIDANCE_MAX_CALLS) * 100));
+    const cap = guidanceCallCap();
+    const pct = Math.min(100, Math.round((used / cap) * 100));
     const fill = document.getElementById("guide-budget-fill");
     fill.style.width = pct + "%";
     fill.classList.toggle("warn", pct >= 80);
-    document.getElementById("guidance-call-count").textContent = used + "/" + GUIDANCE_MAX_CALLS;
+    document.getElementById("guidance-call-count").textContent = used + "/" + cap;
     document.getElementById("guide-budget").setAttribute(
-      "aria-label", used + " of " + GUIDANCE_MAX_CALLS + " vision calls used this session");
+      "aria-label", used + " of " + cap + " vision calls used this session");
   }
 
   // The phone hasn't moved, so the previous read still describes what's on
@@ -2966,7 +2994,7 @@
     if (!state.guidanceRunning) return;
     if (state.guidanceInFlight) { scheduleGuidanceNext(); return; }
 
-    if (state.guidanceCallCount >= GUIDANCE_MAX_CALLS) {
+    if (state.guidanceCallCount >= guidanceCallCap()) {
       document.getElementById("guide-caption-icon").innerHTML = ICON.warning;
       document.getElementById("guide-caption-text").textContent = "Call cap reached for this session -- tap Resume to keep going.";
       pauseGuidanceSearch();
@@ -3001,6 +3029,18 @@
         renderRobotOverlay(result);
         renderRobotStatus(result, false);
         announceRobot(result);
+
+        // Arrival comes from the service's own target_reached field, never
+        // from action === "STOP" -- STOP is also what the model returns for
+        // a blocked path, and what the parser defaults to on a malformed
+        // response. Same found-streak discipline as Guide so one flaky tick
+        // cannot end a walk.
+        if (result.target_reached) {
+          state.guidanceFoundStreak++;
+          if (state.guidanceFoundStreak >= ROBOT_REACHED_STREAK_TO_PAUSE) pauseGuidanceSearch();
+        } else {
+          state.guidanceFoundStreak = 0;
+        }
       } else {
         renderGuidanceOverlay(result);
         renderGuidanceStatus(result, false);

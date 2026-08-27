@@ -65,10 +65,18 @@ Response body (JSON):
     {
       "target_visible": bool,
       "target_direction": "left" | "center" | "right" | "not_visible",
+      "target_reached": bool,
       "obstacle_ahead": bool,
       "action": "FORWARD" | "LEFT" | "RIGHT" | "REVERSE" | "STOP",
       "reasoning": "..."
     }
+
+`target_reached` is the mission's termination signal, and is deliberately
+NOT derived from `action`. "STOP" is what the model returns for a blocked
+path, and is also this route's parse-failure default, so treating it as
+success would end a mission on an obstacle or a malformed response. It is
+coerced strictly (`is True`) and forced false when `target_visible` is
+false: over-running by a few steps is cheap, stopping short is not.
 
 POST /guidance -- AR-style directional guidance for a human holding their
 phone, searching for a target object with their own real camera (as
