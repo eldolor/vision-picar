@@ -583,17 +583,52 @@
     padding-bottom: 76px;
     transition: background-color .2s ease;
   }
-  .robot-zone + .robot-zone { border-left: 1px solid rgba(232, 236, 239, 0.18); }
+
+  /* The backdrop is a live camera feed -- an unknown, often bright, often
+     busy image -- so a low-alpha hairline disappears entirely on anything
+     sunlit. Every mark here is a light line carrying its own dark halo
+     (box-shadow / text-shadow), which is what keeps it legible over both a
+     white wall and a dark hallway without dimming the video underneath. */
+  .robot-zone + .robot-zone::before {
+    content: ""; position: absolute; left: -1px; top: 0; bottom: 0; width: 2px;
+    background: linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.85) 0%,
+      rgba(255,255,255,0.85) 12%,
+      rgba(255,255,255,0.30) 38%,
+      rgba(255,255,255,0.30) 62%,
+      rgba(255,255,255,0.85) 88%,
+      rgba(255,255,255,0.85) 100%);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.55), 0 0 6px rgba(0,0,0,0.45);
+  }
+
   .robot-zone::after {
     content: attr(data-zone);
-    font-size: 9px; letter-spacing: .14em; text-transform: uppercase;
-    color: rgba(232, 236, 239, 0.35);
-    transition: color .2s ease;
+    font-size: 10px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+    color: rgba(255,255,255,0.92);
+    padding: 3px 9px; border-radius: 999px;
+    background: rgba(20,24,30,0.62);
+    border: 1px solid rgba(255,255,255,0.14);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    transition: color .2s ease, background-color .2s ease, border-color .2s ease;
   }
-  .robot-zone.active { background: rgba(91, 157, 245, 0.10); }
-  .robot-zone.active::after { color: var(--accent-primary); }
-  .robot-zone.reached { background: rgba(62, 207, 142, 0.14); }
-  .robot-zone.reached::after { color: var(--accent-safe); }
+
+  .robot-zone.active { background: rgba(91, 157, 245, 0.20); }
+  .robot-zone.active::after {
+    color: #fff; background: var(--accent-primary);
+    border-color: rgba(255,255,255,0.5);
+  }
+  .robot-zone.reached { background: rgba(62, 207, 142, 0.24); }
+  .robot-zone.reached::after {
+    color: var(--accent-safe-ink); background: var(--accent-safe);
+    border-color: rgba(255,255,255,0.5);
+  }
+
+  /* Reduced-motion users still get the state change (colour + fill); only
+     the easing is dropped, matching how the chevron is handled. */
+  @media (prefers-reduced-motion: reduce) {
+    .robot-zone, .robot-zone::after { transition: none; }
+  }
 
   /* Robot view: the action verb is the whole point of this mode, so it
      gets a dedicated badge rather than riding in the de-emphasised
