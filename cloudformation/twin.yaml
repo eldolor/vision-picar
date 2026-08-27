@@ -123,8 +123,11 @@ Resources:
   # shared port-80 listener, to this service's target group -- everything
   # else on that listener falls through to its DefaultActions (the
   # vision-analyze target group). robot/server.py's full route set (see
-  # its @app.get/@app.post decorators) is exactly these five paths, so
-  # listing them exhaustively here is exact, not a guess.
+  # its @app.get/@app.post decorators) is exactly these paths, so listing
+  # them exhaustively here is exact, not a guess. Split across two rules
+  # because an ALB ListenerRule condition allows at most 5 path-pattern
+  # values -- both point at the same target group, priority order between
+  # them doesn't matter since their path sets don't overlap.
   AlbListenerRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
@@ -139,6 +142,23 @@ Resources:
             - /stop
             - /distance
             - /frame
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  # PWA "Add to Home Screen" support -- without a rule for these, they'd
+  # 404 by falling through to vision-analyze, which has no such routes.
+  AlbListenerRulePwa:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 11
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /manifest.json
+            - /icons/*
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

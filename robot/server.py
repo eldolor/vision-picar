@@ -8,7 +8,15 @@ change at all when Phase 11 swaps in the real backend -- only
 config/robot.yaml's `mode` does.
 
 Endpoints:
-    GET  /         serves web-twin/index.html (the digital twin UI)
+    GET  /            serves web-twin/index.html (the digital twin UI)
+    GET  /manifest.json           PWA manifest, for "Add to Home Screen"
+    GET  /icons/icon-192.png      referenced by manifest.json and
+    GET  /icons/icon-512.png      index.html's <link rel="icon">
+    GET  /icons/apple-touch-icon.png
+                                   iOS home-screen icon -- manifest.json's
+                                   icons are ignored by iOS Safari's "Add
+                                   to Home Screen", which only reads this
+                                   apple-touch-icon <link> tag
     POST /action   {"action": "FORWARD", "speed": 50, "duration": 0.5}
     POST /stop     always-available stop
     GET  /distance
@@ -57,6 +65,8 @@ from robot.safety import SafetyController, SafetyViolation
 logger = logging.getLogger("server")
 
 _TWIN_INDEX_HTML = Path(__file__).resolve().parent.parent / "web-twin" / "index.html"
+_TWIN_MANIFEST_JSON = Path(__file__).resolve().parent.parent / "web-twin" / "manifest.json"
+_TWIN_ICONS_DIR = Path(__file__).resolve().parent.parent / "web-twin" / "icons"
 
 
 def require_secret(x_app_secret: str = Header(default="")):
@@ -128,6 +138,26 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     @app.get("/")
     def twin_ui():
         return FileResponse(_TWIN_INDEX_HTML)
+
+    # Explicit routes rather than a generic /icons/{filename} + StaticFiles
+    # mount -- there are exactly three icon files, and exact routes mean no
+    # path-traversal surface to reason about at all, matching this file's
+    # existing minimal-surface style elsewhere.
+    @app.get("/manifest.json")
+    def twin_manifest():
+        return FileResponse(_TWIN_MANIFEST_JSON, media_type="application/manifest+json")
+
+    @app.get("/icons/icon-192.png")
+    def twin_icon_192():
+        return FileResponse(_TWIN_ICONS_DIR / "icon-192.png")
+
+    @app.get("/icons/icon-512.png")
+    def twin_icon_512():
+        return FileResponse(_TWIN_ICONS_DIR / "icon-512.png")
+
+    @app.get("/icons/apple-touch-icon.png")
+    def twin_icon_apple():
+        return FileResponse(_TWIN_ICONS_DIR / "apple-touch-icon.png")
 
     @app.post("/action", dependencies=[Depends(require_secret)])
     def do_action(req: ActionRequest):

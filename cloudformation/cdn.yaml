@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CloudFront distribution in front of the vision-picar NLB. Exists solely
+  so the digital twin's "Guide" tab (getUserMedia, which browsers block
+  outside a secure context) works: CloudFront's default *.cloudfront.net
+  domain ships with a valid TLS certificate automatically, so this needs
+  no custom domain and no ACM certificate request/validation. Caching is
+  disabled on every path -- this origin is a dynamic API + single-page
+  app, not a cacheable static site, and several routes (/action,
+  /guidance, /navigate, ...) require the x-app-secret header and a fresh
+  POST body to reach the origin unmodified, so caching would be actively
+  wrong here, not just unhelpful.
+
+Parameters:
+  ServiceStackName:
+    Type: String
+    Default: vision-picar-service
+
+Resources:
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: vision-picar -- HTTPS front for the shared NLB (twin + vision-analyze)
+        HttpVersion: http2
+        Origins:
+          - Id: nlb-origin
+            DomainName:
+              Fn::ImportValue: !Sub "${ServiceStackName}-NlbDnsName"
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+              OriginSSLProtocols:
+                - TLSv1.2
+        DefaultCacheBehavior:
+          TargetOriginId: nlb-origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - POST
+            - PATCH
+            - DELETE
+          CachedMethods:
+            - GET
+            - HEAD
+          # Managed-CachingDisabled -- see description above for why.
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          # Managed-AllViewer -- forwards every header (x-app-secret
+          # included), cookie, and query string to the origin unchanged.
+          OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
+
+Outputs:
+  DistributionDomainName:
+    Description: Public HTTPS URL for the whole app (twin + vision-analyze, same path-based routing as before)
+    Value: !Sub "https://${Distribution.DomainName}/"
+  DistributionId:
+    Value: !Ref Distribution
