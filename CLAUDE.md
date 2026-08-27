@@ -159,56 +159,112 @@ vision-picar/
 
 ---
 
-## 5. Recommended next steps, in priority order
+## 5. Build order -- everything left before hardware
 
-**If the next step is hardware**, read `HARDWARE-READINESS.md` first
-(what the kit actually changes, and a pre-flight checklist of three
-things the simulation structurally cannot surface), then
-`PLAN-sim-hardening.md` phases S1-S4 and `PLAN-brain-relocation.md`
-phases B1-B3. All of that is buildable and testable **today, with no
-hardware**, and is the largest block of pre-purchase work remaining. The
-list below predates those documents and is still accurate for everything
-unrelated to the hardware transition.
+Sequenced across the three plan documents, which hold the detail. Phase
+IDs are `S*` = `PLAN-sim-hardening.md`, `B*` = `PLAN-brain-relocation.md`.
 
-1. **Write a test suite for `service/vision_analyze/app.py`.** The
-   Lambda version had one (`test_handler.py`, 10 tests) but its
-   Lambda-event-shaped fixtures don't carry over to a FastAPI app --
-   use FastAPI's `TestClient` instead, mocking `vision_core.describe_image_bytes`
-   the same way the old suite mocked the Anthropic client. This is the
-   one real gap left by the Lambda -> ECS Fargate migration.
+**None of stages 0-5 needs the PiCar-X.** Each stage is independently
+useful, so stopping at the end of any of them leaves the project in a
+coherent state.
 
-2. **Build `brain/planner.py`** if you want the real LLM-driven decision
-   loop rather than the current rule-based frontier exploration. This
-   was discussed and partially designed but never implemented --
-   picking it up: a `PlannerAgent(MissionAgent)` whose `decide()` calls
-   Claude with `MissionMemory.as_context()` as the prompt, parses the
-   response into one of `ALLOWED_ACTIONS`, and falls back to
-   `super().decide()` on a bad/unparseable response or API failure
-   (same pattern as `brain/vision.py`'s error handling).
+### Stage 0 -- Validate the premise (no code)
 
-3. **The AR-guidance feature** (discussed but not started): user points
-   the phone camera at a room, app throttles vision analysis calls on a
-   timer, and overlays a directional indicator on the live camera feed
-   pointing toward a named object. Design constraints already agreed on
-   in conversation: AR-style overlay (not just text), timer-throttled
-   analysis (not per-frame, for both cost and latency reasons -- see the
-   cost breakdown in conversation history / README), reuses the same
-   vision service's schema with a new prompt mode rather than a new
-   function.
+Photograph real rooms with a phone and replay the JPEGs through the
+deployed `/navigate`. Check whether the returned actions are sane.
 
-4. **`control/manual_control.py`** -- probably skip. The web twin's
-   manual D-pad now covers this use case better (visual, mobile-friendly,
-   already built and verified). Only worth building if you specifically
-   want a terminal-based WASD controller for some reason (e.g. scripting,
-   no browser available).
+This is first because it is nearly free and it is a **go/no-go gate**.
+Every "the simulation works" result so far is a statement about
+flat-shaded raycaster frames, not about rooms
+(`PLAN-sim-hardening.md` 3.5). If the model cannot navigate from real
+photographs, stages 1-5 are premature and the work is prompt engineering
+instead. Record what you find; it is the only evidence available about
+real-world accuracy without a robot.
 
-5. When ready to buy hardware (Phase 7+): the simulation checkpoint has
-   already passed (both required demos work reliably -- see
-   `tests/demo_explore.py` and `tests/demo_active_search.py`). Buy the
-   hardware list in `README.md`'s "Buy" section, then work through
-   Phases 7-11 in order. `robot/hardware_robot.py` is the only new file
-   required to implement `RobotInterface` against real GPIO/PiCar-X
-   calls -- everything in `brain/` needs zero changes.
+### Stage 1 -- Make the vision path real, in Python
+
+The vision loop is the product (Q1) and today it exists **only in
+JavaScript**. This stage is the largest and most important block of work
+remaining.
+
+- **S1 -- pin the contract.** Document `RobotInterface`'s return shapes
+  and units; add a backend-agnostic conformance suite. Cheap, no behavior
+  change, and everything below gets checked against it.
+- **S2 -- real image bytes.** Port the twin's raycaster
+  (`renderFPV`) into Python so `get_camera_frame()` returns JPEG bytes on
+  every backend. The one structural blocker between Vision Autopilot and
+  hardware.
+- **S2b -- the Python vision agent**, plus room-level step memory in the
+  `/navigate` prompt. Nothing currently stops the vision loop revisiting
+  a searched room except the step cap.
+- **Fold in: a test suite for `service/vision_analyze/app.py`.** Still
+  the one real gap from the Lambda -> ECS migration (FastAPI
+  `TestClient`, mocking `vision_core.*`). S2b changes that service's
+  prompt and schema anyway, so write the tests while you are in there.
+
+**Done when** a Python agent completes a backpack hunt in the sim
+against the real `/navigate`, with cost and wall-clock recorded.
+
+### Stage 2 -- Put the brain on the wire
+
+- **B0 (= S3) -- `RemoteRobot`**, an HTTP client implementing
+  `RobotInterface`. Proof: identical action sequences in-process vs. over
+  HTTP.
+- **B1 -- `MissionRunner`**, turning `run_mission()`'s blocking loop
+  inside out into `start()`/`stop()`/`tick()`/`status()`.
+- **B2 -- `control/brain_server.py`** on :8001.
+- **B3 -- the three failsafes**: motors-left-running (existing watchdog,
+  kept), AWS-link-dead (new), brain-loop-hung (new).
+
+**Done when** a mission runs over HTTP with the same outcome as
+in-process, and a stubbed vision failure ends it with the robot stopped.
+
+### Stage 3 -- Make the sim honest about safety
+
+- **S4 -- put time in the loop.** `MockRobot._settle()` is a no-op, which
+  is why the watchdog's async loop has never been executed by a test.
+- **S5 -- sensor realism.** Until distances stop being multiples of 30cm,
+  `min_distance_cm: 20` only ever triggers at 0 and is provably
+  load-bearing on nothing.
+
+**Done when** changing `min_distance_cm` measurably changes behavior, and
+sensor dropout has defined fail-safe behavior.
+
+### Stage 4 -- Move the console
+
+- **B4 -- the twin becomes an observer.** Explore/Find POST to the brain
+  and render polled status; the manual D-pad still talks straight to the
+  robot server.
+
+**Done when** you start a mission from your phone, background the tab,
+and the robot keeps going. That single observation is the proof the brain
+actually moved.
+
+### Stage 5 -- Harden
+
+- **S7 -- chaos and soak.** Latency, packet loss, a killed link
+  mid-mission, a 1000-step run.
+
+### Then buy
+
+Check `HARDWARE-READINESS.md` section 5's pre-flight items first -- in
+particular 5.2 (`LEFT`/`RIGHT` skip the distance check, correct for a
+pivot and wrong for an arc) and 5.3 (verify whether the ultrasonic pans
+with the camera; if it does not, the peek-based logic needs redesign).
+
+Then: `robot/hardware_robot.py`, B5 (systemd units), and the calibration
+items in `PLAN-sim-hardening.md` section 7 that can only be measured.
+
+### Not on the critical path
+
+- **S6 (Ackermann turns, continuous pose, scaled map)** -- optional since
+  Q1. A vision policy does not reason about grid cells. Revisit only if
+  real-world runs fail in ways that trace back to grid geometry.
+- **`control/manual_control.py`** -- skip. The twin's D-pad covers it
+  better, and B0's `RemoteRobot` makes it nearly free later if wanted.
+- **The rule-based agent** -- keep, do not extend. It is the fastest,
+  free, deterministic way to test the safety layer and mission memory.
+  It is not on the hardware path (`PLAN-sim-hardening.md` 2.2).
 
 ---
 
