@@ -168,10 +168,22 @@ IDs are `S*` = `PLAN-sim-hardening.md`, `B*` = `PLAN-brain-relocation.md`.
 useful, so stopping at the end of any of them leaves the project in a
 coherent state.
 
-### Stage 0 -- Validate the premise (no code)
+### Stage 0 -- Validate the premise
 
-Photograph real rooms with a phone and replay the JPEGs through the
-deployed `/navigate`. Check whether the returned actions are sane.
+**Primary tool: the Guide tab's "Robot view" mode.** Point your phone at
+a real room and it shows the move the robot would make from where you are
+standing -- same `/navigate` route Vision Autopilot uses, real pixels
+instead of the raycaster render. Nothing executes. Walk toward the target
+and see whether following the actions would actually get you there; that
+tests the *loop*, which curated stills cannot.
+
+Hold the phone low, around 10cm -- the PiCar-X camera height. A
+chest-height view is not the robot's view.
+
+Secondary: `python -m tests.manual_replay_navigate <dir> "<target>"`
+replays a folder of photos and prints an action-spread summary. Use it to
+produce a recordable finding -- the failure that matters (the same action
+for every frame) is easier to see in a summary than by walking around.
 
 This is first because it is nearly free and it is a **go/no-go gate**.
 Every "the simulation works" result so far is a statement about

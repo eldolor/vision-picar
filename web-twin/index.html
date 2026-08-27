@@ -561,6 +561,26 @@
   /* De-emphasized caption -- the edge glow + chevron pulse below carry the
      primary "which way / how close" signal now; this is a small, optional,
      glanceable readout for accessibility/clarity, not the main channel. */
+  /* Robot view: the action verb is the whole point of this mode, so it
+     gets a dedicated badge rather than riding in the de-emphasised
+     caption bar Guide uses. Sits above centre so it never collides with
+     the direction chevron. */
+  .robot-action-badge {
+    position: absolute; left: 50%; top: 18%;
+    transform: translate(-50%, -50%) scale(0.9);
+    display: none; flex-direction: column; align-items: center; gap: 2px;
+    padding: 10px 20px; border-radius: 14px;
+    opacity: 0; transition: opacity .18s ease, transform .18s ease;
+  }
+  .robot-action-badge.visible { display: flex; opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .robot-action-verb { font-size: 30px; font-weight: 700; letter-spacing: .06em; line-height: 1.1; }
+  .robot-action-target { font-size: 12px; color: var(--text-dim); }
+  .robot-action-badge[data-action="FORWARD"] .robot-action-verb { color: var(--accent-safe); }
+  .robot-action-badge[data-action="STOP"] .robot-action-verb { color: var(--accent-alert); }
+  .robot-mode-row { display: flex; gap: 6px; margin-top: 10px; }
+  .robot-mode-btn { flex: 1; }
+  .robot-mode-btn.active-mode { border-color: var(--accent); color: var(--accent); }
+
   .guide-caption {
     display: flex; align-items: center; gap: 6px;
     font-family: var(--sans); font-size: var(--fs-body); font-weight: 600; color: var(--text);
@@ -899,6 +919,13 @@
           </svg>
         </div>
       </div>
+      <div class="robot-mode-row" role="group" aria-label="What to ask the vision service">
+        <button id="btn-mode-guide" class="ghost robot-mode-btn active-mode" aria-pressed="true">Guide me</button>
+        <button id="btn-mode-robot" class="ghost robot-mode-btn" aria-pressed="false">Robot view</button>
+      </div>
+      <div class="hint" id="guide-mode-hint" style="margin-top:6px;">
+        <b>Guide me</b> steers <i>you</i> to the object with an arrow.
+      </div>
       <div class="btn-row" style="margin-top:8px;">
         <input type="text" id="guidance-target" class="text-input" value="red backpack" list="target-history-list" style="flex:2;">
         <button id="btn-guidance" class="primary" style="flex:1;">Start</button>
@@ -1046,6 +1073,10 @@
       </div>
       <div class="guide-outline" id="guide-outline">
         <div class="guide-found-badge" id="guide-found-badge"></div>
+      </div>
+      <div class="robot-action-badge guide-glass" id="robot-action-badge">
+        <span class="robot-action-verb" id="robot-action-verb"></span>
+        <span class="robot-action-target" id="robot-action-target"></span>
       </div>
     </div>
     <div class="guide-topbar">
@@ -1347,6 +1378,7 @@
     safetyFlashUntil: 0,
     autopilotRunning: false, autopilotTimerId: null, autopilotTarget: null,
     autopilotInFlight: false, autopilotCallCount: 0, autopilotMaxCalls: 80,
+    guidanceMode: "guide", // "guide" -> /guidance (steer a person); "robot" -> /navigate (what would the robot do)
     guidanceRunning: false, guidanceTimerId: null, guidanceTarget: null,
     guidanceInFlight: false, guidanceCallCount: 0, guidanceStream: null,
     guidanceMuted: false, guidanceNotVisibleStreak: 0,
@@ -2313,6 +2345,7 @@
   // same smoothness.
 
   const GUIDANCE_THROTTLE_MS = 1000;
+  const ROBOT_THROTTLE_MS = 2500; // matches Vision Autopilot's step cadence
   const GUIDANCE_MAX_CAPTURE_DIM = 960; // longest edge, px -- smaller upload + faster inference
   // Anthropic downscales images server-side above ~1568px on the long
   // edge anyway (see Claude's vision docs), so sending a full phone-camera
@@ -2354,7 +2387,12 @@
     if (!url) throw new Error('Set the vision service URL in "Cloud endpoint settings" above first.');
     const headers = { "Content-Type": "application/json" };
     if (secret) headers["x-app-secret"] = secret;
-    return fetch(deriveServiceUrl(url, "/guidance"), {
+    // Both routes take the identical request body (same _decode_image() on
+    // the server) -- only the prompt, the response schema and the renderer
+    // differ. That is what makes robot view a mode here rather than a
+    // second camera implementation.
+    const route = state.guidanceMode === "robot" ? "/navigate" : "/guidance";
+    return fetch(deriveServiceUrl(url, route), {
       method: "POST",
       headers: headers,
       body: JSON.stringify({ image_base64: base64, media_type: "image/jpeg", target_object: targetObject }),
@@ -2378,6 +2416,8 @@
   // restart the animation about once a second.
   let guidanceWasFound = false;
 
+  const robotActionBadge = document.getElementById("robot-action-badge");
+
   function hideAllGuidanceOverlays() {
     guidanceChevron.classList.remove("visible");
     guidanceOutline.classList.remove("visible");
@@ -2386,6 +2426,7 @@
     guidanceEdgeGlowRight.style.opacity = 0;
     guidanceChevron.classList.remove("steady");
     guidanceOutline.classList.remove("steady");
+    robotActionBadge.classList.remove("visible");
   }
 
   // "Found" only required a strict position===center AND proximity===near
@@ -2565,6 +2606,76 @@
 
     const glowSide = offset < 0 ? guidanceEdgeGlowLeft : offset > 0 ? guidanceEdgeGlowRight : null;
     if (glowSide) glowSide.style.opacity = GUIDANCE_EDGE_GLOW[result.position] || 0;
+  }
+
+  // ---- robot view: render /navigate's decision ----
+  // The inverse of Guide's job. Guide answers "where is the object, for a
+  // person walking"; this answers "what would the robot do next", which is
+  // the same question web-twin's Vision Autopilot asks -- except the pixels
+  // are a real room instead of the raycaster render. Nothing executes: a
+  // photo of your kitchen has no corresponding grid-world state, and driving
+  // the simulated robot from it would be meaningless.
+  //
+  // This is the only check available, without buying the hardware, that says
+  // anything about the vision policy's accuracy on real rooms rather than on
+  // flat-shaded maze geometry -- see PLAN-sim-hardening.md 3.5.
+  const ROBOT_ACTION_ROTATION = { FORWARD: -90, LEFT: 180, RIGHT: 0, REVERSE: 90 };
+  const ROBOT_ACTION_OFFSET = { FORWARD: 0, LEFT: -18, RIGHT: 18, REVERSE: 0 };
+  const ROBOT_ACTION_ICON = {
+    FORWARD: "chevronUp", LEFT: "chevronLeft", RIGHT: "chevronRight",
+    REVERSE: "chevronDown", STOP: "warning",
+  };
+
+  function renderRobotOverlay(result) {
+    hideAllGuidanceOverlays();
+    const action = ROBOT_ACTION_ROTATION.hasOwnProperty(result.action) || result.action === "STOP"
+      ? result.action : "STOP";
+
+    robotActionBadge.dataset.action = action;
+    document.getElementById("robot-action-verb").textContent = action;
+    document.getElementById("robot-action-target").textContent = result.target_visible
+      ? (state.guidanceTarget || "target") + " visible" + (result.target_direction ? ", " + result.target_direction : "")
+      : "target not visible";
+    robotActionBadge.classList.add("visible");
+
+    // STOP is the absence of a direction, so showing a chevron for it would
+    // be actively misleading -- the badge carries it alone.
+    if (action === "STOP") return;
+
+    guidanceChevron.style.left = (50 + (ROBOT_ACTION_OFFSET[action] || 0)) + "%";
+    guidanceChevron.style.top = "50%";
+    guidanceChevron.style.transform =
+      "translate(-50%, -50%) rotate(" + ROBOT_ACTION_ROTATION[action] + "deg) scale(1.15)";
+    guidanceChevron.style.color = action === "FORWARD" ? getCss("--accent-safe") : getCss("--text");
+    guidanceChevron.style.setProperty("--pulse-duration", GUIDANCE_PULSE_DURATION.unknown);
+    guidanceChevron.dataset.proximity = "unknown";
+    guidanceChevron.classList.add("visible");
+  }
+
+  function renderRobotStatus(result, analyzing) {
+    const iconEl = document.getElementById("guide-caption-icon");
+    const textEl = document.getElementById("guide-caption-text");
+    if (analyzing && !result) { iconEl.innerHTML = ICON.clock; textEl.textContent = "Deciding…"; return; }
+    if (!result) { iconEl.innerHTML = ICON.search; textEl.textContent = "Not running."; return; }
+    if (result.error) { iconEl.innerHTML = ICON.warning; textEl.textContent = result.error; return; }
+    iconEl.innerHTML = ICON[ROBOT_ACTION_ICON[result.action] || "search"];
+    // The model's stated reason is the thing worth reading here: it is how
+    // you tell a correct action from a right answer for a wrong reason.
+    textEl.textContent = result.reasoning || "";
+  }
+
+  // Same transition-only discipline as announceGuidance(), keyed on the
+  // action rather than the zone -- a per-tick live region would interrupt
+  // itself continuously.
+  let robotLastAnnouncedAction = null;
+  function announceRobot(result) {
+    const key = result.error ? "error" : (result.action || "?");
+    if (key === robotLastAnnouncedAction) return;
+    robotLastAnnouncedAction = key;
+    const msg = result.error
+      ? "Decision unavailable. " + (result.error || "")
+      : key + ". " + (result.reasoning || "");
+    announce(document.getElementById("guide-announce-polite"), msg);
   }
 
   const GUIDANCE_CAPTION_ICON = {
@@ -2871,31 +2982,44 @@
     }
     state.guidanceConsecutiveSkips = 0;
 
+    const isRobot = state.guidanceMode === "robot";
     state.guidanceInFlight = true;
-    renderGuidanceStatus(null, true);
+    (isRobot ? renderRobotStatus : renderGuidanceStatus)(null, true);
     try {
       const base64 = captureGuidanceFrame();
       const result = await callGuidanceEndpoint(base64, state.guidanceTarget);
       state.guidanceErrorStreak = 0;
       state.guidanceCallCount += 1;
       renderGuidanceBudget();
-      renderGuidanceOverlay(result);
-      renderGuidanceStatus(result, false);
-      playGuidanceCues(result);
-      announceGuidance(result);
 
-      if (isGuidanceFound(result)) {
-        state.guidanceFoundStreak++;
-        if (state.guidanceFoundStreak >= GUIDANCE_FOUND_STREAK_TO_PAUSE) pauseGuidanceSearch();
+      if (isRobot) {
+        // No found-pause here, deliberately. Guide pauses on arrival
+        // because the person has arrived and further calls are waste;
+        // robot view is a continuous readout of decisions, and the run
+        // ends at the call cap or when you stop it. Audio cues stay off
+        // too -- they encode proximity, which /navigate does not return.
+        renderRobotOverlay(result);
+        renderRobotStatus(result, false);
+        announceRobot(result);
       } else {
-        state.guidanceFoundStreak = 0;
+        renderGuidanceOverlay(result);
+        renderGuidanceStatus(result, false);
+        playGuidanceCues(result);
+        announceGuidance(result);
+
+        if (isGuidanceFound(result)) {
+          state.guidanceFoundStreak++;
+          if (state.guidanceFoundStreak >= GUIDANCE_FOUND_STREAK_TO_PAUSE) pauseGuidanceSearch();
+        } else {
+          state.guidanceFoundStreak = 0;
+        }
       }
     } catch (e) {
       state.guidanceErrorStreak++;
-      renderGuidanceStatus({ error: e.message }, false);
+      (isRobot ? renderRobotStatus : renderGuidanceStatus)({ error: e.message }, false);
       // Keyed as "error", so the exponential backoff's repeated failures
       // announce once rather than on every retry.
-      announceGuidance({ error: e.message });
+      (isRobot ? announceRobot : announceGuidance)({ error: e.message });
     } finally {
       state.guidanceInFlight = false;
       scheduleGuidanceNext();
@@ -2908,9 +3032,13 @@
   // moment a call succeeds again (see guidanceErrorStreak reset above).
   function scheduleGuidanceNext() {
     if (!state.guidanceRunning || state.guidancePaused) return;
+    // Robot view samples at the cadence the robot actually moves at
+    // (Vision Autopilot's ~2.5s), not Guide's 1s. Sampling faster than the
+    // thing being simulated costs money without telling you more.
+    const base = state.guidanceMode === "robot" ? ROBOT_THROTTLE_MS : GUIDANCE_THROTTLE_MS;
     const delay = state.guidanceErrorStreak > 0
-      ? Math.min(30000, GUIDANCE_THROTTLE_MS * Math.pow(2, state.guidanceErrorStreak))
-      : GUIDANCE_THROTTLE_MS;
+      ? Math.min(30000, base * Math.pow(2, state.guidanceErrorStreak))
+      : base;
     state.guidanceTimerId = setTimeout(guidanceStep, delay);
   }
 
@@ -3067,8 +3195,12 @@
     document.getElementById("btn-guidance-resume").classList.remove("visible");
     updateGuidanceButton();
     resetGuidanceAnnouncements();
+    robotLastAnnouncedAction = null;
     announce(document.getElementById("guide-announce-polite"),
-      "Guiding you to " + state.guidanceTarget + ". Move your phone slowly to scan the room.");
+      state.guidanceMode === "robot"
+        ? "Robot view. Showing the move the robot would make, for " + state.guidanceTarget +
+          ". Hold the phone low, about camera height, and walk slowly."
+        : "Guiding you to " + state.guidanceTarget + ". Move your phone slowly to scan the room.");
     // Counts against the pacing floor so the first real result doesn't land
     // on top of this one.
     guidanceLastAnnounceAt = Date.now();
@@ -3203,6 +3335,34 @@
     prefSet(PREF.onboarded, "1");
     startGuidance();
   }
+  // Robot view reuses every hard part of Guide -- getUserMedia, the
+  // permission and secure-context handling, the fullscreen takeover,
+  // orientation re-sync, throttling, the call cap, the backgrounded-tab
+  // pause -- and swaps only the route and the renderer. That is why it
+  // lives here rather than in the Sim tab, which is also the tab you would
+  // load over plain LAN http:// once there is a real Pi, where camera
+  // access is blocked outright.
+  function setGuidanceMode(mode) {
+    state.guidanceMode = mode;
+    const isRobot = mode === "robot";
+    const guideBtn = document.getElementById("btn-mode-guide");
+    const robotBtn = document.getElementById("btn-mode-robot");
+    guideBtn.classList.toggle("active-mode", !isRobot);
+    robotBtn.classList.toggle("active-mode", isRobot);
+    guideBtn.setAttribute("aria-pressed", String(!isRobot));
+    robotBtn.setAttribute("aria-pressed", String(isRobot));
+    document.getElementById("guide-mode-hint").innerHTML = isRobot
+      ? "<b>Robot view</b> shows the move the <i>robot</i> would make from where you\u2019re standing \u2014 nothing moves. Hold the phone low, about camera height."
+      : "<b>Guide me</b> steers <i>you</i> to the object with an arrow.";
+    try { localStorage.setItem("guidanceMode", mode); } catch (e) { /* private mode */ }
+  }
+  document.getElementById("btn-mode-guide").onclick = function () { setGuidanceMode("guide"); };
+  document.getElementById("btn-mode-robot").onclick = function () { setGuidanceMode("robot"); };
+  try {
+    const savedMode = localStorage.getItem("guidanceMode");
+    if (savedMode === "robot" || savedMode === "guide") setGuidanceMode(savedMode);
+  } catch (e) { /* private mode -- default stays "guide" */ }
+
   document.getElementById("btn-how-it-works").onclick = function () {
     showGuidanceOnboarding(true);
   };

@@ -21,6 +21,11 @@ setup, assembly, real camera, hardware swap-in) are unstarted, by design.
 | `PLAN-brain-relocation.md` | moving the autonomy loop onto the Pi |
 | `PLAN-ar-guidance.md` | the Guide tab, as built |
 
+The Guide tab has two modes: **Guide me** steers a person to an object
+(`/guidance`), and **Robot view** shows the move the robot would make from
+where you are standing (`/navigate`) -- the same decision Vision Autopilot
+makes, but on real pixels rather than the simulator's raycaster render.
+
 The phase numbering below comes from the original `picar-x-build-plan.md`,
 which lives in the Claude Project this work started in and is **not in
 this repo** -- the tables in `CLAUDE.md` are the in-repo source of truth.
