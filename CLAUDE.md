@@ -1,21 +1,24 @@
-# Handoff: vision-picar → Claude Code
+# vision-picar
 
-This document exists so a new Claude Code session can pick up this
-project with zero re-explanation. Read this first, then `README.md` for
-full phase-by-phase build details.
+Orientation for a Claude Code session. Claude Code loads this file
+automatically; `README.md` has the full phase-by-phase build details.
+
+Originally written as `HANDOFF.md`, to carry the project over from a
+Claude Project into Claude Code. Renamed 2026-08-27 -- the migration is
+long done, but the orientation content it accumulated is permanent.
 
 ---
 
-## 1. First 5 minutes in Claude Code
+## 1. Setup
 
-Git is already initialized (see `git log`). To pick up from a clean checkout:
+To pick up from a clean checkout:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 58 passed)
+# Confirm everything still works (should show 61 passed)
 pytest tests/ -v
 ```
 
@@ -39,6 +42,9 @@ task role's IAM permissions, not an API key.
 
 An indoor autonomous robot: PiCar-X chassis + Raspberry Pi 5 (robot
 runtime) + a MacBook running a Vision LLM (high-level reasoning).
+(That MacBook placement dates from before vision moved to Bedrock, and is
+re-examined in `HARDWARE-READINESS.md` section 7 -- the brain no longer
+computes anything. Nothing in the code has changed yet.)
 **Development approach is simulation-first**: all decision-making logic
 is built and validated against a grid-world simulator before any
 hardware is purchased. See `README.md`'s "Final Architecture" section
@@ -73,7 +79,7 @@ the original build plan phases, reordered simulation-first):
 | -- | Simulation checkpoint | Done -- both demo scenarios pass reliably |
 | 9 (partial) | Wi-Fi control API + safety-over-HTTP + watchdog | Done (`robot/server.py`), CORS added |
 | 9 (partial) | Manual WASD control client (`control/manual_control.py`) | NOT BUILT -- `control/` dir exists but is empty. Was planned, then deprioritized in favor of the web twin, which now supersedes this use case (see section 5). |
-| -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Discussed and partially designed in conversation (a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt) but never written to disk. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. |
+| -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Designed but never written to disk -- a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt. See `PLAN-sim-hardening.md` Q1/Q5: settle which policy hardware inherits before building it, or it gets built against the wrong observation shape. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -92,7 +98,9 @@ vision-picar/
 │                               require_secret() gate once deployed publicly,
 │                               serves web-twin/index.html at GET /
 │
-├── brain/                  "MacBook" role -- reasoning, hardware-agnostic
+├── brain/                  reasoning, hardware-agnostic. (Labelled the "MacBook"
+│                            role by the original build plan -- that placement is
+│                            being revisited: see PLAN-brain-relocation.md)
 │   ├── vision.py             Vision LLM scene understanding (Claude API)
 │   ├── agent.py               ConstrainedAgent / MissionAgent / ObjectSearchAgent
 │   ├── memory.py              MissionMemory -- mission, rooms, sightings, actions
@@ -104,11 +112,12 @@ vision-picar/
 │   ├── mock_robot.py          implements RobotInterface against grid_world
 │   └── maps/starter_house.py  living room / hallway / kitchen + red backpack
 │
-├── control/                 EMPTY -- manual_control.py was planned, not built
+├── control/                 EMPTY today. PLAN-brain-relocation.md fills it:
+│                            remote_robot.py, mission_runner.py, brain_server.py
 │
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins
 │
-├── tests/                    58 tests + 5 runnable (non-automated) demo scripts
+├── tests/                    61 tests + 5 runnable (non-automated) demo scripts
 │
 ├── service/vision_analyze/   ECS Fargate: photo upload -> vision analysis (cloud)
 │   ├── app.py                 FastAPI app -- /health, /analyze
@@ -136,12 +145,30 @@ vision-picar/
 ├── requirements.txt
 ├── .gitignore
 ├── README.md                  full build-plan-referenced documentation
-└── HANDOFF.md                 this file
+├── CLAUDE.md                  this file -- session orientation
+│
+│   -- planning / explainer docs (no code; read before hardware work) --
+├── INTRODUCTION.md            project introduction
+├── PLAN-ar-guidance.md        the Guide tab: spec, redesign, changelog (BUILT)
+├── PLAN-sim-hardening.md      how the sim diverges from hardware, phased fixes,
+│                               definition of done before a hardware swap (PROPOSED)
+├── HARDWARE-READINESS.md      what the PiCar-X kit changes: verb-to-motor path,
+│                               pre-flight checklist, where the brain should live
+└── PLAN-brain-relocation.md   moving the autonomy loop onto the Pi (PROPOSED)
 ```
 
 ---
 
 ## 5. Recommended next steps, in priority order
+
+**If the next step is hardware**, read `HARDWARE-READINESS.md` first
+(what the kit actually changes, and a pre-flight checklist of three
+things the simulation structurally cannot surface), then
+`PLAN-sim-hardening.md` phases S1-S4 and `PLAN-brain-relocation.md`
+phases B1-B3. All of that is buildable and testable **today, with no
+hardware**, and is the largest block of pre-purchase work remaining. The
+list below predates those documents and is still accurate for everything
+unrelated to the hardware transition.
 
 1. **Write a test suite for `service/vision_analyze/app.py`.** The
    Lambda version had one (`test_handler.py`, 10 tests) but its
@@ -212,6 +239,12 @@ vision-picar/
   way a Python client would. Only robot *runtime* logic (movement,
   safety, sensing) was wrong to duplicate, and that's been fixed -- the
   twin now calls `robot/server.py` for all of that.
+  **Revisited 2026-08-27:** the reasoning above is still correct, but
+  `PLAN-brain-relocation.md` proposes moving the primary autonomy loop
+  onto the Pi, which would demote the browser from *the* brain to *an
+  optional* brain (kept for LAN dev and for running with no Pi present).
+  Nothing has changed in the code yet; if phase B4 of that plan is built,
+  update this bullet rather than leaving the two documents in conflict.
 
 - **`robot/server.py`'s watchdog** stops the robot if no command arrives
   within `watchdog_timeout_s` (config, default 1.0s). The decision logic

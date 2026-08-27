@@ -1,10 +1,36 @@
 # vision-picar
 
-Simulation-first build of the PiCar-X Vision Agent. See
-`picar-x-build-plan.md` (in your Claude Project knowledge) for the full
-phased plan.
+Simulation-first build of the PiCar-X Vision Agent: all decision-making
+is built and validated against a grid-world simulator before any hardware
+is bought.
 
-## What's built so far (Phase 0)
+**Where things stand.** Phases 0-6 and the simulation checkpoint are
+done; Phase 9's Wi-Fi control API is done and sim-testable; the web twin
+and the cloud vision service are deployed. Phases 7, 8, 10 and 11 (Pi
+setup, assembly, real camera, hardware swap-in) are unstarted, by design.
+`CLAUDE.md` section 3 has the authoritative built-vs-planned table.
+
+**Where to read next**
+
+| Doc | For |
+|---|---|
+| `CLAUDE.md` | orientation: status table, repo map, gotchas. Start here. |
+| `INTRODUCTION.md` | what the project is, for a non-technical reader |
+| `HARDWARE-READINESS.md` | before buying the kit: what changes, pre-flight checklist |
+| `PLAN-sim-hardening.md` | where the sim diverges from hardware, and the phased fix |
+| `PLAN-brain-relocation.md` | moving the autonomy loop onto the Pi |
+| `PLAN-ar-guidance.md` | the Guide tab, as built |
+
+The phase numbering below comes from the original `picar-x-build-plan.md`,
+which lives in the Claude Project this work started in and is **not in
+this repo** -- the tables in `CLAUDE.md` are the in-repo source of truth.
+
+The rest of this file is an append-only build journal, oldest first. For
+current state, read `CLAUDE.md` rather than the first section here.
+
+---
+
+## Phase 0 -- mock robot interface
 
 - `robot/interface.py` — abstract contract brain/ will always code against
 - `robot/factory.py` — reads `config/robot.yaml`, returns the right backend
@@ -25,7 +51,7 @@ pip install -r requirements.txt
 ## Run tests
 
 ```bash
-pytest tests/test_mock_robot.py -v
+pytest tests/ -q        # 61 tests, no API key needed
 ```
 
 ## Run the demo loop
@@ -34,7 +60,7 @@ pytest tests/test_mock_robot.py -v
 python -m tests.demo_manual_loop
 ```
 
-## What's built so far (Phase 1)
+## Phase 1 -- Vision LLM scene understanding
 
 - `brain/vision.py` — `describe_image()` sends a real/stock photo to the
   Vision LLM and returns a structured scene description (obstacles, free
@@ -55,7 +81,7 @@ export ANTHROPIC_API_KEY=sk-...
 python -m tests.manual_describe_image path/to/photo.jpg
 ```
 
-## What's built so far (Phase 2)
+## Phase 2 -- constrained action loop
 
 - `brain/agent.py` — `ConstrainedAgent`: the full capture → vision →
   decide → safety-check → execute loop, restricted to
@@ -76,7 +102,7 @@ Note: decision-making here is intentionally dumb (trust `vision`'s
 `safest_direction`, turn if stuck) — it's a scaffold for Phase 4's agent
 harness (mission, memory, object sightings), not the final logic.
 
-## What's built so far (Phase 4)
+## Phase 4 -- agent harness / mission memory
 
 - `brain/memory.py` — `MissionMemory`: tracks the mission, rooms
   visited/searched, object sightings, and action history. `as_context()`
@@ -106,7 +132,7 @@ the kitchen") -- that's Phase 5. Object detection is also still passive
 (a visited room's frame just reveals what's in it) -- deliberate
 look-around scanning is Phase 6.
 
-## What's built so far (Phase 5 & 6)
+## Phases 5 & 6 -- semantic navigation and object search
 
 - `brain/rooms.py` — `identify_room()`: matches visible objects against
   per-room landmark features (the JSON-style schema from the build plan)
@@ -133,14 +159,22 @@ python -m tests.demo_go_to_room
 python -m tests.demo_active_search
 ```
 
-## Next up (Phase 6 continued / checkpoint)
+## Simulation checkpoint -- passed
 
-Both build-plan checkpoint demos now run end to end in simulation:
-"explore without hitting anything" (Phase 2) and "find the red backpack"
-(Phase 4/6, now with active scanning). Per the plan, this is the gate
-before Part B (buying hardware) -- worth deciding whether to run these
-against a richer/larger map first, or move straight to Phase 7 (Pi
-setup) since the reasoning and safety architecture is validated.
+Both build-plan checkpoint demos run end to end in simulation: "explore
+without hitting anything" (Phase 2) and "find the red backpack" (Phase
+4/6, with active scanning). Per the plan, this is the gate before Part B
+(buying hardware), and it is met.
+
+**But "the checkpoint passed" is a weaker statement than it sounds**, and
+that gap is the subject of `PLAN-sim-hardening.md`. In short: the safety
+threshold is never exercised at its boundary (simulated distances are
+quantised to 30cm, so `min_distance_cm: 20` only ever triggers at 0),
+turning is free in a grid world but is an arc that consumes forward space
+on a real Ackermann chassis, and the map is 3.9m x 3.0m at its own scale
+-- with a 90cm living room a PiCar-X could not turn inside. Read
+`HARDWARE-READINESS.md` before treating this checkpoint as clearance to
+buy.
 
 ## Wi-Fi control API (Phase 9, sim-testable now)
 

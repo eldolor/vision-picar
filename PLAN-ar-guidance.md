@@ -419,7 +419,7 @@ Mirror the same `describe_image_bytes_guidance` logic here too (as
 `describe_image_guidance(image_path, target_object)` following the
 existing file-path-based pattern in this module), for parity with how
 `service/vision_analyze/vision_core.py` intentionally duplicates
-`brain/vision.py` already -- see `HANDOFF.md` section 6 on why that
+`brain/vision.py` already -- see `CLAUDE.md` section 6 on why that
 duplication is accepted, not a bug. Note `brain/vision.py` stays on the
 direct Anthropic API (unchanged by the Lambda->ECS pivot, which only
 affected the cloud-deployed copy) -- don't switch this one to Bedrock
@@ -428,7 +428,7 @@ without a separate, deliberate decision to do so.
 ### 4.4 Tests
 
 `service/vision_analyze/` currently has **no automated test suite at
-all** (a gap left by the Lambda->ECS migration -- see `HANDOFF.md`
+all** (a gap left by the Lambda->ECS migration -- see `CLAUDE.md`
 section 5, item 1). Writing that base test suite is a prerequisite for
 this section, not something to build alongside it from scratch here.
 Once it exists (using FastAPI's `TestClient`, mocking
