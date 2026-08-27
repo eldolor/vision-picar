@@ -124,17 +124,28 @@ abstraction the whole design rests on -- **will have to change** when
 hardware lands. That is precisely the outcome `robot/factory.py`'s
 docstring promises won't happen.
 
-### 2.2 The validated exploration policy cannot run on hardware -- BLOCKER
+### 2.2 The rule-based policy cannot run on hardware -- NOT A BLOCKER (see Q1)
 
 `MissionAgent.decide()` (`brain/agent.py`) prefers frontier cells by
 reading `frame["position"]` and `frame["facing"]` -- grid coordinates no
 camera can produce. Its docstring says it "degrades gracefully" to a
-right-hand-rule fallback without them. True, but the implication is
-under-stated: **the policy proven by `demo_explore.py` /
-`demo_active_search.py` is not the policy hardware will run.** The
-fallback path has far less coverage, and the same coordinate dependency
-exists in the twin's JS (`web-twin/index.html:1592`, indexing
-`position[0]`).
+right-hand-rule fallback without them, but that undersells it: the same
+docstring, four lines earlier, explains that "plain right-hand wall
+following spins in tight circles inside small rooms since a turn is
+almost always 'clear' there," which is *why* frontier preference was
+built. **The fallback hardware would run is documented as broken by the
+file that implements it.** The same coordinate dependency exists in the
+twin's JS (`web-twin/index.html:1592`, indexing `position[0]`).
+
+**Per Q1 this is no longer a problem to solve.** The rule-based agent is
+a simulation tool and stays one -- useful for fast, free, deterministic
+tests of the safety layer, mission memory, and the action loop, with no
+API cost. It is not on the hardware path. Do not spend effort giving it
+coordinates; do not delete it either.
+
+The real consequence is a bookkeeping one: **all 61 tests and both demo
+scripts exercise the sim-only path.** The hardware path (S2b) currently
+has no automated coverage at all.
 
 ### 2.3 No Python HTTP client, and `mode:` doesn't cover the brain side
 
@@ -215,11 +226,18 @@ A PiCar-X is roughly 26cm long, 17cm wide, with a turning radius in the
 and a 30cm doorway leaves ~6cm clearance per side. The map is a fine
 logic puzzle and a poor physical proxy.
 
-### 3.5 The synthetic camera is a flat-shaded raycaster
+### 3.5 The synthetic camera is a flat-shaded raycaster -- now the top fidelity risk
 
 The FPV view is untextured maze geometry. A VLM's accuracy on that tells
 you very little about its accuracy on photographs of a real living room.
-This is the gap least closable in simulation -- see section 6.
+This is the gap least closable in simulation -- see section 7.
+
+**Q1's answer raises this from a curiosity to the main fidelity
+question.** Under a vision policy the render is not a demo visual; it is
+the model's actual input, so every "the sim works" result is a statement
+about raycaster frames, not about rooms. The mitigation is in section 7
+and needs no robot: photograph real rooms and replay them through
+`/navigate`. Do that before, not after, tuning anything else.
 
 ### 3.6 The network is not in the loop
 
@@ -233,8 +251,15 @@ disconnect, or Wi-Fi roaming.
 ## 4. Phased plan
 
 Each phase: what gets built, files touched, and the test that proves it.
-Phases 1-3 close architecture gaps; 4-6 close fidelity gaps; 7 is chaos.
-Phases 1-3 are the ones that change what hardware day looks like.
+Phases S1-S3 close architecture gaps; S4-S6 close fidelity gaps; S7 is
+chaos.
+
+**Priority after Q1's answer (vision):** S2 and S2b first -- together they
+are the entire hardware path, and neither needs hardware to build. Then
+S1 (cheap, and it pins the contract S2 changes), S3, S4. S5 matters for
+the safety layer regardless of policy. **S6 is now optional** -- revisit
+it only if real-world runs show the robot failing in ways that trace back
+to grid geometry.
 
 ### Phase S1 -- Pin the contract
 
@@ -279,9 +304,61 @@ raycaster produce the same view for the same pose -- this is what lets
 the JS one be deleted. (d) `test_server.py`: `GET /frame` returns a
 decodable image.
 
-**Ambiguity to resolve first.** See section 5, Q1 -- whether the
-rule-based policy or the vision policy is the one hardware inherits
-changes how much this phase matters.
+**Priority.** Q1 is answered (vision), which makes this the top phase in
+the plan: it is the one structural blocker between Vision Autopilot and
+real hardware. Pair it with S2b.
+
+### Phase S2b -- A Python vision agent, with memory
+
+**Why this is new.** Per Q1 the vision loop is the product, and **it
+exists only in JavaScript** -- no Python file in this repo calls
+`/navigate` (verified). `brain/agent.py` is entirely rule-based. On the
+Pi the loop needs to be Python, and there is nothing to port from except
+`web-twin/index.html`'s `visionAutopilotStep()`. This is the gap
+`brain/planner.py` was always meant to fill.
+
+**Build.** A `VisionAgent` that captures a frame, POSTs it to
+`/navigate` with the target object, and dispatches the returned verb
+through `SafetyController` -- the same shape as `ConstrainedAgent.step()`,
+with the vision service in place of `decide()`. Reuse `ConstrainedAgent`
+for the loop scaffolding, safety, and history; only the decision source
+changes.
+
+**The memory problem.** Each `/navigate` call is one image plus a target.
+The model gets **no history** -- it cannot know the kitchen was already
+searched, or that this doorway has been crossed three times. Today the
+only thing preventing an infinite loop is the step cap
+(`state.autopilotMaxCalls`). This is what `visited_positions` was solving
+in the rule-based agent, and it does not transfer, because it needs
+coordinates.
+
+The substitute that needs no coordinates: **room-level memory.**
+`brain/rooms.py`'s `identify_room()` and `MissionMemory.searched_rooms`
+already produce "kitchen: searched." Feed that into the prompt as text
+("you have already searched: kitchen, hallway"). Coarser than cells, and
+enough to stop the wandering. Requires a prompt/schema change in
+`service/vision_analyze/vision_core.py`'s `NAVIGATE_PROMPT_TEMPLATE` --
+an added optional `searched_rooms` field on `/navigate`.
+
+**Files.** New `brain/vision_agent.py` (or `brain/planner.py`, the name
+already reserved for it in the docs); `service/vision_analyze/app.py` and
+`vision_core.py` (accept and use `searched_rooms`);
+`web-twin/index.html` (send it too, so both clients behave alike).
+
+**Test.** (a) With `/navigate` mocked to a canned action sequence, assert
+`VisionAgent` dispatches through `SafetyController` and honours a veto --
+no API calls, so this belongs in the automated suite. (b) Assert
+`searched_rooms` is populated from `MissionMemory` and reaches the
+request body. (c) A manual, paid, non-automated run against the real
+service (in the style of `tests/manual_describe_image.py`) that completes
+a backpack hunt in the sim -- this is the parity check against the JS
+Autopilot's ~76 steps. (d) Record cost and wall-clock for that run;
+those numbers are the input to the cost constraint below.
+
+**Cost constraint.** Every step is a paid call. A 76-step hunt is 76
+calls and, at the current 2.5s throttle, over three minutes. Both the
+call cap and the throttle are product decisions now, not demo details --
+carry them into the Python agent rather than leaving them in the browser.
 
 ### Phase S3 -- Put the brain on the wire
 
@@ -381,15 +458,34 @@ no idempotency key today, so this may surface a real design question.
 
 ## 5. Ambiguities -- answer these before building
 
-**Q1. Which policy does hardware inherit?** There are two working
-autonomy implementations: the rule-based frontier explorer
-(`brain/agent.py` + its JS twin) and Vision Autopilot (real Claude calls
-on rendered frames). The first cannot run on hardware without
-coordinates (section 2.2); the second can. If the answer is "vision,"
-Phase S2 becomes the top priority and Phase S6's grid fidelity matters
-much less. If it is "rule-based," a coordinate source is needed and that
-is a much larger project (odometry / SLAM) that this plan does not cover.
-**This is the single highest-leverage open question here.**
+**Q1. Which policy does hardware inherit? -- ANSWERED (2026-08-27):
+vision.** The robot sends an image to the model, gets a move back, and
+repeats until it finds the target. This was the intent all along; the
+rule-based frontier explorer was never a competing design.
+
+Worth recording *why* the rule-based path exists, since it is the larger
+body of code and reads like the primary one: **it is scaffolding for a
+simulator with no camera.** `ConstrainedAgent.__init__` defaults
+`vision_fn=describe_grid_frame`, a free offline converter that turns grid
+facts into the same schema a VLM returns, "so this runs entirely in
+simulation with no API calls and no cost" (its own docstring). That let
+Phase 2's action loop be built before any image pipeline existed. Phase
+4's mission memory and Phase 6's active scanning were then layered on
+top, and frontier preference was added to stop the aimless wandering --
+so the stand-in ended up carrying all 61 tests and both demo scripts.
+
+Consequences, applied throughout this document:
+
+- Phase S2 (real image bytes) is now the **top priority** -- it is the
+  only structural blocker between Vision Autopilot and hardware.
+- Phase S6 (Ackermann, continuous pose, scaled map) drops far down: a
+  policy that never reasons about grid cells does not care how faithful
+  the grid is.
+- Section 2.2 stops being a blocker -- see there.
+- Section 3.5 (raycaster fidelity) gets *more* important, not less: the
+  render is now the model's actual input, not a demo visual.
+- Two new work items appear: a **Python** vision agent (phase S2b) and
+  **step memory** in the `/navigate` prompt (also S2b).
 
 **Q2. Does `brain/` stay on the MacBook? -- ANSWERED (2026-08-27): no.**
 `README.md` says yes, but that predates vision moving to Bedrock. The
@@ -447,6 +543,14 @@ Before trusting a hardware swap-in, all of these:
 6. `get_camera_frame()` returns real image bytes on every backend, and no
    policy reads grid coordinates on the path intended for hardware
    (Phase S2 + Q1).
+6a. A **Python** vision agent completes a backpack hunt in the sim, with
+   cost and wall-clock recorded (Phase S2b). Until this exists the
+   hardware path is browser-only.
+6b. The `/navigate` prompt carries `searched_rooms`, and a run
+   demonstrably stops revisiting a searched room (Phase S2b).
+6c. Real photographs of a real room have been replayed through
+   `/navigate` and the returned actions are sane (section 7). This is
+   the only check that speaks to the model's real-world accuracy.
 7. A mission completes with no collisions under 200ms latency and 5%
    packet loss (Phase S7).
 8. A to-scale map with arc-based turning is navigable by the chosen
