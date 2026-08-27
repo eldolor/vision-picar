@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="An introduction to vision-picar: a robot car that finds things by looking, why the Guide app is the car's own first-person view, and what the hardware phase changes.">
+<meta name="color-scheme" content="light dark">
+<title>Teaching a Car to Look</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500&display=swap">
+
+<style>
+  :root {
+    /* Drafting paper: a cool neutral, biased toward the instrument teal
+       rather than a plain grey, so the whole page sits in one family. */
+    --paper:      #EDF0F1;
+    --panel:      #F7F9F9;
+    --ink:        #101A20;
+    --ink-soft:   #33454F;
+    --muted:      #5A6B75;
+    --rule:       #C6CFD4;
+    --rule-faint: #DDE3E6;
+    /* Two accents, each meaning something: teal is the robot's own
+       sensing, vermilion is the thing it is looking for. */
+    --signal:     #16707F;
+    --signal-bg:  #DCEAEC;
+    --target:     #BF3B2B;
+    --target-bg:  #F6E2DE;
+    --shadow:     0 1px 2px rgba(16, 26, 32, .06), 0 12px 32px rgba(16, 26, 32, .07);
+
+    --measure: 66ch;
+    --step--1: 0.82rem;
+    --step-0:  1.0625rem;
+    --step-1:  1.35rem;
+    --step-2:  1.75rem;
+    --step-3:  2.4rem;
+    --step-4:  clamp(2.6rem, 7vw, 4rem);
+
+    --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --body:    "Newsreader", Georgia, "Times New Roman", serif;
+    --mono:    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0E1519;
+      --panel:      #141E24;
+      --ink:        #DEE6EA;
+      --ink-soft:   #B3C1C8;
+      --muted:      #8397A1;
+      --rule:       #27353C;
+      --rule-faint: #1B262C;
+      --signal:     #46AEC0;
+      --signal-bg:  #102A30;
+      --target:     #E67059;
+      --target-bg:  #2E1712;
+      --shadow:     0 1px 2px rgba(0, 0, 0, .4), 0 14px 36px rgba(0, 0, 0, .35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #0E1519;
+    --panel:      #141E24;
+    --ink:        #DEE6EA;
+    --ink-soft:   #B3C1C8;
+    --muted:      #8397A1;
+    --rule:       #27353C;
+    --rule-faint: #1B262C;
+    --signal:     #46AEC0;
+    --signal-bg:  #102A30;
+    --target:     #E67059;
+    --target-bg:  #2E1712;
+    --shadow:     0 1px 2px rgba(0, 0, 0, .4), 0 14px 36px rgba(0, 0, 0, .35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: var(--step-0);
+    line-height: 1.68;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  .page { max-width: 1080px; margin: 0 auto; padding: 0 clamp(20px, 5vw, 48px) 96px; }
+  .col  { max-width: var(--measure); margin-inline: auto; }
+
+  h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+
+  /* ---------- eyebrow: the annotation layer of a technical drawing ---------- */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--signal);
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    border-bottom: 1px solid var(--rule);
+    padding: clamp(48px, 9vw, 96px) 0 clamp(32px, 5vw, 56px);
+    display: flex; flex-direction: column; gap: 26px;
+  }
+  .masthead h1 {
+    font-size: var(--step-4);
+    font-weight: 800;
+    line-height: .98;
+    letter-spacing: -.032em;
+    max-width: 15ch;
+  }
+  .masthead h1 em {
+    font-style: normal;
+    color: var(--target);
+  }
+  .standfirst {
+    font-size: var(--step-1);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    font-weight: 300;
+    max-width: 54ch;
+  }
+  .masthead-meta {
+    display: flex; flex-wrap: wrap; gap: 8px 22px;
+    font-family: var(--mono); font-size: var(--step--1);
+    color: var(--muted);
+    padding-top: 8px;
+  }
+  .masthead-meta span { display: inline-flex; align-items: center; gap: 7px; }
+  .masthead-meta span::before {
+    content: ""; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--rule); flex: none;
+  }
+
+  /* ---------- prose ---------- */
+  section { padding-top: clamp(48px, 7vw, 80px); }
+  section > .col > * + * { margin-top: 1.1em; }
+
+  h2 {
+    font-size: var(--step-3);
+    font-weight: 700;
+    letter-spacing: -.022em;
+    line-height: 1.1;
+    margin-top: .55em;
+  }
+  h3 {
+    font-size: var(--step-1);
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin-top: 1.9em;
+  }
+  p { margin: 0; }
+  .lede { font-size: var(--step-1); line-height: 1.55; color: var(--ink-soft); font-weight: 300; }
+  strong { font-weight: 500; color: var(--ink); }
+  em.term { font-style: italic; color: var(--ink); }
+
+  a { color: var(--signal); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+  code {
+    font-family: var(--mono); font-size: .86em;
+    background: var(--rule-faint); color: var(--ink-soft);
+    padding: .12em .38em; border-radius: 3px;
+  }
+
+  .pull {
+    border-left: 2px solid var(--target);
+    padding-left: 22px;
+    font-size: var(--step-2);
+    line-height: 1.35;
+    font-weight: 300;
+    letter-spacing: -.012em;
+    color: var(--ink);
+    margin-block: 1.6em !important;
+  }
+
+  /* ---------- instrument panels break the column ---------- */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    padding: clamp(22px, 4vw, 36px);
+    margin-top: 2.2em;
+  }
+  .panel-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px;
+    padding-bottom: 18px; margin-bottom: 24px;
+    border-bottom: 1px solid var(--rule-faint);
+  }
+  .panel-head h3 { margin: 0; font-size: var(--step-1); }
+  .panel-note { font-family: var(--mono); font-size: var(--step--1); color: var(--muted); }
+
+  /* ---------- the loop ---------- */
+  .loop { display: flex; flex-wrap: wrap; align-items: stretch; gap: 12px; }
+  .loop-step {
+    flex: 1 1 190px;
+    display: flex; flex-direction: column; gap: 9px;
+    padding: 18px;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: var(--paper);
+  }
+  .loop-step.swappable {
+    border-style: dashed;
+    border-color: var(--target);
+    background: var(--target-bg);
+  }
+  .loop-icon { width: 22px; height: 22px; color: var(--signal); }
+  .loop-step.swappable .loop-icon { color: var(--target); }
+  .loop-icon svg { width: 100%; height: 100%; display: block; }
+  .loop-step h4 {
+    font-family: var(--display); font-size: var(--step-0); font-weight: 700;
+    letter-spacing: -.005em; margin: 0;
+  }
+  .loop-step p { font-size: .93rem; line-height: 1.5; color: var(--ink-soft); font-weight: 300; }
+  .loop-arrow {
+    align-self: center; color: var(--rule); flex: none;
+    width: 18px; height: 18px;
+  }
+  .loop-arrow svg { width: 100%; height: 100%; display: block; }
+  @media (max-width: 700px) {
+    .loop-arrow { transform: rotate(90deg); }
+  }
+  .loop-return {
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 18px; padding-top: 16px;
+    border-top: 1px dashed var(--rule);
+    font-family: var(--mono); font-size: var(--step--1);
+    color: var(--muted);
+  }
+  .loop-return svg { width: 17px; height: 17px; color: var(--signal); flex: none; }
+
+  /* ---------- three bodies ---------- */
+  .bodies { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .body-card {
+    display: flex; flex-direction: column; gap: 14px;
+    padding: 20px;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: var(--paper);
+  }
+  .body-card.next { border-color: var(--target); }
+  .chip {
+    align-self: flex-start;
+    font-family: var(--mono); font-size: .68rem; font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase;
+    padding: 4px 9px; border-radius: 2px;
+  }
+  .chip.live   { background: var(--signal-bg); color: var(--signal); }
+  .chip.ahead  { background: var(--target-bg); color: var(--target); }
+  .body-card h4 {
+    font-family: var(--display); font-size: var(--step-1); font-weight: 700;
+    letter-spacing: -.015em; margin: 0; line-height: 1.15;
+  }
+  .spec { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; margin: 0; }
+  .spec dt {
+    font-family: var(--mono); font-size: .7rem; font-weight: 500;
+    letter-spacing: .09em; text-transform: uppercase; color: var(--muted);
+    padding-top: .32em;
+  }
+  .spec dd { margin: 0; font-size: .95rem; line-height: 1.45; color: var(--ink-soft); font-weight: 300; }
+
+  /* ---------- phase track: a real sequence, so it earns its numbers ---------- */
+  .track { display: flex; flex-direction: column; }
+  .phase {
+    display: grid;
+    grid-template-columns: 3.4rem 1fr;
+    gap: 0 18px;
+    padding: 14px 0;
+    border-top: 1px solid var(--rule-faint);
+    align-items: baseline;
+  }
+  .phase:first-child { border-top: 0; }
+  .phase-n {
+    font-family: var(--mono); font-size: var(--step--1); font-weight: 600;
+    letter-spacing: .06em; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .phase-body h4 {
+    font-family: var(--display); font-size: var(--step-0); font-weight: 600;
+    margin: 0 0 2px; letter-spacing: -.005em;
+  }
+  .phase-body p { font-size: .93rem; line-height: 1.5; color: var(--muted); font-weight: 300; }
+  .phase.done .phase-n { color: var(--signal); }
+  .phase.here {
+    background: var(--target-bg);
+    margin-inline: calc(-1 * clamp(12px, 2vw, 20px));
+    padding-inline: clamp(12px, 2vw, 20px);
+    border-radius: 3px;
+    border-top-color: transparent;
+  }
+  .phase.here .phase-n { color: var(--target); }
+  .phase.here .phase-body p { color: var(--ink-soft); }
+
+  /* ---------- glossary ---------- */
+  .glossary { display: grid; gap: 0; margin: 0; }
+  .glossary div {
+    display: grid; grid-template-columns: minmax(120px, 190px) 1fr; gap: 6px 22px;
+    padding: 15px 0; border-top: 1px solid var(--rule-faint);
+  }
+  .glossary div:first-child { border-top: 0; padding-top: 0; }
+  .glossary dt {
+    font-family: var(--display); font-weight: 600; font-size: var(--step-0);
+    letter-spacing: -.005em;
+  }
+  .glossary dd { margin: 0; font-size: .95rem; line-height: 1.55; color: var(--ink-soft); font-weight: 300; }
+  @media (max-width: 560px) {
+    .glossary div { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- close ---------- */
+  .closer {
+    margin-top: clamp(56px, 8vw, 88px);
+    padding-top: 30px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono); font-size: var(--step--1);
+    color: var(--muted);
+    display: flex; flex-wrap: wrap; gap: 10px 26px; justify-content: space-between;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">vision-picar &middot; project introduction</div>
+    <h1>Teaching a car to <em>look</em>.</h1>
+    <p class="standfirst">
+      A small robot car you can send to find something. Not by giving it a map
+      or a route &mdash; by letting it look at the room, the way you would, and
+      work out where to go next.
+    </p>
+    <div class="masthead-meta">
+      <span>SunFounder PiCar-X</span>
+      <span>Claude vision models on AWS Bedrock</span>
+      <span>Simulation built first, hardware next</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">The intent</div>
+      <h2>&ldquo;Go find my red backpack.&rdquo;</h2>
+      <p class="lede">
+        That sentence is the whole project. You say it, and a small
+        camera-equipped car drives off into a real house and comes back having
+        found the thing &mdash; around the sofa, through the doorway, past
+        whatever is on the floor that day.
+      </p>
+      <p>
+        What makes that hard is not the driving. It's that the car has never
+        seen your house, has no floorplan, and doesn't know what your backpack
+        looks like. Traditional robot navigation solves this by building a map
+        first and then planning a route through it. This project takes the
+        other road: <strong>no map at all</strong>. The car takes a photograph
+        of whatever is in front of it, asks an AI vision model what it's
+        looking at and which way the backpack is, and makes exactly one move.
+        Then it does it again.
+      </p>
+      <p>
+        It's a deliberately simple idea with a lot hiding inside it, which is
+        why most of the work so far has gone into building somewhere safe to
+        test it.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">The mechanism</div>
+      <h2>One loop, about once a second</h2>
+      <p>
+        Everything in this project &mdash; the simulation, the phone app, the
+        car that doesn't exist yet &mdash; runs the same four-step loop. The
+        only thing that changes between them is who or what performs the last
+        step.
+      </p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h3>The perception loop</h3>
+        <span class="panel-note">look &rarr; think &rarr; decide &rarr; move</span>
+      </div>
+
+      <div class="loop">
+        <div class="loop-step">
+          <span class="loop-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 8h3l1.6-2h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/>
+              <circle cx="12" cy="13.2" r="3.4"/>
+            </svg>
+          </span>
+          <h4>Look</h4>
+          <p>Take one photo of whatever is straight ahead. No map, no memory of the room's layout.</p>
+        </div>
+
+        <span class="loop-arrow" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        </span>
+
+        <div class="loop-step">
+          <span class="loop-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3a5 5 0 0 0-5 5v1.2A4 4 0 0 0 8 17v1.5a2.5 2.5 0 0 0 5 0V3.4"/>
+              <path d="M12 3a5 5 0 0 1 5 5v1.2A4 4 0 0 1 16 17"/>
+            </svg>
+          </span>
+          <h4>Think</h4>
+          <p>Send that photo to a vision model. It reads the scene and answers in plain terms: is the target visible, and where?</p>
+        </div>
+
+        <span class="loop-arrow" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        </span>
+
+        <div class="loop-step">
+          <span class="loop-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/>
+            </svg>
+          </span>
+          <h4>Decide</h4>
+          <p>Turn that answer into one small instruction &mdash; forward, left, right, stop. Never a whole route.</p>
+        </div>
+
+        <span class="loop-arrow" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        </span>
+
+        <div class="loop-step swappable">
+          <span class="loop-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 16v-3l1.8-4.8A2 2 0 0 1 7.7 7h8.6a2 2 0 0 1 1.9 1.2L20 13v3"/>
+              <path d="M2 16h20"/><circle cx="7" cy="18.2" r="1.6"/><circle cx="17" cy="18.2" r="1.6"/>
+            </svg>
+          </span>
+          <h4>Move</h4>
+          <p>Something carries the instruction out. <strong>This is the part that swaps</strong> &mdash; and the reason the project works the way it does.</p>
+        </div>
+      </div>
+
+      <div class="loop-return">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>
+        </svg>
+        <span>The world has changed slightly. Look again. Repeat about once a second.</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">The trick</div>
+      <h2>Three bodies, one brain</h2>
+      <p>
+        Because the last step is the only part that changes, you can unplug the
+        body and put a different one in its place. The eyes and the brain stay
+        exactly the same. That's what lets the project be tested long before
+        any hardware is finished &mdash; and it's the thing worth understanding
+        before you try the app.
+      </p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h3>What performs the &ldquo;move&rdquo; step</h3>
+        <span class="panel-note">same loop in all three</span>
+      </div>
+
+      <div class="bodies">
+        <div class="body-card">
+          <span class="chip live">Working today</span>
+          <h4>A simulated car</h4>
+          <dl class="spec">
+            <dt>Eyes</dt><dd>A drawn first-person view of a make-believe house</dd>
+            <dt>Brain</dt><dd>The vision model, called for real</dd>
+            <dt>Body</dt><dd>A car that exists only as software</dd>
+          </dl>
+        </div>
+
+        <div class="body-card">
+          <span class="chip live">Working today</span>
+          <h4>You, on foot</h4>
+          <dl class="spec">
+            <dt>Eyes</dt><dd>Your phone's actual camera</dd>
+            <dt>Brain</dt><dd>The vision model, called for real</dd>
+            <dt>Body</dt><dd>Your legs</dd>
+          </dl>
+        </div>
+
+        <div class="body-card next">
+          <span class="chip ahead">Next phase</span>
+          <h4>The real PiCar-X</h4>
+          <dl class="spec">
+            <dt>Eyes</dt><dd>The camera bolted to the car</dd>
+            <dt>Brain</dt><dd>The vision model, called for real</dd>
+            <dt>Body</dt><dd>Two motors and a steering servo</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">Guide mode</div>
+      <h2>When you use the app, you are the car</h2>
+      <p>
+        The middle column above is the one people find surprising, so it's
+        worth saying plainly. <em class="term">Guide</em> &mdash; the tab that
+        turns on your camera and points an arrow at what you're looking for
+        &mdash; is not a separate consumer feature that happens to share some
+        code. It is <strong>the robot's first-person view</strong>, handed to a
+        human.
+      </p>
+
+      <p class="pull">
+        Hold up the phone and you're standing in for the car. The camera is its
+        camera. The arrow on screen is the instruction it would have sent to
+        its motors. Your legs are the motors.
+      </p>
+
+      <p>
+        The chevron that swings left and right, the glow along the edge of the
+        screen, the pulse that quickens as you close in, the outline that snaps
+        around the object when you've arrived &mdash; all of that is one
+        decision, rendered for eyes instead of wheels. The car will receive the
+        same decision as <code>FORWARD</code> or <code>LEFT</code>.
+      </p>
+      <p>
+        This is genuinely useful rather than a gimmick. Walking a room with
+        Guide tells you, in about ninety seconds and with no hardware at all,
+        whether the loop is good enough to drive something: whether the model
+        keeps up when you turn, whether its sense of &ldquo;close&rdquo; matches
+        yours, whether once-a-second is often enough to feel responsive. Every
+        one of those questions has to be answered before a car is worth
+        building, and every one of them is cheaper to answer on foot.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">The discipline</div>
+      <h2>The brain proposes; the body can refuse</h2>
+      <p>
+        One rule shapes the whole codebase: <strong>the AI is never allowed to
+        drive directly.</strong> Every instruction it produces passes through a
+        safety layer that sits with the body, not the brain. If the distance
+        sensor says there's something closer than 20&nbsp;cm ahead, the move is
+        vetoed and the wheels stop &mdash; whatever the model asked for, however
+        confident it sounded.
+      </p>
+      <p>
+        The same layer runs a watchdog: if the brain goes quiet for more than a
+        second &mdash; crashed, disconnected, waiting on a slow network call
+        &mdash; the motors stop on their own rather than continuing with the
+        last thing they were told.
+      </p>
+      <p>
+        This matters more than it might sound. A vision model can be confidently
+        wrong about a glass door or a dark stair edge. Keeping the veto in the
+        hardware means the worst case is a car that stops for no reason, not one
+        that drives into something. It's also why the simulation and the real
+        car will share this code unchanged &mdash; the safety rules were written
+        once, tested in software, and are already the rules the hardware will
+        run.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">Where it stands</div>
+      <h2>Built backwards, on purpose</h2>
+      <p>
+        The car was the last thing started, not the first. Everything above it
+        &mdash; the contract the hardware will implement, the safety layer, the
+        vision service, the decision loop, the app &mdash; was built and proven
+        against a simulated house first. Swapping in real hardware is designed
+        to be a configuration change plus one new file.
+      </p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Phase track</h3>
+        <span class="panel-note">each phase working before the next begins</span>
+      </div>
+
+      <div class="track">
+        <div class="phase done">
+          <div class="phase-n">00</div>
+          <div class="phase-body">
+            <h4>A house that isn't real</h4>
+            <p>A grid-world with a living room, a hallway, a kitchen &mdash; and a red backpack somewhere in it.</p>
+          </div>
+        </div>
+        <div class="phase done">
+          <div class="phase-n">01</div>
+          <div class="phase-body">
+            <h4>Teaching it to describe a room</h4>
+            <p>Hand a photo to a vision model, get back a structured account of what's in it.</p>
+          </div>
+        </div>
+        <div class="phase done">
+          <div class="phase-n">02&ndash;03</div>
+          <div class="phase-body">
+            <h4>Deciding, and refusing</h4>
+            <p>The look&ndash;think&ndash;decide&ndash;move loop, wrapped in a safety layer that can overrule it.</p>
+          </div>
+        </div>
+        <div class="phase done">
+          <div class="phase-n">04&ndash;06</div>
+          <div class="phase-body">
+            <h4>Searching rather than wandering</h4>
+            <p>Remembering which rooms it has already been through, and preferring somewhere new.</p>
+          </div>
+        </div>
+        <div class="phase done">
+          <div class="phase-n">09</div>
+          <div class="phase-body">
+            <h4>Splitting brain from body</h4>
+            <p>Thinking happens on one machine, moving on another, with an HTTP link between them &mdash; exactly the split the real car needs.</p>
+          </div>
+        </div>
+        <div class="phase done">
+          <div class="phase-n">10</div>
+          <div class="phase-body">
+            <h4>The digital twin, and Guide</h4>
+            <p>A phone app that drives the simulation for real, plus the vision service in the cloud &mdash; and the first-person mode you can walk around with.</p>
+          </div>
+        </div>
+        <div class="phase here">
+          <div class="phase-n">11</div>
+          <div class="phase-body">
+            <h4>Put it in the car &mdash; next</h4>
+            <p>Same brain, same safety rules, real motors and a real ultrasonic sensor. Say the object out loud; let it go and find it.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">Next phase</div>
+      <h2>What actually gets hard</h2>
+      <p>
+        On paper the hardware swap is small: point the configuration at real
+        hardware instead of the simulator, and write the one file that turns
+        &ldquo;drive forward&rdquo; into motor commands. Nothing in the thinking
+        layer has to change &mdash; that was the point of building it this way.
+      </p>
+      <p>
+        The honest difficulties are elsewhere, and they're all things a
+        simulation is too kind about:
+      </p>
+      <h3>A real room is not a grid</h3>
+      <p>
+        The simulated house has tidy square cells and walls in known places. A
+        real floor has chair legs, a rug edge, a cable, a cat. The distance
+        sensor sees one narrow cone straight ahead and knows nothing about the
+        table leg to the left.
+      </p>
+      <h3>Looking costs money and time</h3>
+      <p>
+        Every glance is a paid call to a vision model, and each one takes a
+        moment to come back. A car moving while it waits is a car acting on a
+        photo of where it used to be. Slower and cheaper, or faster and dearer
+        &mdash; that trade has to be settled with a real chassis on a real
+        floor.
+      </p>
+      <h3>Being wrong at speed</h3>
+      <p>
+        In Guide, a bad instruction just means a person turns the wrong way and
+        shrugs. On a car with momentum, the same mistake ends against a
+        skirting board. The safety layer already exists for this; the next phase
+        is where it stops being theoretical.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">Plain terms</div>
+      <h2>Words you'll hear</h2>
+    </div>
+    <div class="panel">
+      <dl class="glossary">
+        <div>
+          <dt>PiCar-X</dt>
+          <dd>An off-the-shelf robot car kit built around a Raspberry Pi &mdash; two drive motors, steering, a camera on a small pan-tilt mount, and an ultrasonic distance sensor.</dd>
+        </div>
+        <div>
+          <dt>Vision model</dt>
+          <dd>An AI model that accepts an image and a question about it, and answers in words. Here it's asked things like &ldquo;is a red backpack visible, and roughly where in this frame?&rdquo;</dd>
+        </div>
+        <div>
+          <dt>Digital twin</dt>
+          <dd>A working stand-in for the real machine that you can drive and watch. Not a mock-up &mdash; it runs the same movement, sensing and safety code the car will.</dd>
+        </div>
+        <div>
+          <dt>Ultrasonic sensor</dt>
+          <dd>A small emitter that measures distance by timing an echo, like a bat. Cheap and reliable, but it only sees a narrow cone directly ahead.</dd>
+        </div>
+        <div>
+          <dt>Safety veto</dt>
+          <dd>The rule that lets the body overrule the brain. Every proposed move is checked against the distance reading before any wheel turns.</dd>
+        </div>
+        <div>
+          <dt>Grid-world</dt>
+          <dd>The simulated house: rooms laid out on a coarse grid of squares, with doorways between them and objects placed in specific cells.</dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">In short</div>
+      <h2>A car that looks, then moves</h2>
+      <p class="lede">
+        The destination is a small robot you can point at a room and give a
+        sentence to. Everything built so far is the same loop wearing different
+        bodies &mdash; a simulated car to prove the idea, a phone in your hand
+        to feel it, and next, the car itself.
+      </p>
+    </div>
+  </section>
+
+  <div class="closer">
+    <span>vision-picar &mdash; simulation-first build of the PiCar-X vision agent</span>
+    <span>Phase 11 next: real hardware</span>
+  </div>
+
+</div>
+</body>
+</html>
