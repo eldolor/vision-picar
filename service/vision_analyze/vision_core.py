@@ -319,6 +319,82 @@ def _parse_guidance_json(text: str) -> dict:
         return {**_GUIDANCE_EMPTY_SCHEMA, "_raw": text}
 
 
+DESCRIBE_PROMPT = """You are looking at a photo someone has just taken on their phone, usually of a room or part of one. Describe it back to that person.
+
+Write for the person, not for a robot: they want to know what is in the picture. Do not mention obstacles, clearance, safe directions, or anything about navigating the space.
+
+Respond with ONLY a JSON object, no other text, matching this schema:
+{
+  "summary": "one or two plain sentences describing the scene, as you would say it out loud",
+  "room_type": "short label for the kind of space, e.g. \"kitchen\", \"home office\", \"back garden\"; use \"unclear\" if it is not obvious",
+  "objects": [list of the notable things visible, each named specifically -- "red backpack", not "bag"]
+}"""
+
+_DESCRIBE_EMPTY_SCHEMA = {
+    "summary": "",
+    "room_type": "unclear",
+    "objects": [],
+}
+
+
+def describe_image_bytes_person(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
+    """Person-facing sibling of describe_image_bytes().
+
+    Same Bedrock call, different prompt and schema. SCENE_PROMPT asks what a
+    robot needs (obstacles ahead, free space, doorways, a safest direction);
+    this asks what the person holding the phone needs. A separate function
+    rather than a flag on describe_image_bytes(), matching how
+    describe_image_bytes_navigate()/_guidance() were added -- the robot's
+    schema is consumed elsewhere and must not shift underneath it.
+    """
+    client = _get_client()
+
+    fmt = _bedrock_image_format(media_type)
+    if fmt not in ("gif", "jpeg", "png", "webp"):
+        image_bytes = _convert_to_jpeg(image_bytes)
+        fmt = "jpeg"
+
+    response = client.converse(
+        modelId=MODEL_ID,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "image": {
+                            "format": fmt,
+                            "source": {"bytes": image_bytes},
+                        }
+                    },
+                    {"text": DESCRIBE_PROMPT},
+                ],
+            }
+        ],
+        inferenceConfig={"maxTokens": 500},
+    )
+
+    content_blocks = response["output"]["message"]["content"]
+    text = "".join(b["text"] for b in content_blocks if "text" in b)
+    return _parse_describe_json(text)
+
+
+def _parse_describe_json(text: str) -> dict:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:]
+    try:
+        parsed = json.loads(text)
+        merged = {**_DESCRIBE_EMPTY_SCHEMA, **parsed}
+        if not isinstance(merged.get("objects"), list):
+            merged["objects"] = []
+        return merged
+    except json.JSONDecodeError:
+        logger.warning(f"Failed to parse VLM describe response as JSON: {text!r}")
+        return {**_DESCRIBE_EMPTY_SCHEMA, "_raw": text}
+
+
 def _parse_scene_json(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):

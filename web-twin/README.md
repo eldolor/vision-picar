@@ -34,7 +34,8 @@ iPhone (or any browser). No server, no install, no App Store.
   Vision guides them toward a named object. Its own top-level tab; Start
   takes over the full screen (CSS-simulated fullscreen, not the real
   Fullscreen API, for reliability on iOS Safari) and works in both
-  portrait and landscape, refreshed roughly every ~1s through the vision
+  portrait and landscape (a dismissible sheet suggests landscape; the
+  dismissal sticks between sessions), refreshed roughly every ~1s through the vision
   service's `/guidance` route (tightened from an initial ~2s -- see
   `PLAN-ar-guidance.md`'s changelog for the responsiveness/cost tradeoff),
   with the captured frame downscaled to a 960px max dimension first
@@ -49,7 +50,9 @@ iPhone (or any browser). No server, no install, no App Store.
     transitions, glides between positions) plus a screen-edge glow toward
     the direction to turn and a pulse that speeds up as proximity
     increases -- readable at a glance, not dependent on reading the small
-    caption text at the bottom. Once found, it's replaced by a glowing
+    caption text at the bottom. Both honour `prefers-reduced-motion`,
+    which swaps the pulse for a static size/brightness step so proximity
+    stays encoded rather than simply frozen. Once found, it's replaced by a glowing
     outline around the object -- drawn from the response's `bounding_box`
     field, an approximate LLM-estimated rectangle (not pixel-accurate
     segmentation), refreshed each tick, not live-tracked, positioned with
@@ -62,7 +65,53 @@ iPhone (or any browser). No server, no install, no App Store.
     **iOS Safari doesn't support the Vibration API at all, on any
     version** -- a platform limitation, not a bug here -- so the audio
     cues are the actual feedback mechanism on iPhone. A mute button in
-    the fullscreen HUD silences the audio cues only.
+    the fullscreen HUD silences the audio cues only, and the setting is
+    remembered between sessions.
+  - The HUD shows a call-budget meter rather than a raw call count. The
+    exact figure, and the pan-speed readout, are developer instrumentation
+    hidden behind "Show developer readouts" in Settings.
+  - Screen-reader support: the overlay is geometry with no accessible
+    name, so a hidden `aria-live` region speaks the guidance instead
+    (assertively on found). It announces on *transitions* -- a change of
+    zone or proximity -- rather than per tick, since the ~1s loop would
+    otherwise interrupt itself continuously. The decorative overlay,
+    the video, and the visible caption are all `aria-hidden` so nothing
+    is said twice. See `announceGuidance()`.
+
+## Tabs
+
+Three: **Guide** and **Camera** (the phone's real camera, pointed at the
+real world) and **Sim** (the grid-world simulation -- map, telemetry,
+manual D-pad, rule-based Explore/Find, and Vision Autopilot, all driving
+the same simulated robot over the same connection). Settings lives behind
+the gear in the header rather than in the tab bar, since connection
+details persist and the twin reconnects on its own; the gear returns you
+to whichever tab you came from.
+
+Drive and Autonomous used to be separate top-level tabs; they were merged
+into Sim because they are one robot viewed two ways, and a saved
+`vp_active_tab` of either value migrates to `sim` on load.
+
+## Sharing setup with another device
+
+Settings has a **Show setup code**: a QR of the same magic link the
+`?secret=`/`?robotSecret=` query params already implemented, plus the
+service URLs when they differ from what the receiving page would derive
+itself. Scanning it opens the app fully configured.
+
+The QR *is* the secrets in visual form, so it is revealed on an explicit
+tap rather than sitting in Settings permanently, takes itself back down
+after 60 seconds, and disappears if you leave the tab. Anyone who
+photographs the screen has the same access you do.
+
+The encoder is implemented inline (`qrEncode()` and friends) rather than
+pulled from a library or a QR web service -- this page is strictly
+self-contained, and handing these secrets to a third-party image API
+would be a real leak. It covers ISO/IEC 18004 byte mode, versions 1-20,
+EC levels M and L. Its block-structure and alignment tables were
+generated from a reference implementation, and its output was verified
+module-for-module against that reference across both EC levels and all
+eight masks, then decoded end-to-end with zxing-cpp.
 
 ## Architecture: this is now a real client of robot/server.py
 
@@ -121,10 +170,12 @@ for every other feature on this page. Two ways around it, cheapest first:
 
 ## Known limitations
 
-- No persistence -- reloading the page loses the server URL, the
-  vision service URL/secret fields, and all mission bookkeeping (visited cells,
-  search memory). The *robot's* actual position persists server-side
-  since it's not reset on reconnect.
+- Mission bookkeeping (visited cells, search memory, logs) is not
+  persisted -- reloading the page clears it. Connection settings *are*
+  remembered on the device (server URL, vision service URL, both secrets,
+  the last open tab, the mute preference), and the twin re-connects to the
+  robot server automatically on load. The *robot's* actual position
+  persists server-side since it's not reset on reconnect.
 - "Reset mission" clears the twin's local bookkeeping only -- it does
   not (and, matching real hardware, cannot) teleport the robot back to
   a start position. Restart `uvicorn` to reset the sim's position.

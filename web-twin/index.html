@@ -35,21 +35,52 @@
     --accent-alert: #FF6B35;
     --accent-alert-ink: #2A0D02;
     --text: #E8ECEF;
-    --text-dim: #6B7480;
+    /* Was #6B7480, which is 3.4:1 on --surface -- under AA for the 11-13px
+       text this token is used for almost everywhere (hints, telemetry
+       labels, log entries). 5.2:1 here, still clearly secondary. */
+    --text-dim: #8A93A0;
     --border: #262C35;
     --border-strong: #333B47;
     --field-bg: #0E1116;
+    --surface-hover: #2A323D;
     --shadow-1: 0 1px 2px rgba(0,0,0,0.25), 0 4px 14px rgba(0,0,0,0.22);
+    /* A second elevation, for things that float above the page rather than
+       sit in it: modals, toasts, the found-outline. One shadow token doing
+       every job is what flattens a dark UI. */
+    --shadow-2: 0 4px 14px rgba(0,0,0,0.42), 0 18px 44px rgba(0,0,0,0.38);
+    /* The blurred-glass surface was the best-looking thing on this page and
+       existed only inside Guide's fullscreen HUD. Promoted to a token so the
+       tab bar, toasts, and sheets share one material. */
+    --glass-bg: rgba(28,33,41,0.72);
+    --glass-border: rgba(255,255,255,0.07);
+    --lh-tight: 1.25;
+    --lh-body: 1.5;
     --fs-micro: 10px;
     --fs-small: 11px;
     --fs-body: 13px;
     --fs-md: 14px;
     --fs-title: 19px;
+    /* Text inputs get their own size, deliberately decoupled from the
+       body scale: iOS Safari auto-zooms the whole page on focusing any
+       input rendered below 16px and never zooms back out, so every field
+       on this page must stay at or above this regardless of how small
+       the surrounding UI text is. */
+    --fs-input: 16px;
+    --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-primary);
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  /* Suppressing the tap highlight above is right for touch, but it also
+     left keyboard and desktop users with no focus affordance at all (this
+     page has no other :focus styling). One explicit ring, scoped to
+     :focus-visible, restores that without bringing the tap flash back on
+     phones. box-shadow rather than outline so the ring follows each
+     element's own border-radius -- pills, circles, and cards included. */
+  :focus { outline: none; }
+  :focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
   body {
     margin: 0;
@@ -69,9 +100,16 @@
   }
   header h1 { font-size: var(--fs-title); margin: 2px 0 4px; font-weight: 650; }
   header .mission-summary {
-    font-family: var(--mono); font-size: var(--fs-body); color: var(--text-dim);
+    font-family: var(--sans); font-size: var(--fs-body); color: var(--text-dim);
     line-height: 1.4;
   }
+  /* Sim bookkeeping ("hallway, living room searched.") in a global header.
+     It was only ever about the simulated robot, which became conspicuous
+     once Drive and Autonomous merged into one tab and the other two tabs
+     stopped having anything to do with it. Hidden by default so the
+     attribute being absent at first paint is the correct state. */
+  body:not([data-tab="sim"]) header .mission-summary,
+  body:not([data-tab="sim"]) header .eyebrow { display: none; }
 
   .panel {
     background: var(--surface); border-radius: 12px; padding: 12px;
@@ -80,7 +118,7 @@
   }
 
   #canvas-wrap { display: flex; justify-content: center; padding: 8px; }
-  canvas { border-radius: 6px; display: block; }
+  canvas { border-radius: 6px; display: block; max-width: 100%; }
 
   .telemetry {
     font-family: var(--mono); font-size: 12px; color: var(--text-dim);
@@ -106,7 +144,9 @@
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     transition: background 0.12s, transform 0.08s;
   }
+  button:hover { background: var(--surface-hover); }
   button:active { transform: scale(0.96); }
+  button.primary:hover { background: #6FA9F6; }
   button.primary { background: var(--accent-primary); color: var(--accent-primary-ink); }
   button.danger { background: var(--accent-alert); color: var(--accent-alert-ink); }
   button.ghost { background: transparent; border: 1px solid var(--border-strong); }
@@ -137,13 +177,201 @@
   }
   #photo-result .banner.found { background: rgba(62,207,142,0.15); color: var(--accent-safe); }
   #photo-result .banner.not-found { background: rgba(255,107,53,0.1); color: var(--accent-alert); }
-
-  .settings-input {
-    width: 100%; margin-top: 6px; padding: 8px; border-radius: 6px;
-    border: 1px solid var(--border-strong); background: var(--field-bg); color: var(--text);
-    font-family: var(--mono); font-size: var(--fs-body);
+  /* /analyze describes a scene; it is not told what to look for. So "your
+     object isn't in the list" is an absence of evidence, not a negative
+     result, and rendering it in alert orange overstates it. */
+  #photo-result .banner.neutral {
+    background: var(--surface-raised); color: var(--text-dim);
+    border: 1px solid var(--border-strong);
   }
+  /* The room label is context; the sentence is the answer. So the room
+     reads as a small eyebrow above it rather than as the headline, which
+     is the other way round from how the robot-facing response was laid
+     out (there, "living room" was the whole point). */
+  .photo-room {
+    font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px;
+  }
+  .photo-summary {
+    font-family: var(--sans); font-size: var(--fs-md); color: var(--text);
+    line-height: var(--lh-body);
+  }
+
+  /* Every text field on this page -- previously four near-identical
+     inline style strings that had already started to drift apart. One
+     class so a change to field styling (or to --fs-input, which is load-
+     bearing for the iOS zoom behavior) actually reaches all of them. */
+  .text-input {
+    width: 100%; padding: 10px 12px; border-radius: 9px;
+    border: 1px solid var(--border-strong); background: var(--field-bg); color: var(--text);
+    font-family: var(--mono); font-size: var(--fs-input);
+    transition: border-color 0.15s;
+  }
+  .text-input:focus { border-color: var(--accent-primary); }
+  .settings-input { margin-top: 6px; }
   .hint { font-family: var(--sans); font-size: var(--fs-body); color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
+
+  /* The one-line answer to "what is this tab for," in the reading voice of
+     a product rather than a README. Every tab used to open with 60-100
+     words of implementation detail (route names, file paths, service
+     topology) before saying what the feature does. */
+  .lede {
+    font-family: var(--sans); font-size: var(--fs-md); color: var(--text);
+    line-height: 1.45; margin-bottom: 2px;
+  }
+
+  /* ...and the implementation detail itself, one tap away rather than in
+     the way. Deliberately <details>: it's keyboard- and screen-reader-
+     correct for free, and survives with no JS. */
+  .disclosure { margin-top: 6px; }
+  .disclosure > summary {
+    list-style: none; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--sans); font-size: var(--fs-body); font-weight: 600;
+    color: var(--text-dim); padding: 5px 0; transition: color 0.12s;
+  }
+  .disclosure > summary::-webkit-details-marker { display: none; }
+  .disclosure > summary:hover { color: var(--text); }
+  .disclosure > summary:focus-visible { box-shadow: var(--focus-ring); border-radius: 6px; }
+  .disclosure-caret { width: 13px; height: 13px; flex-shrink: 0; transition: transform 0.18s ease-out; }
+  .disclosure-caret svg { width: 100%; height: 100%; }
+  .disclosure[open] .disclosure-caret { transform: rotate(90deg); }
+  .disclosure .hint { margin-top: 0; }
+
+  /* Visually hidden but present in the accessibility tree -- the standard
+     clip technique rather than display:none, which would remove the
+     element from that tree entirely and silence the live region. */
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
+    white-space: nowrap; border: 0;
+  }
+
+  /* Empty states. Four surfaces on this page (both logs, the photo result,
+     the mission summary) previously rendered as blank dark rectangles
+     before anything had happened, which reads as broken rather than
+     "nothing yet." */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    padding: 20px 16px; text-align: center;
+  }
+  .empty-state-icon { width: 20px; height: 20px; color: var(--text-dim); opacity: 0.65; }
+  .empty-state-icon svg { width: 100%; height: 100%; }
+  .empty-state-text {
+    font-family: var(--sans); font-size: var(--fs-body); color: var(--text-dim); line-height: 1.4;
+  }
+
+  /* Result chips -- replaces a run of `key: value` monospace divs. */
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip {
+    font-family: var(--sans); font-size: var(--fs-small); font-weight: 600;
+    color: var(--text); background: var(--surface-raised);
+    border: 1px solid var(--border-strong); border-radius: 999px; padding: 5px 11px;
+  }
+  .chip.match {
+    background: rgba(62,207,142,0.16); border-color: rgba(62,207,142,0.4); color: var(--accent-safe);
+  }
+
+  /* Pending states. Connect and Take photo are the two slowest actions on
+     this page and both used to communicate only by swapping their label. */
+  .spinner {
+    width: 15px; height: 15px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid currentColor; border-top-color: transparent;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  button.is-busy { pointer-events: none; opacity: 0.8; }
+
+  .skeleton {
+    border-radius: 8px;
+    background: linear-gradient(90deg, var(--surface-raised) 25%, #2C343F 37%, var(--surface-raised) 63%);
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease infinite;
+  }
+  @keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  .skeleton-line { height: 12px; margin-top: 9px; }
+  .skeleton-line.short { width: 55%; }
+  .skeleton-line.tall { height: 26px; width: 70%; margin-top: 12px; }
+
+  /* Toasts. Status previously changed silently in place -- a .hint whose
+     text was rewritten, easy to miss entirely on a tab you weren't
+     looking at. */
+  .toast-stack {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(94px + env(safe-area-inset-bottom));
+    z-index: 120; display: flex; flex-direction: column; gap: 8px;
+    width: min(360px, calc(100% - 32px)); pointer-events: none;
+  }
+  .toast {
+    display: flex; align-items: center; gap: 9px;
+    padding: 11px 14px; border-radius: 12px;
+    font-family: var(--sans); font-size: var(--fs-body); font-weight: 600;
+    color: var(--text); line-height: 1.35;
+    background: var(--glass-bg); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    box-shadow: var(--shadow-2);
+    animation: toast-in 0.24s cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+  .toast.leaving { animation: toast-out 0.2s ease-in forwards; }
+  .toast-icon { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-dim); }
+  .toast-icon svg { width: 100%; height: 100%; }
+  .toast.ok .toast-icon { color: var(--accent-safe); }
+  .toast.err .toast-icon { color: var(--accent-alert); }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } }
+  @keyframes toast-out { to { opacity: 0; transform: translateY(8px); } }
+
+  /* Setup-sharing QR. */
+  #qr-reveal[hidden] { display: none; }
+  .qr-warning {
+    display: flex; gap: 9px; align-items: flex-start;
+    margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+    background: rgba(255,107,53,0.1); border: 1px solid rgba(255,107,53,0.28);
+    font-family: var(--sans); font-size: var(--fs-body); color: var(--text);
+    line-height: 1.45;
+  }
+  .qr-warning-icon {
+    width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; color: var(--accent-alert);
+  }
+  .qr-warning-icon svg { width: 100%; height: 100%; }
+  /* A white plate in both themes. Scanners want real black-on-white
+     contrast, and a QR tinted to match a dark UI measurably degrades
+     reads -- this is the one element on the page that should ignore the
+     palette entirely. */
+  .qr-frame {
+    display: flex; justify-content: center;
+    margin-top: 12px; padding: 12px; border-radius: 12px; background: #FFFFFF;
+  }
+  #qr-canvas {
+    display: block; border-radius: 0;
+    image-rendering: pixelated; max-width: 100%; height: auto;
+  }
+  .qr-meta {
+    font-family: var(--sans); font-size: var(--fs-small); color: var(--text-dim);
+    text-align: center; margin: 10px 0 4px; line-height: 1.5;
+  }
+  .qr-countdown { font-family: var(--mono); }
+
+  /* Settings switch. */
+  .switch-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    cursor: pointer; padding: 2px 0;
+  }
+  .switch-copy { min-width: 0; }
+  .switch-title { display: block; font-family: var(--sans); font-size: var(--fs-md); color: var(--text); font-weight: 600; }
+  .switch-sub { display: block; font-family: var(--sans); font-size: var(--fs-body); color: var(--text-dim); line-height: 1.4; margin-top: 2px; }
+  .switch {
+    appearance: none; -webkit-appearance: none; flex-shrink: 0; margin: 0;
+    width: 46px; height: 28px; border-radius: 999px; cursor: pointer;
+    background: var(--surface-raised); border: 1px solid var(--border-strong);
+    position: relative; transition: background 0.18s, border-color 0.18s;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 3px; left: 3px;
+    width: 20px; height: 20px; border-radius: 50%; background: var(--text-dim);
+    transition: transform 0.18s ease-out, background 0.18s;
+  }
+  .switch:checked { background: var(--accent-primary); border-color: var(--accent-primary); }
+  .switch:checked::after { transform: translateX(18px); background: var(--accent-primary-ink); }
 
   .fpv-wrap { display: flex; justify-content: center; margin-top: 8px; }
   #fpv-canvas { border-radius: 8px; display: block; }
@@ -197,16 +425,20 @@
     padding: 20px;
   }
   #guide-onboarding.visible { display: flex; }
+  #guide-onboarding.visible { animation: overlay-fade 0.18s ease-out; }
   .guide-onboarding-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
     padding: 20px; max-width: 340px; width: 100%;
-    box-shadow: var(--shadow-1);
+    box-shadow: var(--shadow-2);
+    animation: modal-rise 0.24s cubic-bezier(0.2, 0.9, 0.3, 1);
   }
+  @keyframes overlay-fade { from { opacity: 0; } }
+  @keyframes modal-rise { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
   .guide-onboarding-title {
     font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px;
   }
   .guide-onboarding-sub {
-    font-family: var(--mono); font-size: var(--fs-small); color: var(--text-dim); margin-bottom: 16px;
+    font-family: var(--sans); font-size: var(--fs-body); color: var(--text-dim); margin-bottom: 16px;
   }
   .guide-onboarding-row {
     display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px;
@@ -271,6 +503,33 @@
   }
   .guide-topbar-right { display: flex; gap: 8px; align-items: center; }
 
+  /* These calls cost money, so the budget stays on screen -- but as a
+     meter rather than the raw "47 calls" counter that used to sit here.
+     A number with a unit nobody outside the project recognizes reads as
+     debug instrumentation bolted onto a live camera view; a bar that
+     fills toward the session cap says the same thing at a glance. The
+     exact count is still one toggle away in Settings. */
+  .guide-budget {
+    display: flex; align-items: center; gap: 7px;
+    padding: 7px 10px; border-radius: 999px;
+    font-family: var(--mono); font-size: var(--fs-small); color: rgba(232,236,239,0.85);
+  }
+  .guide-budget-track {
+    width: 34px; height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.2); overflow: hidden;
+  }
+  .guide-budget-fill {
+    display: block; height: 100%; width: 0%;
+    background: var(--accent-safe); border-radius: 2px;
+    transition: width 0.35s ease-out, background 0.35s ease-out;
+  }
+  .guide-budget-fill.warn { background: var(--accent-alert); }
+
+  /* Developer-only readouts, off unless the Settings switch is on. */
+  .guide-budget-count, #guide-pan-readout { display: none; }
+  body.debug-readouts .guide-budget-count { display: inline; }
+  body.debug-readouts #guide-pan-readout { display: inline; }
+
   /* Transient nudge when the phone's orientation sensor reports panning
      faster than the vision model can usefully track -- see
      handleDeviceOrientation()/updateMotionWarning() in the script below. */
@@ -282,9 +541,13 @@
     color: var(--accent-alert);
     padding: 8px 16px; border-radius: 999px;
     white-space: nowrap; pointer-events: none;
-    opacity: 0; transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+    opacity: 0; visibility: hidden;
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out, visibility 0s linear 0.2s;
   }
-  .guide-motion-warning.visible { opacity: 1; transform: translate(-50%, 0); }
+  .guide-motion-warning.visible {
+    opacity: 1; visibility: visible; transform: translate(-50%, 0);
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out, visibility 0s;
+  }
   .guide-motion-warning-icon { width: 16px; height: 16px; flex-shrink: 0; }
   .guide-motion-warning-icon svg { width: 100%; height: 100%; }
 
@@ -332,16 +595,28 @@
      the instant it's rotated (or dismissed) -- portrait still fully
      works, same as before, this is just steering toward the better
      default. */
+  /* A nudge, not a blocker. This used to be a full-bleed 90%-opaque
+     blackout over the entire camera feed, which is a heavy thing to put
+     between someone and the live view they just granted camera access
+     for -- especially since portrait works fine and this is only a
+     preference. It's now a compact sheet above the caption bar: the feed
+     stays visible behind it, and dismissing it sticks across sessions. */
   #guide-rotate-hint {
-    display: none;
-    position: absolute; inset: 0; z-index: 5;
-    background: rgba(6,8,11,0.9);
-    flex-direction: column; align-items: center; justify-content: center; gap: 10px;
-    text-align: center; padding: 24px;
+    position: absolute; z-index: 5;
+    left: 50%; bottom: calc(104px + env(safe-area-inset-bottom));
+    width: min(340px, calc(100% - 32px));
+    display: flex; flex-direction: row; align-items: center; gap: 12px;
+    text-align: left; padding: 12px 14px; border-radius: 16px;
+    opacity: 0; visibility: hidden;
+    transform: translate(-50%, 10px);
+    transition: opacity 0.25s ease-out, transform 0.25s ease-out, visibility 0s linear 0.25s;
   }
-  #guide-rotate-hint.visible { display: flex; }
+  #guide-rotate-hint.visible {
+    opacity: 1; visibility: visible; transform: translate(-50%, 0);
+    transition: opacity 0.25s ease-out, transform 0.25s ease-out, visibility 0s;
+  }
   .guide-rotate-hint-icon {
-    width: 48px; height: 48px; color: var(--accent-primary);
+    width: 26px; height: 26px; flex-shrink: 0; color: var(--accent-primary);
     animation: guide-rotate-hint-turn 1.8s ease-in-out infinite;
   }
   .guide-rotate-hint-icon svg { width: 100%; height: 100%; }
@@ -350,15 +625,18 @@
     50%, 85% { transform: rotate(-90deg); }
     100% { transform: rotate(-90deg); }
   }
-  .guide-rotate-hint-title { font-size: 16px; font-weight: 700; color: var(--text); }
+  .guide-rotate-hint-copy { min-width: 0; flex: 1; }
+  .guide-rotate-hint-title { font-size: var(--fs-md); font-weight: 700; color: var(--text); }
   .guide-rotate-hint-sub {
-    font-family: var(--sans); font-size: var(--fs-body); color: var(--text-dim);
-    max-width: 260px; line-height: 1.5;
+    font-family: var(--sans); font-size: var(--fs-small); color: var(--text-dim);
+    line-height: 1.4; margin-top: 1px;
   }
   .guide-rotate-hint-dismiss {
-    margin-top: 8px; color: var(--text-dim); font-size: var(--fs-body);
-    padding: 8px 18px; min-height: unset; flex: unset;
+    width: 30px; height: 30px; border-radius: 50%; flex: unset; flex-shrink: 0;
+    min-height: unset; padding: 0; background: transparent; color: var(--text-dim);
+    display: flex; align-items: center; justify-content: center;
   }
+  .guide-rotate-hint-dismiss svg { width: 16px; height: 16px; }
 
   /* ---------- overlay elements: DOM/SVG, CSS-transitioned for smooth motion ---------- */
 
@@ -419,6 +697,21 @@
     transition: left 0.3s ease-out, top 0.3s ease-out, width 0.3s ease-out, height 0.3s ease-out, opacity 0.3s ease-out;
   }
   .guide-outline.visible { opacity: 1; }
+  /* One-shot settle when the target is first confirmed -- the outline used
+     to simply appear. Applied only on the transition into found (see
+     guidanceWasFound), not re-fired on every tick that stays found. */
+  .guide-outline.arrive { animation: guide-found-pop 0.44s cubic-bezier(0.2, 1.3, 0.4, 1); }
+  @keyframes guide-found-pop {
+    0% { transform: scale(1.16); }
+    58% { transform: scale(0.985); }
+    100% { transform: scale(1); }
+  }
+
+  /* Sensor says the phone hasn't moved, so the previous read still holds
+     and no paid call is made. Softening the overlay says "still valid,
+     resting" -- the caption used to be replaced with skip wording, which
+     read as a stall. */
+  .guide-chevron.steady, .guide-outline.steady { opacity: 0.72; }
 
   .guide-found-badge {
     position: absolute; left: 50%; bottom: -30px; transform: translateX(-50%);
@@ -431,41 +724,89 @@
   /* ---------- tabs ---------- */
   header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; }
   header .header-text { min-width: 0; }
+  /* Settings left the tab bar, where it held a fifth of the width for
+     something now opened roughly once (URLs persist and the twin
+     reconnects on its own). The gear toggles it and returns to whichever
+     tab you came from, so it behaves like a detour rather than a
+     destination. */
+  .header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .header-gear {
+    width: 34px; height: 34px; min-height: unset; flex: unset; padding: 0;
+    border-radius: 50%; background: transparent; color: var(--text-dim);
+    display: flex; align-items: center; justify-content: center;
+    transition: color 0.12s, background 0.12s;
+  }
+  .header-gear svg { width: 18px; height: 18px; }
+  .header-gear:hover { background: var(--surface-raised); color: var(--text); }
+  .header-gear.active { color: var(--accent-primary); background: var(--surface-raised); }
+
   .conn-dot {
     display: inline-flex; align-items: center; gap: 5px;
     font-family: var(--mono); font-size: 10px; color: var(--text-dim);
     white-space: nowrap; flex-shrink: 0;
+    background: transparent; border: none; padding: 4px 6px; border-radius: 999px;
+    min-height: unset; flex: unset; font-weight: 400;
   }
+  .conn-dot.actionable { cursor: pointer; }
+  .conn-dot.actionable:hover { background: var(--surface-raised); }
+  .conn-dot:not(.actionable) { pointer-events: none; }
+  .conn-dot.hidden { display: none; }
+  .conn-dot.needs-setup { color: var(--accent-alert); }
+  .conn-dot.needs-setup .dot { background: var(--accent-alert); }
   .conn-dot .dot {
     width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim);
     transition: background 0.2s;
   }
   .conn-dot.connected .dot { background: var(--accent-safe); }
   .conn-dot.connected { color: var(--accent-safe); }
+  .conn-dot.connecting .dot { background: var(--accent-primary); animation: conn-pulse 1s ease-in-out infinite; }
+  .conn-dot.connecting { color: var(--accent-primary); }
+  @keyframes conn-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 
   .wrap { padding-bottom: 84px; } /* room for the fixed tab bar */
 
   .tab-page { display: none; }
-  .tab-page.active { display: block; }
+  /* Tab switching was an instant display swap, which reads as a page
+     reload rather than a move between sections of one app. */
+  .tab-page.active { display: block; animation: tab-in 0.19s ease-out; }
+  @keyframes tab-in { from { opacity: 0; transform: translateY(6px); } }
 
   .tab-bar {
     position: fixed; left: 0; right: 0; bottom: 0;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
+    background: var(--glass-bg);
+    backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5);
+    border-top: 1px solid var(--glass-border);
     padding: 6px env(safe-area-inset-right) calc(6px + env(safe-area-inset-bottom)) env(safe-area-inset-left);
     z-index: 10;
   }
+  /* Fallback for browsers without backdrop-filter, where a 72%-opaque bar
+     would let content read through it illegibly. */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .tab-bar { background: var(--surface); }
+  }
   .tab-bar-inner { max-width: 420px; margin: 0 auto; display: flex; }
   .tab-btn {
+    position: relative;
     flex: 1; background: transparent; border: none; color: var(--text-dim);
     font-family: var(--sans); font-size: var(--fs-small); font-weight: 600;
     padding: 8px 4px 6px; border-radius: 10px; min-height: unset;
     display: flex; flex-direction: column; align-items: center; gap: 3px;
     cursor: pointer; transition: color 0.12s;
   }
-  .tab-btn .tab-icon { width: 20px; height: 20px; }
+  /* The active tab was marked by colour alone. A rule anchored to the top
+     edge of the bar reads as a position in a set, which colour doesn't. */
+  .tab-btn::before {
+    content: ""; position: absolute; top: -6px; left: 50%;
+    width: 24px; height: 2px; border-radius: 0 0 2px 2px;
+    background: var(--accent-primary);
+    transform: translateX(-50%) scaleX(0);
+    transition: transform 0.2s ease-out;
+  }
+  .tab-btn.active::before { transform: translateX(-50%) scaleX(1); }
+  .tab-btn .tab-icon { width: 20px; height: 20px; transition: transform 0.2s ease-out; }
   .tab-btn .tab-icon svg { width: 100%; height: 100%; }
   .tab-btn.active { color: var(--accent-primary); }
+  .tab-btn.active .tab-icon { transform: translateY(-1px) scale(1.08); }
   .tab-btn:active { transform: none; background: var(--surface-raised); }
 
   .subsection-label {
@@ -474,6 +815,47 @@
     margin: 2px 0 8px; padding-top: 10px; border-top: 1px solid var(--border);
   }
   .panel > .subsection-label:first-child { padding-top: 0; border-top: none; }
+
+  /* ---------- reduced motion ---------- */
+  /* This page runs several infinite animations and, in Guide, a
+     full-height edge glow that brightens and dims about once a second --
+     directly in front of someone walking around holding a phone. Honour
+     the OS preference. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+    /* Guide's proximity signal was carried entirely by pulse rate, so
+       freezing the animation would delete the information rather than
+       just calm it. Encode the same three steps statically, in size and
+       brightness, via the data-proximity attribute set in
+       renderGuidanceOverlay(). */
+    .guide-chevron-ring { display: none; }
+    .guide-chevron-pulse { animation: none !important; }
+    .guide-chevron[data-proximity="far"] .guide-chevron-pulse { opacity: 0.6; transform: scale(0.92); }
+    .guide-chevron[data-proximity="medium"] .guide-chevron-pulse { opacity: 0.82; transform: scale(1.12); }
+    .guide-chevron[data-proximity="near"] .guide-chevron-pulse { opacity: 1; transform: scale(1.38); }
+    .guide-preview-chevron { animation: none !important; }
+    .guide-rotate-hint-icon { animation: none !important; transform: rotate(-90deg); }
+    .skeleton { animation: none !important; background: var(--surface-raised); }
+  }
+
+  /* ---------- desktop / large tablet ---------- */
+  /* A 420px column alone in a black field reads as an unfinished mobile
+     page on a laptop -- and the desktop browser is a first-class target
+     here, not an afterthought: it's what README.md recommends for camera
+     work, since localhost is a secure context and a LAN IP isn't. This
+     widens the column and lets the panels breathe; it deliberately does
+     not restructure into multiple columns, which would fork the layout. */
+  @media (min-width: 720px) {
+    .wrap { max-width: 560px; padding: 28px 20px 104px; }
+    .tab-bar-inner { max-width: 560px; }
+    .panel { padding: 16px; border-radius: 14px; margin-bottom: 12px; }
+    header h1 { font-size: 24px; }
+    .tab-btn { padding: 10px 4px 8px; }
+  }
 </style>
 </head>
 <body>
@@ -485,24 +867,31 @@
       <h1>vision-picar</h1>
       <div class="mission-summary" id="mission-summary">No rooms searched yet.</div>
     </div>
-    <div class="conn-dot" id="header-conn-dot"><span class="dot"></span><span id="header-conn-text">Not connected</span></div>
+    <div class="header-actions">
+      <button class="conn-dot" id="header-conn-dot"><span class="dot"></span><span id="header-conn-text">Not connected</span></button>
+      <button class="header-gear" id="btn-settings" aria-label="Settings" aria-expanded="false" data-icon="settings"></button>
+    </div>
   </header>
 
-  <div class="tab-page active" data-tab="guide">
+  <div class="tab-page active" role="tabpanel" data-tab="guide">
     <div class="panel">
-      <div class="section-label">Guide me to... &middot; AR camera guidance</div>
-      <div class="hint">
-        Uses your phone's real camera (not the sim) -- points an arrow, then
-        an outline once found, toward a named object using a live Claude
-        Vision call every couple seconds against the vision service's
-        /guidance route. Opens fullscreen and works in both portrait and
-        landscape. Vibrates on Android; plays directional audio cues
-        everywhere (including iOS, which doesn't support web vibration at
-        all -- see web-twin/README.md). Requires this page to be loaded
-        over https:// or localhost (browsers block camera access
-        otherwise). Each tick is a real paid API call -- watch the call
-        counter.
+      <div class="section-label">Guide me to&hellip;</div>
+      <div class="lede">
+        Name something in the room. Point your camera around, and an arrow
+        will steer you to it &mdash; then outline it once you&rsquo;re there.
       </div>
+      <details class="disclosure">
+        <summary><span class="disclosure-caret" data-icon="chevronRight"></span>Requirements &amp; cost</summary>
+        <div class="hint">
+          Needs a real camera, so this page must be loaded over
+          <b>https://</b> or <b>localhost</b> &mdash; browsers block camera
+          access otherwise. Guidance refreshes about once a second, and each
+          refresh is a paid Claude Vision call against the vision service
+          configured in Settings. Directional audio cues play on every
+          platform; haptics are Android-only (iOS Safari has never supported
+          web vibration).
+        </div>
+      </details>
       <div class="guide-preview">
         <div class="guide-preview-chevron">
           <svg viewBox="0 0 64 64" fill="none">
@@ -511,14 +900,39 @@
         </div>
       </div>
       <div class="btn-row" style="margin-top:8px;">
-        <input type="text" id="guidance-target" value="red backpack" list="target-history-list" style="flex:2; padding:10px; border-radius:8px; border:1px solid var(--border-strong); background:var(--field-bg); color:var(--text); font-family:var(--mono); font-size:var(--fs-body);">
+        <input type="text" id="guidance-target" class="text-input" value="red backpack" list="target-history-list" style="flex:2;">
         <button id="btn-guidance" class="primary" style="flex:1;">Start</button>
       </div>
-      <div class="hint" id="guide-start-error" style="display:none; color:var(--accent-alert); margin-top:8px;"></div>
+      <div class="btn-row">
+        <button id="btn-how-it-works" class="ghost">How it works</button>
+      </div>
+      <div class="hint" id="guide-start-error" style="display:none; color:var(--accent-alert); margin-top:8px;" role="alert"></div>
     </div>
   </div>
 
-  <div class="tab-page" data-tab="drive">
+  <div class="tab-page" role="tabpanel" data-tab="camera">
+    <div class="panel">
+      <div class="subsection-label">Analyze a photo</div>
+      <div class="lede">Take a picture of a room and see what Claude finds in it.</div>
+      <div class="btn-row" style="margin-top:10px;">
+        <input type="text" id="photo-target" class="text-input" list="target-history-list"
+               placeholder="Check for something? (optional)" aria-label="Object to check for (optional)">
+      </div>
+      <div class="btn-row">
+        <button id="btn-take-photo" class="primary"><span data-icon="camera"></span>Take photo</button>
+      </div>
+      <img id="photo-preview" alt="Photo you captured">
+      <div id="photo-empty" class="empty-state">
+        <span class="empty-state-icon" data-icon="camera"></span>
+        <span class="empty-state-text">No photo yet &mdash; take one to see the analysis.</span>
+      </div>
+      <div id="photo-result" role="status" aria-live="polite"></div>
+      <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
+      <div class="hint">Uses the vision service configured in Settings.</div>
+    </div>
+  </div>
+
+  <div class="tab-page" role="tabpanel" data-tab="sim">
     <div class="panel">
       <div id="canvas-wrap"><canvas id="grid-canvas"></canvas></div>
       <div class="telemetry">
@@ -543,11 +957,9 @@
         <button id="btn-look-center" disabled aria-label="Look center"><span data-icon="eye"></span></button>
         <button id="btn-look-right" disabled aria-label="Look right"><span data-icon="eye"></span><span data-icon="chevronRight"></span></button>
       </div>
-      <div class="hint" id="drive-connect-hint">Not connected -- go to the Settings tab to connect to the robot server first.</div>
+      <div class="hint" id="drive-connect-hint">Not connected &mdash; open Settings from the header to connect to the robot server.</div>
     </div>
-  </div>
 
-  <div class="tab-page" data-tab="autonomous">
     <div class="panel">
       <div class="subsection-label">Rule-based &middot; free, no API calls</div>
       <div class="btn-row">
@@ -555,20 +967,26 @@
         <button id="btn-find" disabled>Find backpack</button>
         <button id="btn-reset" class="ghost">Reset mission</button>
       </div>
-      <div id="log"></div>
+      <div id="log" role="log" aria-live="polite"></div>
 
       <div class="subsection-label">Vision autopilot &middot; live Claude Vision loop</div>
-      <div class="hint">
-        Renders a first-person view of the sim and sends it to Claude Vision
-        every couple seconds to pick the next move -- real vision-in-the-loop
-        driving, not the rule-based Explore/Find above. Each tick is a real
-        paid API call against the vision service URL/secret set on the
-        Settings tab (same service, a sibling /navigate route) -- watch the
-        call counter. Movement still goes through robot/server.py's safety
-        veto, same as every other mode.
+      <div class="lede">
+        Claude looks at what the robot sees and picks each move &mdash; real
+        vision-in-the-loop driving, not the rule-based search above.
       </div>
+      <details class="disclosure">
+        <summary><span class="disclosure-caret" data-icon="chevronRight"></span>How it works &amp; cost</summary>
+        <div class="hint">
+          The sim has no camera, so the first-person view below is rendered
+          locally and sent to Claude Vision every couple of seconds to decide
+          the next action. Each tick is a paid API call against the vision
+          service configured in Settings &mdash; watch the call counter.
+          Movement still passes through the robot server&rsquo;s safety veto,
+          same as every other mode.
+        </div>
+      </details>
       <div class="btn-row" style="margin-top:8px;">
-        <input type="text" id="autopilot-target" value="red backpack" list="target-history-list" style="flex:2; padding:10px; border-radius:8px; border:1px solid var(--border-strong); background:var(--field-bg); color:var(--text); font-family:var(--mono); font-size:var(--fs-body);">
+        <input type="text" id="autopilot-target" class="text-input" value="red backpack" list="target-history-list" style="flex:2;">
         <button id="btn-autopilot" style="flex:1;" disabled>Start</button>
       </div>
       <div class="fpv-wrap"><canvas id="fpv-canvas"></canvas></div>
@@ -577,19 +995,6 @@
         <span class="call-counter" id="autopilot-call-count">0 calls</span>
       </div>
       <div id="autopilot-log"></div>
-    </div>
-  </div>
-
-  <div class="tab-page" data-tab="camera">
-    <div class="panel">
-      <div class="subsection-label">Find the bag in a photo</div>
-      <div class="btn-row">
-        <button id="btn-take-photo" class="primary">Take photo</button>
-      </div>
-      <img id="photo-preview" alt="">
-      <div id="photo-result"></div>
-      <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
-      <div class="hint">Uses the vision service URL/secret set on the Settings tab.</div>
     </div>
   </div>
 
@@ -618,8 +1023,17 @@
   </div>
 
   <div id="guide-fullscreen">
-    <video id="guidance-video" autoplay playsinline muted></video>
-    <div id="guidance-overlay">
+    <video id="guidance-video" autoplay playsinline muted aria-hidden="true"></video>
+
+    <!-- The only text channel for Guide. Everything that carries meaning on
+         screen -- chevron, edge glow, found outline -- is geometry with no
+         accessible name, so without these two regions a screen-reader user
+         gets nothing at all from this feature. See announceGuidance() for
+         why announcements fire on transitions rather than on every tick. -->
+    <div class="sr-only" id="guide-announce-polite" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div class="sr-only" id="guide-announce-assertive" role="alert" aria-live="assertive" aria-atomic="true"></div>
+
+    <div id="guidance-overlay" aria-hidden="true">
       <div class="guide-edge-glow guide-edge-glow-left" id="guide-edge-glow-left"></div>
       <div class="guide-edge-glow guide-edge-glow-right" id="guide-edge-glow-right"></div>
       <div class="guide-chevron" id="guide-chevron">
@@ -638,7 +1052,10 @@
       <button class="guide-close-btn guide-glass" id="btn-guidance-close" aria-label="Close" data-icon="close"></button>
       <div class="guide-topbar-right">
         <button class="guide-mute-btn guide-glass" id="btn-guidance-mute" aria-label="Mute" data-icon="volumeOn"></button>
-        <span class="guide-call-count guide-glass" id="guidance-call-count">0 calls</span>
+        <span class="guide-budget guide-glass" id="guide-budget" role="img" aria-label="Vision call budget">
+          <span class="guide-budget-track" aria-hidden="true"><span class="guide-budget-fill" id="guide-budget-fill"></span></span>
+          <span class="guide-budget-count" id="guidance-call-count" aria-hidden="true">0</span>
+        </span>
         <span class="guide-call-count guide-glass" id="guide-pan-readout">pan: --</span>
       </div>
     </div>
@@ -647,65 +1064,107 @@
       <span>Slow down -- panning too fast to track</span>
     </div>
     <div class="guide-bottombar">
-      <div class="guide-caption guide-glass">
+      <div class="guide-caption guide-glass" aria-hidden="true">
         <span class="guide-caption-icon" id="guide-caption-icon" data-icon="search"></span>
         <span class="guide-caption-text" id="guide-caption-text">Analyzing&hellip;</span>
       </div>
       <button class="guide-resume-btn" id="btn-guidance-resume">Resume searching</button>
     </div>
-    <div id="guide-rotate-hint">
+    <div id="guide-rotate-hint" class="guide-glass">
       <div class="guide-rotate-hint-icon" data-icon="phone"></div>
-      <div class="guide-rotate-hint-title">Rotate to landscape</div>
-      <div class="guide-rotate-hint-sub">Guide works best turned sideways -- wider field of view, easier to scan a room.</div>
-      <button class="guide-rotate-hint-dismiss ghost" id="btn-guide-rotate-dismiss">Continue in portrait</button>
+      <div class="guide-rotate-hint-copy">
+        <div class="guide-rotate-hint-title">Try landscape</div>
+        <div class="guide-rotate-hint-sub">Wider view makes a room easier to scan.</div>
+      </div>
+      <button class="guide-rotate-hint-dismiss" id="btn-guide-rotate-dismiss" aria-label="Dismiss and continue in portrait" data-icon="close"></button>
     </div>
   </div>
 
-  <div class="tab-page" data-tab="settings">
+  <div class="tab-page" role="tabpanel" data-tab="settings">
     <div class="panel">
       <div class="section-label">Robot server connection</div>
       <div class="btn-row">
-        <input type="text" id="cfg-server-url" placeholder="http://192.168.1.x:8000" style="flex:2; padding:10px; border-radius:8px; border:1px solid var(--border-strong); background:var(--field-bg); color:var(--text); font-family:var(--mono); font-size:var(--fs-body);">
+        <input type="text" id="cfg-server-url" class="text-input" placeholder="http://192.168.1.x:8000" style="flex:2;">
         <button id="btn-connect" class="primary" style="flex:1;">Connect</button>
       </div>
-      <input type="text" id="cfg-server-secret" placeholder="x-app-secret value (if this deployment requires one)" style="width:100%; margin-top:6px; padding:8px; border-radius:6px; border:1px solid var(--border-strong); background:var(--field-bg); color:var(--text); font-family:var(--mono); font-size:var(--fs-body);">
-      <div class="hint" id="connection-status">
-        Not connected. If this page was opened as a hosted deployment (not a
-        local file), the server URL above is prefilled to match -- just add
-        the shared secret if one is required and tap Connect. For local dev,
-        run `uvicorn robot.server:app --host 0.0.0.0` on your Mac and point
-        this at its LAN address instead, e.g. http://192.168.1.42:8000.
-      </div>
+      <input type="text" id="cfg-server-secret" class="text-input settings-input" placeholder="x-app-secret value (if this deployment requires one)">
+      <div class="hint" id="connection-status" role="status" aria-live="polite">Not connected.</div>
+      <details class="disclosure">
+        <summary><span class="disclosure-caret" data-icon="chevronRight"></span>Setting this up</summary>
+        <div class="hint">
+          When this page is served by the robot server itself, the URL above
+          is already filled in to match &mdash; add the shared secret if the
+          deployment requires one and tap Connect. For local development run
+          <code>uvicorn robot.server:app --host 0.0.0.0</code> and point this
+          at that machine&rsquo;s LAN address instead, e.g.
+          <code>http://192.168.1.42:8000</code>. Both fields are remembered
+          on this device, and the connection is re-established automatically
+          next time you open the app.
+        </div>
+      </details>
     </div>
 
     <div class="panel">
       <div class="section-label">Cloud endpoint settings</div>
+      <div class="lede">Powers Guide, Vision Autopilot, and photo analysis.</div>
+      <input type="text" id="cfg-url" class="text-input settings-input" placeholder="Vision service base URL (https://...)" style="margin-top:8px;">
+      <input type="text" id="cfg-secret" class="text-input settings-input" placeholder="x-app-secret value">
+      <details class="disclosure">
+        <summary><span class="disclosure-caret" data-icon="chevronRight"></span>What goes in these fields</summary>
+        <div class="hint">
+          Enter the <b>base</b> URL only &mdash; e.g.
+          <code>http://localhost:8080</code>, or the DNS name from the
+          <code>cloudformation/service.yaml</code> stack output. Leave off any
+          route like <code>/analyze</code> or <code>/guidance</code>; each
+          feature appends its own (pasting one in anyway is harmless, it gets
+          stripped). The secret is the
+          <code>vision-picar-app-shared-secret</code> value in Secrets
+          Manager. Both fields are remembered on this device.
+        </div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Share setup</div>
+      <div class="lede">Set up someone else&rsquo;s phone by having them scan a code.</div>
       <div class="hint">
-        Used by "Find the bag in a photo," Vision Autopilot, and "Guide me
-        to..." on the other tabs.
+        Opens this app on their device with the service URLs and secrets
+        already filled in, so there is nothing for them to type.
       </div>
-      <input type="text" id="cfg-url" class="settings-input" placeholder="Vision service base URL (https://...)" style="margin-top:8px;">
-      <input type="text" id="cfg-secret" class="settings-input" placeholder="x-app-secret value">
-      <div class="hint">
-        Enter the <b>base</b> URL only -- e.g. <code>http://localhost:8080</code>
-        or the NLB DNS name from the cloudformation/service.yaml stack
-        output. Don't include a route like /analyze, /navigate, or
-        /guidance -- each feature appends its own automatically (though
-        pasting one of those in by mistake is harmless, it gets stripped
-        back off). The secret field is remembered in this browser (see
-        "Cloud endpoint settings" secret prefill in the script) -- the URL
-        field is not, re-enter it after reloading. The secret is the
-        vision-picar-app-shared-secret value in Secrets Manager.
+      <div class="btn-row" style="margin-top:10px;">
+        <button id="btn-show-qr" class="ghost">Show setup code</button>
+      </div>
+      <div id="qr-reveal" hidden>
+        <div class="qr-warning">
+          <span class="qr-warning-icon" data-icon="warning"></span>
+          <span>This code carries your shared secrets. Anyone who scans it &mdash; or photographs the screen &mdash; gets the same access you have.</span>
+        </div>
+        <div class="qr-frame"><canvas id="qr-canvas"></canvas></div>
+        <div class="qr-meta" id="qr-meta"></div>
+        <div class="btn-row">
+          <button id="btn-hide-qr" class="ghost">Hide now</button>
+        </div>
       </div>
     </div>
 
     <div class="panel">
+      <div class="section-label">Developer</div>
+      <label class="switch-row" for="cfg-debug-readouts">
+        <span class="switch-copy">
+          <span class="switch-title">Show developer readouts</span>
+          <span class="switch-sub">Exact API call counts and the pan-speed meter in the Guide overlay.</span>
+        </span>
+        <input type="checkbox" id="cfg-debug-readouts" class="switch">
+      </label>
+    </div>
+
+    <div class="panel">
       <div class="section-label">Debug / support</div>
+      <div class="lede">Something broke? Copy the details into your bug report.</div>
       <div class="hint">
-        If something breaks, tap this and paste the result into a bug
-        report -- it includes the last 20 unexpected JS errors from this
-        browser plus basic context (URL, device), so an issue can be
-        diagnosed without needing to reproduce it live.
+        Includes the last 20 unexpected errors from this browser plus basic
+        context (URL, device) &mdash; enough to diagnose most issues without
+        reproducing them live.
       </div>
       <div class="btn-row" style="margin-top:8px;">
         <button id="btn-copy-debug" class="ghost">Copy debug info</button>
@@ -721,19 +1180,52 @@
      the script below. -->
 <datalist id="target-history-list"></datalist>
 
+<div class="toast-stack" id="toast-stack" role="status" aria-live="polite"></div>
+
 <nav class="tab-bar">
-  <div class="tab-bar-inner">
-    <button class="tab-btn active" data-tab="guide"><span class="tab-icon" data-icon="mapPin"></span>Guide</button>
-    <button class="tab-btn" data-tab="drive"><span class="tab-icon" data-icon="car"></span>Drive</button>
-    <button class="tab-btn" data-tab="autonomous"><span class="tab-icon" data-icon="bot"></span>Autonomous</button>
-    <button class="tab-btn" data-tab="camera"><span class="tab-icon" data-icon="camera"></span>Camera</button>
-    <button class="tab-btn" data-tab="settings"><span class="tab-icon" data-icon="settings"></span>Settings</button>
+  <div class="tab-bar-inner" role="tablist" aria-label="Sections">
+    <button class="tab-btn active" role="tab" aria-selected="true" data-tab="guide"><span class="tab-icon" data-icon="mapPin"></span>Guide</button>
+    <button class="tab-btn" role="tab" aria-selected="false" data-tab="camera"><span class="tab-icon" data-icon="camera"></span>Camera</button>
+    <button class="tab-btn" role="tab" aria-selected="false" data-tab="sim"><span class="tab-icon" data-icon="bot"></span>Sim</button>
   </div>
 </nav>
 
 <script>
 (function () {
   "use strict";
+
+  // ---------- tester error capture ----------
+  // Registered first, before any other statement in this file, so that a
+  // failure during init is recorded too. These listeners used to sit near
+  // the end, which meant an exception thrown on the way there was captured
+  // nowhere -- and an init failure is precisely the kind of "it just looked
+  // broken" report this buffer exists to explain. "Copy debug info" in
+  // Settings reads it back.
+  const DEBUG_LOG_KEY = "vp_debug_log";
+  const DEBUG_LOG_MAX = 20;
+  function pushDebugLog(entry) {
+    try {
+      const log = JSON.parse(localStorage.getItem(DEBUG_LOG_KEY) || "[]");
+      log.push(Object.assign({ t: new Date().toISOString() }, entry));
+      localStorage.setItem(DEBUG_LOG_KEY, JSON.stringify(log.slice(-DEBUG_LOG_MAX)));
+    } catch (e) { /* best-effort -- never let logging itself throw */ }
+  }
+  window.addEventListener("error", function (e) {
+    pushDebugLog({
+      type: "error",
+      message: e.message,
+      source: e.filename + ":" + e.lineno + ":" + e.colno,
+      stack: e.error && e.error.stack,
+    });
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    const reason = e.reason;
+    pushDebugLog({
+      type: "unhandledrejection",
+      message: String((reason && reason.message) || reason),
+      stack: reason && reason.stack,
+    });
+  });
 
   // ---------- icon system ----------
   // One inline-SVG icon set (stroke-based, currentColor, 24x24 viewBox)
@@ -774,6 +1266,16 @@
       if (ICON[name]) el.innerHTML = ICON[name];
     });
   }
+  // Called here rather than at the end of this file. Everything below is
+  // wiring that assumes a fully parsed document -- 26 top-level
+  // getElementById().onclick assignments among it -- and a single one of
+  // those throwing (a truncated response, an element that moved) used to
+  // abort the whole init before the icons were ever drawn, leaving every
+  // data-icon span blank. The tab bar is the most visible casualty, and it
+  // comes back on reload, which makes it look intermittent rather than
+  // structural. This script tag is at the end of <body>, so the elements
+  // it fills already exist.
+  applyStaticIcons();
 
   // ---------- static map data, for rendering only ----------
   // The robot's actual state (position, heading, safety, sensing) now
@@ -851,7 +1353,97 @@
     guidancePaused: false, guidanceFoundStreak: 0,
     guidancePanSpeed: 0, guidanceLastOrientation: null,
     guidanceConsecutiveSkips: 0, guidanceErrorStreak: 0,
+    connecting: false,
   };
+
+  // ---------- persisted preferences ----------
+  // Everything a returning user would otherwise have to re-enter or
+  // re-choose. This page is installable as a PWA, so it gets reopened cold
+  // constantly; previously only the two shared secrets and the target
+  // history survived a reload, which meant every launch started
+  // disconnected with an empty vision URL on whichever tab happened to be
+  // first. localStorage can throw outright in some private-browsing modes,
+  // so every access is wrapped -- a storage failure must never take down
+  // page init or a click handler.
+  const PREF = {
+    serverUrl: "vp_server_url",
+    serverSecret: "vp_cfg_server_secret",   // shared with prefillTesterSecrets below
+    visionUrl: "vp_vision_url",
+    visionSecret: "vp_cfg_secret",          // shared with prefillTesterSecrets below
+    tab: "vp_active_tab",
+    muted: "vp_guide_muted",
+    onboarded: "vp_guide_onboarded",
+    rotateHintDismissed: "vp_guide_rotate_dismissed",
+    debugReadouts: "vp_debug_readouts",
+  };
+  function prefGet(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+  function prefSet(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) { /* best-effort */ }
+  }
+
+  // ---------- shared UI helpers ----------
+
+  // Values rendered here come from the vision service's JSON response, not
+  // from this page -- escape them rather than concatenating them straight
+  // into innerHTML.
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // A blank dark rectangle before anything has happened reads as broken
+  // rather than empty, so every log/result surface gets a real "nothing
+  // yet" state. Marked with data-empty so the first real entry knows to
+  // clear it rather than appending underneath it.
+  function setEmptyState(el, icon, text) {
+    if (!el) return;
+    el.innerHTML = '<div class="empty-state">' +
+      '<span class="empty-state-icon">' + (ICON[icon] || "") + '</span>' +
+      '<span class="empty-state-text">' + text + '</span></div>';
+    el.dataset.empty = "1";
+  }
+  function clearEmptyState(el) {
+    if (el && el.dataset.empty) { el.innerHTML = ""; delete el.dataset.empty; }
+  }
+
+  const LOG_EMPTY = ["clock", "No moves yet — start a mission to see the robot's steps."];
+  const AUTOPILOT_EMPTY = ["bot", "No decisions yet — tap Start to hand driving to Claude."];
+
+  // Transient confirmations for actions whose outcome would otherwise only
+  // appear as rewritten text in a panel the user may not be looking at.
+  const TOAST_ICON = { ok: "target", err: "warning", info: "clock" };
+  function showToast(message, kind) {
+    const stack = document.getElementById("toast-stack");
+    if (!stack) return;
+    const el = document.createElement("div");
+    el.className = "toast " + (kind || "info");
+    el.innerHTML = '<span class="toast-icon">' + (ICON[TOAST_ICON[kind || "info"]] || "") + "</span>" +
+      "<span>" + escapeHtml(message) + "</span>";
+    stack.appendChild(el);
+    setTimeout(function () {
+      el.classList.add("leaving");
+      setTimeout(function () { el.remove(); }, 220);
+    }, kind === "err" ? 5200 : 3200);
+  }
+
+  // Buttons keep their label but gain a spinner and stop accepting input
+  // while the request they started is in flight.
+  function setButtonBusy(btn, busy, busyLabel) {
+    if (!btn) return;
+    if (busy) {
+      if (!btn.dataset.idleHtml) btn.dataset.idleHtml = btn.innerHTML;
+      btn.innerHTML = '<span class="spinner"></span>' + escapeHtml(busyLabel || "Working…");
+      btn.classList.add("is-busy");
+      btn.setAttribute("aria-busy", "true");
+    } else {
+      if (btn.dataset.idleHtml) { btn.innerHTML = btn.dataset.idleHtml; delete btn.dataset.idleHtml; }
+      btn.classList.remove("is-busy");
+      btn.removeAttribute("aria-busy");
+    }
+  }
 
   // ---------- robot/server.py client -- the twin's "brain" side of the ----------
   // ---------- MacBook<->Pi split, talking to the robot over HTTP just  ----------
@@ -885,7 +1477,7 @@
   // known route suffixes before appending the one this call actually
   // needs, so all three features tolerate whatever shape was pasted in,
   // not just "bare URL" or "URL ending in /analyze".
-  const VISION_SERVICE_ROUTES = ["/analyze", "/navigate", "/guidance"];
+  const VISION_SERVICE_ROUTES = ["/analyze", "/describe", "/navigate", "/guidance"];
   function deriveServiceUrl(rawUrl, targetRoute) {
     let trimmed = rawUrl.trim().replace(/\/$/, "");
     for (const route of VISION_SERVICE_ROUTES) {
@@ -1058,9 +1650,9 @@
     state.log = []; state.step = 0; state.autoTarget = null;
     state.autopilotTarget = null; state.autopilotCallCount = 0;
     const logEl = document.getElementById("log");
-    logEl.innerHTML = "";
     delete logEl.dataset.foundLogged;
-    document.getElementById("autopilot-log").innerHTML = "";
+    setEmptyState(logEl, LOG_EMPTY[0], LOG_EMPTY[1]);
+    setEmptyState(document.getElementById("autopilot-log"), AUTOPILOT_EMPTY[0], AUTOPILOT_EMPTY[1]);
     document.getElementById("autopilot-call-count").textContent = "0 calls";
     document.getElementById("fpv-hud").textContent = "Not running.";
     if (state.connected) {
@@ -1079,73 +1671,161 @@
     });
   }
 
+  // The header status answers "can I use what I'm looking at?", which is a
+  // different question on each tab. Guide and Camera never touch
+  // robot/server.py at all -- they talk to the vision service -- so showing
+  // them a red "Not connected" about the robot was both irrelevant and
+  // alarming, on the two tabs meant for people rather than for developing
+  // the robot. Sim is the only tab that needs the robot connection.
   function renderHeaderConnStatus() {
     const dot = document.getElementById("header-conn-dot");
     const text = document.getElementById("header-conn-text");
-    dot.classList.toggle("connected", state.connected);
-    text.textContent = state.connected ? "Connected" : "Not connected";
+    const tab = document.body.dataset.tab || "guide";
+
+    // Sim's own panel already reports both connections in full.
+    dot.classList.toggle("hidden", tab === "settings");
+
+    let label, connected, connecting = false, needsSetup = false, actionable = false;
+    if (tab === "sim") {
+      connected = state.connected;
+      connecting = state.connecting && !state.connected;
+      label = connected ? "Connected" : connecting ? "Connecting\u2026" : "Not connected";
+      actionable = !connected && !connecting;
+    } else {
+      // Guide and Camera need one thing: somewhere to send the image.
+      const hasVisionUrl = !!document.getElementById("cfg-url").value.trim();
+      connected = hasVisionUrl;
+      needsSetup = !hasVisionUrl;
+      label = hasVisionUrl ? "Ready" : "Setup needed";
+      actionable = needsSetup;
+    }
+
+    dot.classList.toggle("connected", connected);
+    dot.classList.toggle("connecting", connecting);
+    dot.classList.toggle("needs-setup", needsSetup);
+    dot.classList.toggle("actionable", actionable);
+    text.textContent = label;
+    dot.setAttribute("aria-label", actionable ? label + " \u2014 open settings" : label);
+
     const hint = document.getElementById("drive-connect-hint");
     if (hint) hint.style.display = state.connected ? "none" : "";
   }
 
-  async function connect() {
+  // Tapping the status when something is missing goes where it can be fixed.
+  document.getElementById("header-conn-dot").onclick = function () {
+    if (this.classList.contains("actionable")) switchTab("settings");
+  };
+
+  // `silent` marks the automatic attempt made at page load (see
+  // autoConnectOnLoad below) rather than a deliberate tap on Connect. The
+  // difference is only in how failure reads: an attempt the user didn't
+  // ask for shouldn't greet them with a paragraph of CORS troubleshooting
+  // on a tab they aren't looking at.
+  async function connect(opts) {
+    const silent = !!(opts && opts.silent);
     const url = document.getElementById("cfg-server-url").value.trim().replace(/\/$/, "");
     const statusEl = document.getElementById("connection-status");
+    const btn = document.getElementById("btn-connect");
     if (!url) {
-      statusEl.textContent = "Enter the robot server's URL first.";
+      if (!silent) statusEl.textContent = "Enter the robot server's URL first.";
       return;
     }
     state.serverUrl = url;
     state.serverSecret = document.getElementById("cfg-server-secret").value.trim();
-    statusEl.textContent = "Connecting\u2026";
+    state.connecting = true;
+    setButtonBusy(btn, true, "Connecting\u2026");
+    statusEl.textContent = silent ? "Reconnecting\u2026" : "Connecting\u2026";
+    renderHeaderConnStatus();
     try {
       const frame = await fetchFrame();
       state.connected = true;
       setControlsEnabled(true);
       statusEl.textContent = "Connected to " + url;
+      prefSet(PREF.serverUrl, url);
       recordObservation(frame);
       render(frame);
+      if (!silent) showToast("Connected to the robot server.", "ok");
     } catch (e) {
       state.connected = false;
       setControlsEnabled(false);
-      statusEl.textContent = "Could not reach " + url + " (" + e.message + "). " +
-        "Check the server is running, on the same network, and CORS/allowed_origins in config/robot.yaml permits this page's origin.";
+      statusEl.textContent = silent
+        ? "Not connected \u2014 " + url + " didn't respond. Tap Connect to retry."
+        : "Could not reach " + url + " (" + e.message + "). " +
+          "Check the server is running, on the same network, and CORS/allowed_origins in config/robot.yaml permits this page's origin.";
+      if (!silent) showToast("Couldn't reach the robot server.", "err");
+    } finally {
+      state.connecting = false;
+      setButtonBusy(btn, false);
+      renderHeaderConnStatus();
     }
-    renderHeaderConnStatus();
   }
 
   // ---------- rendering ----------
 
-  const CELL = 26;
-  const canvas = document.getElementById("grid-canvas");
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = COLS * CELL * dpr;
-  canvas.height = ROWS * CELL * dpr;
-  canvas.style.width = (COLS * CELL) + "px";
-  canvas.style.height = (ROWS * CELL) + "px";
-  const ctx = canvas.getContext("2d");
-  ctx.scale(dpr, dpr);
+  // Both canvases size themselves to the column they're in rather than to
+  // fixed pixel constants. The old fixed 26px cell made the map 338 CSS px
+  // wide, which does not fit the ~322px column available inside .panel on
+  // a 390-393px iPhone (the most common size there is) -- it overflowed and
+  // gave the whole page a horizontal scroll. Sizing is driven by a
+  // ResizeObserver rather than a one-shot measurement at load because both
+  // canvases live inside .tab-page elements that start display:none, where
+  // clientWidth is 0; the observer fires with a real width the moment the
+  // tab is first shown, and again on rotate.
 
-  const FPV_W = 320, FPV_H = 200;
+  const canvas = document.getElementById("grid-canvas");
+  const ctx = canvas.getContext("2d");
   const fpvCanvas = document.getElementById("fpv-canvas");
-  const fpvDpr = window.devicePixelRatio || 1;
-  fpvCanvas.width = FPV_W * fpvDpr;
-  fpvCanvas.height = FPV_H * fpvDpr;
-  fpvCanvas.style.width = FPV_W + "px";
-  fpvCanvas.style.height = FPV_H + "px";
   const fpvCtx = fpvCanvas.getContext("2d");
-  fpvCtx.scale(fpvDpr, fpvDpr);
+
+  const CELL_MIN = 14, CELL_MAX = 30;
+  let CELL = 26;
+  let FPV_W = 320, FPV_H = 200;
+  const FPV_ASPECT = 200 / 320;
+
+  // clientWidth includes the element's own padding, so subtract it to get
+  // the real content box the canvas has to fit inside.
+  function availableWidth(el, padding) {
+    return el.clientWidth - padding * 2;
+  }
+
+  // Returns true when the size actually changed, so callers know whether a
+  // redraw is needed (the observer fires on every layout pass, not just
+  // real resizes).
+  function sizeGridCanvas() {
+    const avail = availableWidth(document.getElementById("canvas-wrap"), 8);
+    if (avail <= 0) return false; // tab still hidden -- observer re-fires when shown
+    const next = Math.max(CELL_MIN, Math.min(CELL_MAX, Math.floor(avail / COLS)));
+    if (next === CELL && canvas.width) return false;
+    CELL = next;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = COLS * CELL * dpr;
+    canvas.height = ROWS * CELL * dpr;
+    canvas.style.width = (COLS * CELL) + "px";
+    canvas.style.height = (ROWS * CELL) + "px";
+    // setTransform, not scale: this runs repeatedly, and scale() compounds.
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return true;
+  }
+
+  function sizeFpvCanvas() {
+    const avail = availableWidth(document.querySelector(".fpv-wrap"), 0);
+    if (avail <= 0) return false;
+    const next = Math.max(200, Math.min(480, Math.floor(avail)));
+    if (next === FPV_W && fpvCanvas.width) return false;
+    FPV_W = next;
+    FPV_H = Math.round(FPV_W * FPV_ASPECT);
+    const dpr = window.devicePixelRatio || 1;
+    fpvCanvas.width = FPV_W * dpr;
+    fpvCanvas.height = FPV_H * dpr;
+    fpvCanvas.style.width = FPV_W + "px";
+    fpvCanvas.style.height = FPV_H + "px";
+    fpvCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return true;
+  }
 
   function getCss(varName) {
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   }
-  function floorColorFor(x, y) {
-    const room = roomAt(x, y);
-    if (room === "living room") return getCss("--floor-living");
-    if (room === "kitchen") return getCss("--floor-kitchen");
-    return getCss("--floor");
-  }
-
   function normalizeAngle(a) {
     while (a > Math.PI) a -= 2 * Math.PI;
     while (a < -Math.PI) a += 2 * Math.PI;
@@ -1232,77 +1912,190 @@
     return fpvCanvas.toDataURL("image/jpeg", 0.82).split(",")[1];
   }
 
-  function render(frame) {
-    frame = frame || state.lastFrame;
-    if (!frame) return; // not connected yet -- nothing to draw
-    renderFPV(frame);
-    ctx.clearRect(0, 0, COLS * CELL, ROWS * CELL);
+  // getCss() hits getComputedStyle on every call, which used to happen
+  // once per cell inside the draw loop (130 calls a frame, on a canvas
+  // that re-renders every animation frame while a safety veto flashes).
+  // Resolved once per draw instead.
+  function mapPalette() {
+    return {
+      wall: getCss("--wall"),
+      door: getCss("--door"),
+      floor: getCss("--floor"),
+      floorLiving: getCss("--floor-living"),
+      floorKitchen: getCss("--floor-kitchen"),
+      text: getCss("--text"),
+      alert: getCss("--accent-alert"),
+      mono: getCss("--mono"),
+      sans: getCss("--sans"),
+    };
+  }
 
+  // roundRect() is only in Safari 16.4+, and this page targets older
+  // iPhones too -- arcTo is universal.
+  function roundRectPath(c, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    c.beginPath();
+    c.moveTo(x + rr, y);
+    c.arcTo(x + w, y, x + w, y + h, rr);
+    c.arcTo(x + w, y + h, x, y + h, rr);
+    c.arcTo(x, y + h, x, y, rr);
+    c.arcTo(x, y, x + w, y, rr);
+    c.closePath();
+  }
+
+  // Floor is drawn as inset, slightly-rounded tiles over a solid wall-
+  // coloured ground rather than as edge-to-edge squares. The gap between
+  // tiles becomes a subtle grid for free, and rooms read as rooms instead
+  // of as one flat field of near-identical greys.
+  function drawFloorAndWalls(pal) {
+    const w = COLS * CELL, h = ROWS * CELL;
+    ctx.fillStyle = pal.wall;
+    ctx.fillRect(0, 0, w, h);
+
+    const inset = 0.75, radius = Math.max(1.5, CELL * 0.1);
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
         const c = cellAt(x, y);
-        if (c === "#") {
-          ctx.fillStyle = getCss("--wall");
-        } else if (c === "D") {
-          ctx.fillStyle = getCss("--door");
-        } else {
-          ctx.fillStyle = floorColorFor(x, y);
-        }
-        ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
-
-        if (state.visited.has(x + "," + y)) {
-          ctx.fillStyle = "rgba(62,207,142,0.08)";
-          ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
-        }
+        if (c === "#") continue;
+        const room = roomAt(x, y);
+        ctx.fillStyle = c === "D" ? pal.door
+          : room === "living room" ? pal.floorLiving
+          : room === "kitchen" ? pal.floorKitchen
+          : pal.floor;
+        roundRectPath(ctx, x * CELL + inset, y * CELL + inset,
+                      CELL - inset * 2, CELL - inset * 2, radius);
+        ctx.fill();
       }
     }
+  }
 
-    // objects
+  // The visited set is insertion-ordered, so the trail can fade from the
+  // oldest cell to the newest -- which reads as a path walked rather than
+  // as a flat wash of "been here".
+  function drawVisitedTrail() {
+    const cells = Array.from(state.visited);
+    const n = cells.length;
+    if (!n) return;
+    const inset = 0.75, radius = Math.max(1.5, CELL * 0.1);
+    cells.forEach(function (key, idx) {
+      const parts = key.split(",");
+      // Range chosen so the oldest cell is still visible against the floor
+      // tiles rather than merely theoretically non-zero.
+      const alpha = 0.09 + 0.19 * ((idx + 1) / n);
+      ctx.fillStyle = "rgba(62,207,142," + alpha.toFixed(3) + ")";
+      roundRectPath(ctx, Number(parts[0]) * CELL + inset, Number(parts[1]) * CELL + inset,
+                    CELL - inset * 2, CELL - inset * 2, radius);
+      ctx.fill();
+    });
+  }
+
+  // Objects were a filled dot with a single capital letter crammed inside
+  // at 8px -- which made "refrigerator" and "red backpack" both render as
+  // "R". A dot with a ring and a real label underneath is legible.
+  function drawObjects(pal) {
+    const labelSize = Math.max(7, Math.min(9, CELL * 0.34));
     Object.keys(OBJECTS).forEach(function (key) {
       const parts = key.split(",");
-      const ox = Number(parts[0]), oy = Number(parts[1]);
       const name = OBJECTS[key];
-      const cx = ox * CELL + CELL / 2, cy = oy * CELL + CELL / 2;
-      ctx.fillStyle = name.indexOf("backpack") !== -1 ? getCss("--accent-alert") : "#546074";
-      ctx.beginPath();
-      ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.font = "8px " + getCss("--mono");
-      ctx.textAlign = "center";
-      ctx.fillText(name[0].toUpperCase(), cx, cy + 3);
-    });
+      const cx = Number(parts[0]) * CELL + CELL / 2;
+      const cy = Number(parts[1]) * CELL + CELL / 2;
+      const isTarget = name.indexOf("backpack") !== -1;
+      const color = isTarget ? pal.alert : "#7A8798";
+      const r = Math.max(3.5, CELL * 0.17);
 
-    // safety collar + robot -- position/heading come from the server's
-    // /frame response now, not any locally-simulated state
+      ctx.beginPath();
+      ctx.arc(cx, cy - CELL * 0.12, r + 3, 0, Math.PI * 2);
+      ctx.strokeStyle = isTarget ? "rgba(255,107,53,0.4)" : "rgba(122,135,152,0.3)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy - CELL * 0.12, r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      // Labels are wider than a cell ("refrigerator" spans about three of
+      // them), and two objects can sit in adjacent cells -- a backing pill
+      // keeps each one readable where they crowd instead of letting the
+      // text blend into the floor tiles behind it.
+      const label = name.split(" ").pop();
+      const labelY = cy + CELL * 0.44;
+      ctx.font = "600 " + labelSize + "px " + pal.sans;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const padX = 3, padY = 1.5;
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(8,10,14,0.72)";
+      roundRectPath(ctx, cx - tw / 2 - padX, labelY - labelSize / 2 - padY,
+                    tw + padX * 2, labelSize + padY * 2, 3);
+      ctx.fill();
+      ctx.fillStyle = isTarget ? color : "rgba(232,236,239,0.78)";
+      ctx.fillText(label, cx, labelY);
+      ctx.textBaseline = "alphabetic";
+    });
+  }
+
+  function drawRobot(frame, pal, flashing) {
     const [px, py] = frame.position;
-    const robotCx = px * CELL + CELL / 2, robotCy = py * CELL + CELL / 2;
-    const flashing = Date.now() < state.safetyFlashUntil;
-    ctx.strokeStyle = flashing ? getCss("--accent-alert") : "rgba(62,207,142,0.35)";
-    ctx.lineWidth = flashing ? 2.5 : 1.5;
+    const cx = px * CELL + CELL / 2, cy = py * CELL + CELL / 2;
+    const collar = (MIN_DISTANCE_CM / CELL_CM) * CELL;
+
+    // Safety collar: a filled falloff plus its ring, so the veto radius
+    // reads as a zone rather than a hairline circle.
+    const grad = ctx.createRadialGradient(cx, cy, collar * 0.25, cx, cy, collar);
+    if (flashing) {
+      grad.addColorStop(0, "rgba(255,107,53,0.30)");
+      grad.addColorStop(1, "rgba(255,107,53,0)");
+    } else {
+      grad.addColorStop(0, "rgba(62,207,142,0.16)");
+      grad.addColorStop(1, "rgba(62,207,142,0)");
+    }
+    ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.arc(robotCx, robotCy, (MIN_DISTANCE_CM / CELL_CM) * CELL, 0, Math.PI * 2);
+    ctx.arc(cx, cy, collar, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = flashing ? pal.alert : "rgba(62,207,142,0.45)";
+    ctx.lineWidth = flashing ? 2.5 : 1.25;
+    ctx.beginPath();
+    ctx.arc(cx, cy, collar, 0, Math.PI * 2);
     ctx.stroke();
 
-    // robot (triangle pointing heading)
     // Note: frame.facing is the *view* heading (chassis heading adjusted
     // by camera pan), same ambiguity as sim/grid_world.py's
     // frame_description(). During a manual LOOK_LEFT/RIGHT tap the
     // triangle will reflect the camera's pan, not just chassis
     // orientation -- cosmetic only, doesn't affect movement/safety.
-    const angleMap = { N: -Math.PI / 2, E: 0, S: Math.PI / 2, W: Math.PI };
-    const angle = angleMap[frame.facing] || 0;
+    const angle = HEADING_ANGLE[frame.facing] || 0;
+    const size = Math.max(5, CELL * 0.35);
     ctx.save();
-    ctx.translate(robotCx, robotCy);
+    ctx.translate(cx, cy);
     ctx.rotate(angle);
-    ctx.fillStyle = getCss("--text");
+    ctx.shadowColor = "rgba(0,0,0,0.55)";
+    ctx.shadowBlur = 5;
+    ctx.fillStyle = pal.text;
     ctx.beginPath();
-    ctx.moveTo(9, 0);
-    ctx.lineTo(-6, -6);
-    ctx.lineTo(-6, 6);
+    ctx.moveTo(size, 0);
+    ctx.lineTo(-size * 0.68, -size * 0.68);
+    ctx.lineTo(-size * 0.34, 0);
+    ctx.lineTo(-size * 0.68, size * 0.68);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
+  }
+
+  function render(frame) {
+    frame = frame || state.lastFrame;
+    if (!frame) return; // not connected yet -- nothing to draw
+    renderFPV(frame);
+
+    const pal = mapPalette();
+    const flashing = Date.now() < state.safetyFlashUntil;
+    ctx.clearRect(0, 0, COLS * CELL, ROWS * CELL);
+    drawFloorAndWalls(pal);
+    drawVisitedTrail();
+    drawObjects(pal);
+    drawRobot(frame, pal, flashing);
 
     if (flashing) requestAnimationFrame(function () { render(); });
 
@@ -1333,6 +2126,7 @@
 
   function renderLog() {
     const el = document.getElementById("log");
+    clearEmptyState(el);
     const entry = state.log[state.log.length - 1];
     const div = document.createElement("div");
     div.className = "entry" + (entry.executed === false ? " veto" : "");
@@ -1421,6 +2215,7 @@
 
   function logAutopilotEntry(action, reasoning, executed) {
     const el = document.getElementById("autopilot-log");
+    clearEmptyState(el);
     const div = document.createElement("div");
     div.className = "entry" + (executed === false ? " action-stop" : action === "FORWARD" ? " action-forward" : "");
     div.textContent = "#" + state.autopilotCallCount + " " + action +
@@ -1577,12 +2372,20 @@
   const GUIDANCE_ZONE_ROTATION = { far_left: 180, left: 180, center: -90, right: 0, far_right: 0 };
   const GUIDANCE_ZONE_SCALE = { far_left: 1.3, left: 1.0, center: 1.1, right: 1.0, far_right: 1.3 };
 
+  // The outline's arrival animation must fire on the transition into
+  // found, not on every tick that stays found -- .visible is removed and
+  // re-added each tick by hideAllGuidanceOverlays(), which would otherwise
+  // restart the animation about once a second.
+  let guidanceWasFound = false;
+
   function hideAllGuidanceOverlays() {
     guidanceChevron.classList.remove("visible");
     guidanceOutline.classList.remove("visible");
     guidanceFoundBadge.classList.remove("visible");
     guidanceEdgeGlowLeft.style.opacity = 0;
     guidanceEdgeGlowRight.style.opacity = 0;
+    guidanceChevron.classList.remove("steady");
+    guidanceOutline.classList.remove("steady");
   }
 
   // "Found" only required a strict position===center AND proximity===near
@@ -1704,7 +2507,11 @@
       guidanceChevron.style.transform = "translate(-50%, -50%) rotate(" + scan.rotation + "deg) scale(1.15)";
       guidanceChevron.style.color = getCss("--text");
       guidanceChevron.style.setProperty("--pulse-duration", GUIDANCE_PULSE_DURATION.unknown);
+      // Read by the reduced-motion rules, which encode proximity as a
+      // static size/brightness step instead of a pulse rate.
+      guidanceChevron.dataset.proximity = "unknown";
       guidanceChevron.classList.add("visible");
+      guidanceWasFound = false;
       if (scan.edgeGlow === "right") guidanceEdgeGlowRight.style.opacity = 0.5;
       else if (scan.edgeGlow === "left") guidanceEdgeGlowLeft.style.opacity = 0.5;
       return;
@@ -1732,6 +2539,14 @@
       guidanceFoundBadge.textContent = "Found — " + (state.guidanceTarget || "target");
       guidanceOutline.classList.add("visible");
       guidanceFoundBadge.classList.add("visible");
+      if (!guidanceWasFound) {
+        // Restart the animation from scratch: removing and re-adding the
+        // class in one frame is a no-op, so force a reflow between them.
+        guidanceOutline.classList.remove("arrive");
+        void guidanceOutline.offsetWidth;
+        guidanceOutline.classList.add("arrive");
+      }
+      guidanceWasFound = true;
       return;
     }
 
@@ -1744,7 +2559,9 @@
     guidanceChevron.style.transform = "translate(-50%, -50%) rotate(" + rotation + "deg) scale(" + scale + ")";
     guidanceChevron.style.color = result.proximity === "medium" ? getCss("--accent-safe") : getCss("--text");
     guidanceChevron.style.setProperty("--pulse-duration", GUIDANCE_PULSE_DURATION[result.proximity] || GUIDANCE_PULSE_DURATION.unknown);
+    guidanceChevron.dataset.proximity = result.proximity || "unknown";
     guidanceChevron.classList.add("visible");
+    guidanceWasFound = false;
 
     const glowSide = offset < 0 ? guidanceEdgeGlowLeft : offset > 0 ? guidanceEdgeGlowRight : null;
     if (glowSide) glowSide.style.opacity = GUIDANCE_EDGE_GLOW[result.position] || 0;
@@ -1775,6 +2592,89 @@
     }
     iconEl.innerHTML = ICON[isGuidanceFound(result) ? GUIDANCE_CAPTION_ICON.found : (GUIDANCE_CAPTION_ICON[result.position] || "search")];
     textEl.textContent = result.guidance || "";
+  }
+
+  // ---- screen-reader announcements ----
+  // Guide's entire visible output is geometry: a chevron, two edge glows,
+  // a rectangle. None of it has an accessible name, and the caption that
+  // paraphrases it is deliberately de-emphasised because the visuals are
+  // meant to be the primary channel. For anyone not looking at the screen
+  // that ranking inverts completely -- text becomes the only channel --
+  // which matters here more than anywhere else in this app, since "point
+  // your phone and I'll tell you where the thing is" is close to a
+  // canonical assistive use case. The service already returns a
+  // human-readable sentence in `guidance`; this speaks it.
+  //
+  // Announcements fire on TRANSITIONS, never per tick. The analysis loop
+  // runs about once a second, and a live region driven off every tick
+  // would interrupt itself continuously -- worse than silence. A tick
+  // reporting the same zone and proximity as the last announcement says
+  // nothing at all.
+  const GUIDANCE_ANNOUNCE_MIN_GAP_MS = 1800;
+  const ZONE_WORDS = {
+    far_left: "far to your left", left: "to your left", center: "straight ahead",
+    right: "to your right", far_right: "far to your right",
+  };
+  const PROXIMITY_WORDS = { near: "close", medium: "nearby", far: "some distance away" };
+  let guidanceLastAnnounceKey = null;
+  let guidanceLastAnnounceAt = 0;
+
+  // Most screen readers ignore a live-region write that doesn't change the
+  // text, so an identical repeated message (found → resume → found) would
+  // be silently dropped. Clearing first forces it to register.
+  function announce(el, message) {
+    el.textContent = "";
+    setTimeout(function () { el.textContent = message; }, 50);
+  }
+
+  function resetGuidanceAnnouncements() {
+    guidanceLastAnnounceKey = null;
+    guidanceLastAnnounceAt = 0;
+    document.getElementById("guide-announce-polite").textContent = "";
+    document.getElementById("guide-announce-assertive").textContent = "";
+  }
+
+  // What counts as "the same situation" for announcement purposes. Zone and
+  // proximity only -- the wording of `guidance` can vary tick to tick for an
+  // unchanged scene (independent LLM calls), and re-reading a reworded
+  // sentence describing the same thing is exactly the chatter to avoid.
+  function guidanceAnnounceKey(result) {
+    if (result.error) return "error";
+    if (isGuidanceFound(result)) return "found";
+    if (!result.target_visible || result.position === "not_visible") return "searching";
+    return (result.position || "?") + "|" + (result.proximity || "?");
+  }
+
+  function guidanceAnnounceMessage(result, key) {
+    const target = state.guidanceTarget || "the target";
+    if (key === "error") return "Guidance unavailable. " + (result.error || "");
+    if (key === "found") return "Found " + target + ".";
+    if (key === "searching") return "Searching for " + target + ". Keep panning slowly.";
+    if (result.guidance) return result.guidance;
+    // Fallback for a response with a position but no sentence.
+    const zone = ZONE_WORDS[result.position] || "";
+    const prox = PROXIMITY_WORDS[result.proximity] || "";
+    return target + (zone ? " " + zone : "") + (prox ? ", " + prox : "") + ".";
+  }
+
+  function announceGuidance(result) {
+    const key = guidanceAnnounceKey(result);
+    if (key === guidanceLastAnnounceKey) return; // same situation -- stay quiet
+    const now = Date.now();
+    // Found is the one state worth interrupting for: it ends the search, so
+    // it skips both the pacing floor and the polite queue.
+    if (key !== "found" && now - guidanceLastAnnounceAt < GUIDANCE_ANNOUNCE_MIN_GAP_MS) {
+      // Deliberately does not record the key. The next eligible tick should
+      // still see a change and announce whatever is true by then, rather
+      // than swallowing this transition permanently.
+      return;
+    }
+    guidanceLastAnnounceKey = key;
+    guidanceLastAnnounceAt = now;
+    announce(
+      document.getElementById(key === "found" ? "guide-announce-assertive" : "guide-announce-polite"),
+      guidanceAnnounceMessage(result, key)
+    );
   }
 
   // ---- haptic (Android-only in practice) + audio (all platforms) cues ----
@@ -1887,17 +2787,22 @@
   function pauseGuidanceSearch() {
     state.guidancePaused = true;
     document.getElementById("btn-guidance-resume").classList.add("visible");
+    announce(document.getElementById("guide-announce-polite"),
+      "Search paused. Activate resume searching to continue.");
   }
 
   function resumeGuidanceSearch() {
     state.guidancePaused = false;
     state.guidanceFoundStreak = 0;
+    // Clear the transition history so the state we resume into is announced
+    // fresh, even if it matches whatever was last spoken before the pause.
+    resetGuidanceAnnouncements();
     // A cap-triggered pause (see GUIDANCE_MAX_CALLS in guidanceStep) would
     // otherwise re-trigger on the very next tick -- resuming past it means
     // starting a fresh call budget, same as a brand new Guide session.
     if (state.guidanceCallCount >= GUIDANCE_MAX_CALLS) {
       state.guidanceCallCount = 0;
-      document.getElementById("guidance-call-count").textContent = "0 calls";
+      renderGuidanceBudget();
     }
     document.getElementById("btn-guidance-resume").classList.remove("visible");
     guidanceStep();
@@ -1923,9 +2828,27 @@
   const GUIDANCE_STILL_SKIP_DEG_PER_SEC = 3;
   const GUIDANCE_MAX_CONSECUTIVE_SKIPS = 3;
 
+  // Single owner of the HUD budget indicator -- previously three separate
+  // "N calls" textContent assignments scattered across start/resume/tick.
+  function renderGuidanceBudget() {
+    const used = state.guidanceCallCount;
+    const pct = Math.min(100, Math.round((used / GUIDANCE_MAX_CALLS) * 100));
+    const fill = document.getElementById("guide-budget-fill");
+    fill.style.width = pct + "%";
+    fill.classList.toggle("warn", pct >= 80);
+    document.getElementById("guidance-call-count").textContent = used + "/" + GUIDANCE_MAX_CALLS;
+    document.getElementById("guide-budget").setAttribute(
+      "aria-label", used + " of " + GUIDANCE_MAX_CALLS + " vision calls used this session");
+  }
+
+  // The phone hasn't moved, so the previous read still describes what's on
+  // screen and no paid call is made. Previously this replaced the caption
+  // with skip wording, which read as a stall -- the guidance was still
+  // valid, it just hadn't needed refreshing. Now the last answer stays put
+  // and the overlay softens to show it's resting rather than live.
   function renderGuidanceSkipped() {
-    document.getElementById("guide-caption-icon").innerHTML = ICON.pulse;
-    document.getElementById("guide-caption-text").textContent = "Holding steady — reusing last read";
+    guidanceChevron.classList.add("steady");
+    guidanceOutline.classList.add("steady");
   }
 
   async function guidanceStep() {
@@ -1955,10 +2878,11 @@
       const result = await callGuidanceEndpoint(base64, state.guidanceTarget);
       state.guidanceErrorStreak = 0;
       state.guidanceCallCount += 1;
-      document.getElementById("guidance-call-count").textContent = state.guidanceCallCount + " calls";
+      renderGuidanceBudget();
       renderGuidanceOverlay(result);
       renderGuidanceStatus(result, false);
       playGuidanceCues(result);
+      announceGuidance(result);
 
       if (isGuidanceFound(result)) {
         state.guidanceFoundStreak++;
@@ -1969,6 +2893,9 @@
     } catch (e) {
       state.guidanceErrorStreak++;
       renderGuidanceStatus({ error: e.message }, false);
+      // Keyed as "error", so the exponential backoff's repeated failures
+      // announce once rather than on every retry.
+      announceGuidance({ error: e.message });
     } finally {
       state.guidanceInFlight = false;
       scheduleGuidanceNext();
@@ -2126,7 +3053,6 @@
 
     guidanceVideo.srcObject = state.guidanceStream;
     guidanceFullscreen.classList.add("active");
-    guideRotateHintDismissed = false;
     updateGuideRotateHint();
     state.guidanceTarget = document.getElementById("guidance-target").value.trim() || "red backpack";
     saveTargetToHistory(state.guidanceTarget);
@@ -2137,9 +3063,15 @@
     state.guidanceFoundStreak = 0;
     state.guidanceConsecutiveSkips = 0;
     state.guidanceErrorStreak = 0;
-    document.getElementById("guidance-call-count").textContent = "0 calls";
+    renderGuidanceBudget();
     document.getElementById("btn-guidance-resume").classList.remove("visible");
     updateGuidanceButton();
+    resetGuidanceAnnouncements();
+    announce(document.getElementById("guide-announce-polite"),
+      "Guiding you to " + state.guidanceTarget + ". Move your phone slowly to scan the room.");
+    // Counts against the pacing floor so the first real result doesn't land
+    // on top of this one.
+    guidanceLastAnnounceAt = Date.now();
     // videoWidth/videoHeight are 0 until the stream's metadata actually
     // loads -- capturing or mapping coordinates before then produces a
     // blank frame / NaN math (0 * Infinity), so wait for it explicitly
@@ -2181,6 +3113,7 @@
     document.getElementById("btn-guidance-resume").classList.remove("visible");
     hideAllGuidanceOverlays();
     renderGuidanceStatus(null, false);
+    resetGuidanceAnnouncements();
     updateGuidanceButton();
     if (guidanceAudioCtx && guidanceAudioCtx.state === "running") guidanceAudioCtx.suspend();
   }
@@ -2196,10 +3129,10 @@
   }
 
   // See #guide-rotate-hint's CSS comment for why this is a nudge, not a
-  // real orientation lock. Dismissing it is per-session (reset the next
-  // time Guide starts), not permanent, so a tester who picks portrait
-  // once isn't stuck dismissing it forever afterward.
-  let guideRotateHintDismissed = false;
+  // real orientation lock. Dismissing it now persists: it was previously
+  // reset on every startGuidance(), so someone who deliberately prefers
+  // portrait had to dismiss the same hint every single session.
+  let guideRotateHintDismissed = prefGet(PREF.rotateHintDismissed) === "1";
   function updateGuideRotateHint() {
     const isPortrait = window.innerHeight > window.innerWidth;
     const shouldShow = guidanceFullscreen.classList.contains("active") && isPortrait && !guideRotateHintDismissed;
@@ -2207,6 +3140,7 @@
   }
   document.getElementById("btn-guide-rotate-dismiss").onclick = function () {
     guideRotateHintDismissed = true;
+    prefSet(PREF.rotateHintDismissed, "1");
     updateGuideRotateHint();
   };
 
@@ -2243,21 +3177,35 @@
     if (state.guidanceStream) state.guidanceStream.getTracks().forEach(function (t) { t.stop(); });
   });
 
-  // Shown once per page load (session-only, not persisted -- matches this
-  // file's existing "not saved between sessions" convention for its other
-  // settings) the first time Start is tapped, before the camera prompt
-  // fires, so the chevron/glow/pulse/outline language makes sense before
-  // it's actually seen live.
-  let guidanceOnboardingShown = false;
+  // Shown the first time Start is tapped, before the camera prompt fires,
+  // so the chevron/glow/pulse/outline language makes sense before it's
+  // actually seen live. Persisted: this used to be a per-page-load flag,
+  // which meant an installed PWA re-showed the same four-row explainer on
+  // every cold launch. "How it works" on the Guide tab re-opens it
+  // deliberately for anyone who wants it again.
+  let guidanceOnboardingShown = prefGet(PREF.onboarded) === "1";
+  // The same card serves two jobs: the first-run explainer that leads
+  // straight into starting the camera, and a "How it works" reference
+  // someone opens deliberately later. Only the first should start the
+  // camera on dismiss.
+  let onboardingIsReview = false;
 
-  function showGuidanceOnboarding() {
+  function showGuidanceOnboarding(asReview) {
+    onboardingIsReview = !!asReview;
+    document.getElementById("btn-onboarding-start").textContent =
+      onboardingIsReview ? "Close" : "Got it, start";
     document.getElementById("guide-onboarding").classList.add("visible");
   }
   function dismissGuidanceOnboarding() {
-    guidanceOnboardingShown = true;
     document.getElementById("guide-onboarding").classList.remove("visible");
+    if (onboardingIsReview) { onboardingIsReview = false; return; }
+    guidanceOnboardingShown = true;
+    prefSet(PREF.onboarded, "1");
     startGuidance();
   }
+  document.getElementById("btn-how-it-works").onclick = function () {
+    showGuidanceOnboarding(true);
+  };
 
   document.getElementById("btn-guidance").onclick = function () {
     if (state.guidanceRunning) { stopGuidance(); return; }
@@ -2268,6 +3216,7 @@
   document.getElementById("btn-guidance-close").onclick = function () { stopGuidance(); };
   document.getElementById("btn-guidance-mute").onclick = function () {
     state.guidanceMuted = !state.guidanceMuted;
+    prefSet(PREF.muted, state.guidanceMuted ? "1" : "0");
     updateGuidanceMuteButton();
   };
   document.getElementById("btn-guidance-resume").onclick = function () { resumeGuidanceSearch(); };
@@ -2286,42 +3235,77 @@
 
     const url = document.getElementById("cfg-url").value.trim();
     const secret = document.getElementById("cfg-secret").value.trim();
+    // Read now rather than in renderPhotoResult: the field is editable
+    // while the request is in flight, and the verdict has to describe the
+    // question that was actually asked.
+    const photoTarget = document.getElementById("photo-target").value.trim();
+    if (photoTarget) saveTargetToHistory(photoTarget);
 
+    const photoBtn = document.getElementById("btn-take-photo");
+
+    document.getElementById("photo-empty").style.display = "none";
     photoPreview.src = URL.createObjectURL(file);
     photoPreview.style.display = "block";
     photoResult.style.display = "block";
-    photoResult.innerHTML = '<div class="hint">Analyzing\u2026</div>';
+    photoResult.innerHTML = PHOTO_SKELETON;
 
     if (!url) {
-      photoResult.innerHTML = '<div class="hint">Set the vision service URL in "Cloud endpoint settings" below first.</div>';
+      photoResult.innerHTML = '<div class="hint">Add the vision service URL in Settings first.</div>';
+      showToast("No vision service URL set \u2014 add one in Settings.", "err");
       return;
     }
+
+    setButtonBusy(photoBtn, true, "Analyzing\u2026");
 
     resizeImageFile(file).then(function (base64) {
       const headers = { "Content-Type": "application/json" };
       if (secret) headers["x-app-secret"] = secret;
 
-      return fetch(deriveServiceUrl(url, "/analyze"), {
-        method: "POST",
-        headers: headers,
-        // Always image/jpeg -- resizeImageFile re-encodes to JPEG
-        // regardless of the source format (also normalizes HEIC/PNG/etc.
-        // from a gallery pick to something every browser's <img> and the
-        // server's Pillow decode agree on).
-        body: JSON.stringify({ image_base64: base64, media_type: "image/jpeg" }),
+      // Always image/jpeg -- resizeImageFile re-encodes to JPEG regardless
+      // of the source format (also normalizes HEIC/PNG/etc. from a gallery
+      // pick to something every browser's <img> and the server's Pillow
+      // decode agree on).
+      const payload = JSON.stringify({ image_base64: base64, media_type: "image/jpeg" });
+      const post = function (route) {
+        return fetch(deriveServiceUrl(url, route), {
+          method: "POST", headers: headers, body: payload,
+        });
+      };
+
+      // /describe is the person-facing route; /analyze is the original
+      // robot-facing one. A vision service deployed before /describe
+      // existed answers 404/405, so fall back rather than breaking the
+      // Camera tab on every deployment that hasn't been updated yet.
+      // renderPhotoResult handles either schema.
+      return post("/describe").then(function (resp) {
+        if (resp.status === 404 || resp.status === 405) return post("/analyze");
+        return resp;
       }).then(function (resp) {
         return resp.json().then(function (data) {
           if (!resp.ok) {
-            photoResult.innerHTML = '<div class="hint">Error ' + resp.status + ': ' + (data.error || "unknown") + '</div>';
+            photoResult.innerHTML = '<div class="hint">Error ' + resp.status + ': ' + escapeHtml(data.error || data.detail || "unknown") + '</div>';
+            showToast("The vision service returned an error.", "err");
             return;
           }
-          renderPhotoResult(data);
+          renderPhotoResult(data, photoTarget);
         });
       });
     }).catch(function (e) {
-      photoResult.innerHTML = '<div class="hint">Request failed: ' + e.message + '. If this is running as a local file in Safari, CORS or mixed-content rules may block it -- try hosting the twin over HTTPS.</div>';
+      photoResult.innerHTML = '<div class="hint">Request failed: ' + escapeHtml(e.message) +
+        '. If this is running as a local file in Safari, CORS or mixed-content rules may block it -- try hosting the twin over HTTPS.</div>';
+      showToast("Couldn't reach the vision service.", "err");
+    }).finally(function () {
+      setButtonBusy(photoBtn, false);
     });
   };
+
+  // Shaped like the result card that replaces it, so the panel doesn't
+  // jump when the response lands.
+  const PHOTO_SKELETON =
+    '<div class="skeleton skeleton-line" style="height:34px;margin-top:0;"></div>' +
+    '<div class="skeleton skeleton-line tall"></div>' +
+    '<div class="skeleton skeleton-line"></div>' +
+    '<div class="skeleton skeleton-line short"></div>';
 
   // Downscales to PHOTO_MAX_CAPTURE_DIM on the long edge before encoding,
   // same rationale as captureGuidanceFrame above -- see PHOTO_MAX_CAPTURE_DIM.
@@ -2347,19 +3331,58 @@
     });
   }
 
-  function renderPhotoResult(data) {
-    const objs = data.important_objects || [];
-    const hasBackpack = objs.some(function (o) { return o.toLowerCase().indexOf("backpack") !== -1; });
-    const banner = hasBackpack
-      ? '<div class="banner found">Found a backpack in this photo.</div>'
-      : '<div class="banner not-found">No backpack spotted in this photo.</div>';
+  // Renders either schema the vision service can answer with:
+  //   /describe -> { summary, room_type, objects }        (person-facing)
+  //   /analyze  -> { room_guess, important_objects, ... } (robot-facing)
+  // The robot-facing navigation fields -- free space, doorway visible,
+  // safest direction -- are deliberately NOT shown here even when present.
+  // This tab is used by a person photographing their own room, and
+  // "Safest direction: FORWARD" is an answer to a question they did not
+  // ask. They remain in the API for the callers that do need them.
+  //
+  // The verdict banner used to be hardcoded to "backpack", left over from
+  // when this tab was labelled "Find the bag in a photo". It now reflects
+  // whatever object was asked about, and says nothing when nothing was.
+  // Note what it can claim: neither route is told what to look for, so a
+  // match is real evidence while a miss only means the model didn't list
+  // it among the notable objects.
+  function renderPhotoResult(data, target) {
+    const objs = data.objects || data.important_objects || [];
+    const room = data.room_type || data.room_guess || "";
+    const summary = data.summary || "";
 
-    photoResult.innerHTML = banner +
-      '<div>Room guess: <b>' + (data.room_guess || "unknown") + '</b></div>' +
-      '<div>Objects: ' + (objs.join(", ") || "none") + '</div>' +
-      '<div>Free space: ' + (data.free_space || "unknown") + '</div>' +
-      '<div>Doorway visible: ' + (data.doorway_visible ? "yes" : "no") + '</div>' +
-      '<div>Safest direction: ' + (data.safest_direction || "-") + '</div>';
+    const needle = (target || "").toLowerCase();
+    const isMatch = function (o) {
+      return !!needle && String(o).toLowerCase().indexOf(needle) !== -1;
+    };
+    const matched = needle && objs.some(isMatch);
+
+    let banner = "";
+    if (needle) {
+      banner = matched
+        ? '<div class="banner found">Found ' + escapeHtml(target) + ' in this photo.</div>'
+        : '<div class="banner neutral">No ' + escapeHtml(target) + ' among the things Claude picked out.</div>' +
+          '<div class="hint" style="margin-top:-2px;margin-bottom:10px;">' +
+          'This describes the whole scene rather than searching for one thing, so that isn\u2019t conclusive. ' +
+          'Guide hunts for a specific object.</div>';
+    }
+
+    const summaryHtml = summary
+      ? '<div class="photo-summary">' + escapeHtml(summary) + '</div>'
+      : "";
+
+    const roomHtml = room && room.toLowerCase() !== "unclear" && room.toLowerCase() !== "unknown"
+      ? '<div class="photo-room">' + escapeHtml(room) + '</div>'
+      : "";
+
+    const chips = objs.length
+      ? '<div class="section-label" style="margin:14px 0 0;">In this photo</div>' +
+        '<div class="chip-row">' + objs.map(function (o) {
+          return '<span class="chip' + (isMatch(o) ? " match" : "") + '">' + escapeHtml(o) + '</span>';
+        }).join("") + '</div>'
+      : '<div class="hint">Claude didn\u2019t pick out anything specific here.</div>';
+
+    photoResult.innerHTML = banner + roomHtml + summaryHtml + chips;
   }
 
   // ---------- tabs ----------
@@ -2367,17 +3390,48 @@
   // .tab-btn is marked active. No element ids changed when the panels were
   // grouped into tabs, so nothing else in this file needed to change.
 
-  function switchTab(name) {
+  const TAB_NAMES = ["guide", "camera", "sim", "settings"];
+  // "drive" and "autonomous" were separate tabs before they merged into
+  // "sim"; a device that stored either one still has it in localStorage.
+  const LEGACY_TAB_ALIASES = { drive: "sim", autonomous: "sim" };
+
+  // Settings is reached from the header gear rather than the tab bar, so
+  // it has no tab button to highlight -- the gear lights up instead, and
+  // remembers which tab to return to.
+  let tabBeforeSettings = "guide";
+
+  function switchTab(name, opts) {
+    if (name === "settings") {
+      const current = document.querySelector(".tab-page.active");
+      if (current && current.dataset.tab !== "settings") tabBeforeSettings = current.dataset.tab;
+    }
     document.querySelectorAll(".tab-page").forEach(function (el) {
       el.classList.toggle("active", el.dataset.tab === name);
     });
     document.querySelectorAll(".tab-btn").forEach(function (el) {
       el.classList.toggle("active", el.dataset.tab === name);
+      el.setAttribute("aria-selected", el.dataset.tab === name ? "true" : "false");
     });
+    document.body.dataset.tab = name;
+    if (name !== "settings") hideSetupQr();
+    renderHeaderConnStatus();
+    const gear = document.getElementById("btn-settings");
+    gear.classList.toggle("active", name === "settings");
+    gear.setAttribute("aria-expanded", name === "settings" ? "true" : "false");
+    if (!(opts && opts.restoring)) prefSet(PREF.tab, name);
+    // A tab page that was display:none had zero width, so its canvases
+    // couldn't measure themselves. This is a no-op where ResizeObserver
+    // exists (it fires on its own); it's the actual fix on browsers
+    // without it.
+    relayoutCanvases();
   }
   document.querySelectorAll(".tab-btn").forEach(function (btn) {
     btn.onclick = function () { switchTab(btn.dataset.tab); };
   });
+  document.getElementById("btn-settings").onclick = function () {
+    const onSettings = document.querySelector(".tab-page.active").dataset.tab === "settings";
+    switchTab(onSettings ? tabBeforeSettings : "settings");
+  };
 
   // ---------- init ----------
   // No server connection yet at page load -- draw the static map only.
@@ -2385,30 +3439,63 @@
   // exists (set once the user taps Connect).
 
   function renderStaticMapOnly() {
+    const pal = mapPalette();
     ctx.clearRect(0, 0, COLS * CELL, ROWS * CELL);
-    for (let y = 0; y < ROWS; y++) {
-      for (let x = 0; x < COLS; x++) {
-        const c = cellAt(x, y);
-        ctx.fillStyle = c === "#" ? getCss("--wall") : c === "D" ? getCss("--door") : floorColorFor(x, y);
-        ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
-      }
+    drawFloorAndWalls(pal);
+    drawObjects(pal);
+  }
+  function renderFpvPlaceholder() {
+    fpvCtx.fillStyle = getCss("--surface");
+    fpvCtx.fillRect(0, 0, FPV_W, FPV_H);
+    fpvCtx.fillStyle = getCss("--text-dim");
+    fpvCtx.font = "12px " + getCss("--mono");
+    fpvCtx.textAlign = "center";
+    fpvCtx.fillText("Connect to see the camera view", FPV_W / 2, FPV_H / 2);
+  }
+
+  // Re-measures both canvases and redraws whichever actually changed size.
+  // Resizing a canvas clears its bitmap, so a redraw here isn't optional.
+  function relayoutCanvases() {
+    if (sizeGridCanvas()) {
+      if (state.lastFrame) render();
+      else renderStaticMapOnly();
+    }
+    if (sizeFpvCanvas()) {
+      if (state.lastFrame) renderFPV();
+      else renderFpvPlaceholder();
     }
   }
-  renderStaticMapOnly();
 
-  fpvCtx.fillStyle = getCss("--surface");
-  fpvCtx.fillRect(0, 0, FPV_W, FPV_H);
-  fpvCtx.fillStyle = getCss("--text-dim");
-  fpvCtx.font = "12px " + getCss("--mono");
-  fpvCtx.textAlign = "center";
-  fpvCtx.fillText("Connect to see the camera view", FPV_W / 2, FPV_H / 2);
+  sizeGridCanvas();
+  sizeFpvCanvas();
+  renderStaticMapOnly();
+  renderFpvPlaceholder();
+  setEmptyState(document.getElementById("log"), LOG_EMPTY[0], LOG_EMPTY[1]);
+  setEmptyState(document.getElementById("autopilot-log"), AUTOPILOT_EMPTY[0], AUTOPILOT_EMPTY[1]);
+
+  if (window.ResizeObserver) {
+    const canvasObserver = new ResizeObserver(relayoutCanvases);
+    canvasObserver.observe(document.getElementById("canvas-wrap"));
+    canvasObserver.observe(document.querySelector(".fpv-wrap"));
+  } else {
+    window.addEventListener("resize", relayoutCanvases);
+  }
+
+  // ---------- restore prior session ----------
+  // Precedence for both URL fields: whatever the user last used > a
+  // convention-based default derived from this page's own origin > empty.
+  // A remembered value always wins, since it's the only one that reflects
+  // a setup actually known to work on this device.
+
+  const cfgServerUrlEl = document.getElementById("cfg-server-url");
+  const cfgUrlEl = document.getElementById("cfg-url");
 
   // If this page is being served BY robot/server.py itself (the ECS
   // deployment, or local `uvicorn robot.server:app`), rather than opened
   // as a local file:// page, the robot server IS this page's own origin --
   // prefill the field instead of making the user type an IP.
   if (location.protocol !== "file:") {
-    document.getElementById("cfg-server-url").value = location.origin;
+    cfgServerUrlEl.value = location.origin;
 
     // Best-effort default for the vision service URL too, based on this
     // project's own documented conventions (README.md/HANDOFF.md), not a
@@ -2418,27 +3505,498 @@
     // vision service (the shared ALB's default port, no suffix). Still
     // just a starting point -- editable, and won't be right for one-off
     // setups like a path-prefixed local reverse proxy.
-    const cfgUrlEl = document.getElementById("cfg-url");
-    if (!cfgUrlEl.value) {
-      // TEMPORARY, for active real-device testing via a specific free-tier
-      // ngrok tunnel + local dev-proxy (scratchpad dev_proxy.py) that
-      // multiplexes the twin and vision-analyze behind one port via an
-      // /api-vision path prefix -- not a real deployment convention, and
-      // this exact hostname is ephemeral (free ngrok tunnels get a new
-      // random URL every time they restart). Remove this branch once
-      // testing via this tunnel is done; the branches below are the
-      // durable, general-purpose defaults.
-      const isThisNgrokDevTunnel = location.hostname === "salami-turbulent-engorge.ngrok-free.dev";
-      const isLocalHost = location.hostname === "localhost" || location.hostname === "127.0.0.1";
-      if (isThisNgrokDevTunnel) {
-        cfgUrlEl.value = location.origin + "/api-vision";
-      } else {
-        cfgUrlEl.value = isLocalHost
-          ? location.protocol + "//" + location.hostname + ":8080"
-          : location.protocol + "//" + location.hostname;
+    const isLocalHost = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    cfgUrlEl.value = isLocalHost
+      ? location.protocol + "//" + location.hostname + ":8080"
+      : location.protocol + "//" + location.hostname;
+  }
+
+  const savedServerUrl = prefGet(PREF.serverUrl);
+  const savedVisionUrl = prefGet(PREF.visionUrl);
+  if (savedServerUrl) cfgServerUrlEl.value = savedServerUrl;
+  if (savedVisionUrl) cfgUrlEl.value = savedVisionUrl;
+
+  // The vision URL was previously the one setting nothing remembered, so
+  // it had to be re-typed after every reload even though its secret was
+  // already being persisted right next to it.
+  cfgUrlEl.addEventListener("change", function () {
+    prefSet(PREF.visionUrl, this.value.trim());
+    renderHeaderConnStatus();
+  });
+  cfgServerUrlEl.addEventListener("change", function () {
+    prefSet(PREF.serverUrl, this.value.trim());
+  });
+
+  const savedTab = LEGACY_TAB_ALIASES[prefGet(PREF.tab)] || prefGet(PREF.tab);
+  if (savedTab && TAB_NAMES.indexOf(savedTab) !== -1) {
+    switchTab(savedTab, { restoring: true });
+  }
+
+  // Developer readouts: the exact call count and the pan-speed meter. Both
+  // are instrumentation for working on this page, not information a person
+  // using Guide has any use for, so they're off by default and gated by a
+  // single body class the CSS keys off.
+  const debugToggleEl = document.getElementById("cfg-debug-readouts");
+  function applyDebugReadouts(on) {
+    document.body.classList.toggle("debug-readouts", on);
+    debugToggleEl.checked = on;
+  }
+  applyDebugReadouts(prefGet(PREF.debugReadouts) === "1");
+  debugToggleEl.addEventListener("change", function () {
+    prefSet(PREF.debugReadouts, this.checked ? "1" : "0");
+    applyDebugReadouts(this.checked);
+  });
+
+
+  // ---------- QR encoder (byte mode, versions 1-20, EC level M or L) ----------
+  // Inline rather than a library: this page is strictly self-contained (no
+  // CDN, served by robot/server.py), and the payload here is the shared
+  // secrets -- handing those to a third-party QR web service would be a
+  // genuine leak, not just an inconvenience. Implements ISO/IEC 18004 byte
+  // mode; the block-structure and alignment tables below were generated
+  // from a reference implementation rather than typed out by hand.
+
+  // Generated from the ISO/IEC 18004 tables, not hand-transcribed.
+  // Per version 1-20 and EC level: [ecCodewordsPerBlock, group1Blocks,
+  // group1DataCodewords, group2Blocks, group2DataCodewords].
+  const QR_BLOCKS = {
+    L: [[7,1,19,0,0],[10,1,34,0,0],[15,1,55,0,0],[20,1,80,0,0],[26,1,108,0,0],[18,2,68,0,0],[20,2,78,0,0],[24,2,97,0,0],[30,2,116,0,0],[18,2,68,2,69],[20,4,81,0,0],[24,2,92,2,93],[26,4,107,0,0],[30,3,115,1,116],[22,5,87,1,88],[24,5,98,1,99],[28,1,107,5,108],[30,5,120,1,121],[28,3,113,4,114],[28,3,107,5,108]],
+    M: [[10,1,16,0,0],[16,1,28,0,0],[26,1,44,0,0],[18,2,32,0,0],[24,2,43,0,0],[16,4,27,0,0],[18,4,31,0,0],[22,2,38,2,39],[22,3,36,2,37],[26,4,43,1,44],[30,1,50,4,51],[22,6,36,2,37],[22,8,37,1,38],[24,4,40,5,41],[24,5,41,5,42],[28,7,45,3,46],[28,10,46,1,47],[26,9,43,4,44],[26,3,44,11,45],[26,3,41,13,42]],
+  };
+  // Alignment-pattern centre coordinates per version (empty for v1).
+  const QR_ALIGN = [[],[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74],[6,30,54,78],[6,30,56,82],[6,30,58,86],[6,34,62,90]];
+
+  // GF(256) for Reed-Solomon, primitive polynomial 0x11D.
+  const GF_EXP = new Uint8Array(512), GF_LOG = new Uint8Array(256);
+  (function initGaloisField() {
+    let x = 1;
+    for (let i = 0; i < 255; i++) {
+      GF_EXP[i] = x;
+      GF_LOG[x] = i;
+      x <<= 1;
+      if (x & 0x100) x ^= 0x11D;
+    }
+    for (let i = 255; i < 512; i++) GF_EXP[i] = GF_EXP[i - 255];
+  })();
+  function gfMul(a, b) { return (a === 0 || b === 0) ? 0 : GF_EXP[GF_LOG[a] + GF_LOG[b]]; }
+
+  // Generator polynomial: product of (x - alpha^i) for i in [0, degree).
+  // Coefficients are highest-degree-first.
+  function rsGenerator(degree) {
+    let poly = [1];
+    for (let i = 0; i < degree; i++) {
+      const next = new Array(poly.length + 1).fill(0);
+      for (let j = 0; j < poly.length; j++) {
+        next[j] ^= poly[j];                        // multiply by x
+        next[j + 1] ^= gfMul(poly[j], GF_EXP[i]);  // ...and by alpha^i
+      }
+      poly = next;
+    }
+    return poly;
+  }
+
+  function rsRemainder(data, ecLen) {
+    const gen = rsGenerator(ecLen);
+    const buf = new Uint8Array(data.length + ecLen);
+    buf.set(data);
+    for (let i = 0; i < data.length; i++) {
+      const factor = buf[i];
+      if (factor === 0) continue;
+      for (let j = 0; j < gen.length; j++) buf[i + j] ^= gfMul(gen[j], factor);
+    }
+    return buf.slice(data.length);
+  }
+
+  function qrDataCapacity(version, ecc) {
+    const spec = QR_BLOCKS[ecc][version - 1];
+    return spec[1] * spec[2] + spec[3] * spec[4];
+  }
+  // Byte mode's character-count indicator widens at version 10.
+  function qrCharCountBits(version) { return version <= 9 ? 8 : 16; }
+
+  function qrChooseVersion(byteLen, ecc) {
+    for (let v = 1; v <= QR_BLOCKS[ecc].length; v++) {
+      if (4 + qrCharCountBits(v) + byteLen * 8 <= qrDataCapacity(v, ecc) * 8) return v;
+    }
+    return 0;
+  }
+
+  // Data codewords -> padded, split into blocks, RS-encoded, interleaved.
+  function qrCodewords(bytes, version, ecc) {
+    const spec = QR_BLOCKS[ecc][version - 1];
+    const ecLen = spec[0], g1n = spec[1], g1d = spec[2], g2n = spec[3], g2d = spec[4];
+    const totalData = g1n * g1d + g2n * g2d;
+
+    const bits = [];
+    const put = function (value, length) {
+      for (let i = length - 1; i >= 0; i--) bits.push((value >>> i) & 1);
+    };
+    put(4, 4);                                  // byte mode
+    put(bytes.length, qrCharCountBits(version));
+    for (let i = 0; i < bytes.length; i++) put(bytes[i], 8);
+
+    const capacity = totalData * 8;
+    for (let i = 0; i < 4 && bits.length < capacity; i++) bits.push(0); // terminator
+    while (bits.length % 8 !== 0) bits.push(0);
+    for (let i = 0; bits.length < capacity; i++) put(i % 2 === 0 ? 0xEC : 0x11, 8);
+
+    const dataCw = new Uint8Array(totalData);
+    for (let i = 0; i < totalData; i++) {
+      let v = 0;
+      for (let j = 0; j < 8; j++) v = (v << 1) | bits[i * 8 + j];
+      dataCw[i] = v;
+    }
+
+    const blocks = [];
+    let off = 0;
+    for (let i = 0; i < g1n; i++) { blocks.push(dataCw.slice(off, off + g1d)); off += g1d; }
+    for (let i = 0; i < g2n; i++) { blocks.push(dataCw.slice(off, off + g2d)); off += g2d; }
+    const ecBlocks = blocks.map(function (b) { return rsRemainder(b, ecLen); });
+
+    // Interleave: column-wise across blocks, data first then EC.
+    const out = [];
+    const longest = Math.max(g1d, g2d);
+    for (let i = 0; i < longest; i++) {
+      for (let b = 0; b < blocks.length; b++) if (i < blocks[b].length) out.push(blocks[b][i]);
+    }
+    for (let i = 0; i < ecLen; i++) {
+      for (let b = 0; b < ecBlocks.length; b++) out.push(ecBlocks[b][i]);
+    }
+    return out;
+  }
+
+  const QR_MASKS = [
+    function (x, y) { return (x + y) % 2 === 0; },
+    function (x, y) { return y % 2 === 0; },
+    function (x, y) { return x % 3 === 0; },
+    function (x, y) { return (x + y) % 3 === 0; },
+    function (x, y) { return (Math.floor(y / 2) + Math.floor(x / 3)) % 2 === 0; },
+    function (x, y) { return (x * y) % 2 + (x * y) % 3 === 0; },
+    function (x, y) { return ((x * y) % 2 + (x * y) % 3) % 2 === 0; },
+    function (x, y) { return ((x + y) % 2 + (x * y) % 3) % 2 === 0; },
+  ];
+
+  // BCH(15,5), then XOR with the spec's fixed mask so an all-zero format
+  // never produces an all-zero pattern.
+  function qrFormatBits(ecc, mask) {
+    const data = ((ecc === "L" ? 1 : 0) << 3) | mask;
+    let rem = data;
+    for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
+    return ((data << 10) | rem) ^ 0x5412;
+  }
+  function qrVersionBits(version) {
+    let rem = version;
+    for (let i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >>> 11) * 0x1F25);
+    return (version << 12) | rem;
+  }
+
+  function qrBuildMatrix(version, ecc, codewords, mask) {
+    const size = version * 4 + 17;
+    const m = [], fixed = [];
+    for (let i = 0; i < size; i++) {
+      m.push(new Array(size).fill(0));
+      fixed.push(new Array(size).fill(false));
+    }
+    const setFixed = function (x, y, v) {
+      if (x < 0 || y < 0 || x >= size || y >= size) return;
+      m[y][x] = v ? 1 : 0;
+      fixed[y][x] = true;
+    };
+
+    // Finder patterns plus their separators (the ring of light modules).
+    [[0, 0], [size - 7, 0], [0, size - 7]].forEach(function (o) {
+      for (let dy = -1; dy <= 7; dy++) {
+        for (let dx = -1; dx <= 7; dx++) {
+          const inside = dx >= 0 && dx <= 6 && dy >= 0 && dy <= 6;
+          const d = Math.max(Math.abs(dx - 3), Math.abs(dy - 3));
+          setFixed(o[0] + dx, o[1] + dy, inside && d !== 2);
+        }
+      }
+    });
+
+    // Timing patterns.
+    for (let i = 8; i < size - 8; i++) {
+      setFixed(i, 6, i % 2 === 0);
+      setFixed(6, i, i % 2 === 0);
+    }
+
+    // Alignment patterns, minus the three that would sit on a finder.
+    const centres = QR_ALIGN[version];
+    for (let a = 0; a < centres.length; a++) {
+      for (let b = 0; b < centres.length; b++) {
+        const cx = centres[a], cy = centres[b];
+        const onFinder = (a === 0 && b === 0) ||
+                         (a === 0 && b === centres.length - 1) ||
+                         (a === centres.length - 1 && b === 0);
+        if (onFinder) continue;
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            setFixed(cx + dx, cy + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+          }
+        }
+      }
+    }
+
+    // Reserve the format-info strips (written properly further down) and
+    // the always-dark module, so data placement skips them.
+    // Index 6 is skipped: the format strip runs alongside the timing
+    // patterns but does not include them, and writing here would erase the
+    // timing modules at (8,6) and (6,8).
+    for (let i = 0; i <= 8; i++) {
+      if (i === 6) continue;
+      setFixed(8, i, false);
+      setFixed(i, 8, false);
+    }
+    for (let i = 0; i < 8; i++) { setFixed(size - 1 - i, 8, false); setFixed(8, size - 1 - i, false); }
+    setFixed(8, size - 8, true);
+
+    if (version >= 7) {
+      const vbits = qrVersionBits(version);
+      for (let i = 0; i < 18; i++) {
+        const bit = (vbits >>> i) & 1;
+        setFixed(size - 11 + (i % 3), Math.floor(i / 3), bit);
+        setFixed(Math.floor(i / 3), size - 11 + (i % 3), bit);
+      }
+    }
+
+    // Data, in two-module columns snaking up and down, skipping column 6.
+    let bitIdx = 0, upward = true;
+    for (let right = size - 1; right >= 1; right -= 2) {
+      if (right === 6) right = 5;
+      for (let vert = 0; vert < size; vert++) {
+        const y = upward ? size - 1 - vert : vert;
+        for (let k = 0; k < 2; k++) {
+          const x = right - k;
+          if (fixed[y][x]) continue;
+          let bit = 0;
+          if (bitIdx < codewords.length * 8) {
+            bit = (codewords[bitIdx >> 3] >>> (7 - (bitIdx & 7))) & 1;
+          }
+          bitIdx++;
+          m[y][x] = bit ^ (QR_MASKS[mask](x, y) ? 1 : 0);
+        }
+      }
+      upward = !upward;
+    }
+
+    const fbits = qrFormatBits(ecc, mask);
+    const fbit = function (i) { return (fbits >>> i) & 1; };
+    for (let i = 0; i <= 5; i++) setFixed(8, i, fbit(i));
+    setFixed(8, 7, fbit(6));
+    setFixed(8, 8, fbit(7));
+    setFixed(7, 8, fbit(8));
+    for (let i = 9; i < 15; i++) setFixed(14 - i, 8, fbit(i));
+    for (let i = 0; i < 8; i++) setFixed(size - 1 - i, 8, fbit(i));
+    for (let i = 8; i < 15; i++) setFixed(8, size - 15 + i, fbit(i));
+    setFixed(8, size - 8, 1);
+
+    return m;
+  }
+
+  // The four penalty rules from the spec; the lowest-scoring mask wins.
+  function qrPenalty(m) {
+    const size = m.length;
+    let score = 0;
+
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < size; i++) {
+        let run = 1;
+        for (let j = 1; j < size; j++) {
+          const cur = pass === 0 ? m[i][j] : m[j][i];
+          const prev = pass === 0 ? m[i][j - 1] : m[j - 1][i];
+          if (cur === prev) {
+            run++;
+            if (run === 5) score += 3;
+            else if (run > 5) score += 1;
+          } else run = 1;
+        }
+      }
+    }
+
+    for (let y = 0; y < size - 1; y++) {
+      for (let x = 0; x < size - 1; x++) {
+        const v = m[y][x];
+        if (v === m[y][x + 1] && v === m[y + 1][x] && v === m[y + 1][x + 1]) score += 3;
+      }
+    }
+
+    // 1:1:3:1:1 finder-like sequences, with four light modules either side.
+    const PATTERNS = [
+      [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1],
+    ];
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < size; i++) {
+        for (let j = 0; j + 11 <= size; j++) {
+          for (let p = 0; p < 2; p++) {
+            let hit = true;
+            for (let k = 0; k < 11; k++) {
+              const v = pass === 0 ? m[i][j + k] : m[j + k][i];
+              if (v !== PATTERNS[p][k]) { hit = false; break; }
+            }
+            if (hit) score += 40;
+          }
+        }
+      }
+    }
+
+    let dark = 0;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) dark += m[y][x];
+    const percent = (dark * 100) / (size * size);
+    score += Math.floor(Math.abs(percent - 50) / 5) * 10;
+    return score;
+  }
+
+  // Returns { matrix, version, ecc, mask } or throws if the text cannot fit.
+  // forcedMask exists so the encoder can be checked module-for-module
+  // against a reference implementation at a known mask.
+  function qrEncode(text, forcedMask) {
+    const bytes = Array.from(new TextEncoder().encode(text));
+    // Prefer M (roughly 15% recoverable) since this is scanned off a
+    // screen; fall back to L only if the payload will not otherwise fit.
+    let ecc = "M", version = qrChooseVersion(bytes.length, ecc);
+    if (!version) { ecc = "L"; version = qrChooseVersion(bytes.length, ecc); }
+    if (!version) throw new Error("Too much data for a QR code (" + bytes.length + " bytes).");
+
+    const codewords = qrCodewords(bytes, version, ecc);
+    if (typeof forcedMask === "number") {
+      return { matrix: qrBuildMatrix(version, ecc, codewords, forcedMask), version: version, ecc: ecc, mask: forcedMask };
+    }
+    let best = null;
+    for (let mask = 0; mask < 8; mask++) {
+      const matrix = qrBuildMatrix(version, ecc, codewords, mask);
+      const penalty = qrPenalty(matrix);
+      if (!best || penalty < best.penalty) best = { matrix: matrix, penalty: penalty, mask: mask };
+    }
+    return { matrix: best.matrix, version: version, ecc: ecc, mask: best.mask };
+  }
+
+  // Drawn light-on-dark-agnostic: always true black on true white, never
+  // the page's theme colours -- scanners need the contrast, and a dark-mode
+  // QR in muted greys is measurably worse to read.
+  function qrRenderToCanvas(canvas, matrix, targetPx) {
+    const QUIET = 4;
+    const size = matrix.length + QUIET * 2;
+    const scale = Math.max(2, Math.floor(targetPx / size));
+    const px = size * scale;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = px * dpr;
+    canvas.height = px * dpr;
+    canvas.style.width = px + "px";
+    canvas.style.height = px + "px";
+    const c = canvas.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.fillStyle = "#FFFFFF";
+    c.fillRect(0, 0, px, px);
+    c.fillStyle = "#000000";
+    for (let y = 0; y < matrix.length; y++) {
+      for (let x = 0; x < matrix.length; x++) {
+        if (matrix[y][x]) c.fillRect((x + QUIET) * scale, (y + QUIET) * scale, scale, scale);
       }
     }
   }
+
+
+  // ---------- setup sharing ----------
+  // A QR of the existing magic link (see prefillTesterSecrets below), which
+  // is a better delivery vehicle than pasting that URL into a chat: it
+  // doesn't persist in someone's message history, and there's nothing to
+  // retype. It is still the secrets in visual form, though, so it is
+  // revealed on an explicit tap rather than sitting in Settings
+  // permanently, and it takes itself back down after a minute.
+  const QR_REVEAL_MS = 60000;
+  let qrHideTimer = null, qrCountdownTimer = null;
+
+  function setupLinkParts() {
+    return {
+      visionSecret: document.getElementById("cfg-secret").value.trim(),
+      robotSecret: document.getElementById("cfg-server-secret").value.trim(),
+      visionUrl: document.getElementById("cfg-url").value.trim(),
+      serverUrl: document.getElementById("cfg-server-url").value.trim().replace(/\/$/, ""),
+    };
+  }
+
+  // Mirrors the default computed during init, so the two stay in step.
+  function conventionalVisionUrl() {
+    if (location.protocol === "file:") return "";
+    const isLocalHost = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    return isLocalHost
+      ? location.protocol + "//" + location.hostname + ":8080"
+      : location.protocol + "//" + location.hostname;
+  }
+
+  function buildSetupUrl() {
+    const p = setupLinkParts();
+    const params = new URLSearchParams();
+    if (p.visionSecret) params.set("secret", p.visionSecret);
+    if (p.robotSecret) params.set("robotSecret", p.robotSecret);
+    // The vision URL is worth carrying when it differs from what the
+    // recipient's own page would derive (a tunnel, a path-prefixed proxy).
+    // When it matches, omitting it keeps the payload short, which is what
+    // decides the QR's version and therefore how big its modules are.
+    if (p.visionUrl && p.visionUrl !== conventionalVisionUrl()) {
+      params.set("visionUrl", p.visionUrl);
+    }
+    // The robot server is this page's own origin in every normal
+    // deployment and the recipient derives that themselves, so it only
+    // earns its payload length when pointed somewhere else.
+    if (p.serverUrl && p.serverUrl !== location.origin) params.set("serverUrl", p.serverUrl);
+    const qs = params.toString();
+    return location.origin + location.pathname + (qs ? "?" + qs : "");
+  }
+
+  function hideSetupQr() {
+    document.getElementById("qr-reveal").hidden = true;
+    if (qrHideTimer) { clearTimeout(qrHideTimer); qrHideTimer = null; }
+    if (qrCountdownTimer) { clearInterval(qrCountdownTimer); qrCountdownTimer = null; }
+  }
+
+  function showSetupQr() {
+    if (location.protocol === "file:") {
+      showToast("Open this page from a server first \u2014 a file:// path can't be shared.", "err");
+      return;
+    }
+    const url = buildSetupUrl();
+    let code;
+    try {
+      code = qrEncode(url);
+    } catch (e) {
+      showToast("Setup link is too long to fit in a QR code.", "err");
+      return;
+    }
+    const reveal = document.getElementById("qr-reveal");
+    // Unhide before measuring: a hidden container reports clientWidth 0,
+    // which would silently pin every screen to the fallback size.
+    reveal.hidden = false;
+    const frame = document.querySelector(".qr-frame");
+    const avail = Math.max(220, frame.clientWidth - 24); // minus .qr-frame padding
+    qrRenderToCanvas(document.getElementById("qr-canvas"), code.matrix, avail);
+
+    const p = setupLinkParts();
+    const carried = [];
+    if (p.visionSecret) carried.push("vision secret");
+    if (p.robotSecret) carried.push("robot secret");
+    const what = carried.length
+      ? "Carries the " + carried.join(" and ") + "."
+      : "No secrets are configured, so this only opens the app.";
+
+    const meta = document.getElementById("qr-meta");
+
+    let remaining = Math.round(QR_REVEAL_MS / 1000);
+    const tick = function () {
+      meta.innerHTML = escapeHtml(what) +
+        '<br><span class="qr-countdown">Hides in ' + remaining + 's</span>';
+    };
+    tick();
+    qrCountdownTimer = setInterval(function () {
+      remaining -= 1;
+      if (remaining >= 0) tick();
+    }, 1000);
+    qrHideTimer = setTimeout(hideSetupQr, QR_REVEAL_MS);
+  }
+
+  document.getElementById("btn-show-qr").onclick = showSetupQr;
+  document.getElementById("btn-hide-qr").onclick = hideSetupQr;
 
   // ---------- tester debug capture ----------
   // For a build handed to a group of remote testers, "it broke" with no
@@ -2446,32 +4004,6 @@
   // appended to a small ring buffer in localStorage; "Copy debug info" in
   // Settings bundles the last 20 of those plus basic context into one
   // paste-able block for a bug report, no screen recording required.
-  const DEBUG_LOG_KEY = "vp_debug_log";
-  const DEBUG_LOG_MAX = 20;
-  function pushDebugLog(entry) {
-    try {
-      const log = JSON.parse(localStorage.getItem(DEBUG_LOG_KEY) || "[]");
-      log.push(Object.assign({ t: new Date().toISOString() }, entry));
-      localStorage.setItem(DEBUG_LOG_KEY, JSON.stringify(log.slice(-DEBUG_LOG_MAX)));
-    } catch (e) { /* best-effort -- never let logging itself throw */ }
-  }
-  window.addEventListener("error", function (e) {
-    pushDebugLog({
-      type: "error",
-      message: e.message,
-      source: e.filename + ":" + e.lineno + ":" + e.colno,
-      stack: e.error && e.error.stack,
-    });
-  });
-  window.addEventListener("unhandledrejection", function (e) {
-    const reason = e.reason;
-    pushDebugLog({
-      type: "unhandledrejection",
-      message: String((reason && reason.message) || reason),
-      stack: reason && reason.stack,
-    });
-  });
-
   document.getElementById("btn-copy-debug").onclick = function () {
     const statusEl = document.getElementById("copy-debug-status");
     let errors = [];
@@ -2487,6 +4019,7 @@
       statusEl.textContent = errors.length
         ? "Copied (" + errors.length + " recent error(s) included)."
         : "Copied -- no errors logged since this browser last cleared its storage.";
+      showToast(errors.length ? "Debug info copied (" + errors.length + " errors)." : "Debug info copied.", "ok");
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(reportCopied).catch(function () {
@@ -2548,9 +4081,19 @@
       const params = new URLSearchParams(location.search);
       const urlSecret = params.get("secret");
       const urlRobotSecret = params.get("robotSecret");
+      // The setup QR also carries the service URLs, since the
+      // convention-derived defaults computed above are wrong for plenty of
+      // real setups (a tunnel, a path-prefixed proxy) -- and the point of
+      // scanning is to have nothing left to type.
+      const urlVisionUrl = params.get("visionUrl");
+      const urlServerUrl = params.get("serverUrl");
       if (urlSecret) localStorage.setItem("vp_cfg_secret", urlSecret);
       if (urlRobotSecret) localStorage.setItem("vp_cfg_server_secret", urlRobotSecret);
-      if (urlSecret || urlRobotSecret) history.replaceState(null, "", location.pathname + location.hash);
+      if (urlVisionUrl) localStorage.setItem(PREF.visionUrl, urlVisionUrl);
+      if (urlServerUrl) localStorage.setItem(PREF.serverUrl, urlServerUrl);
+      if (urlSecret || urlRobotSecret || urlVisionUrl || urlServerUrl) {
+        history.replaceState(null, "", location.pathname + location.hash);
+      }
 
       const cfgSecretEl = document.getElementById("cfg-secret");
       const cfgServerSecretEl = document.getElementById("cfg-server-secret");
@@ -2558,6 +4101,10 @@
       const savedRobotSecret = localStorage.getItem("vp_cfg_server_secret");
       if (savedSecret) cfgSecretEl.value = savedSecret;
       if (savedRobotSecret) cfgServerSecretEl.value = savedRobotSecret;
+      // Applied to the fields directly: the restore block above already ran
+      // and read localStorage before these query params were stored.
+      if (urlVisionUrl) document.getElementById("cfg-url").value = urlVisionUrl;
+      if (urlServerUrl) document.getElementById("cfg-server-url").value = urlServerUrl;
 
       // Also remember anything a tester types in by hand, not just what
       // arrived via the link, so a manual correction sticks too.
@@ -2570,9 +4117,26 @@
     } catch (e) { /* best-effort -- localStorage unavailable, just skip prefill */ }
   })();
 
-  applyStaticIcons();
   renderTargetHistory();
   renderHeaderConnStatus();
+
+  // After applyStaticIcons() (called near the top), which stamps the
+  // button's data-icon="volumeOn" default and would otherwise overwrite a
+  // restored muted state.
+  state.guidanceMuted = prefGet(PREF.muted) === "1";
+  updateGuidanceMuteButton();
+
+  // Last, so it runs after prefillTesterSecrets() above has populated the
+  // secret fields -- connect() reads cfg-server-secret, and a deployment
+  // that requires one would otherwise auto-connect without it and fail.
+  // Reconnecting here rather than leaving every control disabled behind a
+  // Connect button on a tab the user has to go find: the URL is either
+  // remembered or derived from this page's own origin, so in the common
+  // case there is nothing left to ask. Failure is quiet and non-blocking
+  // (see connect()'s `silent`); the manual button remains the retry path.
+  if (document.getElementById("cfg-server-url").value.trim()) {
+    connect({ silent: true });
+  }
 })();
 </script>
 </body>

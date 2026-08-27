@@ -27,7 +27,9 @@ Environment variables:
                         own allowed_origins default) -- fine while
                         APP_SHARED_SECRET is the real access control.
 
-POST /analyze -- one-shot scene description of an uploaded photo.
+POST /analyze  -- one-shot scene description of an uploaded photo, in the
+                  robot's terms (obstacles, free space, safest direction).
+POST /describe -- the same photo described for the person who took it.
 
 Request body (JSON):
     {
@@ -103,7 +105,12 @@ import os
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from vision_core import describe_image_bytes, describe_image_bytes_navigate, describe_image_bytes_guidance
+from vision_core import (
+    describe_image_bytes,
+    describe_image_bytes_person,
+    describe_image_bytes_navigate,
+    describe_image_bytes_guidance,
+)
 from rooms_core import identify_room
 
 logger = logging.getLogger("vision_analyze")
@@ -177,6 +184,25 @@ def create_app() -> FastAPI:
 
         scene["room_guess"] = identify_room(scene.get("important_objects", []))
         return scene
+
+    @app.post("/describe")
+    async def describe(request: Request):
+        """Person-facing sibling of /analyze.
+
+        /analyze answers what a robot needs to know about a room (obstacles,
+        free space, doorways, a safest direction). The twin's Camera tab is
+        used by a person photographing their own room, for whom those fields
+        are meaningless, so this returns a plain description instead. Its own
+        route rather than a flag on /analyze, matching /navigate and
+        /guidance.
+        """
+        image_bytes, media_type, _body = await _decode_image(request)
+
+        try:
+            return describe_image_bytes_person(image_bytes, media_type)
+        except Exception as e:
+            logger.exception("Vision API call failed")
+            raise HTTPException(status_code=502, detail=f"Vision description failed: {e}")
 
     @app.post("/navigate")
     async def navigate(request: Request):
