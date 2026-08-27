@@ -134,14 +134,19 @@ def describe_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> 
 
 NAVIGATE_PROMPT_TEMPLATE = """You are the camera of a small indoor robot searching for a {target_object}.
 Look at this image and decide the robot's single next move.
+
+Divide the image into three equal vertical thirds: "left", "center" and
+"right". These thirds are the frame of reference for both questions 1 and 3,
+so use them literally -- an object is in whichever third its centre falls in.
+
 Consider:
-1. Is the {target_object} visible in this image? If so, roughly which direction is it relative to the center of the frame?
+1. Is the {target_object} visible in this image? If so, which third is it in?
 2. Is there an obstacle directly ahead that would block moving forward?
 3. Has the robot ARRIVED at the {target_object}? Arrived means it is directly
-   in front of the robot and close enough to touch -- filling a large part of
-   the frame, roughly a third or more of the width. Judge this by how much of
-   the frame it fills, not by guessing real-world distance. A {target_object}
-   that is clearly visible but still across the room has NOT been reached.
+   in front of the robot and close enough to touch: it spans roughly the full
+   width of the center third, or more. Judge this by how much of the frame it
+   fills, not by guessing real-world distance. A {target_object} that is
+   clearly visible but still across the room has NOT been reached.
 4. Given the above, what is the single best next action to get closer to the
    {target_object} while not colliding with anything?
 

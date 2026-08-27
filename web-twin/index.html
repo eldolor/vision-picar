@@ -561,6 +561,40 @@
   /* De-emphasized caption -- the edge glow + chevron pulse below carry the
      primary "which way / how close" signal now; this is a small, optional,
      glanceable readout for accessibility/clarity, not the main channel. */
+  /* Robot view: the three zones /navigate's target_direction actually
+     reports (left | center | right), drawn so a wrong read is visible
+     rather than something you have to hold in your head -- "it said RIGHT
+     but the bag is plainly in the left third". Deliberately NOT a generic
+     decorative grid: the robot has no spatial model, and lines implying
+     one would misrepresent what the vision call does. Guide gets none of
+     this, because Guide's geometry is five zones, not three -- so the two
+     modes look different for a real reason.
+
+     Equal thirds also give arrival a free reference: the prompt defines
+     "reached" as the target spanning roughly the centre third's width, so
+     the same lines answer "why did it not say REACHED yet?". */
+  #robot-zones {
+    position: absolute; inset: 0; display: none; pointer-events: none;
+  }
+  #robot-zones.visible { display: flex; }
+  .robot-zone {
+    flex: 1; position: relative;
+    display: flex; align-items: flex-end; justify-content: center;
+    padding-bottom: 76px;
+    transition: background-color .2s ease;
+  }
+  .robot-zone + .robot-zone { border-left: 1px solid rgba(232, 236, 239, 0.18); }
+  .robot-zone::after {
+    content: attr(data-zone);
+    font-size: 9px; letter-spacing: .14em; text-transform: uppercase;
+    color: rgba(232, 236, 239, 0.35);
+    transition: color .2s ease;
+  }
+  .robot-zone.active { background: rgba(91, 157, 245, 0.10); }
+  .robot-zone.active::after { color: var(--accent-primary); }
+  .robot-zone.reached { background: rgba(62, 207, 142, 0.14); }
+  .robot-zone.reached::after { color: var(--accent-safe); }
+
   /* Robot view: the action verb is the whole point of this mode, so it
      gets a dedicated badge rather than riding in the de-emphasised
      caption bar Guide uses. Sits above centre so it never collides with
@@ -577,10 +611,10 @@
   .robot-action-target { font-size: 12px; color: var(--text-dim); }
   .robot-action-badge[data-action="FORWARD"] .robot-action-verb { color: var(--accent-safe); }
   .robot-action-badge[data-action="STOP"] .robot-action-verb { color: var(--accent-alert); }
-  .robot-action-badge[data-action="REACHED"] .robot-action-verb { color: var(--accent); }
+  .robot-action-badge[data-action="REACHED"] .robot-action-verb { color: var(--accent-primary); }
   .robot-mode-row { display: flex; gap: 6px; margin-top: 10px; }
   .robot-mode-btn { flex: 1; }
-  .robot-mode-btn.active-mode { border-color: var(--accent); color: var(--accent); }
+  .robot-mode-btn.active-mode { border-color: var(--accent-primary); color: var(--accent-primary); }
 
   .guide-caption {
     display: flex; align-items: center; gap: 6px;
@@ -1062,6 +1096,11 @@
     <div class="sr-only" id="guide-announce-assertive" role="alert" aria-live="assertive" aria-atomic="true"></div>
 
     <div id="guidance-overlay" aria-hidden="true">
+      <div id="robot-zones">
+        <div class="robot-zone" data-zone="left"></div>
+        <div class="robot-zone" data-zone="center"></div>
+        <div class="robot-zone" data-zone="right"></div>
+      </div>
       <div class="guide-edge-glow guide-edge-glow-left" id="guide-edge-glow-left"></div>
       <div class="guide-edge-glow guide-edge-glow-right" id="guide-edge-glow-right"></div>
       <div class="guide-chevron" id="guide-chevron">
@@ -2418,6 +2457,24 @@
   let guidanceWasFound = false;
 
   const robotActionBadge = document.getElementById("robot-action-badge");
+  const robotZones = document.getElementById("robot-zones");
+  const robotZoneEls = Array.prototype.slice.call(robotZones.querySelectorAll(".robot-zone"));
+
+  // The zone frame itself stays up for the whole robot-view session -- it is
+  // the mode's identity, not a per-tick result -- so it is deliberately not
+  // cleared by hideAllGuidanceOverlays(). Only the highlight changes per tick.
+  function setRobotZonesVisible(visible) {
+    robotZones.classList.toggle("visible", !!visible);
+    if (!visible) highlightRobotZone(null, false);
+  }
+
+  function highlightRobotZone(zone, reached) {
+    robotZoneEls.forEach(function (el) {
+      const isIt = el.dataset.zone === zone;
+      el.classList.toggle("active", isIt && !reached);
+      el.classList.toggle("reached", isIt && !!reached);
+    });
+  }
 
   function hideAllGuidanceOverlays() {
     guidanceChevron.classList.remove("visible");
@@ -2637,6 +2694,12 @@
     // tell success from a blocked path -- the exact confusion target_reached
     // exists to remove.
     const reached = result.target_reached === true;
+    // "not_visible" (and any unexpected value) highlights nothing rather
+    // than defaulting to centre -- a lit zone must always mean the model
+    // actually reported that zone.
+    const zone = result.target_visible ? result.target_direction : null;
+    highlightRobotZone(["left", "center", "right"].indexOf(zone) >= 0 ? zone : null, reached);
+
     robotActionBadge.dataset.action = reached ? "REACHED" : action;
     document.getElementById("robot-action-verb").textContent = reached ? "REACHED" : action;
     document.getElementById("robot-action-target").textContent = reached
@@ -3221,6 +3284,7 @@
 
     guidanceVideo.srcObject = state.guidanceStream;
     guidanceFullscreen.classList.add("active");
+    setRobotZonesVisible(state.guidanceMode === "robot");
     updateGuideRotateHint();
     state.guidanceTarget = document.getElementById("guidance-target").value.trim() || "red backpack";
     saveTargetToHistory(state.guidanceTarget);
@@ -3277,6 +3341,7 @@
     }
     guidanceVideo.srcObject = null;
     guidanceFullscreen.classList.remove("active");
+    setRobotZonesVisible(false);
     document.getElementById("guide-rotate-hint").classList.remove("visible");
     guidanceLastNormBox = null;
     state.guidanceNotVisibleStreak = 0;
