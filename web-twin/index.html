@@ -561,6 +561,103 @@
   /* De-emphasized caption -- the edge glow + chevron pulse below carry the
      primary "which way / how close" signal now; this is a small, optional,
      glanceable readout for accessibility/clarity, not the main channel. */
+  /* ---- Robot view HUD ----
+     The brief was "make it feel robotic". The rule applied throughout: every
+     element displays real machine state, because a HUD reads as a machine
+     when it looks like it is reporting one, not when it has scanlines. So
+     there is no film grain, no tint and no scanline layer -- this tool exists
+     to judge whether the model read the room correctly, and chrome over the
+     video works directly against that. Everything lives at the edges; the
+     centre stays clear apart from a 1px axis reticle.
+
+     obstacle_ahead in particular has been in /navigate's response since it
+     was written and was displayed nowhere until now. */
+  #robot-hud { position: absolute; inset: 0; display: none; pointer-events: none; }
+  #robot-hud.visible { display: block; }
+
+  /* Corner brackets: the one purely decorative element here, and the cheapest
+     possible "you are looking through an instrument" signal. */
+  .robot-bracket { position: absolute; width: 26px; height: 26px; opacity: .85; }
+  .robot-bracket::before, .robot-bracket::after {
+    content: ""; position: absolute; background: rgba(255,255,255,0.9);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  }
+  .robot-bracket::before { width: 100%; height: 2px; }
+  .robot-bracket::after { width: 2px; height: 100%; }
+  .robot-bracket.tl { top: 62px; left: 14px; }
+  .robot-bracket.tr { top: 62px; right: 14px; }
+  .robot-bracket.bl { bottom: 96px; left: 14px; }
+  .robot-bracket.br { bottom: 96px; right: 14px; }
+  .robot-bracket.tr::before, .robot-bracket.br::before { right: 0; }
+  .robot-bracket.tr::after,  .robot-bracket.br::after  { right: 0; }
+  .robot-bracket.bl::before, .robot-bracket.br::before { bottom: 0; }
+  .robot-bracket.bl::after,  .robot-bracket.br::after  { bottom: 0; }
+
+  /* Forward axis. FORWARD means "toward the centre of frame", so this marks
+     a real thing rather than being a targeting flourish. */
+  .robot-reticle {
+    position: absolute; left: 50%; top: 50%; width: 46px; height: 46px;
+    transform: translate(-50%, -50%); opacity: .55;
+  }
+  .robot-reticle::before, .robot-reticle::after {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    background: rgba(255,255,255,0.9); box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  }
+  .robot-reticle::before { width: 1px; height: 100%; transform: translate(-50%,-50%); }
+  .robot-reticle::after  { height: 1px; width: 100%;  transform: translate(-50%,-50%); }
+
+  /* Sweeps once per captured frame. This is the only thing on screen that
+     makes the 2.5s cycle visible -- you see the robot look, instead of
+     guessing when a paid call happened. */
+  .robot-scanline {
+    position: absolute; left: 0; right: 0; top: 0; height: 2px; opacity: 0;
+    background: linear-gradient(to right, transparent, var(--accent-primary), transparent);
+    box-shadow: 0 0 12px 2px rgba(91,157,245,0.55);
+  }
+  .robot-scanline.sweep { animation: robotSweep .55s ease-out 1; }
+  @keyframes robotSweep {
+    0%   { opacity: 0;   transform: translateY(0); }
+    12%  { opacity: .95; }
+    100% { opacity: 0;   transform: translateY(78vh); }
+  }
+
+  /* Time until the next capture, so you know when to hold still. */
+  .robot-countdown {
+    position: absolute; top: 56px; left: 14px; right: 14px; height: 2px;
+    background: rgba(255,255,255,0.14); overflow: hidden;
+  }
+  .robot-countdown span { display: block; height: 100%; width: 0;
+    background: rgba(255,255,255,0.55); }
+  .robot-countdown.run span { animation: robotCountdown linear 1 forwards; }
+  @keyframes robotCountdown { from { width: 0 } to { width: 100% } }
+
+  .robot-telemetry {
+    position: absolute; top: 68px; left: 26px;
+    font-family: var(--mono); font-size: 10px; line-height: 1.65;
+    letter-spacing: .06em; text-transform: uppercase;
+    color: rgba(255,255,255,0.92); text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+  }
+  .robot-telemetry b { color: rgba(255,255,255,0.5); font-weight: 400; margin-right: 7px; }
+  .robot-telemetry .v-alert { color: var(--accent-alert); }
+  .robot-telemetry .v-safe  { color: var(--accent-safe); }
+
+  .robot-obstacle {
+    position: absolute; left: 14px; right: 14px; bottom: 96px;
+    padding: 5px 0; text-align: center;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .18em;
+    color: var(--accent-alert);
+    border-top: 2px solid var(--accent-alert);
+    background: linear-gradient(to top, rgba(255,107,53,0.22), transparent);
+    opacity: 0; transition: opacity .2s ease;
+  }
+  .robot-obstacle.visible { opacity: 1; animation: robotObstaclePulse 1.1s ease-in-out infinite; }
+  @keyframes robotObstaclePulse { 0%,100% { opacity: 1 } 50% { opacity: .55 } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .robot-scanline.sweep { animation-duration: .01s; }
+    .robot-obstacle.visible { animation: none; }
+  }
+
   /* Robot view: the three zones /navigate's target_direction actually
      reports (left | center | right), drawn so a wrong read is visible
      rather than something you have to hold in your head -- "it said RIGHT
@@ -1135,6 +1232,15 @@
         <div class="robot-zone" data-zone="left"></div>
         <div class="robot-zone" data-zone="center"></div>
         <div class="robot-zone" data-zone="right"></div>
+      </div>
+      <div id="robot-hud">
+        <div class="robot-bracket tl"></div><div class="robot-bracket tr"></div>
+        <div class="robot-bracket bl"></div><div class="robot-bracket br"></div>
+        <div class="robot-reticle"></div>
+        <div class="robot-scanline" id="robot-scanline"></div>
+        <div class="robot-countdown" id="robot-countdown"><span></span></div>
+        <div class="robot-telemetry" id="robot-telemetry"></div>
+        <div class="robot-obstacle" id="robot-obstacle">&#9650; OBSTACLE AHEAD</div>
       </div>
       <div class="guide-edge-glow guide-edge-glow-left" id="guide-edge-glow-left"></div>
       <div class="guide-edge-glow guide-edge-glow-right" id="guide-edge-glow-right"></div>
@@ -2498,9 +2604,68 @@
   // The zone frame itself stays up for the whole robot-view session -- it is
   // the mode's identity, not a per-tick result -- so it is deliberately not
   // cleared by hideAllGuidanceOverlays(). Only the highlight changes per tick.
+  const robotHud = document.getElementById("robot-hud");
+  const robotScanline = document.getElementById("robot-scanline");
+  const robotCountdown = document.getElementById("robot-countdown");
+
   function setRobotZonesVisible(visible) {
     robotZones.classList.toggle("visible", !!visible);
-    if (!visible) highlightRobotZone(null, false);
+    robotHud.classList.toggle("visible", !!visible);
+    if (!visible) {
+      highlightRobotZone(null, false);
+      document.getElementById("robot-obstacle").classList.remove("visible");
+      document.getElementById("robot-telemetry").innerHTML = "";
+      robotCountdown.classList.remove("run");
+    }
+  }
+
+  // Restarting a CSS animation needs the class removed, a reflow, then the
+  // class re-added -- doing both in one frame is a no-op. Same trick the
+  // found-outline's arrive animation uses.
+  function restartRobotAnimation(el, cls) {
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+  }
+
+  // Fired at the moment a frame is actually captured and sent, so the sweep
+  // marks a real event rather than running on a decorative timer.
+  function robotSignalCapture() {
+    if (state.guidanceMode !== "robot") return;
+    restartRobotAnimation(robotScanline, "sweep");
+  }
+
+  // Runs for exactly the delay the next call is scheduled at, including the
+  // exponential backoff after an error -- so a stalled loop looks stalled.
+  function robotStartCountdown(ms) {
+    if (state.guidanceMode !== "robot") return;
+    robotCountdown.firstElementChild.style.animationDuration = ms + "ms";
+    restartRobotAnimation(robotCountdown, "run");
+  }
+
+  function renderRobotTelemetry(result) {
+    const el = document.getElementById("robot-telemetry");
+    if (!result || result.error) {
+      el.innerHTML = "<div><b>ERR</b><span class=\"v-alert\">LINK</span></div>";
+      return;
+    }
+    const vis = result.target_visible
+      ? "YES &middot; " + String(result.target_direction || "?").replace("_", " ")
+      : "NO";
+    const obs = result.obstacle_ahead
+      ? '<span class="v-alert">BLOCKED</span>' : '<span class="v-safe">CLEAR</span>';
+    const reached = result.target_reached === true
+      ? '<div><b>STA</b><span class="v-safe">REACHED</span></div>' : "";
+    el.innerHTML =
+      "<div><b>TGT</b>" + escapeHtml(state.guidanceTarget || "--") + "</div>" +
+      "<div><b>ACT</b>" + escapeHtml(result.action || "--") + "</div>" +
+      "<div><b>VIS</b>" + vis + "</div>" +
+      "<div><b>OBS</b>" + obs + "</div>" +
+      "<div><b>SEQ</b>" + String(state.guidanceCallCount).padStart(3, "0") +
+        "/" + String(guidanceCallCap()).padStart(3, "0") + "</div>" +
+      reached;
+    document.getElementById("robot-obstacle")
+      .classList.toggle("visible", result.obstacle_ahead === true);
   }
 
   function highlightRobotZone(zone, reached) {
@@ -3113,6 +3278,7 @@
     (isRobot ? renderRobotStatus : renderGuidanceStatus)(null, true);
     try {
       const base64 = captureGuidanceFrame();
+      robotSignalCapture();
       const result = await callGuidanceEndpoint(base64, state.guidanceTarget);
       state.guidanceErrorStreak = 0;
       state.guidanceCallCount += 1;
@@ -3126,6 +3292,7 @@
         // too -- they encode proximity, which /navigate does not return.
         renderRobotOverlay(result);
         renderRobotStatus(result, false);
+        renderRobotTelemetry(result);
         announceRobot(result);
 
         // Arrival comes from the service's own target_reached field, never
@@ -3155,6 +3322,7 @@
     } catch (e) {
       state.guidanceErrorStreak++;
       (isRobot ? renderRobotStatus : renderGuidanceStatus)({ error: e.message }, false);
+      if (isRobot) renderRobotTelemetry({ error: e.message });
       // Keyed as "error", so the exponential backoff's repeated failures
       // announce once rather than on every retry.
       (isRobot ? announceRobot : announceGuidance)({ error: e.message });
@@ -3177,6 +3345,7 @@
     const delay = state.guidanceErrorStreak > 0
       ? Math.min(30000, base * Math.pow(2, state.guidanceErrorStreak))
       : base;
+    robotStartCountdown(delay);
     state.guidanceTimerId = setTimeout(guidanceStep, delay);
   }
 
