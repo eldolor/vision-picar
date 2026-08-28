@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Persistent storage for Robot-view "Record this walk" data: one EFS
+  filesystem, mounted by both vision-picar-brain (the write path,
+  POST /recording/frame) and vision-picar-admin (the read/delete path).
+
+  Its own stack rather than living inside brain.yaml (where it started):
+  once brain.yaml and admin.yaml are two independently deployed services
+  that both need to mount the same filesystem, owning it in either one
+  creates a circular cross-stack dependency (admin needs brain's EFS
+  export; brain would need admin's security group to grant it ingress).
+  A third, foundational stack both of them import from avoids that
+  entirely, and reflects what's actually true: the recordings volume is a
+  shared resource, not something either service owns.
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Default: vision-picar-network
+
+Resources:
+  EfsFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      FileSystemTags:
+        - Key: Name
+          Value: vision-picar-recordings
+      LifecyclePolicies:
+        # Walks are write-once, read-occasionally (replay, admin review, a
+        # future training job) -- Infrequent Access after 30 days of no
+        # reads cuts storage cost roughly in half for anything not actively
+        # being used. No policy to delete anything; this is exactly the
+        # data meant to accumulate.
+        - TransitionToIA: AFTER_30_DAYS
+
+  # Ingress from the whole VPC CIDR rather than from a specific consuming
+  # service's security group: this filesystem is meant to be mounted by
+  # more than one independently deployed service (today: brain and admin),
+  # and scoping to individual SGs here would recreate the circular-
+  # dependency problem this stack exists to avoid. Same pattern
+  # network.yaml's VpcEndpointSecurityGroup already uses for the same
+  # reason (interface endpoints reachable by any resource in the VPC that
+  # needs them, not enumerated per consumer).
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EFS mount targets -- inbound NFS from anywhere in the VPC
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: !ImportValue
+            Fn::Sub: "${NetworkStackName}-VpcCidr"
+
+  EfsMountTargetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      SubnetId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-PrivateSubnetAId"
+      SecurityGroups: [!Ref EfsSecurityGroup]
+
+  EfsMountTargetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      SubnetId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-PrivateSubnetBId"
+      SecurityGroups: [!Ref EfsSecurityGroup]
+
+  # Scopes every mount to /recordings within the filesystem (not its root)
+  # and sets the ownership the containers' default (root) user writes/reads
+  # as, so a freshly created EFS behaves like a freshly created local
+  # directory would -- for whichever service mounts it.
+  EfsAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref EfsFileSystem
+      RootDirectory:
+        Path: /recordings
+        CreationInfo:
+          OwnerUid: "0"
+          OwnerGid: "0"
+          Permissions: "0755"
+
+Outputs:
+  EfsFileSystemId:
+    Value: !Ref EfsFileSystem
+    Export:
+      Name: !Sub "${AWS::StackName}-EfsFileSystemId"
+  EfsFileSystemArn:
+    Value: !GetAtt EfsFileSystem.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-EfsFileSystemArn"
+  EfsAccessPointId:
+    Value: !Ref EfsAccessPoint
+    Export:
+      Name: !Sub "${AWS::StackName}-EfsAccessPointId"
+  EfsAccessPointArn:
+    Value: !GetAtt EfsAccessPoint.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-EfsAccessPointArn"

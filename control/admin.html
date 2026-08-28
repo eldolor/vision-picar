@@ -1,0 +1,589 @@
+<title>vision-picar brain admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; background: #0f1115; color: #e6e8eb;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #8b92a0; margin-bottom: 20px; }
+  .panel {
+    background: #171a21; border: 1px solid #262b35; border-radius: 10px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type=password], input[type=text] {
+    background: #0f1115; border: 1px solid #2b303b; color: #e6e8eb;
+    border-radius: 6px; padding: 8px 10px; font-family: inherit;
+  }
+  select {
+    background: #0f1115; border: 1px solid #2b303b; color: #e6e8eb;
+    border-radius: 6px; padding: 7px 8px; font-family: inherit;
+  }
+  button {
+    background: #2b3444; color: #e6e8eb; border: 1px solid #3a4356;
+    border-radius: 6px; padding: 8px 12px; cursor: pointer; font-family: inherit;
+  }
+  button:hover { background: #343f53; }
+  button.danger { background: #3a2020; border-color: #5a2a2a; color: #ffb3b3; }
+  button.danger:hover { background: #4a2828; }
+  button.danger.confirming { background: #7a2020; border-color: #a83a3a; color: #fff; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.small { font-size: 11px; padding: 4px 8px; }
+  .status { color: #8b92a0; margin-left: 4px; }
+  .status.ok { color: #6fd08c; }
+  .status.err { color: #ff8080; }
+  .stats { color: #8b92a0; font-size: 12px; }
+  .toolbar { justify-content: space-between; margin-bottom: 12px; }
+  .toolbar input[type=text] { flex: 1; min-width: 160px; }
+  .bulk-bar {
+    display: none; align-items: center; gap: 10px; background: #1c2130;
+    border: 1px solid #2f3b52; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px;
+  }
+  .bulk-bar.show { display: flex; }
+  .walk { border-top: 1px solid #262b35; padding: 12px 0; }
+  .walk:first-child { border-top: none; padding-top: 0; }
+  .walk-head { display: flex; align-items: center; gap: 10px; }
+  .walk-head-main { flex: 1; cursor: pointer; }
+  .walk-name { font-weight: 600; }
+  .walk-meta { color: #8b92a0; font-size: 12px; }
+  .walk-actions { display: flex; gap: 8px; align-items: center; }
+  .label-select { font-size: 12px; padding: 4px 6px; }
+  .label-badge {
+    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 10px;
+    margin-left: 6px; text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .label-badge.good { background: #1e3a24; color: #6fd08c; }
+  .label-badge.bad { background: #3a2020; color: #ff8080; }
+  .label-badge.training-ready { background: #24304a; color: #7fb0ff; }
+  .frames {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px; margin-top: 12px;
+  }
+  .frame { background: #0f1115; border: 1px solid #262b35; border-radius: 8px; overflow: hidden; }
+  .frame img { width: 100%; height: 110px; object-fit: cover; display: block; background: #000; cursor: pointer; }
+  .frame-body { padding: 8px; }
+  .frame-file { font-size: 11px; color: #8b92a0; }
+  .frame-reasoning { font-size: 12px; margin: 6px 0; max-height: 4.5em; overflow: auto; }
+  .frame-action { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #2b3444; margin-bottom: 4px; }
+  .empty { color: #8b92a0; padding: 24px 0; text-align: center; }
+  a.dl-link { color: #9fb4ff; text-decoration: none; font-size: 13px; padding: 8px 12px; }
+  a.dl-link:hover { text-decoration: underline; }
+
+  /* Slideshow overlay */
+  .slideshow {
+    display: none; position: fixed; inset: 0; background: rgba(5,6,9,0.92);
+    z-index: 50; align-items: center; justify-content: center; flex-direction: column;
+  }
+  .slideshow.show { display: flex; }
+  .slideshow img { max-width: 90vw; max-height: 65vh; object-fit: contain; border-radius: 8px; background: #000; }
+  .slideshow-info { max-width: 90vw; text-align: center; margin-top: 14px; }
+  .slideshow-controls { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+  .slideshow-close { position: absolute; top: 20px; right: 24px; }
+</style>
+
+<h1>vision-picar brain admin</h1>
+<div class="sub">View, tag, export, and delete recorded walks (Robot view's "Record this walk") stored on this brain's persistent volume.</div>
+
+<div class="panel">
+  <div class="row">
+    <input type="password" id="secret" placeholder="x-app-secret value" style="flex:1; min-width:220px;">
+    <button id="btn-connect">Connect</button>
+    <span class="status" id="conn-status">Not connected.</span>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="row toolbar">
+    <strong>Recordings</strong>
+    <span class="stats" id="stats-line"></span>
+    <button id="btn-refresh" disabled>Refresh</button>
+  </div>
+  <div class="row toolbar">
+    <input type="text" id="search" placeholder="Search by walk name…" disabled>
+    <select id="sort" disabled>
+      <option value="name-desc">Newest first</option>
+      <option value="name-asc">Oldest first</option>
+      <option value="frames-desc">Most frames</option>
+      <option value="frames-asc">Fewest frames</option>
+    </select>
+  </div>
+  <div class="row bulk-bar" id="bulk-bar">
+    <span id="bulk-count"></span>
+    <button class="danger small" id="btn-bulk-delete">Delete selected</button>
+  </div>
+  <div id="walks"><div class="empty">Connect above to load recordings.</div></div>
+</div>
+
+<div class="slideshow" id="slideshow">
+  <button class="slideshow-close" id="slideshow-close">Close</button>
+  <img id="slideshow-img" alt="">
+  <div class="slideshow-info">
+    <div class="frame-action" id="slideshow-action"></div>
+    <div id="slideshow-reasoning"></div>
+    <div class="status" id="slideshow-pos"></div>
+  </div>
+  <div class="slideshow-controls">
+    <button id="slideshow-prev">&larr; Prev</button>
+    <button id="slideshow-play">Play</button>
+    <button id="slideshow-next">Next &rarr;</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  const SECRET_KEY = "vp_admin_secret";
+  const secretEl = document.getElementById("secret");
+  const connStatusEl = document.getElementById("conn-status");
+  const statsEl = document.getElementById("stats-line");
+  const walksEl = document.getElementById("walks");
+  const searchEl = document.getElementById("search");
+  const sortEl = document.getElementById("sort");
+  const bulkBarEl = document.getElementById("bulk-bar");
+  const bulkCountEl = document.getElementById("bulk-count");
+  const btnBulkDelete = document.getElementById("btn-bulk-delete");
+  const btnConnect = document.getElementById("btn-connect");
+  const btnRefresh = document.getElementById("btn-refresh");
+
+  let secret = "";
+  try { secret = localStorage.getItem(SECRET_KEY) || ""; } catch (e) { /* private mode */ }
+  secretEl.value = secret;
+
+  // All walks currently known (from the last /recording/walks fetch), plus
+  // UI state layered on top -- selection for bulk delete, cached per-walk
+  // detail (frames + navigate entries) so View and the slideshow don't
+  // re-fetch, and search/sort applied purely client-side since the walk
+  // count here is small enough that a server-side index would be
+  // premature.
+  let allWalks = [];
+  const selected = new Set();
+  const detailCache = new Map(); // walk name -> {frames, entries, label}
+
+  function headers(extra) {
+    const h = Object.assign({}, extra);
+    if (secret) h["x-app-secret"] = secret;
+    return h;
+  }
+
+  async function api(method, path, body) {
+    const opts = { method: method, headers: headers(body ? { "content-type": "application/json" } : {}) };
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    const res = await fetch(path, opts);
+    if (res.status === 204) return null;
+    const data = await res.json().catch(function () { return {}; });
+    if (!res.ok) throw new Error(data.detail || ("HTTP " + res.status));
+    return data;
+  }
+
+  async function frameBlobUrl(walk, file) {
+    const res = await fetch("/recording/walks/" + encodeURIComponent(walk) + "/frames/" + encodeURIComponent(file), {
+      headers: headers(),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  }
+
+  function setStatus(el, text, cls) {
+    el.textContent = text;
+    el.className = "status" + (cls ? " " + cls : "");
+  }
+
+  // Same reasoning against alert(): an inline, self-clearing message next
+  // to the button rather than a blocking dialog.
+  function showInlineError(btn, msg) {
+    let span = btn.nextElementSibling;
+    if (!span || !span.classList || !span.classList.contains("inline-err")) {
+      span = document.createElement("span");
+      span.className = "status err inline-err";
+      btn.insertAdjacentElement("afterend", span);
+    }
+    span.textContent = msg;
+    clearTimeout(span._timer);
+    span._timer = setTimeout(function () { span.remove(); }, 6000);
+  }
+
+  // Two-tap confirm rather than a native confirm() dialog -- keeps this
+  // page usable from automated browser control (a blocking native dialog
+  // there stalls everything), and reads just as clearly for a human.
+  function armConfirm(btn, label, onConfirm) {
+    let armed = false;
+    let timer = null;
+    btn.textContent = label;
+    btn.onclick = function () {
+      if (!armed) {
+        armed = true;
+        btn.classList.add("confirming");
+        btn.textContent = "Really delete? Click again";
+        timer = setTimeout(function () {
+          armed = false;
+          btn.classList.remove("confirming");
+          btn.textContent = label;
+        }, 4000);
+        return;
+      }
+      clearTimeout(timer);
+      onConfirm();
+    };
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function fmtBytes(n) {
+    if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + " MB";
+    if (n >= 1024) return (n / 1024).toFixed(0) + " KB";
+    return n + " B";
+  }
+
+  async function loadStats() {
+    try {
+      const s = await api("GET", "/stats");
+      statsEl.textContent = s.walks + " walk" + (s.walks === 1 ? "" : "s") +
+        " · " + s.frames + " frame" + (s.frames === 1 ? "" : "s") +
+        " · " + fmtBytes(s.bytes);
+    } catch (e) {
+      statsEl.textContent = "";
+    }
+  }
+
+  function applyFilterSort() {
+    const q = searchEl.value.trim().toLowerCase();
+    let list = allWalks.filter(function (w) { return !q || w.walk.toLowerCase().includes(q); });
+    const [key, dir] = sortEl.value.split("-");
+    list = list.slice().sort(function (a, b) {
+      let cmp;
+      if (key === "frames") cmp = a.frames - b.frames;
+      else cmp = a.walk < b.walk ? -1 : a.walk > b.walk ? 1 : 0;
+      return dir === "desc" ? -cmp : cmp;
+    });
+    renderWalksList(list);
+  }
+
+  function renderWalksList(list) {
+    if (!allWalks.length) {
+      walksEl.innerHTML = '<div class="empty">No recorded walks yet.</div>';
+      updateBulkBar();
+      return;
+    }
+    if (!list.length) {
+      walksEl.innerHTML = '<div class="empty">No walks match "' + escapeHtml(searchEl.value) + '".</div>';
+      return;
+    }
+    walksEl.innerHTML = "";
+    list.forEach(function (w) { walksEl.appendChild(renderWalk(w)); });
+  }
+
+  async function loadWalks() {
+    walksEl.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const data = await api("GET", "/recording/walks");
+      allWalks = data.walks;
+      applyFilterSort();
+      loadStats();
+    } catch (e) {
+      walksEl.innerHTML = '<div class="empty">Failed to load: ' + escapeHtml(e.message) + "</div>";
+    }
+  }
+
+  function updateBulkBar() {
+    const n = selected.size;
+    bulkBarEl.classList.toggle("show", n > 0);
+    bulkCountEl.textContent = n + " selected";
+    if (!n) btnBulkDelete.textContent = "Delete selected";
+  }
+
+  function labelBadge(label) {
+    if (!label) return "";
+    return '<span class="label-badge ' + escapeHtml(label) + '">' + escapeHtml(label) + "</span>";
+  }
+
+  function renderWalk(w) {
+    const el = document.createElement("div");
+    el.className = "walk";
+
+    const head = document.createElement("div");
+    head.className = "walk-head";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selected.has(w.walk);
+    checkbox.onchange = function () {
+      if (checkbox.checked) selected.add(w.walk); else selected.delete(w.walk);
+      updateBulkBar();
+    };
+    head.appendChild(checkbox);
+
+    const main = document.createElement("div");
+    main.className = "walk-head-main";
+    main.innerHTML =
+      '<div class="walk-name">' + escapeHtml(w.walk) + labelBadge(w.label) + "</div>" +
+      '<div class="walk-meta">' + w.frames + " frame" + (w.frames === 1 ? "" : "s") +
+      (w.bytes ? " · " + fmtBytes(w.bytes) : "") + "</div>";
+    head.appendChild(main);
+
+    const labelSelect = document.createElement("select");
+    labelSelect.className = "label-select";
+    labelSelect.innerHTML =
+      '<option value="">No label</option>' +
+      '<option value="good">good</option>' +
+      '<option value="bad">bad</option>' +
+      '<option value="training-ready">training-ready</option>';
+    labelSelect.value = w.label || "";
+    labelSelect.onchange = async function () {
+      try {
+        await api("PUT", "/recording/walks/" + encodeURIComponent(w.walk) + "/tag", { label: labelSelect.value || null });
+        w.label = labelSelect.value || null;
+        main.querySelector(".walk-name").innerHTML = escapeHtml(w.walk) + labelBadge(w.label);
+      } catch (e) {
+        showInlineError(labelSelect, "Tag failed: " + e.message);
+      }
+    };
+    head.appendChild(labelSelect);
+
+    const actions = document.createElement("div");
+    actions.className = "walk-actions";
+    const viewBtn = document.createElement("button");
+    viewBtn.textContent = "View";
+    const dlLink = document.createElement("a");
+    dlLink.className = "dl-link";
+    dlLink.textContent = "Download";
+    dlLink.href = "#";
+    dlLink.onclick = function (e) {
+      e.preventDefault();
+      downloadWalk(w.walk);
+    };
+    const delBtn = document.createElement("button");
+    delBtn.className = "danger";
+    armConfirm(delBtn, "Delete walk", async function () {
+      delBtn.disabled = true;
+      try {
+        await api("DELETE", "/recording/walks/" + encodeURIComponent(w.walk));
+        selected.delete(w.walk);
+        allWalks = allWalks.filter(function (x) { return x.walk !== w.walk; });
+        applyFilterSort();
+        loadStats();
+        updateBulkBar();
+      } catch (e) {
+        showInlineError(delBtn, "Delete failed: " + e.message);
+        delBtn.disabled = false;
+      }
+    });
+    actions.appendChild(viewBtn);
+    actions.appendChild(dlLink);
+    actions.appendChild(delBtn);
+    head.appendChild(actions);
+    el.appendChild(head);
+
+    const framesEl = document.createElement("div");
+    framesEl.className = "frames";
+    framesEl.style.display = "none";
+    el.appendChild(framesEl);
+
+    async function ensureDetail() {
+      let detail = detailCache.get(w.walk);
+      if (detail) return detail;
+      const raw = await api("GET", "/recording/walks/" + encodeURIComponent(w.walk));
+      const byFile = {};
+      raw.entries.forEach(function (e) { byFile[e.file] = e; });
+      detail = { frames: raw.frames, byFile: byFile };
+      detailCache.set(w.walk, detail);
+      return detail;
+    }
+
+    async function toggle() {
+      const showing = framesEl.style.display !== "none";
+      if (showing) { framesEl.style.display = "none"; return; }
+      framesEl.style.display = "grid";
+      framesEl.innerHTML = '<div class="empty">Loading frames…</div>';
+      try {
+        const detail = await ensureDetail();
+        framesEl.innerHTML = "";
+        detail.frames.forEach(function (f, i) {
+          framesEl.appendChild(renderFrame(w, detail, i, el));
+        });
+      } catch (e) {
+        framesEl.innerHTML = '<div class="empty">Failed to load frames: ' + escapeHtml(e.message) + "</div>";
+      }
+    }
+    main.onclick = toggle;
+    viewBtn.onclick = toggle;
+
+    return el;
+  }
+
+  function renderFrame(w, detail, index, walkEl) {
+    const f = detail.frames[index];
+    const entry = detail.byFile[f.file];
+    const card = document.createElement("div");
+    card.className = "frame";
+
+    const img = document.createElement("img");
+    img.alt = f.file;
+    frameBlobUrl(w.walk, f.file).then(function (url) {
+      img.src = url;
+      img._blobUrl = url;
+    }).catch(function () {});
+    img.onclick = function () { openSlideshow(w, detail, index); };
+    card.appendChild(img);
+
+    const body = document.createElement("div");
+    body.className = "frame-body";
+    let html = '<div class="frame-file">' + escapeHtml(f.file) + " &middot; " + (f.bytes / 1024).toFixed(0) + " KB</div>";
+    if (entry && entry.navigate) {
+      html += '<div class="frame-action">' + escapeHtml(entry.navigate.action || "?") + "</div>";
+      html += '<div class="frame-reasoning">' + escapeHtml(entry.navigate.reasoning || "") + "</div>";
+    }
+    body.innerHTML = html;
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "danger small";
+    armConfirm(delBtn, "Delete frame", async function () {
+      delBtn.disabled = true;
+      try {
+        await api("DELETE", "/recording/walks/" + encodeURIComponent(w.walk) + "/frames/" + encodeURIComponent(f.file));
+        card.remove();
+        w.frames -= 1;
+        detail.frames = detail.frames.filter(function (x) { return x.file !== f.file; });
+        const meta = walkEl.querySelector(".walk-meta");
+        if (meta) meta.textContent = w.frames + " frame" + (w.frames === 1 ? "" : "s");
+        loadStats();
+      } catch (e) {
+        showInlineError(delBtn, "Delete failed: " + e.message);
+        delBtn.disabled = false;
+      }
+    });
+    body.appendChild(delBtn);
+    card.appendChild(body);
+    return card;
+  }
+
+  async function downloadWalk(walk) {
+    const res = await fetch("/recording/walks/" + encodeURIComponent(walk) + "/download", { headers: headers() });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = walk + ".zip";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+  }
+
+  // --- Slideshow -------------------------------------------------------
+  const slideshowEl = document.getElementById("slideshow");
+  const slideshowImg = document.getElementById("slideshow-img");
+  const slideshowAction = document.getElementById("slideshow-action");
+  const slideshowReasoning = document.getElementById("slideshow-reasoning");
+  const slideshowPos = document.getElementById("slideshow-pos");
+  const slideshowPlayBtn = document.getElementById("slideshow-play");
+  let slideshowState = null; // {walk, detail, index, timer}
+
+  function renderSlide() {
+    const s = slideshowState;
+    const f = s.detail.frames[s.index];
+    const entry = s.detail.byFile[f.file];
+    frameBlobUrl(s.walk.walk, f.file).then(function (url) { slideshowImg.src = url; }).catch(function () {});
+    slideshowAction.textContent = entry && entry.navigate ? (entry.navigate.action || "?") : "";
+    slideshowReasoning.textContent = entry && entry.navigate ? (entry.navigate.reasoning || "") : "";
+    slideshowPos.textContent = (s.index + 1) + " / " + s.detail.frames.length + " — " + f.file;
+  }
+
+  function openSlideshow(w, detail, index) {
+    slideshowState = { walk: w, detail: detail, index: index, timer: null };
+    slideshowEl.classList.add("show");
+    renderSlide();
+  }
+
+  function closeSlideshow() {
+    if (slideshowState && slideshowState.timer) clearInterval(slideshowState.timer);
+    slideshowState = null;
+    slideshowEl.classList.remove("show");
+    slideshowPlayBtn.textContent = "Play";
+  }
+
+  function slideshowStep(delta) {
+    const s = slideshowState;
+    if (!s) return;
+    s.index = (s.index + delta + s.detail.frames.length) % s.detail.frames.length;
+    renderSlide();
+  }
+
+  document.getElementById("slideshow-close").onclick = closeSlideshow;
+  document.getElementById("slideshow-prev").onclick = function () { slideshowStep(-1); };
+  document.getElementById("slideshow-next").onclick = function () { slideshowStep(1); };
+  document.getElementById("slideshow-play").onclick = function () {
+    const s = slideshowState;
+    if (!s) return;
+    if (s.timer) {
+      clearInterval(s.timer);
+      s.timer = null;
+      slideshowPlayBtn.textContent = "Play";
+    } else {
+      s.timer = setInterval(function () { slideshowStep(1); }, 1200);
+      slideshowPlayBtn.textContent = "Pause";
+    }
+  };
+  slideshowEl.addEventListener("click", function (e) {
+    if (e.target === slideshowEl) closeSlideshow();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (!slideshowState) return;
+    if (e.key === "Escape") closeSlideshow();
+    else if (e.key === "ArrowLeft") slideshowStep(-1);
+    else if (e.key === "ArrowRight") slideshowStep(1);
+  });
+
+  // --- Bulk delete -------------------------------------------------------
+  armConfirm(btnBulkDelete, "Delete selected", async function () {
+    btnBulkDelete.disabled = true;
+    const names = Array.from(selected);
+    const results = await Promise.allSettled(
+      names.map(function (name) { return api("DELETE", "/recording/walks/" + encodeURIComponent(name)); })
+    );
+    const failed = names.filter(function (_, i) { return results[i].status === "rejected"; });
+    allWalks = allWalks.filter(function (w) { return !names.includes(w.walk) || failed.includes(w.walk); });
+    selected.clear();
+    failed.forEach(function (name) { selected.add(name); });
+    applyFilterSort();
+    loadStats();
+    updateBulkBar();
+    btnBulkDelete.disabled = false;
+    if (failed.length) showInlineError(btnBulkDelete, failed.length + " failed to delete.");
+  });
+
+  // --- Wiring -------------------------------------------------------
+  searchEl.oninput = applyFilterSort;
+  sortEl.onchange = applyFilterSort;
+
+  btnConnect.onclick = function () {
+    secret = secretEl.value.trim();
+    try { localStorage.setItem(SECRET_KEY, secret); } catch (e) { /* private mode */ }
+    setStatus(connStatusEl, "Connecting…");
+    // /recording/walks, not /health -- /health is deliberately unauthenticated
+    // (same reasoning as robot/server.py's), so it can't tell a right secret
+    // from a wrong one. This is also the first real data load, not just a check.
+    api("GET", "/recording/walks").then(function (data) {
+      setStatus(connStatusEl, "Connected.", "ok");
+      btnRefresh.disabled = false;
+      searchEl.disabled = false;
+      sortEl.disabled = false;
+      allWalks = data.walks;
+      applyFilterSort();
+      loadStats();
+    }).catch(function (e) {
+      setStatus(connStatusEl, "Failed: " + e.message, "err");
+    });
+  };
+  btnRefresh.onclick = loadWalks;
+
+  if (secret) btnConnect.onclick();
+})();
+</script>

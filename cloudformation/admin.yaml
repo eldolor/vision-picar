@@ -1,0 +1,247 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  vision-picar admin: control/admin_server.py (view/delete recorded walks)
+  as its own ECS Fargate service, sharing the vision-picar-service stack's
+  NLB/ALB on port 80 (path-routed) with the twin, vision-analyze, and the
+  brain. Deliberately separate from vision-picar-brain -- see control/
+  admin_server.py's docstring for why -- with its own ECR repo, IAM roles,
+  and secret. Mounts the same EFS volume as the brain (recordings.yaml),
+  read/write, so it can review and prune whatever the brain has captured.
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Default: vision-picar-network
+  ServiceStackName:
+    Type: String
+    Default: vision-picar-service
+  RecordingsStackName:
+    Type: String
+    Default: vision-picar-recordings
+  ContainerImageTag:
+    Type: String
+    Default: latest
+  ContainerPort:
+    Type: Number
+    Default: 8002
+  DesiredCount:
+    Type: Number
+    Default: 1
+    AllowedValues: [0, 1]
+    Description: >
+      Same bootstrap knob as brain.yaml: deploy once with 0 (creates the ECR
+      repo with nothing to launch yet), push the image, redeploy with 1.
+
+Resources:
+  EcrRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: vision-picar-admin
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/vision-picar-admin
+      RetentionInDays: 14
+
+  AppSharedSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: vision-picar-admin-shared-secret
+      Description: >
+        Shared secret control/admin.html must send as the x-app-secret
+        header. Deliberately independent from the brain's and twin's
+        secrets -- reviewing/deleting recordings is a different privilege
+        than starting a mission, and the services are independently
+        deployed. Placeholder at creation -- real value set via `aws
+        secretsmanager put-secret-value` after deploy, never in this
+        template.
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: placeholder
+        ExcludePunctuation: true
+        PasswordLength: 32
+
+  EcsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: vision-picar-admin-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadOwnSecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref AppSharedSecret
+
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: vision-picar-admin-task-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      # Otherwise no permissions -- this process never calls the robot or
+      # the vision service, and makes no AWS SDK call besides the EFS mount
+      # itself (same reasoning as brain.yaml's task role).
+      Policies:
+        - PolicyName: MountRecordingsVolume
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: !ImportValue
+                  Fn::Sub: "${RecordingsStackName}-EfsFileSystemArn"
+                Condition:
+                  StringEquals:
+                    elasticfilesystem:AccessPointArn: !ImportValue
+                      Fn::Sub: "${RecordingsStackName}-EfsAccessPointArn"
+
+  AdminSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Admin ECS Fargate task -- inbound only from the shared internal ALB
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !ImportValue
+            Fn::Sub: "${ServiceStackName}-AlbSecurityGroupId"
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: vision-picar-admin-tg
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 15
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  # All of this service's paths in one rule -- 3 of the 5-value
+  # path-pattern limit, unlike brain.yaml which needed two rules.
+  AlbListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 30
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /admin
+            - /recording/walks*
+            - /stats
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: vision-picar-admin
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      Volumes:
+        - Name: recordings
+          EFSVolumeConfiguration:
+            FilesystemId: !ImportValue
+              Fn::Sub: "${RecordingsStackName}-EfsFileSystemId"
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !ImportValue
+                Fn::Sub: "${RecordingsStackName}-EfsAccessPointId"
+              IAM: ENABLED
+      ContainerDefinitions:
+        - Name: admin
+          Image: !Sub "${EcrRepo.RepositoryUri}:${ContainerImageTag}"
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          MountPoints:
+            - SourceVolume: recordings
+              ContainerPath: /app/recordings
+              ReadOnly: false
+          Secrets:
+            - Name: APP_SHARED_SECRET
+              ValueFrom: !Ref AppSharedSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: admin
+
+  EcsService:
+    Type: AWS::ECS::Service
+    DependsOn: AlbListenerRule
+    Properties:
+      ServiceName: vision-picar-admin-service
+      Cluster: !ImportValue
+        Fn::Sub: "${ServiceStackName}-EcsClusterName"
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      HealthCheckGracePeriodSeconds: 30
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !ImportValue
+              Fn::Sub: "${NetworkStackName}-PrivateSubnetAId"
+            - !ImportValue
+              Fn::Sub: "${NetworkStackName}-PrivateSubnetBId"
+          SecurityGroups:
+            - !Ref AdminSecurityGroup
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: admin
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref AlbTargetGroup
+
+Outputs:
+  PublicUrlNote:
+    Value: !Sub
+      - "http://${NlbDnsName}/admin"
+      - NlbDnsName:
+          Fn::ImportValue: !Sub "${ServiceStackName}-NlbDnsName"
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepo.RepositoryUri
+  AppSharedSecretArn:
+    Value: !Ref AppSharedSecret
