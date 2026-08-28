@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 61 passed)
+# Confirm everything still works (should show 133 passed)
 pytest tests/ -v
 ```
 
@@ -59,6 +59,13 @@ is what makes the eventual hardware swap-in (Phase 11) a config change
 instead of a rewrite -- do not introduce a new code path that imports
 `sim.mock_robot` directly from `brain/`.
 
+The second constraint follows from the first: **build it, prove it in the
+digital twin's UI, then put it on the PiCar** -- section 7 has the rule
+and what each phase owes because of it. The abstraction above is what
+makes that possible at all (the twin drives the same API the hardware
+will, so the tap that works in the sim is the tap that works on the
+robot); the ordering rule is what makes it actually happen.
+
 ---
 
 ## 3. Current status (what's actually built vs. what's still planned)
@@ -78,8 +85,13 @@ the original build plan phases, reordered simulation-first):
 | 6 | Object search (active scanning) | Done (`ObjectSearchAgent`) |
 | -- | Simulation checkpoint | Done -- both demo scenarios pass reliably |
 | 9 (partial) | Wi-Fi control API + safety-over-HTTP + watchdog | Done (`robot/server.py`), CORS added |
-| 9 (partial) | Manual WASD control client (`control/manual_control.py`) | NOT BUILT -- `control/` dir exists but is empty. Was planned, then deprioritized in favor of the web twin, which now supersedes this use case (see section 5). |
-| -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Designed but never written to disk -- a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt. **This is now the main hardware-path gap:** `PLAN-sim-hardening.md` Q1 settled that the robot is vision-driven, and the vision loop currently exists only in JavaScript (`web-twin/index.html`'s Vision Autopilot) -- no Python file calls `/navigate`. Phase S2b of that plan specifies the port, including the step-memory problem the browser version does not solve. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. |
+| 9 (partial) | Manual WASD control client (`control/manual_control.py`) | NOT BUILT, and now skipped -- the twin's D-pad supersedes it, and `RemoteRobot` (B0, below) makes it nearly free if ever wanted. |
+| B0-B3 | Brain on the wire: `RemoteRobot`, `MissionRunner`, `control/brain_server.py`, the three failsafes | Done, tested (`control/`, `tests/test_remote_robot.py`, `test_mission_runner.py`, `test_brain_server.py`, `test_failsafes.py`). The autonomy loop is a service now: startable, stoppable, and inspectable over HTTP, with the robot reachable only as an HTTP client. |
+| S2b (partial) | The Python vision agent | Done for recorded walks (`brain/navigate.py`, `brain/vision_agent.py`, `sim/replay_robot.py`, `policy: "vision"`, and the twin's "Record this walk" switch). The model decides every move; the harness supplies the timeout, the failure budget and the step/cost cap. Not yet drivable in the sim (needs S2's real image bytes) and no room-level step memory yet. |
+| B4 | The twin becomes an observer | Done (`web-twin/index.html`'s "Remote brain" panel + `control/drills.py`). Missions start from the phone and survive the tab; the failsafe drills and watchdog readout make B3's guards watchable. Only B5 (systemd on the Pi) is left in that plan. |
+| extra | Interim: brain on ECS Fargate | Done and deployed (`service/brain/`, `cloudformation/brain.yaml`) -- `control/brain_server.py` alongside the twin and vision-analyze on the same shared NLB/ALB, so the remote-brain panel works from a phone off the home LAN with no HTTPS tunnel. Not a build-plan phase and not B5: the brain's real home is still the Pi: see `PLAN-brain-relocation.md`'s "Interim: brain on ECS Fargate" for why this doesn't conflict with that, and for the one real gap it surfaced (separate outbound secrets for the robot vs. the vision service). |
+| extra | Recorded-walk storage + admin viewer | Done and deployed (`cloudformation/recordings.yaml`, `service/admin/`, `control/admin_server.py`) -- an EFS volume (survives redeploys, unlike Fargate's own filesystem) holding Robot-view "Record this walk" data, plus a separate `/admin` service to list/view/delete it. Deliberately its own service, not more routes on `brain_server.py`: reviewing recordings has no reason to move to the Pi when B5 lands or to go down when the mission server restarts. See `PLAN-brain-relocation.md`'s Interim section and `control/admin_server.py`'s docstring. |
+| -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Designed but never written to disk -- a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt. **This is now the main hardware-path gap:** `PLAN-sim-hardening.md` Q1 settled that the robot is vision-driven, and the vision loop currently exists only in JavaScript (`web-twin/index.html`'s Vision Autopilot) -- no Python file calls `/navigate`. Phase S2b of that plan specifies the port, including the step-memory problem the browser version does not solve. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. Stage 2's `MissionRunner` is where it plugs in -- `AGENT-HARNESS.md` section 10 is the instruction sheet: it takes a `vision_fn` and already enforces the timeout and failure budget such a policy needs, and `control/brain_server.py` answers `policy: "vision"` with a 501 until it exists. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -105,19 +117,36 @@ vision-picar/
 │   ├── agent.py               ConstrainedAgent / MissionAgent / ObjectSearchAgent
 │   ├── memory.py              MissionMemory -- mission, rooms, sightings, actions
 │   ├── rooms.py                identify_room() -- landmark-feature room matching
-│   └── planner.py             NOT YET BUILT -- see gap table above
+│   ├── navigate.py            the vision policy's perception step: a frame ->
+│   │                           the cloud /navigate route -> one action (S2b)
+│   ├── vision_agent.py        VisionAgent -- trusts the model's action; the
+│   │                           policy that IS on the hardware path
+│   └── planner.py             NOT YET BUILT -- room-level planning over
+│                               MissionMemory.as_context(); see gap table above
 │
 ├── sim/                     grid-world simulator (Phase 0.5)
 │   ├── grid_world.py
 │   ├── mock_robot.py          implements RobotInterface against grid_world
+│   ├── replay_robot.py        a body made of photographs -- plays a recorded
+│   │                           Robot-view walk back, one frame per move
 │   └── maps/starter_house.py  living room / hallway / kitchen + red backpack
 │
-├── control/                 EMPTY today. PLAN-brain-relocation.md fills it:
-│                            remote_robot.py, mission_runner.py, brain_server.py
+├── control/                 the brain as a service (phases B0-B3). Imports no
+│   │                        backend and no simulator -- the robot is only ever
+│   │                        an HTTP client target
+│   ├── remote_robot.py       RemoteRobot -- RobotInterface over HTTP (B0)
+│   ├── mission_runner.py     one mission's lifecycle: start/tick/stop/status,
+│   │                          plus failsafe B3.2 (vision timeout + budget)
+│   ├── brain_server.py       FastAPI on :8001; drives the runner as a
+│   │                          background task, plus failsafe B3.3 (hung tick)
+│   ├── brain_config.py       the `brain:` block of config/robot.yaml
+│   └── drills.py             fault injection, so the failsafes can be shown
+│                               from the twin and not only asserted in tests
 │
-├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins
+├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
+│                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    61 tests + 5 runnable (non-automated) demo scripts
+├── tests/                    133 tests + 7 runnable (non-automated) demo scripts
 │
 ├── service/vision_analyze/   ECS Fargate: photo upload -> vision analysis (cloud)
 │   ├── app.py                 FastAPI app -- /health, /analyze
@@ -139,7 +168,9 @@ vision-picar/
 │                               (path-based ListenerRule) rather than
 │                               provisioning a second pair or a second port
 │
-├── web-twin/index.html       Mobile-first web UI, real client of robot/server.py.
+├── web-twin/index.html       Mobile-first web UI, real client of robot/server.py
+│                              AND of control/brain_server.py (the remote-brain
+│                              panel, phase B4).
 │                              Deployed via service/twin/ (see above) as well as
 │                              usable locally (`uvicorn robot.server:app`)
 ├── requirements.txt
@@ -149,6 +180,10 @@ vision-picar/
 │
 │   -- planning / explainer docs (no code; read before hardware work) --
 ├── INTRODUCTION.md            project introduction
+├── AGENT-HARNESS.md           how control/ works: the tick, the seams, the
+│                               failsafes, the invariants, and where the LLM
+│                               policy plugs in (BUILT -- read before editing
+│                               control/)
 ├── PLAN-ar-guidance.md        the Guide tab: spec, redesign, changelog (BUILT)
 ├── PLAN-sim-hardening.md      how the sim diverges from hardware, phased fixes,
 │                               definition of done before a hardware swap (PROPOSED)
@@ -167,6 +202,11 @@ IDs are `S*` = `PLAN-sim-hardening.md`, `B*` = `PLAN-brain-relocation.md`.
 **None of stages 0-5 needs the PiCar-X.** Each stage is independently
 useful, so stopping at the end of any of them leaves the project in a
 coherent state.
+
+**Every stage also has to be verifiable from the twin** -- see section 7,
+which is a standing requirement on each phase below, not a nice-to-have.
+A phase is not done when its tests pass; it is done when someone holding
+a phone can watch the thing it built do its job.
 
 ### Stage 0 -- Validate the premise
 
@@ -200,11 +240,13 @@ photographs, stages 1-5 are premature and the work is prompt engineering
 instead. Record what you find; it is the only evidence available about
 real-world accuracy without a robot.
 
-### Stage 1 -- Make the vision path real, in Python
+### Stage 1 -- Make the vision path real, in Python -- **PARTLY DONE**
 
-The vision loop is the product (Q1) and today it exists **only in
-JavaScript**. This stage is the largest and most important block of work
-remaining.
+The vision loop is the product (Q1). It now exists in Python
+(`brain/navigate.py` + `brain/vision_agent.py`, `policy: "vision"`) and
+runs against **recorded walks** -- `sim/replay_robot.py`, fed by the
+twin's new "Record this walk" switch in Robot view. What is left is the
+sim path (S2) and room memory (the rest of S2b).
 
 - **S1 -- pin the contract.** Document `RobotInterface`'s return shapes
   and units; add a backend-agnostic conformance suite. Cheap, no behavior
@@ -213,30 +255,54 @@ remaining.
   (`renderFPV`) into Python so `get_camera_frame()` returns JPEG bytes on
   every backend. The one structural blocker between Vision Autopilot and
   hardware.
-- **S2b -- the Python vision agent**, plus room-level step memory in the
-  `/navigate` prompt. Nothing currently stops the vision loop revisiting
-  a searched room except the step cap.
+- **S2b -- the Python vision agent** -- **BUILT** for recorded walks
+  (`python -m tests.demo_replay_mission <walk> "red backpack"`). **Still
+  open: room-level step memory.** A photograph carries no room label, so
+  nothing stops the vision loop revisiting a searched room except the step
+  cap. Closing it needs a room signal in the frame, not a policy change.
 - **Fold in: a test suite for `service/vision_analyze/app.py`.** Still
   the one real gap from the Lambda -> ECS migration (FastAPI
   `TestClient`, mocking `vision_core.*`). S2b changes that service's
   prompt and schema anyway, so write the tests while you are in there.
 
 **Done when** a Python agent completes a backpack hunt in the sim
-against the real `/navigate`, with cost and wall-clock recorded.
+against the real `/navigate`, with cost and wall-clock recorded. The
+agent and the cost/wall-clock reporting exist
+(`tests/demo_replay_mission.py` prints both); *in the sim* is what S2 is
+still owed for.
 
-### Stage 2 -- Put the brain on the wire
+### Stage 2 -- Put the brain on the wire -- **DONE (2026-08-27)**
 
-- **B0 (= S3) -- `RemoteRobot`**, an HTTP client implementing
-  `RobotInterface`. Proof: identical action sequences in-process vs. over
-  HTTP.
-- **B1 -- `MissionRunner`**, turning `run_mission()`'s blocking loop
-  inside out into `start()`/`stop()`/`tick()`/`status()`.
-- **B2 -- `control/brain_server.py`** on :8001.
-- **B3 -- the three failsafes**: motors-left-running (existing watchdog,
-  kept), AWS-link-dead (new), brain-loop-hung (new).
+Built out of order, ahead of Stage 1: B0-B3 need neither hardware nor the
+Python vision policy, and they are what make Stage 1's agent something a
+robot can run rather than a script someone babysits.
+
+- **B0 (= S3) -- `RemoteRobot`** (`control/remote_robot.py`). Proof, as
+  specified: identical action sequences in-process vs. over a live
+  `uvicorn` (`tests/test_remote_robot.py`), 83 steps either way.
+- **B1 -- `MissionRunner`** (`control/mission_runner.py`) --
+  `start()`/`tick()`/`stop()`/`status()`. No decision logic moved; a
+  tick-driven mission matches `run_mission()`'s step count exactly.
+- **B2 -- `control/brain_server.py`** on :8001, driving the runner as an
+  asyncio background task.
+- **B3 -- the three failsafes**, all tested (`tests/test_failsafes.py`).
 
 **Done when** a mission runs over HTTP with the same outcome as
 in-process, and a stubbed vision failure ends it with the robot stopped.
+Both hold. `python -m tests.demo_brain_over_http` shows the first
+directly (three ways, same 83 steps, identical actions).
+
+Two things worth knowing before extending it:
+
+- **`policy: "vision"` answers 501 on purpose.** The runner takes a
+  `vision_fn` and already enforces S2b's per-call timeout and failure
+  budget around it, so Stage 1's agent plugs in there -- but until it
+  exists, a "vision" mission must not quietly run the rule-based policy.
+- **A stop is enforced at the robot, not just in the loop.** The agent
+  drives through a gate that refuses movement once a mission ends, so a
+  tick already in flight when `POST /mission/stop` lands cannot get its
+  move out. Blocking calls on another thread cannot be interrupted; the
+  gate is what makes "stop stops the car" true anyway.
 
 ### Stage 3 -- Make the sim honest about safety
 
@@ -249,15 +315,25 @@ in-process, and a stubbed vision failure ends it with the robot stopped.
 **Done when** changing `min_distance_cm` measurably changes behavior, and
 sensor dropout has defined fail-safe behavior.
 
-### Stage 4 -- Move the console
+### Stage 4 -- Move the console -- **DONE (2026-08-27)**
 
-- **B4 -- the twin becomes an observer.** Explore/Find POST to the brain
-  and render polled status; the manual D-pad still talks straight to the
-  robot server.
+Pulled forward, immediately after Stage 2, on the principle in section 7:
+Stage 2 was otherwise a stage you could only verify by reading a test
+file.
+
+- **B4 -- the twin becomes an observer.** Built as two labelled panels in
+  the Sim tab -- "Remote brain" (drives `control/brain_server.py`) and
+  "Local brain" (the JS loop, kept for LAN dev and for running with no Pi
+  present). Only one may drive at a time, enforced from both ends. The
+  manual D-pad still talks straight to the robot server and works with
+  the brain service stopped.
+- **Built alongside it, because B3 was otherwise unverifiable by hand:**
+  a failsafe drill picker (`control/drills.py`) and a watchdog readout.
 
 **Done when** you start a mission from your phone, background the tab,
 and the robot keeps going. That single observation is the proof the brain
-actually moved.
+actually moved. Holds with two local uvicorns; still owed against a Pi,
+which is B5.
 
 ### Stage 5 -- Harden
 
@@ -280,7 +356,8 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   Q1. A vision policy does not reason about grid cells. Revisit only if
   real-world runs fail in ways that trace back to grid geometry.
 - **`control/manual_control.py`** -- skip. The twin's D-pad covers it
-  better, and B0's `RemoteRobot` makes it nearly free later if wanted.
+  better, and B0's `RemoteRobot` (built) makes it nearly free if ever
+  wanted.
 - **The rule-based agent** -- keep, do not extend. It is the fastest,
   free, deterministic way to test the safety layer and mission memory.
   It is not on the hardware path (`PLAN-sim-hardening.md` 2.2).
@@ -308,23 +385,58 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   both with a real Bedrock call and a correct response.
 
 - **The web twin's exploration algorithm duplication is intentional,
-  not a bug.** `web-twin/index.html`'s JS re-implements the
-  frontier-preference decision logic from `brain/agent.py`. This is
-  correct: the browser is playing the "brain" role over HTTP, the same
-  way a Python client would. Only robot *runtime* logic (movement,
-  safety, sensing) was wrong to duplicate, and that's been fixed -- the
-  twin now calls `robot/server.py` for all of that.
-  **Revisited 2026-08-27:** the reasoning above is still correct, but
-  `PLAN-brain-relocation.md` proposes moving the primary autonomy loop
-  onto the Pi, which would demote the browser from *the* brain to *an
-  optional* brain (kept for LAN dev and for running with no Pi present).
-  Nothing has changed in the code yet; if phase B4 of that plan is built,
-  update this bullet rather than leaving the two documents in conflict.
+  not a bug -- and the browser is now the *optional* brain, not the
+  primary one.** `web-twin/index.html`'s JS re-implements the
+  frontier-preference decision logic from `brain/agent.py`. That was
+  always legitimate (the browser plays the "brain" role over HTTP, the
+  same way a Python client would); only robot *runtime* logic (movement,
+  safety, sensing) was wrong to duplicate, and that has been server-side
+  since the twin became a real client of `robot/server.py`.
+  **Updated 2026-08-27, when B4 landed:** the Sim tab now has two brains
+  side by side -- "Remote brain" driving `control/brain_server.py`, and
+  "Local brain" running the JS loop in the tab. The remote one is the
+  arrangement the finished robot uses; the local one is kept because it
+  needs no brain service, which makes it the only thing that works with
+  no Pi present and the fastest path for LAN development. Only one may
+  drive at a time, enforced in both directions (the twin refuses to start
+  a local loop during a remote mission; the brain server answers a second
+  `/mission/start` with a 409).
 
 - **`robot/server.py`'s watchdog** stops the robot if no command arrives
   within `watchdog_timeout_s` (config, default 1.0s). The decision logic
   (`watchdog_should_stop`) is unit-tested; the actual async polling loop
   is only exercised by running the server for real (see `README.md`).
+  It is failsafe **B3.1** of three, and the other two live in `control/`
+  and cover different failures -- B3.2 (`MissionRunner`: vision call
+  timeout + consecutive-failure budget) and B3.3 (`brain_server`: a tick
+  that never returns). Don't collapse them: the watchdog cannot see a
+  brain that is alive but stuck, and neither brain-side guard can see
+  motors energised by a call that then crashed.
+
+- **`AGENT-HARNESS.md` is the reference for `control/`** -- one tick in
+  order, the four seams, the concurrency model (which thread runs what
+  and why), the status contract, and a numbered list of invariants not to
+  break. Read it before changing the mission loop; the bullets here cover
+  only what a session needs to avoid breaking something by accident.
+
+- **The brain and the robot are two processes on purpose**, even when
+  both run on the Pi. Running the loop inside `robot/server.py` would be
+  less code and would defeat the watchdog (a synchronous block in the
+  agent loop blocks the event loop the watchdog polls on), merge the two
+  roles the project has kept apart since Phase 0, and lose the base-URL
+  trick that makes brain-on-Pi vs. brain-on-MacBook a config change.
+  `PLAN-brain-relocation.md`'s "Why not one process" has the full
+  argument. The cost is a localhost round trip per call, against a loop
+  that spends seconds waiting on vision.
+
+- **`control/` may not import a backend, the simulator, or
+  `robot/server.py`** -- only `robot/interface.py` (plus the
+  `SafetyViolation` type that is part of that contract) and its own
+  `RemoteRobot`. `tests/test_brain_server.py` asserts this by importing
+  the brain in a subprocess and inspecting `sys.modules`. It is the same
+  constraint as section 2's, one level up: if the brain can reach a
+  backend directly, "run the brain on the Pi" stops being a config
+  change.
 
 - **Safety is enforced server-side, always.** Both the sim agents
   (`brain/agent.py`) and the Wi-Fi API (`robot/server.py`) route every
@@ -372,3 +484,85 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   model string here. If a newer/cheaper model becomes preferable for the
   frequent/throttled calls the AR feature will need, that's a reasonable
   thing to reconsider -- see the cost discussion referenced in section 5.3.
+
+
+---
+
+## 7. Twin first, then the PiCar
+
+The project's ordering rule, stated by the user 2026-08-27 and binding on
+everything below:
+
+> **Build it, prove it in the digital twin's UI, and only then put it on
+> the PiCar.** A phase is not done when its tests pass. It is done when
+> someone holding a phone can watch the thing it built do its job.
+
+Nothing gets built for the car that cannot first be watched working in the
+twin. This is not a preference about documentation -- it decides what
+"finished" means, and therefore what each phase has to ship.
+
+Three reasons this is a rule and not a preference:
+
+1. **The twin is the only surface that survives the hardware swap.** It
+   speaks to `robot/server.py`'s real control API, not a mock of it, so
+   the tap that starts a mission in the sim is the same tap that will
+   start one on the Pi -- only `mode: hardware` and a base URL differ. A
+   pytest run proves something about `MockRobot`; that tap proves it about
+   the robot. Every phase that lands with a UI affordance lands with its
+   own bring-up checklist for the day the hardware arrives.
+2. **Tests are written by whoever wrote the code.** They encode what the
+   author expected. Watching a mission cross a real room is the only
+   check that survives being wrong about that -- Stage 0 exists for
+   exactly this reason.
+3. **The failures that matter cannot be provoked by pressing anything.**
+   That is not a reason to leave them unverifiable; it is the reason
+   `control/drills.py` exists.
+
+### The rules
+
+- **Every phase ships with something to press.** Name it in the phase's
+  plan entry, next to its test.
+- **Where the behavior is a failure nobody can trigger on purpose, ship a
+  drill.** Fault injection that breaks exactly one thing and leaves every
+  other guard standing, so what gets watched is the real guard firing.
+  Drills must be fail-safe by construction -- a drill may only ever end
+  with the robot stopped -- and switchable off (`brain.allow_drills`).
+- **Where a phase genuinely changes nothing observable, say so, and name
+  the readout that would show it if it broke.** "No UI change" is an
+  acceptable answer exactly once per phase, in writing.
+
+### What you can verify today
+
+Setup for all of it: `uvicorn robot.server:app --port 8000` and
+`uvicorn control.brain_server:app --port 8001`, then open
+`http://127.0.0.1:8000/` and connect both in Settings. Restart the robot
+server to put the robot back at its start position -- there is no reset
+endpoint, on purpose (real hardware has none either).
+
+| Stage | Sub-stage | Press this | You should see |
+|---|---|---|---|
+| 0 | Validate the premise | Guide tab -> Robot view, phone at ~10cm | The move the robot would make from where you stand; pauses on arrival |
+| 2 | B0 `RemoteRobot` | Sim tab -> D-pad, then Remote brain -> Start | Both drive the same robot through the same server; the map follows either one |
+| 2 | B1 `MissionRunner` | Remote brain -> Start | Step count, last action, rooms searched and a log tail advancing ~4 steps/second |
+| 2 | B2 the brain service | Start a mission, then close the tab and reopen it | The mission is further along, or finished. It never needed the page |
+| 2 | B3.1 watchdog | D-pad forward, then stop touching it | "Robot watchdog" counts the silence past the timeout and reports the motors stopped |
+| 2 | B3.2 AWS link dead | Drill picker -> vision errors / vision hangs | Three failures counted, mission ends `failed`, robot stopped |
+| 2 | B3.3 brain loop hung | Drill picker -> brain loop hangs | One step, then `failed` -- "brain loop hung"; the watchdog readout stays quiet, which is the point |
+| 2 | stop stops the car | Start a mission, then Stop | Mission ends `stopped`, the map stops moving, watchdog goes quiet |
+| 2 | one brain at a time | Start a remote mission, then tap Explore | Refused with a toast; the reverse is the server's 409 |
+
+### What the remaining phases owe
+
+Each of these is a line in that phase's plan entry, to be built with the
+phase rather than bolted on after:
+
+| Phase | UI proof it has to ship with |
+|---|---|
+| S1 pin the contract | A **"Check robot contract"** button in Settings: run the interface's methods against whatever robot is connected and report which returned the wrong shape. No behavior change to see otherwise -- and this is the button you will actually want on the day a Pi is on the other end |
+| S2 real JPEG frames | The FPV canvas shows the **server-rendered** frame, with a "frame source: server / local" readout. The picture should not change; where it comes from should |
+| S2b Python vision agent | The remote-brain panel's policy picker stops answering **501**. Run a mission with `policy: "vision"` and watch Claude's own reasoning in the log instead of "free space clear" |
+| S4 time in the loop | The watchdog readout becomes worth watching: a move now occupies its duration, so you can see the count climb mid-move rather than only between them |
+| S5 sensor realism | The distance telemetry stops being multiples of 30cm, and a safety veto fires approaching a wall rather than only at 0. Drive at the sofa and watch the collar flash |
+| S6 motion realism | The map shows the robot **arcing** rather than pivoting in place, and refusing a turn that will not fit the corridor |
+| S7 chaos and soak | New drills: added latency, dropped requests, a killed link mid-mission. Same picker, same fail-safe rule |
+| B5 deployment | Reboot the Pi. Open the twin on a phone. Start a mission with no laptop on the network at all -- this is definition-of-done item 1, and it is a UI test by construction |
