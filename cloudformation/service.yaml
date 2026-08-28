@@ -289,6 +289,18 @@ Outputs:
     Value: !Ref InternalAlb
     Export:
       Name: !Sub "${AWS::StackName}-InternalAlbArn"
+  InternalAlbDnsName:
+    Description: >
+      For a caller INSIDE the VPC (e.g. vision-picar-brain) to reach the
+      twin/vision-analyze services directly, without going out to the
+      internet-facing NLB and back in -- the private subnets have no route
+      to the internet at all (see network.yaml), so an NLB DNS name (which
+      resolves to public IPs) is unreachable from inside them. Same path
+      set, same routing, just the internal hop of NLB -> ALB -> ECS with
+      the first leg skipped.
+    Value: !GetAtt InternalAlb.DNSName
+    Export:
+      Name: !Sub "${AWS::StackName}-InternalAlbDnsName"
   AlbListenerArn:
     Description: For other stacks (e.g. vision-picar-twin) to add path-based ListenerRules to this shared port-80 listener
     Value: !Ref AlbListener

@@ -1,0 +1,342 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  vision-picar brain: control/brain_server.py (the autonomy loop) as an ECS
+  Fargate service, sharing the vision-picar-service stack's NLB/ALB on port
+  80 with the twin and vision-analyze (path-routed, not a second port).
+  Separate ECR repo, IAM roles, and secret.
+
+  INTERIM -- see PLAN-brain-relocation.md, "Interim: brain on ECS Fargate."
+  Real home is the Pi (phase B5); torn down once ROBOT_URL/VISION_URL move
+  there. Mounts recordings.yaml's EFS (write path only) -- viewing/deleting
+  walks is admin.yaml's separate service, deliberately (see control/
+  admin_server.py's docstring).
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Default: vision-picar-network
+  ServiceStackName:
+    Type: String
+    Default: vision-picar-service
+  RecordingsStackName:
+    Type: String
+    Default: vision-picar-recordings
+  ContainerImageTag:
+    Type: String
+    Default: latest
+  ContainerPort:
+    Type: Number
+    Default: 8001
+  RobotSecretArn:
+    Type: String
+    Description: >
+      Full ARN (including the random suffix) of vision-picar-twin-shared-secret.
+      Full ARN, not a bare name or a suffix-less partial ARN -- both were
+      tried and both fail: ECS's Secrets Manager authorization check
+      evaluates against the literal SecretId string as given, before any
+      name-to-ARN resolution, so a wildcard IAM Resource pattern never gets
+      the chance to match. neither twin.yaml nor service.yaml exports this,
+      so it's a parameter here rather than Fn::ImportValue -- get it with
+      `aws secretsmanager describe-secret --secret-id
+      vision-picar-twin-shared-secret --query ARN`. Only goes stale if that
+      secret is ever deleted and recreated (not on an ordinary
+      put-secret-value rotation, which keeps the same ARN).
+  VisionSecretArn:
+    Type: String
+    Description: >
+      Same as RobotSecretArn, for vision-picar-app-shared-secret. Get it
+      with `aws secretsmanager describe-secret --secret-id
+      vision-picar-app-shared-secret --query ARN`.
+  DesiredCount:
+    Type: Number
+    Default: 1
+    AllowedValues: [0, 1]
+    Description: >
+      Bootstrap knob: the ECR repo doesn't exist until this stack's first
+      deploy, so there's no image to launch yet. Deploy once with 0, push
+      the image, then redeploy with 1 (the default) -- otherwise the
+      ECS::Service resource fails to stabilize and CloudFormation rolls
+      back the whole stack, deleting the freshly created repo with it.
+
+Resources:
+  EcrRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: vision-picar-brain
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/vision-picar-brain
+      RetentionInDays: 14
+
+  AppSharedSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: vision-picar-brain-shared-secret
+      Description: >
+        Shared secret a caller (the twin's remote-brain panel) must send as
+        the x-app-secret header to reach control/brain_server.py's mission
+        routes. Placeholder at creation -- real value set via `aws
+        secretsmanager put-secret-value` after deploy, never in this
+        template. Distinct from the twin's and vision-analyze's own
+        secrets -- see EcsExecutionRole below for how this service reaches
+        those.
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: placeholder
+        ExcludePunctuation: true
+        PasswordLength: 32
+
+  EcsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: vision-picar-brain-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        # The brain's own secret, plus read access to the twin's and
+        # vision-analyze's secrets -- it has to present each service's own
+        # secret as ROBOT_SHARED_SECRET / VISION_SHARED_SECRET (see
+        # control/brain_server.py), not its own. Exact full ARNs
+        # (RobotSecretArn/VisionSecretArn parameters), not a wildcard or a
+        # bare name: both were tried first and both failed, because ECS's
+        # Secrets Manager authorization check runs against the literal
+        # SecretId string before any name resolution happens -- a wildcard
+        # Resource pattern never gets the chance to match. Passed as
+        # parameters rather than Fn::ImportValue since neither twin.yaml nor
+        # service.yaml exports its secret's ARN.
+        - PolicyName: ReadSharedSecrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref AppSharedSecret
+                  - !Ref RobotSecretArn
+                  - !Ref VisionSecretArn
+
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: vision-picar-brain-task-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      # Otherwise no permissions -- the brain reaches the robot and the
+      # vision service exclusively over HTTP (control/remote_robot.py,
+      # brain/navigate.py), never an AWS SDK call. Same reasoning as twin's
+      # task role. The EFS mount is the one exception: Fargate's EFS
+      # integration authorizes the mount itself via this role (not the app
+      # code -- application code never calls the EFS API, it just opens
+      # files under the mounted path), scoped to this one access point,
+      # owned by cloudformation/recordings.yaml, only.
+      Policies:
+        - PolicyName: MountRecordingsVolume
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticfilesystem:ClientMount
+                  - elasticfilesystem:ClientWrite
+                Resource: !ImportValue
+                  Fn::Sub: "${RecordingsStackName}-EfsFileSystemArn"
+                Condition:
+                  StringEquals:
+                    elasticfilesystem:AccessPointArn: !ImportValue
+                      Fn::Sub: "${RecordingsStackName}-EfsAccessPointArn"
+
+  BrainSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Brain ECS Fargate task -- inbound only from the shared internal ALB
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !ImportValue
+            Fn::Sub: "${ServiceStackName}-AlbSecurityGroupId"
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: vision-picar-brain-tg
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 15
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  # Routes this stack's own paths on the shared port-80 listener to this
+  # service's target group -- everything else falls through to the
+  # listener's DefaultActions (vision-analyze), same as twin.yaml. /health
+  # is deliberately left out of the public path set, matching twin.yaml's
+  # own precedent: the target group's health check hits the container
+  # directly regardless (bypasses listener routing entirely), so this only
+  # affects the public reachability of the literal /health path, not this
+  # service's own health.
+  AlbListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 20
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /mission/start
+            - /mission/stop
+            - /mission/status
+            - /recording/frame
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: vision-picar-brain
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      Volumes:
+        - Name: recordings
+          EFSVolumeConfiguration:
+            FilesystemId: !ImportValue
+              Fn::Sub: "${RecordingsStackName}-EfsFileSystemId"
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !ImportValue
+                Fn::Sub: "${RecordingsStackName}-EfsAccessPointId"
+              IAM: ENABLED
+      ContainerDefinitions:
+        - Name: brain
+          Image: !Sub "${EcrRepo.RepositoryUri}:${ContainerImageTag}"
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          MountPoints:
+            # config/robot.yaml's brain.recording_dir ("recordings", relative
+            # to the container's /app working directory) -- so this volume
+            # lands exactly where control/brain_server.py's record_frame()
+            # already writes, with no code change.
+            - SourceVolume: recordings
+              ContainerPath: /app/recordings
+              ReadOnly: false
+          Environment:
+            # Both the twin (robot/server.py, sim mode) and vision-analyze
+            # sit behind the same shared internal ALB, routed by path -- so
+            # both URLs are the same host. The INTERNAL ALB, not the
+            # internet-facing NLB: the private subnets have no internet
+            # route at all (network.yaml has no NAT Gateway), so an NLB DNS
+            # name -- which resolves to public IPs -- is unreachable from
+            # inside them (confirmed: a mission call hung indefinitely
+            # against it). service.yaml's InternalAlbDnsName output exists
+            # for exactly this. See control/brain_config.py: these override
+            # config/robot.yaml's brain.robot_url / brain.vision_url, which
+            # stay pointed at localhost for Pi/MacBook dev.
+            - Name: ROBOT_URL
+              Value: !Sub
+                - "http://${AlbDnsName}"
+                - AlbDnsName:
+                    Fn::ImportValue: !Sub "${ServiceStackName}-InternalAlbDnsName"
+            - Name: VISION_URL
+              Value: !Sub
+                - "http://${AlbDnsName}"
+                - AlbDnsName:
+                    Fn::ImportValue: !Sub "${ServiceStackName}-InternalAlbDnsName"
+          Secrets:
+            - Name: APP_SHARED_SECRET
+              ValueFrom: !Ref AppSharedSecret
+            # Exact full ARN (RobotSecretArn/VisionSecretArn parameters), not
+            # a bare name or a suffix-less constructed ARN -- both were tried
+            # first. A suffix-less ARN string queried directly returns
+            # ResourceNotFoundException (it's not a valid ARN and not a
+            # friendly name either); a bare name resolves fine for the fetch
+            # itself but ECS's IAM authorization check for it still runs
+            # against the un-resolved literal string, so the wildcard-suffix
+            # Resource pattern in ReadSharedSecrets above never matches
+            # either way. The exact ARN sidesteps both failure modes.
+            - Name: ROBOT_SHARED_SECRET
+              ValueFrom: !Ref RobotSecretArn
+            - Name: VISION_SHARED_SECRET
+              ValueFrom: !Ref VisionSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: brain
+
+  EcsService:
+    Type: AWS::ECS::Service
+    DependsOn: AlbListenerRule
+    Properties:
+      ServiceName: vision-picar-brain-service
+      Cluster: !ImportValue
+        Fn::Sub: "${ServiceStackName}-EcsClusterName"
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      HealthCheckGracePeriodSeconds: 30
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !ImportValue
+              Fn::Sub: "${NetworkStackName}-PrivateSubnetAId"
+            - !ImportValue
+              Fn::Sub: "${NetworkStackName}-PrivateSubnetBId"
+          SecurityGroups:
+            - !Ref BrainSecurityGroup
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: brain
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref AlbTargetGroup
+
+Outputs:
+  PublicUrlNote:
+    Description: >
+      Same NLB and port as vision-picar-service and vision-picar-twin,
+      routed by path. GET /health falls through to vision-analyze (see
+      AlbListenerRule comment) -- use ECS/CloudWatch to check this
+      service's own health instead.
+    Value: !Sub
+      - "http://${NlbDnsName}/mission/status"
+      - NlbDnsName:
+          Fn::ImportValue: !Sub "${ServiceStackName}-NlbDnsName"
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepo.RepositoryUri
+  AppSharedSecretArn:
+    Value: !Ref AppSharedSecret

@@ -146,8 +146,15 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
 
-  # PWA "Add to Home Screen" support -- without a rule for these, they'd
-  # 404 by falling through to vision-analyze, which has no such routes.
+  # PWA "Add to Home Screen" support (without a rule for these, they'd 404
+  # by falling through to vision-analyze, which has no such routes), plus
+  # /health: without this, a public GET /health silently answers with
+  # vision-analyze's health instead of the twin's own (its target group's
+  # health check bypasses listener routing entirely and was never affected
+  # by this; only a caller hitting the public path was) -- the twin's
+  # web-twin/index.html watchdog readout is exactly such a caller, and
+  # reported "unreachable" as a result. Kept in this rule rather than a
+  # third one: still well under the 5-path-pattern-values limit per rule.
   AlbListenerRulePwa:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
@@ -159,6 +166,7 @@ Resources:
           Values:
             - /manifest.json
             - /icons/*
+            - /health
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
