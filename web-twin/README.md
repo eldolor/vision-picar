@@ -118,12 +118,32 @@ eight masks, then decoded end-to-end with zxing-cpp.
 Movement, sensing, and safety enforcement all happen server-side --
 exactly mirroring the MacBook(brain)/Pi(robot) split in the main build
 plan. The autonomous exploration *decision* logic (frontier-preference:
-peek right/left/forward, prefer unvisited cells) intentionally still
-lives in this file's JS, not on the server -- that's correct, not a
-shortcut: deciding what to do next is the "brain" role, and the browser
-is playing that role here the same way `brain/agent.py`'s `MissionAgent`
-does in Python. Only the "robot runtime" (movement execution, distance
-sensing, safety veto) moved server-side.
+peek right/left/forward, prefer unvisited cells) also lives in this
+file's JS -- that's the "brain" role, which the browser plays here the
+same way `brain/agent.py`'s `MissionAgent` does in Python. Only the
+"robot runtime" (movement execution, distance sensing, safety veto) is
+server-side.
+
+**Two brains, and the page now knows the difference** (phase B4 of
+`PLAN-brain-relocation.md`). The Sim tab has:
+
+- **Remote brain** -- `control/brain_server.py` owns the mission. This
+  page starts it, polls `/mission/status`, and stops it. Close the tab
+  and the robot keeps going; reopen it and the mission is picked back up
+  where it got to. This is the arrangement the finished robot uses.
+- **Local brain** -- the JS loop described above. Needs no brain service,
+  runs entirely in this tab, and dies with it. Kept for LAN development
+  and for running with no Pi present.
+
+Only one may drive at a time, enforced on both sides: starting a remote
+mission stops the local loops, starting a local one while a remote
+mission is running is refused with a toast, and the brain server answers
+a second `POST /mission/start` with a 409.
+
+The remote-brain poll is deliberately **not** paused on
+`visibilitychange`, unlike Vision Autopilot's timer. Backgrounding the
+tab pauses the observer and does nothing to the mission -- which is the
+one observation that proves the brain really moved off this device.
 
 What's still hardcoded client-side, and why that's fine: the `LAYOUT`
 and `OBJECTS` constants are for **drawing the map only** -- there's no
@@ -142,6 +162,12 @@ inherent to visualizing a simulation, not duplicated decision logic.
 4. In "Robot server connection," enter `http://<your-mac-ip>:8000` and
    tap Connect.
 5. D-pad, Explore, and Find backpack all now drive the real server.
+
+To use the remote brain as well, start it alongside the robot server:
+`uvicorn control.brain_server:app --host 0.0.0.0 --port 8001`, then fill
+in "Brain service connection" in Settings. It is optional -- everything
+else works with no brain service running, which is the point of keeping
+the local brain.
 
 ## Testing the camera features on a phone (Vision Autopilot's photo upload
    works fine over plain LAN HTTP; "Guide me to..." does not)
@@ -167,6 +193,49 @@ for every other feature on this page. Two ways around it, cheapest first:
    at all (mixed-content blocking) -- and the currently-deployed cloud
    vision service is HTTP-only too (no ACM certificate on its load
    balancer), so pointing at it instead doesn't avoid this.
+
+## Recording a walk, for the Python agent to replay
+
+Robot view used to discard every frame the moment its answer was drawn.
+With the brain service connected, the **"Record this walk"** switch (Guide
+tab, shown when Robot view is selected) saves each frame to the brain
+instead, together with the `/navigate` answer it got live.
+
+That material is what lets the Python agent run the same real-pixel
+mission over and over -- `python -m tests.demo_replay_mission <walk>
+"red backpack"` -- which is how a prompt gets iterated on without walking
+the house again for every change. Frames land in the brain's
+`recording_dir`, one directory per walk, with a `walk.jsonl` beside them
+so a replayed run can be diffed against what the service said at the time.
+
+Hold the phone low, about 10cm -- the PiCar-X camera's height. A
+chest-height walk is not the robot's walk.
+
+`brain.allow_recording: false` removes the endpoint entirely.
+
+## Verifying the robot's failsafes from here
+
+The Sim tab's remote-brain panel has a **failsafe drill** picker, because
+the two guards that matter most on hardware cannot be provoked by
+pressing anything -- you would have to unplug the internet at exactly the
+right moment. Each drill breaks one thing and leaves every other guard
+standing, so what you watch is the real failsafe firing:
+
+| Drill | Breaks | What you should see |
+|---|---|---|
+| Vision service errors | every vision call raises | three failures counted, then `failed`, robot stopped |
+| Vision service hangs | every vision call never returns | same, but the reason says "timed out" |
+| Brain loop hangs | the loop stops returning | one step, then `failed` -- "brain loop hung" |
+
+The third guard, `robot/server.py`'s watchdog, has no drill because it
+needs no fault: it fires whenever commands stop arriving. The **Robot
+watchdog** readout in the same panel shows the silence it measures, so
+you can drive with the D-pad, stop touching it, and watch the count pass
+the timeout and report the motors stopped.
+
+Drills can be switched off entirely with `brain.allow_drills: false` in
+`config/robot.yaml`, for a deployment where nobody should be able to end
+someone else's mission.
 
 ## Known limitations
 

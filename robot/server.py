@@ -37,13 +37,28 @@ LAN. /health stays open (the ALB health check can't send custom
 headers) and / stays open (the page has to load before a user can enter
 the secret in the UI).
 
-Watchdog (build plan Phase 9): if the MacBook stops sending commands for
-~1 second, the Pi stops the motors. `last_command_at` is updated on
-every request; a background task polls it and calls robot.stop() once
-it's stale. The go/no-go decision (watchdog_should_stop) is a pure
-function tested directly in tests/test_server.py -- the async polling
-loop itself needs a running event loop and is exercised by actually
-running the server (see README), not in the automated unit suite.
+Watchdog (build plan Phase 9; failsafe B3.1 in
+PLAN-brain-relocation.md): if commands stop arriving for ~1 second, the
+motors stop. `last_command_at` is updated by /action and /stop only -- a
+sensing read is not a command, and counting one would let a passive
+observer (the twin polling /frame while it watches a mission) hold the
+watchdog off indefinitely. A background task polls it and calls
+robot.stop() once it's stale.
+
+Its original description -- "detects a dead MacBook" -- narrows once the
+brain runs on the Pi and talks to this server over localhost, since a
+dead link is no longer the likely cause. The job it keeps is the one that
+actually matters on hardware: **if a movement call energises the motors
+and then crashes before px.stop(), nothing else catches it.** It is also
+the only guard that sees a command dispatched microseconds before a
+mission was stopped. The brain's own failsafes (B3.2's vision-failure
+budget, B3.3's hung-tick dead-man, both in control/) cover different
+failures and cannot substitute for this one.
+
+The go/no-go decision (watchdog_should_stop) is a pure function tested
+directly in tests/test_server.py -- the async polling loop itself needs a
+running event loop and is exercised by actually running the server (see
+README), not in the automated unit suite.
 """
 
 import os

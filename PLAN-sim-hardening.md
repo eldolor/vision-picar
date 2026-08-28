@@ -250,7 +250,10 @@ disconnect, or Wi-Fi roaming.
 
 ## 4. Phased plan
 
-Each phase: what gets built, files touched, and the test that proves it.
+Each phase: what gets built, files touched, the test that proves it, and
+**the UI proof it ships with** -- see `CLAUDE.md` section 7. A phase is
+not done when its tests pass; it is done when someone holding a phone can
+watch the thing it built do its job.
 Phases S1-S3 close architecture gaps; S4-S6 close fidelity gaps; S7 is
 chaos.
 
@@ -282,6 +285,13 @@ declared keys.
 **Why first.** It is cheap, it changes no behavior, and every later phase
 gets checked against it.
 
+**UI proof.** A "Check robot contract" button in the twin's Settings: run
+the interface's methods against whatever robot is connected and report
+which ones returned the wrong shape. There is nothing else to see -- this
+phase changes no behavior -- but it is the button you will actually want
+on the day a Pi is on the other end, and it makes the conformance suite
+something a person can run rather than only CI.
+
 ### Phase S2 -- Give `get_camera_frame()` a real image contract
 
 **Build.** Move the twin's raycaster from JS into Python so `MockRobot`
@@ -304,11 +314,17 @@ raycaster produce the same view for the same pose -- this is what lets
 the JS one be deleted. (d) `test_server.py`: `GET /frame` returns a
 decodable image.
 
+**UI proof.** The twin's first-person canvas shows the **server-rendered**
+frame, with a "frame source: server / local" readout next to it. The
+picture should not change; where it comes from should. That readout is
+also how you tell, at a glance, whether the JS raycaster has actually
+been retired.
+
 **Priority.** Q1 is answered (vision), which makes this the top phase in
 the plan: it is the one structural blocker between Vision Autopilot and
 real hardware. Pair it with S2b.
 
-### Phase S2b -- A Python vision agent, with memory
+### Phase S2b -- A Python vision agent, with memory -- **PARTLY BUILT**
 
 **Why this is new.** Per Q1 the vision loop is the product, and **it
 exists only in JavaScript** -- no Python file in this repo calls
@@ -355,6 +371,31 @@ a backpack hunt in the sim -- this is the parity check against the JS
 Autopilot's ~76 steps. (d) Record cost and wall-clock for that run;
 those numbers are the input to the cost constraint below.
 
+**Built 2026-08-27: the agent half.** `brain/navigate.py` (the
+`vision_fn`: frame -> `/navigate` -> one action) and
+`brain/vision_agent.py` (`VisionAgent`: trust the model's action).
+`MissionRunner(policy="vision")` runs it, `sim/replay_robot.py` feeds it
+real pixels from a recorded walk, and the twin's Robot view gained a
+"Record this walk" switch that saves frames -- with their live `/navigate`
+answers -- to the brain. `python -m tests.demo_replay_mission` is the
+end-to-end. `POST /mission/start` no longer answers 501.
+
+**Still open: the memory half**, which is the part of this phase the
+description above is really about. A photograph carries no room label, so
+`MissionMemory.visited_rooms` stays empty under this policy and only the
+step cap stops a re-search. That needs a room signal in the frame (the
+`/analyze` room guess, or `identify_room()` over a caption) -- not a
+change to the agent. Also still open: the `service/vision_analyze/` test
+suite folded into this phase.
+
+**UI proof.** The remote-brain panel's policy picker stops answering
+**501** (`control/brain_server.py` rejects `policy: "vision"` until this
+phase exists, rather than quietly running the rule-based policy under a
+vision label). Start a mission with the vision policy from a phone and
+watch Claude's own reasoning arrive in the log, in place of the
+rule-based "free space clear". The call counter and cap belong in that
+panel too, next to the drill picker.
+
 **Cost constraint.** Every step is a paid call. A 76-step hunt is 76
 calls and, at the current 2.5s throttle, over three minutes. Both the
 call cap and the throttle are product decisions now, not demo details --
@@ -377,6 +418,16 @@ and assert **identical action sequences**. This is the single most
 valuable test in the plan: it proves the HTTP boundary is transparent.
 Add to the contract suite so `RemoteRobot` must pass it too.
 
+**BUILT 2026-08-27** as phase B0 of `PLAN-brain-relocation.md`, with that
+exact test (`tests/test_remote_robot.py`, 83 steps and an identical
+action sequence either way). The one thing to add when S1 lands is the
+contract-suite parameterization; `RemoteRobot` does not run it yet
+because it does not exist yet.
+
+**UI proof.** The twin's Sim tab drives the robot through the same server
+the brain does -- D-pad and remote mission produce the same map, and the
+map follows either driver.
+
 ### Phase S4 -- Put time in the loop
 
 **Build.** Implement `MockRobot._settle()` for real, behind a config flag
@@ -393,6 +444,15 @@ past `watchdog_timeout_s`, assert `robot.stop()` actually fired and
 `/health` reports the stale age. Second test: issue commands faster than
 the timeout, assert the watchdog never fires.
 
+**UI proof.** The twin's remote-brain panel already shows the silence the
+watchdog measures (`seconds_since_last_command` against the timeout).
+Today that count only moves *between* commands, because a move takes no
+time. After this phase a move occupies its duration, so the count climbs
+mid-move -- and a mission paced by the robot rather than by
+`tick_interval_s` is the visible difference. That config knob exists
+purely because the sim has no time in it; this phase is what lets it go
+back to 0.
+
 ### Phase S5 -- Sensor realism
 
 **Build.** A `DistanceSensorModel` wrapping `GridWorld.distance_ahead()`:
@@ -403,6 +463,12 @@ behavior so existing tests are unaffected until opted in.
 
 **Files.** New `sim/sensors.py`; `sim/grid_world.py` (sub-cell distance);
 `sim/mock_robot.py`; `config/robot.yaml` (a `sim.sensor_noise` block).
+
+**UI proof.** The Sim tab's distance telemetry stops being multiples of
+30cm and starts jittering, and the safety collar flashes on a veto as you
+drive *toward* the sofa rather than only once against it. Today a veto is
+only reachable at 0, which is why the collar has never really been worth
+watching.
 
 **Test.** (a) With noise enabled, `min_distance_cm` is crossed at
 realistic distances, not only at 0 -- this is what makes the safety layer
@@ -434,6 +500,10 @@ narrower than the turning circle is refused or arcs into a blocked state
 rather than teleporting. (c) With drift enabled, assert the safety layer
 still prevents all collisions over a long run.
 
+**UI proof.** The map draws the robot **arcing** through a turn instead of
+pivoting on the spot, and refuses a turn that will not fit the corridor
+it is in. Both are visible on the canvas with no new controls.
+
 **Note.** This is the biggest change and the most deferrable, because
 safety re-checks distance every step regardless of pose error. Do it
 last, and be willing to stop at "scaled map + arc turns" without drift.
@@ -444,7 +514,14 @@ last, and be willing to stop at "scaled map + arc turns" without drift.
 added latency, jitter, dropped requests, connection resets, duplicated
 requests.
 
-**Files.** New `tests/fault_proxy.py`; new `tests/test_chaos.py`.
+**Files.** New `tests/fault_proxy.py`; new `tests/test_chaos.py`;
+`control/drills.py` (the link faults join the existing drill picker).
+
+**UI proof.** New entries in the twin's failsafe-drill picker: added
+latency, dropped requests, a killed link mid-mission. Same picker, same
+fail-safe rule as the B3 drills -- a drill may only ever end with the
+robot stopped. Watching a mission survive 200ms of latency, and watching
+the watchdog stop the motors when the link dies, is the whole phase.
 
 **Test.** (a) 200ms latency + 5% loss: mission still completes, no
 collisions. (b) Kill the link mid-mission: the watchdog stops the motors

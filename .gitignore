@@ -12,3 +12,4 @@ venv/
 # Never commit secrets
 .env
 *.pem
+recordings/

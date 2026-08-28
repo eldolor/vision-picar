@@ -584,6 +584,109 @@
 
   <section>
     <div class="col">
+      <div class="eyebrow">Whose job is it to keep looking?</div>
+      <h2>The car stops needing a laptop</h2>
+      <p>
+        For most of this project the searching was done by something
+        <em>watching</em> the car: a program on a laptop, or the phone app
+        itself. That works, and it hides a problem. Close the browser tab and
+        the searching stops &mdash; the car sits in the hallway waiting for an
+        instruction that will never come. A robot that needs someone holding a
+        phone for it is not really a robot.
+      </p>
+      <p class="pull">
+        The loop moved onto the car. The phone's job shrank to three buttons:
+        start, stop, and watch. Close the app mid-search, walk into another
+        room, open it again &mdash; the car has kept going.
+      </p>
+      <p>
+        The two programs stay separate on purpose, even though they run on the
+        same machine. One is the <strong>body</strong>: wheels, sensor, safety
+        veto. The other is the <strong>mind</strong>: what to do next. Keeping
+        them apart is what lets the mind be moved &mdash; onto a laptop for
+        development, onto the car for real use &mdash; by changing a single
+        address, with no code change at all.
+      </p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Three ways to stop</h3>
+        <span class="panel-note">because there are three ways to fail</span>
+      </div>
+      <div class="bodies">
+        <div class="body-card">
+          <span class="chip live">Body</span>
+          <h4>Motors left running</h4>
+          <dl class="spec">
+            <dt>Fails</dt><dd>A move starts the motors, then the program crashes before stopping them</dd>
+            <dt>Caught by</dt><dd>The watchdog: no command for a second, wheels stop</dd>
+          </dl>
+        </div>
+        <div class="body-card">
+          <span class="chip live">Mind</span>
+          <h4>The car goes blind</h4>
+          <dl class="spec">
+            <dt>Fails</dt><dd>The vision service is down, or an answer never comes back</dd>
+            <dt>Caught by</dt><dd>Three failed looks in a row end the search rather than driving blind</dd>
+          </dl>
+        </div>
+        <div class="body-card">
+          <span class="chip live">Mind</span>
+          <h4>The thinking freezes</h4>
+          <dl class="spec">
+            <dt>Fails</dt><dd>The searching program is still running, but stuck</dd>
+            <dt>Caught by</dt><dd>A dead-man timer, which the watchdog cannot see</dd>
+          </dl>
+        </div>
+      </div>
+      <p style="margin-top:18px;">
+        The last two are the ones that matter most on a real floor, and neither
+        can be triggered by pressing anything &mdash; you would have to unplug
+        the internet at exactly the right moment. So the app has a
+        <strong>drill</strong> setting: ask the car to break one thing on
+        purpose, and watch the right guard catch it. Every drill can only ever
+        end with the car stopped, which is the same thing the guards do
+        unaided.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <div class="eyebrow">The method</div>
+      <h2>Prove it in the twin, then put it in the car</h2>
+      <p>
+        Everything here was built in a particular order, and it is worth stating
+        as a rule rather than a habit.
+      </p>
+      <p class="pull">
+        A capability is not finished when its tests pass. It is finished when
+        someone holding a phone can watch it work in the twin. Only then does it
+        go anywhere near the car.
+      </p>
+      <p>
+        <strong>A test proves something to whoever wrote it.</strong> It encodes
+        what that person expected. Watching a search cross a room is the check
+        that survives being wrong about that.
+      </p>
+      <p>
+        <strong>The same button becomes the bring-up test.</strong> The twin
+        talks to the car's own control interface &mdash; the real one, not a
+        pretend one. So the tap that starts a search in the simulation is the
+        tap that will start one on the hardware. Every capability that ships
+        with something to press ships with its own first-day-with-the-robot
+        checklist, for free.
+      </p>
+      <p>
+        <strong>Some failures cannot be provoked by hand.</strong> That is not an
+        excuse to leave them unverified; it is why the drills exist.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
       <div class="eyebrow">Where it stands</div>
       <h2>Built backwards, on purpose</h2>
       <p>
@@ -642,6 +745,13 @@
           <div class="phase-body">
             <h4>The digital twin, and Guide</h4>
             <p>A phone app that drives the simulation for real, plus the vision service in the cloud &mdash; and the first-person mode you can walk around with.</p>
+          </div>
+        </div>
+        <div class="phase done">
+          <div class="phase-n">B</div>
+          <div class="phase-body">
+            <h4>The car stops needing a laptop</h4>
+            <p>The search became a small program that runs on the car. The phone starts it and then only watches &mdash; close the app and the car carries on. Three separate ways for it to stop itself, each testable from the phone.</p>
           </div>
         </div>
         <div class="phase here">
@@ -722,6 +832,14 @@
           <dd>The rule that lets the body overrule the brain. Every proposed move is checked against the distance reading before any wheel turns.</dd>
         </div>
         <div>
+          <dt>Watchdog</dt>
+          <dd>A timer on the body's side. If no command arrives for about a second, it stops the motors without asking anyone.</dd>
+        </div>
+        <div>
+          <dt>Failsafe drill</dt>
+          <dd>Deliberately breaking one thing to check the guard that should catch it. Available from the app, and only ever able to end with the car stopped.</dd>
+        </div>
+        <div>
           <dt>Grid-world</dt>
           <dd>The simulated house: rooms laid out on a coarse grid of squares, with doorways between them and objects placed in specific cells.</dd>
         </div>
@@ -738,6 +856,11 @@
         sentence to. Everything built so far is the same loop wearing different
         bodies &mdash; a simulated car to prove the idea, a phone in your hand
         to feel it, and next, the car itself.
+      </p>
+      <p>
+        The loop now runs where the car will be, stops itself three different
+        ways, and every part of it can be watched from a phone before any of it
+        touches a motor. That last clause is the whole method.
       </p>
     </div>
   </section>

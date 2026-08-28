@@ -56,7 +56,7 @@ pip install -r requirements.txt
 ## Run tests
 
 ```bash
-pytest tests/ -q        # 61 tests, no API key needed
+pytest tests/ -q        # 133 tests, no API key needed
 ```
 
 ## Run the demo loop
@@ -200,6 +200,140 @@ uvicorn robot.server:app --reload   # http://127.0.0.1:8000
 
 This file doesn't change at all when Phase 11 swaps in real hardware --
 only `config/robot.yaml`'s `mode` does.
+
+## The brain on the wire (phases B0-B3)
+
+`PLAN-brain-relocation.md`'s Stage 2. The autonomy loop stops being a
+blocking `for` loop inside an agent and becomes a service that can be
+started, stopped, and inspected over HTTP -- the prerequisite for the
+robot being self-contained, with the phone as an observer rather than the
+brain.
+
+**The whole trick:** the brain is *always* an HTTP client of
+`robot/server.py`. Then "brain on the Pi" and "brain on the MacBook"
+differ by a base URL and nothing else.
+
+```
+  :8001  control/brain_server.py     the autonomy loop
+             |  HTTP (localhost on the Pi, LAN from a MacBook)
+             v
+  :8000  robot/server.py             safety + watchdog + backend
+```
+
+**`AGENT-HARNESS.md` is the reference for how this works** -- one tick in
+order, the seams, the concurrency model, the status contract, the
+invariants, and how the S2b vision policy plugs in. What follows is the
+per-phase summary.
+
+- `control/remote_robot.py` (**B0**) -- `RemoteRobot` implements
+  `RobotInterface` by calling `robot/server.py`. `brain/agent.py` cannot
+  tell it apart from an in-process backend: a safety veto raises the same
+  `SafetyViolation` it would locally, and `position` is coerced back to a
+  tuple after its round trip through JSON.
+- `control/mission_runner.py` (**B1**) -- one mission's lifecycle as
+  `start()` / `tick()` / `stop()` / `status()`, with the loop driven from
+  outside. No decision logic moved; the frontier-exploration policy is
+  the same one the demos validated.
+- `control/brain_server.py` (**B2**) -- FastAPI on :8001 owning a
+  `MissionRunner` and driving it as an asyncio background task.
+  `POST /mission/start`, `POST /mission/stop`, `GET /mission/status`,
+  `GET /health`. Imports nothing from `sim/`, and touches `robot/` only
+  for the interface -- asserted by a test.
+- Three failsafes (**B3**), one per distinct failure:
+  **B3.1** motors left running (`robot/server.py`'s watchdog, unchanged);
+  **B3.2** the AWS link dead (a vision-call timeout plus a
+  consecutive-failure budget -- the browser autopilot just logs the error
+  and schedules the next tick); **B3.3** a brain loop alive but stuck (a
+  per-tick dead-man the watchdog cannot see). All three end with the same
+  thing: the robot is told to stop.
+
+```bash
+# two processes, the way they run on the Pi
+uvicorn robot.server:app --port 8000
+uvicorn control.brain_server:app --port 8001
+
+curl -X POST localhost:8001/mission/start \
+     -H 'content-type: application/json' \
+     -d '{"target_object": "red backpack"}'
+curl localhost:8001/mission/status
+curl -X POST localhost:8001/mission/stop     # stops the loop AND the car
+```
+
+To run the brain on the MacBook instead, point `brain.robot_url` in
+`config/robot.yaml` at the Pi's LAN IP and start `brain_server` there.
+That is the only change.
+
+**Proof it is transparent:** `python -m tests.demo_brain_over_http` runs
+the backpack hunt three ways -- in-process, through `RemoteRobot` over a
+real socket, and through the brain service -- and compares them. All
+three take the same 83 steps and produce an identical action sequence.
+`tests/test_remote_robot.py` asserts it against a live `uvicorn`,
+`tests/test_brain_server.py` runs a whole mission through two HTTP hops,
+and `tests/test_failsafes.py` covers B3.2 and B3.3.
+
+### The vision policy on real pixels (phase S2b, partial)
+
+The loop that matters -- a model looking at a photograph and choosing the
+move -- now exists in Python, not only in the browser:
+
+- `brain/navigate.py` -- the `vision_fn`: a frame goes to the vision
+  service's `/navigate`, one action comes back. One mapping decision is
+  load-bearing: the target counts as **found only when the service reports
+  `target_reached`**, never on mere visibility, or a mission would end in a
+  doorway across the room from the backpack and call it success.
+- `brain/vision_agent.py` -- `VisionAgent`: trust the model's action unless
+  the mission is over. Four lines, because validation, the stuck-breaker
+  and mission memory are all inherited.
+- `sim/replay_robot.py` -- a body made of photographs. A walk you recorded,
+  played back one frame per move.
+
+```bash
+# record a walk in the twin (Guide -> Robot view -> "Record this walk"), then:
+export VISION_URL="https://<your vision service>"
+python -m tests.demo_replay_mission recordings/<walk> "red backpack"
+```
+
+That prints one line per step -- action, frame, and the model's own
+reasoning -- then the outcome, the call count, and the wall clock. It is
+the first thing in this project to put the *loop* on real pixels rather
+than one frame at a time.
+
+**Honest limits.** A replay is open loop: the frames follow the path you
+walked, so a LEFT at frame 12 doesn't change what frame 13 shows. It
+measures memory, lifecycle and cost; it does not measure navigation. The
+safety layer is inert (a photograph has no distance in it). And the vision
+policy can't drive the simulator yet -- `MockRobot` has no pixels until
+phase S2.
+
+### Watching it from the twin (phase B4)
+
+The Sim tab has two brains side by side. **Remote brain** starts a mission
+on `control/brain_server.py` and then only observes it -- polling
+`/mission/status` for the step count, last action, rooms searched and log
+tail, and following the robot on the map. **Local brain** is the JS loop
+that has always been there, kept because it needs no brain service at all.
+Only one may drive at a time, enforced from both ends.
+
+Close the tab mid-mission and reopen it: the mission is further along, or
+finished. That is the whole point of the phase, and it is a thing you can
+watch rather than a thing a test asserts.
+
+Two guards would otherwise be unverifiable by hand, since neither can be
+provoked by pressing anything -- so the panel has a **failsafe drill**
+picker (`control/drills.py`) that asks the brain to break exactly one
+thing, and a **watchdog readout** showing the silence `robot/server.py`
+measures:
+
+| Drill | Breaks | What you should see |
+|---|---|---|
+| Vision service errors | every vision call raises | three failures counted, then `failed`, robot stopped |
+| Vision service hangs | every vision call never returns | same, reason says "timed out" |
+| Brain loop hangs | the loop stops returning | one step, then `failed` -- "brain loop hung" |
+
+Every drill is fail-safe by construction: it can only end a mission with
+the robot stopped. `brain.allow_drills: false` removes the surface
+entirely. See `CLAUDE.md` section 7 for the standing rule this comes from
+-- every stage ships with something you can press.
 
 ## Digital twin / web-based visualization
 

@@ -145,3 +145,23 @@ def test_cors_headers_present_for_browser_requests():
             headers={"origin": "http://localhost:5500"},
         )
         assert "access-control-allow-origin" in {k.lower() for k in resp.headers.keys()}
+
+
+def test_sensing_does_not_feed_the_watchdog():
+    """A read is not a command. The twin polls /frame continuously while it
+    observes a brain-driven mission; if that counted, an open phone would
+    silently hold off the one failsafe that catches motors left running."""
+    with make_client() as client:
+        client.post("/action", json={"action": "STOP"})
+        client.get("/frame")
+        client.get("/distance")
+        after_reads = client.get("/health").json()["seconds_since_last_command"]
+
+        client.post("/stop")
+        after_command = client.get("/health").json()["seconds_since_last_command"]
+
+        assert after_command <= after_reads, "a command must reset the watchdog clock"
+        assert client.get("/frame").status_code == 200
+        assert client.get("/health").json()["seconds_since_last_command"] >= after_command, (
+            "sensing reads must not reset the watchdog clock"
+        )

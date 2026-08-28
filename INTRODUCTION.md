@@ -120,6 +120,81 @@ already the rules the hardware will run.
 
 ---
 
+## Whose job is it to keep looking?
+
+For most of this project the searching was done by something *watching* the car:
+a program on a laptop, or the phone app itself. That works, and it hides a
+problem. Close the browser tab and the searching stops — the car sits in the
+hallway waiting for an instruction that will never come. A robot that needs
+someone holding a phone for it is not really a robot.
+
+So the loop moved onto the car. It is now a small program of its own, running
+alongside the one that turns the wheels, and it is the thing that keeps asking
+"what do I see, where do I go next?" The phone's job shrank to three buttons:
+**start**, **stop**, and **watch**. You can close the app mid-search, walk into
+another room, open it again — the car has kept going, and the app picks the
+story back up where it got to.
+
+The two programs stay separate on purpose, even though they run on the same
+machine. One is the *body*: wheels, sensor, safety veto. The other is the
+*mind*: what to do next. Keeping them apart is what lets the mind be moved —
+onto a laptop for development, onto the car for real use — by changing a single
+address, with no code change at all.
+
+---
+
+## Three ways to stop, because there are three ways to fail
+
+The safety veto above catches "about to hit something." It cannot catch a car
+that has quietly stopped making sense. Three different failures need three
+different guards, and each one ends the same way — wheels stopped.
+
+| What goes wrong | What catches it |
+|---|---|
+| A move starts the motors and then the program crashes before stopping them | The body's own **watchdog**: if no command arrives for a second, it stops the wheels itself |
+| The car goes blind — the vision service is down, or an answer never comes back | After three failed looks in a row, the search **ends rather than driving blind**. One bad answer is survivable; a pattern is not |
+| The searching program freezes — still running, but stuck | A **dead-man timer** notices the loop hasn't come back and stops the car |
+
+The second and third are the ones that matter most on a real floor, and neither
+can be triggered by pressing anything — you would have to unplug the internet at
+exactly the right moment. So the app has a **drill** setting: ask the car to
+break one thing on purpose, and watch the right guard catch it. Every drill can
+only ever end with the car stopped, which is the same thing the guards do
+unaided.
+
+---
+
+## The rule: prove it in the twin, then put it in the car
+
+Everything above was built in a particular order, and it is worth stating as a
+rule rather than a habit:
+
+> **A capability is not finished when its tests pass. It is finished when
+> someone holding a phone can watch it work in the twin. Only then does it go
+> anywhere near the car.**
+
+Three reasons this is a rule.
+
+**A test proves something to whoever wrote it.** It encodes what that person
+expected. Watching a search cross a room is the check that survives being wrong
+about that.
+
+**The same button becomes the bring-up test.** The twin talks to the car's own
+control interface — the real one, not a pretend one. So the tap that starts a
+search in the simulation is the tap that will start one on the hardware. Every
+capability that ships with something to press ships with its own
+first-day-with-the-robot checklist, for free.
+
+**Some failures cannot be provoked by hand.** That is not an excuse to leave
+them unverified; it is why the drills exist.
+
+The practical consequence: no capability gets built for the car that cannot be
+watched from the phone first. Where a thing genuinely has nothing to see, that
+gets said out loud, and the readout that *would* show it breaking gets named
+instead.
+
+---
+
 ## Where it stands: built backwards, on purpose
 
 The car was the last thing started, not the first. Everything above it — the
@@ -136,6 +211,7 @@ file.
 | **04–06** | Searching rather than wandering | Remembering which rooms it has already been through, and preferring somewhere new. |
 | **09** | Splitting brain from body | Thinking happens on one machine, moving on another, with an HTTP link between them — exactly the split the real car needs. |
 | **10** | The digital twin, and Guide | A phone app that drives the simulation for real, plus the vision service in the cloud — and the first-person mode you can walk around with. |
+| **B** | The car stops needing a laptop | The search itself became a small program that runs on the car. The phone starts it and then only watches — close the app and the car carries on. Three separate ways for it to stop itself, and a way to test each one from the phone. |
 | **11** | **Put it in the car — next** | Same brain, same safety rules, real motors and a real ultrasonic sensor. Say the object out loud; let it go and find it. |
 
 ---
@@ -181,6 +257,8 @@ theoretical.
 | **Digital twin** | A working stand-in for the real machine that you can drive and watch. Not a mock-up — it runs the same movement, sensing and safety code the car will. |
 | **Ultrasonic sensor** | A small emitter that measures distance by timing an echo, like a bat. Cheap and reliable, but it only sees a narrow cone directly ahead. |
 | **Safety veto** | The rule that lets the body overrule the brain. Every proposed move is checked against the distance reading before any wheel turns. |
+| **Watchdog** | A timer on the body's side. If no command arrives for about a second, it stops the motors without asking anyone. |
+| **Failsafe drill** | Deliberately breaking one thing to check the guard that should catch it. Available from the app, and only ever able to end with the car stopped. |
 | **Grid-world** | The simulated house: rooms laid out on a coarse grid of squares, with doorways between them and objects placed in specific cells. |
 
 ---
@@ -191,8 +269,14 @@ The destination is a small robot you can point at a room and give a sentence to.
 Everything built so far is the same loop wearing different bodies — a simulated
 car to prove the idea, a phone in your hand to feel it, and next, the car itself.
 
+The loop now runs where the car will be, stops itself three different ways, and
+every part of it can be watched from a phone before any of it touches a motor.
+That last clause is the whole method.
+
 ---
 
 *vision-picar — simulation-first build of the PiCar-X vision agent.
+The engineering reference for the searching loop itself is
+[`AGENT-HARNESS.md`](AGENT-HARNESS.md).
 Phase 11 next: real hardware. See [`README.md`](README.md) for the engineering
 detail behind each phase.*

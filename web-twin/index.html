@@ -159,13 +159,20 @@
   .dpad button svg { width: 20px; height: 20px; }
   .dpad .spacer { background: transparent; pointer-events: none; }
 
-  #log {
+  #log, #brain-log {
     font-family: var(--mono); font-size: var(--fs-small); color: var(--text-dim);
     max-height: 130px; overflow-y: auto; line-height: 1.6;
     background: var(--field-bg); border-radius: 8px; padding: 8px 10px;
   }
-  #log .entry.veto { color: var(--accent-alert); }
-  #log .entry.found { color: var(--accent-safe); }
+  #log .entry.veto, #brain-log .entry.veto { color: var(--accent-alert); }
+  #log .entry.found, #brain-log .entry.found { color: var(--accent-safe); }
+
+  /* Matches .text-input, for the failsafe-drill picker. */
+  .select-input {
+    padding: 10px 12px; border-radius: 9px; min-height: 44px;
+    border: 1px solid var(--border-strong); background: var(--field-bg); color: var(--text);
+    font-family: var(--mono); font-size: var(--fs-input);
+  }
 
   #photo-preview {
     width: 100%; border-radius: 8px; margin-top: 8px; display: none;
@@ -1093,6 +1100,16 @@
       <div class="hint" id="guide-mode-hint" style="margin-top:6px;">
         <b>Guide me</b> steers <i>you</i> to the object with an arrow.
       </div>
+      <label class="switch-row" for="cfg-record-walk" id="record-walk-row" style="display:none;">
+        <span class="switch-copy">
+          <span class="switch-title">Record this walk</span>
+          <span class="switch-sub" id="record-walk-sub">
+            Saves each frame to the brain service, so the same walk can be
+            replayed through the Python agent as many times as you like.
+          </span>
+        </span>
+        <input type="checkbox" id="cfg-record-walk" class="switch">
+      </label>
       <div class="btn-row" style="margin-top:8px;">
         <input type="text" id="guidance-target" class="text-input" value="red backpack" list="target-history-list" style="flex:2;">
         <button id="btn-guidance" class="primary" style="flex:1;">Start</button>
@@ -1155,6 +1172,60 @@
     </div>
 
     <div class="panel">
+      <div class="section-label">Remote brain &middot; runs on the robot</div>
+      <div class="lede">
+        The mission runs in <code>control/brain_server.py</code>, not in this
+        tab. Start it and this page becomes an observer &mdash; close it,
+        background it, or open it on another phone, and the robot keeps going.
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <input type="text" id="brain-target" class="text-input" value="red backpack" list="target-history-list" style="flex:2;">
+        <button id="btn-brain-mission" style="flex:1;" disabled>Start</button>
+      </div>
+      <div class="btn-row">
+        <select id="brain-fault" class="select-input" style="flex:1;">
+          <option value="none">Normal mission</option>
+          <option value="vision_error">Drill: vision service errors (B3.2)</option>
+          <option value="vision_hang">Drill: vision service hangs (B3.2)</option>
+          <option value="tick_hang">Drill: brain loop hangs (B3.3)</option>
+        </select>
+      </div>
+      <div class="telemetry" id="brain-telemetry">
+        <div>Mission: <span class="val" id="brain-tel-outcome">idle</span></div>
+        <div>Step: <span class="val" id="brain-tel-step">&ndash;</span></div>
+        <div>Last action: <span class="val" id="brain-tel-action">&ndash;</span></div>
+        <div>Vision fails: <span class="val" id="brain-tel-vision">0</span></div>
+        <div class="full">Rooms searched: <span class="val" id="brain-tel-rooms">&ndash;</span></div>
+        <div class="full">Why: <span class="val" id="brain-tel-why">&ndash;</span></div>
+        <div class="full">Robot watchdog: <span class="val" id="brain-tel-watchdog">&ndash;</span></div>
+      </div>
+      <div id="brain-log" role="log" aria-live="polite"></div>
+      <details class="disclosure">
+        <summary><span class="disclosure-caret" data-icon="chevronRight"></span>What the drills prove</summary>
+        <div class="hint">
+          The two failsafes that matter most on hardware cannot be provoked
+          by pressing anything &mdash; you would have to unplug the internet
+          at the right moment. A drill breaks exactly one thing and leaves
+          every other guard standing, so what you watch is the real failsafe
+          firing: the mission ends, the reason is named, and the robot is
+          stopped. The watchdog readout above is the third one
+          (<code>robot/server.py</code>): it counts how long the robot has
+          gone without a command, and stops the motors on its own if that
+          passes the timeout.
+        </div>
+      </details>
+      <div class="hint" id="brain-connect-hint">
+        No brain service configured &mdash; open Settings to point this at
+        one, or use the local brain below.
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Local brain &middot; runs in this tab</div>
+      <div class="lede">
+        The same policy, re-implemented in JavaScript. Works with no brain
+        service running, and stops when this tab is closed.
+      </div>
       <div class="subsection-label">Rule-based &middot; free, no API calls</div>
       <div class="btn-row">
         <button id="btn-explore" disabled>Explore</button>
@@ -1312,6 +1383,33 @@
           <code>http://192.168.1.42:8000</code>. Both fields are remembered
           on this device, and the connection is re-established automatically
           next time you open the app.
+        </div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <div class="section-label">Brain service connection</div>
+      <div class="lede">
+        Optional. The autonomy loop that runs on the robot rather than in
+        this browser.
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <input type="text" id="cfg-brain-url" class="text-input" placeholder="http://192.168.1.x:8001" style="flex:2;">
+        <button id="btn-brain-connect" class="primary" style="flex:1;">Connect</button>
+      </div>
+      <div class="hint" id="brain-connection-status" role="status" aria-live="polite">Not connected.</div>
+      <details class="disclosure">
+        <summary><span class="disclosure-caret" data-icon="chevronRight"></span>Setting this up</summary>
+        <div class="hint">
+          Run <code>uvicorn control.brain_server:app --host 0.0.0.0 --port
+          8001</code> alongside the robot server &mdash; on the Pi in the
+          finished robot, on any machine during development. It reaches the
+          robot over HTTP too, so the two do not have to share a machine;
+          <code>brain.robot_url</code> in <code>config/robot.yaml</code> is
+          the only thing that decides where it looks. This field re-uses the
+          shared secret from the robot connection above, since both
+          processes read the same <code>APP_SHARED_SECRET</code>. Remembered
+          on this device.
         </div>
       </details>
     </div>
@@ -1567,6 +1665,12 @@
     guidancePanSpeed: 0, guidanceLastOrientation: null,
     guidanceConsecutiveSkips: 0, guidanceErrorStreak: 0,
     connecting: false,
+    // Remote brain (phase B4): this page observes a mission it does not run.
+    brainUrl: "", brainConnected: false, brainConnecting: false,
+    brainMissionRunning: false, brainPollTimerId: null, brainLogSignature: "",
+    watchdogTimerId: null,
+    // Recording a Robot-view walk to the brain, for replay (S2b).
+    recordWalk: false, recordWalkName: null, recordSaved: 0, recordFailed: 0,
   };
 
   // ---------- persisted preferences ----------
@@ -1580,6 +1684,7 @@
   // page init or a click handler.
   const PREF = {
     serverUrl: "vp_server_url",
+    brainUrl: "vp_brain_url",
     serverSecret: "vp_cfg_server_secret",   // shared with prefillTesterSecrets below
     visionUrl: "vp_vision_url",
     visionSecret: "vp_cfg_secret",          // shared with prefillTesterSecrets below
@@ -1588,6 +1693,7 @@
     onboarded: "vp_guide_onboarded",
     rotateHintDismissed: "vp_guide_rotate_dismissed",
     debugReadouts: "vp_debug_readouts",
+    recordWalk: "vp_record_walk",
   };
   function prefGet(key) {
     try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -1781,6 +1887,16 @@
     return state.autoTarget ? state.found : false;
   }
 
+  // The local brain and the remote one must never drive at once -- they
+  // would interleave decisions on the same robot, and each would see the
+  // other's moves as the world changing under it. Refusing here is the
+  // browser-side half of the brain server's own 409 on a second mission.
+  function remoteMissionBlocks() {
+    if (!state.brainMissionRunning) return false;
+    showToast("A brain-service mission is running \u2014 stop it first.", "err");
+    return true;
+  }
+
   async function autoStep() {
     if (!state.autoRunning) return;
     if (missionComplete() || state.step >= state.autoMaxSteps) {
@@ -1832,6 +1948,7 @@
     if (state.autoRunning) state.autoTimerId = setTimeout(autoStep, 200);
   }
   function startAuto(target) {
+    if (remoteMissionBlocks()) return;
     stopAuto();
     stopVisionAutopilot();
     state.autoTarget = target || null;
@@ -1953,6 +2070,7 @@
       const frame = await fetchFrame();
       state.connected = true;
       setControlsEnabled(true);
+      startWatchdogPolling();
       statusEl.textContent = "Connected to " + url;
       prefSet(PREF.serverUrl, url);
       recordObservation(frame);
@@ -2474,6 +2592,7 @@
 
   function startVisionAutopilot() {
     if (!state.connected) return;
+    if (remoteMissionBlocks()) return;
     stopAuto(); // rule-based and vision-driven autonomy shouldn't both drive at once
     state.autopilotTarget = document.getElementById("autopilot-target").value.trim() || "red backpack";
     saveTargetToHistory(state.autopilotTarget);
@@ -2505,6 +2624,378 @@
     if (state.autopilotRunning) stopVisionAutopilot();
     else startVisionAutopilot();
   };
+
+  // ---------- remote brain: this page as an observer (phase B4) ----------
+  //
+  // Everything above this line is a brain that lives in this tab: it
+  // decides, it drives robot/server.py, and it dies with the page. This
+  // section is the other arrangement -- control/brain_server.py owns the
+  // loop, and the page only starts it, watches it, and stops it.
+  //
+  // The observable difference, and the whole reason the phase exists: this
+  // polling loop is deliberately NOT paused on visibilitychange the way
+  // Vision Autopilot's is. Backgrounding the tab pauses the *observer* (the
+  // browser throttles its timers, and that is fine -- polling costs
+  // nothing) and does not touch the mission. Come back, or open the page on
+  // a second phone, and the robot has kept going. That is the proof the
+  // brain actually moved off this device.
+  //
+  // Manual control stays pointed straight at robot/server.py and never goes
+  // through here: the D-pad must keep working with the brain service down.
+
+  const BRAIN_POLL_MS = 700;
+  const BRAIN_EMPTY = ["bot", "No mission yet \u2014 Start hands the loop to the robot."];
+
+  async function brainApi(method, path, body) {
+    const res = await fetch(state.brainUrl + path, {
+      method: method,
+      headers: authHeaders(body ? { "content-type": "application/json" } : {}),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(function () { return {}; });
+    if (!res.ok) throw new Error(data.detail || ("HTTP " + res.status));
+    return data;
+  }
+
+  function setBrainText(id, value, cls) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = value == null || value === "" ? "\u2013" : String(value);
+    el.className = "val" + (cls ? " " + cls : "");
+  }
+
+  const BRAIN_OUTCOME_CLASS = {
+    found: "safe", room_reached: "safe", failed: "alert", stopped: "alert",
+  };
+
+  function renderBrainStatus(status) {
+    const outcome = status.outcome || "idle";
+    setBrainText("brain-tel-outcome",
+      outcome + (status.fault && status.fault !== "none" ? " (" + status.fault + " drill)" : ""),
+      BRAIN_OUTCOME_CLASS[outcome]);
+    setBrainText("brain-tel-step",
+      status.step == null ? null : status.step + (status.max_steps ? " / " + status.max_steps : ""));
+    setBrainText("brain-tel-action", status.last_action);
+    setBrainText("brain-tel-vision", status.vision_failures || 0,
+      status.vision_failures ? "alert" : null);
+    setBrainText("brain-tel-rooms",
+      (status.rooms_searched && status.rooms_searched.length) ? status.rooms_searched.join(", ") : null);
+    setBrainText("brain-tel-why", status.error || status.last_reasoning,
+      status.error ? "alert" : null);
+
+    // The mission log comes from the brain, so it is rewritten wholesale
+    // each poll rather than appended to -- there is no local copy to keep
+    // in step, and a reconnecting observer gets the same tail as everyone
+    // else. Skipped when unchanged so it does not fight the scroll.
+    const tail = status.log_tail || [];
+    const signature = tail.join("\n");
+    if (signature !== state.brainLogSignature) {
+      state.brainLogSignature = signature;
+      const el = document.getElementById("brain-log");
+      if (tail.length === 0) {
+        setEmptyState(el, BRAIN_EMPTY[0], BRAIN_EMPTY[1]);
+      } else {
+        el.dataset.empty = "";
+        el.innerHTML = tail.map(function (line) {
+          const cls = /failure|failed|WARNING/.test(line) ? " veto"
+            : /found\)/.test(line) ? " found" : "";
+          return '<div class="entry' + cls + '">' + escapeHtml(line) + "</div>";
+        }).join("");
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+  }
+
+  // The robot server's watchdog (failsafe B3.1) has no UI of its own: it
+  // fires inside the robot process and stops the motors. /health reports
+  // the silence it measures, which is the closest thing to watching it
+  // work.
+  //
+  // It polls on its own timer rather than off the back of the brain poll,
+  // because the moment you most want to read it is the moment the brain
+  // has just died -- kill the brain service mid-mission and this is what
+  // tells you the robot went quiet and its motors were stopped. Hanging it
+  // off the brain poll would freeze it exactly then. /health does not
+  // update `last_command_at` (only /action and /stop do), so watching the
+  // watchdog cannot hold the watchdog off.
+  const WATCHDOG_POLL_MS = 500;
+
+  function startWatchdogPolling() {
+    stopWatchdogPolling();
+    state.watchdogTimerId = setInterval(function () {
+      // Only while the Sim tab is actually on screen -- Guide and Camera
+      // never touch the robot server, and a hidden readout is not worth a
+      // request every half second.
+      if ((document.body.dataset.tab || "guide") !== "sim") return;
+      renderWatchdog();
+    }, WATCHDOG_POLL_MS);
+    renderWatchdog();
+  }
+  function stopWatchdogPolling() {
+    if (state.watchdogTimerId) clearInterval(state.watchdogTimerId);
+    state.watchdogTimerId = null;
+  }
+
+  async function renderWatchdog() {
+    if (!state.connected) { setBrainText("brain-tel-watchdog", null); return; }
+    try {
+      const res = await fetch(state.serverUrl + "/health");
+      const health = await res.json();
+      const age = health.seconds_since_last_command;
+      const timeout = health.watchdog_timeout_s;
+      const fired = age > timeout;
+      setBrainText("brain-tel-watchdog",
+        "quiet " + age.toFixed(1) + "s / " + timeout + "s " + (fired ? "\u2014 motors stopped" : "\u2014 armed"),
+        fired ? "alert" : "safe");
+    } catch (e) {
+      setBrainText("brain-tel-watchdog", "unreachable", "alert");
+    }
+  }
+
+  async function pollBrainOnce() {
+    let status;
+    try {
+      status = await brainApi("GET", "/mission/status");
+    } catch (e) {
+      setBrainText("brain-tel-outcome", "brain unreachable", "alert");
+      stopBrainPolling();
+      showToast("Lost the brain service: " + e.message, "err");
+      return;
+    }
+
+    const wasRunning = state.brainMissionRunning;
+    state.brainMissionRunning = !!status.running;
+    renderBrainStatus(status);
+    updateBrainControls();
+
+    // Observer, not driver: the map and first-person view follow the
+    // robot's own reported frame, exactly as they do when this page is the
+    // one driving. Caught separately from the status call above -- a dead
+    // *robot* is a different failure from a dead *brain*, and reporting one
+    // as the other would send you debugging the wrong process. The
+    // watchdog readout is the one that names this case.
+    if (state.connected) {
+      try {
+        const frame = await fetchFrame();
+        recordObservation(frame);
+        render(frame);
+      } catch (e) { /* robot unreachable -- renderWatchdog() reports it */ }
+    }
+
+    if (wasRunning && !status.running) {
+      const ok = status.outcome === "found" || status.outcome === "room_reached";
+      showToast("Mission " + status.outcome + (status.error ? ": " + status.error : ""),
+        ok ? "ok" : "err");
+      stopBrainPolling();
+    }
+  }
+
+  function startBrainPolling() {
+    stopBrainPolling();
+    state.brainPollTimerId = setInterval(pollBrainOnce, BRAIN_POLL_MS);
+    pollBrainOnce();
+  }
+  function stopBrainPolling() {
+    if (state.brainPollTimerId) clearInterval(state.brainPollTimerId);
+    state.brainPollTimerId = null;
+  }
+
+  function updateBrainControls() {
+    const btn = document.getElementById("btn-brain-mission");
+    const hint = document.getElementById("brain-connect-hint");
+    btn.disabled = !state.brainConnected;
+    btn.textContent = state.brainMissionRunning ? "Stop" : "Start";
+    btn.classList.toggle("active-mode", state.brainMissionRunning);
+    document.getElementById("brain-fault").disabled = state.brainMissionRunning;
+    document.getElementById("brain-target").disabled = state.brainMissionRunning;
+    if (hint) hint.style.display = state.brainConnected ? "none" : "";
+  }
+
+  async function startBrainMission() {
+    // One brain at a time. Two loops driving one robot is the exact
+    // failure the brain service exists to prevent, and the twin should not
+    // be the thing that creates it.
+    stopAuto();
+    stopVisionAutopilot();
+
+    const target = document.getElementById("brain-target").value.trim() || "red backpack";
+    const fault = document.getElementById("brain-fault").value;
+    saveTargetToHistory(target);
+    const btn = document.getElementById("btn-brain-mission");
+    setButtonBusy(btn, true, "Starting\u2026");
+    try {
+      await brainApi("POST", "/mission/start", { target_object: target, fault: fault });
+      state.brainMissionRunning = true;
+      state.brainLogSignature = "";
+      showToast(fault === "none" ? "Mission started on the robot."
+        : "Failsafe drill started: " + fault, fault === "none" ? "ok" : "info");
+      startBrainPolling();
+    } catch (e) {
+      showToast("Could not start: " + e.message, "err");
+    } finally {
+      setButtonBusy(btn, false);
+      updateBrainControls();
+    }
+  }
+
+  async function stopBrainMission() {
+    const btn = document.getElementById("btn-brain-mission");
+    setButtonBusy(btn, true, "Stopping\u2026");
+    try {
+      const res = await brainApi("POST", "/mission/stop");
+      state.brainMissionRunning = false;
+      if (res.status) renderBrainStatus(res.status);
+      showToast("Mission stopped \u2014 and so is the robot.", "ok");
+    } catch (e) {
+      showToast("Could not stop: " + e.message, "err");
+    } finally {
+      setButtonBusy(btn, false);
+      stopBrainPolling();
+      updateBrainControls();
+    }
+  }
+
+  document.getElementById("btn-brain-mission").onclick = function () {
+    if (state.brainMissionRunning) stopBrainMission();
+    else startBrainMission();
+  };
+
+  async function connectBrain(opts) {
+    const silent = !!(opts && opts.silent);
+    const url = document.getElementById("cfg-brain-url").value.trim().replace(/\/$/, "");
+    const statusEl = document.getElementById("brain-connection-status");
+    const btn = document.getElementById("btn-brain-connect");
+    if (!url) {
+      if (!silent) statusEl.textContent = "Enter the brain service's URL first.";
+      return;
+    }
+    state.brainUrl = url;
+    state.brainConnecting = true;
+    setButtonBusy(btn, true, "Connecting\u2026");
+    try {
+      const health = await brainApi("GET", "/health");
+      state.brainConnected = true;
+      prefSet(PREF.brainUrl, url);
+      statusEl.textContent = "Connected to " + url + " \u2014 driving the robot at " +
+        health.robot_url + (health.drills_allowed ? "" : " (drills disabled)");
+      if (!silent) showToast("Connected to the brain service.", "ok");
+      renderRecordStatus();
+      // A mission may already be running -- started from another device, or
+      // before this page was even opened. Pick it up rather than showing
+      // "idle" over a robot that is moving.
+      await pollBrainOnce();
+      if (state.brainMissionRunning) startBrainPolling();
+    } catch (e) {
+      state.brainConnected = false;
+      statusEl.textContent = silent
+        ? "Not connected \u2014 " + url + " didn't respond. Tap Connect to retry."
+        : "Could not reach " + url + " (" + e.message + "). Is control/brain_server.py running?";
+      if (!silent) showToast("Couldn't reach the brain service.", "err");
+    } finally {
+      state.brainConnecting = false;
+      setButtonBusy(btn, false);
+      updateBrainControls();
+    }
+  }
+
+  document.getElementById("btn-brain-connect").onclick = function () { connectBrain(); };
+
+  // ---------- recording a Robot-view walk, for replay (phase S2b) ----------
+  //
+  // Robot view discards every frame the moment its /navigate answer is
+  // rendered. That throws away the only real-pixel material this project
+  // has: a walk through an actual house, in order, with the service's live
+  // answer for each frame. Kept, the same walk can be replayed through the
+  // Python agent (sim/replay_robot.py) as often as you like -- which is how
+  // a prompt gets iterated on without re-walking the house for every change.
+  //
+  // Frames go to the brain service rather than downloading: 60 download
+  // prompts on a phone is not a workflow, and the brain is the process that
+  // wants the material. Recording is off unless the brain is connected and
+  // has it enabled (brain.allow_recording).
+
+  function newWalkName() {
+    const d = new Date();
+    const pad = function (n) { return String(n).padStart(2, "0"); };
+    const target = (state.guidanceTarget || "walk").toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "walk";
+    return target + "-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) +
+      "-" + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+  }
+
+  function recordingActive() {
+    return state.recordWalk && state.brainConnected && state.guidanceMode === "robot";
+  }
+
+  function beginWalkRecording() {
+    if (!recordingActive()) { state.recordWalkName = null; return; }
+    state.recordWalkName = newWalkName();
+    state.recordSaved = 0;
+    state.recordFailed = 0;
+    showToast("Recording this walk as " + state.recordWalkName, "info");
+    renderRecordStatus();
+  }
+
+  // Fire-and-forget: a failed save must never interrupt a walk, and must
+  // never delay the next /navigate call. The count is the feedback.
+  function recordWalkFrame(base64, navigateResult) {
+    if (!recordingActive() || !state.recordWalkName) return;
+    const seq = state.recordSaved + state.recordFailed;
+    brainApi("POST", "/recording/frame", {
+      walk: state.recordWalkName,
+      seq: seq,
+      image_base64: base64,
+      media_type: "image/jpeg",
+      navigate: navigateResult || null,
+    }).then(function () {
+      state.recordSaved += 1;
+      renderRecordStatus();
+    }).catch(function (e) {
+      state.recordFailed += 1;
+      if (state.recordFailed === 1) showToast("Frame not saved: " + e.message, "err");
+      renderRecordStatus();
+    });
+  }
+
+  function endWalkRecording() {
+    if (!state.recordWalkName) return;
+    const name = state.recordWalkName, saved = state.recordSaved;
+    state.recordWalkName = null;
+    renderRecordStatus();
+    if (saved > 0) {
+      showToast(saved + " frames saved as " + name + " -- replay it with " +
+        "python -m tests.demo_replay_mission", "ok");
+    }
+  }
+
+  function renderRecordStatus() {
+    const sub = document.getElementById("record-walk-sub");
+    if (!sub) return;
+    if (!state.brainConnected) {
+      sub.textContent = "Needs the brain service connected \u2014 set it up in Settings.";
+      return;
+    }
+    if (state.recordWalkName) {
+      sub.textContent = "Recording " + state.recordWalkName + " \u2014 " +
+        state.recordSaved + " frames saved" +
+        (state.recordFailed ? ", " + state.recordFailed + " failed" : "") + ".";
+      return;
+    }
+    sub.textContent = "Saves each frame to the brain service, so the same walk " +
+      "can be replayed through the Python agent as many times as you like.";
+  }
+
+  function updateRecordRow() {
+    const row = document.getElementById("record-walk-row");
+    if (row) row.style.display = state.guidanceMode === "robot" ? "" : "none";
+    renderRecordStatus();
+  }
+
+  document.getElementById("cfg-record-walk").addEventListener("change", function () {
+    state.recordWalk = this.checked;
+    prefSet(PREF.recordWalk, this.checked ? "1" : "0");
+    renderRecordStatus();
+  });
 
   // ---------- AR camera guidance: real phone camera, human is the actuator ----------
   // The inverse of Vision Autopilot -- here the *person* holding the phone
@@ -3285,6 +3776,9 @@
       renderGuidanceBudget();
 
       if (isRobot) {
+        // The frame and the answer it just got, kept together for replay.
+        recordWalkFrame(base64, result);
+
         // No found-pause here, deliberately. Guide pauses on arrival
         // because the person has arrived and further calls are waste;
         // robot view is a continuous readout of decisions, and the run
@@ -3517,6 +4011,7 @@
     // blank frame / NaN math (0 * Infinity), so wait for it explicitly
     // rather than assuming srcObject being set means the video is ready.
     await waitForGuidanceVideoReady();
+    beginWalkRecording();
     guidanceStep();
   }
 
@@ -3534,6 +4029,7 @@
   // (visibilitychange) pauses the analysis timer below but leaves the
   // camera live, per PLAN-ar-guidance.md.
   function stopGuidance() {
+    endWalkRecording();
     state.guidanceRunning = false;
     if (state.guidanceTimerId) clearTimeout(state.guidanceTimerId);
     state.guidanceTimerId = null;
@@ -3663,6 +4159,7 @@
     document.getElementById("guide-mode-hint").innerHTML = isRobot
       ? "<b>Robot view</b> shows the move the <i>robot</i> would make from where you\u2019re standing \u2014 nothing moves. Hold the phone low, about camera height."
       : "<b>Guide me</b> steers <i>you</i> to the object with an arrow.";
+    updateRecordRow();
     try { localStorage.setItem("guidanceMode", mode); } catch (e) { /* private mode */ }
   }
   document.getElementById("btn-mode-guide").onclick = function () { setGuidanceMode("guide"); };
@@ -3939,6 +4436,7 @@
   sizeFpvCanvas();
   renderStaticMapOnly();
   renderFpvPlaceholder();
+  setEmptyState(document.getElementById("brain-log"), BRAIN_EMPTY[0], BRAIN_EMPTY[1]);
   setEmptyState(document.getElementById("log"), LOG_EMPTY[0], LOG_EMPTY[1]);
   setEmptyState(document.getElementById("autopilot-log"), AUTOPILOT_EMPTY[0], AUTOPILOT_EMPTY[1]);
 
@@ -3958,6 +4456,7 @@
 
   const cfgServerUrlEl = document.getElementById("cfg-server-url");
   const cfgUrlEl = document.getElementById("cfg-url");
+  const cfgBrainUrlEl = document.getElementById("cfg-brain-url");
 
   // If this page is being served BY robot/server.py itself (the ECS
   // deployment, or local `uvicorn robot.server:app`), rather than opened
@@ -3978,12 +4477,20 @@
     cfgUrlEl.value = isLocalHost
       ? location.protocol + "//" + location.hostname + ":8080"
       : location.protocol + "//" + location.hostname;
+
+    // Same convention for the brain: it runs alongside the robot server on
+    // :8001 (PLAN-brain-relocation.md's topology), so the page it is served
+    // by knows where to look. Only a starting point -- the brain is
+    // optional, and it may be on another machine entirely.
+    cfgBrainUrlEl.value = location.protocol + "//" + location.hostname + ":8001";
   }
 
   const savedServerUrl = prefGet(PREF.serverUrl);
   const savedVisionUrl = prefGet(PREF.visionUrl);
+  const savedBrainUrl = prefGet(PREF.brainUrl);
   if (savedServerUrl) cfgServerUrlEl.value = savedServerUrl;
   if (savedVisionUrl) cfgUrlEl.value = savedVisionUrl;
+  if (savedBrainUrl) cfgBrainUrlEl.value = savedBrainUrl;
 
   // The vision URL was previously the one setting nothing remembered, so
   // it had to be re-typed after every reload even though its secret was
@@ -3994,6 +4501,9 @@
   });
   cfgServerUrlEl.addEventListener("change", function () {
     prefSet(PREF.serverUrl, this.value.trim());
+  });
+  cfgBrainUrlEl.addEventListener("change", function () {
+    prefSet(PREF.brainUrl, this.value.trim());
   });
 
   const savedTab = LEGACY_TAB_ALIASES[prefGet(PREF.tab)] || prefGet(PREF.tab);
@@ -4382,6 +4892,7 @@
       robotSecret: document.getElementById("cfg-server-secret").value.trim(),
       visionUrl: document.getElementById("cfg-url").value.trim(),
       serverUrl: document.getElementById("cfg-server-url").value.trim().replace(/\/$/, ""),
+      brainUrl: document.getElementById("cfg-brain-url").value.trim().replace(/\/$/, ""),
     };
   }
 
@@ -4410,6 +4921,9 @@
     // deployment and the recipient derives that themselves, so it only
     // earns its payload length when pointed somewhere else.
     if (p.serverUrl && p.serverUrl !== location.origin) params.set("serverUrl", p.serverUrl);
+    // Only worth carrying once someone has actually connected to a brain:
+    // an unused derived default would cost QR payload for nothing.
+    if (p.brainUrl && prefGet(PREF.brainUrl)) params.set("brainUrl", p.brainUrl);
     const qs = params.toString();
     return location.origin + location.pathname + (qs ? "?" + qs : "");
   }
@@ -4556,11 +5070,13 @@
       // scanning is to have nothing left to type.
       const urlVisionUrl = params.get("visionUrl");
       const urlServerUrl = params.get("serverUrl");
+      const urlBrainUrl = params.get("brainUrl");
       if (urlSecret) localStorage.setItem("vp_cfg_secret", urlSecret);
       if (urlRobotSecret) localStorage.setItem("vp_cfg_server_secret", urlRobotSecret);
       if (urlVisionUrl) localStorage.setItem(PREF.visionUrl, urlVisionUrl);
       if (urlServerUrl) localStorage.setItem(PREF.serverUrl, urlServerUrl);
-      if (urlSecret || urlRobotSecret || urlVisionUrl || urlServerUrl) {
+      if (urlBrainUrl) localStorage.setItem(PREF.brainUrl, urlBrainUrl);
+      if (urlSecret || urlRobotSecret || urlVisionUrl || urlServerUrl || urlBrainUrl) {
         history.replaceState(null, "", location.pathname + location.hash);
       }
 
@@ -4574,6 +5090,7 @@
       // and read localStorage before these query params were stored.
       if (urlVisionUrl) document.getElementById("cfg-url").value = urlVisionUrl;
       if (urlServerUrl) document.getElementById("cfg-server-url").value = urlServerUrl;
+      if (urlBrainUrl) document.getElementById("cfg-brain-url").value = urlBrainUrl;
 
       // Also remember anything a tester types in by hand, not just what
       // arrived via the link, so a manual correction sticks too.
@@ -4605,6 +5122,19 @@
   // (see connect()'s `silent`); the manual button remains the retry path.
   if (document.getElementById("cfg-server-url").value.trim()) {
     connect({ silent: true });
+  }
+
+  // The brain is optional, so its silent attempt is only made when a URL
+  // was actually remembered from a previous session -- the derived
+  // localhost:8001 default should not produce a failure message on every
+  // load for the many setups that run no brain service at all.
+  updateBrainControls();
+  const recordToggleEl = document.getElementById("cfg-record-walk");
+  state.recordWalk = prefGet(PREF.recordWalk) === "1";
+  recordToggleEl.checked = state.recordWalk;
+  updateRecordRow();
+  if (prefGet(PREF.brainUrl)) {
+    connectBrain({ silent: true });
   }
 })();
 </script>

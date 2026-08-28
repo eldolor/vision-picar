@@ -18,3 +18,55 @@ server:
   # address; tighten this if the server is ever exposed more broadly.
   allowed_origins:
     - "*"
+
+# The brain (control/brain_server.py). It reaches the robot only over
+# HTTP, so this base URL is the whole difference between running the
+# brain on the Pi (localhost) and on the MacBook (the Pi's LAN IP) --
+# see PLAN-brain-relocation.md.
+brain:
+  robot_url: http://127.0.0.1:8000
+
+  # Cloud vision service, for the Phase S2b Python vision policy. Not
+  # read by anything yet.
+  vision_url: ""
+
+  # The reference backpack hunt takes 83 steps with the frontier policy.
+  # Under a vision policy each step is a paid call -- lower this then.
+  max_steps: 120
+  min_distance_cm: 30.0 # brain-side pre-check; the robot server re-checks
+  request_timeout_s: 10.0
+
+  # Failsafe B3.2 -- the AWS link. A vision call that hangs or errors this
+  # many times in a row stops the robot and ends the mission.
+  vision_timeout_s: 20.0
+  max_vision_failures: 3
+
+  # Failsafe B3.3 -- a brain loop that is alive but stuck. A tick that
+  # doesn't return in this long stops the robot and ends the mission.
+  tick_timeout_s: 30.0
+  # Extra pause between steps. 0 runs as fast as the loop allows, which in
+  # simulation is far too fast to watch: MockRobot._settle() is a no-op
+  # (Phase S4 puts time in the loop), so a whole 83-step mission finishes in
+  # about half a second and the twin only ever shows you the result. Pacing
+  # it here makes the mission observable, which is the point of running it
+  # from the twin at all. On hardware a move takes real seconds and this can
+  # go back to 0. The library default (control/brain_config.py) stays 0 so
+  # tests are not slowed by a display concern.
+  tick_interval_s: 0.25
+
+  # Failsafe drills (control/drills.py): POST /mission/start accepts a
+  # `fault` that breaks one thing on purpose, so the twin can show B3.2 and
+  # B3.3 firing -- neither can be provoked by pressing anything otherwise.
+  # Every drill is fail-safe (it can only end a mission with the robot
+  # stopped). Turn this off if the brain is ever reachable beyond the LAN:
+  # anyone who can reach it could otherwise end someone else's mission.
+  allow_drills: true
+
+  # Recording: the Guide tab's Robot view can save the frames of a walk
+  # here, so the same walk can be replayed through the Python brain
+  # (sim/replay_robot.py) as many times as you like without walking it
+  # again. Written relative to the repo root; .gitignore'd.
+  allow_recording: true
+  recording_dir: recordings
+  drill_vision_timeout_s: 2.0 # shortened so a demo takes seconds, not a minute
+  drill_tick_timeout_s: 3.0
