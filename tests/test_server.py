@@ -2,6 +2,7 @@
 Run with: pytest tests/test_server.py -v
 """
 
+import pytest
 from fastapi.testclient import TestClient
 from robot.server import create_app, watchdog_should_stop
 
@@ -9,6 +10,19 @@ from robot.server import create_app, watchdog_should_stop
 def make_client():
     app = create_app()
     return TestClient(app)
+
+
+@pytest.fixture
+def teleop_config(tmp_path):
+    """A robot.yaml pointed at mode: teleop (PLAN-teleop-robot.md), for
+    tests that need TeleopRobot rather than the default MockRobot."""
+    config = tmp_path / "robot.yaml"
+    config.write_text("mode: teleop\n")
+    return str(config)
+
+
+def make_teleop_client(teleop_config):
+    return TestClient(create_app(teleop_config))
 
 
 def test_forward_action_executes_when_clear():
@@ -47,6 +61,60 @@ def test_frame_endpoint():
         assert "room" in resp.json()
 
 
+def test_teleop_frame_round_trips_through_frame_endpoint(teleop_config):
+    """Proves T2's whole point: GET /frame needs no changes at all -- it's
+    already just robot.get_camera_frame(), whatever the backend is."""
+    with make_teleop_client(teleop_config) as client:
+        pushed = client.post(
+            "/teleop/frame", json={"image_base64": "BASE64DATA", "media_type": "image/jpeg"}
+        )
+        assert pushed.status_code == 200
+        assert pushed.json()["received"] is True
+
+        pulled = client.get("/frame")
+        assert pulled.status_code == 200
+        assert pulled.json()["image_base64"] == "BASE64DATA"
+
+
+def test_teleop_frame_rejected_when_not_in_teleop_mode():
+    """A mode: sim (or hardware) server has nothing to push a frame into
+    -- must fail loudly, not silently drop it."""
+    with make_client() as client:
+        resp = client.post(
+            "/teleop/frame", json={"image_base64": "BASE64DATA"}
+        )
+        assert resp.status_code == 400
+
+
+def test_frame_endpoint_reports_a_stalled_teleop_robot_clearly(teleop_config):
+    """Found via a real deployment: an uncaught TeleopStall reached callers
+    as an opaque 500, and RemoteRobot's error formatting swallowed the
+    actual message by the time it reached a mission's log. GET /frame must
+    translate any get_camera_frame() failure into a specific response --
+    without importing TeleopStall itself, so this file stays backend-
+    agnostic (see the route's own comment)."""
+    with make_teleop_client(teleop_config) as client:
+        resp = client.get("/frame")
+        assert resp.status_code == 503
+        assert "no frame has ever been pushed" in resp.json()["detail"]
+
+
+def test_route_prefix_env_var_prepends_every_route(monkeypatch):
+    """PLAN-teleop-robot.md: a second robot/server.py instance shares the
+    twin's load balancer by claiming a distinct path prefix instead of the
+    twin's already-claimed literal paths. Unset (all tests above), this
+    changes nothing -- confirmed here rather than assumed."""
+    monkeypatch.setenv("ROUTE_PREFIX", "/teleop-robot")
+    with make_client() as client:
+        assert client.get("/teleop-robot/").status_code == 200
+        assert client.get("/teleop-robot/health").status_code == 200
+        assert client.post("/teleop-robot/stop").status_code == 200
+        # The bare, unprefixed paths must not also work -- otherwise this
+        # instance would collide with the twin's own ListenerRule claims.
+        assert client.get("/health").status_code == 404
+        assert client.post("/stop").status_code == 404
+
+
 def test_health_endpoint_reports_command_age():
     with make_client() as client:
         client.post("/stop")
@@ -55,6 +123,15 @@ def test_health_endpoint_reports_command_age():
         assert body["status"] == "ok"
         assert body["seconds_since_last_command"] < 1.0
         assert "watchdog_timeout_s" in body
+        assert body["mode"] == "sim"
+
+
+def test_health_reports_teleop_mode(teleop_config):
+    """A client (Robot view's "drive via brain" start check) needs to tell
+    a mode: sim server apart from a mode: teleop one -- both answer /health
+    the same otherwise."""
+    with make_teleop_client(teleop_config) as client:
+        assert client.get("/health").json()["mode"] == "teleop"
 
 
 def test_safety_blocks_forward_over_wifi_same_as_local_agent():
@@ -94,10 +171,14 @@ def test_protected_routes_require_secret_when_set(monkeypatch):
         )
         assert wrong_header.status_code == 401
 
-        for method, path in [("post", "/action"), ("post", "/stop"), ("get", "/distance"), ("get", "/frame")]:
+        bodies = {"/action": {"action": "STOP"}, "/teleop/frame": {"image_base64": "X"}}
+        for method, path in [
+            ("post", "/action"), ("post", "/stop"), ("get", "/distance"),
+            ("get", "/frame"), ("post", "/teleop/frame"),
+        ]:
             resp = getattr(client, method)(
                 path,
-                **({"json": {"action": "STOP"}} if path == "/action" else {}),
+                **({"json": bodies[path]} if path in bodies else {}),
                 headers={"x-app-secret": "wrong"},
             )
             assert resp.status_code == 401, f"{path} did not reject a wrong secret"

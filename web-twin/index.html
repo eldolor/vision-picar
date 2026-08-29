@@ -572,18 +572,28 @@
      The brief was "make it feel robotic". The rule applied throughout: every
      element displays real machine state, because a HUD reads as a machine
      when it looks like it is reporting one, not when it has scanlines. So
-     there is no film grain, no tint and no scanline layer -- this tool exists
-     to judge whether the model read the room correctly, and chrome over the
-     video works directly against that. Everything lives at the edges; the
-     centre stays clear apart from a 1px axis reticle.
+     there is no film grain, no tint and no decorative scanline layer -- this
+     tool exists to judge whether the model read the room correctly, and
+     chrome over the video works directly against that. Everything lives at
+     the edges; the centre stays clear apart from a 1px axis reticle.
 
      obstacle_ahead in particular has been in /navigate's response since it
-     was written and was displayed nowhere until now. */
+     was written and was displayed nowhere until now.
+
+     Corner brackets and the capture scanline (below) are shared with Guide
+     mode -- both are legitimate under the same rule (the scanline reports a
+     real event, the brackets are the one purely decorative exception, cheap
+     enough to earn its place in both modes). Reticle, countdown, telemetry,
+     and the obstacle banner stay Robot-only: they read out fields
+     (obstacle_ahead, target_reached, exact zone) that /guidance's
+     human-facing schema doesn't have, so showing them in Guide would either
+     be blank or fabricated. */
   #robot-hud { position: absolute; inset: 0; display: none; pointer-events: none; }
   #robot-hud.visible { display: block; }
 
   /* Corner brackets: the one purely decorative element here, and the cheapest
-     possible "you are looking through an instrument" signal. */
+     possible "you are looking through an instrument" signal. Shown in both
+     Guide and Robot view -- see the note above. */
   .robot-bracket { position: absolute; width: 26px; height: 26px; opacity: .85; }
   .robot-bracket::before, .robot-bracket::after {
     content: ""; position: absolute; background: rgba(255,255,255,0.9);
@@ -613,9 +623,11 @@
   .robot-reticle::before { width: 1px; height: 100%; transform: translate(-50%,-50%); }
   .robot-reticle::after  { height: 1px; width: 100%;  transform: translate(-50%,-50%); }
 
-  /* Sweeps once per captured frame. This is the only thing on screen that
-     makes the 2.5s cycle visible -- you see the robot look, instead of
-     guessing when a paid call happened. */
+  /* Sweeps once per captured frame -- in both Guide and Robot view, see
+     robotSignalCapture(). This is the only thing on screen that makes the
+     analysis cycle visible -- you see it look, instead of guessing when a
+     paid call happened. The ".robot-" prefix predates Guide getting one too;
+     not renamed, to keep this diff to the frame itself. */
   .robot-scanline {
     position: absolute; left: 0; right: 0; top: 0; height: 2px; opacity: 0;
     background: linear-gradient(to right, transparent, var(--accent-primary), transparent);
@@ -1110,6 +1122,18 @@
         </span>
         <input type="checkbox" id="cfg-record-walk" class="switch">
       </label>
+      <label class="switch-row" for="cfg-drive-via-brain" id="drive-via-brain-row" style="display:none;">
+        <span class="switch-copy">
+          <span class="switch-title">Drive via brain</span>
+          <span class="switch-sub" id="drive-via-brain-sub">
+            Runs a real mission on the brain service (PLAN-teleop-robot.md)
+            instead of a one-off /navigate call -- mission memory, the step
+            budget and the failsafes all apply to your walk. Turns off
+            recording; the two use these frames differently.
+          </span>
+        </span>
+        <input type="checkbox" id="cfg-drive-via-brain" class="switch">
+      </label>
       <div class="btn-row" style="margin-top:8px;">
         <input type="text" id="guidance-target" class="text-input" value="red backpack" list="target-history-list" style="flex:2;">
         <button id="btn-guidance" class="primary" style="flex:1;">Start</button>
@@ -1304,11 +1328,14 @@
         <div class="robot-zone" data-zone="center"></div>
         <div class="robot-zone" data-zone="right"></div>
       </div>
+      <!-- Shared with Robot view (see the CSS comment above #robot-hud):
+           the corner brackets and capture scanline show in both modes, so
+           they sit outside #robot-hud's mode-gated visibility. -->
+      <div class="robot-bracket tl"></div><div class="robot-bracket tr"></div>
+      <div class="robot-bracket bl"></div><div class="robot-bracket br"></div>
+      <div class="robot-scanline" id="robot-scanline"></div>
       <div id="robot-hud">
-        <div class="robot-bracket tl"></div><div class="robot-bracket tr"></div>
-        <div class="robot-bracket bl"></div><div class="robot-bracket br"></div>
         <div class="robot-reticle"></div>
-        <div class="robot-scanline" id="robot-scanline"></div>
         <div class="robot-countdown" id="robot-countdown"><span></span></div>
         <div class="robot-telemetry" id="robot-telemetry"></div>
         <div class="robot-obstacle" id="robot-obstacle">&#9650; OBSTACLE AHEAD</div>
@@ -1397,6 +1424,7 @@
         <input type="text" id="cfg-brain-url" class="text-input" placeholder="http://192.168.1.x:8001" style="flex:2;">
         <button id="btn-brain-connect" class="primary" style="flex:1;">Connect</button>
       </div>
+      <input type="text" id="cfg-brain-secret" class="text-input settings-input" placeholder="x-app-secret value (if this deployment requires one)">
       <div class="hint" id="brain-connection-status" role="status" aria-live="polite">Not connected.</div>
       <details class="disclosure">
         <summary><span class="disclosure-caret" data-icon="chevronRight"></span>Setting this up</summary>
@@ -1406,9 +1434,12 @@
           finished robot, on any machine during development. It reaches the
           robot over HTTP too, so the two do not have to share a machine;
           <code>brain.robot_url</code> in <code>config/robot.yaml</code> is
-          the only thing that decides where it looks. This field re-uses the
-          shared secret from the robot connection above, since both
-          processes read the same <code>APP_SHARED_SECRET</code>. Remembered
+          the only thing that decides where it looks. On a Pi/MacBook dev
+          setup this usually shares the robot connection's secret above
+          (both processes read the same <code>APP_SHARED_SECRET</code>), but
+          the two can be independently deployed with their own generated
+          secrets (e.g. two separate ECS services) &mdash; this field is
+          always sent as-is, never assumed to match the one above. Remembered
           on this device.
         </div>
       </details>
@@ -1666,11 +1697,17 @@
     guidanceConsecutiveSkips: 0, guidanceErrorStreak: 0,
     connecting: false,
     // Remote brain (phase B4): this page observes a mission it does not run.
-    brainUrl: "", brainConnected: false, brainConnecting: false,
+    brainUrl: "", brainSecret: "", brainConnected: false, brainConnecting: false,
     brainMissionRunning: false, brainPollTimerId: null, brainLogSignature: "",
     watchdogTimerId: null,
     // Recording a Robot-view walk to the brain, for replay (S2b).
     recordWalk: false, recordWalkName: null, recordSaved: 0, recordFailed: 0,
+    // Driving Robot view through a real MissionRunner mission instead of a
+    // one-off /navigate call (PLAN-teleop-robot.md, Phase T3). driveViaBrain
+    // is the live toggle; guidanceViaBrain is latched at Start so Stop knows
+    // whether *this* running session actually started a brain mission, even
+    // if the toggle or brain connection changes mid-walk.
+    driveViaBrain: false, guidanceViaBrain: false,
   };
 
   // ---------- persisted preferences ----------
@@ -1694,6 +1731,7 @@
     rotateHintDismissed: "vp_guide_rotate_dismissed",
     debugReadouts: "vp_debug_readouts",
     recordWalk: "vp_record_walk",
+    driveViaBrain: "vp_drive_via_brain",
   };
   function prefGet(key) {
     try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -2646,10 +2684,21 @@
   const BRAIN_POLL_MS = 700;
   const BRAIN_EMPTY = ["bot", "No mission yet \u2014 Start hands the loop to the robot."];
 
+  // Distinct from authHeaders() (robot/server.py's secret) -- the brain is
+  // an independently deployable service with its own APP_SHARED_SECRET
+  // (cloudformation/brain.yaml / teleop-brain.yaml each generate their own),
+  // not necessarily the robot's. Conflating the two meant every brain call
+  // silently sent the *robot's* secret, which 401s the moment the two
+  // differ -- as they always do once each is its own ECS service.
+  function brainAuthHeaders(extra) {
+    const headers = Object.assign({}, extra);
+    if (state.brainSecret) headers["x-app-secret"] = state.brainSecret;
+    return headers;
+  }
   async function brainApi(method, path, body) {
     const res = await fetch(state.brainUrl + path, {
       method: method,
-      headers: authHeaders(body ? { "content-type": "application/json" } : {}),
+      headers: brainAuthHeaders(body ? { "content-type": "application/json" } : {}),
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(function () { return {}; });
@@ -2870,6 +2919,7 @@
       return;
     }
     state.brainUrl = url;
+    state.brainSecret = document.getElementById("cfg-brain-secret").value.trim();
     state.brainConnecting = true;
     setButtonBusy(btn, true, "Connecting\u2026");
     try {
@@ -2880,6 +2930,7 @@
         health.robot_url + (health.drills_allowed ? "" : " (drills disabled)");
       if (!silent) showToast("Connected to the brain service.", "ok");
       renderRecordStatus();
+      renderDriveViaBrainStatus();
       // A mission may already be running -- started from another device, or
       // before this page was even opened. Pick it up rather than showing
       // "idle" over a robot that is moving.
@@ -2925,6 +2976,16 @@
 
   function recordingActive() {
     return state.recordWalk && state.brainConnected && state.guidanceMode === "robot";
+  }
+
+  // Phase T3 of PLAN-teleop-robot.md: Robot view pushes frames into a real
+  // MissionRunner mission (policy: "vision") instead of calling /navigate
+  // itself. Same gating shape as recordingActive() -- both need a brain and
+  // Robot view specifically -- and the two are mutually exclusive (see the
+  // checkbox handlers below): recording saves a /navigate reply per frame,
+  // which driving via brain never produces.
+  function driveViaBrainActive() {
+    return state.driveViaBrain && state.brainConnected && state.guidanceMode === "robot";
   }
 
   function beginWalkRecording() {
@@ -2994,7 +3055,42 @@
   document.getElementById("cfg-record-walk").addEventListener("change", function () {
     state.recordWalk = this.checked;
     prefSet(PREF.recordWalk, this.checked ? "1" : "0");
+    if (this.checked) {
+      // Mutually exclusive with driving via brain -- see driveViaBrainActive().
+      state.driveViaBrain = false;
+      prefSet(PREF.driveViaBrain, "0");
+      document.getElementById("cfg-drive-via-brain").checked = false;
+    }
     renderRecordStatus();
+  });
+
+  function renderDriveViaBrainStatus() {
+    const sub = document.getElementById("drive-via-brain-sub");
+    if (!sub) return;
+    sub.textContent = state.brainConnected
+      ? "Runs a real mission on the brain service (PLAN-teleop-robot.md) "
+        + "instead of a one-off /navigate call -- mission memory, the step "
+        + "budget and the failsafes all apply to your walk."
+      : "Needs the brain service connected — set it up in Settings.";
+  }
+
+  function updateDriveViaBrainRow() {
+    const row = document.getElementById("drive-via-brain-row");
+    if (row) row.style.display = state.guidanceMode === "robot" ? "" : "none";
+    renderDriveViaBrainStatus();
+  }
+
+  document.getElementById("cfg-drive-via-brain").addEventListener("change", function () {
+    state.driveViaBrain = this.checked;
+    prefSet(PREF.driveViaBrain, this.checked ? "1" : "0");
+    if (this.checked) {
+      // Mutually exclusive with recording -- see driveViaBrainActive().
+      state.recordWalk = false;
+      prefSet(PREF.recordWalk, "0");
+      document.getElementById("cfg-record-walk").checked = false;
+      renderRecordStatus();
+    }
+    renderDriveViaBrainStatus();
   });
 
   // ---------- AR camera guidance: real phone camera, human is the actuator ----------
@@ -3016,8 +3112,17 @@
   // snapping -- canvas would need a hand-rolled animation loop to get the
   // same smoothness.
 
-  const GUIDANCE_THROTTLE_MS = 1000;
-  const ROBOT_THROTTLE_MS = 2500; // matches Vision Autopilot's step cadence
+  // 500ms since /guidance moved to Nova Lite (~1.0-1.6s/call, measured
+  // against a real photo) -- at Sonnet's ~2.5-3.4s/call this throttle was
+  // noise next to the call itself; at Nova Lite's latency it's now a real
+  // fraction of the cycle, so halving it actually tightens the loop
+  // (~2.2s -> ~1.7s/cycle at the measured mean). /navigate moved to the
+  // same model on 2026-08-28 (see vision_core.py's "Per-route models"
+  // note -- a discussed trade-off, not an independently re-measured one),
+  // so Robot view shares this throttle now too instead of pacing itself
+  // to Sonnet's slower round trip.
+  const GUIDANCE_THROTTLE_MS = 500;
+  const ROBOT_THROTTLE_MS = 500;
   const GUIDANCE_MAX_CAPTURE_DIM = 960; // longest edge, px -- smaller upload + faster inference
   // Anthropic downscales images server-side above ~1568px on the long
   // edge anyway (see Claude's vision docs), so sending a full phone-camera
@@ -3076,6 +3181,65 @@
     });
   }
 
+  // ---- drive via brain (Phase T3, PLAN-teleop-robot.md) ----
+  // The alternative to callGuidanceEndpoint() above when
+  // driveViaBrainActive(): instead of a one-off /navigate call, each frame
+  // is pushed into sim/teleop_robot.py's TeleopRobot (via robot/server.py,
+  // the same server the D-pad and Sim tab already use) and the decision is
+  // read back from control/brain_server.py's real MissionRunner -- the
+  // exact loop a PiCar will run, not a simulation of it.
+
+  function pushTeleopFrame(base64) {
+    return apiPost("/teleop/frame", { image_base64: base64, media_type: "image/jpeg" });
+  }
+
+  // Reshapes a GET /mission/status payload into the {action, reasoning,
+  // target_reached, target_visible, target_direction, obstacle_ahead, error}
+  // shape callGuidanceEndpoint()'s /navigate reply has -- so
+  // renderRobotOverlay/renderRobotStatus/renderRobotTelemetry/announceRobot
+  // and guidanceStep()'s found-streak-to-pause logic all keep working
+  // unchanged, whichever source produced the "result". Not a perfect
+  // translation: MissionRunner records a *decision*, not the per-frame
+  // zone/obstacle facts that produced it, so target_visible/target_direction/
+  // obstacle_ahead have nothing honest to report and stay unset. The raw
+  // status rides along as _missionStatus for the fields worth showing that
+  // /navigate never had (outcome, vision_failures) -- see
+  // renderRobotTelemetry.
+  function missionStatusToRobotResult(status) {
+    const arrived = status.outcome === "found" || status.outcome === "room_reached";
+    if (!status.running && !arrived) {
+      // Mission ended without finding the target (stopped/failed/max_steps).
+      // Reported as an error so the existing error branches (caption,
+      // telemetry, the screen-reader announcement) show it exactly like a
+      // lost /navigate connection would -- including a live B3.2/T1-stall
+      // failsafe firing.
+      return { error: status.error || ("mission ended: " + status.outcome), _missionStatus: status };
+    }
+    return {
+      action: status.last_action,
+      reasoning: status.last_reasoning || "",
+      target_reached: arrived,
+      target_visible: false,
+      target_direction: null,
+      obstacle_ahead: false,
+      _missionStatus: status,
+    };
+  }
+
+  async function driveViaBrainStep(base64) {
+    await pushTeleopFrame(base64);
+    const status = await brainApi("GET", "/mission/status");
+    if (!status.running) {
+      // The mission ended (found, room_reached, stopped, failed or
+      // max_steps) -- nothing left to push frames into. Reuses the same
+      // pause the found-streak logic already drives, rather than a second
+      // stop mechanism; "Resume searching" starts a fresh call loop, not a
+      // fresh mission, so this stays a dead end until Stop/Start.
+      pauseGuidanceSearch();
+    }
+    return missionStatusToRobotResult(status);
+  }
+
   // ---- overlay rendering: DOM/SVG elements positioned via CSS, not canvas ----
 
   const GUIDANCE_ZONE_OFFSET = { far_left: -34, left: -18, center: 0, right: 18, far_right: 34 };
@@ -3120,9 +3284,10 @@
   }
 
   // Fired at the moment a frame is actually captured and sent, so the sweep
-  // marks a real event rather than running on a decorative timer.
+  // marks a real event rather than running on a decorative timer. Runs in
+  // both modes -- the scanline element itself lives outside #robot-hud now,
+  // so there's no mode gate here to match.
   function robotSignalCapture() {
-    if (state.guidanceMode !== "robot") return;
     restartRobotAnimation(robotScanline, "sweep");
   }
 
@@ -3140,13 +3305,25 @@
       el.innerHTML = "<div><b>ERR</b><span class=\"v-alert\">LINK</span></div>";
       return;
     }
-    const vis = result.target_visible
+    // Driving via brain (Phase T3): missionStatusToRobotResult() has no
+    // per-frame zone/obstacle facts to report -- MissionRunner records a
+    // decision, not the reading that produced it -- so show that honestly
+    // as N/A rather than a false CLEAR/NO that looks like a confirmed read.
+    const mission = result._missionStatus;
+    const vis = mission ? "N/A" : result.target_visible
       ? "YES &middot; " + String(result.target_direction || "?").replace("_", " ")
       : "NO";
-    const obs = result.obstacle_ahead
+    const obs = mission ? "N/A" : result.obstacle_ahead
       ? '<span class="v-alert">BLOCKED</span>' : '<span class="v-safe">CLEAR</span>';
     const reached = result.target_reached === true
       ? '<div><b>STA</b><span class="v-safe">REACHED</span></div>' : "";
+    // Fields /navigate never had: MissionRunner's own outcome and the B3.2
+    // failure count, so a live failsafe firing is visible here too.
+    const brainRow = mission
+      ? "<div><b>OUT</b>" + escapeHtml(mission.outcome || "running") + "</div>" +
+        "<div><b>VF</b>" + String(mission.vision_failures || 0) +
+        (mission.vision_failures ? '<span class="v-alert"> !</span>' : "") + "</div>"
+      : "";
     el.innerHTML =
       "<div><b>TGT</b>" + escapeHtml(state.guidanceTarget || "--") + "</div>" +
       "<div><b>ACT</b>" + escapeHtml(result.action || "--") + "</div>" +
@@ -3154,7 +3331,7 @@
       "<div><b>OBS</b>" + obs + "</div>" +
       "<div><b>SEQ</b>" + String(state.guidanceCallCount).padStart(3, "0") +
         "/" + String(guidanceCallCap()).padStart(3, "0") + "</div>" +
-      reached;
+      brainRow + reached;
     document.getElementById("robot-obstacle")
       .classList.toggle("visible", result.obstacle_ahead === true);
   }
@@ -3270,7 +3447,29 @@
     { rotation: 0, icon: "chevronRight", caption: "Pan right to search", edgeGlow: "right" },
     { rotation: 90, icon: "chevronDown", caption: "Tilt down, then keep panning", edgeGlow: null },
   ];
+
+  // Real-device feedback (Esa/Joyce): a target centered in frame, then
+  // panned past, made the sweep above keep going the *same* direction it
+  // always starts in (right, then down) with no idea the target had just
+  // been seen -- for a seated user, "tilt down" means pointing at your
+  // own lap. Bridge the gap: remember the last edge zone (not center --
+  // that tells us nothing directional) the target was actually seen at,
+  // and for a short grace window after it's lost, point back that way
+  // instead of restarting the generic room sweep from scratch. Falls
+  // through to the normal sweep once the grace window expires, in case
+  // the target moved and the last-seen direction is now stale.
+  const GUIDANCE_LOST_GRACE_TICKS = 3; // ~5s at the 500ms throttle + Nova Lite's ~1.2s call
+  let guidanceLastEdgePosition = null;
+  const GUIDANCE_LOST_PHASES = {
+    far_left: { rotation: 180, icon: "chevronLeft", caption: "Lost it — go back left", edgeGlow: "left" },
+    left: { rotation: 180, icon: "chevronLeft", caption: "Lost it — go back left", edgeGlow: "left" },
+    right: { rotation: 0, icon: "chevronRight", caption: "Lost it — go back right", edgeGlow: "right" },
+    far_right: { rotation: 0, icon: "chevronRight", caption: "Lost it — go back right", edgeGlow: "right" },
+  };
   function currentGuidanceScanPhase() {
+    if (guidanceLastEdgePosition && state.guidanceNotVisibleStreak <= GUIDANCE_LOST_GRACE_TICKS) {
+      return GUIDANCE_LOST_PHASES[guidanceLastEdgePosition];
+    }
     const idx = Math.floor(state.guidanceNotVisibleStreak / GUIDANCE_SCAN_PHASE_TICKS) % GUIDANCE_SCAN_PHASES.length;
     return GUIDANCE_SCAN_PHASES[idx];
   }
@@ -3341,6 +3540,7 @@
     }
 
     guidanceLastNormBox = null; // left the found state -- don't blend across this gap either
+    if (GUIDANCE_LOST_PHASES[result.position]) guidanceLastEdgePosition = result.position;
     const offset = GUIDANCE_ZONE_OFFSET[result.position] || 0;
     const rotation = GUIDANCE_ZONE_ROTATION[result.position] || -90;
     const scale = GUIDANCE_ZONE_SCALE[result.position] || 1;
@@ -3374,9 +3574,27 @@
     FORWARD: "chevronUp", LEFT: "chevronLeft", RIGHT: "chevronRight",
     REVERSE: "chevronDown", STOP: "warning",
   };
+  // One fixed intensity, not a graded scale like GUIDANCE_EDGE_GLOW's --
+  // target_direction only has three zones (no "far_left"-style outer
+  // tier), so there is nothing to grade against.
+  const ROBOT_EDGE_GLOW_OPACITY = 0.5;
 
   function renderRobotOverlay(result) {
     hideAllGuidanceOverlays();
+    // An errored/ended-mission result (driveViaBrainStep's error branch, or
+    // a lost /navigate connection) carries no `action` at all -- falling
+    // through to the "unrecognized action" default below would paint a big
+    // STOP badge that reads as a deliberate stop decision, when nothing
+    // decided anything. The ERR/LINK telemetry chip and the caption text
+    // already say what actually happened; the overlay just stays empty.
+    if (result.error) return;
+    // Same problem, different trigger: a "drive via brain" mission that IS
+    // running fine but hasn't completed its first tick yet also has no
+    // `action` -- MissionRunner's status starts with last_action unset,
+    // not "STOP". Only skip when there's also no arrival to show, so a
+    // reached-but-somehow-actionless result (shouldn't happen, but cheap to
+    // guard) still gets its REACHED badge below.
+    if (!result.action && !result.target_reached) return;
     const action = ROBOT_ACTION_ROTATION.hasOwnProperty(result.action) || result.action === "STOP"
       ? result.action : "STOP";
 
@@ -3390,6 +3608,15 @@
     // actually reported that zone.
     const zone = result.target_visible ? result.target_direction : null;
     highlightRobotZone(["left", "center", "right"].indexOf(zone) >= 0 ? zone : null, reached);
+
+    // Same edge-glow elements Guide me uses (already reset to opacity 0 by
+    // hideAllGuidanceOverlays() above), driven by /navigate's 3-zone
+    // target_direction instead of /guidance's 5-zone position -- there's
+    // no "far_left"-style outer tier here, just one fixed intensity for
+    // "the target is to that side". Suppressed on arrival, same as the
+    // chevron below: the REACHED badge carries that state alone.
+    if (!reached && zone === "left") guidanceEdgeGlowLeft.style.opacity = ROBOT_EDGE_GLOW_OPACITY;
+    else if (!reached && zone === "right") guidanceEdgeGlowRight.style.opacity = ROBOT_EDGE_GLOW_OPACITY;
 
     robotActionBadge.dataset.action = reached ? "REACHED" : action;
     document.getElementById("robot-action-verb").textContent = reached ? "REACHED" : action;
@@ -3596,6 +3823,16 @@
     }
   }
 
+  // Peak gain for the directional/found tones below, as a fraction of full
+  // scale (1.0). Raised from 0.18 -- real-device feedback found the tones
+  // too quiet to reliably notice. Roughly doubled rather than maxed out:
+  // these fire multiple times a second while searching, so something
+  // closer to 1.0 would be fatiguing/jarring rather than a subtle cue.
+  // There's no in-app volume control, only the mute toggle (btn-guidance-
+  // mute) -- this constant plus the phone's own volume are the only two
+  // levers, by design.
+  const GUIDANCE_TONE_GAIN = 0.35;
+
   function playGuidanceTone(freq, pan, durationMs, opts) {
     if (state.guidanceMuted) return;
     const ctx2 = ensureGuidanceAudioCtx();
@@ -3609,7 +3846,7 @@
       if (opts && opts.glideTo) osc.frequency.linearRampToValueAtTime(opts.glideTo, ctx2.currentTime + durationMs / 1000);
       if (panner) panner.pan.setValueAtTime(pan, ctx2.currentTime);
       gain.gain.setValueAtTime(0, ctx2.currentTime);
-      gain.gain.linearRampToValueAtTime(0.18, ctx2.currentTime + 0.02);
+      gain.gain.linearRampToValueAtTime(GUIDANCE_TONE_GAIN, ctx2.currentTime + 0.02);
       gain.gain.linearRampToValueAtTime(0, ctx2.currentTime + durationMs / 1000);
       osc.connect(gain);
       if (panner) { gain.connect(panner); panner.connect(ctx2.destination); }
@@ -3649,6 +3886,64 @@
     } else {
       playGuidanceTone(360, pan, 90);
     }
+  }
+
+  // ---- robot view: audio/haptic cues keyed to the decision, not proximity ----
+  // /navigate has no `proximity` field, so there is nothing to make a
+  // Guide-style "getting warmer" pulse/tone mean anything here -- what it
+  // does have (an action verb, arrival, an obstacle flag) carries its own
+  // real signal instead: a directional tone per action, the same found
+  // chime Guide uses on arrival, and a distinct warning buzz on an
+  // obstacle. Reuses Guide's existing Web Audio/vibration plumbing
+  // (ensureGuidanceAudioCtx/playGuidanceTone/state.guidanceMuted) as-is --
+  // only the cue *mapping* is new, not a second audio system.
+  const ROBOT_ACTION_TONE = {
+    FORWARD: { freq: 440, pan: 0 },
+    LEFT: { freq: 440, pan: -0.6 },
+    RIGHT: { freq: 440, pan: 0.6 },
+    // Descending pitch reads as "moving away" rather than "turning toward" --
+    // the one action tone that isn't just a panned copy of the others.
+    REVERSE: { freq: 440, pan: 0, glideTo: 260 },
+  };
+
+  // A low square-wave double-buzz, deliberately unlike the sine directional
+  // tones above and the found chime's rising glide -- an obstacle is a
+  // warning, not a direction or a success, and should not be mistaken for
+  // either at a glance (well, a listen).
+  function playRobotObstacleTone() {
+    playGuidanceTone(180, 0, 90, { type: "square" });
+    setTimeout(function () { playGuidanceTone(180, 0, 90, { type: "square" }); }, 120);
+  }
+
+  function playRobotCues(result) {
+    // Same "nothing decided" guard as renderRobotOverlay's -- an errored
+    // or not-yet-ticked result has no action to voice, and playing a tone
+    // for it would be inventing feedback for a decision that never
+    // happened.
+    if (result.error || (!result.action && !result.target_reached)) return;
+
+    if (result.target_reached) {
+      try { if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 90]); } catch (e) { /* best-effort */ }
+      playGuidanceFoundChime();
+      return;
+    }
+    if (result.obstacle_ahead) {
+      // Haptic reserved for arrival and obstacles only, not every routine
+      // tick -- Robot view decides every ~500ms, and buzzing on each one
+      // would be a continuous vibration for the length of a walk rather
+      // than a meaningful cue. Audio still plays every tick (matching
+      // Guide's own while-searching chattiness, muted by the same toggle).
+      try { if (navigator.vibrate) navigator.vibrate([80, 40, 80]); } catch (e) { /* best-effort */ }
+      playRobotObstacleTone();
+      return;
+    }
+    const tone = ROBOT_ACTION_TONE[result.action];
+    if (tone) playGuidanceTone(tone.freq, tone.pan, 90, tone.glideTo ? { glideTo: tone.glideTo } : undefined);
+    // No tone for action === "STOP" here (not reached, not obstacle_ahead) --
+    // the ambiguous/fallback case (PLAN-ar-guidance.md's schema note: STOP
+    // is also the parser's default on a malformed response), same
+    // deliberate silence Guide itself falls back to for its own
+    // unresolved states.
   }
 
   // Once "found" holds for this many consecutive ticks, polling pauses
@@ -3694,16 +3989,25 @@
   }
 
   // Safety ceiling on paid API calls for a single Guide session -- mirrors
-  // autopilotMaxCalls, sized for Guide's faster 1s (vs. autopilot's 2.5s)
-  // throttle so it covers a similar few-minutes-of-active-searching window
-  // rather than running unattended all day. Reuses the existing
-  // pause/"Resume searching" flow rather than a hard stop, since that
-  // plumbing already does exactly the right thing here.
-  const GUIDANCE_MAX_CALLS = 200;
-  // Robot view runs at 2.5s, so 60 calls is ~2.5 minutes -- enough to walk a
-  // couple of rooms, short enough that a tab left open in a pocket cannot
-  // run up a bill. Resume extends it, same as Guide.
-  const ROBOT_MAX_CALLS = 60;
+  // autopilotMaxCalls, sized to cover a similar few-minutes-of-active-
+  // searching window rather than running unattended all day. Originally
+  // 200, picked for a ~1s throttle-as-cycle-time approximation (200s ~=
+  // 3.3min). The real cycle time is throttle + the /guidance call itself;
+  // at Nova Lite's measured ~1.0-1.6s/call plus the 500ms throttle above
+  // (~1.7s/cycle typical), 200 calls would run ~5.7min instead -- longer
+  // than intended now that the cycle time is actually known. Recalibrated
+  // to hit that same ~3.3min window: 200s / ~1.7s =~ 118, rounded to 120.
+  // A guess, not a measurement of a full session -- adjust if real Guide
+  // sessions end up shorter or longer than that in practice. Reuses the
+  // existing pause/"Resume searching" flow rather than a hard stop, since
+  // that plumbing already does exactly the right thing here.
+  const GUIDANCE_MAX_CALLS = 120;
+  // Robot view moved to the same model and throttle as Guide on
+  // 2026-08-28 (see ROBOT_THROTTLE_MS above), so the same ~3.3min budget
+  // this constant was calibrated for above applies here too -- was 60
+  // (~2.5min) back when Robot view paced itself to Sonnet's slower
+  // round trip instead. Resume extends it, same as Guide.
+  const ROBOT_MAX_CALLS = 120;
   function guidanceCallCap() {
     return state.guidanceMode === "robot" ? ROBOT_MAX_CALLS : GUIDANCE_MAX_CALLS;
   }
@@ -3770,7 +4074,9 @@
     try {
       const base64 = captureGuidanceFrame();
       robotSignalCapture();
-      const result = await callGuidanceEndpoint(base64, state.guidanceTarget);
+      const result = (isRobot && driveViaBrainActive())
+        ? await driveViaBrainStep(base64)
+        : await callGuidanceEndpoint(base64, state.guidanceTarget);
       state.guidanceErrorStreak = 0;
       state.guidanceCallCount += 1;
       renderGuidanceBudget();
@@ -3782,12 +4088,12 @@
         // No found-pause here, deliberately. Guide pauses on arrival
         // because the person has arrived and further calls are waste;
         // robot view is a continuous readout of decisions, and the run
-        // ends at the call cap or when you stop it. Audio cues stay off
-        // too -- they encode proximity, which /navigate does not return.
+        // ends at the call cap or when you stop it.
         renderRobotOverlay(result);
         renderRobotStatus(result, false);
         renderRobotTelemetry(result);
         announceRobot(result);
+        playRobotCues(result);
 
         // Arrival comes from the service's own target_reached field, never
         // from action === "STOP" -- STOP is also what the model returns for
@@ -3832,9 +4138,10 @@
   // moment a call succeeds again (see guidanceErrorStreak reset above).
   function scheduleGuidanceNext() {
     if (!state.guidanceRunning || state.guidancePaused) return;
-    // Robot view samples at the cadence the robot actually moves at
-    // (Vision Autopilot's ~2.5s), not Guide's 1s. Sampling faster than the
-    // thing being simulated costs money without telling you more.
+    // Robot view and Guide share a throttle value now (both on Nova Lite
+    // as of 2026-08-28 -- see ROBOT_THROTTLE_MS above), kept as two named
+    // constants rather than one shared one so they can diverge again
+    // without hunting down every use site.
     const base = state.guidanceMode === "robot" ? ROBOT_THROTTLE_MS : GUIDANCE_THROTTLE_MS;
     const delay = state.guidanceErrorStreak > 0
       ? Math.min(30000, base * Math.pow(2, state.guidanceErrorStreak))
@@ -3854,14 +4161,33 @@
   // produces motion-blurred frames and a jumpy overlay, so this nudges
   // the user to slow down using the phone's orientation sensor (free,
   // continuous, no API cost) rather than anything derived from the
-  // throttled /guidance calls themselves. Threshold is low (not, say, a
-  // "fast walk" speed) because /guidance only samples once per
-  // GUIDANCE_THROTTLE_MS (~1s): at 10deg/s the framing has only drifted
-  // ~10deg between two analyzed frames, which is what keeps each new
-  // chevron/outline placement still roughly matching what's on screen --
-  // faster than that and the guidance is already stale by the time it
-  // renders.
-  const PAN_SPEED_WARN_DEG_PER_SEC = 10;
+  // throttled /guidance calls themselves.
+  //
+  // History: started at 10deg/s, briefly tried ~6deg/s after /guidance
+  // moved to Nova Lite (reverted the same day -- too aggressive, false
+  // "slow down" nudges during normal panning). Both were wrong in the
+  // same direction: real-device testing on 2026-08-28 measured a calm,
+  // deliberate room-scan -- exactly the motion this feature is supposed
+  // to welcome, including the app's own search-sweep telling the user to
+  // pan right/down -- at 25-30deg/s, well above either number, so normal
+  // use was tripping the warning essentially all the time.
+  //
+  // Recalibrated 2026-08-28 from the capture cadence itself, not just
+  // vibes: a typical phone's rear camera has roughly a 65deg horizontal
+  // field of view, and keeping at least 50% overlap between two
+  // consecutive analyzed frames -- so the target can't drift clean out of
+  // frame between them -- caps the drift budget at half that, ~32.5deg.
+  // Captures fire every GUIDANCE_THROTTLE_MS/ROBOT_THROTTLE_MS (500ms),
+  // so 32.5deg / 0.5s ~= 65deg/s. That lines up with the same day's
+  // measurements: comfortable deliberate scanning tops out around
+  // 30-40deg/s (clear margin under it), an actual whip-pan measured
+  // 300+deg/s (trips it easily). Using the 500ms capture interval here,
+  // not the ~1.7s full round trip (throttle + Nova Lite latency) --
+  // that larger number would derive a threshold back down near 19deg/s,
+  // right in the over-sensitive range that caused the false positives
+  // above. Still a tuning knob, not a settled constant -- adjust the FOV/
+  // overlap assumptions above if it under- or over-warns in practice.
+  const PAN_SPEED_WARN_DEG_PER_SEC = 65;
   let guidanceOrientationHandler = null;
   let guidanceNoSensorTimerId = null;
 
@@ -3986,9 +4312,104 @@
     updateGuideRotateHint();
     state.guidanceTarget = document.getElementById("guidance-target").value.trim() || "red backpack";
     saveTargetToHistory(state.guidanceTarget);
+
+    // videoWidth/videoHeight are 0 until the stream's metadata actually
+    // loads -- capturing or mapping coordinates before then produces a
+    // blank frame / NaN math (0 * Infinity), so wait for it explicitly
+    // rather than assuming srcObject being set means the video is ready.
+    // Moved ahead of the "drive via brain" block below (it used to run
+    // after /mission/start) specifically so a real frame can be pushed
+    // before the mission exists -- see that block's comment.
+    await waitForGuidanceVideoReady();
+
+    // Phase T3 (PLAN-teleop-robot.md): hand this walk to a real
+    // MissionRunner mission instead of a one-off /navigate call per frame.
+    // Latched here rather than re-read from driveViaBrainActive() every
+    // tick -- the toggle or the brain connection could change mid-walk, and
+    // stopGuidance() needs to know whether *this* session actually started
+    // a mission, not what the toggle says right now.
+    state.guidanceViaBrain = driveViaBrainActive();
+    if (state.guidanceViaBrain) {
+      // Checked before /mission/start, not just left to fail on the first
+      // frame push: "drive via brain" needs the *robot server* URL (not
+      // just the brain URL) pointed at a mode: teleop deployment -- if
+      // it's still the plain twin, POST /teleop/frame 404s per frame with
+      // no clue why. /health now reports which mode is actually running.
+      try {
+        const robotHealth = await apiGet("/health");
+        if (robotHealth.mode !== "teleop") {
+          throw new Error(
+            "Robot server URL isn't a teleop deployment (it reports mode: '" +
+            (robotHealth.mode || "unknown") + "'). Point Settings' Robot " +
+            "server URL at your teleop-robot service instead."
+          );
+        }
+      } catch (e) {
+        showGuideStartError("Can't drive via brain: " + e.message);
+        state.guidanceViaBrain = false;
+        stopGuidance();
+        return;
+      }
+      // Prime a real, fresh frame on the robot server BEFORE the mission
+      // exists. Without this, MissionRunner's tick loop starts as soon as
+      // /mission/start returns and can call get_camera_frame() before this
+      // page's own first guidanceStep() tick has pushed anything -- on a
+      // service that's been idle a while, that first tick then reads
+      // whatever ancient timestamp TeleopRobot last had (or none at all)
+      // and immediately raises TeleopStall, failing the mission before it
+      // ever really started. Pushing one frame here guarantees the first
+      // tick, whenever it fires, sees something pushed moments ago.
+      try {
+        await pushTeleopFrame(captureGuidanceFrame());
+      } catch (e) {
+        showGuideStartError("Could not reach the robot server to prime the first frame: " + e.message);
+        state.guidanceViaBrain = false;
+        stopGuidance();
+        return;
+      }
+      try {
+        await brainApi("POST", "/mission/start",
+          { target_object: state.guidanceTarget, policy: "vision" });
+      } catch (e) {
+        showGuideStartError("Could not start the brain-driven mission: " + e.message);
+        state.guidanceViaBrain = false;
+        stopGuidance();
+        return;
+      }
+    }
+
+    // A brain deployment that explicitly disables recording (e.g. the
+    // teleop-brain stack -- no EFS mount, ALLOW_RECORDING=false, since
+    // recording and "drive via brain" are meant to point at different
+    // brains -- see cloudformation/teleop-brain.yaml) would otherwise fail
+    // every POST /recording/frame with a 403, one per frame, surfaced only
+    // as a single easy-to-miss toast on the very first failure and an
+    // admin viewer that silently never gains the walk. Checked once up
+    // front instead, the same way the "drive via brain" health check above
+    // catches a mismatched deployment before wasting a walk on it.
+    if (recordingActive()) {
+      try {
+        const brainHealth = await brainApi("GET", "/health");
+        if (!brainHealth.recording_allowed) {
+          showGuideStartError(
+            "This brain service has recording disabled (no storage attached). " +
+            "Point Settings' Brain service URL at a brain deployment with " +
+            "recording enabled instead."
+          );
+          stopGuidance();
+          return;
+        }
+      } catch (e) {
+        showGuideStartError("Could not reach the brain service to check recording support: " + e.message);
+        stopGuidance();
+        return;
+      }
+    }
+
     state.guidanceRunning = true;
     state.guidanceCallCount = 0;
     state.guidanceNotVisibleStreak = 0;
+    guidanceLastEdgePosition = null;
     state.guidancePaused = false;
     state.guidanceFoundStreak = 0;
     state.guidanceConsecutiveSkips = 0;
@@ -4006,11 +4427,6 @@
     // Counts against the pacing floor so the first real result doesn't land
     // on top of this one.
     guidanceLastAnnounceAt = Date.now();
-    // videoWidth/videoHeight are 0 until the stream's metadata actually
-    // loads -- capturing or mapping coordinates before then produces a
-    // blank frame / NaN math (0 * Infinity), so wait for it explicitly
-    // rather than assuming srcObject being set means the video is ready.
-    await waitForGuidanceVideoReady();
     beginWalkRecording();
     guidanceStep();
   }
@@ -4030,6 +4446,17 @@
   // camera live, per PLAN-ar-guidance.md.
   function stopGuidance() {
     endWalkRecording();
+    if (state.guidanceViaBrain) {
+      // Fire-and-forget, same as recordWalkFrame() -- stopGuidance() isn't
+      // async (it runs from a plain onclick), and a failed stop here is not
+      // a reason to leave the camera/UI half torn down. /mission/stop
+      // always stops the robot too, so the mission ending cleanly matters
+      // more than this page's confirmation of it.
+      brainApi("POST", "/mission/stop").catch(function (e) {
+        showToast("Could not stop the brain mission: " + e.message, "err");
+      });
+      state.guidanceViaBrain = false;
+    }
     state.guidanceRunning = false;
     if (state.guidanceTimerId) clearTimeout(state.guidanceTimerId);
     state.guidanceTimerId = null;
@@ -4044,6 +4471,7 @@
     setRobotZonesVisible(false);
     document.getElementById("guide-rotate-hint").classList.remove("visible");
     guidanceLastNormBox = null;
+    guidanceLastEdgePosition = null;
     state.guidanceNotVisibleStreak = 0;
     state.guidancePaused = false;
     state.guidanceFoundStreak = 0;
@@ -4149,6 +4577,11 @@
   // access is blocked outright.
   function setGuidanceMode(mode) {
     state.guidanceMode = mode;
+    // A failed-Start error (e.g. last turn's "recording disabled" message)
+    // belongs to whichever mode produced it -- #guide-start-error is one
+    // shared element, so without this it kept showing after switching to
+    // the other mode, where it no longer meant anything.
+    document.getElementById("guide-start-error").style.display = "none";
     const isRobot = mode === "robot";
     const guideBtn = document.getElementById("btn-mode-guide");
     const robotBtn = document.getElementById("btn-mode-robot");
@@ -4160,6 +4593,7 @@
       ? "<b>Robot view</b> shows the move the <i>robot</i> would make from where you\u2019re standing \u2014 nothing moves. Hold the phone low, about camera height."
       : "<b>Guide me</b> steers <i>you</i> to the object with an arrow.";
     updateRecordRow();
+    updateDriveViaBrainRow();
     try { localStorage.setItem("guidanceMode", mode); } catch (e) { /* private mode */ }
   }
   document.getElementById("btn-mode-guide").onclick = function () { setGuidanceMode("guide"); };
@@ -4193,11 +4627,40 @@
   const photoPreview = document.getElementById("photo-preview");
   const photoResult = document.getElementById("photo-result");
 
-  document.getElementById("btn-take-photo").onclick = function () { photoInput.click(); };
+  // Real-device feedback: cancelling the OS camera sheet (declining to
+  // confirm "Use Photo") gives zero on-page feedback -- the page just
+  // sits at "No photo yet" with no explanation, which read as "it thinks
+  // I did not take one" / user error. Two cases to catch: `change` fires
+  // with an empty file list (most browsers), and `change` never fires at
+  // all (some mobile browsers on cancel) -- caught by noticing the tab
+  // regained focus after a capture was started but no file ever arrived.
+  let photoCaptureStartedAt = 0;
+  function notifyNoPhotoSelected() {
+    showToast("No photo was selected — try again, then confirm “Use Photo” when the camera opens.", "info");
+  }
+
+  document.getElementById("btn-take-photo").onclick = function () {
+    photoCaptureStartedAt = Date.now();
+    photoInput.click();
+  };
+
+  window.addEventListener("focus", function () {
+    if (!photoCaptureStartedAt) return;
+    const startedRecently = Date.now() - photoCaptureStartedAt < 60000;
+    photoCaptureStartedAt = 0;
+    if (!startedRecently) return;
+    // Give `change` a beat to fire first if it's going to -- it normally
+    // lands at or before focus returns, but ordering isn't guaranteed
+    // across browsers.
+    setTimeout(function () {
+      if (!photoInput.files || !photoInput.files[0]) notifyNoPhotoSelected();
+    }, 500);
+  });
 
   photoInput.onchange = function () {
     const file = photoInput.files[0];
-    if (!file) return;
+    photoCaptureStartedAt = 0; // capture resolved one way or another
+    if (!file) { notifyNoPhotoSelected(); return; }
 
     const url = document.getElementById("cfg-url").value.trim();
     const secret = document.getElementById("cfg-secret").value.trim();
@@ -4365,6 +4828,18 @@
   // it has no tab button to highlight -- the gear lights up instead, and
   // remembers which tab to return to.
   let tabBeforeSettings = "guide";
+
+  // Declared here (used only by hideSetupQr()/showSetupQr() down in the
+  // "setup sharing" section, well below) rather than nearer that code: the
+  // page-load restore at the bottom of this file calls
+  // switchTab(savedTab, {restoring:true}) before this script has executed
+  // that far, and switchTab -> hideSetupQr() reads this variable. A `let`
+  // is in its temporal dead zone until its declaration line actually runs,
+  // so declaring it down there threw "Cannot access 'qrHideTimer' before
+  // initialization" on every page load that didn't restore straight into
+  // the settings tab -- moved up here, ahead of switchTab's first caller,
+  // fixes that regardless of which tab a returning user lands on.
+  let qrHideTimer = null, qrCountdownTimer = null;
 
   function switchTab(name, opts) {
     if (name === "settings") {
@@ -4884,12 +5359,12 @@
   // revealed on an explicit tap rather than sitting in Settings
   // permanently, and it takes itself back down after a minute.
   const QR_REVEAL_MS = 60000;
-  let qrHideTimer = null, qrCountdownTimer = null;
 
   function setupLinkParts() {
     return {
       visionSecret: document.getElementById("cfg-secret").value.trim(),
       robotSecret: document.getElementById("cfg-server-secret").value.trim(),
+      brainSecret: document.getElementById("cfg-brain-secret").value.trim(),
       visionUrl: document.getElementById("cfg-url").value.trim(),
       serverUrl: document.getElementById("cfg-server-url").value.trim().replace(/\/$/, ""),
       brainUrl: document.getElementById("cfg-brain-url").value.trim().replace(/\/$/, ""),
@@ -4910,6 +5385,7 @@
     const params = new URLSearchParams();
     if (p.visionSecret) params.set("secret", p.visionSecret);
     if (p.robotSecret) params.set("robotSecret", p.robotSecret);
+    if (p.brainSecret) params.set("brainSecret", p.brainSecret);
     // The vision URL is worth carrying when it differs from what the
     // recipient's own page would derive (a tunnel, a path-prefixed proxy).
     // When it matches, omitting it keeps the payload short, which is what
@@ -4959,6 +5435,7 @@
     const carried = [];
     if (p.visionSecret) carried.push("vision secret");
     if (p.robotSecret) carried.push("robot secret");
+    if (p.brainSecret) carried.push("brain secret");
     const what = carried.length
       ? "Carries the " + carried.join(" and ") + "."
       : "No secrets are configured, so this only opens the app.";
@@ -5064,6 +5541,7 @@
       const params = new URLSearchParams(location.search);
       const urlSecret = params.get("secret");
       const urlRobotSecret = params.get("robotSecret");
+      const urlBrainSecret = params.get("brainSecret");
       // The setup QR also carries the service URLs, since the
       // convention-derived defaults computed above are wrong for plenty of
       // real setups (a tunnel, a path-prefixed proxy) -- and the point of
@@ -5073,19 +5551,23 @@
       const urlBrainUrl = params.get("brainUrl");
       if (urlSecret) localStorage.setItem("vp_cfg_secret", urlSecret);
       if (urlRobotSecret) localStorage.setItem("vp_cfg_server_secret", urlRobotSecret);
+      if (urlBrainSecret) localStorage.setItem("vp_cfg_brain_secret", urlBrainSecret);
       if (urlVisionUrl) localStorage.setItem(PREF.visionUrl, urlVisionUrl);
       if (urlServerUrl) localStorage.setItem(PREF.serverUrl, urlServerUrl);
       if (urlBrainUrl) localStorage.setItem(PREF.brainUrl, urlBrainUrl);
-      if (urlSecret || urlRobotSecret || urlVisionUrl || urlServerUrl || urlBrainUrl) {
+      if (urlSecret || urlRobotSecret || urlBrainSecret || urlVisionUrl || urlServerUrl || urlBrainUrl) {
         history.replaceState(null, "", location.pathname + location.hash);
       }
 
       const cfgSecretEl = document.getElementById("cfg-secret");
       const cfgServerSecretEl = document.getElementById("cfg-server-secret");
+      const cfgBrainSecretEl = document.getElementById("cfg-brain-secret");
       const savedSecret = localStorage.getItem("vp_cfg_secret");
       const savedRobotSecret = localStorage.getItem("vp_cfg_server_secret");
+      const savedBrainSecret = localStorage.getItem("vp_cfg_brain_secret");
       if (savedSecret) cfgSecretEl.value = savedSecret;
       if (savedRobotSecret) cfgServerSecretEl.value = savedRobotSecret;
+      if (savedBrainSecret) cfgBrainSecretEl.value = savedBrainSecret;
       // Applied to the fields directly: the restore block above already ran
       // and read localStorage before these query params were stored.
       if (urlVisionUrl) document.getElementById("cfg-url").value = urlVisionUrl;
@@ -5099,6 +5581,9 @@
       });
       cfgServerSecretEl.addEventListener("change", function () {
         try { localStorage.setItem("vp_cfg_server_secret", this.value.trim()); } catch (e) { /* best-effort */ }
+      });
+      cfgBrainSecretEl.addEventListener("change", function () {
+        try { localStorage.setItem("vp_cfg_brain_secret", this.value.trim()); } catch (e) { /* best-effort */ }
       });
     } catch (e) { /* best-effort -- localStorage unavailable, just skip prefill */ }
   })();
@@ -5133,6 +5618,10 @@
   state.recordWalk = prefGet(PREF.recordWalk) === "1";
   recordToggleEl.checked = state.recordWalk;
   updateRecordRow();
+  const driveViaBrainToggleEl = document.getElementById("cfg-drive-via-brain");
+  state.driveViaBrain = prefGet(PREF.driveViaBrain) === "1";
+  driveViaBrainToggleEl.checked = state.driveViaBrain;
+  updateDriveViaBrainRow();
   if (prefGet(PREF.brainUrl)) {
     connectBrain({ silent: true });
   }

@@ -21,6 +21,13 @@ Endpoints:
     POST /stop     always-available stop
     GET  /distance
     GET  /frame
+    POST /teleop/frame   {"image_base64": "...", "media_type": "image/jpeg"}
+                   only meaningful when config/robot.yaml's mode is
+                   "teleop" (PLAN-teleop-robot.md) -- pushes a live phone
+                   frame into sim/teleop_robot.py's TeleopRobot, which
+                   GET /frame then hands back on the next pull. 400 on any
+                   other mode, since a frame with nothing to read it would
+                   silently vanish otherwise.
     GET  /health   watchdog status + last command age
 
 Every /action call goes through robot/safety.py, same as the sim agent
@@ -29,8 +36,8 @@ protection an AI decision does. This is a deliberate extension of "AI
 sits at the bottom of the safety hierarchy": nothing that can move the
 robot bypasses the safety layer, regardless of who's driving.
 
-Auth: /action, /stop, /distance, /frame require a matching x-app-secret
-header when APP_SHARED_SECRET is set in the environment (see
+Auth: /action, /stop, /distance, /frame, /teleop/frame require a matching
+x-app-secret header when APP_SHARED_SECRET is set in the environment (see
 require_secret() below) -- added when this server started being
 deployed publicly (ECS Fargate, service/twin/), not just run on a home
 LAN. /health stays open (the ALB health check can't send custom
@@ -44,6 +51,12 @@ sensing read is not a command, and counting one would let a passive
 observer (the twin polling /frame while it watches a mission) hold the
 watchdog off indefinitely. A background task polls it and calls
 robot.stop() once it's stale.
+
+ROUTE_PREFIX (env var, unset/empty by default): prepended to every route
+below. Exists so a second instance of this exact file -- same image, same
+code, different ECS task -- can share the twin's load balancer instead of
+needing one of its own (cloudformation/teleop-robot.yaml, PLAN-teleop-robot.md).
+The twin's own deployment leaves this unset, so its URLs are unaffected.
 
 Its original description -- "detects a dead MacBook" -- narrows once the
 brain runs on the Pi and talks to this server over localhost, since a
@@ -102,6 +115,11 @@ class ActionRequest(BaseModel):
     angle: int = 90
 
 
+class TeleopFrameRequest(BaseModel):
+    image_base64: str
+    media_type: str = "image/jpeg"
+
+
 def watchdog_should_stop(last_command_at: float, now: float, timeout_s: float) -> bool:
     """Pure decision logic -- see module docstring for why this is
     tested separately from the async polling loop that calls it."""
@@ -115,6 +133,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     config = load_config(config_path) if config_path else load_config()
     watchdog_timeout = config.get("safety", {}).get("watchdog_timeout_s", 1.0)
     min_distance = config.get("safety", {}).get("min_distance_cm", 20.0)
+    # Same resolution get_robot() uses internally -- reported in /health so
+    # a client can tell "wrong deployment" (e.g. Robot view's "drive via
+    # brain" pointed at a mode: sim server) apart from "not reachable at
+    # all", which a bare connectivity check can't distinguish.
+    mode = os.environ.get("ROBOT_MODE") or config.get("mode", "sim")
 
     robot = get_robot(config_path) if config_path else get_robot()
     safety = SafetyController(robot, min_distance_cm=min_distance)
@@ -136,6 +159,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
     app = FastAPI(title="vision-picar robot server", lifespan=lifespan)
 
+    # See module docstring. "" (the default) reproduces every route exactly
+    # as before this existed -- prefix + "/frame" == "/frame".
+    prefix = os.environ.get("ROUTE_PREFIX", "").rstrip("/")
+
     # This server is designed to be reached from a browser (the web twin --
     # locally on the same LAN for real-hardware use, or the public
     # service/twin/ ECS deployment). Same reasoning as
@@ -150,7 +177,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.get("/")
+    @app.get(prefix + "/")
     def twin_ui():
         return FileResponse(_TWIN_INDEX_HTML)
 
@@ -158,23 +185,23 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # mount -- there are exactly three icon files, and exact routes mean no
     # path-traversal surface to reason about at all, matching this file's
     # existing minimal-surface style elsewhere.
-    @app.get("/manifest.json")
+    @app.get(prefix + "/manifest.json")
     def twin_manifest():
         return FileResponse(_TWIN_MANIFEST_JSON, media_type="application/manifest+json")
 
-    @app.get("/icons/icon-192.png")
+    @app.get(prefix + "/icons/icon-192.png")
     def twin_icon_192():
         return FileResponse(_TWIN_ICONS_DIR / "icon-192.png")
 
-    @app.get("/icons/icon-512.png")
+    @app.get(prefix + "/icons/icon-512.png")
     def twin_icon_512():
         return FileResponse(_TWIN_ICONS_DIR / "icon-512.png")
 
-    @app.get("/icons/apple-touch-icon.png")
+    @app.get(prefix + "/icons/apple-touch-icon.png")
     def twin_icon_apple():
         return FileResponse(_TWIN_ICONS_DIR / "apple-touch-icon.png")
 
-    @app.post("/action", dependencies=[Depends(require_secret)])
+    @app.post(prefix + "/action", dependencies=[Depends(require_secret)])
     def do_action(req: ActionRequest):
         state["last_command_at"] = time.monotonic()
         try:
@@ -187,26 +214,56 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @app.post("/stop", dependencies=[Depends(require_secret)])
+    @app.post(prefix + "/stop", dependencies=[Depends(require_secret)])
     def stop():
         state["last_command_at"] = time.monotonic()
         return {"executed": True, "result": robot.stop()}
 
-    @app.get("/distance", dependencies=[Depends(require_secret)])
+    @app.get(prefix + "/distance", dependencies=[Depends(require_secret)])
     def distance():
         return {"distance_cm": robot.get_distance()}
 
-    @app.get("/frame", dependencies=[Depends(require_secret)])
+    @app.get(prefix + "/frame", dependencies=[Depends(require_secret)])
     def frame():
-        return robot.get_camera_frame()
+        try:
+            return robot.get_camera_frame()
+        except Exception as e:
+            # Backend-agnostic on purpose -- no import of a specific
+            # backend's exception type here (e.g. sim/teleop_robot.py's
+            # TeleopStall), so this file stays what its docstring promises:
+            # unchanged regardless of which backend config/robot.yaml's
+            # mode selects. 503 rather than the generic 500 an uncaught
+            # exception would otherwise produce: the camera is what's
+            # unavailable, not this route or the service around it. Found
+            # via a real deployment -- a stalled TeleopRobot's real message
+            # ("no frame has ever been pushed...") was getting swallowed
+            # into an opaque "Internal Server Error" by the time it reached
+            # a mission's log through RemoteRobot.
+            raise HTTPException(status_code=503, detail=str(e))
 
-    @app.get("/health")
+    @app.post(prefix + "/teleop/frame", dependencies=[Depends(require_secret)])
+    def teleop_frame(req: TeleopFrameRequest):
+        # Duck-typed rather than an isinstance check against TeleopRobot,
+        # so this file stays what its own docstring promises: unchanged
+        # regardless of which backend config/robot.yaml's mode selects.
+        push = getattr(robot, "push_frame", None)
+        if push is None:
+            raise HTTPException(
+                status_code=400,
+                detail="This robot is not in teleop mode -- set mode: teleop "
+                "in config/robot.yaml (see PLAN-teleop-robot.md). A pushed "
+                "frame would otherwise have nothing to read it.",
+            )
+        return {"received": True, **push(req.image_base64, req.media_type)}
+
+    @app.get(prefix + "/health")
     def health():
         age = time.monotonic() - state["last_command_at"]
         return {
             "status": "ok",
             "seconds_since_last_command": round(age, 2),
             "watchdog_timeout_s": watchdog_timeout,
+            "mode": mode,
         }
 
     return app

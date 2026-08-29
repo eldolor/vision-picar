@@ -1,10 +1,21 @@
 # Backend selection for robot/factory.py
 # "sim"      -> sim/mock_robot.py (grid-world), no hardware needed
+# "teleop"   -> sim/teleop_robot.py, a live phone camera + a human motor --
+#               see PLAN-teleop-robot.md. Robot view's "drive via brain"
+#               mode pushes frames into this backend.
 # "hardware" -> robot/hardware_robot.py (added in Phase 11, real PiCar-X)
 mode: sim
 
 # Grid-world map to load when mode is "sim"
 sim_map: sim/maps/starter_house.py
+
+# Read only when mode is "teleop" (PLAN-teleop-robot.md).
+teleop:
+  # How long get_camera_frame() waits for a frame newer than the last one
+  # it returned before raising TeleopStall. Must stay comfortably under
+  # brain.tick_timeout_s below (B3.3's generic hung-tick deadline), or
+  # that fires first with a less specific message.
+  stall_timeout_s: 15.0
 
 # Safety thresholds (used identically in sim and hardware phases --
 # see robot/safety.py)

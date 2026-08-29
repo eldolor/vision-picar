@@ -21,6 +21,20 @@ which returned AccessDeniedException for both the base model ID and its
 inference profile. Using the cross-region inference profile for Claude
 Sonnet 4.5 instead, confirmed working (including image input) via a real
 `converse` call before wiring this in.
+
+Per-route models: /analyze feeds a photo a person takes to check a room
+by hand (the Camera tab) and stays on the conservative Sonnet 4.5
+default. /navigate and /guidance both default to Amazon Nova Lite.
+/guidance went first and was measured (real Bedrock calls, real photo) at
+~3x Sonnet's latency with matching accuracy for that task. /navigate
+followed on 2026-08-28 -- a deliberate trade (discussed, not
+accidental) for a faster Robot view loop, made without an equivalent
+navigation-specific accuracy measurement the way /guidance got one. If
+navigation quality looks worse in practice, re-measure with
+tests/manual_replay_navigate.py against both models on the same recorded
+walk before assuming it's fine. All three stay independently overridable
+via env var without a code change, for exactly this kind of per-route
+tuning.
 """
 
 import io
@@ -37,6 +51,9 @@ pillow_heif.register_heif_opener()
 logger = logging.getLogger()
 
 MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+ANALYZE_MODEL_ID = os.environ.get("BEDROCK_ANALYZE_MODEL_ID", MODEL_ID)
+NAVIGATE_MODEL_ID = os.environ.get("BEDROCK_NAVIGATE_MODEL_ID", "amazon.nova-lite-v1:0")
+GUIDANCE_MODEL_ID = os.environ.get("BEDROCK_GUIDANCE_MODEL_ID", "amazon.nova-lite-v1:0")
 
 SCENE_PROMPT = """You are viewing a photo of a room, taken by the owner of a small indoor robot to help it understand the space.
 Describe:
@@ -109,7 +126,7 @@ def describe_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> 
         fmt = "jpeg"
 
     response = client.converse(
-        modelId=MODEL_ID,
+        modelId=ANALYZE_MODEL_ID,
         messages=[
             {
                 "role": "user",
@@ -187,7 +204,7 @@ def describe_image_bytes_navigate(image_bytes: bytes, target_object: str, media_
         fmt = "jpeg"
 
     response = client.converse(
-        modelId=MODEL_ID,
+        modelId=NAVIGATE_MODEL_ID,
         messages=[
             {
                 "role": "user",
@@ -304,7 +321,7 @@ def describe_image_bytes_guidance(image_bytes: bytes, target_object: str, media_
         fmt = "jpeg"
 
     response = client.converse(
-        modelId=MODEL_ID,
+        modelId=GUIDANCE_MODEL_ID,
         messages=[
             {
                 "role": "user",

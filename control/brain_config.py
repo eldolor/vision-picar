@@ -43,6 +43,16 @@ DEFAULTS = {
     # LAN, not something an internet-reachable brain should accept.
     "allow_recording": True,
     "recording_dir": "recordings",
+    # When this brain can't record locally (allow_recording: false, e.g.
+    # teleop-brain has no EFS mount), forward POST /recording/frame to a
+    # peer brain that can, instead of just rejecting it. Empty means "just
+    # reject with 403" -- the old, still-default behavior. See
+    # PLAN-teleop-robot.md's "Recording proxy" section for why this is
+    # safe to proxy when mission control is not: record_frame() touches no
+    # robot/runner state at all, it is pure storage.
+    "recording_proxy_url": "",
+    "recording_proxy_secret": "",
+    "recording_proxy_timeout_s": 10.0,
     "drill_vision_timeout_s": 2.0,
     "drill_tick_timeout_s": 3.0,
 }
@@ -70,5 +80,21 @@ def load_brain_config(config_path=None) -> dict:
         merged["robot_url"] = os.environ["ROBOT_URL"]
     if os.environ.get("VISION_URL"):
         merged["vision_url"] = os.environ["VISION_URL"]
+    # Same idea, for a brain deployment whose robot has no EFS-backed
+    # recordings volume mounted (cloudformation/teleop-brain.yaml) --
+    # without this, a recorded frame would silently land on the container's
+    # own ephemeral disk instead of the shared volume admin_server.py reads,
+    # rather than failing loudly the way an unmounted volume should.
+    if os.environ.get("ALLOW_RECORDING"):
+        merged["allow_recording"] = os.environ["ALLOW_RECORDING"].lower() in ("1", "true", "yes")
+    # Where to forward a recording frame this brain can't store itself.
+    # RECORDING_PROXY_SECRET is that peer's own APP_SHARED_SECRET, not this
+    # brain's -- same "each deployment gets its own generated secret"
+    # pattern brain_server.py's ROBOT_SHARED_SECRET/VISION_SHARED_SECRET
+    # already use for the robot and vision services.
+    if os.environ.get("RECORDING_PROXY_URL"):
+        merged["recording_proxy_url"] = os.environ["RECORDING_PROXY_URL"]
+    if os.environ.get("RECORDING_PROXY_SECRET"):
+        merged["recording_proxy_secret"] = os.environ["RECORDING_PROXY_SECRET"]
 
     return merged

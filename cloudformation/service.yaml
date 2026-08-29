@@ -21,6 +21,19 @@ Parameters:
   BedrockModelId:
     Type: String
     Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  # /analyze and /navigate feed the robot's own perception (safety-adjacent),
+  # so they default to BedrockModelId unless overridden. /guidance is
+  # human-facing only -- nothing drives on its output -- so it defaults to
+  # a faster model instead. See vision_core.py's "Per-route models" note.
+  AnalyzeModelId:
+    Type: String
+    Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  NavigateModelId:
+    Type: String
+    Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  GuidanceModelId:
+    Type: String
+    Default: amazon.nova-lite-v1:0
 
 Resources:
   EcrRepo:
@@ -89,7 +102,7 @@ Resources:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: InvokeBedrockClaudeModels
+        - PolicyName: InvokeBedrockModels
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -97,7 +110,9 @@ Resources:
               # foundation models in multiple regions, so this can't be
               # scoped to a single model ARN the way the rest of this
               # project's IAM is scoped -- accepted tradeoff, matches the
-              # apigatewayv2/ec2 precedent elsewhere in this project.
+              # apigatewayv2/ec2 precedent elsewhere in this project. Also
+              # covers the per-route models (see BedrockModelId and
+              # friends above) which now span more than one provider.
               - Effect: Allow
                 Action:
                   - bedrock:InvokeModel
@@ -235,6 +250,12 @@ Resources:
               Value: "*"
             - Name: BEDROCK_MODEL_ID
               Value: !Ref BedrockModelId
+            - Name: BEDROCK_ANALYZE_MODEL_ID
+              Value: !Ref AnalyzeModelId
+            - Name: BEDROCK_NAVIGATE_MODEL_ID
+              Value: !Ref NavigateModelId
+            - Name: BEDROCK_GUIDANCE_MODEL_ID
+              Value: !Ref GuidanceModelId
           Secrets:
             - Name: APP_SHARED_SECRET
               ValueFrom: !Ref AppSharedSecret

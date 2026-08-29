@@ -1,0 +1,333 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  vision-picar teleop brain: a second control/brain_server.py ECS Fargate
+  service, sibling of brain.yaml, pointed at teleop-robot.yaml's robot
+  instead of the sim-mode twin's -- so a live phone-driven mission can run
+  at the same time the existing sim-mode brain+twin pair keeps working.
+  Shares the vision-picar-service stack's NLB/ALB/cluster and its one
+  vision-analyze service; routed by its own path prefix rather than a
+  second load balancer. Has no storage of its own -- rather than mount
+  recordings.yaml's EFS a second time, it forwards POST /recording/frame
+  to brain.yaml's brain instead (RECORDING_PROXY_URL/_SECRET below). See
+  PLAN-teleop-robot.md's "Recording proxy" section.
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Default: vision-picar-network
+  ServiceStackName:
+    Type: String
+    Default: vision-picar-service
+  ContainerImageTag:
+    Type: String
+    Default: latest
+  ContainerPort:
+    Type: Number
+    Default: 8001
+  RoutePrefix:
+    Type: String
+    Default: /teleop-brain
+    Description: >
+      Must stay in sync with AlbListenerRule's literal path-pattern values
+      below -- see teleop-robot.yaml's RoutePrefix parameter for why this
+      can't be derived automatically.
+  RobotRoutePrefix:
+    Type: String
+    Default: /teleop-robot
+    Description: >
+      teleop-robot.yaml's own RoutePrefix -- appended to the internal ALB's
+      DNS name to build ROBOT_URL below, so this brain reaches that robot
+      and not the sim-mode twin.
+  TeleopRobotSecretArn:
+    Type: String
+    Description: >
+      Full ARN (including the random suffix) of
+      vision-picar-teleop-robot-shared-secret -- see brain.yaml's
+      RobotSecretArn parameter for why this has to be the exact full ARN,
+      not a bare name, and why it's a parameter rather than
+      Fn::ImportValue. Get it with `aws secretsmanager describe-secret
+      --secret-id vision-picar-teleop-robot-shared-secret --query ARN`.
+  VisionSecretArn:
+    Type: String
+    Description: >
+      Same vision-picar-app-shared-secret brain.yaml already uses -- one
+      vision service, shared by both brains. Get it with `aws
+      secretsmanager describe-secret --secret-id
+      vision-picar-app-shared-secret --query ARN`.
+  MainBrainSecretArn:
+    Type: String
+    Description: >
+      brain.yaml's own vision-picar-brain-shared-secret -- this brain can't
+      store a recording itself (see ALLOW_RECORDING/RECORDING_PROXY_URL
+      below), so it authenticates as a client of that brain's own
+      /recording/frame instead. Get it with `aws secretsmanager
+      describe-secret --secret-id vision-picar-brain-shared-secret --query
+      ARN`.
+  DesiredCount:
+    Type: Number
+    Default: 1
+    AllowedValues: [0, 1]
+    Description: >
+      Bootstrap knob, same reason as brain.yaml's: deploy once with 0,
+      push the image, then redeploy with 1 (the default).
+
+Resources:
+  EcrRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: vision-picar-teleop-brain
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/vision-picar-teleop-brain
+      RetentionInDays: 14
+
+  AppSharedSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: vision-picar-teleop-brain-shared-secret
+      Description: >
+        Shared secret a caller (the twin's Robot view, "Drive via brain")
+        must send as the x-app-secret header to reach this brain's mission
+        routes. Placeholder at creation -- real value set via `aws
+        secretsmanager put-secret-value` after deploy, never in this
+        template. Distinct from brain.yaml's own secret -- these are two
+        independent brains.
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: placeholder
+        ExcludePunctuation: true
+        PasswordLength: 32
+
+  EcsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: vision-picar-teleop-brain-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        # This brain's own secret, plus read access to the teleop robot's,
+        # vision-analyze's, and the main brain's secrets -- same reasoning
+        # as brain.yaml's ReadSharedSecrets, exact full ARNs for the same
+        # reason.
+        - PolicyName: ReadSharedSecrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref AppSharedSecret
+                  - !Ref TeleopRobotSecretArn
+                  - !Ref VisionSecretArn
+                  - !Ref MainBrainSecretArn
+
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: vision-picar-teleop-brain-task-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      # No permissions -- unlike brain.yaml, no EFS mount (see the
+      # description above), and otherwise the same reasoning as brain.yaml's
+      # task role: this reaches the robot and vision service over HTTP only.
+
+  TeleopBrainSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Teleop brain ECS Fargate task -- inbound only from the shared internal ALB
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !ImportValue
+            Fn::Sub: "${ServiceStackName}-AlbSecurityGroupId"
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: vision-picar-teleop-brain-tg
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      TargetType: ip
+      # Prefixed, same reasoning as teleop-robot.yaml's target group.
+      HealthCheckPath: /teleop-brain/health
+      HealthCheckIntervalSeconds: 15
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  # Unlike brain.yaml, /health IS included here. brain.yaml excludes it
+  # because it shares the twin's *unprefixed* namespace, where bare
+  # /health is already claimed by the twin's own ListenerRule -- brain.yaml
+  # genuinely cannot claim it too without colliding. That reason doesn't
+  # apply here: this service has its own /teleop-brain prefix, so
+  # /teleop-brain/health collides with nothing. Omitting it anyway (an
+  # earlier version of this file did, "for consistency" with brain.yaml)
+  # was a mistake found in production: connectBrain()'s own reachability
+  # check calls GET /health, so excluding it made the Settings "Connect"
+  # button for this brain permanently unable to succeed over the public
+  # URL, regardless of mode.
+  AlbListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 50
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /teleop-brain/mission/start
+            - /teleop-brain/mission/stop
+            - /teleop-brain/mission/status
+            - /teleop-brain/recording/frame
+            - /teleop-brain/health
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: vision-picar-teleop-brain
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      ContainerDefinitions:
+        - Name: teleop-brain
+          Image: !Sub "${EcrRepo.RepositoryUri}:${ContainerImageTag}"
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          Environment:
+            # control/brain_server.py: every route answers under this
+            # prefix -- must match AlbListenerRule's values above.
+            - Name: ROUTE_PREFIX
+              Value: !Ref RoutePrefix
+            # The internal ALB, same reasoning as brain.yaml's ROBOT_URL/
+            # VISION_URL comment: private subnets have no internet route,
+            # so this must be the internal DNS name, not the public NLB.
+            # This one URL is the entire difference from brain.yaml's own
+            # ROBOT_URL -- same host, teleop-robot's path prefix instead
+            # of none.
+            - Name: ROBOT_URL
+              Value: !Sub
+                - "http://${AlbDnsName}${RobotRoutePrefix}"
+                - AlbDnsName:
+                    Fn::ImportValue: !Sub "${ServiceStackName}-InternalAlbDnsName"
+                  RobotRoutePrefix: !Ref RobotRoutePrefix
+            # Same vision-analyze service brain.yaml already uses, unprefixed.
+            - Name: VISION_URL
+              Value: !Sub
+                - "http://${AlbDnsName}"
+                - AlbDnsName:
+                    Fn::ImportValue: !Sub "${ServiceStackName}-InternalAlbDnsName"
+            # No EFS mount on this deployment (unlike brain.yaml) -- rather
+            # than mount recordings.yaml's EFS a second time, a frame posted
+            # here is forwarded on (RECORDING_PROXY_URL/_SECRET below) to
+            # the brain that does have it. ALLOW_RECORDING itself stays
+            # false: it means "no *local* storage", not "reject the
+            # request" -- control/brain_server.py's record_frame() checks
+            # RECORDING_PROXY_URL before falling back to the 403 this used
+            # to always give. See PLAN-teleop-robot.md's "Recording proxy"
+            # section for why this is safe here specifically: recording
+            # touches no robot/mission state, unlike /mission/* -- proxying
+            # THAT would tick the wrong robot (this brain's RemoteRobot is
+            # bound to teleop-robot.yaml's robot, not the sim-mode one).
+            - Name: ALLOW_RECORDING
+              Value: "false"
+            # The main brain's own unprefixed /recording/frame -- same bare
+            # internal-ALB host VISION_URL above already uses; distinguished
+            # from vision-analyze's routes by path, not host, at the ALB's
+            # own ListenerRules (brain.yaml's Priority 20 rule claims
+            # /recording/frame there).
+            - Name: RECORDING_PROXY_URL
+              Value: !Sub
+                - "http://${AlbDnsName}"
+                - AlbDnsName:
+                    Fn::ImportValue: !Sub "${ServiceStackName}-InternalAlbDnsName"
+          Secrets:
+            - Name: APP_SHARED_SECRET
+              ValueFrom: !Ref AppSharedSecret
+            - Name: ROBOT_SHARED_SECRET
+              ValueFrom: !Ref TeleopRobotSecretArn
+            - Name: VISION_SHARED_SECRET
+              ValueFrom: !Ref VisionSecretArn
+            - Name: RECORDING_PROXY_SECRET
+              ValueFrom: !Ref MainBrainSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: teleop-brain
+
+  EcsService:
+    Type: AWS::ECS::Service
+    DependsOn: AlbListenerRule
+    Properties:
+      ServiceName: vision-picar-teleop-brain-service
+      Cluster: !ImportValue
+        Fn::Sub: "${ServiceStackName}-EcsClusterName"
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      HealthCheckGracePeriodSeconds: 30
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !ImportValue
+              Fn::Sub: "${NetworkStackName}-PrivateSubnetAId"
+            - !ImportValue
+              Fn::Sub: "${NetworkStackName}-PrivateSubnetBId"
+          SecurityGroups:
+            - !Ref TeleopBrainSecurityGroup
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: teleop-brain
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref AlbTargetGroup
+
+Outputs:
+  PublicUrlNote:
+    Description: >
+      Same NLB/CloudFront as vision-picar-service, routed by path prefix.
+      Point the twin's Settings "Brain URL" at the CloudFront HTTPS domain
+      plus this prefix, e.g. https://<cloudfront-domain>/teleop-brain.
+    Value: !Sub
+      - "http://${NlbDnsName}${RoutePrefix}/mission/status"
+      - NlbDnsName:
+          Fn::ImportValue: !Sub "${ServiceStackName}-NlbDnsName"
+        RoutePrefix: !Ref RoutePrefix
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepo.RepositoryUri
+  AppSharedSecretArn:
+    Value: !Ref AppSharedSecret

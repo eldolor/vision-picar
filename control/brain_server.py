@@ -28,6 +28,12 @@ the brain/robot separation the project has kept since Phase 0. The cost
 is a localhost round trip per call, against a loop that spends seconds
 waiting on vision.
 
+ROUTE_PREFIX (env var, unset/empty by default): prepended to every route
+below, same mechanism and reason as robot/server.py's -- lets a second
+instance of this file share the twin's load balancer with its own
+non-colliding paths instead of needing a load balancer of its own
+(cloudformation/teleop-brain.yaml, PLAN-teleop-robot.md).
+
 This module pulls in nothing from sim/ -- no simulator, no backend, no
 robot server -- and touches robot/ only for the interface and the
 SafetyViolation type that is part of it. The robot is reachable only
@@ -59,6 +65,7 @@ import re
 from pathlib import Path
 from typing import Callable, Optional
 
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -199,6 +206,10 @@ def create_app(
 
     app = FastAPI(title="vision-picar brain server")
 
+    # See module docstring. "" (the default) reproduces every route exactly
+    # as before this existed.
+    prefix = os.environ.get("ROUTE_PREFIX", "").rstrip("/")
+
     # The twin will call this from a browser once B4 lands (Stage 4).
     # Same reasoning as robot/server.py: permissive origins, with
     # require_secret() as the actual access control.
@@ -234,7 +245,7 @@ def create_app(
             runner.stop("mission loop cancelled")
             raise
 
-    @app.post("/mission/start", dependencies=[Depends(require_secret)])
+    @app.post(prefix + "/mission/start", dependencies=[Depends(require_secret)])
     async def start_mission(req: MissionStartRequest):
         runner = state["runner"]
         if runner is not None and runner.is_running():
@@ -255,7 +266,7 @@ def create_app(
         state["task"] = asyncio.create_task(mission_loop(runner))
         return {"started": True, "status": runner.status()}
 
-    @app.post("/mission/stop", dependencies=[Depends(require_secret)])
+    @app.post(prefix + "/mission/stop", dependencies=[Depends(require_secret)])
     async def stop_mission():
         """Always available. Stops the loop AND the car -- stopping the
         thinking is not stopping the robot."""
@@ -277,7 +288,7 @@ def create_app(
         await asyncio.to_thread(robot().stop)
         return {"stopped": True, "status": _idle_status()}
 
-    @app.get("/mission/status", dependencies=[Depends(require_secret)])
+    @app.get(prefix + "/mission/status", dependencies=[Depends(require_secret)])
     async def mission_status():
         runner = state["runner"]
         if runner is None:
@@ -287,11 +298,47 @@ def create_app(
         # class either way.
         return {**runner.status(), "fault": state["fault"]}
 
-    @app.post("/recording/frame", dependencies=[Depends(require_secret)])
+    async def _proxy_recording_frame(req: RecordFrameRequest) -> dict:
+        # record_frame() below touches no robot/runner state at all -- it's
+        # pure storage -- which is exactly why this is safe to forward to a
+        # peer brain when *this* brain has no storage of its own (e.g.
+        # teleop-brain, no EFS mount). Mission-control routes could never do
+        # this: a brain's RemoteRobot is bound to one robot_url for its
+        # whole process lifetime, so proxying /mission/* would tick the
+        # WRONG robot. See PLAN-teleop-robot.md's "Recording proxy" section.
+        url = config["recording_proxy_url"].rstrip("/") + "/recording/frame"
+        headers = {}
+        if config["recording_proxy_secret"]:
+            headers["x-app-secret"] = config["recording_proxy_secret"]
+
+        def _forward() -> httpx.Response:
+            # Sync client run in a thread, not httpx.AsyncClient, matching
+            # RemoteRobot/vision_fn_for's existing style elsewhere in
+            # control/ and brain/ -- and specifically off the event loop
+            # (asyncio.to_thread) since this fires once per recorded frame
+            # (up to ~2/s during an active walk), not a one-off call like
+            # the teleop-mode health check above.
+            with httpx.Client(timeout=config["recording_proxy_timeout_s"]) as client:
+                return client.post(url, json=req.model_dump(), headers=headers)
+
+        try:
+            resp = await asyncio.to_thread(_forward)
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=502, detail=f"Recording proxy unreachable: {e}")
+        if resp.status_code >= 400:
+            # Surface the peer's own error (its own 403, a bad-walk-name
+            # 400, ...) rather than inventing a new one -- the caller should
+            # see exactly what the brain that actually owns storage said.
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        return resp.json()
+
+    @app.post(prefix + "/recording/frame", dependencies=[Depends(require_secret)])
     async def record_frame(req: RecordFrameRequest):
         """Save one walk frame. Off by default on any brain that should not
         be accepting writes from whoever can reach it."""
         if not config["allow_recording"]:
+            if config["recording_proxy_url"]:
+                return await _proxy_recording_frame(req)
             raise HTTPException(status_code=403, detail="Recording is disabled on this brain.")
         if not WALK_NAME.match(req.walk):
             raise HTTPException(
@@ -339,7 +386,7 @@ def create_app(
         return {"saved": path.name, "walk": req.walk, "frames": len(existing) + 1,
                 "dir": str(walk_dir)}
 
-    @app.get("/health")
+    @app.get(prefix + "/health")
     async def health():
         runner = state["runner"]
         return {
@@ -347,7 +394,16 @@ def create_app(
             "robot_url": config["robot_url"],
             "mission_running": bool(runner is not None and runner.is_running()),
             "drills_allowed": bool(config["allow_drills"]),
-            "recording_allowed": bool(config["allow_recording"]),
+            # "Will a POST /recording/frame actually succeed here" -- true
+            # either because this brain stores locally, or because it
+            # forwards to one that does (recording_proxy_url). Before the
+            # recording proxy existed these were the same thing; now a
+            # brain can have allow_recording: false and still legitimately
+            # accept recordings, so checking allow_recording alone here
+            # would make web-twin/index.html's pre-flight check in
+            # startGuidance() (Guide/Robot view) reject a walk that would
+            # have actually worked.
+            "recording_allowed": bool(config["allow_recording"]) or bool(config["recording_proxy_url"]),
             "faults": list(drills.FAULTS),
         }
 

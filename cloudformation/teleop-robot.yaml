@@ -1,0 +1,278 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  vision-picar teleop robot: a second robot/server.py ECS Fargate service,
+  same image and code as vision-picar-twin but running mode: teleop
+  (ROBOT_MODE env var -- see robot/factory.py) instead of mode: sim, so a
+  live phone can drive a real MissionRunner mission at the same time the
+  Sim tab's mode: sim twin keeps working. Sibling of twin.yaml, not a
+  replacement for it: separate ECR repo, IAM roles, secret and ECS
+  service, sharing only the vision-picar-service stack's NLB/ALB/cluster
+  and the vision-picar-service stack's CloudFront distribution in front of
+  it -- routed by its own path prefix (ROUTE_PREFIX env var -- see
+  robot/server.py) rather than a second load balancer, since robot/server.py's
+  literal, unprefixed paths (/action, /frame, ...) are already exhaustively
+  claimed by twin.yaml's own ListenerRules. See PLAN-teleop-robot.md.
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Default: vision-picar-network
+  ServiceStackName:
+    Type: String
+    Default: vision-picar-service
+  ContainerImageTag:
+    Type: String
+    Default: latest
+  ContainerPort:
+    Type: Number
+    Default: 8000
+  RoutePrefix:
+    Type: String
+    Default: /teleop-robot
+    Description: >
+      Must stay in sync with the literal path-pattern values in
+      AlbListenerRule/AlbListenerRulePwa below and with
+      AlbTargetGroup's HealthCheckPath -- CloudFormation can't derive a
+      path-pattern list from a prefix string, so all three are written out
+      by hand and have to agree.
+  DesiredCount:
+    Type: Number
+    Default: 1
+    AllowedValues: [0, 1]
+    Description: >
+      Bootstrap knob, same reason as brain.yaml's: the ECR repo doesn't
+      exist until this stack's first deploy, so there's no image to launch
+      yet. Deploy once with 0, push the image, then redeploy with 1 (the
+      default).
+
+Resources:
+  EcrRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: vision-picar-teleop-robot
+      ImageScanningConfiguration:
+        ScanOnPush: true
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/vision-picar-teleop-robot
+      RetentionInDays: 14
+
+  AppSharedSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: vision-picar-teleop-robot-shared-secret
+      Description: >
+        Shared secret a phone (and the teleop-brain service) must send as
+        the x-app-secret header to reach this robot's movement/sensing/
+        /teleop/frame routes. Placeholder at creation -- real value set via
+        `aws secretsmanager put-secret-value` after deploy, never in this
+        template. Distinct from the sim-mode twin's secret -- these are two
+        independent robots.
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: placeholder
+        ExcludePunctuation: true
+        PasswordLength: 32
+
+  EcsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: vision-picar-teleop-robot-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadOwnSecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref AppSharedSecret
+
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: vision-picar-teleop-robot-task-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      # No permissions -- same as twin's task role. TeleopRobot calls no
+      # AWS service itself; it just holds whatever frame was last pushed.
+
+  TeleopRobotSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Teleop robot ECS Fargate task -- inbound only from the shared internal ALB
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !ImportValue
+            Fn::Sub: "${ServiceStackName}-AlbSecurityGroupId"
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: vision-picar-teleop-robot-tg
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      TargetType: ip
+      # Prefixed -- robot/server.py's /health route is itself prefixed by
+      # ROUTE_PREFIX below (a target group's own health check bypasses
+      # listener routing and hits the container directly, but the
+      # container only answers requests under its own prefix).
+      HealthCheckPath: /teleop-robot/health
+      HealthCheckIntervalSeconds: 15
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  # Same exhaustive-path-list convention as twin.yaml's two rules, every
+  # value carrying this stack's RoutePrefix by hand (an ALB path-pattern
+  # condition is a literal list, not a prefix match against a variable) --
+  # this is what lets this service and the sim-mode twin share one
+  # listener without their path sets ever overlapping. Split across two
+  # rules for the same reason twin.yaml is: at most 5 path-pattern values
+  # per condition.
+  AlbListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 40
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /teleop-robot/
+            - /teleop-robot/action
+            - /teleop-robot/stop
+            - /teleop-robot/distance
+            - /teleop-robot/frame
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  AlbListenerRulePwa:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 41
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /teleop-robot/teleop/frame
+            - /teleop-robot/manifest.json
+            - /teleop-robot/icons/*
+            - /teleop-robot/health
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: vision-picar-teleop-robot
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: ARM64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      ContainerDefinitions:
+        - Name: teleop-robot
+          Image: !Sub "${EcrRepo.RepositoryUri}:${ContainerImageTag}"
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          Environment:
+            - Name: ALLOWED_ORIGINS
+              Value: "*"
+            # robot/factory.py: picks sim/teleop_robot.py's TeleopRobot
+            # instead of config/robot.yaml's own mode: sim default --
+            # same image as the twin, different runtime choice.
+            - Name: ROBOT_MODE
+              Value: teleop
+            # robot/server.py: every route answers under this prefix
+            # instead of bare, so it can share the twin's listener --
+            # must match RoutePrefix and the ListenerRule values above.
+            - Name: ROUTE_PREFIX
+              Value: !Ref RoutePrefix
+          Secrets:
+            - Name: APP_SHARED_SECRET
+              ValueFrom: !Ref AppSharedSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: teleop-robot
+
+  EcsService:
+    Type: AWS::ECS::Service
+    DependsOn: AlbListenerRule
+    Properties:
+      ServiceName: vision-picar-teleop-robot-service
+      Cluster: !ImportValue
+        Fn::Sub: "${ServiceStackName}-EcsClusterName"
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      HealthCheckGracePeriodSeconds: 30
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !ImportValue
+              Fn::Sub: "${NetworkStackName}-PrivateSubnetAId"
+            - !ImportValue
+              Fn::Sub: "${NetworkStackName}-PrivateSubnetBId"
+          SecurityGroups:
+            - !Ref TeleopRobotSecurityGroup
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - ContainerName: teleop-robot
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref AlbTargetGroup
+
+Outputs:
+  PublicUrlNote:
+    Description: >
+      Same NLB/CloudFront as vision-picar-service and vision-picar-twin,
+      routed by path prefix. Load this from a phone over the CloudFront
+      HTTPS domain (cdn.yaml's DistributionDomainName), not this bare NLB
+      URL -- getUserMedia needs a secure context. Point Settings' "Robot
+      server URL" at the same base, e.g.
+      https://<cloudfront-domain>/teleop-robot.
+    Value: !Sub
+      - "http://${NlbDnsName}${RoutePrefix}/"
+      - NlbDnsName:
+          Fn::ImportValue: !Sub "${ServiceStackName}-NlbDnsName"
+        RoutePrefix: !Ref RoutePrefix
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepo.RepositoryUri
+  AppSharedSecretArn:
+    Value: !Ref AppSharedSecret

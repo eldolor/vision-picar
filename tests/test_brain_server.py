@@ -111,6 +111,21 @@ def test_health_reports_the_robot_url_it_will_use():
         assert body["robot_url"]
 
 
+def test_route_prefix_env_var_prepends_every_route(monkeypatch):
+    """PLAN-teleop-robot.md: a second brain_server instance shares the
+    twin's load balancer by claiming a distinct path prefix instead of the
+    existing brain deployment's already-claimed literal paths. Unset (every
+    other test in this file), this changes nothing -- confirmed here."""
+    monkeypatch.setenv("ROUTE_PREFIX", "/teleop-brain")
+    with TestClient(create_app(robot_factory=lambda: RecordingRobot(fresh_mock_robot()))) as client:
+        assert client.get("/teleop-brain/health").status_code == 200
+        assert client.get("/teleop-brain/mission/status").status_code == 200
+        # The bare, unprefixed paths must not also work -- otherwise this
+        # instance would collide with the existing brain's ListenerRule.
+        assert client.get("/health").status_code == 404
+        assert client.get("/mission/status").status_code == 404
+
+
 def test_second_start_while_running_is_rejected_not_raced():
     """Two loops driving one robot is the failure this service exists to
     prevent."""
@@ -297,6 +312,128 @@ def test_recording_can_be_switched_off(tmp_path):
     with TestClient(recording_app(tmp_path, allow=False)) as client:
         assert post_frame(client, 0).status_code == 403
         assert client.get("/health").json()["recording_allowed"] is False
+
+
+def test_health_reports_recording_allowed_when_only_proxied(tmp_path):
+    """Regression: a brain with allow_recording: false but a configured
+    recording_proxy_url can still actually save a walk (see the proxy
+    tests below) -- /health's recording_allowed has to say so, or
+    web-twin/index.html's pre-flight check in startGuidance() rejects a
+    "Record this walk" session that would have worked."""
+    config = tmp_path / "robot.yaml"
+    config.write_text(
+        "brain:\n  allow_recording: false\n"
+        "  recording_proxy_url: http://peer-brain.internal\n"
+    )
+    app = create_app(config_path=str(config),
+                      robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        assert client.get("/health").json()["recording_allowed"] is True
+
+
+# ---------- recording proxy (teleop-brain -> main brain) ----------
+#
+# A brain with no storage of its own (allow_recording: false, e.g.
+# teleop-brain -- no EFS mount) can forward POST /recording/frame to a peer
+# brain that has one, instead of just rejecting it -- see
+# PLAN-teleop-robot.md's "Recording proxy" section. The outbound call is a
+# plain httpx.Client used synchronously inside asyncio.to_thread, so these
+# tests fake control.brain_server.httpx.Client rather than spinning up a
+# second live server -- record_frame()'s local-storage behavior is already
+# covered above, and the proxy path only needs to prove it forwards the
+# right request and relays the peer's response honestly.
+
+
+def proxying_app(tmp_path, proxy_url="http://peer-brain.internal",
+                  proxy_secret="peer-secret"):
+    config = tmp_path / "robot.yaml"
+    config.write_text(
+        "brain:\n"
+        "  allow_recording: false\n"
+        f"  recording_proxy_url: {proxy_url}\n"
+        f"  recording_proxy_secret: {proxy_secret}\n"
+    )
+    return create_app(config_path=str(config),
+                      robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+
+def fake_proxy_client(monkeypatch, post):
+    """Patches control.brain_server.httpx.Client to a stub whose .post()
+    is `post`, so a test can assert on the outbound call and control the
+    (fake) peer's response without a real second server."""
+    import control.brain_server as brain_server_module
+
+    class FakeClient:
+        def __init__(self, timeout=None):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def post(self, url, json=None, headers=None):
+            return post(url, json=json, headers=headers)
+
+    monkeypatch.setattr(brain_server_module.httpx, "Client", FakeClient)
+
+
+class FakeProxyResponse:
+    def __init__(self, status_code=200, json_body=None, text=""):
+        self.status_code = status_code
+        self._json_body = json_body or {}
+        self.text = text
+
+    def json(self):
+        return self._json_body
+
+
+def test_recording_proxies_to_a_peer_brain_when_disabled_locally(tmp_path, monkeypatch):
+    calls = []
+
+    def post(url, json, headers):
+        calls.append({"url": url, "json": json, "headers": headers})
+        return FakeProxyResponse(
+            200, {"saved": "frame-0000.jpg", "walk": "walk-1", "frames": 1, "dir": "peer-dir"}
+        )
+
+    fake_proxy_client(monkeypatch, post)
+
+    with TestClient(proxying_app(tmp_path)) as client:
+        resp = post_frame(client, 0)
+
+    assert resp.status_code == 200, resp.text
+    # The proxy's response is relayed verbatim -- "peer-dir" could never
+    # come from this brain's own (disabled) local-write path.
+    assert resp.json()["dir"] == "peer-dir"
+    assert len(calls) == 1
+    assert calls[0]["url"] == "http://peer-brain.internal/recording/frame"
+    assert calls[0]["headers"] == {"x-app-secret": "peer-secret"}
+    assert calls[0]["json"]["walk"] == "walk-1"
+
+
+def test_recording_proxy_surfaces_the_peers_own_error(tmp_path, monkeypatch):
+    fake_proxy_client(monkeypatch, lambda url, json, headers: FakeProxyResponse(400, text="bad walk name"))
+
+    with TestClient(proxying_app(tmp_path)) as client:
+        resp = post_frame(client, 0)
+
+    assert resp.status_code == 400
+
+
+def test_recording_proxy_unreachable_peer_is_a_502_not_a_crash(tmp_path, monkeypatch):
+    import httpx
+
+    def post(url, json, headers):
+        raise httpx.ConnectError("connection refused")
+
+    fake_proxy_client(monkeypatch, post)
+
+    with TestClient(proxying_app(tmp_path)) as client:
+        resp = post_frame(client, 0)
+
+    assert resp.status_code == 502
 
 
 def test_a_walk_name_cannot_escape_the_recording_directory(tmp_path):

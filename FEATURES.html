@@ -1,0 +1,1048 @@
+<title>Vision-PiCar Features</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+  :root{
+    --bg:#F5F7F4;
+    --surface:#FFFFFF;
+    --surface-sunken:#ECF1ED;
+    --text:#10160F;
+    --text-muted:#55655A;
+    --text-faint:#8C978C;
+    --border:#DCE3DC;
+    --accent:#0F7A54;
+    --accent-strong:#0A5F42;
+    --accent-soft:#DEF0E6;
+    --panel-bg:#0D1713;
+    --panel-bg-2:#101E18;
+    --panel-text:#C4EBDA;
+    --panel-text-dim:#7DA895;
+    --panel-border:rgba(79,224,172,0.28);
+    --shadow-card:0 1px 2px rgba(16,22,15,0.05), 0 10px 28px -16px rgba(16,22,15,0.16);
+    --radius:12px;
+    --serif:'IBM Plex Serif', Georgia, 'Times New Roman', serif;
+    --sans:'IBM Plex Sans', -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --mono:'IBM Plex Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0A100C;
+      --surface:#111812;
+      --surface-sunken:#0D1410;
+      --text:#E8EEE7;
+      --text-muted:#94A69A;
+      --text-faint:#5B6C60;
+      --border:#213028;
+      --accent:#49E2AD;
+      --accent-strong:#79F0C7;
+      --accent-soft:rgba(73,226,173,0.14);
+      --panel-bg:#132019;
+      --panel-bg-2:#0F1A14;
+      --panel-text:#BEEEDA;
+      --panel-text-dim:#6F9384;
+      --panel-border:rgba(73,226,173,0.32);
+      --shadow-card:0 1px 2px rgba(0,0,0,0.35), 0 14px 32px -18px rgba(0,0,0,0.55);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0A100C;
+    --surface:#111812;
+    --surface-sunken:#0D1410;
+    --text:#E8EEE7;
+    --text-muted:#94A69A;
+    --text-faint:#5B6C60;
+    --border:#213028;
+    --accent:#49E2AD;
+    --accent-strong:#79F0C7;
+    --accent-soft:rgba(73,226,173,0.14);
+    --panel-bg:#132019;
+    --panel-bg-2:#0F1A14;
+    --panel-text:#BEEEDA;
+    --panel-text-dim:#6F9384;
+    --panel-border:rgba(73,226,173,0.32);
+    --shadow-card:0 1px 2px rgba(0,0,0,0.35), 0 14px 32px -18px rgba(0,0,0,0.55);
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto;}
+    *{animation-duration:0.01ms !important; transition-duration:0.01ms !important;}
+  }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--serif);
+    font-size:17px;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,h4{font-family:var(--sans); color:var(--text); text-wrap:balance; margin:0;}
+  p{margin:0 0 1.05em; max-width:66ch;}
+  ul,ol{margin:0 0 1.1em; padding-left:1.35em; max-width:64ch;}
+  li{margin-bottom:0.42em;}
+  a{color:var(--accent-strong);}
+  code{
+    font-family:var(--mono); font-size:0.86em;
+    background:var(--surface-sunken); border:1px solid var(--border);
+    border-radius:5px; padding:0.1em 0.42em;
+  }
+  strong{color:var(--text); font-weight:600;}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:4px;}
+
+  /* ---------- page shell ---------- */
+  .page{max-width:1280px; margin:0 auto; padding:0 clamp(20px,4vw,48px);}
+
+  .masthead{
+    padding:56px 0 40px;
+    border-bottom:1px solid var(--border);
+  }
+  .eyebrow{
+    font-family:var(--mono); font-size:0.74rem; letter-spacing:0.14em;
+    text-transform:uppercase; color:var(--accent-strong);
+    display:flex; align-items:center; gap:10px; margin-bottom:18px;
+  }
+  .eyebrow::before{
+    content:""; width:7px; height:7px; border-radius:50%;
+    background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft);
+    flex:none;
+  }
+  h1.title{
+    font-size:clamp(2.3rem,4.6vw,3.1rem); font-weight:700; letter-spacing:-0.015em;
+    max-width:14ch; margin-bottom:16px;
+  }
+  .dek{
+    font-family:var(--serif); font-size:1.15rem; color:var(--text-muted);
+    max-width:56ch; margin-bottom:30px;
+  }
+  .status-row{
+    display:flex; flex-wrap:wrap; gap:10px; margin-bottom:28px;
+  }
+  .chip{
+    font-family:var(--mono); font-size:0.76rem; letter-spacing:0.02em;
+    color:var(--text-muted); background:var(--surface); border:1px solid var(--border);
+    border-radius:999px; padding:6px 13px; display:inline-flex; align-items:baseline; gap:6px;
+    font-variant-numeric:tabular-nums;
+  }
+  .chip b{color:var(--text); font-weight:600;}
+
+  .jump-row{display:flex; flex-wrap:wrap; gap:10px;}
+  .jump-link{
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:var(--sans); font-weight:600; font-size:0.88rem;
+    color:var(--text); text-decoration:none;
+    background:var(--surface); border:1px solid var(--border); border-radius:999px;
+    padding:9px 16px 9px 12px; transition:border-color .15s ease, transform .15s ease, background .15s ease;
+  }
+  .jump-link:hover{border-color:var(--accent); background:var(--accent-soft); color:var(--accent-strong);}
+  .jump-link svg{flex:none;}
+
+  /* ---------- layout ---------- */
+  .layout{
+    display:grid; grid-template-columns: 232px minmax(0,700px);
+    gap:60px; padding:44px 0 100px; justify-content:center;
+  }
+  nav.toc{position:sticky; top:28px; align-self:start; max-height:calc(100vh - 56px); overflow-y:auto;}
+  nav.toc ol{list-style:none; margin:0; padding:0;}
+  nav.toc > ol > li{margin-bottom:2px;}
+  .toc-link{
+    display:flex; gap:10px; align-items:baseline; text-decoration:none;
+    font-family:var(--sans); font-size:0.86rem; font-weight:500;
+    color:var(--text-muted); padding:7px 10px; border-radius:7px;
+    border-left:2px solid transparent; transition:color .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .toc-num{font-family:var(--mono); color:var(--text-faint); font-size:0.78rem; flex:none;}
+  .toc-link:hover{color:var(--text); background:var(--surface-sunken);}
+  .toc-link.active{color:var(--accent-strong); border-left-color:var(--accent); background:var(--accent-soft);}
+  .toc-sub{list-style:none; margin:2px 0 8px 30px; padding:0;}
+  .toc-sub .toc-link{font-size:0.8rem; padding:4px 10px;}
+
+  main{min-width:0;}
+  section{padding-top:14px; margin-bottom:76px; scroll-margin-top:24px;}
+  section:last-of-type{margin-bottom:24px;}
+  .sec-head{display:flex; gap:16px; align-items:baseline; margin-bottom:18px;}
+  .sec-num{
+    font-family:var(--mono); font-size:0.95rem; color:var(--accent-strong);
+    background:var(--accent-soft); border-radius:7px; padding:3px 9px;
+    font-variant-numeric:tabular-nums; flex:none;
+  }
+  h2.sec-title{font-size:clamp(1.5rem,2.6vw,1.85rem); font-weight:700; letter-spacing:-0.01em;}
+  .sec-lede{color:var(--text-muted); font-size:1.02rem;}
+
+  h3.feat-title{font-size:1.2rem; font-weight:700; margin:34px 0 10px;}
+  h4.sub-title{font-family:var(--sans); font-size:0.98rem; font-weight:600; margin:22px 0 8px; color:var(--text);}
+
+  .q{
+    font-family:var(--sans); font-size:0.92rem; color:var(--text);
+    background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent);
+    border-radius:0 8px 8px 0; padding:12px 16px; margin:0 0 18px; max-width:64ch;
+  }
+  .q b{color:var(--accent-strong); font-family:var(--mono); font-size:0.72rem; letter-spacing:0.08em; text-transform:uppercase; display:block; margin-bottom:4px;}
+
+  .meta-line{font-family:var(--mono); font-size:0.85rem; color:var(--text-muted); margin:0 0 16px;}
+  .meta-line b{color:var(--text); font-weight:600;}
+
+  /* mode / sub-feature cards */
+  .mode-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:22px 24px; margin:0 0 20px; box-shadow:var(--shadow-card); max-width:100%;
+  }
+  .mode-card + .mode-card{margin-top:16px;}
+  .mode-card__head{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+  .mode-tag{
+    font-family:var(--mono); font-size:0.72rem; font-weight:600; letter-spacing:0.03em;
+    color:var(--accent-strong); background:var(--accent-soft); border-radius:6px; padding:3px 8px;
+  }
+  .mode-card h4{font-family:var(--sans); font-size:1.02rem; font-weight:700; margin:0;}
+  .mode-card p:last-child, .mode-card ul:last-child, .mode-card ol:last-child{margin-bottom:0;}
+
+  /* diagrams / code panels */
+  .panel-wrap{margin:0 0 22px; max-width:100%;}
+  .panel{
+    position:relative; background:var(--panel-bg); border:1px solid var(--panel-border);
+    border-radius:10px; overflow-x:auto; box-shadow:var(--shadow-card);
+  }
+  .panel::before, .panel::after{
+    content:""; position:absolute; width:14px; height:14px; pointer-events:none;
+    border-color:var(--panel-border); opacity:0.9;
+  }
+  .panel::before{top:8px; left:8px; border-top:1.5px solid; border-left:1.5px solid; border-color:var(--panel-border);}
+  .panel::after{bottom:8px; right:8px; border-bottom:1.5px solid; border-right:1.5px solid; border-color:var(--panel-border);}
+  .panel pre{
+    margin:0; padding:26px 24px; color:var(--panel-text); font-family:var(--mono);
+    font-size:0.83rem; line-height:1.65; white-space:pre; tab-size:2;
+  }
+  .panel .cap{
+    font-family:var(--mono); font-size:0.68rem; letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--panel-text-dim); padding:10px 24px 0; display:block;
+  }
+  .tok-k{color:var(--accent-strong);}
+  .tok-s{color:#E7C77A;} /* panel is always a dark "screen" surface in both page themes, so a fixed amber reads fine on it either way */
+
+  /* tables */
+  .table-wrap{overflow-x:auto; margin:0 0 22px; border:1px solid var(--border); border-radius:10px;}
+  table{border-collapse:collapse; width:100%; min-width:560px; font-family:var(--sans); font-size:0.88rem;}
+  thead th{
+    text-align:left; font-family:var(--mono); font-size:0.7rem; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--text-muted); background:var(--surface-sunken);
+    padding:11px 16px; border-bottom:1px solid var(--border); white-space:nowrap;
+  }
+  tbody td{padding:12px 16px; border-bottom:1px solid var(--border); vertical-align:top; color:var(--text);}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--surface-sunken);}
+  td.mono, th.mono{font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  td.strong{font-weight:600; font-family:var(--sans); white-space:nowrap;}
+  td code, tbody td code{white-space:nowrap;}
+
+  .divider{border:none; border-top:1px solid var(--border); margin:36px 0;}
+
+  .status-tag{
+    font-family:var(--mono); font-size:0.68rem; font-weight:600; letter-spacing:0.05em;
+    padding:2px 8px; border-radius:999px; white-space:nowrap;
+  }
+  .status-tag.built{background:var(--accent-soft); color:var(--accent-strong);}
+  .status-tag.proposed{background:var(--surface-sunken); color:var(--text-muted); border:1px solid var(--border);}
+
+  .next-list{list-style:none; padding:0; margin:0;}
+  .next-list li{
+    display:flex; gap:14px; align-items:baseline; padding:14px 0; border-bottom:1px solid var(--border);
+  }
+  .next-list li:last-child{border-bottom:none;}
+  .next-list .doc-name{font-family:var(--mono); font-weight:600; color:var(--text); white-space:nowrap;}
+  .next-list .doc-desc{color:var(--text-muted); font-size:0.94rem; margin:0;}
+
+  footer{
+    border-top:1px solid var(--border); padding:30px 0 60px;
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px;
+    font-family:var(--mono); font-size:0.78rem; color:var(--text-faint);
+  }
+
+  /* mobile toc: horizontal chip strip */
+  @media (max-width:920px){
+    .layout{grid-template-columns:1fr; gap:0; padding-top:20px;}
+    nav.toc{
+      position:static; max-height:none; overflow:visible;
+      display:flex; gap:6px; overflow-x:auto; padding-bottom:14px; margin-bottom:28px;
+      border-bottom:1px solid var(--border);
+    }
+    nav.toc ol{display:flex; gap:6px;}
+    nav.toc .toc-sub{display:none;}
+    .toc-link{white-space:nowrap; border-left:none; border-bottom:2px solid transparent;}
+    .toc-link.active{border-left:none; border-bottom-color:var(--accent);}
+  }
+  @media (max-width:560px){
+    h1.title{max-width:none;}
+    .jump-link span.jl-label{display:inline;}
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">vision&#8209;picar &middot; ui feature reference</div>
+    <h1 class="title">Features</h1>
+    <p class="dek">How every tab, mode, and cloud service in the web twin actually
+      works &mdash; end to end, from a tap on the phone to the Bedrock call it
+      triggers.</p>
+
+    <div class="jump-row" style="margin-bottom:22px;">
+      <a class="jump-link" href="#guide">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
+        <span class="jl-label">Guide</span>
+      </a>
+      <a class="jump-link" href="#camera">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.4"/></svg>
+        <span class="jl-label">Camera</span>
+      </a>
+      <a class="jump-link" href="#sim">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="11" rx="2"/><path d="M9 8V5a3 3 0 0 1 6 0v3"/><circle cx="9" cy="13.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="13.5" r="1.1" fill="currentColor" stroke="none"/></svg>
+        <span class="jl-label">Sim</span>
+      </a>
+      <a class="jump-link" href="#settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M4 17h6"/><circle cx="17" cy="7" r="2.2"/><circle cx="13" cy="17" r="2.2"/><path d="M20 17h-3"/></svg>
+        <span class="jl-label">Settings</span>
+      </a>
+    </div>
+
+    <div class="status-row">
+      <span class="chip"><b>4</b>&nbsp;tabs</span>
+      <span class="chip"><b>3</b>&nbsp;backend processes</span>
+      <span class="chip"><b>7</b>&nbsp;AWS stacks, one shared ALB</span>
+      <span class="chip">written against <b>172770b</b> + the teleop work in <b>PLAN&#8209;teleop&#8209;robot.md</b></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Sections">
+      <ol>
+        <li><a class="toc-link" href="#moving-parts"><span class="toc-num">0</span>Moving parts</a></li>
+        <li>
+          <a class="toc-link" href="#guide"><span class="toc-num">1</span>Guide tab</a>
+          <ol class="toc-sub">
+            <li><a class="toc-link" href="#guide-me">1.1&nbsp;Guide me</a></li>
+            <li><a class="toc-link" href="#robot-view">1.2&nbsp;Robot view</a></li>
+          </ol>
+        </li>
+        <li><a class="toc-link" href="#camera"><span class="toc-num">2</span>Camera tab</a></li>
+        <li><a class="toc-link" href="#sim"><span class="toc-num">3</span>Sim tab</a></li>
+        <li><a class="toc-link" href="#settings"><span class="toc-num">4</span>Settings tab</a></li>
+        <li><a class="toc-link" href="#safety"><span class="toc-num">5</span>Safety &amp; failsafes</a></li>
+        <li><a class="toc-link" href="#aws"><span class="toc-num">6</span>AWS deployment</a></li>
+        <li><a class="toc-link" href="#next"><span class="toc-num">7</span>Where to look next</a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <!-- 0 ================================================= -->
+      <section id="moving-parts">
+        <div class="sec-head"><span class="sec-num">00</span><h2 class="sec-title">The moving parts, once</h2></div>
+        <p class="sec-lede">So the rest of this page doesn't repeat itself.</p>
+
+        <p>Four backend processes this UI can talk to, all HTTP, all optionally
+          behind an <code>x-app-secret</code> header:</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Process</th><th>Port&nbsp;(local)</th><th>What it is</th><th>Code</th></tr></thead>
+            <tbody>
+              <tr><td class="strong">Robot server</td><td class="mono">:8000</td><td>Safety layer + watchdog + one <code>RobotInterface</code> backend (sim / teleop / eventually hardware)</td><td class="mono">robot/server.py</td></tr>
+              <tr><td class="strong">Brain server</td><td class="mono">:8001</td><td>The autonomy loop (<code>MissionRunner</code>) as a service &mdash; start / stop / observe a mission over HTTP</td><td class="mono">control/brain_server.py</td></tr>
+              <tr><td class="strong">Vision&#8209;analyze service</td><td class="mono">cloud&nbsp;only</td><td>Calls Amazon Bedrock for every vision question &mdash; scene description, navigation, AR guidance</td><td class="mono">service/vision_analyze/app.py</td></tr>
+              <tr><td class="strong">Admin service</td><td class="mono">cloud&nbsp;only</td><td>Lists / views / deletes recorded walks on the shared EFS volume &mdash; not reachable from the twin UI</td><td class="mono">service/admin/</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>The twin (<code>web-twin/index.html</code>) is a browser client of the
+          first three. It never talks to a simulator or a robot backend directly
+          &mdash; everything goes over HTTP to the robot server and/or the brain
+          server, the same way a Pi's own client eventually will. The robot
+          server is also what <em>serves</em> the twin page itself
+          (<code>GET /</code>) in the deployed app, so &ldquo;load the app&rdquo;
+          and &ldquo;have a robot connection&rdquo; can be the same request.</p>
+
+        <h4 class="sub-title">Two brains, one driver&rsquo;s seat</h4>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Brain</th><th>Runs where</th><th>Needs</th></tr></thead>
+            <tbody>
+              <tr><td class="strong">Rule&#8209;based / vision&#8209;in&#8209;JS</td><td>This page&rsquo;s own JavaScript</td><td>Nothing &mdash; no brain service required</td></tr>
+              <tr><td class="strong">Real <code>MissionRunner</code></td><td><code>control/brain_server.py</code></td><td>The brain service running and connected</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="margin-bottom:0;">Only one may drive at a time. This is the
+          Sim tab&rsquo;s Local/Remote brain split, and &mdash; new &mdash; it is
+          also Robot view&rsquo;s &ldquo;Drive via brain&rdquo; switch.</p>
+      </section>
+
+      <!-- 1 ================================================= -->
+      <section id="guide">
+        <div class="sec-head"><span class="sec-num">01</span><h2 class="sec-title">Guide tab</h2></div>
+        <p class="sec-lede">Two modes, picked with the <strong>Guide me / Robot
+          view</strong> toggle. Both are &ldquo;point the phone at a room and
+          repeat one vision call on a timer&rdquo; with a different prompt,
+          schema, and renderer.</p>
+
+        <h4 class="sub-title">Shared mechanics, both modes</h4>
+        <ul>
+          <li>Requires a secure context (<code>https://</code> or
+            <code>localhost</code>) &mdash; <code>getUserMedia</code> is blocked
+            otherwise, and the start error explains this rather than failing
+            silently.</li>
+          <li>Full-screen &lt;video&gt; camera takeover, CSS-simulated
+            (<code>position:fixed</code>), not the real Fullscreen API &mdash;
+            iOS Safari&rsquo;s support for arbitrary elements is unreliable.</li>
+          <li>Every capture downscales to a 960px long edge before upload
+            &mdash; smaller payload, faster Bedrock inference, no visible
+            quality loss for a coarse position/action question.</li>
+          <li>Loop cadence is <strong>500&nbsp;ms</strong> for both routes
+            (moved onto Amazon Nova Lite on 2026&#8209;08&#8209;28). A
+            consecutive error backs the delay off exponentially, capped at 30s,
+            resetting the moment a call succeeds.</li>
+          <li>A capture is skipped entirely if the phone&rsquo;s orientation
+            sensor says nothing has moved since the last tick &mdash; a free
+            way to avoid a paid call with nothing new to answer.</li>
+          <li>A hard cap of <strong>120 calls</strong> per session (~1 minute)
+            auto&#8209;pauses with a &ldquo;Resume searching&rdquo; button.</li>
+          <li>Backgrounding the tab pauses the timer; the camera stream itself
+            releases only on Stop or navigating away.</li>
+          <li>A wake lock keeps the screen on while active; rotating the phone
+            re&#8209;syncs overlay positions immediately rather than waiting
+            for the next tick.</li>
+        </ul>
+
+        <h3 class="feat-title" id="guide-me">1.1 &middot; Guide me</h3>
+        <p style="margin-bottom:8px;">Steer a person to an object.</p>
+        <div class="q"><b>Question answered</b>&ldquo;Where is
+          <code>{target_object}</code>, relative to where I&rsquo;m standing,
+          and how do I get closer?&rdquo; The <em>person</em> is the actuator;
+          nothing in the app moves anything.</div>
+
+        <p class="meta-line"><b>Backend</b> &middot; <code>POST /guidance</code>
+          on the vision-analyze service &rarr; <code>describe_image_bytes_guidance()</code>,
+          model <code>amazon.nova-lite-v1:0</code> by default. Never touches
+          the robot server &mdash; works with only the Cloud endpoint settings
+          filled in.</p>
+
+        <div class="panel-wrap">
+          <div class="panel">
+            <span class="cap">/guidance response</span>
+            <pre>{
+  <span class="tok-k">"target_visible"</span>: true | false,
+  <span class="tok-k">"position"</span>: <span class="tok-s">"far_left"</span> | <span class="tok-s">"left"</span> | <span class="tok-s">"center"</span> | <span class="tok-s">"right"</span> | <span class="tok-s">"far_right"</span> | <span class="tok-s">"not_visible"</span>,
+  <span class="tok-k">"proximity"</span>: <span class="tok-s">"near"</span> | <span class="tok-s">"medium"</span> | <span class="tok-s">"far"</span> | <span class="tok-s">"unknown"</span>,
+  <span class="tok-k">"guidance"</span>: <span class="tok-s">"short human-readable instruction"</span>,
+  <span class="tok-k">"bounding_box"</span>: {x_min, y_min, x_max, y_max} | null
+}</pre>
+          </div>
+        </div>
+        <p><code>bounding_box</code> is normalized 0.0&ndash;1.0 against the
+          full captured frame, requested only when the model is confident
+          &mdash; a malformed one is rejected server-side and falls back to
+          <code>null</code>.</p>
+
+        <h4 class="sub-title">What's on screen</h4>
+        <ul>
+          <li><strong>Searching:</strong> a directional chevron pans toward
+            <code>position</code>&rsquo;s zone; a screen-edge glow brightens on
+            the side to turn toward; the chevron pulses faster as
+            <code>proximity</code> tightens. While the object hasn&rsquo;t been
+            spotted at all, a fixed search-sweep pattern takes over instead
+            (right for ~5 ticks, then down for ~5, repeating) &mdash; the model
+            has zero positional information in this state, so it's a UI
+            convention, not a model-informed suggestion.</li>
+          <li><strong>Found:</strong> a bounding-box outline (DOM/SVG, so it
+            glides via CSS transition rather than snapping), smoothed
+            55%-toward-the-new-estimate each tick to damp per-tick
+            localization jitter, and mapped from normalized coordinates to
+            on-screen pixels accounting for the video's <code>object-fit:cover</code>
+            crop.</li>
+          <li><strong>Found gate:</strong> <code>proximity === "near"</code>
+            (any position), or <code>proximity === "medium" &amp;&amp;
+            position === "center"</code> &mdash; added after real-device
+            testing showed a dead-centered object sometimes scored
+            &ldquo;medium&rdquo; and never advanced.</li>
+          <li><strong>Feedback:</strong> directional Web Audio tones (panned
+            left/right, works on iOS, muteable) and vibration patterns
+            (Android Chrome only &mdash; Apple has never implemented the
+            Vibration API in Safari; audio is the real cross-platform
+            channel).</li>
+          <li><strong>Auto-pause:</strong> once &ldquo;found&rdquo; holds for
+            one tick, polling stops entirely &mdash; no reason to keep paying
+            for calls once the answer stopped changing. &ldquo;Resume
+            searching&rdquo; restarts the loop without restarting the
+            session.</li>
+        </ul>
+        <p><strong>Cost:</strong> a real Bedrock vision call roughly every
+          1.7s effective cycle. Never auto-starts. <strong>Never touches</strong>
+          <code>RobotInterface</code>, the robot server, or <code>control/</code>
+          &mdash; the same phone-as-sensor, human-as-actuator design as the
+          rest of the twin's non-robot features.</p>
+
+        <hr class="divider">
+
+        <h3 class="feat-title" id="robot-view">1.2 &middot; Robot view</h3>
+        <div class="q"><b>Question answered</b>&ldquo;If this frame came from
+          the robot's camera right now, what move would it make?&rdquo;
+          <strong>Nothing executes.</strong> Read-only proof the vision policy
+          works on real room pixels, not the grid-world sim's flat-shaded
+          raycaster render.</div>
+
+        <p>Robot view has <strong>three distinct behaviors</strong>, as
+          switches next to the target field &mdash; only visible in this mode,
+          mutually exclusive with each other:</p>
+
+        <div class="panel-wrap">
+          <div class="panel">
+            <pre>Guide tab -&gt; Robot view
+  |
+  +-- (default) one-off /navigate preview -- nothing persists
+  +-- "Record this walk"  -- saves each frame+reply to the brain, for replay
+  +-- "Drive via brain"   -- runs a REAL MissionRunner mission, live</pre>
+          </div>
+        </div>
+
+        <div class="mode-card">
+          <div class="mode-card__head"><span class="mode-tag">1.2.a</span><h4>Default &middot; one-off <code>/navigate</code> preview</h4></div>
+          <p class="meta-line"><b>Backend</b> &middot; <code>POST /navigate</code>,
+            same request/response plumbing as Guide me, different prompt and
+            schema, also Nova Lite by default.</p>
+          <div class="panel-wrap" style="margin-top:14px;">
+            <div class="panel">
+              <span class="cap">/navigate response</span>
+              <pre>{
+  <span class="tok-k">"target_visible"</span>: true | false,
+  <span class="tok-k">"target_direction"</span>: <span class="tok-s">"left"</span> | <span class="tok-s">"center"</span> | <span class="tok-s">"right"</span> | <span class="tok-s">"not_visible"</span>,
+  <span class="tok-k">"target_reached"</span>: true | false,
+  <span class="tok-k">"obstacle_ahead"</span>: true | false,
+  <span class="tok-k">"action"</span>: <span class="tok-s">"FORWARD"</span> | <span class="tok-s">"LEFT"</span> | <span class="tok-s">"RIGHT"</span> | <span class="tok-s">"REVERSE"</span> | <span class="tok-s">"STOP"</span>,
+  <span class="tok-k">"reasoning"</span>: <span class="tok-s">"one short sentence"</span>
+}</pre>
+            </div>
+          </div>
+          <p>The frame splits into three vertical thirds (left/center/right).
+            <strong><code>action</code> only ever means movement; arrival is
+            <code>target_reached</code></strong>, a separate field &mdash; so a
+            <code>STOP</code> from an obstacle can never be confused with a
+            <code>STOP</code> from success. (The fallback schema also defaults
+            <code>action</code> to <code>STOP</code>, which is exactly why the
+            split matters: a parse failure must never look like arrival.)</p>
+          <ul>
+            <li>A persistent three-zone HUD frame stays up for the whole
+              session &mdash; it's the mode's visual identity, not a per-tick
+              result, so it's the one thing not cleared every tick.</li>
+            <li>The zone matching <code>target_direction</code> highlights;
+              nothing highlights on <code>not_visible</code> &mdash; a lit
+              zone must always mean the model actually reported that zone.</li>
+            <li><strong>Arrival is its own badge</strong> (<code>REACHED</code>),
+              never the raw <code>STOP</code> action.</li>
+            <li>No audio/haptic cues here &mdash; they'd encode
+              <code>proximity</code>, a field <code>/navigate</code> doesn't
+              return.</li>
+            <li>Pauses only after <strong>two consecutive</strong>
+              <code>target_reached</code> ticks, not one &mdash; this mode is a
+              continuous decision readout, not a one-shot confirmation.</li>
+            <li>Hold the phone low, ~10cm &mdash; roughly PiCar-X camera
+              height. This is Stage 0 of the build plan: the cheapest, fastest
+              go/no-go signal for whether the vision model can navigate real
+              rooms at all.</li>
+          </ul>
+        </div>
+
+        <div class="mode-card">
+          <div class="mode-card__head"><span class="mode-tag">1.2.b</span><h4>&ldquo;Record this walk&rdquo;</h4></div>
+          <p>Saves every captured frame plus its <code>/navigate</code> reply
+            to the <strong>brain service</strong> &mdash; not the vision
+            service, and not a browser download (60 download prompts on a
+            phone isn't a workflow). Requires the brain connected in
+            Settings; <code>brain.allow_recording</code> gates it
+            server-side too.</p>
+          <ol>
+            <li>Start generates a walk name from the target + timestamp.</li>
+            <li>Each tick's frame + reply &rarr;
+              <code>POST {brainUrl}/recording/frame</code>, fire-and-forget
+              &mdash; a failed save must never interrupt the walk or delay the
+              next call. A running saved/failed counter shows under the
+              switch.</li>
+            <li>The brain writes frames to the shared EFS volume &mdash; the
+              same storage the separate admin service lists/views/deletes
+              from later.</li>
+            <li>Stop shows the walk name and save count in a toast, with the
+              exact replay command:
+              <code>python -m tests.demo_replay_mission recordings/&lt;walk&gt; "&lt;target&gt;"</code>.</li>
+          </ol>
+          <p>A recorded walk becomes <code>sim/replay_robot.py</code>'s input
+            &mdash; an open-loop &ldquo;body made of photographs&rdquo; that
+            lets the vision agent run, repeatedly and for free, against the
+            exact same frames while a prompt is iterated on. <strong>Not the
+            same as &ldquo;Drive via brain&rdquo;</strong> &mdash; recording
+            still makes a one-off <code>/navigate</code> call per frame and
+            just also saves it; driving via brain replaces that call
+            entirely with a live mission tick, which is why the two are
+            mutually exclusive.</p>
+        </div>
+
+        <div class="mode-card">
+          <div class="mode-card__head"><span class="mode-tag">1.2.c</span><h4>&ldquo;Drive via brain&rdquo; &mdash; closes the loop for real</h4></div>
+          <p>The one that actually exercises <code>control/brain_server.py</code>'s
+            real <code>MissionRunner</code> &mdash; mission memory, the
+            failure budget, the timeouts, the whole B0&ndash;B3 stack &mdash;
+            from a <em>live</em> phone camera instead of a recorded walk or a
+            drill. Before this existed, nothing in the codebase read a live
+            camera through <code>MissionRunner</code>; a phone walk proved
+            the vision <em>model</em> could read a room but proved nothing
+            about the <em>brain</em>. A phone is now one working instance of
+            &ldquo;live camera,&rdquo; and a PiCar will be another.</p>
+
+          <div class="panel-wrap">
+            <div class="panel">
+              <span class="cap">before &mdash; two paths that never touch</span>
+              <pre>Guide/Robot view (phone camera)      Sim tab, Remote brain (no camera)
+    |                                    |
+    v                                    v
+  POST /navigate (vision-analyze)      POST /mission/start
+    |                                    |
+    v                                    v
+  HUD renders the reply.               control/brain_server.py -&gt; MissionRunner
+  Nothing moves, no mission exists.      |
+                                          v
+                                        RemoteRobot -&gt; robot/server.py -&gt; MockRobot</pre>
+            </div>
+          </div>
+          <div class="panel-wrap">
+            <div class="panel">
+              <span class="cap">after &mdash; robot view becomes a third source for the one real loop</span>
+              <pre>Guide tab, Robot view, "Drive via brain"
+    |
+    | POST /teleop/frame  (new)
+    v
+robot/server.py  (mode: teleop)  --  sim/teleop_robot.py's TeleopRobot
+    ^                                        |
+    | GET /frame (existing, unmodified)      | get_camera_frame() returns
+    |                                        | the last pushed frame
+control/brain_server.py -&gt; MissionRunner -&gt; VisionAgent -&gt; vision_fn_for()
+    |                                                            |
+    v                                                            v
+ GET /mission/status  --&gt;  Robot view HUD                service/vision_analyze
+ (polled at the same 500ms cadence)                       (Bedrock, unchanged)</pre>
+            </div>
+          </div>
+
+          <p><strong>The person holding the phone is the motor.</strong>
+            <code>TeleopRobot</code>'s drive methods don't move anything
+            &mdash; they log what the model decided, the same honest no-op
+            <code>ReplayRobot</code>'s pan methods already are. The next frame
+            is whatever you actually photograph after reading the instruction
+            and walking, which is what makes this <strong>closed-loop</strong>
+            where a recorded-walk replay is open-loop.</p>
+
+          <h4 class="sub-title">On Start, when the switch is on</h4>
+          <ol>
+            <li>A pre-flight check: <code>GET {serverUrl}/health</code> must
+              report <code>mode: "teleop"</code> &mdash; if the robot server
+              is still plain <code>mode: sim</code>, this fails loudly here
+              instead of 404-ing silently on the first frame push.</li>
+            <li><code>POST {brainUrl}/mission/start</code> with
+              <code>{policy: "vision", target_object}</code>. The brain's
+              runner factory resolves the vision policy into a real
+              <code>vision_fn</code> bound to the configured vision service
+              &mdash; the function that actually calls <code>/navigate</code>
+              on the brain's behalf, per tick.</li>
+            <li>The choice is <strong>latched</strong> at Start, not re-read
+              from the toggle every tick &mdash; so Stop knows whether
+              <em>this</em> session actually started a mission even if the
+              toggle or brain connection changes mid-walk.</li>
+          </ol>
+
+          <h4 class="sub-title">Each tick</h4>
+          <ol>
+            <li><code>POST {serverUrl}/teleop/frame</code> with the captured
+              JPEG &mdash; <code>TeleopRobot.push_frame()</code>, secret-gated
+              like every other robot route. Bumps a sequence number, notifies
+              anyone waiting on a fresher frame.</li>
+            <li>Independently, <code>MissionRunner</code>'s own tick loop
+              (an asyncio background task inside the brain server) calls
+              <code>RemoteRobot.get_camera_frame()</code> &rarr;
+              <code>GET {serverUrl}/frame</code> &rarr;
+              <code>TeleopRobot.get_camera_frame()</code>, which returns
+              whatever was most recently pushed &mdash; a
+              <strong>staleness check, not a block</strong> (see below) &mdash;
+              feeds it to <code>/navigate</code>, and applies the model's
+              decision exactly as it would for a recorded walk or the sim.</li>
+            <li>The page polls <code>GET {brainUrl}/mission/status</code> and
+              reshapes it into the same
+              <code>{action, reasoning, target_reached, &hellip;}</code> shape
+              a raw <code>/navigate</code> reply has, so every existing
+              renderer and the found-streak-to-pause logic keep working
+              unmodified regardless of which sub-mode produced the result.</li>
+            <li>The telemetry readout gains two rows raw <code>/navigate</code>
+              never had &mdash; <code>OUT</code> (the mission's outcome) and
+              <code>VF</code> (vision failures, so a live B3.2 budget counting
+              up is visible) &mdash; and marks visibility/obstacle fields
+              <code>N/A</code> rather than a false clear, since a mission
+              status is a <em>decision</em>, not the per-frame reading that
+              produced it.</li>
+            <li>A mission ending any way other than found &mdash; stopped,
+              failed, max steps, a live stall, a live vision-failure budget
+              hit &mdash; surfaces through the exact same error path a lost
+              <code>/navigate</code> connection would, and stops the tick loop
+              the same way arrival does.</li>
+          </ol>
+
+          <p><strong>Stop</strong> &rarr; <code>POST {brainUrl}/mission/stop</code>
+            (fire-and-forget), which stops both the mission loop and the
+            robot &mdash; enforced at the robot gate, not just in the loop, so
+            a tick already in flight can't get a move out after stop.</p>
+
+          <h4 class="sub-title">What makes this a real failsafe demo, not a preview</h4>
+          <ul>
+            <li><strong>Stand still</strong> (or point the phone at the
+              ceiling): within <code>stall_timeout_s</code> (default 15s) the
+              mission ends <code>failed</code> with a stall message &mdash; a
+              genuine failsafe firing, no drill involved.</li>
+            <li><strong>Point the phone somewhere unparseable:</strong>
+              exercises B3.2's vision-failure budget (default 3 chances) the
+              same way a drill would, but for real.</li>
+            <li><strong>Background the tab:</strong> the mission is a service
+              call, not page state, so it's still running when you come
+              back.</li>
+          </ul>
+
+          <h4 class="sub-title"><code>TeleopRobot</code>, precisely</h4>
+          <p>A fourth <code>RobotInterface</code> backend, alongside
+            sim/hardware/replay (<code>sim/teleop_robot.py</code>):</p>
+          <ul>
+            <li><code>push_frame(image_base64, media_type)</code> &mdash; not
+              part of <code>RobotInterface</code>; called only by the
+              <code>/teleop/frame</code> route. Stores the frame, bumps a
+              sequence number, records when it arrived.</li>
+            <li><code>get_camera_frame()</code> &mdash; <strong>a staleness
+              check, not a wait.</strong> Originally a blocking wait for a
+              frame newer than the last one <em>that caller</em> had seen
+              &mdash; and that shipped a real bug: the &ldquo;last
+              returned&rdquo; cursor was shared across <em>every</em> caller
+              of <code>GET /frame</code>, so Settings' own passive
+              reachability check could consume the current frame and leave
+              the next caller (an active mission tick) blocking the full 15s
+              and then failing &mdash; even with a healthy phone actively
+              streaming. Confirmed live: two consecutive plain <code>curl</code>
+              reads took 15.2s on the second call. Fixed the same day: it now
+              tracks <em>when</em> a frame was last pushed, returns it
+              immediately if within <code>stall_timeout_s</code>, or raises
+              <code>TeleopStall</code> immediately otherwise &mdash; never
+              blocks.</li>
+            <li>Drive/turn/look methods &mdash; log-only acks, no position
+              tracked.</li>
+            <li><code>get_distance()</code> &mdash; always <code>999.0</code>,
+              the same &ldquo;honestly no ultrasonic here&rdquo; constant
+              <code>ReplayRobot</code> uses, so the safety layer never blocks
+              a move against this backend.</li>
+            <li><code>TeleopStall</code> needs no special handling in
+              <code>MissionRunner</code> &mdash; it surfaces straight into
+              <code>tick()</code>'s existing catch-all, which already stops
+              the robot and ends the mission <code>failed</code> with the
+              exception's own message. One known rough edge: the
+              <code>/frame</code> route doesn't catch it specially yet, so a
+              live stall currently surfaces as a generic HTTP&nbsp;500 rather
+              than a named 503 &mdash; functionally correct, just a less
+              legible log line.</li>
+          </ul>
+          <p><strong>Config:</strong> <code>config/robot.yaml</code>'s
+            <code>mode: teleop</code> (a sibling of <code>sim</code>, not a
+            stand-in for <code>hardware</code>) plus a <code>teleop:</code>
+            block (<code>stall_timeout_s</code>, default 15.0).</p>
+          <p style="margin-bottom:0;"><strong>What this doesn't solve:</strong>
+            room-level step memory &mdash; a photograph still carries no room
+            label, so a teleop mission can revisit an already-searched room;
+            only the step cap stops it, same limitation as every
+            vision-policy mission today.</p>
+        </div>
+      </section>
+
+      <!-- 2 ================================================= -->
+      <section id="camera">
+        <div class="sec-head"><span class="sec-num">02</span><h2 class="sec-title">Camera tab &middot; Analyze a photo</h2></div>
+        <p class="sec-lede">The original, one-shot vision feature, unaffected by anything above.</p>
+        <ul>
+          <li>A native camera picker
+            (<code>&lt;input type="file" accept="image/*" capture="environment"&gt;</code>)
+            &mdash; unlike Guide's live <code>getUserMedia</code>, this works
+            fine over plain HTTP, no secure-context requirement.</li>
+          <li>An optional target-object text field.</li>
+          <li><strong>Backend:</strong> <code>POST /analyze</code>, model
+            <code>us.anthropic.claude-sonnet-4-5-20250929-v1:0</code> by
+            default &mdash; the one route still on a Claude model rather than
+            Nova Lite, since it's a one-off analysis rather than a
+            several-times-a-second loop and benefits from the stronger
+            reasoning. The response includes a <code>room_guess</code> from
+            the detected objects.</li>
+          <li>Downscaled to 1568px before upload &mdash; Anthropic's own
+            server-side downscaling threshold, so anything larger just burns
+            upload time and per-pixel cost for zero quality gain.</li>
+          <li>A single request/response; no loop, no camera left open,
+            nothing to Stop.</li>
+        </ul>
+      </section>
+
+      <!-- 3 ================================================= -->
+      <section id="sim">
+        <div class="sec-head"><span class="sec-num">03</span><h2 class="sec-title">Sim tab &middot; the grid-world twin</h2></div>
+        <p class="sec-lede">Everything here talks to the robot server (and, for
+          Vision Autopilot, the vision-analyze service directly) plus a JS
+          port of the starter-house grid layout.</p>
+        <ul>
+          <li><strong>Top-down canvas + telemetry</strong> &mdash; room,
+            facing, free space, doorway, visible objects, live safety status,
+            all rendered from the same calls every other panel uses.</li>
+          <li><strong>Manual control (D-pad)</strong> &mdash; direct
+            <code>POST /action</code> / <code>POST /stop</code> calls. Every
+            move passes through the server's safety veto, the same path an AI
+            decision gets &mdash; a human driving over Wi-Fi has the same
+            collision protection.</li>
+          <li><strong>Remote brain</strong> &mdash; starts a real
+            <code>MissionRunner</code> mission, then this panel becomes a
+            pure <em>observer</em>: step count, last action, rooms searched, a
+            log tail, following the robot on the map. Closing the tab and
+            reopening shows the mission further along or finished &mdash;
+            proof it's a service call, not page state. A
+            <strong>failsafe drill picker</strong> injects exactly one fault
+            (vision errors, vision hangs, or a hung brain loop) so the two
+            guards that can't be provoked by pressing anything can still be
+            watched firing, always ending with the robot stopped. A
+            <strong>watchdog readout</strong> shows the server's own silence
+            counter.</li>
+          <li><strong>Local brain, rule-based</strong> (Explore / Find
+            backpack / Reset) &mdash; the frontier-preference algorithm from
+            <code>brain/agent.py</code>, re-implemented in JavaScript, driving
+            the same <code>/action</code> calls a human would. Free, no API
+            calls, kept specifically because it needs no brain service and
+            exercises the safety layer without cost.</li>
+          <li><strong>Local brain, Vision Autopilot</strong> &mdash; since the
+            grid-world sim has no real camera, a small canvas raycaster
+            renders a synthetic first-person frame, posts it to
+            <code>/navigate</code> every ~2.5s, and executes whatever action
+            comes back through the same safety-veto path. Never
+            auto-starts; a visible call counter and step cap bound the
+            cost.</li>
+        </ul>
+        <p style="margin-bottom:0;"><strong>Remote and Local brains are
+          mutually exclusive</strong>, enforced both directions: the twin
+          refuses to start a local loop during a remote mission, and the
+          brain server answers a second <code>/mission/start</code> with
+          <code>409</code>.</p>
+      </section>
+
+      <!-- 4 ================================================= -->
+      <section id="settings">
+        <div class="sec-head"><span class="sec-num">04</span><h2 class="sec-title">Settings tab</h2></div>
+        <ul>
+          <li><strong>Robot server connection</strong> &mdash; URL + optional
+            secret. Auto-fills to the page's own origin when served by the
+            robot server itself; manual entry still works for pointing at a
+            different server (e.g. a teleop deployment).</li>
+          <li><strong>Brain service connection</strong> &mdash; its own URL
+            and an independently entered secret, never assumed to match the
+            robot's once each is its own deployed service. Needed for Remote
+            brain, recording, and Drive via brain.</li>
+          <li><strong>Cloud endpoint settings</strong> &mdash; the
+            vision-analyze base URL + secret, shared by Guide, Robot view's
+            default sub-mode, Vision Autopilot, and Camera-tab analysis.
+            Enter the base URL only; each feature appends its own route.</li>
+          <li><strong>Share setup</strong> &mdash; a QR code encoding every
+            URL and secret above, so a second phone needs no typing.
+            Explicitly flagged: anyone who scans or photographs it gets the
+            same access.</li>
+          <li><strong>Developer</strong> &mdash; a switch for exact API call
+            counts and the pan-speed meter, for anyone debugging the loop
+            rather than just using it.</li>
+          <li><strong>Debug / support</strong> &mdash; copies the last 20
+            unexpected browser-side errors plus basic context to the
+            clipboard, for pasting into a bug report without
+            live-reproducing the issue.</li>
+        </ul>
+        <p style="margin-bottom:0;">All fields except debug/onboarding flags
+          persist in <code>localStorage</code> so a re-opened install doesn't
+          start from a blank state.</p>
+      </section>
+
+      <!-- 5 ================================================= -->
+      <section id="safety">
+        <div class="sec-head"><span class="sec-num">05</span><h2 class="sec-title">Safety and failsafes</h2></div>
+        <p class="sec-lede">Cross-cutting, not a tab. Applies to every mode
+          that moves anything; Guide me and Robot view's default/recording
+          sub-modes move nothing, so none of this applies to them.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Guard</th><th>Where</th><th>Catches</th></tr></thead>
+            <tbody>
+              <tr><td class="strong">Safety veto</td><td class="mono">robot/safety.py</td><td>A move that would collide, regardless of who or what requested it &mdash; enforced on every <code>/action</code> call, on the server</td></tr>
+              <tr><td class="strong">B3.1 &middot; watchdog</td><td class="mono">robot/server.py</td><td>Motors left running because any client went quiet past <code>watchdog_timeout_s</code></td></tr>
+              <tr><td class="strong">B3.2 &middot; vision guard</td><td class="mono">mission_runner.py</td><td>A vision call that times out or fails repeatedly (timeout + failure-count budget)</td></tr>
+              <tr><td class="strong">B3.3 &middot; dead-man</td><td class="mono">brain_server.py</td><td>A tick that starts and never returns &mdash; a brain that's alive but stuck, invisible to the watchdog</td></tr>
+              <tr><td class="strong">T1 &middot; stall <span class="status-tag built" style="margin-left:6px;">teleop only</span></td><td class="mono">teleop_robot.py</td><td>No fresh frame pushed within <code>stall_timeout_s</code> &mdash; surfaces through B3.3's catch-all, no new handling needed</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="margin-bottom:0;">All five end the same way: the robot is
+          told to stop. B3.2 and B3.3 can't be triggered by pressing anything
+          on real hardware, which is why the Sim tab's drill picker exists
+          &mdash; and why the live phone walk in <a href="#robot-view">1.2.c</a>
+          is the closest thing to provoking them for real without a drill.</p>
+      </section>
+
+      <!-- 6 ================================================= -->
+      <section id="aws">
+        <div class="sec-head"><span class="sec-num">06</span><h2 class="sec-title">AWS deployment</h2></div>
+        <p class="sec-lede">How the pieces above actually run in the cloud.
+          Everything shares <strong>one NLB, one internal ALB, and one
+          CloudFront distribution</strong> &mdash; a new feature gets a new
+          path prefix and a new <code>ListenerRule</code> on the existing
+          shared listener, not a new load balancer or port.</p>
+
+        <div class="panel-wrap">
+          <div class="panel">
+            <pre>                         Internet
+                            |
+                  CloudFront distribution        &lt;- cloudformation/cdn.yaml
+             (public HTTPS -- satisfies getUserMedia's
+              secure-context requirement; origin is
+              plain http:// to the NLB, TLS terminates here)
+                            |
+                    Network Load Balancer          &lt;- cloudformation/service.yaml
+                            |
+                    Internal ALB, one shared
+                    listener on port 80
+                            |
+      +----------+----------+----------+----------+-----------+
+      |          |          |          |          |           |
+  vision-      twin       brain     teleop-    teleop-       admin
+  analyze    (Priority   (Priority   robot     brain       (Priority
+  (default,   10 / 11)     20)     (Priority  (Priority       30)
+  no prefix,             /mission/*  40 / 41)    50)        /admin/*
+  path-                  ...          /teleop-   /teleop-
+  fallthrough)                        robot/*    brain/*</pre>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Stack</th><th>Service it runs</th><th>Path claimed</th><th>Priority</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td class="mono strong">service.yaml</td><td>vision-analyze<br><span style="color:var(--text-muted); font-size:0.85em;">/analyze, /navigate, /guidance, /describe</span></td><td>everything else claims &mdash; the fallthrough</td><td class="mono">&mdash;</td><td>Owns the NLB, ALB, listener, VPC endpoints; every other stack imports these</td></tr>
+              <tr><td class="mono strong">twin.yaml</td><td>robot/server.py<br><span style="color:var(--text-muted); font-size:0.85em;">mode: sim</span></td><td class="mono">/, /action, /stop, /distance, /frame, /teleop/frame</td><td class="mono">10, 11</td><td>The deployed &ldquo;main&rdquo; twin &mdash; what a phone hits by default</td></tr>
+              <tr><td class="mono strong">brain.yaml</td><td>control/brain_server.py</td><td class="mono">/mission/*</td><td class="mono">20</td><td>Sits alongside twin.yaml, not inside it</td></tr>
+              <tr><td class="mono strong">admin.yaml</td><td>service/admin/</td><td class="mono">/admin/*</td><td class="mono">30</td><td>Recorded-walk viewer against the shared EFS volume &mdash; own service so it doesn't depend on the brain being up</td></tr>
+              <tr><td class="mono strong">teleop-robot.yaml</td><td>robot/server.py<br><span style="color:var(--text-muted); font-size:0.85em;">mode: teleop</span></td><td class="mono">/teleop-robot/*</td><td class="mono">40, 41</td><td>A second, independent instance of the twin image via <code>ROUTE_PREFIX</code> &mdash; sim and teleop live at once</td></tr>
+              <tr><td class="mono strong">teleop-brain.yaml</td><td>brain_server.py, pointed at the teleop robot</td><td class="mono">/teleop-brain/*</td><td class="mono">50</td><td>Same <code>ROUTE_PREFIX</code> trick, own secret, own <code>robot_url</code></td></tr>
+              <tr><td class="mono strong">recordings.yaml</td><td>EFS volume</td><td class="mono">&mdash;</td><td class="mono">&mdash;</td><td>Mounted by the brain (writes) and admin (reads); survives redeploys unlike Fargate's own ephemeral disk</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4 class="sub-title">Why CloudFront exists</h4>
+        <p><code>getUserMedia</code> (Guide me and both live-camera Robot view
+          sub-modes) requires a secure context. A bare NLB/ALB only serves
+          plain HTTP; CloudFront's default domain gives free automatic HTTPS
+          in front of it with no certificate management &mdash; what makes any
+          live-camera feature usable from a phone off the deploying machine's
+          own LAN at all.</p>
+
+        <h4 class="sub-title">Why teleop got its own sibling stacks</h4>
+        <p><code>robot/factory.py</code> picks exactly one backend per process
+          at boot, and the brain server picks exactly one <code>robot_url</code>
+          at start &mdash; so running sim-mode and teleop-mode
+          <em>simultaneously</em> needs two robot processes and two brain
+          processes, not a flag flip on the existing ones. Deliberately new
+          files rather than parameterizing the existing templates, so a
+          mistake in the new stack can't touch the already-running one.</p>
+
+        <h4 class="sub-title">Secrets</h4>
+        <p>Each service gets its own generated <code>x-app-secret</code> in
+          Secrets Manager, entered manually into the twin's Settings fields.
+          They are never assumed to match each other once each service is
+          independently deployed &mdash; a bug fixed live during teleop
+          testing: the twin was silently sending the robot's secret as the
+          brain's too, which 401s the instant they differ.</p>
+
+        <h4 class="sub-title">Models, per route</h4>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Route</th><th>Model</th><th>Why</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">/analyze</td><td class="mono">us.anthropic.claude&#8209;sonnet&#8209;4&#8209;5&#8209;20250929&#8209;v1:0</td><td>One-shot photo analysis &mdash; accuracy over latency</td></tr>
+              <tr><td class="mono">/navigate</td><td class="mono">amazon.nova&#8209;lite&#8209;v1:0</td><td>Several-times-a-second loop &mdash; latency dominates the experience</td></tr>
+              <tr><td class="mono">/guidance</td><td class="mono">amazon.nova&#8209;lite&#8209;v1:0</td><td>Same &mdash; a continuous, timer-throttled loop</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="margin-bottom:0;">All three are overridable via
+          <code>BEDROCK_ANALYZE_MODEL_ID</code> / <code>BEDROCK_NAVIGATE_MODEL_ID</code>
+          / <code>BEDROCK_GUIDANCE_MODEL_ID</code>.</p>
+      </section>
+
+      <!-- 7 ================================================= -->
+      <section id="next">
+        <div class="sec-head"><span class="sec-num">07</span><h2 class="sec-title">Where to look next</h2></div>
+        <ul class="next-list">
+          <li>
+            <span class="doc-name">PLAN&#8209;ar&#8209;guidance.md</span>
+            <p class="doc-desc">Guide me's full build history &mdash; every redesign, bug, and UX decision, in order, with dates.</p>
+          </li>
+          <li>
+            <span class="doc-name">PLAN&#8209;teleop&#8209;robot.md</span>
+            <p class="doc-desc">Robot view's &ldquo;Drive via brain&rdquo; build history, including the two real bugs found and fixed against the live AWS deployment on 2026&#8209;08&#8209;28.</p>
+          </li>
+          <li>
+            <span class="doc-name">AGENT&#8209;HARNESS.md <span class="status-tag built">built</span></span>
+            <p class="doc-desc">The mission tick's internals: seams, concurrency model, status contract, invariants. Read before changing anything in <code>control/</code>.</p>
+          </li>
+          <li>
+            <span class="doc-name">CLAUDE.md &sect;7</span>
+            <p class="doc-desc">The phase &rarr; UI-action &rarr; expected-result table this page's Guide/Sim sections expand on.</p>
+          </li>
+        </ul>
+      </section>
+
+    </main>
+  </div>
+
+  <footer>
+    <span>vision-picar &middot; features reference</span>
+    <span>source: FEATURES.md</span>
+  </footer>
+
+</div>
+
+<script>
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll(".toc-link"));
+    var map = {};
+    links.forEach(function (a) {
+      var id = a.getAttribute("href").slice(1);
+      var el = document.getElementById(id);
+      if (el) map[id] = a;
+    });
+    var sections = Object.keys(map).map(function (id) { return document.getElementById(id); });
+
+    function setActive(id) {
+      links.forEach(function (a) { a.classList.remove("active"); });
+      if (map[id]) map[id].classList.add("active");
+    }
+
+    if ("IntersectionObserver" in window && sections.length) {
+      var observer = new IntersectionObserver(function (entries) {
+        var visible = entries.filter(function (e) { return e.isIntersecting; });
+        if (visible.length) {
+          visible.sort(function (a, b) { return a.boundingClientRect.top - b.boundingClientRect.top; });
+          setActive(visible[0].target.id);
+        }
+      }, { rootMargin: "-10% 0px -70% 0px", threshold: [0, 1] });
+      sections.forEach(function (s) { observer.observe(s); });
+      setActive(sections[0].id);
+    }
+  })();
+</script>

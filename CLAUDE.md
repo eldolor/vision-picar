@@ -177,6 +177,10 @@ vision-picar/
 ├── .gitignore
 ├── README.md                  full build-plan-referenced documentation
 ├── CLAUDE.md                  this file -- session orientation
+├── FEATURES.md                 every UI feature (all four tabs), how each
+│                               one works end-to-end, and the AWS topology
+│                               it runs against -- start here for "how does
+│                               X work" questions about the app itself
 │
 │   -- planning / explainer docs (no code; read before hardware work) --
 ├── INTRODUCTION.md            project introduction
@@ -224,8 +228,16 @@ Robot view pauses when the service reports `target_reached`, so a walk
 ends at arrival instead of burning calls. **That field needs an ECS
 redeploy of `service/vision_analyze/` to take effect** -- against the
 currently deployed service the field is simply absent, the pause never
-fires, and everything else behaves as before. The 60-call cap (~2.5 min
-at the 2.5s cadence) bounds the cost either way.
+fires, and everything else behaves as before. The 120-call cap (~3.3 min
+at the 500ms cadence) bounds the cost either way.
+
+`/navigate` moved to Amazon Nova Lite on 2026-08-28, matching `/guidance`
+(`service/vision_analyze/vision_core.py`'s "Per-route models" note) --
+a discussed trade-off, not an independently re-measured one. Robot view
+is the tool that would surface it if navigation accuracy actually
+suffered; if a walk looks worse than it used to, that is itself the
+finding, and `tests/manual_replay_navigate.py` against both models on
+the same recorded walk is how to confirm it.
 
 Secondary: `python -m tests.manual_replay_navigate <dir> "<target>"`
 replays a folder of photos and prints an action-spread summary. Use it to
