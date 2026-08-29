@@ -309,7 +309,7 @@
       <span class="chip"><b>4</b>&nbsp;tabs</span>
       <span class="chip"><b>3</b>&nbsp;backend processes</span>
       <span class="chip"><b>7</b>&nbsp;AWS stacks, one shared ALB</span>
-      <span class="chip">written against <b>172770b</b> + the teleop work in <b>PLAN&#8209;teleop&#8209;robot.md</b></span>
+      <span class="chip">written against <b>01054a0</b>, which lands <b>PLAN&#8209;teleop&#8209;robot.md</b></span>
     </div>
   </header>
 
@@ -339,6 +339,50 @@
       <section id="moving-parts">
         <div class="sec-head"><span class="sec-num">00</span><h2 class="sec-title">The moving parts, once</h2></div>
         <p class="sec-lede">So the rest of this page doesn't repeat itself.</p>
+
+        <div class="q">
+          <b>Why three surfaces, not one</b>
+          It's tempting to read the digital twin as existing purely to
+          emulate the robot, which makes Sim, Guide me, and Robot view look
+          redundant with each other &mdash; they aren't, and none of them is
+          actually emulating the robot in the literal sense (that's still
+          blocked on buying hardware, Phase 11). Each answers &ldquo;does
+          this work&rdquo; for a different layer of the system.
+          <ul style="margin:12px 0 0;">
+            <li style="margin-bottom:10px;"><strong>Sim tab</strong> proves the
+              <em>control logic</em> &mdash; mission memory, the safety veto,
+              the failure budgets, <code>MissionRunner</code>'s failsafes
+              &mdash; against a free, deterministic grid world, because this
+              project is simulation-first by design: nothing here gets
+              validated against real hardware first. It's also the only place
+              <code>control/drills.py</code>'s fault injection is safe to run
+              at all &mdash; nobody deliberately kills the vision link or
+              hangs the brain loop on a real robot to prove the failsafe
+              fires.</li>
+            <li style="margin-bottom:10px;"><strong>Guide me has nothing to do
+              with the robot.</strong> It's a phone-as-sensor,
+              human-as-actuator feature that exists because the sim
+              structurally can't answer one question: can the vision
+              <em>model</em> read a real room? <code>MockRobot</code>'s
+              camera renders a flat-shaded raycaster, not real pixels
+              (<code>PLAN-sim-hardening.md</code>'s point that every
+              &ldquo;the simulation works&rdquo; result so far is a statement
+              about synthetic geometry, not rooms). Guide me answers that
+              with real photographs, and is a genuinely useful standalone
+              feature in its own right &mdash; point your phone, find your
+              keys.</li>
+            <li style="margin-bottom:0;"><strong>Robot view</strong> is the
+              same real-pixel test as Guide me, but asks &ldquo;what would
+              the robot do&rdquo; instead of &ldquo;where should the person
+              go&rdquo; &mdash; the cheapest go/no-go gate for the navigation
+              <em>policy</em> before spending money on a PiCar-X.</li>
+          </ul>
+          <p style="margin:12px 0 0;">So: Sim validates the software that
+            will eventually run the robot; Guide me and Robot view validate
+            the vision model that software depends on, on real pixels the
+            sim can never produce. All three matter, and they're testing
+            different things, not the same thing three ways.</p>
+        </div>
 
         <p>Four backend processes this UI can talk to, all HTTP, all optionally
           behind an <code>x-app-secret</code> header:</p>

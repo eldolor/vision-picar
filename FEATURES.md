@@ -2,7 +2,7 @@
 
 A feature-by-feature reference for `web-twin/index.html`, the mobile-first
 web app that is this project's one real UI. Written against the repo as
-of `172770b` plus the (uncommitted, done) teleop work described in
+of `01054a0`, which lands the teleop work described in
 `PLAN-teleop-robot.md`. Where `README.md` explains *why* something was
 built and `CLAUDE.md` tracks *status*, this file explains *how each
 button actually works* -- which process it talks to, which route, and
@@ -16,6 +16,41 @@ exercises the brain/control loop against real pixels.
 ---
 
 ## 0. The moving parts, once, so the rest of this doc doesn't repeat itself
+
+**Three different surfaces in this app answer "does this work" for three
+different layers of the system, not one "does the robot work" question
+asked three times.** It's tempting to read the digital twin as existing
+purely to emulate the robot, which makes Sim, Guide me, and Robot view
+look redundant with each other -- they aren't, and none of them is
+actually emulating the robot in the literal sense (that's still blocked
+on buying hardware, Phase 11):
+
+- **Sim tab** proves the *control logic* -- mission memory, the safety
+  veto, the failure budgets, `MissionRunner`'s failsafes -- against a
+  free, deterministic grid world, because this project is
+  simulation-first by design: nothing here gets validated against real
+  hardware first. It's also the only place `control/drills.py`'s fault
+  injection is safe to run at all -- nobody deliberately kills the vision
+  link or hangs the brain loop on a real robot to prove the failsafe
+  fires.
+- **Guide me has nothing to do with the robot.** It's a phone-as-sensor,
+  human-as-actuator feature that exists because the sim structurally
+  can't answer one question: can the vision *model* read a real room?
+  `MockRobot`'s camera renders a flat-shaded raycaster, not real pixels
+  (`PLAN-sim-hardening.md`'s point that every "the simulation works"
+  result so far is a statement about synthetic geometry, not rooms).
+  Guide me answers that with real photographs, and is a genuinely useful
+  standalone feature in its own right -- point your phone, find your
+  keys.
+- **Robot view** is the same real-pixel test as Guide me, but asks "what
+  would the robot do" instead of "where should the person go" -- the
+  cheapest go/no-go gate for the navigation *policy* before spending
+  money on a PiCar-X.
+
+So: Sim validates the software that will eventually run the robot; Guide
+me and Robot view validate the vision model that software depends on, on
+real pixels the sim can never produce. All three matter, and they're
+testing different things, not the same thing three ways.
 
 Four backend processes this UI can talk to, all HTTP, all optionally
 behind `x-app-secret`:
