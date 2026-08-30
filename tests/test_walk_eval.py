@@ -107,8 +107,8 @@ def test_empty_walk_is_handled_not_crashed():
 def test_oscillation_counts_direction_reversals_not_turns():
     """Four turns the same way is a deliberate route around something; four
     turns alternating is a policy with no memory of its last move."""
-    deliberate = compute_metrics(walk(["RIGHT", "RIGHT", "RIGHT", "RIGHT"]))
-    flapping = compute_metrics(walk(["LEFT", "RIGHT", "LEFT", "RIGHT"]))
+    deliberate = compute_metrics(walk(["RIGHT"] * 8))
+    flapping = compute_metrics(walk(["LEFT", "RIGHT"] * 4))
     assert deliberate["oscillation_rate"] == 0.0
     assert flapping["oscillation_rate"] == 1.0
     assert "oscillating" in metric_flags(flapping)
@@ -182,8 +182,15 @@ def test_oscillation_and_identity_flips_actually_move_the_score():
     """Both were computed, displayed as flags, and then ignored by the
     number -- four walks oscillating at 40-60% paid nothing for it."""
     judge = {"sensible_rate": 1.0}
-    steady = compute_metrics(walk(["FORWARD", "RIGHT", "RIGHT", "FORWARD", "FORWARD", "RIGHT"]))
-    flapping = compute_metrics(walk(["FORWARD", "RIGHT", "LEFT", "FORWARD", "RIGHT", "LEFT"]))
+    # Identical action COUNTS (3 forward, 3 right, 3 left) -- only the
+    # ordering differs, so nothing but the oscillation term can separate
+    # them. Grouped turns are a deliberate route around something; alternating
+    # ones are a policy with no memory of its last move.
+    steady = compute_metrics(walk(
+        ["FORWARD", "RIGHT", "RIGHT", "RIGHT", "FORWARD", "LEFT", "LEFT", "LEFT", "FORWARD"]))
+    flapping = compute_metrics(walk(
+        ["FORWARD", "RIGHT", "LEFT", "RIGHT", "LEFT", "FORWARD", "RIGHT", "LEFT", "FORWARD"]))
+    assert steady["action_spread"] == flapping["action_spread"]
     assert score_walk(steady, judge)["score"] > score_walk(flapping, judge)["score"]
 
     stable = walk(["FORWARD"] * 6)
@@ -314,3 +321,28 @@ def test_the_history_given_to_a_frame_comes_from_the_whole_walk():
     # turns; its prompt must show that history rather than a clean slate.
     assert any("RIGHT, RIGHT" in prompt for prompt in seen)
     assert any("NOT moved forward" in prompt for prompt in seen)
+
+
+def test_a_handful_of_turns_is_not_called_oscillation():
+    """Two turns that happen to differ read as 100% reversal. Every short
+    successful walk was being flagged `oscillating` on 3-5 turns, which said
+    nothing about them -- the rate is noise until there are enough turns for
+    a pattern to exist."""
+    few = compute_metrics(walk(["FORWARD", "LEFT", "RIGHT", "FORWARD"]))
+    assert few["oscillation_rate"] == 0.0
+    assert "oscillating" not in metric_flags(few)
+
+    many = compute_metrics(walk(["LEFT", "RIGHT"] * 4))
+    assert many["oscillation_rate"] == 1.0
+    assert "oscillating" in metric_flags(many)
+
+
+def test_a_couple_of_opening_turns_is_not_called_stuck():
+    """Orientation at the start of a walk is not a stall. Claiming it was
+    made the judge reject the opening moves of walks that went on to reach
+    the target in 13 frames."""
+    from control.walk_eval import _history_note
+
+    assert "NOT moved forward" not in _history_note(["RIGHT"])
+    assert "NOT moved forward" not in _history_note(["RIGHT", "LEFT"])
+    assert "NOT moved forward" in _history_note(["RIGHT", "LEFT", "RIGHT"])

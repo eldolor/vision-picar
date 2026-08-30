@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # (target_reached: true, action: FORWARD) was marked wrong for obeying its
 # instructions. Bumping rescoes every stored eval.json rather than leaving
 # walks ranked by a judge that disagreed with the policy prompt.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 MOVE_ACTIONS = ("FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP")
 
@@ -68,6 +68,8 @@ DEGENERATE_SHARE = 0.90      # >=90% one action == not reading the scene
 STALL_RUN = 8                # >=8 frames without a FORWARD == not closing distance
 OSCILLATION_RATE = 0.40      # >=40% of turns immediately reversing direction
 IDENTITY_FLIPS = 4           # target_visible changing this many times
+MIN_TURNS_FOR_OSCILLATION = 6  # fewer turns than this and the reversal rate is noise
+MIN_STUCK_WINDOW = 3         # moves of history before "it may be stuck" is fair
 
 
 def _entry_actions(entries: list) -> list:
@@ -96,9 +98,14 @@ def compute_metrics(entries: list) -> dict:
     # Turn reversals: RIGHT immediately after LEFT (or vice versa), as a
     # share of all turns. A policy routing deliberately around an obstacle
     # keeps turning the same way; one re-deciding blind flips.
+    # Reversal rate over too few turns is noise, not a pattern: two turns
+    # that happen to differ read as 100% oscillation. Every short successful
+    # walk was being flagged `oscillating` on 3-5 turns, which said nothing
+    # about them. Below the floor, report 0 rather than a number that will
+    # be over-read.
     turns = [a for a in actions if a in ("LEFT", "RIGHT")]
     reversals = sum(1 for x, y in zip(turns, turns[1:]) if x != y)
-    oscillation = (reversals / (len(turns) - 1)) if len(turns) > 1 else 0.0
+    oscillation = (reversals / (len(turns) - 1)) if len(turns) >= MIN_TURNS_FOR_OSCILLATION else 0.0
 
     visible = [nav.get("target_visible") is True for nav in navs]
     flips = sum(1 for x, y in zip(visible, visible[1:]) if x != y)
@@ -161,6 +168,11 @@ So do NOT mark an action wrong merely because the robot has arrived:
   drive into something OTHER than the {target_object}.
 - The {target_object} is the goal, not an obstacle. Closing the last of the
   distance to it is correct behaviour, not a collision risk.
+- NEVER mark FORWARD wrong on the grounds that the robot is close to the
+  {target_object}, or that it "should have stopped" because it has arrived.
+  Whether it has arrived is the target_reached field, which you are not
+  being asked to grade. If you disagree with target_reached, that is not an
+  error in the ACTION -- answer sensible.
 
 Judge whether the chosen action was sensible for this photo AND for where
 the robot is in its walk. The mistake to be strictest about is the one that
@@ -212,7 +224,11 @@ def _history_note(prior_actions: list) -> str:
         return "This is the robot's first move of the walk.\n"
     window = prior_actions[-HISTORY_WINDOW:]
     note = "The robot's previous moves, oldest first, were: " + ", ".join(window) + ".\n"
-    if window and "FORWARD" not in window:
+    # Only claim it is stuck once there is enough history to mean it. Two
+    # turns at the start of a walk is orientation, not a stall, and telling
+    # the judge otherwise made it reject the opening moves of walks that
+    # went on to reach the target in 13 frames.
+    if len(window) >= MIN_STUCK_WINDOW and "FORWARD" not in window:
         note += (f"Note it has NOT moved forward once in its last {len(window)} moves -- "
                  "it may be turning on the spot instead of making progress.\n")
     return note
