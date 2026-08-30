@@ -251,3 +251,40 @@ def test_a_walk_name_gets_the_full_width_on_a_phone(browser, admin_server):
     assert name["width"] > PHONE["width"] * 0.6, (
         f"the walk name only gets {name['width']:.0f}px of {PHONE['width']}px")
     page.close()
+
+
+def test_the_slideshow_controls_are_thumb_sized_on_a_phone(browser, admin_server):
+    """Prev/Next/Play are pressed once per frame -- a 39-frame walk is 39
+    taps -- and at desktop sizing they were 34px tall and 52-70px wide, under
+    every touch-target guideline going.
+
+    This asserts the thing that actually changed. An earlier version of this
+    test asserted the controls were on screen, which passed with the mobile
+    CSS removed: at 390x844 the desktop layout does fit, so that test proved
+    nothing. The rest of the phone slideshow work (safe-area insets, sticky
+    controls, swipe) is precautionary -- no reproduction was found for it.
+    """
+    walks = json.loads(json.dumps(WALKS))
+    page, _ = open_console(browser, admin_server, viewport=PHONE, walks=walks)
+
+    page.route("**/recording/walks/*", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps({
+            "walk": walks["walks"][0]["walk"],
+            "frames": [{"file": "frame-0000.jpg", "bytes": 1000}],
+            "entries": [{"seq": 0, "file": "frame-0000.jpg",
+                         "navigate": {"action": "FORWARD", "reasoning": "r"}}],
+            "label": None, "model_id": None, "meta": None, "eval": None})))
+    page.route("**/frames/*", lambda r: r.fulfill(
+        status=200, content_type="image/jpeg", body=b"\xff\xd8\xff\xd9"))
+
+    page.locator(".walk").first.locator(".walk-actions button", has_text="View").click()
+    page.wait_for_selector(".frame", timeout=10_000)
+    page.locator(".frame img").first.click()
+    sync_api.expect(page.locator("#slideshow")).to_have_class("slideshow show")
+
+    for sel in ("#slideshow-prev", "#slideshow-next", "#slideshow-play"):
+        box = page.locator(sel).bounding_box()
+        assert box is not None, sel
+        assert box["height"] >= 44, f"{sel} is only {box['height']:.0f}px tall"
+        assert box["width"] >= 90, f"{sel} is only {box['width']:.0f}px wide"
+    page.close()

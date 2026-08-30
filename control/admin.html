@@ -131,6 +131,33 @@
   .slideshow-info { max-width: 90vw; text-align: center; margin-top: 14px; }
   .slideshow-controls { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
   .slideshow-close { position: absolute; top: 20px; right: 24px; }
+
+  /* The slideshow on a phone. Absolutely-positioned Close, a fixed-height
+     image and an un-scrollable column are all fine on a desktop and all fail
+     on a handset: the close button lands under the browser chrome, a long
+     reasoning line pushes Prev/Next off the bottom of the screen, and there
+     is no way to get to either. Below this width it becomes an ordinary
+     scrolling column with the controls pinned to the bottom, inside the
+     safe-area insets so iOS's own bars do not sit on top of them. */
+  @media (max-width: 700px) {
+    .slideshow {
+      justify-content: flex-start;
+      overflow-y: auto;
+      padding: calc(10px + env(safe-area-inset-top)) 10px
+               calc(10px + env(safe-area-inset-bottom));
+    }
+    .slideshow-close { position: static; align-self: flex-end; margin-bottom: 8px; }
+    .slideshow img { max-width: 100%; max-height: 46vh; }
+    .slideshow-info { max-width: 100%; }
+    .slideshow-controls {
+      position: sticky; bottom: 0; width: 100%; margin-top: auto;
+      padding-top: 10px; background: rgba(5,6,9,0.92);
+    }
+    /* Thumb-sized -- 34px tall is under every touch-target guideline going,
+       and this is the control you press once per frame of a 39-frame walk.
+       Each gets an equal share of the row. */
+    .slideshow-controls button { flex: 1; padding: 14px 8px; }
+  }
 </style>
 
 <h1>vision-picar brain admin</h1>

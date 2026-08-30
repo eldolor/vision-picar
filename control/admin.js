@@ -676,6 +676,29 @@
   }
 
   document.getElementById("slideshow-close").onclick = closeSlideshow;
+  // Swipe to step through frames. On a phone this is how you actually read a
+  // walk -- reaching for Prev/Next between every frame of a 39-frame walk is
+  // not a review, it is data entry. Horizontal-only, and ignored unless the
+  // gesture is clearly sideways, so it never fights the overlay's own
+  // vertical scrolling.
+  (function () {
+    const el = document.getElementById("slideshow");
+    let x0 = null, y0 = null;
+    el.addEventListener("touchstart", function (e) {
+      if (e.touches.length !== 1) { x0 = null; return; }
+      x0 = e.touches[0].clientX;
+      y0 = e.touches[0].clientY;
+    }, { passive: true });
+    el.addEventListener("touchend", function (e) {
+      if (x0 === null || !e.changedTouches.length) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      x0 = null;
+      if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      slideshowStep(dx < 0 ? 1 : -1);
+    }, { passive: true });
+  })();
+
   document.getElementById("slideshow-prev").onclick = function () { slideshowStep(-1); };
   document.getElementById("slideshow-next").onclick = function () { slideshowStep(1); };
   document.getElementById("slideshow-play").onclick = function () {
