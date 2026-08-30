@@ -602,21 +602,21 @@
     const statusEl = document.getElementById("connection-status");
     const btn = document.getElementById("btn-connect");
     if (!url) {
-      if (!silent) statusEl.textContent = "Enter the robot server's URL first.";
+      if (!silent) setConnStatus(statusEl, "err", "No URL yet", "Enter the robot server's address above, then tap Connect.");
       return;
     }
     state.serverUrl = url;
     state.serverSecret = document.getElementById("cfg-server-secret").value.trim();
     state.connecting = true;
     setButtonBusy(btn, true, "Connecting\u2026");
-    statusEl.textContent = silent ? "Reconnecting\u2026" : "Connecting\u2026";
+    setConnStatus(statusEl, "busy", silent ? "Reconnecting\u2026" : "Connecting\u2026", url);
     renderHeaderConnStatus();
     try {
       const frame = await fetchFrame();
       state.connected = true;
       setControlsEnabled(true);
       startWatchdogPolling();
-      statusEl.textContent = "Connected to " + url;
+      setConnStatus(statusEl, "ok", "Connected", url);
       prefSet(PREF.serverUrl, url);
       recordObservation(frame);
       render(frame);
@@ -624,16 +624,40 @@
     } catch (e) {
       state.connected = false;
       setControlsEnabled(false);
-      statusEl.textContent = silent
-        ? "Not connected \u2014 " + url + " didn't respond. Tap Connect to retry."
-        : "Could not reach " + url + " (" + e.message + "). " +
-          "Check the server is running, on the same network, and CORS/allowed_origins in config/robot.yaml permits this page's origin.";
+      setConnStatus(statusEl, "err", "Not connected", silent
+        ? url + " didn't respond. Tap Connect to retry."
+        : "Could not reach " + url + " (" + e.message + "). Check the server is "
+          + "running, on the same network, and that CORS/allowed_origins in "
+          + "config/robot.yaml permits this page's origin.");
       if (!silent) showToast("Couldn't reach the robot server.", "err");
     } finally {
       state.connecting = false;
       setButtonBusy(btn, false);
       renderHeaderConnStatus();
     }
+  }
+
+  // ---------- connection status ----------
+  // These two readouts are how you find out, standing in the middle of a
+  // room with a phone, whether the thing you are about to drive is actually
+  // reachable. They used to be dim grey body text that read identically
+  // whether the service was live or dead, with a long URL burying the one
+  // word that mattered. State goes in the label, colour and dot; the URL is
+  // demoted to a detail line that is allowed to wrap or truncate.
+  //
+  // Writes through the label/detail spans rather than the container's
+  // textContent, which would blow away the dot and the structure.
+  const CONN_STATE_CLASS = {ok: "is-ok", err: "is-err", busy: "is-busy", idle: ""};
+
+  function setConnStatus(el, stateName, label, detail) {
+    if (!el) return;
+    el.classList.remove("is-ok", "is-err", "is-busy");
+    const cls = CONN_STATE_CLASS[stateName];
+    if (cls) el.classList.add(cls);
+    const labelEl = el.querySelector(".conn-status-label");
+    const detailEl = el.querySelector(".conn-status-detail");
+    if (labelEl) labelEl.textContent = label;
+    if (detailEl) detailEl.textContent = detail || "";
   }
 
   // ---------- rendering ----------
@@ -1431,7 +1455,7 @@
     const statusEl = document.getElementById("brain-connection-status");
     const btn = document.getElementById("btn-brain-connect");
     if (!url) {
-      if (!silent) statusEl.textContent = "Enter the brain service's URL first.";
+      if (!silent) setConnStatus(statusEl, "err", "No URL yet", "Enter the brain service's address above, then tap Connect.");
       return;
     }
     state.brainUrl = url;
@@ -1445,8 +1469,8 @@
       // default applies" -- resolved for display in brainModelLabel().
       state.brainNavigateModelId = health.navigate_model_id || null;
       prefSet(PREF.brainUrl, url);
-      statusEl.textContent = "Connected to " + url + " \u2014 driving the robot at " +
-        health.robot_url + (health.drills_allowed ? "" : " (drills disabled)");
+      setConnStatus(statusEl, "ok", "Connected" + (health.drills_allowed ? "" : " (drills disabled)"),
+        url + " \u2014 driving the robot at " + health.robot_url);
       if (!silent) showToast("Connected to the brain service.", "ok");
       renderRecordStatus();
       renderDriveViaBrainStatus();
@@ -1457,9 +1481,9 @@
       if (state.brainMissionRunning) startBrainPolling();
     } catch (e) {
       state.brainConnected = false;
-      statusEl.textContent = silent
-        ? "Not connected \u2014 " + url + " didn't respond. Tap Connect to retry."
-        : "Could not reach " + url + " (" + e.message + "). Is control/brain_server.py running?";
+      setConnStatus(statusEl, "err", "Not connected", silent
+        ? url + " didn't respond. Tap Connect to retry."
+        : "Could not reach " + url + " (" + e.message + "). Is control/brain_server.py running?");
       if (!silent) showToast("Couldn't reach the brain service.", "err");
     } finally {
       state.brainConnecting = false;

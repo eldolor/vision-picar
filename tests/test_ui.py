@@ -273,3 +273,63 @@ def test_robot_only_rows_are_hidden_in_guide_mode(browser, twin_server):
     sync_api.expect(page.locator("#navigate-model-row")).to_be_visible()
     sync_api.expect(page.locator("#record-walk-row")).to_be_visible()
     page.close()
+
+
+# ---------- connection status ----------
+
+
+def test_connection_status_reads_as_a_state_not_a_sentence(browser, twin_server):
+    """These two readouts are how you find out, standing in a room holding a
+    phone, whether the thing you are about to drive is reachable. They used
+    to be dim grey body text that looked identical connected or dead, with a
+    long URL burying the one word that mattered.
+
+    Asserts the structure that makes the state legible: a dot, a label
+    carrying the state on its own, and the URL demoted to a detail line.
+    """
+    page, _ = open_twin(browser, twin_server)
+    for eid in ("connection-status", "brain-connection-status"):
+        el = page.locator("#" + eid)
+        assert el.locator(".conn-status-dot").count() == 1, eid
+        label = el.locator(".conn-status-label")
+        # State-agnostic: the fixture's twin is live, so the robot panel may
+        # legitimately have auto-connected by now. What matters is that the
+        # label carries a state on its own, without a URL in it.
+        text = label.inner_text().strip()
+        assert text in {"Connected", "Not connected", "Connecting\u2026",
+                        "Reconnecting\u2026", "No URL yet"}, f"{eid}: {text!r}"
+        assert "http" not in text, f"{eid} label should not carry a URL: {text!r}"
+        # The label must be visually stronger than the surrounding hint text,
+        # or this is the same unreadable line with extra markup.
+        weight = page.evaluate(
+            "(id) => getComputedStyle(document.querySelector('#'+id+' .conn-status-label'))"
+            ".fontWeight", eid)
+        assert int(weight) >= 600, f"{eid} label is not bold ({weight})"
+    page.close()
+
+
+def test_a_live_connection_is_visually_distinct_from_a_dead_one(browser, twin_server):
+    """The original bug in miniature: connected and not-connected rendered in
+    exactly the same colour, so the state could only be read by parsing the
+    sentence."""
+    page, _ = open_twin(browser, twin_server)
+    el = page.locator("#connection-status")
+
+    def label_colour():
+        return page.evaluate(
+            "() => getComputedStyle(document.querySelector("
+            "'#connection-status .conn-status-label')).color")
+
+    def set_state(cls):
+        page.evaluate(
+            "(c) => { const el = document.getElementById('connection-status');"
+            " el.classList.remove('is-ok','is-err','is-busy'); el.classList.add(c); }", cls)
+
+    set_state("is-err")
+    dead = label_colour()
+    set_state("is-ok")
+    alive = label_colour()
+
+    assert dead != alive, "connected and disconnected look identical"
+    assert el.evaluate("el => el.classList.contains('is-ok')")
+    page.close()

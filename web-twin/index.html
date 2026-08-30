@@ -218,6 +218,59 @@
   .settings-input { margin-top: 6px; }
   .hint { font-family: var(--sans); font-size: var(--fs-body); color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
 
+  /* Connection status. Both of these used to be plain .hint text -- dim grey
+     at body size, identical whether the thing was connected or dead, with a
+     long URL swallowing the one word that mattered. On a phone in a bright
+     room that is unreadable at a glance, which is exactly when you need it:
+     you are standing in the middle of the floor about to start a walk.
+     A tinted card, a coloured dot and the state as a heading, with the URL
+     demoted to a second line that can truncate. */
+  .conn-status {
+    display: flex; align-items: flex-start; gap: 10px; margin-top: 10px;
+    padding: 10px 12px; border-radius: 10px;
+    background: var(--surface-raised); border: 1px solid var(--border);
+    border-left: 3px solid var(--text-dim);
+  }
+  .conn-status-dot {
+    flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--text-dim); margin-top: 5px;
+  }
+  .conn-status-body { min-width: 0; flex: 1; }
+  .conn-status-label {
+    display: block; font-family: var(--sans); font-weight: 700;
+    font-size: var(--fs-md); color: var(--text); line-height: 1.3;
+  }
+  .conn-status-detail {
+    display: block; font-family: var(--mono); font-size: var(--fs-body);
+    color: var(--text-dim); line-height: 1.4; margin-top: 3px;
+    overflow-wrap: anywhere;
+  }
+  .conn-status.is-ok { border-left-color: var(--accent-safe); }
+  .conn-status.is-ok .conn-status-dot {
+    background: var(--accent-safe);
+    /* A live connection is the one state worth animating: it says "this is
+       true right now", not "this was true when you last tapped". */
+    animation: conn-pulse 2.2s ease-in-out infinite;
+  }
+  .conn-status.is-ok .conn-status-label { color: var(--accent-safe); }
+  .conn-status.is-err { border-left-color: var(--accent-alert); }
+  .conn-status.is-err .conn-status-dot { background: var(--accent-alert); }
+  .conn-status.is-err .conn-status-label { color: var(--accent-alert); }
+  .conn-status.is-busy { border-left-color: var(--accent-primary); }
+  .conn-status.is-busy .conn-status-dot {
+    background: var(--accent-primary); animation: conn-pulse 1s ease-in-out infinite;
+  }
+  .conn-status.is-busy .conn-status-label { color: var(--accent-primary); }
+  @keyframes conn-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
+    50% { opacity: 0.55; box-shadow: 0 0 0 5px transparent; }
+  }
+  /* Someone who has asked the OS to stop moving things gets a static dot;
+     colour and weight already carry the whole message. */
+  @media (prefers-reduced-motion: reduce) {
+    .conn-status .conn-status-dot { animation: none !important; }
+  }
+
   /* The one-line answer to "what is this tab for," in the reading voice of
      a product rather than a README. Every tab used to open with 60-100
      words of implementation detail (route names, file paths, service
@@ -1419,7 +1472,13 @@
         <button id="btn-connect" class="primary" style="flex:1;">Connect</button>
       </div>
       <input type="text" id="cfg-server-secret" class="text-input settings-input" placeholder="x-app-secret value (if this deployment requires one)">
-      <div class="hint" id="connection-status" role="status" aria-live="polite">Not connected.</div>
+      <div class="conn-status" id="connection-status" role="status" aria-live="polite">
+        <span class="conn-status-dot"></span>
+        <span class="conn-status-body">
+          <span class="conn-status-label">Not connected</span>
+          <span class="conn-status-detail"></span>
+        </span>
+      </div>
       <details class="disclosure">
         <summary><span class="disclosure-caret" data-icon="chevronRight"></span>Setting this up</summary>
         <div class="hint">
@@ -1446,7 +1505,13 @@
         <button id="btn-brain-connect" class="primary" style="flex:1;">Connect</button>
       </div>
       <input type="text" id="cfg-brain-secret" class="text-input settings-input" placeholder="x-app-secret value (if this deployment requires one)">
-      <div class="hint" id="brain-connection-status" role="status" aria-live="polite">Not connected.</div>
+      <div class="conn-status" id="brain-connection-status" role="status" aria-live="polite">
+        <span class="conn-status-dot"></span>
+        <span class="conn-status-body">
+          <span class="conn-status-label">Not connected</span>
+          <span class="conn-status-detail"></span>
+        </span>
+      </div>
       <details class="disclosure">
         <summary><span class="disclosure-caret" data-icon="chevronRight"></span>Setting this up</summary>
         <div class="hint">
