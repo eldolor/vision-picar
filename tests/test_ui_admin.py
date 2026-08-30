@@ -204,3 +204,50 @@ def test_the_score_and_the_operator_label_are_separate_controls(browser, admin_s
     sync_api.expect(walk.locator(".label-select")).to_have_count(1)
     assert walk.locator(".label-select").input_value() == ""
     page.close()
+
+
+# ---------- narrow screens ----------
+
+
+def test_the_console_does_not_scroll_sideways_on_a_phone(browser, admin_server):
+    """The page was built at desktop width: one row per walk, with the name,
+    a label picker, a replay picker and four buttons side by side. On a phone
+    that row could not fit, so the buttons ran off the right edge and the
+    name column collapsed to about 130px -- wrapping a walk name over six
+    lines beside a wide empty gap.
+
+    Horizontal overflow is the symptom worth pinning, because it is what
+    makes controls unreachable rather than merely ugly."""
+    page, _ = open_console(browser, admin_server, viewport=PHONE)
+    overflow = page.evaluate(
+        "() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 1, f"page scrolls {overflow}px sideways at {PHONE['width']}px wide"
+    page.close()
+
+
+def test_every_walk_control_is_reachable_on_a_phone(browser, admin_server):
+    """Not scrolling sideways is not enough on its own -- the controls have
+    to actually be on screen and hittable."""
+    page, _ = open_console(browser, admin_server, viewport=PHONE)
+    walk = page.locator(".walk").first
+    for selector in (".label-select", ".replay-select", ".walk-actions button"):
+        el = walk.locator(selector).first
+        sync_api.expect(el).to_be_visible()
+        box = el.bounding_box()
+        assert box is not None, selector
+        assert box["x"] >= 0, f"{selector} starts off the left edge"
+        assert box["x"] + box["width"] <= PHONE["width"] + 1, (
+            f"{selector} runs {box['x'] + box['width'] - PHONE['width']:.0f}px "
+            f"past the right edge")
+    page.close()
+
+
+def test_a_walk_name_gets_the_full_width_on_a_phone(browser, admin_server):
+    """The visible symptom: the name was squeezed into a narrow column beside
+    the controls instead of having the row to itself."""
+    page, _ = open_console(browser, admin_server, viewport=PHONE)
+    name = page.locator(".walk-name").first.bounding_box()
+    assert name is not None
+    assert name["width"] > PHONE["width"] * 0.6, (
+        f"the walk name only gets {name['width']:.0f}px of {PHONE['width']}px")
+    page.close()

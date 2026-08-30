@@ -47,9 +47,12 @@
   .walk:first-child { border-top: none; padding-top: 0; }
   .walk-head { display: flex; align-items: center; gap: 10px; }
   .walk-head-main { flex: 1; cursor: pointer; }
-  .walk-name { font-weight: 600; }
+  /* Walk names carry the model and a timestamp, so they are long and have
+     no spaces to break at. Without this they either force the page wide or
+     squeeze the column they live in down to nothing. */
+  .walk-name { font-weight: 600; overflow-wrap: anywhere; }
   .walk-meta { color: #8b92a0; font-size: 12px; }
-  .walk-actions { display: flex; gap: 8px; align-items: center; }
+  .walk-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .label-select { font-size: 12px; padding: 4px 6px; }
   .replay-select { font-size: 12px; padding: 4px 6px; max-width: 150px; }
   .label-badge {
@@ -87,6 +90,36 @@
   .empty { color: #8b92a0; padding: 24px 0; text-align: center; }
   a.dl-link { color: #9fb4ff; text-decoration: none; font-size: 13px; padding: 8px 12px; }
   a.dl-link:hover { text-decoration: underline; }
+
+  /* ---- narrow screens ----
+     This page was built at desktop width and read as one row per walk: name,
+     label, replay, four buttons. On a phone that row cannot fit, so the name
+     column collapsed to about 130px -- wrapping a walk name over six lines --
+     while the buttons ran off the right edge and had to be scrolled to.
+     Below this width the row becomes a stack instead: the walk identifies
+     itself on its own full-width line, and its controls wrap underneath. */
+  @media (max-width: 700px) {
+    body { padding: 12px; }
+    .panel { padding: 12px; }
+    .walk-head {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 8px 10px;
+      align-items: start;
+    }
+    .walk-head > input[type="checkbox"] { margin-top: 4px; }
+    /* Both controls and the button row span the full width beneath the
+       name, rather than competing with it for horizontal space. */
+    .walk-head .label-select,
+    .walk-head .walk-actions { grid-column: 1 / -1; }
+    .replay-select { max-width: none; flex: 1 1 auto; }
+    .walk-actions > * { flex: 0 0 auto; }
+    .walk-eval { padding-left: 0; }
+    .toolbar > strong { flex: 1 1 100%; }
+    /* One frame per row is unreadable; two keeps the thumbnails useful. */
+    .frames { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+    .slideshow img { max-width: 96vw; max-height: 55vh; }
+  }
 
   /* Slideshow overlay */
   .slideshow {
