@@ -529,3 +529,21 @@ def test_a_replay_is_checked_for_collisions_like_a_recording(vision, monkeypatch
     assert body["collisions"]["collisions"], "the replay found no collision"
     assert "collision" in body["flags"]
     assert body["score"] <= 40
+
+
+def test_the_target_is_recovered_from_a_name_carrying_a_prompt_tag(client):
+    """Walk names now carry the model AND the prompt, and the target is
+    parsed back out of the name for the judge's and collision check's
+    prompts. Miss the prompt tag and the target becomes "blue bottle next
+    step and walls", which then goes to the model."""
+    c, root = client
+    make_walk(root, "blue-bottle-opus-4-5-next-step-and-walls-20260830-171042", ["FORWARD"])
+    body = c.post(
+        "/recording/walks/blue-bottle-opus-4-5-next-step-and-walls-20260830-171042"
+        "/evaluate?judge=false").json()
+    assert body["target_object"] == "blue bottle"
+
+    make_walk(root, "red-backpack-qwen3-vl-235b-a22b-20260830-104120", ["FORWARD"])
+    body = c.post("/recording/walks/red-backpack-qwen3-vl-235b-a22b-20260830-104120"
+                  "/evaluate?judge=false").json()
+    assert body["target_object"] == "red backpack"

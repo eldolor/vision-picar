@@ -359,3 +359,20 @@ def test_the_prompt_picker_hides_when_there_is_only_one_wording(browser, twin_se
     page, _ = open_twin(browser, twin_server, models=single)
     sync_api.expect(page.locator("#navigate-prompt-row")).to_be_hidden()
     page.close()
+
+
+def test_service_default_says_what_it_resolves_to(browser, twin_server):
+    """"Service default" and an explicit pick of the same model or prompt
+    produce identical walks -- the only difference is whether the choice is
+    sent and recorded. Two options that silently mean the same thing is a
+    trap, so each names what it currently resolves to."""
+    page, _ = open_twin(browser, twin_server)
+
+    model_placeholder = page.locator("#cfg-navigate-model option").first.inner_text()
+    assert "Service default" in model_placeholder
+    assert "opus-4-5" in model_placeholder, model_placeholder
+
+    prompt_placeholder = page.locator("#cfg-navigate-prompt option").first.inner_text()
+    assert "Service default" in prompt_placeholder
+    assert MODELS_REPLY["default_prompt"] in prompt_placeholder, prompt_placeholder
+    page.close()

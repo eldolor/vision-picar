@@ -317,6 +317,11 @@ def _walk_target(walk_dir: Path, walk_name: str) -> str:
     if meta.get("target_object"):
         return meta["target_object"]
     stem = re.sub(r"-\d{8}-\d{6}$", "", walk_name)
+    # Strip the prompt tag before the model tag -- newWalkName() appends them
+    # in that order, so they come off in reverse. Getting this wrong makes the
+    # target "blue bottle next step and walls", which then goes into the
+    # judge's and the collision check's prompts.
+    stem = re.sub(r"-(default|next-step[a-z0-9-]*)$", "", stem)
     stem = re.sub(r"-(nova|claude|haiku|sonnet|opus|qwen|llama|pixtral)[a-z0-9-]*$", "", stem)
     return stem.replace("-", " ") or "the target object"
 

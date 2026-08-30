@@ -1530,7 +1530,15 @@
           .replace(/-v\d.*$/, "")           // bare version suffix (no date), e.g. nova-lite-v1:0
           .slice(0, 20)
       : "";
-    return target + modelTag + "-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) +
+    // The prompt too. It rides along inside walk.jsonl the same way the model
+    // does, but telling five walks apart in the console meant opening each
+    // one to read prompt_variant out of its frames -- which is exactly the
+    // job the model tag was added to avoid. "default" is left off, so a name
+    // only grows when there is something to distinguish.
+    const promptTag = (state.navigatePromptVariant && state.navigatePromptVariant !== "default")
+      ? "-" + state.navigatePromptVariant.replace(/[^a-z0-9]+/gi, "-").slice(0, 20)
+      : "";
+    return target + modelTag + promptTag + "-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) +
       "-" + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
   }
 
@@ -1654,11 +1662,17 @@
     while (select.options.length > 1) select.remove(1);
   }
 
-  function populatePromptOptions(prompts) {
+  function populatePromptOptions(prompts, servicedefault) {
     const select = document.getElementById("cfg-navigate-prompt");
     const row = document.getElementById("navigate-prompt-row");
     if (!select || !row) return;
     while (select.options.length > 1) select.remove(1);
+    // Same trap as the model picker: "Service default" and the named variant
+    // it resolves to are the same prompt, and a walk recorded under each is
+    // identical apart from what the log says produced it.
+    if (select.options[0] && servicedefault) {
+      select.options[0].textContent = "Service default \u2014 " + servicedefault;
+    }
     row.dataset.hasChoices = prompts.length > 1 ? "1" : "0";
     for (const name of prompts) {
       const opt = document.createElement("option");
@@ -1692,13 +1706,21 @@
         // other caller is a mode switch the user has no reason to make.
         state.navigateModelsLoaded = true;
         state.navigateServiceDefault = data.default || "";
-        populatePromptOptions(data.prompts || []);
+        populatePromptOptions(data.prompts || [], data.default_prompt || "");
         resetNavigateModelOptions();
         for (const m of data.models) {
           const opt = document.createElement("option");
           opt.value = m.id;
           opt.textContent = m.label || m.id;
           select.appendChild(opt);
+        }
+        // "Service default" and an explicit pick of the SAME model are not
+        // distinguishable in the UI otherwise -- they produce identical
+        // walks, and the only difference is whether model_id is sent and
+        // recorded. Naming what it resolves to makes the choice honest.
+        const placeholder = select.options[0];
+        if (placeholder && data.default) {
+          placeholder.textContent = "Service default \u2014 " + shortModelName(data.default);
         }
         const saved = prefGet(PREF.navigateModelId);
         if (saved && data.models.some(function (m) { return m.id === saved; })) {
@@ -1738,6 +1760,16 @@
   // vision service default. Shown rather than inferred on purpose -- the
   // one real failure this project hit was a week of recorded walks
   // attributed to a model that was never running.
+  // A model id trimmed to something readable in a dropdown.
+  function shortModelName(id) {
+    return String(id || "")
+      .replace(/^(us|global)\./, "")
+      .replace(/^anthropic\.claude-/, "")
+      .replace(/-\d{8}-v\d+:\d+$/, "")
+      .replace(/^amazon\./, "")
+      .replace(/-v\d+:\d+$/, "");
+  }
+
   function brainModelLabel() {
     const labelFor = function (id) {
       const select = document.getElementById("cfg-navigate-model");
