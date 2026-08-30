@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # (target_reached: true, action: FORWARD) was marked wrong for obeying its
 # instructions. Bumping rescoes every stored eval.json rather than leaving
 # walks ranked by a judge that disagreed with the policy prompt.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 MOVE_ACTIONS = ("FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP")
 
@@ -148,6 +148,7 @@ took this photo, and its navigation policy chose the action: {action}
 (it reported: target_visible={target_visible}, target_reached={target_reached},
 obstacle_ahead={obstacle_ahead}, reasoning: "{reasoning}").
 
+{history_note}
 The robot's available actions are FORWARD, LEFT, RIGHT, REVERSE and STOP.
 It moves roughly 30cm per FORWARD step. Turning costs a step and does not
 close distance.
@@ -161,10 +162,15 @@ So do NOT mark an action wrong merely because the robot has arrived:
 - The {target_object} is the goal, not an obstacle. Closing the last of the
   distance to it is correct behaviour, not a collision risk.
 
-Judge ONLY whether the chosen action was sensible for this photo. The
-mistake to be strictest about is the one that wastes the robot's time:
+Judge whether the chosen action was sensible for this photo AND for where
+the robot is in its walk. The mistake to be strictest about is the one that
+wastes the robot's time:
 - Refusing to move FORWARD when there is clearly open floor ahead, merely
   because furniture is visible somewhere further away.
+- Repeating a turn that the recent moves show is not working. If the robot
+  has already turned several times without moving forward, another turn is
+  NOT sensible -- it is the same mistake again, and the robot is stuck.
+  Judge that harshly even if the turn looks defensible in isolation.
 Also wrong, in the other direction:
 - Choosing FORWARD when a piece of furniture, a wall or a person -- not the
   {target_object} itself -- is within about one step.
@@ -189,8 +195,32 @@ def _parse_json_reply(text: str) -> dict:
     return json.loads(match.group(0))
 
 
+HISTORY_WINDOW = 6
+
+
+def _history_note(prior_actions: list) -> str:
+    """The recent moves, in words, so a frame can be judged in the context
+    of the walk rather than in isolation.
+
+    Without this the judge is structurally blind to the failure that
+    actually happens here: one RIGHT looks perfectly defensible on its own,
+    and so does the sixtieth. A walk that turned in place for 80 consecutive
+    frames was rated 6-of-8 sensible, because every frame really did look
+    fine by itself. Trajectory failure only exists across frames.
+    """
+    if not prior_actions:
+        return "This is the robot's first move of the walk.\n"
+    window = prior_actions[-HISTORY_WINDOW:]
+    note = "The robot's previous moves, oldest first, were: " + ", ".join(window) + ".\n"
+    if window and "FORWARD" not in window:
+        note += (f"Note it has NOT moved forward once in its last {len(window)} moves -- "
+                 "it may be turning on the spot instead of making progress.\n")
+    return note
+
+
 def judge_frame(client, model_id: str, image_bytes: bytes, nav: dict,
-                target_object: str, media_format: str = "jpeg") -> dict:
+                target_object: str, media_format: str = "jpeg",
+                prior_actions: list | None = None) -> dict:
     prompt = JUDGE_PROMPT.format(
         target_object=target_object,
         action=nav.get("action"),
@@ -198,6 +228,7 @@ def judge_frame(client, model_id: str, image_bytes: bytes, nav: dict,
         target_reached=nav.get("target_reached"),
         obstacle_ahead=nav.get("obstacle_ahead"),
         reasoning=str(nav.get("reasoning", ""))[:200].replace('"', "'"),
+        history_note=_history_note(prior_actions or []),
     )
     resp = client.converse(
         modelId=model_id,
@@ -232,15 +263,22 @@ def judge_walk(client, model_id: str, entries: list, frame_bytes_for,
     if not entries:
         return {"judged": 0, "sensible_rate": None, "frames": [], "error": "no entries"}
 
-    picks = [entries[i] for i in _sample_indices(len(entries), sample)]
+    indices = _sample_indices(len(entries), sample)
+    # Actions leading up to each sampled frame come from the WHOLE walk, not
+    # from the sample -- the frames between two samples are exactly where a
+    # stall hides.
+    all_actions = [(e.get("navigate") or {}).get("action") or "?" for e in entries]
+    picks = [(i, entries[i]) for i in indices]
 
-    def one(entry):
+    def one(pick):
+        i, entry = pick
         nav = entry.get("navigate") or {}
         try:
             image = frame_bytes_for(entry)
             if not image:
                 return None
-            out = judge_frame(client, model_id, image, nav, target_object)
+            out = judge_frame(client, model_id, image, nav, target_object,
+                              prior_actions=all_actions[:i])
         except Exception as e:  # noqa: BLE001 -- a judge failure must not fail the walk
             logger.warning("judge failed on %s: %s", entry.get("file"), e)
             return {"file": entry.get("file"), "seq": entry.get("seq"),
@@ -266,12 +304,30 @@ def judge_walk(client, model_id: str, entries: list, frame_bytes_for,
 def score_walk(metrics: dict, judge: dict | None) -> dict:
     """Blend into one advisory 0-100 number.
 
-    Weighting reflects what each part can actually see. The judge looks at
-    pixels, so it carries most of the weight; the metrics cannot see the
-    room but catch shapes the judge's sample might miss (it judges 8 frames,
-    the stall metric sees all of them). With no judge, the metrics are
-    rescaled to the full 100 rather than capping the score at 40 -- a
-    metrics-only run should still be able to say "this looks fine".
+    Three parts, and the split is the result of the scorer being wrong twice:
+
+    completion (0.25) -- did the walk ever report target_reached. Reaching
+        the object is the entire task, and for a while nothing in this score
+        noticed whether it happened: a walk that turned in place for 80
+        frames and never arrived was rated the same as one that arrived in
+        11, all else equal. It is weighted but not absolute, because a walk
+        can legitimately end without arriving (the target really isn't in
+        the room, or the operator simply stopped).
+
+    behaviour (0.30) -- the four measured shapes, averaged. Every flag
+        metric_flags() can raise now moves the number. Previously only
+        degeneracy and stalling did, so `oscillating` and
+        `unstable-identity` were computed, displayed, and silently ignored
+        -- four walks oscillating at 40-60% paid nothing for it.
+
+    judge (0.45) -- the only part that looks at pixels, so it keeps the
+        largest single share, but no longer a majority. It used to carry
+        0.6, which let a walk the metrics knew had stalled for 80
+        consecutive frames still score 65 because each sampled frame looked
+        defensible on its own.
+
+    With no judge the other two are rescaled to the full 100, so a
+    metrics-only run can still say "this looks fine".
     """
     if metrics.get("empty"):
         return {"score": 0, "verdict": "poor", "flags": ["empty"]}
@@ -286,20 +342,48 @@ def score_walk(metrics: dict, judge: dict | None) -> dict:
     # Progress: full marks for a walk that never goes STALL_RUN frames
     # without a FORWARD, decaying to zero at three times that.
     stall = metrics.get("longest_no_forward_run", 0)
-    progress = 1.0 - min(1.0, max(0, stall - STALL_RUN) / (2 * STALL_RUN))
-    if stall < STALL_RUN:
-        progress = 1.0
+    progress = 1.0 if stall < STALL_RUN else \
+        1.0 - min(1.0, (stall - STALL_RUN) / (2 * STALL_RUN))
 
-    metric_part = 0.5 * non_degeneracy + 0.5 * progress
+    # Smoothness: turning back and forth wastes steps even when each turn is
+    # individually defensible. Zero once every turn reverses the last one.
+    smoothness = 1.0 - min(1.0, metrics.get("oscillation_rate", 0.0))
+
+    # Identity stability: how often the target blinked in and out of being
+    # "visible" -- what a red blanket being mistaken for a red backpack
+    # looks like from the log. Scaled against the flag threshold.
+    flips = metrics.get("visibility_flips", 0)
+    identity = 1.0 - min(1.0, flips / (2 * IDENTITY_FLIPS))
+
+    # Non-degeneracy counts double. A walk that emits one action for every
+    # frame is not navigating at all -- it scores perfectly on smoothness
+    # (no turns to reverse) and progress (never stalls), and averaging the
+    # four equally let a blind always-FORWARD walk outscore one that was
+    # genuinely reading the scene.
+    behaviour = (2 * non_degeneracy + progress + smoothness + identity) / 5
+    completion = 1.0 if metrics.get("target_reached") else 0.0
     rate = (judge or {}).get("sensible_rate")
 
     if rate is None:
-        score = 100 * metric_part
+        score = 100 * (0.55 * behaviour + 0.45 * completion)
         basis = "metrics-only"
     else:
-        score = 100 * (0.6 * rate + 0.4 * metric_part)
+        score = 100 * (0.45 * rate + 0.30 * behaviour + 0.25 * completion)
         basis = "judge+metrics"
 
     score = int(round(score))
     verdict = "good" if score >= 70 else ("mixed" if score >= 45 else "poor")
-    return {"score": score, "verdict": verdict, "flags": flags, "basis": basis}
+    return {
+        "score": score, "verdict": verdict, "flags": flags, "basis": basis,
+        # Shown in the console so a number can be argued with rather than
+        # just believed.
+        "components": {
+            "judge": round(rate, 3) if rate is not None else None,
+            "behaviour": round(behaviour, 3),
+            "completion": completion,
+            "non_degeneracy": round(non_degeneracy, 3),
+            "progress": round(progress, 3),
+            "smoothness": round(smoothness, 3),
+            "identity": round(identity, 3),
+        },
+    }

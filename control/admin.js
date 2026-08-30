@@ -370,6 +370,18 @@
         bits.push("judge unavailable");
       }
       let html = '<div class="eval-line">' + escapeHtml(bits.join(" · ")) + "</div>";
+      // The score's own arithmetic, so a number can be argued with rather
+      // than just believed -- and so a low score points at which part of the
+      // walk earned it.
+      const c = ev.components;
+      if (c) {
+        const pct = function (v) { return v == null ? "--" : Math.round(v * 100) + "%"; };
+        html += '<div class="eval-line dim">score = judge ' + pct(c.judge) +
+          " · behaviour " + pct(c.behaviour) +
+          " (progress " + pct(c.progress) + ", smoothness " + pct(c.smoothness) +
+          ", identity " + pct(c.identity) + ", spread " + pct(c.non_degeneracy) + ")" +
+          " · reached " + (c.completion ? "yes" : "no") + "</div>";
+      }
       // One concrete example of a move the judge disagreed with is more
       // use than the aggregate on its own.
       const bad = (j.frames || []).filter(function (f) { return f.sensible === false && f.why; });

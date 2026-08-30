@@ -84,11 +84,13 @@ def test_an_always_forward_walk_does_not_outscore_a_discriminating_one():
     the blind model first -- which is exactly the wrong answer, since on a
     genuine close obstacle Nova drove straight into the couch."""
     blind = score_walk(compute_metrics(walk(DEGENERATE_WALK)), None)
-    mixed = score_walk(
-        compute_metrics(walk(["FORWARD"] * 14 + ["RIGHT", "LEFT", "FORWARD", "STOP"] * 2)),
+    # A walk that reads the scene: mostly forward, a deliberate turn taken
+    # in one direction rather than flip-flopping, then forward again.
+    discriminating = score_walk(
+        compute_metrics(walk(["FORWARD"] * 8 + ["RIGHT", "RIGHT", "FORWARD", "FORWARD", "STOP"])),
         None,
     )
-    assert blind["score"] < mixed["score"]
+    assert blind["score"] < discriminating["score"]
     assert "degenerate" in blind["flags"]
 
 
@@ -155,9 +157,47 @@ def test_score_is_higher_with_a_good_judge_than_a_bad_one():
 def test_metrics_only_still_uses_the_full_range():
     """A walk with no judge must not be capped below "good" purely for
     lacking a judge -- otherwise the cheap tier is unreadable on its own."""
-    s = score_walk(compute_metrics(walk(["FORWARD", "RIGHT", "FORWARD", "LEFT"])), None)
+    entries = walk(["FORWARD"] * 6 + ["RIGHT", "FORWARD", "FORWARD"])
+    entries[-1]["navigate"]["target_reached"] = True
+    s = score_walk(compute_metrics(entries), None)
     assert s["basis"] == "metrics-only"
     assert s["verdict"] == "good"
+
+
+def test_reaching_the_target_is_worth_more_than_not():
+    """The task is to reach the object. Nothing in the score noticed whether
+    that happened until schema 4: a walk that turned in place for 80 frames
+    and never arrived rated the same as one that arrived in 11."""
+    actions = ["FORWARD"] * 6 + ["RIGHT", "FORWARD"]
+    missed = walk(actions)
+    found = walk(actions)
+    found[-1]["navigate"]["target_reached"] = True
+
+    judge = {"sensible_rate": 1.0}
+    assert score_walk(compute_metrics(found), judge)["score"] > \
+        score_walk(compute_metrics(missed), judge)["score"]
+
+
+def test_oscillation_and_identity_flips_actually_move_the_score():
+    """Both were computed, displayed as flags, and then ignored by the
+    number -- four walks oscillating at 40-60% paid nothing for it."""
+    judge = {"sensible_rate": 1.0}
+    steady = compute_metrics(walk(["FORWARD", "RIGHT", "RIGHT", "FORWARD", "FORWARD", "RIGHT"]))
+    flapping = compute_metrics(walk(["FORWARD", "RIGHT", "LEFT", "FORWARD", "RIGHT", "LEFT"]))
+    assert score_walk(steady, judge)["score"] > score_walk(flapping, judge)["score"]
+
+    stable = walk(["FORWARD"] * 6)
+    flipping = [entry(i, "FORWARD", visible=(i % 2 == 0)) for i in range(6)]
+    assert score_walk(compute_metrics(stable), judge)["score"] > \
+        score_walk(compute_metrics(flipping), judge)["score"]
+
+
+def test_the_score_reports_its_own_components():
+    """So a number can be argued with rather than just believed."""
+    c = score_walk(compute_metrics(walk(["FORWARD", "RIGHT"])), {"sensible_rate": 0.5})["components"]
+    assert set(c) == {"judge", "behaviour", "completion", "non_degeneracy",
+                      "progress", "smoothness", "identity"}
+    assert c["judge"] == 0.5
 
 
 def test_verdict_bands():
@@ -226,3 +266,51 @@ def test_sample_indices_always_include_first_and_last():
     assert idx[0] == 0 and idx[-1] == 21
     assert len(idx) == 8
     assert _sample_indices(3, 8) == [0, 1, 2]
+
+
+# ---------- the judge can see the walk, not just the frame ----------
+
+
+def test_the_judge_is_told_what_the_robot_just_did():
+    """The structural flaw in per-frame judging: one RIGHT is defensible on
+    its own, and so is the sixtieth. A walk that turned in place for 80
+    consecutive frames was rated 6-of-8 sensible because every sampled frame
+    really did look fine by itself."""
+    from control.walk_eval import _history_note
+
+    note = _history_note(["RIGHT", "LEFT", "RIGHT", "LEFT"])
+    assert "RIGHT, LEFT, RIGHT, LEFT" in note
+    assert "NOT moved forward" in note
+
+    assert "first move" in _history_note([])
+    # A window containing progress must not claim the robot is stuck.
+    assert "NOT moved forward" not in _history_note(["RIGHT", "FORWARD", "LEFT"])
+
+
+def test_history_is_capped_to_a_window():
+    from control.walk_eval import _history_note, HISTORY_WINDOW
+
+    note = _history_note(["RIGHT"] * 40)
+    assert note.count("RIGHT") == HISTORY_WINDOW
+
+
+def test_the_history_given_to_a_frame_comes_from_the_whole_walk():
+    """Sampling judges 8 frames of a 120-frame walk. The prior actions must
+    come from every frame in between -- that gap is exactly where a stall
+    hides -- not from the sampled subset."""
+    seen = []
+
+    class Recorder:
+        def converse(self, modelId, messages, inferenceConfig):
+            seen.append(messages[0]["content"][1]["text"])
+            return {"output": {"message": {"content": [
+                {"text": '{"sensible": true, "better_action": null, "why": "ok"}'}]}}}
+
+    entries = walk(["RIGHT"] * 30 + ["FORWARD"] * 2)
+    judge_walk(Recorder(), "m", entries, lambda e: b"jpeg", "red backpack", sample=4,
+               max_workers=1)
+
+    # The last sampled frame is near the end of a walk that was almost all
+    # turns; its prompt must show that history rather than a clean slate.
+    assert any("RIGHT, RIGHT" in prompt for prompt in seen)
+    assert any("NOT moved forward" in prompt for prompt in seen)
