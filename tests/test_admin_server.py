@@ -18,6 +18,7 @@ it is exercised the bedrock client factory is monkeypatched.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -290,3 +291,127 @@ def test_a_walk_with_no_timestamp_in_its_name_still_lists(client):
     c, root = client
     make_walk(root, "some-old-walk", ["FORWARD"])
     assert c.get("/recording/walks").json()["walks"][0]["recorded_at"] is None
+
+
+# ---------- replay: the same pixels, a different model ----------
+#
+# The only controlled model comparison this project has. Comparing two live
+# walks instead mixes model quality with where the operator pointed the
+# phone -- every model conclusion drawn that way has had to be retracted at
+# least once.
+
+
+def nav_reply(action, **over):
+    d = {"action": action, "target_visible": True, "target_direction": "center",
+         "target_reached": False, "obstacle_ahead": False, "reasoning": "r"}
+    d.update(over)
+    return d
+
+
+@pytest.fixture
+def vision(recordings, monkeypatch):
+    """A client whose config names a vision service, with the HTTP call to it
+    replaced. Returns (client, root, calls)."""
+    root, config_path = recordings
+    Path(config_path).write_text(
+        f"brain:\n  recording_dir: {root / 'recordings'}\n"
+        f"  vision_url: http://vision.invalid\n")
+    calls = []
+
+    def fake_post(vision_url, timeout_s, image_bytes, target_object, model_id):
+        calls.append({"target": target_object, "model_id": model_id})
+        return nav_reply("FORWARD")
+
+    monkeypatch.setattr(admin_server, "post_navigate", fake_post)
+    return TestClient(admin_server.create_app(config_path=config_path)), root, calls
+
+
+def test_a_replay_re_asks_every_frame_under_the_chosen_model(vision):
+    c, root, calls = vision
+    make_walk(root, "walk-r", ["STOP", "STOP", "STOP"])
+
+    body = c.post("/recording/walks/walk-r/replay",
+                  json={"model_id": "qwen.qwen3-vl-235b-a22b"}).json()
+
+    assert body["frames"] == 3
+    assert body["metrics"]["forward_rate"] == 1.0
+    assert len(calls) == 3
+    assert {x["model_id"] for x in calls} == {"qwen.qwen3-vl-235b-a22b"}
+    # The target comes from the walk, not from the caller.
+    assert {x["target"] for x in calls} == {"walk r"}
+
+
+def test_replay_scores_with_the_same_scorer_as_the_original(vision):
+    """A replay and a recording must be comparable numbers, which means the
+    replay is shaped as walk.jsonl entries and handed to the same scorer --
+    nothing about replays is special-cased in walk_eval."""
+    c, root, _calls = vision
+    make_walk(root, "walk-s", ["STOP"] * 12)
+
+    replay = c.post("/recording/walks/walk-s/replay", json={}).json()
+    original = c.post("/recording/walks/walk-s/evaluate?judge=false").json()
+
+    assert set(replay["metrics"]) == set(original["metrics"])
+    assert "score" in replay and "verdict" in replay
+    # The recording never moved; the replay moves every frame.
+    assert replay["metrics"]["forward_rate"] > original["metrics"]["forward_rate"]
+
+
+def test_replay_reports_how_much_it_disagreed(vision):
+    c, root, _calls = vision
+    make_walk(root, "walk-t", ["FORWARD", "FORWARD", "LEFT", "LEFT"])
+
+    body = c.post("/recording/walks/walk-t/replay", json={}).json()
+
+    assert body["agreement"] == 0.5
+    changed = {d["seq"] for d in body["diff"]}
+    assert changed == {2, 3}
+    assert all(d["original"] == "LEFT" and d["replayed"] == "FORWARD" for d in body["diff"])
+
+
+def test_one_failing_frame_does_not_lose_the_replay(recordings, monkeypatch):
+    root, config_path = recordings
+    Path(config_path).write_text(
+        f"brain:\n  recording_dir: {root / 'recordings'}\n"
+        f"  vision_url: http://vision.invalid\n")
+    n = {"calls": 0}
+
+    def flaky(vision_url, timeout_s, image_bytes, target_object, model_id):
+        n["calls"] += 1
+        if n["calls"] == 2:
+            raise RuntimeError("HTTP 502: vision service down")
+        return nav_reply("FORWARD")
+
+    monkeypatch.setattr(admin_server, "post_navigate", flaky)
+    c = TestClient(admin_server.create_app(config_path=config_path))
+    make_walk(root, "walk-u", ["STOP"] * 4)
+
+    body = c.post("/recording/walks/walk-u/replay", json={}).json()
+    assert body["errors"] == 1
+    assert body["metrics"]["frames"] == 3
+
+
+def test_replays_accumulate_per_model_rather_than_overwriting(vision):
+    """A walk should build up a comparison table across models, not replace
+    one result with the next."""
+    c, root, _calls = vision
+    make_walk(root, "walk-v", ["STOP", "STOP"])
+
+    c.post("/recording/walks/walk-v/replay", json={"model_id": "amazon.nova-lite-v1:0"})
+    c.post("/recording/walks/walk-v/replay", json={"model_id": "qwen.qwen3-vl-235b-a22b"})
+
+    stored = c.get("/recording/walks/walk-v/replays").json()["replays"]
+    assert {r["model_id"] for r in stored} == {"amazon.nova-lite-v1:0", "qwen.qwen3-vl-235b-a22b"}
+    # and the sidecars must not be counted as frames
+    assert c.get("/recording/walks").json()["walks"][0]["frames"] == 2
+
+
+def test_replay_without_a_vision_service_is_a_clear_503(client):
+    """The default test config names no vision service, which is the same
+    state a misconfigured deployment is in -- it must say so once, rather
+    than 500 or fail once per frame."""
+    c, root = client
+    make_walk(root, "walk-w", ["STOP"])
+    resp = c.post("/recording/walks/walk-w/replay", json={})
+    assert resp.status_code == 503
+    assert "vision" in resp.json()["detail"].lower()

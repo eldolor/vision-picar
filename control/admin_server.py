@@ -24,7 +24,17 @@ POST /recording/frame already writes to (that route stays in brain_server.py
 -- it is the live capture path, tightly coupled to an active Robot-view
 session, unlike browsing history after the fact). No mission logic, no
 RemoteRobot, no vision policy -- this process still never talks to the
-robot or the vision service.
+robot. It does now call the vision service, but only for replay -- see
+below.
+
+**On replay calling the vision service.** POST .../replay re-asks a recorded
+walk's frames under a different model, which means calling the deployed
+/navigate. That is a deliberate exception to the paragraph above, argued in
+control/walk_replay.py's docstring: a replay's whole question is "what would
+the SERVICE say about these pixels", including its prompt and parsing, so
+going straight to Bedrock would answer a different question and would stop
+tracking the real route the moment either changed. Only this one route does
+it, and its failure is confined to itself.
 
 **On the scorecard calling Bedrock.** This process previously made no AWS
 call but the EFS mount itself, and the judge tier (control/walk_eval.py)
@@ -49,6 +59,8 @@ frames it already holds on local disk over HTTP to have them read back.
     PUT    /recording/walks/{walk}/meta             set walk-level metadata (model_id)
     POST   /recording/walks/{walk}/evaluate         (re)score a walk
     GET    /recording/walks/{walk}/evaluation       the scorecard, computed lazily
+    POST   /recording/walks/{walk}/replay           re-ask its frames under another model
+    GET    /recording/walks/{walk}/replays          every stored replay of it
     DELETE /recording/walks/{walk}                  delete a whole walk
     DELETE /recording/walks/{walk}/frames/{file}    delete one frame
     GET    /stats                                   walk/frame/byte totals
@@ -62,6 +74,7 @@ import logging
 import os
 import re
 import shutil
+import time
 import zipfile
 from pathlib import Path
 from typing import Optional
@@ -72,7 +85,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from control.brain_config import load_brain_config
-from control import walk_eval
+from control import walk_eval, walk_replay
 
 logger = logging.getLogger("admin_server")
 
@@ -101,6 +114,50 @@ def _bedrock_client():
         "bedrock-runtime",
         config=Config(retries={"max_attempts": 3, "mode": "adaptive"}, read_timeout=90),
     )
+
+
+def post_navigate(vision_url: str, timeout_s: float, image_bytes: bytes,
+                  target_object: str, model_id):
+    """One call to the DEPLOYED /navigate -- see control/walk_replay.py's
+    docstring for why replay goes through the service rather than straight to
+    Bedrock. Module level, like _bedrock_client above, so a test can replace
+    it without a live service."""
+    import base64
+
+    import httpx
+
+    body = {
+        "image_base64": base64.b64encode(image_bytes).decode(),
+        "media_type": "image/jpeg",
+        "target_object": target_object,
+    }
+    if model_id:
+        body["model_id"] = model_id
+    headers = {"Content-Type": "application/json"}
+    secret = os.environ.get("VISION_SHARED_SECRET") or os.environ.get("APP_SHARED_SECRET")
+    if secret:
+        headers["x-app-secret"] = secret
+    # Retry the transient ones. A replay fires every frame of a walk at the
+    # vision service at once, which is a burstier pattern than anything else
+    # in this project produces, and Bedrock throttles it -- raising the
+    # worker count to beat the load balancer's 60s timeout turned 0 errors
+    # into 10 of 22. Backoff fixes that without trading throughput for it.
+    import random
+    import time as _time
+
+    last = ""
+    for attempt in range(4):
+        with httpx.Client(timeout=timeout_s) as client:
+            resp = client.post(vision_url.rstrip("/") + "/navigate", json=body, headers=headers)
+        if resp.status_code == 200:
+            return resp.json()
+        last = f"HTTP {resp.status_code}: {resp.text[:160]}"
+        # 4xx other than 429 is our own bad request -- retrying cannot help.
+        if resp.status_code < 500 and resp.status_code != 429:
+            break
+        _time.sleep((0.6 * 2 ** attempt) + random.uniform(0, 0.4))
+    raise RuntimeError(last)
+
 
 _ADMIN_HTML = Path(__file__).resolve().parent / "admin.html"
 _ADMIN_JS = Path(__file__).resolve().parent / "admin.js"
@@ -132,6 +189,16 @@ VALID_LABELS = {"good", "bad", "training-ready"}
 # in the console instead.
 EVAL_FILE_NAME = "eval.json"
 
+# One stored replay per model, so re-asking the same walk under the same
+# model is free and a walk accumulates a comparison table rather than
+# overwriting one. Slugged because a model id contains ":" and "." and has
+# to survive being a filename.
+REPLAY_PREFIX = "replay-"
+
+
+def _replay_file(model_id: str) -> str:
+    return REPLAY_PREFIX + re.sub(r"[^A-Za-z0-9._-]", "_", model_id) + ".json"
+
 # Walk-level facts the frames themselves don't carry -- written by
 # brain_server's POST /recording/finish, and backfillable for the walks
 # recorded before that route existed (see PUT /recording/walks/{walk}/meta).
@@ -140,6 +207,12 @@ META_FILE_NAME = "meta.json"
 
 class TagRequest(BaseModel):
     label: Optional[str] = None  # None/omitted clears the label
+
+
+class ReplayRequest(BaseModel):
+    """Which model to re-ask a recorded walk's frames under. Omitted means
+    the vision service's own default."""
+    model_id: Optional[str] = None
 
 
 class MetaRequest(BaseModel):
@@ -299,6 +372,7 @@ def create_app(config_path=None) -> FastAPI:
                 "finished": (walk_dir / META_FILE_NAME).exists(),
                 "recorded_at": _walk_recorded_at(walk_dir.name, walk_dir),
                 "eval": _eval_summary(walk_dir),
+                "replays": _replay_summaries(walk_dir),
             })
         return {"recording_dir": str(base), "walks": walks}
 
@@ -398,6 +472,19 @@ def create_app(config_path=None) -> FastAPI:
             logger.warning("could not persist eval for %s: %s", walk_name, e)
         return result
 
+    def _replay_summaries(walk_dir: Path) -> list:
+        """The compact form the walk list shows -- never the per-frame diff,
+        which is large and only wanted on one walk at a time."""
+        out = []
+        for path in sorted(walk_dir.glob(REPLAY_PREFIX + "*.json")):
+            try:
+                r = json.loads(path.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            out.append({k: r.get(k) for k in
+                        ("model_id", "score", "verdict", "flags", "agreement", "errors")})
+        return out
+
     def _eval_summary(walk_dir: Path) -> Optional[dict]:
         """The compact form the walk list shows -- never the full per-frame
         judge output, which is large and only wanted on one walk at a time."""
@@ -427,6 +514,119 @@ def create_app(config_path=None) -> FastAPI:
         if existing and existing.get("schema") == walk_eval.SCHEMA_VERSION:
             return existing
         return await asyncio.to_thread(_evaluate, walk_dir, walk, True)
+
+    # ---- replay: the same pixels, a different model ----
+
+    def _replay(walk_dir: Path, walk_name: str, model_id) -> dict:
+        # Checked before any frame is read: a deployment with no vision
+        # service configured should say so once, not once per frame.
+        if not config["vision_url"]:
+            raise RuntimeError(
+                "No vision service configured. Set brain.vision_url in "
+                "config/robot.yaml, or VISION_URL in this task's environment.")
+        entries = _walk_entries(walk_dir)
+        target = _walk_target(walk_dir, walk_name)
+
+        def frame_bytes_for(entry):
+            name = entry.get("file") or ""
+            if not FRAME_FILENAME.match(name):
+                return None
+            path = walk_dir / name
+            return path.read_bytes() if path.is_file() else None
+
+        def call(image_bytes, target_object, chosen):
+            return post_navigate(config["vision_url"], config["vision_timeout_s"],
+                                 image_bytes, target_object, chosen)
+
+        out = walk_replay.replay_walk(
+            entries, frame_bytes_for, target, call, model_id=model_id)
+
+        # Score the replay with the SAME scorer the original gets, by handing
+        # it entries in the same shape -- so the two numbers are comparable
+        # and nothing about replays is special-cased in walk_eval.
+        metrics = walk_eval.compute_metrics(out["entries"])
+        scored = walk_eval.score_walk(metrics, None)
+        result = {
+            "schema": walk_eval.SCHEMA_VERSION,
+            "walk": walk_name,
+            "model_id": model_id or "(service default)",
+            "target_object": target,
+            "replayed_at": time.time(),
+            **scored,
+            "metrics": metrics,
+            # Frames attempted, which is not metrics.frames -- that counts
+            # only the ones that came back, so the two differ when the
+            # vision service dropped some.
+            "frames": out["frames"],
+            "agreement": out["agreement"],
+            "errors": out["errors"],
+            "diff": out["diff"],
+        }
+        try:
+            (walk_dir / _replay_file(result["model_id"])).write_text(
+                json.dumps(result, indent=1))
+        except OSError as e:
+            logger.warning("could not persist replay for %s: %s", walk_name, e)
+        return result
+
+    @app.post("/recording/walks/{walk}/replay", dependencies=[Depends(require_secret)])
+    async def replay_walk_route(walk: str, req: ReplayRequest):
+        """Re-ask this walk's frames under another model.
+
+        The only controlled model comparison available: identical pixels,
+        one variable. Comparing two live walks instead mixes model quality
+        with where the operator pointed the phone.
+        """
+        walk_dir = _resolve_walk_dir(walk)
+        try:
+            return await asyncio.to_thread(_replay, walk_dir, walk, req.model_id)
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=str(e))
+
+    @app.get("/recording/models", dependencies=[Depends(require_secret)])
+    async def replay_models():
+        """Relay the vision service's own allow-list, so the console never
+        carries a copy of model ids -- same rule the twin's picker follows.
+
+        Its own route rather than letting the page fetch /navigate/models
+        directly: that only happens to work because both services sit behind
+        one load balancer, and it would break the console when admin is run
+        on its own in local dev.
+        """
+        vision_url = config["vision_url"]
+        if not vision_url:
+            return {"models": [], "default": None, "detail": "No vision service configured."}
+
+        def fetch():
+            import httpx
+
+            headers = {}
+            secret = os.environ.get("VISION_SHARED_SECRET") or os.environ.get("APP_SHARED_SECRET")
+            if secret:
+                headers["x-app-secret"] = secret
+            with httpx.Client(timeout=config["request_timeout_s"]) as client:
+                r = client.get(vision_url.rstrip("/") + "/navigate/models", headers=headers)
+            r.raise_for_status()
+            return r.json()
+
+        try:
+            return await asyncio.to_thread(fetch)
+        except Exception as e:  # noqa: BLE001 -- an empty picker beats a broken page
+            logger.warning("could not fetch navigate models: %s", e)
+            return {"models": [], "default": None, "detail": str(e)[:200]}
+
+    @app.get("/recording/walks/{walk}/replays", dependencies=[Depends(require_secret)])
+    async def list_replays(walk: str):
+        """Every stored replay of this walk, so it accumulates a comparison
+        table instead of overwriting one."""
+        walk_dir = _resolve_walk_dir(walk)
+        out = []
+        for p in sorted(walk_dir.glob(REPLAY_PREFIX + "*.json")):
+            try:
+                out.append(json.loads(p.read_text()))
+            except (json.JSONDecodeError, OSError):
+                continue
+        return {"walk": walk, "replays": out}
 
     @app.put("/recording/walks/{walk}/meta", dependencies=[Depends(require_secret)])
     async def set_meta(walk: str, req: MetaRequest):

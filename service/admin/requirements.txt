@@ -6,3 +6,7 @@ pyyaml
 # rather than routed through service/vision_analyze. Still no httpx, no
 # anthropic, no robot/ or brain/ imports.
 boto3
+# Replay (POST /recording/walks/{walk}/replay) re-asks a walk's frames
+# through the deployed /navigate -- see control/walk_replay.py for why it
+# goes through the service rather than straight to Bedrock.
+httpx

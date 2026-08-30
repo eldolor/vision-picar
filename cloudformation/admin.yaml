@@ -31,6 +31,17 @@ Parameters:
     Description: >
       Same bootstrap knob as brain.yaml: deploy once with 0 (creates the ECR
       repo with nothing to launch yet), push the image, redeploy with 1.
+  VisionSecretArn:
+    Type: String
+    Default: ""
+    Description: >
+      Full ARN of vision-picar-app-shared-secret, so replay can authenticate
+      to the vision service's /navigate. Exact ARN including the suffix, not
+      a wildcard or a bare name: ECS's Secrets Manager authorization check
+      runs against the literal SecretId string before any name resolution
+      (the same trap brain.yaml documents). Find it with
+      `aws secretsmanager describe-secret --secret-id
+      vision-picar-app-shared-secret --query ARN`. Empty disables replay.
   JudgeEnabled:
     Type: String
     Default: "true"
@@ -55,6 +66,9 @@ Parameters:
       How many evenly spaced frames of a walk the judge looks at (first and
       last always included). One Bedrock call each, so this is the knob that
       sets a walk's evaluation cost.
+
+Conditions:
+  HasVisionSecret: !Not [!Equals [!Ref VisionSecretArn, ""]]
 
 Resources:
   EcrRepo:
@@ -110,6 +124,9 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource:
                   - !Ref AppSharedSecret
+                  # The vision service's secret too, injected as
+                  # VISION_SHARED_SECRET so replay can call its /navigate.
+                  - !If [HasVisionSecret, !Ref VisionSecretArn, !Ref AppSharedSecret]
 
   EcsTaskRole:
     Type: AWS::IAM::Role
@@ -208,6 +225,9 @@ Resources:
             # nothing at all, since it would fall through to vision-analyze.
             - /admin.js
             - /recording/walks*
+            # The replay model picker's source -- admin relays the vision
+            # service's allow-list rather than the console carrying a copy.
+            - /recording/models
             - /stats
       Actions:
         - Type: forward
@@ -257,9 +277,26 @@ Resources:
               Value: !Ref JudgeModelId
             - Name: JUDGE_SAMPLE_FRAMES
               Value: !Ref JudgeSampleFrames
+            # Where replay re-asks a walk's frames. The INTERNAL ALB, same
+            # reasoning as brain.yaml's VISION_URL: the private subnets have
+            # no route to the internet, so the public NLB name is unreachable
+            # from in here.
+            - Name: VISION_URL
+              Value: !Sub
+                - "http://${AlbDns}"
+                - AlbDns: !ImportValue
+                    Fn::Sub: "${ServiceStackName}-InternalAlbDnsName"
           Secrets:
             - Name: APP_SHARED_SECRET
               ValueFrom: !Ref AppSharedSecret
+            # The vision service's OWN secret, not this service's -- replay
+            # is an outbound call and has to present what that service
+            # expects (same distinction brain.yaml draws).
+            - !If
+              - HasVisionSecret
+              - Name: VISION_SHARED_SECRET
+                ValueFrom: !Ref VisionSecretArn
+              - !Ref AWS::NoValue
           LogConfiguration:
             LogDriver: awslogs
             Options:

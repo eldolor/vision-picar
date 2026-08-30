@@ -4,11 +4,12 @@
 # whole control/ package for simplicity, matching service/brain/'s and
 # service/twin/'s Dockerfiles, but this process never imports
 # brain_server.py, mission_runner.py, remote_robot.py, or drills.py --
-# no robot/, no brain/, no anthropic, no httpx. That's the point of this
+# no robot/, no brain/, no anthropic. That's the point of this
 # being control/admin_server.py: viewing and deleting recorded walks has
 # nothing to do with the robot or the vision service. (boto3 is in
 # requirements for the scorecard's judge tier, which calls Bedrock
-# directly -- a managed endpoint, not a peer service.)
+# directly -- a managed endpoint, not a peer service; httpx is there
+# for replay, the one route that does call the vision service.)
 #
 #   docker build -f service/admin/Dockerfile -t vision-picar-admin .
 

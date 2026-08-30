@@ -126,6 +126,39 @@
     }
   }
 
+  // Models offered for replay. Fetched from the admin server, which relays
+  // the vision service's allow-list -- the console must not carry its own
+  // copy of model ids, for the same reason the twin's picker doesn't.
+  let replayModels = [];
+
+  async function loadReplayModels() {
+    try {
+      const data = await api("GET", "/recording/models");
+      replayModels = Array.isArray(data.models) ? data.models : [];
+    } catch (e) {
+      replayModels = [];
+    }
+  }
+
+  // Look for a replay the server may have finished after our request timed
+  // out. Cheap: a couple of polls of an endpoint that just reads sidecars.
+  async function pollForReplay(w, modelId, tries) {
+    tries = tries || 6;
+    for (let i = 0; i < tries; i++) {
+      await new Promise(function (r) { setTimeout(r, 5000); });
+      try {
+        const data = await api("GET", "/recording/walks/" + encodeURIComponent(w.walk) + "/replays");
+        const hit = (data.replays || []).find(function (r) { return r.model_id === modelId; });
+        if (hit) {
+          w.replays = (w.replays || []).filter(function (x) { return x.model_id !== modelId; });
+          w.replays.push(hit);
+          return true;
+        }
+      } catch (err) { /* keep waiting */ }
+    }
+    return false;
+  }
+
   function applyFilterSort() {
     const q = searchEl.value.trim().toLowerCase();
     let list = allWalks.filter(function (w) { return !q || w.walk.toLowerCase().includes(q); });
@@ -170,6 +203,7 @@
       allWalks = data.walks;
       applyFilterSort();
       loadStats();
+      loadReplayModels();
       scorePendingWalks();
     } catch (e) {
       walksEl.innerHTML = '<div class="empty">Failed to load: ' + escapeHtml(e.message) + "</div>";
@@ -350,6 +384,49 @@
       }
     };
 
+    // ---- replay: same pixels, another model ----
+    // The only controlled comparison available. Two live walks by two models
+    // are two different physical paths, so their score gap mixes model
+    // quality with where the phone was pointed; this holds the frames fixed.
+    const replaySelect = document.createElement("select");
+    replaySelect.className = "replay-select";
+    replaySelect.innerHTML = '<option value="">Replay with…</option>';
+    for (const m of replayModels) {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = shortModel(m.id);
+      replaySelect.appendChild(opt);
+    }
+    replaySelect.onchange = async function () {
+      const modelId = replaySelect.value;
+      if (!modelId) return;
+      replaySelect.disabled = true;
+      const was = replaySelect.options[replaySelect.selectedIndex].textContent;
+      replaySelect.options[replaySelect.selectedIndex].textContent = "Replaying…";
+      try {
+        const r = await api("POST", "/recording/walks/" + encodeURIComponent(w.walk) + "/replay",
+          { model_id: modelId });
+        w.replays = (w.replays || []).filter(function (x) { return x.model_id !== r.model_id; });
+        w.replays.push(r);
+        renderReplays();
+      } catch (e) {
+        // A long walk can outrun the load balancer's 60s idle timeout even
+        // though the server finishes the job and writes its sidecar -- so a
+        // timeout is not a failure, it is a lost response. Go and look for
+        // the result before reporting anything.
+        const recovered = await pollForReplay(w, modelId);
+        if (recovered) {
+          renderReplays();
+        } else {
+          showInlineError(replaySelect, "Replay failed: " + e.message);
+        }
+      } finally {
+        replaySelect.options[replaySelect.selectedIndex].textContent = was;
+        replaySelect.selectedIndex = 0;
+        replaySelect.disabled = false;
+      }
+    };
+    actions.appendChild(replaySelect);
     actions.appendChild(evalBtn);
     actions.appendChild(viewBtn);
     actions.appendChild(dlLink);
@@ -402,10 +479,33 @@
     }
     renderEvalDetail();
 
+    const replayEl = document.createElement("div");
+    replayEl.className = "walk-eval";
+    el.appendChild(replayEl);
+
+    function renderReplays() {
+      const rs = w.replays || [];
+      if (!rs.length) { replayEl.innerHTML = ""; return; }
+      // Recorded score first, then each replay, so the comparison reads as a
+      // column rather than something to hold in your head.
+      const rows = rs.slice().sort(function (a, b) { return b.score - a.score; })
+        .map(function (r) {
+          const agree = r.agreement == null ? "--" : Math.round(r.agreement * 100) + "%";
+          return '<div class="eval-line">replay · <b>' + escapeHtml(shortModel(r.model_id)) +
+            "</b> score " + r.score + " (" + escapeHtml(r.verdict) + ") · agreed with the " +
+            "recording on " + agree + " of frames" +
+            (r.errors ? " · " + r.errors + " frame(s) failed" : "") +
+            (r.flags && r.flags.length ? " · " + escapeHtml(r.flags.join(", ")) : "") + "</div>";
+        });
+      replayEl.innerHTML = rows.join("");
+    }
+    renderReplays();
+
     walkRenderers[w.walk] = {
       renderHead: renderHead,
       renderEvalDetail: renderEvalDetail,
       markScored: function () { evalBtn.textContent = "Re-score"; },
+      renderReplays: renderReplays,
     };
 
     const framesEl = document.createElement("div");
