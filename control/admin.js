@@ -132,8 +132,17 @@
     const [key, dir] = sortEl.value.split("-");
     list = list.slice().sort(function (a, b) {
       let cmp;
-      if (key === "frames") cmp = a.frames - b.frames;
-      else cmp = a.walk < b.walk ? -1 : a.walk > b.walk ? 1 : 0;
+      if (key === "frames") {
+        cmp = a.frames - b.frames;
+      } else if (a.recorded_at != null && b.recorded_at != null) {
+        // By recording time, NOT by name. The name carries the model now
+        // ("red-backpack-opus-4-5-<timestamp>"), so sorting on it groups by
+        // model and buries a walk between two runs on a different one --
+        // which reads in the console as the walk having gone missing.
+        cmp = a.recorded_at - b.recorded_at;
+      } else {
+        cmp = a.walk < b.walk ? -1 : a.walk > b.walk ? 1 : 0;
+      }
       return dir === "desc" ? -cmp : cmp;
     });
     renderWalksList(list);

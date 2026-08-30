@@ -194,6 +194,36 @@ def _walk_model_id(walk_dir: Path, entries: list) -> Optional[str]:
     return meta.get("model_id")
 
 
+# newWalkName() in web-twin builds "<target>-<model tag>-YYYYMMDD-HHMMSS".
+WALK_TIMESTAMP = re.compile(r"(\d{8})-(\d{6})$")
+
+
+def _walk_recorded_at(walk_name: str, walk_dir: Path) -> Optional[float]:
+    """When this walk was recorded, as an epoch seconds float.
+
+    Parsed from the name rather than taken from the directory's mtime: the
+    console writes eval.json and tags.json into the walk directory, so mtime
+    moves every time a walk is scored or labelled, and a list sorted by it
+    would reshuffle itself as you used it.
+
+    This exists because the console's "Newest first" used to sort on the
+    walk NAME, which meant time order only while every name was
+    "<target>-<timestamp>". Once the model tag was added to the name, that
+    sort silently became "group by model" -- and a run of walks on one model
+    buried the walks recorded either side of it on another.
+    """
+    m = WALK_TIMESTAMP.search(walk_name)
+    if m:
+        import datetime
+        try:
+            return datetime.datetime.strptime(
+                m.group(1) + m.group(2), "%Y%m%d%H%M%S").timestamp()
+        except ValueError:
+            pass
+    meta = _read_json_sidecar(walk_dir, META_FILE_NAME) or {}
+    return meta.get("finished_at")
+
+
 def _walk_target(walk_dir: Path, walk_name: str) -> str:
     """The target object, for the judge's prompt. meta.json if recorded;
     otherwise recovered from the walk name, which newWalkName() builds as
@@ -267,6 +297,7 @@ def create_app(config_path=None) -> FastAPI:
                 "label": _read_label(walk_dir),
                 "model_id": _walk_model_id(walk_dir, _walk_entries(walk_dir)),
                 "finished": (walk_dir / META_FILE_NAME).exists(),
+                "recorded_at": _walk_recorded_at(walk_dir.name, walk_dir),
                 "eval": _eval_summary(walk_dir),
             })
         return {"recording_dir": str(base), "walks": walks}

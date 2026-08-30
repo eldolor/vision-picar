@@ -263,3 +263,30 @@ def test_the_console_serves_its_script_and_links_to_it(client):
     # no-cache, so a redeploy can't leave a stale script against fresh HTML
     assert "no-cache" in script.headers.get("cache-control", "")
     assert "scorePendingWalks" in script.text
+
+
+def test_walks_carry_a_recording_time_for_sorting(client):
+    """The console's "Newest first" sorted on the walk NAME, which meant
+    time order only while every name was "<target>-<timestamp>". Adding the
+    model tag to the name silently turned it into "group by model", and a
+    run of walks on one model buried the walks recorded either side of it on
+    another -- which reads as the walks having gone missing."""
+    c, root = client
+    make_walk(root, "red-backpack-opus-4-5-20260830-104413", ["FORWARD"])
+    make_walk(root, "red-backpack-qwen3-vl-235b-a22b-20260830-103934", ["FORWARD"])
+
+    walks = {w["walk"]: w for w in c.get("/recording/walks").json()["walks"]}
+    opus = walks["red-backpack-opus-4-5-20260830-104413"]["recorded_at"]
+    qwen = walks["red-backpack-qwen3-vl-235b-a22b-20260830-103934"]["recorded_at"]
+
+    assert opus is not None and qwen is not None
+    # The opus walk was recorded LATER, though its name sorts earlier.
+    assert opus > qwen
+    assert "red-backpack-opus-4-5-20260830-104413" < "red-backpack-qwen3-vl-235b-a22b-20260830-103934"
+
+
+def test_a_walk_with_no_timestamp_in_its_name_still_lists(client):
+    """Old or hand-made directory names must not break the listing."""
+    c, root = client
+    make_walk(root, "some-old-walk", ["FORWARD"])
+    assert c.get("/recording/walks").json()["walks"][0]["recorded_at"] is None
