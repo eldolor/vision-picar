@@ -98,6 +98,9 @@ logger = logging.getLogger("admin_server")
 JUDGE_MODEL_ID = os.environ.get(
     "BEDROCK_JUDGE_MODEL_ID", "us.anthropic.claude-opus-4-5-20251101-v1:0")
 JUDGE_SAMPLE_FRAMES = int(os.environ.get("JUDGE_SAMPLE_FRAMES", "8"))
+# The collision check looks at FORWARD frames only, from the end backwards --
+# see control/walk_eval.check_collisions for why that is where they hide.
+COLLISION_MAX_CHECKS = int(os.environ.get("COLLISION_MAX_CHECKS", "12"))
 # Off by default so this service keeps its old behaviour (and needs no
 # Bedrock permissions) unless the deployment opts in.
 JUDGE_ENABLED = os.environ.get("WALK_JUDGE_ENABLED", "").lower() in ("1", "true", "yes")
@@ -447,15 +450,15 @@ def create_app(config_path=None) -> FastAPI:
         entries = _walk_entries(walk_dir)
         metrics = walk_eval.compute_metrics(entries)
 
+        def frame_bytes_for(entry):
+            name = entry.get("file") or ""
+            if not FRAME_FILENAME.match(name):
+                return None
+            path = walk_dir / name
+            return path.read_bytes() if path.is_file() else None
+
         judge = None
         if use_judge and JUDGE_ENABLED and entries:
-            def frame_bytes_for(entry):
-                name = entry.get("file") or ""
-                if not FRAME_FILENAME.match(name):
-                    return None
-                path = walk_dir / name
-                return path.read_bytes() if path.is_file() else None
-
             try:
                 judge = walk_eval.judge_walk(
                     _bedrock_client(), JUDGE_MODEL_ID, entries, frame_bytes_for,
@@ -465,7 +468,16 @@ def create_app(config_path=None) -> FastAPI:
                 logger.warning("judge tier failed for %s: %s", walk_name, e)
                 judge = {"judged": 0, "sensible_rate": None, "error": str(e)[:200]}
 
-        scored = walk_eval.score_walk(metrics, judge)
+        collisions = None
+        if use_judge and JUDGE_ENABLED and entries:
+            try:
+                collisions = walk_eval.check_collisions(
+                    _bedrock_client(), JUDGE_MODEL_ID, entries, frame_bytes_for,
+                    max_checks=COLLISION_MAX_CHECKS)
+            except Exception as e:  # noqa: BLE001 -- degrade, don't fail the walk
+                logger.warning("collision check failed for %s: %s", walk_name, e)
+
+        scored = walk_eval.score_walk(metrics, judge, collisions)
         result = {
             "schema": walk_eval.SCHEMA_VERSION,
             "walk": walk_name,
@@ -474,6 +486,7 @@ def create_app(config_path=None) -> FastAPI:
             **scored,
             "metrics": metrics,
             "judge": judge,
+            "collisions": collisions,
         }
         try:
             (walk_dir / EVAL_FILE_NAME).write_text(json.dumps(result, indent=1))

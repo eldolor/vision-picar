@@ -24,6 +24,7 @@ Bedrock call.
 import pytest
 
 from control.walk_eval import (
+    check_collisions,
     compute_metrics,
     judge_frame,
     judge_walk,
@@ -203,7 +204,7 @@ def test_the_score_reports_its_own_components():
     """So a number can be argued with rather than just believed."""
     c = score_walk(compute_metrics(walk(["FORWARD", "RIGHT"])), {"sensible_rate": 0.5})["components"]
     assert set(c) == {"judge", "behaviour", "completion", "non_degeneracy",
-                      "progress", "smoothness", "identity"}
+                      "progress", "smoothness", "identity", "collisions"}
     assert c["judge"] == 0.5
 
 
@@ -386,3 +387,68 @@ def test_the_judge_is_told_a_collision_outranks_a_wasted_step():
     # The specific excuse the judge accepted must be refused by name.
     assert "continue the search" in prompt
     assert "fills most of the frame" in prompt
+
+
+# ---------- collisions: the one failure with physical consequences ----------
+
+
+def test_only_forward_frames_are_candidates_for_a_collision():
+    """A turn or a stop cannot drive into anything."""
+    from control.walk_eval import collision_candidates
+
+    entries = walk(["FORWARD", "LEFT", "FORWARD", "STOP", "RIGHT"])
+    assert collision_candidates(entries) == [0, 2]
+
+
+def test_candidates_are_not_filtered_by_the_walks_own_obstacle_claim():
+    """The log holds the model's CLAIM about obstacles, and the failure being
+    hunted is exactly a model that says "clear" while facing a wall. Trusting
+    obstacle_ahead here would skip precisely the frames that matter -- the
+    real one said "a plain wall with no visible target or obstacle" and drove
+    at it."""
+    from control.walk_eval import collision_candidates
+
+    entries = [entry(0, "FORWARD", obstacle=False), entry(1, "FORWARD", obstacle=False)]
+    assert collision_candidates(entries) == [0, 1]
+
+
+def test_a_collision_caps_the_score_however_good_the_rest_was():
+    """A walk that hit something is not a good walk. Before this, a walk that
+    ended with three commands into a wall scored 56 -- entirely for missing
+    the target -- and the wall was never mentioned."""
+    m = compute_metrics(walk(["FORWARD"] * 4 + ["RIGHT", "FORWARD"]))
+    m["target_reached"] = True
+    clean = score_walk(m, {"sensible_rate": 1.0})
+    hit = score_walk(m, {"sensible_rate": 1.0}, {"collisions": [{"seq": 5}]})
+
+    assert clean["score"] > 70
+    assert hit["score"] <= 40
+    assert "collision" in hit["flags"]
+    assert hit["verdict"] == "poor"
+
+
+def test_no_collisions_found_changes_nothing():
+    m = compute_metrics(walk(["FORWARD", "RIGHT"]))
+    with_check = score_walk(m, {"sensible_rate": 1.0}, {"checked": 6, "collisions": []})
+    without = score_walk(m, {"sensible_rate": 1.0})
+    assert with_check["score"] == without["score"]
+    assert "collision" not in with_check["flags"]
+
+
+def test_the_collision_check_looks_at_the_end_of_a_walk():
+    """A walk that drives into something tends to do it once it is lost,
+    which is late -- and a recording stops where the operator saw it happen."""
+    client = FakeClient('{"would_collide": true, "why": "wall fills the frame"}')
+    entries = walk(["FORWARD"] * 30)
+    out = check_collisions(client, "m", entries, lambda e: b"jpeg", max_checks=4,
+                           max_workers=1)
+    assert out["checked"] == 4
+    assert out["forward_frames"] == 30
+    assert [c["seq"] for c in out["collisions"]] == [26, 27, 28, 29]
+
+
+def test_a_failed_collision_check_costs_that_frame_not_the_walk():
+    client = FakeClient(raise_on={2})
+    entries = walk(["FORWARD"] * 3)
+    out = check_collisions(client, "m", entries, lambda e: b"jpeg", max_workers=1)
+    assert out["checked"] == 2

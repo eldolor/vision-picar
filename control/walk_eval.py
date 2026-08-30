@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # (target_reached: true, action: FORWARD) was marked wrong for obeying its
 # instructions. Bumping rescoes every stored eval.json rather than leaving
 # walks ranked by a judge that disagreed with the policy prompt.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 MOVE_ACTIONS = ("FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP")
 
@@ -126,6 +126,10 @@ def compute_metrics(entries: list) -> dict:
             sum(1 for nav in navs if nav.get("obstacle_ahead") is True) / n, 3),
         "model_ids": models,
     }
+
+
+def collision_flag(collisions: dict | None) -> list:
+    return ["collision"] if (collisions or {}).get("collisions") else []
 
 
 def metric_flags(m: dict) -> list:
@@ -285,6 +289,92 @@ def judge_frame(client, model_id: str, image_bytes: bytes, nav: dict,
     }
 
 
+COLLISION_PROMPT = """A small indoor robot commanded FORWARD on this frame.
+
+Answer one question only: would moving forward about 30cm from here run the
+robot into something?
+
+Say true if a wall, door, furniture, an appliance or a person occupies the
+space immediately in front of the camera -- in particular if a flat surface
+fills most of the frame with no floor visible between the camera and it. Say
+false if there is clear floor ahead for at least a step, however much
+furniture is further away.
+
+You are not judging whether the move was clever or whether the robot found
+what it was looking for. Only whether it was about to hit something.
+
+Respond with ONLY a JSON object:
+{{"would_collide": true | false, "why": "one short sentence"}}"""
+
+
+def collision_candidates(entries: list) -> list:
+    """Indices worth checking for an imminent collision.
+
+    Every FORWARD, because that is the only action that can drive into
+    anything. Deliberately NOT filtered by the walk's own obstacle_ahead: the
+    log contains the model's CLAIM about obstacles, and the failure being
+    looked for is precisely a model that claims "clear" while facing a wall.
+    Filtering on it would hide exactly the frames that matter.
+    """
+    out = []
+    for i, e in enumerate(entries):
+        if ((e.get("navigate") or {}).get("action")) == "FORWARD":
+            out.append(i)
+    return out
+
+
+def check_collisions(client, model_id: str, entries: list, frame_bytes_for,
+                     max_checks: int = 12, max_workers: int = 4) -> dict:
+    """Look for frames where the robot was told to drive into something.
+
+    This is the one failure with physical consequences, and nothing else in
+    the scorecard can see it. A walk that ended with three consecutive
+    commands into a wall scored 56 -- entirely for not reaching the target --
+    and the wall went unmentioned. It cannot be computed from the log for the
+    reason in collision_candidates() above: it needs the pixels.
+
+    Sampled from the END backwards. A walk that drives into something tends
+    to do it once it is lost, which is late; and the last frames are where a
+    recording stops precisely because the operator saw it happen.
+    """
+    candidates = collision_candidates(entries)
+    if not candidates:
+        return {"checked": 0, "collisions": [], "frames": []}
+    picks = sorted(candidates[-max_checks:])
+
+    def one(i):
+        entry = entries[i]
+        try:
+            image = frame_bytes_for(entry)
+            if not image:
+                return None
+            resp = client.converse(
+                modelId=model_id,
+                messages=[{"role": "user", "content": [
+                    {"image": {"format": "jpeg", "source": {"bytes": image}}},
+                    {"text": COLLISION_PROMPT}]}],
+                inferenceConfig={"maxTokens": 150},
+            )
+            text = "".join(b.get("text", "") for b in resp["output"]["message"]["content"])
+            verdict = _parse_json_reply(text)
+        except Exception as e:  # noqa: BLE001 -- one bad frame must not lose the check
+            logger.warning("collision check failed on %s: %s", entry.get("file"), e)
+            return None
+        return {"seq": entry.get("seq"), "file": entry.get("file"),
+                "would_collide": verdict.get("would_collide") is True,
+                "why": str(verdict.get("why", ""))[:200]}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        results = [r for r in pool.map(one, picks) if r is not None]
+
+    return {
+        "checked": len(results),
+        "forward_frames": len(candidates),
+        "collisions": [r for r in results if r["would_collide"]],
+        "frames": results,
+    }
+
+
 def _sample_indices(n: int, k: int) -> list:
     """Evenly spaced, always including the first and last frame -- a walk's
     ending is where arrival or a terminal stall shows up."""
@@ -339,7 +429,7 @@ def judge_walk(client, model_id: str, entries: list, frame_bytes_for,
     }
 
 
-def score_walk(metrics: dict, judge: dict | None) -> dict:
+def score_walk(metrics: dict, judge: dict | None, collisions: dict | None = None) -> dict:
     """Blend into one advisory 0-100 number.
 
     Three parts, and the split is the result of the scorer being wrong twice:
@@ -370,7 +460,7 @@ def score_walk(metrics: dict, judge: dict | None) -> dict:
     if metrics.get("empty"):
         return {"score": 0, "verdict": "poor", "flags": ["empty"]}
 
-    flags = metric_flags(metrics)
+    flags = metric_flags(metrics) + collision_flag(collisions)
 
     # Non-degeneracy: full marks until one action passes half the walk,
     # zero once it is the only action.
@@ -409,6 +499,14 @@ def score_walk(metrics: dict, judge: dict | None) -> dict:
         score = 100 * (0.45 * rate + 0.30 * behaviour + 0.25 * completion)
         basis = "judge+metrics"
 
+    # A walk that drove into something is not a good walk, whatever else it
+    # did. This is the only failure here with physical consequences, so it
+    # caps the score rather than nudging it -- the alternative is a walk that
+    # hit a wall still reading "good" because it was efficient about it.
+    hits = len((collisions or {}).get("collisions", []))
+    if hits:
+        score = min(score, 40)
+
     score = int(round(score))
     verdict = "good" if score >= 70 else ("mixed" if score >= 45 else "poor")
     return {
@@ -423,5 +521,6 @@ def score_walk(metrics: dict, judge: dict | None) -> dict:
             "progress": round(progress, 3),
             "smoothness": round(smoothness, 3),
             "identity": round(identity, 3),
+            "collisions": hits,
         },
     }
