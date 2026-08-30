@@ -170,7 +170,7 @@ def test_navigate_requires_a_target_object(client):
 def test_navigate_returns_the_decision_verbatim(client, monkeypatch):
     monkeypatch.setattr(
         app_module, "describe_image_bytes_navigate",
-        lambda b, target, mt, searched_rooms=None, model_id=None: navigate_reply(),
+        lambda b, target, mt, searched_rooms=None, model_id=None, prompt_variant=None: navigate_reply(),
     )
     resp = client.post(
         "/navigate", json={"image_base64": IMAGE_B64, "target_object": "red backpack"}
@@ -187,7 +187,7 @@ def test_navigate_forwards_searched_rooms(client, monkeypatch):
     vision_core.describe_image_bytes_navigate()'s searched_rooms kwarg."""
     seen = {}
 
-    def fake(image_bytes, target, media_type, searched_rooms=None, model_id=None):
+    def fake(image_bytes, target, media_type, searched_rooms=None, model_id=None, prompt_variant=None):
         seen["searched_rooms"] = searched_rooms
         return navigate_reply()
 
@@ -208,7 +208,7 @@ def test_navigate_forwards_searched_rooms(client, monkeypatch):
 def test_navigate_defaults_searched_rooms_to_empty(client, monkeypatch):
     seen = {}
 
-    def fake(image_bytes, target, media_type, searched_rooms=None, model_id=None):
+    def fake(image_bytes, target, media_type, searched_rooms=None, model_id=None, prompt_variant=None):
         seen["searched_rooms"] = searched_rooms
         return navigate_reply()
 
@@ -227,7 +227,7 @@ def test_navigate_ignores_a_malformed_searched_rooms(client, monkeypatch):
     a caller's mistake."""
     seen = {}
 
-    def fake(image_bytes, target, media_type, searched_rooms=None, model_id=None):
+    def fake(image_bytes, target, media_type, searched_rooms=None, model_id=None, prompt_variant=None):
         seen["searched_rooms"] = searched_rooms
         return navigate_reply()
 
@@ -255,7 +255,7 @@ def test_navigate_ignores_a_malformed_searched_rooms(client, monkeypatch):
 
 
 def test_navigate_a_vision_failure_is_a_502(client, monkeypatch):
-    def boom(b, target, mt, searched_rooms=None, model_id=None):
+    def boom(b, target, mt, searched_rooms=None, model_id=None, prompt_variant=None):
         raise RuntimeError("bedrock: throttled")
 
     monkeypatch.setattr(app_module, "describe_image_bytes_navigate", boom)
@@ -281,7 +281,7 @@ def test_navigate_models_lists_the_allowed_set_and_default(client):
 def test_navigate_forwards_a_valid_model_id(client, monkeypatch):
     seen = {}
 
-    def fake(image_bytes, target, media_type, searched_rooms=None, model_id=None):
+    def fake(image_bytes, target, media_type, searched_rooms=None, model_id=None, prompt_variant=None):
         seen["model_id"] = model_id
         return navigate_reply()
 
@@ -303,7 +303,7 @@ def test_navigate_defaults_model_id_to_none(client, monkeypatch):
     is the single source of truth for what "no preference" means."""
     seen = {}
 
-    def fake(image_bytes, target, media_type, searched_rooms=None, model_id=None):
+    def fake(image_bytes, target, media_type, searched_rooms=None, model_id=None, prompt_variant=None):
         seen["model_id"] = model_id
         return navigate_reply()
 
@@ -367,3 +367,51 @@ def test_guidance_a_vision_failure_is_a_502(client, monkeypatch):
         "/guidance", json={"image_base64": IMAGE_B64, "target_object": "red backpack"}
     )
     assert resp.status_code == 502
+
+
+# ---------- /navigate prompt variants ----------
+#
+# The prompt is a lever at least as strong as the model, and was the only one
+# that could not be varied without a redeploy. The stall this project spent
+# days on was a wording problem: "is there an obstacle directly ahead" read as
+# "is there furniture anywhere in front of me", which stays true from every
+# angle and so never lets FORWARD come back.
+
+
+def test_navigate_models_also_publishes_the_prompt_variants(client):
+    body = client.get("/navigate/models").json()
+    assert body["default_prompt"] == app_module.DEFAULT_PROMPT_VARIANT
+    assert set(body["prompts"]) == set(app_module.NAVIGATE_PROMPT_VARIANTS)
+    assert "default" in body["prompts"]
+
+
+def test_navigate_forwards_a_valid_prompt_variant(client, monkeypatch):
+    seen = {}
+
+    def fake(image_bytes, target, media_type, searched_rooms=None, model_id=None,
+             prompt_variant=None):
+        seen["prompt_variant"] = prompt_variant
+        return navigate_reply()
+
+    monkeypatch.setattr(app_module, "describe_image_bytes_navigate", fake)
+    variant = sorted(app_module.NAVIGATE_PROMPT_VARIANTS)[-1]
+
+    resp = client.post("/navigate", json={
+        "image_base64": IMAGE_B64, "target_object": "red backpack",
+        "prompt_variant": variant})
+
+    assert resp.status_code == 200
+    assert seen["prompt_variant"] == variant
+
+
+def test_navigate_rejects_an_unknown_prompt_variant(client, monkeypatch):
+    """Validated before any Bedrock call, exactly like model_id -- a typo
+    must not silently fall back to the default wording, or a whole recorded
+    walk would be attributed to a prompt that never ran."""
+    def fail_if_called(*a, **k):
+        raise AssertionError("must not reach the model for a bad prompt_variant")
+
+    monkeypatch.setattr(app_module, "describe_image_bytes_navigate", fail_if_called)
+    resp = client.post("/navigate", json={
+        "image_base64": IMAGE_B64, "target_object": "x", "prompt_variant": "made-up"})
+    assert resp.status_code == 400

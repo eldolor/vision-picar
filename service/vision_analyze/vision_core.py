@@ -256,6 +256,77 @@ Respond with ONLY a JSON object, no other text, matching this schema:
   "reasoning": "one short sentence explaining the choice"
 }}"""
 
+
+
+# The prompt is a lever at least as strong as the model, and until now it was
+# the only one that could not be varied without a redeploy. The stall that
+# started this whole investigation was a WORDING problem: "is there an
+# obstacle directly ahead" got read as "is there furniture anywhere in front
+# of me", which stays true from every angle and every distance, so FORWARD
+# could never come back once a room had furniture in it.
+#
+# Variants are named and served from here for the same reason models are:
+# one allow-list, server side, echoed back on every reply so a recorded walk
+# says which prompt produced it.
+NAVIGATE_PROMPT_VARIANTS = {
+    "default": NAVIGATE_PROMPT_TEMPLATE,
+}
+
+# Differs from the default in questions 2 and 5 only. Question 2 asks about
+# the NEXT STEP rather than about the room in general, and question 5 says
+# outright that closing distance over open floor is progress -- the two
+# changes aimed squarely at the observed failure. Kept as a variant rather
+# than made the default because it has never been measured over a whole
+# recorded walk; that is what the picker and replay are for.
+NAVIGATE_PROMPT_VARIANTS["next-step-obstacle"] = """You are the camera of a small indoor robot searching for a {target_object}.
+Look at this image and decide the robot's single next move.
+
+Divide the image into three equal vertical thirds: "left", "center" and
+"right". These thirds are the frame of reference for both questions 1 and 3,
+so use them literally -- an object is in whichever third its centre falls in.
+
+Consider:
+1. Is the {target_object} visible in this image? If so, which third is it in?
+2. Is there an obstacle close enough to block the robot's NEXT SINGLE STEP?
+   The robot moves about 30cm per step. Answer true ONLY if something is
+   within roughly one step -- that is, it fills the bottom portion of the
+   frame and there is no clear floor between the camera and it. Furniture
+   further away across open floor is NOT an obstacle for this step: if you
+   can see clear floor immediately in front of the robot, answer false, even
+   if there is furniture beyond that floor.
+3. Has the robot ARRIVED at the {target_object}? Arrived means it is directly
+   in front of the robot and close enough to touch: it spans roughly the full
+   width of the center third, or more. Judge this by how much of the frame it
+   fills, not by guessing real-world distance. A {target_object} that is
+   clearly visible but still across the room has NOT been reached.
+4. What kind of room does this look like -- e.g. "kitchen", "hallway",
+   "living room", "bedroom", "bathroom"? Use "unclear" if you can't tell.
+5. Given the above, what is the single best next action to get closer to the
+   {target_object} while not colliding with anything? Prefer FORWARD whenever
+   there is clear floor immediately ahead, even if the {target_object} is not
+   perfectly centred and even if furniture is visible further away -- closing
+   distance over open floor is progress. Turn only when something is within
+   one step, or when the {target_object} is far enough to the side that
+   forward motion would not close the gap.{searched_rooms_note}
+
+"action" is only about movement -- it never means "the search is over".
+Report arrival in "target_reached" instead, so that a STOP caused by an
+obstacle is never confused with a STOP caused by success.
+
+Respond with ONLY a JSON object, no other text, matching this schema:
+{{
+  "target_visible": true | false,
+  "target_direction": "left" | "center" | "right" | "not_visible",
+  "target_reached": true | false,
+  "obstacle_ahead": true | false,
+  "room_guess": "short room-type label, or \\"unclear\\"",
+  "action": "FORWARD" | "LEFT" | "RIGHT" | "REVERSE" | "STOP",
+  "reasoning": "one short sentence explaining the choice"
+}}"""
+
+DEFAULT_PROMPT_VARIANT = os.environ.get("NAVIGATE_PROMPT_VARIANT", "default")
+
+
 # Appended into the prompt only when the caller has already searched at
 # least one room (MissionMemory.searched_rooms, threaded through by
 # control/mission_runner.py -- see brain/navigate.py). This is the room-
@@ -290,6 +361,7 @@ def describe_image_bytes_navigate(
     media_type: str = "image/jpeg",
     searched_rooms: list | None = None,
     model_id: str | None = None,
+    prompt_variant: str | None = None,
 ) -> dict:
     client = _get_client()
     model_id = model_id or NAVIGATE_MODEL_ID
@@ -304,7 +376,9 @@ def describe_image_bytes_navigate(
         note = _SEARCHED_ROOMS_NOTE_TEMPLATE.format(
             rooms=", ".join(searched_rooms), target_object=target_object
         )
-    prompt = NAVIGATE_PROMPT_TEMPLATE.format(target_object=target_object, searched_rooms_note=note)
+    variant = prompt_variant or DEFAULT_PROMPT_VARIANT
+    template = NAVIGATE_PROMPT_VARIANTS.get(variant, NAVIGATE_PROMPT_TEMPLATE)
+    prompt = template.format(target_object=target_object, searched_rooms_note=note)
 
     response = client.converse(
         modelId=model_id,
@@ -332,6 +406,9 @@ def describe_image_bytes_navigate(
     # admin viewer reading it back later -- can tell which model produced
     # which decision, and at what token cost, without a side-channel.
     decision["model_id"] = model_id
+    # Which wording produced this, carried for the same reason model_id is:
+    # a recorded walk has to be able to say what made it.
+    decision["prompt_variant"] = variant
     usage = response.get("usage") or {}
     decision["usage"] = {
         "input_tokens": usage.get("inputTokens"),

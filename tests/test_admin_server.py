@@ -318,8 +318,10 @@ def vision(recordings, monkeypatch):
         f"  vision_url: http://vision.invalid\n")
     calls = []
 
-    def fake_post(vision_url, timeout_s, image_bytes, target_object, model_id):
-        calls.append({"target": target_object, "model_id": model_id})
+    def fake_post(vision_url, timeout_s, image_bytes, target_object, model_id,
+                  prompt_variant=None):
+        calls.append({"target": target_object, "model_id": model_id,
+                      "prompt_variant": prompt_variant})
         return nav_reply("FORWARD")
 
     monkeypatch.setattr(admin_server, "post_navigate", fake_post)
@@ -376,7 +378,8 @@ def test_one_failing_frame_does_not_lose_the_replay(recordings, monkeypatch):
         f"  vision_url: http://vision.invalid\n")
     n = {"calls": 0}
 
-    def flaky(vision_url, timeout_s, image_bytes, target_object, model_id):
+    def flaky(vision_url, timeout_s, image_bytes, target_object, model_id,
+              prompt_variant=None):
         n["calls"] += 1
         if n["calls"] == 2:
             raise RuntimeError("HTTP 502: vision service down")
@@ -415,3 +418,33 @@ def test_replay_without_a_vision_service_is_a_clear_503(client):
     resp = c.post("/recording/walks/walk-w/replay", json={})
     assert resp.status_code == 503
     assert "vision" in resp.json()["detail"].lower()
+
+
+def test_a_replay_can_vary_the_prompt_instead_of_the_model(vision):
+    """The other axis, and the more interesting one: the failure that started
+    this project was a wording problem, not a model problem. Replaying the
+    same frames under a different prompt is the experiment that could never
+    be run before -- it needed a redeploy."""
+    c, root, calls = vision
+    make_walk(root, "walk-p", ["STOP", "STOP"])
+
+    c.post("/recording/walks/walk-p/replay",
+           json={"prompt_variant": "next-step-obstacle"})
+
+    assert {x["prompt_variant"] for x in calls} == {"next-step-obstacle"}
+
+
+def test_model_and_prompt_replays_are_stored_separately(vision):
+    """A walk holds a grid across both axes, not one result per model: the
+    same model under two prompts is two different experiments."""
+    c, root, _calls = vision
+    make_walk(root, "walk-q", ["STOP"])
+
+    c.post("/recording/walks/walk-q/replay", json={"model_id": "amazon.nova-lite-v1:0"})
+    c.post("/recording/walks/walk-q/replay",
+           json={"model_id": "amazon.nova-lite-v1:0", "prompt_variant": "next-step-obstacle"})
+
+    stored = c.get("/recording/walks/walk-q/replays").json()["replays"]
+    assert len(stored) == 2
+    assert {r["prompt_variant"] for r in stored} == {"default", "next-step-obstacle"}
+    assert {r["model_id"] for r in stored} == {"amazon.nova-lite-v1:0"}

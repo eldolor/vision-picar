@@ -130,27 +130,40 @@
   // the vision service's allow-list -- the console must not carry its own
   // copy of model ids, for the same reason the twin's picker doesn't.
   let replayModels = [];
+  let replayPrompts = [];
 
   async function loadReplayModels() {
     try {
       const data = await api("GET", "/recording/models");
       replayModels = Array.isArray(data.models) ? data.models : [];
+      // Prompt wording is the other axis, and the one the original stall
+      // turned out to live on. Only offered when there is more than one, so
+      // a single-variant deployment shows no pointless control.
+      replayPrompts = Array.isArray(data.prompts) && data.prompts.length > 1
+        ? data.prompts : [];
     } catch (e) {
       replayModels = [];
+      replayPrompts = [];
     }
   }
 
   // Look for a replay the server may have finished after our request timed
   // out. Cheap: a couple of polls of an endpoint that just reads sidecars.
-  async function pollForReplay(w, modelId, tries) {
+  async function pollForReplay(w, modelId, promptVariant, tries) {
     tries = tries || 6;
     for (let i = 0; i < tries; i++) {
       await new Promise(function (r) { setTimeout(r, 5000); });
       try {
         const data = await api("GET", "/recording/walks/" + encodeURIComponent(w.walk) + "/replays");
-        const hit = (data.replays || []).find(function (r) { return r.model_id === modelId; });
+        const hit = (data.replays || []).find(function (r) {
+          return r.model_id === modelId &&
+            (r.prompt_variant || "default") === (promptVariant || "default");
+        });
         if (hit) {
-          w.replays = (w.replays || []).filter(function (x) { return x.model_id !== modelId; });
+          w.replays = (w.replays || []).filter(function (x) {
+            return !(x.model_id === modelId &&
+              (x.prompt_variant || "default") === (promptVariant || "default"));
+          });
           w.replays.push(hit);
           return true;
         }
@@ -406,22 +419,30 @@
     const replaySelect = document.createElement("select");
     replaySelect.className = "replay-select";
     replaySelect.innerHTML = '<option value="">Replay with…</option>';
+    // Values are "<model>|<prompt>" so one control covers both axes without
+    // a second dropdown crowding the row on a phone.
     for (const m of replayModels) {
-      const opt = document.createElement("option");
-      opt.value = m.id;
-      opt.textContent = shortModel(m.id);
-      replaySelect.appendChild(opt);
+      for (const prompt of (replayPrompts.length ? replayPrompts : ["default"])) {
+        const opt = document.createElement("option");
+        opt.value = m.id + "|" + prompt;
+        opt.textContent = shortModel(m.id) + (prompt === "default" ? "" : " · " + prompt);
+        replaySelect.appendChild(opt);
+      }
     }
     replaySelect.onchange = async function () {
-      const modelId = replaySelect.value;
-      if (!modelId) return;
+      if (!replaySelect.value) return;
+      const parts = replaySelect.value.split("|");
+      const modelId = parts[0];
+      const promptVariant = parts[1] || "default";
       replaySelect.disabled = true;
       const was = replaySelect.options[replaySelect.selectedIndex].textContent;
       replaySelect.options[replaySelect.selectedIndex].textContent = "Replaying…";
       try {
         const r = await api("POST", "/recording/walks/" + encodeURIComponent(w.walk) + "/replay",
-          { model_id: modelId });
-        w.replays = (w.replays || []).filter(function (x) { return x.model_id !== r.model_id; });
+          { model_id: modelId, prompt_variant: promptVariant });
+        w.replays = (w.replays || []).filter(function (x) {
+          return !(x.model_id === r.model_id && (x.prompt_variant || "default") === (r.prompt_variant || "default"));
+        });
         w.replays.push(r);
         renderReplays();
       } catch (e) {
@@ -429,7 +450,7 @@
         // though the server finishes the job and writes its sidecar -- so a
         // timeout is not a failure, it is a lost response. Go and look for
         // the result before reporting anything.
-        const recovered = await pollForReplay(w, modelId);
+        const recovered = await pollForReplay(w, modelId, promptVariant);
         if (recovered) {
           renderReplays();
         } else {
@@ -506,8 +527,10 @@
       const rows = rs.slice().sort(function (a, b) { return b.score - a.score; })
         .map(function (r) {
           const agree = r.agreement == null ? "--" : Math.round(r.agreement * 100) + "%";
+          const variant = (r.prompt_variant && r.prompt_variant !== "default")
+            ? " · " + escapeHtml(r.prompt_variant) : "";
           return '<div class="eval-line">replay · <b>' + escapeHtml(shortModel(r.model_id)) +
-            "</b> score " + r.score + " (" + escapeHtml(r.verdict) + ") · agreed with the " +
+            variant + "</b> score " + r.score + " (" + escapeHtml(r.verdict) + ") · agreed with the " +
             "recording on " + agree + " of frames" +
             (r.errors ? " · " + r.errors + " frame(s) failed" : "") +
             (r.flags && r.flags.length ? " · " + escapeHtml(r.flags.join(", ")) : "") + "</div>";

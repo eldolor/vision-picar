@@ -202,6 +202,8 @@
     // /navigate model A/B (empty string = service default, i.e. omit
     // model_id entirely -- see fetchNavigateModels()).
     navigateModelId: "", navigateModelsLoaded: false,
+    // The prompt wording axis, served from the same allow-list as the models.
+    navigatePromptVariant: "",
     // The vision service's own default, and whatever the connected brain
     // pins -- both only for showing which model a mission would really use.
     navigateServiceDefault: "", brainNavigateModelId: null,
@@ -239,6 +241,7 @@
     recordWalk: "vp_record_walk",
     driveViaBrain: "vp_drive_via_brain",
     navigateModelId: "vp_navigate_model_id",
+    navigatePromptVariant: "vp_navigate_prompt_variant",
   };
   function prefGet(key) {
     try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -1633,6 +1636,13 @@
   function updateModelPickerRow() {
     const row = document.getElementById("navigate-model-row");
     if (row) row.style.display = state.guidanceMode === "robot" ? "" : "none";
+    const promptRow = document.getElementById("navigate-prompt-row");
+    // Only shown once the service offers more than one wording -- a single
+    // variant is not a choice.
+    if (promptRow) {
+      promptRow.style.display =
+        (state.guidanceMode === "robot" && promptRow.dataset.hasChoices === "1") ? "" : "none";
+    }
     if (state.guidanceMode === "robot" && !state.navigateModelsLoaded) fetchNavigateModels();
   }
 
@@ -1642,6 +1652,26 @@
     const select = document.getElementById("cfg-navigate-model");
     if (!select) return;
     while (select.options.length > 1) select.remove(1);
+  }
+
+  function populatePromptOptions(prompts) {
+    const select = document.getElementById("cfg-navigate-prompt");
+    const row = document.getElementById("navigate-prompt-row");
+    if (!select || !row) return;
+    while (select.options.length > 1) select.remove(1);
+    row.dataset.hasChoices = prompts.length > 1 ? "1" : "0";
+    for (const name of prompts) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    }
+    const saved = prefGet(PREF.navigatePromptVariant);
+    if (saved && prompts.indexOf(saved) !== -1) {
+      select.value = saved;
+      state.navigatePromptVariant = saved;
+    }
+    updateModelPickerRow();
   }
 
   function fetchNavigateModels() {
@@ -1662,6 +1692,7 @@
         // other caller is a mode switch the user has no reason to make.
         state.navigateModelsLoaded = true;
         state.navigateServiceDefault = data.default || "";
+        populatePromptOptions(data.prompts || []);
         resetNavigateModelOptions();
         for (const m of data.models) {
           const opt = document.createElement("option");
@@ -1677,6 +1708,11 @@
       })
       .catch(function () { /* leave "Service default" as the only option; a later call retries */ });
   }
+
+  document.getElementById("cfg-navigate-prompt").addEventListener("change", function () {
+    state.navigatePromptVariant = this.value;
+    prefSet(PREF.navigatePromptVariant, this.value);
+  });
 
   document.getElementById("cfg-navigate-model").addEventListener("change", function () {
     state.navigateModelId = this.value;
@@ -1828,6 +1864,9 @@
     // Model A/B only applies to /navigate (Robot view) -- /guidance is a
     // person-facing feature, not the evaluation flow this picker is for.
     if (route === "/navigate" && state.navigateModelId) payload.model_id = state.navigateModelId;
+    if (route === "/navigate" && state.navigatePromptVariant) {
+      payload.prompt_variant = state.navigatePromptVariant;
+    }
     return fetch(deriveServiceUrl(url, route), {
       method: "POST",
       headers: headers,
@@ -3035,6 +3074,7 @@
           target_object: state.guidanceTarget,
           policy: "vision",
           model_id: state.navigateModelId || null,
+          prompt_variant: state.navigatePromptVariant || null,
         });
       } catch (e) {
         showGuideStartError("Could not start the brain-driven mission: " + e.message);

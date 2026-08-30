@@ -60,6 +60,8 @@ PHONE = {"width": 390, "height": 844}
 
 MODELS_REPLY = {
     "default": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+    "default_prompt": "default",
+    "prompts": ["default", "next-step-obstacle"],
     "models": [
         {"id": "us.anthropic.claude-opus-4-5-20251101-v1:0", "label": "Claude Opus 4.5 (best judgement)"},
         {"id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "label": "Claude Sonnet 4.5 (cautious)"},
@@ -110,7 +112,7 @@ def browser():
         b.close()
 
 
-def open_twin(browser, twin_server, *, saved_vision_url=True, mode="robot"):
+def open_twin(browser, twin_server, *, saved_vision_url=True, mode="robot", models=None):
     """A phone-sized page with the twin loaded.
 
     `saved_vision_url` seeds localStorage the way a returning user's browser
@@ -128,7 +130,7 @@ def open_twin(browser, twin_server, *, saved_vision_url=True, mode="robot"):
     )
     page = context.new_page()
     page.route("**/navigate/models", lambda route: route.fulfill(
-        status=200, content_type="application/json", body=_json(MODELS_REPLY)))
+        status=200, content_type="application/json", body=_json(models or MODELS_REPLY)))
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(twin_server, wait_until="networkidle")
@@ -332,4 +334,28 @@ def test_a_live_connection_is_visually_distinct_from_a_dead_one(browser, twin_se
 
     assert dead != alive, "connected and disconnected look identical"
     assert el.evaluate("el => el.classList.contains('is-ok')")
+    page.close()
+
+
+def test_the_prompt_picker_appears_when_the_service_offers_a_choice(browser, twin_server):
+    """The other axis. The stall this project spent days on was a wording
+    problem, so being able to pick the wording matters at least as much as
+    picking the model."""
+    page, _ = open_twin(browser, twin_server)
+    select = page.locator("#cfg-navigate-prompt")
+    sync_api.expect(select).to_be_visible()
+    sync_api.expect(select.locator("option")).to_have_count(
+        len(MODELS_REPLY["prompts"]) + 1)  # + "Service default"
+
+    select.select_option("next-step-obstacle")
+    assert select.input_value() == "next-step-obstacle"
+    page.close()
+
+
+def test_the_prompt_picker_hides_when_there_is_only_one_wording(browser, twin_server):
+    """A single variant is not a choice, and a control that never does
+    anything is worse than no control."""
+    single = dict(MODELS_REPLY, prompts=["default"])
+    page, _ = open_twin(browser, twin_server, models=single)
+    sync_api.expect(page.locator("#navigate-prompt-row")).to_be_hidden()
     page.close()

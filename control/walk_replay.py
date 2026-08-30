@@ -51,11 +51,15 @@ DEFAULT_WORKERS = 6
 
 
 def replay_walk(entries, frame_bytes_for, target_object, post_navigate,
-                model_id=None, max_workers=DEFAULT_WORKERS):
+                model_id=None, prompt_variant=None, max_workers=DEFAULT_WORKERS):
     """Re-ask every frame of a walk.
 
-    `post_navigate(image_bytes, target_object, model_id) -> dict` performs one
-    /navigate call and returns its JSON body.
+    `post_navigate(image_bytes, target_object, model_id, prompt_variant) -> dict`
+    performs one /navigate call and returns its JSON body.
+
+    Varying `prompt_variant` instead of `model_id` is the same experiment on
+    the other axis, and the more interesting one: the failure that started
+    this project was a wording problem, not a model problem.
 
     Returns the replayed answers shaped as walk.jsonl entries, so the very
     same control/walk_eval.py scoring runs over a replay and over the
@@ -63,8 +67,8 @@ def replay_walk(entries, frame_bytes_for, target_object, post_navigate,
     recorded at the time.
     """
     if not entries:
-        return {"model_id": model_id, "frames": 0, "entries": [], "diff": [],
-                "errors": 0, "agreement": None}
+        return {"model_id": model_id, "prompt_variant": prompt_variant, "frames": 0,
+                "entries": [], "diff": [], "errors": 0, "agreement": None}
 
     def one(entry):
         nav = entry.get("navigate") or {}
@@ -72,7 +76,7 @@ def replay_walk(entries, frame_bytes_for, target_object, post_navigate,
         if not image:
             return entry, None, "no image bytes"
         try:
-            return entry, post_navigate(image, target_object, model_id), None
+            return entry, post_navigate(image, target_object, model_id, prompt_variant), None
         except Exception as e:  # noqa: BLE001 -- one bad frame must not lose the replay
             logger.warning("replay failed on %s: %s", entry.get("file"), e)
             return entry, None, f"{type(e).__name__}: {e}"[:160]
@@ -91,6 +95,7 @@ def replay_walk(entries, frame_bytes_for, target_object, post_navigate,
         # Carry the model actually used, exactly as a live recording does, so
         # a stored replay is self-describing.
         answer.setdefault("model_id", model_id)
+        answer.setdefault("prompt_variant", prompt_variant)
         replay_entries.append({
             "seq": entry.get("seq"),
             "file": entry.get("file"),
@@ -108,6 +113,7 @@ def replay_walk(entries, frame_bytes_for, target_object, post_navigate,
 
     return {
         "model_id": model_id,
+        "prompt_variant": prompt_variant,
         "frames": len(entries),
         "errors": errors,
         # How often the replay chose the same move as the recording. Low

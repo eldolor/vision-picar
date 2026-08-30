@@ -117,7 +117,7 @@ def _bedrock_client():
 
 
 def post_navigate(vision_url: str, timeout_s: float, image_bytes: bytes,
-                  target_object: str, model_id):
+                  target_object: str, model_id, prompt_variant=None):
     """One call to the DEPLOYED /navigate -- see control/walk_replay.py's
     docstring for why replay goes through the service rather than straight to
     Bedrock. Module level, like _bedrock_client above, so a test can replace
@@ -133,6 +133,8 @@ def post_navigate(vision_url: str, timeout_s: float, image_bytes: bytes,
     }
     if model_id:
         body["model_id"] = model_id
+    if prompt_variant:
+        body["prompt_variant"] = prompt_variant
     headers = {"Content-Type": "application/json"}
     secret = os.environ.get("VISION_SHARED_SECRET") or os.environ.get("APP_SHARED_SECRET")
     if secret:
@@ -196,8 +198,12 @@ EVAL_FILE_NAME = "eval.json"
 REPLAY_PREFIX = "replay-"
 
 
-def _replay_file(model_id: str) -> str:
-    return REPLAY_PREFIX + re.sub(r"[^A-Za-z0-9._-]", "_", model_id) + ".json"
+def _replay_file(model_id: str, prompt_variant=None) -> str:
+    """One file per (model, prompt) pair -- the two axes are independent and a
+    walk should be able to hold a grid of both, not one result per model."""
+    key = model_id if not prompt_variant or prompt_variant == "default" \
+        else f"{model_id}__{prompt_variant}"
+    return REPLAY_PREFIX + re.sub(r"[^A-Za-z0-9._-]", "_", key) + ".json"
 
 # Walk-level facts the frames themselves don't carry -- written by
 # brain_server's POST /recording/finish, and backfillable for the walks
@@ -213,6 +219,9 @@ class ReplayRequest(BaseModel):
     """Which model to re-ask a recorded walk's frames under. Omitted means
     the vision service's own default."""
     model_id: Optional[str] = None
+    # The other axis. Varying the wording over a recorded walk is the
+    # experiment this project most needs and could never run before.
+    prompt_variant: Optional[str] = None
 
 
 class MetaRequest(BaseModel):
@@ -482,7 +491,8 @@ def create_app(config_path=None) -> FastAPI:
             except (json.JSONDecodeError, OSError):
                 continue
             out.append({k: r.get(k) for k in
-                        ("model_id", "score", "verdict", "flags", "agreement", "errors")})
+                        ("model_id", "prompt_variant", "score", "verdict", "flags",
+                         "agreement", "errors")})
         return out
 
     def _eval_summary(walk_dir: Path) -> Optional[dict]:
@@ -517,7 +527,7 @@ def create_app(config_path=None) -> FastAPI:
 
     # ---- replay: the same pixels, a different model ----
 
-    def _replay(walk_dir: Path, walk_name: str, model_id) -> dict:
+    def _replay(walk_dir: Path, walk_name: str, model_id, prompt_variant=None) -> dict:
         # Checked before any frame is read: a deployment with no vision
         # service configured should say so once, not once per frame.
         if not config["vision_url"]:
@@ -534,12 +544,13 @@ def create_app(config_path=None) -> FastAPI:
             path = walk_dir / name
             return path.read_bytes() if path.is_file() else None
 
-        def call(image_bytes, target_object, chosen):
+        def call(image_bytes, target_object, chosen, variant):
             return post_navigate(config["vision_url"], config["vision_timeout_s"],
-                                 image_bytes, target_object, chosen)
+                                 image_bytes, target_object, chosen, variant)
 
         out = walk_replay.replay_walk(
-            entries, frame_bytes_for, target, call, model_id=model_id)
+            entries, frame_bytes_for, target, call, model_id=model_id,
+            prompt_variant=prompt_variant)
 
         # Score the replay with the SAME scorer the original gets, by handing
         # it entries in the same shape -- so the two numbers are comparable
@@ -550,6 +561,7 @@ def create_app(config_path=None) -> FastAPI:
             "schema": walk_eval.SCHEMA_VERSION,
             "walk": walk_name,
             "model_id": model_id or "(service default)",
+            "prompt_variant": prompt_variant or "default",
             "target_object": target,
             "replayed_at": time.time(),
             **scored,
@@ -563,7 +575,7 @@ def create_app(config_path=None) -> FastAPI:
             "diff": out["diff"],
         }
         try:
-            (walk_dir / _replay_file(result["model_id"])).write_text(
+            (walk_dir / _replay_file(result["model_id"], prompt_variant)).write_text(
                 json.dumps(result, indent=1))
         except OSError as e:
             logger.warning("could not persist replay for %s: %s", walk_name, e)
@@ -579,7 +591,8 @@ def create_app(config_path=None) -> FastAPI:
         """
         walk_dir = _resolve_walk_dir(walk)
         try:
-            return await asyncio.to_thread(_replay, walk_dir, walk, req.model_id)
+            return await asyncio.to_thread(_replay, walk_dir, walk, req.model_id,
+                                           req.prompt_variant)
         except RuntimeError as e:
             raise HTTPException(status_code=503, detail=str(e))
 

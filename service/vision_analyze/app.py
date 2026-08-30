@@ -142,6 +142,8 @@ from vision_core import (
     describe_image_bytes_guidance,
     NAVIGATE_MODEL_CHOICES,
     NAVIGATE_MODEL_ID,
+    NAVIGATE_PROMPT_VARIANTS,
+    DEFAULT_PROMPT_VARIANT,
 )
 from rooms_core import identify_room
 
@@ -245,6 +247,10 @@ def create_app() -> FastAPI:
         return {
             "default": NAVIGATE_MODEL_ID,
             "models": [{"id": mid, "label": label} for mid, label in NAVIGATE_MODEL_CHOICES.items()],
+            # The prompt is a lever at least as strong as the model, and is
+            # published alongside it so one fetch tells a client both axes.
+            "default_prompt": DEFAULT_PROMPT_VARIANT,
+            "prompts": sorted(NAVIGATE_PROMPT_VARIANTS),
         }
 
     @app.post("/navigate")
@@ -267,9 +273,17 @@ def create_app() -> FastAPI:
                 detail=f"Bad request: 'model_id' must be one of {sorted(NAVIGATE_MODEL_CHOICES)}.",
             )
 
+        prompt_variant = body.get("prompt_variant")
+        if prompt_variant is not None and prompt_variant not in NAVIGATE_PROMPT_VARIANTS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bad request: 'prompt_variant' must be one of {sorted(NAVIGATE_PROMPT_VARIANTS)}.",
+            )
+
         try:
             decision = describe_image_bytes_navigate(
-                image_bytes, target_object, media_type, searched_rooms=searched_rooms, model_id=model_id
+                image_bytes, target_object, media_type, searched_rooms=searched_rooms,
+                model_id=model_id, prompt_variant=prompt_variant
             )
         except Exception as e:
             logger.exception("Vision API call failed")
