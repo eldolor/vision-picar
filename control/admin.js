@@ -196,15 +196,30 @@
     list.forEach(function (w) { walksEl.appendChild(renderWalk(w)); });
   }
 
+  // Everything that has to happen once a walk list arrives, in ONE place.
+  // Connect and Refresh each used to carry their own copy, and only
+  // Refresh's fetched the replay models -- so every dropdown was empty on
+  // the path a page load actually takes. Two copies of a sequence is how
+  // that survives being "fixed".
+  function onWalksLoaded(data) {
+    allWalks = data.walks;
+    applyFilterSort();
+    loadStats();
+    // Re-render once the model list lands. renderWalk() builds each
+    // "Replay with..." dropdown from replayModels, so rendering before the
+    // fetch resolves leaves every dropdown empty. Rendering first and
+    // repainting keeps the list appearing immediately rather than waiting
+    // on a second request.
+    loadReplayModels().then(function () {
+      if (replayModels.length) applyFilterSort();
+    });
+    scorePendingWalks();
+  }
+
   async function loadWalks() {
     walksEl.innerHTML = '<div class="empty">Loading…</div>';
     try {
-      const data = await api("GET", "/recording/walks");
-      allWalks = data.walks;
-      applyFilterSort();
-      loadStats();
-      loadReplayModels();
-      scorePendingWalks();
+      onWalksLoaded(await api("GET", "/recording/walks"));
     } catch (e) {
       walksEl.innerHTML = '<div class="empty">Failed to load: ' + escapeHtml(e.message) + "</div>";
     }
@@ -719,9 +734,7 @@
       btnRefresh.disabled = false;
       searchEl.disabled = false;
       sortEl.disabled = false;
-      allWalks = data.walks;
-      applyFilterSort();
-      loadStats();
+      onWalksLoaded(data);
     }).catch(function (e) {
       setStatus(connStatusEl, "Failed: " + e.message, "err");
     });
