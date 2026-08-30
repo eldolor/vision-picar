@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 268 passed)
+# Confirm everything still works (should show 318 passed)
 pytest tests/ -v
 
 # service/vision_analyze/ has its own suite -- see section 5, item 1
@@ -108,6 +108,7 @@ the original build plan phases, reordered simulation-first):
 | B4 | The twin becomes an observer | Done (`web-twin/index.html`'s "Remote brain" panel + `control/drills.py`). Missions start from the phone and survive the tab; the failsafe drills and watchdog readout make B3's guards watchable. Only B5 (systemd on the Pi) is left in that plan. |
 | T1-T4 | Teleop robot: a live phone walk drives the real `MissionRunner` mission, closed loop (`PLAN-teleop-robot.md`) | Done and deployed (2026-08-28) -- `sim/teleop_robot.py`'s `TeleopRobot` (a fourth `RobotInterface` backend: `mode: teleop`, no motor, a live pushed camera frame, no distance sensor), `POST /teleop/frame` on `robot/server.py`, the twin's Robot view "Drive via brain" switch, and sibling `teleop-robot.yaml`/`teleop-brain.yaml` CloudFormation stacks sharing the existing NLB/ALB (see section 6's AWS-topology bullet). Verified end to end: a real phone walk found its target (`OUT: FOUND`), and both B3.2 (vision-failure budget) and T1's stall detection were triggered live, no drill, against the deployed services. One rough edge, since fixed: `/frame` now catches a stall and returns 503 with the real message instead of a generic 500. |
 | extra | Interim: brain on ECS Fargate | Done and deployed (`service/brain/`, `cloudformation/brain.yaml`) -- `control/brain_server.py` alongside the twin and vision-analyze on the same shared NLB/ALB, so the remote-brain panel works from a phone off the home LAN with no HTTPS tunnel. Not a build-plan phase and not B5: the brain's real home is still the Pi: see `PLAN-brain-relocation.md`'s "Interim: brain on ECS Fargate" for why this doesn't conflict with that, and for the one real gap it surfaced (separate outbound secrets for the robot vs. the vision service). |
+| extra | Recorded-walk evaluation harness | Done and deployed (2026-08-30) -- `control/walk_eval.py` scores a walk (metrics + an LLM judge + a collision check, advisory and kept out of the operator's own label), `control/walk_replay.py` re-asks its frames under another model or prompt, `/navigate` takes `model_id` and `prompt_variant` from server-side allow-lists, and the console shows a per-model summary. **This is the instrument the Stage 0 gate needed:** it turns "did that walk go well" from an afternoon of reading JSON into a button, and replay is the only controlled model comparison available -- two live walks vary the operator's path as well as the model. What it has already established is in the Stage 0 notes below. |
 | extra | Recorded-walk storage + admin viewer | Done and deployed (`cloudformation/recordings.yaml`, `service/admin/`, `control/admin_server.py`) -- an EFS volume (survives redeploys, unlike Fargate's own filesystem) holding Robot-view "Record this walk" data, plus a separate `/admin` service to list/view/delete it. Deliberately its own service, not more routes on `brain_server.py`: reviewing recordings has no reason to move to the Pi when B5 lands or to go down when the mission server restarts. See `PLAN-brain-relocation.md`'s Interim section and `control/admin_server.py`'s docstring. Since T1-T4, `teleop-brain.yaml`'s brain has no EFS mount of its own and instead proxies `POST /recording/frame` to the main brain (`control/brain_server.py`'s `recording_proxy_url`) -- see `PLAN-teleop-robot.md`'s "Recording proxy" section for why only that one route, never `/mission/*`, may be proxied between brains. |
 | -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Designed but never written to disk -- a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt. **This is now the main hardware-path gap:** `PLAN-sim-hardening.md` Q1 settled that the robot is vision-driven, and the vision loop currently exists only in JavaScript (`web-twin/index.html`'s Vision Autopilot) -- no Python file calls `/navigate`. Phase S2b of that plan specifies the port, including the step-memory problem the browser version does not solve. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. Stage 2's `MissionRunner` is where it plugs in -- `AGENT-HARNESS.md` section 10 is the instruction sheet: it takes a `vision_fn` and already enforces the timeout and failure budget such a policy needs, and `control/brain_server.py` answers `policy: "vision"` with a 501 until it exists. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. |
@@ -171,16 +172,32 @@ vision-picar/
 │   ├── brain_server.py       FastAPI on :8001; drives the runner as a
 │   │                          background task, plus failsafe B3.3 (hung tick)
 │   ├── brain_config.py       the `brain:` block of config/robot.yaml
-│   └── drills.py             fault injection, so the failsafes can be shown
-│                               from the twin and not only asserted in tests
+│   ├── drills.py             fault injection, so the failsafes can be shown
+│   │                           from the twin and not only asserted in tests
+│   ├── walk_eval.py          scores a recorded walk: deterministic metrics
+│   │                           (degenerate / stalled / oscillating /
+│   │                           unstable-identity), an LLM judge over sampled
+│   │                           frames, and a collision check over the frames
+│   │                           that commanded FORWARD. Advisory -- written to
+│   │                           its own eval.json, never the operator's label
+│   ├── walk_replay.py        re-asks a walk's frames under another model or
+│   │                           prompt. The ONLY controlled comparison this
+│   │                           project has: two live walks vary the
+│   │                           operator's path as well as the model
+│   ├── admin.html/.js        the recorded-walk console (see admin_server.py)
 │
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    268 tests (incl. test_robot_contract.py's
+├── tests/                    318 tests (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1],
-│                              test_sensors.py [S5], and
-│                              test_watchdog_integration.py [S4])
+│                              test_sensors.py [S5],
+│                              test_watchdog_integration.py [S4],
+│                              test_walk_eval.py + test_admin_server.py
+│                              (the recorded-walk scorecard and replay),
+│                              test_ui.py + test_ui_admin.py (Playwright,
+│                              real browser at a phone viewport), and
+│                              test_alb_routes.py -- see section 6)
 │                              + 7 runnable (non-automated) demo scripts
 │
 ├── service/vision_analyze/   ECS Fargate: photo upload -> vision analysis (cloud)
@@ -188,7 +205,7 @@ vision-picar/
 │   │                           /navigate, /guidance
 │   ├── vision_core.py         calls Amazon Bedrock (Claude, Converse API)
 │   ├── rooms_core.py          identify_room() -- same logic as brain/rooms.py
-│   ├── tests/                 app.py's own suite (22 tests) -- routing,
+│   ├── tests/                 app.py's own suite (25 tests) -- routing,
 │   │                           validation, decode/size/error handling, all
 │   │                           vision_core.* calls mocked. Run separately:
 │   │                           `pytest service/vision_analyze/tests/ -v`
@@ -294,6 +311,28 @@ Opus 4.5 was chosen by measurement: all 22 frames of walk
 model on the account, same pixels and prompt. See `vision_core.py`'s
 "Per-route models" note for the result. `/guidance` remains on Nova Lite.
 
+**What the gate has actually shown, as of 2026-08-30** -- run it yourself
+before trusting any of it, but this is where it stands:
+
+- Walks now reach the target, which they never did before. Claude Opus 4.5
+  and Qwen3-VL both arrive in 6-14 frames; Sonnet 4.5 stalls (one FORWARD in
+  22 frames, turning on the spot with the target centred) and Nova Lite
+  wanders without arriving.
+- **The failure is obstacle routing, not object recognition.** Every model
+  identifies a red backpack; the ones that fail refuse to close distance over
+  open floor because "is there an obstacle directly ahead" reads as "is there
+  furniture anywhere in front of me".
+- **`obstacle_ahead` is not calibrated and should not be trusted.** On the
+  same frames Opus reports it on ~100% and Qwen on ~0%. On a frame that is
+  nothing but a wall, Opus and Sonnet turn away; Qwen and Nova drive into it.
+  On hardware the ultrasonic is the real obstacle sensor -- do not let the
+  vision policy be the thing relying on this field.
+- **The prompt is at least as strong a lever as the model, and the obvious
+  fix is wrong.** Rewording the obstacle question to be about the next step
+  takes Sonnet from 0% FORWARD to 100% FORWARD on the same frames -- which is
+  the *other* degenerate failure. Both wordings ship (`default` and
+  `next-step-obstacle`); neither is right yet.
+
 Secondary: `python -m tests.manual_replay_navigate <dir> "<target>"`
 replays a folder of photos and prints an action-spread summary. Use it to
 produce a recordable finding -- the failure that matters (the same action
@@ -336,7 +375,7 @@ sim path (S2) and room memory (the rest of S2b).
   `AGENT-HARNESS.md` section 10 for the exact mechanism, which
   deliberately doesn't touch the `vision_fn(frame) -> scene` contract.
 - **`service/vision_analyze/app.py`'s test suite -- BUILT.**
-  `service/vision_analyze/tests/` (22 tests, FastAPI `TestClient`, every
+  `service/vision_analyze/tests/` (25 tests, FastAPI `TestClient`, every
   `vision_core.*`/`identify_room` call mocked) -- closes the one real gap
   left over from the Lambda -> ECS migration. Run separately from the
   root suite: `pytest service/vision_analyze/tests/ -v` (see section 6).
@@ -559,6 +598,28 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   entirely (they hit the target IP:port directly), so leaving `/health`
   out of a ListenerRule's paths doesn't affect that service's health
   checks -- only the public reachability of that literal path.
+
+- **A public route needs an ALB path pattern, or it 404s.** Both public
+  services share one listener and are routed by EXACT path patterns (see the
+  NLB/ALB bullet above). Adding a route to a FastAPI app is therefore only
+  half the job -- and the failure is quiet, because the page still loads and
+  one feature is silently dead. It has shipped five times (`/app.js`,
+  `/admin.js`, `/recording/finish`, `/recording/summary`,
+  `/teleop-robot/app.js`). `tests/test_alb_routes.py` now walks each app's
+  real routes against its template's real patterns and fails if they drift;
+  deliberate exceptions are listed there with their reason. A ListenerRule
+  condition allows at most 5 path values, so a sixth route means a second
+  rule, as `twin.yaml`, `teleop-brain.yaml` and `admin.yaml` all now do.
+
+- **The twin and the admin console have UI tests, and they earned them.**
+  Every UI bug in this project so far has been found on a phone rather than
+  by the Python suite -- a model picker that rendered empty, one that
+  rendered 40px wide, an admin console that could only be used sideways.
+  `tests/test_ui.py` and `tests/test_ui_admin.py` drive the real pages in a
+  real browser at a 390px viewport. They skip (not fail) without
+  `playwright install chromium`. When adding one, re-introduce the bug and
+  watch it go red first: two tests written in this project passed against
+  the very defect they were written for until that was checked.
 
 - **`robot/server.py`'s `require_secret()` gate is new** (added
   alongside the ECS deployment) and is a no-op when `APP_SHARED_SECRET`
