@@ -1,0 +1,275 @@
+"""
+tests/test_ui.py
+
+The twin's client, in a real browser. Until this file existed the UI was
+the one component of this project with no automated coverage at all --
+which is an awkward gap given CLAUDE.md section 7's rule that a phase is
+not done until someone holding a phone can watch it work. The twin is the
+designated proof surface for everything, and nothing proved the twin.
+
+**Written against two bugs that actually shipped**, both on 2026-08-29,
+both found by a person looking at a phone rather than by the 283 passing
+Python tests:
+
+  1. The /navigate model picker never populated. fetchNavigateModels() ran
+     during init, before #cfg-url had been restored from localStorage, so
+     it bailed on an empty URL -- and it set its "already loaded" flag
+     BEFORE the request, so the one early failure latched and it never
+     retried. The page looked fine and the list was permanently empty.
+  2. The picker rendered as a ~40px chevron with no readable text.
+     .switch-row is flex with space-between, built for rows whose control
+     is a fixed-width toggle; the model picker is the only control in the
+     app that carries text, and the description squeezed it to nothing.
+
+Note what each needs. (1) is a load-order bug a jsdom test could catch.
+(2) is invisible to any DOM-only test -- it needs layout, at a phone
+viewport, which is why this is Playwright and not jsdom.
+
+Driven from pytest so `pytest tests/ -q` stays the single invocation
+CLAUDE.md documents. Skipped cleanly (not failed) when Playwright or its
+browser isn't installed, so a checkout without `playwright install
+chromium` still runs the rest of the suite:
+
+    pip install pytest-playwright && python -m playwright install chromium
+
+The vision service is never contacted: GET /navigate/models is fulfilled
+by Playwright request interception, so these tests exercise the client's
+own logic without a second live service or a paid call.
+"""
+
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import httpx
+import pytest
+
+from tests.conftest import REPO_ROOT, SERVER_START_TIMEOUT_S, free_port
+
+sync_api = pytest.importorskip(
+    "playwright.sync_api",
+    reason="UI tests need `pip install pytest-playwright` + `playwright install chromium`",
+)
+
+# The phone this project is actually used from. The squeeze bug only
+# appears at a narrow width -- at desktop width the picker had room and
+# looked fine, which is exactly why it reached a phone.
+PHONE = {"width": 390, "height": 844}
+
+MODELS_REPLY = {
+    "default": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+    "models": [
+        {"id": "us.anthropic.claude-opus-4-5-20251101-v1:0", "label": "Claude Opus 4.5 (best judgement)"},
+        {"id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "label": "Claude Sonnet 4.5 (cautious)"},
+        {"id": "qwen.qwen3-vl-235b-a22b", "label": "Qwen3-VL (non-Anthropic)"},
+        {"id": "amazon.nova-lite-v1:0", "label": "Nova Lite (cheap baseline)"},
+    ],
+}
+
+
+@pytest.fixture(scope="module")
+def twin_server():
+    """A live `uvicorn robot.server:app`, same subprocess pattern as
+    tests/test_watchdog_integration.py -- a real server serving the real
+    index.html and app.js, not a fixture copy of either."""
+    port = free_port()
+    url = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "robot.server:app",
+         "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
+        cwd=REPO_ROOT, env={**os.environ},
+    )
+    try:
+        deadline = time.monotonic() + SERVER_START_TIMEOUT_S
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                pytest.fail(f"twin server exited early with code {proc.returncode}")
+            try:
+                if httpx.get(f"{url}/health", timeout=0.5).status_code == 200:
+                    break
+            except httpx.HTTPError:
+                time.sleep(0.05)
+        else:
+            pytest.fail(f"twin server was not healthy within {SERVER_START_TIMEOUT_S}s")
+        yield url
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+@pytest.fixture(scope="module")
+def browser():
+    with sync_api.sync_playwright() as p:
+        b = p.chromium.launch()
+        yield b
+        b.close()
+
+
+def open_twin(browser, twin_server, *, saved_vision_url=True, mode="robot"):
+    """A phone-sized page with the twin loaded.
+
+    `saved_vision_url` seeds localStorage the way a returning user's browser
+    would -- which is the state bug (1) needed: the URL exists in storage
+    but is not yet in the DOM when init runs.
+    """
+    context = browser.new_context(viewport=PHONE)
+    seed = {"guidanceMode": mode}
+    if saved_vision_url:
+        seed["vp_vision_url"] = twin_server
+    context.add_init_script(
+        "(() => { const s = %s;"
+        " try { for (const k in s) localStorage.setItem(k, s[k]); } catch (e) {} })();"
+        % _json(seed)
+    )
+    page = context.new_page()
+    page.route("**/navigate/models", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(MODELS_REPLY)))
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(twin_server, wait_until="networkidle")
+    return page, errors
+
+
+def _json(obj):
+    import json
+    return json.dumps(obj)
+
+
+def model_select(page):
+    return page.locator("#cfg-navigate-model")
+
+
+# ---------- the page works at all ----------
+
+
+def test_the_page_loads_without_a_script_error(browser, twin_server):
+    """app.js is external now; a broken route or a parse error would leave
+    HTML that renders and does nothing. The Python side asserts the route
+    serves the file -- this asserts the browser can actually run it."""
+    page, errors = open_twin(browser, twin_server)
+    assert errors == [], f"uncaught page errors: {errors}"
+    assert page.locator("#btn-mode-robot").is_visible()
+    page.close()
+
+
+# ---------- regression: the picker never populated ----------
+
+
+def test_the_model_picker_populates_on_a_normal_page_load(browser, twin_server):
+    """Bug (1). The saved vision URL is in localStorage but not yet in the
+    DOM when setGuidanceMode() runs during init, so the picker's own early
+    fetch attempt finds nothing -- something later has to actually fill it.
+
+    Asserting on option COUNT, not just "no error": the broken build also
+    threw nothing. It just silently offered "Service default" forever.
+    """
+    page, _ = open_twin(browser, twin_server)
+    select = model_select(page)
+    sync_api.expect(select).to_be_visible()
+    # 1 page-owned "Service default" + the service's 4
+    sync_api.expect(select.locator("option")).to_have_count(len(MODELS_REPLY["models"]) + 1)
+    assert "Claude Opus 4.5" in select.locator("option").nth(1).inner_text()
+    page.close()
+
+
+def test_a_failed_model_fetch_does_not_latch_the_picker_shut(browser, twin_server):
+    """The precise mechanism of bug (1): the "already loaded" flag was set
+    before the request, so one failure was permanent. Here the first fetch
+    500s and a later one succeeds -- the picker must recover."""
+    context = browser.new_context(viewport=PHONE)
+    context.add_init_script(
+        '(() => { try { localStorage.setItem("guidanceMode","robot"); } catch(e){} })();')
+    page = context.new_page()
+
+    calls = {"n": 0}
+
+    def flaky(route):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            route.fulfill(status=500, body="nope")
+        else:
+            route.fulfill(status=200, content_type="application/json", body=_json(MODELS_REPLY))
+
+    page.route("**/navigate/models", flaky)
+    page.goto(twin_server, wait_until="networkidle")
+
+    # No saved URL, so init's attempt is a no-op; setting one must retry.
+    # The field lives in a collapsed Settings panel, and getting there is
+    # not what this test is about -- set the value and fire the same change
+    # event the panel would, which is the handler under test.
+    def set_vision_url(value):
+        page.evaluate(
+            "(v) => { const el = document.getElementById('cfg-url'); el.value = v;"
+            " el.dispatchEvent(new Event('change')); }", value)
+
+    set_vision_url(twin_server)          # first fetch: 500, must not latch
+    set_vision_url(twin_server + "/")    # second: succeeds
+
+    sync_api.expect(model_select(page).locator("option")).to_have_count(
+        len(MODELS_REPLY["models"]) + 1)
+    page.close()
+
+
+# ---------- regression: the picker was unreadable ----------
+
+
+def test_the_model_picker_is_readable_on_a_phone(browser, twin_server):
+    """Bug (2), and the reason this file uses a real browser: the select
+    collapsed to about 40px beside its own description, so the chosen model
+    had nowhere to render. Nothing about the DOM was wrong -- only layout.
+    """
+    page, _ = open_twin(browser, twin_server)
+    select = model_select(page)
+    sync_api.expect(select).to_be_visible()
+    box = select.bounding_box()
+    assert box is not None
+    assert box["width"] >= 150, (
+        f"the model picker is {box['width']:.0f}px wide at {PHONE['width']}px -- "
+        "too narrow to show a model name (it regressed to ~40px once)"
+    )
+    page.close()
+
+
+def test_the_selected_model_is_visible_after_choosing_one(browser, twin_server):
+    """The user-visible symptom, asserted end to end: pick a model, and the
+    control shows which one."""
+    page, _ = open_twin(browser, twin_server)
+    select = model_select(page)
+    select.select_option("qwen.qwen3-vl-235b-a22b")
+    assert select.input_value() == "qwen.qwen3-vl-235b-a22b"
+    chosen = page.evaluate(
+        "() => { const s = document.getElementById('cfg-navigate-model');"
+        " return s.options[s.selectedIndex].textContent.trim(); }")
+    assert "Qwen3-VL" in chosen
+    page.close()
+
+
+def test_the_choice_survives_a_reload(browser, twin_server):
+    """It is persisted to localStorage and re-applied only if the service
+    still offers it -- so a walk started after a reload runs the model the
+    picker is showing, not silently the default."""
+    page, _ = open_twin(browser, twin_server)
+    model_select(page).select_option("amazon.nova-lite-v1:0")
+    page.reload(wait_until="networkidle")
+    sync_api.expect(model_select(page)).to_have_value("amazon.nova-lite-v1:0")
+    page.close()
+
+
+# ---------- mode switching ----------
+
+
+def test_robot_only_rows_are_hidden_in_guide_mode(browser, twin_server):
+    """The picker, recording and drive-via-brain belong to Robot view; Guide
+    steers a person and has no model to choose."""
+    page, _ = open_twin(browser, twin_server, mode="guide")
+    sync_api.expect(page.locator("#navigate-model-row")).to_be_hidden()
+
+    page.click("#btn-mode-robot")
+    sync_api.expect(page.locator("#navigate-model-row")).to_be_visible()
+    sync_api.expect(page.locator("#record-walk-row")).to_be_visible()
+    page.close()

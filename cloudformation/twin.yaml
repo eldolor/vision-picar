@@ -167,6 +167,11 @@ Resources:
             - /manifest.json
             - /icons/*
             - /health
+            # web-twin/app.js -- the twin's client, which used to be an
+            # inline <script> in index.html and needed no path of its own.
+            # Without this it would 404 by falling through to
+            # vision-analyze, and the twin would load as a dead page.
+            - /app.js
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

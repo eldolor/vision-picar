@@ -1,0 +1,288 @@
+"""
+walk_eval.py
+
+Scores a recorded Robot-view walk (control/brain_server.py's
+POST /recording/frame writes them; control/admin_server.py serves them)
+so a walk can be judged without a person reading 22 frames of JSON by
+hand -- which is exactly how the 2026-08-29 findings were produced, and
+is not a repeatable process.
+
+**This is a diagnostic score, not a quality score, and the distinction is
+load-bearing.** A walk's log carries no ground truth: a STOP in front of
+a wall and a STOP in front of nothing at all produce byte-identical
+entries. Nothing here can tell you "the robot navigated well". What the
+metrics below *can* tell you, cheaply and deterministically, is that a
+walk exhibits one of the failure shapes this project has actually hit:
+
+  degenerate        one action for every frame -- the failure
+                    tests/manual_replay_navigate.py's docstring warns
+                    about, where a clean-looking run means the model is
+                    not reading the scene at all (Nova Lite answered
+                    FORWARD on 22/22 frames of walk 195904).
+  stalled           a long run with no FORWARD. This is the 2026-08-29
+                    ottoman walk: the target stayed visible and centred
+                    while the policy turned back and forth for 21
+                    consecutive frames and never closed the distance.
+  oscillating       LEFT/RIGHT alternation, the signature of a policy
+                    re-deciding from scratch every frame with no memory
+                    of which way it already turned.
+  unstable-identity target_visible flipping on and off, which is what a
+                    red blanket being intermittently mistaken for a red
+                    backpack looks like from the log side.
+
+The judge tier (judge_walk) is the only part with anything resembling
+ground truth, because it looks at the pixels. It is a real Bedrock call
+per sampled frame, so it is sampled and capped rather than run over every
+frame.
+
+Deliberately free of FastAPI, boto3 client construction and filesystem
+layout: compute_metrics/score_walk are pure functions over the parsed
+walk.jsonl entries, so the whole scorecard is unit-testable with no AWS
+and no temp directories (tests/test_walk_eval.py). The caller supplies a
+bedrock client and the frame bytes.
+"""
+
+import json
+import logging
+import re
+from concurrent.futures import ThreadPoolExecutor
+
+logger = logging.getLogger(__name__)
+
+SCHEMA_VERSION = 2
+
+MOVE_ACTIONS = ("FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP")
+
+# Thresholds. Chosen against the six walks recorded 2026-08-28/29, which
+# are the only real-world material this project has -- they are calibrated
+# to flag those specific failures, not derived from anything more
+# principled, and should be revisited once there are walks that a person
+# has judged good.
+DEGENERATE_SHARE = 0.90      # >=90% one action == not reading the scene
+STALL_RUN = 8                # >=8 frames without a FORWARD == not closing distance
+OSCILLATION_RATE = 0.40      # >=40% of turns immediately reversing direction
+IDENTITY_FLIPS = 4           # target_visible changing this many times
+
+
+def _entry_actions(entries: list) -> list:
+    return [(e.get("navigate") or {}).get("action") for e in entries]
+
+
+def compute_metrics(entries: list) -> dict:
+    """Pure, deterministic, no model calls. `entries` is walk.jsonl parsed,
+    in seq order -- the same shape admin_server's get_walk() returns."""
+    navs = [(e.get("navigate") or {}) for e in entries]
+    n = len(navs)
+    if n == 0:
+        return {"frames": 0, "empty": True}
+
+    actions = [nav.get("action") for nav in navs]
+    counted = {a: actions.count(a) for a in sorted(set(a for a in actions if a))}
+    dominant = max(counted.values()) if counted else 0
+
+    # Longest run of consecutive frames with no FORWARD -- "how long did it
+    # go without making progress", which is the ottoman failure directly.
+    longest_no_forward = run = 0
+    for a in actions:
+        run = 0 if a == "FORWARD" else run + 1
+        longest_no_forward = max(longest_no_forward, run)
+
+    # Turn reversals: RIGHT immediately after LEFT (or vice versa), as a
+    # share of all turns. A policy routing deliberately around an obstacle
+    # keeps turning the same way; one re-deciding blind flips.
+    turns = [a for a in actions if a in ("LEFT", "RIGHT")]
+    reversals = sum(1 for x, y in zip(turns, turns[1:]) if x != y)
+    oscillation = (reversals / (len(turns) - 1)) if len(turns) > 1 else 0.0
+
+    visible = [nav.get("target_visible") is True for nav in navs]
+    flips = sum(1 for x, y in zip(visible, visible[1:]) if x != y)
+
+    models = sorted({nav.get("model_id") for nav in navs if nav.get("model_id")})
+
+    return {
+        "frames": n,
+        "action_spread": counted,
+        "dominant_action_share": round(dominant / n, 3),
+        "forward_rate": round(actions.count("FORWARD") / n, 3),
+        "longest_no_forward_run": longest_no_forward,
+        "oscillation_rate": round(oscillation, 3),
+        "target_visible_rate": round(sum(visible) / n, 3),
+        "visibility_flips": flips,
+        "target_reached": any(nav.get("target_reached") is True for nav in navs),
+        "obstacle_rate": round(
+            sum(1 for nav in navs if nav.get("obstacle_ahead") is True) / n, 3),
+        "model_ids": models,
+    }
+
+
+def metric_flags(m: dict) -> list:
+    """The named failure shapes, in the order they matter for diagnosis.
+
+    Reads every field defensively: an eval.json written by an older
+    SCHEMA_VERSION is still on the volume after a redeploy, and a missing
+    metric should mean "this shape wasn't measured", never a 500 in the
+    admin console.
+    """
+    if m.get("empty"):
+        return ["empty"]
+    flags = []
+    if m.get("dominant_action_share", 0) >= DEGENERATE_SHARE:
+        flags.append("degenerate")
+    if m.get("longest_no_forward_run", 0) >= STALL_RUN:
+        flags.append("stalled")
+    if m.get("oscillation_rate", 0) >= OSCILLATION_RATE:
+        flags.append("oscillating")
+    if m.get("visibility_flips", 0) >= IDENTITY_FLIPS:
+        flags.append("unstable-identity")
+    return flags
+
+
+JUDGE_PROMPT = """A small indoor robot is searching for a {target_object}. Its camera
+took this photo, and its navigation policy chose the action: {action}
+(it reported: target_visible={target_visible}, obstacle_ahead={obstacle_ahead},
+reasoning: "{reasoning}").
+
+The robot's available actions are FORWARD, LEFT, RIGHT, REVERSE and STOP.
+It moves roughly 30cm per FORWARD step. Turning costs a step and does not
+close distance.
+
+Judge ONLY whether the chosen action was sensible for this photo. Be strict
+about two specific mistakes:
+- Refusing to move FORWARD when there is clearly open floor ahead, merely
+  because furniture is visible somewhere further away. That wastes the step.
+- Choosing FORWARD when something is close enough to collide with within
+  about one step.
+
+Respond with ONLY a JSON object:
+{{
+  "sensible": true | false,
+  "better_action": "FORWARD" | "LEFT" | "RIGHT" | "REVERSE" | "STOP" | null,
+  "why": "one short sentence"
+}}"""
+
+
+def _parse_json_reply(text: str) -> dict:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.lower().startswith("json"):
+            text = text[4:]
+    match = re.search(r"\{.*\}", text, re.S)
+    if not match:
+        raise ValueError(f"no JSON object in judge reply: {text[:120]!r}")
+    return json.loads(match.group(0))
+
+
+def judge_frame(client, model_id: str, image_bytes: bytes, nav: dict,
+                target_object: str, media_format: str = "jpeg") -> dict:
+    prompt = JUDGE_PROMPT.format(
+        target_object=target_object,
+        action=nav.get("action"),
+        target_visible=nav.get("target_visible"),
+        obstacle_ahead=nav.get("obstacle_ahead"),
+        reasoning=str(nav.get("reasoning", ""))[:200].replace('"', "'"),
+    )
+    resp = client.converse(
+        modelId=model_id,
+        messages=[{"role": "user", "content": [
+            {"image": {"format": media_format, "source": {"bytes": image_bytes}}},
+            {"text": prompt},
+        ]}],
+        inferenceConfig={"maxTokens": 200},
+    )
+    text = "".join(b.get("text", "") for b in resp["output"]["message"]["content"])
+    verdict = _parse_json_reply(text)
+    return {
+        "sensible": verdict.get("sensible") is True,
+        "better_action": verdict.get("better_action"),
+        "why": str(verdict.get("why", ""))[:300],
+    }
+
+
+def _sample_indices(n: int, k: int) -> list:
+    """Evenly spaced, always including the first and last frame -- a walk's
+    ending is where arrival or a terminal stall shows up."""
+    if n <= k:
+        return list(range(n))
+    return sorted({round(i * (n - 1) / (k - 1)) for i in range(k)})
+
+
+def judge_walk(client, model_id: str, entries: list, frame_bytes_for,
+               target_object: str, sample: int = 8, max_workers: int = 4) -> dict:
+    """Judge up to `sample` evenly spaced frames. `frame_bytes_for` maps an
+    entry to its image bytes (admin reads them off EFS); a frame it cannot
+    supply is skipped rather than failing the walk."""
+    if not entries:
+        return {"judged": 0, "sensible_rate": None, "frames": [], "error": "no entries"}
+
+    picks = [entries[i] for i in _sample_indices(len(entries), sample)]
+
+    def one(entry):
+        nav = entry.get("navigate") or {}
+        try:
+            image = frame_bytes_for(entry)
+            if not image:
+                return None
+            out = judge_frame(client, model_id, image, nav, target_object)
+        except Exception as e:  # noqa: BLE001 -- a judge failure must not fail the walk
+            logger.warning("judge failed on %s: %s", entry.get("file"), e)
+            return {"file": entry.get("file"), "seq": entry.get("seq"),
+                    "action": nav.get("action"), "error": f"{type(e).__name__}"}
+        out.update({"file": entry.get("file"), "seq": entry.get("seq"),
+                    "action": nav.get("action")})
+        return out
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        results = [r for r in pool.map(one, picks) if r is not None]
+
+    scored = [r for r in results if "sensible" in r]
+    rate = round(sum(1 for r in scored if r["sensible"]) / len(scored), 3) if scored else None
+    return {
+        "judged": len(scored),
+        "attempted": len(results),
+        "sensible_rate": rate,
+        "model_id": model_id,
+        "frames": results,
+    }
+
+
+def score_walk(metrics: dict, judge: dict | None) -> dict:
+    """Blend into one advisory 0-100 number.
+
+    Weighting reflects what each part can actually see. The judge looks at
+    pixels, so it carries most of the weight; the metrics cannot see the
+    room but catch shapes the judge's sample might miss (it judges 8 frames,
+    the stall metric sees all of them). With no judge, the metrics are
+    rescaled to the full 100 rather than capping the score at 40 -- a
+    metrics-only run should still be able to say "this looks fine".
+    """
+    if metrics.get("empty"):
+        return {"score": 0, "verdict": "poor", "flags": ["empty"]}
+
+    flags = metric_flags(metrics)
+
+    # Non-degeneracy: full marks until one action passes half the walk,
+    # zero once it is the only action.
+    share = metrics.get("dominant_action_share", 0.0)
+    non_degeneracy = 1.0 - max(0.0, (share - 0.5) / 0.5)
+
+    # Progress: full marks for a walk that never goes STALL_RUN frames
+    # without a FORWARD, decaying to zero at three times that.
+    stall = metrics.get("longest_no_forward_run", 0)
+    progress = 1.0 - min(1.0, max(0, stall - STALL_RUN) / (2 * STALL_RUN))
+    if stall < STALL_RUN:
+        progress = 1.0
+
+    metric_part = 0.5 * non_degeneracy + 0.5 * progress
+    rate = (judge or {}).get("sensible_rate")
+
+    if rate is None:
+        score = 100 * metric_part
+        basis = "metrics-only"
+    else:
+        score = 100 * (0.6 * rate + 0.4 * metric_part)
+        basis = "judge+metrics"
+
+    score = int(round(score))
+    verdict = "good" if score >= 70 else ("mixed" if score >= 45 else "poor")
+    return {"score": score, "verdict": verdict, "flags": flags, "basis": basis}

@@ -258,13 +258,13 @@ Phases S1-S3 close architecture gaps; S4-S6 close fidelity gaps; S7 is
 chaos.
 
 **Priority after Q1's answer (vision):** S2 and S2b first -- together they
-are the entire hardware path, and neither needs hardware to build. Then
-S1 (cheap, and it pins the contract S2 changes), S3, S4. S5 matters for
-the safety layer regardless of policy. **S6 is now optional** -- revisit
-it only if real-world runs show the robot failing in ways that trace back
-to grid geometry.
+are the entire hardware path, and neither needs hardware to build.
+**S1, S3, S4 and (mostly) S5 are now built** -- see each phase below for
+what shipped and, for S5, what was deliberately deferred. **S6 is still
+optional** -- revisit it only if real-world runs show the robot failing in
+ways that trace back to grid geometry. **S7 remains proposed.**
 
-### Phase S1 -- Pin the contract
+### Phase S1 -- Pin the contract -- **BUILT (2026-08-28)**
 
 **Build.** Document `RobotInterface`'s return shapes, units, ranges, and
 error semantics as an explicit contract. Add a backend-agnostic
@@ -290,7 +290,35 @@ the interface's methods against whatever robot is connected and report
 which ones returned the wrong shape. There is nothing else to see -- this
 phase changes no behavior -- but it is the button you will actually want
 on the day a Pi is on the other end, and it makes the conformance suite
-something a person can run rather than only CI.
+something a person can run rather than only CI. **Not built** -- the
+conformance suite itself was the priority; the Settings button is a UI
+nicety on top of it and can land whenever someone wants it from the twin
+specifically, without changing what the suite proves.
+
+**Built, against four backends, not just `MockRobot`.** By the time this
+phase was picked up, three more backends existed that S1's own text
+didn't anticipate (`RemoteRobot`, `ReplayRobot`, `TeleopRobot`), so
+`tests/test_robot_contract.py` parametrizes over all four via a single
+`robot` fixture -- `remote` reuses `tests/conftest.py`'s existing
+`robot_over_asgi` fixture (an in-process `RemoteRobot` over a real ASGI-
+mounted `robot/server.py`) rather than re-implementing that wiring. 36
+tests (9 assertions x 4 backends) cover: every backend is actually a
+`RobotInterface`; every movement/turn/pan method returns a dict
+self-identifying via an `"action"` key matching the method name;
+`drive_forward`/`reverse`/`turn_left`/`turn_right` accept their declared
+`speed`/`duration`/`angle` kwargs; `stop()` is idempotent (callable twice
+without raising -- the property every failsafe in `AGENT-HARNESS.md`
+section 6 depends on); `get_distance()` returns a non-negative number;
+`get_camera_frame()` returns a dict with a non-empty string `room` key.
+
+**Deliberately not pinned yet: pixels in `get_camera_frame()`.**
+`MockRobot` still returns grid facts, not `image_base64`, until phase S2
+lands -- asserting a pixel contract today would be false for `MockRobot`
+and too loose to mean anything if watered down to accommodate it. The
+suite's own docstring names this as the thing to add when S2 ships real
+image bytes on every backend, rather than a gap nobody wrote down.
+`robot/hardware_robot.py` (Phase 11) will need to pass this same file
+unmodified -- that is the whole point of writing it now.
 
 ### Phase S2 -- Give `get_camera_frame()` a real image contract
 
@@ -428,7 +456,7 @@ because it does not exist yet.
 the brain does -- D-pad and remote mission produce the same map, and the
 map follows either driver.
 
-### Phase S4 -- Put time in the loop
+### Phase S4 -- Put time in the loop -- **BUILT (2026-08-28)**
 
 **Build.** Implement `MockRobot._settle()` for real, behind a config flag
 (`sim.realtime: true|false`) so the unit suite stays fast. Add a simulated
@@ -453,7 +481,28 @@ mid-move -- and a mission paced by the robot rather than by
 purely because the sim has no time in it; this phase is what lets it go
 back to 0.
 
-### Phase S5 -- Sensor realism
+**Built, with one simplification from the plan above: a live `uvicorn`
+subprocess, not a simulated clock.** `sim.realtime: true`
+(`config/robot.yaml`) makes `MockRobot._settle(duration)` actually
+`time.sleep(duration)`; off by default (`realtime: false`) so every
+existing test and `tests/demo_*.py` script stays exactly as fast as
+before. `robot/server.py` gained a `ROBOT_CONFIG_PATH` env var (same
+pattern as the existing `ROUTE_PREFIX`/`ROBOT_MODE`) so a live server can
+be pointed at a temp config without editing the real one --
+`tests/test_watchdog_integration.py` uses it to run a real `uvicorn`
+against a temp config with a short `watchdog_timeout_s` and
+`sim.realtime: true`, and proves three things a simulated clock could
+only have asserted about itself: the watchdog's real async loop measures
+real silence past the timeout (`PLAN-sim-hardening.md` 3.1's own finding
+-- "never executed by any test" -- is no longer true); commands closer
+together than the timeout keep it quiet; and a move genuinely occupies
+its declared `duration` under `sim.realtime: true`. A simulated clock was
+judged not worth the added complexity once a live subprocess already
+gives real wall-clock time for free -- the temp-config trick is what
+makes that fast enough to run in the normal suite (well under a second
+per test at a 0.3s timeout, not the production 1.0s default).
+
+### Phase S5 -- Sensor realism -- **BUILT (2026-08-28), cone geometry deferred**
 
 **Build.** A `DistanceSensorModel` wrapping `GridWorld.distance_ahead()`:
 sub-cell resolution, Gaussian noise, a cone rather than a ray, a dropout
@@ -478,6 +527,42 @@ it is provably flat. (c) Assert the safety layer never permits FORWARD
 into a wall across N seeded noisy runs. (d) Dropout: sensor returns
 `None`/max -- assert the system fails safe (STOP), which is **currently
 undefined behavior**.
+
+**Built: `sim/sensors.py`'s `DistanceSensorModel`**, wrapping the exact
+cell-count reading with Gaussian noise (`stddev_cm`), a dropout rate,
+range clamping to a real HC-SR04's 2-400cm, and optional read latency
+(only actually slept when `sim.realtime` is also on, S4). Wired into
+`MockRobot.get_distance()` and `robot/factory.py` behind
+`config/robot.yaml`'s `sim.sensor_noise.enabled` (default `false`) -- a
+robot's `sensor` is `None` unless explicitly turned on, which keeps
+`get_distance()`'s old exact-multiple-of-30 formula untouched for every
+existing test and demo. `tests/test_sensors.py` and
+`tests/test_mock_robot.py` cover the model itself and its wiring; one
+test (`test_min_distance_cm_is_load_bearing_at_a_non_multiple_of_30`) ties
+it directly back to `robot/safety.py`, closing test (a) above and
+definition-of-done item 4 below with a deterministic, non-seed-dependent
+assertion rather than a statistical sweep.
+
+**Dropout's fail-safe answer, decided rather than left undefined (closing
+test (d)): `0.0`, not `None`.** `min_distance_cm` is never configured
+below 0, so a dropped reading reported as `0.0` always trips
+`robot/safety.py`'s veto -- "the sensor went blind" fails toward "stop",
+never toward "assume clear and keep driving" the way a `None` silently
+coerced to a large number would. This also avoids threading a real
+`Optional[float]` through `RobotInterface`'s declared `-> float` return
+type, `robot/server.py`'s JSON response, and `RemoteRobot.get_distance()`'s
+`float(...)` coercion, none of which needed to change. See
+`sim/sensors.py`'s own docstring for the full reasoning.
+
+**Deferred, per this phase's own Q4 (below): the cone.** `distance_ahead()`
+is still a single ray, matching `GridWorld`'s discrete-position geometry --
+modeling a real ~15-degree cone needs continuous sub-cell position, which
+is S6's job and, per Q4, past the point where measuring the real sensor
+beats modeling it further. Test (b), the collision-rate sweep across a
+long simulated run, is also not built for the same reason: it is a
+statistical claim about exploration behavior under noise, which is more
+honestly answered once there is a real sensor to compare against than by
+tuning a synthetic distribution to look reasonable.
 
 ### Phase S6 -- Motion realism
 
@@ -606,25 +691,41 @@ observation shape.
 
 Before trusting a hardware swap-in, all of these:
 
-1. The Phase S1 contract suite passes against `MockRobot` and
-   `RemoteRobot`, with no grid-specific assertions in it.
+1. **Met, and then some.** The Phase S1 contract suite passes against
+   `MockRobot` and `RemoteRobot`, with no grid-specific assertions in it --
+   and against `ReplayRobot`/`TeleopRobot` too, which didn't exist when
+   this item was written.
 2. `demo_active_search.py` produces an **identical action sequence**
    in-process and over HTTP (Phase S3).
-3. The watchdog's real async loop is proven by an integration test to
-   stop the motors after silence, and proven not to fire under a normal
-   command cadence (Phase S4).
-4. `min_distance_cm` is demonstrably load-bearing: changing it changes
-   measured behavior (Phase S5). Today it provably does not.
-5. Sensor dropout and out-of-range reads have defined, tested fail-safe
-   behavior. Today this is undefined.
+3. **Met.** The watchdog's real async loop is proven by an integration
+   test (`tests/test_watchdog_integration.py`, against a live `uvicorn`
+   subprocess) to measure real silence past the timeout, and proven not to
+   fire under a normal command cadence (Phase S4).
+4. **Met.** `min_distance_cm` is demonstrably load-bearing: changing it
+   changes measured behavior (Phase S5) --
+   `tests/test_sensors.py::test_min_distance_cm_is_load_bearing_at_a_non_multiple_of_30`
+   crosses the threshold at a value that is neither 0 nor a multiple of 30,
+   which was provably impossible before this phase.
+5. **Met.** Sensor dropout has defined, tested fail-safe behavior: a
+   dropout reads as `0.0cm`, which always trips the safety veto (Phase S5,
+   `sim/sensors.py`). Out-of-range reads are clamped to the configured
+   `min_range_cm`/`max_range_cm`, also tested. Cone-shaped false negatives
+   (an object off-axis that a ray-cast sensor can't see at all) are not
+   modeled -- see S5's own "deferred" note; that needs the continuous pose
+   S6 would add, not a fail-safe policy decision.
 6. `get_camera_frame()` returns real image bytes on every backend, and no
    policy reads grid coordinates on the path intended for hardware
    (Phase S2 + Q1).
 6a. A **Python** vision agent completes a backpack hunt in the sim, with
    cost and wall-clock recorded (Phase S2b). Until this exists the
    hardware path is browser-only.
-6b. The `/navigate` prompt carries `searched_rooms`, and a run
-   demonstrably stops revisiting a searched room (Phase S2b).
+6b. **The wiring is met; the behavioral claim is not yet independently
+   verified.** The `/navigate` prompt carries `searched_rooms`
+   (`AGENT-HARNESS.md` section 10, `tests/test_vision_policy.py`) and the
+   request genuinely reaches the service with the right room names in it --
+   proven by tests. Whether a real model call actually *stops revisiting*
+   a named room is a live-model behavioral question, same category as 6c
+   below, and hasn't been checked against a real walk yet.
 6c. Real photographs of a real room have been replayed through
    `/navigate` and the returned actions are sane (section 7). This is
    the only check that speaks to the model's real-world accuracy.
@@ -635,9 +736,14 @@ Before trusting a hardware swap-in, all of these:
 9. `robot/server.py`, `robot/safety.py`, and `brain/` are unchanged by
    the hardware swap. If any of them needs a change, the abstraction
    leaked and the swap is not a config change.
-10. `MIN_DISTANCE_CM` exists in exactly one place. It is currently in two
-    (`config/robot.yaml` and `web-twin/index.html:1318`, kept in sync by
-    a comment).
+10. **Met.** `min_distance_cm` is configured in exactly one place
+    (`config/robot.yaml`'s `safety.min_distance_cm`) and reported from
+    there by `robot/server.py`'s `/health` -- `web-twin/index.html` reads
+    it into `state.minDistanceCm` instead of carrying its own hardcoded
+    copy, which used to drift silently if the two were ever edited
+    separately. A `MIN_DISTANCE_CM_FALLBACK` constant remains, used only
+    before a connection exists or against an older deployment with no
+    `min_distance_cm` field in its `/health` reply.
 
 ---
 

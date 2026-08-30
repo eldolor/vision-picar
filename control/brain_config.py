@@ -24,6 +24,15 @@ DEFAULTS = {
     # Cloud vision service. Unused until Phase S2b ports the vision policy
     # into Python; carried here so the brain has one place to look for it.
     "vision_url": "",
+    # Which model answers /navigate for a mission that doesn't name one.
+    # Empty means "no preference": the request omits model_id entirely and
+    # the vision service applies its own default. This exists for the
+    # headless case -- once B5 puts the brain on the Pi, a mission can start
+    # with no twin in the loop to pick a model, and pinning one in config is
+    # then the only way to say which. A POST /mission/start model_id
+    # overrides it. Never guess a Bedrock model id here: the allow-list lives
+    # in the vision service (GET /navigate/models) and is validated there.
+    "navigate_model_id": "",
     "max_steps": 120,
     "min_distance_cm": 30.0,
     "request_timeout_s": 10.0,
@@ -80,6 +89,8 @@ def load_brain_config(config_path=None) -> dict:
         merged["robot_url"] = os.environ["ROBOT_URL"]
     if os.environ.get("VISION_URL"):
         merged["vision_url"] = os.environ["VISION_URL"]
+    if os.environ.get("NAVIGATE_MODEL_ID"):
+        merged["navigate_model_id"] = os.environ["NAVIGATE_MODEL_ID"]
     # Same idea, for a brain deployment whose robot has no EFS-backed
     # recordings volume mounted (cloudformation/teleop-brain.yaml) --
     # without this, a recorded frame would silently land on the container's

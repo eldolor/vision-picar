@@ -1,3 +1,8 @@
 fastapi
 uvicorn[standard]
 pyyaml
+# The walk scorecard's judge tier (control/walk_eval.py) calls Bedrock
+# directly -- see control/admin_server.py's docstring for why that is here
+# rather than routed through service/vision_analyze. Still no httpx, no
+# anthropic, no robot/ or brain/ imports.
+boto3

@@ -20,6 +20,7 @@ setup, assembly, real camera, hardware swap-in) are unstarted, by design.
 | `PLAN-sim-hardening.md` | where the sim diverges from hardware, and the phased fix |
 | `PLAN-brain-relocation.md` | moving the autonomy loop onto the Pi |
 | `PLAN-ar-guidance.md` | the Guide tab, as built |
+| `PLAN-teleop-robot.md` | a live phone walk driving the real brain, closed loop |
 
 The Guide tab has two modes: **Guide me** steers a person to an object
 (`/guidance`), and **Robot view** shows the move the robot would make from
@@ -56,7 +57,8 @@ pip install -r requirements.txt
 ## Run tests
 
 ```bash
-pytest tests/ -q        # 133 tests, no API key needed
+pytest tests/ -q        # 212 tests, no API key needed
+pytest service/vision_analyze/tests/ -q  # that service's own 18 tests, run separately
 ```
 
 ## Run the demo loop

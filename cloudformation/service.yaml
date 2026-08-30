@@ -30,7 +30,20 @@ Parameters:
     Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
   NavigateModelId:
     Type: String
-    Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+    # Opus 4.5 since 2026-08-29, chosen by measurement rather than argument:
+    # all 22 frames of the recorded walk red-backpack-20260829-195904 were
+    # replayed through every invokable vision model on this account, same
+    # pixels and same prompt. Opus was the only one that both made forward
+    # progress and stayed obstacle-aware, and the only one that refused to
+    # call a red blanket a red backpack.
+    #
+    # It replaces Sonnet 4.5, which produced every stalled walk in that
+    # evaluation -- on the 195904 frames it answered FORWARD once in 22 and
+    # never closed distance over open floor. Note the walks were recorded
+    # believing this was Nova Lite: the code default in
+    # service/vision_analyze/vision_core.py said so, but this parameter has
+    # always overridden it, and the env var wins. Both now say Opus 4.5.
+    Default: us.anthropic.claude-opus-4-5-20251101-v1:0
   GuidanceModelId:
     Type: String
     Default: amazon.nova-lite-v1:0

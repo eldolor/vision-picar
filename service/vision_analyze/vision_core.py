@@ -24,17 +24,31 @@ Sonnet 4.5 instead, confirmed working (including image input) via a real
 
 Per-route models: /analyze feeds a photo a person takes to check a room
 by hand (the Camera tab) and stays on the conservative Sonnet 4.5
-default. /navigate and /guidance both default to Amazon Nova Lite.
-/guidance went first and was measured (real Bedrock calls, real photo) at
-~3x Sonnet's latency with matching accuracy for that task. /navigate
-followed on 2026-08-28 -- a deliberate trade (discussed, not
-accidental) for a faster Robot view loop, made without an equivalent
-navigation-specific accuracy measurement the way /guidance got one. If
-navigation quality looks worse in practice, re-measure with
-tests/manual_replay_navigate.py against both models on the same recorded
-walk before assuming it's fine. All three stay independently overridable
-via env var without a code change, for exactly this kind of per-route
-tuning.
+default. /guidance is on Amazon Nova Lite, measured (real Bedrock calls,
+real photo) at ~3x Sonnet's latency with matching accuracy for that task.
+
+/navigate is on Claude Opus 4.5 since 2026-08-29, and that choice is the
+one thing here backed by a real measurement on real rooms. All 22 frames
+of the recorded walk red-backpack-20260829-195904 were replayed through
+every invokable vision model on this account -- identical pixels,
+identical prompt, only the model varying. Opus was the only candidate that
+both made forward progress and stayed obstacle-aware, and the only one
+that refused to call a red blanket a red backpack. Nova Lite scored a
+perfect FORWARD rate by being blind: on a frame where the couch filled the
+lower half it still answered FORWARD, obstacle_ahead=false.
+
+A cautionary note this file earned the hard way: for months the line above
+said Nova Lite while cloudformation/service.yaml's NavigateModelId
+parameter passed Sonnet 4.5, and the env var wins. Every walk recorded
+before 2026-08-29 was therefore produced by a model nobody involved
+believed was running. Keep the code default and the template parameter in
+step, and treat a walk's own recorded model_id (echoed on every /navigate
+reply since the model picker shipped) as the only trustworthy answer to
+"what produced this".
+
+All routes stay independently overridable via env var without a code
+change, for exactly this kind of per-route tuning; /navigate additionally
+accepts a per-request model_id from the allow-list below.
 """
 
 import io
@@ -52,8 +66,66 @@ logger = logging.getLogger()
 
 MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 ANALYZE_MODEL_ID = os.environ.get("BEDROCK_ANALYZE_MODEL_ID", MODEL_ID)
-NAVIGATE_MODEL_ID = os.environ.get("BEDROCK_NAVIGATE_MODEL_ID", "amazon.nova-lite-v1:0")
+# Keep this in step with cloudformation/service.yaml's NavigateModelId
+# parameter. They disagreed for a while -- this said Nova Lite, the template
+# said Sonnet 4.5, and the env var silently won -- which meant a week of
+# recorded walks were attributed to the wrong model. If you change one,
+# change both.
+NAVIGATE_MODEL_ID = os.environ.get(
+    "BEDROCK_NAVIGATE_MODEL_ID", "us.anthropic.claude-opus-4-5-20251101-v1:0")
 GUIDANCE_MODEL_ID = os.environ.get("BEDROCK_GUIDANCE_MODEL_ID", "amazon.nova-lite-v1:0")
+
+# /navigate's model A/B set -- a request may pick one of these by id (app.py
+# validates against this exact set before it ever reaches Bedrock, so an
+# arbitrary string can't run up the bill or hit a model this account has no
+# access to). Each was confirmed with a real `converse` call before being
+# listed here, the same rule as NAVIGATE_MODEL_ID's default above --
+# "claude-sonnet-5", the Opus 4.6/4.7/4.8 and 5 profiles, GPT-5.6 and
+# Grok 4.6 are all in this account's Bedrock catalog
+# (list-foundation-models) but return AccessDeniedException on an actual
+# call, so they are deliberately absent despite looking available.
+#
+# The four here were chosen by replaying all 22 frames of the recorded walk
+# red-backpack-20260829-195904 through every invokable vision model on the
+# account -- identical pixels, identical prompt, only the model varying:
+#
+#   opus-4.5    the only model that both made forward progress (10/22) and
+#               stayed obstacle-aware, and the only one that refused to call
+#               a red blanket a red backpack. Best judgement available.
+#   sonnet-4.5  what that walk actually ran on. FORWARD on 1/22 frames --
+#               it is the over-cautious end of the range, and the model
+#               whose behaviour the stall was first observed against, so it
+#               stays in as the control.
+#   qwen3-vl    the non-Anthropic axis, so a conclusion here is not just
+#               "a bigger Claude". Good object ID, obstacle-blind.
+#   nova-lite   the cheap floor. Answered FORWARD on 22/22 frames and drove
+#               into a couch on a genuine close-obstacle frame -- kept
+#               precisely so that a degenerate baseline is visible in the
+#               comparison rather than assumed.
+#
+# Dropped after the same sweep: haiku-4.5 (sonnet's caution, none of opus's
+# judgement), llama4-scout (as obstacle-blind as nova, no upside),
+# pixtral-large (15 of 22 calls errored, ~42s median latency).
+#
+# Overridable as a whole via env var for the same reason the per-route
+# defaults above are: this list will go stale as Bedrock's catalog changes,
+# without a code change to fix it.
+_DEFAULT_NAVIGATE_MODEL_CHOICES = {
+    "us.anthropic.claude-opus-4-5-20251101-v1:0": "Claude Opus 4.5 (best judgement)",
+    "us.anthropic.claude-sonnet-4-5-20250929-v1:0": "Claude Sonnet 4.5 (cautious)",
+    "qwen.qwen3-vl-235b-a22b": "Qwen3-VL (non-Anthropic)",
+    "amazon.nova-lite-v1:0": "Nova Lite (cheap baseline)",
+}
+
+
+def _load_navigate_model_choices() -> dict:
+    configured = os.environ.get("BEDROCK_NAVIGATE_MODEL_CHOICES")
+    if not configured:
+        return dict(_DEFAULT_NAVIGATE_MODEL_CHOICES)
+    return {model_id.strip(): model_id.strip() for model_id in configured.split(",") if model_id.strip()}
+
+
+NAVIGATE_MODEL_CHOICES = _load_navigate_model_choices()
 
 SCENE_PROMPT = """You are viewing a photo of a room, taken by the owner of a small indoor robot to help it understand the space.
 Describe:
@@ -164,8 +236,10 @@ Consider:
    width of the center third, or more. Judge this by how much of the frame it
    fills, not by guessing real-world distance. A {target_object} that is
    clearly visible but still across the room has NOT been reached.
-4. Given the above, what is the single best next action to get closer to the
-   {target_object} while not colliding with anything?
+4. What kind of room does this look like -- e.g. "kitchen", "hallway",
+   "living room", "bedroom", "bathroom"? Use "unclear" if you can't tell.
+5. Given the above, what is the single best next action to get closer to the
+   {target_object} while not colliding with anything?{searched_rooms_note}
 
 "action" is only about movement -- it never means "the search is over".
 Report arrival in "target_reached" instead, so that a STOP caused by an
@@ -177,9 +251,23 @@ Respond with ONLY a JSON object, no other text, matching this schema:
   "target_direction": "left" | "center" | "right" | "not_visible",
   "target_reached": true | false,
   "obstacle_ahead": true | false,
+  "room_guess": "short room-type label, or \\"unclear\\"",
   "action": "FORWARD" | "LEFT" | "RIGHT" | "REVERSE" | "STOP",
   "reasoning": "one short sentence explaining the choice"
 }}"""
+
+# Appended into the prompt only when the caller has already searched at
+# least one room (MissionMemory.searched_rooms, threaded through by
+# control/mission_runner.py -- see brain/navigate.py). This is the room-
+# level step memory named as the open half of phase S2b in
+# AGENT-HARNESS.md section 12: a single photograph has no history of its
+# own, so the only way to stop the policy re-searching a room is to tell it,
+# in words, what it has already covered.
+_SEARCHED_ROOMS_NOTE_TEMPLATE = (
+    " You have already searched: {rooms}. If this looks like one of those "
+    "rooms and the {target_object} is not visible here, prefer moving toward "
+    "unexplored space over lingering in a room already searched."
+)
 
 # Note the default action is STOP, which is also a legitimate model answer
 # for "blocked". That overloading is exactly why arrival gets its own
@@ -190,21 +278,36 @@ _NAVIGATE_EMPTY_SCHEMA = {
     "target_direction": "not_visible",
     "target_reached": False,
     "obstacle_ahead": False,
+    "room_guess": "unclear",
     "action": "STOP",
     "reasoning": "Unable to analyze image.",
 }
 
 
-def describe_image_bytes_navigate(image_bytes: bytes, target_object: str, media_type: str = "image/jpeg") -> dict:
+def describe_image_bytes_navigate(
+    image_bytes: bytes,
+    target_object: str,
+    media_type: str = "image/jpeg",
+    searched_rooms: list | None = None,
+    model_id: str | None = None,
+) -> dict:
     client = _get_client()
+    model_id = model_id or NAVIGATE_MODEL_ID
 
     fmt = _bedrock_image_format(media_type)
     if fmt not in ("gif", "jpeg", "png", "webp"):
         image_bytes = _convert_to_jpeg(image_bytes)
         fmt = "jpeg"
 
+    note = ""
+    if searched_rooms:
+        note = _SEARCHED_ROOMS_NOTE_TEMPLATE.format(
+            rooms=", ".join(searched_rooms), target_object=target_object
+        )
+    prompt = NAVIGATE_PROMPT_TEMPLATE.format(target_object=target_object, searched_rooms_note=note)
+
     response = client.converse(
-        modelId=NAVIGATE_MODEL_ID,
+        modelId=model_id,
         messages=[
             {
                 "role": "user",
@@ -215,7 +318,7 @@ def describe_image_bytes_navigate(image_bytes: bytes, target_object: str, media_
                             "source": {"bytes": image_bytes},
                         }
                     },
-                    {"text": NAVIGATE_PROMPT_TEMPLATE.format(target_object=target_object)},
+                    {"text": prompt},
                 ],
             }
         ],
@@ -224,7 +327,17 @@ def describe_image_bytes_navigate(image_bytes: bytes, target_object: str, media_
 
     content_blocks = response["output"]["message"]["content"]
     text = "".join(b["text"] for b in content_blocks if "text" in b)
-    return _parse_navigate_json(text)
+    decision = _parse_navigate_json(text)
+    # Carried on the reply (not just logged) so a recorded walk -- and the
+    # admin viewer reading it back later -- can tell which model produced
+    # which decision, and at what token cost, without a side-channel.
+    decision["model_id"] = model_id
+    usage = response.get("usage") or {}
+    decision["usage"] = {
+        "input_tokens": usage.get("inputTokens"),
+        "output_tokens": usage.get("outputTokens"),
+    }
+    return decision
 
 
 def _parse_navigate_json(text: str) -> dict:
@@ -245,6 +358,11 @@ def _parse_navigate_json(text: str) -> dict:
         merged["target_reached"] = merged["target_reached"] is True
         if merged["target_reached"] and not merged["target_visible"]:
             merged["target_reached"] = False
+        # A non-string (or empty) room_guess is as good as "unclear" -- this
+        # feeds straight into MissionMemory's room bookkeeping, which must
+        # never mistake a garbage value for a real room label.
+        room_guess = merged.get("room_guess")
+        merged["room_guess"] = str(room_guess).strip() if isinstance(room_guess, str) and room_guess.strip() else "unclear"
         return merged
     except json.JSONDecodeError:
         logger.warning(f"Failed to parse VLM navigate response as JSON: {text!r}")

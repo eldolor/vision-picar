@@ -31,6 +31,30 @@ Parameters:
     Description: >
       Same bootstrap knob as brain.yaml: deploy once with 0 (creates the ECR
       repo with nothing to launch yet), push the image, redeploy with 1.
+  JudgeEnabled:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >
+      Whether the walk scorecard may call Bedrock to judge sampled frames.
+      "false" leaves the free, deterministic metrics tier working on its own
+      -- useful if the judge's per-walk cost is ever unwelcome.
+  JudgeModelId:
+    Type: String
+    Default: us.anthropic.claude-opus-4-5-20251101-v1:0
+    Description: >
+      The judge model. Opus 4.5 by default: replaying walk
+      red-backpack-20260829-195904 through every invokable vision model on
+      this account, it was the only one that both made forward progress and
+      stayed obstacle-aware, and the only one that refused to call a red
+      blanket a red backpack -- which is the one quality a judge needs.
+  JudgeSampleFrames:
+    Type: String
+    Default: "8"
+    Description: >
+      How many evenly spaced frames of a walk the judge looks at (first and
+      last always included). One Bedrock call each, so this is the knob that
+      sets a walk's evaluation cost.
 
 Resources:
   EcrRepo:
@@ -98,9 +122,16 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
-      # Otherwise no permissions -- this process never calls the robot or
-      # the vision service, and makes no AWS SDK call besides the EFS mount
-      # itself (same reasoning as brain.yaml's task role).
+      # Beyond the EFS mount, the only permission here is Bedrock, for the
+      # walk scorecard's judge tier (control/walk_eval.py). This process
+      # still never calls the robot or the vision service -- Bedrock is a
+      # managed endpoint reached over the VPC's existing bedrock-runtime
+      # interface endpoint, not a peer service in this project, so admin
+      # keeps the property its docstring cares about: reviewing recordings
+      # does not depend on where the brain or the robot is running today.
+      # Routing the judge through service/vision_analyze instead would have
+      # broken exactly that, and would have meant shipping frames already on
+      # this task's own volume out over HTTP to be read back.
       Policies:
         - PolicyName: MountRecordingsVolume
           PolicyDocument:
@@ -116,6 +147,19 @@ Resources:
                   StringEquals:
                     elasticfilesystem:AccessPointArn: !ImportValue
                       Fn::Sub: "${RecordingsStackName}-EfsAccessPointArn"
+        - PolicyName: JudgeRecordedWalks
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Resource "*" matches service.yaml's own Bedrock policy, and
+              # for the same reason: cross-region inference profiles resolve
+              # to model ARNs in several regions, which a narrower resource
+              # list gets wrong the moment the judge model changes.
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:Converse
+                Resource: "*"
 
   AdminSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -159,6 +203,10 @@ Resources:
         - Field: path-pattern
           Values:
             - /admin
+            # control/admin.js -- the console's client, previously inline in
+            # admin.html. A missing path here means the page loads and does
+            # nothing at all, since it would fall through to vision-analyze.
+            - /admin.js
             - /recording/walks*
             - /stats
       Actions:
@@ -199,6 +247,16 @@ Resources:
             - SourceVolume: recordings
               ContainerPath: /app/recordings
               ReadOnly: false
+          Environment:
+            # The walk scorecard's judge tier. Off unless explicitly enabled,
+            # so the deterministic metrics (which cost nothing and call
+            # nothing) stay the default behaviour.
+            - Name: WALK_JUDGE_ENABLED
+              Value: !Ref JudgeEnabled
+            - Name: BEDROCK_JUDGE_MODEL_ID
+              Value: !Ref JudgeModelId
+            - Name: JUDGE_SAMPLE_FRAMES
+              Value: !Ref JudgeSampleFrames
           Secrets:
             - Name: APP_SHARED_SECRET
               ValueFrom: !Ref AppSharedSecret

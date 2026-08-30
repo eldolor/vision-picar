@@ -31,11 +31,11 @@ PIXEL = base64.b64encode(b"\xff\xd8\xff\xd9").decode()
 
 
 def navigate_reply(action="FORWARD", visible=False, reached=False, obstacle=False,
-                   direction="not_visible", reasoning="because"):
+                   direction="not_visible", reasoning="because", room_guess="unclear"):
     return {
         "target_visible": visible, "target_direction": direction,
         "target_reached": reached, "obstacle_ahead": obstacle,
-        "action": action, "reasoning": reasoning,
+        "room_guess": room_guess, "action": action, "reasoning": reasoning,
     }
 
 
@@ -123,6 +123,142 @@ def test_navigate_posts_what_the_service_expects(tmp_path):
         "image_base64": PIXEL, "media_type": "image/jpeg", "target_object": TARGET,
     }
     assert scene["safest_direction"] == "LEFT"
+
+
+# ---------- room-level step memory (AGENT-HARNESS.md section 12) ----------
+
+
+def test_room_guess_reaches_the_scene():
+    scene = to_scene(navigate_reply(room_guess="kitchen"), TARGET)
+    assert scene["_navigate"]["room_guess"] == "kitchen"
+
+
+def test_a_missing_or_blank_room_guess_is_unclear_not_a_crash():
+    assert to_scene({}, TARGET)["_navigate"]["room_guess"] == "unclear"
+    assert to_scene(navigate_reply(room_guess=""), TARGET)["_navigate"]["room_guess"] == "unclear"
+    assert to_scene({"room_guess": 7}, TARGET)["_navigate"]["room_guess"] == "unclear"
+
+
+def test_searched_rooms_is_omitted_when_empty(tmp_path):
+    """Backward compatible: a caller that never opts in sends exactly the
+    request test_navigate_posts_what_the_service_expects already pins."""
+    import httpx
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=navigate_reply())
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    navigate_scene(
+        {"image_base64": PIXEL}, TARGET, "http://vision.test/", client=client, searched_rooms=[],
+    )
+    assert "searched_rooms" not in seen["body"]
+
+
+def test_searched_rooms_is_sent_when_present(tmp_path):
+    import httpx
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=navigate_reply())
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    navigate_scene(
+        {"image_base64": PIXEL}, TARGET, "http://vision.test/", client=client,
+        searched_rooms=["kitchen", "hallway"],
+    )
+    assert seen["body"]["searched_rooms"] == ["kitchen", "hallway"]
+
+
+def test_vision_fn_for_exposes_a_searched_rooms_setter(monkeypatch):
+    """The mechanism control/mission_runner.py's _guarded_vision() relies
+    on: a mutable attribute on the callable, not a second positional arg --
+    so the vision_fn(frame) -> scene contract every other seam depends on
+    is untouched."""
+    import httpx
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=navigate_reply())
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    vision_fn = vision_fn_for(TARGET, vision_url="http://vision.test/", client=client)
+
+    assert hasattr(vision_fn, "set_searched_rooms")
+    vision_fn({"image_base64": PIXEL})
+    assert "searched_rooms" not in seen["body"], "nothing searched yet"
+
+    vision_fn.set_searched_rooms({"kitchen"})  # a set, like MissionMemory.searched_rooms
+    vision_fn({"image_base64": PIXEL})
+    assert seen["body"]["searched_rooms"] == ["kitchen"]
+
+
+def test_mission_agent_backfills_room_from_the_scenes_room_guess(tmp_path):
+    """The other half of the loop: MissionMemory can only track rooms a
+    vision-driven mission visits if something turns the model's room_guess
+    into frame["room"], since a real/replayed camera frame never carries
+    one of its own."""
+    robot = ReplayRobot(write_walk(tmp_path, 2))
+    memory = MissionMemory(mission="find it", target_object=TARGET)
+    agent = VisionAgent(
+        robot, memory,
+        vision_fn=lambda f: to_scene(navigate_reply(room_guess="kitchen"), TARGET),
+    )
+
+    result = agent.step()
+
+    assert result.frame["room"] == "kitchen"
+    assert "kitchen" in memory.visited_rooms
+    assert "kitchen" in memory.searched_rooms
+
+
+def test_mission_agent_leaves_a_real_room_label_alone(tmp_path):
+    """Sim frames already carry a real room -- the backfill must never
+    override ground truth with a model guess."""
+    from sim.maps.starter_house import build_starter_world
+    from sim.mock_robot import MockRobot
+
+    robot = MockRobot(build_starter_world())
+    memory = MissionMemory(mission="find it", target_object=TARGET)
+    agent = VisionAgent(
+        robot, memory,
+        vision_fn=lambda f: to_scene(navigate_reply(room_guess="kitchen"), TARGET),
+    )
+
+    result = agent.step()
+
+    assert result.frame["room"] != "kitchen"
+
+
+def test_a_mission_tells_the_service_what_it_has_already_searched(tmp_path):
+    """End to end through MissionRunner: once a room is marked searched,
+    the next vision call carries it."""
+    robot = RecordingRobot(ReplayRobot(write_walk(tmp_path, 4)))
+    seen_searched_rooms = []
+
+    def vision_fn(frame):
+        return to_scene(navigate_reply(action="FORWARD", room_guess="kitchen"), TARGET)
+
+    def set_searched_rooms(rooms):
+        seen_searched_rooms.append(list(rooms))
+
+    vision_fn.set_searched_rooms = set_searched_rooms
+
+    runner = MissionRunner(
+        robot, target_object=TARGET, policy="vision", vision_fn=vision_fn, max_steps=3
+    )
+    runner.start()
+    while runner.tick():
+        pass
+
+    assert seen_searched_rooms[0] == [], "nothing searched before the first call"
+    assert seen_searched_rooms[-1] == ["kitchen"], "kitchen was marked searched after step 1"
 
 
 # ---------- the policy ----------
@@ -299,3 +435,47 @@ def test_a_flaky_service_ends_the_mission_rather_than_walking_blind(tmp_path):
     assert runner.status()["outcome"] == "failed"
     assert "stop" in robot.calls
     assert "drive_forward" not in robot.calls
+
+
+# ---------- choosing the model on the wire ----------
+
+
+def _capture_body(reply=None):
+    """A MockTransport that records the request body it was given."""
+    import httpx
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=reply or navigate_reply())
+
+    return seen, httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_a_chosen_model_reaches_the_service():
+    seen, client = _capture_body()
+    navigate_scene({"image_base64": "aGk="}, TARGET, "http://vision.test",
+                   client=client, model_id="us.anthropic.claude-opus-4-5-20251101-v1:0")
+    assert seen["body"]["model_id"] == "us.anthropic.claude-opus-4-5-20251101-v1:0"
+
+
+def test_no_model_omits_the_field_entirely():
+    """Absent means "the service's own default". Sending null, or a model
+    name this module guessed, would both be wrong -- the allow-list and the
+    default both live in the vision service."""
+    seen, client = _capture_body()
+    navigate_scene({"image_base64": "aGk="}, TARGET, "http://vision.test", client=client)
+    assert "model_id" not in seen["body"]
+
+
+def test_vision_fn_for_binds_the_model_without_changing_the_call_contract():
+    """The whole point of binding it in the factory: the harness still calls
+    vision_fn(frame) with one argument (AGENT-HARNESS.md section 10)."""
+    seen, client = _capture_body()
+    fn = vision_fn_for(TARGET, vision_url="http://vision.test", client=client,
+                       model_id="qwen.qwen3-vl-235b-a22b")
+
+    fn({"image_base64": "aGk="})
+
+    assert seen["body"]["model_id"] == "qwen.qwen3-vl-235b-a22b"

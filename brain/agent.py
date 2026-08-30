@@ -238,6 +238,18 @@ class MissionAgent(ConstrainedAgent):
     def step(self) -> StepResult:
         result = super().step()
         room = result.frame.get("room", "unknown")
+        if room == "unknown":
+            # A real-camera frame carries no room label of its own (sim
+            # frames always do). The vision policy's scene may carry a
+            # room guess instead (brain/navigate.py's to_scene(), sourced
+            # from /navigate's room_guess) -- backfill it here so
+            # MissionMemory tracks rooms the same way regardless of which
+            # policy produced the frame. Rule-based scenes have no
+            # "_navigate" key, so this is a no-op for them.
+            guessed = (result.scene.get("_navigate") or {}).get("room_guess")
+            if guessed and guessed != "unclear":
+                room = guessed
+                result.frame["room"] = room
         self.memory.record_observation(result.step, result.frame, result.scene)
         self.memory.mark_room_searched(room)
         self.memory.record_action(result.step, room, result.action, result.executed)

@@ -18,15 +18,32 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 133 passed)
+# Confirm everything still works (should show 268 passed)
 pytest tests/ -v
+
+# service/vision_analyze/ has its own suite -- see section 5, item 1
+pytest service/vision_analyze/tests/ -v
+
+# tests/test_ui.py drives the real twin in a real browser. It SKIPS unless
+# a browser is installed, so the count above holds either way -- install it
+# once to actually get that coverage:
+python -m playwright install chromium
 ```
 
-`service/vision_analyze/` (the ECS Fargate vision service) has no
-automated test suite of its own yet -- see section 5, item 1. It's
-verified working by manual `docker run` + curl, and against the live
-deployment, not by an automated suite the way `lambda/vision_analyze/`
-used to be before it was decommissioned.
+**`tests/test_ui.py` is the twin's only automated coverage, and it exists
+because the UI was where the bugs actually escaped.** Two shipped on
+2026-08-29 and were both found on a phone, not by the (then 283-strong)
+Python suite: the model picker silently never populated, and it rendered
+as a 40px chevron with no readable text. The second is invisible to any
+DOM-only test -- it needs real layout at a phone viewport, which is why
+this is Playwright rather than jsdom. Both were re-introduced deliberately
+to confirm the new tests fail on them before being trusted.
+
+`service/vision_analyze/` (the ECS Fargate vision service) is still
+verified against a real deployment by manual `docker run` + curl too, not
+only by its own automated suite -- see section 5, item 1 for what that
+suite does and does not cover (it's app.py's own routing/validation/error
+mapping, not the real Bedrock call).
 
 **Environment variable needed for anything vision-related in the sim:**
 `ANTHROPIC_API_KEY` -- required by `brain/vision.py` (only for
@@ -87,10 +104,11 @@ the original build plan phases, reordered simulation-first):
 | 9 (partial) | Wi-Fi control API + safety-over-HTTP + watchdog | Done (`robot/server.py`), CORS added |
 | 9 (partial) | Manual WASD control client (`control/manual_control.py`) | NOT BUILT, and now skipped -- the twin's D-pad supersedes it, and `RemoteRobot` (B0, below) makes it nearly free if ever wanted. |
 | B0-B3 | Brain on the wire: `RemoteRobot`, `MissionRunner`, `control/brain_server.py`, the three failsafes | Done, tested (`control/`, `tests/test_remote_robot.py`, `test_mission_runner.py`, `test_brain_server.py`, `test_failsafes.py`). The autonomy loop is a service now: startable, stoppable, and inspectable over HTTP, with the robot reachable only as an HTTP client. |
-| S2b (partial) | The Python vision agent | Done for recorded walks (`brain/navigate.py`, `brain/vision_agent.py`, `sim/replay_robot.py`, `policy: "vision"`, and the twin's "Record this walk" switch). The model decides every move; the harness supplies the timeout, the failure budget and the step/cost cap. Not yet drivable in the sim (needs S2's real image bytes) and no room-level step memory yet. |
+| S2b (partial) | The Python vision agent | Done for recorded walks (`brain/navigate.py`, `brain/vision_agent.py`, `sim/replay_robot.py`, `policy: "vision"`, and the twin's "Record this walk" switch) and, since T1-T4, for a live phone walk too (`sim/teleop_robot.py`, "Drive via brain"). The model decides every move; the harness supplies the timeout, the failure budget and the step/cost cap. Room-level step memory is done -- `/navigate` exchanges `searched_rooms`/`room_guess` with the client, and `brain/agent.py:MissionAgent.step()` backfills `frame["room"]` from it (`AGENT-HARNESS.md` section 10). Not yet drivable in the grid-world sim itself -- still needs S2's real image bytes. |
 | B4 | The twin becomes an observer | Done (`web-twin/index.html`'s "Remote brain" panel + `control/drills.py`). Missions start from the phone and survive the tab; the failsafe drills and watchdog readout make B3's guards watchable. Only B5 (systemd on the Pi) is left in that plan. |
+| T1-T4 | Teleop robot: a live phone walk drives the real `MissionRunner` mission, closed loop (`PLAN-teleop-robot.md`) | Done and deployed (2026-08-28) -- `sim/teleop_robot.py`'s `TeleopRobot` (a fourth `RobotInterface` backend: `mode: teleop`, no motor, a live pushed camera frame, no distance sensor), `POST /teleop/frame` on `robot/server.py`, the twin's Robot view "Drive via brain" switch, and sibling `teleop-robot.yaml`/`teleop-brain.yaml` CloudFormation stacks sharing the existing NLB/ALB (see section 6's AWS-topology bullet). Verified end to end: a real phone walk found its target (`OUT: FOUND`), and both B3.2 (vision-failure budget) and T1's stall detection were triggered live, no drill, against the deployed services. One rough edge, since fixed: `/frame` now catches a stall and returns 503 with the real message instead of a generic 500. |
 | extra | Interim: brain on ECS Fargate | Done and deployed (`service/brain/`, `cloudformation/brain.yaml`) -- `control/brain_server.py` alongside the twin and vision-analyze on the same shared NLB/ALB, so the remote-brain panel works from a phone off the home LAN with no HTTPS tunnel. Not a build-plan phase and not B5: the brain's real home is still the Pi: see `PLAN-brain-relocation.md`'s "Interim: brain on ECS Fargate" for why this doesn't conflict with that, and for the one real gap it surfaced (separate outbound secrets for the robot vs. the vision service). |
-| extra | Recorded-walk storage + admin viewer | Done and deployed (`cloudformation/recordings.yaml`, `service/admin/`, `control/admin_server.py`) -- an EFS volume (survives redeploys, unlike Fargate's own filesystem) holding Robot-view "Record this walk" data, plus a separate `/admin` service to list/view/delete it. Deliberately its own service, not more routes on `brain_server.py`: reviewing recordings has no reason to move to the Pi when B5 lands or to go down when the mission server restarts. See `PLAN-brain-relocation.md`'s Interim section and `control/admin_server.py`'s docstring. |
+| extra | Recorded-walk storage + admin viewer | Done and deployed (`cloudformation/recordings.yaml`, `service/admin/`, `control/admin_server.py`) -- an EFS volume (survives redeploys, unlike Fargate's own filesystem) holding Robot-view "Record this walk" data, plus a separate `/admin` service to list/view/delete it. Deliberately its own service, not more routes on `brain_server.py`: reviewing recordings has no reason to move to the Pi when B5 lands or to go down when the mission server restarts. See `PLAN-brain-relocation.md`'s Interim section and `control/admin_server.py`'s docstring. Since T1-T4, `teleop-brain.yaml`'s brain has no EFS mount of its own and instead proxies `POST /recording/frame` to the main brain (`control/brain_server.py`'s `recording_proxy_url`) -- see `PLAN-teleop-robot.md`'s "Recording proxy" section for why only that one route, never `/mission/*`, may be proxied between brains. |
 | -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Designed but never written to disk -- a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt. **This is now the main hardware-path gap:** `PLAN-sim-hardening.md` Q1 settled that the robot is vision-driven, and the vision loop currently exists only in JavaScript (`web-twin/index.html`'s Vision Autopilot) -- no Python file calls `/navigate`. Phase S2b of that plan specifies the port, including the step-memory problem the browser version does not solve. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. Stage 2's `MissionRunner` is where it plugs in -- `AGENT-HARNESS.md` section 10 is the instruction sheet: it takes a `vision_fn` and already enforces the timeout and failure budget such a policy needs, and `control/brain_server.py` answers `policy: "vision"` with a 501 until it exists. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
@@ -129,6 +147,19 @@ vision-picar/
 │   ├── mock_robot.py          implements RobotInterface against grid_world
 │   ├── replay_robot.py        a body made of photographs -- plays a recorded
 │   │                           Robot-view walk back, one frame per move
+│   │                           (open loop -- see its own docstring)
+│   ├── teleop_robot.py        a body made of a live phone camera and a
+│   │                           human -- TeleopRobot, mode: teleop
+│   │                           (PLAN-teleop-robot.md). Closed loop, unlike
+│   │                           replay_robot.py: the next frame really is
+│   │                           whatever the person photographs after
+│   │                           reading the model's decision. No motor, no
+│   │                           distance sensor -- honest no-ops, same
+│   │                           pattern as replay_robot.py's.
+│   ├── sensors.py              DistanceSensorModel -- Gaussian noise, dropout,
+│   │                           real-range clamping for MockRobot.get_distance(),
+│   │                           opt-in via config/robot.yaml's sim.sensor_noise
+│   │                           (Phase S5)
 │   └── maps/starter_house.py  living room / hallway / kitchen + red backpack
 │
 ├── control/                 the brain as a service (phases B0-B3). Imports no
@@ -146,14 +177,24 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    133 tests + 7 runnable (non-automated) demo scripts
+├── tests/                    268 tests (incl. test_robot_contract.py's
+│                              backend-agnostic conformance suite [S1],
+│                              test_sensors.py [S5], and
+│                              test_watchdog_integration.py [S4])
+│                              + 7 runnable (non-automated) demo scripts
 │
 ├── service/vision_analyze/   ECS Fargate: photo upload -> vision analysis (cloud)
-│   ├── app.py                 FastAPI app -- /health, /analyze
+│   ├── app.py                 FastAPI app -- /health, /analyze, /describe,
+│   │                           /navigate, /guidance
 │   ├── vision_core.py         calls Amazon Bedrock (Claude, Converse API)
 │   ├── rooms_core.py          identify_room() -- same logic as brain/rooms.py
-│   ├── requirements.txt, Dockerfile
-│   └── NOTE: no automated test suite yet -- see section 6
+│   ├── tests/                 app.py's own suite (22 tests) -- routing,
+│   │                           validation, decode/size/error handling, all
+│   │                           vision_core.* calls mocked. Run separately:
+│   │                           `pytest service/vision_analyze/tests/ -v`
+│   │                           (see section 6 for why it's not swept into
+│   │                           the top-level `tests/` package)
+│   └── requirements.txt, Dockerfile
 │
 ├── service/twin/              ECS Fargate: robot/server.py + web-twin/index.html
 │   ├── Dockerfile              built from the REPO ROOT (needs real robot/, sim/,
@@ -190,10 +231,15 @@ vision-picar/
 │                               control/)
 ├── PLAN-ar-guidance.md        the Guide tab: spec, redesign, changelog (BUILT)
 ├── PLAN-sim-hardening.md      how the sim diverges from hardware, phased fixes,
-│                               definition of done before a hardware swap (PROPOSED)
+│                               definition of done before a hardware swap
+│                               (S1 and S3 BUILT, S2/S2b partial, S4-S7 PROPOSED)
 ├── HARDWARE-READINESS.md      what the PiCar-X kit changes: verb-to-motor path,
 │                               pre-flight checklist, where the brain should live
-└── PLAN-brain-relocation.md   moving the autonomy loop onto the Pi (PROPOSED)
+├── PLAN-brain-relocation.md   moving the autonomy loop onto the Pi (B0-B4 BUILT,
+│                               B5 needs the Pi)
+└── PLAN-teleop-robot.md       a live phone walk driving the real MissionRunner
+                                mission, closed loop -- T1-T4 (BUILT); see the
+                                T1-T4 status-table row above
 ```
 
 ---
@@ -231,13 +277,22 @@ currently deployed service the field is simply absent, the pause never
 fires, and everything else behaves as before. The 120-call cap (~3.3 min
 at the 500ms cadence) bounds the cost either way.
 
-`/navigate` moved to Amazon Nova Lite on 2026-08-28, matching `/guidance`
-(`service/vision_analyze/vision_core.py`'s "Per-route models" note) --
-a discussed trade-off, not an independently re-measured one. Robot view
-is the tool that would surface it if navigation accuracy actually
-suffered; if a walk looks worse than it used to, that is itself the
-finding, and `tests/manual_replay_navigate.py` against both models on
-the same recorded walk is how to confirm it.
+**`/navigate` runs Claude Opus 4.5 as of 2026-08-29, and the previous
+claim on this line was wrong in a way worth knowing about.** It used to
+say `/navigate` moved to Nova Lite on 2026-08-28. The *code* default in
+`service/vision_analyze/vision_core.py` did say Nova Lite -- but
+`cloudformation/service.yaml`'s `NavigateModelId` parameter has always
+passed a value, and the env var wins. Every walk recorded before
+2026-08-29 was actually produced by **Claude Sonnet 4.5**, and was
+diagnosed for a while as if it were Nova. Two lessons, both now enforced
+in code: keep the code default and the template parameter in step (each
+file says so), and trust a walk's own recorded `model_id` -- echoed on
+every `/navigate` reply since the model picker shipped -- over any prose.
+
+Opus 4.5 was chosen by measurement: all 22 frames of walk
+`red-backpack-20260829-195904` replayed through every invokable vision
+model on the account, same pixels and prompt. See `vision_core.py`'s
+"Per-route models" note for the result. `/guidance` remains on Nova Lite.
 
 Secondary: `python -m tests.manual_replay_navigate <dir> "<target>"`
 replays a folder of photos and prints an action-spread summary. Use it to
@@ -260,22 +315,31 @@ runs against **recorded walks** -- `sim/replay_robot.py`, fed by the
 twin's new "Record this walk" switch in Robot view. What is left is the
 sim path (S2) and room memory (the rest of S2b).
 
-- **S1 -- pin the contract.** Document `RobotInterface`'s return shapes
-  and units; add a backend-agnostic conformance suite. Cheap, no behavior
-  change, and everything below gets checked against it.
+- **S1 -- pin the contract -- BUILT.** `tests/test_robot_contract.py`:
+  a backend-agnostic conformance suite (36 tests) parameterized over all
+  four `RobotInterface` backends that exist today (`MockRobot`,
+  `RemoteRobot`, `ReplayRobot`, `TeleopRobot`), asserting return shapes,
+  units and `stop()` idempotency with no grid-specific assertions. Not yet
+  pinned: pixels in `get_camera_frame()` -- that's S2's job, noted in the
+  suite's own docstring as the thing to extend it with once real image
+  bytes exist on every backend.
 - **S2 -- real image bytes.** Port the twin's raycaster
   (`renderFPV`) into Python so `get_camera_frame()` returns JPEG bytes on
   every backend. The one structural blocker between Vision Autopilot and
   hardware.
 - **S2b -- the Python vision agent** -- **BUILT** for recorded walks
-  (`python -m tests.demo_replay_mission <walk> "red backpack"`). **Still
-  open: room-level step memory.** A photograph carries no room label, so
-  nothing stops the vision loop revisiting a searched room except the step
-  cap. Closing it needs a room signal in the frame, not a policy change.
-- **Fold in: a test suite for `service/vision_analyze/app.py`.** Still
-  the one real gap from the Lambda -> ECS migration (FastAPI
-  `TestClient`, mocking `vision_core.*`). S2b changes that service's
-  prompt and schema anyway, so write the tests while you are in there.
+  (`python -m tests.demo_replay_mission <walk> "red backpack"`) and, since
+  `PLAN-teleop-robot.md`'s T1-T4, for a live phone walk too. **Room-level
+  step memory is built**: `/navigate` now exchanges `searched_rooms`
+  (client -> server, from `MissionMemory.searched_rooms`) and `room_guess`
+  (server -> client, backfilled into `frame["room"]`) -- see
+  `AGENT-HARNESS.md` section 10 for the exact mechanism, which
+  deliberately doesn't touch the `vision_fn(frame) -> scene` contract.
+- **`service/vision_analyze/app.py`'s test suite -- BUILT.**
+  `service/vision_analyze/tests/` (22 tests, FastAPI `TestClient`, every
+  `vision_core.*`/`identify_room` call mocked) -- closes the one real gap
+  left over from the Lambda -> ECS migration. Run separately from the
+  root suite: `pytest service/vision_analyze/tests/ -v` (see section 6).
 
 **Done when** a Python agent completes a backpack hunt in the sim
 against the real `/navigate`, with cost and wall-clock recorded. The
@@ -316,16 +380,28 @@ Two things worth knowing before extending it:
   move out. Blocking calls on another thread cannot be interrupted; the
   gate is what makes "stop stops the car" true anyway.
 
-### Stage 3 -- Make the sim honest about safety
+### Stage 3 -- Make the sim honest about safety -- **DONE (2026-08-28)**
 
-- **S4 -- put time in the loop.** `MockRobot._settle()` is a no-op, which
-  is why the watchdog's async loop has never been executed by a test.
-- **S5 -- sensor realism.** Until distances stop being multiples of 30cm,
-  `min_distance_cm: 20` only ever triggers at 0 and is provably
-  load-bearing on nothing.
+- **S4 -- put time in the loop.** Done. `config/robot.yaml`'s
+  `sim.realtime` (default `false`) makes `MockRobot._settle(duration)`
+  actually `time.sleep(duration)`; `robot/server.py` gained a
+  `ROBOT_CONFIG_PATH` env var so `tests/test_watchdog_integration.py` can
+  run a real `uvicorn` subprocess against a temp config with a short
+  `watchdog_timeout_s` -- the watchdog's async loop is executed by a test
+  now, against real wall-clock time on a real event loop.
+- **S5 -- sensor realism.** Done, cone geometry deferred (see
+  `PLAN-sim-hardening.md`'s S5 section for why). `sim/sensors.py`'s
+  `DistanceSensorModel` adds Gaussian noise, dropout, and real 2-400cm
+  range clamping behind `config/robot.yaml`'s `sim.sensor_noise.enabled`
+  (default `false`, so `get_distance()`'s old exact-multiple-of-30
+  formula is untouched until opted in). Dropout reads as `0.0cm` --
+  always trips the safety veto, a deliberate fail-safe choice documented
+  in that module.
 
 **Done when** changing `min_distance_cm` measurably changes behavior, and
-sensor dropout has defined fail-safe behavior.
+sensor dropout has defined fail-safe behavior. Both true now --
+`tests/test_sensors.py::test_min_distance_cm_is_load_bearing_at_a_non_multiple_of_30`
+is the direct proof of the first.
 
 ### Stage 4 -- Move the console -- **DONE (2026-08-27)**
 
@@ -389,12 +465,22 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   calls Amazon Bedrock's Converse API, not the direct Anthropic API
   `brain/vision.py` uses -- see that file's docstring for why.
 
-- **`service/vision_analyze/` has no automated test suite yet** (see
-  section 5, item 1) -- the Lambda version's `test_handler.py` doesn't
-  carry over since it's shaped around Lambda's `handler(event, context)`
-  signature, not a FastAPI app. Verified manually instead: local
-  `docker run` + curl, then the same against the deployed NLB endpoint,
-  both with a real Bedrock call and a correct response.
+- **`service/vision_analyze/` has its own test suite now**
+  (`service/vision_analyze/tests/`, see section 5 item 1) -- the Lambda
+  version's `test_handler.py` didn't carry over since it was shaped around
+  Lambda's `handler(event, context)` signature, not a FastAPI app, so this
+  is a fresh suite built against `app.py` directly (FastAPI `TestClient`,
+  every `vision_core.*` call mocked). It's deliberately **not** under the
+  top-level `tests/` package -- both directories are named `tests`, so a
+  bare `pytest` from the repo root (not this project's documented
+  invocation, which is always `pytest tests/ -q`) would hit a module-name
+  collision without `service/__init__.py` and
+  `service/vision_analyze/__init__.py` disambiguating the two; run it with
+  `pytest service/vision_analyze/tests/ -v`. It covers app.py's own
+  routing, request validation, and error mapping -- not the real Bedrock
+  call, which is still verified manually: local `docker run` + curl, then
+  the same against the deployed NLB endpoint, both with a real Bedrock
+  call and a correct response.
 
 - **The web twin's exploration algorithm duplication is intentional,
   not a bug -- and the browser is now the *optional* brain, not the
@@ -562,6 +648,8 @@ endpoint, on purpose (real hardware has none either).
 | 2 | B3.3 brain loop hung | Drill picker -> brain loop hangs | One step, then `failed` -- "brain loop hung"; the watchdog readout stays quiet, which is the point |
 | 2 | stop stops the car | Start a mission, then Stop | Mission ends `stopped`, the map stops moving, watchdog goes quiet |
 | 2 | one brain at a time | Start a remote mission, then tap Explore | Refused with a toast; the reverse is the server's 409 |
+| S4 | time in the loop | Set `sim.realtime: true` in `config/robot.yaml`, restart the robot server, then Remote brain -> Start | The watchdog readout climbs mid-move instead of only between moves -- a move now genuinely occupies its duration, off by default so this is opt-in |
+| S5 | sensor realism | Set `sim.sensor_noise.enabled: true`, restart the robot server, then D-pad toward a wall | Distance telemetry stops being multiples of 30cm and jitters; the safety collar can flash before you're touching the wall, not only once you are |
 
 ### What the remaining phases owe
 
@@ -570,11 +658,9 @@ phase rather than bolted on after:
 
 | Phase | UI proof it has to ship with |
 |---|---|
-| S1 pin the contract | A **"Check robot contract"** button in Settings: run the interface's methods against whatever robot is connected and report which returned the wrong shape. No behavior change to see otherwise -- and this is the button you will actually want on the day a Pi is on the other end |
+| S1 pin the contract | **Suite built, button not.** A **"Check robot contract"** button in Settings: run the interface's methods against whatever robot is connected and report which returned the wrong shape. `tests/test_robot_contract.py` is the suite itself, runnable from a terminal against any backend today; the Settings button that makes it pressable from the twin is still owed |
 | S2 real JPEG frames | The FPV canvas shows the **server-rendered** frame, with a "frame source: server / local" readout. The picture should not change; where it comes from should |
 | S2b Python vision agent | The remote-brain panel's policy picker stops answering **501**. Run a mission with `policy: "vision"` and watch Claude's own reasoning in the log instead of "free space clear" |
-| S4 time in the loop | The watchdog readout becomes worth watching: a move now occupies its duration, so you can see the count climb mid-move rather than only between them |
-| S5 sensor realism | The distance telemetry stops being multiples of 30cm, and a safety veto fires approaching a wall rather than only at 0. Drive at the sofa and watch the collar flash |
 | S6 motion realism | The map shows the robot **arcing** rather than pivoting in place, and refusing a turn that will not fit the corridor |
 | S7 chaos and soak | New drills: added latency, dropped requests, a killed link mid-mission. Same picker, same fail-safe rule |
 | B5 deployment | Reboot the Pi. Open the twin on a phone. Start a mission with no laptop on the network at all -- this is definition-of-done item 1, and it is a UI test by construction |

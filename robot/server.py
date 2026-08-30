@@ -9,6 +9,7 @@ config/robot.yaml's `mode` does.
 
 Endpoints:
     GET  /            serves web-twin/index.html (the digital twin UI)
+    GET  /app.js                  the twin's client script (was inline)
     GET  /manifest.json           PWA manifest, for "Add to Home Screen"
     GET  /icons/icon-192.png      referenced by manifest.json and
     GET  /icons/icon-512.png      index.html's <link rel="icon">
@@ -58,6 +59,15 @@ code, different ECS task -- can share the twin's load balancer instead of
 needing one of its own (cloudformation/teleop-robot.yaml, PLAN-teleop-robot.md).
 The twin's own deployment leaves this unset, so its URLs are unaffected.
 
+ROBOT_CONFIG_PATH (env var, unset by default): overrides which
+config/robot.yaml the module-level `app` below loads, same pattern as
+ROUTE_PREFIX/ROBOT_MODE. `create_app(config_path)` already took an
+explicit path for tests that construct an app object directly; this is
+what lets a *live* `uvicorn robot.server:app` subprocess do the same --
+tests/test_watchdog_integration.py (Phase S4) is the one thing that needs
+it, to point a live server at a temp config with a short
+watchdog_timeout_s and sim.realtime: true without editing the real one.
+
 Its original description -- "detects a dead MacBook" -- narrows once the
 brain runs on the Pi and talks to this server over localhost, since a
 dead link is no longer the likely cause. The job it keeps is the one that
@@ -93,6 +103,7 @@ from robot.safety import SafetyController, SafetyViolation
 logger = logging.getLogger("server")
 
 _TWIN_INDEX_HTML = Path(__file__).resolve().parent.parent / "web-twin" / "index.html"
+_TWIN_APP_JS = Path(__file__).resolve().parent.parent / "web-twin" / "app.js"
 _TWIN_MANIFEST_JSON = Path(__file__).resolve().parent.parent / "web-twin" / "manifest.json"
 _TWIN_ICONS_DIR = Path(__file__).resolve().parent.parent / "web-twin" / "icons"
 
@@ -181,6 +192,24 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     def twin_ui():
         return FileResponse(_TWIN_INDEX_HTML)
 
+    @app.get(prefix + "/app.js")
+    def twin_app_js():
+        """The twin's client, extracted out of index.html.
+
+        no-cache (not no-store): the browser still caches the file but must
+        revalidate, and FileResponse already sends an ETag, so an unchanged
+        script costs one 304 and a changed one is picked up immediately. This
+        is what makes a redeploy safe without hashed filenames -- index.html
+        and app.js can never end up a version apart, which for a page whose
+        HTML and JS are deployed as a single image is the only failure mode
+        worth designing against.
+        """
+        return FileResponse(
+            _TWIN_APP_JS,
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-cache"},
+        )
+
     # Explicit routes rather than a generic /icons/{filename} + StaticFiles
     # mount -- there are exactly three icon files, and exact routes mean no
     # path-traversal surface to reason about at all, matching this file's
@@ -263,10 +292,19 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             "status": "ok",
             "seconds_since_last_command": round(age, 2),
             "watchdog_timeout_s": watchdog_timeout,
+            # The single source of truth for the safety threshold this
+            # server actually enforces -- see web-twin/index.html's
+            # renderWatchdog(), which reads this into state.minDistanceCm
+            # so the JS local-brain's own clearance checks and the map's
+            # safety-collar drawing stay in sync with whatever
+            # config/robot.yaml's safety.min_distance_cm actually is,
+            # instead of a second hardcoded constant that can drift from
+            # it (PLAN-sim-hardening.md definition of done, item 10).
+            "min_distance_cm": min_distance,
             "mode": mode,
         }
 
     return app
 
 
-app = create_app()
+app = create_app(os.environ.get("ROBOT_CONFIG_PATH"))

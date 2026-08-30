@@ -9,6 +9,35 @@ mode: sim
 # Grid-world map to load when mode is "sim"
 sim_map: sim/maps/starter_house.py
 
+# Read only when mode is "sim". Both blocks default to MockRobot's
+# original exact/instant behavior -- see sim/mock_robot.py and
+# sim/sensors.py for what each does and why it's opt-in
+# (PLAN-sim-hardening.md phases S4 and S5).
+sim:
+  # Phase S4 -- put time in the loop. When true, a move actually occupies
+  # its declared duration instead of returning instantly, which is what
+  # lets robot/server.py's watchdog readout climb mid-move instead of
+  # only between moves. Off by default so the unit suite and every
+  # tests/demo_*.py script stay exactly as fast as they always were --
+  # turn this on for a live two-uvicorn run, not for automated tests.
+  # (Distinct from brain.tick_interval_s below, which paces the *brain's*
+  # polling loop for the same "make it watchable" reason; this is the
+  # robot side of the same problem.)
+  realtime: false
+
+  # Phase S5 -- sensor realism. Every value here reproduces
+  # get_distance()'s pre-S5 behavior exactly (an exact multiple of 30cm,
+  # never dropped, never latent) until enabled is set true.
+  sensor_noise:
+    enabled: false
+    stddev_cm: 3.0 # Gaussian jitter added to the true (quantized) distance
+    dropout_rate: 0.0 # fraction of reads that fail -- see sim/sensors.py
+    # for why a dropout reads as 0.0cm (fail-safe: always trips the veto)
+    # rather than as a missing value
+    min_range_cm: 2.0 # HC-SR04's real minimum
+    max_range_cm: 400.0 # HC-SR04's real maximum
+    read_latency_s: 0.0 # only actually slept when sim.realtime is also true
+
 # Read only when mode is "teleop" (PLAN-teleop-robot.md).
 teleop:
   # How long get_camera_frame() waits for a frame newer than the last one

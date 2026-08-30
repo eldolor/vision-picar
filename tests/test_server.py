@@ -126,6 +126,15 @@ def test_health_endpoint_reports_command_age():
         assert body["mode"] == "sim"
 
 
+def test_health_reports_the_configured_min_distance_cm():
+    """The single source of truth web-twin/index.html's renderWatchdog()
+    reads into state.minDistanceCm -- see that file and
+    PLAN-sim-hardening.md's definition of done, item 10."""
+    with make_client() as client:
+        body = client.get("/health").json()
+        assert body["min_distance_cm"] == 20.0
+
+
 def test_health_reports_teleop_mode(teleop_config):
     """A client (Robot view's "drive via brain" start check) needs to tell
     a mode: sim server apart from a mode: teleop one -- both answer /health
@@ -246,3 +255,26 @@ def test_sensing_does_not_feed_the_watchdog():
         assert client.get("/health").json()["seconds_since_last_command"] >= after_command, (
             "sensing reads must not reset the watchdog clock"
         )
+
+
+# ---------- the twin's client script ----------
+#
+# web-twin/app.js was extracted out of index.html's inline <script>. If the
+# route or the reference breaks, the twin loads as a dead page -- HTML with
+# no behaviour -- which no other test would catch.
+
+
+def test_the_twin_serves_its_script_and_links_to_it():
+    from fastapi.testclient import TestClient
+    from robot.server import create_app
+
+    with TestClient(create_app()) as client:
+        page = client.get("/")
+        assert page.status_code == 200
+        assert 'src="app.js"' in page.text
+        assert "<script>" not in page.text, "the client should be external, not inlined again"
+
+        script = client.get("/app.js")
+        assert script.status_code == 200
+        assert "application/javascript" in script.headers["content-type"]
+        assert "no-cache" in script.headers.get("cache-control", "")

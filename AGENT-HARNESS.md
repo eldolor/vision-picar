@@ -59,14 +59,13 @@ the first paid call.
   grid description. Phase S2 (the raycaster ported into Python) is what
   changes that; until then the sim runs the rule-based policy and real
   pixels come from a recorded walk.
-- **No room-level step memory.** A photograph carries no room label, so
-  `MissionMemory.visited_rooms` stays empty under the vision policy and
-  nothing stops it re-searching a room but the step cap. This is the open
-  half of S2b.
 - **`as_context()` still feeds nothing.** §12.
 - **A replay is open loop.** It measures memory, lifecycle and cost
   honestly; it does not measure navigation. `sim/replay_robot.py` has the
   full caveat, including why the safety layer is inert there.
+
+Room-level step memory -- the other open half of S2b -- is **built**: see
+§10.
 
 ### What expires, and when
 
@@ -77,7 +76,6 @@ in this document should need to move.
 | Phase | What becomes untrue | Update |
 |---|---|---|
 | **S2** -- real image bytes | `MockRobot` has no pixels, so the vision policy cannot drive the sim | §1's policy table; §3 step 3 |
-| **S2b remainder** -- room memory | "nothing stops it re-searching a room" | §1; §12's room-memory gap |
 | **Phase 11** -- hardware | `HardwareRobot` does not exist | §5's body-seam row |
 | **B5** -- systemd on the Pi | The brain runs wherever you start it | §2's diagram caption |
 | any | A gap in §12 gets closed | §12 -- it is the only other section that dates |
@@ -425,12 +423,39 @@ Record one from the twin: Guide tab -> Robot view -> "Record this walk"
 can be compared against what the service said at the time, on the same
 pixels.
 
-### What is left of S2b
+### Room-level step memory -- built
 
-Room-level step memory. A photograph carries no room label, so nothing but
-the step cap stops the vision policy re-searching. Closing it needs a room
-signal in the frame -- the `/analyze` route's room guess, or
-`identify_room()` over a caption -- not a change to the policy.
+A photograph carries no room label of its own, so without this nothing
+stops the vision policy re-searching a room but the step cap. Closed with
+a room signal traveling both directions through `/navigate`, not a change
+to the policy itself:
+
+- **Server -> client:** `service/vision_analyze/vision_core.py`'s
+  `NAVIGATE_PROMPT_TEMPLATE` now asks the model to guess the current room
+  type (`"room_guess"`, defaulting to `"unclear"` on a missing/garbage
+  answer). `brain/navigate.py`'s `to_scene()` carries it into
+  `scene["_navigate"]["room_guess"]`. `brain/agent.py:MissionAgent.step()`
+  backfills `frame["room"]` from it whenever the frame's own room is
+  `"unknown"` -- a sim frame's real room label is never overridden, since
+  it's never `"unknown"` to begin with. This is what lets
+  `MissionMemory.visited_rooms`/`searched_rooms` populate at all under this
+  policy.
+- **Client -> server:** `control/mission_runner.py`'s `_guarded_vision()`
+  calls a `set_searched_rooms(rooms)` attribute on `self.vision_fn`
+  (present on `brain/navigate.py`'s `vision_fn_for()`, absent on the
+  rule-based default) with `MissionMemory.searched_rooms` before every
+  vision call -- **not** a second positional argument, so the
+  `vision_fn(frame) -> scene` contract in §5 is unchanged. `/navigate`'s
+  request body carries `searched_rooms` when non-empty, and the prompt
+  tells the model to prefer unexplored space over a room it's already
+  named.
+
+Still open: this only reaches the Python vision policy
+(`control/brain_server.py`'s `policy: "vision"`, i.e. recorded walks and
+teleop missions today). The twin's browser-side Vision Autopilot
+(`web-twin/index.html`) calls `/navigate` directly and does not send
+`searched_rooms` -- a reasonable fast-follow, not done here, since that
+mode is local/optional-brain territory (§1), not the hardware path.
 
 ---
 
@@ -472,7 +497,7 @@ are the other two reasons worth revisiting this.
 ## 12. Known gaps  *(perishable -- see §1)*
 
 - **The vision policy cannot drive the simulator** (no pixels until phase
-  S2), and has **no room memory** (§1). Both are the remainder of S2b.
+  S2). Room-level step memory, the other half of S2b, is built -- §10.
 - **Mission state does not survive a brain restart.** A crash loses the
   mission; only the robot's position persists, server-side. Nothing
   resumes.

@@ -62,6 +62,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -110,15 +111,78 @@ class RecordFrameRequest(BaseModel):
     navigate: Optional[dict] = None
 
 
+class FinishWalkRequest(BaseModel):
+    """Sent once by the twin when a Robot-view recording stops.
+
+    Frames arrive one at a time and nothing in the stream says which one is
+    last, so without this a walk is only "finished" in the sense that no
+    more frames happened to arrive. The marker it writes (meta.json) is what
+    lets control/admin_server.py tell a completed walk from one still in
+    progress, and it is where the walk-level model_id and target live --
+    both facts the twin knows and the frames do not carry on their own.
+
+    Best-effort by design: a closed tab or a dead battery never sends it,
+    which is why admin also scores lazily on first read.
+    """
+    walk: str
+    model_id: Optional[str] = None
+    target_object: Optional[str] = None
+
+
 class MissionStartRequest(BaseModel):
     target_object: Optional[str] = None
     target_room: Optional[str] = None
     mission: Optional[str] = None
     max_steps: Optional[int] = None
     policy: str = "frontier"
+    # Which model answers /navigate for this mission (policy: "vision" only).
+    # Omitted falls back to brain.navigate_model_id, then to the vision
+    # service's own default. Validated against the service's published
+    # allow-list at start -- see _validate_navigate_model().
+    model_id: Optional[str] = None
     # One of control/drills.FAULTS. Breaks exactly one thing so a failsafe
     # can be watched firing; "none" is an ordinary mission.
     fault: str = "none"
+
+
+def _validate_navigate_model(model_id: str, vision_url: str, secret: Optional[str],
+                             timeout_s: float) -> None:
+    """Reject an unusable model at mission start rather than mid-tick.
+
+    Without this, a bad model_id becomes a 400 from the vision service
+    *inside* a tick, which counts against failsafe B3.2's vision-failure
+    budget: the mission limps through three failures and then dies reporting
+    "vision failed 3 times", which says nothing about the actual cause and
+    costs three round trips to say it.
+
+    The allow-list is deliberately NOT duplicated here. It lives in the
+    vision service (vision_core.NAVIGATE_MODEL_CHOICES, published at
+    GET /navigate/models), and this asks that service what it accepts --
+    one HTTP call per mission start, against a list that will keep changing
+    as Bedrock's catalogue does. A copy in control/ would be wrong the first
+    time a model was added and nobody thought to update two places.
+
+    A service that cannot answer is NOT treated as a rejection: an unknown
+    model is a caller error, but an unreachable models endpoint is an outage,
+    and refusing to start a mission because a *validation* call failed would
+    turn a soft problem into a hard one. The mission proceeds and the normal
+    B3.2 budget covers whatever happens next.
+    """
+    url = vision_url.rstrip("/") + "/navigate/models"
+    headers = {"x-app-secret": secret} if secret else {}
+    try:
+        with httpx.Client(timeout=timeout_s) as client:
+            resp = client.get(url, headers=headers)
+        resp.raise_for_status()
+        allowed = {m["id"] for m in resp.json().get("models", []) if "id" in m}
+    except (httpx.HTTPError, ValueError, KeyError) as e:
+        logger.warning("Could not verify model_id %r against %s: %s", model_id, url, e)
+        return
+    if allowed and model_id not in allowed:
+        raise ValueError(
+            f"model_id {model_id!r} is not offered by the vision service. "
+            f"Available: {', '.join(sorted(allowed))}."
+        )
 
 
 def create_app(
@@ -164,11 +228,18 @@ def create_app(
                     "The vision policy searches for an object -- /navigate takes a "
                     "target_object. A target_room-only mission needs policy='frontier'."
                 )
+            model_id = req.model_id or config["navigate_model_id"] or None
+            if model_id:
+                _validate_navigate_model(
+                    model_id, config["vision_url"], vision_secret,
+                    config["request_timeout_s"],
+                )
             vision_fn = vision_fn_for(
                 req.target_object,
                 vision_url=config["vision_url"],
                 secret=vision_secret,
                 timeout_s=config["vision_timeout_s"],
+                model_id=model_id,
             )
 
         kwargs = dict(
@@ -254,7 +325,13 @@ def create_app(
             raise HTTPException(status_code=409, detail="A mission is already running.")
 
         try:
-            runner = make_runner(robot(), req)
+            # Off the event loop: building a vision runner now makes a
+            # blocking GET to the vision service to validate model_id, and a
+            # slow or dead service would otherwise stall the loop for the
+            # whole request timeout -- hanging /mission/status and /health
+            # for the twin that is polling them. Construction is pure
+            # otherwise, so a thread is safe.
+            runner = await asyncio.to_thread(make_runner, robot(), req)
         except drills.DrillNotAllowed as e:
             raise HTTPException(status_code=403, detail=str(e))
         except ValueError as e:
@@ -298,15 +375,17 @@ def create_app(
         # class either way.
         return {**runner.status(), "fault": state["fault"]}
 
-    async def _proxy_recording_frame(req: RecordFrameRequest) -> dict:
-        # record_frame() below touches no robot/runner state at all -- it's
-        # pure storage -- which is exactly why this is safe to forward to a
-        # peer brain when *this* brain has no storage of its own (e.g.
-        # teleop-brain, no EFS mount). Mission-control routes could never do
-        # this: a brain's RemoteRobot is bound to one robot_url for its
-        # whole process lifetime, so proxying /mission/* would tick the
+    async def _proxy_recording(route: str, req: BaseModel) -> dict:
+        # The routes this forwards touch no robot/runner state at all --
+        # they're pure storage -- which is exactly why they're safe to
+        # forward to a peer brain when *this* brain has no storage of its
+        # own (e.g. teleop-brain, no EFS mount). Mission-control routes could
+        # never do this: a brain's RemoteRobot is bound to one robot_url for
+        # its whole process lifetime, so proxying /mission/* would tick the
         # WRONG robot. See PLAN-teleop-robot.md's "Recording proxy" section.
-        url = config["recording_proxy_url"].rstrip("/") + "/recording/frame"
+        # `route` is therefore restricted to /recording/* by construction --
+        # both call sites pass a literal, never anything caller-supplied.
+        url = config["recording_proxy_url"].rstrip("/") + route
         headers = {}
         if config["recording_proxy_secret"]:
             headers["x-app-secret"] = config["recording_proxy_secret"]
@@ -338,7 +417,7 @@ def create_app(
         be accepting writes from whoever can reach it."""
         if not config["allow_recording"]:
             if config["recording_proxy_url"]:
-                return await _proxy_recording_frame(req)
+                return await _proxy_recording("/recording/frame", req)
             raise HTTPException(status_code=403, detail="Recording is disabled on this brain.")
         if not WALK_NAME.match(req.walk):
             raise HTTPException(
@@ -386,6 +465,44 @@ def create_app(
         return {"saved": path.name, "walk": req.walk, "frames": len(existing) + 1,
                 "dir": str(walk_dir)}
 
+    @app.post(prefix + "/recording/finish", dependencies=[Depends(require_secret)])
+    async def finish_walk(req: FinishWalkRequest):
+        """Mark a recorded walk complete and record what produced it.
+
+        Only ever writes meta.json beside the frames -- it deliberately does
+        not score anything. Scoring lives in control/admin_server.py, which
+        is the process that owns reviewing recordings and the one that has
+        Bedrock permissions; the brain's job ends when the frames are safely
+        on the volume.
+        """
+        if not config["allow_recording"]:
+            if config["recording_proxy_url"]:
+                return await _proxy_recording("/recording/finish", req)
+            raise HTTPException(status_code=403, detail="Recording is disabled on this brain.")
+        if not WALK_NAME.match(req.walk):
+            raise HTTPException(status_code=400, detail="Bad walk name.")
+
+        base = Path(config["recording_dir"]).resolve()
+        walk_dir = (base / req.walk).resolve()
+        if base != walk_dir.parent or not walk_dir.is_dir():
+            raise HTTPException(status_code=404, detail="No such walk.")
+
+        meta_path = walk_dir / "meta.json"
+        meta = {}
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                meta = {}
+        meta["finished_at"] = time.time()
+        meta["frames"] = len([p for p in walk_dir.iterdir() if p.name.startswith("frame-")])
+        if req.model_id:
+            meta["model_id"] = req.model_id
+        if req.target_object:
+            meta["target_object"] = req.target_object
+        meta_path.write_text(json.dumps(meta, indent=1))
+        return {"walk": req.walk, "meta": meta}
+
     @app.get(prefix + "/health")
     async def health():
         runner = state["runner"]
@@ -394,6 +511,16 @@ def create_app(
             "robot_url": config["robot_url"],
             "mission_running": bool(runner is not None and runner.is_running()),
             "drills_allowed": bool(config["allow_drills"]),
+            # Which model this brain pins for policy: "vision", or null for
+            # "whatever the vision service defaults to". Reported so the twin
+            # can SHOW the model a mission would run rather than leaving it
+            # to be inferred -- the failure this project actually hit was a
+            # week of walks attributed to a model that was never running.
+            # Deliberately not resolved against the vision service here: that
+            # would put an HTTP call in a health check that gets polled. The
+            # twin already fetches GET /navigate/models and can resolve the
+            # null case itself.
+            "navigate_model_id": config["navigate_model_id"] or None,
             # "Will a POST /recording/frame actually succeed here" -- true
             # either because this brain stores locally, or because it
             # forwards to one that does (recording_proxy_url). Before the

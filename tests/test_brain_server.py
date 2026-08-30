@@ -446,3 +446,251 @@ def test_a_corrupt_or_oversized_frame_is_refused(tmp_path):
     with TestClient(recording_app(tmp_path)) as client:
         assert post_frame(client, 0, image_base64="not base64!!").status_code == 400
         assert post_frame(client, 0, image_base64="A" * (8 * 1024 * 1024)).status_code == 413
+
+
+# ---------- finishing a walk ----------
+#
+# Frames arrive one at a time and nothing in the stream says which is last,
+# so a walk is otherwise only "finished" in the sense that no more frames
+# turned up. POST /recording/finish is the explicit signal, and it is where
+# the walk-level model_id lands -- the fact that makes a recorded walk
+# comparable against another walk of the same room on a different model.
+
+
+def test_finishing_a_walk_records_the_model_that_produced_it(tmp_path):
+    import json as _json
+
+    with TestClient(recording_app(tmp_path)) as client:
+        post_frame(client, 0)
+        walk_dir = post_frame(client, 1).json()["dir"]
+        resp = client.post("/recording/finish", json={
+            "walk": "walk-1",
+            "model_id": "amazon.nova-lite-v1:0",
+            "target_object": "red backpack",
+        })
+
+    assert resp.status_code == 200, resp.text
+    meta = _json.loads((Path(walk_dir) / "meta.json").read_text())
+    assert meta["model_id"] == "amazon.nova-lite-v1:0"
+    assert meta["target_object"] == "red backpack"
+    assert meta["frames"] == 2
+    assert meta["finished_at"] > 0
+
+
+def test_finishing_an_unknown_walk_is_a_404_not_a_new_directory(tmp_path):
+    """A typo'd walk name must not conjure an empty walk into the listing."""
+    with TestClient(recording_app(tmp_path)) as client:
+        resp = client.post("/recording/finish", json={"walk": "never-recorded"})
+    assert resp.status_code == 404
+    assert not (tmp_path / "recordings" / "never-recorded").exists()
+
+
+def test_finish_rejects_a_bad_walk_name(tmp_path):
+    with TestClient(recording_app(tmp_path)) as client:
+        assert client.post("/recording/finish", json={"walk": "../etc"}).status_code == 400
+
+
+def test_finish_is_refused_when_recording_is_off(tmp_path):
+    with TestClient(recording_app(tmp_path, allow=False)) as client:
+        assert client.post("/recording/finish", json={"walk": "walk-1"}).status_code == 403
+
+
+def test_finish_does_not_clobber_a_model_id_already_recorded(tmp_path):
+    """Re-finishing (a double-tap on Stop) must not blank out metadata."""
+    import json as _json
+
+    with TestClient(recording_app(tmp_path)) as client:
+        walk_dir = post_frame(client, 0).json()["dir"]
+        client.post("/recording/finish", json={"walk": "walk-1", "model_id": "m-1"})
+        client.post("/recording/finish", json={"walk": "walk-1"})
+
+    assert _json.loads((Path(walk_dir) / "meta.json").read_text())["model_id"] == "m-1"
+
+
+# ---------- choosing the model for a vision mission ----------
+#
+# The twin's model picker used to apply only to a one-off /navigate call, so
+# turning on "Drive via brain" silently fell back to the service default --
+# the bad kind of silent. The model is bound into the mission's vision_fn by
+# the factory, which leaves the vision_fn(frame) -> scene contract untouched
+# (AGENT-HARNESS.md section 10); nothing below asserts on that contract.
+
+
+def vision_config(tmp_path, **extra):
+    lines = ["brain:", "  vision_url: http://vision.invalid"]
+    for k, v in extra.items():
+        lines.append(f"  {k}: {v}")
+    config = tmp_path / "robot.yaml"
+    config.write_text("\n".join(lines) + "\n")
+    return str(config)
+
+
+def capture_model_id(monkeypatch):
+    """Intercept vision_fn_for at the brain_server namespace, which is what
+    the route actually calls."""
+    import control.brain_server as bs
+
+    seen = {}
+
+    def fake_vision_fn_for(target, **kwargs):
+        seen["model_id"] = kwargs.get("model_id")
+        return lambda frame: {}
+
+    monkeypatch.setattr(bs, "vision_fn_for", fake_vision_fn_for)
+    return seen
+
+
+def test_a_mission_binds_the_requested_model(tmp_path, monkeypatch):
+    import control.brain_server as bs
+
+    seen = capture_model_id(monkeypatch)
+    monkeypatch.setattr(bs, "_validate_navigate_model", lambda *a, **k: None)
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "red backpack", "policy": "vision",
+            "model_id": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+        })
+        client.post("/mission/stop")
+
+    assert resp.status_code == 200, resp.text
+    assert seen["model_id"] == "us.anthropic.claude-opus-4-5-20251101-v1:0"
+
+
+def test_the_configured_default_is_used_when_the_request_names_none(tmp_path, monkeypatch):
+    """The headless case: once the brain runs on the Pi a mission can start
+    with no twin to pick a model, so config has to be able to pin one."""
+    import control.brain_server as bs
+
+    seen = capture_model_id(monkeypatch)
+    monkeypatch.setattr(bs, "_validate_navigate_model", lambda *a, **k: None)
+    app = bs.create_app(
+        config_path=vision_config(tmp_path, navigate_model_id="qwen.qwen3-vl-235b-a22b"),
+        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        client.post("/mission/start", json={"target_object": "x", "policy": "vision"})
+        client.post("/mission/stop")
+
+    assert seen["model_id"] == "qwen.qwen3-vl-235b-a22b"
+
+
+def test_the_request_overrides_the_configured_default(tmp_path, monkeypatch):
+    import control.brain_server as bs
+
+    seen = capture_model_id(monkeypatch)
+    monkeypatch.setattr(bs, "_validate_navigate_model", lambda *a, **k: None)
+    app = bs.create_app(
+        config_path=vision_config(tmp_path, navigate_model_id="amazon.nova-lite-v1:0"),
+        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        client.post("/mission/start", json={
+            "target_object": "x", "policy": "vision", "model_id": "qwen.qwen3-vl-235b-a22b"})
+        client.post("/mission/stop")
+
+    assert seen["model_id"] == "qwen.qwen3-vl-235b-a22b"
+
+
+def test_no_model_anywhere_means_no_preference_not_a_guessed_name(tmp_path, monkeypatch):
+    """None must reach the request as an absent field -- control/ never gets
+    to invent a Bedrock model id."""
+    import control.brain_server as bs
+
+    seen = capture_model_id(monkeypatch)
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        client.post("/mission/start", json={"target_object": "x", "policy": "vision"})
+        client.post("/mission/stop")
+
+    assert seen["model_id"] is None
+
+
+def test_an_unknown_model_is_refused_at_start_not_after_three_failed_ticks(tmp_path, monkeypatch):
+    """Without start-time validation this becomes a 400 inside a tick, which
+    burns failsafe B3.2's budget and then reports "vision failed 3 times" --
+    which says nothing about the real cause."""
+    import control.brain_server as bs
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"models": [{"id": "amazon.nova-lite-v1:0"}]}
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, headers=None):
+            return FakeResponse()
+
+    monkeypatch.setattr(bs.httpx, "Client", lambda **kw: FakeClient())
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "x", "policy": "vision", "model_id": "made.up-model"})
+
+    assert resp.status_code == 400
+    assert "not offered" in resp.json()["detail"]
+    assert "amazon.nova-lite-v1:0" in resp.json()["detail"]
+
+
+def test_a_models_endpoint_outage_does_not_block_the_mission(tmp_path, monkeypatch):
+    """An unknown model is a caller error; an unreachable models endpoint is
+    an outage. Refusing to start because a *validation* call failed would
+    turn a soft problem into a hard one -- B3.2 already covers what happens
+    next."""
+    import control.brain_server as bs
+
+    seen = capture_model_id(monkeypatch)
+
+    def boom(**kw):
+        raise bs.httpx.ConnectError("vision service unreachable")
+
+    monkeypatch.setattr(bs.httpx, "Client", boom)
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "x", "policy": "vision", "model_id": "amazon.nova-lite-v1:0"})
+        client.post("/mission/stop")
+
+    assert resp.status_code == 200, resp.text
+    assert seen["model_id"] == "amazon.nova-lite-v1:0"
+
+
+def test_health_reports_the_model_a_vision_mission_would_run(tmp_path):
+    """Shown, not inferred: the one real failure this project hit was a week
+    of recorded walks attributed to a model that was never running."""
+    import control.brain_server as bs
+
+    app = bs.create_app(
+        config_path=vision_config(tmp_path, navigate_model_id="qwen.qwen3-vl-235b-a22b"),
+        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        assert client.get("/health").json()["navigate_model_id"] == "qwen.qwen3-vl-235b-a22b"
+
+
+def test_health_reports_null_when_the_brain_pins_nothing(tmp_path):
+    """null means "the vision service's default applies" -- deliberately not
+    resolved here, which would put an HTTP call in a polled health check."""
+    import control.brain_server as bs
+
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        assert client.get("/health").json()["navigate_model_id"] is None

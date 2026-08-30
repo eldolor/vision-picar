@@ -6,3 +6,10 @@ uvicorn
 pydantic
 httpx
 
+
+# UI tests (tests/test_ui.py) -- drives the real twin in a real browser at a
+# phone viewport, which is the only way to catch the class of bug that has
+# actually escaped here (a picker that renders but is 40px wide). Needs a
+# browser too, once: `python -m playwright install chromium`. Without it the
+# UI tests skip rather than fail, so the rest of the suite still runs.
+pytest-playwright

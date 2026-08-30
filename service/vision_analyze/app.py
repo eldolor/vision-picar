@@ -58,8 +58,19 @@ Request body (JSON):
     {
       "image_base64": "...",
       "media_type": "image/jpeg",  // optional, defaults to image/jpeg
-      "target_object": "red backpack"   // required
+      "target_object": "red backpack",  // required
+      "searched_rooms": ["kitchen", "hallway"],  // optional, room-level step
+                                                  // memory -- see below
+      "model_id": "amazon.nova-lite-v1:0"  // optional, must be one of
+                                            // GET /navigate/models's list;
+                                            // omit for this route's default
+                                            // (vision_core.NAVIGATE_MODEL_ID)
     }
+
+GET /navigate/models -- the model A/B set above, plus which one is the
+default, so a caller (the twin's model picker) doesn't hardcode ids that
+drift as vision_core.NAVIGATE_MODEL_CHOICES changes:
+    {"default": "amazon.nova-lite-v1:0", "models": [{"id": ..., "label": ...}]}
 
 Response body (JSON):
     {
@@ -67,9 +78,20 @@ Response body (JSON):
       "target_direction": "left" | "center" | "right" | "not_visible",
       "target_reached": bool,
       "obstacle_ahead": bool,
+      "room_guess": "kitchen" | "unclear",
       "action": "FORWARD" | "LEFT" | "RIGHT" | "REVERSE" | "STOP",
-      "reasoning": "..."
+      "reasoning": "...",
+      "model_id": "amazon.nova-lite-v1:0",  // which model actually answered
+      "usage": {"input_tokens": int | null, "output_tokens": int | null}
     }
+
+`searched_rooms`/`room_guess` close the room-level step-memory gap noted in
+AGENT-HARNESS.md section 12: a single photograph carries no history of its
+own, so a vision-driven mission (control/brain_server.py's `policy:
+"vision"`) feeds back what MissionMemory already knows it has searched, and
+reads this route's own room guess to update that memory in turn --
+brain/navigate.py and brain/agent.py:MissionAgent.step() are the client
+side of this loop.
 
 `target_reached` is the mission's termination signal, and is deliberately
 NOT derived from `action`. "STOP" is what the model returns for a blocked
@@ -118,6 +140,8 @@ from vision_core import (
     describe_image_bytes_person,
     describe_image_bytes_navigate,
     describe_image_bytes_guidance,
+    NAVIGATE_MODEL_CHOICES,
+    NAVIGATE_MODEL_ID,
 )
 from rooms_core import identify_room
 
@@ -212,6 +236,17 @@ def create_app() -> FastAPI:
             logger.exception("Vision API call failed")
             raise HTTPException(status_code=502, detail=f"Vision description failed: {e}")
 
+    @app.get("/navigate/models")
+    def navigate_models():
+        """The model A/B set /navigate will accept, so a client (the twin's
+        model picker) never has to hardcode ids that drift as this service's
+        allow-list changes. `default` is what an omitted model_id resolves
+        to -- see vision_core.NAVIGATE_MODEL_ID."""
+        return {
+            "default": NAVIGATE_MODEL_ID,
+            "models": [{"id": mid, "label": label} for mid, label in NAVIGATE_MODEL_CHOICES.items()],
+        }
+
     @app.post("/navigate")
     async def navigate(request: Request):
         image_bytes, media_type, body = await _decode_image(request)
@@ -220,8 +255,22 @@ def create_app() -> FastAPI:
         if not target_object:
             raise HTTPException(status_code=400, detail="Bad request: 'target_object' is required.")
 
+        searched_rooms = body.get("searched_rooms") or []
+        if not isinstance(searched_rooms, list):
+            searched_rooms = []
+        searched_rooms = [r for r in searched_rooms if isinstance(r, str) and r.strip()]
+
+        model_id = body.get("model_id")
+        if model_id is not None and model_id not in NAVIGATE_MODEL_CHOICES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bad request: 'model_id' must be one of {sorted(NAVIGATE_MODEL_CHOICES)}.",
+            )
+
         try:
-            decision = describe_image_bytes_navigate(image_bytes, target_object, media_type)
+            decision = describe_image_bytes_navigate(
+                image_bytes, target_object, media_type, searched_rooms=searched_rooms, model_id=model_id
+            )
         except Exception as e:
             logger.exception("Vision API call failed")
             raise HTTPException(status_code=502, detail=f"Vision navigation failed: {e}")

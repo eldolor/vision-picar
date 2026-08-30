@@ -42,6 +42,22 @@ An image. `get_camera_frame()` must return `image_base64` and
 vision policy cannot drive the simulator until phase S2 ports the twin's
 raycaster into Python. Today the backends that work with it are
 `sim/replay_robot.py` (a recorded walk) and, later, real hardware.
+
+## Room-level step memory
+
+A photograph carries no room label -- `AGENT-HARNESS.md` section 12's "no
+room memory" gap. `vision_fn_for()` closes it without breaking the
+`vision_fn(frame) -> scene` single-argument contract every other seam in
+the harness relies on: the callable it returns also carries a
+`set_searched_rooms(rooms)` attribute, which `control/mission_runner.py`'s
+`_guarded_vision()` calls with the live `MissionMemory.searched_rooms`
+immediately before every vision call, entirely outside the documented
+contract. The rule-based policy's `vision_fn` has no such attribute, so
+`getattr(..., "set_searched_rooms", None)` is `None` there and nothing
+changes. `to_scene()` reads the service's own `room_guess` back out the
+other side; `brain/agent.py:MissionAgent.step()` uses it to backfill
+`frame["room"]` when the frame's own room is `"unknown"`, which is what
+lets `MissionMemory` track rooms at all under this policy.
 """
 
 import logging
@@ -72,9 +88,17 @@ def navigate_scene(
     secret: Optional[str] = None,
     timeout_s: float = DEFAULT_TIMEOUT_S,
     client: Optional[httpx.Client] = None,
+    searched_rooms: Optional[list] = None,
+    model_id: Optional[str] = None,
 ) -> dict:
     """One vision call. Returns `brain/vision.py`'s scene schema, with the
-    raw /navigate response preserved under `_navigate`."""
+    raw /navigate response preserved under `_navigate`.
+
+    `model_id` picks which Bedrock model answers, from the allow-list the
+    vision service publishes at GET /navigate/models. Omitted means "no
+    preference" -- the service's own default -- and is NOT a model name this
+    module gets to guess, which is why None is passed through as an absent
+    field rather than a default string."""
     image_base64 = frame.get("image_base64")
     if not image_base64:
         raise FrameHasNoImage(
@@ -88,6 +112,10 @@ def navigate_scene(
         "media_type": frame.get("media_type", "image/jpeg"),
         "target_object": target_object,
     }
+    if searched_rooms:
+        body["searched_rooms"] = list(searched_rooms)
+    if model_id:
+        body["model_id"] = model_id
     headers = {"Content-Type": "application/json"}
     if secret:
         headers["x-app-secret"] = secret
@@ -119,6 +147,9 @@ def to_scene(result: dict, target_object: str) -> dict:
     reached = result.get("target_reached") is True
     visible = result.get("target_visible") is True
     obstacle = result.get("obstacle_ahead") is True
+    room_guess = result.get("room_guess")
+    if not isinstance(room_guess, str) or not room_guess.strip():
+        room_guess = "unclear"
 
     return {
         "obstacles_ahead": ["obstacle"] if obstacle else [],
@@ -134,6 +165,7 @@ def to_scene(result: dict, target_object: str) -> dict:
             "target_direction": result.get("target_direction", "not_visible"),
             "target_reached": reached,
             "obstacle_ahead": obstacle,
+            "room_guess": room_guess,
             "reasoning": result.get("reasoning", ""),
         },
     }
@@ -145,9 +177,23 @@ def vision_fn_for(
     secret: Optional[str] = None,
     timeout_s: float = DEFAULT_TIMEOUT_S,
     client: Optional[httpx.Client] = None,
+    model_id: Optional[str] = None,
 ):
     """Bind a target and an endpoint into the one-argument `vision_fn(frame)`
-    the harness expects."""
+    the harness expects.
+
+    `model_id` is bound here, in the factory, exactly like `vision_url` and
+    `secret` -- so a mission can choose its model without the
+    `vision_fn(frame) -> scene` contract growing a second argument. Nothing
+    that only knows that contract (MissionRunner, the agents) needs to know
+    a model was chosen at all.
+
+    The returned callable also carries a `set_searched_rooms(rooms)`
+    attribute -- not part of the `vision_fn(frame) -> scene` contract, so
+    nothing that only expects that contract needs to know about it.
+    `control/mission_runner.py`'s `_guarded_vision()` calls it with
+    `MissionMemory.searched_rooms` before every vision call when present;
+    see this module's docstring, "Room-level step memory"."""
     url = vision_url or os.environ.get("VISION_URL", "")
     if not url:
         raise ValueError(
@@ -155,10 +201,16 @@ def vision_fn_for(
             "config/robot.yaml, or export VISION_URL."
         )
     app_secret = secret if secret is not None else os.environ.get("APP_SHARED_SECRET", "")
+    state = {"searched_rooms": []}
 
     def vision_fn(frame: dict) -> dict:
         return navigate_scene(
-            frame, target_object, url, secret=app_secret, timeout_s=timeout_s, client=client
+            frame, target_object, url, secret=app_secret, timeout_s=timeout_s, client=client,
+            searched_rooms=state["searched_rooms"], model_id=model_id,
         )
 
+    def set_searched_rooms(rooms) -> None:
+        state["searched_rooms"] = list(rooms)
+
+    vision_fn.set_searched_rooms = set_searched_rooms
     return vision_fn
