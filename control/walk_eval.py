@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # (target_reached: true, action: FORWARD) was marked wrong for obeying its
 # instructions. Bumping rescoes every stored eval.json rather than leaving
 # walks ranked by a judge that disagreed with the policy prompt.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 MOVE_ACTIONS = ("FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP")
 
@@ -180,17 +180,25 @@ So do NOT mark an action wrong merely because the robot has arrived:
   the action it chose, then it was sensible, whatever else it got wrong.
 
 Judge whether the chosen action was sensible for this photo AND for where
-the robot is in its walk. The mistake to be strictest about is the one that
-wastes the robot's time:
+the robot is in its walk. Two kinds of mistake matter and they are NOT
+equally bad.
+
+The serious one, because the robot cannot undo it -- driving into something:
+- Choosing FORWARD when a wall, a door, furniture or a person is within
+  about one step. If a flat surface fills most of the frame and you cannot
+  see floor between the camera and it, the robot is already up against
+  something. FORWARD is wrong there no matter what it is hunting for, and
+  ESPECIALLY when the {target_object} is not visible -- "keep going to
+  continue the search" is not a reason to drive into a wall. Mark it not
+  sensible and say STOP or a turn.
+
+The wasteful one, which costs a step but breaks nothing:
 - Refusing to move FORWARD when there is clearly open floor ahead, merely
   because furniture is visible somewhere further away.
 - Repeating a turn that the recent moves show is not working. If the robot
   has already turned several times without moving forward, another turn is
   NOT sensible -- it is the same mistake again, and the robot is stuck.
   Judge that harshly even if the turn looks defensible in isolation.
-Also wrong, in the other direction:
-- Choosing FORWARD when a piece of furniture, a wall or a person -- not the
-  {target_object} itself -- is within about one step.
 
 Respond with ONLY a JSON object:
 {{

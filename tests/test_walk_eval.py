@@ -365,3 +365,24 @@ def test_a_judge_that_recommends_the_same_action_has_not_found_a_fault():
         '{"sensible": false, "better_action": "STOP", "why": "wall within one step"}')
     out = judge_frame(client, "m", b"jpeg", {"action": "FORWARD"}, "red backpack")
     assert out["sensible"] is False
+
+
+def test_the_judge_is_told_a_collision_outranks_a_wasted_step():
+    """A real walk ended with three consecutive commands to drive FORWARD
+    into a wall that filled the frame, and the judge called the last one
+    sensible -- agreeing there was "no immediate obstacle". Three passes of
+    telling it not to penalise FORWARD had biased it into approving a
+    collision.
+
+    The same model, asked the /navigate question on that frame, answers
+    RIGHT with obstacle_ahead true. So the prompt has to rank the two error
+    kinds explicitly rather than leaning on the model's judgement."""
+    from control.walk_eval import JUDGE_PROMPT
+
+    prompt = JUDGE_PROMPT.lower()
+    serious = prompt.index("cannot undo")
+    wasteful = prompt.index("costs a step but breaks nothing")
+    assert serious < wasteful, "collision must be presented as the graver error"
+    # The specific excuse the judge accepted must be refused by name.
+    assert "continue the search" in prompt
+    assert "fills most of the frame" in prompt
