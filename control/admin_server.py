@@ -569,7 +569,23 @@ def create_app(config_path=None) -> FastAPI:
         # it entries in the same shape -- so the two numbers are comparable
         # and nothing about replays is special-cased in walk_eval.
         metrics = walk_eval.compute_metrics(out["entries"])
-        scored = walk_eval.score_walk(metrics, None)
+
+        # Including the collision check. Without it a replay cannot answer the
+        # question the feature exists for -- "would this model or this wording
+        # have driven into that wall" -- and would report a clean-looking
+        # score for a run that hit something, which is worse than reporting
+        # nothing. It costs up to COLLISION_MAX_CHECKS extra calls on top of
+        # the replay's own.
+        collisions = None
+        if JUDGE_ENABLED and out["entries"]:
+            try:
+                collisions = walk_eval.check_collisions(
+                    _bedrock_client(), JUDGE_MODEL_ID, out["entries"], frame_bytes_for,
+                    max_checks=COLLISION_MAX_CHECKS)
+            except Exception as e:  # noqa: BLE001 -- degrade, don't lose the replay
+                logger.warning("collision check failed for replay of %s: %s", walk_name, e)
+
+        scored = walk_eval.score_walk(metrics, None, collisions)
         result = {
             "schema": walk_eval.SCHEMA_VERSION,
             "walk": walk_name,
@@ -585,6 +601,7 @@ def create_app(config_path=None) -> FastAPI:
             "frames": out["frames"],
             "agreement": out["agreement"],
             "errors": out["errors"],
+            "collisions": collisions,
             "diff": out["diff"],
         }
         try:

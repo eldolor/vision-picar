@@ -506,3 +506,26 @@ def test_a_model_that_hit_something_is_never_ranked_best(client):
 def test_an_empty_recordings_dir_summarises_to_nothing(client):
     c, _root = client
     assert c.get("/recording/summary").json()["rows"] == []
+
+
+def test_a_replay_is_checked_for_collisions_like_a_recording(vision, monkeypatch):
+    """Without this a replay cannot answer the question the feature exists
+    for -- would this model, or this wording, have driven into that wall --
+    and would report a clean score for a run that hit something, which is
+    worse than reporting nothing."""
+    c, root, _calls = vision
+    make_walk(root, "walk-x", ["FORWARD"] * 4)
+
+    class Hitter:
+        def converse(self, modelId, messages, inferenceConfig):
+            return {"output": {"message": {"content": [
+                {"text": '{"would_collide": true, "why": "wall fills the frame"}'}]}}}
+
+    monkeypatch.setattr(admin_server, "JUDGE_ENABLED", True)
+    monkeypatch.setattr(admin_server, "_bedrock_client", lambda: Hitter())
+
+    body = c.post("/recording/walks/walk-x/replay", json={}).json()
+
+    assert body["collisions"]["collisions"], "the replay found no collision"
+    assert "collision" in body["flags"]
+    assert body["score"] <= 40

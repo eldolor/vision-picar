@@ -324,6 +324,63 @@ Respond with ONLY a JSON object, no other text, matching this schema:
   "reasoning": "one short sentence explaining the choice"
 }}"""
 
+# Both wordings above fail, in opposite directions: the default treats any
+# furniture in the room as a reason not to move, and "next-step-obstacle"
+# fixes that so thoroughly that the model stops seeing walls. This one keeps
+# the next-step framing and adds back the one thing it threw away -- a
+# surface filling the frame is a stop condition, whatever the robot is
+# hunting for. Named for what it is trying to hold together.
+NAVIGATE_PROMPT_VARIANTS["next-step-and-walls"] = """You are the camera of a small indoor robot searching for a {target_object}.
+Look at this image and decide the robot's single next move.
+
+Divide the image into three equal vertical thirds: "left", "center" and
+"right". These thirds are the frame of reference for both questions 1 and 3,
+so use them literally -- an object is in whichever third its centre falls in.
+
+Consider:
+1. Is the {target_object} visible in this image? If so, which third is it in?
+2. Is there an obstacle close enough to block the robot's NEXT SINGLE STEP?
+   The robot moves about 30cm per step. Two rules, and they matter equally:
+   - Answer FALSE when there is clear floor immediately in front of the
+     robot, even if there is furniture further away across that floor.
+     Furniture on the far side of an open room does not block this step.
+   - Answer TRUE when something is right in front of the camera -- in
+     particular when a flat surface such as a wall, a door or the side of a
+     sofa fills most of the frame and you cannot see floor between the camera
+     and it. A featureless close-up IS an obstacle: it means the robot is
+     already up against something.
+3. Has the robot ARRIVED at the {target_object}? Arrived means it is directly
+   in front of the robot and close enough to touch: it spans roughly the full
+   width of the center third, or more. Judge this by how much of the frame it
+   fills, not by guessing real-world distance. A {target_object} that is
+   clearly visible but still across the room has NOT been reached.
+4. What kind of room does this look like -- e.g. "kitchen", "hallway",
+   "living room", "bedroom", "bathroom"? Use "unclear" if you can't tell.
+5. Given the above, what is the single best next action to get closer to the
+   {target_object} while not colliding with anything?
+   - Prefer FORWARD when there is clear floor ahead, even if the
+     {target_object} is off-centre or not visible at all -- closing distance
+     over open floor is progress, and turning costs a step without gaining
+     any.
+   - Never choose FORWARD when question 2 is true. Being unable to see the
+     {target_object} is not a reason to drive into a wall; turn instead, so
+     the next frame shows somewhere the robot can actually go.{searched_rooms_note}
+
+"action" is only about movement -- it never means "the search is over".
+Report arrival in "target_reached" instead, so that a STOP caused by an
+obstacle is never confused with a STOP caused by success.
+
+Respond with ONLY a JSON object, no other text, matching this schema:
+{{
+  "target_visible": true | false,
+  "target_direction": "left" | "center" | "right" | "not_visible",
+  "target_reached": true | false,
+  "obstacle_ahead": true | false,
+  "room_guess": "short room-type label, or \\"unclear\\"",
+  "action": "FORWARD" | "LEFT" | "RIGHT" | "REVERSE" | "STOP",
+  "reasoning": "one short sentence explaining the choice"
+}}"""
+
 DEFAULT_PROMPT_VARIANT = os.environ.get("NAVIGATE_PROMPT_VARIANT", "default")
 
 
