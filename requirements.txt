@@ -13,3 +13,6 @@ httpx
 # browser too, once: `python -m playwright install chromium`. Without it the
 # UI tests skip rather than fail, so the rest of the suite still runs.
 pytest-playwright
+
+# Coverage, for the command in CLAUDE.md section 6.
+pytest-cov

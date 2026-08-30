@@ -547,3 +547,556 @@ def test_the_target_is_recovered_from_a_name_carrying_a_prompt_tag(client):
     body = c.post("/recording/walks/red-backpack-qwen3-vl-235b-a22b-20260830-104120"
                   "/evaluate?judge=false").json()
     assert body["target_object"] == "red backpack"
+
+
+# ---------- the viewer/deleter half ----------
+#
+# These routes predate the scorecard and had no tests at all, which for
+# DELETE is a poor place to have none.
+
+
+def test_a_frame_is_served_with_the_right_content_type(client):
+    c, root = client
+    make_walk(root, "walk-f1", ["FORWARD"])
+    resp = c.get("/recording/walks/walk-f1/frames/frame-0000.jpg")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/jpeg"
+    assert resp.content == b"\xff\xd8\xff\xd9"
+
+
+@pytest.mark.parametrize("bad", ["../../etc/passwd", "notaframe.jpg", "frame-9.jpg"])
+def test_a_frame_path_cannot_escape_its_walk(client, bad):
+    """The one route that takes a filename from the caller."""
+    c, root = client
+    make_walk(root, "walk-f2", ["FORWARD"])
+    assert c.get(f"/recording/walks/walk-f2/frames/{bad}").status_code in (400, 404)
+
+
+def test_deleting_one_frame_removes_it_from_the_log_too(client):
+    """A frame and its walk.jsonl entry have to go together, or a replay
+    reads an entry whose image is gone."""
+    c, root = client
+    walk_dir = make_walk(root, "walk-d1", ["FORWARD", "LEFT", "STOP"])
+
+    resp = c.delete("/recording/walks/walk-d1/frames/frame-0001.jpg")
+
+    assert resp.status_code == 200
+    assert not (walk_dir / "frame-0001.jpg").exists()
+    remaining = [json.loads(l) for l in (walk_dir / "walk.jsonl").read_text().splitlines() if l.strip()]
+    assert [e["file"] for e in remaining] == ["frame-0000.jpg", "frame-0002.jpg"]
+    assert c.get("/recording/walks").json()["walks"][0]["frames"] == 2
+
+
+def test_deleting_a_walk_removes_the_whole_directory(client):
+    c, root = client
+    walk_dir = make_walk(root, "walk-d2", ["FORWARD"])
+    assert c.delete("/recording/walks/walk-d2").status_code == 200
+    assert not walk_dir.exists()
+    assert c.get("/recording/walks").json()["walks"] == []
+
+
+def test_deleting_an_unknown_walk_is_a_404_not_a_wiped_directory(client):
+    c, root = client
+    make_walk(root, "walk-d3", ["FORWARD"])
+    assert c.delete("/recording/walks/nope").status_code == 404
+    assert c.delete("/recording/walks/..").status_code in (400, 404)
+    # the real walk is untouched
+    assert c.get("/recording/walks").json()["walks"][0]["walk"] == "walk-d3"
+
+
+def test_a_walk_downloads_as_a_zip_of_its_files(client):
+    import io
+    import zipfile
+
+    c, root = client
+    make_walk(root, "walk-z", ["FORWARD", "LEFT"])
+    c.put("/recording/walks/walk-z/tag", json={"label": "good"})
+
+    resp = c.get("/recording/walks/walk-z/download")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+    names = set(zipfile.ZipFile(io.BytesIO(resp.content)).namelist())
+    assert {"frame-0000.jpg", "frame-0001.jpg", "walk.jsonl", "tags.json"} <= names
+
+
+def test_stats_totals_frames_and_bytes_across_walks(client):
+    c, root = client
+    make_walk(root, "walk-s1", ["FORWARD", "LEFT"])
+    make_walk(root, "walk-s2", ["FORWARD"])
+    body = c.get("/stats").json()
+    assert body["walks"] == 2
+    assert body["frames"] == 3
+    assert body["bytes"] > 0
+
+
+def test_stats_and_the_listing_survive_a_missing_recordings_dir(tmp_path):
+    """A brand-new deployment, before any walk has been recorded."""
+    config = tmp_path / "robot.yaml"
+    config.write_text(f"brain:\n  recording_dir: {tmp_path / 'never-created'}\n")
+    c = TestClient(admin_server.create_app(config_path=str(config)))
+    assert c.get("/stats").json() == {"walks": 0, "frames": 0, "bytes": 0}
+    assert c.get("/recording/walks").json()["walks"] == []
+    assert c.get("/recording/summary").json()["rows"] == []
+
+
+def test_health_reports_where_the_recordings_live(client):
+    c, _root = client
+    body = c.get("/health").json()
+    assert body["status"] == "ok"
+    assert body["recording_dir_exists"] is True
+
+
+def test_the_console_page_and_its_script_are_served(client):
+    c, _root = client
+    assert 'src="admin.js"' in c.get("/admin").text
+    assert c.get("/admin.js").status_code == 200
+
+
+def test_a_corrupt_sidecar_is_ignored_rather_than_fatal(client):
+    """Sidecars are plain files on a shared volume; a truncated write must
+    not take out the listing for every walk."""
+    c, root = client
+    walk_dir = make_walk(root, "walk-c1", ["FORWARD"])
+    (walk_dir / "tags.json").write_text("{not json")
+    (walk_dir / "eval.json").write_text("{also not json")
+    (walk_dir / "meta.json").write_text("{nor this")
+    (walk_dir / "replay-broken.json").write_text("{still not")
+
+    listed = c.get("/recording/walks").json()["walks"][0]
+    assert listed["label"] is None and listed["eval"] is None
+    assert listed["replays"] == []
+    assert c.get("/recording/walks/walk-c1/replays").json()["replays"] == []
+    assert c.get("/recording/summary").json()["rows"] == []
+
+
+def test_the_model_relay_says_so_when_no_vision_service_is_configured(client):
+    c, _root = client
+    body = c.get("/recording/models").json()
+    assert body["models"] == []
+    assert "vision" in body["detail"].lower()
+
+
+def test_the_model_relay_degrades_to_an_empty_list_when_the_service_is_down(vision, monkeypatch):
+    """An empty picker beats a broken page."""
+    c, _root, _calls = vision
+
+    class Boom:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, headers=None):
+            raise RuntimeError("vision service unreachable")
+
+    # httpx is imported inside the function, so patch the library itself.
+    import httpx
+
+    monkeypatch.setattr(httpx, "Client", lambda **kw: Boom())
+    body = c.get("/recording/models").json()
+    assert body["models"] == []
+
+
+def test_an_unlabelled_walk_can_have_its_label_cleared(client):
+    c, root = client
+    walk_dir = make_walk(root, "walk-t1", ["FORWARD"])
+    c.put("/recording/walks/walk-t1/tag", json={"label": "bad"})
+    assert (walk_dir / "tags.json").exists()
+
+    assert c.put("/recording/walks/walk-t1/tag", json={"label": None}).json()["label"] is None
+    assert not (walk_dir / "tags.json").exists()
+
+
+def test_an_unknown_label_is_refused(client):
+    c, root = client
+    make_walk(root, "walk-t2", ["FORWARD"])
+    assert c.put("/recording/walks/walk-t2/tag", json={"label": "excellent"}).status_code == 400
+
+
+# ---------- the outbound /navigate call replay makes ----------
+
+
+class FakeResp:
+    def __init__(self, status, payload=None, text=""):
+        self.status_code = status
+        self._payload = payload or {}
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+def fake_httpx(responses, sent=None):
+    """An httpx.Client stand-in returning `responses` in order."""
+    seq = list(responses)
+
+    class Client:
+        def __init__(self, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None, headers=None):
+            if sent is not None:
+                sent.append({"url": url, "json": json, "headers": headers})
+            return seq.pop(0)
+
+    return Client
+
+
+def test_post_navigate_sends_the_shape_the_service_expects(monkeypatch):
+    import httpx
+
+    sent = []
+    monkeypatch.setattr(httpx, "Client", fake_httpx([FakeResp(200, {"action": "FORWARD"})], sent))
+    monkeypatch.setenv("VISION_SHARED_SECRET", "vision-secret")
+
+    out = admin_server.post_navigate("http://vision.test/", 10.0, b"\xff\xd8",
+                                     "red backpack", "m-1", "next-step-and-walls")
+
+    assert out == {"action": "FORWARD"}
+    body = sent[0]["json"]
+    assert sent[0]["url"] == "http://vision.test/navigate"
+    assert body["target_object"] == "red backpack"
+    assert body["model_id"] == "m-1"
+    assert body["prompt_variant"] == "next-step-and-walls"
+    assert body["image_base64"]  # base64 of the bytes, not the bytes
+    # The VISION service's secret, not this service's own.
+    assert sent[0]["headers"]["x-app-secret"] == "vision-secret"
+
+
+def test_post_navigate_omits_model_and_prompt_when_not_chosen(monkeypatch):
+    import httpx
+
+    sent = []
+    monkeypatch.setattr(httpx, "Client", fake_httpx([FakeResp(200, {})], sent))
+    admin_server.post_navigate("http://v", 5.0, b"x", "target", None, None)
+    assert "model_id" not in sent[0]["json"]
+    assert "prompt_variant" not in sent[0]["json"]
+
+
+def test_post_navigate_retries_a_throttle_and_then_succeeds(monkeypatch):
+    """A replay fires every frame of a walk at the vision service at once,
+    which is burstier than anything else here produces, and Bedrock throttles
+    it -- raising the worker count once turned 0 errors into 10 of 22."""
+    import httpx
+
+    monkeypatch.setattr(httpx, "Client", fake_httpx([
+        FakeResp(429, text="slow down"),
+        FakeResp(503, text="unavailable"),
+        FakeResp(200, {"action": "LEFT"}),
+    ]))
+    monkeypatch.setattr(admin_server.time, "sleep", lambda s: None)
+
+    assert admin_server.post_navigate("http://v", 5.0, b"x", "t", None)["action"] == "LEFT"
+
+
+def test_post_navigate_does_not_retry_its_own_bad_request(monkeypatch):
+    """A 400 is this caller's mistake -- an unknown model, say. Retrying it
+    three times just makes the same error slowly."""
+    import httpx
+
+    calls = {"n": 0}
+
+    class Counting:
+        def __init__(self, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None, headers=None):
+            calls["n"] += 1
+            return FakeResp(400, text="unknown model_id")
+
+    monkeypatch.setattr(httpx, "Client", Counting)
+    monkeypatch.setattr(admin_server.time, "sleep", lambda s: None)
+
+    with pytest.raises(RuntimeError) as e:
+        admin_server.post_navigate("http://v", 5.0, b"x", "t", "made-up")
+
+    assert calls["n"] == 1
+    assert "400" in str(e.value)
+
+
+def test_post_navigate_gives_up_after_retrying(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(httpx, "Client", fake_httpx([FakeResp(500, text="boom")] * 6))
+    monkeypatch.setattr(admin_server.time, "sleep", lambda s: None)
+    with pytest.raises(RuntimeError) as e:
+        admin_server.post_navigate("http://v", 5.0, b"x", "t", None)
+    assert "500" in str(e.value)
+
+
+def test_the_bedrock_client_is_built_with_retries(monkeypatch):
+    """Built per call site rather than at import, so this module stays
+    importable (and testable) without boto3 configured."""
+    import boto3
+
+    captured = {}
+
+    def fake_client(name, config=None, **kw):
+        captured["name"] = name
+        captured["attempts"] = config.retries["max_attempts"]
+        return "client"
+
+    monkeypatch.setattr(boto3, "client", fake_client)
+    assert admin_server._bedrock_client() == "client"
+    assert captured["name"] == "bedrock-runtime"
+    assert captured["attempts"] >= 1
+
+
+# ---------- remaining guards and degradation paths ----------
+
+
+def test_the_secret_gate_refuses_a_wrong_one(recordings, monkeypatch):
+    """Reviewing and deleting recordings is a different privilege from
+    starting a mission, so this service has its own secret."""
+    root, config_path = recordings
+    monkeypatch.setenv("APP_SHARED_SECRET", "right")
+    c = TestClient(admin_server.create_app(config_path=config_path))
+    make_walk(root, "walk-g1", ["FORWARD"])
+
+    assert c.get("/recording/walks").status_code == 401
+    assert c.get("/recording/walks", headers={"x-app-secret": "wrong"}).status_code == 401
+    assert c.get("/recording/walks", headers={"x-app-secret": "right"}).status_code == 200
+    # /health and the page itself stay open -- the ALB check cannot send
+    # headers, and a user must load the page before entering a secret.
+    assert c.get("/health").status_code == 200
+    assert c.get("/admin").status_code == 200
+
+
+@pytest.mark.parametrize("route", [
+    "/recording/walks/../secrets",
+    "/recording/walks/bad%20name/replays",
+])
+def test_a_bad_walk_name_is_refused_everywhere_it_is_accepted(client, route):
+    c, _root = client
+    assert c.get(route).status_code in (400, 404)
+
+
+def test_a_walk_with_no_jsonl_scores_as_empty(client):
+    """Frames on disk but no log -- a recording interrupted before its first
+    /navigate reply came back."""
+    c, root = client
+    walk_dir = root / "recordings" / "walk-nolog"
+    walk_dir.mkdir(parents=True)
+    (walk_dir / "frame-0000.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+
+    body = c.post("/recording/walks/walk-nolog/evaluate?judge=false").json()
+    assert body["metrics"]["empty"] is True
+    assert body["score"] == 0
+
+
+def test_a_malformed_jsonl_line_is_skipped_not_fatal(client):
+    c, root = client
+    walk_dir = make_walk(root, "walk-badline", ["FORWARD", "LEFT"])
+    with (walk_dir / "walk.jsonl").open("a") as f:
+        f.write("{ this is not json\n")
+
+    assert c.post("/recording/walks/walk-badline/evaluate?judge=false").json()["metrics"]["frames"] == 2
+
+
+def test_the_target_comes_from_meta_when_it_is_recorded(client):
+    """meta.json wins over parsing the name, which is only a fallback."""
+    c, root = client
+    make_walk(root, "some-walk-name", ["FORWARD"])
+    c.put("/recording/walks/some-walk-name/meta", json={"target_object": "green mug"})
+    assert c.post("/recording/walks/some-walk-name/evaluate?judge=false").json()["target_object"] \
+        == "green mug"
+
+
+def test_a_walk_with_an_unparseable_timestamp_falls_back_to_meta(client):
+    c, root = client
+    make_walk(root, "walk-notime", ["FORWARD"])
+    listed = c.get("/recording/walks").json()["walks"][0]
+    assert listed["recorded_at"] is None
+
+    c.post("/recording/walks/walk-notime/evaluate?judge=false")
+    # finished_at only lands via the brain's finish route; meta set by hand
+    # is the other way a walk gets one.
+    c.put("/recording/walks/walk-notime/meta", json={"model_id": "m"})
+    assert c.get("/recording/walks").json()["walks"][0]["model_id"] == "m"
+
+
+def test_a_replay_whose_judge_is_unavailable_still_scores(vision, monkeypatch):
+    """Bedrock being down costs the collision check, not the replay."""
+    c, root, _calls = vision
+    make_walk(root, "walk-nj", ["FORWARD"] * 3)
+    monkeypatch.setattr(admin_server, "JUDGE_ENABLED", True)
+    monkeypatch.setattr(admin_server, "_bedrock_client",
+                        lambda: (_ for _ in ()).throw(RuntimeError("bedrock down")))
+
+    body = c.post("/recording/walks/walk-nj/replay", json={}).json()
+    assert body["collisions"] is None
+    assert "score" in body
+
+
+def test_the_summary_counts_a_walk_that_reached_its_target(vision):
+    c, root, _calls = vision
+    walk_dir = make_walk(root, "red-thing-20260830-090000", ["FORWARD"] * 3)
+    entries = [json.loads(l) for l in (walk_dir / "walk.jsonl").read_text().splitlines() if l.strip()]
+    entries[-1]["navigate"]["target_reached"] = True
+    (walk_dir / "walk.jsonl").write_text("".join(json.dumps(e) + "\n" for e in entries))
+
+    c.post("/recording/walks/red-thing-20260830-090000/evaluate?judge=false")
+    row = [r for r in c.get("/recording/summary").json()["rows"] if r["source"] == "recorded"][0]
+    assert row["reached"] == 1 and row["reach_rate"] == 1.0
+
+
+def test_a_scorecard_that_cannot_be_written_is_still_returned(client, monkeypatch):
+    """A read-only or full volume must not turn a computed score into a 500 --
+    the caller gets the result, the persistence is best-effort."""
+    c, root = client
+    make_walk(root, "walk-ro", ["FORWARD"] * 3)
+
+    real = Path.write_text
+
+    def refuse(self, *a, **kw):
+        if self.name in ("eval.json", "replay-m.json"):
+            raise OSError("read-only file system")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "write_text", refuse)
+    body = c.post("/recording/walks/walk-ro/evaluate?judge=false").json()
+    assert "score" in body
+    assert not (root / "recordings" / "walk-ro" / "eval.json").exists()
+
+
+def test_a_replay_that_cannot_be_written_is_still_returned(vision, monkeypatch):
+    c, root, _calls = vision
+    make_walk(root, "walk-ro2", ["FORWARD"])
+
+    real = Path.write_text
+
+    def refuse(self, *a, **kw):
+        if self.name.startswith("replay-"):
+            raise OSError("no space left on device")
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(Path, "write_text", refuse)
+    assert "score" in c.post("/recording/walks/walk-ro2/replay", json={}).json()
+
+
+def test_a_missing_frame_file_is_a_404(client):
+    c, root = client
+    make_walk(root, "walk-mf", ["FORWARD"])
+    assert c.get("/recording/walks/walk-mf/frames/frame-0007.jpg").status_code == 404
+
+
+def test_a_name_with_an_impossible_date_has_no_recorded_at(client):
+    """The regex matches the SHAPE of a timestamp; strptime is what rejects
+    the 30th of February."""
+    c, root = client
+    make_walk(root, "thing-20260230-999999", ["FORWARD"])
+    assert c.get("/recording/walks").json()["walks"][0]["recorded_at"] is None
+
+
+def test_the_model_relay_presents_the_vision_services_secret(vision, monkeypatch):
+    c, _root, _calls = vision
+    monkeypatch.setenv("VISION_SHARED_SECRET", "vision-secret")
+    seen = {}
+
+    class Client:
+        def __init__(self, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, headers=None):
+            seen["headers"] = headers
+
+            class R:
+                status_code = 200
+
+                @staticmethod
+                def raise_for_status():
+                    return None
+
+                @staticmethod
+                def json():
+                    return {"models": [{"id": "m"}], "default": "m"}
+
+            return R()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "Client", Client)
+    assert c.get("/recording/models").json()["models"] == [{"id": "m"}]
+    assert seen["headers"]["x-app-secret"] == "vision-secret"
+
+
+def test_stats_skips_files_sitting_beside_the_walk_directories(client):
+    c, root = client
+    make_walk(root, "walk-st", ["FORWARD"])
+    (root / "recordings" / "stray.txt").write_text("not a walk")
+    assert c.get("/stats").json()["walks"] == 1
+
+
+def test_a_log_entry_naming_a_file_that_is_not_a_frame_is_skipped(client):
+    """walk.jsonl is appended by the brain and read here; a line naming
+    something outside the frame-NNNN convention must not be turned into a
+    path this service then reads."""
+    c, root = client
+    walk_dir = make_walk(root, "walk-oddfile", ["FORWARD"])
+    with (walk_dir / "walk.jsonl").open("a") as f:
+        f.write(json.dumps({"seq": 1, "file": "../../etc/passwd",
+                            "navigate": {"action": "FORWARD"}}) + "\n")
+
+    body = c.post("/recording/walks/walk-oddfile/evaluate?judge=false").json()
+    assert body["metrics"]["frames"] == 2  # both entries counted from the log
+    assert "score" in body
+
+
+def test_a_log_entry_naming_a_non_frame_file_yields_no_bytes(client, monkeypatch):
+    """frame_bytes_for() is what stands between a walk.jsonl line and a file
+    read. An entry naming something outside the frame-NNNN convention must
+    produce no bytes rather than a path traversal -- so the judge and the
+    collision check skip it."""
+    c, root = client
+    walk_dir = make_walk(root, "walk-badentry", ["FORWARD"])
+    with (walk_dir / "walk.jsonl").open("a") as f:
+        f.write(json.dumps({"seq": 1, "file": "../../../etc/passwd",
+                            "navigate": {"action": "FORWARD"}}) + "\n")
+
+    judged = []
+
+    class Recorder:
+        def converse(self, modelId, messages, inferenceConfig):
+            judged.append(1)
+            return {"output": {"message": {"content": [
+                {"text": '{"sensible": true, "better_action": null, "why": "ok"}'}]}}}
+
+    monkeypatch.setattr(admin_server, "JUDGE_ENABLED", True)
+    monkeypatch.setattr(admin_server, "_bedrock_client", lambda: Recorder())
+
+    body = c.post("/recording/walks/walk-badentry/evaluate").json()
+    # Two entries in the log, but only the real frame is ever read.
+    assert body["metrics"]["frames"] == 2
+    assert body["judge"]["judged"] == 1
+
+
+def test_a_replay_skips_a_log_entry_with_no_readable_frame(vision):
+    c, root, calls = vision
+    walk_dir = make_walk(root, "walk-badentry2", ["FORWARD"])
+    with (walk_dir / "walk.jsonl").open("a") as f:
+        f.write(json.dumps({"seq": 1, "file": "not-a-frame.txt",
+                            "navigate": {"action": "FORWARD"}}) + "\n")
+
+    body = c.post("/recording/walks/walk-badentry2/replay", json={}).json()
+    assert body["errors"] == 1
+    assert len(calls) == 1

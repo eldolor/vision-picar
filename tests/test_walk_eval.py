@@ -503,3 +503,24 @@ def test_a_capped_score_still_reports_what_it_would_have_been():
     # a floor.
     weak = score_walk(compute_metrics(walk(["STOP"] * 20)), {"sensible_rate": 0.1}, hit)
     assert weak["score"] == weak["score_uncapped"] < 40
+
+
+def test_replaying_a_walk_with_no_entries_returns_an_empty_result():
+    """A walk directory with frames but an unreadable walk.jsonl."""
+    from control.walk_replay import replay_walk
+
+    out = replay_walk([], lambda e: b"jpeg", "red backpack", lambda *a: {},
+                      model_id="m")
+    assert out["frames"] == 0 and out["entries"] == [] and out["agreement"] is None
+
+
+def test_a_frame_whose_image_is_missing_is_an_error_not_a_silent_skip():
+    """A deleted frame leaves its walk.jsonl entry behind. The replay has to
+    report that rather than quietly scoring a shorter walk."""
+    from control.walk_replay import replay_walk
+
+    entries = walk(["FORWARD", "LEFT"])
+    out = replay_walk(entries, lambda e: None, "red backpack", lambda *a: {},
+                      model_id="m")
+    assert out["errors"] == 2
+    assert all(d["error"] == "no image bytes" for d in out["diff"])

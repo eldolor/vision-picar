@@ -169,3 +169,150 @@ def test_runner_works_the_same_over_http(robot_over_asgi):
     assert remote_status["outcome"] == local_status["outcome"] == FOUND
     assert remote_status["step"] == local_status["step"]
     assert remote_status["sighting"] == local_status["sighting"]
+
+
+# ---------- the halt gate, the one-shot rule, and the failure paths ----------
+#
+# These are the guards that make "stop stops the car" true, and the ones that
+# decide whether a mission dies loudly or quietly. Each was reachable only by
+# a failure nobody triggers on purpose.
+
+
+def test_reverse_is_refused_once_a_mission_is_over():
+    """The gate covers every movement verb, not just the ones the frontier
+    policy happens to use -- a vision policy can emit REVERSE."""
+    from control.mission_runner import MissionHalted, _HaltGate
+
+    gate = _HaltGate(fresh_mock_robot(), is_running=lambda: False)
+    for call in (gate.drive_forward, gate.reverse, gate.turn_left, gate.turn_right):
+        with pytest.raises(MissionHalted):
+            call()
+
+
+def test_a_runner_refuses_to_be_started_twice():
+    """One mission per runner. Restarting one would reuse a MissionMemory
+    that already believes rooms are searched and the target found."""
+    runner = MissionRunner(robot=fresh_mock_robot(), target_object="red backpack",
+                           max_steps=2)
+    runner.start()
+    runner.stop()
+    with pytest.raises(RuntimeError) as e:
+        runner.start()
+    assert "build a new one" in str(e.value)
+
+
+def test_the_step_budget_ends_the_mission():
+    """max_steps is the last of the three budgets and the only one that
+    fires on a mission that is working, just not fast enough."""
+    runner = MissionRunner(robot=fresh_mock_robot(),
+                           target_object="an object that is not in this house",
+                           max_steps=3)
+    runner.start()
+    for _ in range(12):
+        if not runner.tick():
+            break
+    status = runner.status()
+    assert status["running"] is False
+    assert status["outcome"] == "max_steps", status
+    assert "budget" in " ".join(status["log_tail"]).lower()
+
+
+def test_a_policy_that_raises_ends_the_mission_rather_than_the_process():
+    """Anything the decision layer throws that is not a vision failure --
+    a bug in the agent, a bad frame -- must still stop the robot and end
+    the mission, not escape into the brain's event loop."""
+    robot = RecordingRobot(fresh_mock_robot())
+    runner = MissionRunner(robot=robot, target_object="red backpack", max_steps=5)
+    runner.start()
+
+    class Exploding:
+        history = []
+
+        def step(self):
+            raise ZeroDivisionError("policy bug")
+
+    runner.agent = Exploding()
+    assert runner.tick() is False
+
+    status = runner.status()
+    assert status["running"] is False
+    assert status["outcome"] == "failed"
+    assert "policy bug" in (status["error"] or ""), status
+    assert "stop" in robot.calls
+
+
+def test_ticking_a_stopped_mission_is_a_no_op():
+    runner = MissionRunner(robot=fresh_mock_robot(), target_object="x", max_steps=5)
+    runner.start()
+    runner.stop()
+    assert runner.tick() is False
+
+
+def test_a_failing_stop_is_logged_rather_than_raised():
+    """stop() is what every failsafe calls last. If it throws, the failsafe
+    that was trying to end the mission dies instead."""
+    class BadStop(RecordingRobot):
+        def stop(self):
+            raise RuntimeError("motor controller offline")
+
+    runner = MissionRunner(robot=BadStop(fresh_mock_robot()), target_object="x", max_steps=5)
+    runner.start()
+    runner.stop("operator")
+
+    assert runner.status()["running"] is False
+    assert any("stop command failed" in line for line in runner.status()["log_tail"])
+
+
+def test_a_room_and_an_object_produce_one_mission_sentence():
+    from control.mission_runner import MissionRunner as MR
+
+    assert MR._default_mission("red backpack", "kitchen") == \
+        "Find the red backpack in the kitchen."
+
+
+def test_a_vision_call_with_no_timeout_runs_inline():
+    """timeout_s <= 0 means "no dead-man" -- used by the in-process tests and
+    by a policy that does its own timing."""
+    from control.mission_runner import call_with_timeout
+
+    assert call_with_timeout(lambda x: x * 2, 21, timeout_s=0) == 42
+    assert call_with_timeout(lambda x: x * 2, 21, timeout_s=None) == 42
+
+
+def test_reverse_passes_through_the_gate_while_a_mission_runs():
+    """The gate wraps every verb; the allowed path needs covering too, or
+    only the refusal is proven."""
+    from control.mission_runner import _HaltGate
+
+    robot = RecordingRobot(fresh_mock_robot())
+    gate = _HaltGate(robot, is_running=lambda: True)
+    gate.reverse()
+    assert "reverse" in robot.calls
+
+
+def test_a_stop_landing_mid_tick_does_not_record_the_step():
+    """The race the halt gate exists for: stop() arrives while a step is in
+    flight. The gate refuses the movement, and the tick must not then report
+    the mission as still running."""
+    robot = RecordingRobot(fresh_mock_robot())
+    runner = MissionRunner(robot=robot, target_object="red backpack", max_steps=10)
+    runner.start()
+
+    class StopsMidStep:
+        history = []
+
+        def step(self_inner):
+            runner.stop("operator stopped mid-step")
+
+            class Result:
+                step = 1
+                action = "FORWARD"
+                executed = True
+                scene = {}
+
+            return Result()
+
+    runner.agent = StopsMidStep()
+    assert runner.tick() is False
+    assert runner.status()["running"] is False
+    assert "stop" in robot.calls

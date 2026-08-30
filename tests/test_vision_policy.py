@@ -479,3 +479,44 @@ def test_vision_fn_for_binds_the_model_without_changing_the_call_contract():
     fn({"image_base64": "aGk="})
 
     assert seen["body"]["model_id"] == "qwen.qwen3-vl-235b-a22b"
+
+
+def test_a_non_200_from_the_vision_service_is_a_clear_error():
+    """The failure MissionRunner's B3.2 budget counts. It has to carry the
+    status and the body, or a mission dies reporting nothing useful."""
+    import httpx
+
+    def handler(request):
+        return httpx.Response(503, text="upstream unavailable")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError) as e:
+        navigate_scene({"image_base64": "aGk="}, TARGET, "http://vision.test", client=client)
+    assert "503" in str(e.value)
+    assert "upstream unavailable" in str(e.value)
+
+
+def test_a_client_this_module_created_is_closed_again():
+    """navigate_scene() builds its own httpx.Client when none is passed, and
+    has to close it -- the vision policy calls this once per tick for the
+    length of a mission."""
+    import httpx
+
+    created = []
+    real = httpx.Client
+
+    class Tracking(real):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            created.append(self)
+
+    httpx.Client = Tracking
+    try:
+        try:
+            navigate_scene({"image_base64": "aGk="}, TARGET, "http://127.0.0.1:1")
+        except Exception:
+            pass
+    finally:
+        httpx.Client = real
+
+    assert created and created[0].is_closed

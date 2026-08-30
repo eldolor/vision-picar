@@ -265,10 +265,11 @@ class MissionRunner:
         if not self._running:
             return False
 
-        if len(self.agent.history) >= self.max_steps:
-            self._finish(MAX_STEPS, f"step budget of {self.max_steps} exhausted")
-            return False
-
+        # The step budget is checked at the END of a tick, below, where
+        # _finish() then sets _running False -- so a duplicate check here
+        # could never fire, and a second copy of the rule is one that can
+        # drift from the real one. Removed after coverage showed it
+        # unreachable rather than untested.
         try:
             result = self.agent.step()
         except MissionHalted:

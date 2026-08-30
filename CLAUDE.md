@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 318 passed)
+# Confirm everything still works (should show 412 passed)
 pytest tests/ -v
 
 # service/vision_analyze/ has its own suite -- see section 5, item 1
@@ -189,7 +189,8 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    318 tests (incl. test_robot_contract.py's
+├── tests/                    412 tests, 99% line coverage of brain/,
+│                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1],
 │                              test_sensors.py [S5],
 │                              test_watchdog_integration.py [S4],
@@ -610,6 +611,29 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   deliberate exceptions are listed there with their reason. A ListenerRule
   condition allows at most 5 path values, so a sixth route means a second
   rule, as `twin.yaml`, `teleop-brain.yaml` and `admin.yaml` all now do.
+
+- **Coverage is 99% of `brain/`, `control/`, `robot/` and `sim/`, and the
+  last 1% is deliberate.** Measure it with:
+
+  ```bash
+  pytest tests/ --cov=brain --cov=control --cov=robot --cov=sim --cov-report=term-missing
+  ```
+
+  Two things are left uncovered on purpose. `robot/server.py`'s watchdog
+  loop body is exercised by `tests/test_watchdog_integration.py` against a
+  live `uvicorn` **subprocess**, which coverage cannot instrument -- it is
+  tested, just not visibly. And `control/brain_server.py`'s second walk-name
+  check is unreachable defensive code behind a regex that already validated
+  the name; deleting a safety check to make a number go up would be a poor
+  trade. `brain/agent.py` sits at 92% because the rule-based agent is
+  explicitly not on the hardware path (`PLAN-sim-hardening.md` 2.2) -- keep
+  it, don't extend it, and don't chase its branches.
+
+  Chasing the number is not the point, but the exercise paid for itself
+  twice: it found `MissionRunner.tick()` carrying an unreachable duplicate of
+  the step-budget check (now removed -- a second copy of a rule can drift
+  from the real one), and it found that DELETE on a walk, the download zip,
+  and the whole outbound `/navigate` retry path had no tests at all.
 
 - **The twin and the admin console have UI tests, and they earned them.**
   Every UI bug in this project so far has been found on a phone rather than
