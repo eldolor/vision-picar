@@ -346,3 +346,22 @@ def test_a_couple_of_opening_turns_is_not_called_stuck():
     assert "NOT moved forward" not in _history_note(["RIGHT"])
     assert "NOT moved forward" not in _history_note(["RIGHT", "LEFT"])
     assert "NOT moved forward" in _history_note(["RIGHT", "LEFT", "RIGHT"])
+
+
+def test_a_judge_that_recommends_the_same_action_has_not_found_a_fault():
+    """It did this steadily over obstacle_ahead: "not sensible ... the robot
+    incorrectly reported obstacle_ahead=True", better_action FORWARD, on a
+    frame whose action was FORWARD. That is an objection to the scene
+    description, not to the move -- and since one model reports
+    obstacle_ahead on nearly every frame, it was a systematic penalty
+    against that model rather than a finding about its navigation."""
+    client = FakeClient(
+        '{"sensible": false, "better_action": "FORWARD", "why": "obstacle_ahead was wrong"}')
+    out = judge_frame(client, "m", b"jpeg", {"action": "FORWARD"}, "red backpack")
+    assert out["sensible"] is True
+
+    # A genuine disagreement about the move is still a fault.
+    client = FakeClient(
+        '{"sensible": false, "better_action": "STOP", "why": "wall within one step"}')
+    out = judge_frame(client, "m", b"jpeg", {"action": "FORWARD"}, "red backpack")
+    assert out["sensible"] is False

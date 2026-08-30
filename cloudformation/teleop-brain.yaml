@@ -201,8 +201,32 @@ Resources:
             - /teleop-brain/mission/start
             - /teleop-brain/mission/stop
             - /teleop-brain/mission/status
-            - /teleop-brain/recording/frame
             - /teleop-brain/health
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  # An ALB ListenerRule condition allows at most 5 path-pattern values, and
+  # the mission/health set above already uses four -- so the recording paths
+  # get their own rule, exactly as twin.yaml splits its PWA assets out.
+  # Both forward to the same target group; priority order between them does
+  # not matter since the path sets do not overlap.
+  AlbListenerRuleRecording:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 51
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /teleop-brain/recording/frame
+            # Marks a walk complete and records which model produced it.
+            # Without this path the twin's finish call 404s at the ALB, the
+            # walk never shows as finished, and the admin console's
+            # auto-scoring skips it -- which is exactly what happened to
+            # every walk recorded before 2026-08-30.
+            - /teleop-brain/recording/finish
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

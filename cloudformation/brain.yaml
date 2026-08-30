@@ -212,6 +212,12 @@ Resources:
             - /mission/stop
             - /mission/status
             - /recording/frame
+            # Marks a walk complete and records which model produced it.
+            # Without this path the twin's finish call 404s at the ALB, the
+            # walk never shows as finished, and the admin console's
+            # auto-scoring skips it -- which is exactly what happened to
+            # every walk recorded before 2026-08-30.
+            - /recording/finish
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

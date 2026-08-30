@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # (target_reached: true, action: FORWARD) was marked wrong for obeying its
 # instructions. Bumping rescoes every stored eval.json rather than leaving
 # walks ranked by a judge that disagreed with the policy prompt.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 MOVE_ACTIONS = ("FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP")
 
@@ -173,6 +173,11 @@ So do NOT mark an action wrong merely because the robot has arrived:
   Whether it has arrived is the target_reached field, which you are not
   being asked to grade. If you disagree with target_reached, that is not an
   error in the ACTION -- answer sensible.
+- The same goes for obstacle_ahead. You are grading the MOVE, not the
+  robot's description of the scene. If you think obstacle_ahead was reported
+  wrongly but the move itself was the right one to make, answer sensible.
+  Only "better_action" decides this: if the action you would have chosen is
+  the action it chose, then it was sensible, whatever else it got wrong.
 
 Judge whether the chosen action was sensible for this photo AND for where
 the robot is in its walk. The mistake to be strictest about is the one that
@@ -256,9 +261,18 @@ def judge_frame(client, model_id: str, image_bytes: bytes, nav: dict,
     )
     text = "".join(b.get("text", "") for b in resp["output"]["message"]["content"])
     verdict = _parse_json_reply(text)
+    sensible = verdict.get("sensible") is True
+    better = verdict.get("better_action")
+    # A judge that says "not sensible" and then names the SAME action has
+    # contradicted itself -- it is really objecting to something other than
+    # the move (it did this steadily over obstacle_ahead, marking FORWARD
+    # wrong while recommending FORWARD). The action is the only thing being
+    # graded, so the recommendation wins over the label.
+    if not sensible and better and better == nav.get("action"):
+        sensible = True
     return {
-        "sensible": verdict.get("sensible") is True,
-        "better_action": verdict.get("better_action"),
+        "sensible": sensible,
+        "better_action": better,
         "why": str(verdict.get("why", ""))[:300],
     }
 
