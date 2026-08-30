@@ -49,7 +49,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+# 3: the judge was penalising arrival. It never saw target_reached, and the
+# /navigate prompt tells a model that "action" means movement only and that
+# arrival belongs in target_reached -- so a model doing exactly that
+# (target_reached: true, action: FORWARD) was marked wrong for obeying its
+# instructions. Bumping rescoes every stored eval.json rather than leaving
+# walks ranked by a judge that disagreed with the policy prompt.
+SCHEMA_VERSION = 3
 
 MOVE_ACTIONS = ("FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP")
 
@@ -139,19 +145,29 @@ def metric_flags(m: dict) -> list:
 
 JUDGE_PROMPT = """A small indoor robot is searching for a {target_object}. Its camera
 took this photo, and its navigation policy chose the action: {action}
-(it reported: target_visible={target_visible}, obstacle_ahead={obstacle_ahead},
-reasoning: "{reasoning}").
+(it reported: target_visible={target_visible}, target_reached={target_reached},
+obstacle_ahead={obstacle_ahead}, reasoning: "{reasoning}").
 
 The robot's available actions are FORWARD, LEFT, RIGHT, REVERSE and STOP.
 It moves roughly 30cm per FORWARD step. Turning costs a step and does not
 close distance.
 
-Judge ONLY whether the chosen action was sensible for this photo. Be strict
-about two specific mistakes:
+Important: in this system "action" describes MOVEMENT ONLY. It never means
+"the search is over" -- arrival is reported separately, in target_reached.
+So do NOT mark an action wrong merely because the robot has arrived:
+- If target_reached is true, the mission ends on this frame regardless of
+  the action, so the action is moot. Judge it sensible unless it would
+  drive into something OTHER than the {target_object}.
+- The {target_object} is the goal, not an obstacle. Closing the last of the
+  distance to it is correct behaviour, not a collision risk.
+
+Judge ONLY whether the chosen action was sensible for this photo. The
+mistake to be strictest about is the one that wastes the robot's time:
 - Refusing to move FORWARD when there is clearly open floor ahead, merely
-  because furniture is visible somewhere further away. That wastes the step.
-- Choosing FORWARD when something is close enough to collide with within
-  about one step.
+  because furniture is visible somewhere further away.
+Also wrong, in the other direction:
+- Choosing FORWARD when a piece of furniture, a wall or a person -- not the
+  {target_object} itself -- is within about one step.
 
 Respond with ONLY a JSON object:
 {{
@@ -179,6 +195,7 @@ def judge_frame(client, model_id: str, image_bytes: bytes, nav: dict,
         target_object=target_object,
         action=nav.get("action"),
         target_visible=nav.get("target_visible"),
+        target_reached=nav.get("target_reached"),
         obstacle_ahead=nav.get("obstacle_ahead"),
         reasoning=str(nav.get("reasoning", ""))[:200].replace('"', "'"),
     )
