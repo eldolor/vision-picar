@@ -473,6 +473,7 @@ def create_app(config_path=None) -> FastAPI:
             try:
                 collisions = walk_eval.check_collisions(
                     _bedrock_client(), JUDGE_MODEL_ID, entries, frame_bytes_for,
+                    target_object=_walk_target(walk_dir, walk_name),
                     max_checks=COLLISION_MAX_CHECKS)
             except Exception as e:  # noqa: BLE001 -- degrade, don't fail the walk
                 logger.warning("collision check failed for %s: %s", walk_name, e)
@@ -581,7 +582,7 @@ def create_app(config_path=None) -> FastAPI:
             try:
                 collisions = walk_eval.check_collisions(
                     _bedrock_client(), JUDGE_MODEL_ID, out["entries"], frame_bytes_for,
-                    max_checks=COLLISION_MAX_CHECKS)
+                    target_object=target, max_checks=COLLISION_MAX_CHECKS)
             except Exception as e:  # noqa: BLE001 -- degrade, don't lose the replay
                 logger.warning("collision check failed for replay of %s: %s", walk_name, e)
 

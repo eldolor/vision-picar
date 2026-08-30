@@ -452,3 +452,54 @@ def test_a_failed_collision_check_costs_that_frame_not_the_walk():
     entries = walk(["FORWARD"] * 3)
     out = check_collisions(client, "m", entries, lambda e: b"jpeg", max_workers=1)
     assert out["checked"] == 2
+
+
+def test_arriving_at_the_target_is_not_a_collision():
+    """Found by a real walk: hunting a blue bottle, the check flagged "a blue
+    water bottle is directly in front of the camera at close range, blocking"
+    -- it called ARRIVAL a crash. The judge prompt had been told the target
+    is the goal rather than an obstacle; the collision prompt had not, and was
+    not even given the target's name."""
+    from control.walk_eval import COLLISION_PROMPT
+
+    filled = COLLISION_PROMPT.format(target_object="blue bottle")
+    assert "blue bottle" in filled
+    assert "arrival, not a collision" in filled
+    assert "Answer true only if something ELSE is in the way." in filled
+
+
+def test_the_target_name_reaches_the_collision_prompt():
+    seen = []
+
+    class Recorder:
+        def converse(self, modelId, messages, inferenceConfig):
+            seen.append(messages[0]["content"][1]["text"])
+            return {"output": {"message": {"content": [
+                {"text": '{"would_collide": false, "why": "clear"}'}]}}}
+
+    check_collisions(Recorder(), "m", walk(["FORWARD"]), lambda e: b"jpeg",
+                     target_object="blue bottle", max_workers=1)
+    assert "blue bottle" in seen[0]
+
+
+def test_a_capped_score_still_reports_what_it_would_have_been():
+    """The cap is right -- a walk that hit something is not a good walk -- but
+    on its own it flattens the top of the range: three real walks that failed
+    for quite different reasons all scored exactly 40, which makes the number
+    useless for the comparison it exists to support."""
+    m = compute_metrics(walk(["FORWARD"] * 8 + ["RIGHT"]))
+    m["target_reached"] = True
+    hit = {"collisions": [{"seq": 1}]}
+
+    good = score_walk(m, {"sensible_rate": 1.0}, hit)
+    mediocre = score_walk(m, {"sensible_rate": 0.4}, hit)
+
+    # Both capped to the same headline number, which is the point of the cap
+    # and also why it cannot be the only number.
+    assert good["score"] == mediocre["score"] == 40
+    assert good["score_uncapped"] > mediocre["score_uncapped"]
+
+    # A walk already below the cap is left alone -- the cap is a ceiling, not
+    # a floor.
+    weak = score_walk(compute_metrics(walk(["STOP"] * 20)), {"sensible_rate": 0.1}, hit)
+    assert weak["score"] == weak["score_uncapped"] < 40

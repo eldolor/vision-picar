@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # (target_reached: true, action: FORWARD) was marked wrong for obeying its
 # instructions. Bumping rescoes every stored eval.json rather than leaving
 # walks ranked by a judge that disagreed with the policy prompt.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 MOVE_ACTIONS = ("FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP")
 
@@ -289,10 +289,11 @@ def judge_frame(client, model_id: str, image_bytes: bytes, nav: dict,
     }
 
 
-COLLISION_PROMPT = """A small indoor robot commanded FORWARD on this frame.
+COLLISION_PROMPT = """A small indoor robot searching for a {target_object} commanded
+FORWARD on this frame.
 
 Answer one question only: would moving forward about 30cm from here run the
-robot into something?
+robot into something it should not hit?
 
 Say true if a wall, door, furniture, an appliance or a person occupies the
 space immediately in front of the camera -- in particular if a flat surface
@@ -300,8 +301,14 @@ fills most of the frame with no floor visible between the camera and it. Say
 false if there is clear floor ahead for at least a step, however much
 furniture is further away.
 
+The {target_object} is the ONE thing that does not count. Reaching it is the
+robot's entire purpose, so a {target_object} close to the camera -- even
+filling the frame -- is an arrival, not a collision. Answer false for that.
+Answer true only if something ELSE is in the way.
+
 You are not judging whether the move was clever or whether the robot found
-what it was looking for. Only whether it was about to hit something.
+what it was looking for. Only whether it was about to hit something it
+should not.
 
 Respond with ONLY a JSON object:
 {{"would_collide": true | false, "why": "one short sentence"}}"""
@@ -324,6 +331,7 @@ def collision_candidates(entries: list) -> list:
 
 
 def check_collisions(client, model_id: str, entries: list, frame_bytes_for,
+                     target_object: str = "the target object",
                      max_checks: int = 12, max_workers: int = 4) -> dict:
     """Look for frames where the robot was told to drive into something.
 
@@ -352,7 +360,7 @@ def check_collisions(client, model_id: str, entries: list, frame_bytes_for,
                 modelId=model_id,
                 messages=[{"role": "user", "content": [
                     {"image": {"format": "jpeg", "source": {"bytes": image}}},
-                    {"text": COLLISION_PROMPT}]}],
+                    {"text": COLLISION_PROMPT.format(target_object=target_object)}]}],
                 inferenceConfig={"maxTokens": 150},
             )
             text = "".join(b.get("text", "") for b in resp["output"]["message"]["content"])
@@ -504,13 +512,21 @@ def score_walk(metrics: dict, judge: dict | None, collisions: dict | None = None
     # caps the score rather than nudging it -- the alternative is a walk that
     # hit a wall still reading "good" because it was efficient about it.
     hits = len((collisions or {}).get("collisions", []))
+    uncapped = int(round(score))
     if hits:
+        # The cap is deliberate, but on its own it flattens the top of the
+        # range: three walks that failed for quite different reasons all
+        # scored exactly 40, which makes the number useless for the
+        # comparison it exists to support. The capped score stays the
+        # headline, and the uncapped one is reported beside it so walks
+        # remain orderable.
         score = min(score, 40)
 
     score = int(round(score))
     verdict = "good" if score >= 70 else ("mixed" if score >= 45 else "poor")
     return {
-        "score": score, "verdict": verdict, "flags": flags, "basis": basis,
+        "score": score, "score_uncapped": uncapped,
+        "verdict": verdict, "flags": flags, "basis": basis,
         # Shown in the console so a number can be argued with rather than
         # just believed.
         "components": {
