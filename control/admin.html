@@ -55,6 +55,18 @@
   .walk-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .label-select { font-size: 12px; padding: 4px 6px; }
   .replay-select { font-size: 12px; padding: 4px 6px; max-width: 150px; }
+  .summary-row {
+    display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px 12px;
+    padding: 8px 0; border-top: 1px solid #262b35; align-items: baseline;
+  }
+  .summary-row:first-child { border-top: none; }
+  .summary-model { font-weight: 600; overflow-wrap: anywhere; }
+  .summary-num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .summary-sub { grid-column: 1 / -1; font-size: 12px; color: #8b92a0; }
+  .summary-hit { color: #ff8080; }
+  @media (max-width: 700px) {
+    .summary-row { grid-template-columns: 1fr auto; }
+  }
   .label-badge {
     display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 10px;
     margin-left: 6px; text-transform: uppercase; letter-spacing: 0.03em;
@@ -169,6 +181,15 @@
     <button id="btn-connect">Connect</button>
     <span class="status" id="conn-status">Not connected.</span>
   </div>
+</div>
+
+<div class="panel" id="summary-panel" style="display:none;">
+  <div class="row toolbar">
+    <strong>By model</strong>
+    <span class="stats">Every scored walk and replay, grouped. Replays are the
+      controlled evidence -- same pixels, one variable.</span>
+  </div>
+  <div id="summary"></div>
 </div>
 
 <div class="panel">

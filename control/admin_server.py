@@ -700,6 +700,73 @@ def create_app(config_path=None) -> FastAPI:
             headers={"Cache-Control": "no-cache"},
         )
 
+    @app.get("/recording/summary", dependencies=[Depends(require_secret)])
+    async def summary():
+        """Per-model totals across every scored walk AND every stored replay.
+
+        The aggregation that was being done by hand -- and, being done by
+        hand, was done differently each time and had to be retracted twice.
+        Replays are folded in beside recordings because a replay is the more
+        trustworthy evidence: it holds the pixels fixed and varies one thing,
+        where two live walks vary the operator's path as well.
+        """
+        base = Path(config["recording_dir"]).resolve()
+        if not base.is_dir():
+            return {"rows": []}
+
+        acc = {}
+
+        def add(model_id, prompt_variant, ev, source):
+            if not ev or ev.get("score") is None:
+                return
+            key = (model_id or "(unknown)", prompt_variant or "default", source)
+            row = acc.setdefault(key, {
+                "model_id": key[0], "prompt_variant": key[1], "source": source,
+                "walks": 0, "scores": [], "reached": 0, "collisions": 0,
+                "flags": {}, "frames": [],
+            })
+            row["walks"] += 1
+            row["scores"].append(ev["score"])
+            metrics = ev.get("metrics") or {}
+            if metrics.get("target_reached"):
+                row["reached"] += 1
+            if metrics.get("frames"):
+                row["frames"].append(metrics["frames"])
+            if "collision" in (ev.get("flags") or []):
+                row["collisions"] += 1
+            for f in (ev.get("flags") or []):
+                row["flags"][f] = row["flags"].get(f, 0) + 1
+
+        for walk_dir in sorted(p for p in base.iterdir() if p.is_dir()):
+            entries = _walk_entries(walk_dir)
+            ev = _read_json_sidecar(walk_dir, EVAL_FILE_NAME)
+            add(_walk_model_id(walk_dir, entries),
+                (ev or {}).get("prompt_variant"), ev, "recorded")
+            for path in sorted(walk_dir.glob(REPLAY_PREFIX + "*.json")):
+                try:
+                    r = json.loads(path.read_text())
+                except (json.JSONDecodeError, OSError):
+                    continue
+                add(r.get("model_id"), r.get("prompt_variant"), r, "replay")
+
+        rows = []
+        for row in acc.values():
+            scores = sorted(row.pop("scores"))
+            frames = sorted(row.pop("frames"))
+            mid = len(scores) // 2
+            rows.append({
+                **row,
+                "mean_score": round(sum(scores) / len(scores)),
+                "median_score": scores[mid] if len(scores) % 2 else
+                                round((scores[mid - 1] + scores[mid]) / 2),
+                "best": scores[-1], "worst": scores[0],
+                "reach_rate": round(row["reached"] / row["walks"], 2),
+                "median_frames": frames[len(frames) // 2] if frames else None,
+            })
+        # Best first, but a model that hit something is never "best".
+        rows.sort(key=lambda r: (r["collisions"] > 0, -r["mean_score"]))
+        return {"rows": rows}
+
     @app.get("/stats", dependencies=[Depends(require_secret)])
     async def stats():
         base = Path(config["recording_dir"]).resolve()

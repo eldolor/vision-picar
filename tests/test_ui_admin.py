@@ -106,7 +106,7 @@ def browser():
 
 
 def open_console(browser, admin_server, *, models=MODELS, walks=WALKS,
-                 viewport=DESKTOP, models_delay_ms=0):
+                 viewport=DESKTOP, models_delay_ms=0, summary=None):
     context = browser.new_context(viewport=viewport)
     context.add_init_script(
         '(() => { try { localStorage.setItem("vp_admin_secret", "test"); } catch (e) {} })();')
@@ -120,6 +120,9 @@ def open_console(browser, admin_server, *, models=MODELS, walks=WALKS,
     page.route("**/recording/models", models_route)
     page.route("**/recording/walks", lambda r: r.fulfill(
         status=200, content_type="application/json", body=json.dumps(walks)))
+    page.route("**/recording/summary", lambda r: r.fulfill(
+        status=200, content_type="application/json",
+        body=json.dumps(summary if summary is not None else {"rows": []})))
     page.route("**/stats", lambda r: r.fulfill(
         status=200, content_type="application/json",
         body=json.dumps({"walks": len(walks["walks"]), "frames": 53, "bytes": 3_384_000})))
@@ -287,4 +290,38 @@ def test_the_slideshow_controls_are_thumb_sized_on_a_phone(browser, admin_server
         assert box is not None, sel
         assert box["height"] >= 44, f"{sel} is only {box['height']:.0f}px tall"
         assert box["width"] >= 90, f"{sel} is only {box['width']:.0f}px wide"
+    page.close()
+
+
+def test_the_summary_panel_renders_per_model_rows(browser, admin_server):
+    """The comparison that used to live in a chat message. It has to be on
+    the page, and it has to fit a phone."""
+    rows = {"rows": [
+        {"model_id": "us.anthropic.claude-opus-4-5-20251101-v1:0", "prompt_variant": "default",
+         "source": "recorded", "walks": 5, "mean_score": 74, "median_score": 73,
+         "best": 80, "worst": 66, "reach_rate": 1.0, "median_frames": 8,
+         "collisions": 0, "flags": {"oscillating": 3}},
+        {"model_id": "qwen.qwen3-vl-235b-a22b", "prompt_variant": "default",
+         "source": "recorded", "walks": 5, "mean_score": 85, "median_score": 91,
+         "best": 96, "worst": 40, "reach_rate": 0.8, "median_frames": 6,
+         "collisions": 1, "flags": {"collision": 1}},
+    ]}
+    page, errors = open_console(browser, admin_server, viewport=PHONE, summary=rows)
+
+    sync_api.expect(page.locator("#summary-panel")).to_be_visible()
+    sync_api.expect(page.locator(".summary-row")).to_have_count(2)
+    text = page.locator("#summary").inner_text()
+    assert "74" in text and "85" in text
+    assert "hit something" in text, "a collision must be called out, not buried in a mean"
+
+    overflow = page.evaluate(
+        "() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 1, f"summary panel scrolls {overflow}px sideways on a phone"
+    assert errors == []
+    page.close()
+
+
+def test_the_summary_panel_stays_hidden_with_nothing_to_compare(browser, admin_server):
+    page, _ = open_console(browser, admin_server, summary={"rows": []})
+    sync_api.expect(page.locator("#summary-panel")).to_be_hidden()
     page.close()

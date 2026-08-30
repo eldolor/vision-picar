@@ -115,6 +115,40 @@
     return n + " B";
   }
 
+  // The per-model table that was being assembled by hand after every batch
+  // of walks -- differently each time, and wrong twice.
+  async function loadSummary() {
+    const panel = document.getElementById("summary-panel");
+    const el = document.getElementById("summary");
+    try {
+      const data = await api("GET", "/recording/summary");
+      const rows = data.rows || [];
+      if (!rows.length) { panel.style.display = "none"; return; }
+      el.innerHTML = rows.map(function (r) {
+        const variant = r.prompt_variant && r.prompt_variant !== "default"
+          ? " · " + escapeHtml(r.prompt_variant) : "";
+        const hit = r.collisions
+          ? ' <span class="summary-hit">· ' + r.collisions + " hit something</span>" : "";
+        const flags = Object.keys(r.flags || {})
+          .filter(function (f) { return f !== "collision"; })
+          .map(function (f) { return f + " x" + r.flags[f]; }).join(", ");
+        return '<div class="summary-row">' +
+          '<span class="summary-model">' + escapeHtml(shortModel(r.model_id)) + variant +
+            ' <span class="status">' + escapeHtml(r.source) + "</span></span>" +
+          '<span class="summary-num">' + r.mean_score + " avg</span>" +
+          '<span class="summary-num">' + Math.round(r.reach_rate * 100) + "% reached</span>" +
+          '<span class="summary-num">' + r.walks + (r.walks === 1 ? " walk" : " walks") + "</span>" +
+          '<span class="summary-sub">best ' + r.best + " · worst " + r.worst +
+            (r.median_frames ? " · median " + r.median_frames + " frames" : "") +
+            (flags ? " · " + escapeHtml(flags) : "") + hit + "</span>" +
+          "</div>";
+      }).join("");
+      panel.style.display = "";
+    } catch (e) {
+      panel.style.display = "none";
+    }
+  }
+
   async function loadStats() {
     try {
       const s = await api("GET", "/stats");
@@ -218,6 +252,7 @@
     allWalks = data.walks;
     applyFilterSort();
     loadStats();
+    loadSummary();
     // Re-render once the model list lands. renderWalk() builds each
     // "Replay with..." dropdown from replayModels, so rendering before the
     // fetch resolves leaves every dropdown empty. Rendering first and
@@ -272,6 +307,7 @@
           // the queue finishes scoring.
           const r = walkRenderers[w.walk];
           if (r) { r.renderHead(); r.renderEvalDetail(); r.markScored(); }
+          loadSummary();
         } catch (e) {
           // A walk that won't score (Bedrock down, malformed log) must not
           // stop the queue -- its Evaluate button still works by hand.
@@ -445,6 +481,7 @@
         });
         w.replays.push(r);
         renderReplays();
+        loadSummary();
       } catch (e) {
         // A long walk can outrun the load balancer's 60s idle timeout even
         // though the server finishes the job and writes its sidecar -- so a

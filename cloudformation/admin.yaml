@@ -225,10 +225,33 @@ Resources:
             # nothing at all, since it would fall through to vision-analyze.
             - /admin.js
             - /recording/walks*
+            - /stats
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  # An ALB ListenerRule condition allows at most 5 path-pattern values and the
+  # rule above uses four, so the read-only /recording/* routes that are not
+  # under /recording/walks get their own. Same split twin.yaml and
+  # teleop-brain.yaml already make.
+  #
+  # A route added here without a path added there is a 404 that looks like a
+  # bug in the page -- it has happened four times now, which is why
+  # tests/test_alb_routes.py asserts the two stay in step.
+  AlbListenerRuleReadonly:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 31
+      Conditions:
+        - Field: path-pattern
+          Values:
             # The replay model picker's source -- admin relays the vision
             # service's allow-list rather than the console carrying a copy.
             - /recording/models
-            - /stats
+            # The per-model comparison table.
+            - /recording/summary
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

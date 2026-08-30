@@ -185,6 +185,12 @@ Resources:
             - /teleop-robot/manifest.json
             - /teleop-robot/icons/*
             - /teleop-robot/health
+            # The twin's client script, which this deployment serves at its
+            # own prefix. Missing since the JS was extracted out of
+            # index.html: the page loaded and did nothing, because a page
+            # whose script 404s still renders. Found by
+            # tests/test_alb_routes.py, not by anyone looking at it.
+            - /teleop-robot/app.js
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

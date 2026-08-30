@@ -448,3 +448,61 @@ def test_model_and_prompt_replays_are_stored_separately(vision):
     assert len(stored) == 2
     assert {r["prompt_variant"] for r in stored} == {"default", "next-step-obstacle"}
     assert {r["model_id"] for r in stored} == {"amazon.nova-lite-v1:0"}
+
+
+# ---------- the per-model summary ----------
+#
+# The aggregation that was being done by hand after every batch of walks --
+# differently each time, and wrong twice.
+
+
+def test_the_summary_groups_scored_walks_by_model(client):
+    c, root = client
+    for name, actions in (("red-backpack-a-20260830-100000", ["FORWARD"] * 6),
+                          ("red-backpack-b-20260830-100100", ["STOP"] * 6)):
+        make_walk(root, name, actions, model="m-1")
+        c.post(f"/recording/walks/{name}/evaluate?judge=false")
+
+    rows = c.get("/recording/summary").json()["rows"]
+    recorded = [r for r in rows if r["source"] == "recorded"]
+    assert len(recorded) == 1
+    assert recorded[0]["model_id"] == "m-1"
+    assert recorded[0]["walks"] == 2
+    assert recorded[0]["best"] >= recorded[0]["worst"]
+
+
+def test_recordings_and_replays_are_counted_separately(vision):
+    """A replay is stronger evidence than a recording -- it holds the pixels
+    fixed -- so the two must not be averaged into one number."""
+    c, root, _calls = vision
+    make_walk(root, "red-backpack-c-20260830-100200", ["STOP"] * 4, model="m-1")
+    c.post("/recording/walks/red-backpack-c-20260830-100200/evaluate?judge=false")
+    c.post("/recording/walks/red-backpack-c-20260830-100200/replay",
+           json={"model_id": "m-2"})
+
+    rows = c.get("/recording/summary").json()["rows"]
+    assert {(r["model_id"], r["source"]) for r in rows} == {("m-1", "recorded"), ("m-2", "replay")}
+
+
+def test_a_model_that_hit_something_is_never_ranked_best(client):
+    """Ordering has to reflect that a collision is disqualifying, not just a
+    lower score."""
+    c, root = client
+    make_walk(root, "red-backpack-d-20260830-100300", ["FORWARD"] * 4, model="safe")
+    c.post("/recording/walks/red-backpack-d-20260830-100300/evaluate?judge=false")
+    walk_dir = make_walk(root, "red-backpack-e-20260830-100400", ["FORWARD"] * 4, model="hitter")
+    c.post("/recording/walks/red-backpack-e-20260830-100400/evaluate?judge=false")
+    # Force a collision onto the second walk's stored scorecard.
+    stored = json.loads((walk_dir / "eval.json").read_text())
+    stored["flags"] = stored.get("flags", []) + ["collision"]
+    stored["score"] = 99
+    (walk_dir / "eval.json").write_text(json.dumps(stored))
+
+    rows = [r for r in c.get("/recording/summary").json()["rows"] if r["source"] == "recorded"]
+    assert rows[-1]["model_id"] == "hitter", [r["model_id"] for r in rows]
+    assert rows[-1]["collisions"] == 1
+
+
+def test_an_empty_recordings_dir_summarises_to_nothing(client):
+    c, _root = client
+    assert c.get("/recording/summary").json()["rows"] == []
