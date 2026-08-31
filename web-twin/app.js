@@ -187,7 +187,8 @@
     autopilotInFlight: false, autopilotCallCount: 0, autopilotMaxCalls: 80,
     guidanceMode: "guide", // "guide" -> /guidance (steer a person); "robot" -> /navigate (what would the robot do)
     guidanceRunning: false, guidanceTimerId: null, guidanceTarget: null,
-    guidanceInFlight: false, guidanceCallCount: 0, guidanceStream: null,
+    guidanceInFlight: 0, guidanceSeq: 0, guidanceLastRenderedSeq: 0,
+    guidanceCallCount: 0, guidanceStream: null,
     guidanceMuted: false, guidanceNotVisibleStreak: 0,
     guidancePaused: false, guidanceFoundStreak: 0,
     guidancePanSpeed: 0, guidanceLastOrientation: null,
@@ -1994,6 +1995,25 @@
   // to Sonnet's slower round trip.
   const GUIDANCE_THROTTLE_MS = 500;
   const ROBOT_THROTTLE_MS = 500;
+  // How many vision calls may be in flight at once. The throttle above is
+  // the gap between *dispatches*; the round trip is added on top, so with
+  // a strictly serial loop the real cadence was throttle + latency --
+  // ~3s once /navigate moved to Opus 4.5, not the 500ms the constant
+  // suggests. Overlapping calls decouples the two: a decision arrives
+  // every ~500ms, each still describing a frame from one round trip ago.
+  //
+  // **Pipelining raises throughput, not freshness.** No answer here is
+  // any newer than it was before; there are simply more of them, which is
+  // what a person walking can actually use -- they integrate across
+  // several. A robot executing each one would be worse off, which is why
+  // drive-via-brain is pinned to 1 below.
+  //
+  // 2, not more, and the number is measured rather than guessed:
+  // control/walk_replay.py records that at 8 concurrent workers "Bedrock
+  // throttled 10 of 22 frames" against a single vision task. Bedrock
+  // quota is account-and-region scoped, so this contends with whatever
+  // else is running in the account -- including production.
+  const GUIDANCE_MAX_IN_FLIGHT = 2;
   const GUIDANCE_MAX_CAPTURE_DIM = 960; // longest edge, px -- smaller upload + faster inference
   // Anthropic downscales images server-side above ~1568px on the long
   // edge anyway (see Claude's vision docs), so sending a full phone-camera
@@ -2940,7 +2960,12 @@
 
   async function guidanceStep() {
     if (!state.guidanceRunning) return;
-    if (state.guidanceInFlight) { scheduleGuidanceNext(); return; }
+    // Drive-via-brain runs a real MissionRunner mission, which is strictly
+    // one action at a time -- the step budget and the failsafes are built
+    // on that. Overlapping calls there would have the brain deciding from
+    // frames it has already acted past, so that mode stays serial.
+    const maxInFlight = driveViaBrainActive() ? 1 : GUIDANCE_MAX_IN_FLIGHT;
+    if (state.guidanceInFlight >= maxInFlight) { scheduleGuidanceNext(); return; }
 
     if (state.guidanceCallCount >= guidanceCallCap()) {
       document.getElementById("guide-caption-icon").innerHTML = ICON.warning;
@@ -2959,8 +2984,21 @@
     state.guidanceConsecutiveSkips = 0;
 
     const isRobot = state.guidanceMode === "robot";
-    state.guidanceInFlight = true;
+    const seq = ++state.guidanceSeq;
+    state.guidanceInFlight++;
+    // Budget is reserved at dispatch, not on success. A call that is sent
+    // has been paid for whether or not its answer is fresh enough to
+    // render, and counting on completion would let the loop dispatch past
+    // the cap while calls were still outstanding.
+    state.guidanceCallCount += 1;
+    renderGuidanceBudget();
     (isRobot ? renderRobotStatus : renderGuidanceStatus)(null, true);
+
+    // Scheduled here rather than in the finally below: that is the whole
+    // change. Pacing the next dispatch on the throttle instead of on this
+    // call returning is what lets calls overlap at all.
+    scheduleGuidanceNext();
+
     try {
       const base64 = captureGuidanceFrame();
       robotSignalCapture();
@@ -2968,13 +3006,23 @@
         ? await driveViaBrainStep(base64)
         : await callGuidanceEndpoint(base64, state.guidanceTarget);
       state.guidanceErrorStreak = 0;
-      state.guidanceCallCount += 1;
-      renderGuidanceBudget();
+
+      // The frame and the answer it got belong together regardless of
+      // arrival order, so a recorded walk keeps every pair -- including
+      // ones too stale to draw. Dropping them would silently thin a
+      // recording that sim/replay_robot.py later plays back frame by
+      // frame.
+      if (isRobot) recordWalkFrame(base64, result);
+
+      // Everything past here changes what the person sees or the loop
+      // believes, so it must not run for an answer that has been overtaken
+      // (latency varies per call, so seq 7 can land after seq 9) or for a
+      // walk that has since been paused or stopped.
+      if (!state.guidanceRunning || state.guidancePaused) return;
+      if (seq <= state.guidanceLastRenderedSeq) return;
+      state.guidanceLastRenderedSeq = seq;
 
       if (isRobot) {
-        // The frame and the answer it just got, kept together for replay.
-        recordWalkFrame(base64, result);
-
         // No found-pause here, deliberately. Guide pauses on arrival
         // because the person has arrived and further calls are waste;
         // robot view is a continuous readout of decisions, and the run
@@ -3011,14 +3059,19 @@
       }
     } catch (e) {
       state.guidanceErrorStreak++;
+      // The next tick was already scheduled at the base throttle before
+      // this call failed, so the backoff has to replace that timer rather
+      // than add to it -- otherwise a failing endpoint keeps getting
+      // hammered at 500ms while the backoff sits unused.
+      scheduleGuidanceNext({ replace: true });
+      if (!state.guidanceRunning || state.guidancePaused) return;
       (isRobot ? renderRobotStatus : renderGuidanceStatus)({ error: e.message }, false);
       if (isRobot) renderRobotTelemetry({ error: e.message });
       // Keyed as "error", so the exponential backoff's repeated failures
       // announce once rather than on every retry.
       (isRobot ? announceRobot : announceGuidance)({ error: e.message });
     } finally {
-      state.guidanceInFlight = false;
-      scheduleGuidanceNext();
+      state.guidanceInFlight--;
     }
   }
 
@@ -3026,8 +3079,18 @@
   // instead of hammering a possibly-down endpoint every second on
   // someone's phone battery/data -- resets to the normal throttle the
   // moment a call succeeds again (see guidanceErrorStreak reset above).
-  function scheduleGuidanceNext() {
+  function scheduleGuidanceNext(opts) {
     if (!state.guidanceRunning || state.guidancePaused) return;
+    // With calls overlapping, more than one path can want to schedule the
+    // next tick. `replace` is for the error path, which needs to push an
+    // already-scheduled tick further out; without it a pending timer wins
+    // and the caller's delay is silently ignored.
+    if (opts && opts.replace && state.guidanceTimerId) {
+      clearTimeout(state.guidanceTimerId);
+      state.guidanceTimerId = null;
+    } else if (state.guidanceTimerId) {
+      return;
+    }
     // Robot view and Guide share a throttle value now (both on Nova Lite
     // as of 2026-08-28 -- see ROBOT_THROTTLE_MS above), kept as two named
     // constants rather than one shared one so they can diverge again
@@ -3037,7 +3100,13 @@
       ? Math.min(30000, base * Math.pow(2, state.guidanceErrorStreak))
       : base;
     robotStartCountdown(delay);
-    state.guidanceTimerId = setTimeout(guidanceStep, delay);
+    state.guidanceTimerId = setTimeout(function () {
+      // Cleared before the step runs, so the idempotence guard above sees
+      // "no tick pending" and the step it is about to run can schedule the
+      // next one.
+      state.guidanceTimerId = null;
+      guidanceStep();
+    }, delay);
   }
 
   function showGuideStartError(message) {
@@ -3373,6 +3442,12 @@
     state.guidanceNotVisibleStreak = 0;
     state.guidancePaused = false;
     state.guidanceFoundStreak = 0;
+    // Calls already in flight will still resolve after this, and their
+    // handlers check guidanceRunning -- but the counters must not carry
+    // into the next session or the first dispatch would look overtaken.
+    state.guidanceInFlight = 0;
+    state.guidanceSeq = 0;
+    state.guidanceLastRenderedSeq = 0;
     document.getElementById("btn-guidance-resume").classList.remove("visible");
     hideAllGuidanceOverlays();
     renderGuidanceStatus(null, false);
