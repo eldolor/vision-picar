@@ -107,7 +107,11 @@ def twin_server():
 @pytest.fixture(scope="module")
 def browser():
     with sync_api.sync_playwright() as p:
-        b = p.chromium.launch()
+        b = p.chromium.launch(
+            # Lets a test load the page from a host that is neither
+            # localhost nor the service host, which is the only shape
+            # in which the endpoint notice is supposed to appear.
+            args=["--host-resolver-rules=MAP vision-picar.test 127.0.0.1"])
         yield b
         b.close()
 
@@ -446,4 +450,75 @@ def test_the_banner_is_readable_on_a_phone(browser, twin_server):
     box = page.locator("#env-banner").bounding_box()
     assert box["width"] >= PHONE["width"] - 4, f"banner not full width: {box}"
     assert box["height"] >= 20, f"banner too short to read: {box}"
+
+
+# ---------- the endpoint notice ----------
+#
+# A saved vision URL outlives the page that saved it. Opening a second
+# deployment on a phone that has used the first leaves the new page calling
+# the old service, and the only symptom is a 401 -- which reads as a wrong
+# secret rather than a call to the wrong place. This cost a real debugging
+# session before the notice existed.
+
+
+def _open_at_alias_host(browser, twin_server, vision_url):
+    """The twin loaded from a host that is neither localhost nor the vision
+    service, with `vision_url` already saved the way a previous deployment
+    would have left it."""
+    port = twin_server.rsplit(":", 1)[1]
+    page_url = f"http://vision-picar.test:{port}/"
+    context = browser.new_context(viewport=PHONE)
+    context.add_init_script(
+        "(() => { try { localStorage.setItem('vp_vision_url', %s); } catch (e) {} })();"
+        % _json(vision_url)
+    )
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(page_url, wait_until="networkidle")
+    page.wait_for_timeout(800)
+    page.click("#btn-settings")
+    page.wait_for_timeout(300)
+    return page, errors, f"vision-picar.test:{port}"
+
+
+def test_no_endpoint_notice_when_the_service_is_this_page(browser, twin_server):
+    """The common case, and the reason this is a notice rather than a
+    warning: it must be silent when nothing is unusual."""
+    port = twin_server.rsplit(":", 1)[1]
+    page, errors, _ = _open_at_alias_host(
+        browser, twin_server, f"http://vision-picar.test:{port}")
+    assert not errors
+    assert page.locator("#cfg-url-mismatch").is_hidden()
+    page.context.close()
+
+
+def test_the_notice_names_both_hosts_when_they_differ(browser, twin_server):
+    """Both halves matter. "Calls go elsewhere" is not actionable without
+    saying where, and "this page is X" is what makes the mismatch legible."""
+    page, errors, page_host = _open_at_alias_host(
+        browser, twin_server, "https://example-vision.test")
+    assert not errors
+    assert page.locator("#cfg-url-mismatch").is_visible()
+    text = " ".join(page.inner_text("#cfg-url-mismatch").split())
+    assert "example-vision.test" in text, text
+    assert page_host in text, text
+    page.context.close()
+
+
+def test_the_notice_does_not_fire_for_local_development(browser, twin_server):
+    """localhost routinely splits the twin (:8000) from the vision service
+    (:8080). Flagging that would make the notice noise on the one setup
+    every developer uses."""
+    context = browser.new_context(viewport=PHONE)
+    context.add_init_script(
+        "(() => { try { localStorage.setItem('vp_vision_url',"
+        " 'http://127.0.0.1:8080'); } catch (e) {} })();")
+    page = context.new_page()
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(800)
+    page.click("#btn-settings")
+    page.wait_for_timeout(300)
+    assert page.locator("#cfg-url-mismatch").is_hidden()
+    context.close()
 

@@ -346,6 +346,47 @@
   // needs, so all three features tolerate whatever shape was pasted in,
   // not just "bare URL" or "URL ending in /analyze".
   const VISION_SERVICE_ROUTES = ["/analyze", "/describe", "/navigate", "/guidance"];
+  // Which host will a vision call actually go to, and is it this page's?
+  //
+  // A saved endpoint outlives the page that saved it: open a second
+  // deployment on a phone that has used the first, and localStorage
+  // quietly points the new page at the old service. The only symptom is a
+  // 401, which reads as a bad secret rather than a call to the wrong
+  // place -- an hour of debugging a credential that was never wrong.
+  //
+  // Deliberately a *notice*, never an error. A mismatch is legitimate and
+  // supported: PLAN-ar-guidance.md's hosting section expects tunnels and
+  // path-prefixed proxies, where the vision service properly lives
+  // somewhere else. This says what will be called; it does not claim
+  // anything is broken.
+  function visionHost() {
+    const raw = (document.getElementById("cfg-url") || {}).value;
+    if (!raw || !raw.trim()) return null;
+    try { return new URL(raw.trim()).host; } catch (e) { return null; }
+  }
+
+  function visionHostDiffersFromPage() {
+    const host = visionHost();
+    // file:// has no meaningful origin to compare against, and localhost
+    // dev routinely splits the twin (:8000) from the service (:8080).
+    if (!host || location.protocol === "file:") return false;
+    if (location.hostname === "localhost" || location.hostname === "127.0.0.1") return false;
+    return host !== location.host;
+  }
+
+  function renderEndpointNote() {
+    const el = document.getElementById("cfg-url-mismatch");
+    if (!el) return;
+    if (!visionHostDiffersFromPage()) { el.hidden = true; return; }
+    el.innerHTML =
+      "Vision calls go to <b>" + escapeHtml(visionHost()) + "</b>, not <b>"
+      + escapeHtml(location.host) + "</b>, which served this page. That is "
+      + "fine for a tunnel or a proxy \u2014 but if they are different "
+      + "deployments, the secret below has to be the one "
+      + escapeHtml(visionHost()) + " expects.";
+    el.hidden = false;
+  }
+
   function deriveServiceUrl(rawUrl, targetRoute) {
     let trimmed = rawUrl.trim().replace(/\/$/, "");
     for (const route of VISION_SERVICE_ROUTES) {
@@ -2011,7 +2052,19 @@
       body: JSON.stringify(payload),
     }).then(function (resp) {
       return resp.json().then(function (data) {
-        if (!resp.ok) throw new Error(data.detail || ("HTTP " + resp.status));
+        if (!resp.ok) {
+          let message = data.detail || ("HTTP " + resp.status);
+          // The one failure that is routinely misdiagnosed. A rejected
+          // secret says nothing about *which* service rejected it, and
+          // when the page and the service are different deployments the
+          // secret is usually right and pointed at the wrong one.
+          if (resp.status === 401 && visionHostDiffersFromPage()) {
+            message += " (sent to " + visionHost() + ", but this page came from "
+              + location.host + " -- if those are different deployments, "
+              + "this is their secret, not a wrong one)";
+          }
+          throw new Error(message);
+        }
         return data;
       });
     });
@@ -3884,6 +3937,7 @@
   cfgUrlEl.addEventListener("change", function () {
     prefSet(PREF.visionUrl, this.value.trim());
     renderHeaderConnStatus();
+    renderEndpointNote();
     // A new service may offer a different model set (the allow-list is
     // server-side, deliberately), so re-ask rather than keeping stale options.
     state.navigateModelsLoaded = false;
@@ -4542,4 +4596,5 @@
     connectBrain({ silent: true });
   }
   renderEnvBanner();
+  renderEndpointNote();
 })();
