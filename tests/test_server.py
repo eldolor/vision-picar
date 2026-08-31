@@ -81,6 +81,24 @@ def test_frame_endpoint_serves_a_decodable_image():
         assert img.format == "JPEG"
 
 
+def test_health_reports_no_env_label_by_default():
+    """Production sets no ENV_LABEL, and the twin's banner keys off this
+    field being empty -- so "unset" has to mean "no banner", not a missing
+    key the client then has to guess about."""
+    with make_client() as client:
+        assert client.get("/health").json()["env_label"] == ""
+
+
+def test_health_reports_the_configured_env_label(monkeypatch):
+    """How a non-production deployment marks itself. The page asks the
+    server rather than pattern-matching its own hostname, because the
+    twin is opened off CloudFront, off an NLB, off localhost and off a
+    test file server, and only the server knows which deployment it is."""
+    monkeypatch.setenv("ENV_LABEL", "Lab")
+    with make_client() as client:
+        assert client.get("/health").json()["env_label"] == "Lab"
+
+
 def test_teleop_frame_round_trips_through_frame_endpoint(teleop_config):
     """Proves T2's whole point: GET /frame needs no changes at all -- it's
     already just robot.get_camera_frame(), whatever the backend is."""

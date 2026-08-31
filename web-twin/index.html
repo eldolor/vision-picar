@@ -93,6 +93,33 @@
 
   .wrap { max-width: 420px; margin: 0 auto; padding: 14px 14px 32px; }
 
+  /* Environment banner. Renders only when the server it is talking to
+     reports an env_label (see robot/server.py's /health) -- production
+     sets none, so the same page and the same image are safe in both.
+     Sticky rather than fixed: the tab bar is the one fixed element on the
+     page, and a second one competing for the viewport on iOS is how the
+     bottom bar started drifting. Sticky keeps it visible while scrolling
+     without leaving the normal flow. */
+  .env-banner {
+    position: sticky; top: 0; z-index: 20;
+    display: none;
+    margin: 0 -16px 12px;
+    padding: 7px 16px calc(7px + env(safe-area-inset-bottom, 0px));
+    background: var(--accent-alert);
+    color: #16110D;
+    font-family: var(--mono); font-size: var(--fs-small); font-weight: 700;
+    letter-spacing: 0.10em; text-transform: uppercase; text-align: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.45);
+  }
+  .env-banner.visible { display: block; }
+  .env-banner .dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: #16110D; margin-right: 8px; vertical-align: middle;
+  }
+  /* A second, always-in-view marker: the tab bar is on screen even when
+     the banner has scrolled behind a tab switch, and a coloured rule
+     there reads as "this whole app is the other environment". */
+  body.env-flagged .tab-bar { border-top: 2px solid var(--accent-alert); }
   header { margin-bottom: 12px; }
   header .eyebrow {
     font-family: var(--mono); font-size: var(--fs-small); letter-spacing: 0.08em;
@@ -1150,6 +1177,8 @@
 </head>
 <body>
 <div class="wrap">
+
+  <div class="env-banner" id="env-banner" role="status" aria-live="polite"></div>
 
   <header>
     <div class="header-text">

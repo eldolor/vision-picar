@@ -173,6 +173,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # See module docstring. "" (the default) reproduces every route exactly
     # as before this existed -- prefix + "/frame" == "/frame".
     prefix = os.environ.get("ROUTE_PREFIX", "").rstrip("/")
+    env_label = os.environ.get("ENV_LABEL", "").strip()
 
     # This server is designed to be reached from a browser (the web twin --
     # locally on the same LAN for real-hardware use, or the public
@@ -302,6 +303,13 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # it (PLAN-sim-hardening.md definition of done, item 10).
             "min_distance_cm": min_distance,
             "mode": mode,
+            # Which deployment this is, for the twin's environment banner.
+            # Unset (production) means the banner never renders, so the
+            # same image is safe everywhere -- an environment marks itself
+            # rather than the page guessing from a hostname, which breaks
+            # the moment a CloudFront domain changes. Empty string, not
+            # null, so a client can treat it as a plain falsy string.
+            "env_label": env_label,
         }
 
     return app
