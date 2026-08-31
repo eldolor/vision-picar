@@ -330,6 +330,25 @@ Respond with ONLY a JSON object, no other text, matching this schema:
 # the next-step framing and adds back the one thing it threw away -- a
 # surface filling the frame is a stop condition, whatever the robot is
 # hunting for. Named for what it is trying to hold together.
+#
+# **MEASURED 2026-08-30, and it does not hold them together.** All 22 frames
+# of red-backpack-20260829-195904, every model x every variant, full
+# coverage (see CLAUDE.md's Stage 0 notes for the table). FORWARD rate:
+#
+#                        default   next-step-obstacle   next-step-and-walls
+#   Claude Opus 4.5        0.591          0.318                0.455
+#   Claude Sonnet 4.5      0.000          1.000                0.955
+#   Qwen3-VL               0.773          1.000                1.000
+#
+# The wall clause buys one frame in 22 on Sonnet and nothing at all on Qwen:
+# both still answer FORWARD to essentially everything, including the frames
+# the collision check flags. It is a rounding error away from the failure it
+# was written to correct, and should not be promoted to default. Keep it
+# served -- a negative result is only durable while the thing that produced
+# it can still be re-run -- but the next attempt should change the shape of
+# the question, not its wording. Note what the table also says: `default` is
+# the only column that avoids the always-FORWARD mode on all three models,
+# and it is the current default for that reason.
 NAVIGATE_PROMPT_VARIANTS["next-step-and-walls"] = """You are the camera of a small indoor robot searching for a {target_object}.
 Look at this image and decide the robot's single next move.
 

@@ -331,8 +331,39 @@ before trusting any of it, but this is where it stands:
 - **The prompt is at least as strong a lever as the model, and the obvious
   fix is wrong.** Rewording the obstacle question to be about the next step
   takes Sonnet from 0% FORWARD to 100% FORWARD on the same frames -- which is
-  the *other* degenerate failure. Both wordings ship (`default` and
-  `next-step-obstacle`); neither is right yet.
+  the *other* degenerate failure. Three wordings now ship (`default`,
+  `next-step-obstacle`, `next-step-and-walls`).
+- **The full 3x3 was finally run on 2026-08-30, and the third wording does
+  not work.** All 22 frames of `red-backpack-20260829-195904`, every model x
+  every variant, replayed at full coverage. FORWARD rate:
+
+  |                   | default | next-step-obstacle | next-step-and-walls |
+  |---|---|---|---|
+  | Claude Opus 4.5   | 0.591 | 0.318 | 0.455 |
+  | Claude Sonnet 4.5 | 0.000 | 1.000 | 0.955 |
+  | Qwen3-VL          | 0.773 | 1.000 | 1.000 |
+
+  `next-step-and-walls` was written to keep the next-step framing while
+  restoring "a surface filling the frame is a stop condition". It buys one
+  frame in 22 on Sonnet and nothing on Qwen -- still the always-FORWARD
+  degenerate mode, still colliding. **Do not promote it.** `default` is the
+  only column that avoids that mode on all three models, which is the
+  evidence for leaving it as the default. No cell reached the target, and
+  every cell except Sonnet/`default` was flagged `collision`. Next attempt
+  should change the *shape* of the question -- the single-step /navigate
+  contract has no memory of which way it already turned -- not its wording.
+- **These nine numbers replaced nine that were wrong, and the way they were
+  wrong is the cautionary tale.** The same matrix had been run before and
+  reported 33/33/33 across the variants, which reads as "the wording makes
+  no difference". It was really "the vision service timed out": those cells
+  completed 3, 9 and 2 of 22 frames. `control/admin_server.py`'s retry
+  branched on a status code while httpx *raises* a timeout, so the backoff
+  never ran on the failure that dominated, and the scorer graded whatever
+  came back. Fixed 2026-08-30 (`replay_timeout_s`, a retry that catches
+  `httpx.TransportError`, and `REPLAY_MIN_COVERAGE`, below which a replay is
+  stored but deliberately left unscored). **A replay's `coverage` field is
+  now the first thing to read**: a score computed over a third of a walk is
+  not a weaker measurement, it is a different one.
 
 Secondary: `python -m tests.manual_replay_navigate <dir> "<target>"`
 replays a folder of photos and prints an action-spread summary. Use it to
