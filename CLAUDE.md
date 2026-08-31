@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 412 passed)
+# Confirm everything still works (should show 419 passed)
 pytest tests/ -v
 
 # service/vision_analyze/ has its own suite -- see section 5, item 1
@@ -189,7 +189,7 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    412 tests, 99% line coverage of brain/,
+├── tests/                    419 tests, 99% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1],
 │                              test_sensors.py [S5],

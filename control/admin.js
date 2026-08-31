@@ -561,13 +561,30 @@
       if (!rs.length) { replayEl.innerHTML = ""; return; }
       // Recorded score first, then each replay, so the comparison reads as a
       // column rather than something to hold in your head.
-      const rows = rs.slice().sort(function (a, b) { return b.score - a.score; })
+      // Unscored replays last, whatever their frame count: they are not a
+      // worse result, they are an absent one.
+      const rows = rs.slice().sort(function (a, b) {
+        if ((a.score == null) !== (b.score == null)) return a.score == null ? 1 : -1;
+        return b.score - a.score;
+      })
         .map(function (r) {
           const agree = r.agreement == null ? "--" : Math.round(r.agreement * 100) + "%";
           const variant = (r.prompt_variant && r.prompt_variant !== "default")
             ? " · " + escapeHtml(r.prompt_variant) : "";
-          return '<div class="eval-line">replay · <b>' + escapeHtml(shortModel(r.model_id)) +
-            variant + "</b> score " + r.score + " (" + escapeHtml(r.verdict) + ") · agreed with the " +
+          const head = '<div class="eval-line">replay · <b>' +
+            escapeHtml(shortModel(r.model_id)) + variant + "</b> ";
+          // A replay that lost too many frames says nothing about the model,
+          // so it gets no number to compare -- reporting one is exactly how
+          // three timed-out prompt variants came to look equivalent.
+          if (r.score == null) {
+            const got = r.coverage == null ? "" :
+              " -- only " + Math.round(r.coverage * 100) + "% of frames came back";
+            return head + "not scored (" + escapeHtml(r.verdict || "unusable") + ")" +
+              escapeHtml(got) +
+              (r.errors ? " · " + r.errors + " frame(s) failed" : "") +
+              " · replay it again</div>";
+          }
+          return head + "score " + r.score + " (" + escapeHtml(r.verdict) + ") · agreed with the " +
             "recording on " + agree + " of frames" +
             (r.errors ? " · " + r.errors + " frame(s) failed" : "") +
             (r.flags && r.flags.length ? " · " + escapeHtml(r.flags.join(", ")) : "") + "</div>";

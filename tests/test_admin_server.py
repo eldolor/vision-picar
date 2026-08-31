@@ -450,6 +450,206 @@ def test_model_and_prompt_replays_are_stored_separately(vision):
     assert {r["model_id"] for r in stored} == {"amazon.nova-lite-v1:0"}
 
 
+# ---------- a replay that mostly failed is not a result ----------
+#
+# Replay is the only controlled comparison this project has, which is
+# exactly why a broken one is dangerous rather than merely useless: it
+# comes back looking like a measurement. Three prompt variants of one
+# 22-frame walk were once all scored 33, on 3, 9 and 2 surviving frames --
+# read at the time as "the wording made no difference", and really "the
+# vision service timed out". These three tests are that incident.
+
+
+def timing_out(recordings, monkeypatch, fails, total):
+    """A client whose vision service drops `fails` of `total` frames."""
+    root, config_path = recordings
+    Path(config_path).write_text(
+        f"brain:\n  recording_dir: {root / 'recordings'}\n"
+        f"  vision_url: http://vision.invalid\n")
+    n = {"calls": 0}
+
+    def flaky(vision_url, timeout_s, image_bytes, target_object, model_id,
+              prompt_variant=None):
+        n["calls"] += 1
+        if n["calls"] <= fails:
+            raise RuntimeError("ReadTimeout: timed out")
+        return nav_reply("FORWARD")
+
+    monkeypatch.setattr(admin_server, "post_navigate", flaky)
+    return TestClient(admin_server.create_app(config_path=config_path)), root
+
+
+def test_a_replay_that_lost_most_of_its_frames_is_not_given_a_score(recordings, monkeypatch):
+    """The defect itself: 2 frames of 10 came back and the scorer produced a
+    number anyway, indistinguishable in the console from a model that really
+    had navigated badly."""
+    c, root = timing_out(recordings, monkeypatch, fails=8, total=10)
+    make_walk(root, "walk-timeout", ["STOP"] * 10)
+
+    body = c.post("/recording/walks/walk-timeout/replay", json={}).json()
+
+    assert body["errors"] == 8
+    assert body["coverage"] == 0.2
+    assert body["score"] is None, "a mostly-failed replay must not report a score"
+    assert body["verdict"] == "unusable"
+    assert body["flags"] == ["incomplete"]
+
+
+def test_an_unscored_replay_is_kept_out_of_the_per_model_summary(recordings, monkeypatch):
+    """A null score is the mechanism -- summary's add() already skips one --
+    so this pins the two halves together. Averaging a timeout into a model's
+    mean is how a harness failure becomes a model conclusion."""
+    c, root = timing_out(recordings, monkeypatch, fails=8, total=10)
+    make_walk(root, "walk-timeout-2", ["STOP"] * 10)
+
+    c.post("/recording/walks/walk-timeout-2/replay",
+           json={"model_id": "amazon.nova-lite-v1:0"})
+
+    rows = c.get("/recording/summary").json()["rows"]
+    assert not [r for r in rows if r["source"] == "replay"], \
+        "an unusable replay must not appear as evidence about its model"
+
+
+def test_a_replay_that_lost_only_a_frame_or_two_is_still_scored(recordings, monkeypatch):
+    """The guard has to be a threshold, not a demand for perfection: a walk
+    that dropped one frame of twenty is still the comparison the operator
+    asked for."""
+    c, root = timing_out(recordings, monkeypatch, fails=1, total=20)
+    make_walk(root, "walk-nearly", ["STOP"] * 20)
+
+    body = c.post("/recording/walks/walk-nearly/replay", json={}).json()
+
+    assert body["errors"] == 1
+    assert body["coverage"] == 0.95
+    assert isinstance(body["score"], int)
+    assert body["verdict"] != "unusable"
+
+
+def test_replay_uses_its_own_timeout_not_the_missions(vision_timeouts):
+    """A mission is impatient because a robot is standing in a room with its
+    motors live. A replay has no robot, and is the burstiest caller here --
+    sharing B3.2's 20s budget is what produced the timeouts above."""
+    c, root, seen = vision_timeouts
+    make_walk(root, "walk-budget", ["STOP"])
+
+    c.post("/recording/walks/walk-budget/replay", json={})
+
+    assert seen == [60.0], "replay should spend replay_timeout_s, not vision_timeout_s"
+
+
+@pytest.fixture
+def vision_timeouts(recordings, monkeypatch):
+    """Like `vision`, but records the timeout each call was given."""
+    root, config_path = recordings
+    Path(config_path).write_text(
+        f"brain:\n  recording_dir: {root / 'recordings'}\n"
+        f"  vision_url: http://vision.invalid\n")
+    seen = []
+
+    def fake_post(vision_url, timeout_s, image_bytes, target_object, model_id,
+                  prompt_variant=None):
+        seen.append(timeout_s)
+        return nav_reply("FORWARD")
+
+    monkeypatch.setattr(admin_server, "post_navigate", fake_post)
+    return TestClient(admin_server.create_app(config_path=config_path)), root, seen
+
+
+# ---------- post_navigate's retry ----------
+
+
+def test_a_read_timeout_is_retried_rather_than_losing_the_frame(monkeypatch):
+    """The bug, exactly. httpx raises a timeout instead of returning a status
+    code, so it fell straight out of post_navigate and the backoff written
+    for this very burst never ran on the failure that dominates it."""
+    import httpx
+
+    attempts = {"n": 0}
+
+    class FakeClient:
+        def __init__(self, timeout=None):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None, headers=None):
+            attempts["n"] += 1
+            if attempts["n"] < 3:
+                raise httpx.ReadTimeout("timed out")
+            return httpx.Response(200, json={"action": "FORWARD"})
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+    monkeypatch.setattr(admin_server.time, "sleep", lambda s: None, raising=False)
+
+    out = admin_server.post_navigate("http://vision.invalid", 5.0, b"jpg",
+                                     "red backpack", None)
+
+    assert out == {"action": "FORWARD"}
+    assert attempts["n"] == 3, "the timeout should have been retried, not raised"
+
+
+def test_a_frame_that_times_out_every_attempt_reports_the_timeout(monkeypatch):
+    """And when the retries genuinely run out, the error that reaches the
+    replay's diff has to name the timeout -- diagnosing this incident
+    depended on those strings being in the stored record."""
+    import httpx
+
+    class AlwaysTimesOut:
+        def __init__(self, timeout=None):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None, headers=None):
+            raise httpx.ReadTimeout("timed out")
+
+    monkeypatch.setattr(httpx, "Client", AlwaysTimesOut)
+    monkeypatch.setattr(admin_server.time, "sleep", lambda s: None, raising=False)
+
+    with pytest.raises(RuntimeError, match="ReadTimeout"):
+        admin_server.post_navigate("http://vision.invalid", 5.0, b"jpg",
+                                   "red backpack", None)
+
+
+def test_a_bad_request_is_not_retried(monkeypatch):
+    """Unchanged behaviour, pinned because the retry block was restructured
+    around it: a 400 is our own malformed call and no amount of backoff
+    fixes it."""
+    import httpx
+
+    attempts = {"n": 0}
+
+    class Rejects:
+        def __init__(self, timeout=None):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None, headers=None):
+            attempts["n"] += 1
+            return httpx.Response(400, text="bad model_id")
+
+    monkeypatch.setattr(httpx, "Client", Rejects)
+    monkeypatch.setattr(admin_server.time, "sleep", lambda s: None, raising=False)
+
+    with pytest.raises(RuntimeError, match="400"):
+        admin_server.post_navigate("http://vision.invalid", 5.0, b"jpg",
+                                   "red backpack", None)
+    assert attempts["n"] == 1
+
+
 # ---------- the per-model summary ----------
 #
 # The aggregation that was being done by hand after every batch of walks --

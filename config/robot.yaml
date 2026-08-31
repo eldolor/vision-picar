@@ -66,8 +66,8 @@ server:
 brain:
   robot_url: http://127.0.0.1:8000
 
-  # Cloud vision service, for the Phase S2b Python vision policy. Not
-  # read by anything yet.
+  # Cloud vision service: the Phase S2b Python vision policy's /navigate
+  # route, and the one call control/admin_server.py makes (walk replay).
   vision_url: ""
 
   # The reference backpack hunt takes 83 steps with the frontier policy.
@@ -80,6 +80,13 @@ brain:
   # many times in a row stops the robot and ends the mission.
   vision_timeout_s: 20.0
   max_vision_failures: 3
+
+  # Replaying a recorded walk, which is NOT a mission and wants a longer
+  # deadline: nothing is driving, and replay is the burstiest caller here
+  # (several frames at once against one vision task, on the slowest model
+  # in the allow-list). Sharing the 20s above cost one 22-frame comparison
+  # 21 of its frames to read timeouts.
+  replay_timeout_s: 60.0
 
   # Failsafe B3.3 -- a brain loop that is alive but stuck. A tick that
   # doesn't return in this long stops the robot and ends the mission.

@@ -39,6 +39,16 @@ DEFAULTS = {
     # B3.2 -- the AWS link failsafe.
     "vision_timeout_s": 20.0,
     "max_vision_failures": 3,
+    # Replaying a recorded walk (control/walk_replay.py) is a different
+    # question from a live mission's vision call, and it wants a different
+    # deadline. A mission is impatient on purpose -- there is a robot
+    # standing in a room with its motors live, which is the whole reason
+    # B3.2's budget above is short. A replay has no robot, and it is the
+    # burstiest caller in the project: several frames in flight at once
+    # against one vision task, on the slowest model in the allow-list.
+    # Sharing the mission's 20s cost one 22-frame comparison 21 of its
+    # frames to read timeouts, and the scorer reported a number anyway.
+    "replay_timeout_s": 60.0,
     # B3.3 -- the hung-loop failsafe, plus the loop's own pacing.
     "tick_timeout_s": 30.0,
     "tick_interval_s": 0.0,

@@ -47,6 +47,15 @@ logger = logging.getLogger(__name__)
 # load balancer in front of admin gives up at 60s, and a 39-frame walk at 4
 # workers went over. Not unbounded, though: at 8 workers Bedrock throttled
 # 10 of 22 frames, so the caller retries with backoff and this stays modest.
+#
+# **The throttling above was not the failure that actually cost us data**,
+# and the distinction is worth keeping: reviewing the stored replays on
+# 2026-08-30 found 150 lost frames and every one of them was a read
+# timeout, not a 429. Concurrency here was only half of it -- the caller
+# was spending a mission's 20s vision budget per frame and its backoff
+# never ran on an exception. Both are fixed in control/admin_server.py
+# (replay_timeout_s, and a retry that catches httpx.TransportError), so
+# this number is once again about throughput rather than about errors.
 DEFAULT_WORKERS = 6
 
 

@@ -105,6 +105,20 @@ COLLISION_MAX_CHECKS = int(os.environ.get("COLLISION_MAX_CHECKS", "12"))
 # Bedrock permissions) unless the deployment opts in.
 JUDGE_ENABLED = os.environ.get("WALK_JUDGE_ENABLED", "").lower() in ("1", "true", "yes")
 
+# How many times one /navigate call is tried before a frame is given up on.
+NAVIGATE_ATTEMPTS = 4
+
+# How much of a walk a replay has to actually get back before its score is
+# allowed to mean anything. Replay is the only controlled comparison this
+# project has, so a replay that quietly lost most of its frames is worse
+# than no replay at all: three prompt variants of one 22-frame walk all
+# came back scored 33, on 3, 9 and 2 surviving frames respectively, which
+# reads as "the wording made no difference" and was really "the vision
+# service timed out". Below this a replay is still stored -- the console
+# shows the error count, and knowing a comparison failed is the point --
+# but left unscored, and /recording/summary already skips a null score.
+REPLAY_MIN_COVERAGE = float(os.environ.get("REPLAY_MIN_COVERAGE", "0.8"))
+
 
 def _bedrock_client():
     """Imported lazily and built per call site rather than at module import:
@@ -151,16 +165,29 @@ def post_navigate(vision_url: str, timeout_s: float, image_bytes: bytes,
     import time as _time
 
     last = ""
-    for attempt in range(4):
-        with httpx.Client(timeout=timeout_s) as client:
-            resp = client.post(vision_url.rstrip("/") + "/navigate", json=body, headers=headers)
-        if resp.status_code == 200:
-            return resp.json()
-        last = f"HTTP {resp.status_code}: {resp.text[:160]}"
-        # 4xx other than 429 is our own bad request -- retrying cannot help.
-        if resp.status_code < 500 and resp.status_code != 429:
-            break
-        _time.sleep((0.6 * 2 ** attempt) + random.uniform(0, 0.4))
+    for attempt in range(NAVIGATE_ATTEMPTS):
+        try:
+            with httpx.Client(timeout=timeout_s) as client:
+                resp = client.post(vision_url.rstrip("/") + "/navigate",
+                                   json=body, headers=headers)
+        except httpx.TransportError as e:
+            # A read timeout is by far the commonest way a replay loses a
+            # frame, and it arrives as an EXCEPTION rather than a status
+            # code -- so it used to fall straight out of this function and
+            # the backoff written just above for exactly this burst never
+            # ran on the failure that dominates it. One 22-frame walk lost
+            # 21 frames to timeouts and was scored anyway, as though the
+            # model had answered; see the coverage guard in _replay().
+            last = f"{type(e).__name__}: {e}"[:160]
+        else:
+            if resp.status_code == 200:
+                return resp.json()
+            last = f"HTTP {resp.status_code}: {resp.text[:160]}"
+            # 4xx other than 429 is our own bad request -- retrying cannot help.
+            if resp.status_code < 500 and resp.status_code != 429:
+                break
+        if attempt < NAVIGATE_ATTEMPTS - 1:
+            _time.sleep((0.6 * 2 ** attempt) + random.uniform(0, 0.4))
     raise RuntimeError(last)
 
 
@@ -511,7 +538,7 @@ def create_app(config_path=None) -> FastAPI:
                 continue
             out.append({k: r.get(k) for k in
                         ("model_id", "prompt_variant", "score", "verdict", "flags",
-                         "agreement", "errors")})
+                         "agreement", "errors", "coverage")})
         return out
 
     def _eval_summary(walk_dir: Path) -> Optional[dict]:
@@ -564,12 +591,20 @@ def create_app(config_path=None) -> FastAPI:
             return path.read_bytes() if path.is_file() else None
 
         def call(image_bytes, target_object, chosen, variant):
-            return post_navigate(config["vision_url"], config["vision_timeout_s"],
+            # replay_timeout_s, NOT the mission's vision_timeout_s -- see
+            # control/brain_config.py for why those are different questions.
+            return post_navigate(config["vision_url"], config["replay_timeout_s"],
                                  image_bytes, target_object, chosen, variant)
 
         out = walk_replay.replay_walk(
             entries, frame_bytes_for, target, call, model_id=model_id,
             prompt_variant=prompt_variant)
+
+        # How much of the walk actually came back. A replay is only evidence
+        # about a model or a wording to the extent the service answered; see
+        # REPLAY_MIN_COVERAGE.
+        attempted = out["frames"]
+        coverage = round(len(out["entries"]) / attempted, 3) if attempted else 0.0
 
         # Score the replay with the SAME scorer the original gets, by handing
         # it entries in the same shape -- so the two numbers are comparable
@@ -582,8 +617,9 @@ def create_app(config_path=None) -> FastAPI:
         # score for a run that hit something, which is worse than reporting
         # nothing. It costs up to COLLISION_MAX_CHECKS extra calls on top of
         # the replay's own.
+        usable = coverage >= REPLAY_MIN_COVERAGE
         collisions = None
-        if JUDGE_ENABLED and out["entries"]:
+        if JUDGE_ENABLED and out["entries"] and usable:
             try:
                 collisions = walk_eval.check_collisions(
                     _bedrock_client(), JUDGE_MODEL_ID, out["entries"], frame_bytes_for,
@@ -591,7 +627,18 @@ def create_app(config_path=None) -> FastAPI:
             except Exception as e:  # noqa: BLE001 -- degrade, don't lose the replay
                 logger.warning("collision check failed for replay of %s: %s", walk_name, e)
 
-        scored = walk_eval.score_walk(metrics, None, collisions)
+        if usable:
+            scored = walk_eval.score_walk(metrics, None, collisions)
+        else:
+            # Deliberately not a low score: a low score is a claim about the
+            # model, and this is a statement about the harness. Scoring these
+            # anyway is what made three timed-out variants of one walk look
+            # like three equivalent wordings. A null score also keeps them
+            # out of /recording/summary, which already skips one.
+            logger.warning("replay of %s under %s/%s returned %d of %d frames -- not scoring",
+                           walk_name, model_id or "(service default)",
+                           prompt_variant or "default", len(out["entries"]), attempted)
+            scored = {"score": None, "verdict": "unusable", "flags": ["incomplete"]}
         result = {
             "schema": walk_eval.SCHEMA_VERSION,
             "walk": walk_name,
@@ -605,6 +652,9 @@ def create_app(config_path=None) -> FastAPI:
             # only the ones that came back, so the two differ when the
             # vision service dropped some.
             "frames": out["frames"],
+            # What fraction of those came back. The number that says whether
+            # the rest of this record is evidence about the model at all.
+            "coverage": coverage,
             "agreement": out["agreement"],
             "errors": out["errors"],
             "collisions": collisions,
