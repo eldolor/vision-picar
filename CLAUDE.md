@@ -367,6 +367,24 @@ before trusting any of it, but this is where it stands:
   now the first thing to read**: a score computed over a third of a walk is
   not a weaker measurement, it is a different one.
 
+- **An ordinal distance question was tried and does not yet work
+  (2026-08-31, Lab only).** `/navigate`'s `default-with-distance` variant
+  asks how many robot moves of clearance there are ahead --
+  `within_one_step` / `a_few_steps` / `far` -- ordinal rather than metric,
+  because a single monocular frame cannot give metric depth. Replayed over
+  80 frames from five recorded walks (two targets, 100% coverage) against
+  Lab's vision service: **`within_one_step` 60%, `far` 5%**. Someone
+  walking across a house does not spend three frames in five one step from
+  a collision. It is the same over-reading `obstacle_ahead` already shows,
+  and it is not the target being miscounted -- the skew holds at 55% on
+  the frames where the target is not visible at all. The two fields agree
+  with each other 85% of the time, so they are wrong together rather than
+  independently noisy. `brain/agent.py`'s proximity veto exists but stays
+  **off by default**: wired on, this would block three FORWARDs in five
+  and reproduce the never-FORWARD stall. Next attempt should change the
+  question's shape -- what is in the centre third and in the path, not
+  what is nearest anywhere in frame.
+
 Secondary: `python -m tests.manual_replay_navigate <dir> "<target>"`
 replays a folder of photos and prints an action-spread summary. Use it to
 produce a recordable finding -- the failure that matters (the same action
