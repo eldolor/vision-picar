@@ -575,3 +575,81 @@ def test_the_vision_policy_can_now_drive_the_grid_world():
 
     img = Image.open(io.BytesIO(base64.b64decode(sent[0]["image_base64"])))
     assert img.format == "JPEG" and img.size[0] > 0
+
+
+# ---------- Q2: the brain-side proximity veto ----------
+#
+# robot/safety.py never fires on a camera-only backend: a photograph has no
+# distance in it, so get_distance() returns NO_SENSOR_CM and the veto path
+# is dead code through an entire Robot-view walk. These cover the narrow
+# substitute -- an ordinal estimate from the model, usable ONLY where there
+# is no sensor to contradict it.
+
+
+def _agent_with_estimate(robot, estimate, **kwargs):
+    """A VisionAgent-shaped ConstrainedAgent whose vision_fn returns a scene
+    carrying `estimate`, with FORWARD as the chosen action."""
+    from brain.agent import ConstrainedAgent
+
+    def vision_fn(_frame):
+        return {
+            "obstacles_ahead": [], "free_space": "clear",
+            "doorway_visible": False, "important_objects": [],
+            "safest_direction": "FORWARD",
+            "_navigate": {"distance_estimate": estimate},
+        }
+
+    return ConstrainedAgent(robot, vision_fn=vision_fn, **kwargs)
+
+
+def test_the_veto_is_off_unless_asked_for(tmp_path):
+    """Default off. An estimate is not a measurement, and a policy that
+    silently started braking on one would be a surprise."""
+    robot = ReplayRobot(write_walk(tmp_path, 3))
+    result = _agent_with_estimate(robot, "within_one_step").step()
+    assert result.executed is True
+
+
+def test_the_veto_blocks_forward_when_the_model_says_one_step(tmp_path):
+    """The whole point: on a backend with no sensor, this is the only thing
+    that can stop a FORWARD into a wall."""
+    robot = ReplayRobot(write_walk(tmp_path, 3))
+    result = _agent_with_estimate(
+        robot, "within_one_step", vision_proximity_veto=True).step()
+    assert result.executed is False
+    assert "within_one_step" in result.detail
+    assert "not a measurement" in result.detail, (
+        "the message has to say it is an estimate, or a clean run reads as "
+        "evidence of collision avoidance"
+    )
+
+
+@pytest.mark.parametrize("estimate", ["a_few_steps", "far", "unknown", None])
+def test_the_veto_stays_out_of_the_way_otherwise(tmp_path, estimate):
+    """"unknown" is what a prompt variant that never asked returns, and it
+    must never be treated as a warning -- that would brake on every frame
+    under the default prompt."""
+    robot = ReplayRobot(write_walk(tmp_path, 3))
+    result = _agent_with_estimate(
+        robot, estimate, vision_proximity_veto=True).step()
+    assert result.executed is True
+
+
+def test_a_real_sensor_always_wins(tmp_path):
+    """MockRobot has a distance reading, so the model's guess must not get a
+    vote -- not even to block. A measurement beats an estimate, and letting
+    a hallucinated 'within_one_step' freeze a robot that can see clear floor
+    is the failure mode this ordering exists to prevent."""
+    from sim.maps.starter_house import build_starter_world
+    from sim.mock_robot import MockRobot
+
+    world = build_starter_world()
+    world.robot_x, world.robot_y = 5, 3   # open hallway, clear ahead
+    robot = MockRobot(world)
+    assert robot.get_distance() < 999.0, "fixture assumes a real reading"
+
+    result = _agent_with_estimate(
+        robot, "within_one_step", vision_proximity_veto=True).step()
+    assert result.executed is True, (
+        "a vision estimate overrode a real distance reading"
+    )

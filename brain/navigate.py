@@ -138,6 +138,13 @@ def navigate_scene(
     return to_scene(result, target_object)
 
 
+# Mirrors service/vision_analyze/vision_core.py's allow-list. Duplicated
+# for the same reason the prompt is (CLAUDE.md section 6): this module must
+# not import from the service, and a value the service stops sending should
+# read as "unknown" here rather than pass through unchecked.
+DISTANCE_ESTIMATES = ("within_one_step", "a_few_steps", "far", "unknown")
+
+
 def to_scene(result: dict, target_object: str) -> dict:
     """Map /navigate's answer onto brain/vision.py's scene schema.
 
@@ -170,6 +177,15 @@ def to_scene(result: dict, target_object: str) -> dict:
             "target_reached": reached,
             "obstacle_ahead": obstacle,
             "room_guess": room_guess,
+            # Ordinal proximity, present only under the
+            # "default-with-distance" prompt variant. Anything the service
+            # did not vouch for arrives as "unknown", and "unknown" must
+            # never be acted on -- see brain/agent.py's proximity veto.
+            "distance_estimate": (
+                result.get("distance_estimate")
+                if result.get("distance_estimate") in DISTANCE_ESTIMATES
+                else "unknown"
+            ),
             "reasoning": result.get("reasoning", ""),
         },
     }

@@ -415,3 +415,74 @@ def test_navigate_rejects_an_unknown_prompt_variant(client, monkeypatch):
     resp = client.post("/navigate", json={
         "image_base64": IMAGE_B64, "target_object": "x", "prompt_variant": "made-up"})
     assert resp.status_code == 400
+
+
+# ---------- the ordinal distance estimate (Q2) ----------
+
+
+def test_the_distance_variant_is_published_like_any_other(client):
+    """Served from the allow-list rather than hardcoded in a client, so the
+    twin's prompt picker offers it and a recorded walk says which wording
+    produced it -- the same discipline the model picker follows."""
+    body = client.get("/navigate/models").json()
+    assert "default-with-distance" in body["prompts"]
+
+
+def test_the_default_prompt_is_not_touched_by_the_distance_variant():
+    """CLAUDE.md's 3x3 matrix measured the default's exact wording, and
+    production serves the same file. A variant that edited the default
+    would silently invalidate those numbers and change production's
+    behaviour on the next deploy."""
+    import vision_core
+
+    assert (vision_core.NAVIGATE_PROMPT_VARIANTS["default"]
+            is vision_core.NAVIGATE_PROMPT_TEMPLATE)
+    assert "distance_estimate" not in vision_core.NAVIGATE_PROMPT_TEMPLATE
+
+
+def test_the_distance_variant_asks_for_the_field_it_promises():
+    """The prompt and the response schema have to agree, or the field comes
+    back absent on every call and the veto can never fire."""
+    import vision_core
+
+    prompt = vision_core.NAVIGATE_PROMPT_VARIANTS["default-with-distance"]
+    rendered = prompt.format(target_object="red backpack", searched_rooms_note="")
+    assert "within_one_step" in rendered
+    assert '"distance_estimate"' in rendered
+    # The target is the one thing that must not read as an obstacle --
+    # otherwise arriving looks exactly like being blocked.
+    assert "does not count" in rendered
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("within_one_step", "within_one_step"),
+    ("a_few_steps", "a_few_steps"),
+    ("far", "far"),
+    ("VERY CLOSE", "unknown"),      # off the allow-list
+    ("12cm", "unknown"),            # a number, which this field never is
+    (None, "unknown"),
+])
+def test_an_unrecognised_distance_estimate_becomes_unknown(raw, expected):
+    """A caller may veto a move on this field, so anything unrecognised has
+    to fail towards "do not act on it" -- never towards a made-up level of
+    confidence."""
+    import json as _json
+
+    import vision_core
+
+    payload = {"target_visible": False, "target_direction": "not_visible",
+               "target_reached": False, "obstacle_ahead": False,
+               "room_guess": "kitchen", "action": "FORWARD",
+               "reasoning": "x"}
+    if raw is not None:
+        payload["distance_estimate"] = raw
+    parsed = vision_core._parse_navigate_json(_json.dumps(payload))
+    assert parsed["distance_estimate"] == expected
+
+
+def test_distance_estimate_is_always_present_even_on_a_garbage_reply():
+    """A client should never have to tell "the model said nothing" apart
+    from "this variant does not ask"."""
+    import vision_core
+
+    assert vision_core._parse_navigate_json("not json at all")["distance_estimate"] == "unknown"

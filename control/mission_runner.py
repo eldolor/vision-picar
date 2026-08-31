@@ -193,6 +193,7 @@ class MissionRunner:
         mission: Optional[str] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
         min_distance_cm: float = DEFAULT_MIN_DISTANCE_CM,
+        vision_proximity_veto: bool = False,
         policy: str = "frontier",
         vision_fn: Optional[Callable[[dict], dict]] = None,
         vision_timeout_s: float = DEFAULT_VISION_TIMEOUT_S,
@@ -236,6 +237,11 @@ class MissionRunner:
             self.memory,
             min_distance_cm=min_distance_cm,
             vision_fn=self._guarded_vision,
+            # Only reaches the vision policy: the rule-based one runs
+            # against MockRobot, which has a real distance reading, so the
+            # veto would return immediately anyway. Passing it either way
+            # would just be a flag that cannot fire.
+            vision_proximity_veto=vision_proximity_veto and policy == "vision",
         )
 
         self._lock = threading.RLock()
