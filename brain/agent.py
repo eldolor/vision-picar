@@ -22,7 +22,8 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from robot.interface import RobotInterface
-from robot.safety import SafetyController, SafetyViolation
+from robot.interface import NO_SENSOR_CM
+from robot.safety import FORWARD_ACTIONS, SafetyController, SafetyViolation
 from brain.vision import describe_grid_frame
 from brain.memory import MissionMemory
 
@@ -65,11 +66,15 @@ class ConstrainedAgent:
         min_distance_cm: float = 20.0,
         vision_fn: Callable[[dict], dict] = describe_grid_frame,
         max_consecutive_stops: int = 3,
+        vision_proximity_veto: bool = False,
     ):
         self.robot = robot
         self.safety = SafetyController(robot, min_distance_cm=min_distance_cm)
         self.vision_fn = vision_fn
         self.max_consecutive_stops = max_consecutive_stops
+        # Off by default, and see _vision_proximity_veto() for the three
+        # conditions that still have to hold before it can fire.
+        self.vision_proximity_veto = vision_proximity_veto
         self.history: list[StepResult] = []
 
     def decide(self, scene: dict, frame: Optional[dict] = None) -> str:
@@ -92,12 +97,66 @@ class ConstrainedAgent:
 
         return action
 
+    def _vision_proximity_veto(self, action: str, scene: dict) -> None:
+        """Stop a FORWARD the model says would hit something, on a backend
+        that has no distance sensor to say otherwise.
+
+        **This is not a safety layer and must never be mistaken for one.**
+        `robot/safety.py` is, and its docstring is explicit that it "never
+        trusts the AI's own claims about distance" -- which is why this
+        lives in brain/ instead, alongside the brain-side `min_distance_cm`
+        pre-check that config/robot.yaml already documents. The real
+        ultrasonic still re-checks every move it can.
+
+        What it is for: on ReplayRobot and TeleopRobot, `get_distance()`
+        returns NO_SENSOR_CM, so the veto path in robot/safety.py is dead
+        code and a whole Robot-view walk says nothing about collision
+        avoidance. This makes that path execute against real pixels, which
+        nothing else does before hardware exists.
+
+        Three conditions, all required:
+
+        1. Explicitly enabled. Off by default.
+        2. The backend genuinely has no sensor. If a real reading exists,
+           it wins -- a model's guess must never override or pre-empt a
+           measurement.
+        3. The model actually said "within_one_step". "unknown" is what a
+           prompt variant that never asked returns, and it is never acted
+           on.
+
+        Do NOT copy this into robot/hardware_robot.py. On the PiCar the
+        ultrasonic is the obstacle sensor, and CLAUDE.md's own measurements
+        say why this signal cannot be one: on identical frames Opus reports
+        obstacle_ahead ~100% of the time and Qwen ~0%.
+        """
+        if not self.vision_proximity_veto:
+            return
+        if action not in FORWARD_ACTIONS:
+            return
+        if self.robot.get_distance() < NO_SENSOR_CM:
+            return  # a real sensor is present; it decides, not the model
+        estimate = (scene.get("_navigate") or {}).get("distance_estimate")
+        if estimate != "within_one_step":
+            return
+        self.robot.stop()
+        msg = (
+            f"Blocked {action}: vision estimate says within_one_step and this "
+            "backend has no distance sensor (brain-side estimate, not a "
+            "measurement)"
+        )
+        logger.warning(msg)
+        raise SafetyViolation(msg)
+
     def step(self) -> StepResult:
         frame = self.robot.get_camera_frame()
         scene = self.vision_fn(frame)
         action = self.decide(scene, frame)
 
         try:
+            # Before the real check, never instead of it: on any backend
+            # with a sensor this returns immediately and robot/safety.py
+            # remains the only thing that can veto a move.
+            self._vision_proximity_veto(action, scene)
             result = self.safety.check_and_execute(action)
             executed = True
         except SafetyViolation as e:

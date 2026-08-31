@@ -80,14 +80,13 @@ import threading
 import time
 from typing import Optional
 
-from robot.interface import RobotInterface
+from robot.interface import NO_SENSOR_CM as _NO_SENSOR_CM, RobotInterface
 
 logger = logging.getLogger("teleop_robot")
 
-# Matches sim/replay_robot.py's NO_SENSOR_CM -- this backend has no
-# ultrasonic either, and pretending otherwise would make robot/safety.py
-# look like it had exercised something it hadn't.
-NO_SENSOR_CM = 999.0
+# Re-exported from robot/interface.py, which is where the contract lives
+# now -- this used to be a hand-kept copy of sim/replay_robot.py's.
+NO_SENSOR_CM = _NO_SENSOR_CM
 
 DEFAULT_STALL_TIMEOUT_S = 15.0
 

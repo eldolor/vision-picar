@@ -10,6 +10,19 @@ via robot/factory.py.
 
 from abc import ABC, abstractmethod
 
+# What `get_distance()` returns on a backend that has no distance sensor at
+# all -- a photograph has no depth in it, so ReplayRobot and TeleopRobot
+# both answer with this. Far above any configured `min_distance_cm`, so
+# robot/safety.py's veto never fires there: an honest "I cannot tell you"
+# rather than a fabricated clearance that would make a walk look like it
+# had exercised collision avoidance.
+#
+# Lives here, on the interface, because it is part of the contract rather
+# than a property of any one backend -- and because it was previously
+# defined twice, in sim/replay_robot.py and again in sim/teleop_robot.py
+# with a comment asking the reader to keep the two in step by hand.
+NO_SENSOR_CM = 999.0
+
 
 class RobotInterface(ABC):
     @abstractmethod

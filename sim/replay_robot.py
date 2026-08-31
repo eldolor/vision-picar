@@ -57,7 +57,7 @@ import base64
 import logging
 from pathlib import Path
 
-from robot.interface import RobotInterface
+from robot.interface import NO_SENSOR_CM as _NO_SENSOR_CM, RobotInterface
 
 logger = logging.getLogger("replay_robot")
 
@@ -67,10 +67,10 @@ MEDIA_TYPES = {
     ".webp": "image/webp", ".gif": "image/gif",
 }
 
-# Far above any configured min_distance_cm. See the docstring: this backend
-# has no distance sensor, and pretending otherwise would make a replay look
-# like it had exercised the safety layer.
-NO_SENSOR_CM = 999.0
+# Re-exported from robot/interface.py, which is where the contract lives
+# now. Kept as a module-level name because callers and tests import it from
+# here, and because it is genuinely part of this backend's story.
+NO_SENSOR_CM = _NO_SENSOR_CM
 
 MOVEMENTS = ("drive_forward", "reverse", "turn_left", "turn_right")
 

@@ -268,8 +268,48 @@ Respond with ONLY a JSON object, no other text, matching this schema:
 # Variants are named and served from here for the same reason models are:
 # one allow-list, server side, echoed back on every reply so a recorded walk
 # says which prompt produced it.
+# The default, plus one extra question and one extra field: an ORDINAL
+# proximity judgement. Built by string surgery on the default rather than
+# written out, so the two cannot drift in the five questions they share.
+#
+# **Why ordinal and not centimetres.** A single monocular frame cannot give
+# metric depth -- a real sofa and a doll's sofa are identical up to scale --
+# so asking for a number invites a confident guess with no error bar. "How
+# many moves of clearance" is a question about this image at this framing,
+# which is the kind the model can actually answer.
+#
+# **Why it is a variant and not the default.** The 3x3 matrix in
+# CLAUDE.md measured the default's wording; changing it would invalidate
+# those numbers and, worse, change production's behaviour the moment this
+# file is deployed there. Kept separate so the existing replay harness can
+# A/B the two over the same frames, which is the tool this repo already has
+# for exactly this question.
+_DISTANCE_QUESTION = """
+6. How close is the nearest thing the robot would collide with if it moved
+   forward from here? Answer in ROBOT MOVES, not distance: "within_one_step"
+   if a wall, furniture, door or person is close enough that one forward move
+   would reach it; "a_few_steps" if there is clear floor for two or three
+   moves before anything is in the way; "far" if the path ahead is open well
+   beyond that. The {target_object} is the ONE thing that does not count --
+   reaching it is the goal, not a collision, so judge the space around it.
+"""
+
+NAVIGATE_PROMPT_WITH_DISTANCE = (
+    NAVIGATE_PROMPT_TEMPLATE
+    .replace(
+        '{searched_rooms_note}\n',
+        "{searched_rooms_note}" + _DISTANCE_QUESTION,
+    )
+    .replace(
+        '  "reasoning": "one short sentence explaining the choice"',
+        '  "distance_estimate": "within_one_step" | "a_few_steps" | "far",\n'
+        '  "reasoning": "one short sentence explaining the choice"',
+    )
+)
+
 NAVIGATE_PROMPT_VARIANTS = {
     "default": NAVIGATE_PROMPT_TEMPLATE,
+    "default-with-distance": NAVIGATE_PROMPT_WITH_DISTANCE,
 }
 
 # Differs from the default in questions 2 and 5 only. Question 2 asks about
@@ -428,7 +468,15 @@ _NAVIGATE_EMPTY_SCHEMA = {
     "room_guess": "unclear",
     "action": "STOP",
     "reasoning": "Unable to analyze image.",
+    # Always present, so a client never has to distinguish "the model said
+    # nothing" from "this prompt variant does not ask". "unknown" is the
+    # only value that must never be acted on.
+    "distance_estimate": "unknown",
 }
+
+# Ordinal, deliberately. See NAVIGATE_PROMPT_WITH_DISTANCE for why there is
+# no centimetre figure here and why there should not be one.
+DISTANCE_ESTIMATES = ("within_one_step", "a_few_steps", "far", "unknown")
 
 
 def describe_image_bytes_navigate(
@@ -516,6 +564,12 @@ def _parse_navigate_json(text: str) -> dict:
         # never mistake a garbage value for a real room label.
         room_guess = merged.get("room_guess")
         merged["room_guess"] = str(room_guess).strip() if isinstance(room_guess, str) and room_guess.strip() else "unclear"
+        # Anything off the allow-list becomes "unknown" rather than passing
+        # through. A caller may veto a move on this field, so an
+        # unrecognised value has to fail towards "do not act on it" -- never
+        # towards a made-up level of confidence.
+        if merged.get("distance_estimate") not in DISTANCE_ESTIMATES:
+            merged["distance_estimate"] = "unknown"
         return merged
     except json.JSONDecodeError:
         logger.warning(f"Failed to parse VLM navigate response as JSON: {text!r}")
