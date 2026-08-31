@@ -3697,7 +3697,10 @@
       else renderStaticMapOnly();
     }
     if (sizeFpvCanvas()) {
-      if (state.lastFrame) renderFPV();
+      // drawFPV, not renderFPV: a resize must repaint from the same source
+      // the last render used, or a server frame silently becomes a local
+      // one while the readout still says "server".
+      if (state.lastFrame) drawFPV();
       else renderFpvPlaceholder();
     }
   }
