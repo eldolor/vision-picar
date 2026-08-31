@@ -676,6 +676,32 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   watch it go red first: two tests written in this project passed against
   the very defect they were written for until that was checked.
 
+- **Every ECS task definition here is ARM64 -- build images with
+  `--platform linux/arm64`.** An amd64 image pushes to ECR without
+  complaint and then fails at placement with `CannotPullContainerError:
+  image Manifest does not contain descriptor matching platform
+  'linux/arm64 v8'`, which costs a couple of rollout attempts before it is
+  obvious what happened. Confirm with `aws ecs describe-task-definition
+  --query taskDefinition.runtimePlatform` if in doubt. The full loop for
+  any of these services is: `docker build --platform linux/arm64 -f
+  service/<name>/Dockerfile -t vision-picar-<name> .` (from the repo root
+  -- see the repo map), tag and push to the matching ECR repo, then `aws
+  ecs update-service --cluster vision-picar-cluster --service
+  vision-picar-<name>-service --force-new-deployment`.
+
+- **A replay outlives its own HTTP response.** `POST
+  /recording/walks/{walk}/replay` is synchronous, and the shared load
+  balancer closes the response at 60s -- which any walk past roughly 20
+  frames will exceed. The server finishes the job and writes its sidecar
+  regardless, so the caller's move is to poll `GET
+  /recording/walks/{walk}/replays` for a fresh `replayed_at`, which is
+  what `control/admin.js`'s `pollForReplay()` does. **Do not fire the next
+  replay when the POST returns**: on a timed-out response the previous one
+  is still running, and stacking replays on one vision task is the exact
+  load that used to make them lose frames. Making replay a job (POST
+  returns an id, poll for the result) would remove the class of problem
+  and has not been done.
+
 - **`robot/server.py`'s `require_secret()` gate is new** (added
   alongside the ECS deployment) and is a no-op when `APP_SHARED_SECRET`
   is unset -- which is how local dev and the test suite both run, so
