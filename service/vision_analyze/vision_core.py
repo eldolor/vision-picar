@@ -284,6 +284,35 @@ Respond with ONLY a JSON object, no other text, matching this schema:
 # file is deployed there. Kept separate so the existing replay harness can
 # A/B the two over the same frames, which is the tool this repo already has
 # for exactly this question.
+# **Measured 2026-08-31, on 80 frames from five recorded walks (two
+# targets, 100% coverage), replayed through this variant. The field is
+# informative but badly calibrated, and must not drive a veto as it
+# stands:**
+#
+#   within_one_step 48/80 (60%)   a_few_steps 28/80   far 4/80 (5%)
+#
+# Sixty percent of frames from someone walking across a house say one
+# forward move would hit something, and "far" is essentially never used.
+# That is not what a walk looks like. It is the same over-reading already
+# recorded for obstacle_ahead -- "is there an obstacle directly ahead"
+# heard as "is there furniture anywhere in front of me" -- and an indoor
+# room always has *something* within a step or two if walls and furniture
+# at the periphery count.
+#
+# The skew is NOT the target being counted as an obstacle: on the 56
+# frames where the target was not visible at all it holds at 55%. It
+# agrees with obstacle_ahead on 85% of frames, so the two are consistent
+# with each other and wrong together rather than independently noisy.
+#
+# **Consequence: wiring the veto to this would block roughly three of
+# every five FORWARDs -- reproducing the never-FORWARD stall the 3x3
+# matrix found for Sonnet.** brain/agent.py's veto stays off by default,
+# and this is the evidence for that default.
+#
+# Not fixed by rewording, on this repo's own experience: the 3x3 matrix
+# moved between degenerate modes rather than out of them. The next attempt
+# should change the SHAPE of the question -- ask what is in the center
+# third and in the path, not what is nearest anywhere in frame.
 _DISTANCE_QUESTION = """
 6. How close is the nearest thing the robot would collide with if it moved
    forward from here? Answer in ROBOT MOVES, not distance: "within_one_step"
