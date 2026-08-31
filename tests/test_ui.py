@@ -452,3 +452,70 @@ def test_the_notice_does_not_fire_for_local_development(browser, twin_server):
     assert page.locator("#cfg-url-mismatch").is_hidden()
     context.close()
 
+
+
+# ---------- connection failures say which kind they are ----------
+#
+# Three situations were reported with one message: the request never
+# arrived, the secret was rejected, and the server answered that it had no
+# frame yet. Only the first is about networks and origins. Repeating that
+# advice for the other two sends someone to check three things that are
+# already fine -- which is exactly what happened against a healthy
+# mode: teleop server that simply had no walk in progress.
+
+
+def _connect_against(browser, twin_server, status, detail):
+    """The twin, connecting to a robot server that answers with a chosen
+    status. Routed rather than really deployed: what is under test is the
+    client's wording, not the server's behaviour."""
+    page, errors = open_twin(browser, twin_server)
+
+    def handler(route):
+        route.fulfill(status=status, content_type="application/json",
+                      body=_json({"detail": detail}))
+
+    page.route("**/frame", handler)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.wait_for_timeout(900)
+    return page, errors, " ".join(page.inner_text("#connection-status").split())
+
+
+def test_a_stalled_teleop_server_is_not_reported_as_unreachable(browser, twin_server):
+    """The message that started this: a healthy server answering 503 was
+    presented as possibly-down, possibly-off-network, possibly-CORS."""
+    page, errors, text = _connect_against(
+        browser, twin_server, 503,
+        "no new frame in 83553.5s (limit 15.0s) -- is the phone still capturing?")
+    assert not errors
+    assert "is running" in text, text
+    assert "CORS" not in text, "still blaming CORS for a server that answered"
+    assert "no new frame" in text, "the server's own diagnosis was dropped"
+    page.context.close()
+
+
+def test_a_rejected_secret_says_the_server_was_reachable(browser, twin_server):
+    """A 401 is never a network problem, and saying so points at the one
+    thing that is actually wrong -- which deployment the secret belongs to."""
+    page, errors, text = _connect_against(
+        browser, twin_server, 401, "Missing or invalid x-app-secret header.")
+    assert not errors
+    assert "reachable" in text, text
+    assert "CORS" not in text, text
+    page.context.close()
+
+
+def test_an_unreachable_server_still_gets_the_network_advice(browser, twin_server):
+    """The advice is right for the case it was written for, and must not be
+    lost while narrowing the cases it applies to."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/frame", lambda route: route.abort())
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.wait_for_timeout(900)
+    text = " ".join(page.inner_text("#connection-status").split())
+    assert "Could not reach" in text, text
+    assert "CORS" in text, text
+    page.context.close()
