@@ -686,9 +686,8 @@
     } catch (e) {
       state.connected = false;
       setControlsEnabled(false);
-      setConnStatus(statusEl, "err", "Not connected", silent
-        ? url + " didn't respond. Tap Connect to retry."
-        : connectFailureMessage(url, e));
+      setConnStatus(statusEl, "err", "Not connected",
+                    connectFailureMessage(url, e, silent));
       if (!silent) showToast("Couldn't reach the robot server.", "err");
     } finally {
       state.connecting = false;
@@ -4244,11 +4243,20 @@
   // advice about networks and origins; repeating it for the second sends
   // someone to check three things that are already fine while the real
   // answer sits in the message they were told to ignore.
-  function connectFailureMessage(url, e) {
+  function connectFailureMessage(url, e, silent) {
+    // `silent` is the reconnect that runs on page load, and it used to have
+    // its own wording -- "didn't respond. Tap Connect to retry." That is
+    // the same mistake as the CORS advice in a shorter sentence: a server
+    // that answered 503 did respond, and saying otherwise sends someone
+    // to check the network. Only the no-status branch varies by silence
+    // now; when something answered, what it said is worth the space
+    // whether or not anyone pressed a button.
     if (!e.status) {
-      return "Could not reach " + url + " (" + e.message + "). Check the server is "
-        + "running, on the same network, and that CORS/allowed_origins in "
-        + "config/robot.yaml permits this page's origin.";
+      return silent
+        ? url + " didn't respond. Tap Connect to retry."
+        : "Could not reach " + url + " (" + e.message + "). Check the server is "
+          + "running, on the same network, and that CORS/allowed_origins in "
+          + "config/robot.yaml permits this page's origin.";
     }
     // A teleop server has no camera of its own -- it serves whatever frame
     // a phone last pushed into it, so it is unreachable-looking until

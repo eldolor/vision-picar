@@ -519,3 +519,28 @@ def test_an_unreachable_server_still_gets_the_network_advice(browser, twin_serve
     assert "Could not reach" in text, text
     assert "CORS" in text, text
     page.context.close()
+
+
+def test_the_auto_reconnect_also_reports_what_the_server_said(browser, twin_server):
+    """The reconnect that runs on page load had its own wording -- "didn't
+    respond. Tap Connect to retry." -- which is the CORS mistake in a
+    shorter sentence: a server that answered 503 did respond. This was
+    missed the first time because only the manual Connect path was fixed,
+    and the page-load path is the one most people actually see."""
+    context = browser.new_context(viewport=PHONE)
+    context.add_init_script(
+        "(() => { try { localStorage.setItem('vp_cfg_server_url', %s); }"
+        " catch (e) {} })();" % _json(twin_server))
+    page = context.new_page()
+    page.route("**/frame", lambda route: route.fulfill(
+        status=503, content_type="application/json",
+        body=_json({"detail": "no new frame in 83553.5s (limit 15.0s) -- "
+                              "is the phone still capturing?"})))
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(1500)
+    page.click("#btn-settings")
+    page.wait_for_timeout(300)
+    text = " ".join(page.inner_text("#connection-status").split())
+    assert "didn't respond" not in text, f"still claiming no response: {text}"
+    assert "no new frame" in text, f"the server's own diagnosis was dropped: {text}"
+    context.close()
