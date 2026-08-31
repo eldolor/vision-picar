@@ -18,15 +18,16 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 419 passed)
+# Confirm everything still works (should show 445 passed, with a browser
+# installed -- see below; 440 without, as five parity tests skip)
 pytest tests/ -v
 
 # service/vision_analyze/ has its own suite -- see section 5, item 1
 pytest service/vision_analyze/tests/ -v
 
-# tests/test_ui.py drives the real twin in a real browser. It SKIPS unless
-# a browser is installed, so the count above holds either way -- install it
-# once to actually get that coverage:
+# tests/test_ui.py and tests/test_renderer_parity.py drive the real twin in
+# a real browser. They SKIP rather than fail without one, so the rest of
+# the suite still runs -- install it once to actually get that coverage:
 python -m playwright install chromium
 ```
 
@@ -104,6 +105,7 @@ the original build plan phases, reordered simulation-first):
 | 9 (partial) | Wi-Fi control API + safety-over-HTTP + watchdog | Done (`robot/server.py`), CORS added |
 | 9 (partial) | Manual WASD control client (`control/manual_control.py`) | NOT BUILT, and now skipped -- the twin's D-pad supersedes it, and `RemoteRobot` (B0, below) makes it nearly free if ever wanted. |
 | B0-B3 | Brain on the wire: `RemoteRobot`, `MissionRunner`, `control/brain_server.py`, the three failsafes | Done, tested (`control/`, `tests/test_remote_robot.py`, `test_mission_runner.py`, `test_brain_server.py`, `test_failsafes.py`). The autonomy loop is a service now: startable, stoppable, and inspectable over HTTP, with the robot reachable only as an HTTP client. |
+| S2 | Real image bytes -- the twin's raycaster ported into Python (`sim/renderer.py`) | Done (2026-08-31). `MockRobot.get_camera_frame()` returns a rendered JPEG like every other backend, so the vision policy drives the simulator and `RobotInterface` no longer has to change when hardware lands (`PLAN-sim-hardening.md` 2.1, now closed). Parity with the JS is proven column by column (`tests/test_renderer_parity.py`), which is what makes `renderFPV` safe to delete -- **not yet deleted**: it is still the fallback for a server predating S2, and nothing has been redeployed. The twin's new "frame source: server / local" readout is how you tell which one drew the picture. Read `sim/renderer.py`'s fidelity note before treating a sim result as a statement about real rooms. |
 | S2b (partial) | The Python vision agent | Done for recorded walks (`brain/navigate.py`, `brain/vision_agent.py`, `sim/replay_robot.py`, `policy: "vision"`, and the twin's "Record this walk" switch) and, since T1-T4, for a live phone walk too (`sim/teleop_robot.py`, "Drive via brain"). The model decides every move; the harness supplies the timeout, the failure budget and the step/cost cap. Room-level step memory is done -- `/navigate` exchanges `searched_rooms`/`room_guess` with the client, and `brain/agent.py:MissionAgent.step()` backfills `frame["room"]` from it (`AGENT-HARNESS.md` section 10). Not yet drivable in the grid-world sim itself -- still needs S2's real image bytes. |
 | B4 | The twin becomes an observer | Done (`web-twin/index.html`'s "Remote brain" panel + `control/drills.py`). Missions start from the phone and survive the tab; the failsafe drills and watchdog readout make B3's guards watchable. Only B5 (systemd on the Pi) is left in that plan. |
 | T1-T4 | Teleop robot: a live phone walk drives the real `MissionRunner` mission, closed loop (`PLAN-teleop-robot.md`) | Done and deployed (2026-08-28) -- `sim/teleop_robot.py`'s `TeleopRobot` (a fourth `RobotInterface` backend: `mode: teleop`, no motor, a live pushed camera frame, no distance sensor), `POST /teleop/frame` on `robot/server.py`, the twin's Robot view "Drive via brain" switch, and sibling `teleop-robot.yaml`/`teleop-brain.yaml` CloudFormation stacks sharing the existing NLB/ALB (see section 6's AWS-topology bullet). Verified end to end: a real phone walk found its target (`OUT: FOUND`), and both B3.2 (vision-failure budget) and T1's stall detection were triggered live, no drill, against the deployed services. One rough edge, since fixed: `/frame` now catches a stall and returns 503 with the real message instead of a generic 500. |
@@ -380,24 +382,28 @@ real-world accuracy without a robot.
 
 ### Stage 1 -- Make the vision path real, in Python -- **PARTLY DONE**
 
-The vision loop is the product (Q1). It now exists in Python
-(`brain/navigate.py` + `brain/vision_agent.py`, `policy: "vision"`) and
-runs against **recorded walks** -- `sim/replay_robot.py`, fed by the
-twin's new "Record this walk" switch in Robot view. What is left is the
-sim path (S2) and room memory (the rest of S2b).
+The vision loop is the product (Q1). It exists in Python
+(`brain/navigate.py` + `brain/vision_agent.py`, `policy: "vision"`) and,
+since S2 landed on 2026-08-31, runs against **every backend**: the
+grid-world sim, recorded walks (`sim/replay_robot.py`), a live phone walk
+(`sim/teleop_robot.py`) and hardware later. Room memory (the rest of S2b)
+is built too. What is left in this stage is the demo that spends real
+money -- see **Done when** below.
 
 - **S1 -- pin the contract -- BUILT.** `tests/test_robot_contract.py`:
   a backend-agnostic conformance suite (36 tests) parameterized over all
   four `RobotInterface` backends that exist today (`MockRobot`,
   `RemoteRobot`, `ReplayRobot`, `TeleopRobot`), asserting return shapes,
-  units and `stop()` idempotency with no grid-specific assertions. Not yet
-  pinned: pixels in `get_camera_frame()` -- that's S2's job, noted in the
-  suite's own docstring as the thing to extend it with once real image
-  bytes exist on every backend.
-- **S2 -- real image bytes.** Port the twin's raycaster
-  (`renderFPV`) into Python so `get_camera_frame()` returns JPEG bytes on
-  every backend. The one structural blocker between Vision Autopilot and
-  hardware.
+  units and `stop()` idempotency with no grid-specific assertions. Extended
+  by S2 (44 tests now) to pin pixels too: every backend must return a
+  decodable image and name its media type.
+- **S2 -- real image bytes -- BUILT (2026-08-31).** `sim/renderer.py` is
+  the twin's raycaster ported into Python, so `get_camera_frame()` returns
+  JPEG bytes on every backend and the one structural blocker between
+  Vision Autopilot and hardware is gone. The JS raycaster is still present
+  as the pre-S2 fallback and is now safe to delete -- see the status table
+  in section 3, and `sim/renderer.py`'s fidelity note, which is the reason
+  this does not retire the real-photo gate in Stage 0.
 - **S2b -- the Python vision agent** -- **BUILT** for recorded walks
   (`python -m tests.demo_replay_mission <walk> "red backpack"`) and, since
   `PLAN-teleop-robot.md`'s T1-T4, for a live phone walk too. **Room-level
@@ -413,10 +419,15 @@ sim path (S2) and room memory (the rest of S2b).
   root suite: `pytest service/vision_analyze/tests/ -v` (see section 6).
 
 **Done when** a Python agent completes a backpack hunt in the sim
-against the real `/navigate`, with cost and wall-clock recorded. The
-agent and the cost/wall-clock reporting exist
-(`tests/demo_replay_mission.py` prints both); *in the sim* is what S2 is
-still owed for.
+against the real `/navigate`, with cost and wall-clock recorded. Every
+piece now exists -- the agent, the cost/wall-clock reporting
+(`tests/demo_replay_mission.py` prints both) and, since S2, the sim
+frames themselves. **The run itself has not been made**: it costs real
+`/navigate` calls, and nothing in the automated suite spends money. That
+run is the remaining item in this stage, and it is also the first
+closed-loop measurement this project has ever had -- unlike a replay,
+turning left in the sim really does change the next frame
+(`sim/replay_robot.py`'s open-loop caveat).
 
 ### Stage 2 -- Put the brain on the wire -- **DONE (2026-08-27)**
 

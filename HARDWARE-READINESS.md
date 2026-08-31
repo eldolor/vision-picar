@@ -140,7 +140,10 @@ anything real -- see section 3 and `PLAN-sim-hardening.md` section 7.
 - **Phases S1-S4 of `PLAN-sim-hardening.md`** -- pin the interface
   contract, make `get_camera_frame()` return real image bytes, build the
   Python HTTP client, put time in the loop so the watchdog is actually
-  tested.
+  tested. **All four are now built** -- S1 and S3 on 2026-08-28, S4 the
+  same day, and S2 on 2026-08-31 (`sim/renderer.py`). S5 is built too,
+  which `PLAN-sim-hardening.md` Q4 puts past the point where measuring
+  beats modelling.
 - **The cheap real-world test:** photograph real rooms with a phone and
   replay those JPEGs through `/navigate`, the same way Guide already
   replays them through `/guidance`. **No robot required.** This answers
@@ -151,6 +154,14 @@ anything real -- see section 3 and `PLAN-sim-hardening.md` section 7.
 could simply be measured: ultrasonic behavior on an actual sofa, actual
 turning radius on actual carpet, real stopping distance. A ~$100 kit
 measures those better than a week of simulator work does.
+
+**Both prerequisites are met as of 2026-08-31**, so this is now the live
+recommendation rather than a future one. Note the kit has shipping
+latency that no other item here has, and section 5.3 -- whether the
+ultrasonic pans with the camera -- is answerable only by looking at the
+assembly diagram, decides whether the peek-based policy works at all, and
+blocks nothing else. That makes ordering the highest-value action
+available, and it can happen in parallel with everything below.
 
 The genuinely unbuyable-around items: how far the car coasts between
 "sensor says 20cm" and "motors stopped," and whether the ultrasonic sees

@@ -114,7 +114,7 @@ Two consequences that shape the rest of this plan:
 These are architecture gaps, not fidelity gaps. Ordered by how badly
 each breaks the stated goal.
 
-### 2.1 `get_camera_frame()` has no image contract -- BLOCKER
+### 2.1 `get_camera_frame()` has no image contract -- **CLOSED (2026-08-31, phase S2)**
 
 `MockRobot.get_camera_frame()` returns a dict of grid facts
 (`room`, `facing`, `position`, `objects_visible`). A real Pi camera
@@ -123,6 +123,13 @@ satisfies the current consumers. So `RobotInterface` -- the one
 abstraction the whole design rests on -- **will have to change** when
 hardware lands. That is precisely the outcome `robot/factory.py`'s
 docstring promises won't happen.
+
+**Closed by phase S2.** `sim/renderer.py` renders the grid world, and
+`MockRobot.get_camera_frame()` now answers with `image_base64` /
+`media_type` like every other backend -- so a Pi camera is a fourth
+implementation of a shape that already exists, not a fifth shape. The
+contract is pinned in `robot/interface.py` and asserted for all four
+backends by `tests/test_robot_contract.py`.
 
 ### 2.2 The rule-based policy cannot run on hardware -- NOT A BLOCKER (see Q1)
 
@@ -320,7 +327,7 @@ image bytes on every backend, rather than a gap nobody wrote down.
 `robot/hardware_robot.py` (Phase 11) will need to pass this same file
 unmodified -- that is the whole point of writing it now.
 
-### Phase S2 -- Give `get_camera_frame()` a real image contract
+### Phase S2 -- Give `get_camera_frame()` a real image contract -- **BUILT (2026-08-31)**
 
 **Build.** Move the twin's raycaster from JS into Python so `MockRobot`
 can return actual JPEG bytes. `get_camera_frame()` returns
@@ -351,6 +358,39 @@ been retired.
 **Priority.** Q1 is answered (vision), which makes this the top phase in
 the plan: it is the one structural blocker between Vision Autopilot and
 real hardware. Pair it with S2b.
+
+**As built (2026-08-31).** All four tests exist and pass, plus a fifth
+thing worth recording:
+
+- `sim/renderer.py` is a line-for-line port of `renderFPV`, and the
+  constants are deliberately kept under the JS names so the two can be
+  diffed by eye. `render=False` on `MockRobot` keeps the free/offline
+  path (a render is ~7ms, and the rule-based policy has no use for the
+  picture).
+- **The grid facts stayed at the top level rather than moving under
+  `metadata`**, which is a deviation from this section's wording and a
+  deliberate one: section 2.2 says the rule-based agent keeps its
+  coordinates, and `brain/agent.py` reads `position`/`facing` from there.
+  `metadata` carries provenance instead. The "no policy may read these"
+  rule is documented on both `RobotInterface.get_camera_frame()` and
+  `MockRobot`'s override rather than enforced by shape.
+- **Parity is checked as wall silhouette, not as pixels**
+  (`tests/test_renderer_parity.py`). Canvas antialiases a fractional wall
+  column and PIL does not, so identical bytes were never achievable;
+  comparing where each renderer puts the wall is what "the same view"
+  means. It drives the real page in Chromium and *strips* `image_base64`
+  from `/frame` to force the JS path -- without that the test would
+  compare Python against Python and pass for the wrong reason.
+- **The UI proof found a real bug.** `fetchFrame()` in `web-twin/app.js`
+  rebuilds the server's reply into a new object from six named keys, so
+  it silently dropped `image_base64`: the readout said "local" against a
+  server that was in fact sending pixels. That is exactly the class of
+  thing the readout exists to make visible, and it was invisible to every
+  Python test.
+- **`renderFPV`/`fpvCastRay` are still in `app.js` and still reachable.**
+  Parity is proven, so deleting them is now safe -- but they are the
+  fallback for a server that predates S2, and nothing has been redeployed
+  yet. Delete them once the deployed twin reports "server".
 
 ### Phase S2b -- A Python vision agent, with memory -- **PARTLY BUILT**
 

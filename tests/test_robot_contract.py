@@ -18,21 +18,26 @@ not a backend-specific quirk -- that's the point of running each one once
 per backend via the `robot` fixture below, rather than writing MockRobot's
 own tests four times with the noun changed.
 
-Not covered here, deliberately: `get_camera_frame()`'s `image_base64`
-presence. MockRobot returns grid facts, not pixels, until phase S2 lands
-(AGENT-HARNESS.md section 1) -- asserting pixels here would either be
-false for MockRobot or too loose to mean anything. What today's four
-backends actually agree on is a `dict` with a `room` key; that's what's
-pinned. Revisit this file when S2 lands and add the pixel contract for the
-backends S2 promises it to (see PLAN-sim-hardening.md's own note that S1's
-job is exactly to be extended, not rewritten, as backends change).
+**Pixels are pinned here as of phase S2.** They were not before: MockRobot
+returned grid facts and no image, so asserting pixels would have been
+either false for it or too loose to mean anything, and this file said to
+revisit when S2 landed. It has -- `sim/renderer.py` gives the grid world a
+real raycast camera -- so all four backends now agree on a decodable image
+plus a `room` key, and that is what's pinned below. This is the extension
+S1 was designed for rather than a rewrite of it.
+
+Note `PIXEL` is a genuine (tiny) JPEG rather than the four-byte stub it
+used to be. A contract that says "decodable image" has to be tested with
+something actually decodable, or it only pins the base64.
 
 Run with: pytest tests/test_robot_contract.py -v
 """
 
 import base64
+import io
 
 import pytest
+from PIL import Image
 
 from robot.interface import RobotInterface
 from sim.maps.starter_house import build_starter_world
@@ -40,7 +45,16 @@ from sim.mock_robot import MockRobot
 from sim.replay_robot import ReplayRobot
 from sim.teleop_robot import TeleopRobot
 
-PIXEL = base64.b64encode(b"\xff\xd8\xff\xd9").decode()
+
+def _tiny_jpeg() -> str:
+    """A real 8x8 JPEG, base64. Built rather than pasted so it stays
+    obvious what it is and cannot rot into an unreadable blob."""
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), (90, 100, 120)).save(buf, format="JPEG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+PIXEL = _tiny_jpeg()
 
 MOVEMENT_METHODS = ("drive_forward", "reverse")
 TURN_METHODS = ("turn_left", "turn_right")
@@ -156,3 +170,27 @@ def test_get_camera_frame_is_a_dict_with_a_room_key(robot):
     assert isinstance(frame.get("room"), str) and frame["room"], (
         "room must be a non-empty string, even when its value is 'unknown'"
     )
+
+
+def test_get_camera_frame_carries_a_decodable_image(robot):
+    """Phase S2's contract, and the reason `RobotInterface` does not have
+    to change when hardware lands: every backend answers with pixels, so
+    a Pi camera is a fourth implementation of a shape that already exists
+    rather than a fifth shape (PLAN-sim-hardening.md 2.1)."""
+    frame = robot.get_camera_frame()
+
+    data = frame.get("image_base64")
+    assert isinstance(data, str) and data, "every backend must supply image_base64"
+
+    raw = base64.b64decode(data, validate=True)
+    img = Image.open(io.BytesIO(raw))
+    img.verify()  # raises if the bytes are not a real image
+    assert img.width > 0 and img.height > 0
+
+
+def test_get_camera_frame_declares_its_media_type(robot):
+    """A vision call has to name the media type it is sending, so guessing
+    it here would just move the guess downstream."""
+    media_type = robot.get_camera_frame().get("media_type")
+    assert isinstance(media_type, str)
+    assert media_type.startswith("image/"), media_type

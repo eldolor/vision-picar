@@ -2,8 +2,12 @@
 Run with: pytest tests/test_server.py -v
 """
 
+import base64
+import io
+
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from robot.server import create_app, watchdog_should_stop
 
 
@@ -59,6 +63,22 @@ def test_frame_endpoint():
         resp = client.get("/frame")
         assert resp.status_code == 200
         assert "room" in resp.json()
+
+
+def test_frame_endpoint_serves_a_decodable_image():
+    """Phase S2, over the wire. `/frame` itself needed no change for this
+    -- it has always been `robot.get_camera_frame()` verbatim, which is
+    the same property T2 relied on for teleop -- but the twin and every
+    RemoteRobot-driven mission read the sim's pixels through here, so the
+    image surviving JSON transport is worth pinning separately from the
+    backend returning it."""
+    with make_client() as client:
+        body = client.get("/frame").json()
+
+        assert body["media_type"] == "image/jpeg"
+        img = Image.open(io.BytesIO(base64.b64decode(body["image_base64"])))
+        img.verify()
+        assert img.format == "JPEG"
 
 
 def test_teleop_frame_round_trips_through_frame_endpoint(teleop_config):

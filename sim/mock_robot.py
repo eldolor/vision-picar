@@ -30,6 +30,7 @@ from typing import Optional
 
 from sim.grid_world import GridWorld
 from sim.sensors import DistanceSensorModel
+from sim import renderer
 from robot.interface import RobotInterface
 
 logger = logging.getLogger("mock_robot")
@@ -47,9 +48,22 @@ class MockRobot(RobotInterface):
         world: GridWorld,
         realtime: bool = False,
         sensor: Optional[DistanceSensorModel] = None,
+        render: bool = True,
+        render_width: int = renderer.DEFAULT_WIDTH,
+        render_height: int = renderer.DEFAULT_HEIGHT,
     ):
         self.world = world
         self.realtime = realtime
+        # Phase S2. On by default because the pixels are now part of the
+        # RobotInterface contract -- the conformance suite asserts every
+        # backend returns a decodable image. `render=False` is the
+        # free/offline path: no raycast, no JPEG encode, and
+        # get_camera_frame() collapses back to frame_description(). Worth
+        # having because a render is ~7ms and the rule-based policy, which
+        # is most of the suite, has no use for the picture.
+        self.render = render
+        self.render_width = render_width
+        self.render_height = render_height
         # None (the default) keeps get_distance()'s exact, noiseless,
         # always-30cm-multiple behavior every existing test depends on --
         # see sim/sensors.py's own docstring for why that is a real gap,
@@ -102,10 +116,43 @@ class MockRobot(RobotInterface):
     # ---------- sensing ----------
 
     def get_camera_frame(self) -> dict:
-        """Returns a structured scene description instead of pixels.
-        See build plan Phase 0.5 -- grid-world 'camera frame' = text/struct,
-        not an actual image."""
-        return self.world.frame_description()
+        """Grid facts *and* real pixels -- phase S2.
+
+        Until S2 this returned a structured description and nothing else,
+        which is what stopped the vision policy driving the simulator at
+        all (`PLAN-sim-hardening.md` 2.1 -- the one blocker that would
+        have forced `RobotInterface` to change when hardware landed).
+        `sim/renderer.py` now supplies `image_base64`/`media_type` in the
+        same shape `ReplayRobot` and `TeleopRobot` already return, so all
+        four backends answer this call the same way.
+
+        **The grid facts are sim-only debug data and no vision policy may
+        read them.** They stay at the top level rather than moving under
+        `metadata` for one reason: `brain/agent.py`'s frontier preference
+        reads `position`/`facing` from here, and
+        `PLAN-sim-hardening.md` 2.2 is explicit that the rule-based agent
+        keeps its coordinates ("do not spend effort giving it
+        coordinates; do not delete it either"). A camera cannot produce
+        them, so anything on the hardware path that touches them is
+        cheating and will fail the moment it meets a real robot.
+
+        `frame_description()` remains the free/offline path: no render, no
+        Pillow, and the same dict minus the three keys added here.
+        """
+        frame = self.world.frame_description()
+        if not self.render:
+            return frame
+        # Added *after* frame_description(), which logs the dict it built.
+        # A base64 JPEG in the log would bury every other line in it.
+        frame["image_base64"] = renderer.render_world_base64(
+            self.world, self.render_width, self.render_height
+        )
+        frame["media_type"] = renderer.MEDIA_TYPE
+        frame["metadata"] = {
+            "source": "sim",
+            "render": {"w": self.render_width, "h": self.render_height},
+        }
+        return frame
 
     def get_distance(self) -> float:
         """Distance in cm, matching the real ultrasonic sensor's units.

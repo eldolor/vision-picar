@@ -1,3 +1,9 @@
 fastapi
 uvicorn[standard]
 pyyaml
+# Phase S2: mode: sim serves rendered camera frames, so this image needs
+# the renderer's dependency. robot/factory.py imports sim/ only in the
+# sim branch, so a mode: teleop container never touches it -- but this
+# image is the one that runs mode: sim, and without pillow GET /frame
+# fails at import time rather than at deploy time.
+pillow

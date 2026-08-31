@@ -32,7 +32,8 @@ what keeps the other ten sections from rotting with them.
 
 ## 1. Where this is on the road  *(the perishable section)*
 
-Updated 2026-08-27, when the vision policy landed for recorded walks.
+Updated 2026-08-31, when phase S2 gave the simulator pixels and the
+vision policy stopped being limited to recorded and live walks.
 
 The word "agent" covers two things. Both now exist in Python; what
 separates them is which backends they can run against.
@@ -47,7 +48,7 @@ separates them is which backends they can run against.
 | `policy=` | Decides with | Runs against | Costs |
 |---|---|---|---|
 | `"frontier"` (default) | rule-based exploration: frontier-preference where the frame carries grid coordinates, a plain wall-follower where it does not (§3 step 5) | anything | nothing |
-| `"vision"` | `/navigate` -- one model call per step, one action back | backends whose `get_camera_frame()` returns `image_base64`: `sim/replay_robot.py` today, hardware later. **Not `MockRobot`**, which has no pixels until phase S2 | one paid call per step |
+| `"vision"` | `/navigate` -- one model call per step, one action back | **every backend**, since phase S2 gave the grid world a camera of its own (`sim/renderer.py`): `MockRobot`, `ReplayRobot`, `TeleopRobot`, and hardware later | one paid call per step |
 
 `POST /mission/start` with `policy: "vision"` needs `brain.vision_url` and
 a `target_object`; both are checked at start time rather than failing on
@@ -55,10 +56,6 @@ the first paid call.
 
 ### What still isn't there
 
-- **The vision policy cannot drive the simulator.** `MockRobot` returns a
-  grid description. Phase S2 (the raycaster ported into Python) is what
-  changes that; until then the sim runs the rule-based policy and real
-  pixels come from a recorded walk.
 - **`as_context()` still feeds nothing.** §12.
 - **A replay is open loop.** It measures memory, lifecycle and cost
   honestly; it does not measure navigation. `sim/replay_robot.py` has the
@@ -75,7 +72,7 @@ in this document should need to move.
 
 | Phase | What becomes untrue | Update |
 |---|---|---|
-| **S2** -- real image bytes | `MockRobot` has no pixels, so the vision policy cannot drive the sim | §1's policy table; §3 step 3 |
+| ~~**S2** -- real image bytes~~ | *Landed 2026-08-31.* §1's policy table and §3 step 3 were updated with it. | done |
 | **Phase 11** -- hardware | `HardwareRobot` does not exist | §5's body-seam row |
 | **B5** -- systemd on the Pi | The brain runs wherever you start it | §2's diagram caption |
 | any | A gap in §12 gets closed | §12 -- it is the only other section that dates |
@@ -140,7 +137,10 @@ returns `True` while the mission is still running, so a caller can write
 2. **Check the step budget.** At `max_steps`, finish with outcome
    `max_steps`.
 3. **Perceive.** `agent.step()` calls `get_camera_frame()` -- an HTTP
-   `GET /frame` when the robot is remote.
+   `GET /frame` when the robot is remote. Since phase S2 that reply
+   carries a real image on every backend, the simulator included
+   (`sim/renderer.py`); `MockRobot` also keeps its grid facts alongside
+   the pixels, for the rule-based policy alone.
 4. **Interpret.** The frame goes to `vision_fn`, wrapped in
    `_guarded_vision`: a per-call timeout enforced on a **daemon thread**
    (section 7). A raise or a timeout becomes `VisionUnavailable`. Under
@@ -496,8 +496,12 @@ are the other two reasons worth revisiting this.
 
 ## 12. Known gaps  *(perishable -- see §1)*
 
-- **The vision policy cannot drive the simulator** (no pixels until phase
-  S2). Room-level step memory, the other half of S2b, is built -- §10.
+- ~~The vision policy cannot drive the simulator.~~ **Closed by phase S2**
+  (`sim/renderer.py`). Room-level step memory, the other half of S2b, was
+  already built -- §10. What remains is a fidelity caveat rather than a
+  gap: the sim's frames are flat-shaded raycaster geometry, so a result
+  from them is not a statement about real rooms
+  (`PLAN-sim-hardening.md` 3.5).
 - **Mission state does not survive a brain restart.** A crash loses the
   mission; only the robot's position persists, server-side. Nothing
   resumes.

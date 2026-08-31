@@ -3,13 +3,19 @@ vision.py
 
 Vision LLM scene understanding (build plan Phase 1 sim).
 
-Two entry points, both returning the same schema so brain/agent.py never
-needs to know which one produced a given description:
+Several entry points, all returning the same schema so brain/agent.py
+never needs to know which one produced a given description:
 
 - describe_image(image_path)
     Sends a real or stock photo to the Vision LLM. This is what Phase 1
     actually tests: can the model reliably interpret basic household
     scenes from static images, before any hardware or live camera exists.
+
+- describe_frame(frame) / describe_base64(data, media_type)
+    The same call for pixels already in memory -- a get_camera_frame()
+    result, from any backend that has an image. Added by phase S2, which
+    is when the simulator gained pixels of its own; before that a file
+    path was the only way in and the sim had no file to offer.
 
 - describe_grid_frame(frame)
     Converts grid_world.frame_description() output into the same schema
@@ -84,6 +90,32 @@ def describe_image(image_path: str) -> dict:
     """Send a real or stock photo to the Vision LLM and return a
     structured scene description. This is the Phase 1 sim milestone."""
     data, media_type = _image_to_base64(image_path)
+    return describe_base64(data, media_type)
+
+
+def describe_frame(frame: dict) -> dict:
+    """Describe an already-captured frame -- phase S2.
+
+    A `get_camera_frame()` result carries `image_base64`/`media_type`
+    directly on every backend that has pixels (`MockRobot` since S2,
+    `ReplayRobot`, `TeleopRobot`, and hardware later), so there is nothing
+    to read off disk. Before S2 the only way into this module was a file
+    path, which is why the sim could not use it at all: the grid world had
+    no file and no pixels to write to one.
+
+    Falls back to `describe_grid_frame()` when the frame has no image, so
+    a caller holding a `render=False` MockRobot frame still gets the same
+    schema back rather than a KeyError.
+    """
+    data = frame.get("image_base64")
+    if not data:
+        return describe_grid_frame(frame)
+    return describe_base64(data, frame.get("media_type", "image/jpeg"))
+
+
+def describe_base64(data: str, media_type: str = "image/jpeg") -> dict:
+    """The one place that actually calls the model. Split out of
+    `describe_image()` so bytes already in memory never need a temp file."""
     client = _get_client()
 
     response = client.messages.create(

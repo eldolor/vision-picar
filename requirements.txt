@@ -1,6 +1,10 @@
 pyyaml
 pytest
 anthropic
+# The grid world's synthetic camera (sim/renderer.py, phase S2) renders and
+# JPEG-encodes with this. It is a runtime dependency of the simulator, not
+# just of the tests -- MockRobot.get_camera_frame() imports it.
+pillow
 fastapi
 uvicorn
 pydantic

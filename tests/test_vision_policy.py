@@ -86,11 +86,12 @@ def test_an_obstacle_is_reported_as_no_free_space():
 
 
 def test_a_frame_with_no_pixels_is_a_clear_error(monkeypatch):
-    """MockRobot returns a grid description. The failure should name that,
-    not surface as a confusing 400 from the vision service."""
+    """Every backend carries pixels since S2, so this is now the
+    render=False offline path or a broken backend -- either way it should
+    say so here, not surface as a confusing 400 from the vision service."""
     with pytest.raises(FrameHasNoImage) as excinfo:
         navigate_scene({"room": "kitchen"}, TARGET, "http://vision.test")
-    assert "S2" in str(excinfo.value)
+    assert "image_base64" in str(excinfo.value)
 
 
 def test_vision_fn_for_requires_a_url(monkeypatch):
@@ -520,3 +521,57 @@ def test_a_client_this_module_created_is_closed_again():
         httpx.Client = real
 
     assert created and created[0].is_closed
+
+
+# ---------- phase S2: the vision policy drives the simulator ----------
+
+
+def test_the_vision_policy_can_now_drive_the_grid_world():
+    """S2's whole point, stated as a test.
+
+    Before the raycaster moved into Python this was impossible: MockRobot
+    had no pixels, so `navigate_scene()` raised `FrameHasNoImage` on the
+    very first tick and the only backend the vision policy could run
+    against was a recorded walk. `AGENT-HARNESS.md` section 1 listed it as
+    the headline gap; this is the assertion that closes it.
+
+    The service is stubbed -- what is under test is that real rendered
+    frames reach it, not what a model would say about them.
+    """
+    import httpx
+
+    from sim.maps.starter_house import build_starter_world
+    from sim.mock_robot import MockRobot
+
+    sent = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json=navigate_reply(action="FORWARD"))
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    robot = MockRobot(build_starter_world())
+
+    def vision_fn(frame):
+        return to_scene(
+            navigate_scene(frame, TARGET, "http://vision.test", client=client),
+            TARGET,
+        )
+
+    runner = MissionRunner(robot=robot, target_object=TARGET, vision_fn=vision_fn,
+                           policy="vision")
+    runner.start()
+    for _ in range(3):
+        runner.tick()
+
+    assert sent, "no frame reached the vision service"
+    for body in sent:
+        assert body["image_base64"], "the sim sent a frame with no pixels"
+        assert body["media_type"] == "image/jpeg"
+
+    # And the pixels are a real image, not the grid dict stringified.
+    import io
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(base64.b64decode(sent[0]["image_base64"])))
+    assert img.format == "JPEG" and img.size[0] > 0

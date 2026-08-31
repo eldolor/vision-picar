@@ -38,10 +38,12 @@ status panel's reasoning line, where it belongs.
 ## What this requires of a frame
 
 An image. `get_camera_frame()` must return `image_base64` and
-`media_type`. `MockRobot` returns a grid description and no pixels, so the
-vision policy cannot drive the simulator until phase S2 ports the twin's
-raycaster into Python. Today the backends that work with it are
-`sim/replay_robot.py` (a recorded walk) and, later, real hardware.
+`media_type`. Since phase S2 every backend does, `MockRobot` included --
+`sim/renderer.py` ports the twin's raycaster into Python, so the vision
+policy drives the grid-world simulator as well as a recorded walk
+(`sim/replay_robot.py`), a live phone walk (`sim/teleop_robot.py`) and,
+later, real hardware. Read `sim/renderer.py`'s fidelity note before
+treating a sim result as a statement about real rooms.
 
 ## Room-level step memory
 
@@ -102,9 +104,11 @@ def navigate_scene(
     image_base64 = frame.get("image_base64")
     if not image_base64:
         raise FrameHasNoImage(
-            "This frame carries no image_base64. The vision policy needs pixels; "
-            "MockRobot returns a grid description until phase S2 lands. Use "
-            "sim/replay_robot.py, or the rule-based policy."
+            "This frame carries no image_base64. The vision policy needs "
+            "pixels, and every backend supplies them since phase S2 -- so a "
+            "frame without them is either a MockRobot built with "
+            "render=False (the free/offline path) or a backend that is not "
+            "honouring RobotInterface.get_camera_frame()'s contract."
         )
 
     body = {

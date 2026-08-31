@@ -450,6 +450,15 @@
     margin-top: 8px; line-height: 1.6;
   }
   .fpv-hud .action { color: var(--text); font-weight: 600; }
+  /* Phase S2's visible proof: the picture above should not change when the
+     raycaster moves into Python, but where it came from should. This is
+     how you tell at a glance whether the JS one is still being used. */
+  .fpv-source {
+    font-family: var(--mono); font-size: var(--fs-small); color: var(--text-dim);
+    margin-top: 4px; opacity: 0.75;
+  }
+  .fpv-source .server { color: var(--accent-safe); }
+  .fpv-source .local { color: var(--accent-alert); }
   .fpv-hud .visible { color: var(--accent-safe); }
   .fpv-hud .not-visible { color: var(--text-dim); }
   .call-counter { font-family: var(--mono); font-size: 11px; color: var(--text-dim); align-self: center; }
@@ -1368,6 +1377,7 @@
         <button id="btn-autopilot" style="flex:1;" disabled>Start</button>
       </div>
       <div class="fpv-wrap"><canvas id="fpv-canvas"></canvas></div>
+      <div class="fpv-source" id="fpv-source">frame source: <span class="local">not connected</span></div>
       <div class="fpv-hud" id="fpv-hud">Not running.</div>
       <div class="btn-row" style="margin-top:8px; justify-content: flex-end;">
         <span class="call-counter" id="autopilot-call-count">0 calls</span>

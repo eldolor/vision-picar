@@ -371,6 +371,11 @@
       room: raw.room, facing: raw.facing,
       freeSpaceCells: raw.free_space_cells, doorwayAhead: raw.doorway_ahead,
       objectsVisible: raw.objects_visible, position: raw.position,
+      // Phase S2: the sim renders its own camera now, so a frame arrives
+      // with pixels. Carried through rather than dropped here -- this
+      // remapping is the only place the server's reply becomes the page's
+      // frame object, so a key missed here is a key the whole UI lacks.
+      imageBase64: raw.image_base64, mediaType: raw.media_type,
     };
     state.lastFrame = frame;
     return frame;
@@ -811,6 +816,50 @@
     });
   }
 
+  // ---------- phase S2: the camera moved into Python ----------
+  // sim/renderer.py now renders the grid world, so a frame from a
+  // connected server arrives with its own pixels and this page has nothing
+  // left to simulate. renderFPV() above is kept only as the fallback for a
+  // server that predates S2 -- the readout says which one you are looking
+  // at, which is how you tell whether the JS raycaster is still in use.
+  // When it reads "server" everywhere, renderFPV/fpvCastRay can be deleted
+  // (tests/test_renderer_parity.py is what proves the pictures match).
+
+  function setFrameSource(kind) {
+    const el = document.getElementById("fpv-source");
+    if (!el) return;
+    const label = kind === "server"
+      ? '<span class="server">server (sim/renderer.py)</span>'
+      : '<span class="local">local raycaster</span>';
+    el.innerHTML = "frame source: " + label;
+  }
+
+  function drawFPV(frame) {
+    frame = frame || state.lastFrame;
+    if (!frame) return;
+    if (!frame.imageBase64) {
+      renderFPV(frame);
+      setFrameSource("local");
+      return;
+    }
+    const img = new Image();
+    img.onload = function () {
+      // The render is a fixed 320x200 (sim/renderer.py's default, which is
+      // what makes the golden test reproducible) and the canvas is
+      // whatever the viewport allows, so this is usually an upscale.
+      // Smoothing off keeps the hard raycaster edges the local renderer
+      // draws -- the phase's proof is that the picture does not change.
+      fpvCtx.imageSmoothingEnabled = false;
+      fpvCtx.drawImage(img, 0, 0, FPV_W, FPV_H);
+      fpvCtx.imageSmoothingEnabled = true;
+    };
+    // Decode failure would otherwise leave the last frame on screen and
+    // silently look like nothing had gone wrong.
+    img.onerror = function () { renderFPV(frame); setFrameSource("local"); };
+    img.src = "data:" + (frame.mediaType || "image/jpeg") + ";base64," + frame.imageBase64;
+    setFrameSource("server");
+  }
+
   function captureFPVFrame() {
     return fpvCanvas.toDataURL("image/jpeg", 0.82).split(",")[1];
   }
@@ -990,7 +1039,7 @@
   function render(frame) {
     frame = frame || state.lastFrame;
     if (!frame) return; // not connected yet -- nothing to draw
-    renderFPV(frame);
+    drawFPV(frame);
 
     const pal = mapPalette();
     const flashing = Date.now() < state.safetyFlashUntil;
@@ -1139,8 +1188,15 @@
 
     state.autopilotInFlight = true;
     try {
-      renderFPV(state.lastFrame);
-      const frameB64 = captureFPVFrame();
+      // Prefer the server's own pixels over a re-capture of the canvas:
+      // it avoids a second lossy JPEG encode, and it removes a race, since
+      // drawFPV() paints a server frame asynchronously once the image
+      // decodes. Falls back to the local render for a pre-S2 server.
+      let frameB64 = state.lastFrame && state.lastFrame.imageBase64;
+      if (!frameB64) {
+        renderFPV(state.lastFrame);
+        frameB64 = captureFPVFrame();
+      }
       const decision = await callNavigateEndpoint(frameB64, state.autopilotTarget);
       state.autopilotCallCount += 1;
       document.getElementById("autopilot-call-count").textContent = state.autopilotCallCount + " calls";
