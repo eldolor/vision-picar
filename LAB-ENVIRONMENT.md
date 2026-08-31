@@ -83,6 +83,7 @@ Every stack takes `NamePrefix=vp-lab` and
 | `vp-lab-admin` | recorded-walk console | `RecordingsStackName`, `VisionSecretArn` |
 | `vp-lab-teleop-robot` | robot server (`mode: teleop`) | `RoutePrefix=/teleop-robot` |
 | `vp-lab-teleop-brain` | second brain for teleop | `RoutePrefix`, `RobotRoutePrefix`, three secret ARNs |
+| `vp-lab-cdn` | CloudFront distribution (HTTPS) | `ServiceStackName` only -- takes no `NetworkStackName` |
 
 **The bootstrap dance applies to every stack that creates its own ECR
 repo**: deploy with `DesiredCount=0`, push the image, redeploy with
@@ -118,14 +119,28 @@ Same route set as production: `/` and `/health` (twin), `/navigate`,
 `/analyze`, `/guidance`, `/navigate/models` (vision), `/mission/*`
 (brain), `/admin` (console), `/teleop-robot/*`, `/teleop-brain/*`.
 
-There is **no CloudFront distribution for Lab**, so this is plain HTTP.
-That matters for one thing only: `getUserMedia` requires a secure
-context, so **the Guide tab's camera will not start against the Lab
-URL from a phone.** Options, cheapest first: test camera work at
-`http://localhost` (a secure context by definition), or add a
-`vp-lab-cdn` stack modeled on `cloudformation/cdn.yaml`. Everything that
-doesn't need the camera -- the Sim tab, the brain panel, the admin
-console -- works over plain HTTP today.
+Over HTTPS, via Lab's own CloudFront distribution
+(`vp-lab-cdn`, added 2026-08-31):
+
+    https://d84xtvg03kx5c.cloudfront.net/
+
+**Use the HTTPS URL from a phone.** `getUserMedia` requires a secure
+context, so the Guide tab's camera will not start against the plain-HTTP
+NLB address. Verified on the Lab distribution: `isSecureContext` is true
+and `navigator.mediaDevices.getUserMedia` is present, with the page
+loading clean at a 390px viewport.
+
+`cdn.yaml` needed no structural change -- it was already parameterized by
+`ServiceStackName`, and CloudFront assigns its own distribution id and
+domain, so nothing there can collide between environments. It gained a
+cosmetic `NamePrefix` only, to label the distribution in the console now
+that there are two. That default was change-set verified against the live
+`vision-picar-cdn` stack, same as the others.
+
+Caching is disabled on every path, inherited from the prod template: this
+origin is a dynamic API plus a single-page app, and routes like
+`/navigate` need the `x-app-secret` header and a fresh POST body to reach
+the origin unmodified.
 
 Each Lab service has its **own** `x-app-secret`, unrelated to
 production's. Read one with:
@@ -137,7 +152,9 @@ production's. Read one with:
 ## Cost
 
 The two load balancers are ~$32/month and **cannot scale to zero** --
-that is the price of the isolation. The six Fargate tasks are the rest;
+that is the price of the isolation. CloudFront adds effectively nothing
+at this traffic level (no fixed charge; caching is disabled, so every
+request is an origin fetch billed per request and per GB). The six Fargate tasks are the rest;
 scale them down between sessions:
 
     for s in service twin brain admin teleop-robot teleop-brain; do
@@ -146,9 +163,10 @@ scale them down between sessions:
     done
 
 To remove the environment entirely, delete the stacks in reverse
-dependency order (`teleop-brain`, `teleop-robot`, `admin`, `brain`,
-`twin`, `recordings`, `service`). ECR repos with images in them block
-deletion; empty them first.
+dependency order (`cdn`, `teleop-brain`, `teleop-robot`, `admin`,
+`brain`, `twin`, `recordings`, `service`). ECR repos with images in them
+block deletion; empty them first. The CloudFront stack is slow to delete
+(the distribution has to disable and propagate first) -- start it early.
 
 ## Prod, for comparison
 

@@ -15,6 +15,14 @@ Parameters:
   ServiceStackName:
     Type: String
     Default: vision-picar-service
+  NamePrefix:
+    Type: String
+    Default: vision-picar
+    Description: >
+      Cosmetic only -- CloudFront assigns its own distribution id and
+      domain, so nothing here can collide between environments. This just
+      labels the distribution in the console, which matters once there is
+      more than one. The default reproduces the original Comment exactly.
 
 Resources:
   Distribution:
@@ -22,7 +30,7 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: vision-picar -- HTTPS front for the shared NLB (twin + vision-analyze)
+        Comment: !Sub "${NamePrefix} -- HTTPS front for the shared NLB (twin + vision-analyze)"
         HttpVersion: http2
         Origins:
           - Id: nlb-origin
