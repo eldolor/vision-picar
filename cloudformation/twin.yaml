@@ -10,6 +10,30 @@ Description: >
   "separate app," same cluster, same public port.
 
 Parameters:
+  DesiredCount:
+    Type: Number
+    Default: 1
+    AllowedValues: [0, 1]
+    Description: >
+      Bootstrap knob, same as brain.yaml's: the ECR repo doesn't exist
+      until this stack's first deploy, so there's no image to launch yet.
+      Deploy once with 0, push the image, then redeploy with 1 (the
+      default) -- otherwise the ECS::Service resource fails to stabilize
+      and CloudFormation rolls back the whole stack, deleting the freshly
+      created repo with it. Default 1 leaves an existing deployment
+      unchanged.
+  NamePrefix:
+    Type: String
+    Default: vision-picar
+    Description: >
+      Prefix for every physical resource name this stack creates, so a
+      second environment can stand up alongside production without
+      colliding on account-global names (ECR repos, IAM roles, ELB/target
+      group names, secrets). The default reproduces the original hardcoded
+      names byte for byte, so redeploying an existing stack with no
+      parameters changes nothing. The Lab environment passes `vp-lab` --
+      deliberately short, because ELB and target-group names cap at 32
+      characters and `vision-picar-lab-teleop-brain-tg` is exactly 32.
   NetworkStackName:
     Type: String
     Default: vision-picar-network
@@ -27,20 +51,20 @@ Resources:
   EcrRepo:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: vision-picar-twin
+      RepositoryName: !Sub "${NamePrefix}-twin"
       ImageScanningConfiguration:
         ScanOnPush: true
 
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: /ecs/vision-picar-twin
+      LogGroupName: !Sub "/ecs/${NamePrefix}-twin"
       RetentionInDays: 14
 
   AppSharedSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: vision-picar-twin-shared-secret
+      Name: !Sub "${NamePrefix}-twin-shared-secret"
       Description: >
         Shared secret the web twin must send as the x-app-secret header
         to reach robot/server.py's movement/sensing routes. Placeholder
@@ -55,7 +79,7 @@ Resources:
   EcsExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: vision-picar-twin-execution-role
+      RoleName: !Sub "${NamePrefix}-twin-execution-role"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -78,7 +102,7 @@ Resources:
   EcsTaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: vision-picar-twin-task-role
+      RoleName: !Sub "${NamePrefix}-twin-task-role"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -108,7 +132,7 @@ Resources:
   AlbTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: vision-picar-twin-tg
+      Name: !Sub "${NamePrefix}-twin-tg"
       Port: !Ref ContainerPort
       Protocol: HTTP
       VpcId: !ImportValue
@@ -179,7 +203,7 @@ Resources:
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: vision-picar-twin
+      Family: !Sub "${NamePrefix}-twin"
       Cpu: "256"
       Memory: "512"
       NetworkMode: awsvpc
@@ -213,11 +237,11 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn: AlbListenerRule
     Properties:
-      ServiceName: vision-picar-twin-service
+      ServiceName: !Sub "${NamePrefix}-twin-service"
       Cluster: !ImportValue
         Fn::Sub: "${ServiceStackName}-EcsClusterName"
       TaskDefinition: !Ref TaskDefinition
-      DesiredCount: 1
+      DesiredCount: !Ref DesiredCount
       LaunchType: FARGATE
       HealthCheckGracePeriodSeconds: 30
       NetworkConfiguration:

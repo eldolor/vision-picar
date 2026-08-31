@@ -12,6 +12,18 @@ Description: >
   PLAN-teleop-robot.md's "Recording proxy" section.
 
 Parameters:
+  NamePrefix:
+    Type: String
+    Default: vision-picar
+    Description: >
+      Prefix for every physical resource name this stack creates, so a
+      second environment can stand up alongside production without
+      colliding on account-global names (ECR repos, IAM roles, ELB/target
+      group names, secrets). The default reproduces the original hardcoded
+      names byte for byte, so redeploying an existing stack with no
+      parameters changes nothing. The Lab environment passes `vp-lab` --
+      deliberately short, because ELB and target-group names cap at 32
+      characters and `vision-picar-lab-teleop-brain-tg` is exactly 32.
   NetworkStackName:
     Type: String
     Default: vision-picar-network
@@ -75,20 +87,20 @@ Resources:
   EcrRepo:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: vision-picar-teleop-brain
+      RepositoryName: !Sub "${NamePrefix}-teleop-brain"
       ImageScanningConfiguration:
         ScanOnPush: true
 
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: /ecs/vision-picar-teleop-brain
+      LogGroupName: !Sub "/ecs/${NamePrefix}-teleop-brain"
       RetentionInDays: 14
 
   AppSharedSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: vision-picar-teleop-brain-shared-secret
+      Name: !Sub "${NamePrefix}-teleop-brain-shared-secret"
       Description: >
         Shared secret a caller (the twin's Robot view, "Drive via brain")
         must send as the x-app-secret header to reach this brain's mission
@@ -105,7 +117,7 @@ Resources:
   EcsExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: vision-picar-teleop-brain-execution-role
+      RoleName: !Sub "${NamePrefix}-teleop-brain-execution-role"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -135,7 +147,7 @@ Resources:
   EcsTaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: vision-picar-teleop-brain-task-role
+      RoleName: !Sub "${NamePrefix}-teleop-brain-task-role"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -166,7 +178,7 @@ Resources:
   AlbTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: vision-picar-teleop-brain-tg
+      Name: !Sub "${NamePrefix}-teleop-brain-tg"
       Port: !Ref ContainerPort
       Protocol: HTTP
       VpcId: !ImportValue
@@ -234,7 +246,7 @@ Resources:
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: vision-picar-teleop-brain
+      Family: !Sub "${NamePrefix}-teleop-brain"
       Cpu: "256"
       Memory: "512"
       NetworkMode: awsvpc
@@ -318,7 +330,7 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn: AlbListenerRule
     Properties:
-      ServiceName: vision-picar-teleop-brain-service
+      ServiceName: !Sub "${NamePrefix}-teleop-brain-service"
       Cluster: !ImportValue
         Fn::Sub: "${ServiceStackName}-EcsClusterName"
       TaskDefinition: !Ref TaskDefinition

@@ -9,6 +9,30 @@ Description: >
   network.yaml).
 
 Parameters:
+  DesiredCount:
+    Type: Number
+    Default: 1
+    AllowedValues: [0, 1]
+    Description: >
+      Bootstrap knob, same as brain.yaml's: the ECR repo doesn't exist
+      until this stack's first deploy, so there's no image to launch yet.
+      Deploy once with 0, push the image, then redeploy with 1 (the
+      default) -- otherwise the ECS::Service resource fails to stabilize
+      and CloudFormation rolls back the whole stack, deleting the freshly
+      created repo with it. Default 1 leaves an existing deployment
+      unchanged.
+  NamePrefix:
+    Type: String
+    Default: vision-picar
+    Description: >
+      Prefix for every physical resource name this stack creates, so a
+      second environment can stand up alongside production without
+      colliding on account-global names (ECR repos, IAM roles, ELB/target
+      group names, secrets). The default reproduces the original hardcoded
+      names byte for byte, so redeploying an existing stack with no
+      parameters changes nothing. The Lab environment passes `vp-lab` --
+      deliberately short, because ELB and target-group names cap at 32
+      characters and `vision-picar-lab-teleop-brain-tg` is exactly 32.
   NetworkStackName:
     Type: String
     Default: vision-picar-network
@@ -52,25 +76,25 @@ Resources:
   EcrRepo:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: vision-picar-analyze
+      RepositoryName: !Sub "${NamePrefix}-analyze"
       ImageScanningConfiguration:
         ScanOnPush: true
 
   EcsCluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: vision-picar-cluster
+      ClusterName: !Sub "${NamePrefix}-cluster"
 
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: /ecs/vision-picar-analyze
+      LogGroupName: !Sub "/ecs/${NamePrefix}-analyze"
       RetentionInDays: 14
 
   AppSharedSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: vision-picar-app-shared-secret
+      Name: !Sub "${NamePrefix}-app-shared-secret"
       Description: >
         Shared secret the web twin must send as the x-app-secret header.
         Placeholder at creation -- real value set post-deploy via CLI.
@@ -83,7 +107,7 @@ Resources:
   EcsExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: vision-picar-ecs-execution-role
+      RoleName: !Sub "${NamePrefix}-ecs-execution-role"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -106,7 +130,7 @@ Resources:
   EcsTaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: vision-picar-ecs-task-role
+      RoleName: !Sub "${NamePrefix}-ecs-task-role"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -165,7 +189,7 @@ Resources:
   InternalAlb:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: vision-picar-alb
+      Name: !Sub "${NamePrefix}-alb"
       Scheme: internal
       Type: application
       Subnets:
@@ -179,7 +203,7 @@ Resources:
   AlbTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: vision-picar-tg
+      Name: !Sub "${NamePrefix}-tg"
       Port: !Ref ContainerPort
       Protocol: HTTP
       VpcId: !ImportValue
@@ -203,7 +227,7 @@ Resources:
   Nlb:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: vision-picar-nlb
+      Name: !Sub "${NamePrefix}-nlb"
       Scheme: internet-facing
       Type: network
       Subnets:
@@ -216,7 +240,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     DependsOn: AlbListener
     Properties:
-      Name: vision-picar-nlb-tg
+      Name: !Sub "${NamePrefix}-nlb-tg"
       Port: 80
       Protocol: TCP
       VpcId: !ImportValue
@@ -241,7 +265,7 @@ Resources:
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: vision-picar-analyze
+      Family: !Sub "${NamePrefix}-analyze"
       Cpu: "256"
       Memory: "512"
       NetworkMode: awsvpc
@@ -283,10 +307,10 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn: AlbListener
     Properties:
-      ServiceName: vision-picar-service
+      ServiceName: !Sub "${NamePrefix}-service"
       Cluster: !Ref EcsCluster
       TaskDefinition: !Ref TaskDefinition
-      DesiredCount: 1
+      DesiredCount: !Ref DesiredCount
       LaunchType: FARGATE
       HealthCheckGracePeriodSeconds: 30
       NetworkConfiguration:
