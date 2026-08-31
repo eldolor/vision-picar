@@ -376,3 +376,74 @@ def test_service_default_says_what_it_resolves_to(browser, twin_server):
     assert "Service default" in prompt_placeholder
     assert MODELS_REPLY["default_prompt"] in prompt_placeholder, prompt_placeholder
     page.close()
+
+
+# ---------- the environment banner ----------
+
+
+def _open_with_health(browser, twin_server, env_label):
+    """The twin, with /health's env_label forced to a given value.
+
+    Intercepted rather than served by a second uvicorn with ENV_LABEL set:
+    what is under test here is the client's reaction to the field, and the
+    server side of it is already pinned in tests/test_server.py.
+    """
+    page, errors = open_twin(browser, twin_server)
+
+    def handler(route):
+        resp = route.fetch()
+        body = resp.json()
+        body["env_label"] = env_label
+        route.fulfill(status=200, content_type="application/json", body=_json(body))
+
+    page.route("**/health", handler)
+    page.reload(wait_until="networkidle")
+    page.wait_for_timeout(600)
+    return page, errors
+
+
+def test_no_banner_when_the_server_reports_no_environment(browser, twin_server):
+    """Production's state. The banner must be invisible by default, or it
+    is worse than useless -- a warning that is always on teaches people to
+    stop seeing it."""
+    page, errors = _open_with_health(browser, twin_server, "")
+    assert not errors
+    assert page.evaluate(
+        "() => getComputedStyle(document.getElementById('env-banner')).display"
+    ) == "none"
+    assert not page.evaluate("() => document.body.classList.contains('env-flagged')")
+
+
+def test_the_banner_names_the_environment_when_the_server_does(browser, twin_server):
+    """The visibility assertion is not redundant with the text one: this
+    test was first written without it, and passed against a banner whose
+    reveal had been deliberately removed -- inner_text still returned the
+    text of a display:none element. Same trap as the 40px model picker."""
+    page, errors = _open_with_health(browser, twin_server, "Lab")
+    assert not errors
+    assert page.evaluate(
+        "() => getComputedStyle(document.getElementById('env-banner')).display"
+    ) != "none", "banner has the text but was never revealed"
+    assert "LAB ENVIRONMENT" in page.inner_text("#env-banner").upper()
+    assert page.evaluate("() => document.body.classList.contains('env-flagged')")
+
+
+def test_the_banner_stays_in_view_when_the_page_scrolls(browser, twin_server):
+    """Sticky, not fixed: the tab bar is the page's one fixed element, and
+    a second competing for the viewport is how the bottom bar started
+    drifting on iOS. Sticky keeps it visible without leaving the flow."""
+    page, _ = _open_with_health(browser, twin_server, "Lab")
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    page.wait_for_timeout(400)
+    box = page.locator("#env-banner").bounding_box()
+    assert box is not None and box["y"] < 60, f"banner scrolled out of view: {box}"
+
+
+def test_the_banner_is_readable_on_a_phone(browser, twin_server):
+    """Same lesson as the model picker: a control that renders but is
+    unreadable at a phone width has not shipped. Full bleed, real height."""
+    page, _ = _open_with_health(browser, twin_server, "Lab")
+    box = page.locator("#env-banner").bounding_box()
+    assert box["width"] >= PHONE["width"] - 4, f"banner not full width: {box}"
+    assert box["height"] >= 20, f"banner too short to read: {box}"
+

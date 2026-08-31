@@ -860,6 +860,36 @@
     setFrameSource("server");
   }
 
+  // ---------- environment banner ----------
+  // Which deployment is this? The page asks the server that served it,
+  // rather than pattern-matching its own hostname -- a CloudFront domain
+  // can change, and the twin is also opened straight off an NLB, off
+  // localhost, and (in tests) off a file server. The one thing that is
+  // always true is that robot/server.py served this HTML, so a relative
+  // /health is the same deployment by construction.
+  //
+  // Fails silent and shows nothing. A page that cannot reach its own
+  // origin has bigger problems than a missing badge, and production
+  // reports no label at all -- so "no banner" is both the healthy
+  // production state and the safe failure state.
+  async function renderEnvBanner() {
+    const el = document.getElementById("env-banner");
+    if (!el) return;
+    try {
+      const base = window.location.pathname.replace(/\/[^/]*$/, "");
+      const resp = await fetch(base + "/health", { cache: "no-store" });
+      if (!resp.ok) return;
+      const label = (await resp.json()).env_label;
+      if (!label) return;
+      el.innerHTML = '<span class="dot"></span>' + escapeHtml(label) + " environment";
+      el.classList.add("visible");
+      document.body.classList.add("env-flagged");
+      document.title = label.toUpperCase() + " \u00b7 " + document.title;
+    } catch (e) {
+      /* no banner -- see above */
+    }
+  }
+
   function captureFPVFrame() {
     return fpvCanvas.toDataURL("image/jpeg", 0.82).split(",")[1];
   }
@@ -4436,4 +4466,5 @@
   if (prefGet(PREF.brainUrl)) {
     connectBrain({ silent: true });
   }
+  renderEnvBanner();
 })();

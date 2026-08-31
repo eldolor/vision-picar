@@ -14,6 +14,16 @@ Description: >
   claimed by twin.yaml's own ListenerRules. See PLAN-teleop-robot.md.
 
 Parameters:
+  EnvLabel:
+    Type: String
+    Default: ""
+    Description: >
+      Names this deployment in the twin's UI banner (robot/server.py
+      exposes it on /health; web-twin/app.js renders it). Empty -- the
+      default, and what production uses -- means no banner at all, so the
+      same image is safe in every environment and a warning that is always
+      on never gets a chance to become invisible. The Lab environment
+      passes "Lab".
   NamePrefix:
     Type: String
     Default: vision-picar
@@ -56,6 +66,14 @@ Parameters:
       exist until this stack's first deploy, so there's no image to launch
       yet. Deploy once with 0, push the image, then redeploy with 1 (the
       default).
+
+Conditions:
+  # An empty EnvLabel must add no environment variable at all, not one
+  # with an empty value: the latter still rewrites the task definition,
+  # which a change set against the live production stack showed would
+  # churn TaskDefinition and EcsService for a deployment that wants
+  # nothing to change. AWS::NoValue drops the list element entirely.
+  HasEnvLabel: !Not [!Equals [!Ref EnvLabel, ""]]
 
 Resources:
   EcrRepo:
@@ -230,6 +248,11 @@ Resources:
           Environment:
             - Name: ALLOWED_ORIGINS
               Value: "*"
+            - !If
+              - HasEnvLabel
+              - Name: ENV_LABEL
+                Value: !Ref EnvLabel
+              - !Ref AWS::NoValue
             # robot/factory.py: picks sim/teleop_robot.py's TeleopRobot
             # instead of config/robot.yaml's own mode: sim default --
             # same image as the twin, different runtime choice.
