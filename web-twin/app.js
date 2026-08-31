@@ -322,18 +322,31 @@
     if (state.serverSecret) headers["x-app-secret"] = state.serverSecret;
     return headers;
   }
+  // A server that answered is a different problem from a server that
+  // could not be reached, and only the caller knows how to say so. The
+  // status is carried on the Error because both helpers otherwise reduce
+  // every failure to a message string -- which is how a precise 503 ("no
+  // new frame -- is the phone still capturing?") ended up presented as
+  // "check the server is running, on the same network, and that CORS
+  // permits this origin", three things that were all true at the time.
+  function apiError(res, detail) {
+    const err = new Error(detail || ("HTTP " + res.status));
+    err.status = res.status;
+    return err;
+  }
+
   async function apiPost(path, body) {
     const res = await fetch(state.serverUrl + path, {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(body || {}),
     });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || ("HTTP " + res.status));
+    if (!res.ok) throw apiError(res, (await res.json().catch(() => ({}))).detail);
     return res.json();
   }
   async function apiGet(path) {
     const res = await fetch(state.serverUrl + path, { headers: authHeaders() });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || ("HTTP " + res.status));
+    if (!res.ok) throw apiError(res, (await res.json().catch(() => ({}))).detail);
     return res.json();
   }
 
@@ -676,9 +689,7 @@
       setControlsEnabled(false);
       setConnStatus(statusEl, "err", "Not connected", silent
         ? url + " didn't respond. Tap Connect to retry."
-        : "Could not reach " + url + " (" + e.message + "). Check the server is "
-          + "running, on the same network, and that CORS/allowed_origins in "
-          + "config/robot.yaml permits this page's origin.");
+        : connectFailureMessage(url, e));
       if (!silent) showToast("Couldn't reach the robot server.", "err");
     } finally {
       state.connecting = false;
@@ -4329,6 +4340,39 @@
   // revealed on an explicit tap rather than sitting in Settings
   // permanently, and it takes itself back down after a minute.
   const QR_REVEAL_MS = 60000;
+
+  // Why the connection failed, in the words of whatever actually failed.
+  //
+  // Two genuinely different situations were being reported identically:
+  // the request never arrived (wrong URL, server down, CORS), and the
+  // server answered with a precise complaint. Only the first is worth
+  // advice about networks and origins; repeating it for the second sends
+  // someone to check three things that are already fine while the real
+  // answer sits in the message they were told to ignore.
+  function connectFailureMessage(url, e) {
+    if (!e.status) {
+      return "Could not reach " + url + " (" + e.message + "). Check the server is "
+        + "running, on the same network, and that CORS/allowed_origins in "
+        + "config/robot.yaml permits this page's origin.";
+    }
+    // A teleop server has no camera of its own -- it serves whatever frame
+    // a phone last pushed into it, so it is unreachable-looking until
+    // Robot view starts pushing. That is the expected state before a walk,
+    // not a fault, and it is the single most common way to meet a 503
+    // here.
+    if (e.status === 503 && /frame/i.test(e.message)) {
+      return url + " is running, but has no camera frame yet: " + e.message
+        + " A teleop robot server only has a picture while Robot view is"
+        + " pushing one, so connect it after starting the walk, not before.";
+    }
+    if (e.status === 401 || e.status === 403) {
+      return url + " rejected the secret (HTTP " + e.status + "). The server is"
+        + " reachable, so this is the wrong value for THIS deployment -- check"
+        + " it is the one " + url.replace(/^https?:\/\//, "").split("/")[0]
+        + " expects.";
+    }
+    return url + " answered with an error (HTTP " + e.status + "): " + e.message;
+  }
 
   function setupLinkParts() {
     return {
