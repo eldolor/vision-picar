@@ -111,7 +111,18 @@ def browser():
             # Lets a test load the page from a host that is neither
             # localhost nor the service host, which is the only shape
             # in which the endpoint notice is supposed to appear.
-            args=["--host-resolver-rules=MAP vision-picar.test 127.0.0.1"])
+            args=[
+                # Lets a test load the page from a host that is neither
+                # localhost nor the service host, which is the only shape
+                # in which the endpoint notice is supposed to appear.
+                "--host-resolver-rules=MAP vision-picar.test 127.0.0.1",
+                # Without a fake camera getUserMedia never attaches a
+                # stream, Robot view never starts, and anything downstream
+                # of pressing Start is untestable -- silently, since the
+                # page reports no error of its own.
+                "--use-fake-ui-for-media-stream",
+                "--use-fake-device-for-media-stream",
+            ])
         yield b
         b.close()
 
@@ -637,3 +648,31 @@ def test_a_state_that_needs_no_action_does_not_raise_a_toast(browser, twin_serve
     )
     page.context.close()
 
+
+
+def test_recording_says_so_when_it_cannot_start(browser, twin_server):
+    """A walk recorded with no brain connected is silently dropped frame by
+    frame, and the first sign of it is an empty admin console after the
+    walk. The Settings row explains the requirement, but nobody is reading
+    Settings at the moment they press Start."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_record_walk','1');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(800)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")
+    page.wait_for_timeout(1500)
+    assert not errors
+    body = page.inner_text("body")
+    assert "Not recording" in body, (
+        "recording was silently skipped with no brain connected"
+    )
+    context.close()

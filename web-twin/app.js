@@ -1713,7 +1713,18 @@
   }
 
   function beginWalkRecording() {
-    if (!recordingActive()) { state.recordWalkName = null; return; }
+    if (!recordingActive()) {
+      state.recordWalkName = null;
+      // Silence here costs a whole walk. The toggle stays on, every frame
+      // is dropped by recordWalkFrame's own early return, and the first
+      // sign of trouble is an empty admin console afterwards -- by which
+      // point the walk is gone. The Settings row explains the requirement,
+      // but nobody is looking at Settings at the moment they press Start.
+      if (state.recordWalk && state.guidanceMode === "robot" && !state.brainConnected) {
+        showToast("Not recording: the brain service isn't connected.", "err");
+      }
+      return;
+    }
     state.recordWalkName = newWalkName();
     state.recordSaved = 0;
     state.recordFailed = 0;
