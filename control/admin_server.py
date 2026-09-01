@@ -861,7 +861,14 @@ def create_app(config_path=None) -> FastAPI:
     @app.get("/health")
     async def health():
         base = Path(config["recording_dir"]).resolve()
-        return {"status": "ok", "recording_dir": str(base), "recording_dir_exists": base.is_dir()}
+        return {"status": "ok", "recording_dir": str(base),
+                "recording_dir_exists": base.is_dir(),
+                # Which deployment this is. Unauthenticated on purpose --
+                # /health already is, and the console has to know which
+                # environment it is before anyone has typed a secret, which
+                # is exactly when the confusion happens. The value is a
+                # label, not a credential.
+                "env_label": os.environ.get("ENV_LABEL", "").strip()}
 
     return app
 
