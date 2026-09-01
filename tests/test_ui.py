@@ -489,9 +489,13 @@ def test_a_stalled_teleop_server_is_not_reported_as_unreachable(browser, twin_se
         browser, twin_server, 503,
         "no new frame in 83553.5s (limit 15.0s) -- is the phone still capturing?")
     assert not errors
-    assert "is running" in text, text
     assert "CORS" not in text, "still blaming CORS for a server that answered"
-    assert "no new frame" in text, "the server's own diagnosis was dropped"
+    assert "Waiting for a walk" in text, text
+    assert "Nothing to do" in text, "says what happened but not what to do"
+    # Not styled as a fault: nothing is wrong and nothing needs doing.
+    assert not page.locator("#connection-status.is-err").count(), (
+        "a state that needs no action is still presented as an error"
+    )
     page.context.close()
 
 
@@ -503,6 +507,9 @@ def test_a_rejected_secret_says_the_server_was_reachable(browser, twin_server):
     assert not errors
     assert "reachable" in text, text
     assert "CORS" not in text, text
+    assert page.locator("#connection-status.is-err").count(), (
+        "a wrong secret does need action and should look like it"
+    )
     page.context.close()
 
 
@@ -542,5 +549,21 @@ def test_the_auto_reconnect_also_reports_what_the_server_said(browser, twin_serv
     page.wait_for_timeout(300)
     text = " ".join(page.inner_text("#connection-status").split())
     assert "didn't respond" not in text, f"still claiming no response: {text}"
-    assert "no new frame" in text, f"the server's own diagnosis was dropped: {text}"
+    assert "Waiting for a walk" in text, text
     context.close()
+
+
+def test_a_state_that_needs_no_action_does_not_raise_a_toast(browser, twin_server):
+    """A toast reading "Couldn't reach the robot server" was once shown
+    directly above a panel explaining the server was running. Interrupting
+    someone is for things they have to act on."""
+    page, errors, _ = _connect_against(
+        browser, twin_server, 503,
+        "no new frame in 85456.8s (limit 15.0s) -- is the phone still capturing?")
+    assert not errors
+    body = page.inner_text("body")
+    assert "Couldn't reach the robot server" not in body, (
+        "toast contradicts the panel it sits on top of"
+    )
+    page.context.close()
+

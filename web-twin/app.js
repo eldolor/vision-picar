@@ -686,9 +686,9 @@
     } catch (e) {
       state.connected = false;
       setControlsEnabled(false);
-      setConnStatus(statusEl, "err", "Not connected",
-                    connectFailureMessage(url, e, silent));
-      if (!silent) showToast("Couldn't reach the robot server.", "err");
+      const failure = connectFailure(url, e, silent);
+      setConnStatus(statusEl, failure.state, failure.label, failure.detail);
+      if (!silent && failure.toast) showToast(failure.toast, "err");
     } finally {
       state.connecting = false;
       setButtonBusy(btn, false);
@@ -4243,38 +4243,60 @@
   // advice about networks and origins; repeating it for the second sends
   // someone to check three things that are already fine while the real
   // answer sits in the message they were told to ignore.
-  function connectFailureMessage(url, e, silent) {
-    // `silent` is the reconnect that runs on page load, and it used to have
-    // its own wording -- "didn't respond. Tap Connect to retry." That is
-    // the same mistake as the CORS advice in a shorter sentence: a server
-    // that answered 503 did respond, and saying otherwise sends someone
-    // to check the network. Only the no-status branch varies by silence
-    // now; when something answered, what it said is worth the space
-    // whether or not anyone pressed a button.
+  // What failed, how it should look, and whether it is worth interrupting
+  // someone about.
+  //
+  // Everything here used to be one red "Not connected" plus a toast
+  // reading "Couldn't reach the robot server" -- which was shown, at one
+  // point, directly above a panel explaining that the server was running.
+  // A state that needs no action should not be styled as a fault or
+  // announce itself, and a state that does need action should say which.
+  function connectFailure(url, e, silent) {
+    const host = url.replace(/^https?:\/\//, "").split("/")[0];
+
     if (!e.status) {
-      return silent
-        ? url + " didn't respond. Tap Connect to retry."
-        : "Could not reach " + url + " (" + e.message + "). Check the server is "
-          + "running, on the same network, and that CORS/allowed_origins in "
-          + "config/robot.yaml permits this page's origin.";
+      return {
+        state: "err", label: "Not connected",
+        detail: silent
+          ? url + " didn't respond. Tap Connect to retry."
+          : "Could not reach " + url + " (" + e.message + "). Check the server is "
+            + "running, on the same network, and that CORS/allowed_origins in "
+            + "config/robot.yaml permits this page's origin.",
+        toast: "Couldn't reach the robot server.",
+      };
     }
+
     // A teleop server has no camera of its own -- it serves whatever frame
-    // a phone last pushed into it, so it is unreachable-looking until
-    // Robot view starts pushing. That is the expected state before a walk,
-    // not a fault, and it is the single most common way to meet a 503
-    // here.
+    // a phone last pushed, so before a walk it has nothing to give. That is
+    // the normal resting state of a correctly configured deployment, not a
+    // fault, and there is nothing for anyone to do about it here. Neutral
+    // styling, no toast: Robot view connects this itself when it starts
+    // pushing frames.
     if (e.status === 503 && /frame/i.test(e.message)) {
-      return url + " is running, but has no camera frame yet: " + e.message
-        + " A teleop robot server only has a picture while Robot view is"
-        + " pushing one, so connect it after starting the walk, not before.";
+      return {
+        state: "idle", label: "Waiting for a walk",
+        detail: host + " is running and simply has no camera frame yet, which "
+          + "is normal before a walk. Nothing to do here \u2014 start Robot "
+          + "view with \u201cDrive via brain\u201d and this connects itself.",
+        toast: null,
+      };
     }
+
     if (e.status === 401 || e.status === 403) {
-      return url + " rejected the secret (HTTP " + e.status + "). The server is"
-        + " reachable, so this is the wrong value for THIS deployment -- check"
-        + " it is the one " + url.replace(/^https?:\/\//, "").split("/")[0]
-        + " expects.";
+      return {
+        state: "err", label: "Secret rejected",
+        detail: host + " is reachable, so this is the wrong secret for THIS "
+          + "deployment rather than a network problem. Check it is the one "
+          + host + " expects.",
+        toast: "The robot server rejected that secret.",
+      };
     }
-    return url + " answered with an error (HTTP " + e.status + "): " + e.message;
+
+    return {
+      state: "err", label: "Not connected",
+      detail: host + " answered with an error (HTTP " + e.status + "): " + e.message,
+      toast: "The robot server returned an error.",
+    };
   }
 
   function setupLinkParts() {
