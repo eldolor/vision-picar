@@ -170,7 +170,23 @@
        Each gets an equal share of the row. */
     .slideshow-controls button { flex: 1; padding: 14px 8px; }
   }
+  /* Same purpose as the twin's: two deployments serve this identical page
+     from different hosts, and a walk recorded against the wrong one is
+     invisible until someone goes looking for it on the other. Renders only
+     when the server reports an env_label; production sets none. */
+  .env-banner {
+    display: none;
+    margin: -16px -16px 16px;
+    padding: 8px 16px;
+    background: #FF6B35; color: #16110D;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 0.10em; text-transform: uppercase; text-align: center;
+  }
+  .env-banner.visible { display: block; }
 </style>
+
+<div class="env-banner" id="env-banner" role="status"></div>
 
 <h1>vision-picar brain admin</h1>
 <div class="sub">View, tag, export, and delete recorded walks (Robot view's "Record this walk") stored on this brain's persistent volume.</div>

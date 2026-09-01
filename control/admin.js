@@ -841,5 +841,23 @@
   };
   btnRefresh.onclick = loadWalks;
 
+  // Which deployment is this? Asked of the server that served the page,
+  // for the same reason the twin does it: a hostname is not something
+  // anyone reads off an address bar before typing a secret, and this
+  // console is byte-identical between environments. Unauthenticated and
+  // fails silent -- no banner is both production's healthy state and the
+  // safe outcome if the fetch throws.
+  fetch("health", { cache: "no-store" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (body) {
+      if (!body || !body.env_label) return;
+      const el = document.getElementById("env-banner");
+      if (!el) return;
+      el.textContent = body.env_label + " environment";
+      el.classList.add("visible");
+      document.title = body.env_label.toUpperCase() + " \u00b7 " + document.title;
+    })
+    .catch(function () { /* no banner -- see above */ });
+
   if (secret) btnConnect.onclick();
 })();

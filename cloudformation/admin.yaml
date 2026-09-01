@@ -9,6 +9,13 @@ Description: >
   read/write, so it can review and prune whatever the brain has captured.
 
 Parameters:
+  EnvLabel:
+    Type: String
+    Default: ""
+    Description: >
+      Names this deployment in the admin console's banner (control/admin_server.py
+      exposes it on /health). Empty -- the default, and production's value --
+      means no banner, so the same image is safe in every environment.
   NamePrefix:
     Type: String
     Default: vision-picar
@@ -80,6 +87,11 @@ Parameters:
       sets a walk's evaluation cost.
 
 Conditions:
+  # Empty must add no variable at all rather than an empty one: an empty
+  # value still rewrites the task definition, which a change set showed
+  # would churn a deployment meant to change nothing.
+  HasEnvLabel: !Not [!Equals [!Ref EnvLabel, ""]]
+
   HasVisionSecret: !Not [!Equals [!Ref VisionSecretArn, ""]]
 
 Resources:
@@ -303,6 +315,11 @@ Resources:
               ContainerPath: /app/recordings
               ReadOnly: false
           Environment:
+            - !If
+              - HasEnvLabel
+              - Name: ENV_LABEL
+                Value: !Ref EnvLabel
+              - !Ref AWS::NoValue
             # The walk scorecard's judge tier. Off unless explicitly enabled,
             # so the deterministic metrics (which cost nothing and call
             # nothing) stay the default behaviour.

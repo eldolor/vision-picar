@@ -372,14 +372,14 @@
   // path-prefixed proxies, where the vision service properly lives
   // somewhere else. This says what will be called; it does not claim
   // anything is broken.
-  function visionHost() {
-    const raw = (document.getElementById("cfg-url") || {}).value;
+  function fieldHost(id) {
+    const raw = (document.getElementById(id) || {}).value;
     if (!raw || !raw.trim()) return null;
     try { return new URL(raw.trim()).host; } catch (e) { return null; }
   }
 
-  function visionHostDiffersFromPage() {
-    const host = visionHost();
+  function hostDiffersFromPage(id) {
+    const host = fieldHost(id);
     // file:// has no meaningful origin to compare against, and localhost
     // dev routinely splits the twin (:8000) from the service (:8080).
     if (!host || location.protocol === "file:") return false;
@@ -387,17 +387,35 @@
     return host !== location.host;
   }
 
+  function visionHost() { return fieldHost("cfg-url"); }
+  function visionHostDiffersFromPage() { return hostDiffersFromPage("cfg-url"); }
+
+  // All three endpoints, not just the vision one. The first version covered
+  // vision because that was the 401 in front of me; the brain URL then sent
+  // a walk recorded on Lab to production's volume, and the robot URL can do
+  // the same for the D-pad. One saved endpoint following someone between
+  // deployments is the shape -- which field it happens to be is incidental.
+  const ENDPOINT_FIELDS = [
+    {id: "cfg-url", note: "cfg-url-mismatch", what: "Vision calls"},
+    {id: "cfg-server-url", note: "cfg-server-url-mismatch", what: "Robot commands and frames"},
+    {id: "cfg-brain-url", note: "cfg-brain-url-mismatch",
+     what: "Missions and recorded walks"},
+  ];
+
   function renderEndpointNote() {
-    const el = document.getElementById("cfg-url-mismatch");
-    if (!el) return;
-    if (!visionHostDiffersFromPage()) { el.hidden = true; return; }
-    el.innerHTML =
-      "Vision calls go to <b>" + escapeHtml(visionHost()) + "</b>, not <b>"
-      + escapeHtml(location.host) + "</b>, which served this page. That is "
-      + "fine for a tunnel or a proxy \u2014 but if they are different "
-      + "deployments, the secret below has to be the one "
-      + escapeHtml(visionHost()) + " expects.";
-    el.hidden = false;
+    ENDPOINT_FIELDS.forEach(function (f) {
+      const el = document.getElementById(f.note);
+      if (!el) return;
+      if (!hostDiffersFromPage(f.id)) { el.hidden = true; return; }
+      const host = escapeHtml(fieldHost(f.id));
+      el.innerHTML =
+        escapeHtml(f.what) + " go to <b>" + host + "</b>, not <b>"
+        + escapeHtml(location.host) + "</b>, which served this page. That is "
+        + "fine for a tunnel or a proxy \u2014 but if these are different "
+        + "deployments, this points at the other one, and the secret here has "
+        + "to be the one " + host + " expects.";
+      el.hidden = false;
+    });
   }
 
   function deriveServiceUrl(rawUrl, targetRoute) {
@@ -3954,7 +3972,9 @@
     resetNavigateModelOptions();
     fetchNavigateModels();
   });
+  cfgBrainUrlEl.addEventListener("change", renderEndpointNote);
   cfgServerUrlEl.addEventListener("change", function () {
+    renderEndpointNote();
     prefSet(PREF.serverUrl, this.value.trim());
   });
   cfgBrainUrlEl.addEventListener("change", function () {
