@@ -195,6 +195,20 @@ on:
 `brain/` -- this phase is entirely "point an existing client at an
 existing endpoint."
 
+**This mode stays serial, and that is now load-bearing.** Robot view's
+ordinary `/navigate` calls overlap (up to `GUIDANCE_MAX_IN_FLIGHT` = 2,
+see `FEATURES.md` section 1), but driving via brain pins itself to one
+call in flight: `guidanceStep()` reads
+`driveViaBrainActive() ? 1 : GUIDANCE_MAX_IN_FLIGHT`. A real
+`MissionRunner` mission is strictly one action at a time -- the step
+budget and every failsafe in `AGENT-HARNESS.md` §6 are built on that --
+so overlapping here would have the brain deciding from frames it has
+already acted past. Pipelining buys a *person* more readings to integrate
+across; it buys a robot executing each decision nothing, and costs it
+coherence. If that pin is ever removed, the failure will not look like a
+crash: it will look like a mission that turns the wrong way for reasons
+that made sense two frames ago.
+
 **Built.** A "Drive via brain" switch next to "Record this walk" in Robot
 view, gated by `driveViaBrainActive()` (needs the brain connected and
 `guidanceMode === "robot"`, same shape as `recordingActive()`) and

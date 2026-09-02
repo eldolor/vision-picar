@@ -111,14 +111,46 @@ and redesign history for this tab; this section is what it does today.
   (both routes moved to Amazon Nova Lite on 2026-08-28; before that Robot
   view paced itself slower to match Sonnet's round trip). On a
   consecutive error the delay backs off exponentially, capped at 30s, and
-  resets to the base rate the moment a call succeeds.
+  resets to the base rate the moment a call succeeds. The backoff
+  *replaces* the tick already scheduled at the base rate rather than
+  adding a second one -- otherwise a failing endpoint keeps being hit
+  every 500ms while the backoff sits unused.
+- **Calls overlap** -- up to `GUIDANCE_MAX_IN_FLIGHT` = **2** at once.
+  The throttle above is the gap between *dispatches*; the round trip used
+  to be added on top, so the real cadence was throttle + latency (~3s once
+  `/navigate` moved to Opus 4.5, not the 500ms the constant suggests). The
+  next tick is scheduled at dispatch instead of when the call returns,
+  which is the whole mechanism -- it decouples the two, so a decision
+  arrives every ~500ms, each still describing a frame from one round trip
+  ago. **This raises throughput, not freshness**: no answer is newer than
+  it was before, there are simply more of them, which is what a person
+  walking can actually use (they integrate across several). A robot
+  executing each one would be worse off, which is why "Drive via brain"
+  pins itself to 1 -- see section 1.2.c. Two rather than more is measured,
+  not guessed: `control/walk_replay.py` records that at 8 concurrent
+  workers "Bedrock throttled 10 of 22 frames", and Bedrock quota is
+  account-and-region scoped, so this contends with everything else running
+  in the account -- including production.
+- **An answer that has been overtaken is discarded, not drawn.** Latency
+  varies per call, so with two in flight seq 7 can land after seq 9. Every
+  dispatch takes a sequence number and only renders if it is newer than
+  the last one drawn (`guidanceLastRenderedSeq`); a stale answer is still
+  *saved* when the walk is being recorded (section 1.2.b), because the
+  frame and the reply it got belong together regardless of arrival order.
+- **The call budget is reserved at dispatch, not counted on success.** A
+  call that has been sent has been paid for whether or not its answer is
+  fresh enough to render, and counting on completion would let the loop
+  dispatch past the cap while calls were still outstanding.
 - A capture is skipped (no call made) if the phone's orientation sensor
   reports it's been essentially still since the last tick
   (`GUIDANCE_STILL_SKIP_DEG_PER_SEC`), up to `GUIDANCE_MAX_CONSECUTIVE_SKIPS`
   in a row -- saves a paid call when nothing in frame could have changed.
 - A hard call cap per session (`GUIDANCE_MAX_CALLS` / `ROBOT_MAX_CALLS` =
-  **120**, ~1 minute at 500ms) auto-pauses with a "Resume searching"
-  button, so a forgotten-running tab can't burn money unbounded.
+  **120**) auto-pauses with a "Resume searching" button, so a
+  forgotten-running tab can't burn money unbounded. At the 500ms dispatch
+  rate that is about a minute -- and since calls began overlapping it
+  really is about a minute, where the old serial loop took several. The
+  number of paid calls is unchanged; the budget is just spent faster.
 - Backgrounding the browser tab (`visibilitychange`) pauses the timer;
   foregrounding resumes it. The camera stream itself is only released on
   Stop or navigating away (`track.stop()` on every track).
@@ -238,10 +270,29 @@ different prompt and schema.
   "target_direction": "left" | "center" | "right" | "not_visible",
   "target_reached": true | false,
   "obstacle_ahead": true | false,
+  "room_guess": "short room-type label, or \"unclear\"",
   "action": "FORWARD" | "LEFT" | "RIGHT" | "REVERSE" | "STOP",
+  "distance_estimate": "within_one_step" | "a_few_steps" | "far" | "unknown",
   "reasoning": "one short sentence"
 }
 ```
+`room_guess` is what feeds room-level step memory -- the client sends
+`searched_rooms` and the server answers with a room label, which
+`brain/agent.py:MissionAgent.step()` backfills into `frame["room"]`
+(`AGENT-HARNESS.md` section 10).
+
+**`distance_estimate` is only asked for under the `default-with-distance`
+prompt variant, and is `"unknown"` everywhere else** -- including on a
+parse failure, since a caller may veto a move on it and an unrecognised
+value has to fail towards "do not act on this". It is an *ordinal*
+judgement (how many robot moves of clearance), not a distance: a single
+monocular frame cannot give metric depth, so asking for centimetres would
+invite a confident guess with no error bar. **It is not calibrated and
+should not drive anything** -- measured over 80 frames from five recorded
+walks it reports `within_one_step` on 60% and `far` on 5%, which is not
+what walking across a house looks like. See `CLAUDE.md`'s Stage 0 notes
+for the full measurement and section 5 for the veto that stays off
+because of it.
 The frame is split into three vertical thirds (left/center/right) as the
 frame of reference for both `target_direction` and the model's own
 reasoning about what's in front of it. **`action` only ever means
@@ -300,7 +351,15 @@ connected in Settings; `brain.allow_recording` gates it server-side too.
    (`control/brain_server.py:300`), fire-and-forget (`recordWalkFrame()`)
    -- a failed save must never interrupt the walk or delay the next
    `/navigate` call. A running saved/failed counter renders under the
-   switch.
+   switch. **The frame's `seq` is allocated when the vision call is
+   dispatched, not when the save resolves.** That matters because calls
+   overlap: numbering from the saved/failed counters let two frames read
+   the same value before either save returned, and
+   `control/brain_server.py` writes `frame-{seq:04d}.jpg` with
+   `write_bytes()` -- a silent overwrite, while `walk.jsonl` still gained
+   a row for each. Measured against the defect, every other frame was
+   lost. Dispatch order is also capture order, which is the order
+   `sim/replay_robot.py` replays a walk in.
 3. `control/brain_server.py` writes frames to the shared EFS volume
    (`cloudformation/recordings.yaml`) -- the same storage the separate
    `/admin` service (`service/admin/`) lists/views/deletes from later.
@@ -593,6 +652,50 @@ All fields except the debug/onboarding flags persist in `localStorage`
 (wrapped in try/catch -- private browsing can throw) so a re-opened PWA
 doesn't start from a blank state.
 
+**Endpoint mismatch notices.** Each of the three URL fields above shows a
+note when the host it points at is not the host that served the page --
+"Robot commands and frames go to **X**, not **Y**, which served this
+page." It is not an error: a tunnel or a proxy is a legitimate reason for
+them to differ, and local dev routinely splits the twin (:8000) from the
+service (:8080), so the note says what will be called rather than
+claiming anything is broken. `file://` and same-host are silent.
+
+This exists because **that persistence is exactly the hazard**. A saved
+URL outlives the page that saved it, so opening a second deployment on a
+phone that has used the first leaves the new page calling the old
+service. The first version covered only the vision field, because a 401
+was the visible symptom -- and a 401 reads as a wrong secret rather than
+a call to the wrong place. The brain field then sent a walk recorded on
+one deployment to another deployment's volume, and the robot field can do
+the same for the D-pad. One saved endpoint following someone between
+deployments is the shape; which field it happens to be is incidental,
+so all three are covered.
+
+**Environment banner.** When the server that served the page reports a
+non-empty `env_label` on `/health`, the twin renders a sticky
+orange banner ("LAB ENVIRONMENT"), puts a coloured rule along the top of
+the tab bar, and prefixes the browser tab title. The `/admin` console does
+the same for itself. Three things worth knowing about how it decides:
+
+- **The page asks the server that served it**, via a relative `/health`,
+  rather than pattern-matching its own hostname -- a CloudFront domain can
+  change, and the twin is also opened straight off an NLB, off localhost,
+  and off a file server in tests. The one thing always true is that
+  `robot/server.py` served this HTML.
+- **Production sets no label, so nothing renders.** The same image is
+  therefore safe in every environment, and a warning that is always on
+  never gets the chance to become invisible.
+- **It fails silent.** A page that cannot reach its own origin has bigger
+  problems than a missing badge, so "no banner" is both the healthy
+  production state and the safe failure state.
+
+The label comes from an `ENV_LABEL` environment variable on
+`robot/server.py` and `control/admin_server.py`, set by the `EnvLabel`
+CloudFormation parameter (section 6). It is unauthenticated on purpose:
+`/health` already is, and someone has to know which environment they are
+looking at *before* typing a secret, which is precisely when the
+confusion happens. The value is a label, not a credential.
+
 ---
 
 ## 5. Safety and failsafes (cross-cutting, not a tab)
@@ -615,6 +718,37 @@ two that can't be triggered by pressing anything on real hardware, which
 is why `control/drills.py`'s fault picker exists in the Sim tab -- and
 why the live phone walk in section 1.2.c is the closest thing to
 provoking them for real without a drill.
+
+### 5.1 The vision proximity veto -- built, off, and staying off
+
+`brain/agent.py` can also stop a `FORWARD` that the *model* says would hit
+something, using the `distance_estimate` field from section 1.2.a. It is
+**disabled by default** (`vision_proximity_veto`, on both
+`ConstrainedAgent` and `MissionRunner`) and three conditions must all hold
+before it can fire: it is explicitly enabled; the backend genuinely has no
+distance sensor (`get_distance()` returns `robot/interface.py`'s
+`NO_SENSOR_CM`, as `ReplayRobot` and `TeleopRobot` do -- a photograph has
+no depth in it); and the model actually said `within_one_step`, never
+`"unknown"`.
+
+**It is not a safety layer and must not be mistaken for one.**
+`robot/safety.py` is, and its docstring is explicit that it never trusts
+the AI's own claims about distance -- which is why this lives in `brain/`
+instead. If a real reading exists it wins; a model's guess must never
+override or pre-empt a measurement.
+
+**What it is for:** on `ReplayRobot` and `TeleopRobot` the safety veto is
+dead code, so a whole Robot-view walk says nothing about collision
+avoidance. This makes that path execute against real pixels, which nothing
+else does before hardware exists.
+
+**Why it ships off:** measured over 80 frames from five recorded walks,
+`within_one_step` comes back on 60% of them. Wired on, that would block
+roughly three FORWARDs in five and reproduce the never-FORWARD stall the
+3x3 prompt matrix already found. **Do not copy this into
+`robot/hardware_robot.py`** -- on the PiCar the ultrasonic is the obstacle
+sensor, and on identical frames one model reports `obstacle_ahead` ~100%
+of the time and another ~0%.
 
 ---
 
@@ -658,6 +792,18 @@ have cost roughly as much as everything else in this project combined).
 | `teleop-robot.yaml` | `robot/server.py`, `mode: teleop` | `/teleop-robot/*` | 40, 41 | A **second, independent instance** of the same image as `twin.yaml`, via `ROUTE_PREFIX` -- lets sim-mode and teleop-mode be live at the same time (`robot/factory.py` picks one backend per process) |
 | `teleop-brain.yaml` | `control/brain_server.py`, pointed at the teleop robot | `/teleop-brain/*` | 50 | Same `ROUTE_PREFIX` trick, own secret, own `robot_url` |
 | `recordings.yaml` | EFS volume | -- | -- | No routes of its own; mounted by the brain (writes) and admin (reads) services, survives redeploys unlike Fargate's own ephemeral disk |
+
+**`EnvLabel`.** `twin.yaml`, `teleop-robot.yaml` and `admin.yaml` each
+take an `EnvLabel` parameter, defaulting to `""`, which becomes the
+`ENV_LABEL` environment variable behind the banner described in section
+4. An empty value must add **no variable at all** rather than an empty
+one: an empty one still rewrites the task definition, which a change set
+against the live production stack showed would churn `TaskDefinition` and
+`EcsService` for a deployment meant to change nothing. `AWS::NoValue`
+under a `HasEnvLabel` condition is what drops the list element entirely.
+
+Production passes nothing and is therefore unaffected. A second
+environment passes its own name.
 
 **Why CloudFront exists at all**, specifically: `getUserMedia` (Guide
 me and both live-camera Robot view sub-modes) requires a secure context.

@@ -18,8 +18,8 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 445 passed, with a browser
-# installed -- see below; 440 without, as five parity tests skip)
+# Confirm everything still works (should show 471 passed, with a browser
+# installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
 # service/vision_analyze/ has its own suite -- see section 5, item 1
@@ -191,7 +191,7 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    419 tests, 99% line coverage of brain/,
+├── tests/                    471 tests, 99% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1],
 │                              test_sensors.py [S5],
@@ -199,7 +199,12 @@ vision-picar/
 │                              test_walk_eval.py + test_admin_server.py
 │                              (the recorded-walk scorecard and replay),
 │                              test_ui.py + test_ui_admin.py (Playwright,
-│                              real browser at a phone viewport), and
+│                              real browser at a phone viewport),
+│                              test_ui_pipeline.py (Playwright too, but
+│                              against a real threaded stub -- the
+│                              properties it pins are timing ones, and
+│                              page.route() serialises the very requests
+│                              it would be measuring), and
 │                              test_alb_routes.py -- see section 6)
 │                              + 7 runnable (non-automated) demo scripts
 │
@@ -294,8 +299,12 @@ Robot view pauses when the service reports `target_reached`, so a walk
 ends at arrival instead of burning calls. **That field needs an ECS
 redeploy of `service/vision_analyze/` to take effect** -- against the
 currently deployed service the field is simply absent, the pause never
-fires, and everything else behaves as before. The 120-call cap (~3.3 min
-at the 500ms cadence) bounds the cost either way.
+fires, and everything else behaves as before. The 120-call cap bounds the
+cost either way -- and since Robot view's calls started overlapping (up to
+two in flight, `GUIDANCE_MAX_IN_FLIGHT`), 120 calls is about a minute of
+walking rather than the ~3.3 min a strictly serial loop took. The number
+of paid calls is unchanged; the budget is just spent faster, so a walk
+that used to fit inside the cap may now hit it.
 
 **`/navigate` runs Claude Opus 4.5 as of 2026-08-29, and the previous
 claim on this line was wrong in a way worth knowing about.** It used to
@@ -821,6 +830,9 @@ endpoint, on purpose (real hardware has none either).
 | 2 | one brain at a time | Start a remote mission, then tap Explore | Refused with a toast; the reverse is the server's 409 |
 | S4 | time in the loop | Set `sim.realtime: true` in `config/robot.yaml`, restart the robot server, then Remote brain -> Start | The watchdog readout climbs mid-move instead of only between moves -- a move now genuinely occupies its duration, off by default so this is opt-in |
 | S5 | sensor realism | Set `sim.sensor_noise.enabled: true`, restart the robot server, then D-pad toward a wall | Distance telemetry stops being multiples of 30cm and jitters; the safety collar can flash before you're touching the wall, not only once you are |
+| -- | overlapped vision calls | Guide tab -> Robot view, Start, with developer readouts on | Decisions land about every 500ms instead of every ~3s. The call counter climbs at the dispatch rate, and an answer overtaken by a newer one is never drawn |
+| -- | environment banner | Run the robot server with `ENV_LABEL=Lab`, reload the twin | An orange "LAB ENVIRONMENT" bar at the top, a coloured rule on the tab bar, and `LAB ·` prefixing the tab title. Unset it and everything disappears -- that absence *is* production's state |
+| -- | endpoint mismatch notice | Settings -> point any of the three URL fields at a host other than the one serving the page | A note under that field naming both hosts. Not an error: it says what will be called, because a tunnel or split local dev is legitimate |
 
 ### What the remaining phases owe
 

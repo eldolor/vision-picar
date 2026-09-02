@@ -355,6 +355,34 @@ hardware day.** It decides whether the policy works at all, and if the
 sensor is chassis-mounted the fix is a real design change (turn the
 chassis to peek, or add a second distance source), not a constant.
 
+### 5.4 Do not carry the vision proximity veto onto the car
+
+`brain/agent.py` has a `vision_proximity_veto` (off by default) that stops
+a `FORWARD` when the model's own `distance_estimate` says
+`within_one_step`. It exists **only** because `ReplayRobot` and
+`TeleopRobot` have no distance sensor -- `get_distance()` returns
+`robot/interface.py`'s `NO_SENSOR_CM` -- so on those backends
+`robot/safety.py`'s veto is dead code and a whole recorded walk says
+nothing about collision avoidance.
+
+`HardwareRobot` will have a real ultrasonic, which makes the veto both
+unnecessary and actively wrong there. Two reasons, and the second is the
+one that bites:
+
+1. **A measurement must win over a guess.** The veto already returns
+   early whenever `get_distance()` reports anything below `NO_SENSOR_CM`,
+   so on the car it would be inert -- but leaving it wired reads as
+   "vision helps with obstacles", which invites someone to trust it.
+2. **The signal is not calibrated and the models disagree wildly.** On
+   identical frames one model reports `obstacle_ahead` ~100% of the time
+   and another ~0%; `distance_estimate` says `within_one_step` on 60% of
+   real walk frames. On hardware the ultrasonic is the obstacle sensor.
+   Do not let the vision policy be the thing relying on either field.
+
+Nothing needs doing on hardware day except *not* copying it into
+`robot/hardware_robot.py`. It is listed here because the tempting move --
+"we already have obstacle logic, reuse it" -- is the wrong one.
+
 ---
 
 ## 6. Two gotchas worth knowing now

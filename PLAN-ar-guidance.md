@@ -524,6 +524,21 @@ function startGuidance(targetObject) {
 Key correctness points, not optional:
 - **Guard against overlapping requests** (`guidanceInFlight`) -- a slow
   response shouldn't cause two in-flight calls stacking up.
+  **SUPERSEDED (2026-09-02): calls now deliberately overlap, up to two.**
+  The reasoning above is still right about *why* you cannot just remove
+  the guard -- unbounded stacking against a slow endpoint is a real
+  failure -- but "skip a tick" turned out to be the wrong fix. It made the
+  real cadence `THROTTLE_MS + latency`, which reached ~3s once `/navigate`
+  moved to Opus 4.5, so the throttle constant stopped describing anything
+  observable. What shipped instead: a bounded counter
+  (`GUIDANCE_MAX_IN_FLIGHT` = 2) rather than a boolean, the next tick
+  scheduled at dispatch rather than on return, and a sequence number so an
+  answer overtaken by a newer one is discarded instead of drawn. Note the
+  last part is a requirement this section did not anticipate -- once calls
+  overlap, "render whatever came back" is a bug. `FEATURES.md` section 1
+  is the current behaviour; "Drive via brain" stays pinned to one in
+  flight (`PLAN-teleop-robot.md`, Phase T3), because a robot executing
+  each decision needs them in order.
 - **Pause when the tab/page isn't visible** -- listen for
   `visibilitychange` and stop the timer when hidden, restart on
   visible, so backgrounding the browser doesn't keep burning API calls.
@@ -559,7 +574,9 @@ fixed cost -- it only adds marginal per-call cost on top of it.
 based on how it feels in practice. Slower (2000-3000ms) trades
 responsiveness for cost; there's little point going faster than the
 model's own 1-2s response time, since requests would just queue up
-behind `guidanceInFlight`.
+behind `guidanceInFlight`. (Also superseded -- see 5.3. The throttle is
+500ms today and is the gap between *dispatches*, so it no longer has to
+stay above the model's response time.)
 
 ---
 
