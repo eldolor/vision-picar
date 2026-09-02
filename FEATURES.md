@@ -805,6 +805,31 @@ under a `HasEnvLabel` condition is what drops the list element entirely.
 Production passes nothing and is therefore unaffected. A second
 environment passes its own name.
 
+**The consequence, measured 2026-09-02: the three production stacks do
+not list `EnvLabel`, and that drift cannot be closed.** They were last
+updated before the parameter existed. Deploying the template does
+nothing -- `aws cloudformation deploy` answers "No changes to deploy,"
+and a change set created by hand comes back `Status: FAILED`,
+`ExecutionStatus: UNAVAILABLE`, `Changes: []`, reason "The submitted
+information didn't contain changes." The change set *sees* the new
+parameter; it just yields no resource delta, because that is exactly what
+`AWS::NoValue` above is for. CloudFormation will not execute a
+zero-change change set, so the stack's stored template and parameter list
+stay where they are.
+
+This is cosmetic and self-correcting -- every deploy passes
+`--template-file`, so git is the source of truth and the stale stored
+template is visible only through `describe-stacks`. The first deploy
+carrying a real change registers the parameter normally, including the
+one that matters: `--parameter-overrides EnvLabel=<name>` produces a
+genuine delta and works. **Do not try to force it.** The only mechanism
+that would is a two-step churn -- deploy with a non-empty label, then
+again with it empty -- which rewrites `TaskDefinition` and restarts
+`EcsService` twice in production to arrive back where it started, the
+precise churn the condition was written to avoid. Note that a failed
+attempt leaves a `FAILED` change set attached to the stack;
+`list-change-sets` then `delete-change-set` clears it.
+
 **Why CloudFront exists at all**, specifically: `getUserMedia` (Guide
 me and both live-camera Robot view sub-modes) requires a secure context.
 A bare NLB/ALB only serves plain HTTP; CloudFront's default
