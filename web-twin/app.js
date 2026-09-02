@@ -143,6 +143,11 @@
   const FPV_MAX_DIST = 14; // cells
   const FPV_STEP = 0.05; // ray march step, in cells
   const FPV_WALL_RGB = { r: 118, g: 129, b: 150 };
+  // The room the walls stand in. Byte-identical to sim/renderer.py's
+  // COLOR_CEILING / COLOR_FLOOR -- see renderFPV() for why these are
+  // constants here and not the twin's --wall / --floor CSS variables.
+  const FPV_CEILING_CSS = "rgb(198,203,211)";
+  const FPV_FLOOR_CSS = "rgb(128,120,110)";
 
   // Fallback only, used until the connected server's /health reply has
   // actually been read into state.minDistanceCm (renderWatchdog(), below)
@@ -188,6 +193,9 @@
     guidanceMode: "guide", // "guide" -> /guidance (steer a person); "robot" -> /navigate (what would the robot do)
     guidanceRunning: false, guidanceTimerId: null, guidanceTarget: null,
     guidanceInFlight: 0, guidanceSeq: 0, guidanceLastRenderedSeq: 0,
+    // Which run a vision call belongs to. Bumped on every stop, captured at
+    // dispatch, compared on return -- see stopGuidance() and guidanceStep().
+    guidanceEpoch: 0,
     guidanceCallCount: 0, guidanceStream: null,
     guidanceMuted: false, guidanceNotVisibleStreak: 0,
     guidancePaused: false, guidanceFoundStreak: 0,
@@ -209,6 +217,11 @@
     // The vision service's own default, and whatever the connected brain
     // pins -- both only for showing which model a mission would really use.
     navigateServiceDefault: "", brainNavigateModelId: null,
+    brainNavigatePromptVariant: null,
+    // Which policy the Remote brain panel starts a mission under. "frontier"
+    // is the free rule-based explorer; "vision" spends a model call a step
+    // and is the one on the hardware path (PLAN-sim-hardening.md 2.2).
+    brainPolicy: "frontier",
     // Driving Robot view through a real MissionRunner mission instead of a
     // one-off /navigate call (PLAN-teleop-robot.md, Phase T3). driveViaBrain
     // is the live toggle; guidanceViaBrain is latched at Start so Stop knows
@@ -244,6 +257,7 @@
     driveViaBrain: "vp_drive_via_brain",
     navigateModelId: "vp_navigate_model_id",
     navigatePromptVariant: "vp_navigate_prompt_variant",
+    brainPolicy: "vp_brain_policy",
   };
   function prefGet(key) {
     try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -837,9 +851,17 @@
     const px = gx + 0.5, py = gy + 0.5;
     const baseAngle = HEADING_ANGLE[frame.facing] || 0;
 
-    fpvCtx.fillStyle = getCss("--wall");
+    // NOT getCss("--wall") / getCss("--floor") any more, and that is the
+    // point. Those are the dark UI chrome colours (#05070A / #232A33), and
+    // borrowing them painted the ceiling and floor almost black. This canvas
+    // is what the vision policy sees when the server has no pixels of its
+    // own, so it is lit like a room instead of themed like a panel -- and it
+    // is now immune to a restyle of the app. Kept byte-identical to
+    // sim/renderer.py's COLOR_CEILING / COLOR_FLOOR; changing one without
+    // the other is what tests/test_renderer_parity.py exists to catch.
+    fpvCtx.fillStyle = FPV_CEILING_CSS;
     fpvCtx.fillRect(0, 0, FPV_W, FPV_H / 2);
-    fpvCtx.fillStyle = getCss("--floor");
+    fpvCtx.fillStyle = FPV_FLOOR_CSS;
     fpvCtx.fillRect(0, FPV_H / 2, FPV_W, FPV_H / 2);
 
     for (let x = 0; x < FPV_W; x++) {
@@ -1557,8 +1579,44 @@
     btn.classList.toggle("active-mode", state.brainMissionRunning);
     document.getElementById("brain-fault").disabled = state.brainMissionRunning;
     document.getElementById("brain-target").disabled = state.brainMissionRunning;
+    document.getElementById("brain-policy").disabled = state.brainMissionRunning;
     if (hint) hint.style.display = state.brainConnected ? "none" : "";
+    renderBrainPolicyHint();
+    updateBrainPickersRow();
   }
+
+  // The vision policy spends money and its result is only interpretable if
+  // you know which model and which wording produced it -- so say both, in
+  // words, before the mission starts rather than leaving them to be inferred
+  // from a log afterwards.
+  function renderBrainPolicyHint() {
+    const hint = document.getElementById("brain-policy-hint");
+    if (!hint) return;
+    if (state.brainPolicy !== "vision") {
+      hint.style.display = "none";
+      return;
+    }
+    hint.style.display = "";
+    hint.innerHTML = "Every step is a paid <code>/navigate</code> call. "
+      + "Model: <b>" + escapeHtml(brainModelLabel()) + "</b>. "
+      + "Wording: <b>" + escapeHtml(brainPromptLabel()) + "</b>.";
+  }
+
+  function updateBrainPickersRow() {
+    const row = document.getElementById("brain-policy-pickers-row");
+    if (row) row.style.display = state.brainPolicy === "vision" ? "" : "none";
+  }
+
+  // The two pickers live on the Guide tab, next to Robot view -- the flow
+  // they were built for. The vision policy is their second consumer, and a
+  // control the operator cannot find is the same as no control, so this jumps
+  // there rather than duplicating the selects in a second tab where the two
+  // copies could disagree about what is selected.
+  document.getElementById("btn-brain-pickers").onclick = function () {
+    switchTab("guide");
+    const row = document.getElementById("navigate-model-row");
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: "center" });
+  };
 
   async function startBrainMission() {
     // One brain at a time. Two loops driving one robot is the exact
@@ -1572,8 +1630,17 @@
     saveTargetToHistory(target);
     const btn = document.getElementById("btn-brain-mission");
     setButtonBusy(btn, true, "Starting\u2026");
+    const body = { target_object: target, fault: fault, policy: state.brainPolicy };
+    // Sent only on the policy that reads them, and only when actually
+    // picked: an absent field means "whatever the brain, and then the vision
+    // service, defaults to". Sending null instead would be the same value
+    // with a worse story about where it came from.
+    if (state.brainPolicy === "vision") {
+      if (state.navigateModelId) body.model_id = state.navigateModelId;
+      if (state.navigatePromptVariant) body.prompt_variant = state.navigatePromptVariant;
+    }
     try {
-      await brainApi("POST", "/mission/start", { target_object: target, fault: fault });
+      await brainApi("POST", "/mission/start", body);
       state.brainMissionRunning = true;
       state.brainLogSignature = "";
       showToast(fault === "none" ? "Mission started on the robot."
@@ -1609,6 +1676,16 @@
     else startBrainMission();
   };
 
+  document.getElementById("brain-policy").addEventListener("change", function () {
+    state.brainPolicy = this.value;
+    prefSet(PREF.brainPolicy, this.value);
+    // The model and wording pickers live on the Guide tab and were
+    // previously shown only for Robot view. This is their second consumer.
+    updateModelPickerRow();
+    renderBrainPolicyHint();
+    updateBrainPickersRow();
+  });
+
   async function connectBrain(opts) {
     const silent = !!(opts && opts.silent);
     const url = document.getElementById("cfg-brain-url").value.trim().replace(/\/$/, "");
@@ -1628,6 +1705,7 @@
       // null means "this brain pins nothing, so the vision service's own
       // default applies" -- resolved for display in brainModelLabel().
       state.brainNavigateModelId = health.navigate_model_id || null;
+      state.brainNavigatePromptVariant = health.navigate_prompt_variant || null;
       prefSet(PREF.brainUrl, url);
       setConnStatus(statusEl, "ok", "Connected" + (health.drills_allowed ? "" : " (drills disabled)"),
         url + " \u2014 driving the robot at " + health.robot_url);
@@ -1820,17 +1898,26 @@
   // override that's easy to forget is set. The allow-list itself lives on
   // the server (vision_core.NAVIGATE_MODEL_CHOICES) so this page never
   // hardcodes ids that would drift as that list changes.
+  function navigatePickersWanted() {
+    // Two consumers now: Robot view's own /navigate calls, and the Sim tab's
+    // remote brain when it is set to the vision policy. Both send the same
+    // two fields to the same allow-list, so they share one pair of pickers
+    // rather than growing a second, driftable copy in the Sim tab.
+    return state.guidanceMode === "robot" || state.brainPolicy === "vision";
+  }
+
   function updateModelPickerRow() {
+    const wanted = navigatePickersWanted();
     const row = document.getElementById("navigate-model-row");
-    if (row) row.style.display = state.guidanceMode === "robot" ? "" : "none";
+    if (row) row.style.display = wanted ? "" : "none";
     const promptRow = document.getElementById("navigate-prompt-row");
     // Only shown once the service offers more than one wording -- a single
     // variant is not a choice.
     if (promptRow) {
       promptRow.style.display =
-        (state.guidanceMode === "robot" && promptRow.dataset.hasChoices === "1") ? "" : "none";
+        (wanted && promptRow.dataset.hasChoices === "1") ? "" : "none";
     }
-    if (state.guidanceMode === "robot" && !state.navigateModelsLoaded) fetchNavigateModels();
+    if (wanted && !state.navigateModelsLoaded) fetchNavigateModels();
   }
 
   // Drops every option but "Service default", which is index 0 and is the
@@ -1906,6 +1993,13 @@
           select.value = saved;
           state.navigateModelId = saved;
         }
+        // Both readouts name the service's own defaults when nothing is
+        // picked, and until this reply lands there is no name to give. They
+        // are rendered synchronously by whatever revealed them, so they have
+        // to be redrawn once the answer arrives -- otherwise the panel says
+        // "the service default" forever.
+        renderDriveViaBrainStatus();
+        renderBrainPolicyHint();
       })
       .catch(function () { /* leave "Service default" as the only option; a later call retries */ });
   }
@@ -1913,12 +2007,14 @@
   document.getElementById("cfg-navigate-prompt").addEventListener("change", function () {
     state.navigatePromptVariant = this.value;
     prefSet(PREF.navigatePromptVariant, this.value);
+    renderBrainPolicyHint();
   });
 
   document.getElementById("cfg-navigate-model").addEventListener("change", function () {
     state.navigateModelId = this.value;
     prefSet(PREF.navigateModelId, this.value);
     renderDriveViaBrainStatus();
+    renderBrainPolicyHint();
   });
 
   document.getElementById("cfg-record-walk").addEventListener("change", function () {
@@ -1962,6 +2058,25 @@
     if (state.navigateModelId) return labelFor(state.navigateModelId) + " (your pick)";
     if (state.brainNavigateModelId) return labelFor(state.brainNavigateModelId) + " (pinned on the brain)";
     if (state.navigateServiceDefault) return labelFor(state.navigateServiceDefault) + " (service default)";
+    return "the service default";
+  }
+
+  // The wording axis, resolved the same way and for the same reason. The
+  // failure this guards against is not hypothetical: a week of walks were
+  // attributed to a model that was never running, because a value was passed
+  // and something else was served.
+  function brainPromptLabel() {
+    if (state.navigatePromptVariant) return state.navigatePromptVariant + " (your pick)";
+    if (state.brainNavigatePromptVariant) {
+      return state.brainNavigatePromptVariant + " (pinned on the brain)";
+    }
+    const select = document.getElementById("cfg-navigate-prompt");
+    const placeholder = select && select.options[0];
+    // "Service default -- <name>", set by populatePromptOptions() once the
+    // service has told us what that name is.
+    if (placeholder && placeholder.textContent.indexOf("\u2014") !== -1) {
+      return placeholder.textContent.split("\u2014")[1].trim() + " (service default)";
+    }
     return "the service default";
   }
 
@@ -3014,6 +3129,15 @@
     state.guidanceConsecutiveSkips = 0;
 
     const isRobot = state.guidanceMode === "robot";
+    // Which run this call belongs to. `guidanceRunning` cannot answer that:
+    // it is a boolean, and it is true again the moment the NEXT session
+    // starts -- so a call still in flight when you stop would pass the
+    // freshness checks below and render the previous session's decision over
+    // the new session's camera view. Worse and invisible: it also sets
+    // guidanceLastRenderedSeq to its own (higher) seq, which then suppressed
+    // the new session's first several real answers. Captured here, in the
+    // same synchronous block as the dispatch, and compared on return.
+    const epoch = state.guidanceEpoch;
     const seq = ++state.guidanceSeq;
     // Reserved here, in the same synchronous block as the dispatch, so no
     // two overlapping calls can be handed the same frame number. Null
@@ -3039,6 +3163,10 @@
       const result = (isRobot && driveViaBrainActive())
         ? await driveViaBrainStep(base64)
         : await callGuidanceEndpoint(base64, state.guidanceTarget);
+      // Nothing below this line may touch state belonging to a run that is
+      // no longer the current one -- not the error streak, not the frame
+      // recorder, not the overlay. See `epoch` above.
+      if (epoch !== state.guidanceEpoch) return;
       state.guidanceErrorStreak = 0;
 
       // The frame and the answer it got belong together regardless of
@@ -3092,6 +3220,9 @@
         }
       }
     } catch (e) {
+      // A previous run's failure must not pace, or discourage, this one --
+      // same reasoning as the epoch check on the success path above.
+      if (epoch !== state.guidanceEpoch) return;
       state.guidanceErrorStreak++;
       // The next tick was already scheduled at the base throttle before
       // this call failed, so the backoff has to replace that timer rather
@@ -3476,9 +3607,14 @@
     state.guidanceNotVisibleStreak = 0;
     state.guidancePaused = false;
     state.guidanceFoundStreak = 0;
-    // Calls already in flight will still resolve after this, and their
-    // handlers check guidanceRunning -- but the counters must not carry
-    // into the next session or the first dispatch would look overtaken.
+    // Calls already in flight will still resolve after this. Bumping the
+    // epoch is what orphans them: guidanceRunning is true again as soon as
+    // the next session starts, so it cannot tell "this run" from "the run
+    // before it", and a late answer used to be drawn over the new session's
+    // camera view -- then set guidanceLastRenderedSeq to its own higher
+    // seq, silently suppressing the new run's first few real decisions.
+    // guidanceStep() captures this at dispatch and compares it on return.
+    state.guidanceEpoch++;
     state.guidanceInFlight = 0;
     state.guidanceSeq = 0;
     state.guidanceLastRenderedSeq = 0;
@@ -4704,6 +4840,15 @@
   // was actually remembered from a previous session -- the derived
   // localhost:8001 default should not produce a failure message on every
   // load for the many setups that run no brain service at all.
+  const brainPolicyEl = document.getElementById("brain-policy");
+  const savedPolicy = prefGet(PREF.brainPolicy);
+  if (savedPolicy === "vision" || savedPolicy === "frontier") {
+    state.brainPolicy = savedPolicy;
+    brainPolicyEl.value = savedPolicy;
+    // A remembered "vision" has to bring the Guide tab's pickers back with
+    // it, or the panel names a model nobody can see or change.
+    updateModelPickerRow();
+  }
   updateBrainControls();
   const recordToggleEl = document.getElementById("cfg-record-walk");
   state.recordWalk = prefGet(PREF.recordWalk) === "1";

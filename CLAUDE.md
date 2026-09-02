@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 471 passed, with a browser
+# Confirm everything still works (should show 495 passed, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -106,13 +106,13 @@ the original build plan phases, reordered simulation-first):
 | 9 (partial) | Manual WASD control client (`control/manual_control.py`) | NOT BUILT, and now skipped -- the twin's D-pad supersedes it, and `RemoteRobot` (B0, below) makes it nearly free if ever wanted. |
 | B0-B3 | Brain on the wire: `RemoteRobot`, `MissionRunner`, `control/brain_server.py`, the three failsafes | Done, tested (`control/`, `tests/test_remote_robot.py`, `test_mission_runner.py`, `test_brain_server.py`, `test_failsafes.py`). The autonomy loop is a service now: startable, stoppable, and inspectable over HTTP, with the robot reachable only as an HTTP client. |
 | S2 | Real image bytes -- the twin's raycaster ported into Python (`sim/renderer.py`) | Done (2026-08-31). `MockRobot.get_camera_frame()` returns a rendered JPEG like every other backend, so the vision policy drives the simulator and `RobotInterface` no longer has to change when hardware lands (`PLAN-sim-hardening.md` 2.1, now closed). Parity with the JS is proven column by column (`tests/test_renderer_parity.py`), which is what makes `renderFPV` safe to delete -- **not yet deleted**: it is still the fallback for a server predating S2, and nothing has been redeployed. The twin's new "frame source: server / local" readout is how you tell which one drew the picture. Read `sim/renderer.py`'s fidelity note before treating a sim result as a statement about real rooms. |
-| S2b (partial) | The Python vision agent | Done for recorded walks (`brain/navigate.py`, `brain/vision_agent.py`, `sim/replay_robot.py`, `policy: "vision"`, and the twin's "Record this walk" switch) and, since T1-T4, for a live phone walk too (`sim/teleop_robot.py`, "Drive via brain"). The model decides every move; the harness supplies the timeout, the failure budget and the step/cost cap. Room-level step memory is done -- `/navigate` exchanges `searched_rooms`/`room_guess` with the client, and `brain/agent.py:MissionAgent.step()` backfills `frame["room"]` from it (`AGENT-HARNESS.md` section 10). Not yet drivable in the grid-world sim itself -- still needs S2's real image bytes. |
+| S2b (partial) | The Python vision agent | Done for recorded walks (`brain/navigate.py`, `brain/vision_agent.py`, `sim/replay_robot.py`, `policy: "vision"`, and the twin's "Record this walk" switch) and, since T1-T4, for a live phone walk too (`sim/teleop_robot.py`, "Drive via brain"). The model decides every move; the harness supplies the timeout, the failure budget and the step/cost cap. Room-level step memory is done -- `/navigate` exchanges `searched_rooms`/`room_guess` with the client, and `brain/agent.py:MissionAgent.step()` backfills `frame["room"]` from it (`AGENT-HARNESS.md` section 10). Since S2 it drives the grid-world sim too, and since M1 it is startable from the twin: the Remote brain panel has a policy picker, and a vision mission carries a `model_id` and a `prompt_variant` that are validated at start and shown before you spend anything. |
 | B4 | The twin becomes an observer | Done (`web-twin/index.html`'s "Remote brain" panel + `control/drills.py`). Missions start from the phone and survive the tab; the failsafe drills and watchdog readout make B3's guards watchable. Only B5 (systemd on the Pi) is left in that plan. |
 | T1-T4 | Teleop robot: a live phone walk drives the real `MissionRunner` mission, closed loop (`PLAN-teleop-robot.md`) | Done and deployed (2026-08-28) -- `sim/teleop_robot.py`'s `TeleopRobot` (a fourth `RobotInterface` backend: `mode: teleop`, no motor, a live pushed camera frame, no distance sensor), `POST /teleop/frame` on `robot/server.py`, the twin's Robot view "Drive via brain" switch, and sibling `teleop-robot.yaml`/`teleop-brain.yaml` CloudFormation stacks sharing the existing NLB/ALB (see section 6's AWS-topology bullet). Verified end to end: a real phone walk found its target (`OUT: FOUND`), and both B3.2 (vision-failure budget) and T1's stall detection were triggered live, no drill, against the deployed services. One rough edge, since fixed: `/frame` now catches a stall and returns 503 with the real message instead of a generic 500. |
 | extra | Interim: brain on ECS Fargate | Done and deployed (`service/brain/`, `cloudformation/brain.yaml`) -- `control/brain_server.py` alongside the twin and vision-analyze on the same shared NLB/ALB, so the remote-brain panel works from a phone off the home LAN with no HTTPS tunnel. Not a build-plan phase and not B5: the brain's real home is still the Pi: see `PLAN-brain-relocation.md`'s "Interim: brain on ECS Fargate" for why this doesn't conflict with that, and for the one real gap it surfaced (separate outbound secrets for the robot vs. the vision service). |
 | extra | Recorded-walk evaluation harness | Done and deployed (2026-08-30) -- `control/walk_eval.py` scores a walk (metrics + an LLM judge + a collision check, advisory and kept out of the operator's own label), `control/walk_replay.py` re-asks its frames under another model or prompt, `/navigate` takes `model_id` and `prompt_variant` from server-side allow-lists, and the console shows a per-model summary. **This is the instrument the Stage 0 gate needed:** it turns "did that walk go well" from an afternoon of reading JSON into a button, and replay is the only controlled model comparison available -- two live walks vary the operator's path as well as the model. What it has already established is in the Stage 0 notes below. |
 | extra | Recorded-walk storage + admin viewer | Done and deployed (`cloudformation/recordings.yaml`, `service/admin/`, `control/admin_server.py`) -- an EFS volume (survives redeploys, unlike Fargate's own filesystem) holding Robot-view "Record this walk" data, plus a separate `/admin` service to list/view/delete it. Deliberately its own service, not more routes on `brain_server.py`: reviewing recordings has no reason to move to the Pi when B5 lands or to go down when the mission server restarts. See `PLAN-brain-relocation.md`'s Interim section and `control/admin_server.py`'s docstring. Since T1-T4, `teleop-brain.yaml`'s brain has no EFS mount of its own and instead proxies `POST /recording/frame` to the main brain (`control/brain_server.py`'s `recording_proxy_url`) -- see `PLAN-teleop-robot.md`'s "Recording proxy" section for why only that one route, never `/mission/*`, may be proxied between brains. |
-| -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Designed but never written to disk -- a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt. **This is now the main hardware-path gap:** `PLAN-sim-hardening.md` Q1 settled that the robot is vision-driven, and the vision loop currently exists only in JavaScript (`web-twin/index.html`'s Vision Autopilot) -- no Python file calls `/navigate`. Phase S2b of that plan specifies the port, including the step-memory problem the browser version does not solve. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. Stage 2's `MissionRunner` is where it plugs in -- `AGENT-HARNESS.md` section 10 is the instruction sheet: it takes a `vision_fn` and already enforces the timeout and failure budget such a policy needs, and `control/brain_server.py` answers `policy: "vision"` with a 501 until it exists. |
+| -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Designed but never written to disk -- a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt. **This is now the main hardware-path gap:** `PLAN-sim-hardening.md` Q1 settled that the robot is vision-driven, and the vision loop's *port* is done (`brain/navigate.py` calls `/navigate`; the JS Vision Autopilot is now the optional one). Phase S2b of that plan specifies the port, including the step-memory problem the browser version does not solve. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. Stage 2's `MissionRunner` is where it plugs in -- `AGENT-HARNESS.md` section 10 is the instruction sheet: it takes a `vision_fn` and already enforces the timeout and failure budget such a policy needs, and `control/brain_server.py` serves `policy: "vision"` with `brain/vision_agent.py` today -- what is still missing is room-level *planning* over `MissionMemory`, not the vision loop. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -191,7 +191,7 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    471 tests, 99% line coverage of brain/,
+├── tests/                    495 tests, 99% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1],
 │                              test_sensors.py [S5],
@@ -213,7 +213,7 @@ vision-picar/
 │   │                           /navigate, /guidance
 │   ├── vision_core.py         calls Amazon Bedrock (Claude, Converse API)
 │   ├── rooms_core.py          identify_room() -- same logic as brain/rooms.py
-│   ├── tests/                 app.py's own suite (47 tests) -- routing,
+│   ├── tests/                 app.py's own suite (54 tests) -- routing,
 │   │                           validation, decode/size/error handling, all
 │   │                           vision_core.* calls mocked. Run separately:
 │   │                           `pytest service/vision_analyze/tests/ -v`
@@ -402,24 +402,159 @@ before trusting any of it, but this is where it stands:
   question's shape -- what is in the centre third and in the path, not
   what is nearest anywhere in frame.
 
-- **That shape change now exists as `center-third-path`, and is NOT yet
-  measured (2026-09-02).** It asks what is in the bottom half of the centre
-  third -- the patch of ground the next step actually crosses -- and answers
-  `open_floor` / `blocked` / `unclear` in a new `path_ahead` field, with
-  `obstacle_ahead` defined as a restatement of it rather than a second
-  opinion. Two deliberate properties. It is **descriptive, not evaluative**:
-  a cautious model can truthfully say "there is an obstacle ahead" about
-  almost any indoor room, but it cannot call a wall `open_floor`. And it
-  changes **question 2 alone** -- questions 1, 3, 4 and 5 are byte-identical
-  to `default` by construction (string surgery, pinned by a test), because
-  `next-step-obstacle` moved questions 2 and 5 together and left no way to
-  tell which half caused the degenerate result. If this comes back
-  always-FORWARD with question 5 untouched, question 5 is the problem, and
-  that is itself worth knowing. Because `obstacle_ahead` carries the answer,
-  `control/walk_eval.py`'s FORWARD rate and collision check score it in the
-  existing table with no change to the harness. **Nothing here is a claim
-  about how it performs.** Replay it over the same frames before believing
-  anything -- and read the `coverage` before the score.
+- **A fifth wording, `bearing-only`, deletes the obstacle question instead
+  of rewording it. MEASURED 2026-09-02, and it is the first wording that is
+  degenerate on no model.** Phase M1 of
+  `PLAN-microduck-transplants.md`. The argument is that a single monocular
+  frame does not contain metric depth, so no wording recovers it: `/navigate`
+  keeps *what* and *which way*, and a distance sensor owns *how far*. Two
+  lines are removed from `default` and nothing else -- the question and its
+  schema line -- so `obstacle_ahead` is **absent from the reply**, not false.
+  `brain/navigate.py` maps that absence to `free_space: "unknown"`, and the
+  only obstacle logic left on the path is `robot/safety.py`'s
+  `get_distance()` re-check before every FORWARD. Under a replay
+  (`ReplayRobot` has no sensor) `control/walk_eval.py` will therefore flag
+  the run `collision`: **record that column as "what the sensor must catch",
+  not as a defect** -- it is M10's specification.
+
+- **The full 5x3, at 100% coverage, replayed 2026-09-02** (same 22 frames of
+  `red-backpack-20260829-195904`, every model x every wording). FORWARD rate:
+
+  |                   | default | next-step-obstacle | next-step-and-walls | center-third-path | bearing-only |
+  |---|---|---|---|---|---|
+  | Claude Opus 4.5   | 0.591 | 0.318 | 0.455 | 0.591 | **0.591** |
+  | Claude Sonnet 4.5 | 0.000 | 1.000 | 0.955 | 0.091 | **0.591** |
+  | Qwen3-VL          | 0.773 | 1.000 | 1.000 | 0.818 | **0.773** |
+
+  Three things this settles.
+
+  **`bearing-only` is the only column with no degenerate cell.** No `stalled`
+  flag, no `degenerate` flag, all three models inside 0.591-0.773. Sonnet's
+  never-FORWARD stall -- the failure that started this whole investigation --
+  is gone without flipping to the always-FORWARD failure that every previous
+  attempt traded it for. Deleting the question did what five rewordings of it
+  could not. **This is evidence about the degenerate modes, not about
+  navigation:** no cell in the table reaches the target, and every
+  `bearing-only` cell is still flagged `collision` -- 12 of 12 checked
+  FORWARDs on all three models. That column is M10's specification, not a
+  defect: `ReplayRobot` has no distance sensor, and the whole argument is
+  that the sensor is what refuses those moves.
+
+  **Question 5 was what broke `next-step-obstacle`, not the region change.**
+  `center-third-path` moves question 2 alone and takes Sonnet from 0.000 to
+  0.091; `next-step-obstacle` moved questions 2 and 5 together and took it to
+  1.000. That attribution is exactly what the variant was built for, and it
+  cost one replay to get. Neither is worth promoting -- 0.091 is still the
+  stall.
+
+  **Qwen was never answering the question anyway.** Its `obstacle_rate` is
+  0.000 under `default`, and its `bearing-only` numbers are identical to its
+  `default` ones in every field -- same FORWARD rate, same 12/12 collisions,
+  same score, same agreement. Removing a question a model was already
+  ignoring changes nothing, which is the cleanest possible confirmation that
+  `obstacle_ahead` is uncalibrated rather than merely noisy.
+
+- **The closed-loop sim run was made, and it does NOT settle the gate
+  question -- the renderer is the blocker (2026-09-02).** Stage 1's "done
+  when" ran for real: `tests/demo_sim_mission.py`, `policy: "vision"`, the
+  grid world, the deployed `/navigate`, `sim.sensor_noise.enabled: true`,
+  Opus 4.5, 40 paid steps each.
+
+  | wording | steps | wall clock | ended | distance to target | outcome |
+  |---|---|---|---|---|---|
+  | `default` | 40 | 142.2s (3.6s/step) | (2,1) | 14 cells | `max_steps` |
+  | `bearing-only` | 40 | 146.1s (3.7s/step) | (2,2) -- never moved | 13 cells | `max_steps` |
+
+  Neither reached the target; neither ever claimed to. Action spread was 31
+  RIGHT / 6 STOP / 2 FORWARD / 1 LEFT and 39 RIGHT / 2 FORWARD. **But the
+  reason was not the policy.** Nearly every decision's reasoning said some
+  version of "the image is very dark and unclear" or "a blank gray wall", and
+  the model was right: the render painted its ceiling and floor with the
+  twin's `--wall` / `--floor` CSS variables -- two near-blacks meant for dark
+  UI chrome -- so a room came back as a black void with two grey slabs. The
+  policy spun looking for a view it never got.
+
+  **Both renderers now carry their own lit ceiling and floor** and no longer
+  read the app's theme, so restyling the twin cannot change what the model
+  sees (`sim/renderer.py`, `renderFPV` in `web-twin/app.js`, golden
+  re-blessed, browser parity test still green). **That fix is unmeasured:**
+  it makes the frames legible to a human eye, and whether a closed-loop run
+  can now discriminate between wordings is the next paid run's question.
+  Until then the replay table above is the instrument for anything about the
+  *seeing*, and a sim run measures the *loop* -- cost, wall clock, budgets,
+  the veto. One half of the diagnosis is still open and is a map question,
+  not a renderer one: the starter house's start pose faces a near wall, so
+  even a lit first frame shows little of the room.
+
+  Two things the runs did prove, which no replay can. The **safety collar is
+  live and fired** (1 veto on `default`, 2 on `bearing-only`) -- the only
+  obstacle logic left under `bearing-only`, exactly as designed. And the
+  brain-side `min_distance_cm` was **30.0, exactly one grid cell**, so with
+  S5's 3cm jitter the veto was near a coin flip at one cell of clearance
+  (`28.0`, `28.9`, `27.7` all blocked live; a test written for it measures
+  90/200). **Now 20.0**, matching `safety.min_distance_cm` that
+  `robot/server.py` has always used, so the brain-side pre-check and the
+  robot-side veto agree on one number. Against the noiseless sensor this
+  changes nothing -- an exact reading is only ever a multiple of 30, so any
+  threshold in (0, 30] blocks exactly the one case that matters -- which is
+  why 30.0 sat there unremarked until noise was switched on.
+
+- **That shape change was built as `center-third-path` and measured on
+  2026-09-02. It does not work, and the corpus it was measured on turned
+  out to be invalid. Both halves matter.**
+
+  It asks what is in the bottom half of the centre third -- the ground the
+  next step crosses -- as `open_floor` / `blocked` / `unclear`, with
+  `obstacle_ahead` defined as a restatement of it. Eight walks, 96 frames,
+  two targets, replayed against `default` under two models, every cell at
+  coverage 1.0. Frame-weighted FORWARD rate:
+
+  |                   | default | center-third-path |
+  |---|---|---|
+  | Claude Opus 4.5   | 0.323 | 0.365 |
+  | Qwen3-VL          | 0.354 | 0.573 |
+
+  The collision flag did not move at all -- 6/8 walks for Opus, 7/8 for
+  Qwen, under both wordings -- and the models moved *apart* rather than
+  together. **The per-frame field explains why, and it is worth knowing:**
+  Opus answers `blocked` on 66%, Qwen on 5%, agreement 40% against a chance
+  rate of 35% (kappa 0.075). But the disagreement is perfectly **nested**:
+  all 32 frames Opus called `open_floor`, Qwen called `open_floor` too, and
+  of the 63 it called `blocked` Qwen called 58 of them open. Neither model
+  ever contradicts the other's ordering. They read the picture the same way
+  and cut the threshold in different places -- and **a threshold has no
+  wording**, which is why four rewordings have now failed and a fifth
+  should not be written. The instruction itself was followed exactly:
+  `obstacle_ahead` restates `path_ahead` on 99%/100% of frames.
+
+- **The Stage 0 corpus does not test what it claims to, and every number
+  above and below inherits the problem (found 2026-09-02, by reading the
+  frames instead of the JSON).** In every walk sampled, across both
+  targets:
+
+  1. **The target is on raised furniture.** The red backpack sits on an
+     ottoman; the blue bottle sits on a console table. A PiCar-X is a floor
+     robot. It cannot arrive at either, so `target_reached` is not merely
+     rare in these walks -- it is unachievable, and the collision flags are
+     *correct*: the only way to approach the target is to drive into the
+     furniture holding it. Opus says so in its own reasoning, answering
+     `blocked` and then FORWARD "since reaching the backpack requires
+     moving toward the couch". That is not incoherence. It is a real
+     dilemma handed to it by an impossible task.
+  2. **The camera is at standing height, not 10cm.** The frames look *down*
+     onto a ~45cm ottoman and a ~75cm table. Stage 0's own instructions
+     above say to hold the phone at ~10cm and that "a chest-height view is
+     not the robot's view" -- the recordings did not follow it. From 10cm
+     that ottoman is a wall, and none of these scenes resolve the same way.
+
+  **Consequence: the four-wording failure is not established as a prompt
+  problem or a policy-shape problem.** It was measured on a task the robot
+  cannot perform, from a viewpoint it will never have. The 3x3 matrix, the
+  `distance_estimate` skew and the table above are all reproducible and all
+  suspect for the same reason. **Nothing further should be spent on prompt
+  wording until the corpus is re-recorded:** a target on the floor, the
+  phone at ~10cm, both rooms, several walks. That is a phone and twenty
+  minutes, and it is the cheapest high-value item left in Stage 0.
 
 Secondary: `python -m tests.manual_replay_navigate <dir> "<target>"`
 replays a folder of photos and prints an action-spread summary. Use it to
@@ -467,7 +602,7 @@ money -- see **Done when** below.
   `AGENT-HARNESS.md` section 10 for the exact mechanism, which
   deliberately doesn't touch the `vision_fn(frame) -> scene` contract.
 - **`service/vision_analyze/app.py`'s test suite -- BUILT.**
-  `service/vision_analyze/tests/` (47 tests, FastAPI `TestClient`, every
+  `service/vision_analyze/tests/` (54 tests, FastAPI `TestClient`, every
   `vision_core.*`/`identify_room` call mocked) -- closes the one real gap
   left over from the Lambda -> ECS migration. Run separately from the
   root suite: `pytest service/vision_analyze/tests/ -v` (see section 6).
@@ -506,10 +641,15 @@ directly (three ways, same 83 steps, identical actions).
 
 Two things worth knowing before extending it:
 
-- **`policy: "vision"` answers 501 on purpose.** The runner takes a
-  `vision_fn` and already enforces S2b's per-call timeout and failure
-  budget around it, so Stage 1's agent plugs in there -- but until it
-  exists, a "vision" mission must not quietly run the rule-based policy.
+- **`policy: "vision"` is live, and reachable from the twin since M1.**
+  The runner takes a `vision_fn` and enforces S2b's per-call timeout and
+  failure budget around it; `brain/vision_agent.py` is what plugs in there.
+  A "vision" mission carries a `model_id` and a `prompt_variant`, both
+  validated against the vision service's published allow-lists in one round
+  trip at start rather than becoming a 400 inside a tick. `MissionStartRequest`
+  forbids unknown fields: it silently dropped `prompt_variant` for as long as
+  the twin had been sending it, and a mission that runs a different wording
+  from the one named in the UI is unattributable.
 - **A stop is enforced at the robot, not just in the loop.** The agent
   drives through a gate that refuses movement once a mission ends, so a
   tick already in flight when `POST /mission/stop` lands cannot get its
@@ -741,6 +881,14 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   watch it go red first: two tests written in this project passed against
   the very defect they were written for until that was checked.
 
+  **And run it in its module's real order, not just with `-k`.** The
+  session-crossing test in `tests/test_ui_pipeline.py` passed alone three
+  times and failed in the suite -- because its stub's answer plan was keyed
+  to how many calls the *first* run happened to make, which a warmer browser
+  changed. The defect was in the test, but a `-k` run would have shipped it
+  either way. A timing test that has never run alongside its neighbours has
+  not been run.
+
 - **Every ECS task definition here is ARM64 -- build images with
   `--platform linux/arm64`.** An amd64 image pushes to ECR without
   complaint and then fails at placement with `CannotPullContainerError:
@@ -856,7 +1004,10 @@ endpoint, on purpose (real hardware has none either).
 | 2 | stop stops the car | Start a mission, then Stop | Mission ends `stopped`, the map stops moving, watchdog goes quiet |
 | 2 | one brain at a time | Start a remote mission, then tap Explore | Refused with a toast; the reverse is the server's 409 |
 | S4 | time in the loop | Set `sim.realtime: true` in `config/robot.yaml`, restart the robot server, then Remote brain -> Start | The watchdog readout climbs mid-move instead of only between moves -- a move now genuinely occupies its duration, off by default so this is opt-in |
-| S5 | sensor realism | Set `sim.sensor_noise.enabled: true`, restart the robot server, then D-pad toward a wall | Distance telemetry stops being multiples of 30cm and jitters; the safety collar can flash before you're touching the wall, not only once you are |
+| S5 | sensor realism | Set `sim.sensor_noise.enabled: true`, restart the robot server, then D-pad toward a wall | Distance telemetry stops being multiples of 30cm and jitters. The collar still fires only at the wall: `min_distance_cm` is 20 on both sides now, which is 3.3 sigma clear of one cell -- at the old brain-side 30 the jitter alone vetoed ~45% of legal one-cell moves |
+| -- | a lit sim camera | Sim tab, drive the D-pad and watch the FPV canvas (or `GET /frame`) | A room: light ceiling, mid-brown floor, blue-grey walls. It used to be a black void with two grey slabs, because the render borrowed the twin's dark `--wall`/`--floor` UI colours -- which is why the model called every sim frame "very dark and unclear" |
+| -- | a session's calls die with it | Guide tab -> Robot view, Start, Stop, Start again | The new session's HUD never shows the previous one's decision. A call still in flight at Stop is orphaned by run (`guidanceEpoch`), not by a boolean -- it used to flash its answer over the new camera view and then suppress the new run's first few real decisions. Everything else was already reset on Stop, so a straggler was the only route |
+| M1 | the vision policy, from a phone | Sim tab -> Remote brain -> policy "Vision policy", then Start | The panel names the model and wording first; then each step is one `/navigate` call and the log shows the model's own reasoning. With `sim.sensor_noise.enabled: true` the safety collar is the only thing vetoing a FORWARD at a wall -- which under `bearing-only` is the entire design |
 | -- | overlapped vision calls | Guide tab -> Robot view, Start, with developer readouts on | Decisions land about every 500ms instead of every ~3s. The call counter climbs at the dispatch rate, and an answer overtaken by a newer one is never drawn |
 | -- | environment banner | Run the robot server with `ENV_LABEL=Lab`, reload the twin | An orange "LAB ENVIRONMENT" bar at the top, a coloured rule on the tab bar, and `LAB ·` prefixing the tab title. Unset it and everything disappears -- that absence *is* production's state |
 | -- | endpoint mismatch notice | Settings -> point any of the three URL fields at a host other than the one serving the page | A note under that field naming both hosts. Not an error: it says what will be called, because a tunnel or split local dev is legitimate |
@@ -870,7 +1021,7 @@ phase rather than bolted on after:
 |---|---|
 | S1 pin the contract | **Suite built, button not.** A **"Check robot contract"** button in Settings: run the interface's methods against whatever robot is connected and report which returned the wrong shape. `tests/test_robot_contract.py` is the suite itself, runnable from a terminal against any backend today; the Settings button that makes it pressable from the twin is still owed |
 | S2 real JPEG frames | The FPV canvas shows the **server-rendered** frame, with a "frame source: server / local" readout. The picture should not change; where it comes from should |
-| S2b Python vision agent | The remote-brain panel's policy picker stops answering **501**. Run a mission with `policy: "vision"` and watch Claude's own reasoning in the log instead of "free space clear" |
+| S2b Python vision agent | **Built 2026-09-02 (M1).** The Remote brain panel has a policy picker; `policy: "vision"` runs the Python agent and the log carries Claude's own reasoning instead of "free space clear". The panel names the model and the wording it would ask with, before you spend anything |
 | S6 motion realism | The map shows the robot **arcing** rather than pivoting in place, and refusing a turn that will not fit the corridor |
 | S7 chaos and soak | New drills: added latency, dropped requests, a killed link mid-mission. Same picker, same fail-safe rule |
 | B5 deployment | Reboot the Pi. Open the twin on a phone. Start a mission with no laptop on the network at all -- this is definition-of-done item 1, and it is a UI test by construction |

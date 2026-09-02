@@ -606,3 +606,138 @@ def test_obstacle_ahead_is_not_recomputed_from_path_ahead():
         "path_ahead": "blocked", "reasoning": "x"}))
     assert parsed["path_ahead"] == "blocked"
     assert parsed["obstacle_ahead"] is False
+
+
+# ---------- bearing-only: the obstacle question deleted (M1) ----------
+
+
+def test_the_bearing_only_variant_is_published_like_any_other(client):
+    """Same discipline as every other wording: served from the allow-list, so
+    the twin's picker offers it without a client-side hardcode and a recorded
+    walk can say which prompt produced it."""
+    body = client.get("/navigate/models").json()
+    assert "bearing-only" in body["prompts"]
+
+
+def test_the_bearing_only_variant_removes_question_2_and_nothing_else():
+    """The whole experiment is the subtraction. Four wordings of question 2
+    have been measured and two of them produced never-FORWARD while two
+    produced always-FORWARD; this variant asks whether the question is worth
+    asking a photograph at all. If anything ELSE moved with it, the answer
+    would not be attributable -- the same trap "next-step-obstacle" fell into
+    by moving questions 2 and 5 together."""
+    import difflib
+
+    import vision_core
+
+    default = vision_core.NAVIGATE_PROMPT_TEMPLATE
+    variant = vision_core.NAVIGATE_PROMPT_VARIANTS["bearing-only"]
+
+    removed = [line for line in difflib.ndiff(default.splitlines(), variant.splitlines())
+               if line.startswith("- ")]
+    added = [line for line in difflib.ndiff(default.splitlines(), variant.splitlines())
+             if line.startswith("+ ")]
+    assert added == []
+    assert removed == [
+        "- 2. Is there an obstacle directly ahead that would block moving forward?",
+        '-   "obstacle_ahead": true | false,',
+    ]
+
+
+def test_the_bearing_only_variant_does_not_touch_the_default():
+    """Production serves this file, and the Stage 0 table measured the
+    default's exact wording."""
+    import vision_core
+
+    assert (vision_core.NAVIGATE_PROMPT_VARIANTS["default"]
+            is vision_core.NAVIGATE_PROMPT_TEMPLATE)
+    assert "obstacle_ahead" in vision_core.NAVIGATE_PROMPT_TEMPLATE
+
+
+def test_variant_asks_obstacle_is_read_off_the_template():
+    """Derived, not a second list. A variant that drops the field cannot
+    forget to register itself, which is the failure mode a hand-maintained
+    set of names would have."""
+    import vision_core
+
+    assert vision_core.variant_asks_obstacle("default") is True
+    assert vision_core.variant_asks_obstacle("center-third-path") is True
+    assert vision_core.variant_asks_obstacle("default-with-distance") is True
+    assert vision_core.variant_asks_obstacle("bearing-only") is False
+    # An unknown name resolves to the default template, which is what
+    # describe_image_bytes_navigate() will actually send for it.
+    assert vision_core.variant_asks_obstacle("made-up") is True
+
+
+def _stub_converse(monkeypatch, reply_json: str):
+    import vision_core
+
+    class FakeClient:
+        def converse(self, **kwargs):
+            self.kwargs = kwargs
+            return {"output": {"message": {"content": [{"text": reply_json}]}},
+                    "usage": {"inputTokens": 1, "outputTokens": 2}}
+
+    fake = FakeClient()
+    monkeypatch.setattr(vision_core, "_get_client", lambda: fake)
+    return fake
+
+
+def test_bearing_only_omits_obstacle_ahead_from_the_reply(monkeypatch):
+    """Absent, not false. _parse_navigate_json merges the empty schema over
+    every reply, so without the strip this field would come back False on a
+    variant that never asked -- indistinguishable from a model that looked at
+    the frame and saw clear floor. A caller has to be able to tell those
+    apart; brain/navigate.py reports the second as free_space "unknown"."""
+    import json as _json
+
+    import vision_core
+
+    _stub_converse(monkeypatch, _json.dumps({
+        "target_visible": True, "target_direction": "center",
+        "target_reached": False, "room_guess": "hallway",
+        "action": "FORWARD", "reasoning": "x"}))
+
+    decision = vision_core.describe_image_bytes_navigate(
+        b"jpegbytes", "red backpack", "image/jpeg", prompt_variant="bearing-only")
+
+    assert "obstacle_ahead" not in decision
+    assert decision["action"] == "FORWARD"
+    assert decision["prompt_variant"] == "bearing-only"
+
+
+def test_bearing_only_strips_obstacle_ahead_even_if_the_model_volunteers_it(monkeypatch):
+    """The field is absent because nobody asked, so a model that answers a
+    question it was not asked does not get to reintroduce the very signal
+    this variant exists to remove."""
+    import json as _json
+
+    import vision_core
+
+    _stub_converse(monkeypatch, _json.dumps({
+        "target_visible": False, "target_direction": "not_visible",
+        "target_reached": False, "obstacle_ahead": True,
+        "room_guess": "hallway", "action": "STOP", "reasoning": "x"}))
+
+    decision = vision_core.describe_image_bytes_navigate(
+        b"jpegbytes", "red backpack", "image/jpeg", prompt_variant="bearing-only")
+
+    assert "obstacle_ahead" not in decision
+
+
+def test_a_variant_that_asks_still_reports_obstacle_ahead(monkeypatch):
+    """The strip is keyed off the template, so it must not touch the
+    variants the Stage 0 table is measured on."""
+    import json as _json
+
+    import vision_core
+
+    _stub_converse(monkeypatch, _json.dumps({
+        "target_visible": False, "target_direction": "not_visible",
+        "target_reached": False, "obstacle_ahead": True,
+        "room_guess": "hallway", "action": "STOP", "reasoning": "x"}))
+
+    decision = vision_core.describe_image_bytes_navigate(
+        b"jpegbytes", "red backpack", "image/jpeg", prompt_variant="default")
+
+    assert decision["obstacle_ahead"] is True

@@ -73,7 +73,12 @@ brain:
   # The reference backpack hunt takes 83 steps with the frontier policy.
   # Under a vision policy each step is a paid call -- lower this then.
   max_steps: 120
-  min_distance_cm: 30.0 # brain-side pre-check; the robot server re-checks
+  # Brain-side pre-check; the robot server re-checks against
+  # safety.min_distance_cm above, which is now the same number on purpose.
+  # NOT 30.0: that is exactly one grid cell, so with sim.sensor_noise on it
+  # vetoes about half of the legal one-cell moves. See
+  # control/mission_runner.py's DEFAULT_MIN_DISTANCE_CM for the full note.
+  min_distance_cm: 20.0
   request_timeout_s: 10.0
 
   # Failsafe B3.2 -- the AWS link. A vision call that hangs or errors this

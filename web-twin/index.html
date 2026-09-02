@@ -1231,7 +1231,8 @@
           <span class="switch-sub" id="navigate-model-sub">
             Which model answers /navigate for this walk -- pick one, then
             record, to compare price/performance across models on the same
-            room. Applies to "Drive via brain" too.
+            room. Applies to "Drive via brain" and to the Sim tab's remote
+            brain on the vision policy too.
           </span>
         </span>
         <select id="cfg-navigate-model" class="text-input">
@@ -1244,7 +1245,9 @@
           <span class="switch-sub">
             Which wording /navigate asks with. The stall this project spent
             days on was a wording problem, not a model problem -- so this is
-            the other half of the experiment.
+            the other half of the experiment. "bearing-only" is the one that
+            deletes the obstacle question outright and leaves clearance to
+            the distance sensor.
           </span>
         </span>
         <select id="cfg-navigate-prompt" class="text-input">
@@ -1344,6 +1347,18 @@
       <div class="btn-row" style="margin-top:8px;">
         <input type="text" id="brain-target" class="text-input" value="red backpack" list="target-history-list" style="flex:2;">
         <button id="btn-brain-mission" style="flex:1;" disabled>Start</button>
+      </div>
+      <div class="btn-row">
+        <select id="brain-policy" class="select-input" style="flex:1;">
+          <option value="frontier">Rule-based policy &middot; free</option>
+          <option value="vision">Vision policy &middot; paid, one model call per step</option>
+        </select>
+      </div>
+      <div class="hint" id="brain-policy-hint" style="display:none;"></div>
+      <div class="btn-row" id="brain-policy-pickers-row" style="display:none;">
+        <button id="btn-brain-pickers" class="ghost" style="flex:1;">
+          Pick the model &amp; wording
+        </button>
       </div>
       <div class="btn-row">
         <select id="brain-fault" class="select-input" style="flex:1;">

@@ -92,6 +92,7 @@ def navigate_scene(
     client: Optional[httpx.Client] = None,
     searched_rooms: Optional[list] = None,
     model_id: Optional[str] = None,
+    prompt_variant: Optional[str] = None,
 ) -> dict:
     """One vision call. Returns `brain/vision.py`'s scene schema, with the
     raw /navigate response preserved under `_navigate`.
@@ -100,7 +101,15 @@ def navigate_scene(
     vision service publishes at GET /navigate/models. Omitted means "no
     preference" -- the service's own default -- and is NOT a model name this
     module gets to guess, which is why None is passed through as an absent
-    field rather than a default string."""
+    field rather than a default string.
+
+    `prompt_variant` is the same arrangement for the other axis. The wording
+    is at least as strong a lever as the model -- the 3x3 matrix in CLAUDE.md
+    moved a model's FORWARD rate from 0.000 to 1.000 without changing the
+    model -- so a mission has to be able to name it, and a recorded walk has
+    to be able to say which one produced it. Same allow-list endpoint
+    (`prompts` in GET /navigate/models), same "None means the service's own
+    default" contract, and the same refusal to guess a value here."""
     image_base64 = frame.get("image_base64")
     if not image_base64:
         raise FrameHasNoImage(
@@ -120,6 +129,8 @@ def navigate_scene(
         body["searched_rooms"] = list(searched_rooms)
     if model_id:
         body["model_id"] = model_id
+    if prompt_variant:
+        body["prompt_variant"] = prompt_variant
     headers = {"Content-Type": "application/json"}
     if secret:
         headers["x-app-secret"] = secret
@@ -157,6 +168,13 @@ def to_scene(result: dict, target_object: str) -> dict:
 
     reached = result.get("target_reached") is True
     visible = result.get("target_visible") is True
+    # ABSENT is not the same as false. The "bearing-only" prompt variant (M1,
+    # PLAN-microduck-transplants.md) deletes the obstacle question outright --
+    # camera for bearing, distance sensor for clearance -- so the service omits
+    # the field rather than sending a default for it. Reporting "clear" here
+    # would put words in a model's mouth that was never asked. "unknown" is the
+    # level brain/vision.py's empty scene already uses for exactly this.
+    asked = "obstacle_ahead" in result
     obstacle = result.get("obstacle_ahead") is True
     room_guess = result.get("room_guess")
     if not isinstance(room_guess, str) or not room_guess.strip():
@@ -166,8 +184,9 @@ def to_scene(result: dict, target_object: str) -> dict:
         "obstacles_ahead": ["obstacle"] if obstacle else [],
         # The service reports whether the way ahead is blocked, not how far
         # away anything is -- there is no distance in a photograph. Two
-        # states, honestly labelled, rather than a made-up number.
-        "free_space": "none" if obstacle else "clear",
+        # states, honestly labelled, rather than a made-up number. Three,
+        # once a variant can decline to answer at all: see `asked` above.
+        "free_space": ("none" if obstacle else "clear") if asked else "unknown",
         "doorway_visible": False,  # /navigate does not report doorways
         "important_objects": [target_object] if reached else [],
         "safest_direction": action,
@@ -175,7 +194,12 @@ def to_scene(result: dict, target_object: str) -> dict:
             "target_visible": visible,
             "target_direction": result.get("target_direction", "not_visible"),
             "target_reached": reached,
-            "obstacle_ahead": obstacle,
+            # None means "this prompt variant did not ask", and a consumer
+            # must not read it as False. The only obstacle logic left on the
+            # path under such a variant is robot/safety.py's get_distance()
+            # re-check before every FORWARD -- which is where M1 argues the
+            # question belonged all along.
+            "obstacle_ahead": obstacle if asked else None,
             "room_guess": room_guess,
             # Ordinal proximity, present only under the
             # "default-with-distance" prompt variant. Anything the service
@@ -198,15 +222,16 @@ def vision_fn_for(
     timeout_s: float = DEFAULT_TIMEOUT_S,
     client: Optional[httpx.Client] = None,
     model_id: Optional[str] = None,
+    prompt_variant: Optional[str] = None,
 ):
     """Bind a target and an endpoint into the one-argument `vision_fn(frame)`
     the harness expects.
 
-    `model_id` is bound here, in the factory, exactly like `vision_url` and
-    `secret` -- so a mission can choose its model without the
-    `vision_fn(frame) -> scene` contract growing a second argument. Nothing
-    that only knows that contract (MissionRunner, the agents) needs to know
-    a model was chosen at all.
+    `model_id` and `prompt_variant` are bound here, in the factory, exactly
+    like `vision_url` and `secret` -- so a mission can choose its model and
+    its wording without the `vision_fn(frame) -> scene` contract growing more
+    arguments. Nothing that only knows that contract (MissionRunner, the
+    agents) needs to know either was chosen at all.
 
     The returned callable also carries a `set_searched_rooms(rooms)`
     attribute -- not part of the `vision_fn(frame) -> scene` contract, so
@@ -227,6 +252,7 @@ def vision_fn_for(
         return navigate_scene(
             frame, target_object, url, secret=app_secret, timeout_s=timeout_s, client=client,
             searched_rooms=state["searched_rooms"], model_id=model_id,
+            prompt_variant=prompt_variant,
         )
 
     def set_searched_rooms(rooms) -> None:

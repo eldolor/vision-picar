@@ -69,7 +69,7 @@ from typing import Callable, Optional
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from brain.navigate import vision_fn_for
 from control import drills
@@ -138,50 +138,80 @@ class MissionStartRequest(BaseModel):
     # Which model answers /navigate for this mission (policy: "vision" only).
     # Omitted falls back to brain.navigate_model_id, then to the vision
     # service's own default. Validated against the service's published
-    # allow-list at start -- see _validate_navigate_model().
+    # allow-list at start -- see _validate_navigate_choices().
     model_id: Optional[str] = None
+    # Which wording of the /navigate prompt this mission runs. Same three-step
+    # fallback and the same start-time validation as model_id, for the same
+    # reason: the 3x3 matrix in CLAUDE.md moved one model's FORWARD rate from
+    # 0.000 to 1.000 by wording alone, so a mission that cannot name its
+    # variant is a mission whose result cannot be attributed.
+    #
+    # This field is also why extra="forbid" is on this model. The twin has
+    # been sending prompt_variant on "Drive via brain" since the picker
+    # shipped, and pydantic's default is to DROP an unknown field silently:
+    # the mission ran the service default while the UI said otherwise, which
+    # is precisely the NavigateModelId trap the Stage 0 notes record. An
+    # unknown field is now a 422 naming it.
+    prompt_variant: Optional[str] = None
     # One of control/drills.FAULTS. Breaks exactly one thing so a failsafe
     # can be watched firing; "none" is an ordinary mission.
     fault: str = "none"
 
+    model_config = ConfigDict(extra="forbid")
 
-def _validate_navigate_model(model_id: str, vision_url: str, secret: Optional[str],
-                             timeout_s: float) -> None:
-    """Reject an unusable model at mission start rather than mid-tick.
 
-    Without this, a bad model_id becomes a 400 from the vision service
-    *inside* a tick, which counts against failsafe B3.2's vision-failure
-    budget: the mission limps through three failures and then dies reporting
-    "vision failed 3 times", which says nothing about the actual cause and
-    costs three round trips to say it.
+def _validate_navigate_choices(model_id: Optional[str], prompt_variant: Optional[str],
+                               vision_url: str, secret: Optional[str],
+                               timeout_s: float) -> None:
+    """Reject an unusable model or prompt variant at mission start rather
+    than mid-tick.
 
-    The allow-list is deliberately NOT duplicated here. It lives in the
-    vision service (vision_core.NAVIGATE_MODEL_CHOICES, published at
-    GET /navigate/models), and this asks that service what it accepts --
-    one HTTP call per mission start, against a list that will keep changing
-    as Bedrock's catalogue does. A copy in control/ would be wrong the first
-    time a model was added and nobody thought to update two places.
+    Without this, a bad value becomes a 400 from the vision service *inside*
+    a tick, which counts against failsafe B3.2's vision-failure budget: the
+    mission limps through three failures and then dies reporting "vision
+    failed 3 times", which says nothing about the actual cause and costs
+    three round trips to say it.
+
+    Neither allow-list is duplicated here. Both live in the vision service
+    (vision_core.NAVIGATE_MODEL_CHOICES and NAVIGATE_PROMPT_VARIANTS,
+    published together at GET /navigate/models), and this asks that service
+    what it accepts -- one HTTP call per mission start, covering both axes,
+    against lists that keep changing as Bedrock's catalogue and this
+    project's wording experiments do. A copy in control/ would be wrong the
+    first time either grew and nobody thought to update two places.
 
     A service that cannot answer is NOT treated as a rejection: an unknown
-    model is a caller error, but an unreachable models endpoint is an outage,
+    value is a caller error, but an unreachable models endpoint is an outage,
     and refusing to start a mission because a *validation* call failed would
     turn a soft problem into a hard one. The mission proceeds and the normal
-    B3.2 budget covers whatever happens next.
+    B3.2 budget covers whatever happens next. The same rule covers a service
+    too old to publish `prompts` at all: an empty list is "could not ask",
+    not "nothing is allowed".
     """
+    if not model_id and not prompt_variant:
+        return
     url = vision_url.rstrip("/") + "/navigate/models"
     headers = {"x-app-secret": secret} if secret else {}
     try:
         with httpx.Client(timeout=timeout_s) as client:
             resp = client.get(url, headers=headers)
         resp.raise_for_status()
-        allowed = {m["id"] for m in resp.json().get("models", []) if "id" in m}
-    except (httpx.HTTPError, ValueError, KeyError) as e:
-        logger.warning("Could not verify model_id %r against %s: %s", model_id, url, e)
+        body = resp.json()
+        allowed = {m["id"] for m in body.get("models", []) if "id" in m}
+        prompts = {p for p in body.get("prompts", []) if isinstance(p, str)}
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as e:
+        logger.warning("Could not verify model_id %r / prompt_variant %r against %s: %s",
+                       model_id, prompt_variant, url, e)
         return
-    if allowed and model_id not in allowed:
+    if model_id and allowed and model_id not in allowed:
         raise ValueError(
             f"model_id {model_id!r} is not offered by the vision service. "
             f"Available: {', '.join(sorted(allowed))}."
+        )
+    if prompt_variant and prompts and prompt_variant not in prompts:
+        raise ValueError(
+            f"prompt_variant {prompt_variant!r} is not offered by the vision "
+            f"service. Available: {', '.join(sorted(prompts))}."
         )
 
 
@@ -229,17 +259,20 @@ def create_app(
                     "target_object. A target_room-only mission needs policy='frontier'."
                 )
             model_id = req.model_id or config["navigate_model_id"] or None
-            if model_id:
-                _validate_navigate_model(
-                    model_id, config["vision_url"], vision_secret,
-                    config["request_timeout_s"],
-                )
+            prompt_variant = (
+                req.prompt_variant or config["navigate_prompt_variant"] or None
+            )
+            _validate_navigate_choices(
+                model_id, prompt_variant, config["vision_url"], vision_secret,
+                config["request_timeout_s"],
+            )
             vision_fn = vision_fn_for(
                 req.target_object,
                 vision_url=config["vision_url"],
                 secret=vision_secret,
                 timeout_s=config["vision_timeout_s"],
                 model_id=model_id,
+                prompt_variant=prompt_variant,
             )
 
         kwargs = dict(
@@ -521,6 +554,11 @@ def create_app(
             # twin already fetches GET /navigate/models and can resolve the
             # null case itself.
             "navigate_model_id": config["navigate_model_id"] or None,
+            # The other lever, reported for exactly the same reason. A walk
+            # attributed to the wrong wording is as wrong as one attributed to
+            # the wrong model, and wording moved a FORWARD rate from 0.000 to
+            # 1.000 in this project's own 3x3 matrix.
+            "navigate_prompt_variant": config["navigate_prompt_variant"] or None,
             # "Will a POST /recording/frame actually succeed here" -- true
             # either because this brain stores locally, or because it
             # forwards to one that does (recording_proxy_url). Before the

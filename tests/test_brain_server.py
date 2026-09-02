@@ -534,6 +534,7 @@ def capture_model_id(monkeypatch):
 
     def fake_vision_fn_for(target, **kwargs):
         seen["model_id"] = kwargs.get("model_id")
+        seen["prompt_variant"] = kwargs.get("prompt_variant")
         return lambda frame: {}
 
     monkeypatch.setattr(bs, "vision_fn_for", fake_vision_fn_for)
@@ -544,7 +545,7 @@ def test_a_mission_binds_the_requested_model(tmp_path, monkeypatch):
     import control.brain_server as bs
 
     seen = capture_model_id(monkeypatch)
-    monkeypatch.setattr(bs, "_validate_navigate_model", lambda *a, **k: None)
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
     app = bs.create_app(config_path=vision_config(tmp_path),
                         robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
 
@@ -565,7 +566,7 @@ def test_the_configured_default_is_used_when_the_request_names_none(tmp_path, mo
     import control.brain_server as bs
 
     seen = capture_model_id(monkeypatch)
-    monkeypatch.setattr(bs, "_validate_navigate_model", lambda *a, **k: None)
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
     app = bs.create_app(
         config_path=vision_config(tmp_path, navigate_model_id="qwen.qwen3-vl-235b-a22b"),
         robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
@@ -581,7 +582,7 @@ def test_the_request_overrides_the_configured_default(tmp_path, monkeypatch):
     import control.brain_server as bs
 
     seen = capture_model_id(monkeypatch)
-    monkeypatch.setattr(bs, "_validate_navigate_model", lambda *a, **k: None)
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
     app = bs.create_app(
         config_path=vision_config(tmp_path, navigate_model_id="amazon.nova-lite-v1:0"),
         robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
@@ -671,6 +672,251 @@ def test_a_models_endpoint_outage_does_not_block_the_mission(tmp_path, monkeypat
 
     assert resp.status_code == 200, resp.text
     assert seen["model_id"] == "amazon.nova-lite-v1:0"
+
+
+def test_a_mission_binds_the_requested_prompt_variant(tmp_path, monkeypatch):
+    """The wording is the other half of what makes a walk attributable, and
+    until now the brain dropped it on the floor."""
+    import control.brain_server as bs
+
+    seen = capture_model_id(monkeypatch)
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "red backpack", "policy": "vision",
+            "prompt_variant": "bearing-only",
+        })
+        client.post("/mission/stop")
+
+    assert resp.status_code == 200, resp.text
+    assert seen["prompt_variant"] == "bearing-only"
+
+
+def test_the_twins_prompt_variant_is_no_longer_silently_dropped(tmp_path, monkeypatch):
+    """This is the bug this field was added for, and it was live.
+
+    web-twin/app.js has been sending prompt_variant on "Drive via brain"
+    since the picker shipped. MissionStartRequest had no such field, and
+    pydantic's default is to DISCARD an unknown one -- so the mission ran the
+    service's default wording while the UI showed the operator's pick. That
+    is exactly the NavigateModelId trap the Stage 0 notes record: a value
+    that was passed, ignored, and then reasoned about as though it had
+    applied. Re-introduce the missing field and this test goes red."""
+    import control.brain_server as bs
+
+    seen = capture_model_id(monkeypatch)
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        # Byte-for-byte the body web-twin/app.js sends from Robot view.
+        resp = client.post("/mission/start", json={
+            "target_object": "red backpack", "policy": "vision",
+            "model_id": None, "prompt_variant": "center-third-path"})
+        client.post("/mission/stop")
+
+    assert resp.status_code == 200, resp.text
+    assert seen["prompt_variant"] == "center-third-path"
+
+
+def test_an_unknown_field_is_refused_by_name_rather_than_ignored(tmp_path):
+    """The generalisation of the bug above, and Microduck's own lesson
+    (`duck-ipc-proto`): refuse per-field, by name, instead of accepting a
+    request and quietly running something else. A misspelled parameter is a
+    caller error and has to read as one."""
+    import control.brain_server as bs
+
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "x", "policy": "vision", "prompt_varient": "bearing-only"})
+
+    assert resp.status_code == 422
+    assert "prompt_varient" in resp.text
+
+
+def test_the_configured_prompt_variant_is_used_when_the_request_names_none(tmp_path, monkeypatch):
+    """The headless case again: once B5 puts the brain on the Pi a mission can
+    start with no twin in the loop to pick a wording."""
+    import control.brain_server as bs
+
+    seen = capture_model_id(monkeypatch)
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
+    app = bs.create_app(
+        config_path=vision_config(tmp_path, navigate_prompt_variant="bearing-only"),
+        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        client.post("/mission/start", json={"target_object": "x", "policy": "vision"})
+        client.post("/mission/stop")
+
+    assert seen["prompt_variant"] == "bearing-only"
+
+
+def test_the_request_overrides_the_configured_prompt_variant(tmp_path, monkeypatch):
+    import control.brain_server as bs
+
+    seen = capture_model_id(monkeypatch)
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
+    app = bs.create_app(
+        config_path=vision_config(tmp_path, navigate_prompt_variant="default"),
+        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        client.post("/mission/start", json={
+            "target_object": "x", "policy": "vision", "prompt_variant": "bearing-only"})
+        client.post("/mission/stop")
+
+    assert seen["prompt_variant"] == "bearing-only"
+
+
+def test_no_prompt_variant_anywhere_means_no_preference(tmp_path, monkeypatch):
+    """None reaches the request as an absent field -- control/ never gets to
+    invent a wording, the same way it never invents a model id."""
+    import control.brain_server as bs
+
+    seen = capture_model_id(monkeypatch)
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        client.post("/mission/start", json={"target_object": "x", "policy": "vision"})
+        client.post("/mission/stop")
+
+    assert seen["prompt_variant"] is None
+
+
+def _models_endpoint_serving(body: dict, monkeypatch):
+    import control.brain_server as bs
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return body
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, headers=None):
+            return FakeResponse()
+
+    monkeypatch.setattr(bs.httpx, "Client", lambda **kw: FakeClient())
+
+
+def test_an_unknown_prompt_variant_is_refused_at_start(tmp_path, monkeypatch):
+    """Same reasoning as the model check: a 400 inside a tick would burn
+    B3.2's budget and then report "vision failed 3 times", which says nothing
+    about a typo in a variant name."""
+    import control.brain_server as bs
+
+    _models_endpoint_serving(
+        {"models": [{"id": "amazon.nova-lite-v1:0"}],
+         "prompts": ["default", "bearing-only"]}, monkeypatch)
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "x", "policy": "vision", "prompt_variant": "bearing-onlyy"})
+
+    assert resp.status_code == 400
+    assert "not offered" in resp.json()["detail"]
+    assert "bearing-only" in resp.json()["detail"]
+
+
+def test_a_service_too_old_to_publish_prompts_does_not_block_the_mission(tmp_path, monkeypatch):
+    """An empty list is "could not ask", not "nothing is allowed" -- the same
+    rule that keeps a models-endpoint outage from turning a soft problem into
+    a hard one. The deployed service predates several of these variants."""
+    import control.brain_server as bs
+
+    seen = capture_model_id(monkeypatch)
+    _models_endpoint_serving({"models": [{"id": "amazon.nova-lite-v1:0"}]}, monkeypatch)
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "x", "policy": "vision", "prompt_variant": "bearing-only"})
+        client.post("/mission/stop")
+
+    assert resp.status_code == 200, resp.text
+    assert seen["prompt_variant"] == "bearing-only"
+
+
+def test_both_axes_are_checked_in_one_round_trip(tmp_path, monkeypatch):
+    """One call per mission start, not one per axis. The models endpoint
+    publishes both lists together precisely so a client can ask once."""
+    import control.brain_server as bs
+
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"models": [{"id": "amazon.nova-lite-v1:0"}],
+                    "prompts": ["default", "bearing-only"]}
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, headers=None):
+            calls.append(url)
+            return FakeResponse()
+
+    capture_model_id(monkeypatch)
+    monkeypatch.setattr(bs.httpx, "Client", lambda **kw: FakeClient())
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "x", "policy": "vision",
+            "model_id": "amazon.nova-lite-v1:0", "prompt_variant": "bearing-only"})
+        client.post("/mission/stop")
+
+    assert resp.status_code == 200, resp.text
+    assert len(calls) == 1
+
+
+def test_health_reports_the_prompt_variant_a_vision_mission_would_run(tmp_path):
+    """Shown, not inferred -- for the same reason the model id is. A walk
+    attributed to the wrong wording is as wrong as one attributed to the
+    wrong model."""
+    import control.brain_server as bs
+
+    app = bs.create_app(
+        config_path=vision_config(tmp_path, navigate_prompt_variant="bearing-only"),
+        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        assert client.get("/health").json()["navigate_prompt_variant"] == "bearing-only"
+
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        assert client.get("/health").json()["navigate_prompt_variant"] is None
 
 
 def test_health_reports_the_model_a_vision_mission_would_run(tmp_path):

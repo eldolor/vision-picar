@@ -54,9 +54,22 @@ from robot.interface import RobotInterface
 
 logger = logging.getLogger("mission_runner")
 
-# Matches tests/demo_active_search.py, so a runner-driven mission and the
-# demo's run_mission() are directly comparable.
-DEFAULT_MIN_DISTANCE_CM = 30.0
+# Deliberately NOT 30.0, which is exactly one grid cell.
+#
+# Against the noiseless sensor the two are indistinguishable: an exact
+# get_distance() only ever returns a multiple of 30, so any threshold in
+# (0, 30] blocks exactly the one case that matters -- a robot hard against a
+# wall, reading 0.0. That is why 30.0 stood here unremarked for so long.
+#
+# Turn S5's sensor noise on and 30.0 becomes a coin flip. One cell of
+# clearance reads 30 +/- 3cm, so the veto fires on roughly half of the
+# perfectly legal moves; M1's closed-loop sim runs blocked FORWARDs at
+# 28.0cm, 28.9cm and 27.7cm doing exactly this. 20.0 is 3.3 sigma clear of
+# 30 and 6.7 sigma clear of 0, and it matches config/robot.yaml's
+# safety.min_distance_cm, which robot/server.py has always used -- so the
+# brain-side pre-check and the robot-side veto now agree on one number
+# instead of two. tests/test_sensors.py pins the property.
+DEFAULT_MIN_DISTANCE_CM = 20.0
 # The reference backpack hunt (tests/demo_active_search.py) takes 83 steps
 # with the frontier policy, so a budget of 80 would end just short of it.
 # Under a vision policy every step is a paid call and this wants to come

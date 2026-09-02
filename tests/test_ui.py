@@ -38,6 +38,7 @@ own logic without a second live service or a paid call.
 """
 
 import os
+import re
 import subprocess
 import sys
 import time
@@ -675,3 +676,121 @@ def test_the_banner_is_readable_on_a_phone(browser, twin_server):
     assert box["width"] >= PHONE["width"] - 4, f"banner not full width: {box}"
     assert box["height"] >= 20, f"banner too short to read: {box}"
 
+
+
+# ---------- the remote brain's policy picker (M1) ----------
+#
+# `policy: "vision"` has existed on control/brain_server.py since S2b, and
+# until now the twin had no way to ask for it -- the Remote brain panel
+# always started a frontier mission. That made the vision policy the one
+# thing in this project you could not watch from a phone, which
+# CLAUDE.md section 7 says is the same as not shipped.
+#
+# The picker also carries the model and the wording, because a paid mission
+# whose result nobody can attribute is not a measurement.
+
+
+def open_sim_tab(browser, twin_server, **kwargs):
+    page, errors = open_twin(browser, twin_server, **kwargs)
+    page.click('.tab-btn[data-tab="sim"]')
+    return page, errors
+
+
+def test_the_remote_brain_can_be_set_to_the_vision_policy(browser, twin_server):
+    page, _ = open_sim_tab(browser, twin_server, mode="guide")
+    select = page.locator("#brain-policy")
+    sync_api.expect(select).to_be_visible()
+
+    select.select_option("vision")
+    assert select.input_value() == "vision"
+    page.close()
+
+
+def test_choosing_the_vision_policy_says_what_it_would_ask_and_what_it_costs(browser, twin_server):
+    """A paid mission that does not say which model and which wording it
+    would run is not a measurement -- it is the NavigateModelId trap again,
+    where a week of walks was attributed to a model that was never running."""
+    page, _ = open_sim_tab(browser, twin_server, mode="guide")
+    hint = page.locator("#brain-policy-hint")
+    sync_api.expect(hint).to_be_hidden()
+
+    page.locator("#brain-policy").select_option("vision")
+    sync_api.expect(hint).to_be_visible()
+    sync_api.expect(hint).to_contain_text("paid")
+    # Nothing picked yet, so both resolve to the service's own defaults --
+    # and the hint has to name those rather than going quiet. They arrive
+    # with GET /navigate/models, so the readout has to be redrawn when it
+    # lands; expect() polls, which is what makes that assertable.
+    sync_api.expect(hint).to_contain_text("Claude Opus 4.5")
+    sync_api.expect(hint).to_contain_text("service default")
+    sync_api.expect(hint).to_contain_text(MODELS_REPLY["default_prompt"])
+    page.close()
+
+
+def test_the_vision_policy_brings_the_model_and_prompt_pickers_with_it(browser, twin_server):
+    """The two pickers were Robot-view-only. The vision policy is their
+    second consumer, so they have to appear for it too -- otherwise the panel
+    names a model and a wording the operator has no way to change."""
+    page, _ = open_sim_tab(browser, twin_server, mode="guide")
+    page.locator("#brain-policy").select_option("vision")
+
+    # They live on the Guide tab -- see the button test below for why -- so
+    # "visible" is only a fair question once that tab is on screen.
+    page.click('.tab-btn[data-tab="guide"]')
+    sync_api.expect(page.locator("#navigate-model-row")).to_be_visible()
+    sync_api.expect(page.locator("#navigate-prompt-row")).to_be_visible()
+
+    # And they go away again with the policy that wanted them: Guide mode
+    # steers a person and has no model to choose.
+    page.click('.tab-btn[data-tab="sim"]')
+    page.locator("#brain-policy").select_option("frontier")
+    page.click('.tab-btn[data-tab="guide"]')
+    sync_api.expect(page.locator("#navigate-model-row")).to_be_hidden()
+    page.close()
+
+
+def test_the_hint_follows_the_pickers(browser, twin_server):
+    """Pick a wording on the Guide tab, and the Sim tab's panel says so. The
+    whole point is that the operator reads what will run instead of inferring
+    it from a log afterwards."""
+    page, _ = open_sim_tab(browser, twin_server, mode="guide")
+    page.locator("#brain-policy").select_option("vision")
+    page.click("#btn-brain-pickers")
+    page.locator("#cfg-navigate-prompt").select_option("next-step-obstacle")
+
+    page.click('.tab-btn[data-tab="sim"]')
+    hint = page.locator("#brain-policy-hint")
+    sync_api.expect(hint).to_contain_text("next-step-obstacle")
+    sync_api.expect(hint).to_contain_text("your pick")
+    page.close()
+
+
+def test_the_pickers_are_one_tap_away_from_the_panel(browser, twin_server):
+    """They live on the Guide tab, beside Robot view -- the flow they were
+    built for. Duplicating the selects in the Sim tab would give two copies
+    that can disagree about what is selected, so the panel navigates to them
+    instead."""
+    page, _ = open_sim_tab(browser, twin_server, mode="guide")
+    sync_api.expect(page.locator("#brain-policy-pickers-row")).to_be_hidden()
+
+    page.locator("#brain-policy").select_option("vision")
+    sync_api.expect(page.locator("#brain-policy-pickers-row")).to_be_visible()
+
+    page.click("#btn-brain-pickers")
+    sync_api.expect(page.locator('.tab-page[data-tab="guide"]')).to_have_class(
+        re.compile(r"\bactive\b"))
+    sync_api.expect(page.locator("#cfg-navigate-model")).to_be_visible()
+    page.close()
+
+
+def test_the_policy_choice_survives_a_reload(browser, twin_server):
+    """A standing choice that silently resets to the free policy would be a
+    mission you paid for by accident, or one you did not get."""
+    page, _ = open_sim_tab(browser, twin_server, mode="guide")
+    page.locator("#brain-policy").select_option("vision")
+    page.reload(wait_until="load")
+
+    page.click('.tab-btn[data-tab="sim"]')
+    assert page.locator("#brain-policy").input_value() == "vision"
+    sync_api.expect(page.locator("#brain-policy-hint")).to_be_visible()
+    page.close()

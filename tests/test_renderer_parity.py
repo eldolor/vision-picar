@@ -199,7 +199,7 @@ def _canvas_wall_tops(page):
           }
           return { width: c.width, height: c.height, tops: tops };
         }""",
-        list(renderer.COLOR_SKY),
+        list(renderer.COLOR_CEILING),
     )
 
 

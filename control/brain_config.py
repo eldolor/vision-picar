@@ -33,6 +33,13 @@ DEFAULTS = {
     # overrides it. Never guess a Bedrock model id here: the allow-list lives
     # in the vision service (GET /navigate/models) and is validated there.
     "navigate_model_id": "",
+    # Which wording of the /navigate prompt a mission runs when it doesn't
+    # name one. Same contract as navigate_model_id above, for the other lever:
+    # empty means "no preference", the request omits prompt_variant, and the
+    # vision service applies its own DEFAULT_PROMPT_VARIANT. Never guess a
+    # name here either -- the allow-list lives in the vision service (GET
+    # /navigate/models publishes it as `prompts`) and is validated there.
+    "navigate_prompt_variant": "",
     "max_steps": 120,
     "min_distance_cm": 30.0,
     "request_timeout_s": 10.0,
@@ -101,6 +108,8 @@ def load_brain_config(config_path=None) -> dict:
         merged["vision_url"] = os.environ["VISION_URL"]
     if os.environ.get("NAVIGATE_MODEL_ID"):
         merged["navigate_model_id"] = os.environ["NAVIGATE_MODEL_ID"]
+    if os.environ.get("NAVIGATE_PROMPT_VARIANT"):
+        merged["navigate_prompt_variant"] = os.environ["NAVIGATE_PROMPT_VARIANT"]
     # Same idea, for a brain deployment whose robot has no EFS-backed
     # recordings volume mounted (cloudformation/teleop-brain.yaml) --
     # without this, a recorded frame would silently land on the container's

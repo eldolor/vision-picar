@@ -14,7 +14,15 @@ below is the only thing bounding what a run costs, so it defaults low.
 Usage:
     export VISION_URL="https://<your vision service>"
     export APP_SHARED_SECRET="..."          # if the deployment sets one
+    export NAVIGATE_MODEL_ID="..."          # optional, from GET /navigate/models
+    export NAVIGATE_PROMPT_VARIANT="..."    # optional, likewise (`prompts`)
     python -m tests.demo_sim_mission "red backpack" [max_steps]
+
+The backend comes from `config/robot.yaml`, so `sim.sensor_noise.enabled:
+true` applies here -- which is the point for M1
+(`PLAN-microduck-transplants.md`): under the `bearing-only` wording the
+distance sensor is the ONLY thing left refusing a move, so a run against a
+noiseless one measures the easy case.
 
 ## Why this is worth running even though the sim is not a real room
 
@@ -54,7 +62,7 @@ import time
 
 from brain.navigate import vision_fn_for
 from control.mission_runner import MissionRunner
-from sim.maps.starter_house import build_starter_world
+from robot.factory import get_robot
 from sim.mock_robot import MockRobot
 
 # Each step is one paid /navigate call, so this is a budget, not a
@@ -76,19 +84,41 @@ def main():
     vision_url = os.environ.get("VISION_URL")
     if not vision_url:
         sys.exit("Set VISION_URL to the deployed vision service's base URL.")
+    # Which model and which wording answer /navigate. Both optional, both
+    # read the same way VISION_URL is, and both PRINTED below -- an
+    # unattributable paid run is not a measurement, and this project has
+    # already lost a week of walks to a value that was passed and ignored.
+    model_id = os.environ.get("NAVIGATE_MODEL_ID") or None
+    prompt_variant = os.environ.get("NAVIGATE_PROMPT_VARIANT") or None
 
-    world = build_starter_world()
-    robot = MockRobot(world)
+    # Built from config/robot.yaml rather than constructed here, so
+    # `sim.sensor_noise.enabled: true` and `sim.realtime` actually apply --
+    # M1's whole argument is that the DISTANCE SENSOR owns clearance, and a
+    # run against a noiseless sensor would be measuring the easy case. One
+    # source of truth for the backend, the same one robot/server.py uses.
+    # ROBOT_CONFIG_PATH, same env var robot/server.py honours, so a run can
+    # point at a temp config (sensor noise on, say) without editing the
+    # repo's own defaults.
+    config_path = os.environ.get("ROBOT_CONFIG_PATH")
+    robot = get_robot(config_path) if config_path else get_robot()
+    if not isinstance(robot, MockRobot):
+        sys.exit("config/robot.yaml is not in sim mode -- this script drives the "
+                 "grid world.")
+    world = robot.world
     runner = MissionRunner(
         robot,
         target_object=target,
         policy="vision",
-        vision_fn=vision_fn_for(target, vision_url=vision_url),
+        vision_fn=vision_fn_for(target, vision_url=vision_url,
+                                model_id=model_id, prompt_variant=prompt_variant),
         max_steps=max_steps,
     )
 
     goal = [cell for cell, name in world.objects.items() if name == target]
     print(f"=== grid-world sim, target={target!r}, cap={max_steps} paid steps ===")
+    print(f"Model:   {model_id or '(the vision service default)'}")
+    print(f"Wording: {prompt_variant or '(the vision service default)'}")
+    print(f"Sensor:  {'noisy (sim.sensor_noise on)' if robot.sensor else 'exact'}")
     print(f"Start: {(world.robot_x, world.robot_y)} facing {world.heading.name} "
           f"in the {world.room_at(world.robot_x, world.robot_y)}")
     if goal:

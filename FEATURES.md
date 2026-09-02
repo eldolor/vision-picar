@@ -137,6 +137,15 @@ and redesign history for this tab; this section is what it does today.
   the last one drawn (`guidanceLastRenderedSeq`); a stale answer is still
   *saved* when the walk is being recorded (section 1.2.b), because the
   frame and the reply it got belong together regardless of arrival order.
+- **A call cannot outlive the session that made it.** The sequence number
+  above only orders calls *within* a run, and both it and `guidanceRunning`
+  reset on Stop -- so a call still in flight when you stopped used to clear
+  both checks in the *next* session, flash its answer over the new camera
+  view, and then set `guidanceLastRenderedSeq` to its own higher number,
+  silently suppressing the new run's first several real decisions. Every
+  dispatch now also carries the run it belongs to (`guidanceEpoch`, bumped
+  on Stop) and is dropped on return if that run is over -- before it can
+  touch the overlay, the error streak, or the frame recorder.
 - **The call budget is reserved at dispatch, not counted on success.** A
   call that has been sent has been paid for whether or not its answer is
   fresh enough to render, and counting on completion would let the loop
@@ -309,7 +318,13 @@ variant `obstacle_ahead` is a restatement of `path_ahead == "blocked"`,
 which is what lets the existing scorer measure the new question unchanged;
 the parser deliberately does **not** derive one from the other, because
 manufacturing that agreement would hide the disagreement worth seeing.
-**Unmeasured as of 2026-09-02** -- see `CLAUDE.md`'s Stage 0 notes.
+**Measured 2026-09-02 and it does not work** -- the collision rate is
+unchanged and the two models answer it 40% alike against a 35% chance rate,
+disagreeing about the threshold rather than about the picture. It stays
+served so the negative result can be re-run. Note the corpus it was measured
+on was found to be invalid in the same pass (targets on raised furniture,
+camera at standing height) -- see `CLAUDE.md`'s Stage 0 notes, which is also
+the reason this field is not wired to anything.
 The frame is split into three vertical thirds (left/center/right) as the
 frame of reference for both `target_direction` and the model's own
 reasoning about what's in front of it. **`action` only ever means
@@ -601,8 +616,8 @@ grid rendering, a JS port of `sim/grid_world.py`'s starter-house layout.
   gets -- a human driving over Wi-Fi has the same collision protection.
   Disabled until Settings' robot connection succeeds.
 - **Remote brain** (`control/brain_server.py`'s real `MissionRunner`) --
-  `POST {brainUrl}/mission/start` with a target and an optional fault
-  drill, then this panel becomes a pure *observer*, polling
+  `POST {brainUrl}/mission/start` with a target, a **policy** and an
+  optional fault drill, then this panel becomes a pure *observer*, polling
   `GET /mission/status` for step count, last action, rooms searched, a
   log tail, and following the robot on the map. Closing the tab or
   reopening it later shows the mission further along or finished -- the
@@ -614,6 +629,18 @@ grid rendering, a JS port of `sim/grid_world.py`'s starter-house layout.
   (B3.2, B3.3) can still be watched firing, always ending with the robot
   stopped. A **watchdog readout** shows `robot/server.py`'s own B3.1
   silence counter.
+
+  A **policy picker** chooses between the free rule-based explorer and the
+  **vision policy** (`brain/vision_agent.py`), which spends one `/navigate`
+  call per step and is the policy that will be on the robot. Picking it sends
+  the Guide tab's `model_id` and `prompt_variant` along with the start, and
+  reveals those two pickers -- the Remote brain panel is their second
+  consumer -- with a one-tap jump to them. Before you spend anything the panel
+  states, in words, which model and which wording the mission would ask with,
+  resolved the same way the server resolves them (your pick, then whatever the
+  brain pins, then the vision service's own default). Both are validated
+  against the service's published allow-lists in a single round trip at start,
+  so a typo is a refusal rather than three burnt vision failures.
 - **Local brain, rule-based** (`Explore` / `Find backpack` / `Reset
   mission`) -- the frontier-preference exploration algorithm from
   `brain/agent.py`, re-implemented in this page's JavaScript, driving

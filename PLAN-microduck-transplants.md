@@ -1,6 +1,6 @@
 # Plan: what to take from Microduck
 
-Status: proposed, nothing built · Date: 2026-09-02 · Phase IDs: `M1`-`M12`
+Status: M1 built and measured (see its entry -- the replays settled more than the sim run did), M2-M12 proposed · Date: 2026-09-02 · Phase IDs: `M1`-`M12`
 
 [Microduck](https://github.com/pollen-robotics/microduck) (Apache-2.0, read
 2026-09-02) is Pollen Robotics' open-source brain for a 25cm bipedal robot:
@@ -80,7 +80,7 @@ Seven of the twelve phases need no hardware.
 
 | # | Phase | When | Press this to prove it |
 |---|---|---|---|
-| M1 | Settle the gate reading | pre-hardware | Two runs. The replay table gains two columns |
+| M1 | Settle the gate reading | pre-hardware | **DONE.** The replay table gained two columns; the sim leg is blocked on the renderer |
 | M2 | A depth grid on the interface, and in the sim | pre-hardware | A depth strip under the FPV canvas, tracking the view |
 | M3 | The tri-state zone, and a centre-zone veto | pre-hardware | Dropout reads grey, not "wall". The collar fires off-centre |
 | M4 | Refusals are state, manual preempts autonomous | pre-hardware | Tap the D-pad mid-mission. It ends `preempted`, and says by whom |
@@ -103,7 +103,125 @@ implementation cannot. M12 is last and conditional -- see its entry.
 
 ## 4. Pre-hardware phases
 
-### M1 -- Settle the gate reading
+### M1 -- Settle the gate reading -- **BUILT AND MEASURED 2026-09-02**
+
+**What it showed, in one line.** Deleting the obstacle question is the first
+change that leaves no model degenerate; the closed-loop sim leg could not
+adjudicate anything, because the renderer's frames are too dark to navigate
+from.
+
+**The replay leg answered its question.** All 22 frames of
+`red-backpack-20260829-195904`, three models x the two new wordings, 100%
+coverage on every cell, deployed against the redeployed vision service. The
+full 5x3 table is in `CLAUDE.md`'s Stage 0 notes; three findings:
+
+- **`bearing-only` is the only column with no degenerate cell.** Sonnet goes
+  0.000 -> 0.591 without flipping to the always-FORWARD mode that every
+  reworded question traded the stall for. No `stalled`, no `degenerate`.
+- **Question 5 broke `next-step-obstacle`, not the region change.**
+  `center-third-path` moves question 2 alone: Sonnet 0.000 -> 0.091. Moving 2
+  and 5 together gave 1.000. That attribution is what the variant existed
+  for, and it cost one replay. Neither wording is worth promoting.
+- **Qwen was already ignoring the question** -- `obstacle_rate` 0.000 under
+  `default`, and its `bearing-only` numbers are identical to its `default`
+  ones in every field. Removing a question a model never answered changes
+  nothing, which is the cleanest confirmation available that `obstacle_ahead`
+  is uncalibrated rather than noisy.
+
+Every `bearing-only` cell is still flagged `collision`, 12 of 12 checked
+FORWARDs. **That is this phase's other output, and it is a specification, not
+a defect** -- `ReplayRobot` has no sensor, and M10's sensor is what has to
+catch those twelve.
+
+**The sim leg did not answer its question, and the reason is worth more than
+the answer would have been.** Stage 1's "done when" ran for real -- Opus 4.5,
+`policy: "vision"`, the grid world, the deployed `/navigate`, sensor noise
+on, 40 paid steps per wording. `default` ended 14 cells away in 142.2s;
+`bearing-only` ended 13 cells away in 146.1s having never left its start
+cell. Neither claimed arrival.
+
+But nearly every decision's reasoning said "the image is very dark and
+unclear" or "a blank gray wall", and the frames bore that out: from the start
+cell `sim/renderer.py` rendered mostly black with two grey slabs. **The sim's
+frames were too information-poor for a closed-loop run to discriminate
+between wordings at all.** M1's design assumed the sim's distance sensor
+could stand in for a ToF and settle the gate reading empirically; that
+assumption is sound and the instrument was not ready.
+
+**The lighting half of that has since been fixed** (see
+`PLAN-sim-hardening.md` 3.5): the render was painting its ceiling and floor
+with the twin's two near-black UI colours, and both renderers now carry lit
+constants of their own. **The fix is itself unmeasured** -- it makes the
+frames legible to a human eye, and whether that is enough for a closed-loop
+run to discriminate is the next paid run's question. The other half of the
+diagnosis is untouched: the starter house's start pose faces a near wall, so
+even a lit first frame shows very little of the room. That is a map question.
+
+Two things the run did prove that no replay can. The safety collar is live
+and fired (1 veto on `default`, 2 on `bearing-only`) -- under `bearing-only`
+it is the only obstacle logic left, exactly as designed. And
+`min_distance_cm: 30.0` is exactly one grid cell, so with S5's 3cm jitter the
+veto is near a coin flip at one cell of clearance. A threshold sitting on a
+quantization boundary should be moved before anyone reads a FORWARD rate off
+a noisy sim run.
+
+Built:
+
+- **`bearing-only`**, in `service/vision_analyze/vision_core.py`. Two lines
+  removed from `default` and nothing else -- the question and its schema line
+  -- pinned by a test that diffs the two templates and asserts the removal
+  set exactly. `obstacle_ahead` is stripped from the reply for any variant
+  whose template does not ask for it (`variant_asks_obstacle()`, read off the
+  template so it cannot drift), including when a model volunteers the field
+  unasked.
+- **`brain/navigate.py` tolerates the absence honestly.** `free_space` becomes
+  `"unknown"` and `_navigate["obstacle_ahead"]` becomes `None`, never `False`
+  -- the same distinction M3 makes for a failed depth zone. The only obstacle
+  logic left on the path under this variant is `SafetyController`'s
+  `get_distance()` re-check before every FORWARD.
+- **The wording reaches a mission at all.** `prompt_variant` now threads
+  `POST /mission/start` -> `brain_config` -> `vision_fn_for()` ->
+  `/navigate`, validated against the service's published `prompts` in the
+  same round trip that already validated `model_id`.
+- **The twin can start a vision mission.** The Remote brain panel gained a
+  policy picker; `policy: "vision"` was previously unreachable from the UI,
+  which by section 7's rule meant it was not shipped.
+
+**A live silent fallback was found and closed on the way**, and it is the
+same class of bug M7 is about. `web-twin/app.js` has been sending
+`prompt_variant` on "Drive via brain" since the picker shipped;
+`MissionStartRequest` had no such field, and pydantic discards an unknown one
+by default. Every brain-driven walk ran the service's default wording while
+the UI named the operator's pick. The model is now `extra="forbid"`, so a
+misspelled field is a 422 naming it.
+
+Also built, to make the runs possible and attributable:
+`tests/demo_sim_mission.py` takes `NAVIGATE_MODEL_ID` /
+`NAVIGATE_PROMPT_VARIANT` / `ROBOT_CONFIG_PATH`, prints all three plus
+whether the sensor is noisy, and builds its backend from `config/robot.yaml`
+via `robot/factory.py` so `sim.sensor_noise` actually applies. All five ECS
+services were redeployed from this branch; `/navigate/models` serves six
+wordings.
+
+Two follow-ups found by the sim runs, both since fixed:
+
+- **The renderer's lighting** (above).
+- **`min_distance_cm: 30.0` was exactly one grid cell**, so with S5's 3cm
+  jitter the veto fired on roughly half of the legal one-cell moves --
+  measured at 90/200 in a test written for it. Both the brain-side default
+  and `config/robot.yaml` are now 20.0, matching the robot server's own
+  threshold, which changes nothing against the noiseless sensor (an exact
+  reading is only ever a multiple of 30, so any threshold in (0, 30] blocks
+  the same single case) and takes the veto 3.3 sigma clear of one cell.
+
+Still open after this phase:
+
+- **Re-running the closed loop** now that the frames are lit. The runs above
+  measured a renderer, not a policy, and the fix is unmeasured.
+- **Whether to promote `bearing-only`.** It is the best column measured, on
+  one walk, against a `collision` count that only a real sensor answers. That
+  is M10's evidence, not this phase's, and promoting a default off one walk
+  is how the `NavigateModelId` mistake happened.
 
 **Why.** Two questions are open at once, and one run each answers both.
 

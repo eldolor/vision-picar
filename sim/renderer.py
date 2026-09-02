@@ -32,6 +32,33 @@ end to end in Python -- memory, lifecycle, cost, arrival, the safety
 layer with a real distance reading behind it -- and it does not make the
 sim a substitute for photographing real rooms. Do both.
 
+**One specific way it was worse than "flat-shaded" has been measured and
+fixed (2026-09-02).** M1's two closed-loop missions -- 40 paid steps each,
+Opus 4.5, two prompt wordings -- ended 13 and 14 cells from a target
+neither ever saw, and nearly every decision's reasoning said some version
+of *"the image is very dark and unclear"* or *"a blank gray wall"*. The
+model was right. The upper and lower halves of the frame were being
+painted with the twin's `--wall` (#05070A) and `--floor` (#232A33) CSS
+variables -- two near-blacks picked for dark UI chrome -- so a room read as
+a black void with two grey slabs in it, and the policy spun looking for a
+view it never got.
+
+The ceiling and floor are now lit (`COLOR_CEILING` / `COLOR_FLOOR` below),
+and this file no longer borrows the app's theme, so restyling the twin
+cannot silently change what the model sees.
+
+**That fix is unmeasured.** It makes the frames legible to a human eye;
+whether it makes a closed-loop run able to discriminate between wordings,
+models or policies is a question for the next paid run, and until that run
+happens `CLAUDE.md`'s replay table is still the instrument for anything
+about what the model *sees*. What a sim run measures reliably either way is
+the *loop*: cost, wall clock, the budgets, and the safety veto firing on a
+real distance reading.
+
+The other half of M1's diagnosis is untouched and still open: the starter
+house's start pose faces a near wall, so even a well-lit first frame shows
+very little of the room. That is a map question, not a renderer one.
+
 ## Parity with the JavaScript it replaces
 
 Every constant and every line of the geometry below is a deliberate
@@ -66,11 +93,24 @@ FPV_MAX_DIST = 14.0  # cells
 FPV_STEP = 0.05  # ray march step, in cells
 FPV_WALL_RGB = (118, 129, 150)
 
-# From the twin's CSS custom properties. The upper half of the frame is
-# painted with --wall and the lower half with --floor; that is the JS
-# behaviour, odd-looking variable name and all.
-COLOR_SKY = (5, 7, 10)  # --wall:  #05070A
-COLOR_FLOOR = (35, 42, 51)  # --floor: #232A33
+# The room the walls stand in. **These are deliberately no longer the twin's
+# CSS custom properties**, which is the change that made these frames usable.
+#
+# The FPV render borrowed `--wall` (#05070A) for the upper half and `--floor`
+# (#232A33) for the lower half -- two near-blacks chosen for a dark UI
+# chrome, not for something a model has to read. M1's closed-loop runs
+# measured the consequence: the ceiling and floor came back as black, the
+# model reported "very dark and unclear" or "a blank gray wall" on nearly
+# every frame, and two 40-step missions never found a target that was in the
+# next room. This render is the policy's *input*, so it is lit like a room
+# rather than themed like a panel.
+#
+# `renderFPV` in web-twin/app.js carries the same two constants, for the same
+# reason it carries every other one on this page -- see "Parity" above. It no
+# longer reads them from CSS either, so restyling the twin cannot silently
+# change what the model sees.
+COLOR_CEILING = (198, 203, 211)  # upper half: a lit ceiling, not a night sky
+COLOR_FLOOR = (128, 120, 110)  # lower half: floor, distinct from the walls
 COLOR_TARGET = (255, 107, 53)  # --accent-alert: #FF6B35
 COLOR_OBJECT = (84, 96, 116)  # #546074, inline in renderFPV
 
@@ -174,7 +214,7 @@ def render(layout, objects, px: float, py: float, base_angle: float,
     the 0.5, matching the JS. `base_angle` is radians, from
     `HEADING_ANGLE`.
     """
-    img = Image.new("RGB", (width, height), COLOR_SKY)
+    img = Image.new("RGB", (width, height), COLOR_CEILING)
     draw = ImageDraw.Draw(img)
     draw.rectangle([0, height // 2, width, height], fill=COLOR_FLOOR)
 

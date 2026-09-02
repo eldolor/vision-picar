@@ -411,3 +411,96 @@ def test_overlapping_frames_get_distinct_sequence_numbers(browser, twin_server):
     finally:
         vision.close()
         brain.close()
+
+
+# ---------- a call outliving the session that made it ----------
+
+
+def test_a_previous_sessions_answer_never_reaches_the_next_session(browser, twin_server):
+    """Reported from a phone: start Robot view, stop it, start it again, and
+    the previous session's decision flashes on the new camera view.
+
+    The cause was that the freshness guard had no notion of *which run* a
+    call belonged to. `guidanceRunning` is a boolean and is true again the
+    moment the next session starts, and `guidanceSeq`/`guidanceLastRenderedSeq`
+    are reset to 0 on stop -- so a straggler carrying a high seq from the old
+    run cleared both checks, painted its answer over the new run's HUD, and
+    then set `guidanceLastRenderedSeq` to its own seq, which silently
+    suppressed the new run's first several real decisions. The visible flash
+    was the smaller half of the bug. (Everything else is already reset on
+    stop -- the telemetry is emptied and the badge hidden -- so a straggler
+    is the only way old content can reach a new session at all.)
+
+    Two properties this has to get right to be meaningful, both learned the
+    hard way:
+
+      * **The straggler's seq must be HIGHER than the new run has rendered**,
+        or the ordinary sequence check masks the defect by accident. Hence
+        the first run is allowed to rack up several fast calls, and the
+        second is served slowly.
+      * **Every call from the new run must answer RIGHT.** The first version
+        of this test planted three slow LEFT answers before stopping and
+        assumed the old run would consume them all; under a different test
+        order it consumed one, and the new run was legitimately served LEFT
+        by the stub. The barrier below is read *after* the stop, so
+        everything above it provably belongs to the new run.
+
+    Re-introduce the defect (drop the `epoch` check in guidanceStep) and this
+    goes red.
+    """
+    # REVERSE, not RIGHT: it keeps the first run's answers distinguishable
+    # from both the straggler and anything the second run sees.
+    stub = _Stub(plan={i: (0.2, "REVERSE") for i in range(1, 60)})
+    try:
+        page, errors = _start_robot_view(browser, twin_server, stub)
+
+        # Let the first run get several calls in, so its seq is well ahead.
+        deadline = time.monotonic() + 10
+        while stub.total < 6 and time.monotonic() < deadline:
+            page.wait_for_timeout(100)
+        assert stub.total >= 6, f"the first run barely ran: {stub.total} calls"
+
+        # The next calls answer LEFT, slowly -- these are the stragglers.
+        # Several, because up to two can be in flight and the loop may
+        # dispatch again between reading `total` and this assignment.
+        with stub.lock:
+            first_straggler = stub.total + 1
+        for i in range(first_straggler, first_straggler + 4):
+            stub.plan[i] = (5.0, "LEFT")
+        page.wait_for_timeout(900)
+        with stub.lock:
+            dispatched = stub.total
+        assert dispatched >= first_straggler, (
+            "no slow call was ever dispatched, so nothing is in flight to "
+            "outlive the session -- this test cannot observe its defect"
+        )
+
+        page.click("#btn-guidance-close")     # stop, with a call outstanding
+
+        # Read AFTER the stop: the loop dispatches nothing once it is
+        # stopped, so every ordinal above this belongs to the next run. They
+        # answer RIGHT, and slowly -- a new run that renders quickly would
+        # push guidanceLastRenderedSeq past the straggler's seq and mask the
+        # defect. This also overwrites any LEFT entry the old run never used.
+        with stub.lock:
+            barrier = stub.total
+        for i in range(barrier + 1, barrier + 60):
+            stub.plan[i] = (2.5, "RIGHT")
+
+        page.click("#btn-guidance")           # straight into a new session
+
+        # Watch the whole window in which the straggler lands, rather than
+        # sampling once: the flash is brief by construction.
+        seen = set()
+        for _ in range(35):
+            page.wait_for_timeout(200)
+            seen.add(page.inner_text("#robot-action-verb").strip().upper())
+
+        assert not errors, errors
+        assert "LEFT" not in seen, (
+            "the previous session's decision was drawn on the new session's "
+            f"camera view (verbs seen: {sorted(seen)})"
+        )
+        page.context.close()
+    finally:
+        stub.close()

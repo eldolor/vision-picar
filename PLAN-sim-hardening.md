@@ -246,6 +246,32 @@ about raycaster frames, not about rooms. The mitigation is in section 7
 and needs no robot: photograph real rooms and replay them through
 `/navigate`. Do that before, not after, tuning anything else.
 
+**Measured 2026-09-02. One cause found and fixed; one still open.**
+M1 of `PLAN-microduck-transplants.md` ran the first two closed-loop
+missions against the deployed `/navigate` -- Opus 4.5, 40 paid steps each,
+two prompt wordings. Both ended more than a dozen cells from a target
+neither ever saw, and nearly every decision's reasoning said *"the image
+is very dark and unclear"* or *"a blank gray wall"*.
+
+**Cause, and the fix.** The render painted its upper and lower halves with
+the twin's `--wall` (#05070A) and `--floor` (#232A33) CSS variables --
+near-blacks chosen for dark UI chrome, not for something a model reads --
+so a room came back as a black void with two grey slabs in it. Both
+renderers now carry their own lit ceiling and floor constants and no longer
+read the app's theme, so restyling the twin cannot change what the model
+sees. Golden image re-blessed; the browser parity test still passes.
+
+**Still open, and it is a map question rather than a renderer one:** the
+starter house's start pose faces a near wall, so even a well-lit first
+frame shows very little of the room.
+
+**And the fix itself is unmeasured.** It makes the frames legible to a
+human eye. Whether a closed-loop run can now discriminate between wordings,
+models or policies is the next paid run's question -- until then, treat a
+sim run as a measurement of the *loop* (cost, wall clock, budgets, the
+safety veto on a real distance reading) and `CLAUDE.md`'s replay table as
+the instrument for anything about the seeing.
+
 ### 3.6 The network is not in the loop
 
 `TestClient` uses an in-process ASGI transport -- no sockets, no latency,

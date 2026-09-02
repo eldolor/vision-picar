@@ -111,3 +111,73 @@ def test_min_distance_cm_is_load_bearing_at_a_non_multiple_of_30():
     allowed = SafetyController(FixedDistanceRobot(), min_distance_cm=90.0)
     result = allowed.check_and_execute("FORWARD")
     assert result["action"] == "drive_forward"
+
+
+def test_the_default_veto_threshold_is_not_on_the_grid_quantum():
+    """The threshold must not sit on 30cm, because 30cm is exactly one cell.
+
+    Against the noiseless sensor this is invisible: `get_distance()` only
+    ever returns a multiple of 30, so 30.0 and 20.0 block exactly the same
+    single case (a robot hard against a wall, reading 0.0). Turn S5's noise
+    on and 30.0 becomes a coin flip -- one cell of clearance reads 30 +/- 3cm,
+    so roughly half of a mission's legal forward moves get vetoed. M1's
+    closed-loop sim runs hit this live, blocking FORWARDs at 28.0cm, 28.9cm
+    and 27.7cm.
+
+    Set DEFAULT_MIN_DISTANCE_CM back to 30.0 and the first assertion goes
+    red at around half of the samples.
+    """
+    from control.mission_runner import DEFAULT_MIN_DISTANCE_CM
+    from robot.safety import SafetyController, SafetyViolation
+
+    sensor = DistanceSensorModel(noise_stddev_cm=3.0, rng=random.Random(7))
+
+    class OneCellOfClearance:
+        """A wall exactly one move away -- the reading a robot gets on most
+        of the steps of a real mission, and the one this must not veto."""
+
+        def get_distance(self):
+            return sensor.read(1)
+
+        def stop(self):
+            return {"action": "stop"}
+
+        def drive_forward(self, speed=50, duration=0.5):
+            return {"action": "drive_forward"}
+
+    safety = SafetyController(OneCellOfClearance(), min_distance_cm=DEFAULT_MIN_DISTANCE_CM)
+    blocked = 0
+    for _ in range(200):
+        try:
+            safety.check_and_execute("FORWARD")
+        except SafetyViolation:
+            blocked += 1
+    assert blocked == 0, (
+        f"{blocked}/200 legal one-cell moves were vetoed -- the threshold "
+        f"({DEFAULT_MIN_DISTANCE_CM}cm) is within the sensor's noise of one "
+        "grid cell (30cm)"
+    )
+
+    # And the case it exists for still fires: hard against a wall.
+    class AgainstAWall(OneCellOfClearance):
+        def get_distance(self):
+            return sensor.read(0)
+
+    wall = SafetyController(AgainstAWall(), min_distance_cm=DEFAULT_MIN_DISTANCE_CM)
+    for _ in range(50):
+        with pytest.raises(SafetyViolation):
+            wall.check_and_execute("FORWARD")
+
+
+def test_the_brain_and_the_robot_server_agree_on_one_threshold():
+    """Two numbers for the same guard is one number too many. The brain's
+    pre-check exists to save a round trip, not to be a second, stricter
+    policy -- and when they diverged, the stricter one was the one sitting
+    on the grid quantum."""
+    import yaml
+
+    config = yaml.safe_load(open("config/robot.yaml"))
+    from control.mission_runner import DEFAULT_MIN_DISTANCE_CM
+
+    assert float(config["safety"]["min_distance_cm"]) == DEFAULT_MIN_DISTANCE_CM
+    assert float(config["brain"]["min_distance_cm"]) == DEFAULT_MIN_DISTANCE_CM

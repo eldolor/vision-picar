@@ -383,8 +383,20 @@ provided everything else.
 
 **`brain/navigate.py`** is the `vision_fn`: frame in, `/navigate` call,
 scene out. `vision_fn_for(target, vision_url, secret)` binds the target
-and endpoint into the one-argument callable the harness wants. One mapping
-decision in there is load-bearing and worth knowing:
+and endpoint into the one-argument callable the harness wants -- along
+with `model_id` and `prompt_variant`, the two axes a mission's result has
+to be attributable to. They are bound in the factory precisely so the
+`vision_fn(frame) -> scene` contract does not grow arguments; nothing
+downstream knows either was chosen. Both resolve request -> `brain:` config
+-> the vision service's own default, and both are checked against that
+service's published allow-lists (`GET /navigate/models`, which serves
+`models` and `prompts` together) in one call at `/mission/start`, so a typo
+is a 400 rather than three burnt vision failures. `MissionStartRequest`
+forbids unknown fields for the same reason -- until M1 it silently dropped
+the `prompt_variant` the twin had been sending, which is the
+NavigateModelId trap in miniature.
+
+One mapping decision in there is load-bearing and worth knowing:
 
 > **`important_objects` carries the target only when `target_reached` is
 > true, not when it is merely visible.** `MissionMemory` treats a match
@@ -407,6 +419,17 @@ What the harness supplies, and what you must therefore *not* add:
   is the browser autopilot's bug, and §6 exists to prevent it.
 - **The step cap is the cost cap**, since every step is a paid call.
   `tick_interval_s` is the throttle.
+
+### An absent field is not a false one
+
+`/navigate`'s `bearing-only` variant (M1, `PLAN-microduck-transplants.md`)
+removes the obstacle question entirely, so its reply carries no
+`obstacle_ahead` at all. `to_scene()` maps that to `free_space: "unknown"`
+and `_navigate["obstacle_ahead"]: None` rather than to "clear" -- a model
+that was never asked has not said the way is open. Under that variant the
+only obstacle logic left on the path is `robot/safety.py`'s
+`get_distance()` re-check before every `FORWARD`, which is the point: the
+camera answers *what* and *which way*, a distance sensor answers *how far*.
 
 ### The proximity veto seam -- off by default
 

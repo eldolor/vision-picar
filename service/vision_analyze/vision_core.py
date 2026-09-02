@@ -516,10 +516,45 @@ Respond with ONLY a JSON object, no other text, matching this schema:
 # always-FORWARD with question 5 untouched, the answer is that question 5 is
 # the problem, and that is worth knowing.
 #
-# **NOT MEASURED YET.** It is a variant and not the default for the reason
-# every other one is: the Stage 0 table measured the default's exact wording,
-# and production serves this file. Replay it over the same frames before
-# believing anything about it -- and read the coverage before the score.
+# **MEASURED 2026-09-02, and it does not work. Do not promote it.** Eight
+# recorded walks, 96 frames, two targets, replayed against `default` under
+# two models -- every cell at coverage 1.0. Frame-weighted FORWARD rate:
+#
+#                        default   center-third-path
+#   Claude Opus 4.5       0.323          0.365
+#   Qwen3-VL              0.354          0.573
+#
+# The collision flag did not move at all: 6 of 8 walks for Opus and 7 of 8
+# for Qwen, under both wordings. And the two models moved APART (0.03 apart
+# under default, 0.21 apart here), with one Qwen cell tipping into a flat
+# degenerate 1.0. Better scoping should converge two competent readers of
+# the same patch of floor, not separate them.
+#
+# The per-frame field says why, and the answer is not what was expected:
+#
+#   Opus  blocked 66%  open_floor 33%     Qwen  open_floor 94%  blocked 5%
+#   agreement on path_ahead 40% (kappa 0.075 -- chance is 35%)
+#
+# **The instruction was followed exactly.** obstacle_ahead restates
+# path_ahead on 99% of Opus frames and 100% of Qwen's, which is what the
+# prompt asked for. And the disagreement is perfectly NESTED, not scattered:
+# every one of the 32 frames Opus called open_floor, Qwen also called
+# open_floor; of the 63 Opus called blocked, Qwen called 58 of them open.
+# There is no frame where the two contradict each other's ordering. They
+# read the image the same way and cut "blocked" at wildly different
+# thresholds. **A threshold has no wording.** That is why four attempts at
+# rewording this question have now failed, and why a fifth should not be
+# written: the next lever is an anchor or an example, or -- on hardware --
+# the ultrasonic sensor, which measures the threshold instead of arguing
+# about it.
+#
+# **READ THIS BEFORE TRUSTING ANY OF THE ABOVE.** While reading the frames
+# that produced these numbers it turned out the corpus itself is invalid --
+# both targets sit on raised furniture and every frame is shot from standing
+# height, so the mission is not reachable by a floor robot and the view is
+# not the robot's. See CLAUDE.md's Stage 0 notes. The numbers here are real
+# and reproducible, but they measure the wrong task, and this variant has
+# not had a fair test.
 _CENTER_THIRD_QUESTION = """2. Look ONLY at the bottom half of the center third: the patch of ground the
    robot would drive over on its next single step. Everything else in this
    image -- both side thirds, and everything above the halfway line -- is NOT
@@ -556,6 +591,66 @@ NAVIGATE_PROMPT_VARIANTS["center-third-path"] = NAVIGATE_PROMPT_CENTER_THIRD
 # frame. "unclear" is the only value that must never be acted on -- same
 # contract as DISTANCE_ESTIMATES above.
 PATH_AHEAD_VALUES = ("open_floor", "blocked", "unclear")
+
+
+# Phase M1 (PLAN-microduck-transplants.md). Every other variant on this page
+# is another attempt to word the obstacle question well. This one deletes it.
+#
+# Microduck splits perception by what a sensor can actually answer -- "camera
+# = direction, ToF = distance" -- and this project has measured the same
+# thing the hard way. `obstacle_ahead` reads ~100% true on Opus and ~0% on
+# Qwen over identical frames; `default-with-distance` says "within one step"
+# on 60% of frames, and still 55% on frames with no target in them at all.
+# Four wordings produced two never-FORWARD results and two always-FORWARD
+# ones. A single monocular frame does not contain metric depth, so no wording
+# recovers it.
+#
+# So: /navigate keeps WHAT and WHICH WAY, and a distance sensor owns HOW FAR.
+# `robot/safety.py` already re-reads `get_distance()` before every FORWARD,
+# which is the veto this variant hands the job back to.
+#
+# **Only question 2 is removed.** Questions 1, 3, 4 and 5 are byte-identical
+# to the default, by construction (string surgery, pinned by a test), for the
+# same reason "center-third-path" is: "next-step-obstacle" moved questions 2
+# and 5 together and left no way to attribute the degenerate result. The
+# remaining questions keep their original numbers -- 1, 3, 4, 5, with a gap.
+# Renumbering them would edit four lines this experiment is trying to hold
+# still, and the model is being asked to answer questions, not to audit an
+# ordinal sequence.
+#
+# `obstacle_ahead` is absent from the reply, not false: the schema line is
+# removed too, and describe_image_bytes_navigate() strips the field for any
+# variant whose template does not ask for it. A caller must be able to tell
+# "the model saw no obstacle" from "nobody asked" -- brain/navigate.py's
+# to_scene() reports the second as free_space "unknown".
+#
+# **NOT MEASURED YET.** Replay it over the same frames as the 3x3 matrix
+# before believing anything about it -- and read the coverage before the
+# score. Note that control/walk_eval.py's collision check will flag such a
+# replay, because ReplayRobot has no distance sensor to veto anything. That
+# column is the specification for M10's real sensor, not a defect.
+_OBSTACLE_QUESTION_LINE = (
+    "2. Is there an obstacle directly ahead that would block moving forward?\n"
+)
+_OBSTACLE_SCHEMA_LINE = '  "obstacle_ahead": true | false,\n'
+
+NAVIGATE_PROMPT_BEARING_ONLY = (
+    NAVIGATE_PROMPT_TEMPLATE
+    .replace(_OBSTACLE_QUESTION_LINE, "")
+    .replace(_OBSTACLE_SCHEMA_LINE, "")
+)
+
+NAVIGATE_PROMPT_VARIANTS["bearing-only"] = NAVIGATE_PROMPT_BEARING_ONLY
+
+
+def variant_asks_obstacle(variant: str) -> bool:
+    """Does this prompt variant ask for `obstacle_ahead` at all?
+
+    Derived from the template rather than kept as a second list, so a new
+    variant that drops the field cannot forget to register itself here.
+    """
+    template = NAVIGATE_PROMPT_VARIANTS.get(variant, NAVIGATE_PROMPT_TEMPLATE)
+    return '"obstacle_ahead"' in template
 
 
 DEFAULT_PROMPT_VARIANT = os.environ.get("NAVIGATE_PROMPT_VARIANT", "default")
@@ -646,6 +741,14 @@ def describe_image_bytes_navigate(
     content_blocks = response["output"]["message"]["content"]
     text = "".join(b["text"] for b in content_blocks if "text" in b)
     decision = _parse_navigate_json(text)
+    # A field nobody asked for must not arrive as `false`. _parse_navigate_json
+    # merges the empty schema over every reply, so obstacle_ahead would come
+    # back False under a variant that never asked -- indistinguishable from a
+    # model that looked and saw clear floor. Stripped here, keyed off the
+    # template itself (see variant_asks_obstacle), so the absence is the
+    # answer. brain/navigate.py maps it to free_space "unknown".
+    if not variant_asks_obstacle(variant):
+        decision.pop("obstacle_ahead", None)
     # Carried on the reply (not just logged) so a recorded walk -- and the
     # admin viewer reading it back later -- can tell which model produced
     # which decision, and at what token cost, without a side-channel.

@@ -85,6 +85,36 @@ def test_an_obstacle_is_reported_as_no_free_space():
     assert to_scene(navigate_reply(obstacle=False), TARGET)["free_space"] == "clear"
 
 
+def test_an_absent_obstacle_field_is_unknown_not_clear():
+    """The "bearing-only" variant (M1) deletes the obstacle question, so the
+    service omits the field rather than sending a default for it. Reading
+    that as "clear" would put words in the mouth of a model that was never
+    asked -- and it is the same collapse M3 refuses for a failed depth zone:
+    "nothing is there" and "I could not tell" are different answers."""
+    reply = navigate_reply()
+    del reply["obstacle_ahead"]
+
+    scene = to_scene(reply, TARGET)
+
+    assert scene["free_space"] == "unknown"
+    assert scene["obstacles_ahead"] == []
+    assert scene["_navigate"]["obstacle_ahead"] is None
+
+
+def test_an_absent_obstacle_field_does_not_stop_the_policy_deciding():
+    """The point of removing the question is that the model still answers the
+    other four. A missing obstacle field must cost nothing else in the
+    mapping -- the only obstacle logic left on the path is robot/safety.py's
+    get_distance() re-check before every FORWARD."""
+    reply = navigate_reply(action="FORWARD", visible=True, direction="center")
+    del reply["obstacle_ahead"]
+
+    scene = to_scene(reply, TARGET)
+
+    assert scene["safest_direction"] == "FORWARD"
+    assert scene["_navigate"]["target_direction"] == "center"
+
+
 def test_a_frame_with_no_pixels_is_a_clear_error(monkeypatch):
     """Every backend carries pixels since S2, so this is now the
     render=False offline path or a broken backend -- either way it should
@@ -480,6 +510,36 @@ def test_vision_fn_for_binds_the_model_without_changing_the_call_contract():
     fn({"image_base64": "aGk="})
 
     assert seen["body"]["model_id"] == "qwen.qwen3-vl-235b-a22b"
+
+
+def test_a_chosen_prompt_variant_reaches_the_service():
+    """The other lever. Wording moved one model's FORWARD rate from 0.000 to
+    1.000 in this project's own 3x3 matrix, so a mission that cannot name its
+    variant is a mission whose result cannot be attributed."""
+    seen, client = _capture_body()
+    navigate_scene({"image_base64": "aGk="}, TARGET, "http://vision.test",
+                   client=client, prompt_variant="bearing-only")
+    assert seen["body"]["prompt_variant"] == "bearing-only"
+
+
+def test_no_prompt_variant_omits_the_field_entirely():
+    """Same contract as model_id: absent means "the service's own default",
+    and the allow-list lives there, not here."""
+    seen, client = _capture_body()
+    navigate_scene({"image_base64": "aGk="}, TARGET, "http://vision.test", client=client)
+    assert "prompt_variant" not in seen["body"]
+
+
+def test_vision_fn_for_binds_the_prompt_variant_too():
+    """Bound in the factory alongside the model, so the harness still calls
+    vision_fn(frame) with one argument (AGENT-HARNESS.md section 10)."""
+    seen, client = _capture_body()
+    fn = vision_fn_for(TARGET, vision_url="http://vision.test", client=client,
+                       prompt_variant="center-third-path")
+
+    fn({"image_base64": "aGk="})
+
+    assert seen["body"]["prompt_variant"] == "center-third-path"
 
 
 def test_a_non_200_from_the_vision_service_is_a_clear_error():
