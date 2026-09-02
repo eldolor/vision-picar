@@ -171,7 +171,7 @@ def browser():
         b.close()
 
 
-def _start_robot_view(browser, twin_server, stub):
+def _start_robot_view(browser, twin_server, stub, extra_prefs=None):
     """Robot view, running, pointed at the stub.
 
     `vp_guide_onboarded` matters: without it the Start button opens the
@@ -184,6 +184,8 @@ def _start_robot_view(browser, twin_server, stub):
         "vp_guide_onboarded": "1",
         "vp_vision_url": stub.url,
     }
+    if extra_prefs:
+        seed.update(extra_prefs)
     ctx.add_init_script(
         "(() => { const s = %s;"
         " try { for (const k in s) localStorage.setItem(k, s[k]); } catch (e) {} })();"
@@ -279,3 +281,133 @@ def test_an_overtaken_answer_is_not_drawn(browser, twin_server):
         page.context.close()
     finally:
         stub.close()
+
+
+# ---------- recorded-walk frame numbering ----------
+#
+# Pipelining reaches further than the guidance loop. `recordWalkFrame()`
+# used to number each frame `recordSaved + recordFailed` -- counters that
+# only move when the recording POST *resolves*. Serial calls were spaced by
+# the throttle plus a whole vision round trip, so a save always landed
+# before the next frame needed a number. Overlapping calls close that gap:
+# two answers can arrive together, both read the same counters, and both
+# claim the same seq.
+#
+# Nothing complains. control/brain_server.py writes frame-{seq:04d}.jpg
+# with `write_bytes()`, so the second frame silently overwrites the first,
+# while walk.jsonl gains a row for each -- leaving a manifest that
+# disagrees with the directory and a walk that replays a frame short. This
+# is the Stage 0 recording path, so the damage lands in the evidence.
+
+
+class _BrainStub:
+    """Enough of control/brain_server.py to make recording activate, with a
+    deliberately slow /recording/frame.
+
+    The delay is the point: it holds each save open long enough that the
+    next frame has to be numbered while the previous one is still in
+    flight, which is exactly the window the old code numbered inside.
+    """
+
+    def __init__(self, save_delay_s=0.7):
+        self.lock = threading.Lock()
+        self.seqs = []
+        self.save_delay_s = save_delay_s
+        stub = self
+
+        class H(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def _cors(self):
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Headers", "*")
+                self.send_header("Access-Control-Allow-Methods", "*")
+
+            def _send(self, obj, status=200):
+                raw = json.dumps(obj).encode()
+                self.send_response(status)
+                self._cors()
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def do_OPTIONS(self):
+                self.send_response(204)
+                self._cors()
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def do_GET(self):
+                if "/health" in self.path:
+                    # recording_allowed matters: startGuidance() refuses to
+                    # begin a recorded walk against a brain that has no
+                    # storage attached, and a stub that omits it fails the
+                    # precheck rather than the assertion under test.
+                    self._send({"status": "ok", "robot_url": "http://stub",
+                                "drills_allowed": True, "navigate_model_id": None,
+                                "recording_allowed": True})
+                elif "/mission/status" in self.path:
+                    self._send({"running": False, "state": "idle"})
+                else:
+                    self._send({"detail": "not found"}, 404)
+
+            def do_POST(self):
+                raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                if "/recording/frame" in self.path:
+                    seq = json.loads(raw or b"{}").get("seq")
+                    time.sleep(stub.save_delay_s)
+                    with stub.lock:
+                        stub.seqs.append(seq)
+                    self._send({"saved": "frame.jpg", "frames": len(stub.seqs)})
+                else:
+                    self._send({"ok": True})
+
+            def log_message(self, *a):
+                pass
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self._server.server_address[1]}"
+
+    def close(self):
+        self._server.shutdown()
+
+
+def test_overlapping_frames_get_distinct_sequence_numbers(browser, twin_server):
+    """Two frames recorded from overlapping vision calls must never share a
+    seq -- the server would overwrite one of them without saying so."""
+    vision, brain = _Stub(), _BrainStub()
+    try:
+        page, errors = _start_robot_view(
+            browser, twin_server, vision,
+            extra_prefs={"vp_brain_url": brain.url, "vp_record_walk": "1"},
+        )
+        # Long enough for several overlapping vision calls to complete and
+        # for their saves to pile up against the stub's delay.
+        page.wait_for_timeout(7000)
+        # Not stopped via the button: in Robot view the fullscreen camera
+        # overlay sits over it, and stopping is beside the point -- what is
+        # under test is the numbers already handed out. The extra wait lets
+        # the saves still in flight land before the snapshot.
+        page.wait_for_timeout(1500)
+        assert not errors, errors
+
+        with brain.lock:
+            seqs = list(brain.seqs)
+        assert vision.peak > 1, (
+            f"vision calls never overlapped (peak {vision.peak}); this test "
+            "cannot observe the defect it exists for"
+        )
+        assert len(seqs) >= 3, f"too few frames recorded to be meaningful: {seqs}"
+        assert all(s is not None for s in seqs), f"a frame carried no seq: {seqs}"
+        assert len(set(seqs)) == len(seqs), (
+            f"duplicate seq -- one recorded frame silently overwrote another: {seqs}"
+        )
+        assert sorted(seqs) == list(range(len(seqs))), (
+            f"frame numbers are not the contiguous 0..n-1 a walk replays: {seqs}"
+        )
+        page.close()
+    finally:
+        vision.close()
+        brain.close()

@@ -200,6 +200,7 @@
     watchdogTimerId: null,
     // Recording a Robot-view walk to the brain, for replay (S2b).
     recordWalk: false, recordWalkName: null, recordSaved: 0, recordFailed: 0,
+    recordSeq: 0,
     // /navigate model A/B (empty string = service default, i.e. omit
     // model_id entirely -- see fetchNavigateModels()).
     navigateModelId: "", navigateModelsLoaded: false,
@@ -1728,15 +1729,26 @@
     state.recordWalkName = newWalkName();
     state.recordSaved = 0;
     state.recordFailed = 0;
+    state.recordSeq = 0;
     showToast("Recording this walk as " + state.recordWalkName, "info");
     renderRecordStatus();
   }
 
   // Fire-and-forget: a failed save must never interrupt a walk, and must
   // never delay the next /navigate call. The count is the feedback.
-  function recordWalkFrame(base64, navigateResult) {
+  // `seq` is allocated by the caller at dispatch, NOT derived here from
+  // recordSaved/recordFailed. Those increment when this POST resolves, so
+  // once vision calls overlap two frames can both read the same value
+  // before either save returns -- and control/brain_server.py writes
+  // frame-{seq:04d}.jpg with write_bytes(), which overwrites in silence
+  // while walk.jsonl still gains two rows for the one seq. The walk then
+  // replays a frame short, with a manifest that disagrees with the
+  // directory. Dispatch order is also capture order, which is the order
+  // sim/replay_robot.py plays a walk back in.
+  function recordWalkFrame(base64, navigateResult, seq) {
     if (!recordingActive() || !state.recordWalkName) return;
-    const seq = state.recordSaved + state.recordFailed;
+    // Captured before recording began: there is no slot reserved for it.
+    if (seq === null || seq === undefined) return;
     brainApi("POST", "/recording/frame", {
       walk: state.recordWalkName,
       seq: seq,
@@ -3003,6 +3015,10 @@
 
     const isRobot = state.guidanceMode === "robot";
     const seq = ++state.guidanceSeq;
+    // Reserved here, in the same synchronous block as the dispatch, so no
+    // two overlapping calls can be handed the same frame number. Null
+    // when this frame is not being recorded at all.
+    const recSeq = (isRobot && state.recordWalkName) ? state.recordSeq++ : null;
     state.guidanceInFlight++;
     // Budget is reserved at dispatch, not on success. A call that is sent
     // has been paid for whether or not its answer is fresh enough to
@@ -3030,7 +3046,7 @@
       // ones too stale to draw. Dropping them would silently thin a
       // recording that sim/replay_robot.py later plays back frame by
       // frame.
-      if (isRobot) recordWalkFrame(base64, result);
+      if (isRobot) recordWalkFrame(base64, result, recSeq);
 
       // Everything past here changes what the person sees or the loop
       // believes, so it must not run for an answer that has been overtaken
