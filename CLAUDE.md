@@ -262,9 +262,17 @@ vision-picar/
 │                               pre-flight checklist, where the brain should live
 ├── PLAN-brain-relocation.md   moving the autonomy loop onto the Pi (B0-B4 BUILT,
 │                               B5 needs the Pi)
-└── PLAN-teleop-robot.md       a live phone walk driving the real MissionRunner
-                                mission, closed loop -- T1-T4 (BUILT); see the
-                                T1-T4 status-table row above
+├── PLAN-teleop-robot.md       a live phone walk driving the real MissionRunner
+│                               mission, closed loop -- T1-T4 (BUILT); see the
+│                               T1-T4 status-table row above
+└── PLAN-microduck-transplants.md
+                                twelve designs borrowed from Pollen Robotics'
+                                Microduck -- a depth sensor instead of asking
+                                the model how far, plus refusal reasons, driver
+                                arbitration, a health verdict and a rollback.
+                                M1-M12, NOTHING BUILT; seven need no hardware.
+                                Start at M1: two runs that settle whether the
+                                Stage 0 gate is measuring what will ship
 ```
 
 ---
