@@ -58,7 +58,7 @@ pip install -r requirements.txt
 
 ```bash
 pytest tests/ -q        # 471 tests, no API key needed
-pytest service/vision_analyze/tests/ -q  # that service's own 35 tests, run separately
+pytest service/vision_analyze/tests/ -q  # that service's own 47 tests, run separately
 ```
 
 ## Run the demo loop

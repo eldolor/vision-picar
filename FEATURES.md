@@ -273,6 +273,7 @@ different prompt and schema.
   "room_guess": "short room-type label, or \"unclear\"",
   "action": "FORWARD" | "LEFT" | "RIGHT" | "REVERSE" | "STOP",
   "distance_estimate": "within_one_step" | "a_few_steps" | "far" | "unknown",
+  "path_ahead": "open_floor" | "blocked" | "unclear",
   "reasoning": "one short sentence"
 }
 ```
@@ -293,6 +294,22 @@ walks it reports `within_one_step` on 60% and `far` on 5%, which is not
 what walking across a house looks like. See `CLAUDE.md`'s Stage 0 notes
 for the full measurement and section 5 for the veto that stays off
 because of it.
+
+**`path_ahead` is the fourth attempt at the same question, asked about a
+different region, and is only populated under the `center-third-path`
+variant** (`"unclear"` everywhere else, parse failures included, on the
+same fail-towards-inaction contract). The three wordings before it and
+`distance_estimate` all failed the same way: "is there an obstacle ahead"
+is a question about the whole frame, and indoors the honest answer is
+almost always yes. This one asks what is in the bottom half of the centre
+third -- the patch of ground the next step actually crosses -- and asks it
+*descriptively* (`open_floor` / `blocked` / `unclear`, "what is there")
+rather than *evaluatively* ("does that count as an obstacle"). Under this
+variant `obstacle_ahead` is a restatement of `path_ahead == "blocked"`,
+which is what lets the existing scorer measure the new question unchanged;
+the parser deliberately does **not** derive one from the other, because
+manufacturing that agreement would hide the disagreement worth seeing.
+**Unmeasured as of 2026-09-02** -- see `CLAUDE.md`'s Stage 0 notes.
 The frame is split into three vertical thirds (left/center/right) as the
 frame of reference for both `target_direction` and the model's own
 reasoning about what's in front of it. **`action` only ever means

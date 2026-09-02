@@ -213,7 +213,7 @@ vision-picar/
 │   │                           /navigate, /guidance
 │   ├── vision_core.py         calls Amazon Bedrock (Claude, Converse API)
 │   ├── rooms_core.py          identify_room() -- same logic as brain/rooms.py
-│   ├── tests/                 app.py's own suite (25 tests) -- routing,
+│   ├── tests/                 app.py's own suite (47 tests) -- routing,
 │   │                           validation, decode/size/error handling, all
 │   │                           vision_core.* calls mocked. Run separately:
 │   │                           `pytest service/vision_analyze/tests/ -v`
@@ -394,6 +394,25 @@ before trusting any of it, but this is where it stands:
   question's shape -- what is in the centre third and in the path, not
   what is nearest anywhere in frame.
 
+- **That shape change now exists as `center-third-path`, and is NOT yet
+  measured (2026-09-02).** It asks what is in the bottom half of the centre
+  third -- the patch of ground the next step actually crosses -- and answers
+  `open_floor` / `blocked` / `unclear` in a new `path_ahead` field, with
+  `obstacle_ahead` defined as a restatement of it rather than a second
+  opinion. Two deliberate properties. It is **descriptive, not evaluative**:
+  a cautious model can truthfully say "there is an obstacle ahead" about
+  almost any indoor room, but it cannot call a wall `open_floor`. And it
+  changes **question 2 alone** -- questions 1, 3, 4 and 5 are byte-identical
+  to `default` by construction (string surgery, pinned by a test), because
+  `next-step-obstacle` moved questions 2 and 5 together and left no way to
+  tell which half caused the degenerate result. If this comes back
+  always-FORWARD with question 5 untouched, question 5 is the problem, and
+  that is itself worth knowing. Because `obstacle_ahead` carries the answer,
+  `control/walk_eval.py`'s FORWARD rate and collision check score it in the
+  existing table with no change to the harness. **Nothing here is a claim
+  about how it performs.** Replay it over the same frames before believing
+  anything -- and read the `coverage` before the score.
+
 Secondary: `python -m tests.manual_replay_navigate <dir> "<target>"`
 replays a folder of photos and prints an action-spread summary. Use it to
 produce a recordable finding -- the failure that matters (the same action
@@ -440,7 +459,7 @@ money -- see **Done when** below.
   `AGENT-HARNESS.md` section 10 for the exact mechanism, which
   deliberately doesn't touch the `vision_fn(frame) -> scene` contract.
 - **`service/vision_analyze/app.py`'s test suite -- BUILT.**
-  `service/vision_analyze/tests/` (25 tests, FastAPI `TestClient`, every
+  `service/vision_analyze/tests/` (47 tests, FastAPI `TestClient`, every
   `vision_core.*`/`identify_room` call mocked) -- closes the one real gap
   left over from the Lambda -> ECS migration. Run separately from the
   root suite: `pytest service/vision_analyze/tests/ -v` (see section 6).

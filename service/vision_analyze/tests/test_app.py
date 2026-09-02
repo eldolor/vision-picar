@@ -486,3 +486,123 @@ def test_distance_estimate_is_always_present_even_on_a_garbage_reply():
     import vision_core
 
     assert vision_core._parse_navigate_json("not json at all")["distance_estimate"] == "unknown"
+
+
+# ---------- the center-third path question (Q2, fourth attempt) ----------
+
+
+def test_the_center_third_variant_is_published_like_any_other(client):
+    """Same discipline as every other wording: served from the allow-list, so
+    the twin's picker offers it without a client-side hardcode and a recorded
+    walk can say which prompt produced it."""
+    body = client.get("/navigate/models").json()
+    assert "center-third-path" in body["prompts"]
+
+
+def test_the_default_prompt_is_not_touched_by_the_center_third_variant():
+    """The Stage 0 table measured the default's exact wording and production
+    serves this file, so a variant that edited the default in place would
+    both invalidate those numbers and change production on the next deploy."""
+    import vision_core
+
+    assert (vision_core.NAVIGATE_PROMPT_VARIANTS["default"]
+            is vision_core.NAVIGATE_PROMPT_TEMPLATE)
+    assert "path_ahead" not in vision_core.NAVIGATE_PROMPT_TEMPLATE
+
+
+def test_the_center_third_variant_asks_for_the_field_it_promises():
+    """The prompt and the response schema have to agree, or the field comes
+    back absent on every call and there is nothing to measure."""
+    import vision_core
+
+    rendered = vision_core.NAVIGATE_PROMPT_VARIANTS["center-third-path"].format(
+        target_object="red backpack", searched_rooms_note="")
+    assert '"path_ahead"' in rendered
+    assert "open_floor" in rendered
+    # The region restriction IS the experiment -- without it this is just
+    # another rewording of "is there an obstacle ahead".
+    assert "bottom half of the center third" in rendered
+    # Approaching the target must not read as being blocked by it, or
+    # arriving looks exactly like a collision.
+    assert "never counts as" in rendered
+
+
+def test_the_center_third_variant_changes_question_2_and_nothing_else():
+    """The point of this variant is attribution. "next-step-obstacle" moved
+    question 2 and question 5 together and went degenerate, and there was no
+    way to tell which half did it -- so this one moves question 2 alone, and
+    that property is worth pinning rather than trusting to a comment."""
+    import vision_core
+
+    default = vision_core.NAVIGATE_PROMPT_TEMPLATE
+    variant = vision_core.NAVIGATE_PROMPT_VARIANTS["center-third-path"]
+
+    # Question 2 is gone, replaced.
+    assert "2. Is there an obstacle directly ahead" in default
+    assert "2. Is there an obstacle directly ahead" not in variant
+
+    # Questions 1, 3, 4 and 5 survive verbatim. Question 5 especially: it is
+    # the one the previous attempt also moved, and holding it fixed is what
+    # makes a degenerate result here point at question 5 rather than at the
+    # region change.
+    for shared in (
+        "1. Is the {target_object} visible in this image?",
+        "3. Has the robot ARRIVED at the {target_object}?",
+        "4. What kind of room does this look like",
+        "5. Given the above, what is the single best next action to get closer to the\n"
+        "   {target_object} while not colliding with anything?{searched_rooms_note}",
+    ):
+        assert shared in default
+        assert shared in variant
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("open_floor", "open_floor"),
+    ("blocked", "blocked"),
+    ("unclear", "unclear"),
+    ("clear", "unclear"),        # plausible, off the allow-list, still refused
+    ("OPEN_FLOOR", "unclear"),   # case is not normalised on purpose
+    (None, "unclear"),
+])
+def test_an_unrecognised_path_ahead_becomes_unclear(raw, expected):
+    """Same contract as distance_estimate: anything unrecognised fails
+    towards "do not act on it", never towards a made-up confidence."""
+    import json as _json
+
+    import vision_core
+
+    payload = {"target_visible": False, "target_direction": "not_visible",
+               "target_reached": False, "obstacle_ahead": False,
+               "room_guess": "kitchen", "action": "FORWARD",
+               "reasoning": "x"}
+    if raw is not None:
+        payload["path_ahead"] = raw
+    parsed = vision_core._parse_navigate_json(_json.dumps(payload))
+    assert parsed["path_ahead"] == expected
+
+
+def test_path_ahead_is_always_present_even_on_a_garbage_reply():
+    """A client should never have to tell "the model said nothing" apart from
+    "this variant does not ask"."""
+    import vision_core
+
+    assert vision_core._parse_navigate_json("not json at all")["path_ahead"] == "unclear"
+
+
+def test_obstacle_ahead_is_not_recomputed_from_path_ahead():
+    """The prompt asks the model to keep the two in step, and whether it
+    actually does is the measurement. Deriving one from the other in the
+    parser would manufacture the agreement and hide the disagreement worth
+    seeing -- the same mistake as grading a replay without reading its
+    coverage."""
+    import json as _json
+
+    import vision_core
+
+    parsed = vision_core._parse_navigate_json(_json.dumps({
+        "target_visible": False, "target_direction": "not_visible",
+        "target_reached": False, "obstacle_ahead": False,
+        "room_guess": "kitchen", "action": "FORWARD",
+        "path_ahead": "blocked", "reasoning": "x"}))
+    assert parsed["path_ahead"] == "blocked"
+    assert parsed["obstacle_ahead"] is False

@@ -469,6 +469,95 @@ Respond with ONLY a JSON object, no other text, matching this schema:
   "reasoning": "one short sentence explaining the choice"
 }}"""
 
+# The fourth attempt at the obstacle question, and the first that changes its
+# SHAPE rather than its wording. The three before it -- the default,
+# "next-step-obstacle" and "next-step-and-walls" -- all asked some version of
+# "is there an obstacle ahead", and all three failed in one of two ways: a
+# model that treats any furniture in the room as a reason never to move, or
+# one that has stopped seeing walls. `default-with-distance` then asked how
+# much clearance there is and skewed the same direction: 60% of frames from a
+# walk across a house came back "within_one_step". CLAUDE.md's Stage 0 notes
+# and NAVIGATE_PROMPT_WITH_DISTANCE above carry both measurements.
+#
+# The common failure is one of SCOPE, not of judgement. "Is there an obstacle
+# ahead" is a question about the whole frame, and in an indoor room the honest
+# answer is almost always yes -- there is always a wall somewhere in front of
+# you. The model is not wrong; it is answering a question that cannot
+# discriminate. So this variant asks about the one region the answer is
+# actually about: the patch of ground the robot would drive over on its next
+# step, which is the bottom half of the center third.
+#
+# Three changes, all serving that:
+#
+#   1. REGION. Only the bottom half of the center third counts, and the prompt
+#      says outright that the side thirds and everything above the halfway
+#      line are not in the path however close or large they look. The frame
+#      already has thirds -- questions 1 and 3 use them -- so this reuses a
+#      frame of reference the model has been given rather than inventing one.
+#   2. DESCRIPTIVE, NOT EVALUATIVE. It asks what IS there, not whether that
+#      counts as an obstacle. A cautious model can answer "yes, there is an
+#      obstacle" truthfully about almost any room; it cannot answer
+#      "open_floor" about a wall filling the patch. Naming the ground types
+#      first is deliberate for the same reason -- "I see a rug" should resolve
+#      towards open, not towards caution.
+#   3. obstacle_ahead IS DERIVED FROM IT, not asked separately. The prompt
+#      says to set it true when and only when the answer is "blocked", so it
+#      is a restatement rather than a second opinion. This is what keeps the
+#      variant drop-in comparable: walk_eval's FORWARD rate and collision
+#      check read obstacle_ahead, so the new question can be scored in the
+#      existing table with no change to the harness.
+#
+# **ONLY question 2 changes.** Questions 1, 3, 4 and 5 are byte-identical to
+# the default, by construction -- this is built by string surgery on
+# NAVIGATE_PROMPT_TEMPLATE, the same way NAVIGATE_PROMPT_WITH_DISTANCE is, so
+# the two cannot drift. That is the whole experiment: "next-step-obstacle"
+# moved question 2 AND question 5 at once and went degenerate, and there was
+# no way to tell which half did it. If this variant still comes back
+# always-FORWARD with question 5 untouched, the answer is that question 5 is
+# the problem, and that is worth knowing.
+#
+# **NOT MEASURED YET.** It is a variant and not the default for the reason
+# every other one is: the Stage 0 table measured the default's exact wording,
+# and production serves this file. Replay it over the same frames before
+# believing anything about it -- and read the coverage before the score.
+_CENTER_THIRD_QUESTION = """2. Look ONLY at the bottom half of the center third: the patch of ground the
+   robot would drive over on its next single step. Everything else in this
+   image -- both side thirds, and everything above the halfway line -- is NOT
+   in the robot's path for this step, however close or large it looks. What
+   is in that patch?
+   - "open_floor": floor, rug, carpet or any other surface the robot could
+     roll across. Choose this whenever that patch is ground, even when
+     furniture, walls or people are visible elsewhere in the frame.
+   - "blocked": a wall, door, item of furniture, step or person occupies
+     that patch, so the robot cannot drive through it.
+   - "unclear": the patch is too dark, too blurred or too close to identify.
+   The {target_object} is the one thing that never counts as "blocked" --
+   reaching it is the goal, not a collision, so judge the ground around it.
+   Then set "obstacle_ahead" true when and ONLY when this answer is
+   "blocked". It is a restatement of this question, not a second opinion
+   about the room."""
+
+NAVIGATE_PROMPT_CENTER_THIRD = (
+    NAVIGATE_PROMPT_TEMPLATE
+    .replace(
+        "2. Is there an obstacle directly ahead that would block moving forward?",
+        _CENTER_THIRD_QUESTION,
+    )
+    .replace(
+        '  "reasoning": "one short sentence explaining the choice"',
+        '  "path_ahead": "open_floor" | "blocked" | "unclear",\n'
+        '  "reasoning": "one short sentence explaining the choice"',
+    )
+)
+
+NAVIGATE_PROMPT_VARIANTS["center-third-path"] = NAVIGATE_PROMPT_CENTER_THIRD
+
+# What is in the robot's path, as opposed to what is nearest anywhere in
+# frame. "unclear" is the only value that must never be acted on -- same
+# contract as DISTANCE_ESTIMATES above.
+PATH_AHEAD_VALUES = ("open_floor", "blocked", "unclear")
+
+
 DEFAULT_PROMPT_VARIANT = os.environ.get("NAVIGATE_PROMPT_VARIANT", "default")
 
 
@@ -501,6 +590,8 @@ _NAVIGATE_EMPTY_SCHEMA = {
     # nothing" from "this prompt variant does not ask". "unknown" is the
     # only value that must never be acted on.
     "distance_estimate": "unknown",
+    # Same contract, for the center-third variant's question 2.
+    "path_ahead": "unclear",
 }
 
 # Ordinal, deliberately. See NAVIGATE_PROMPT_WITH_DISTANCE for why there is
@@ -599,6 +690,13 @@ def _parse_navigate_json(text: str) -> dict:
         # towards a made-up level of confidence.
         if merged.get("distance_estimate") not in DISTANCE_ESTIMATES:
             merged["distance_estimate"] = "unknown"
+        # Same treatment, and for the same reason: an unrecognised value has
+        # to fail towards "do not act on it". Note obstacle_ahead is NOT
+        # recomputed from this -- the prompt asks the model to keep the two
+        # in step, and quietly overwriting one with the other would hide
+        # exactly the disagreement worth measuring.
+        if merged.get("path_ahead") not in PATH_AHEAD_VALUES:
+            merged["path_ahead"] = "unclear"
         return merged
     except json.JSONDecodeError:
         logger.warning(f"Failed to parse VLM navigate response as JSON: {text!r}")
