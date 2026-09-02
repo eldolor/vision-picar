@@ -219,6 +219,7 @@
   }
   .tok-k{color:var(--accent-strong);}
   .tok-s{color:#E7C77A;} /* panel is always a dark "screen" surface in both page themes, so a fixed amber reads fine on it either way */
+  .tok-c{color:var(--panel-text-dim);font-style:italic;} /* an aside inside a schema block, not part of the schema */
 
   /* tables */
   .table-wrap{overflow-x:auto; margin:0 0 22px; border:1px solid var(--border); border-radius:10px;}
@@ -309,7 +310,7 @@
       <span class="chip"><b>4</b>&nbsp;tabs</span>
       <span class="chip"><b>3</b>&nbsp;backend processes</span>
       <span class="chip"><b>7</b>&nbsp;AWS stacks, one shared ALB</span>
-      <span class="chip">written against <b>01054a0</b>, which lands <b>PLAN&#8209;teleop&#8209;robot.md</b></span>
+      <span class="chip">written against <b>0925301</b>, which lands <b>M1</b> of <b>PLAN&#8209;microduck&#8209;transplants.md</b></span>
     </div>
   </header>
 
@@ -537,7 +538,8 @@
 
         <p>Robot view has <strong>three distinct behaviors</strong>, as
           switches next to the target field &mdash; only visible in this mode,
-          mutually exclusive with each other:</p>
+          mutually exclusive with each other &mdash; plus two <em>pickers</em>
+          (1.2.d) that apply whichever of the three you choose:</p>
 
         <div class="panel-wrap">
           <div class="panel">
@@ -553,7 +555,8 @@
           <div class="mode-card__head"><span class="mode-tag">1.2.a</span><h4>Default &middot; one-off <code>/navigate</code> preview</h4></div>
           <p class="meta-line"><b>Backend</b> &middot; <code>POST /navigate</code>,
             same request/response plumbing as Guide me, different prompt and
-            schema, also Nova Lite by default.</p>
+            schema. Claude Opus 4.5 by default &mdash; and both the model and
+            the <em>wording</em> are pickers, not constants: see below.</p>
           <div class="panel-wrap" style="margin-top:14px;">
             <div class="panel">
               <span class="cap">/navigate response</span>
@@ -561,7 +564,8 @@
   <span class="tok-k">"target_visible"</span>: true | false,
   <span class="tok-k">"target_direction"</span>: <span class="tok-s">"left"</span> | <span class="tok-s">"center"</span> | <span class="tok-s">"right"</span> | <span class="tok-s">"not_visible"</span>,
   <span class="tok-k">"target_reached"</span>: true | false,
-  <span class="tok-k">"obstacle_ahead"</span>: true | false,
+  <span class="tok-k">"obstacle_ahead"</span>: true | false,   <span class="tok-c">// absent under "bearing-only"</span>
+  <span class="tok-k">"room_guess"</span>: <span class="tok-s">"kitchen"</span> | <span class="tok-s">"hallway"</span> | &hellip; | <span class="tok-s">"unclear"</span>,
   <span class="tok-k">"action"</span>: <span class="tok-s">"FORWARD"</span> | <span class="tok-s">"LEFT"</span> | <span class="tok-s">"RIGHT"</span> | <span class="tok-s">"REVERSE"</span> | <span class="tok-s">"STOP"</span>,
   <span class="tok-k">"reasoning"</span>: <span class="tok-s">"one short sentence"</span>
 }</pre>
@@ -593,7 +597,43 @@
               height. This is Stage 0 of the build plan: the cheapest, fastest
               go/no-go signal for whether the vision model can navigate real
               rooms at all.</li>
+            <li><strong>A session's calls die with it.</strong> Calls overlap
+              (up to two in flight), so each one carries both a sequence
+              number and the <em>run</em> it belongs to. Without the second,
+              a call still outstanding when you pressed Stop would land in
+              the <em>next</em> session, flash its answer over the new camera
+              view, and then suppress that run's first few real decisions by
+              claiming their sequence numbers. Reported from a phone as a
+              brief flicker; the suppression was the larger, invisible
+              half.</li>
           </ul>
+        </div>
+
+        <div class="mode-card">
+          <div class="mode-card__head"><span class="mode-tag">1.2.d</span><h4>Two pickers &middot; which model, and which wording</h4></div>
+          <p>Both are served from the vision service's own allow-lists
+            (<code>GET /navigate/models</code>, which publishes
+            <code>models</code> and <code>prompts</code> together), so this
+            page never hard-codes ids that drift. Each is echoed back on every
+            reply, so a recorded walk can say what produced it &mdash; the one
+            real failure this project has had was a week of walks attributed
+            to a model that was never running.</p>
+          <p><strong>The wording is at least as strong a lever as the model.</strong>
+            The same recorded walk, replayed through every combination at 100%
+            coverage, moved one model's FORWARD rate from 0.000 to 1.000
+            without changing the model. Five wordings now ship. The current
+            default asks whether there is an obstacle ahead;
+            <code>bearing-only</code> deletes that question outright and omits
+            <code>obstacle_ahead</code> from the reply, on the argument that a
+            single photograph does not contain distance and a sensor should
+            own it. It is the only wording that leaves no model degenerate
+            &mdash; and it is not the default, because that judgement needs a
+            real distance sensor to settle.</p>
+          <p>The pickers live here, next to Robot view, because this is the
+            flow that produces something comparable. They apply to
+            &ldquo;Drive via brain&rdquo; and to the Sim tab's remote brain on
+            the vision policy too, which is why choosing that policy reveals
+            them.</p>
         </div>
 
         <div class="mode-card">
@@ -690,7 +730,11 @@ control/brain_server.py -&gt; MissionRunner -&gt; VisionAgent -&gt; vision_fn_fo
               is still plain <code>mode: sim</code>, this fails loudly here
               instead of 404-ing silently on the first frame push.</li>
             <li><code>POST {brainUrl}/mission/start</code> with
-              <code>{policy: "vision", target_object}</code>. The brain's
+              <code>{policy: "vision", target_object}</code>, plus
+              <code>model_id</code> and <code>prompt_variant</code> when
+              picked &mdash; both validated against the vision service's
+              published allow-lists in one round trip at start, so a typo is a
+              refusal rather than three burnt vision failures. The brain's
               runner factory resolves the vision policy into a real
               <code>vision_fn</code> bound to the configured vision service
               &mdash; the function that actually calls <code>/navigate</code>
@@ -857,20 +901,33 @@ control/brain_server.py -&gt; MissionRunner -&gt; VisionAgent -&gt; vision_fn_fo
             guards that can't be provoked by pressing anything can still be
             watched firing, always ending with the robot stopped. A
             <strong>watchdog readout</strong> shows the server's own silence
-            counter.</li>
+            counter. A <strong>policy picker</strong> chooses between the free
+            rule-based explorer and the <strong>vision policy</strong>
+            (<code>brain/vision_agent.py</code>) &mdash; one paid
+            <code>/navigate</code> call per step, and the policy that will be
+            on the robot. Picking it reveals the Guide tab's model and wording
+            pickers, sends both with the start, and states in words which of
+            each the mission would ask with before you spend anything.</li>
           <li><strong>Local brain, rule-based</strong> (Explore / Find
             backpack / Reset) &mdash; the frontier-preference algorithm from
             <code>brain/agent.py</code>, re-implemented in JavaScript, driving
             the same <code>/action</code> calls a human would. Free, no API
             calls, kept specifically because it needs no brain service and
             exercises the safety layer without cost.</li>
-          <li><strong>Local brain, Vision Autopilot</strong> &mdash; since the
-            grid-world sim has no real camera, a small canvas raycaster
-            renders a synthetic first-person frame, posts it to
-            <code>/navigate</code> every ~2.5s, and executes whatever action
-            comes back through the same safety-veto path. Never
-            auto-starts; a visible call counter and step cap bound the
-            cost.</li>
+          <li><strong>Local brain, Vision Autopilot</strong> &mdash; the
+            grid-world sim has no real camera, so a raycaster renders a
+            synthetic first-person frame, which is posted to
+            <code>/navigate</code> every ~2.5s and executed through the same
+            safety-veto path. Since phase S2 that render lives in
+            <code>sim/renderer.py</code> and arrives with the frame; the
+            canvas version here is the fallback for a server that predates it,
+            and a &ldquo;frame source: server / local&rdquo; readout says
+            which one drew the picture. Never auto-starts; a visible call
+            counter and step cap bound the cost. Both renderers light the
+            ceiling and floor with their own constants rather than the app's
+            dark UI colours &mdash; borrowing those painted a room as a black
+            void, and two closed-loop missions spent 80 paid calls being told
+            the frame was &ldquo;very dark and unclear.&rdquo;</li>
         </ul>
         <p style="margin-bottom:0;"><strong>Remote and Local brains are
           mutually exclusive</strong>, enforced both directions: the twin
@@ -1018,7 +1075,7 @@ control/brain_server.py -&gt; MissionRunner -&gt; VisionAgent -&gt; vision_fn_fo
             <thead><tr><th>Route</th><th>Model</th><th>Why</th></tr></thead>
             <tbody>
               <tr><td class="mono">/analyze</td><td class="mono">us.anthropic.claude&#8209;sonnet&#8209;4&#8209;5&#8209;20250929&#8209;v1:0</td><td>One-shot photo analysis &mdash; accuracy over latency</td></tr>
-              <tr><td class="mono">/navigate</td><td class="mono">amazon.nova&#8209;lite&#8209;v1:0</td><td>Several-times-a-second loop &mdash; latency dominates the experience</td></tr>
+              <tr><td class="mono">/navigate</td><td class="mono">us.anthropic.claude&#8209;opus&#8209;4&#8209;5&#8209;20251101&#8209;v1:0</td><td>Chosen by measurement, not by latency &mdash; all 22 frames of one recorded walk replayed through every invokable vision model on the account. See the model picker below</td></tr>
               <tr><td class="mono">/guidance</td><td class="mono">amazon.nova&#8209;lite&#8209;v1:0</td><td>Same &mdash; a continuous, timer-throttled loop</td></tr>
             </tbody>
           </table>
