@@ -849,7 +849,7 @@
               <tr><td>Motor driver (TB6612FNG)</td><td class="mono">10</td><td>0 if the kit includes one</td></tr>
               <tr><td>Camera Module 3</td><td class="mono">30</td><td>Q4 may change this</td></tr>
               <tr><td>Pan/tilt bracket + SG90s</td><td class="mono">12</td><td>Replaces what the PiCar-X bundled</td></tr>
-              <tr><td>2S Li-ion pack + charger</td><td class="mono">30</td><td>Motor rail only (§1.3)</td></tr>
+              <tr><td class="strong">3S Li-ion pack + charger</td><td class="mono">35</td><td>Motor rail only (§1.3). <b>Not 2S</b> — see the correction below</td></tr>
               <tr><td>Wiring, connectors, switch, XT60</td><td class="mono">15</td><td></td></tr>
               <tr><td>Standoffs, M2.5/M3 hardware</td><td class="mono">10</td><td>For stacking decks</td></tr>
               <tr><td class="strong">Subtotal</td><td class="mono strong">~407</td><td></td></tr>
@@ -863,7 +863,7 @@
             <thead><tr><th>Item</th><th class="mono">~USD</th><th>Avoids</th></tr></thead>
             <tbody>
               <tr><td>Powered USB hub</td><td class="mono">15</td><td>The 600 mA USB cap browning out the Pi (§1.3)</td></tr>
-              <tr><td>IMU (MPU6050 / BNO055)</td><td class="mono">10</td><td>Heading drift between scans — <b>matters much more under (b+)</b></td></tr>
+              <tr><td>IMU (MPU6050 / BNO055)</td><td class="mono">10</td><td>Heading drift between scans — <b>matters much more under (b+)</b>. May be <b>0</b> if the motor-driver board carries one</td></tr>
               <tr><td>5 V buck converter</td><td class="mono">8</td><td>If the Pi is ever taken off the bank and onto the pack</td></tr>
               <tr><td>Lidar mount, 3D printed</td><td class="mono">15</td><td>0 with a printer</td></tr>
               <tr><td>Jumper wires, misc</td><td class="mono">10</td><td></td></tr>
@@ -892,6 +892,34 @@
         </div>
 
         <p>Already owned, $0: the power bank (§1.3). Deferred, possibly never: any AI accelerator (§4.5). <b>Budget ~$450–500</b>, and the two variables that move it are whether a Pi 5 is already owned and how Q4 resolves.</p>
+
+        <div class="caution">
+          <span class="flag">Correction · 2026-09-03 · the pack is 3S, not 2S</span>
+          <p>The first draft specced a 2S (7.4 V) pack. Every serious differential chassis surveyed — iDili R3, Yahboom’s 520-motor kits — ships <b>12 V</b> gear motors, which run underpowered and sluggish on 7.4 V. <b>3S (11.1 V)</b> is right.</p>
+          <p>Found by pricing real products rather than by reasoning, which is the argument for pricing real products.</p>
+        </div>
+
+        <p><b>Two line items may collapse into one.</b> A combined motor-driver board — the Waveshare General Driver for Robots, ~$30 — can carry the TB6612-class driver, encoder inputs, servo ports <b>and an IMU</b> on one board, replacing two separate purchases. <em>Verify the IMU is present before relying on it</em>; the saving is real but the claim is second-hand.</p>
+
+        <p><b>A chassis’s own battery may replace the pack.</b> Some kits ship a protected lithium pack — check its voltage against §1.3’s two-rail plan before buying a second one.</p>
+
+        <h3 class="feat-title">3.7 &nbsp;Two ways to buy this, and the second was nearly missed</h3>
+
+        <p>§3.6 prices <b>parts, integrated by hand</b>. There is a second path, and it was almost filtered out of a market survey on a false premise — that a lidar had already been bought, when nothing has been ordered at all.</p>
+
+        <div class="mode-card">
+          <div class="mode-card__head"><span class="mode-tag">alternative</span><h4>A complete ROS 2 platform</h4></div>
+          <p>Yahboom ROSMASTER, Hiwonder LanderPi and similar ship chassis, encoder motors, driver, lidar and often a depth camera as one unit — with working launch files, a URDF, TF frames already configured, and documentation. Roughly <b>$400–700</b>.</p>
+          <p><b>The comparison is not really about money.</b> §3.3 named (b+)’s cost as <em>weeks, and most of it learning rather than writing</em>. A platform that boots into a working nav2 stack deletes most of that, and against ~$465 of separate parts plus the integration it may be cheaper in the only currency that is scarce here.</p>
+          <p><b>What it costs instead:</b> less learned by assembling it, possible lock-in to the vendor’s stack, and the lidar is inherited rather than chosen — which reopens §1.2.</p>
+          <p><b>Not decided.</b> Recorded because dismissing it required believing something untrue.</p>
+        </div>
+
+        <div class="finding">
+          <span class="flag">One specification this document had missed</span>
+          <p>A <b>circular</b> footprint. The obvious reason — fewer lidar shadow zones — is weak, since the lidar sits on a raised plate and the chassis barely occludes it.</p>
+          <p><b>The real reason is nav2.</b> A circular robot has a constant turning radius, so its costmap footprint is a single <code>robot_radius</code> rather than a polygon, and <b>rotating in place is always safe</b>. A rectangular robot sweeps a circle wider than itself when it pivots and can clip a doorframe it is nominally clear of. Given §1.1 chose differential drive <em>specifically to rotate in place</em>, that is worth more than it first appears — though not unconditionally worth a large premium from an unknown vendor with no ROS 2 community.</p>
+        </div>
       </section>
 
       <!-- ===================== 4 ===================== -->

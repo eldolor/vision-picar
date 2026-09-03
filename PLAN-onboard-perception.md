@@ -566,7 +566,7 @@ should be checked before ordering.
 | Motor driver (TB6612FNG) | 10 | 0 if the kit includes one |
 | Camera Module 3 | 30 | Q4 may change this |
 | 2-axis pan/tilt bracket + SG90s | 12 | Replaces what the PiCar-X bundled |
-| 2S Li-ion pack + charger | 30 | Motor rail only (1.3) |
+| **3S** Li-ion pack + charger | 35 | Motor rail only (1.3). **Not 2S** -- see the correction below |
 | Wiring, connectors, switch, XT60 | 15 | |
 | Standoffs, M2.5/M3 hardware | 10 | For stacking decks |
 | | **~407** | |
@@ -576,7 +576,7 @@ should be checked before ordering.
 | Item | ~USD | Avoids |
 |---|---|---|
 | Powered USB hub | 15 | The 600mA USB cap browning out the Pi (1.3) |
-| IMU (MPU6050 / BNO055) | 10 | Heading drift between scans -- **matters much more under (b+)** |
+| IMU (MPU6050 / BNO055) | 10 | Heading drift between scans -- **matters much more under (b+)**. May be **0** if the motor-driver board carries one; verify before buying separately |
 | 5V buck converter | 8 | If the Pi is ever taken off the bank and onto the pack |
 | Lidar mount, 3D printed | 15 | 0 with a printer |
 | Jumper wires, misc | 10 | |
@@ -602,6 +602,59 @@ should be checked before ordering.
 Already owned, 0: the power bank (1.3). Deferred, possibly never: any AI
 accelerator (4.5). **Budget ~450-500**, and the two variables that move it are
 whether a Pi 5 is already owned and how Q4 resolves.
+
+**Correction, 2026-09-03: the pack is 3S, not 2S.** The first draft of this
+table specced a 2S (7.4V) pack. Every serious differential chassis surveyed --
+iDili R3, Yahboom's 520-motor kits -- ships **12V** gear motors, which run
+underpowered and sluggish on 7.4V. **3S (11.1V)** is the right pack. Found by
+pricing real products rather than by reasoning, which is the argument for
+pricing real products.
+
+**Two line items may collapse into one.** A combined motor-driver board -- the
+Waveshare General Driver for Robots is the example that came up, ~30 -- can
+carry the TB6612-class driver, the encoder inputs, servo ports **and an IMU**
+on one board. If it does, it replaces the separate motor driver and the
+separate IMU together. **Verify the IMU is present before relying on it**; the
+saving is real but the claim is second-hand.
+
+**A chassis's own battery may replace the pack.** Some kits (the iDili R3) ship
+a protected lithium pack. Check its voltage against 1.3's two-rail plan before
+buying a second one.
+
+### 3.7 Two ways to buy this, and the second was nearly missed
+
+The table above prices **parts, integrated by hand**. There is a second path,
+and it was almost filtered out of a market survey on a false premise -- that a
+lidar had already been bought, when nothing has been ordered at all.
+
+**Complete ROS 2 platforms** (Yahboom ROSMASTER, Hiwonder LanderPi and similar)
+ship chassis, encoder motors, driver, lidar and often a depth camera as one
+unit, with working launch files, a URDF, TF frames already configured, and
+documentation. Roughly 400-700.
+
+**The comparison is not really about money.** (b+)'s cost was named in 3.3 as
+*weeks, and most of it learning rather than writing* -- TF frames, a URDF,
+nav2 parameters, launch files. A platform that boots into a working nav2 stack
+deletes most of that, and against ~465 of separate parts plus the integration
+it may be the cheaper path in the only currency that is scarce here.
+
+**What it costs instead:** less learned by assembling it, possible lock-in to
+the vendor's software stack, and the lidar is inherited rather than chosen --
+which would reopen 1.2.
+
+**Not decided.** Recorded because dismissing it required believing something
+untrue, and that is the kind of premise worth writing down.
+
+**One specification the survey added that this document had not:** a
+**circular** footprint. The stated reason -- fewer lidar shadow zones -- is
+weak, since the lidar sits on a raised plate and the chassis barely occludes
+it. The real reason is nav2: a circular robot has a constant turning radius, so
+its costmap footprint is a single `robot_radius` rather than a polygon, and
+**rotating in place is always safe**. A rectangular robot sweeps a circle wider
+than itself when it pivots and can clip a doorframe it is nominally clear of.
+Given 1.1 chose differential drive *specifically to rotate in place*, that is
+worth more than it first appears -- though not unconditionally worth a large
+price premium from an unknown vendor with no ROS 2 community.
 
 ---
 
