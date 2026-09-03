@@ -236,7 +236,7 @@ go past.** A forward-only sensor cannot do this at all, which is another point
 for 360 degrees over the 8x8 ToF originally proposed, and it only surfaced by
 working a stop condition through properly.
 
-### 1.9 A live tension, not yet resolved
+### 1.9 A live tension -- **CLOSED by 1.10**
 
 **4.5's "accelerator possibly never" and 1.8's `approach` pull against each
 other.** With no on-device detector the target bearing arrives at deliberation
@@ -250,6 +250,81 @@ short hops and let the planner re-issue, which erodes the trigger discipline; or
 **let the lidar carry it once locked** -- take one bearing fix, then track that
 geometric feature in the scan while closing. The first is cheapest, the third is
 the most elegant and the most work. **Q4's subject.**
+
+**Resolved by buying the sensor (1.10).** With an on-sensor detector the bearing
+is fresh at sensor rate, so `approach` is closed loop on both halves -- the
+detector for direction, the lidar for distance. None of the three workarounds is
+needed.
+
+### 1.10 The reactive tier: **two layers**, and an IMX500
+
+**Decided: the AI Camera (Sony IMX500) up front**, not a Camera Module 3 with an
+accelerator deferred. It runs its network **on the sensor**, so detection costs
+the Pi's cores nothing -- which matters most exactly where it would be felt,
+under (b+), sharing four cores with `slam_toolbox` and nav2.
+
+**And that decision simplified the design it was made for.** A three-layer
+scheme had been proposed: VLM for identity, **lidar blob tracking** for
+continuous bearing, and a CPU detector to re-acquire when tracking broke. Layer
+two existed for one reason -- *you should not have to re-detect the target ten
+times a second*. With an on-sensor detector that is free and continuous, so:
+
+| | Was going to be | Now |
+|---|---|---|
+| Continuous bearing | lidar blob tracking + data association | **the detector, directly** |
+| Range to target | lidar at the tracked blob | **lidar at the detector's bearing** -- 1.8, already decided |
+| Re-acquisition | a CPU detector as backup | **not a thing** -- tracking cannot break if detection never stopped |
+
+**Same shape as 1.6:** an intricate mechanism designed around an absence,
+cancelled once the absence was filled. What remains is what 1.8 already
+specified -- the detector points, the lidar measures -- plus the VLM as the
+deliberation tier that already exists. No new tracking machinery.
+
+#### Why not a CPU detector
+
+Under (a) a single-class detector at a few Hz is comfortable on four
+Cortex-A76 cores and costs nothing. Under (b+) it shares those cores with SLAM,
+which is a sustained load. Paying ~$40 to move the work onto the sensor buys
+CPU headroom at exactly the point the design gets tight, and closes the camera
+question rather than deferring it.
+
+#### What it commits to, and the one thing to verify first
+
+The IMX500 runs models compiled through **Sony's toolchain**, not arbitrary
+ONNX -- the same class of friction as Hailo's DFC.
+
+1. **Verify the bundled model zoo covers COCO before ordering.** The Raspberry
+   Pi AI Camera ships example models (MobileNet-SSD class); COCO's 80 should
+   include `backpack` and `bottle`. If so, 4.2's zero-training finding holds.
+   **This is the one check that could undermine the choice.**
+2. **A custom class later is a toolchain project**, not an afternoon. Fine
+   while COCO covers the targets.
+
+**A limitation that no longer matters:** the IMX500 emits detections, not
+embeddings. That was the sub-question withdrawn when 1.6 cancelled the
+visual-edge design, so the decisions stay consistent.
+
+### 1.11 Arbitration: split by question, not by authority
+
+Microduck's `architecture.md` §6 rule -- *decided priority, not
+last-writer-wins* -- governs **control**. This governs **facts**, so the rule is
+different: each question goes to whichever source can actually answer it.
+
+| Question | Who wins | Why |
+|---|---|---|
+| **Is it a red backpack?** | **VLM** | more capable at semantics, and it holds the mission's definition of the target |
+| **What bearing?** | **detector** | geometric precision beats a natural-language direction |
+| **How far?** | **lidar** | 1.8's fusion -- range at the detector's bearing |
+| **Is it there right now?** | **detector** (fresh) | but a VLM "not here" **triggers re-confirmation**, never a silent override |
+| **Can I reach it?** | **planner** | it knows the mission, the memory and the map |
+| **Will I hit something?** | **lidar + collar** | no vote, ever |
+
+**The instinct that "if Bedrock is more capable, the planner wins" holds where it
+should and only there.** It is right for *identity* and wrong for *geometry*: a
+COCO detector is measurably better than a VLM at the one thing `approach` needs,
+because a bounding box is a bearing and "slightly to the left" is not. Stage 0
+already established that every model identifies a red backpack -- capability was
+never the scarce thing. Precision was.
 
 ---
 
@@ -564,12 +639,12 @@ should be checked before ordering.
 | **Slamtec RPLidar C1** | 99 | 1.2 |
 | Differential chassis kit, **encoder motors** | 69 | Yahboom 2WD, chosen -- 3.8 |
 | Motor driver (TB6612FNG) | 0 | **Included** with the Yahboom kit -- IC unconfirmed (3.8) |
-| Camera Module 3 | 30 | Q4 may change this |
+| **AI Camera (IMX500)** | 70 | Q4 decided -- 1.10. Was Camera Module 3 at 30 |
 | 2-axis pan/tilt bracket + SG90s | 12 | Replaces what the PiCar-X bundled |
 | **3S** Li-ion pack + charger | 35 | Motor rail only (1.3). **Not 2S** -- see the correction below |
 | Wiring, connectors, switch, XT60 | 15 | |
 | Standoffs, M2.5/M3 hardware | 10 | For stacking decks |
-| | **~365** | Was ~407 before the chassis was priced |
+| | **~405** | Chassis priced down (3.8), camera up (1.10) |
 
 **Strongly recommended -- each avoids a failure already discussed here**
 
@@ -587,20 +662,20 @@ should be checked before ordering.
 | Item | ~USD | Why |
 |---|---|---|
 | NVMe SSD + M.2 HAT | 45 | **SD cards corrupt on brownout**, which is the exact failure 1.3 is written about. The one item here that prevents losing work rather than an annoyance |
-| AI Camera (IMX500) instead of Camera Module 3 | +40 | Q4, still open |
+| ~~AI Camera instead of Camera Module 3~~ | -- | **Decided (1.10)** -- moved into the essential list |
 
 **Totals**
 
 | Scenario | ~USD |
 |---|---|
-| Essential only | 365 |
-| **+ recommended** | **423** |
-| + NVMe | 468 |
-| + AI Camera instead | 508 |
+| Essential only | 405 |
+| **+ recommended** | **463** |
+| + NVMe | 508 |
+| ~~+ AI Camera instead~~ | now in the essential list |
 | Already own a Pi 5 | subtract ~100 |
 
 Already owned, 0: the power bank (1.3). Deferred, possibly never: any AI
-accelerator (4.5). **Budget ~400-470**, and the two variables that move it are whether a Pi 5 is
+accelerator (4.5). **Budget ~460-510**, and the two variables that move it are whether a Pi 5 is
 already owned and how Q4 resolves. Revised down from ~450-500 once the chassis
 was priced against real listings rather than estimated (3.8).
 
@@ -943,11 +1018,12 @@ the re-recorded corpus before anyone quotes it.
 
 ### 6.2 Still to discuss
 
-Q2 (goal vocabulary) and Q3 (stop conditions) are **settled** -- see 1.7 and 1.8.
+Q2 (goal vocabulary), Q3 (stop conditions) and Q4 (the detector, and
+arbitration) are **settled** -- see 1.7, 1.8, 1.10 and 1.11. Q5 is what is
+left.
 
 | # | Question | Why it is not obvious |
 |---|---|---|
-| Q4 | **Who arbitrates a confident detector against a planner that says the target is not here?** -- and, from 1.9, **is there an on-device detector at all?** | M4's subject, and Microduck's own open #3. The IMX500-embedding sub-question is **withdrawn**: 1.6 cancels the visual-edge design, so Q4 turns on detection quality and on 1.9's stale-bearing problem, not on embeddings |
 | Q5 | **Does the sim participate at all?** | `sim/renderer.py` renders flat-shaded walls; a COCO detector finds nothing in them, so a sim backend would have to synthesise detections -- making the sim leg unable to test the detector, only its consumers |
 
 ### 6.3 What it owes the twin

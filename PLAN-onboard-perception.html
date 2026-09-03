@@ -389,7 +389,7 @@
       <span class="chip"><b>Date</b> 2026-09-03</span>
       <span class="chip"><b>Chassis</b> differential</span>
       <span class="chip"><b>Lidar</b> (a) → (b+)</span>
-      <span class="chip"><b>Budget</b> ~$423</span>
+      <span class="chip"><b>Budget</b> ~$463</span>
     </div>
     <div class="jump-row">
       <a class="jump-link" href="#decisions"><span class="jl-label">The decisions</span></a>
@@ -604,14 +604,79 @@
 
         <p><b><code>traverse</code> has the hard stop condition, and 360° is what answers it.</b> “Have I passed through the doorway” is a fact about <em>where you are</em>, with no map to check against. But a doorway is a narrow gap between two returns, and passing through means those returns slide from ahead, to beside, to behind — <b>the lidar watches the frame go past.</b> A forward-only sensor cannot do this at all: another point for 360° over the 8×8 ToF originally proposed, and it surfaced only by working a stop condition through properly.</p>
 
-        <h3 class="feat-title">1.9 &nbsp;A live tension, not yet resolved</h3>
+        <h3 class="feat-title">1.9 &nbsp;A live tension — <b>closed by §1.10</b></h3>
 
         <div class="caution">
           <span class="flag">§4.5 and §1.8 pull against each other</span>
           <p>With no on-device detector the target bearing arrives at deliberation rate — <b>1–3 seconds stale</b> — so <code>approach</code> is open loop on the semantic half while the lidar closes the loop on clearance. This project has been burned by an open-loop assumption before (<code>sim/replay_robot.py</code>’s docstring).</p>
         </div>
 
-        <p>Three ways out: a <b>cheap CPU detector</b> (stock YOLO11n on the Pi 5’s own cores, a few Hz — no accelerator, no purchase); accept open-loop <code>approach</code> over short hops and let the planner re-issue, which erodes the trigger discipline; or <b>let the lidar carry it once locked</b> — take one bearing fix, then track that geometric feature in the scan while closing. The first is cheapest, the third the most elegant and the most work. <b>Q4’s subject.</b></p>
+        <p>Three ways out: a <b>cheap CPU detector</b> (stock YOLO11n on the Pi 5’s own cores, a few Hz — no accelerator, no purchase); accept open-loop <code>approach</code> over short hops and let the planner re-issue, which erodes the trigger discipline; or <b>let the lidar carry it once locked</b> — take one bearing fix, then track that geometric feature in the scan while closing.</p>
+
+        <div class="finding">
+          <span class="flag">Resolved by buying the sensor</span>
+          <p>With an on-sensor detector the bearing is <b>fresh at sensor rate</b>, so <code>approach</code> is closed loop on both halves — the detector for direction, the lidar for distance. None of the three workarounds is needed. See §1.10.</p>
+        </div>
+
+        <h3 class="feat-title">1.10 &nbsp;The reactive tier: <b>two layers</b>, and an IMX500</h3>
+
+        <p><b>Decided: the AI Camera (Sony IMX500) up front</b>, not a Camera Module 3 with an accelerator deferred. It runs its network <b>on the sensor</b>, so detection costs the Pi’s cores nothing — which matters most exactly where it would be felt: under (b+), sharing four cores with <code>slam_toolbox</code> and nav2.</p>
+
+        <div class="finding">
+          <span class="flag">And the decision simplified the design it was made for</span>
+          <p>A three-layer scheme had been proposed: VLM for identity, <b>lidar blob tracking</b> for continuous bearing, and a CPU detector to re-acquire when tracking broke. Layer two existed for one reason — <em>you should not have to re-detect the target ten times a second.</em> With an on-sensor detector that is free and continuous.</p>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th></th><th>Was going to be</th><th>Now</th></tr></thead>
+            <tbody>
+              <tr><td class="strong">Continuous bearing</td><td>lidar blob tracking + data association</td><td><b>the detector, directly</b></td></tr>
+              <tr><td class="strong">Range to target</td><td>lidar at the tracked blob</td><td><b>lidar at the detector’s bearing</b> — §1.8, already decided</td></tr>
+              <tr><td class="strong">Re-acquisition</td><td>a CPU detector as backup</td><td><b>not a thing</b> — tracking cannot break if detection never stopped</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p><b>Same shape as §1.6:</b> an intricate mechanism designed around an absence, cancelled once the absence was filled. What remains is what §1.8 already specified — the detector points, the lidar measures — plus the VLM as the deliberation tier that already exists. No new tracking machinery.</p>
+
+        <h4 class="sub-title">Why not a CPU detector</h4>
+        <p>Under (a), single-class detection at a few Hz is comfortable on four Cortex-A76 cores and costs nothing. Under (b+) it shares those cores with SLAM, a sustained load. Paying ~$40 to move the work onto the sensor buys CPU headroom exactly where the design gets tight, and closes the camera question rather than deferring it.</p>
+
+        <h4 class="sub-title">What it commits to, and the one thing to verify first</h4>
+        <p>The IMX500 runs models compiled through <b>Sony’s toolchain</b>, not arbitrary ONNX — the same class of friction as Hailo’s DFC.</p>
+
+        <div class="caution">
+          <span class="flag">Check before ordering</span>
+          <p><b>Verify the bundled model zoo covers COCO.</b> The Raspberry Pi AI Camera ships example models (MobileNet-SSD class); COCO’s 80 should include <code>backpack</code> and <code>bottle</code>. If so, §4.2’s zero-training finding holds. <b>This is the one check that could undermine the choice.</b></p>
+          <p><b>A custom class later is a toolchain project</b>, not an afternoon. Fine while COCO covers the targets.</p>
+        </div>
+
+        <p><b>A limitation that no longer matters:</b> the IMX500 emits detections, not embeddings. That was the sub-question withdrawn when §1.6 cancelled the visual-edge design, so the decisions stay consistent.</p>
+
+        <h3 class="feat-title">1.11 &nbsp;Arbitration: split by question, not by authority</h3>
+
+        <p>Microduck’s <code>architecture.md</code> §6 rule — <em>decided priority, not last-writer-wins</em> — governs <b>control</b>. This governs <b>facts</b>, so the rule is different: each question goes to whichever source can actually answer it.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Question</th><th>Who wins</th><th>Why</th></tr></thead>
+            <tbody>
+              <tr><td class="strong">Is it a red backpack?</td><td><b>VLM</b></td><td>more capable at semantics, and it holds the mission’s definition of the target</td></tr>
+              <tr><td class="strong">What bearing?</td><td><b>detector</b></td><td>geometric precision beats a natural-language direction</td></tr>
+              <tr><td class="strong">How far?</td><td><b>lidar</b></td><td>§1.8’s fusion — range at the detector’s bearing</td></tr>
+              <tr><td class="strong">Is it there right now?</td><td><b>detector</b> (fresh)</td><td>but a VLM “not here” <b>triggers re-confirmation</b>, never a silent override</td></tr>
+              <tr><td class="strong">Can I reach it?</td><td><b>planner</b></td><td>it knows the mission, the memory and the map</td></tr>
+              <tr><td class="strong">Will I hit something?</td><td><b>lidar + collar</b></td><td>no vote, ever</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="finding">
+          <span class="flag">Where the “Bedrock is more capable” instinct holds</span>
+          <p>It is right for <em>identity</em> and wrong for <em>geometry</em>. A COCO detector is measurably better than a VLM at the one thing <code>approach</code> needs, because a bounding box <em>is</em> a bearing and “slightly to the left” is not.</p>
+          <p>Stage 0 already established that every model identifies a red backpack — <b>capability was never the scarce thing. Precision was.</b></p>
+        </div>
 
       </section>
 
@@ -847,12 +912,12 @@
               <tr><td class="strong">Slamtec RPLidar C1</td><td class="mono">99</td><td>§1.2</td></tr>
               <tr><td class="strong">Chassis kit, encoder motors</td><td class="mono">69</td><td>Yahboom 2WD, chosen — §3.8</td></tr>
               <tr><td>Motor driver (TB6612FNG)</td><td class="mono">0</td><td><b>Included</b> with the Yahboom kit — IC unconfirmed (§3.8)</td></tr>
-              <tr><td>Camera Module 3</td><td class="mono">30</td><td>Q4 may change this</td></tr>
+              <tr><td class="strong">AI Camera (IMX500)</td><td class="mono">70</td><td>Q4 decided — §1.10. Was Camera Module 3 at 30</td></tr>
               <tr><td>Pan/tilt bracket + SG90s</td><td class="mono">12</td><td>Replaces what the PiCar-X bundled</td></tr>
               <tr><td class="strong">3S Li-ion pack + charger</td><td class="mono">35</td><td>Motor rail only (§1.3). <b>Not 2S</b> — see the correction below</td></tr>
               <tr><td>Wiring, connectors, switch, XT60</td><td class="mono">15</td><td></td></tr>
               <tr><td>Standoffs, M2.5/M3 hardware</td><td class="mono">10</td><td>For stacking decks</td></tr>
-              <tr><td class="strong">Subtotal</td><td class="mono strong">~365</td><td>Was ~407 before the chassis was priced</td></tr>
+              <tr><td class="strong">Subtotal</td><td class="mono strong">~405</td><td>Chassis priced down (§3.8), camera up (§1.10)</td></tr>
             </tbody>
           </table>
         </div>
@@ -882,16 +947,15 @@
           <table>
             <thead><tr><th>Scenario</th><th class="mono">~USD</th></tr></thead>
             <tbody>
-              <tr><td>Essential only</td><td class="mono">365</td></tr>
-              <tr><td class="strong">+ recommended</td><td class="mono strong">423</td></tr>
-              <tr><td>+ NVMe</td><td class="mono">468</td></tr>
-              <tr><td>+ AI Camera instead of Camera Module 3</td><td class="mono">508</td></tr>
+              <tr><td>Essential only</td><td class="mono">405</td></tr>
+              <tr><td class="strong">+ recommended</td><td class="mono strong">463</td></tr>
+              <tr><td>+ NVMe</td><td class="mono">508</td></tr>
               <tr><td>Already own a Pi 5</td><td class="mono">− 100</td></tr>
             </tbody>
           </table>
         </div>
 
-        <p>Already owned, $0: the power bank (§1.3). Deferred, possibly never: any AI accelerator (§4.5). <b>Budget ~$400–470</b> — revised down from ~$450–500 once the chassis was priced against real listings rather than estimated (§3.8). The two variables that move it are whether a Pi 5 is already owned and how Q4 resolves.</p>
+        <p>Already owned, $0: the power bank (§1.3). Deferred, possibly never: any AI accelerator (§4.5). <b>Budget ~$460–510</b> — revised down from ~$450–500 once the chassis was priced against real listings rather than estimated (§3.8). The two variables that move it are whether a Pi 5 is already owned and how Q4 resolves.</p>
 
         <div class="caution">
           <span class="flag">Correction · 2026-09-03 · the pack is 3S, not 2S</span>
@@ -1136,7 +1200,7 @@
             <tbody>
               <tr><td class="mono">Q2</td><td class="strong">Goal vocabulary</td><td><b>SETTLED</b> — closed, versioned, three verbs. See §1.7</td></tr>
               <tr><td class="mono">Q3</td><td class="strong">Stop conditions</td><td><b>SETTLED</b> — typed success from the planner, typed failure from the robot. See §1.8</td></tr>
-              <tr><td class="mono">Q4</td><td class="strong">Detector vs planner arbitration — and is there an on-device detector at all?</td><td>M4’s subject, and Microduck’s own open #3. The IMX500-embedding sub-question is <b>withdrawn</b>: §1.6 cancels the visual-edge design, so Q4 turns on detection quality and §1.9’s stale-bearing problem, not on embeddings</td></tr>
+              <tr><td class="mono">Q4</td><td class="strong">Detector, and arbitration</td><td><b>SETTLED</b> — IMX500 up front, two-layer reactive tier, arbitration split by question. See §1.10 and §1.11</td></tr>
               <tr><td class="mono">Q5</td><td class="strong">Does the sim participate?</td><td><code>sim/renderer.py</code> renders flat-shaded walls; a COCO detector finds nothing in them, so a sim backend would have to synthesise detections — making the sim leg unable to test the detector, only its consumers</td></tr>
             </tbody>
           </table>
