@@ -1,24 +1,18 @@
 # Plan: perception on the car itself
 
-Status: **PROPOSED, nothing built, nothing decided** · Date: 2026-09-03 · Phase IDs: none assigned yet
+Status: **decisions recorded, nothing built** · Date: 2026-09-03 · Phase IDs: none assigned yet
 
-A holding pen, in the sense `microduck`'s `docs/ideas/` uses the term: written
-down before it has a design so the thinking is not lost, and **deliberately not
-a decision**. Nothing here has been measured on a Pi, nothing has been bought,
-and no phase ID has been assigned -- section 1's recommendation is an order of
-work, not a purchase.
+Started as a holding pen after reading Microduck -- *what could run on the car
+itself?* -- and became the place where a chain of hardware and architecture
+decisions got made. Sections 1-3 are those decisions and the reasoning behind
+them. Nothing here is implemented.
 
-It exists because reading Microduck raised a question this project had not
-asked: *what could run on the car itself?* `PLAN-microduck-transplants.md`
-answers the depth half of that (M2, M3, M10 -- a sensor, not a model). This
-document is the other half: the vision model, the hardware that would run it,
-and where it would sit.
+**It supersedes parts of two other documents.** Section 5 lists exactly what,
+because the chassis decision in 1.1 makes `HARDWARE-READINESS.md` partly wrong
+and retires a phase of `PLAN-sim-hardening.md`.
 
-Companion to [`HARDWARE-READINESS.md`](HARDWARE-READINESS.md) (what the kit
-changes) and [`PLAN-microduck-transplants.md`](PLAN-microduck-transplants.md)
-(§2's sensor-split argument, which this document assumes rather than repeats).
-
-Section 3 is a glossary for all three documents.
+Companion to `PLAN-microduck-transplants.md` (§2's sensor-split argument, which
+this assumes rather than repeats). Section 7 is a glossary for all three.
 
 ---
 
@@ -29,370 +23,684 @@ Microduck runs three model families on the robot, all local, all small:
 | | What | Where | How |
 |---|---|---|---|
 | Locomotion | 9 ONNX policies, `obs[1,61] -> act[1,14]` | `robotd`, inside the 50Hz tick | ONNX Runtime, `dlopen`'d |
-| `duck-detect` | `yolo11n` @ 320, **one class**, 3.9MB INT8, mAP50 0.976 | `mediad`, off the control loop | RK3566 NPU via `librknnrt.so`, `dlopen`'d; ONNX CPU fallback |
+| `duck-detect` | `yolo11n` @ 320, **one class**, 3.9MB INT8, mAP50 0.976 | `mediad`, off the control loop | RK3566 NPU via `librknnrt.so` |
 | `pet-detect` | ~20KB audio CNN over log-mel, sub-ms | `robotd`'s audio worker | ONNX |
 
-Only the middle one transfers. A PiCar-X has no gait to learn and no head to
+Only the middle one transfers. A PiCar has no gait to learn and no head to
 scratch.
 
-**Two mismatches to hold onto before reading section 1.**
+**Two things to hold onto.** `duck-detect` is **single-class** -- it finds
+Microduck's own duck and reduces the box to a `bearing()` in -1..1. This
+project's target is arbitrary text typed at mission start, which is
+open-vocabulary and much harder on-device (§4.2 is why that turns out not to
+matter for the targets in use).
 
-**`duck-detect` is single-class.** It detects Microduck's own duck and reduces
-the box to a `bearing()` in -1..1 -- "turn towards it" needs a bearing, not a
-box. This project's target is arbitrary text typed at mission start ("red
-backpack", "blue bottle"), which is an open-vocabulary problem and a
-substantially harder one on-device. Section 1.2 is why that turns out not to
-matter for the targets actually in use.
-
-**Recognition is not the failing half.** Stage 0 established that every cloud
-model identifies a red backpack; four wordings failed on *depth*. So an
-on-device detector does **not** close the Stage 0 gate, and no argument in this
-document should be read as claiming it does. What it would buy is different,
-and still real:
-
-- **Rate** -- a bearing at tens of Hz in the ~1-3s gaps between `/navigate` calls
-- **Cost** -- no Bedrock charge per frame
-- **Offline** -- the collar and a target lock keep working when the link dies
-
-That is Microduck's tiering (§2 below): fast local perception underneath slow
-remote deliberation. It is a good argument. It is not the gate argument.
+And **recognition was never the failing half.** Stage 0 established that every
+cloud model identifies a red backpack; four wordings failed on *depth*. So no
+detector closes the Stage 0 gate. **A lidar does** (§3.2), which is why this
+document ends somewhere different from where it started.
 
 ---
 
-## 1. Accelerator options on a PiCar-X
+## 1. Decisions
 
-### 1.1 The four options
+Made 2026-09-03, in conversation, in this order. Each has its reasoning in the
+section named.
 
-**The Pi 5 has no NPU.** That is the single biggest difference from the RK3566,
-and it cuts both ways: there is no free 0.8 TOPS sitting on the SoC, but the
-four Cortex-A76 cores at 2.4GHz are a considerably stronger CPU host than the
-Rockchip's A55s. CPU-only is a real option here in a way it is not on a duck.
+### 1.1 Chassis: **differential drive**, not Ackermann
 
-| Option | Silicon | Inference runs | Rated | Chassis fit |
-|---|---|---|---|---|
-| **CPU only** | 4x Cortex-A76 @ 2.4GHz | on the Pi's cores | -- | Nothing to buy, nothing to mount, no power draw, no conflict |
-| **AI Camera** | Sony IMX500 | **on the sensor** | ~3 TOPS class | CSI swap. Nothing on the GPIO header, no PCIe, negligible Pi CPU. Best physical fit |
-| **AI HAT+** | Hailo-8L / Hailo-8 | on the module, over PCIe | 13 / 26 TOPS | **Conflicts with the Robot HAT** (§1.4). Real watts off the pack |
-| **Coral USB** | Google Edge TPU | on the stick, over USB | 4 TOPS | Support on Pi 5 with recent kernels has been rough -- verify before buying |
+Reasoning in §3.5. The PiCar-X's Ackermann steering cannot rotate in place,
+which is the single best input to lidar scan matching and the assumption behind
+essentially every navigation stack and hobby SLAM tutorial in existence.
 
-All figures are vendor ratings at INT8. None has been measured on this project's
-hardware, because this project has no hardware.
+**It also retroactively makes the simulator correct**, which is a real dividend
+and is documented in §5:
 
-### 1.2 The finding that lowers the risk on all four paths
+| Item | Was | Now |
+|---|---|---|
+| `sim/grid_world.py`'s pivot-in-place assumption | wrong about the hardware | **correct** |
+| Phase **S6** (Ackermann turns, continuous pose, scaled map) | open, deferred | **unnecessary** |
+| `HARDWARE-READINESS.md` §5.2 -- `LEFT`/`RIGHT` skip the distance check, "correct for a pivot and wrong for an arc" | the wrong branch | **the right branch** |
+| `RobotInterface`'s `LEFT`/`RIGHT` verbs | approximate | literal |
 
-**`backpack` and `bottle` are both COCO classes.**
+**Cost:** the PiCar-X's integrated pan/tilt camera mount and ultrasonic are no
+longer included, and `HARDWARE-READINESS.md` is written for that kit
+throughout. A 2-axis SG90 pan/tilt bracket is ~$10-15 separately.
 
-The Stage 0 targets are in the standard 80-class label set that essentially
-every off-the-shelf detector predicts. So a stock, pre-compiled YOLO11n --
-Hailo's Model Zoo ships HEFs for both Hailo-8 and Hailo-8L; the ONNX and TFLite
-equivalents are equally available -- detects them with **zero training, zero
-calibration set, zero distillation**. Download, run, filter to the class,
-reduce the box to a bearing exactly as `duck-detect` does.
+### 1.2 Lidar: start at **(a)**, target **(b+)**. Model: **RPLidar C1**
 
-*(Confirm against the specific model's label file rather than taking this
-paragraph's word for it.)*
+The four ways to use a lidar are in §3.3. Decided:
 
-This retires most of the "data is the project, not the model" concern that
-Microduck's `autonomous_behavior.md` raises and that an earlier reading of this
-question inherited. Distillation becomes the project only when the target
-vocabulary goes past COCO's 80.
+- **Start at (a)** -- a 360-degree metric clearance ring, no SLAM. It closes the
+  Stage 0 gate on its own, it is a strictly better M10 than the ultrasonic, and
+  it is a driver plus trigonometry rather than an architecture.
+- **If mapping proves to be the point, go to (b+)** -- ROS behind an HTTP wall,
+  never (b)'s drifting hand-rolled SLAM and never (c)'s full ROS adoption.
+- **RPLidar C1**, ~$100, USB.
 
-**What it does not give you is the colour.** COCO says `backpack`, not `red
-backpack`. In a room with two backpacks you are back to either an HSV check on
-the crop -- cheap, and probably sufficient -- or a genuinely open-vocabulary
-model (YOLO-World, or CLIP re-ranking class-agnostic proposals), which is a much
-larger commitment.
+**The model choice shifted, and why is worth recording.** The earlier lean was
+the LDROBOT LD06, on weight (~50g vs ~190g) and power (~200mA vs ~500mA), for a
+small Ackermann car. Both premises then changed: a differential chassis carries
+the mass without complaint, and committing to (a) makes **driver quality the
+binding constraint** -- the `rplidar` package is `for scan in
+lidar.iter_scans()`, where LD06 means owning a community parser. `rplidar_ros`
+also exists for the day (b+) arrives.
 
-### 1.3 YOLO11n on the AI HAT+, specifically
+### 1.3 Power: **two rails, one ground**
 
-Asked directly, so answered directly: **yes, and it is the most turnkey
-combination on the list.**
+```text
+  [ power bank ]──USB──► Pi 5                 clean, regulated, protected
+       └───────────────► lidar                data-only line to the Pi
+  [ 2S Li-ion  ]───────► motor driver         separate, noisy, isolated
+                            └── common ground to the Pi, nothing else shared
+```
 
-- `sudo apt install hailo-all` gets the PCIe driver, HailoRT, the
-  GStreamer/TAPPAS bits, and `rpicam-apps` with Hailo post-processing stages.
-- Pre-compiled YOLO11n HEFs exist in Hailo's Model Zoo for both parts, so the
-  COCO path needs no toolchain at all.
-- A detection demo is a one-liner against `rpicam-hello`.
+**Power the lidar from the bank, not through the Pi.** If the bank turns out to
+be 5V/3A rather than 5A, the Pi 5 runs in its reduced mode and caps total USB
+peripheral current near 600mA -- which an RPLidar's ~500mA would nearly consume.
+A powered hub or the adapter's separate power input removes the whole class of
+problem for a few dollars, whatever the bank measures.
 
-**The friction is custom classes.** You cannot hand the chip a `.pt` or an
-`.onnx` -- it wants a HEF, produced by Hailo's Dataflow Compiler, which requires
-**x86-64 Linux** (not the Pi, not an ARM Mac), plus a calibration set of a few
-hundred representative frames for INT8 quantisation. That is a real setup cost
-and it is the argument for staying inside the Model Zoo while COCO covers the
-targets.
+**Motors never share the Pi's rail.** DC motors produce current spikes and
+back-EMF that a USB bank's protection may simply trip on, cutting power to the
+Pi mid-mission.
 
-**It is also enormously overprovisioned.** YOLO11n at 640 on a Hailo-8L runs in
-the high-tens-to-hundreds of FPS; at 320, more. The decision loop is one
-`/navigate` call every 1-3 seconds. Throughput is therefore *not* the reason to
-buy one, which means the decision rests entirely on physical fit -- and that is
-where it gets difficult.
+The 50000mAh / 22.5W bank already owned is **an excellent bench supply**, and
+goes on the robot only if it weighs under ~400g and does 5V/5A. Four numbers to
+read off the unit: weight, 5V current per port, USB-PD or QC only, and whether
+outputs are independently regulated.
 
-### 1.4 The Robot HAT conflict is the real blocker
+### 1.4 The tiered architecture
 
-**Physical, not software.** SunFounder's Robot HAT occupies the 40-pin GPIO
-header -- battery input, motor drivers, servo headers, ADC. The AI HAT+ needs
-*both* the PCIe FPC connector *and* 5V from that same header.
+Reasoning in §2. The VLM stays as the **deliberation tier**; a local loop owns
+the **reactive tier**.
 
-**Verify the pass-through on the actual kit before assuming either way.** As far
-as this document knows the Robot HAT is a terminating board with no stacking
-pins, but that is an assumption and it is cheap to check with the board in hand.
+- Deliberation is **event-driven, never periodic** (§2.4).
+- Its output is an **egocentric goal**, never a coordinate the reactive tier
+  cannot resolve (§2.3) -- though §3.2 relaxes this if a map lands.
+- The reactive tier **never blocks** on it. It always holds a current goal;
+  a new one arrives asynchronously (§2.5).
+- **`brain/agent.py` becomes the degraded mode.** The rule-based frontier
+  explorer that this project keeps but does not extend is what runs when the
+  link is down. It stops being dead weight.
 
-If there is no pass-through, the options are:
+### 1.5 Map and memory persistence
 
-- A bare **M.2 -> PCIe FPC adapter** mounted off-header somewhere on the
-  chassis, fed 5V separately. Doable, unsupported, and now you are fabricating a
-  mount on a small car.
-- The **AI Camera** instead, which avoids the header entirely.
+Reasoning in §3.4. Ten decisions, taken together:
 
-Power is the second constraint. Hailo-8L is ~2W typical, Hailo-8 up to ~5W under
-load, drawn from two 18650s that are also running two drive motors and two
-servos. The AI Camera and CPU-only paths cost nothing extra.
-
-### 1.5 The monocular-depth trap
-
-**Do not reach for a depth model to fix the gate.** It is the obvious move and
-it is the exact error `PLAN-microduck-transplants.md` §2 argues against.
-
-Depth Anything V2 Small and MiDaS small both run on a Pi 5, slowly. They produce
-**relative** inverse depth. The metric-finetuned variants are calibrated to
-camera intrinsics and mounting heights nothing like a 10cm PiCar camera.
-Adopting one replaces "ask a VLM how far" with "ask a smaller model how far" --
-the same class of error with fewer parameters, and Stage 0 has already spent
-five wordings establishing that this class of error is not a wording problem.
-
-**One nuance worth keeping, though.** Relative depth plus a ground-plane
-assumption yields a *traversability mask* -- "is the centre third of the floor
-ahead clear relative to its surroundings" -- which is a genuinely different
-question from "how many cm". That is `center-third-path`'s question answered by
-geometry instead of by a prompt, and `center-third-path` failed as a prompt for
-reasons (a threshold has no wording) that geometry does not share. It may be
-worth something later. It is still not the metric answer M10 needs.
-
-**And note what Microduck's own answer to distance is: not a model.** A
-VL53L5CX/VL53L8CX 8x8 ToF, ~$20-30 on a breakout, publishing `Range` /
-`NoTarget` / `Unusable`. That is M2 and M3 in real hardware, and it is the
-cheapest item on this page by an order of magnitude.
-
-### 1.6 Recommendation -- an order of work, not a purchase
-
-1. **Benchmark stock YOLO11n at 320, single class, on the Pi 5 CPU.** Free, and
-   it is the measurement every other option is judged against. Microduck builds
-   `duck-bench` for exactly this reason. If it clears ~10 FPS, no accelerator
-   was ever needed for a 1-3s loop.
-2. **If CPU proves tight, prefer the AI Camera** over the AI HAT+. It sidesteps
-   the header fight, the power draw and the mounting problem in one move.
-3. **Treat the ToF as the depth answer**, independent of all of the above.
-   Buying 13 TOPS does not move the gate; a $25 sensor does.
-4. **Do not buy anything before step 1 reports a number.**
+| | Decision |
+|---|---|
+| **Persistence scope** | **Only the map persists.** `MissionMemory` stays in RAM in the brain, unchanged |
+| **Ownership** | The planner is a **pure function** -- context in, goal out, writes nothing. The brain is the sole writer |
+| **Embedding source** | A **separate small encoder**, not the detector's features and not ORB *(contingent -- see §3.2)* |
+| **Match handling** | Design the confirm path, **ship always-confirm**, tune the threshold on real matches later |
+| **Views per edge** | **Schema for a bag, store one.** One memory per *direction of travel* |
+| **House id** | **Config.** SSID as a later convenience |
+| **Map key** | **By house**, visual memories scoped per camera-configuration |
+| **Staleness** | Every edge carries **last-confirmed + success/failure counts**, both visible to the planner. Eviction deferred |
+| **Bootstrap** | An empty graph is **not a special mode** -- but the planner's context says "map is empty" explicitly |
+| **Store** | DynamoDB · needs a VPC endpoint (`network.yaml` has no NAT) · **AWS durable, Pi working copy** · `schema_version` from the first write · stored map text is data, never instruction |
 
 ---
 
-## 2. Where it would sit architecturally
+## 2. The tiered architecture
 
-### 2.1 The tiering this borrows
+### 2.1 Three rates
 
-Microduck separates three rates, and the separation is the point:
+Microduck separates three, and the separation is the point:
 
 ```text
    ~50 Hz    reflex        ONNX policies, on-board, no network
-              robotd's tick; safety owns the only motor write handle
+                           robotd's tick; safety owns the only motor write handle
 
   ~15-30 Hz  perception    NPU detector -> bearing
-              tofd         -> distance          each question to the sensor
-              BLE beacon   -> identity             that can answer it
+                           tofd         -> distance     each question to the
+                           BLE beacon   -> identity     sensor that answers it
 
    ~0.5 Hz   deliberation  the LLM, off-board, over WebSocket
-              sends intents; never trusted to execute them
+                           sends intents; never trusted to execute them
 ```
 
-**vision-picar collapses the middle two tiers into the top one.** A single cloud
-`/navigate` call is asked for bearing *and* distance, at 1-3s, and its answer
-drives the robot. `bearing-only` (M1, measured 2026-09-02) is the first half of
-un-collapsing that: `/navigate` keeps *what* and *which way*, and something else
-owns *how far*. An on-device detector would be the second half -- the bearing
-arriving at perception rate instead of deliberation rate.
+**vision-picar collapses all three into one.** A single cloud `/navigate` call
+is asked for bearing *and* distance *and* the next action, at 1-3s, and its
+answer drives the robot.
 
-### 2.2 Its own process. Not `robot/server.py`
+`bearing-only` (M1, measured 2026-09-02) was the first half of un-collapsing
+that: `/navigate` keeps *what* and *which way*, something else owns *how far*.
+The lidar is that something else (§3.2).
 
-This is the open **"Perception in its own process"** row in
-`PLAN-microduck-transplants.md` §1, and it is the one architectural point this
-document is confident about.
+### 2.2 One function becomes three
 
-Microduck's rule (`architecture.md` §2.4) is **features, not frames**: put
-perception next to the sensor, publish derived features -- "ball at (x,y)",
-"person detected" -- tens of bytes at 10-30Hz, and let the control path read a
-locally cached *latest* snapshot, non-blocking, last-value-wins. "Shipping
-frames to `robotd` so it can run its own vision would waste most of the board's
-memory bandwidth."
+Today the seam is `vision_fn(frame) -> scene`, called once per tick, doing three
+jobs:
 
-The failure mode it buys: **a stalled detector degrades perception rather than
-adding jitter to motor control.** Applied here, that is the difference between a
-wedged `picamera2` capture and a `/stop` that still answers -- which today is
-undefined behaviour and is exactly what M9 exists to test.
+```text
+                     today                        tiered
+  ─────────────────────────────────────────────────────────────────────
+  perceive    what's in frame?        cloud        on-board
+  decide      which way now?          cloud        local
+  deliberate  where next, and why?    cloud¹       cloud, on trigger
+```
 
-So: a separate process, publishing features, that `robot/server.py` and the
-brain read as a snapshot and never block on.
+¹ -- and barely. CLAUDE.md's own note: *"the single-step `/navigate` contract has
+no memory of which way it already turned."* The deliberation tier is mostly
+**not happening today**; `searched_rooms`/`room_guess` is the one thread of it,
+bolted onto a per-step call.
 
-### 2.3 What must not change
+### 2.3 The deliberation tier already has a name
 
-Three constraints this project already holds, restated because a new perception
-process is precisely the kind of thing that quietly violates them:
+**It is `brain/planner.py`** -- "NOT BUILT. Designed but never written to disk --
+a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the
+prompt," which CLAUDE.md calls the main hardware-path gap.
 
-1. **`brain/` and `robot/server.py` talk only to `RobotInterface`.** A detector
-   is not a reason to introduce a second path. Whatever it publishes has to
-   arrive through the abstraction or alongside it, never around it.
+And `as_context()` **feeds nothing today** -- one test calls it, nothing else.
+It formats `MISSION / MEMORY / CURRENT OBSERVATION / AVAILABLE TOOLS`, which is
+a *deliberation* prompt, not a per-step one.
+
+So tiering is not a new architecture. It is the reason the component this repo
+already named has never had a job: with one call doing everything at one rate,
+there was nowhere for a planner to sit. **Splitting the rates creates the slot.**
+
+### 2.4 Trigger discipline -- where the cost saving lives
+
+Tiering pays off only if deliberation is **event-driven, never periodic**.
+
+| Trigger | Fired by | Why |
+|---|---|---|
+| Mission start | runner | there is no goal yet |
+| Goal achieved | reactive | "I am at the doorway. Now what?" |
+| Goal impossible | reactive | boxed in, or the target left frame and did not return |
+| Room change suspected | reactive | crossed a doorway; memory needs updating |
+| **Candidate sighting** | reactive | detector thinks it sees the target; cloud confirms identity and reachability |
+| Staleness | timer | a goal older than N seconds is suspect |
+
+The saving is exactly **reactive steps per goal**, and that number is
+**unmeasured**. Sim runs took 40 steps; real walks reached target in 6-22
+frames. At ~8 reactive steps per goal it is ~8x -- a real number, but derived,
+not measured, and it should not be quoted as one until §6.1's free experiment
+has been run.
+
+**The candidate-sighting trigger is the one that does real work**, not just cost
+saving: it is what keeps a cheap local detector honest. The detector says
+`backpack`; the cloud says whether it is the *red* one and whether the robot can
+reach it.
+
+### 2.5 Never block, and the degraded mode
+
+Microduck's rule (`architecture.md` §2.4): the control path reads a cached
+latest value and never waits on another service. Applied here:
+
+- The reactive tier always holds a current goal; a new one arrives
+  **asynchronously** and replaces it.
+- Mission start is the one genuinely blocking call -- or it is not, if the
+  opening default is "look around", which is safe and useful.
+- **When the cloud is unreachable, `brain/agent.py` takes over.** The rule-based
+  frontier explorer that `PLAN-sim-hardening.md` 2.2 says to keep and not extend
+  becomes the *defined degradation*: no cloud, no planner, deterministic
+  wall-following until the link returns.
+
+That last is the only sensible answer to "what does the car do when Wi-Fi drops
+mid-mission", and it costs nothing -- the code already exists and is tested.
+
+### 2.6 What must not change
+
+Three constraints a new perception process is exactly the sort of thing to
+violate quietly:
+
+1. **`brain/` and `robot/server.py` talk only to `RobotInterface`.** Whatever
+   the reactive tier publishes arrives through the abstraction or alongside it,
+   never around it.
 2. **Safety is enforced server-side, always.** A bearing is an input to a
    decision, never a movement path of its own.
 3. **`control/` may not import a backend or the simulator.** If the detector's
    output reaches the brain, it reaches it over HTTP like everything else.
 
-### 2.4 Open questions -- all of them
+### 2.7 Its own process
 
-Nothing below is decided. These are the questions a design doc would have to
-answer before any of this is built.
+The open **"Perception in its own process"** row in
+`PLAN-microduck-transplants.md` §1. Microduck's rule is **features, not
+frames**: perception next to the sensor, publish derived features, control path
+reads a cached snapshot non-blocking.
 
-| # | Question | Why it is not obvious |
-|---|---|---|
-| 1 | **What does the detector publish?** A bearing in -1..1 like `duck-detect`? A box? A class list with confidences? | A bearing is the smallest thing that is useful and the hardest to extend. A box defers the decision at the cost of making every consumer do the reduction |
-| 2 | **Who consumes it?** The brain, as a new field on the frame? `robot/safety.py`, as a veto input? The twin, as an overlay? | Each answer implies a different transport and a different failure mode |
-| 3 | **Does it change `RobotInterface`?** | S2 was careful to make `get_camera_frame()` uniform across backends. A `get_detections()` would have to be answerable by `MockRobot`, `ReplayRobot` and `TeleopRobot` too, or it splits the contract |
-| 4 | **What does the sim do?** | `sim/renderer.py` renders flat-shaded walls. A COCO detector will find nothing in them, so a sim backend would have to synthesise detections from grid truth -- which makes the sim leg unable to test the detector, only its consumers |
-| 5 | **Does `/navigate` still name the target?** | If the detector handles "where is the backpack", the cloud call's remaining job is smaller and possibly different in kind |
-| 6 | **What happens when it disagrees with the cloud?** | Two things now answer "is the target visible". Microduck's answer to competing authorities is a decided priority order, not last-writer-wins (`architecture.md` §6) -- which is M4's subject |
-
-### 2.5 What it would owe the twin
-
-Per section 7 of `CLAUDE.md`: a phase is not done when its tests pass, it is
-done when someone holding a phone can watch the thing it built do its job.
-
-For this one that is unambiguous: **a bounding box drawn over the FPV canvas,
-with the bearing as a number underneath, updating faster than the mission log
-scrolls.** If the detector is running and the box is not on the phone, it is
-not shipped.
+The failure mode it buys: **a stalled detector degrades perception rather than
+adding jitter to motor control.** Here that is the difference between a wedged
+`picamera2` capture and a `/stop` that still answers -- today undefined, and
+exactly what M9 exists to test.
 
 ---
 
-## 3. Glossary
+## 3. Mapping
 
-Acronyms used across this document, `PLAN-microduck-transplants.md`, and the
-Microduck reading behind both.
+### 3.1 Why there was no map
 
-### 3.1 On-device vision and accelerators
+`MissionMemory` holds `visited_rooms`, `searched_rooms`, sightings and actions.
+It holds **no geometry**. No pose, no occupancy grid, no "the kitchen is north
+of here". The grid world has coordinates; a real house would not.
+
+So a goal like "go to the kitchen" is **not executable** by a reactive tier that
+has no idea which way that is. Only egocentric goals work:
+
+| Goal form | Executable without a map? |
+|---|---|
+| `approach(backpack)` | **yes** -- bearing, servo toward it, collar stops it |
+| `traverse(doorway at +0.4)` | **yes** -- same mechanism |
+| `explore(bearing -0.6)` | **yes** -- a heading plus a stop condition |
+| `go_to(kitchen)` | **no** -- needs a map |
+
+**And the project had already hit this wall.** `ObjectSearchAgent.decide()` has
+two branches: with grid `position` and `facing` -- *sim only* -- it does
+frontier-preference exploration; without them, "which is what a real camera
+frame will look like", it degrades to a right-hand wall-follower
+(`AGENT-HARNESS.md` §3). That degradation **is** the no-map problem, met and
+documented before this discussion started.
+
+### 3.2 What the lidar changes -- more than "it adds a map"
+
+The first reading of this was that a metric map is *not derivable* on this
+hardware but *buyable*. True, and it undersold the purchase.
+
+**A lidar solves the no-odometry problem, which was the harder half.**
+Consecutive scans register against each other, so scan matching recovers
+relative motion directly: **the lidar is the odometer.** Hector SLAM was
+designed precisely for platforms with no wheel encoders. The chain
+
+> no encoders -> no odometry -> no localisation -> no map
+
+is not repaired link by link. The lidar replaces it.
+
+Knock-on effects:
+
+- **Clearance becomes metric and 360-degree** at ~10Hz instead of one ultrasonic
+  beam. **This closes the Stage 0 gate** more completely than the ToF, any
+  prompt wording, or any accelerator. The entire five-wording investigation was
+  about a question a lidar answers directly.
+- **"Go to the kitchen" becomes executable** -- a coordinate goal and a path,
+  not a visual search.
+- **The topological map stops being a substitute and becomes a labelling.**
+  Rooms become regions of an occupancy grid; `room_guess` labels a place whose
+  geometry is already known. Strictly better than the visual-edge design.
+
+**What it does not do: see a backpack.** A lidar reads geometry, never
+semantics. Camera and lidar are complementary, not alternatives.
+
+**What a 2D lidar still misses:** it sees one plane. Chair legs, not the seat.
+Glass, mirrors and dark matte surfaces are unreliable. The camera still has to
+cover everything above the scan plane.
+
+### 3.3 The four ways to use a lidar
+
+**(a) Clearance ring, no SLAM.** "At every angle, how far is the nearest thing."
+No map, no idea where it is. Closes the gate. A driver and trigonometry -- days.
+Fits the existing architecture entirely. **Chosen as the starting point.**
+
+**(b) Lightweight scan-matching SLAM.** Draws a floor plan and roughly tracks
+itself on it. Makes coordinate goals real. **Drifts** -- no loop closure, so a
+lap of the house may not line up with itself. Fine for one session, poor for an
+accumulated map. Weeks of work, stays hand-rolled.
+
+**(c) ROS 2 + `slam_toolbox` / Cartographer.** Loop closure, a full nav stack,
+durable reusable maps. **Swallows the project** -- its own IPC (DDS), build
+system, node lifecycle and test model; typically wants Ubuntu, which may cost
+the vendor library `robot/hardware_robot.py` is meant to be built on.
+
+**(b+) ROS behind an HTTP wall. CHOSEN as the target if mapping proves to be
+the point.** Run ROS 2 as *one isolated service* on the Pi exposing a tiny API
+-- `GET /pose`, `GET /map`, `POST /goto` -- and nothing else in the system knows
+ROS exists.
+
+> This is exactly Microduck's `tofd` pattern: it owns one sensor, publishes,
+> reads nothing, and consumers reach it through its own socket without knowing
+> how it talks to hardware. Same rule, bigger sensor.
+
+Gets loop closure and a real nav stack; keeps `RobotInterface`, the FastAPI
+control plane, the tests and the brain. Costs one process boundary and enough
+ROS to *configure* a node, not to rebuild in it.
+
+**Note the chassis decision made (b+) and (c) more viable**, not less: the ROS
+navigation stack assumes differential drive throughout. Under Ackermann it would
+have fought back.
+
+### 3.4 Persistence
+
+Decided in 1.5. The reasoning behind the two that matter most:
+
+**Only the map persists.** `MissionMemory` is constructed at
+`control/mission_runner.py:255`, held on the runner, kept in
+`control/brain_server.py`'s `state`, running on ECS Fargate -- **RAM only, no
+serialisation anywhere, one mission's lifetime, no copy on the Pi.** Persisting
+it would buy mid-mission resumption that cannot be used: a robot that crashed
+does not know where it is any more, which is the no-map problem again. The map
+is what needs to outlive a mission, because the whole value of mapping a house
+is that the second trip is cheaper.
+
+**Tiering is what makes remote state affordable.** Per-tick memory access over a
+WAN would violate the never-block rule. At goal boundaries -- 5-10 times a
+mission -- a round trip is invisible. Same convergence as B5: whoever holds the
+memory is the planner's client, and a stateless cloud planner plus Pi-side
+memory survives the link dying with its memory intact.
+
+### 3.5 Why differential
+
+| | Ackermann (PiCar-X) | Differential |
+|---|---|---|
+| Rotate in place | **no** | yes |
+| Best scan-matching input (pure rotation) | unavailable | available |
+| SLAM examples / nav stacks | few apply | the assumed case |
+| Recovery when stuck | reverse and arc | rotate and re-plan |
+| Pan/tilt camera mount | included | **source separately** |
+| Ultrasonic, motor driver, battery | integrated | assemble |
+| `HARDWARE-READINESS.md` | written for it | **needs revision** |
+
+---
+
+## 4. Accelerator options -- now probably unnecessary
+
+Kept because the analysis is sound and the conclusion changed.
+
+### 4.1 The four paths
+
+**The Pi 5 has no NPU** -- the biggest difference from the RK3566 -- but four
+Cortex-A76 cores at 2.4GHz are a stronger CPU host than the Rockchip's A55s, so
+CPU-only is a real option here in a way it is not on a duck.
+
+| Option | Silicon | Inference runs | Rated | Fit |
+|---|---|---|---|---|
+| **CPU only** | 4x Cortex-A76 @ 2.4GHz | on the Pi | -- | Nothing to buy or mount |
+| **AI Camera** | Sony IMX500 | **on the sensor** | ~3 TOPS | CSI swap, negligible Pi CPU |
+| **AI HAT+** | Hailo-8L / 8 | on the module, over PCIe | 13 / 26 TOPS | GPIO/PCIe contention; real watts |
+| **Coral USB** | Edge TPU | on the stick | 4 TOPS | Pi 5 kernel support has been rough |
+
+Vendor ratings at INT8. **None measured on a board.**
+
+### 4.2 The finding that lowers the risk
+
+**`backpack` and `bottle` are both COCO classes.** The Stage 0 targets are in
+the standard 80-class label set essentially every off-the-shelf detector
+predicts, so a stock pre-compiled YOLO11n finds them with **zero training, zero
+calibration set, zero distillation**. Distillation becomes the project only past
+COCO's 80. *(Confirm against the model's own label file.)*
+
+**It does not give you the colour.** COCO says `backpack`, not `red backpack`.
+Two backpacks in a room means an HSV check on the crop -- cheap and probably
+sufficient -- or a genuinely open-vocabulary model, which is a much larger
+commitment.
+
+### 4.3 YOLO11n on the AI HAT+
+
+Yes, and it is the most turnkey combination on the list: `sudo apt install
+hailo-all` brings the driver, HailoRT, the GStreamer bits and `rpicam-apps` with
+Hailo post-processing; pre-compiled YOLO11n HEFs exist for both parts.
+
+**The friction is custom classes** -- the chip wants a HEF from Hailo's
+Dataflow Compiler, which needs **x86-64 Linux**, plus a calibration set. And it
+is **enormously overprovisioned**: high-tens-to-hundreds of FPS against a
+decision loop measured in seconds.
+
+### 4.4 The corrected benchmark bar
+
+**The original recommendation contained a circular argument and is withdrawn.**
+It said to benchmark YOLO11n on the Pi 5 CPU and concluded *"if it clears ~10
+FPS, no accelerator was ever needed for a 1-3s loop"* -- judging the edge option
+against the cloud latency the edge option removes.
+
+The bar comes from **how far the car travels before it can react**:
+
+```text
+reaction budget = clearance to preserve / speed
+```
+
+At 10 FPS, worst-case latency is ~200ms (100ms inference plus up to 100ms
+waiting for the next frame):
+
+| Speed | Travel in 200ms | Against a 20cm collar |
+|---|---|---|
+| 30 cm/s | 6cm | comfortable |
+| 60 cm/s | 12cm | tight |
+| 100 cm/s | 20cm | the whole collar, before deciding |
+
+**The binding number is unmeasured: how fast the car actually moves.** It
+belongs on the hardware-day pre-flight list.
+
+Two things relax the bar. **The range sensor owns emergency stop, not the
+camera** -- so the detector's latency budget is about steering, not collision.
+And **motion is discrete today** (speed 50 for 0.5s per move), capping decisions
+near 2Hz. The FPS question only sharpens with *continuous* driving, which is a
+design choice not yet made.
+
+### 4.5 Why the conclusion changed
+
+**Buying the lidar weakens the case for an accelerator rather than
+strengthening it.** Obstacle avoidance moves to the lidar; navigation moves to
+the map; visual edge-matching disappears (§3.2). The only remaining job for
+on-device vision is "is the target in view" -- lower-rate and not
+safety-critical, which the cloud VLM can keep doing at deliberation rate.
+
+**Sequencing: lidar first, accelerator possibly never.**
+
+---
+
+## 5. What this invalidates elsewhere
+
+The chassis decision has documentation consequences. Recorded here so they are
+not discovered on hardware day.
+
+| Document | What is now wrong |
+|---|---|
+| `HARDWARE-READINESS.md` | Written for the PiCar-X **throughout**. §1's parts table, §4's verb-to-motor path and §5's pre-flight checklist all assume Ackermann + Robot HAT + `picarx`. **§5.2's arc concern resolves to the pivot branch.** §5.3 (where the ultrasonic is mounted) is superseded by the lidar |
+| `PLAN-sim-hardening.md` | **S6 (Ackermann turns, continuous pose, scaled map) is unnecessary** -- `grid_world.py`'s pivot assumption is now correct. §3.3's divergence is closed by hardware choice rather than by code |
+| `PLAN-microduck-transplants.md` | **M2/M3 are built (2026-09-03) and the seam holds** -- but `PATH_FRACTION` does not. See §5.1, which is the one concrete defect this decision creates in existing code. **M10** (clearance from a real sensor) is satisfied far better by 360-degree metric returns than by one ultrasonic beam |
+| `CLAUDE.md` | The status table and build order reference S6 and the PiCar-X hardware path |
+
+`HARDWARE-READINESS.md` and `PLAN-sim-hardening.md` have had staleness notes
+added pointing here. Nothing else has been edited.
+
+### 5.1 `PATH_FRACTION` breaks on a 360-degree sensor
+
+**The good news first: M2's seam already accommodates a lidar, and by design.**
+`get_depth_grid()` carries `rows` and `cols` **in the data** rather than pinning
+them in the contract, and publishes `rows: 1` when there is no elevation to
+report -- which is exactly what a 2D lidar is. The tri-state
+(`ZONE_RANGE` / `ZONE_NO_TARGET` / `ZONE_UNUSABLE`) is precisely what a lidar
+needs, since a return, an empty sweep and a failed measurement are three
+different facts. A 360-degree unit slots in as `rows: 1, cols: N`. No interface
+change.
+
+**The defect is one layer up, in M3's consumer.** `robot/safety.py` selects the
+path zones as `PATH_FRACTION = 0.5` -- *the middle half of the columns* -- and
+its own comment derives that from **field of view**:
+
+> the middle half of the sim's 60-degree render is +/-15 degrees, which at one
+> grid cell (30cm) ahead spans 16cm [...] The middle half of a VL53L5CX's
+> 45-degree field is +/-11.25 degrees: 12cm at one cell. Both bracket the
+> robot's own width, which is the number that matters.
+
+Every sensor considered when that was written had a **narrow, forward** field --
+60 degrees in the sim, 45 on the ToF -- so a fraction-of-columns rule was a
+sound proxy for an angle.
+
+**On a 360-degree lidar the middle half of the columns is +/-90 degrees**: the
+entire forward hemisphere, not the path. That is precisely the first failure
+mode the same comment warns about -- "take the WHOLE grid and the outermost rays
+[...] the robot is permanently vetoed in every corridor it is supposed to drive
+down."
+
+**The grid carries `rows` and `cols` but not the angular span they cover.** With
+every sensor so far that span was implicit and similar, so nothing needed it.
+A 360-degree sensor makes the omission load-bearing.
+
+**The fix is small and belongs before M10, not during it:** carry the field of
+view (or per-zone bearings) in the grid, and have `path_zone_indices()` select
+by *angle* rather than by fraction-of-columns. The angle it should select is
+already worked out in that comment -- bracket the chassis width at the stop
+threshold -- so this is a change of input, not of reasoning.
+
+M3's own note anticipates a revisit: *"Revisited in M10 against the real
+sensor's actual field of view."* It anticipates a ToF-shaped one. This is
+larger, and cheap now.
+
+---
+
+## 6. Open questions
+
+### 6.1 Measurable today, for free
+
+**Replay the trigger policy over recorded walks.** Every walk on EFS carries
+`walk.jsonl` -- frames plus the `/navigate` reply at the time, including
+`room_guess`. Running a candidate trigger policy over that data offline counts
+**how many deliberation calls it would have fired** versus the number of frames.
+No new inference, no Bedrock charge, no hardware. It turns §2.4's cost claim
+into a number, on data already owned -- the same move `control/walk_replay.py`
+already makes for prompts.
+
+**Caveat with teeth:** the current corpus is the invalid one (target on raised
+furniture, camera at standing height). The trigger count is probably robust to
+that, being about room transitions rather than depth, but it should be re-run on
+the re-recorded corpus before anyone quotes it.
+
+### 6.2 Still to discuss
+
+| # | Question | Why it is not obvious |
+|---|---|---|
+| Q2 | **Is the goal vocabulary closed or open?** `approach` / `traverse` / `explore` / `sweep`, or open-ended text the reactive tier parses | Closed is testable and refusable by name (M7's rule); open is more capable and much harder to validate |
+| Q3 | **Does a goal carry a stop condition, or does the reactive tier infer one?** | Provisional answer given: the goal carries it ("you are close to the backpack"); the reactive tier infers failure ("stuck in a corner"). Not yet examined |
+| Q4 | **Who arbitrates a confident detector against a planner that says the target is not here?** | M4's subject, and Microduck's own open #3. **Sub-question: can the IMX500 emit an embedding, or only boxes?** -- it runs its net on the sensor, which may make §1.5's separate-encoder decision moot or mandatory |
+| Q5 | **Does the sim participate at all?** | `sim/renderer.py` renders flat-shaded walls; a COCO detector finds nothing in them, so a sim backend would have to synthesise detections -- making the sim leg unable to test the detector, only its consumers |
+
+### 6.3 What it owes the twin
+
+Per `CLAUDE.md` §7 -- a phase is done when someone holding a phone can watch it
+work, not when its tests pass.
+
+- **The lidar:** a live 360-degree clearance ring under the FPV canvas. Drive at
+  a chair leg the old ultrasonic beam would have missed and watch the collar
+  fire.
+- **The tiers:** the current goal, when it was set, and what triggered it -- plus
+  a deliberation-call counter that **visibly does not climb every step**. That
+  single number makes the whole architecture watchable.
+- **The map:** the graph or occupancy grid, the edge being executed, and a way
+  to delete a bad edge (§1.5's staleness decision guarantees there will be some).
+
+---
+
+## 7. Glossary
+
+### 7.1 On-device vision and accelerators
 
 | | |
 |---|---|
-| **TOPS** | Tera-Operations Per Second. A throughput rating for inference accelerators, usually quoted at INT8. Marketing-adjacent: real speed depends on the model, not the number |
-| **INT8** | 8-bit integer arithmetic. Quantising from 32-bit floats makes a model ~4x smaller and much faster, at some accuracy cost. What NPUs are built for |
-| **NPU** | Neural Processing Unit. An on-chip inference accelerator. The RK3566 has one; the Pi 5 does not |
-| **ONNX** | Open Neural Network Exchange. A portable model format, so a net trained in PyTorch can run under a different runtime |
-| **HEF** | Hailo Executable Format. Hailo's compiled model file -- the chip will not take an ONNX |
-| **DFC** | Dataflow Compiler. Hailo's toolchain that turns ONNX into a HEF. x86-64 Linux only |
-| **YOLO** | "You Only Look Once". A family of single-pass object detectors. The `n` in YOLO11n is "nano", the smallest variant |
-| **COCO** | Common Objects in Context. The standard detection dataset; its 80-class label set is what most off-the-shelf detectors predict, and it includes `backpack` and `bottle` |
-| **mAP50** | mean Average Precision at 50% IoU -- the usual detection accuracy score |
-| **IoU** | Intersection over Union. Box overlap, the thing mAP thresholds on |
-| **XNNPACK** | Google's optimised CPU inference backend for ARM/x86, used under ONNX Runtime and TFLite |
-| **ncnn** | Tencent's lightweight embedded inference engine; a common fast path on ARM CPUs |
-| **TFLite** | TensorFlow Lite. Google's mobile/embedded runtime and model format |
-| **CLIP** | Contrastive Language-Image Pre-training. Matches images to text, which is what makes open-vocabulary detection possible |
+| **TOPS** | Tera-Operations Per Second. A throughput rating for accelerators, usually at INT8. Marketing-adjacent: real speed depends on the model |
+| **INT8** | 8-bit integer arithmetic. Quantising from 32-bit floats makes a model ~4x smaller and much faster, at some accuracy cost |
+| **NPU** | Neural Processing Unit -- on-chip inference accelerator. The RK3566 has one; **the Pi 5 does not** |
+| **ONNX** | Open Neural Network Exchange. A portable model format |
+| **HEF** | Hailo Executable Format -- Hailo's compiled model file; the chip will not take an ONNX |
+| **DFC** | Dataflow Compiler. Hailo's ONNX-to-HEF toolchain. x86-64 Linux only |
+| **YOLO** | "You Only Look Once" -- single-pass object detectors. The `n` is "nano" |
+| **COCO** | Common Objects in Context. The 80-class label set most detectors predict; includes `backpack` and `bottle` |
+| **mAP50 / IoU** | mean Average Precision at 50% Intersection over Union -- the usual detection score, and the box-overlap measure it thresholds on |
+| **XNNPACK / ncnn / TFLite** | Optimised CPU inference backends and runtimes for ARM |
+| **CLIP** | Contrastive Language-Image Pre-training. Matches images to text; what makes open-vocabulary detection possible |
 | **VLM / LLM** | Vision-Language Model / Large Language Model. The cloud tier -- what `/navigate` calls |
-| **MiDaS / Depth Anything** | Monocular depth-estimation models: one image in, a depth map out. **Relative**, not metric -- §1.5 |
-| **HSV** | Hue-Saturation-Value. The colour space for a "is that backpack red" check on a crop |
+| **MiDaS / Depth Anything** | Monocular depth models. **Relative**, not metric -- which is why they do not close the gate |
+| **HSV** | Hue-Saturation-Value. The colour space for an "is that backpack red" check |
 
-### 3.2 Hardware and buses
+### 7.2 Mapping and navigation
+
+| | |
+|---|---|
+| **SLAM** | Simultaneous Localization and Mapping. Building a map while working out where you are on it |
+| **Scan matching** | Registering one lidar scan against the previous to recover relative motion -- **lidar odometry**, which is why no wheel encoders are needed |
+| **Loop closure** | Recognising a previously visited place and snapping the map back into consistency. The thing (b) lacks and (c) has |
+| **Occupancy grid** | A map as a grid of cells, each free / occupied / unknown |
+| **Odometry** | Estimating motion from sensors -- wheel encoders classically, or the lidar itself |
+| **Dead reckoning** | Estimating position by accumulating motion with no external reference. Drifts without bound |
+| **Metric vs topological map** | A floor plan with coordinates, vs. a graph of places and how they connect |
+| **Egocentric vs allocentric** | Relative to the robot ("doorway at +0.4") vs. relative to the world ("the kitchen") |
+| **ICP** | Iterative Closest Point. A classic scan-registration algorithm |
+| **DWA** | Dynamic Window Approach. A common local planner -- and one that assumes differential drive |
+| **Ackermann / differential drive** | Car-like front-wheel steering that cannot pivot, vs. independently driven wheels that can |
+| **ROS 2** | Robot Operating System 2. A robotics framework -- its own IPC (DDS), build system (colcon) and node model |
+| **DDS / colcon** | ROS 2's transport layer / its build tool |
+| **`slam_toolbox` / Cartographer / Hector SLAM** | Production SLAM implementations. Hector notably needs no odometry |
+| **Costmap** | An occupancy grid inflated by robot radius, so a planner can treat the robot as a point |
+| **Back-EMF** | Voltage a spinning motor generates back into its supply. Why motors get their own rail |
+| **BEC / buck converter** | A step-down regulator -- how to take a clean 5V off a higher-voltage pack |
+
+### 7.3 Hardware and buses
 
 | | |
 |---|---|
 | **SoC** | System on Chip. The RK3566, or the Pi 5's BCM2712 |
-| **HAT** | Hardware Attached on Top. The Pi's 40-pin add-on board spec. Two HATs wanting the same header is §1.4's conflict |
-| **PCIe** | Peripheral Component Interconnect Express. The high-speed bus the AI HAT+ uses; the Pi 5 exposes one lane |
-| **FPC** | Flexible Printed Circuit -- the flat ribbon cable. On a Pi 5 it is how PCIe leaves the board |
-| **M.2** | The card form factor (as in NVMe SSDs) the Hailo module ships in |
-| **CSI** | Camera Serial Interface. The Pi's ribbon camera port, distinct from USB |
-| **ADC** | Analog-to-Digital Converter. On the Robot HAT, for battery voltage and analog sensors |
-| **ToF** | Time of Flight. A depth sensor that times a light pulse; the VL53L5CX/L8CX give an 8x8 grid |
-| **IMU** | Inertial Measurement Unit. Accelerometer + gyroscope, for orientation and fall detection |
-| **I2C / UART** | Two low-speed serial buses. Microduck's ToF sits on I2C; its 15 servos and IMU share one UART |
+| **HAT** | Hardware Attached on Top. The Pi's 40-pin add-on spec |
+| **PCIe / FPC / M.2** | The high-speed bus the AI HAT+ uses / the ribbon cable carrying it on a Pi 5 / the Hailo module's form factor |
+| **CSI** | Camera Serial Interface. The Pi's ribbon camera port |
+| **UART / I2C** | Low-speed serial buses. Some lidars use UART; the Robot HAT may occupy the GPIO pins |
+| **USB-PD / QC** | USB Power Delivery / Quick Charge. Voltage-negotiation standards; a Pi 5 negotiates over PD |
+| **ADC** | Analog-to-Digital Converter |
+| **ToF** | Time of Flight. A depth sensor that times a light pulse |
+| **IMU** | Inertial Measurement Unit. Accelerometer + gyroscope |
 | **HFOV** | Horizontal Field Of View, in degrees |
-| **VPU / ISP** | Video Processing Unit (hardware codec) / Image Signal Processor (the sensor pipeline) |
+| **VPU / ISP** | Video Processing Unit (hardware codec) / Image Signal Processor |
 | **RKNN / rknpu2** | Rockchip's NPU model format and runtime |
 
-### 3.3 Microduck's system
+### 7.4 Microduck's system
 
 | | |
 |---|---|
-| **RL** | Reinforcement Learning -- how the locomotion policies are trained |
-| **PPO** | Proximal Policy Optimization, the specific RL algorithm |
-| **MuJoCo** | The physics simulator the policies train in |
-| **sim2real** | Getting a sim-trained policy to work on real hardware, usually via domain randomisation |
-| **FK** | Forward Kinematics. Joint angles -> where a part is in space; needed to reproject ToF zones into the robot's frame |
-| **SFLP** | Sensor Fusion Low Power. The IMU's on-chip fusion producing an orientation quaternion |
-| **JSON-RPC** | A remote-procedure-call convention over JSON. Microduck runs 2.0 over unix sockets |
-| **NDJSON** | Newline-Delimited JSON -- one object per line, so a stream is trivially framed |
-| **UDS** | Unix Domain Socket. Local IPC via a filesystem path, which is where the free access control comes from |
-| **IPC / RPC** | Inter-Process Communication / Remote Procedure Call |
-| **SO_PEERCRED** | A socket option returning the caller's uid/gid/pid -- the basis of both the audit log and enforcement |
-| **uid / gid** | User ID / Group ID |
-| **BLE** | Bluetooth Low Energy. The phone's path in, via `btd` |
-| **GATT** | Generic Attribute Profile. How BLE exposes readable/writable characteristics |
-| **RSSI** | Received Signal Strength Indicator. Signal strength, used as coarse distance between ducks |
-| **WebRTC** | Real-time media + data channels, browser-native. Carries telepresence |
-| **SDP / ICE / STUN / TURN** | WebRTC's connection machinery: Session Description Protocol (what peers offer), Interactive Connectivity Establishment (finding a path), STUN (discovering your public address), TURN (a relay when NAT defeats you -- the one that costs real bandwidth) |
-| **DTLS-SRTP** | The encryption on WebRTC media, end-to-end even through a TURN relay |
-| **SCTP** | The transport under WebRTC data channels |
-| **NAT** | Network Address Translation. Why a home robot is not directly reachable from the internet |
-| **SSE** | Server-Sent Events. One-way server push over HTTP; considered and declined |
-| **D-Bus** | Linux's system message bus; how BlueZ and NetworkManager are driven |
-| **BlueZ / NetworkManager** | Linux's Bluetooth stack / network configuration daemon |
-| **RT** | Real-Time. As in "RT-ish": tight timing, but not a hard-real-time kernel |
-| **EMA** | Exponential Moving Average. The smoothing on battery voltage so a load sag cannot trip shutdown |
+| **RL / PPO / MuJoCo / sim2real** | Reinforcement Learning · Proximal Policy Optimization · the physics simulator the policies train in · getting a sim-trained policy onto real hardware |
+| **FK** | Forward Kinematics. Joint angles to a position in space |
+| **SFLP** | Sensor Fusion Low Power. The IMU's on-chip orientation fusion |
+| **JSON-RPC / NDJSON** | A JSON RPC convention / newline-delimited JSON, one object per line |
+| **UDS / IPC / RPC** | Unix Domain Socket · Inter-Process Communication · Remote Procedure Call |
+| **SO_PEERCRED** | A socket option returning the caller's uid/gid/pid -- the basis of audit and enforcement |
+| **BLE / GATT / RSSI** | Bluetooth Low Energy · how it exposes characteristics · signal strength, used as coarse distance |
+| **WebRTC** | Real-time media and data channels, browser-native |
+| **SDP / ICE / STUN / TURN** | WebRTC's connection machinery: what peers offer · finding a path · discovering your public address · a relay when NAT defeats you |
+| **DTLS-SRTP / SCTP** | WebRTC's media encryption / the transport under its data channels |
+| **NAT** | Network Address Translation. Why a home robot is not directly reachable |
+| **SSE** | Server-Sent Events. One-way HTTP push; considered and declined |
+| **D-Bus / BlueZ / NetworkManager** | Linux's message bus / Bluetooth stack / network configuration daemon |
+| **EMA** | Exponential Moving Average. The battery-voltage smoothing that stops a load sag tripping shutdown |
 | **ULD** | Ultra Lite Driver. ST's vendored C driver for the ToF sensors |
-| **shm / dmabuf** | Shared memory / a Linux buffer-sharing mechanism -- the zero-copy escape hatch if frames ever must cross a process boundary |
-| **NV12 / UYVY / MJPEG / H.264** | Video formats: two raw YUV pixel layouts, a per-frame JPEG stream, and the compressed codec WebRTC carries |
-| **V4L2 M2M** | Video4Linux2 Memory-to-Memory. The kernel API for hardware video encode |
-| **flock / fsync / rename(2)** | Linux primitives for a safe file write: lock it, force it to disk, swap it in atomically |
-| **inotify** | Linux filesystem change notification -- deliberately not used yet |
-| **SHA-256 / minisign** | A cryptographic hash / a signature tool. Together, how a release is verified before install |
-| **OTA** | Over-The-Air. Remote software updates |
-| **RTT** | Round-Trip Time. Latency, watched by the deadman |
-| **SDK** | Software Development Kit. The planned on-robot API for third-party code |
+| **shm / dmabuf** | Shared memory / Linux buffer sharing -- the zero-copy escape hatch |
+| **NV12 / UYVY / MJPEG / H.264** | Two raw YUV layouts, a per-frame JPEG stream, and the codec WebRTC carries |
+| **V4L2 M2M** | Video4Linux2 Memory-to-Memory. The kernel API for hardware encode |
+| **flock / fsync / rename(2) / inotify** | Linux primitives for a safe file write, and change notification |
+| **SHA-256 / minisign** | A cryptographic hash / a signature tool. How a release is verified |
+| **OTA / RTT / SDK** | Over-The-Air updates · Round-Trip Time · Software Development Kit |
 
-### 3.4 This project
+### 7.5 This project
 
 | | |
 |---|---|
-| **ALB / NLB** | Application / Network Load Balancer. AWS's layer-7 and layer-4 balancers -- the pair all five services share |
-| **ECS / Fargate** | Elastic Container Service / its serverless compute mode. Where twin, brain, vision, admin and teleop run |
-| **ECR** | Elastic Container Registry. Where the ARM64 images go |
-| **EFS** | Elastic File System. The network filesystem holding recorded walks, chosen because it survives a redeploy |
-| **VPC** | Virtual Private Cloud. The network -- running VPC endpoints instead of a NAT gateway |
-| **IAM** | Identity and Access Management. How the vision task authenticates to Bedrock without an API key |
-| **CDN / CloudFront** | Content Delivery Network. The HTTPS front door |
+| **ALB / NLB** | Application / Network Load Balancer -- the pair all five services share |
+| **ECS / Fargate / ECR** | Elastic Container Service · its serverless mode · Elastic Container Registry |
+| **EFS** | Elastic File System. Holds recorded walks; survives a redeploy |
+| **DynamoDB** | AWS's key-value store -- §1.5's choice for the map |
+| **VPC / IAM** | Virtual Private Cloud · Identity and Access Management |
+| **CDN / CloudFront** | The HTTPS front door |
 | **IaC** | Infrastructure as Code. The CloudFormation templates |
-| **FPV** | First-Person View. The twin's rendered camera canvas |
-| **AR** | Augmented Reality. The Guide tab |
-| **DOM / jsdom** | Document Object Model / a headless JS implementation of it -- why the UI tests are Playwright instead |
-| **CORS** | Cross-Origin Resource Sharing. The browser rule the robot server had to allow |
-| **WASD** | The keyboard drive keys, from the never-built manual control client |
-| **CI** | Continuous Integration. The build/test pipeline |
+| **FPV / AR** | First-Person View, the twin's camera canvas · Augmented Reality, the Guide tab |
+| **DOM / jsdom** | Document Object Model / a headless JS implementation -- why UI tests are Playwright |
+| **CORS** | Cross-Origin Resource Sharing |
+| **CI** | Continuous Integration |
 
 ---
 
-## 4. Sources
+## 8. Sources
 
 - Microduck `docs/design/architecture.md` §2.4 (features not frames), §5.3
-  (server-side agents over WebSocket), §6 (safety and authority)
-- Microduck `docs/design/robotd-design.md` §1.4-§1.5 (the tick, the invariants),
-  §2.4 (safety owns the only write handle)
-- Microduck `docs/ideas/autonomous_behavior.md` ("Duck detector (camera + NPU)",
-  and the camera/ToF/BLE sensor split)
-- Microduck `docs/project/npu-bringup.md` (the `yolo11n` numbers, `dlopen` over
-  linking, "the runtime dequantises")
+  (server-side agents over WebSocket), §6 (safety and authority), §1 (`tofd`
+  owns one sensor and reads nothing -- the pattern behind (b+))
+- Microduck `docs/design/robotd-design.md` §1.4-§1.5, §2.4
+- Microduck `docs/ideas/autonomous_behavior.md` (duck detector; the camera / ToF
+  / BLE sensor split)
+- Microduck `docs/project/npu-bringup.md` (`yolo11n` numbers, `dlopen` over
+  linking)
 - Microduck `tof/src/lib.rs` (`Range` / `NoTarget` / `Unusable`)
-- Microduck `policies/README.md`, `pet-detect/README.md`
-- This repo: `CLAUDE.md` Stage 0 notes, `PLAN-microduck-transplants.md` §1-§2
-  and M1-M12, `HARDWARE-READINESS.md` §1 and §5
+- This repo: `CLAUDE.md` Stage 0 notes and §7 · `AGENT-HARNESS.md` §3, §5, §10 ·
+  `PLAN-microduck-transplants.md` §1-§2 · `HARDWARE-READINESS.md` §1, §5 ·
+  `control/mission_runner.py:255` · `brain/memory.py`
 
-Hardware claims about the Pi 5, the AI HAT+, the AI Camera and Coral are from
-general knowledge as of this document's date, **not** verified against a board.
-Every one of them is cheap to check and should be checked before money moves.
+Hardware claims about the Pi 5, the AI HAT+, the AI Camera, Coral and the lidars
+are from general knowledge as of this date, **not verified against a board**.
+Every one is cheap to check and should be checked before money moves.

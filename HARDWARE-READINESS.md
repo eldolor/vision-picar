@@ -1,5 +1,22 @@
 # Hardware transition: what the PiCar-X kit actually changes
 
+> **STALE IN PART, 2026-09-03 -- the chassis decision changed.**
+> `PLAN-onboard-perception.md` §1.1 records a decision to use a **differential-drive
+> chassis** rather than the PiCar-X's Ackermann steering, so a lidar can rotate in
+> place for scan matching. This document is written for the PiCar-X throughout and
+> has not been revised. What is affected:
+>
+> - **§1** (parts table, `picarx` library, Ackermann note) -- the body changed.
+> - **§4** (verb-to-motor path) -- `LEFT`/`RIGHT` become real pivots, not arcs.
+> - **§5.2** (`LEFT`/`RIGHT` skip the distance check, "correct for a pivot and
+>   wrong for an arc") -- **resolves to the pivot branch**, i.e. the safe one.
+> - **§5.3** (where the ultrasonic is mounted) -- superseded; a 360-degree lidar
+>   is the obstacle sensor (`PLAN-onboard-perception.md` §1.2, §3.2).
+> - **§5.4** (do not carry the vision proximity veto onto the car) -- unchanged
+>   and still correct; the lidar strengthens it.
+>
+> §2, §6 and §7 are chassis-independent and stand as written.
+
 Status: explainer, written 2026-08-27 while deciding whether to buy the
 kit. Nothing built. Companion to `PLAN-sim-hardening.md`, which covers
 the simulation work worth doing first; this doc covers what the physical

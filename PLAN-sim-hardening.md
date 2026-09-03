@@ -630,7 +630,20 @@ statistical claim about exploration behavior under noise, which is more
 honestly answered once there is a real sensor to compare against than by
 tuning a synthetic distribution to look reasonable.
 
-### Phase S6 -- Motion realism
+### Phase S6 -- Motion realism -- **RETIRED 2026-09-03**
+
+> **This phase existed because the PiCar-X could not pivot in place and
+> `sim/grid_world.py` assumed it could.** `PLAN-onboard-perception.md` §1.1
+> decides on a **differential-drive chassis** instead, so the grid world's
+> pivot assumption is now *correct* about the hardware, and section 3.3's
+> divergence is closed by the hardware choice rather than by this code.
+>
+> The Ackermann turn model, the arc blocking and the minimum-radius parameter
+> below are **no longer needed**. Continuous pose and a to-scale map may still
+> be wanted for their own sake if a lidar lands and the sim has to represent
+> metric geometry -- but that is a different phase with a different
+> justification, and it is not this one.
+
 
 **Build.** Continuous pose (float x, y, heading in degrees) underneath
 the grid, with the discrete grid derived from it for room lookup. An
