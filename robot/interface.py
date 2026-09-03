@@ -129,6 +129,10 @@ def unusable_grid(cols: int = DEPTH_COLS_DEFAULT) -> dict:
     backend cannot make a walk look as though it had exercised collision
     avoidance it never had.
     """
+    # No `fov_deg`: a backend with no sensor has no field of view, and
+    # inventing one would be the same fabrication `NO_SENSOR_CM` refuses.
+    # Nothing reads it here anyway -- an all-unusable grid never reaches a
+    # range comparison, so which zones are "the path" cannot matter.
     return {
         "rows": 1,
         "cols": cols,
@@ -199,6 +203,7 @@ class RobotInterface(ABC):
             {"rows": int,          # vertical zones; 1 when there is no
                                    #   elevation to report
              "cols": int,          # horizontal zones, left to right
+             "fov_deg": float,     # horizontal field of view the cols span
              "zones": [            # row-major, len() == rows * cols
                 {"status": ZONE_RANGE | ZONE_NO_TARGET | ZONE_UNUSABLE,
                  "distance_cm": float | None},
@@ -214,6 +219,19 @@ class RobotInterface(ABC):
         `RobotInterface` from having to change again on the day a sensor is
         fitted (`robot/factory.py`'s promise), which is the whole reason
         this is on the interface rather than tucked inside `HardwareRobot`.
+
+        **`fov_deg` is required of any backend reporting real ranges over a
+        wide field**, and is what makes `cols` mean something. Columns are
+        the centres of `cols` equal slices of it, so column `i` points at
+        `-fov_deg/2 + fov_deg * (i + 0.5) / cols` -- the convention
+        `sim/renderer.py` casts rays on and `robot/safety.py` selects the
+        path on. Omitting it is tolerated only because every backend that
+        predates it has a narrow forward field, where the fraction-of-columns
+        rule it falls back to is a sound proxy for an angle; on a
+        360-degree lidar that proxy selects the whole forward hemisphere
+        and vetoes every corridor. `PLAN-onboard-perception.md` 5.1 is the
+        full argument, and `robot/safety.py` warns when a wide grid arrives
+        without it.
 
         **`rows`/`cols` travel in the data rather than being pinned by the
         contract**, borrowing Microduck's `Frame` shape, and that is what

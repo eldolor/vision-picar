@@ -27,17 +27,23 @@ tri-state load-bearing rather than tidy.
 Run with: pytest tests/test_depth_veto.py -v
 """
 
+import logging
+import math
 import random
 
 import pytest
 
 from robot.interface import ZONE_NO_TARGET, ZONE_RANGE, ZONE_UNUSABLE
 from robot.safety import (
+    CHASSIS_WIDTH_CM,
     PATH_FRACTION,
+    PATH_HALF_ANGLE_DEG,
+    PATH_REFERENCE_CM,
     SafetyController,
     SafetyViolation,
     path_zone_indices,
 )
+from sim import renderer
 from sim.grid_world import GridWorld, Heading
 from sim.maps.starter_house import LAYOUT, OBJECTS, ROOMS
 from sim.mock_robot import MockRobot
@@ -307,3 +313,126 @@ def test_dropout_does_not_stop_the_robot_dead_the_way_the_scalar_does():
     assert grid_blocked < scalar_blocked / 10, (
         f"grid vetoed {grid_blocked}/{trials} vs the scalar's {scalar_blocked} "
         "-- the grid is supposed to survive dropout the scalar cannot")
+
+
+# ---------- selecting the path by angle, not by fraction (5.1) ----------
+#
+# PATH_FRACTION was a sound proxy for an angle while every sensor
+# considered had a narrow forward field. PLAN-onboard-perception.md 1.2
+# buys a 360-degree lidar, on which the middle half of the columns is
+# +/-90 degrees -- the whole forward hemisphere, which is the
+# permanently-vetoed-in-every-corridor failure the module's own comment
+# warns about. These pin the angular rule that replaces it.
+
+
+def test_the_angular_rule_picks_the_same_zones_as_the_fraction_did_in_the_sim():
+    """The change is of input, not of behaviour. On the sim's 60-degree
+    8-column grid both rules select the middle four, which is what makes
+    every other test in this file still meaningful."""
+    assert path_zone_indices(1, 8, 60) == path_zone_indices(1, 8) == [2, 3, 4, 5]
+
+
+def test_a_360_degree_grid_selects_the_path_and_not_the_hemisphere():
+    """The defect 5.1 found, stated as a test. A 72-zone lidar at 5 degrees
+    per bin must yield a cone a chassis width wide, not 36 zones spanning
+    +/-90 degrees -- which would read the walls beside the robot and veto
+    every corridor it is supposed to drive down."""
+    idx = path_zone_indices(1, 72, 360)
+    assert idx == [33, 34, 35, 36, 37, 38]
+    # Straddling straight ahead, and narrow.
+    assert len(idx) < 72 * PATH_FRACTION / 4
+    # What the pre-5.1 rule would have done, for contrast.
+    assert len(path_zone_indices(1, 72)) == 36
+
+
+def test_the_cone_is_symmetric_and_falls_short_of_the_chassis_by_under_one_slice():
+    """The rule's justification is that the cone brackets the chassis at one
+    move's travel -- and on a grid this coarse it *nearly* does, which is
+    worth pinning rather than rounding away.
+
+    Zones are selected by their CENTRE bearing, so the outermost selected
+    zone contributes only to its own edge: on the sim's 8-column
+    60-degree grid that edge is 15.00 degrees against a required 15.38, and
+    the cone spans 16.1cm where the chassis is 16.5. Selecting by zone
+    *edge* instead would pull in the +/-18.75 zones, widening the cone to
+    +/-30 degrees -- which reads the walls beside the robot and is the
+    corridor failure two tests below already forbid.
+
+    **This shortfall is not new.** The pre-5.1 fraction rule selected the
+    identical four zones, so the geometry is unchanged; 5.1 only made the
+    selection correct on a sensor whose columns do not span 60 degrees.
+    The gap is bounded by half a slice and is M10's to measure against a
+    real sensor's real field of view.
+    """
+    fov, cols = 60, 8
+    idx = path_zone_indices(1, cols, fov)
+    bearings = [-fov / 2 + fov * (i + 0.5) / cols for i in idx]
+
+    assert bearings == [-b for b in reversed(bearings)], "the cone must be centred"
+
+    edge = max(abs(b) for b in bearings) + (fov / cols) / 2
+    span_cm = 2 * PATH_REFERENCE_CM * math.tan(math.radians(edge))
+    shortfall = CHASSIS_WIDTH_CM - span_cm
+    assert 0 < shortfall < 1.0, (
+        f"cone spans {span_cm:.1f}cm at {PATH_REFERENCE_CM}cm against a "
+        f"{CHASSIS_WIDTH_CM}cm chassis -- expected a sub-centimetre shortfall")
+    assert edge < PATH_HALF_ANGLE_DEG, "selection is by centre, so the edge falls inside"
+
+
+def test_the_cone_under_covers_the_chassis_at_the_stop_threshold():
+    """The honest limit of a fixed-angle cone, recorded so M10 measures it
+    rather than rediscovering it.
+
+    The cone is sized at one move's travel (30cm). At the 20cm stop
+    threshold the same angles subtend only ~10.7cm, against a 16.5cm
+    chassis -- so an obstacle at the chassis corner *at the threshold* sits
+    outside the path zones and is not what the veto reads. Pre-existing:
+    the fraction rule selected the same zones. The real answer is a cone
+    that widens as range shortens, which needs a sensor whose geometry is
+    known -- M10, not the grid world.
+    """
+    fov, cols = 60, 8
+    idx = path_zone_indices(1, cols, fov)
+    edge = max(abs(-fov / 2 + fov * (i + 0.5) / cols) for i in idx) + (fov / cols) / 2
+    at_threshold = 2 * 20.0 * math.tan(math.radians(edge))
+    assert at_threshold < CHASSIS_WIDTH_CM, (
+        "if this ever passes, the cone geometry changed and M10's note above "
+        "needs revisiting")
+
+
+def test_a_grid_coarser_than_the_cone_still_has_a_path():
+    """A 360-degree grid chopped into 8 bins has no zone within the cone at
+    all. It must fall back to the zone(s) pointing most nearly ahead rather
+    than returning nothing and silently dropping through to the scalar --
+    the same promise `max(1, ...)` makes on the fraction branch."""
+    idx = path_zone_indices(1, 8, 360)
+    assert idx == [3, 4], "the two bins straddling straight ahead"
+
+
+def test_an_undeclared_field_of_view_still_works_for_a_narrow_sensor():
+    """Every backend predating 5.1 omits `fov_deg`, and all of them have
+    narrow forward fields where the fraction is a fair proxy. They must
+    keep working unchanged."""
+    assert path_zone_indices(1, 8, None) == [2, 3, 4, 5]
+    assert path_zone_indices(2, 4, None) == [1, 2, 5, 6]
+    assert path_zone_indices(1, 8, 0) == [2, 3, 4, 5]
+
+
+def test_a_wide_grid_without_a_field_of_view_warns_rather_than_guessing(caplog):
+    """The silent-fallback class M7 exists to remove. Falling back is the
+    right behaviour -- there is nothing else to do -- but doing it quietly
+    on a lidar is how the hemisphere bug ships."""
+    import robot.safety as safety_module
+
+    safety_module._warned_missing_fov = False
+    with caplog.at_level(logging.WARNING, logger="safety"):
+        path_zone_indices(1, 72, None)
+    assert any("fov_deg" in r.message for r in caplog.records), (
+        "a 72-column grid with no declared field of view must say so")
+
+
+def test_the_simulator_declares_the_field_of_view_it_actually_casts_on():
+    """`MockRobot` casts its zones on `renderer.FPV_FOV`. Publishing any
+    other number would aim the veto's cone somewhere the rays never went."""
+    grid = robot_at(2, 1, Heading.E).get_depth_grid()
+    assert grid["fov_deg"] == pytest.approx(math.degrees(renderer.FPV_FOV))

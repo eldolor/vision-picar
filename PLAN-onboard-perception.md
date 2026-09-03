@@ -1037,13 +1037,13 @@ not discovered on hardware day.
 |---|---|
 | `HARDWARE-READINESS.md` | Written for the PiCar-X **throughout**. §1's parts table, §4's verb-to-motor path and §5's pre-flight checklist all assume Ackermann + Robot HAT + `picarx`. **§5.2's arc concern resolves to the pivot branch.** §5.3 (where the ultrasonic is mounted) is superseded by the lidar |
 | `PLAN-sim-hardening.md` | **S6 (Ackermann turns, continuous pose, scaled map) is unnecessary** -- `grid_world.py`'s pivot assumption is now correct. §3.3's divergence is closed by hardware choice rather than by code |
-| `PLAN-microduck-transplants.md` | **M2/M3 are built (2026-09-03) and the seam holds** -- but `PATH_FRACTION` does not. See §5.1, which is the one concrete defect this decision creates in existing code. **M10** (clearance from a real sensor) is satisfied far better by 360-degree metric returns than by one ultrasonic beam |
+| `PLAN-microduck-transplants.md` | **M2/M3 are built (2026-09-03) and the seam holds.** `PATH_FRACTION` did not -- §5.1, the one concrete defect this decision created in existing code, **fixed 2026-09-03**. **M10** (clearance from a real sensor) is satisfied far better by 360-degree metric returns than by one ultrasonic beam |
 | `CLAUDE.md` | The status table and build order reference S6 and the PiCar-X hardware path |
 
 `HARDWARE-READINESS.md` and `PLAN-sim-hardening.md` have had staleness notes
 added pointing here. Nothing else has been edited.
 
-### 5.1 `PATH_FRACTION` breaks on a 360-degree sensor
+### 5.1 `PATH_FRACTION` breaks on a 360-degree sensor -- **FIXED 2026-09-03**
 
 **The good news first: M2's seam already accommodates a lidar, and by design.**
 `get_depth_grid()` carries `rows` and `cols` **in the data** rather than pinning
@@ -1086,6 +1086,48 @@ threshold -- so this is a change of input, not of reasoning.
 M3's own note anticipates a revisit: *"Revisited in M10 against the real
 sensor's actual field of view."* It anticipates a ToF-shaped one. This is
 larger, and cheap now.
+
+#### Done, and what it turned up
+
+`get_depth_grid()` carries **`fov_deg`**; `path_zone_indices()` takes it and
+selects every column whose bearing is within
+`atan(half the chassis width / one move's travel)` -- about **+/-15.4
+degrees** -- of straight ahead. A grid that declares no field of view keeps
+the old fraction rule, because every backend predating this has a narrow
+forward field where it is a fair proxy; a *wide* grid arriving without one
+**warns**, since a silent fallback here is how the hemisphere bug ships (M7's
+rule).
+
+**It is a change of input rather than of behaviour, and that is checkable.**
+On the sim's 60-degree 8-column grid both rules select the middle four zones,
+so the corridor and doorway tests that validate the cone still mean what they
+meant. On a 72-bin lidar the new rule selects **6 zones spanning +/-15
+degrees** where the old one selected **36 spanning +/-90**.
+
+Two things fell out of writing it that the section did not anticipate.
+
+**The fraction was already wrong for the ToF it was justified against.** The
+old comment claimed the middle half of a VL53L5CX's 45-degree field brackets
+the chassis; it spans 12cm against a 16.5cm robot, and the angular rule
+correctly widens that selection from four columns to six. The arithmetic
+happened to land close enough on the one sensor it was checked against, which
+is the same shape of error as the `NavigateModelId` trap.
+
+**A fixed-angle cone under-covers at close range, and always did.** Zones are
+selected by centre bearing, so the cone is sized at one move's travel (30cm,
+where it spans 16.1cm against the 16.5cm chassis) and at the **20cm stop
+threshold subtends only ~10.7cm**. An obstacle at the chassis corner *at the
+threshold* is therefore not what the veto reads. This is **pre-existing** --
+the fraction rule selected the identical zones -- and it is not fixable in the
+grid world, whose walls are axis-aligned and 30cm apart. The real answer is a
+cone that widens as range shortens, which needs a sensor whose geometry is
+known. **Measure it in M10**; `tests/test_depth_veto.py` pins it so it is
+found deliberately rather than rediscovered.
+
+`CHASSIS_WIDTH_CM` is still the PiCar-X's 16.5cm, deliberately: the chosen
+differential chassis is 148mm wide, so the cone errs wide, which is the safe
+direction. **Re-measure it on the real chassis** -- a hardware-day pre-flight
+item, not a guess to leave standing.
 
 ---
 

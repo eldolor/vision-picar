@@ -82,7 +82,7 @@ Seven of the twelve phases need no hardware.
 |---|---|---|---|
 | M1 | Settle the gate reading | pre-hardware | **DONE.** The replay table gained two columns; the sim leg is blocked on the renderer |
 | M2 | A depth grid on the interface, and in the sim | pre-hardware | **DONE.** A depth strip under the FPV canvas, tracking the view |
-| M3 | The tri-state zone, and a centre-zone veto | pre-hardware | **DONE.** Dropout reads grey, not "wall". The off-centre half is M10's |
+| M3 | The tri-state zone, and a centre-zone veto | pre-hardware | **DONE.** Dropout reads grey, not "wall". The off-centre half is M10's, and so is the close-range cone gap 5.1 documented |
 | M4 | Refusals are state, manual preempts autonomous | pre-hardware | **DONE.** Tap the D-pad mid-mission. It ends `preempted`, and says by whom |
 | M5 | One health command | pre-hardware | **DONE.** Kill the brain. Settings flips and the command exits non-zero |
 | M6 | A process start never moves the robot | pre-hardware | Restart the robot server mid-mission. The map does not twitch |
@@ -944,6 +944,17 @@ gimbal mounting gives both.
 - Write the fusion rule into `HARDWARE-READINESS.md` 5.4: camera for bearing
   and room, sensor for clearance, the prompt is never asked for distance.
 - Compare against M1's recorded "what the sensor must catch" column.
+- **Set `robot/safety.py`'s `PATH_HALF_ANGLE_DEG` inputs from the real
+  sensor**, and measure the close-range gap it documents.
+  `PLAN-onboard-perception.md` 5.1 replaced the fraction-of-columns rule with
+  an angular one (2026-09-03) so a 360-degree unit selects a path rather than
+  the forward hemisphere -- but zones are chosen by centre bearing, so the
+  cone is sized at one move's travel and subtends only ~10.7cm at the 20cm
+  stop threshold against a 16.5cm chassis. Pre-existing, not introduced, and
+  not observable in the grid world (axis-aligned walls 30cm apart). The real
+  answer is a cone that widens as range shortens, which needs a sensor whose
+  geometry is known -- i.e. this phase. `CHASSIS_WIDTH_CM` is still the
+  PiCar-X's and wants re-measuring on the chassis actually bought.
 
 **Press this.** D-pad toward a chair leg a single ultrasonic beam misses. The
 safety collar flashes before contact.

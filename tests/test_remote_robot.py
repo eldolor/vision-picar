@@ -143,8 +143,12 @@ def test_depth_grid_comes_from_the_robot_not_from_the_interface_default(robot_ov
         "the interface default was inherited instead of the route being called"
     )
     local = fresh_mock_robot().get_depth_grid()
-    assert {k: grid[k] for k in ("rows", "cols", "zones")} == local, (
+    assert {k: grid[k] for k in ("rows", "cols", "fov_deg", "zones")} == local, (
         "the wire must not change the grid: same robot, same start pose"
+    )
+    assert grid["fov_deg"] == local["fov_deg"], (
+        "fov_deg has to survive the wire or brain-side safety silently falls "
+        "back to the fraction-of-columns rule (PLAN-onboard-perception.md 5.1)"
     )
     # It may *add* to it, and since M3 it does: the route composes the
     # server's own safety reduction onto the backend's grid, so the twin can

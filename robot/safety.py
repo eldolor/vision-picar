@@ -28,9 +28,15 @@ against a threshold rather than anything cleverer.
 """
 
 import logging
+import math
 from typing import Optional, Tuple
 
-from robot.interface import RobotInterface, ZONE_RANGE, ZONE_UNUSABLE
+from robot.interface import (
+    DEPTH_COLS_DEFAULT,
+    RobotInterface,
+    ZONE_RANGE,
+    ZONE_UNUSABLE,
+)
 
 logger = logging.getLogger("safety")
 
@@ -47,45 +53,131 @@ logger = logging.getLogger("safety")
 # after the first collision.
 FORWARD_ACTIONS = {"FORWARD"}
 
-# How much of the depth grid's width counts as "the path the next move
-# crosses" -- phase M3. The middle half of the columns, and the reason is
-# geometry rather than taste.
+# What counts as "the path the next move crosses" -- phase M3, reworked by
+# PLAN-onboard-perception.md section 5.1. The reason is geometry rather
+# than taste, and the geometry is an ANGLE.
 #
-# A PiCar-X is about 16.5cm wide. The middle half of the sim's 60-degree
-# render is +/-15 degrees, which at one grid cell (30cm) ahead spans 16cm,
-# and at the 20cm stop threshold spans 11cm. The middle half of a
-# VL53L5CX's 45-degree field is +/-11.25 degrees: 12cm at one cell. Both
-# bracket the robot's own width, which is the number that matters -- the
-# veto should refuse what the chassis would hit and nothing else.
+# The rule: a zone is in the path if its bearing is within
+# +/-atan(half the chassis width / one move's travel) of straight ahead.
+# That is the cone the chassis sweeps crossing the ground the next move
+# covers, so the veto refuses what the robot would hit and nothing else.
 #
-# The two failure modes either side of this are both real and both
-# observable in the grid world. Take the WHOLE grid and the outermost rays
-# of a 60-degree cone read the side walls of a 30cm corridor at ~18cm, so
-# the robot is permanently vetoed in every corridor it is supposed to
-# drive down. Take a single centre ray -- which is what `get_distance()`
-# is -- and it looks straight through a doorway while the door frame is
-# about to catch the chassis. Widening this fraction makes doorways
-# unpassable; narrowing it turns the veto back into the one beam it
-# already was.
+# The two failure modes either side of it are both real and both
+# observable in the grid world. Too WIDE and the outermost rays of a
+# 60-degree cone read the side walls of a 30cm corridor at ~18cm, so the
+# robot is permanently vetoed in every corridor it is supposed to drive
+# down. Too NARROW and it degenerates to the single centre ray
+# `get_distance()` already was, looking straight through a doorway while
+# the frame is about to catch the chassis.
 #
-# Revisited in M10 against the real sensor's actual field of view, which
-# is the only thing that makes these angles more than arithmetic.
+# **Why this is an angle and not a fraction of the columns.** It used to
+# be `PATH_FRACTION = 0.5`, the middle half of the columns, which was a
+# sound proxy while every sensor considered had a narrow forward field --
+# 60 degrees in the sim, 45 on a VL53L5CX. On a 360-degree lidar the
+# middle half of the columns is +/-90 degrees: the entire forward
+# hemisphere, which is precisely the permanently-vetoed-in-every-corridor
+# failure above. The grid carried `rows`/`cols` but never the angular span
+# they cover, because with every sensor so far that span was implicit and
+# similar. A 360-degree sensor makes the omission load-bearing, so
+# `get_depth_grid()` now carries `fov_deg` and this selects on it.
+#
+# On the sim's 60-degree/8-column grid the two rules pick the same four
+# zones, which is what makes this a change of input rather than of
+# behaviour. On a 45-degree ToF the angular rule picks six columns where
+# the fraction picked four -- the fraction's +/-11.25 degrees spans 12cm at
+# one move's travel, which does NOT bracket a 16.5cm chassis. The old
+# comment claimed it did. It was arithmetic that happened to land close
+# enough on the one sensor it was checked against.
+#
+# CHASSIS_WIDTH_CM is the PiCar-X's, kept deliberately: the differential
+# chassis chosen in PLAN-onboard-perception.md section 1.1 is 148mm wide,
+# so this over-states the width and the cone errs wide, which is the safe
+# direction. **Re-measure it on the real chassis** -- that is a hardware-day
+# pre-flight item, not a guess to leave standing.
+CHASSIS_WIDTH_CM = 16.5
+# How far ahead the cone is required to bracket the chassis: one move's
+# travel, since that is the ground `path_zone_indices()` is asked about.
+# One grid cell in the sim, and what the original arithmetic used.
+PATH_REFERENCE_CM = 30.0
+PATH_HALF_ANGLE_DEG = math.degrees(math.atan(CHASSIS_WIDTH_CM / 2 / PATH_REFERENCE_CM))
+
+# The pre-5.1 rule, still used for a grid that does not declare `fov_deg`.
+# Correct for the narrow forward sensors that are the only ones able to
+# omit it (see `path_zone_indices()`), and wrong for a wide one -- which is
+# why omitting it is warned about rather than silently accepted.
 PATH_FRACTION = 0.5
 
+# Above how many columns an undeclared field of view is treated as a
+# mistake rather than as a narrow sensor. `DEPTH_COLS_DEFAULT` is what a
+# VL53L5CX gives per row and what every backend here publishes today, so
+# anything wider is a sensor this module has not been told the geometry of.
+_WIDE_GRID_COLS = DEPTH_COLS_DEFAULT
 
-def path_zone_indices(rows: int, cols: int) -> list:
+# One warning per process, not per call: this is on the veto's hot path.
+_warned_missing_fov = False
+
+
+def _zone_bearings_deg(cols: int, fov_deg: float) -> list:
+    """The bearing of each column's centre, left to right, relative to
+    straight ahead.
+
+    Matches how the zones are cast in the first place -- `MockRobot`'s
+    `get_depth_grid()` and `sim/renderer.py`'s ray loop both walk
+    `-fov/2 + fov * (i + 0.5) / cols`. Two copies of that convention is
+    how the strip and the veto would start disagreeing about which
+    direction a zone points.
+    """
+    return [-fov_deg / 2 + fov_deg * (i + 0.5) / cols for i in range(cols)]
+
+
+def path_zone_indices(rows: int, cols: int, fov_deg=None) -> list:
     """Which zones of a `rows` x `cols` grid the next move crosses.
 
-    The middle `PATH_FRACTION` of the columns, in every row. Rows are not
-    narrowed here: the sim publishes `rows: 1` (`cast_ray()` has no
-    elevation), and on a real sensor the rows that matter are decided by
-    M8's floor rejection, which is geometry this layer does not have.
-    Taking all rows until then is the conservative reading -- a floor
+    `fov_deg` is the grid's own horizontal field of view, straight out of
+    `get_depth_grid()`. Given one, the path is every column whose bearing
+    is within `PATH_HALF_ANGLE_DEG` of ahead. Without one, it falls back to
+    the middle `PATH_FRACTION` of the columns.
+
+    **The fallback is for narrow sensors only, and says so out loud.** A
+    backend that reports real ranges over a wide field and omits `fov_deg`
+    gets the pre-5.1 behaviour, which on a 360-degree unit selects the
+    whole forward hemisphere and vetoes everything. That is a silent
+    fallback of exactly the kind M7 exists to remove, so it warns.
+
+    Rows are not narrowed here: the sim publishes `rows: 1` (`cast_ray()`
+    has no elevation), and on a real sensor the rows that matter are
+    decided by M8's floor rejection, which is geometry this layer does not
+    have. Taking all rows until then is the conservative reading -- a floor
     return would veto a legal move rather than hide a real one.
     """
-    span = max(1, round(cols * PATH_FRACTION))
-    first = (cols - span) // 2
-    return [r * cols + c for r in range(rows) for c in range(first, first + span)]
+    global _warned_missing_fov
+    if cols <= 0:
+        return []
+
+    if fov_deg and fov_deg > 0:
+        bearings = _zone_bearings_deg(cols, float(fov_deg))
+        chosen = [c for c, b in enumerate(bearings) if abs(b) <= PATH_HALF_ANGLE_DEG]
+        if not chosen:
+            # Slices wider than the cone itself -- a coarse 360-degree grid.
+            # Keep the column(s) pointing most nearly ahead rather than
+            # returning nothing and falling through to the scalar, which is
+            # the same `max(1, ...)` promise the fraction branch makes.
+            nearest = min(abs(b) for b in bearings)
+            chosen = [c for c, b in enumerate(bearings)
+                      if abs(abs(b) - nearest) < 1e-9]
+    else:
+        if cols > _WIDE_GRID_COLS and not _warned_missing_fov:
+            _warned_missing_fov = True
+            logger.warning(
+                "depth grid reports %d columns but no fov_deg -- falling back to "
+                "the middle %.0f%% of columns, which is only correct for a narrow "
+                "forward sensor. A wide sensor must declare fov_deg "
+                "(PLAN-onboard-perception.md 5.1).", cols, PATH_FRACTION * 100)
+        span = max(1, round(cols * PATH_FRACTION))
+        first = (cols - span) // 2
+        chosen = list(range(first, first + span))
+
+    return [r * cols + c for r in range(rows) for c in chosen]
 
 
 class SafetyViolation(Exception):
@@ -138,7 +230,9 @@ class SafetyController:
         if get_grid is not None:
             grid = get_grid()
             zones = grid.get("zones") or []
-            indices = path_zone_indices(int(grid.get("rows", 1)), int(grid.get("cols", 0)))
+            indices = path_zone_indices(int(grid.get("rows", 1)),
+                                        int(grid.get("cols", 0)),
+                                        grid.get("fov_deg"))
             path = [zones[i] for i in indices if i < len(zones)]
             measured = [
                 z["distance_cm"] for z in path

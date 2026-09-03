@@ -932,6 +932,20 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   the reduction anywhere: `GET /depth` publishes it (`path`) precisely so
   the twin can draw it without owning it.
 
+- **Which zones are "the path" is chosen by ANGLE, not by fraction of the
+  columns** (`PLAN-onboard-perception.md` 5.1, fixed 2026-09-03). The grid
+  carries `fov_deg`, and `path_zone_indices()` selects every column whose
+  bearing is within ~15.4 degrees of ahead -- `atan(half the chassis width /
+  one move's travel)`. It used to take the middle half of the columns, which
+  was a fair proxy only because every sensor considered had a narrow forward
+  field: on the 360-degree lidar now chosen, the middle half of the columns is
+  **the entire forward hemisphere**, which vetoes every corridor. **A backend
+  with a wide field must publish `fov_deg`** -- one that doesn't gets the old
+  fraction rule and a warning, never silence. On the sim's 60-degree grid both
+  rules pick the same four zones, so this changed no behaviour there, and the
+  readout that would show it if it broke is the depth strip's outlined path
+  zones under the twin's FPV canvas.
+
 - **Safety is enforced server-side, always.** Both the sim agents
   (`brain/agent.py`) and the Wi-Fi API (`robot/server.py`) route every
   movement action through `robot/safety.py`'s `SafetyController`. Don't

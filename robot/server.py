@@ -392,7 +392,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         clearance, source = safety.path_clearance()
         grid["path"] = {
             "indices": path_zone_indices(
-                int(grid.get("rows", 1)), int(grid.get("cols", 0))
+                int(grid.get("rows", 1)), int(grid.get("cols", 0)),
+                grid.get("fov_deg"),
             ),
             "clearance_cm": clearance,
             "source": source,

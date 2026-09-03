@@ -25,6 +25,7 @@ existing demo stay exactly as fast and as exact as they always were:
 """
 
 import logging
+import math
 import time
 from typing import Optional
 
@@ -264,7 +265,12 @@ class MockRobot(RobotInterface):
                 zones.append({"status": interface.ZONE_RANGE, "distance_cm": reading})
 
         self.world._record(f"DEPTH view_heading={view.name} cols={cols}")
-        return {"rows": 1, "cols": cols, "zones": zones}
+        # `fov_deg` is the render's own field of view, and it must be: the
+        # zones above are cast on `renderer.FPV_FOV`, so publishing anything
+        # else would point `robot/safety.py`'s path cone somewhere the rays
+        # never went.
+        return {"rows": 1, "cols": cols,
+                "fov_deg": math.degrees(renderer.FPV_FOV), "zones": zones}
 
     def get_distance(self) -> float:
         """Distance in cm, matching the real ultrasonic sensor's units.
