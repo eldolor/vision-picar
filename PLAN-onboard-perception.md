@@ -486,11 +486,14 @@ Tiering pays off only if deliberation is **event-driven, never periodic**.
 | **Candidate sighting** | reactive | detector thinks it sees the target; cloud confirms identity and reachability |
 | Staleness | timer | a goal older than N seconds is suspect |
 
-The saving is exactly **reactive steps per goal**, and that number is
-**unmeasured**. Sim runs took 40 steps; real walks reached target in 6-22
-frames. At ~8 reactive steps per goal it is ~8x -- a real number, but derived,
-not measured, and it should not be quoted as one until §6.1's free experiment
-has been run.
+The saving is exactly **reactive steps per goal**. It was derived here as ~8x
+(sim runs took 40 steps; real walks reached target in 6-22 frames) and flagged
+as underived-from-data. **§6.1 has now measured it: 4.1x pooled, 2.2x-5.7x by
+mission length. Quote 4-6x.** Two things that estimate missed, both in §6.1:
+the saving is bounded by the *event* rate rather than by the staleness timer,
+and ~40% of a naive trigger count is `target_visible` / `room_guess` flicker
+rather than events -- so **the trigger policy needs the same hysteresis
+`lost_target` does**, or it fires on noise.
 
 **The candidate-sighting trigger is the one that does real work**, not just cost
 saving: it is what keeps a cheap local detector honest. The detector says
@@ -1088,7 +1091,7 @@ larger, and cheap now.
 
 ## 6. Open questions
 
-### 6.1 Measurable today, for free
+### 6.1 Measurable today, for free -- **MEASURED 2026-09-03**
 
 **Replay the trigger policy over recorded walks.** Every walk on EFS carries
 `walk.jsonl` -- frames plus the `/navigate` reply at the time, including
@@ -1098,10 +1101,59 @@ No new inference, no Bedrock charge, no hardware. It turns §2.4's cost claim
 into a number, on data already owned -- the same move `control/walk_replay.py`
 already makes for prompts.
 
-**Caveat with teeth:** the current corpus is the invalid one (target on raised
-furniture, camera at standing height). The trigger count is probably robust to
-that, being about room transitions rather than depth, but it should be re-run on
-the re-recorded corpus before anyone quotes it.
+**Run: `python -m tests.manual_trigger_count`** -- 39 walks, 821 recorded
+frames, §2.4's six triggers, `stale_n=8`. Two of them are not witnessable in
+a recorded walk and are therefore *undercounted*: "goal impossible / boxed in"
+needs the lidar this corpus predates, and a goal the reactive tier would have
+finished early leaves no trace in a walk the model drove step by step. So the
+saving below is if anything **over**-stated, which is the safe direction.
+
+**§2.4's "~8x" is 4.1x, and the two refinements matter more than the
+headline.**
+
+**First: ~40% of the naive trigger count is field noise, not events.** Firing
+on every raw `target_visible` / `room_guess` edge gives 2.8x. Requiring two
+consecutive frames of agreement before believing an edge -- the same
+hysteresis `lost_target` always needed -- gives **4.1x**; three frames, 4.5x.
+`target_visible` flips on **24.1%** of frames and `room_guess` changes on
+12.7%, which is `control/walk_eval.py`'s `unstable-identity` flag seen from
+the cost side. **A trigger policy is only as stable as the fields it triggers
+on**, and §2.4 does not say so. Hysteresis is not tuning; it is what makes
+trigger discipline work at all.
+
+**Second: the saving scales with mission length**, because `start` is one
+fixed trigger per mission (39 of 199 triggers here, over a corpus full of very
+short walks):
+
+| mission length | walks | frames | saving |
+|---|---|---|---|
+| < 10 frames | 12 | 75 | 2.2x |
+| 10-19 | 15 | 205 | 3.4x |
+| 20-39 | 9 | 295 | 4.8x |
+| 40+ | 3 | 246 | **5.7x** |
+
+So ~8x is an over-estimate for the missions actually recorded, but it is the
+right order and the trend runs toward it. **Quote 4-6x, not 8x.**
+
+**Third, and load-bearing for the design: the staleness timer is not the cost
+driver.** Past `stale_n` ~10 it stops binding entirely (5.7% of triggers at 8),
+so cost is set by the *event* rate, not by how long a goal is allowed to run.
+Tuning the timer to save money will not work; stabilising the fields will.
+
+**The caveat this section was written with does not bite.** The worry was that
+the corpus is the invalid one (target on raised furniture, camera at standing
+height). Splitting it three ways -- different targets, rooms and dates --
+gives 4.2x / 3.7x / 4.7x and a visibility-flip rate of 24.8% / 24.4% / 21.2%:
+
+| group | walks | frames | saving | `target_visible` flip rate |
+|---|---|---|---|---|
+| red-backpack (Aug 28-30) | 25 | 508 | 4.2x | 24.8% |
+| blue-bottle (Aug 30-31) | 9 | 176 | 3.7x | 24.4% |
+| bottle (Sep 02) | 5 | 137 | 4.7x | 21.2% |
+
+The flicker is a property of the perception, not of one bad session. Re-run it
+on the re-recorded corpus anyway -- it costs nothing -- but the number is not
+waiting on that.
 
 ### 6.2 The five questions, and where they landed
 
@@ -1109,9 +1161,10 @@ the re-recorded corpus before anyone quotes it.
 Q4 the detector and arbitration (1.10, 1.11) · Q5 the sim (1.12). Q1's map and
 persistence questions are 1.5-1.6.
 
-What remains open is **not design** but measurement and verification: 6.1's free
-trigger-count experiment, 3.8's four seller questions, 1.10's model-zoo check,
-and the re-recorded Stage 0 corpus.
+What remains open is **not design** but measurement and verification: 3.8's four
+seller questions, 1.10's model-zoo check, and the re-recorded Stage 0 corpus.
+**6.1's free trigger-count experiment is done** (2026-09-03) -- it is the one
+item on that list that needed neither a seller nor a walk.
 
 Kept as an index into where each landed:
 
