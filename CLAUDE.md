@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 571 passed, with a browser
+# Confirm everything still works (should show 592 passed, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -116,6 +116,7 @@ the original build plan phases, reordered simulation-first):
 | M2 | A depth grid on `RobotInterface`, and in the sim | Done (2026-09-03), not deployed -- `get_depth_grid()` with an honest all-unusable default, `MockRobot` synthesising it from `renderer.cast_ray()`, `GET /depth`, `RemoteRobot` over it, a depth strip under the twin's FPV canvas, and `_HaltGate` added to the conformance suite as a fifth backend. Nothing in `brain/` reads it yet: M3 is the consumer. See `PLAN-microduck-transplants.md`. |
 | M3 | The tri-state zone, and a centre-zone veto | Done (2026-09-03), not deployed -- `SafetyController.path_clearance()` reduces the middle half of the grid's columns to one number and compares it to `min_distance_cm`, exactly as it compared `get_distance()` before. A failed zone never enters the comparison in either direction; a wholly blind path falls back to the scalar and keeps its `0.0`-on-dropout stop. `GET /depth` publishes the reduction so the twin never recomputes it. |
 | M4 | Refusals are state, manual preempts autonomous | Done (2026-09-03), not deployed -- `robot/server.py` arbitrates `/action` by a decided order (`stop > twin-dpad > brain > twin-local-brain`, `AGENT-HARNESS.md` 4.1) instead of letting the last writer win, every refusal carries a machine-readable `reason`, `RemoteRobot` raises `Preempted` rather than `SafetyViolation`, and a preempted mission ends `preempted` with the robot stopped. |
+| M5 | One health command | Done (2026-09-03), not deployed -- `python -m control.health` (and a Settings health line) asks both halves and exits non-zero when either is unhealthy or unreachable. Verdict inputs are reachability, the robot watchdog loop's own poll freshness, and a running mission's tick liveness; everything else is description and never changes the exit code. Both servers now log an identity line at start-up. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -131,6 +132,10 @@ vision-picar/
 │   │                         (incl. get_depth_grid(), M2 -- the only method with a
 │   │                          default: all-unusable, so a sensorless backend says so)
 │   ├── factory.py            picks sim vs. hardware backend from config/robot.yaml
+│   ├── identity.py            one start-up line: service, git revision,
+│   │                           executable path, config path (M5). In robot/
+│   │                           because BOTH servers log it and robot/ may
+│   │                           never import control/
 │   ├── safety.py              local safety layer; can veto any action, sim or real
 │   └── server.py              FastAPI Wi-Fi control API (Phase 9), CORS-enabled,
 │                               require_secret() gate once deployed publicly,
@@ -181,6 +186,10 @@ vision-picar/
 │   ├── brain_config.py       the `brain:` block of config/robot.yaml
 │   ├── drills.py             fault injection, so the failsafes can be shown
 │   │                           from the twin and not only asserted in tests
+│   ├── health.py             `python -m control.health` -- one verdict for
+│   │                           both halves, non-zero when either is broken
+│   │                           or unreachable. Holds the rule about what may
+│   │                           reach a verdict at all (M5)
 │   ├── walk_eval.py          scores a recorded walk: deterministic metrics
 │   │                           (degenerate / stalled / oscillating /
 │   │                           unstable-identity), an LLM judge over sampled
@@ -196,13 +205,14 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    571 tests, 99% line coverage of brain/,
+├── tests/                    592 tests, 99% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
 │                              75 tests over five backends,
 │                              test_sensors.py [S5],
 │                              test_depth_veto.py [M3],
 │                              test_authority.py [M4],
+│                              test_health.py [M5],
 │                              test_watchdog_integration.py [S4],
 │                              test_walk_eval.py + test_admin_server.py
 │                              (the recorded-walk scorecard and replay),
@@ -874,6 +884,15 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   backend directly, "run the brain on the Pi" stops being a config
   change.
 
+- **Only conditions a release can be blamed for may reach a health
+  verdict** (M5). `control/health.py` holds that rule and is the only place
+  that decides what "unhealthy" means -- the twin's Settings line renders
+  its per-half answers and must never invent one, or the page and the
+  command that gates M11's rollback could disagree about the same robot.
+  When adding a `/health` field, put it in the verdict list or the
+  description list deliberately: a check that goes red because the robot is
+  parked is one everybody learns to ignore.
+
 - **Since M4 the robot server arbitrates who is driving**, by the order in
   `AGENT-HARNESS.md` 4.1 (`stop > twin-dpad > brain > twin-local-brain`).
   Every `/action` names its driver in an `x-driver` header; an unnamed one
@@ -1092,6 +1111,7 @@ endpoint, on purpose (real hardware has none either).
 | M2 | a depth grid the robot reports | Sim tab, look under the FPV canvas, then drive the D-pad at a wall | Eight zones, red near and green far, hatched grey where unmeasurable, with the grid's own shape and the nearest zone named beneath. Tap look-left and the strip swings with the picture -- it is cast off the *view* heading, same as the render. A server predating the route says "not reported by this server" rather than going blank, because blank and "no obstacles" must not look alike |
 | M3 | the veto reading the grid | Set `sim.sensor_noise.enabled: true` with `dropout_rate: 0.2`, restart the robot server, then drive the D-pad at a wall | The path zones are outlined on the strip and the readout names the clearance the veto actually reads, plus where it came from. Dropped zones hatch grey and the robot keeps going -- seven others answered, where a single beam reading `0.0` would have stopped it. Against the wall the strip turns red and says FORWARD is vetoed |
 | M4 | a person outranks the brain | Sim tab -> Remote brain -> Start, then tap the D-pad | The mission ends `preempted` (not `failed`), the log line names `twin-dpad`, the car does what the pad said, and the Driving readout switches. Stop touching it for a second and it reads "twin-dpad (lapsed)" -- authority rides the same deadman the watchdog does, which is why there is no release button to forget |
+| M5 | one health answer | Settings -> Check health, then kill the brain and press it again | OK naming each build's git revision, then UNHEALTHY naming the brain with the robot still ok. Drive into a wall first and it stays OK: a parked robot with a safety veto on record is not a release to blame. `python -m control.health` prints the same verdict and its exit code follows |
 | M1 | the vision policy, from a phone | Sim tab -> Remote brain -> policy "Vision policy", then Start | The panel names the model and wording first; then each step is one `/navigate` call and the log shows the model's own reasoning. With `sim.sensor_noise.enabled: true` the safety collar is the only thing vetoing a FORWARD at a wall -- which under `bearing-only` is the entire design |
 | -- | overlapped vision calls | Guide tab -> Robot view, Start, with developer readouts on | Decisions land about every 500ms instead of every ~3s. The call counter climbs at the dispatch rate, and an answer overtaken by a newer one is never drawn |
 | -- | environment banner | Run the robot server with `ENV_LABEL=Lab`, reload the twin | An orange "LAB ENVIRONMENT" bar at the top, a coloured rule on the tab bar, and `LAB ·` prefixing the tab title. Unset it and everything disappears -- that absence *is* production's state |
@@ -1107,6 +1127,7 @@ phase rather than bolted on after:
 | S1 pin the contract | **Suite built, button not.** A **"Check robot contract"** button in Settings: run the interface's methods against whatever robot is connected and report which returned the wrong shape. `tests/test_robot_contract.py` is the suite itself, runnable from a terminal against any backend today; the Settings button that makes it pressable from the twin is still owed |
 | S2 real JPEG frames | The FPV canvas shows the **server-rendered** frame, with a "frame source: server / local" readout. The picture should not change; where it comes from should |
 | M2 depth grid | **Built 2026-09-03.** The depth strip under the twin's FPV canvas, tracking the view |
+| M5 one health command | **Built 2026-09-03.** The Settings health line and its Check health button |
 | M4 authority + refusal reasons | **Built 2026-09-03.** "Driving" and "Last refusal" beside the watchdog readout, and the mission log naming the refusal instead of stamping every one of them `[VETOED]` |
 | M3 tri-state veto | **Built 2026-09-03.** The path zones outlined on that strip, and a readout naming the clearance the veto reads and its source. The "off-centre approach" half of its done-when is **not** demonstrable here and is deliberately left to M10 -- the grid world's walls are axis-aligned and 30cm apart, so a cone and a single ray hit them at nearly the same distance, and a sim test for it would pass because the failure cannot occur |
 | S2b Python vision agent | **Built 2026-09-02 (M1).** The Remote brain panel has a policy picker; `policy: "vision"` runs the Python agent and the log carries Claude's own reasoning instead of "free space clear". The panel names the model and the wording it would ask with, before you spend anything |

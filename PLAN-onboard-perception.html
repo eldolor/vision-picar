@@ -1,0 +1,869 @@
+<meta charset="utf-8">
+<title>Perception on the Car</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+  :root{
+    --bg:#F5F7F4;
+    --surface:#FFFFFF;
+    --surface-sunken:#ECF1ED;
+    --text:#10160F;
+    --text-muted:#55655A;
+    --text-faint:#8C978C;
+    --border:#DCE3DC;
+    --accent:#0F7A54;
+    --accent-strong:#0A5F42;
+    --accent-soft:#DEF0E6;
+    --panel-bg:#0D1713;
+    --panel-bg-2:#101E18;
+    --panel-text:#C4EBDA;
+    --panel-text-dim:#7DA895;
+    --panel-border:rgba(79,224,172,0.28);
+    --shadow-card:0 1px 2px rgba(16,22,15,0.05), 0 10px 28px -16px rgba(16,22,15,0.16);
+    --radius:12px;
+    --serif:'IBM Plex Serif', Georgia, 'Times New Roman', serif;
+    --sans:'IBM Plex Sans', -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --mono:'IBM Plex Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0A100C;
+      --surface:#111812;
+      --surface-sunken:#0D1410;
+      --text:#E8EEE7;
+      --text-muted:#94A69A;
+      --text-faint:#5B6C60;
+      --border:#213028;
+      --accent:#49E2AD;
+      --accent-strong:#79F0C7;
+      --accent-soft:rgba(73,226,173,0.14);
+      --panel-bg:#132019;
+      --panel-bg-2:#0F1A14;
+      --panel-text:#BEEEDA;
+      --panel-text-dim:#6F9384;
+      --panel-border:rgba(73,226,173,0.32);
+      --shadow-card:0 1px 2px rgba(0,0,0,0.35), 0 14px 32px -18px rgba(0,0,0,0.55);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0A100C;
+    --surface:#111812;
+    --surface-sunken:#0D1410;
+    --text:#E8EEE7;
+    --text-muted:#94A69A;
+    --text-faint:#5B6C60;
+    --border:#213028;
+    --accent:#49E2AD;
+    --accent-strong:#79F0C7;
+    --accent-soft:rgba(73,226,173,0.14);
+    --panel-bg:#132019;
+    --panel-bg-2:#0F1A14;
+    --panel-text:#BEEEDA;
+    --panel-text-dim:#6F9384;
+    --panel-border:rgba(73,226,173,0.32);
+    --shadow-card:0 1px 2px rgba(0,0,0,0.35), 0 14px 32px -18px rgba(0,0,0,0.55);
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto;}
+    *{animation-duration:0.01ms !important; transition-duration:0.01ms !important;}
+  }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--serif);
+    font-size:17px;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,h4{font-family:var(--sans); color:var(--text); text-wrap:balance; margin:0;}
+  p{margin:0 0 1.05em; max-width:66ch;}
+  ul,ol{margin:0 0 1.1em; padding-left:1.35em; max-width:64ch;}
+  li{margin-bottom:0.42em;}
+  a{color:var(--accent-strong);}
+  code{
+    font-family:var(--mono); font-size:0.86em;
+    background:var(--surface-sunken); border:1px solid var(--border);
+    border-radius:5px; padding:0.1em 0.42em;
+  }
+  strong{color:var(--text); font-weight:600;}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:4px;}
+
+  /* ---------- page shell ---------- */
+  .page{max-width:1280px; margin:0 auto; padding:0 clamp(20px,4vw,48px);}
+
+  .masthead{
+    padding:56px 0 40px;
+    border-bottom:1px solid var(--border);
+  }
+  .eyebrow{
+    font-family:var(--mono); font-size:0.74rem; letter-spacing:0.14em;
+    text-transform:uppercase; color:var(--accent-strong);
+    display:flex; align-items:center; gap:10px; margin-bottom:18px;
+  }
+  .eyebrow::before{
+    content:""; width:7px; height:7px; border-radius:50%;
+    background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft);
+    flex:none;
+  }
+  h1.title{
+    font-size:clamp(2.3rem,4.6vw,3.1rem); font-weight:700; letter-spacing:-0.015em;
+    max-width:14ch; margin-bottom:16px;
+  }
+  .dek{
+    font-family:var(--serif); font-size:1.15rem; color:var(--text-muted);
+    max-width:56ch; margin-bottom:30px;
+  }
+  .status-row{
+    display:flex; flex-wrap:wrap; gap:10px; margin-bottom:28px;
+  }
+  .chip{
+    font-family:var(--mono); font-size:0.76rem; letter-spacing:0.02em;
+    color:var(--text-muted); background:var(--surface); border:1px solid var(--border);
+    border-radius:999px; padding:6px 13px; display:inline-flex; align-items:baseline; gap:6px;
+    font-variant-numeric:tabular-nums;
+  }
+  .chip b{color:var(--text); font-weight:600;}
+
+  .jump-row{display:flex; flex-wrap:wrap; gap:10px;}
+  .jump-link{
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:var(--sans); font-weight:600; font-size:0.88rem;
+    color:var(--text); text-decoration:none;
+    background:var(--surface); border:1px solid var(--border); border-radius:999px;
+    padding:9px 16px 9px 12px; transition:border-color .15s ease, transform .15s ease, background .15s ease;
+  }
+  .jump-link:hover{border-color:var(--accent); background:var(--accent-soft); color:var(--accent-strong);}
+  .jump-link svg{flex:none;}
+
+  /* ---------- layout ---------- */
+  .layout{
+    display:grid; grid-template-columns: 232px minmax(0,700px);
+    gap:60px; padding:44px 0 100px; justify-content:center;
+  }
+  nav.toc{position:sticky; top:28px; align-self:start; max-height:calc(100vh - 56px); overflow-y:auto;}
+  nav.toc ol{list-style:none; margin:0; padding:0;}
+  nav.toc > ol > li{margin-bottom:2px;}
+  .toc-link{
+    display:flex; gap:10px; align-items:baseline; text-decoration:none;
+    font-family:var(--sans); font-size:0.86rem; font-weight:500;
+    color:var(--text-muted); padding:7px 10px; border-radius:7px;
+    border-left:2px solid transparent; transition:color .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .toc-num{font-family:var(--mono); color:var(--text-faint); font-size:0.78rem; flex:none;}
+  .toc-link:hover{color:var(--text); background:var(--surface-sunken);}
+  .toc-link.active{color:var(--accent-strong); border-left-color:var(--accent); background:var(--accent-soft);}
+  .toc-sub{list-style:none; margin:2px 0 8px 30px; padding:0;}
+  .toc-sub .toc-link{font-size:0.8rem; padding:4px 10px;}
+
+  main{min-width:0;}
+  section{padding-top:14px; margin-bottom:76px; scroll-margin-top:24px;}
+  section:last-of-type{margin-bottom:24px;}
+  .sec-head{display:flex; gap:16px; align-items:baseline; margin-bottom:18px;}
+  .sec-num{
+    font-family:var(--mono); font-size:0.95rem; color:var(--accent-strong);
+    background:var(--accent-soft); border-radius:7px; padding:3px 9px;
+    font-variant-numeric:tabular-nums; flex:none;
+  }
+  h2.sec-title{font-size:clamp(1.5rem,2.6vw,1.85rem); font-weight:700; letter-spacing:-0.01em;}
+  .sec-lede{color:var(--text-muted); font-size:1.02rem;}
+
+  h3.feat-title{font-size:1.2rem; font-weight:700; margin:34px 0 10px;}
+  h4.sub-title{font-family:var(--sans); font-size:0.98rem; font-weight:600; margin:22px 0 8px; color:var(--text);}
+
+  .q{
+    font-family:var(--sans); font-size:0.92rem; color:var(--text);
+    background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent);
+    border-radius:0 8px 8px 0; padding:12px 16px; margin:0 0 18px; max-width:64ch;
+  }
+  .q b{color:var(--accent-strong); font-family:var(--mono); font-size:0.72rem; letter-spacing:0.08em; text-transform:uppercase; display:block; margin-bottom:4px;}
+
+  .meta-line{font-family:var(--mono); font-size:0.85rem; color:var(--text-muted); margin:0 0 16px;}
+  .meta-line b{color:var(--text); font-weight:600;}
+
+  /* mode / sub-feature cards */
+  .mode-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:22px 24px; margin:0 0 20px; box-shadow:var(--shadow-card); max-width:100%;
+  }
+  .mode-card + .mode-card{margin-top:16px;}
+  .mode-card__head{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+  .mode-tag{
+    font-family:var(--mono); font-size:0.72rem; font-weight:600; letter-spacing:0.03em;
+    color:var(--accent-strong); background:var(--accent-soft); border-radius:6px; padding:3px 8px;
+  }
+  .mode-card h4{font-family:var(--sans); font-size:1.02rem; font-weight:700; margin:0;}
+  .mode-card p:last-child, .mode-card ul:last-child, .mode-card ol:last-child{margin-bottom:0;}
+
+  /* diagrams / code panels */
+  .panel-wrap{margin:0 0 22px; max-width:100%;}
+  .panel{
+    position:relative; background:var(--panel-bg); border:1px solid var(--panel-border);
+    border-radius:10px; overflow-x:auto; box-shadow:var(--shadow-card);
+  }
+  .panel::before, .panel::after{
+    content:""; position:absolute; width:14px; height:14px; pointer-events:none;
+    border-color:var(--panel-border); opacity:0.9;
+  }
+  .panel::before{top:8px; left:8px; border-top:1.5px solid; border-left:1.5px solid; border-color:var(--panel-border);}
+  .panel::after{bottom:8px; right:8px; border-bottom:1.5px solid; border-right:1.5px solid; border-color:var(--panel-border);}
+  .panel pre{
+    margin:0; padding:26px 24px; color:var(--panel-text); font-family:var(--mono);
+    font-size:0.83rem; line-height:1.65; white-space:pre; tab-size:2;
+  }
+  .panel .cap{
+    font-family:var(--mono); font-size:0.68rem; letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--panel-text-dim); padding:10px 24px 0; display:block;
+  }
+  .tok-k{color:var(--accent-strong);}
+  .tok-s{color:#E7C77A;} /* panel is always a dark "screen" surface in both page themes, so a fixed amber reads fine on it either way */
+  .tok-c{color:var(--panel-text-dim);font-style:italic;} /* an aside inside a schema block, not part of the schema */
+
+  /* tables */
+  .table-wrap{overflow-x:auto; margin:0 0 22px; border:1px solid var(--border); border-radius:10px;}
+  table{border-collapse:collapse; width:100%; min-width:560px; font-family:var(--sans); font-size:0.88rem;}
+  thead th{
+    text-align:left; font-family:var(--mono); font-size:0.7rem; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--text-muted); background:var(--surface-sunken);
+    padding:11px 16px; border-bottom:1px solid var(--border); white-space:nowrap;
+  }
+  tbody td{padding:12px 16px; border-bottom:1px solid var(--border); vertical-align:top; color:var(--text);}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--surface-sunken);}
+  td.mono, th.mono{font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  td.strong{font-weight:600; font-family:var(--sans); white-space:nowrap;}
+  td code, tbody td code{white-space:nowrap;}
+
+  .divider{border:none; border-top:1px solid var(--border); margin:36px 0;}
+
+  .status-tag{
+    font-family:var(--mono); font-size:0.68rem; font-weight:600; letter-spacing:0.05em;
+    padding:2px 8px; border-radius:999px; white-space:nowrap;
+  }
+  .status-tag.built{background:var(--accent-soft); color:var(--accent-strong);}
+  .status-tag.proposed{background:var(--surface-sunken); color:var(--text-muted); border:1px solid var(--border);}
+
+  .next-list{list-style:none; padding:0; margin:0;}
+  .next-list li{
+    display:flex; gap:14px; align-items:baseline; padding:14px 0; border-bottom:1px solid var(--border);
+  }
+  .next-list li:last-child{border-bottom:none;}
+  .next-list .doc-name{font-family:var(--mono); font-weight:600; color:var(--text); white-space:nowrap;}
+  .next-list .doc-desc{color:var(--text-muted); font-size:0.94rem; margin:0;}
+
+  footer{
+    border-top:1px solid var(--border); padding:30px 0 60px;
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px;
+    font-family:var(--mono); font-size:0.78rem; color:var(--text-faint);
+  }
+
+  /* mobile toc: horizontal chip strip */
+  @media (max-width:920px){
+    .layout{grid-template-columns:1fr; gap:0; padding-top:20px;}
+    nav.toc{
+      position:static; max-height:none; overflow:visible;
+      display:flex; gap:6px; overflow-x:auto; padding-bottom:14px; margin-bottom:28px;
+      border-bottom:1px solid var(--border);
+    }
+    nav.toc ol{display:flex; gap:6px;}
+    nav.toc .toc-sub{display:none;}
+    .toc-link{white-space:nowrap; border-left:none; border-bottom:2px solid transparent;}
+    .toc-link.active{border-left:none; border-bottom-color:var(--accent);}
+  }
+  @media (max-width:560px){
+    h1.title{max-width:none;}
+    .jump-link span.jl-label{display:inline;}
+  }
+
+  /* ---------- additions for this page ---------- */
+  [hidden]{display:none !important;}
+  :root{
+    --warn:#9A5B00; --warn-soft:#FBEFDC; --warn-border:#E8CFA4;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --warn:#E8B368; --warn-soft:rgba(232,179,104,0.12); --warn-border:rgba(232,179,104,0.3);
+    }
+  }
+  :root[data-theme="dark"]{
+    --warn:#E8B368; --warn-soft:rgba(232,179,104,0.12); --warn-border:rgba(232,179,104,0.3);
+  }
+
+  /* a finding worth lifting off the page */
+  .finding{
+    background:var(--accent-soft); border:1px solid var(--border);
+    border-left:3px solid var(--accent); border-radius:0 10px 10px 0;
+    padding:18px 22px; margin:0 0 22px;
+  }
+  .finding .flag{
+    font-family:var(--mono); font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--accent-strong); display:block; margin-bottom:8px;
+  }
+  .finding p{max-width:60ch;}
+  .finding p:last-child{margin-bottom:0;}
+
+  /* the same shape, in the warning register -- semantic, not the accent */
+  .caution{
+    background:var(--warn-soft); border:1px solid var(--warn-border);
+    border-left:3px solid var(--warn); border-radius:0 10px 10px 0;
+    padding:18px 22px; margin:0 0 22px;
+  }
+  .caution .flag{
+    font-family:var(--mono); font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--warn); display:block; margin-bottom:8px;
+  }
+  .caution p:last-child{margin-bottom:0;}
+
+  /* ordered recommendation -- the numbers are a real sequence, so they show */
+  ol.steps{list-style:none; padding:0; margin:0 0 22px; counter-reset:step;}
+  ol.steps li{
+    counter-increment:step; position:relative; padding:0 0 16px 44px; margin:0;
+    max-width:64ch;
+  }
+  ol.steps li::before{
+    content:counter(step); position:absolute; left:0; top:1px;
+    font-family:var(--mono); font-size:0.8rem; font-weight:600;
+    color:var(--accent-strong); background:var(--accent-soft);
+    width:27px; height:27px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+  }
+  ol.steps li:last-child{padding-bottom:0;}
+
+  /* glossary */
+  .gloss-tools{
+    display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+    margin:0 0 24px; padding-bottom:18px; border-bottom:1px solid var(--border);
+  }
+  .gloss-filter{
+    flex:1 1 240px; min-width:0;
+    font-family:var(--mono); font-size:0.86rem; color:var(--text);
+    background:var(--surface); border:1px solid var(--border); border-radius:8px;
+    padding:9px 13px;
+  }
+  .gloss-filter::placeholder{color:var(--text-faint);}
+  .gloss-filter:focus{outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent);}
+  .gloss-count{
+    font-family:var(--mono); font-size:0.78rem; color:var(--text-muted);
+    font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  .gloss-group{margin:0 0 30px;}
+  .gloss-group > h4{
+    font-family:var(--mono); font-size:0.72rem; letter-spacing:0.12em; text-transform:uppercase;
+    color:var(--text-muted); margin:0 0 10px; padding-bottom:8px;
+    border-bottom:1px solid var(--border);
+  }
+  .gloss-row{
+    display:grid; grid-template-columns:minmax(120px,180px) minmax(0,1fr);
+    gap:6px 20px; padding:9px 0; border-bottom:1px solid var(--border);
+    align-items:baseline;
+  }
+  .gloss-group .gloss-row:last-child{border-bottom:none;}
+  .gloss-row dt{
+    font-family:var(--mono); font-size:0.83rem; font-weight:600; color:var(--text);
+  }
+  .gloss-row dd{
+    margin:0; font-family:var(--serif); font-size:0.95rem;
+    color:var(--text-muted); line-height:1.55;
+  }
+  .gloss-row dd b, .gloss-row dd strong{color:var(--text);}
+  .gloss-empty{
+    font-family:var(--mono); font-size:0.85rem; color:var(--text-faint); padding:20px 0;
+  }
+  @media (max-width:560px){
+    .gloss-row{grid-template-columns:1fr; gap:2px;}
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="eyebrow">Plan · vision-picar</div>
+    <h1 class="title">Perception on the Car</h1>
+    <p class="dek">What could run on the PiCar itself, what hardware would run it, and where it would sit — the question Microduck raised that this project had not asked.</p>
+    <div class="status-row">
+      <span class="chip"><b>Status</b> proposed</span>
+      <span class="chip"><b>Built</b> nothing</span>
+      <span class="chip"><b>Decided</b> nothing</span>
+      <span class="chip"><b>Date</b> 2026-09-03</span>
+      <span class="chip"><b>Phase IDs</b> none assigned</span>
+    </div>
+    <div class="jump-row">
+      <a class="jump-link" href="#options"><span class="jl-label">Accelerator options</span></a>
+      <a class="jump-link" href="#architecture"><span class="jl-label">Where it would sit</span></a>
+      <a class="jump-link" href="#glossary"><span class="jl-label">Glossary</span></a>
+    </div>
+  </header>
+
+  <div class="layout">
+
+    <nav class="toc" aria-label="Contents">
+      <ol>
+        <li><a class="toc-link" href="#question"><span class="toc-num">0</span><span>The question</span></a></li>
+        <li><a class="toc-link" href="#options"><span class="toc-num">1</span><span>Accelerator options</span></a></li>
+        <li><a class="toc-link" href="#architecture"><span class="toc-num">2</span><span>Where it would sit</span></a></li>
+        <li><a class="toc-link" href="#glossary"><span class="toc-num">3</span><span>Glossary</span></a></li>
+        <li><a class="toc-link" href="#sources"><span class="toc-num">4</span><span>Sources</span></a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <!-- ============ 0 ============ -->
+      <section id="question">
+        <div class="sec-head">
+          <span class="sec-num">0</span>
+          <h2 class="sec-title">The question, and what it is not</h2>
+        </div>
+        <p class="sec-lede">A holding pen, in the sense Microduck’s <code>docs/ideas/</code> uses the term: written down before it has a design so the thinking is not lost, and deliberately not a decision.</p>
+
+        <p>Nothing here has been measured on a Pi, nothing has been bought, and no phase ID has been assigned. Section 1’s recommendation is an <em>order of work</em>, not a purchase.</p>
+
+        <p>Microduck runs three model families on the robot — all local, all small:</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Family</th><th>What</th><th>Where</th><th>How</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="strong">Locomotion</td>
+                <td>9 ONNX policies, <code>obs[1,61] → act[1,14]</code></td>
+                <td><code>robotd</code>, inside the 50&nbsp;Hz tick</td>
+                <td>ONNX Runtime, <code>dlopen</code>’d</td>
+              </tr>
+              <tr>
+                <td class="strong"><code>duck-detect</code></td>
+                <td><code>yolo11n</code> @ 320, <b>one class</b>, 3.9&nbsp;MB INT8, mAP50 0.976</td>
+                <td><code>mediad</code>, off the control loop</td>
+                <td>RK3566 NPU via <code>librknnrt.so</code>; ONNX CPU fallback</td>
+              </tr>
+              <tr>
+                <td class="strong"><code>pet-detect</code></td>
+                <td>~20&nbsp;KB audio CNN over log-mel, sub-ms</td>
+                <td><code>robotd</code>’s audio worker</td>
+                <td>ONNX</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>Only the middle one transfers. A PiCar-X has no gait to learn and no head to scratch.</p>
+
+        <h3 class="feat-title">Two mismatches to hold onto</h3>
+
+        <h4 class="sub-title"><code>duck-detect</code> is single-class</h4>
+        <p>It detects Microduck’s own duck and reduces the box to a <code>bearing()</code> in −1..1 — “turn towards it” needs a bearing, not a box. This project’s target is arbitrary text typed at mission start (“red backpack”, “blue bottle”), which is an open-vocabulary problem and a substantially harder one on-device. <a href="#coco">§1.2</a> is why that turns out not to matter for the targets actually in use.</p>
+
+        <h4 class="sub-title">Recognition is not the failing half</h4>
+        <p>Stage 0 established that every cloud model identifies a red backpack; four wordings failed on <em>depth</em>. So an on-device detector does <b>not</b> close the Stage 0 gate, and no argument on this page should be read as claiming it does.</p>
+
+        <div class="q">
+          <b>What it would actually buy</b>
+          <ul style="margin:0; padding-left:1.1em;">
+            <li><strong>Rate</strong> — a bearing at tens of Hz in the ~1–3&nbsp;s gaps between <code>/navigate</code> calls.</li>
+            <li><strong>Cost</strong> — no Bedrock charge per frame.</li>
+            <li><strong>Offline</strong> — the collar and a target lock keep working when the link dies.</li>
+          </ul>
+        </div>
+
+        <p>That is Microduck’s tiering (<a href="#architecture">§2</a>): fast local perception underneath slow remote deliberation. It is a good argument. It is not the gate argument.</p>
+      </section>
+
+      <!-- ============ 1 ============ -->
+      <section id="options">
+        <div class="sec-head">
+          <span class="sec-num">1</span>
+          <h2 class="sec-title">Accelerator options on a PiCar-X</h2>
+        </div>
+        <p class="sec-lede">Four paths, none measured on this project’s hardware — because this project has no hardware yet.</p>
+
+        <p><b>The Pi 5 has no NPU.</b> That is the single biggest difference from the RK3566, and it cuts both ways: there is no free 0.8 TOPS sitting on the SoC, but four Cortex-A76 cores at 2.4&nbsp;GHz are a considerably stronger CPU host than the Rockchip’s A55s. <b>CPU-only is a real option here in a way it is not on a duck.</b></p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Option</th><th>Silicon</th><th>Inference runs</th><th class="mono">Rated</th><th>Chassis fit</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="strong">CPU only</td>
+                <td>4× Cortex-A76 @ 2.4 GHz</td>
+                <td>on the Pi’s cores</td>
+                <td class="mono">—</td>
+                <td>Nothing to buy, nothing to mount, no extra power, no conflict</td>
+              </tr>
+              <tr>
+                <td class="strong">AI Camera</td>
+                <td>Sony IMX500</td>
+                <td><b>on the sensor</b></td>
+                <td class="mono">~3 TOPS</td>
+                <td>CSI swap. Nothing on the GPIO header, no PCIe, negligible Pi CPU. Best physical fit</td>
+              </tr>
+              <tr>
+                <td class="strong">AI HAT+</td>
+                <td>Hailo-8L / Hailo-8</td>
+                <td>on the module, over PCIe</td>
+                <td class="mono">13 / 26 TOPS</td>
+                <td>Conflicts with the Robot HAT (<a href="#conflict">§1.4</a>). Real watts off the pack</td>
+              </tr>
+              <tr>
+                <td class="strong">Coral USB</td>
+                <td>Google Edge TPU</td>
+                <td>on the stick, over USB</td>
+                <td class="mono">4 TOPS</td>
+                <td>Support on Pi 5 with recent kernels has been rough — verify before buying</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="meta-line">All figures are <b>vendor ratings at INT8</b>. None has been measured on a board.</p>
+
+        <h3 class="feat-title" id="coco">1.2 &nbsp;The finding that lowers the risk on all four paths</h3>
+
+        <div class="finding">
+          <span class="flag">Finding</span>
+          <p><b><code>backpack</code> and <code>bottle</code> are both COCO classes.</b></p>
+          <p>The Stage 0 targets are in the standard 80-class label set that essentially every off-the-shelf detector predicts. A stock, pre-compiled YOLO11n detects them with <b>zero training, zero calibration set, zero distillation</b> — download, run, filter to the class, reduce the box to a bearing exactly as <code>duck-detect</code> does.</p>
+        </div>
+
+        <p>This retires most of the “data is the project, not the model” concern that Microduck’s <code>autonomous_behavior.md</code> raises. Distillation becomes the project only when the target vocabulary goes past COCO’s 80. <em>(Confirm against the specific model’s label file rather than taking this page’s word for it.)</em></p>
+
+        <p><b>What it does not give you is the colour.</b> COCO says <code>backpack</code>, not <code>red backpack</code>. In a room with two backpacks you are back to either an HSV check on the crop — cheap, and probably sufficient — or a genuinely open-vocabulary model (YOLO-World, or CLIP re-ranking class-agnostic proposals), which is a much larger commitment.</p>
+
+        <h3 class="feat-title">1.3 &nbsp;YOLO11n on the AI HAT+, specifically</h3>
+
+        <p>Asked directly, so answered directly: <b>yes, and it is the most turnkey combination on the list.</b></p>
+
+        <ul>
+          <li><code>sudo apt install hailo-all</code> gets the PCIe driver, HailoRT, the GStreamer/TAPPAS bits, and <code>rpicam-apps</code> with Hailo post-processing stages.</li>
+          <li>Pre-compiled YOLO11n HEFs exist in Hailo’s Model Zoo for both parts, so the COCO path needs no toolchain at all.</li>
+          <li>A detection demo is a one-liner against <code>rpicam-hello</code>.</li>
+        </ul>
+
+        <p><b>The friction is custom classes.</b> You cannot hand the chip a <code>.pt</code> or an <code>.onnx</code> — it wants a HEF, produced by Hailo’s Dataflow Compiler, which requires <b>x86-64 Linux</b> (not the Pi, not an ARM Mac), plus a calibration set of a few hundred representative frames for INT8 quantisation. That is the argument for staying inside the Model Zoo while COCO covers the targets.</p>
+
+        <p><b>It is also enormously overprovisioned.</b> YOLO11n at 640 on a Hailo-8L runs in the high-tens-to-hundreds of FPS; at 320, more. The decision loop is one <code>/navigate</code> call every 1–3&nbsp;seconds. Throughput is therefore <em>not</em> the reason to buy one — which means the decision rests entirely on physical fit.</p>
+
+        <h3 class="feat-title" id="conflict">1.4 &nbsp;The Robot HAT conflict is the real blocker</h3>
+
+        <div class="caution">
+          <span class="flag">Verify before buying</span>
+          <p><b>Physical, not software.</b> SunFounder’s Robot HAT occupies the 40-pin GPIO header — battery input, motor drivers, servo headers, ADC. The AI HAT+ needs <em>both</em> the PCIe FPC connector <em>and</em> 5&nbsp;V from that same header.</p>
+          <p>As far as this page knows the Robot HAT is a terminating board with no stacking pins — but that is an <b>assumption</b>, and it is cheap to check with the board in hand.</p>
+        </div>
+
+        <p>If there is no pass-through, the options are a bare <b>M.2 → PCIe FPC adapter</b> mounted off-header and fed 5&nbsp;V separately — doable, unsupported, and now you are fabricating a mount on a small car — or the <b>AI Camera</b>, which avoids the header entirely.</p>
+
+        <p>Power is the second constraint. Hailo-8L is ~2&nbsp;W typical, Hailo-8 up to ~5&nbsp;W under load, drawn from two 18650s that are also running two drive motors and two servos. The AI Camera and CPU-only paths cost nothing extra.</p>
+
+        <h3 class="feat-title">1.5 &nbsp;The monocular-depth trap</h3>
+
+        <p><b>Do not reach for a depth model to fix the gate.</b> It is the obvious move and it is the exact error <code>PLAN-microduck-transplants.md</code> §2 argues against.</p>
+
+        <p>Depth Anything V2 Small and MiDaS small both run on a Pi 5, slowly. They produce <b>relative</b> inverse depth. The metric-finetuned variants are calibrated to camera intrinsics and mounting heights nothing like a 10&nbsp;cm PiCar camera. Adopting one replaces “ask a VLM how far” with “ask a smaller model how far” — the same class of error with fewer parameters, and Stage 0 has already spent five wordings establishing that this class of error is not a wording problem.</p>
+
+        <p><b>One nuance worth keeping.</b> Relative depth plus a ground-plane assumption yields a <em>traversability mask</em> — “is the centre third of the floor ahead clear relative to its surroundings” — which is a genuinely different question from “how many cm”. That is <code>center-third-path</code>’s question answered by geometry instead of by a prompt, and it failed as a prompt for reasons (a threshold has no wording) that geometry does not share. Worth something later; still not the metric answer M10 needs.</p>
+
+        <div class="q">
+          <b>And note</b>
+          Microduck’s own answer to distance is <b>not a model</b>. A VL53L5CX/VL53L8CX 8×8 ToF, ~$20–30 on a breakout, publishing <code>Range</code> / <code>NoTarget</code> / <code>Unusable</code>. That is M2 and M3 in real hardware, and it is the cheapest item on this page by an order of magnitude.
+        </div>
+
+        <h3 class="feat-title">1.6 &nbsp;Recommendation — an order of work, not a purchase</h3>
+
+        <ol class="steps">
+          <li><b>Benchmark stock YOLO11n at 320, single class, on the Pi 5 CPU.</b> Free, and it is the measurement every other option is judged against. Microduck builds <code>duck-bench</code> for exactly this reason. If it clears ~10 FPS, no accelerator was ever needed for a 1–3&nbsp;s loop.</li>
+          <li><b>If CPU proves tight, prefer the AI Camera</b> over the AI HAT+. It sidesteps the header fight, the power draw and the mounting problem in one move.</li>
+          <li><b>Treat the ToF as the depth answer</b>, independent of all of the above. Buying 13 TOPS does not move the gate; a $25 sensor does.</li>
+          <li><b>Do not buy anything before step 1 reports a number.</b></li>
+        </ol>
+      </section>
+
+      <!-- ============ 2 ============ -->
+      <section id="architecture">
+        <div class="sec-head">
+          <span class="sec-num">2</span>
+          <h2 class="sec-title">Where it would sit architecturally</h2>
+        </div>
+        <p class="sec-lede">Microduck separates three rates, and the separation is the point.</p>
+
+        <div class="panel-wrap">
+          <div class="panel">
+            <pre>   <span class="tok-k">~50 Hz</span>    reflex        ONNX policies, on-board, no network
+                            robotd's tick; safety owns the only motor write handle
+
+  <span class="tok-k">~15-30 Hz</span>  perception    NPU detector -&gt; bearing
+                            tofd          -&gt; distance      <span class="tok-c">each question to the</span>
+                            BLE beacon    -&gt; identity      <span class="tok-c">sensor that answers it</span>
+
+   <span class="tok-k">~0.5 Hz</span>   deliberation  the LLM, off-board, over WebSocket
+                            sends intents; never trusted to execute them</pre>
+            <span class="cap">Microduck · three rates, three authorities</span>
+          </div>
+        </div>
+
+        <p><b>vision-picar collapses the middle two tiers into the top one.</b> A single cloud <code>/navigate</code> call is asked for bearing <em>and</em> distance, at 1–3&nbsp;s, and its answer drives the robot. <code>bearing-only</code> (M1, measured 2026-09-02) is the first half of un-collapsing that: <code>/navigate</code> keeps <em>what</em> and <em>which way</em>, and something else owns <em>how far</em>. An on-device detector would be the second half — the bearing arriving at perception rate instead of deliberation rate.</p>
+
+        <h3 class="feat-title">2.2 &nbsp;Its own process. Not <code>robot/server.py</code></h3>
+
+        <p>This is the open <b>“Perception in its own process”</b> row in <code>PLAN-microduck-transplants.md</code> §1, and it is the one architectural point this page is confident about.</p>
+
+        <p>Microduck’s rule (<code>architecture.md</code> §2.4) is <b>features, not frames</b>: put perception next to the sensor, publish derived features — “ball at (x,y)”, “person detected” — tens of bytes at 10–30&nbsp;Hz, and let the control path read a locally cached <em>latest</em> snapshot, non-blocking, last-value-wins.</p>
+
+        <p>The failure mode it buys: <b>a stalled detector degrades perception rather than adding jitter to motor control.</b> Applied here, that is the difference between a wedged <code>picamera2</code> capture and a <code>/stop</code> that still answers — which today is undefined behaviour, and is exactly what M9 exists to test.</p>
+
+        <h3 class="feat-title">2.3 &nbsp;What must not change</h3>
+
+        <p>Three constraints this project already holds, restated because a new perception process is precisely the kind of thing that quietly violates them:</p>
+
+        <ol class="steps">
+          <li><b><code>brain/</code> and <code>robot/server.py</code> talk only to <code>RobotInterface</code>.</b> A detector is not a reason to introduce a second path. Whatever it publishes arrives through the abstraction or alongside it — never around it.</li>
+          <li><b>Safety is enforced server-side, always.</b> A bearing is an input to a decision, never a movement path of its own.</li>
+          <li><b><code>control/</code> may not import a backend or the simulator.</b> If the detector’s output reaches the brain, it reaches it over HTTP like everything else.</li>
+        </ol>
+
+        <h3 class="feat-title">2.4 &nbsp;Open questions — all of them</h3>
+
+        <p>Nothing below is decided. These are the questions a design doc would have to answer before any of this is built.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th class="mono">#</th><th>Question</th><th>Why it is not obvious</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">1</td><td class="strong">What does it publish?</td><td>A bearing in −1..1 like <code>duck-detect</code>? A box? A class list with confidences? A bearing is the smallest useful thing and the hardest to extend; a box defers the decision at the cost of making every consumer do the reduction</td></tr>
+              <tr><td class="mono">2</td><td class="strong">Who consumes it?</td><td>The brain, as a new field on the frame? <code>robot/safety.py</code>, as a veto input? The twin, as an overlay? Each answer implies a different transport and a different failure mode</td></tr>
+              <tr><td class="mono">3</td><td class="strong">Does <code>RobotInterface</code> change?</td><td>S2 was careful to make <code>get_camera_frame()</code> uniform across backends. A <code>get_detections()</code> would have to be answerable by <code>MockRobot</code>, <code>ReplayRobot</code> and <code>TeleopRobot</code> too, or it splits the contract</td></tr>
+              <tr><td class="mono">4</td><td class="strong">What does the sim do?</td><td><code>sim/renderer.py</code> renders flat-shaded walls. A COCO detector finds nothing in them, so a sim backend would have to synthesise detections from grid truth — making the sim leg unable to test the detector, only its consumers</td></tr>
+              <tr><td class="mono">5</td><td class="strong">Does <code>/navigate</code> still name the target?</td><td>If the detector handles “where is the backpack”, the cloud call’s remaining job is smaller and possibly different in kind</td></tr>
+              <tr><td class="mono">6</td><td class="strong">What if it disagrees with the cloud?</td><td>Two things now answer “is the target visible”. Microduck’s answer to competing authorities is a decided priority order, not last-writer-wins (<code>architecture.md</code> §6) — which is M4’s subject</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="feat-title">2.5 &nbsp;What it would owe the twin</h3>
+
+        <p>Per <code>CLAUDE.md</code> §7: a phase is not done when its tests pass, it is done when someone holding a phone can watch the thing it built do its job.</p>
+
+        <div class="q">
+          <b>The proof to ship with it</b>
+          A bounding box drawn over the FPV canvas, with the bearing as a number underneath, updating faster than the mission log scrolls. If the detector is running and the box is not on the phone, it is not shipped.
+        </div>
+      </section>
+
+      <!-- ============ 3 ============ -->
+      <section id="glossary">
+        <div class="sec-head">
+          <span class="sec-num">3</span>
+          <h2 class="sec-title">Glossary</h2>
+        </div>
+        <p class="sec-lede">Acronyms used across this page, <code>PLAN-microduck-transplants.md</code>, and the Microduck reading behind both.</p>
+
+        <div class="gloss-tools">
+          <input type="search" id="gloss-filter" class="gloss-filter" placeholder="Filter — try “depth”, “WebRTC”, “AWS”…" aria-label="Filter glossary terms" autocomplete="off">
+          <span class="gloss-count" id="gloss-count"></span>
+        </div>
+
+        <div id="gloss-root">
+
+          <div class="gloss-group">
+            <h4>On-device vision and accelerators</h4>
+            <dl>
+              <div class="gloss-row"><dt>TOPS</dt><dd>Tera-Operations Per Second. A throughput rating for inference accelerators, usually quoted at INT8. Marketing-adjacent: real speed depends on the model, not the number.</dd></div>
+              <div class="gloss-row"><dt>INT8</dt><dd>8-bit integer arithmetic. Quantising from 32-bit floats makes a model ~4× smaller and much faster, at some accuracy cost. What NPUs are built for.</dd></div>
+              <div class="gloss-row"><dt>NPU</dt><dd>Neural Processing Unit. An on-chip inference accelerator. The RK3566 has one; <b>the Pi 5 does not</b>.</dd></div>
+              <div class="gloss-row"><dt>ONNX</dt><dd>Open Neural Network Exchange. A portable model format, so a net trained in PyTorch can run under a different runtime.</dd></div>
+              <div class="gloss-row"><dt>HEF</dt><dd>Hailo Executable Format. Hailo’s compiled model file — the chip will not take an ONNX.</dd></div>
+              <div class="gloss-row"><dt>DFC</dt><dd>Dataflow Compiler. Hailo’s toolchain that turns ONNX into a HEF. x86-64 Linux only.</dd></div>
+              <div class="gloss-row"><dt>YOLO</dt><dd>“You Only Look Once”. A family of single-pass object detectors. The <code>n</code> in YOLO11n is “nano”, the smallest variant.</dd></div>
+              <div class="gloss-row"><dt>COCO</dt><dd>Common Objects in Context. The standard detection dataset; its 80-class label set is what most off-the-shelf detectors predict, and it includes <code>backpack</code> and <code>bottle</code>.</dd></div>
+              <div class="gloss-row"><dt>mAP50</dt><dd>mean Average Precision at 50% IoU — the usual detection accuracy score.</dd></div>
+              <div class="gloss-row"><dt>IoU</dt><dd>Intersection over Union. Box overlap, the thing mAP thresholds on.</dd></div>
+              <div class="gloss-row"><dt>XNNPACK</dt><dd>Google’s optimised CPU inference backend for ARM/x86, used under ONNX Runtime and TFLite.</dd></div>
+              <div class="gloss-row"><dt>ncnn</dt><dd>Tencent’s lightweight embedded inference engine; a common fast path on ARM CPUs.</dd></div>
+              <div class="gloss-row"><dt>TFLite</dt><dd>TensorFlow Lite. Google’s mobile/embedded runtime and model format.</dd></div>
+              <div class="gloss-row"><dt>CLIP</dt><dd>Contrastive Language-Image Pre-training. Matches images to text, which is what makes open-vocabulary detection possible.</dd></div>
+              <div class="gloss-row"><dt>VLM / LLM</dt><dd>Vision-Language Model / Large Language Model. The cloud tier — what <code>/navigate</code> calls.</dd></div>
+              <div class="gloss-row"><dt>MiDaS / Depth Anything</dt><dd>Monocular depth-estimation models: one image in, a depth map out. <b>Relative</b>, not metric — see §1.5.</dd></div>
+              <div class="gloss-row"><dt>HSV</dt><dd>Hue-Saturation-Value. The colour space for a “is that backpack red” check on a crop.</dd></div>
+            </dl>
+          </div>
+
+          <div class="gloss-group">
+            <h4>Hardware and buses</h4>
+            <dl>
+              <div class="gloss-row"><dt>SoC</dt><dd>System on Chip. The RK3566, or the Pi 5’s BCM2712.</dd></div>
+              <div class="gloss-row"><dt>HAT</dt><dd>Hardware Attached on Top. The Pi’s 40-pin add-on board spec. Two HATs wanting the same header is §1.4’s conflict.</dd></div>
+              <div class="gloss-row"><dt>PCIe</dt><dd>Peripheral Component Interconnect Express. The high-speed bus the AI HAT+ uses; the Pi 5 exposes one lane.</dd></div>
+              <div class="gloss-row"><dt>FPC</dt><dd>Flexible Printed Circuit — the flat ribbon cable. On a Pi 5 it is how PCIe leaves the board.</dd></div>
+              <div class="gloss-row"><dt>M.2</dt><dd>The card form factor (as in NVMe SSDs) the Hailo module ships in.</dd></div>
+              <div class="gloss-row"><dt>CSI</dt><dd>Camera Serial Interface. The Pi’s ribbon camera port, distinct from USB.</dd></div>
+              <div class="gloss-row"><dt>ADC</dt><dd>Analog-to-Digital Converter. On the Robot HAT, for battery voltage and analog sensors.</dd></div>
+              <div class="gloss-row"><dt>ToF</dt><dd>Time of Flight. A depth sensor that times a light pulse; the VL53L5CX/L8CX give an 8×8 grid.</dd></div>
+              <div class="gloss-row"><dt>IMU</dt><dd>Inertial Measurement Unit. Accelerometer + gyroscope, for orientation and fall detection.</dd></div>
+              <div class="gloss-row"><dt>I²C / UART</dt><dd>Two low-speed serial buses. Microduck’s ToF sits on I²C; its 15 servos and IMU share one UART.</dd></div>
+              <div class="gloss-row"><dt>HFOV</dt><dd>Horizontal Field Of View, in degrees.</dd></div>
+              <div class="gloss-row"><dt>VPU / ISP</dt><dd>Video Processing Unit (hardware codec) / Image Signal Processor (the sensor pipeline).</dd></div>
+              <div class="gloss-row"><dt>RKNN / rknpu2</dt><dd>Rockchip’s NPU model format and runtime.</dd></div>
+            </dl>
+          </div>
+
+          <div class="gloss-group">
+            <h4>Microduck’s system</h4>
+            <dl>
+              <div class="gloss-row"><dt>RL</dt><dd>Reinforcement Learning — how the locomotion policies are trained.</dd></div>
+              <div class="gloss-row"><dt>PPO</dt><dd>Proximal Policy Optimization, the specific RL algorithm.</dd></div>
+              <div class="gloss-row"><dt>MuJoCo</dt><dd>The physics simulator the policies train in.</dd></div>
+              <div class="gloss-row"><dt>sim2real</dt><dd>Getting a sim-trained policy to work on real hardware, usually via domain randomisation.</dd></div>
+              <div class="gloss-row"><dt>FK</dt><dd>Forward Kinematics. Joint angles → where a part is in space; needed to reproject ToF zones into the robot’s frame.</dd></div>
+              <div class="gloss-row"><dt>SFLP</dt><dd>Sensor Fusion Low Power. The IMU’s on-chip fusion producing an orientation quaternion.</dd></div>
+              <div class="gloss-row"><dt>JSON-RPC</dt><dd>A remote-procedure-call convention over JSON. Microduck runs 2.0 over unix sockets.</dd></div>
+              <div class="gloss-row"><dt>NDJSON</dt><dd>Newline-Delimited JSON — one object per line, so a stream is trivially framed.</dd></div>
+              <div class="gloss-row"><dt>UDS</dt><dd>Unix Domain Socket. Local IPC via a filesystem path, which is where the free access control comes from.</dd></div>
+              <div class="gloss-row"><dt>IPC / RPC</dt><dd>Inter-Process Communication / Remote Procedure Call.</dd></div>
+              <div class="gloss-row"><dt>SO_PEERCRED</dt><dd>A socket option returning the caller’s uid/gid/pid — the basis of both the audit log and enforcement.</dd></div>
+              <div class="gloss-row"><dt>uid / gid</dt><dd>User ID / Group ID.</dd></div>
+              <div class="gloss-row"><dt>BLE</dt><dd>Bluetooth Low Energy. The phone’s path in, via <code>btd</code>.</dd></div>
+              <div class="gloss-row"><dt>GATT</dt><dd>Generic Attribute Profile. How BLE exposes readable/writable characteristics.</dd></div>
+              <div class="gloss-row"><dt>RSSI</dt><dd>Received Signal Strength Indicator. Signal strength, used as coarse distance between ducks.</dd></div>
+              <div class="gloss-row"><dt>WebRTC</dt><dd>Real-time media + data channels, browser-native. Carries telepresence.</dd></div>
+              <div class="gloss-row"><dt>SDP / ICE / STUN / TURN</dt><dd>WebRTC’s connection machinery: Session Description Protocol (what peers offer), Interactive Connectivity Establishment (finding a path), STUN (discovering your public address), TURN (a relay when NAT defeats you — the one that costs real bandwidth).</dd></div>
+              <div class="gloss-row"><dt>DTLS-SRTP</dt><dd>The encryption on WebRTC media, end-to-end even through a TURN relay.</dd></div>
+              <div class="gloss-row"><dt>SCTP</dt><dd>The transport under WebRTC data channels.</dd></div>
+              <div class="gloss-row"><dt>NAT</dt><dd>Network Address Translation. Why a home robot is not directly reachable from the internet.</dd></div>
+              <div class="gloss-row"><dt>SSE</dt><dd>Server-Sent Events. One-way server push over HTTP; considered and declined.</dd></div>
+              <div class="gloss-row"><dt>D-Bus</dt><dd>Linux’s system message bus; how BlueZ and NetworkManager are driven.</dd></div>
+              <div class="gloss-row"><dt>BlueZ / NetworkManager</dt><dd>Linux’s Bluetooth stack / network configuration daemon.</dd></div>
+              <div class="gloss-row"><dt>RT</dt><dd>Real-Time. As in “RT-ish”: tight timing, but not a hard-real-time kernel.</dd></div>
+              <div class="gloss-row"><dt>EMA</dt><dd>Exponential Moving Average. The smoothing on battery voltage so a load sag cannot trip shutdown.</dd></div>
+              <div class="gloss-row"><dt>ULD</dt><dd>Ultra Lite Driver. ST’s vendored C driver for the ToF sensors.</dd></div>
+              <div class="gloss-row"><dt>shm / dmabuf</dt><dd>Shared memory / a Linux buffer-sharing mechanism — the zero-copy escape hatch if frames ever must cross a process boundary.</dd></div>
+              <div class="gloss-row"><dt>NV12 / UYVY / MJPEG / H.264</dt><dd>Video formats: two raw YUV pixel layouts, a per-frame JPEG stream, and the compressed codec WebRTC carries.</dd></div>
+              <div class="gloss-row"><dt>V4L2 M2M</dt><dd>Video4Linux2 Memory-to-Memory. The kernel API for hardware video encode.</dd></div>
+              <div class="gloss-row"><dt>flock / fsync / rename(2)</dt><dd>Linux primitives for a safe file write: lock it, force it to disk, swap it in atomically.</dd></div>
+              <div class="gloss-row"><dt>inotify</dt><dd>Linux filesystem change notification — deliberately not used yet.</dd></div>
+              <div class="gloss-row"><dt>SHA-256 / minisign</dt><dd>A cryptographic hash / a signature tool. Together, how a release is verified before install.</dd></div>
+              <div class="gloss-row"><dt>OTA</dt><dd>Over-The-Air. Remote software updates.</dd></div>
+              <div class="gloss-row"><dt>RTT</dt><dd>Round-Trip Time. Latency, watched by the deadman.</dd></div>
+              <div class="gloss-row"><dt>SDK</dt><dd>Software Development Kit. The planned on-robot API for third-party code.</dd></div>
+            </dl>
+          </div>
+
+          <div class="gloss-group">
+            <h4>This project</h4>
+            <dl>
+              <div class="gloss-row"><dt>ALB / NLB</dt><dd>Application / Network Load Balancer. AWS’s layer-7 and layer-4 balancers — the pair all five services share.</dd></div>
+              <div class="gloss-row"><dt>ECS / Fargate</dt><dd>Elastic Container Service / its serverless compute mode. Where twin, brain, vision, admin and teleop run.</dd></div>
+              <div class="gloss-row"><dt>ECR</dt><dd>Elastic Container Registry. Where the ARM64 images go.</dd></div>
+              <div class="gloss-row"><dt>EFS</dt><dd>Elastic File System. The network filesystem holding recorded walks, chosen because it survives a redeploy.</dd></div>
+              <div class="gloss-row"><dt>VPC</dt><dd>Virtual Private Cloud. The network — running VPC endpoints instead of a NAT gateway.</dd></div>
+              <div class="gloss-row"><dt>IAM</dt><dd>Identity and Access Management. How the vision task authenticates to Bedrock without an API key.</dd></div>
+              <div class="gloss-row"><dt>CDN / CloudFront</dt><dd>Content Delivery Network. The HTTPS front door.</dd></div>
+              <div class="gloss-row"><dt>IaC</dt><dd>Infrastructure as Code. The CloudFormation templates.</dd></div>
+              <div class="gloss-row"><dt>FPV</dt><dd>First-Person View. The twin’s rendered camera canvas.</dd></div>
+              <div class="gloss-row"><dt>AR</dt><dd>Augmented Reality. The Guide tab.</dd></div>
+              <div class="gloss-row"><dt>DOM / jsdom</dt><dd>Document Object Model / a headless JS implementation of it — why the UI tests are Playwright instead.</dd></div>
+              <div class="gloss-row"><dt>CORS</dt><dd>Cross-Origin Resource Sharing. The browser rule the robot server had to allow.</dd></div>
+              <div class="gloss-row"><dt>WASD</dt><dd>The keyboard drive keys, from the never-built manual control client.</dd></div>
+              <div class="gloss-row"><dt>CI</dt><dd>Continuous Integration. The build/test pipeline.</dd></div>
+            </dl>
+          </div>
+
+        </div>
+        <p class="gloss-empty" id="gloss-empty" hidden>No term matches that filter.</p>
+      </section>
+
+      <!-- ============ 4 ============ -->
+      <section id="sources">
+        <div class="sec-head">
+          <span class="sec-num">4</span>
+          <h2 class="sec-title">Sources</h2>
+        </div>
+
+        <ul class="next-list">
+          <li><span class="doc-name">architecture.md</span><p class="doc-desc">§2.4 features not frames · §5.3 server-side agents over WebSocket · §6 safety and authority</p></li>
+          <li><span class="doc-name">robotd-design.md</span><p class="doc-desc">§1.4–§1.5 the tick and the invariants · §2.4 safety owns the only write handle</p></li>
+          <li><span class="doc-name">autonomous_behavior.md</span><p class="doc-desc">“Duck detector (camera + NPU)”, and the camera / ToF / BLE sensor split</p></li>
+          <li><span class="doc-name">npu-bringup.md</span><p class="doc-desc">The <code>yolo11n</code> numbers, <code>dlopen</code> over linking, “the runtime dequantises”</p></li>
+          <li><span class="doc-name">tof/src/lib.rs</span><p class="doc-desc"><code>Range</code> / <code>NoTarget</code> / <code>Unusable</code> — three outcomes, on purpose</p></li>
+          <li><span class="doc-name">policies/README.md</span><p class="doc-desc">The nine ONNX policies and the 61-D observation family</p></li>
+          <li><span class="doc-name">CLAUDE.md</span><p class="doc-desc">Stage 0 notes — the 5×3 matrix, the invalid corpus, the collar</p></li>
+          <li><span class="doc-name">PLAN-microduck-transplants.md</span><p class="doc-desc">§1–§2 and M1–M12 — the sensor-split argument this page assumes</p></li>
+          <li><span class="doc-name">HARDWARE-READINESS.md</span><p class="doc-desc">§1 what the kit is · §5 the pre-flight checklist</p></li>
+        </ul>
+
+        <div class="caution">
+          <span class="flag">Provenance</span>
+          <p>Hardware claims about the Pi 5, the AI HAT+, the AI Camera and Coral are from general knowledge as of this page’s date — <b>not verified against a board</b>. Every one of them is cheap to check, and should be checked before money moves.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer>
+    <span>vision-picar · PLAN-onboard-perception</span>
+    <span>Proposed 2026-09-03 · nothing built</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  // TOC active state
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc-link'));
+  var sections = links
+    .map(function (a) { return document.querySelector(a.getAttribute('href')); })
+    .filter(Boolean);
+
+  if ('IntersectionObserver' in window && sections.length) {
+    var seen = new Map();
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { seen.set(e.target.id, e.intersectionRatio); });
+      var best = null, bestRatio = 0;
+      seen.forEach(function (ratio, id) {
+        if (ratio > bestRatio) { bestRatio = ratio; best = id; }
+      });
+      links.forEach(function (a) {
+        a.classList.toggle('active', best !== null && a.getAttribute('href') === '#' + best);
+      });
+    }, { rootMargin: '-10% 0px -70% 0px', threshold: [0, 0.15, 0.4, 0.75, 1] });
+    sections.forEach(function (s) { obs.observe(s); });
+  }
+
+  // Glossary filter
+  var input = document.getElementById('gloss-filter');
+  var root = document.getElementById('gloss-root');
+  var count = document.getElementById('gloss-count');
+  var empty = document.getElementById('gloss-empty');
+  if (!input || !root || !count) { return; }
+
+  var rows = Array.prototype.slice.call(root.querySelectorAll('.gloss-row'));
+  var groups = Array.prototype.slice.call(root.querySelectorAll('.gloss-group'));
+  var total = rows.length;
+
+  rows.forEach(function (r) { r.dataset.hay = r.textContent.toLowerCase(); });
+
+  function render() {
+    var q = input.value.trim().toLowerCase();
+    var shown = 0;
+    rows.forEach(function (r) {
+      var hit = q === '' || r.dataset.hay.indexOf(q) !== -1;
+      r.hidden = !hit;
+      if (hit) { shown++; }
+    });
+    groups.forEach(function (g) {
+      var any = Array.prototype.some.call(g.querySelectorAll('.gloss-row'), function (r) {
+        return !r.hidden;
+      });
+      g.hidden = !any;
+    });
+    empty.hidden = shown !== 0;
+    count.textContent = q === ''
+      ? total + ' terms'
+      : shown + ' of ' + total;
+  }
+
+  input.addEventListener('input', render);
+  render();
+})();
+</script>

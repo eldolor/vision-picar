@@ -1391,6 +1391,7 @@
   // ---------- controls ----------
 
   document.getElementById("btn-connect").onclick = function () { connect(); };
+  document.getElementById("btn-health-check").onclick = function () { runHealthCheck(); };
 
   document.getElementById("btn-forward").onclick = function () { manualAction("FORWARD"); };
   document.getElementById("btn-reverse").onclick = function () { manualAction("REVERSE"); };
@@ -1694,6 +1695,87 @@
       setBrainText("brain-tel-driver", null);
       setBrainText("brain-tel-refusal", null);
     }
+  }
+
+  // ---------- phase M5: one health answer ----------
+  // The same verdict `python -m control.health` prints, from the page.
+  //
+  // The page asks both services directly rather than asking one of them to
+  // report on the other: a brain that cannot reach the robot is exactly
+  // the case this has to catch, and it would report itself fine.
+  //
+  // **The rule about what may reach a verdict lives in control/health.py,
+  // not here.** This renders `ok` / `unhealthy` / `unreachable` per half
+  // and never invents a judgement of its own -- if it did, the page and
+  // the command that gates M11's rollback could disagree about the same
+  // robot, and the page is the one people would believe.
+  async function probeHealth(url, secret) {
+    if (!url) return { status: "not configured" };
+    try {
+      const headers = secret ? { "x-app-secret": secret } : {};
+      const res = await fetch(url.replace(/\/$/, "") + "/health", { headers: headers });
+      if (!res.ok) return { status: "unreachable", problem: "HTTP " + res.status };
+      return { status: "ok", body: await res.json() };
+    } catch (e) {
+      return { status: "unreachable", problem: e.message };
+    }
+  }
+
+  function robotProblem(body) {
+    // Verdict input: the watchdog loop's own liveness. Absent on a server
+    // older than M5, which cannot be judged on a field it does not
+    // publish -- absent is not stale.
+    const age = body.seconds_since_watchdog_poll;
+    const interval = body.watchdog_poll_interval_s;
+    if (typeof age === "number" && interval && age > interval * 10) {
+      return "watchdog loop has not polled for " + age.toFixed(1) + "s";
+    }
+    return null;
+  }
+
+  function brainProblem(body) {
+    const since = body.seconds_since_last_tick;
+    const deadline = body.tick_timeout_s;
+    if (body.mission_running && typeof since === "number" && deadline && since > deadline) {
+      return "a mission is running but has not ticked for " + since.toFixed(1) + "s";
+    }
+    return null;
+  }
+
+  async function runHealthCheck() {
+    const verdictEl = document.getElementById("system-health-verdict");
+    const detailEl = document.getElementById("system-health-detail");
+    if (!verdictEl) return;
+    verdictEl.className = "health-verdict";
+    verdictEl.textContent = "checking\u2026";
+    detailEl.textContent = "";
+
+    const robotUrl = document.getElementById("cfg-server-url").value.trim();
+    const brainUrl = document.getElementById("cfg-brain-url").value.trim();
+    const [robot, brain] = await Promise.all([
+      probeHealth(robotUrl, document.getElementById("cfg-server-secret").value.trim()),
+      probeHealth(brainUrl, document.getElementById("cfg-brain-secret").value.trim()),
+    ]);
+
+    const parts = [];
+    const failed = [];
+    [["robot", robot, robotProblem], ["brain", brain, brainProblem]].forEach(function (row) {
+      const name = row[0], result = row[1], check = row[2];
+      if (result.status === "not configured") { parts.push(name + ": not configured"); return; }
+      if (result.status !== "ok") {
+        failed.push(name);
+        parts.push(name + ": unreachable (" + (result.problem || "no answer") + ")");
+        return;
+      }
+      const problem = check(result.body);
+      if (problem) { failed.push(name); parts.push(name + ": " + problem); return; }
+      const ident = result.body.identity;
+      parts.push(name + ": ok" + (ident && ident.git_revision ? " (" + ident.git_revision + ")" : ""));
+    });
+
+    verdictEl.textContent = failed.length ? "UNHEALTHY \u2014 " + failed.join(", ") : "OK";
+    verdictEl.className = "health-verdict " + (failed.length ? "bad" : "ok");
+    detailEl.textContent = parts.join(" \u00b7 ");
   }
 
   // Phase M4. Two readouts, both off /health, both answering "the robot is

@@ -529,6 +529,16 @@
     background: var(--surface-raised); border-radius: 0 8px 8px 0;
   }
   .endpoint-note[hidden] { display: none; }
+  /* Phase M5 */
+  .health-line {
+    font-family: var(--mono); font-size: var(--fs-small);
+    margin-top: 8px; padding: 9px 11px; line-height: 1.5;
+    background: var(--field-bg); border-radius: 8px;
+  }
+  .health-verdict { font-weight: 700; color: var(--text-dim); }
+  .health-verdict.ok { color: var(--accent-safe); }
+  .health-verdict.bad { color: var(--accent-alert); }
+  .health-detail { display: block; color: var(--text-dim); margin-top: 4px; }
   .endpoint-note b { color: var(--text); font-weight: 600; }
   .fpv-source .server { color: var(--accent-safe); }
   .fpv-source .local { color: var(--accent-alert); }
@@ -1646,6 +1656,19 @@
           <span class="conn-status-label">Not connected</span>
           <span class="conn-status-detail"></span>
         </span>
+      </div>
+      <!-- Phase M5. The same verdict `python -m control.health` prints, on
+           the page, because "what is wrong with this robot" does not divide
+           into hardware and software until after it is answered. One line,
+           both halves, and it names which half failed -- two health routes
+           each reporting themselves fine is not an answer. -->
+      <div class="section-label" style="margin-top:14px;">System health</div>
+      <div class="health-line" id="system-health">
+        <span class="health-verdict" id="system-health-verdict">not checked</span>
+        <span class="health-detail" id="system-health-detail"></span>
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button id="btn-health-check" style="flex:1;">Check health</button>
       </div>
       <details class="disclosure">
         <summary><span class="disclosure-caret" data-icon="chevronRight"></span>Setting this up</summary>

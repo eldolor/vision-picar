@@ -447,6 +447,12 @@ the twin already renders that field.
 8. **Every refusal names a machine-readable reason.** §4.2. A caller must
    never have to read prose to tell "retry later" from "you are not
    driving".
+9. **Only what a release can be blamed for reaches a health verdict.**
+   `control/health.py` holds the rule and is the single place that decides
+   what "unhealthy" means. A distance reading, a measured silence, a driver
+   and a last refusal are description -- printed, never in the exit code.
+   A check that goes red because the robot is parked is one everybody
+   learns to ignore, and M11 rolls a release back on this.
 
 ---
 

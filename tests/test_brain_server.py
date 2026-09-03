@@ -241,9 +241,15 @@ def test_the_brain_process_never_loads_the_simulator():
 
     assert not [m for m in loaded if m.startswith("sim")], f"brain loaded the simulator: {loaded}"
     # robot.safety comes in with SafetyViolation, which is part of the
-    # interface contract RemoteRobot re-raises. A backend or the robot
-    # server itself would not be.
-    assert set(loaded) <= {"robot", "robot.interface", "robot.safety"}, loaded
+    # interface contract RemoteRobot re-raises. robot.identity is M5's
+    # start-up line, which both servers log and which therefore has to live
+    # in the lower half -- it is stdlib only, and importing it can reach no
+    # backend. A backend or the robot server itself would not be allowed
+    # here, which is the whole point of listing these by name rather than
+    # allowing the `robot` package wholesale.
+    assert set(loaded) <= {
+        "robot", "robot.interface", "robot.safety", "robot.identity",
+    }, loaded
 
 
 # ---------- recording a Robot-view walk ----------

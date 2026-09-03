@@ -44,6 +44,7 @@ what robot/server.py's watchdog (B3.1) exists to catch.
 
 import logging
 import threading
+import time
 from typing import Callable, Optional
 
 from brain.agent import ObjectSearchAgent
@@ -275,6 +276,9 @@ class MissionRunner:
         self._lock = threading.RLock()
         self._running = False
         self._outcome = IDLE
+        self._last_tick_at = None
+        self._ticks = 0
+        self._started_at = None
         self._error: Optional[str] = None
         self._vision_failures = 0
         self._last_action: Optional[str] = None
@@ -291,6 +295,8 @@ class MissionRunner:
                 raise RuntimeError("A MissionRunner runs one mission; build a new one")
             self._running = True
             self._outcome = RUNNING
+            self._started_at = time.monotonic()
+            self._last_tick_at = time.monotonic()
             self._log_line(f"mission started: {self.memory.mission} (max_steps={self.max_steps})")
 
     def tick(self) -> bool:
@@ -334,6 +340,13 @@ class MissionRunner:
             if not self._running:
                 # stop()/abort() landed while the step was in flight.
                 return False
+            # Phase M5. When a tick last COMPLETED, which is what a health
+            # verdict needs and what no other field here reports. `step`
+            # advancing is the same fact, but only if you sample it twice
+            # and know how long you waited; this is one number a health
+            # check can compare against a deadline it already has.
+            self._last_tick_at = time.monotonic()
+            self._ticks += 1
             self._vision_failures = 0
             self._last_action = result.action
             self._last_reasoning = self._describe(result)
@@ -388,6 +401,15 @@ class MissionRunner:
                 "rooms_visited": sorted(self.memory.visited_rooms),
                 "rooms_searched": sorted(self.memory.searched_rooms),
                 "vision_failures": self._vision_failures,
+                # Phase M5, all three description-only in themselves. The
+                # verdict is built from them by control/health.py, which is
+                # the only place that decides what "unhealthy" means.
+                "ticks": self._ticks,
+                "seconds_since_last_tick": (
+                    round(time.monotonic() - self._last_tick_at, 2)
+                    if self._last_tick_at is not None else None
+                ),
+                "tick_rate_hz": self._tick_rate_hz(),
                 "sighting": self._sighting_dict(),
                 "log_tail": self._log[-LOG_TAIL_LINES:],
             }
@@ -440,6 +462,24 @@ class MissionRunner:
             self._log_line(f"mission ended ({outcome}): {note}")
         # Outside the lock: this is an HTTP call when the robot is remote.
         self._safe_stop()
+
+    def _tick_rate_hz(self):
+        """Ticks per second since the mission started -- phase M5.
+
+        **Description, never verdict**, and the reason is worth stating
+        because the plan asked for a rate check. There is no knowable
+        target to compare this against: a frontier tick is milliseconds of
+        work plus `tick_interval_s`, and a vision tick is several seconds
+        of a paid API call. The same number is healthy in one policy and
+        alarming in the other, so a threshold on it would fire on the
+        wrong thing. `seconds_since_last_tick` against the mission's own
+        `tick_timeout_s` is the comparison that has a target, and that is
+        what control/health.py uses. This is here to be read by a person.
+        """
+        if self._started_at is None or not self._ticks:
+            return None
+        elapsed = time.monotonic() - self._started_at
+        return round(self._ticks / elapsed, 3) if elapsed > 0 else None
 
     def _safe_stop(self) -> None:
         try:

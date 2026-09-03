@@ -1131,3 +1131,98 @@ def test_a_server_older_than_m4_leaves_both_readouts_blank(browser, twin_server)
         page.inner_text("#brain-tel-driver")
     assert not errors, errors
     page.close()
+
+
+# ---------- one health answer, from the page (phase M5) ----------
+
+
+def _settings_health(browser, twin_server, *, brain_url=None, brain_health=None,
+                     robot_health=None):
+    page, errors = open_twin(browser, twin_server)
+    if robot_health is not None:
+        page.route(re.compile(r".*:%s/health" % twin_server.rsplit(":", 1)[1]),
+                   lambda route: route.fulfill(status=200,
+                                               content_type="application/json",
+                                               body=_json(robot_health)))
+    if brain_health is not None:
+        page.route("**/brain-stub/health", lambda route: route.fulfill(
+            status=200, content_type="application/json", body=_json(brain_health)))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    if brain_url is not None:
+        page.fill("#cfg-brain-url", brain_url)
+    page.click("#btn-health-check")
+    return page, errors
+
+
+HEALTHY_BRAIN_BODY = {
+    "status": "ok", "mission_running": False, "tick_timeout_s": 30.0,
+    "identity": {"git_revision": "abc1234"},
+}
+
+
+def test_the_health_line_names_the_half_that_failed(browser, twin_server):
+    """The press-this for M5: kill the brain and the page says which half
+    went, rather than a bare red light. Two health routes each reporting
+    themselves fine is what this replaces."""
+    page, errors = _settings_health(
+        browser, twin_server, brain_url="http://127.0.0.1:9/unreachable")
+    verdict = page.locator("#system-health-verdict")
+    sync_api.expect(verdict).to_contain_text("UNHEALTHY", timeout=8000)
+    sync_api.expect(verdict).to_contain_text("brain")
+    sync_api.expect(page.locator("#system-health-detail")).to_contain_text("robot: ok")
+    assert not errors, errors
+    page.close()
+
+
+def test_a_healthy_pair_reads_ok_and_names_the_build(browser, twin_server):
+    """M11 rolls a release back on this verdict, so "which build said it
+    was fine" has to be on the line that said it."""
+    page, errors = _settings_health(
+        browser, twin_server, brain_url=twin_server + "/brain-stub",
+        brain_health=HEALTHY_BRAIN_BODY)
+    verdict = page.locator("#system-health-verdict")
+    sync_api.expect(verdict).to_have_text("OK", timeout=8000)
+    sync_api.expect(page.locator("#system-health-detail")).to_contain_text("abc1234")
+    assert not errors, errors
+    page.close()
+
+
+def test_a_robot_against_a_wall_does_not_read_as_unhealthy(browser, twin_server):
+    """The rule, at the surface people actually look at: only conditions a
+    release can be blamed for reach the verdict. A page that went red
+    because the robot was parked is one everybody learns to ignore -- and
+    it would disagree with the command that gates the rollback."""
+    page, errors = _settings_health(
+        browser, twin_server, brain_url=twin_server + "/brain-stub",
+        brain_health=HEALTHY_BRAIN_BODY,
+        robot_health={
+            "status": "ok", "mode": "sim", "seconds_since_last_command": 3600.0,
+            "watchdog_timeout_s": 1.0, "seconds_since_watchdog_poll": 0.05,
+            "watchdog_poll_interval_s": 0.1,
+            "last_refusal": {"reason": "safety_distance", "detail": "Blocked FORWARD",
+                             "driver": "twin-dpad", "seconds_ago": 0.2},
+            "identity": {"git_revision": "abc1234"},
+        })
+    sync_api.expect(page.locator("#system-health-verdict")).to_have_text("OK", timeout=8000)
+    assert not errors, errors
+    page.close()
+
+
+def test_a_stalled_watchdog_loop_reads_as_unhealthy(browser, twin_server):
+    """The failure nothing else here can see: the server answers every
+    request while the guard that stops the motors is gone."""
+    page, errors = _settings_health(
+        browser, twin_server, brain_url=twin_server + "/brain-stub",
+        brain_health=HEALTHY_BRAIN_BODY,
+        robot_health={
+            "status": "ok", "mode": "sim", "seconds_since_last_command": 0.2,
+            "watchdog_timeout_s": 1.0, "seconds_since_watchdog_poll": 5.0,
+            "watchdog_poll_interval_s": 0.1,
+            "identity": {"git_revision": "abc1234"},
+        })
+    verdict = page.locator("#system-health-verdict")
+    sync_api.expect(verdict).to_contain_text("UNHEALTHY", timeout=8000)
+    sync_api.expect(page.locator("#system-health-detail")).to_contain_text("watchdog loop")
+    assert not errors, errors
+    page.close()

@@ -76,6 +76,7 @@ from control import drills
 from control.brain_config import load_brain_config
 from control.mission_runner import MissionRunner
 from control.remote_robot import RemoteRobot
+from robot.identity import log_identity
 from robot.interface import RobotInterface
 
 logger = logging.getLogger("brain_server")
@@ -224,6 +225,8 @@ def create_app(
     (an in-process RemoteRobot, or a recording stub) and a runner; the
     module-level `app` below is what `uvicorn control.brain_server:app`
     serves."""
+    # Phase M5, same reason as robot/server.py's: first line out.
+    ident = log_identity("vision-picar brain server", config_path)
     config = load_brain_config(config_path)
     secret = os.environ.get("APP_SHARED_SECRET")
     # Distinct from `secret` above, which gates callers OF this brain.
@@ -539,10 +542,28 @@ def create_app(
     @app.get(prefix + "/health")
     async def health():
         runner = state["runner"]
+        running = bool(runner is not None and runner.is_running())
+        status = runner.status() if runner is not None else None
         return {
             "status": "ok",
+            "identity": ident,
             "robot_url": config["robot_url"],
-            "mission_running": bool(runner is not None and runner.is_running()),
+            "mission_running": running,
+            # Phase M5. The verdict input for "the loop is alive but
+            # stuck": if a mission is running and no tick has COMPLETED
+            # within the mission's own tick deadline, the loop that was
+            # supposed to notice that has itself stopped running. B3.3
+            # aborts a hung tick from inside that loop -- which is exactly
+            # why it cannot report a loop that is no longer there. The
+            # deadline is reported alongside so the check does not carry a
+            # second copy of it.
+            "seconds_since_last_tick": (
+                status["seconds_since_last_tick"] if running and status else None
+            ),
+            "tick_timeout_s": state["tick_timeout_s"],
+            # Description, never verdict -- see MissionRunner._tick_rate_hz()
+            # for why a rate has no knowable target here.
+            "tick_rate_hz": status["tick_rate_hz"] if running and status else None,
             "drills_allowed": bool(config["allow_drills"]),
             # Which model this brain pins for policy: "vision", or null for
             # "whatever the vision service defaults to". Reported so the twin

@@ -98,6 +98,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from robot.factory import get_robot, load_config
+from robot.identity import log_identity
 from robot.interface import DRIVER_UNKNOWN, driver_priority
 from robot.safety import SafetyController, SafetyViolation, path_zone_indices
 
@@ -132,6 +133,13 @@ class TeleopFrameRequest(BaseModel):
     media_type: str = "image/jpeg"
 
 
+# How often the watchdog loop wakes. Named (phase M5) because /health now
+# publishes it: a health check has to know what "fresh" means for this
+# server's own poll, and hardcoding a second copy of 0.1 in control/health.py
+# is how the two would drift apart.
+WATCHDOG_POLL_INTERVAL_S = 0.1
+
+
 def watchdog_should_stop(last_command_at: float, now: float, timeout_s: float) -> bool:
     """Pure decision logic -- see module docstring for why this is
     tested separately from the async polling loop that calls it."""
@@ -142,6 +150,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     """Builds a fresh app + robot + safety controller. Tests call this
     directly to get an isolated instance per test; the module-level
     `app` below is what `uvicorn robot.server:app` actually serves."""
+    # Phase M5. First line out of the process, before anything can fail in
+    # a way that makes you wonder which build you are looking at.
+    ident = log_identity("vision-picar robot server", config_path)
     config = load_config(config_path) if config_path else load_config()
     watchdog_timeout = config.get("safety", {}).get("watchdog_timeout_s", 1.0)
     min_distance = config.get("safety", {}).get("min_distance_cm", 20.0)
@@ -166,6 +177,15 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         "driver": None,
         "driver_at": 0.0,
         "last_refusal": None,
+        # Phase M5. When the watchdog's own loop last ran, which is a
+        # different fact from `last_command_at` -- that measures the
+        # CLIENT's silence, this measures whether the guard measuring it is
+        # still alive. Nothing noticed before if the asyncio task died: the
+        # server kept answering every request, /health kept reporting a
+        # growing silence, and the thing that was supposed to act on that
+        # silence was gone. Seeded at start-up so a server that has not yet
+        # polled once does not read as stalled.
+        "watchdog_polled_at": time.monotonic(),
     }
 
     def authority_holder(now: float):
@@ -205,8 +225,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
     async def watchdog_loop():
         while True:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(WATCHDOG_POLL_INTERVAL_S)
             now = time.monotonic()
+            state["watchdog_polled_at"] = now
             if watchdog_should_stop(state["last_command_at"], now, watchdog_timeout):
                 robot.stop()
                 # Phase M4: the watchdog is a stop, not a refusal of any
@@ -432,6 +453,16 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # it (PLAN-sim-hardening.md definition of done, item 10).
             "min_distance_cm": min_distance,
             "mode": mode,
+            # Phase M5. Which build answered, for anyone reading a health
+            # report rather than a log. Same content as the start-up line.
+            "identity": ident,
+            # Phase M5. How long since the watchdog loop itself ran. A
+            # verdict input for `python -m control.health`, and the only
+            # field here that says anything about whether this server's own
+            # guard is alive rather than about the robot.
+            "seconds_since_watchdog_poll": round(
+                time.monotonic() - state["watchdog_polled_at"], 2),
+            "watchdog_poll_interval_s": WATCHDOG_POLL_INTERVAL_S,
             # Phase M4. Who last drove, and whether they still hold the
             # robot -- `holder` is None once authority has lapsed on
             # silence, which is a different statement from "nobody has ever

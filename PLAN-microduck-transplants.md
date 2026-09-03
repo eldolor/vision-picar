@@ -1,6 +1,6 @@
 # Plan: what to take from Microduck
 
-Status: M1 built and measured (see its entry -- the replays settled more than the sim run did), M2-M4 built 2026-09-03, M5-M12 proposed (M7b added 2026-09-03) · Date: 2026-09-02 · Phase IDs: `M1`-`M12`
+Status: M1 built and measured (see its entry -- the replays settled more than the sim run did), M2-M5 built 2026-09-03, M6-M12 proposed (M7b added 2026-09-03) · Date: 2026-09-02 · Phase IDs: `M1`-`M12`
 
 [Microduck](https://github.com/pollen-robotics/microduck) (Apache-2.0, read
 2026-09-02) is Pollen Robotics' open-source brain for a 25cm bipedal robot:
@@ -84,7 +84,7 @@ Seven of the twelve phases need no hardware.
 | M2 | A depth grid on the interface, and in the sim | pre-hardware | **DONE.** A depth strip under the FPV canvas, tracking the view |
 | M3 | The tri-state zone, and a centre-zone veto | pre-hardware | **DONE.** Dropout reads grey, not "wall". The off-centre half is M10's |
 | M4 | Refusals are state, manual preempts autonomous | pre-hardware | **DONE.** Tap the D-pad mid-mission. It ends `preempted`, and says by whom |
-| M5 | One health command | pre-hardware | Kill the brain. Settings flips and the command exits non-zero |
+| M5 | One health command | pre-hardware | **DONE.** Kill the brain. Settings flips and the command exits non-zero |
 | M6 | A process start never moves the robot | pre-hardware | Restart the robot server mid-mission. The map does not twitch |
 | M7 | Nothing falls back silently | pre-hardware | A misspelled env variant refuses at boot instead of serving `default` |
 | M7b | One shipped wording | pre-hardware | The mission panel names no wording, because there is only one |
@@ -612,7 +612,69 @@ Re-introduce silent last-writer-wins and watch the test go red first.
 "preempted by twin-dpad", the car does what the pad said, and the readout says
 why the brain's last move was refused.
 
-### M5 -- One health command
+### M5 -- One health command -- **BUILT 2026-09-03**
+
+**What it is.** `python -m control.health` asks both halves, prints one
+answer, and exits non-zero when either is unhealthy or unreachable.
+`--json` for the same content. M11 gates a release rollback on that exit
+code, and a boot timer runs it with nobody reading the output.
+
+Built:
+
+- **`control/health.py`**, and the rule it exists to hold. Only conditions
+  a release can be **blamed for** reach the verdict (`robotd-design`
+  section 3.4, invariant 5). Three inputs: each process reachable; the
+  robot's watchdog loop still polling; and, while a mission is running, a
+  tick having completed inside the mission's own `tick_timeout_s`.
+  Everything else -- the distance reading, the measured silence, the
+  driver, the last refusal, the tick rate -- is **description**: printed,
+  in `--json`, never in the exit code. The drift that rule prevents is a
+  health check that goes red because a robot is sitting still, which is
+  one everybody learns to ignore.
+- **The watchdog loop's own liveness**, which is a new fact and not a
+  rename. `seconds_since_last_command` measures the *client's* silence;
+  `seconds_since_watchdog_poll` measures whether the guard that acts on
+  that silence is still running. Nothing noticed before if that asyncio
+  task died: the server answered every request and reported a growing
+  silence while the thing meant to stop the motors was gone.
+- **The mission loop's liveness**, for the same class of failure one level
+  up. B3.3 aborts a hung *tick* from inside the loop -- which is precisely
+  why it cannot report a loop that is no longer there.
+- **`robot/identity.py`**: one line at start-up, at warning level --
+  service, git revision, executable path, config path -- and the same
+  content on both `/health` routes. The executable path is the
+  load-bearing field: after M11 a rollback can leave the git revision
+  looking exactly right while `current` still points at the build you were
+  trying to leave.
+- **A health line in the twin's Settings**, with a Check health button. It
+  asks both services directly rather than asking one to report on the
+  other -- a brain that cannot reach the robot is the case this has to
+  catch, and it would report itself fine.
+
+**A rate is deliberately description, not a verdict input**, against the
+phase's own text. There is no knowable target: a frontier tick is
+milliseconds plus `tick_interval_s`, a vision tick is several seconds of a
+paid API call, and the same number is healthy in one policy and alarming
+in the other. `seconds_since_last_tick` against `tick_timeout_s` is the
+comparison that *has* a declared target, and that is what the verdict
+uses. The rate is printed for a person.
+
+**One gap was found by removing a guard and watching nothing happen.**
+Deleting the line that records the watchdog's poll left all fifteen stub
+tests green -- a stub cannot tell a seeded value from a live one.
+`tests/test_watchdog_integration.py` now checks it against the real
+uvicorn subprocess, and that test does go red. The stubbed suite tests the
+*rule*; only a live server tests that the field is real.
+
+**Press this.** Settings -> Check health with both services up: OK, naming
+each build's git revision. Kill the brain and press it again: UNHEALTHY,
+naming the brain, with the robot still reported ok. Drive the robot into a
+wall first and it stays OK -- a parked robot with a safety veto on record
+is not a release to blame, and that is the rule made visible.
+
+**Not deployed**, same as M2-M4.
+
+**As originally specified**, kept below the way M1-M4's are.
 
 **Why.** "What is wrong with this robot" does not divide into hardware and
 software until after it is answered, so Microduck answers it with one command

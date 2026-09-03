@@ -126,3 +126,47 @@ def test_a_move_actually_occupies_its_duration_under_realtime(live_server):
     assert resp.status_code == 200
     assert resp.json()["executed"] is True
     assert elapsed >= duration * 0.8
+
+
+# ---------- the loop's own liveness (phase M5) ----------
+
+
+def test_the_watchdog_loop_reports_that_it_is_still_running(live_server):
+    """Phase M5's second verdict input, and the reason it needs a live
+    server rather than a stub.
+
+    `seconds_since_last_command` measures the CLIENT's silence; this
+    measures whether the guard that acts on that silence is itself alive.
+    Nothing noticed before if the asyncio task died: the server kept
+    answering every request, `/health` kept reporting a growing silence,
+    and the thing that was supposed to stop the motors was gone.
+
+    Stop updating `watchdog_polled_at` inside the loop and this goes red --
+    which is exactly what happened when it was checked: the stubbed tests
+    in `tests/test_health.py` all passed against a server that had stopped
+    polling, because a stub cannot tell a seeded value from a live one.
+    """
+    interval = httpx.get(f"{live_server}/health").json()["watchdog_poll_interval_s"]
+    assert interval > 0
+
+    # Longer than several poll intervals, so a value that is merely seeded
+    # at start-up has had time to go stale.
+    time.sleep(max(0.5, interval * 10))
+
+    age = httpx.get(f"{live_server}/health").json()["seconds_since_watchdog_poll"]
+    assert age <= interval * 5, (
+        f"the watchdog loop last polled {age}s ago (it wakes every {interval}s) -- "
+        "either the loop is not running or it is no longer recording that it is"
+    )
+
+
+def test_the_health_command_agrees_with_a_live_server(live_server):
+    """`python -m control.health`'s robot half, against a real process
+    rather than a stub -- the one thing the stubbed suite cannot check is
+    that the fields it reads are the fields the server actually sends."""
+    from control import health
+
+    report = health.check_robot(live_server)
+    assert report["status"] == health.OK, report["problems"]
+    assert report["identity"]["git_revision"]
+    assert report["description"]["watchdog_poll_age_s"] is not None
