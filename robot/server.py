@@ -253,6 +253,19 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     def distance():
         return {"distance_cm": robot.get_distance()}
 
+    @app.get(prefix + "/depth", dependencies=[Depends(require_secret)])
+    def depth():
+        """The depth grid, phase M2 -- its own route rather than a field on
+        /frame, because it is a different sensor. A camera that has wedged
+        must not take the clearance reading down with it (M9), and a
+        backend with no depth sensor answers here with an all-unusable grid
+        while still returning real pixels there.
+
+        Unauthenticated backends and pre-M2 servers are the reason
+        `RemoteRobot` treats a 404 here as "this server has no depth
+        route", rather than as a transport failure."""
+        return robot.get_depth_grid()
+
     @app.get(prefix + "/frame", dependencies=[Depends(require_secret)])
     def frame():
         try:

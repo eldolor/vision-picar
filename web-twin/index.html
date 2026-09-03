@@ -476,6 +476,29 @@
     font-family: var(--mono); font-size: var(--fs-small); color: var(--text-dim);
     margin-top: 8px; line-height: 1.6;
   }
+  /* Phase M2. Sized to the canvas above it rather than to the card, so the
+     zones line up with the columns of the view they measure -- a strip that
+     drifted out of alignment with the picture would be worse than no strip,
+     because it would still look authoritative. */
+  .depth-wrap { display: flex; flex-direction: column; align-items: center; margin-top: 6px; }
+  .depth-strip {
+    display: flex; gap: 2px; width: 100%; max-width: 100%;
+    height: 14px; border-radius: 4px; overflow: hidden;
+  }
+  .depth-zone { flex: 1 1 0; border-radius: 2px; background: var(--field-bg); }
+  /* Three outcomes, three appearances. `unusable` is grey and flat on
+     purpose: it must not read as a distance, because it is the absence of
+     one. `no_target` is the darkest END of the range ramp rather than a
+     fourth colour -- nothing within range IS a statement about the room. */
+  .depth-zone.unusable {
+    background: repeating-linear-gradient(
+      45deg, var(--text-dim) 0 2px, transparent 2px 4px);
+    opacity: 0.45;
+  }
+  .depth-readout {
+    font-family: var(--mono); font-size: var(--fs-small); color: var(--text-dim);
+    margin-top: 4px; opacity: 0.75; text-align: center;
+  }
   .fpv-hud .action { color: var(--text); font-weight: 600; }
   /* Phase S2's visible proof: the picture above should not change when the
      raycaster moves into Python, but where it came from should. This is
@@ -1433,6 +1456,17 @@
         <button id="btn-autopilot" style="flex:1;" disabled>Start</button>
       </div>
       <div class="fpv-wrap"><canvas id="fpv-canvas"></canvas></div>
+      <!-- Phase M2's UI proof: the depth grid the robot reports, drawn as one
+           zone per column of the view above it. Left-to-right here is
+           left-to-right there, so a wall that fills the right of the picture
+           reddens the right of the strip. Grey is "could not measure", which
+           is deliberately not the same colour as "nothing within range" --
+           see robot/interface.py's three zone outcomes. -->
+      <div class="depth-wrap">
+        <div class="depth-strip" id="depth-strip" role="img"
+             aria-label="Depth zones across the camera's field of view"></div>
+        <div class="depth-readout" id="depth-readout">depth: not connected</div>
+      </div>
       <div class="fpv-source" id="fpv-source">frame source: <span class="local">not connected</span></div>
       <div class="fpv-hud" id="fpv-hud">Not running.</div>
       <div class="btn-row" style="margin-top:8px; justify-content: flex-end;">

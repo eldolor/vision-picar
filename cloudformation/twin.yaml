@@ -190,6 +190,11 @@ Resources:
             # Without this it would 404 by falling through to
             # vision-analyze, and the twin would load as a dead page.
             - /app.js
+            # The depth grid (phase M2). Its own route rather than a field
+            # on /frame, so a wedged camera cannot take the clearance
+            # reading with it -- which means it needs its own path here
+            # too. The fifth and last value this rule can hold.
+            - /depth
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

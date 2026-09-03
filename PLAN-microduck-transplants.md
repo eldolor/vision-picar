@@ -1,6 +1,6 @@
 # Plan: what to take from Microduck
 
-Status: M1 built and measured (see its entry -- the replays settled more than the sim run did), M2-M12 proposed · Date: 2026-09-02 · Phase IDs: `M1`-`M12`
+Status: M1 built and measured (see its entry -- the replays settled more than the sim run did), M2 built 2026-09-03, M3-M12 proposed (M7b added 2026-09-03) · Date: 2026-09-02 · Phase IDs: `M1`-`M12`
 
 [Microduck](https://github.com/pollen-robotics/microduck) (Apache-2.0, read
 2026-09-02) is Pollen Robotics' open-source brain for a 25cm bipedal robot:
@@ -81,12 +81,13 @@ Seven of the twelve phases need no hardware.
 | # | Phase | When | Press this to prove it |
 |---|---|---|---|
 | M1 | Settle the gate reading | pre-hardware | **DONE.** The replay table gained two columns; the sim leg is blocked on the renderer |
-| M2 | A depth grid on the interface, and in the sim | pre-hardware | A depth strip under the FPV canvas, tracking the view |
+| M2 | A depth grid on the interface, and in the sim | pre-hardware | **DONE.** A depth strip under the FPV canvas, tracking the view |
 | M3 | The tri-state zone, and a centre-zone veto | pre-hardware | Dropout reads grey, not "wall". The collar fires off-centre |
 | M4 | Refusals are state, manual preempts autonomous | pre-hardware | Tap the D-pad mid-mission. It ends `preempted`, and says by whom |
 | M5 | One health command | pre-hardware | Kill the brain. Settings flips and the command exits non-zero |
 | M6 | A process start never moves the robot | pre-hardware | Restart the robot server mid-mission. The map does not twitch |
 | M7 | Nothing falls back silently | pre-hardware | A misspelled env variant refuses at boot instead of serving `default` |
+| M7b | One shipped wording | pre-hardware | The mission panel names no wording, because there is only one |
 | M8 | Floor rejection and the too-close band | hardware day | Tilt the camera down. The strip stays clear |
 | M9 | The camera cannot wedge `stop` | hardware day | Pull the ribbon mid-mission. `/frame` errors, `/stop` answers |
 | M10 | Clearance from a real sensor | buy list | D-pad at a chair leg the ultrasonic beam misses. The collar flashes |
@@ -280,7 +281,76 @@ on the spot with the target centred.
 **Done when** the sim backpack hunt completes under the real `/navigate` with
 cost and wall-clock in the notes, and the variant table has both new columns.
 
-### M2 -- A depth grid on the interface, and in the sim
+### M2 -- A depth grid on the interface, and in the sim -- **BUILT 2026-09-03**
+
+**What it is.** `RobotInterface.get_depth_grid()`, the seam a distance
+sensor arrives through, exercised end to end in the sim before any sensor
+is bought. Nothing in `brain/` reads it yet -- M3 gives it its first
+consumer.
+
+Built:
+
+- **The method, non-abstract, with an honest default.** `unusable_grid()`
+  in `robot/interface.py`: every zone `ZONE_UNUSABLE`, which is
+  `NO_SENSOR_CM`'s rule one sensor later. `ReplayRobot` and `TeleopRobot`
+  inherit it -- a photograph has no depth in it and a phone walk has no
+  ToF -- so neither can make a walk look as though it exercised collision
+  avoidance it never had.
+- **All three zone outcomes exist from the start**, because the default
+  needs the third one. `ZONE_RANGE` carries a number; `ZONE_NO_TARGET`
+  (nothing within range -- information about the room) and `ZONE_UNUSABLE`
+  (the absence of information) both carry `None`. M3 is still where the
+  tri-state becomes load-bearing: it is what starts producing `UNUSABLE`
+  in the sim, from `sim.sensor_noise`'s dropout, and what teaches
+  `robot/safety.py` to reduce the centre zones.
+- **`MockRobot` synthesises the grid from `renderer.cast_ray()`** -- the
+  same raycaster that draws the camera frame, off the *view* heading, so
+  `look_left()` swings the strip exactly as it swings the picture.
+  `rows: 1`, truthfully: `cast_ray()` has no elevation, and eight
+  identical copies of one row would look like a matrix and be a fiction.
+- **The grid and the scalar agree by construction.** Half a cell (the
+  robot occupies its own cell) and one `FPV_STEP` (the march overshoots
+  into the wall) are subtracted, which makes the centre zones equal
+  `get_distance()` exactly on an axis-aligned wall and makes the reading
+  conservative rather than optimistic everywhere else. This was not
+  cosmetic: without it the grid read ~16cm further than the scalar on the
+  same wall, and M3's veto has to choose between those two numbers. The
+  project has already paid once for a threshold sitting half a cell from
+  where it was assumed to be (`min_distance_cm: 30.0`, M1).
+- **`GET /depth` on `robot/server.py`, and `RemoteRobot` over it.** Its
+  own route, not a field on `/frame`: a wedged camera must not take the
+  clearance reading down with it (M9). `RemoteRobot` **overrides** the
+  interface default rather than inheriting it -- inheriting would report
+  "no sensor" about a robot that has one -- and treats a 404, and only a
+  404, as "this server predates the route". A 500 still raises, so a
+  broken sensor is never quietly reported as an absent one.
+- **The conformance suite gained a fifth backend.** `_HaltGate` wraps the
+  robot every mission is actually driven through, delegates method by
+  method, and did exactly what that shape does: it inherited the
+  all-unusable default while wrapping a `MockRobot` that had a working
+  sensor. Nothing else in the suite would have noticed -- a gate that
+  forgets a *sensing* method still passes every test about the methods it
+  guards. `tests/conftest.py`'s `RecordingRobot` had the same hole.
+
+**Press this.** Sim tab, under the FPV canvas: eight zones, red near, green
+far, hatched grey where unmeasurable, with a readout naming the grid's own
+shape and the nearest zone. Drive the D-pad at a wall and watch the centre
+zones close; tap look-left and the strip swings with the picture. A server
+that predates the route says "depth: not reported by this server" rather
+than going blank -- blank and "no obstacles" must not look alike.
+
+**Done.** The strip tracks the FPV view and the contract suite passes on
+all five backends (75 tests, up from 44).
+
+**Not deployed.** `cloudformation/twin.yaml` and `teleop-robot.yaml` carry
+the new path patterns -- `/depth` took the twin's PWA rule to its
+five-value limit and needed a third rule on the teleop stack -- but no
+stack has been redeployed. Until it is, the deployed twin shows "depth:
+not reported by this server", which is the correct reading of a pre-M2
+server and is what that message exists for.
+
+**As originally specified**, kept below the way M1's is -- the design is
+what the built thing has to be read against.
 
 **Why.** M1 argues the sensor should own clearance. This is the seam that lets
 it, and it can be exercised in the sim before any sensor is bought.
@@ -491,6 +561,94 @@ adding the stack parameter that arms it.
 **Press this.** Start the service with `NAVIGATE_PROMPT_VARIANT=bearing-onlyy`.
 It refuses at boot naming the variant, instead of coming up healthy and
 serving `default`.
+
+### M7b -- One shipped wording
+
+**Why.** Five wordings of `/navigate` exist. They were never features; they
+were an experiment, and the experiment has finished. Section 2's argument is
+that a single monocular frame does not contain metric depth, so no wording
+recovers it -- and four attempts to reword the obstacle question, plus one
+deletion of it, are what established that. `center-third-path` settled it
+structurally rather than by yet another comparison: Opus answers `blocked` on
+66% of frames and Qwen on 5%, but the disagreement is perfectly **nested** --
+every frame Opus calls `open_floor`, Qwen does too. They read the picture the
+same way and cut the threshold in different places, and **a threshold has no
+wording.**
+
+Three further facts point the same way:
+
+- **On the model actually shipped, the wording is already a no-op.** In the
+  5x3 table, Claude Opus 4.5 reads 0.591 under `default` and 0.591 under
+  `bearing-only`. The wording column only separates models this project does
+  not run.
+- **Every live variant is a way for a walk to become unattributable**, and
+  this project has now paid for that three times: the `NavigateModelId` env
+  var that made every pre-2026-08-29 walk Sonnet while it was diagnosed as
+  Nova; `MissionStartRequest` silently discarding `prompt_variant` for as
+  long as the twin had been sending it; and the stray frame found on
+  2026-09-03 (below).
+- **A wording picker on the phone is a control with no correct setting.**
+  Offering an operator five ways to ask an unanswerable question invites the
+  reading that one of them is right.
+
+**What this is not.** It is not "delete the variants". Replay is the only
+controlled comparison this project has -- two live walks vary the operator's
+path as well as the model -- and deleting the wordings deletes the ability to
+re-run the experiment. The split is between *shipped* and *experimental*, not
+between kept and thrown away.
+
+**Depends on M7**, which is what makes "one shipped wording" true rather than
+aspirational: until `NAVIGATE_PROMPT_VARIANT` is validated at import, a typo
+deploys a service that serves `default` while every walk claims otherwise.
+Do M7 first.
+
+**Build.**
+
+- **`default` is the one wording on the live path.** It is the incumbent, it
+  is identical to `bearing-only` under Opus 4.5, and it is the column the
+  3x3 established never reaches the always-FORWARD degenerate mode on any
+  model. Not `bearing-only`: it is the best replay column measured, on one
+  walk, against a `collision` count only a real sensor answers -- and
+  promoting a default off one walk is exactly how the `NavigateModelId`
+  mistake happened.
+- **Remove the wording picker from the live mission and Robot-view paths.**
+  The model picker stays; the model is a real operator choice with measured
+  consequences, and the wording is not.
+- **Keep all five reachable from replay only** (`control/walk_replay.py`'s
+  allow-list, and the admin console). They cost nothing there and cannot
+  contaminate a live walk.
+- **`/navigate` keeps accepting `prompt_variant`** -- replay needs it -- but
+  the twin stops sending one, so a live walk records the server's own
+  default and can be attributed to it.
+- **Fix the stray-frame contamination** found on 2026-09-03: a `/navigate`
+  call still in flight when a Robot-view session is stopped gets written
+  into the *next* walk's directory, carrying its own wording and its own
+  sequence number. Walk `bottle-opus-4-5-center-third-path-20260902-163923`
+  holds sixteen `center-third-path` frames and one `bearing-only` frame at
+  `seq: 37`. This is the same orphaned-in-flight-call class the Robot-view
+  HUD already fixed with `guidanceEpoch`, one layer down: the recorder
+  needs the same epoch. **Until it is fixed, no walk that follows another
+  walk within one session is safely attributable**, which undercuts every
+  measurement this plan makes.
+
+**Files.** `web-twin/app.js` (the picker and the recorder's epoch),
+`control/brain_server.py`, `control/walk_replay.py`,
+`service/vision_analyze/vision_core.py`'s "Per-route models" note, the Stage
+0 notes in `CLAUDE.md`, `tests/test_ui.py`.
+
+**Test.** A live walk records the server's default wording and no other. Two
+walks recorded back to back in one session contain no frame from each other
+-- re-introduce the straggler and watch it go red first, the way
+`guidanceEpoch`'s own fix was checked.
+
+**Press this.** Start a Robot-view walk, stop it, immediately start another.
+The second walk's frames are all its own, and neither walk's recorded
+wording is something anyone had to choose.
+
+**Done when** the live path offers exactly one wording, replay offers all
+five, and two back-to-back walks are cleanly separated.
+
+---
 
 ---
 

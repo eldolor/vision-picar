@@ -183,6 +183,10 @@
 
   const state = {
     serverUrl: "", serverSecret: "", connected: false, lastFrame: null,
+    // Phase M2. `depthUnsupported` latches on the first 404 so a server
+    // that predates /depth is asked once and then left alone, rather than
+    // producing one failed request per step for the rest of the session.
+    lastDepth: null, depthUnsupported: false,
     visited: new Set(), searchedRooms: new Set(),
     sightings: [], found: false, foundSighting: null,
     log: [], step: 0,
@@ -466,7 +470,93 @@
       imageBase64: raw.image_base64, mediaType: raw.media_type,
     };
     state.lastFrame = frame;
+    // Phase M2. Fired alongside the frame rather than awaited with it: the
+    // strip is telemetry, and a robot whose depth route is slow or missing
+    // must not slow down or break the picture. Its own failure is silent
+    // for the same reason -- renderDepth() says "not reported" and the rest
+    // of the page carries on.
+    refreshDepth();
     return frame;
+  }
+
+  // ---------- phase M2: the depth grid ----------
+  // A separate route because it is a separate sensor (robot/server.py's
+  // /depth). Folding it into /frame would mean a camera that has wedged
+  // takes the clearance reading down with it, which is the coupling M9
+  // exists to prevent.
+  async function refreshDepth() {
+    if (state.depthUnsupported) return;
+    try {
+      state.lastDepth = await apiGet("/depth");
+    } catch (e) {
+      if (e.status === 404) {
+        // A server older than M2. A real state, not an error: the stacks
+        // are redeployed one at a time.
+        state.depthUnsupported = true;
+        state.lastDepth = null;
+      }
+      // Any other failure leaves the previous grid up rather than blanking
+      // the strip on one dropped request.
+    }
+    renderDepth();
+  }
+
+  // Range zones ramp from alert (close) to safe (far), so the strip reads
+  // the same way the map's safety collar does. The scale tops out at
+  // DEPTH_FAR_CM rather than at the grid's own maximum: a strip that
+  // rescaled itself every frame would make a wall look further away as you
+  // drove at it, which is exactly backwards.
+  var DEPTH_FAR_CM = 200;
+
+  function depthZoneStyle(zone) {
+    if (zone.status === "unusable") return { cls: "depth-zone unusable", css: "" };
+    if (zone.status === "no_target") {
+      return { cls: "depth-zone", css: "background: var(--accent-safe); opacity: 0.35;" };
+    }
+    var t = Math.max(0, Math.min(1, (zone.distance_cm || 0) / DEPTH_FAR_CM));
+    // Close -> alert, far -> safe. Both are read from CSS so the strip
+    // follows the theme, unlike sim/renderer.py's frame colours, which
+    // deliberately no longer do (they are the model's input; this is not).
+    var color = t < 0.5 ? "var(--accent-alert)" : "var(--accent-safe)";
+    return { cls: "depth-zone", css: "background: " + color + "; opacity: " +
+             (0.35 + 0.65 * (1 - Math.abs(t - 0.5) * 2)).toFixed(2) + ";" };
+  }
+
+  function renderDepth() {
+    var strip = document.getElementById("depth-strip");
+    var readout = document.getElementById("depth-readout");
+    if (!strip || !readout) return;
+
+    var grid = state.lastDepth;
+    if (!grid || !grid.zones || !grid.zones.length) {
+      strip.innerHTML = "";
+      readout.textContent = state.depthUnsupported
+        ? "depth: not reported by this server"
+        : (state.connected ? "depth: no zones reported" : "depth: not connected");
+      return;
+    }
+
+    strip.innerHTML = grid.zones.map(function (z) {
+      var s = depthZoneStyle(z);
+      var title = z.status === "range" ? Math.round(z.distance_cm) + "cm" : z.status;
+      return '<div class="' + s.cls + '" style="' + s.css + '" title="' + title + '"></div>';
+    }).join("");
+
+    var measured = grid.zones.filter(function (z) { return z.status === "range"; });
+    var unusable = grid.zones.filter(function (z) { return z.status === "unusable"; }).length;
+    if (!measured.length) {
+      // Says which kind of nothing this is. "No depth sensor" and "the
+      // sensor is blind right now" are the distinction M3 is built on, and
+      // a strip that showed one grey bar for both would erase it.
+      readout.textContent = unusable === grid.zones.length
+        ? "depth: no sensor (" + grid.zones.length + " zones unusable)"
+        : "depth: nothing within range";
+      return;
+    }
+    var nearest = Math.min.apply(null, measured.map(function (z) { return z.distance_cm; }));
+    readout.textContent = "depth: " + grid.rows + "\u00d7" + grid.cols +
+      ", nearest " + Math.round(nearest) + "cm" +
+      (unusable ? ", " + unusable + " unusable" : "");
   }
 
 
@@ -702,6 +792,11 @@
       return;
     }
     state.serverUrl = url;
+    // Connecting somewhere else clears the "this server has no /depth"
+    // latch -- otherwise one pre-M2 server would silence the strip for
+    // every server connected to afterwards in the same session.
+    state.depthUnsupported = false;
+    state.lastDepth = null;
     state.serverSecret = document.getElementById("cfg-server-secret").value.trim();
     state.connecting = true;
     setButtonBusy(btn, true, "Connecting\u2026");

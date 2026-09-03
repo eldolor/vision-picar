@@ -139,6 +139,9 @@ class RecordingRobot(RobotInterface):
     def get_distance(self) -> float:
         return self._record("get_distance", self.delegate.get_distance())
 
+    def get_depth_grid(self) -> dict:
+        return self._record("get_depth_grid", self.delegate.get_depth_grid())
+
 
 def fresh_mock_robot():
     """A MockRobot on a brand-new starter house."""

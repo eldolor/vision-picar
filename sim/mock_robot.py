@@ -28,6 +28,7 @@ import logging
 import time
 from typing import Optional
 
+from robot import interface
 from sim.grid_world import GridWorld
 from sim.sensors import DistanceSensorModel
 from sim import renderer
@@ -38,6 +39,15 @@ logger = logging.getLogger("mock_robot")
 # Simulation conversion constants (tune freely; only affects sim realism)
 CELLS_PER_SECOND_AT_FULL_SPEED = 2.0  # at speed=100
 DEGREES_PER_TURN = 90  # grid-world only supports 90-degree turns
+# What get_distance() has always multiplied a cell count by, and what
+# sim/sensors.py defaults its own `cell_cm` to. Named here because
+# get_depth_grid() needs the same number and two copies of a constant
+# is how the grid and the scalar would start disagreeing about the same
+# wall.
+DEFAULT_CELL_CM = 30.0
+# The robot occupies its cell, so clearance is measured from the front of
+# that cell rather than from its centre -- see get_depth_grid().
+ROBOT_HALF_CELL = 0.5
 
 
 class MockRobot(RobotInterface):
@@ -153,6 +163,85 @@ class MockRobot(RobotInterface):
             "render": {"w": self.render_width, "h": self.render_height},
         }
         return frame
+
+    def get_depth_grid(self) -> dict:
+        """Depth zones across the field of view, phase M2 -- cast from the
+        same raycaster that draws the camera frame.
+
+        Two things make this worth having before any sensor is bought.
+        It is the seam M1 argued for (`PLAN-microduck-transplants.md`
+        section 2: the camera answers *which way*, a sensor answers *how
+        far*), and it is exercisable here: the grid world already knows
+        where its walls are, so the sim can stand in for a ToF while the
+        consumer that will read it (`robot/safety.py`, M3) is written.
+
+        **`rows: 1`, and that is the honest number.** `cast_ray()` has no
+        elevation and the grid world has no floor or ceiling geometry, so
+        there is no second row to report. Publishing eight identical copies
+        of one row would look like a matrix and be a fiction; the shape
+        travels in the data precisely so this can be said out loud.
+
+        Three details behind the numbers:
+
+        * **The view heading, not the body heading**, matching
+          `renderer.render_world_image()`. `look_left()` swings the strip
+          the same way it swings the picture -- which is the point of a
+          peek, and what `MissionAgent.decide()` already assumes about
+          `get_distance()`.
+        * **Zone rays are the centres of `cols` equal slices of the FOV**,
+          so the strip lines up column-for-column with the frame above it.
+          With an even `cols` no ray points exactly ahead; the two centre
+          zones straddle the axis by half a slice, which is what M3's
+          "reduce the centre zones to one scalar" is for.
+        * **Half a cell and one ray-march step are subtracted**, so a zone
+          reports clearance ahead of the robot's own cell and never more
+          than it has. `cast_ray()` measures from the cell *centre* to the
+          wall face, and overshoots by up to `FPV_STEP`; `get_distance()`
+          counts free cells ahead of the robot. Left uncorrected the grid
+          would read ~16cm further than the scalar on the same wall -- a
+          silent disagreement between the two numbers M3's veto has to
+          choose between, and this project has already paid once for a
+          threshold sitting half a cell from where it was assumed to be
+          (`min_distance_cm: 30.0`, M1). Corrected, the centre zones and
+          `get_distance()` agree exactly on an axis-aligned wall, which is
+          the property M3 needs and a test below pins.
+
+        A ray that reaches `FPV_MAX_DIST` without meeting a wall is
+        `ZONE_NO_TARGET` -- nothing within range, which is information, and
+        deliberately not the same answer as `ZONE_UNUSABLE`. **Nothing here
+        ever produces `ZONE_UNUSABLE`**: an exact grid world has no failed
+        reads. M3 is where `sim.sensor_noise`'s dropout starts producing
+        them, which is what gives the tri-state something to distinguish in
+        the sim rather than only on hardware.
+        """
+        cols = interface.DEPTH_COLS_DEFAULT
+        cell_cm = self.sensor.cell_cm if self.sensor else DEFAULT_CELL_CM
+        view = self.world._view_heading()
+        base_angle = renderer.HEADING_ANGLE[view.name]
+        px, py = self.world.robot_x + 0.5, self.world.robot_y + 0.5
+
+        zones = []
+        for i in range(cols):
+            t = (i + 0.5) / cols
+            angle = base_angle - renderer.FPV_FOV / 2 + renderer.FPV_FOV * t
+            dist_cells = renderer.cast_ray(self.world.layout, px, py, angle)
+            if dist_cells >= renderer.FPV_MAX_DIST:
+                zones.append({"status": interface.ZONE_NO_TARGET, "distance_cm": None})
+                continue
+            # cast_ray() overshoots: it marches in FPV_STEP increments and
+            # returns the first step already inside the wall, so the true
+            # crossing lies in (dist - FPV_STEP, dist]. Report the lower
+            # end. Overstating clearance in a number a safety veto will
+            # read is the one direction this must not round.
+            free_cells = dist_cells - renderer.FPV_STEP - ROBOT_HALF_CELL
+            clearance = max(0.0, free_cells) * cell_cm
+            zones.append({
+                "status": interface.ZONE_RANGE,
+                "distance_cm": round(clearance, 1),
+            })
+
+        self.world._record(f"DEPTH view_heading={view.name} cols={cols}")
+        return {"rows": 1, "cols": cols, "zones": zones}
 
     def get_distance(self) -> float:
         """Distance in cm, matching the real ultrasonic sensor's units.

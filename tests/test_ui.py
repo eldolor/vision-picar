@@ -794,3 +794,132 @@ def test_the_policy_choice_survives_a_reload(browser, twin_server):
     assert page.locator("#brain-policy").input_value() == "vision"
     sync_api.expect(page.locator("#brain-policy-hint")).to_be_visible()
     page.close()
+
+
+# ---------- the depth strip (phase M2) ----------
+#
+# M2's UI proof, and the reason it is a browser test rather than a DOM one:
+# the strip has to line up with the camera view above it and survive a phone
+# viewport. A strip that renders but sits 40px wide, or drifts out of
+# alignment with the picture it describes, is worse than no strip -- it still
+# looks authoritative. That is the same class of defect as the 40px model
+# picker this file was written for.
+
+
+def _connect_for_depth(browser, twin_server):
+    """The twin connected to the real robot server, which under mode: sim
+    publishes a real grid from sim/renderer.py's raycaster. Not routed:
+    what is under test here is that the two ends agree, and a stubbed grid
+    would pin the stub."""
+    page, errors = open_twin(browser, twin_server)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    # The strip lives on the Sim tab, beneath the FPV canvas. Without this
+    # the zones exist in the DOM and are not visible -- which is the first
+    # thing these tests caught, and a reminder that "the element is there"
+    # and "someone can see it" are different assertions.
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_selector("#depth-strip .depth-zone", state="visible", timeout=5000)
+    return page, errors
+
+
+def test_the_depth_strip_shows_one_zone_per_column_the_robot_reports(browser, twin_server):
+    """The grid declares its own shape (`rows`/`cols` travel in the data),
+    so the strip must be drawn from that rather than from a hardcoded eight
+    -- otherwise a real sensor with a different geometry would be drawn
+    wrong and still look right."""
+    page, errors = _connect_for_depth(browser, twin_server)
+    reported = page.evaluate(
+        "async () => (await (await fetch(document.getElementById('cfg-server-url').value"
+        " + '/depth')).json()).cols")
+    assert page.locator("#depth-strip .depth-zone").count() == reported
+    assert not errors, errors
+    page.close()
+
+
+def test_the_depth_strip_is_visible_and_full_width_on_a_phone(browser, twin_server):
+    """Bug (2)'s shape, one feature later: the zones live in a flex row, and
+    a flex row inside a centring wrapper is exactly what collapsed the model
+    picker to 40px."""
+    page, _ = _connect_for_depth(browser, twin_server)
+    strip = page.locator("#depth-strip")
+    sync_api.expect(strip).to_be_visible()
+    box = strip.bounding_box()
+    assert box is not None
+    assert box["width"] >= 200, (
+        f"the depth strip is {box['width']:.0f}px wide at {PHONE['width']}px -- "
+        "too narrow to read a zone off"
+    )
+    assert box["height"] >= 8, "a zero-height strip renders as nothing"
+    page.close()
+
+
+def test_the_strip_lines_up_with_the_camera_view_it_measures(browser, twin_server):
+    """Left-to-right on the strip is left-to-right in the picture. A strip
+    wider or narrower than the canvas would still show the right numbers
+    while pointing at the wrong part of the room."""
+    page, _ = _connect_for_depth(browser, twin_server)
+    canvas = page.locator("#fpv-canvas").bounding_box()
+    strip = page.locator("#depth-strip").bounding_box()
+    assert canvas and strip
+    assert abs(canvas["x"] - strip["x"]) <= 2, (
+        f"strip starts at {strip['x']:.0f}, canvas at {canvas['x']:.0f}")
+    assert abs(canvas["width"] - strip["width"]) <= 2, (
+        f"strip is {strip['width']:.0f}px, canvas {canvas['width']:.0f}px")
+    page.close()
+
+
+def test_the_readout_names_the_nearest_zone(browser, twin_server):
+    """The number a person standing next to the robot actually wants, and
+    the one M3's veto will compare against a threshold."""
+    page, _ = _connect_for_depth(browser, twin_server)
+    text = page.inner_text("#depth-readout")
+    assert "nearest" in text and "cm" in text, text
+    assert "1×8" in text, f"the readout should name the grid's own shape: {text}"
+    page.close()
+
+
+def test_a_server_with_no_depth_route_says_so_instead_of_going_blank(browser, twin_server):
+    """The stacks are redeployed one at a time, so a twin talking to a
+    pre-M2 robot server is a real state and not an error. It must be
+    legible as 'this server does not report depth' rather than as an empty
+    space that could equally mean 'no obstacles'."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/depth", lambda route: route.fulfill(
+        status=404, content_type="application/json", body=_json({"detail": "Not Found"})))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_timeout(900)
+    text = page.inner_text("#depth-readout")
+    assert "not reported" in text, text
+    assert page.locator("#depth-strip .depth-zone").count() == 0
+    assert not errors, errors
+    page.close()
+
+
+def test_an_unmeasurable_zone_is_not_drawn_as_a_distance(browser, twin_server):
+    """The tri-state's whole point, made visible: 'I could not tell' must
+    not be paintable as 'clear' or as any range. This is what stops a
+    reader -- and later M3's veto -- treating a failed zone as a number."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/depth", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "rows": 1, "cols": 2,
+            "zones": [{"status": "range", "distance_cm": 40.0},
+                      {"status": "unusable", "distance_cm": None}],
+        })))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_selector("#depth-strip .depth-zone", state="visible", timeout=5000)
+    zones = page.locator("#depth-strip .depth-zone")
+    assert zones.count() == 2
+    assert "unusable" in (zones.nth(1).get_attribute("class") or "")
+    assert "unusable" not in (zones.nth(0).get_attribute("class") or "")
+    assert "1 unusable" in page.inner_text("#depth-readout")
+    assert not errors, errors
+    page.close()

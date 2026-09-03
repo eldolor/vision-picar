@@ -213,6 +213,28 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
 
+  # A third rule, because both of the above are at the 5-path-pattern-value
+  # limit. robot/server.py is deployed twice and every route it gains has to
+  # be routed at both prefixes -- tests/test_alb_routes.py fails if one is
+  # forgotten, which is the only reason /teleop-robot/app.js above was ever
+  # found.
+  AlbListenerRuleDepth:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 42
+      Conditions:
+        - Field: path-pattern
+          Values:
+            # The depth grid (phase M2). Under mode: teleop this answers
+            # all-unusable -- a live phone walk has no ToF -- which is a
+            # real answer and has to be reachable to be read as one.
+            - /teleop-robot/depth
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:

@@ -38,7 +38,7 @@ from typing import Optional
 
 import httpx
 
-from robot.interface import RobotInterface
+from robot.interface import RobotInterface, unusable_grid
 from robot.safety import SafetyViolation
 
 logger = logging.getLogger("remote_robot")
@@ -119,6 +119,27 @@ class RemoteRobot(RobotInterface):
 
     def get_distance(self) -> float:
         return float(self._request("GET", "/distance")["distance_cm"])
+
+    def get_depth_grid(self) -> dict:
+        """Phase M2. Overrides `RobotInterface`'s all-unusable default,
+        because the robot on the other end of this socket may well have a
+        depth sensor and inheriting the default would report that it did
+        not -- a silent lie in exactly the direction a safety consumer
+        must not be lied to.
+
+        A 404 is the one error not treated as a transport failure: it means
+        this server predates the route, which is a real state (the deployed
+        stacks are redeployed one at a time), and the honest answer for it
+        is the same all-unusable grid any sensorless backend gives. Every
+        other status still raises, so a broken sensor is not quietly
+        reported as an absent one."""
+        try:
+            return self._request("GET", "/depth")
+        except RobotTransportError as e:
+            if "HTTP 404" in str(e):
+                logger.info("robot server has no /depth route -- reporting no depth sensor")
+                return unusable_grid()
+            raise
 
     # ---------- internal ----------
 

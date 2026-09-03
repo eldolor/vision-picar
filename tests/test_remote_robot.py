@@ -123,3 +123,62 @@ def test_unknown_action_raises_value_error(robot_over_asgi):
     turns that into a 400; RemoteRobot turns it back."""
     with pytest.raises(ValueError):
         robot_over_asgi._action("FLY")
+
+
+# ---------- the depth grid over the wire (phase M2) ----------
+
+
+def test_depth_grid_comes_from_the_robot_not_from_the_interface_default(robot_over_asgi):
+    """`get_depth_grid()` is the one RobotInterface method with a default
+    implementation, so a client that forgot to override it would answer
+    all-unusable while talking to a robot that has a working sensor -- a
+    silent lie in the one direction a safety consumer must not be lied to,
+    and one nothing else in the suite would notice."""
+    from robot.interface import ZONE_RANGE
+
+    grid = robot_over_asgi.get_depth_grid()
+    assert grid["rows"] == 1 and grid["cols"] >= 1
+    assert any(z["status"] == ZONE_RANGE for z in grid["zones"]), (
+        "the sim robot on the other end has a sensor -- reporting none means "
+        "the interface default was inherited instead of the route being called"
+    )
+    assert grid == fresh_mock_robot().get_depth_grid(), (
+        "the wire must not change the grid: same robot, same start pose"
+    )
+
+
+def test_a_server_with_no_depth_route_reports_no_sensor_rather_than_failing():
+    """The stacks are redeployed one at a time, so a brain talking to a
+    pre-M2 robot server is a real state. It resolves to the same
+    all-unusable grid any sensorless backend gives -- never a transport
+    error that would spend a tick of the mission's failure budget, and
+    never a fabricated clearance."""
+    import httpx
+
+    from robot.interface import ZONE_UNUSABLE
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/depth":
+            return httpx.Response(404, json={"detail": "Not Found"})
+        return httpx.Response(200, json={})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bot = RemoteRobot("http://robot.test", client=client)
+    grid = bot.get_depth_grid()
+    assert all(z["status"] == ZONE_UNUSABLE for z in grid["zones"])
+
+
+def test_a_broken_depth_sensor_is_not_reported_as_an_absent_one():
+    """Only 404 means "this server has no such route". A 500 is a robot
+    that has a depth route and could not answer it, which the caller has to
+    hear about -- collapsing the two would turn every sensor fault into a
+    quiet "no sensor fitted"."""
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="sensor bus error")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    bot = RemoteRobot("http://robot.test", client=client)
+    with pytest.raises(RobotTransportError):
+        bot.get_depth_grid()

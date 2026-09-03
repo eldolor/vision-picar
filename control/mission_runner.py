@@ -164,6 +164,14 @@ class _HaltGate(RobotInterface):
     def get_distance(self) -> float:
         return self._robot.get_distance()
 
+    def get_depth_grid(self) -> dict:
+        # Sensing passes through, same as the two above. Inheriting
+        # RobotInterface's all-unusable default here instead would make
+        # every mission report that its robot had no depth sensor,
+        # whatever it was actually wrapping -- which is why the gate is
+        # now one of the backends in tests/test_robot_contract.py.
+        return self._robot.get_depth_grid()
+
 
 def call_with_timeout(fn: Callable, *args, timeout_s: Optional[float] = None):
     """Run `fn(*args)`, raising TimeoutError if it outlasts `timeout_s`.
