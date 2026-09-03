@@ -1,6 +1,6 @@
 # Plan: perception on the car itself
 
-Status: **decisions recorded, nothing built** · Date: 2026-09-03 · Phase IDs: none assigned yet
+Status: **design settled, nothing built** · Date: 2026-09-03 · Phase IDs: none assigned yet
 
 Started as a holding pen after reading Microduck -- *what could run on the car
 itself?* -- and became the place where a chain of hardware and architecture
@@ -325,6 +325,93 @@ COCO detector is measurably better than a VLM at the one thing `approach` needs,
 because a bounding box is a bearing and "slightly to the left" is not. Stage 0
 already established that every model identifies a red backpack -- capability was
 never the scarce thing. Precision was.
+
+---
+
+### 1.12 The sim participates, with **synthesised detections**
+
+`sim/renderer.py` draws flat-shaded raycaster walls. A COCO detector finds
+nothing in them, so the reactive tier cannot be tested against rendered pixels.
+Three options were weighed: the sim does not participate; the sim synthesises
+detections from grid truth; or the renderer is made detectable by drawing real
+objects.
+
+**Decided: synthesise from grid truth.** `MockRobot` knows where the target is
+and emits a bounding box directly -- no rendering, no model.
+
+**What that tests, and what it cannot.** The sim's job here is the **loop**, not
+the model: is a goal issued, executed and reported; does the collar veto; does
+the trigger discipline fire when it should; does arbitration behave when sources
+disagree. Synthetic detections exercise all of it, deterministically and for
+free. **The sim leg tests the detector's consumers, never the detector.** Any
+claim about detection accuracy comes from real frames -- Stage 0, the recorded
+walks and the replay harness, which use real pixels. The renderer's fidelity
+note already says why a sim result is not a statement about real rooms.
+
+The precedent is `MockRobot` already keeping grid facts beside its pixels, and
+`unusable_grid()` one sensor over: **a backend that says honestly what it does
+and does not have**, so no run can look as though it exercised perception it
+never had. A synthesised detection is marked as such.
+
+#### Perfect, but occlusion-aware -- fidelity, not noise
+
+"Perfect" must not mean *the sim always says where the target is*. A detector
+that sees through walls would make the sim useless for exactly the behaviours
+most worth testing -- `explore`, room-to-room movement, `lost_target`.
+
+The baseline is **exact bearing when the target is genuinely visible, nothing
+when it is not**: in the camera's field of view *and* unoccluded.
+`sim/renderer.py:cast_ray()` already exists, so the occlusion test is a ray to
+the target and a comparison. **Build it from the start; it is not noise.**
+
+#### Three-way output from day one, for M3's exact reason
+
+The depth grid distinguishes `ZONE_RANGE` / `ZONE_NO_TARGET` / `ZONE_UNUSABLE`
+because "nothing there" and "I could not tell" mean opposite things. A detector
+needs the same three:
+
+| | Means |
+|---|---|
+| `detected` | with bearing and confidence |
+| `absent` | the frame was good and the target is not in it -- **information** |
+| `unavailable` | no frame, stalled pipeline, camera fault -- **the absence of information** |
+
+The failure this designs out is concrete: **a wedged `picamera2` capture reading
+as "the target is gone"**, ending a mission `lost_target` when the truth is that
+the camera died. Same class as M9, and free to prevent now.
+
+#### Noise behind a flag, mirroring `sim.sensor_noise`
+
+Off by default, same shape as the existing `config/robot.yaml` block. Four
+kinds, each mapped to something in 1.11:
+
+| Noise | Tests |
+|---|---|
+| Bearing jitter | that `approach` does not oscillate when the bearing wobbles |
+| Dropout | that a missed frame needs hysteresis before it becomes `lost_target` |
+| False positive | 1.11's rule that a VLM "not here" triggers re-confirmation, never a silent override |
+| Misclassification | identity arbitration -- the VLM wins |
+
+**Not on that list: box-size error.** 1.8 gives distance to the lidar, so the
+detector's box size is never load-bearing. One fewer failure mode, and a
+confirmation that the sensor split was right.
+
+#### Write the noise tests *with* the flag
+
+S5 is the argument. Sensor noise shipped off by default -- correct -- and
+`min_distance_cm: 30.0` therefore sat **exactly on a quantization boundary,
+undiscovered for months**: a noiseless reading is only ever a multiple of 30, so
+every threshold in (0, 30] behaves identically. Switching noise on surfaced it
+at once, and it was a real defect -- the veto was near a coin flip at one cell
+of clearance.
+
+The repo's answer was not to make noise default-on. It was
+`test_min_distance_cm_is_load_bearing_at_a_non_multiple_of_30`: **a specific
+test that turns noise on to pin a property that only exists under noise.**
+
+So: off for the bulk of the suite, plus a handful of tests that enable it
+deliberately, written at the same time as the flag. **A flag no test ever
+enables is decorative** -- the same failure as an encoder nothing reads (3.8).
 
 ---
 
@@ -1016,15 +1103,25 @@ furniture, camera at standing height). The trigger count is probably robust to
 that, being about room transitions rather than depth, but it should be re-run on
 the re-recorded corpus before anyone quotes it.
 
-### 6.2 Still to discuss
+### 6.2 The five questions, and where they landed
 
-Q2 (goal vocabulary), Q3 (stop conditions) and Q4 (the detector, and
-arbitration) are **settled** -- see 1.7, 1.8, 1.10 and 1.11. Q5 is what is
-left.
+**All five are settled.** Q2 goal vocabulary (1.7) · Q3 stop conditions (1.8) ·
+Q4 the detector and arbitration (1.10, 1.11) · Q5 the sim (1.12). Q1's map and
+persistence questions are 1.5-1.6.
 
-| # | Question | Why it is not obvious |
+What remains open is **not design** but measurement and verification: 6.1's free
+trigger-count experiment, 3.8's four seller questions, 1.10's model-zoo check,
+and the re-recorded Stage 0 corpus.
+
+Kept as an index into where each landed:
+
+| # | Question | Where it landed |
 |---|---|---|
-| Q5 | **Does the sim participate at all?** | `sim/renderer.py` renders flat-shaded walls; a COCO detector finds nothing in them, so a sim backend would have to synthesise detections -- making the sim leg unable to test the detector, only its consumers |
+| Q1 | Is there a map, and where does memory live? | **1.5** persistence -- only the map persists, planner is a pure function · **1.6** the visual-edge mechanism is cancelled |
+| Q2 | Closed or open goal vocabulary? | **1.7** closed and versioned, three verbs, unknown verbs refuse by name |
+| Q3 | Who owns the stop condition? | **1.8** typed success from the planner, typed failure from the robot, lidar x bearing |
+| Q4 | Is there an on-device detector, and who arbitrates? | **1.10** IMX500 on-sensor, two layers · **1.11** arbitration split by question, not authority |
+| Q5 | Does the sim participate? | **1.12** yes, with synthesised detections; occlusion-aware, tri-state, noise behind a flag |
 
 ### 6.3 What it owes the twin
 

@@ -384,7 +384,7 @@
     <h1 class="title">Perception on the Car</h1>
     <p class="dek">What could run on the car itself — and the chain of hardware and architecture decisions that question turned out to be hiding.</p>
     <div class="status-row">
-      <span class="chip"><b>Status</b> decisions recorded</span>
+      <span class="chip"><b>Status</b> design settled</span>
       <span class="chip"><b>Built</b> nothing</span>
       <span class="chip"><b>Date</b> 2026-09-03</span>
       <span class="chip"><b>Chassis</b> differential</span>
@@ -677,6 +677,69 @@
           <p>It is right for <em>identity</em> and wrong for <em>geometry</em>. A COCO detector is measurably better than a VLM at the one thing <code>approach</code> needs, because a bounding box <em>is</em> a bearing and “slightly to the left” is not.</p>
           <p>Stage 0 already established that every model identifies a red backpack — <b>capability was never the scarce thing. Precision was.</b></p>
         </div>
+
+        <h3 class="feat-title">1.12 &nbsp;The sim participates, with <b>synthesised detections</b></h3>
+
+        <p><code>sim/renderer.py</code> draws flat-shaded raycaster walls. A COCO detector finds nothing in them, so the reactive tier cannot be tested against rendered pixels. Three options were weighed: the sim does not participate; it synthesises detections from grid truth; or the renderer is made detectable by drawing real objects.</p>
+
+        <div class="finding">
+          <span class="flag">Decided</span>
+          <p><b>Synthesise from grid truth.</b> <code>MockRobot</code> knows where the target is and emits a bounding box directly — no rendering, no model.</p>
+        </div>
+
+        <p><b>What that tests, and what it cannot.</b> The sim’s job here is the <b>loop</b>, not the model: is a goal issued, executed and reported; does the collar veto; does the trigger discipline fire; does arbitration behave when sources disagree. Synthetic detections exercise all of it, deterministically and free. <b>The sim leg tests the detector’s consumers, never the detector.</b> Any claim about detection accuracy comes from real frames — Stage 0, the recorded walks and the replay harness.</p>
+
+        <p>The precedent is <code>MockRobot</code> already keeping grid facts beside its pixels, and <code>unusable_grid()</code> one sensor over: <b>a backend that says honestly what it does and does not have</b>, so no run can look as though it exercised perception it never had.</p>
+
+        <h4 class="sub-title">Perfect, but occlusion-aware — fidelity, not noise</h4>
+
+        <p>“Perfect” must not mean <em>the sim always says where the target is</em>. A detector that sees through walls would make the sim useless for exactly the behaviours most worth testing — <code>explore</code>, room-to-room movement, <code>lost_target</code>.</p>
+
+        <p>The baseline is <b>exact bearing when the target is genuinely visible, nothing when it is not</b>: in the camera’s field of view <em>and</em> unoccluded. <code>cast_ray()</code> already exists, so the occlusion test is a ray to the target and a comparison. <b>Build it from the start; it is not noise.</b></p>
+
+        <h4 class="sub-title">Three-way output from day one, for M3’s exact reason</h4>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>State</th><th>Means</th></tr></thead>
+            <tbody>
+              <tr><td class="strong"><code>detected</code></td><td>with bearing and confidence</td></tr>
+              <tr><td class="strong"><code>absent</code></td><td>the frame was good and the target is not in it — <b>information</b></td></tr>
+              <tr><td class="strong"><code>unavailable</code></td><td>no frame, stalled pipeline, camera fault — <b>the absence of information</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="caution">
+          <span class="flag">The failure this designs out</span>
+          <p>A wedged <code>picamera2</code> capture reading as “the target is gone”, ending a mission <code>lost_target</code> when the truth is that the camera died. Same class as M9, and free to prevent now.</p>
+        </div>
+
+        <h4 class="sub-title">Noise behind a flag, mirroring <code>sim.sensor_noise</code></h4>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Noise</th><th>Tests</th></tr></thead>
+            <tbody>
+              <tr><td class="strong">Bearing jitter</td><td>that <code>approach</code> does not oscillate when the bearing wobbles</td></tr>
+              <tr><td class="strong">Dropout</td><td>that a missed frame needs hysteresis before it becomes <code>lost_target</code></td></tr>
+              <tr><td class="strong">False positive</td><td>§1.11’s rule that a VLM “not here” triggers re-confirmation, never a silent override</td></tr>
+              <tr><td class="strong">Misclassification</td><td>identity arbitration — the VLM wins</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p><b>Not on that list: box-size error.</b> §1.8 gives distance to the lidar, so the detector’s box size is never load-bearing. One fewer failure mode, and a confirmation that the sensor split was right.</p>
+
+        <h4 class="sub-title">Write the noise tests <em>with</em> the flag</h4>
+
+        <div class="finding">
+          <span class="flag">S5 is the argument</span>
+          <p>Sensor noise shipped off by default — correct — and <code>min_distance_cm: 30.0</code> therefore sat <b>exactly on a quantization boundary, undiscovered for months</b>: a noiseless reading is only ever a multiple of 30, so every threshold in (0, 30] behaves identically. Switching noise on surfaced it at once, and it was a real defect — the veto was near a coin flip at one cell of clearance.</p>
+          <p>The repo’s answer was not default-on noise. It was <code>test_min_distance_cm_is_load_bearing_at_a_non_multiple_of_30</code>: <b>a specific test that turns noise on to pin a property that only exists under noise.</b></p>
+        </div>
+
+        <p>So: off for the bulk of the suite, plus a handful of tests that enable it deliberately, written at the same time as the flag. <b>A flag no test ever enables is decorative</b> — the same failure as an encoder nothing reads (§3.8).</p>
 
       </section>
 
@@ -1201,7 +1264,7 @@
               <tr><td class="mono">Q2</td><td class="strong">Goal vocabulary</td><td><b>SETTLED</b> — closed, versioned, three verbs. See §1.7</td></tr>
               <tr><td class="mono">Q3</td><td class="strong">Stop conditions</td><td><b>SETTLED</b> — typed success from the planner, typed failure from the robot. See §1.8</td></tr>
               <tr><td class="mono">Q4</td><td class="strong">Detector, and arbitration</td><td><b>SETTLED</b> — IMX500 up front, two-layer reactive tier, arbitration split by question. See §1.10 and §1.11</td></tr>
-              <tr><td class="mono">Q5</td><td class="strong">Does the sim participate?</td><td><code>sim/renderer.py</code> renders flat-shaded walls; a COCO detector finds nothing in them, so a sim backend would have to synthesise detections — making the sim leg unable to test the detector, only its consumers</td></tr>
+              <tr><td class="mono">Q5</td><td class="strong">Does the sim participate?</td><td><b>SETTLED</b> — yes, with synthesised detections. See §1.12</td></tr>
             </tbody>
           </table>
         </div>
