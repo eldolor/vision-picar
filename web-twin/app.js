@@ -354,10 +354,11 @@
     return err;
   }
 
-  async function apiPost(path, body) {
+  async function apiPost(path, body, extraHeaders) {
     const res = await fetch(state.serverUrl + path, {
       method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
+      headers: authHeaders(Object.assign({ "Content-Type": "application/json" },
+                                         extraHeaders || {})),
       body: JSON.stringify(body || {}),
     });
     if (!res.ok) throw apiError(res, (await res.json().catch(() => ({}))).detail);
@@ -449,9 +450,18 @@
     return trimmed + targetRoute;
   }
 
-  async function sendAction(action) {
-    if (action === "STOP") return apiPost("/stop", {});
-    return apiPost("/action", { action: action });
+  // Phase M4. Every command names who is issuing it, so the robot server
+  // can apply the decided priority order (AGENT-HARNESS.md) instead of
+  // letting the last writer win. The page has two drivers and they rank
+  // differently: a person tapping the pad outranks the JS loop, and both
+  // are only meaningful because the server now knows the difference.
+  const DRIVER_DPAD = "twin-dpad";
+  const DRIVER_LOCAL_BRAIN = "twin-local-brain";
+
+  async function sendAction(action, driver) {
+    const headers = { "x-driver": driver || DRIVER_DPAD };
+    if (action === "STOP") return apiPost("/stop", {}, headers);
+    return apiPost("/action", { action: action }, headers);
   }
   async function fetchDistance() {
     const data = await apiGet("/distance");
@@ -602,10 +612,11 @@
   // ---------- action execution -- talks to robot/server.py for movement,   ----------
   // ---------- sensing, and safety; the twin no longer computes any of this ----------
 
-  function logEntry(action, executed, extra) {
+  function logEntry(action, executed, extra, reason) {
     state.step += 1;
     const room = state.lastFrame ? state.lastFrame.room : "unknown";
-    state.log.push({ step: state.step, action: action, executed: executed, room: room, extra: extra || "" });
+    state.log.push({ step: state.step, action: action, executed: executed, room: room,
+                     extra: extra || "", reason: reason || "" });
     renderLog();
   }
 
@@ -627,11 +638,15 @@
   // action to the server, logs the (server-authoritative) executed/veto
   // result, then refreshes the frame for rendering. Mirrors
   // brain/agent.py's ConstrainedAgent.step(): execute, then observe.
-  async function commitAction(action) {
-    const resp = await sendAction(action);
+  async function commitAction(action, driver) {
+    const resp = await sendAction(action, driver);
     const executed = resp.executed !== false;
     if (!executed) state.safetyFlashUntil = Date.now() + 350;
-    logEntry(action, executed, executed ? "" : (resp.detail || "SAFETY VETO"));
+    // Phase M4: the reason is what a person can act on. "SAFETY VETO" was
+    // the only thing this ever said, so a move refused because someone
+    // else had taken the robot looked identical to one refused for being
+    // about to hit a wall -- two situations with opposite responses.
+    logEntry(action, executed, executed ? "" : refusalText(resp), resp.reason);
 
     const frame = await fetchFrame();
     recordObservation(frame);
@@ -639,9 +654,21 @@
     return { executed: executed, frame: frame };
   }
 
+  const REFUSAL_LABEL = {
+    safety_distance: "SAFETY VETO",
+    preempted: "PREEMPTED",
+    watchdog: "WATCHDOG",
+  };
+
+  function refusalText(resp) {
+    const label = REFUSAL_LABEL[resp.reason];
+    if (!label) return resp.detail || "SAFETY VETO";
+    return resp.detail ? label + " \u2014 " + resp.detail : label;
+  }
+
   async function manualAction(action) {
     if (!state.connected) return;
-    await commitAction(action);
+    await commitAction(action, DRIVER_DPAD);
   }
 
   // ---------- frontier-preference autonomous exploration ----------
@@ -679,7 +706,7 @@
 
     const last = state.log[state.log.length - 1];
     if (last && (last.action === "LEFT" || last.action === "RIGHT") && last.executed) {
-      await commitAction("FORWARD");
+      await commitAction("FORWARD", DRIVER_LOCAL_BRAIN);
       scheduleNext();
       return;
     }
@@ -709,7 +736,7 @@
     });
 
     const choice = frontier[0] || options[0];
-    await commitAction(choice ? choice[0] : "STOP");
+    await commitAction(choice ? choice[0] : "STOP", DRIVER_LOCAL_BRAIN);
     scheduleNext();
   }
 
@@ -1338,7 +1365,17 @@
     const entry = state.log[state.log.length - 1];
     const div = document.createElement("div");
     div.className = "entry" + (entry.executed === false ? " veto" : "");
-    div.textContent = "#" + entry.step + " " + entry.room + " \u2192 " + entry.action + (entry.executed === false ? " [VETOED]" : "");
+    // Phase M4: name the refusal rather than stamping every one of them
+    // VETOED. The reason was already being carried here and thrown away,
+    // so a preemption and a wall produced identical lines -- which is the
+    // surface version of the bug the whole phase is about. VETOED stays as
+    // the fallback for a server that sends no reason.
+    var tag = "";
+    if (entry.executed === false) {
+      tag = " [" + (REFUSAL_LABEL[entry.reason] || "VETOED") + "]";
+      if (entry.extra) div.title = entry.extra;
+    }
+    div.textContent = "#" + entry.step + " " + entry.room + " \u2192 " + entry.action + tag;
     el.appendChild(div);
     el.scrollTop = el.scrollHeight;
 
@@ -1457,7 +1494,7 @@
       state.autopilotCallCount += 1;
       document.getElementById("autopilot-call-count").textContent = state.autopilotCallCount + " calls";
 
-      const { executed } = await commitAction(decision.action); // also re-renders the FPV view via render()
+      const { executed } = await commitAction(decision.action, DRIVER_LOCAL_BRAIN); // also re-renders the FPV view via render()
       renderAutopilotHud(decision, executed);
       logAutopilotEntry(decision.action, decision.reasoning, executed);
 
@@ -1651,9 +1688,48 @@
       setBrainText("brain-tel-watchdog",
         "quiet " + age.toFixed(1) + "s / " + timeout + "s " + (fired ? "\u2014 motors stopped" : "\u2014 armed"),
         fired ? "alert" : "safe");
+      renderAuthority(health);
     } catch (e) {
       setBrainText("brain-tel-watchdog", "unreachable", "alert");
+      setBrainText("brain-tel-driver", null);
+      setBrainText("brain-tel-refusal", null);
     }
+  }
+
+  // Phase M4. Two readouts, both off /health, both answering "the robot is
+  // not moving -- what stopped it?".
+  //
+  // `authority_holder` is deliberately separate from `driver`: the first is
+  // who holds the robot *now*, the second is who last had it. Authority
+  // lapses on silence, so "brain (lapsed)" is a real and different state
+  // from "brain is driving" -- it is what you see a second after a mission
+  // ends, and it is when a new driver may take over cleanly.
+  //
+  // Pre-M4 servers report neither field; both readouts then stay blank
+  // rather than inventing a driver, which is the same choice the depth
+  // strip makes about a server with no /depth.
+  function renderAuthority(health) {
+    // Key presence, not value: a pre-M4 server sends no `driver` at all,
+    // while an M4 server sends null for "nobody has driven yet". Reading
+    // null as "no such server field" would blank the readout on exactly
+    // the server that supports it.
+    if (!health || !("driver" in health)) {
+      setBrainText("brain-tel-driver", null);
+      setBrainText("brain-tel-refusal", null);
+      return;
+    }
+    const holder = health.authority_holder;
+    setBrainText("brain-tel-driver",
+      holder ? holder : (health.driver ? health.driver + " (lapsed)" : "nobody yet"),
+      holder ? "safe" : null);
+
+    const refusal = health.last_refusal;
+    if (!refusal) { setBrainText("brain-tel-refusal", "none"); return; }
+    const label = REFUSAL_LABEL[refusal.reason] || refusal.reason;
+    setBrainText("brain-tel-refusal",
+      label + " \u00b7 " + refusal.driver + " \u00b7 " +
+      refusal.seconds_ago.toFixed(1) + "s ago",
+      "alert");
   }
 
   async function pollBrainOnce() {

@@ -1,6 +1,6 @@
 # Plan: what to take from Microduck
 
-Status: M1 built and measured (see its entry -- the replays settled more than the sim run did), M2 and M3 built 2026-09-03, M4-M12 proposed (M7b added 2026-09-03) · Date: 2026-09-02 · Phase IDs: `M1`-`M12`
+Status: M1 built and measured (see its entry -- the replays settled more than the sim run did), M2-M4 built 2026-09-03, M5-M12 proposed (M7b added 2026-09-03) · Date: 2026-09-02 · Phase IDs: `M1`-`M12`
 
 [Microduck](https://github.com/pollen-robotics/microduck) (Apache-2.0, read
 2026-09-02) is Pollen Robotics' open-source brain for a 25cm bipedal robot:
@@ -83,7 +83,7 @@ Seven of the twelve phases need no hardware.
 | M1 | Settle the gate reading | pre-hardware | **DONE.** The replay table gained two columns; the sim leg is blocked on the renderer |
 | M2 | A depth grid on the interface, and in the sim | pre-hardware | **DONE.** A depth strip under the FPV canvas, tracking the view |
 | M3 | The tri-state zone, and a centre-zone veto | pre-hardware | **DONE.** Dropout reads grey, not "wall". The off-centre half is M10's |
-| M4 | Refusals are state, manual preempts autonomous | pre-hardware | Tap the D-pad mid-mission. It ends `preempted`, and says by whom |
+| M4 | Refusals are state, manual preempts autonomous | pre-hardware | **DONE.** Tap the D-pad mid-mission. It ends `preempted`, and says by whom |
 | M5 | One health command | pre-hardware | Kill the brain. Settings flips and the command exits non-zero |
 | M6 | A process start never moves the robot | pre-hardware | Restart the robot server mid-mission. The map does not twitch |
 | M7 | Nothing falls back silently | pre-hardware | A misspelled env variant refuses at boot instead of serving `default` |
@@ -501,7 +501,76 @@ collar fires on centre-zone hits, and the robot does not stop dead on dropout.
 as one approached head-on, and dropout is visibly not the same thing as clear
 floor.
 
-### M4 -- Refusals are state, and manual preempts autonomous
+### M4 -- Refusals are state, and manual preempts autonomous -- **BUILT 2026-09-03**
+
+**What it is.** The robot server had no notion of a driver at all. The
+twin's D-pad and a remote mission both posted to `/action` and the later
+one won -- last-writer-wins between two loops that each read the other's
+moves as the world changing under them. And a refusal carried no
+machine-readable reason, so a move refused because someone else had taken
+the robot was indistinguishable from one refused for being about to hit a
+wall: two situations whose correct responses are opposites.
+
+**Decided, and written into `AGENT-HARNESS.md` section 4.1:**
+
+    stop  >  manual D-pad  >  remote mission  >  local brain
+
+Rank is by role, not by client. Five rules follow, each because its
+opposite is a real failure: `stop` is never arbitrated (a stop that can be
+refused is not a stop); `stop` claims nothing (or the loser of an
+arbitration takes the robot back by giving up); equal rank passes (two
+D-pad taps must not fight); authority lapses on silence; and an unnamed
+command ranks as manual.
+
+Built:
+
+- **Arbitration on `/action`**, before anything moves. `x-driver` names the
+  caller; `robot/interface.py` holds the priority table and the `Preempted`
+  type.
+- **Authority lapses on the deadman the server already keeps.**
+  `watchdog_timeout_s` after the last command the motors stop and the claim
+  goes with them. That is why there is no release call to forget and why
+  one D-pad tap does not lock the brain out forever. `/health` reports
+  `authority_holder` (who holds it now, `null` once it has lapsed) beside
+  `driver` (who last had it) -- two different statements, and the second is
+  what you read a second after a mission ends.
+- **Every refusal carries a `reason`**: `safety_distance`, `preempted`,
+  `watchdog`. `mission_ended` stays brain-side, because `robot/server.py`
+  has no notion of a mission and must not grow one.
+- **`RemoteRobot` raises `Preempted`, never `SafetyViolation`**, and
+  branches on the reason rather than the prose -- so a server older than M4,
+  which sends no reason and whose only refusal was ever the distance check,
+  still reads correctly.
+- **`MissionRunner` ends the mission `preempted`**, robot stopped, the log
+  line naming the driver. Deliberately not `failed`: nothing went wrong, the
+  mission was outranked, and filing a human intervention next to a dead AWS
+  link would make both harder to read. It is not counted against B3.2's
+  vision budget either -- a person is not a flaky link, and spending a retry
+  would give the brain two more chances to fight a human for the car.
+- **The twin names its drivers** (`twin-dpad` for the pad, `twin-local-brain`
+  for the JS loop) and shows who is driving and what was last refused,
+  beside the watchdog readout -- all three answer the same question, which
+  is "the robot is not moving, what stopped it?".
+
+**A refusal reason was already being carried to the log and thrown away.**
+`logEntry()` took an `extra` argument that `renderLog()` never rendered, so
+every refusal printed `[VETOED]` regardless of cause. That is the surface
+version of the bug this whole phase is about, and it was one line.
+
+Four guards were removed one at a time to watch the tests go red:
+arbitration itself (9 of 13 fail), `Preempted` collapsed into
+`SafetyViolation` (the mission ends `failed` instead), `stop` claiming
+authority, and authority never lapsing.
+
+**Press this.** Start a remote mission from the Sim tab, then tap the
+D-pad. The mission ends "preempted", the log line names `twin-dpad`, the
+car does what the pad said, and the Driving readout switches. Stop
+touching it for a second and the readout reads "twin-dpad (lapsed)" --
+that is when a new mission may start.
+
+**Not deployed**, same as M2 and M3.
+
+**As originally specified**, kept below the way M1-M3's are.
 
 **Why.** Microduck's state stream must report what was *refused*, with a
 reason, because a teleop UI showing the stick forward and the robot still is

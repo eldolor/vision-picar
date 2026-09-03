@@ -1410,6 +1410,13 @@
         <div class="full">Rooms searched: <span class="val" id="brain-tel-rooms">&ndash;</span></div>
         <div class="full">Why: <span class="val" id="brain-tel-why">&ndash;</span></div>
         <div class="full">Robot watchdog: <span class="val" id="brain-tel-watchdog">&ndash;</span></div>
+        <!-- Phase M4. Who holds the robot, and why the last command was
+             refused. Both sit beside the watchdog because they answer the
+             same question a person actually asks: the robot is not moving,
+             what stopped it? Before this, a preemption and a wall looked
+             identical from here. -->
+        <div class="full">Driving: <span class="val" id="brain-tel-driver">&ndash;</span></div>
+        <div class="full">Last refusal: <span class="val" id="brain-tel-refusal">&ndash;</span></div>
       </div>
       <div id="brain-log" role="log" aria-live="polite"></div>
       <details class="disclosure">

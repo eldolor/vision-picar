@@ -214,9 +214,16 @@ it is the only one a compromised or buggy brain cannot skip.
                                ├── room_reached   target room entered
                                ├── max_steps      budget exhausted
                                ├── stopped        stop() -- an operator
+                               ├── preempted      a higher-priority driver
+                                                  took the robot (§4.1)
                                └── failed         abort(), a vision budget
                                                   blown, or a step raised
 ```
+
+**`preempted` is deliberately not `failed`.** Nothing went wrong; the
+mission was outranked. Filing a normal human intervention alongside a dead
+AWS link would make both harder to read, and would invite a retry where
+retrying is exactly wrong.
 
 Every terminal transition goes through `_finish()`, which does three
 things in order: mark the runner not-running (so the halt gate closes),
@@ -230,6 +237,67 @@ stop and a natural completion cannot rewrite history.
 
 **One runner runs one mission.** `start()` on a used runner raises. The
 brain server builds a fresh one per `POST /mission/start`.
+
+### 4.1 Who is driving -- the authority order  *(phase M4)*
+
+Microduck lists authority priority between the physical controller, the
+app and the autonomous layer as something to **decide** rather than let
+emerge (`architecture` §6). Here is the decision, and it is enforced in
+`robot/server.py` rather than merely written down:
+
+```
+    stop  >  manual D-pad  >  remote mission  >  local brain
+```
+
+Rank is by **role, not by client**. A person issuing one command at a time
+outranks any loop; a loop on the robot's own network outranks a loop in a
+browser tab. `robot/interface.py` holds the table.
+
+Five rules follow, and each exists because its opposite is a real failure:
+
+1. **`stop` is never arbitrated.** It is allowed from anyone at any time.
+   A stop that could be refused because someone else is driving is not a
+   stop.
+2. **`stop` claims nothing.** Stopping is not a bid to drive, so the
+   holder keeps its claim. Otherwise the loser of an arbitration takes the
+   robot back by giving up.
+3. **Equal rank passes.** Two D-pad taps, or a mission's own successive
+   ticks, must not fight each other.
+4. **Authority lapses on silence**, on the deadman the server already
+   keeps: `watchdog_timeout_s` after the last command the motors stop and
+   the claim goes with them. This is why there is no release call to
+   forget, and why one D-pad tap does not lock the brain out forever.
+5. **An unnamed command ranks as manual.** The callers that do not name
+   themselves are a person with curl, a script run by hand, or a test.
+   Ranking them low would mean a running mission ignores a human's direct
+   command, which is what the order above forbids.
+
+Before M4 none of this existed: the D-pad and a remote mission both posted
+to `/action` and the later one won. The only guards were the twin refusing
+to start its local loop during a remote mission and the brain's 409 on a
+second `/mission/start` -- neither of which is on the robot, and neither of
+which can see the D-pad at all.
+
+### 4.2 Refusals carry a reason  *(phase M4)*
+
+A refusal answers `{"executed": false, "reason": ..., "detail": ...}`. The
+prose is for a person; the `reason` is what a client branches on, because
+a teleop UI showing the stick forward and the robot still is unusable
+(`robotd-design` §3.2) and because two refusals here have **opposite**
+correct responses.
+
+| reason | where | what the caller should do |
+|---|---|---|
+| `safety_distance` | robot server | this move was unsafe; the next may be fine |
+| `preempted` | robot server | you are not driving; stop, do not retry |
+| `watchdog` | robot server (`/health`) | nobody commanded for too long; motors stopped |
+| `mission_ended` | brain (`_HaltGate`) | the mission is over; the gate refused a late tick |
+
+`mission_ended` is brain-side on purpose: `robot/server.py` has no notion
+of a mission and must not grow one. `RemoteRobot` maps `preempted` to
+`Preempted` and everything else to `SafetyViolation` -- including a refusal
+with no `reason` at all, which is a server older than M4, where the
+distance check was the only thing that ever refused.
 
 ---
 
@@ -362,17 +430,23 @@ the twin already renders that field.
    change. There is a test.
 3. **Stopping the mission stops the car.** Every terminal path calls
    `robot.stop()`, and the halt gate keeps a late tick from undoing it.
-4. **One brain drives at a time.** The server 409s a second
-   `/mission/start`; the twin refuses to start its local loop during a
-   remote mission.
+4. **One brain drives at a time, and a person outranks both.** The brain
+   server 409s a second `/mission/start` and the twin refuses to start its
+   local loop during a remote mission -- but since M4 the *robot* enforces
+   the order in §4.1 as well, which is the only guard that can see the
+   D-pad. Do not add a movement route that skips it.
 5. **`RemoteRobot` stays transparent.** A safety veto must raise
-   `SafetyViolation` exactly as in-process, and `position` must survive
+   `SafetyViolation` exactly as in-process, a preemption must raise
+   `Preempted` and never be collapsed into it, and `position` must survive
    JSON as a tuple. `tests/test_remote_robot.py` asserts an identical
    83-step action sequence in-process and over a live socket; if that
    test starts failing, the HTTP boundary has stopped being invisible.
 6. **Drills are fail-safe.** A new fault may only ever end a mission with
    the robot stopped. Never add one that makes the robot move.
 7. **A capability ships with something to press.** `CLAUDE.md` section 7.
+8. **Every refusal names a machine-readable reason.** §4.2. A caller must
+   never have to read prose to tell "retry later" from "you are not
+   driving".
 
 ---
 

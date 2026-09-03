@@ -50,7 +50,7 @@ from brain.agent import ObjectSearchAgent
 from brain.memory import MissionMemory
 from brain.vision import describe_grid_frame
 from brain.vision_agent import VisionAgent
-from robot.interface import RobotInterface
+from robot.interface import Preempted, RobotInterface
 
 logger = logging.getLogger("mission_runner")
 
@@ -93,6 +93,13 @@ ROOM_REACHED = "room_reached"
 STOPPED = "stopped"
 MAX_STEPS = "max_steps"
 FAILED = "failed"
+# Phase M4. Someone with more authority took the robot -- a person at the
+# D-pad, by the order in AGENT-HARNESS.md. Deliberately NOT `failed`:
+# nothing went wrong, the mission was outranked, and calling it a failure
+# would put a normal human intervention in the same bucket as a dead AWS
+# link. It is terminal all the same; a preempted brain does not get to
+# argue.
+PREEMPTED = "preempted"
 
 
 class VisionUnavailable(RuntimeError):
@@ -305,6 +312,17 @@ class MissionRunner:
             return False
         except VisionUnavailable as e:
             return self._handle_vision_failure(e)
+        except Preempted as e:
+            # Phase M4. Not counted against any budget and not retried:
+            # a preemption is not a transient fault, it is the answer to
+            # "who is driving", and it will keep being the answer for as
+            # long as the person keeps tapping. _finish() stops the car,
+            # which is correct even though the robot is already doing what
+            # the other driver said -- a stop from the loser of an
+            # arbitration is one more command from a driver that has been
+            # outranked, and the server refuses nobody's stop.
+            self._finish(PREEMPTED, str(e))
+            return False
         except Exception as e:  # noqa: BLE001
             # Anything else -- a dead robot link, a backend fault -- is a
             # reason to stop the car, not to keep looping blind.

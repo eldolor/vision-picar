@@ -24,6 +24,65 @@ from abc import ABC, abstractmethod
 NO_SENSOR_CM = 999.0
 
 
+# ---------- who is driving (phase M4) ----------
+#
+# Microduck lists authority priority between the physical controller, the
+# app and the autonomous layer as something to *decide* rather than let
+# emerge (`architecture` section 6). The decision, written out in
+# `AGENT-HARNESS.md` and enforced by `robot/server.py`:
+#
+#     stop  >  manual D-pad  >  remote mission  >  local brain
+#
+# `stop` is not a driver -- it is everyone's right, always, and never
+# claims or loses authority. The rest rank by ROLE, not by client: a
+# person issuing one command at a time outranks any loop, and a loop
+# running on the robot's own network outranks one running in a browser
+# tab.
+DRIVER_MANUAL = 30
+DRIVER_AUTONOMOUS = 20
+DRIVER_LOCAL = 10
+
+DRIVER_PRIORITY = {
+    "twin-dpad": DRIVER_MANUAL,
+    "teleop-operator": DRIVER_MANUAL,
+    "brain": DRIVER_AUTONOMOUS,
+    "teleop": DRIVER_AUTONOMOUS,
+    "twin-local-brain": DRIVER_LOCAL,
+}
+
+# A command that names no driver. **Ranked as manual, deliberately**, and
+# the reasoning is worth keeping: the callers that do not name themselves
+# are a person with curl, a script someone is running by hand, or a test.
+# Ranking an unnamed caller LOW would mean a running mission ignores a
+# human's direct command, which is precisely what the order above forbids.
+# Ranking it high means a human at a terminal preempts the robot, which is
+# what the order says should happen. When every client names itself this
+# can be tightened; until then, err toward the person.
+DRIVER_UNKNOWN = "unknown"
+
+
+def driver_priority(name: str) -> int:
+    return DRIVER_PRIORITY.get(name, DRIVER_MANUAL)
+
+
+class Preempted(Exception):
+    """A movement command was refused because a higher-priority driver
+    holds the robot -- phase M4.
+
+    Distinct from `SafetyViolation`, and the distinction is the point. A
+    safety veto means *this move* is unsafe and the next one may be fine;
+    a preemption means *this driver* is no longer in charge, and retrying
+    is exactly the wrong response. `control/mission_runner.py` ends the
+    mission `preempted` rather than counting it against any budget.
+
+    Lives here rather than in `robot/safety.py` because `control/` may
+    import `robot/interface.py` and little else (see CLAUDE.md section 6),
+    and because "someone else is driving" is a fact about the robot rather
+    than a judgement made by the safety layer.
+    """
+
+
+
 # ---------- the depth grid (phase M2, PLAN-microduck-transplants.md) ----------
 #
 # Microduck's split, which M1 measured the need for the hard way: the camera

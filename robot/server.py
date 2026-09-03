@@ -98,6 +98,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from robot.factory import get_robot, load_config
+from robot.interface import DRIVER_UNKNOWN, driver_priority
 from robot.safety import SafetyController, SafetyViolation, path_zone_indices
 
 logger = logging.getLogger("server")
@@ -152,13 +153,77 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
     robot = get_robot(config_path) if config_path else get_robot()
     safety = SafetyController(robot, min_distance_cm=min_distance)
-    state = {"last_command_at": time.monotonic()}
+    state = {
+        "last_command_at": time.monotonic(),
+        # Phase M4. Who last drove, when, and what was last refused. The
+        # server has never had a notion of a driver at all: the D-pad and a
+        # remote mission both posted to /action and the later one simply
+        # won. That is last-writer-wins between two loops that each read
+        # the other's moves as the world changing under them.
+        # None until someone actually drives -- "nobody has touched this
+        # robot yet" is a real state and should not read as an anonymous
+        # driver who has since gone quiet.
+        "driver": None,
+        "driver_at": 0.0,
+        "last_refusal": None,
+    }
+
+    def authority_holder(now: float):
+        """Who currently holds the robot, or None if authority has lapsed.
+
+        **Authority lapses on silence, on the same clock the watchdog
+        already keeps.** A driver holds the robot only while it is
+        actively driving it; `watchdog_timeout_s` after its last command
+        the motors are stopped and the claim is released, so the next
+        driver -- whoever it is -- starts clean. That reuses a deadman
+        this server already has rather than inventing a second lifetime,
+        and it means no explicit release call exists to be forgotten.
+        """
+        if now - state["driver_at"] > watchdog_timeout:
+            return None
+        return state["driver"]
+
+    def refuse(reason: str, detail: str, driver: str):
+        """Record a refusal and answer with it.
+
+        Every refusal carries a machine-readable `reason` as well as
+        prose, because a teleop UI showing the stick forward and the robot
+        still is unusable (Microduck's `robotd-design` section 3.2). The
+        prose is for a person; the reason is what the twin colours and
+        what a client can branch on -- `RemoteRobot` has to tell a safety
+        veto (retry later) from a preemption (stop, you are not driving)
+        and cannot do that by reading a sentence.
+        """
+        state["last_refusal"] = {
+            "reason": reason,
+            "detail": detail,
+            "driver": driver,
+            "at": time.monotonic(),
+        }
+        logger.warning(f"refused ({reason}) for {driver}: {detail}")
+        return {"executed": False, "reason": reason, "detail": detail}
 
     async def watchdog_loop():
         while True:
             await asyncio.sleep(0.1)
-            if watchdog_should_stop(state["last_command_at"], time.monotonic(), watchdog_timeout):
+            now = time.monotonic()
+            if watchdog_should_stop(state["last_command_at"], now, watchdog_timeout):
                 robot.stop()
+                # Phase M4: the watchdog is a stop, not a refusal of any
+                # particular command -- but it is the reason the motors are
+                # off, and "why is the robot not moving" is the question
+                # /health has to be able to answer. Recorded once per
+                # silence rather than ten times a second.
+                last = state["last_refusal"]
+                if not (last and last["reason"] == "watchdog"
+                        and last["at"] >= state["last_command_at"]):
+                    state["last_refusal"] = {
+                        "reason": "watchdog",
+                        "detail": (f"no command for over {watchdog_timeout}s -- "
+                                   "motors stopped"),
+                        "driver": state["driver"],
+                        "at": now,
+                    }
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -232,22 +297,50 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         return FileResponse(_TWIN_ICONS_DIR / "apple-touch-icon.png")
 
     @app.post(prefix + "/action", dependencies=[Depends(require_secret)])
-    def do_action(req: ActionRequest):
-        state["last_command_at"] = time.monotonic()
+    def do_action(req: ActionRequest, x_driver: str = Header(default="")):
+        now = time.monotonic()
+        driver = (x_driver or "").strip() or DRIVER_UNKNOWN
+
+        # Phase M4 -- arbitration, before anything moves. A decided order,
+        # not last-writer-wins: see robot/interface.py's DRIVER_PRIORITY and
+        # AGENT-HARNESS.md. Equal rank is allowed through, so two D-pad taps
+        # never fight each other; only a strictly lower-ranked driver is
+        # refused, and only while a higher one is actually driving.
+        holder = authority_holder(now)
+        if holder and holder != driver and driver_priority(driver) < driver_priority(holder):
+            return refuse(
+                "preempted",
+                f"{holder} is driving -- {driver} is lower priority and was refused",
+                driver,
+            )
+
+        state["last_command_at"] = now
+        state["driver"] = driver
+        state["driver_at"] = now
         try:
             result = safety.check_and_execute(
                 req.action, speed=req.speed, duration=req.duration, angle=req.angle
             )
-            return {"executed": True, "result": result}
+            return {"executed": True, "result": result, "driver": driver}
         except SafetyViolation as e:
-            return {"executed": False, "detail": str(e)}
+            return refuse("safety_distance", str(e), driver)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
     @app.post(prefix + "/stop", dependencies=[Depends(require_secret)])
-    def stop():
+    def stop(x_driver: str = Header(default="")):
+        """Always allowed, from anyone, and it neither claims authority nor
+        releases it -- phase M4.
+
+        Top of the order in AGENT-HARNESS.md, and the one command that must
+        never be arbitrated: a stop that could be refused because someone
+        else is driving is not a stop. It does not claim authority either,
+        because stopping is not a bid to drive; the holder keeps its claim
+        and keeps it only as long as it keeps commanding, exactly as
+        before."""
         state["last_command_at"] = time.monotonic()
-        return {"executed": True, "result": robot.stop()}
+        return {"executed": True, "result": robot.stop(),
+                "driver": (x_driver or "").strip() or DRIVER_UNKNOWN}
 
     @app.get(prefix + "/distance", dependencies=[Depends(require_secret)])
     def distance():
@@ -339,6 +432,17 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # it (PLAN-sim-hardening.md definition of done, item 10).
             "min_distance_cm": min_distance,
             "mode": mode,
+            # Phase M4. Who last drove, and whether they still hold the
+            # robot -- `holder` is None once authority has lapsed on
+            # silence, which is a different statement from "nobody has ever
+            # driven". The twin shows both beside the watchdog readout.
+            "driver": state["driver"],
+            "authority_holder": authority_holder(time.monotonic()),
+            "last_refusal": (
+                {**state["last_refusal"],
+                 "seconds_ago": round(time.monotonic() - state["last_refusal"]["at"], 2)}
+                if state["last_refusal"] else None
+            ),
             # Which deployment this is, for the twin's environment banner.
             # Unset (production) means the banner never renders, so the
             # same image is safe everywhere -- an environment marks itself

@@ -1031,3 +1031,103 @@ def test_an_unmeasurable_zone_is_not_drawn_as_a_distance(browser, twin_server):
     assert "1 unusable" in page.inner_text("#depth-readout")
     assert not errors, errors
     page.close()
+
+
+# ---------- who is driving, and why a move was refused (phase M4) ----------
+#
+# Both readouts answer the question a person standing next to the robot
+# actually asks: it is not moving, what stopped it? Before M4 the page
+# could not tell "someone else took the robot" from "it is about to hit a
+# wall" -- every refusal rendered as the words SAFETY VETO.
+
+
+def _open_sim_tab(browser, twin_server):
+    page, errors = open_twin(browser, twin_server)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    return page, errors
+
+
+def test_the_driver_readout_starts_at_nobody_and_names_the_pad(browser, twin_server):
+    """"Nobody has driven this robot yet" is a real state and must not read
+    as an anonymous driver who has since gone quiet -- the two look the
+    same on the wire if you check the value instead of the key."""
+    page, errors = _open_sim_tab(browser, twin_server)
+    sync_api.expect(page.locator("#brain-tel-driver")).to_have_text("nobody yet", timeout=5000)
+
+    page.click("#btn-look-left")
+    sync_api.expect(page.locator("#brain-tel-driver")).to_have_text("twin-dpad", timeout=5000)
+    assert not errors, errors
+    page.close()
+
+
+def test_a_preemption_does_not_read_as_a_safety_veto_in_the_log(browser, twin_server):
+    """The bug this phase is about, at the surface a person reads. Two
+    refusals with opposite correct responses -- retry later, versus stop,
+    you are not driving -- rendered as the same three words."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/action", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "executed": False, "reason": "preempted",
+            "detail": "twin-dpad is driving -- brain is lower priority and was refused",
+        })))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.click("#btn-forward")
+    log = page.locator("#log")
+    sync_api.expect(log).to_contain_text("PREEMPTED", timeout=5000)
+    assert "SAFETY VETO" not in log.inner_text()
+    assert not errors, errors
+    page.close()
+
+
+def test_the_refusal_readout_names_the_reason_and_who_was_refused(browser, twin_server):
+    """Which party was refused matters as much as why: "the brain was
+    preempted" and "the pad was preempted" are different stories about the
+    same robot."""
+    page, errors = open_twin(browser, twin_server)
+
+    def health(route):
+        route.fulfill(status=200, content_type="application/json", body=_json({
+            "status": "ok", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0, "min_distance_cm": 20, "mode": "sim",
+            "env_label": "", "driver": "twin-dpad", "authority_holder": "twin-dpad",
+            "last_refusal": {"reason": "preempted", "detail": "outranked",
+                             "driver": "brain", "at": 1.0, "seconds_ago": 2.5},
+        }))
+
+    page.route("**/health", health)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    readout = page.locator("#brain-tel-refusal")
+    sync_api.expect(readout).to_contain_text("PREEMPTED", timeout=5000)
+    sync_api.expect(readout).to_contain_text("brain")
+    assert not errors, errors
+    page.close()
+
+
+def test_a_server_older_than_m4_leaves_both_readouts_blank(browser, twin_server):
+    """Same choice the depth strip makes about a server with no /depth: say
+    nothing rather than invent a driver. The stacks are redeployed one at a
+    time, so this is a state the twin really meets."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0, "mode": "sim",
+        })))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_timeout(900)
+    assert page.inner_text("#brain-tel-driver").strip() in ("–", "-", ""), \
+        page.inner_text("#brain-tel-driver")
+    assert not errors, errors
+    page.close()

@@ -38,12 +38,18 @@ from typing import Optional
 
 import httpx
 
-from robot.interface import RobotInterface, unusable_grid
+from robot.interface import Preempted, RobotInterface, unusable_grid
 from robot.safety import SafetyViolation
 
 logger = logging.getLogger("remote_robot")
 
 DEFAULT_TIMEOUT_S = 10.0
+
+# Phase M4. Every command names its driver so `robot/server.py` can apply a
+# decided priority order rather than letting the last writer win. "brain" is
+# the autonomous rank: a person tapping the twin's D-pad outranks it and
+# takes the robot, which is the whole point -- see AGENT-HARNESS.md.
+DEFAULT_DRIVER = "brain"
 
 
 class RobotTransportError(RuntimeError):
@@ -71,9 +77,13 @@ class RemoteRobot(RobotInterface):
         secret: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT_S,
         client: Optional[httpx.Client] = None,
+        driver: str = DEFAULT_DRIVER,
     ):
         self.base_url = base_url.rstrip("/")
-        self.headers = {"x-app-secret": secret} if secret else {}
+        self.driver = driver
+        self.headers = {"x-driver": driver}
+        if secret:
+            self.headers["x-app-secret"] = secret
         # An injected client is how tests mount the robot app in-process
         # (httpx.ASGITransport) without a real socket; production passes
         # nothing and gets a plain pooled client.
@@ -146,10 +156,22 @@ class RemoteRobot(RobotInterface):
     def _action(self, action: str, **kwargs) -> dict:
         body = self._request("POST", "/action", json={"action": action, **kwargs})
         if body.get("executed") is False:
-            # The server's safety layer vetoed it. Raise the same
-            # exception the in-process path would have raised, so agent
-            # code cannot tell the two apart.
-            raise SafetyViolation(body.get("detail", f"{action} blocked by robot server"))
+            detail = body.get("detail", f"{action} blocked by robot server")
+            # Phase M4: which refusal this is decides what the caller
+            # should do, and the two answers are opposites. A safety veto
+            # means *this move* was unsafe and the next one may be fine, so
+            # it raises what the in-process path raises and the agent's
+            # existing except-clause treats it as an implicit STOP. A
+            # preemption means *this driver* is no longer in charge, and
+            # retrying is exactly wrong -- MissionRunner ends the mission.
+            #
+            # Branching on `reason` rather than on the prose: a server
+            # older than M4 sends no reason at all, and everything it
+            # refuses is a safety veto, which is what the fallback below
+            # preserves.
+            if body.get("reason") == "preempted":
+                raise Preempted(detail)
+            raise SafetyViolation(detail)
         return _tupleize(body.get("result", {}))
 
     def _request(self, method: str, path: str, json: Optional[dict] = None) -> dict:
