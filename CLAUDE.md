@@ -117,7 +117,8 @@ the original build plan phases, reordered simulation-first):
 | M3 | The tri-state zone, and a centre-zone veto | Done (2026-09-03), not deployed -- `SafetyController.path_clearance()` reduces the middle half of the grid's columns to one number and compares it to `min_distance_cm`, exactly as it compared `get_distance()` before. A failed zone never enters the comparison in either direction; a wholly blind path falls back to the scalar and keeps its `0.0`-on-dropout stop. `GET /depth` publishes the reduction so the twin never recomputes it. |
 | M4 | Refusals are state, manual preempts autonomous | Done (2026-09-03), not deployed -- `robot/server.py` arbitrates `/action` by a decided order (`stop > twin-dpad > brain > twin-local-brain`, `AGENT-HARNESS.md` 4.1) instead of letting the last writer win, every refusal carries a machine-readable `reason`, `RemoteRobot` raises `Preempted` rather than `SafetyViolation`, and a preempted mission ends `preempted` with the robot stopped. |
 | M5 | One health command | Done (2026-09-03), not deployed -- `python -m control.health` (and a Settings health line) asks both halves and exits non-zero when either is unhealthy or unreachable. Verdict inputs are reachability, the robot watchdog loop's own poll freshness, and a running mission's tick liveness; everything else is description and never changes the exit code. Both servers now log an identity line at start-up. |
-| 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. |
+| -- | On-car perception + the hardware chain (`PLAN-onboard-perception.md`) | **DESIGN SETTLED 2026-09-03, NOTHING BUILT.** Started as "what could run on the car itself" after reading Microduck and ended up rewriting the hardware plan. Decided: a **differential-drive chassis** rather than the PiCar-X's Ackermann (which **retires S6** and makes `grid_world.py`'s pivot assumption correct); a **lidar** used first as a 360-degree clearance ring and only later as SLAM behind an HTTP wall; an **IMX500 AI Camera** for on-sensor detection; and a **tiered architecture** where the VLM becomes an event-triggered deliberation tier -- which is what finally gives `brain/planner.py` a job. Also settles the goal vocabulary, stop conditions, arbitration and what the sim can test. Bill of materials ~$463. **Read it before buying anything**, and note its section 5: `HARDWARE-READINESS.md` is now partly wrong. |
+| 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. **The chassis is no longer a PiCar-X** -- see the row above. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
 
@@ -283,14 +284,20 @@ vision-picar/
 ├── PLAN-teleop-robot.md       a live phone walk driving the real MissionRunner
 │                               mission, closed loop -- T1-T4 (BUILT); see the
 │                               T1-T4 status-table row above
-└── PLAN-microduck-transplants.md
-                                twelve designs borrowed from Pollen Robotics'
-                                Microduck -- a depth sensor instead of asking
-                                the model how far, plus refusal reasons, driver
-                                arbitration, a health verdict and a rollback.
-                                M1-M12, NOTHING BUILT; seven need no hardware.
-                                Start at M1: two runs that settle whether the
-                                Stage 0 gate is measuring what will ship
+├── PLAN-microduck-transplants.md
+│                               twelve designs borrowed from Pollen Robotics'
+│                               Microduck -- a depth sensor instead of asking
+│                               the model how far, plus refusal reasons, driver
+│                               arbitration, a health verdict and a rollback.
+│                               M1-M5 BUILT (2026-09-03, not deployed), M6-M12
+│                               proposed; seven need no hardware
+└── PLAN-onboard-perception.md  what runs on the car itself -- and the hardware
+                                chain that question turned out to be hiding.
+                                DESIGN SETTLED, NOTHING BUILT. Supersedes parts
+                                of HARDWARE-READINESS.md and retires phase S6;
+                                its section 5 says exactly what. Read it before
+                                any hardware purchase -- the chassis is no
+                                longer a PiCar-X
 ```
 
 ---
@@ -778,19 +785,31 @@ which is B5.
 
 ### Then buy
 
-Check `HARDWARE-READINESS.md` section 5's pre-flight items first -- in
-particular 5.2 (`LEFT`/`RIGHT` skip the distance check, correct for a
-pivot and wrong for an arc) and 5.3 (verify whether the ultrasonic pans
-with the camera; if it does not, the peek-based logic needs redesign).
+**Read `PLAN-onboard-perception.md` first -- the chassis is no longer a
+PiCar-X.** Its section 1 holds the decided parts list (differential chassis,
+RPLidar C1, IMX500 AI Camera, two power rails, ~$463) and section 3.8 the
+four questions still to ask the seller. Its section 5 lists what that
+decision invalidates elsewhere, including in `HARDWARE-READINESS.md`.
+
+`HARDWARE-READINESS.md` section 5's pre-flight items still apply where they
+are chassis-independent, with two now answered by the purchase: **5.2**
+(`LEFT`/`RIGHT` skip the distance check, "correct for a pivot and wrong for
+an arc") **resolves to the pivot branch**, and **5.3** (where the ultrasonic
+is mounted) is **superseded** -- a 360-degree lidar is the obstacle sensor.
 
 Then: `robot/hardware_robot.py`, B5 (systemd units), and the calibration
 items in `PLAN-sim-hardening.md` section 7 that can only be measured.
 
 ### Not on the critical path
 
-- **S6 (Ackermann turns, continuous pose, scaled map)** -- optional since
-  Q1. A vision policy does not reason about grid cells. Revisit only if
-  real-world runs fail in ways that trace back to grid geometry.
+- **S6 (Ackermann turns, continuous pose, scaled map)** -- **RETIRED
+  2026-09-03.** It existed because the PiCar-X could not pivot in place and
+  `sim/grid_world.py` assumed it could. `PLAN-onboard-perception.md` 1.1
+  chooses a **differential-drive chassis**, so the sim's assumption is now
+  correct about the hardware and the divergence closes by purchase rather than
+  by the largest change in the sim-hardening plan. Continuous pose and a
+  to-scale map may still be wanted if a lidar lands and the sim must represent
+  metric geometry -- but that is a different phase with a different reason.
 - **`control/manual_control.py`** -- skip. The twin's D-pad covers it
   better, and B0's `RemoteRobot` (built) makes it nearly free if ever
   wanted.
@@ -1131,6 +1150,5 @@ phase rather than bolted on after:
 | M4 authority + refusal reasons | **Built 2026-09-03.** "Driving" and "Last refusal" beside the watchdog readout, and the mission log naming the refusal instead of stamping every one of them `[VETOED]` |
 | M3 tri-state veto | **Built 2026-09-03.** The path zones outlined on that strip, and a readout naming the clearance the veto reads and its source. The "off-centre approach" half of its done-when is **not** demonstrable here and is deliberately left to M10 -- the grid world's walls are axis-aligned and 30cm apart, so a cone and a single ray hit them at nearly the same distance, and a sim test for it would pass because the failure cannot occur |
 | S2b Python vision agent | **Built 2026-09-02 (M1).** The Remote brain panel has a policy picker; `policy: "vision"` runs the Python agent and the log carries Claude's own reasoning instead of "free space clear". The panel names the model and the wording it would ask with, before you spend anything |
-| S6 motion realism | The map shows the robot **arcing** rather than pivoting in place, and refusing a turn that will not fit the corridor |
 | S7 chaos and soak | New drills: added latency, dropped requests, a killed link mid-mission. Same picker, same fail-safe rule |
 | B5 deployment | Reboot the Pi. Open the twin on a phone. Start a mission with no laptop on the network at all -- this is definition-of-done item 1, and it is a UI test by construction |
