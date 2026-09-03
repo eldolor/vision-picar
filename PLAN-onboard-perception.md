@@ -132,7 +132,7 @@ Reasoning in §3.4. Ten decisions, taken together:
 |---|---|
 | **Persistence scope** | **Only the map persists.** `MissionMemory` stays in RAM in the brain, unchanged |
 | **Ownership** | The planner is a **pure function** -- context in, goal out, writes nothing. The brain is the sole writer |
-| **Embedding source** | A **separate small encoder**, not the detector's features and not ORB *(contingent -- see §3.2)* |
+| **Embedding source** | **Moot -- the visual-edge design is not being built.** See 1.6. Had it been, a separate small encoder, not the detector's features and not ORB |
 | **Match handling** | Design the confirm path, **ship always-confirm**, tune the threshold on real matches later |
 | **Views per edge** | **Schema for a bag, store one.** One memory per *direction of travel* |
 | **House id** | **Config.** SSID as a later convenience |
@@ -140,6 +140,116 @@ Reasoning in §3.4. Ten decisions, taken together:
 | **Staleness** | Every edge carries **last-confirmed + success/failure counts**, both visible to the planner. Eviction deferred |
 | **Bootstrap** | An empty graph is **not a special mode** -- but the planner's context says "map is empty" explicitly |
 | **Store** | DynamoDB · needs a VPC endpoint (`network.yaml` has no NAT) · **AWS durable, Pi working copy** · `schema_version` from the first write · stored map text is data, never instruction |
+
+**Every row above survives. One mechanism does not** -- see 1.6.
+
+### 1.6 The visual-edge memory is **not being built**
+
+Q1 designed a topological map whose edges carry a *visual memory* -- an
+embedding of what a doorway looked like -- so a robot with no coordinates could
+navigate by searching for a remembered view. That design was correct for the
+problem it was given, and it is now **cancelled**.
+
+**The reason is that (b+) deletes it.** Coordinates need no interpretation, so a
+map replaces embeddings, bags of views, per-direction memories, aliasing
+mitigation and match confirmation -- all of it. It is the most speculative and
+most laborious part of anything designed here, and it exists *only* to work
+around not having a map.
+
+**Building it would mean building toward something already scheduled for
+demolition.** So: the topological graph stays as a **placeholder that (b+) fills
+in with real geometry**, and nothing implements the visual half.
+
+**The cost, stated honestly.** Under (a) there is no map, so navigation memory is
+room labels and nothing else -- roughly what exists today, and not good. That is
+an honest interim rather than an elaborate workaround.
+
+**One consequence that reaches Q4:** "can the IMX500 emit an embedding, or only
+boxes?" was load-bearing while the visual-edge design was live. It is now
+**moot**, and Q4 turns on detection quality alone.
+
+### 1.7 Goal vocabulary: **closed and versioned, three verbs**
+
+- `approach(target, stop_within_cm)` · `traverse(bearing)` · `explore(bearing)`.
+- **An unknown verb refuses by name.** Never a best-effort approximation --
+  M7's rule, and the two silent-fallback bugs this project has already paid for
+  (`prompt_variant` dropped by pydantic; the `NavigateModelId` env-var trap).
+- The vocabulary carries a **version**, and the robot publishes which verbs it
+  has, so skew between planner and robot is a named refusal rather than a
+  behaviour difference.
+- **`sweep` is deliberately left out.** Its stop condition ("have I covered the
+  room?") is a mapping question, and under (a) there is no map. Add a fourth
+  verb when the trigger log shows the planner reaching for it -- a measured
+  signal, not a guess.
+- **`traverse` is in the contract but not implementable until the lidar is
+  fitted** -- its completion test is geometric (1.8). `approach` and `explore`
+  are the two that work first.
+
+**Why closed.** The reactive tier is a bearing, a lidar ring and a motor. It
+should not become a natural-language system: that puts an ambiguity-tolerant
+component inside the fast, safety-adjacent loop. A closed vocabulary is also
+finite, so it is testable without hardware and drivable from the twin -- which
+open-ended text is not, since its test surface is "whatever the model might
+say".
+
+**Expressiveness costs little**, because the planner runs every few seconds
+anyway. "Back out, then take the other door" is two goals in sequence, and
+sequencing is the planner's job -- a compound instruction is the planner doing
+the reactive tier's work.
+
+### 1.8 Stop conditions: **success from the planner, failure from the robot**
+
+- **Success is semantic, so the goal carries it**, with a threshold. The verb
+  sets the shape; the parameter tunes it.
+- **Failure is physical, so the reactive tier infers it -- and names it.**
+  A boolean is useless to a planner: `blocked`, `lost_target`, `no_progress`,
+  `oscillating` and `timeout` lead to different next goals. This is
+  `AGENT-HARNESS.md` §4.2 and M4's rule one level up.
+- **The detectors already exist.** `control/walk_eval.py` computes *degenerate*,
+  *stalled* and *oscillating* over recorded walks. The same logic runs live in
+  the reactive tier instead of only post-hoc.
+- **Success is a claim, not a fact.** The planner verifies on its next call --
+  the same confirm pattern as a candidate sighting. Under (a) the robot cannot
+  know it went through the *intended* doorway.
+
+**Where a stop condition physically lives: lidar x bearing.** "Close to the
+backpack" is not directly checkable -- a lidar reads geometry, never semantics.
+The fusion is the same split as everything else here: **the camera says which
+direction, the lidar says how far in that direction.** So `approach` resolves to
+*the nearest lidar return within +/-N degrees of the target bearing is under the
+threshold*. Bounding-box height as a distance proxy is uncalibrated in precisely
+the way `obstacle_ahead` was -- a large object far away looks like a small one
+near. Do not build on it.
+
+**Two thresholds, two owners.** The goal's `stop_within_cm` is the planner's
+intent; `safety.min_distance_cm` is the collar, non-negotiable and server-side.
+**A goal asking to close inside the collar refuses at parse time, by name** --
+never silently clamped, never discovered as a mysteriously unfinishable goal.
+That is 1.7's closed vocabulary paying for itself immediately.
+
+**`traverse` has the hard stop condition, and 360 degrees is what answers it.**
+`approach` shrinks a distance; `explore` runs a heading. "Have I passed through
+the doorway" is a fact about *where you are*, with no map to check against. But a
+doorway is a narrow gap between two returns, and passing through means those
+returns slide from ahead, to beside, to behind -- **the lidar watches the frame
+go past.** A forward-only sensor cannot do this at all, which is another point
+for 360 degrees over the 8x8 ToF originally proposed, and it only surfaced by
+working a stop condition through properly.
+
+### 1.9 A live tension, not yet resolved
+
+**4.5's "accelerator possibly never" and 1.8's `approach` pull against each
+other.** With no on-device detector the target bearing arrives at deliberation
+rate -- **1-3 seconds stale** -- so `approach` is open loop on the semantic half
+while the lidar closes the loop on clearance. This project has been burned by an
+open-loop assumption before (`sim/replay_robot.py`'s docstring).
+
+Three ways out: a **cheap CPU detector** (stock YOLO11n on the Pi 5's own cores,
+a few Hz, no accelerator and no purchase); accept open-loop `approach` over
+short hops and let the planner re-issue, which erodes the trigger discipline; or
+**let the lidar carry it once locked** -- take one bearing fix, then track that
+geometric feature in the scan while closing. The first is cheapest, the third is
+the most elegant and the most work. **Q4's subject.**
 
 ---
 
@@ -320,6 +430,12 @@ Knock-on effects:
   Rooms become regions of an occupancy grid; `room_guess` labels a place whose
   geometry is already known. Strictly better than the visual-edge design.
 
+**All three of those arrive with (b)/(b+), not with the lidar.** Option (a) is a
+clearance ring and has **no map at all** -- so under (a), `go_to(kitchen)` stays
+unexecutable and navigation memory stays at room labels. Buying the sensor and
+having a map are separated by however long you stay at (a). An earlier draft of
+this section conflated the two.
+
 **What it does not do: see a backpack.** A lidar reads geometry, never
 semantics. Camera and lidar are complementary, not alternatives.
 
@@ -360,6 +476,45 @@ ROS to *configure* a node, not to rebuild in it.
 navigation stack assumes differential drive throughout. Under Ackermann it would
 have fought back.
 
+#### (a) is not a fork -- it is the first two weeks of (b+)
+
+Whatever the destination, the opening is identical: assemble, **get scans into
+Python and verify they are sane in the actual house** (glass, mirrors, mounting
+vibration), then **wire the safety collar to them**. `robot/safety.py` still owns
+the veto under (b+) -- nav2 plans on top of a safety layer, it does not replace
+one.
+
+So the (a) work is ~80% reusable: the driver, the `get_depth_grid()` feed, §5.1's
+angular fix and the twin readout are all needed either way. **The choice is not
+"(a) or (b+)", it is whether you stop at (a).**
+
+And stopping there first is worth it on its own: layering SLAM onto scans you
+have not validated is how a mounting-vibration problem gets debugged as a
+mapping problem.
+
+#### What (b+) costs, honestly
+
+(a) is days; **(b+) is weeks, and most of it is learning rather than writing** --
+TF frames, a URDF describing where the lidar sits relative to the wheels, nav2
+parameters, launch files, `slam_toolbox` config. None of it hard; all of it
+unfamiliar.
+
+It also forces **an OS decision that (a) does not**. ROS 2's well-trodden path is
+Ubuntu, and Raspberry Pi OS is what `picamera2` and `rpicam-apps` target:
+
+1. **Ubuntu on the Pi** -- the standard ROS route, at the cost of the camera stack.
+2. **ROS in Docker on Pi OS** -- keeps the camera tooling, adds container
+   plumbing for the lidar device and networking. **Probably right**, and it fits
+   (b+)'s behind-a-wall shape.
+3. Two boards. Overkill.
+
+#### What (b+) changes about the shopping list
+
+| | Under (a) alone | With (b+) as the near plan |
+|---|---|---|
+| **Encoder motors** | nice to have -- the lidar is the odometer | **required.** nav2's local planner wants wheel odometry fused with scan matching; scan matching alone is meaningfully worse |
+| **IMU** | not needed | **desirable** -- ~$10, stabilises heading between scans |
+
 ### 3.4 Persistence
 
 Decided in 1.5. The reasoning behind the two that matter most:
@@ -390,6 +545,63 @@ memory survives the link dying with its memory intact.
 | Pan/tilt camera mount | included | **source separately** |
 | Ultrasonic, motor driver, battery | integrated | assemble |
 | `HARDWARE-READINESS.md` | written for it | **needs revision** |
+
+---
+
+### 3.6 What it costs
+
+Approximate US prices, from general knowledge on 2026-09-03. **Not verified
+against a retailer**, and several move a lot with sales. Every figure here
+should be checked before ordering.
+
+**Essential -- the robot does not work without these**
+
+| Item | ~USD | Note |
+|---|---|---|
+| Raspberry Pi 5 (8GB) | 80 | If one is not already owned |
+| Active cooler | 8 | The Pi 5 throttles without it, and SLAM is a sustained load |
+| microSD 64GB A2 | 12 | See the SSD row below |
+| **Slamtec RPLidar C1** | 100 | 1.2 |
+| Differential chassis kit, **encoder motors** | 100 | 60-150; encoders push it up |
+| Motor driver (TB6612FNG) | 10 | 0 if the kit includes one |
+| Camera Module 3 | 30 | Q4 may change this |
+| 2-axis pan/tilt bracket + SG90s | 12 | Replaces what the PiCar-X bundled |
+| 2S Li-ion pack + charger | 30 | Motor rail only (1.3) |
+| Wiring, connectors, switch, XT60 | 15 | |
+| Standoffs, M2.5/M3 hardware | 10 | For stacking decks |
+| | **~407** | |
+
+**Strongly recommended -- each avoids a failure already discussed here**
+
+| Item | ~USD | Avoids |
+|---|---|---|
+| Powered USB hub | 15 | The 600mA USB cap browning out the Pi (1.3) |
+| IMU (MPU6050 / BNO055) | 10 | Heading drift between scans -- **matters much more under (b+)** |
+| 5V buck converter | 8 | If the Pi is ever taken off the bank and onto the pack |
+| Lidar mount, 3D printed | 15 | 0 with a printer |
+| Jumper wires, misc | 10 | |
+| | **~58** | |
+
+**Worth considering**
+
+| Item | ~USD | Why |
+|---|---|---|
+| NVMe SSD + M.2 HAT | 45 | **SD cards corrupt on brownout**, which is the exact failure 1.3 is written about. The one item here that prevents losing work rather than an annoyance |
+| AI Camera (IMX500) instead of Camera Module 3 | +40 | Q4, still open |
+
+**Totals**
+
+| Scenario | ~USD |
+|---|---|
+| Essential only | 407 |
+| **+ recommended** | **465** |
+| + NVMe | 510 |
+| + AI Camera instead | 550 |
+| Already own a Pi 5 | subtract ~100 |
+
+Already owned, 0: the power bank (1.3). Deferred, possibly never: any AI
+accelerator (4.5). **Budget ~450-500**, and the two variables that move it are
+whether a Pi 5 is already owned and how Q4 resolves.
 
 ---
 
@@ -477,6 +689,13 @@ safety-critical, which the cloud VLM can keep doing at deliberation rate.
 
 **Sequencing: lidar first, accelerator possibly never.**
 
+**But 1.9 records a live tension with this**, found while working through
+`approach`'s stop condition: with no on-device detector the target bearing is
+1-3 seconds stale, which makes `approach` open loop on the semantic half. A
+**CPU-only** detector -- no accelerator, no purchase -- may re-enter the design
+there. "Accelerator possibly never" is not the same claim as "no on-device
+detection", and this section should not be read as settling Q4.
+
 ---
 
 ## 5. What this invalidates elsewhere
@@ -559,11 +778,11 @@ the re-recorded corpus before anyone quotes it.
 
 ### 6.2 Still to discuss
 
+Q2 (goal vocabulary) and Q3 (stop conditions) are **settled** -- see 1.7 and 1.8.
+
 | # | Question | Why it is not obvious |
 |---|---|---|
-| Q2 | **Is the goal vocabulary closed or open?** `approach` / `traverse` / `explore` / `sweep`, or open-ended text the reactive tier parses | Closed is testable and refusable by name (M7's rule); open is more capable and much harder to validate |
-| Q3 | **Does a goal carry a stop condition, or does the reactive tier infer one?** | Provisional answer given: the goal carries it ("you are close to the backpack"); the reactive tier infers failure ("stuck in a corner"). Not yet examined |
-| Q4 | **Who arbitrates a confident detector against a planner that says the target is not here?** | M4's subject, and Microduck's own open #3. **Sub-question: can the IMX500 emit an embedding, or only boxes?** -- it runs its net on the sensor, which may make §1.5's separate-encoder decision moot or mandatory |
+| Q4 | **Who arbitrates a confident detector against a planner that says the target is not here?** -- and, from 1.9, **is there an on-device detector at all?** | M4's subject, and Microduck's own open #3. The IMX500-embedding sub-question is **withdrawn**: 1.6 cancels the visual-edge design, so Q4 turns on detection quality and on 1.9's stale-bearing problem, not on embeddings |
 | Q5 | **Does the sim participate at all?** | `sim/renderer.py` renders flat-shaded walls; a COCO detector finds nothing in them, so a sim backend would have to synthesise detections -- making the sim leg unable to test the detector, only its consumers |
 
 ### 6.3 What it owes the twin
