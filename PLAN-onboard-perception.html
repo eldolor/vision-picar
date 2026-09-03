@@ -389,7 +389,7 @@
       <span class="chip"><b>Date</b> 2026-09-03</span>
       <span class="chip"><b>Chassis</b> differential</span>
       <span class="chip"><b>Lidar</b> (a) → (b+)</span>
-      <span class="chip"><b>Budget</b> ~$465</span>
+      <span class="chip"><b>Budget</b> ~$423</span>
     </div>
     <div class="jump-row">
       <a class="jump-link" href="#decisions"><span class="jl-label">The decisions</span></a>
@@ -844,15 +844,15 @@
               <tr><td>Raspberry Pi 5 (8 GB)</td><td class="mono">80</td><td>If one is not already owned</td></tr>
               <tr><td>Active cooler</td><td class="mono">8</td><td>The Pi 5 throttles without it; SLAM is a sustained load</td></tr>
               <tr><td>microSD 64 GB A2</td><td class="mono">12</td><td>See the SSD row below</td></tr>
-              <tr><td class="strong">Slamtec RPLidar C1</td><td class="mono">100</td><td>§1.2</td></tr>
-              <tr><td class="strong">Chassis kit, encoder motors</td><td class="mono">100</td><td>60–150; encoders push it up</td></tr>
-              <tr><td>Motor driver (TB6612FNG)</td><td class="mono">10</td><td>0 if the kit includes one</td></tr>
+              <tr><td class="strong">Slamtec RPLidar C1</td><td class="mono">99</td><td>§1.2</td></tr>
+              <tr><td class="strong">Chassis kit, encoder motors</td><td class="mono">69</td><td>Yahboom 2WD, chosen — §3.8</td></tr>
+              <tr><td>Motor driver (TB6612FNG)</td><td class="mono">0</td><td><b>Included</b> with the Yahboom kit — IC unconfirmed (§3.8)</td></tr>
               <tr><td>Camera Module 3</td><td class="mono">30</td><td>Q4 may change this</td></tr>
               <tr><td>Pan/tilt bracket + SG90s</td><td class="mono">12</td><td>Replaces what the PiCar-X bundled</td></tr>
               <tr><td class="strong">3S Li-ion pack + charger</td><td class="mono">35</td><td>Motor rail only (§1.3). <b>Not 2S</b> — see the correction below</td></tr>
               <tr><td>Wiring, connectors, switch, XT60</td><td class="mono">15</td><td></td></tr>
               <tr><td>Standoffs, M2.5/M3 hardware</td><td class="mono">10</td><td>For stacking decks</td></tr>
-              <tr><td class="strong">Subtotal</td><td class="mono strong">~407</td><td></td></tr>
+              <tr><td class="strong">Subtotal</td><td class="mono strong">~365</td><td>Was ~407 before the chassis was priced</td></tr>
             </tbody>
           </table>
         </div>
@@ -882,16 +882,16 @@
           <table>
             <thead><tr><th>Scenario</th><th class="mono">~USD</th></tr></thead>
             <tbody>
-              <tr><td>Essential only</td><td class="mono">407</td></tr>
-              <tr><td class="strong">+ recommended</td><td class="mono strong">465</td></tr>
-              <tr><td>+ NVMe</td><td class="mono">510</td></tr>
-              <tr><td>+ AI Camera instead of Camera Module 3</td><td class="mono">550</td></tr>
+              <tr><td>Essential only</td><td class="mono">365</td></tr>
+              <tr><td class="strong">+ recommended</td><td class="mono strong">423</td></tr>
+              <tr><td>+ NVMe</td><td class="mono">468</td></tr>
+              <tr><td>+ AI Camera instead of Camera Module 3</td><td class="mono">508</td></tr>
               <tr><td>Already own a Pi 5</td><td class="mono">− 100</td></tr>
             </tbody>
           </table>
         </div>
 
-        <p>Already owned, $0: the power bank (§1.3). Deferred, possibly never: any AI accelerator (§4.5). <b>Budget ~$450–500</b>, and the two variables that move it are whether a Pi 5 is already owned and how Q4 resolves.</p>
+        <p>Already owned, $0: the power bank (§1.3). Deferred, possibly never: any AI accelerator (§4.5). <b>Budget ~$400–470</b> — revised down from ~$450–500 once the chassis was priced against real listings rather than estimated (§3.8). The two variables that move it are whether a Pi 5 is already owned and how Q4 resolves.</p>
 
         <div class="caution">
           <span class="flag">Correction · 2026-09-03 · the pack is 3S, not 2S</span>
@@ -912,7 +912,27 @@
           <p>Yahboom ROSMASTER, Hiwonder LanderPi and similar ship chassis, encoder motors, driver, lidar and often a depth camera as one unit — with working launch files, a URDF, TF frames already configured, and documentation. Roughly <b>$400–700</b>.</p>
           <p><b>The comparison is not really about money.</b> §3.3 named (b+)’s cost as <em>weeks, and most of it learning rather than writing</em>. A platform that boots into a working nav2 stack deletes most of that, and against ~$465 of separate parts plus the integration it may be cheaper in the only currency that is scarce here.</p>
           <p><b>What it costs instead:</b> less learned by assembling it, possible lock-in to the vendor’s stack, and the lidar is inherited rather than chosen — which reopens §1.2.</p>
-          <p><b>Not decided.</b> Recorded because dismissing it required believing something untrue.</p>
+          <p><b>Surveyed 2026-09-03 — and the path is closed.</b> Every bundled ROS 2 platform findable on Amazon US fails on drive geometry or compute topology.</p>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Platform</th><th>Why it fails</th></tr></thead>
+            <tbody>
+              <tr><td>Yahboom ROSMASTER X3 / M1 / M3</td><td>mecanum</td></tr>
+              <tr><td>Yahboom ROSMASTER R2 / A1</td><td>Ackermann</td></tr>
+              <tr><td>Hiwonder LanderPi</td><td>mecanum / Ackermann / tank only; off-Amazon; $732–1046</td></tr>
+              <tr><td>Hiwonder Tank · Swaytail MC400</td><td>tracked; mecanum</td></tr>
+              <tr><td class="strong">Yahboom MicroROS-Pi5 ($180 all-in)</td><td><b>compute topology</b> — see below</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="caution">
+          <span class="flag">The one that came closest, and the thing it concedes</span>
+          <p>The MicroROS-Pi5 is a good kit — 4× MD310Z20 quadrature encoder motors, an ORBBEC MS200 lidar included, anodised aluminium, a six-axis IMU on its ESP32S3 board, ROS 2 Humble and Python 3 confirmed. But it is <em>“designed to run ROS 2 on a PC via WiFi UDP, not directly on a Pi 5 — your Pi 5 would act as a remote compute node, not an onboard controller.”</em></p>
+          <p>That contradicts <code>HARDWARE-READINESS.md</code> §7, which names “the robot only works when the laptop is on, awake, and on the same Wi-Fi” as the reason the brain moves onto the Pi at all — and it fails <code>CLAUDE.md</code> §7’s Stage 4 done-when outright: <b>start a mission with no laptop on the network at all.</b></p>
+          <p><b>The technical caveat does not rescue it.</b> micro-ROS’s agent is only a process, so running it plus nav2 on the Pi is probably possible against the vendor’s documented setup. But the kit’s whole value was that its documentation deletes the learning curve — deviating from its documented architecture forfeits exactly that. Technically possible, strategically pointless.</p>
         </div>
 
         <div class="finding">
@@ -920,6 +940,69 @@
           <p>A <b>circular</b> footprint. The obvious reason — fewer lidar shadow zones — is weak, since the lidar sits on a raised plate and the chassis barely occludes it.</p>
           <p><b>The real reason is nav2.</b> A circular robot has a constant turning radius, so its costmap footprint is a single <code>robot_radius</code> rather than a polygon, and <b>rotating in place is always safe</b>. A rectangular robot sweeps a circle wider than itself when it pivots and can clip a doorframe it is nominally clear of. Given §1.1 chose differential drive <em>specifically to rotate in place</em>, that is worth more than it first appears — though not unconditionally worth a large premium from an unknown vendor with no ROS 2 community.</p>
         </div>
+        <h3 class="feat-title">3.8 &nbsp;The chassis, chosen — and what is still unverified</h3>
+
+        <div class="finding">
+          <span class="flag">Chosen</span>
+          <p><b>Yahboom 2WD encoder chassis (~$69) + Slamtec RPLidar C1 (~$99) = ~$168.</b></p>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th></th><th>Yahboom + C1</th><th>iDili R3 + C1 + driver</th></tr></thead>
+            <tbody>
+              <tr><td class="strong">Total</td><td class="mono"><b>~168</b></td><td class="mono">~279, plus a top plate to source</td></tr>
+              <tr><td class="strong">Motor driver</td><td><b>included</b></td><td>not included</td></tr>
+              <tr><td class="strong">Pi 5 as onboard controller</td><td>yes</td><td>yes</td></tr>
+              <tr><td class="strong">Footprint</td><td>rectangular, 228 × 148 mm</td><td><b>circular</b>, 205 × 192 mm — §3.7’s nav2 win</td></tr>
+              <tr><td class="strong">Payload</td><td>~2 kg</td><td>3 kg</td></tr>
+              <tr><td class="strong">Vendor</td><td>established, ROS 2 resources</td><td>unknown, very recent listing</td></tr>
+              <tr><td class="strong">Shipping</td><td>normal</td><td>Sep 22 – Oct 1</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>The circular footprint is genuinely the better nav2 chassis. It costs <b>$111 more, arrives with no motor driver and no top plate, and comes from a vendor with no track record.</b> Not worth it at that price; revisit if the Yahboom’s deck proves too cramped.</p>
+
+        <p><b>A note on the deck.</b> The survey marked 228 × 148 mm as passing a “15 × 15 cm” floor. It does not, literally — 148 &lt; 150. It passes in practice, because a Pi 5 is 85 × 56 mm and the lidar needs its own raised plate regardless, so the binding dimension is never 148 mm. Recorded because the checkmark was applied without checking.</p>
+
+        <h4 class="sub-title">What the vendor’s own documentation settled</h4>
+
+        <p>Amazon listings had, across four rounds, failed to answer the questions that actually gate the purchase. Yahboom’s product pages answered two of them.</p>
+
+        <div class="finding">
+          <span class="flag">The gating question — answered, yes</span>
+          <p>A motor driver that spins motors but never counts pulses leaves the encoders decorative and nav2 with no wheel odometry — the requirement that disqualified every other chassis.</p>
+          <p>Yahboom’s encoder motor drive module carries an <b>STM32F103RCT6 coprocessor that both drives the motors and obtains encoder data</b>, and talks to the host over <b>I²C or serial</b>. That is the right shape: an MCU counts edges in real time and hands the Pi a number.</p>
+          <p><b>Unverified:</b> whether the board bundled in the $69 kit is that same module. The listing says only “Expansion Board Driver”.</p>
+        </div>
+
+        <p><b>3S is confirmed by the vendor, not inferred.</b> Yahboom: <em>“If you want to connect 520 motor, please choose a 12.6 V power supply.”</em> 12.6 V is a charged 3S pack. §3.6’s correction was made by reasoning from motor ratings; this is the manufacturer saying it.</p>
+
+        <p><b>Two Amazon variants exist</b> — <code>B0F3CZ3WYB</code> (no battery, the ~$69 one) and <code>B0F3CYDQ21</code> (<b>with battery</b>). Since a 12.6 V pack is needed anyway, check whether the bundled one qualifies: it could remove a ~$35 line item and the voltage-matching problem with it.</p>
+
+        <p><b>No IMU.</b> Yahboom lists the MPU6050 as an add-on module, not bundled, so §3.6’s separate IMU line stays.</p>
+
+        <h4 class="sub-title">The finding that reaches back into §4.4</h4>
+
+        <p>Yahboom’s own figures: <b>L-type 520, 1:40 reduction, ~300 RPM after reduction</b> (the market survey said 1:30; the vendor says 1:40). On the 65 mm wheels these kits ship, that is roughly <b>1 m/s top speed</b> — which lands exactly on the worst row of §4.4’s reaction-budget table.</p>
+
+        <div class="caution">
+          <span class="flag">The chassis can outrun its own reaction budget</span>
+          <p>At 100 cm/s a 200 ms detector latency consumes <b>the entire 20 cm collar before a decision is made</b>.</p>
+          <p>Not a defect — indoors it will run at a fraction of that, and nav2 caps velocity regardless. But it makes the <b>velocity cap a safety parameter rather than a comfort setting</b>, and it gives §4.4’s explicitly-unmeasured “how fast does the car actually move” a concrete upper bound to design against, months before any hardware arrives.</p>
+        </div>
+
+        <h4 class="sub-title">Still unverified before ordering</h4>
+
+        <ol class="steps">
+          <li>Whether the bundled expansion board is the STM32-based encoder module.</li>
+          <li><b>Encoder CPR/PPR.</b> “High-precision Hall encoder, built-in shaping and pull-up, direct square-wave output” — but no number on any page. Likely in the tutorial documentation.</li>
+          <li>Which motor driver IC (TB6612FNG preferred over L298N).</li>
+          <li>Whether the with-battery variant’s pack is 12.6 V / 3S.</li>
+        </ol>
+
+        <p>None is a blocker; all four are one email to the seller.</p>
       </section>
 
       <!-- ===================== 4 ===================== -->

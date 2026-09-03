@@ -561,15 +561,15 @@ should be checked before ordering.
 | Raspberry Pi 5 (8GB) | 80 | If one is not already owned |
 | Active cooler | 8 | The Pi 5 throttles without it, and SLAM is a sustained load |
 | microSD 64GB A2 | 12 | See the SSD row below |
-| **Slamtec RPLidar C1** | 100 | 1.2 |
-| Differential chassis kit, **encoder motors** | 100 | 60-150; encoders push it up |
-| Motor driver (TB6612FNG) | 10 | 0 if the kit includes one |
+| **Slamtec RPLidar C1** | 99 | 1.2 |
+| Differential chassis kit, **encoder motors** | 69 | Yahboom 2WD, chosen -- 3.8 |
+| Motor driver (TB6612FNG) | 0 | **Included** with the Yahboom kit -- IC unconfirmed (3.8) |
 | Camera Module 3 | 30 | Q4 may change this |
 | 2-axis pan/tilt bracket + SG90s | 12 | Replaces what the PiCar-X bundled |
 | **3S** Li-ion pack + charger | 35 | Motor rail only (1.3). **Not 2S** -- see the correction below |
 | Wiring, connectors, switch, XT60 | 15 | |
 | Standoffs, M2.5/M3 hardware | 10 | For stacking decks |
-| | **~407** | |
+| | **~365** | Was ~407 before the chassis was priced |
 
 **Strongly recommended -- each avoids a failure already discussed here**
 
@@ -593,15 +593,16 @@ should be checked before ordering.
 
 | Scenario | ~USD |
 |---|---|
-| Essential only | 407 |
-| **+ recommended** | **465** |
-| + NVMe | 510 |
-| + AI Camera instead | 550 |
+| Essential only | 365 |
+| **+ recommended** | **423** |
+| + NVMe | 468 |
+| + AI Camera instead | 508 |
 | Already own a Pi 5 | subtract ~100 |
 
 Already owned, 0: the power bank (1.3). Deferred, possibly never: any AI
-accelerator (4.5). **Budget ~450-500**, and the two variables that move it are
-whether a Pi 5 is already owned and how Q4 resolves.
+accelerator (4.5). **Budget ~400-470**, and the two variables that move it are whether a Pi 5 is
+already owned and how Q4 resolves. Revised down from ~450-500 once the chassis
+was priced against real listings rather than estimated (3.8).
 
 **Correction, 2026-09-03: the pack is 3S, not 2S.** The first draft of this
 table specced a 2S (7.4V) pack. Every serious differential chassis surveyed --
@@ -642,8 +643,37 @@ it may be the cheaper path in the only currency that is scarce here.
 the vendor's software stack, and the lidar is inherited rather than chosen --
 which would reopen 1.2.
 
-**Not decided.** Recorded because dismissing it required believing something
-untrue, and that is the kind of premise worth writing down.
+**Surveyed 2026-09-03, and the path is closed.** Every bundled ROS 2 platform
+findable on Amazon US fails on drive geometry or on compute topology:
+
+| Platform | Why it fails |
+|---|---|
+| Yahboom ROSMASTER X3 / M1 / M3 | mecanum |
+| Yahboom ROSMASTER R2 / A1 | Ackermann |
+| Hiwonder LanderPi | mecanum / Ackermann / tank only; off-Amazon; $732-1046 |
+| Hiwonder Tank, Swaytail MC400 | tracked; mecanum |
+| **Yahboom MicroROS-Pi5** ($180, all-in) | **compute topology -- see below** |
+
+**The MicroROS-Pi5 came closest and fails on the one thing this project cannot
+concede.** It is a good kit -- 4x MD310Z20 quadrature encoder motors, an ORBBEC
+MS200 lidar included, anodised aluminium, a six-axis IMU on its ESP32S3 board,
+ROS 2 Humble and Python 3 confirmed. But it is "designed to run ROS 2 on a PC
+via WiFi UDP, not directly on a Pi 5 -- your Pi 5 would act as a remote compute
+node, not an onboard controller."
+
+That contradicts `HARDWARE-READINESS.md` §7, which names "the robot only works
+when the laptop is on, awake, and on the same Wi-Fi" as the reason the brain
+moves onto the Pi at all, and it fails `CLAUDE.md` §7's Stage 4 done-when
+outright: *start a mission with no laptop on the network at all.*
+
+**The technical caveat does not rescue it.** micro-ROS's agent is only a
+process, so running it plus nav2 on the Pi 5 is probably possible against the
+vendor's documented setup. But the kit's whole value was that its documentation
+deletes the learning curve; deviating from its documented architecture forfeits
+exactly that. Technically possible, strategically pointless.
+
+**So: parts, integrated by hand.** 3.8 records what was chosen and what is still
+unverified.
 
 **One specification the survey added that this document had not:** a
 **circular** footprint. The stated reason -- fewer lidar shadow zones -- is
@@ -655,6 +685,88 @@ than itself when it pivots and can clip a doorframe it is nominally clear of.
 Given 1.1 chose differential drive *specifically to rotate in place*, that is
 worth more than it first appears -- though not unconditionally worth a large
 price premium from an unknown vendor with no ROS 2 community.
+
+---
+
+### 3.8 The chassis, chosen -- and what is still unverified
+
+**Yahboom 2WD encoder chassis (~$69) + Slamtec RPLidar C1 (~$99) = ~$168.**
+
+| | Yahboom + C1 | iDili R3 + C1 + driver |
+|---|---|---|
+| Total | **~168** | ~279, plus a top plate to source |
+| Motor driver | **included** | not included |
+| Pi 5 as onboard controller | yes | yes |
+| Footprint | rectangular, 228 x 148mm | **circular**, 205 x 192mm -- 3.7's nav2 win |
+| Payload | ~2kg | 3kg |
+| Vendor | established, ROS 2 resources | unknown, very recent listing |
+| Shipping | normal | Sep 22 - Oct 1 |
+
+The circular footprint is genuinely the better nav2 chassis. It costs **$111
+more, arrives with no motor driver and no top plate, and comes from a vendor
+with no track record**. Not worth it at that price; revisit if the Yahboom's
+deck proves too cramped.
+
+**A note on the deck.** The survey marked 228 x 148mm as passing a "15 x 15cm"
+floor. It does not, literally -- 148 < 150. It passes in practice, because a Pi
+5 is 85 x 56mm and the lidar needs its own raised plate regardless, so the
+binding dimension is never 148mm. Worth recording that the checkmark was
+applied without checking.
+
+#### What the vendor's own documentation settled
+
+Amazon listings had, across four rounds, failed to answer the questions that
+actually gate the purchase. Yahboom's product pages answered two of them.
+
+**The encoder question -- the one that could have made a $69 chassis the wrong
+buy -- is answered: yes.** A motor driver that spins motors but never counts
+pulses leaves the encoders decorative and nav2 with no wheel odometry, which is
+the requirement that disqualified every other chassis. Yahboom's encoder motor
+drive module carries an **STM32F103RCT6 coprocessor that both drives the motors
+and obtains encoder data**, and talks to the host over **I2C or serial**. That
+is the right shape: an MCU counts edges in real time and hands the Pi a number.
+**Unverified:** whether the board bundled in the $69 kit is that same module.
+The listing says only "Expansion Board Driver". One question to the seller.
+
+**3S is confirmed by the vendor, not inferred.** Yahboom: *"If you want to
+connect 520 motor, please choose a 12.6V power supply."* 12.6V is a charged 3S
+pack. 3.6's correction was made by reasoning from motor ratings; this is the
+manufacturer saying it.
+
+**Two Amazon variants exist** -- `B0F3CZ3WYB` (no battery, the ~$69 one) and
+`B0F3CYDQ21` (**with battery**). Since a 12.6V pack is needed anyway, check
+whether the bundled one qualifies: it could remove a ~$35 line item and the
+voltage-matching problem with it.
+
+**No IMU.** Yahboom lists the MPU6050 as an add-on module, not bundled, so
+3.6's separate IMU line stays.
+
+#### The finding that reaches back into 4.4
+
+Yahboom's own figures: **L-type 520, 1:40 reduction, ~300 RPM after
+reduction** (the market survey said 1:30; the vendor says 1:40). On the 65mm
+wheels these kits ship, that is roughly **1 m/s top speed**.
+
+Which lands exactly on the worst row of 4.4's reaction-budget table: at 100cm/s
+a 200ms detector latency consumes **the entire 20cm collar before a decision is
+made**.
+
+**The chassis can outrun its own reaction budget.** Not a defect -- indoors it
+will run at a fraction of that, and nav2 caps velocity regardless. But it makes
+the **velocity cap a safety parameter rather than a comfort setting**, and it
+gives 4.4's explicitly-unmeasured "how fast does the car actually move" a
+concrete upper bound to design against, months before any hardware arrives.
+
+#### Still unverified before ordering
+
+1. Whether the bundled expansion board is the STM32-based encoder module.
+2. **Encoder CPR/PPR.** "High-precision Hall encoder, built-in shaping and
+   pull-up, direct square-wave output" -- but no number on any page. Likely in
+   the tutorial documentation.
+3. Which motor driver IC (TB6612FNG preferred over L298N).
+4. Whether the with-battery variant's pack is 12.6V/3S.
+
+None is a blocker; all four are one email to the seller.
 
 ---
 
