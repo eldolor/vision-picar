@@ -208,11 +208,17 @@ class MockRobot(RobotInterface):
 
         A ray that reaches `FPV_MAX_DIST` without meeting a wall is
         `ZONE_NO_TARGET` -- nothing within range, which is information, and
-        deliberately not the same answer as `ZONE_UNUSABLE`. **Nothing here
-        ever produces `ZONE_UNUSABLE`**: an exact grid world has no failed
-        reads. M3 is where `sim.sensor_noise`'s dropout starts producing
-        them, which is what gives the tri-state something to distinguish in
-        the sim rather than only on hardware.
+        deliberately not the same answer as `ZONE_UNUSABLE`.
+
+        **`ZONE_UNUSABLE` comes from `sim.sensor_noise`'s dropout, per zone
+        (phase M3).** With no sensor model configured -- the default -- the
+        grid is exact and no zone is ever unusable, which is the same
+        promise `get_distance()` makes. With one configured, each zone
+        draws its own dropout and its own noise, because the zones of a
+        real sensor fail independently. That is what gives the tri-state
+        something to distinguish in the sim rather than only on hardware,
+        and what lets `robot/safety.py` show the property M3 is for: one
+        blind zone is not a blind robot.
         """
         cols = interface.DEPTH_COLS_DEFAULT
         cell_cm = self.sensor.cell_cm if self.sensor else DEFAULT_CELL_CM
@@ -225,9 +231,7 @@ class MockRobot(RobotInterface):
             t = (i + 0.5) / cols
             angle = base_angle - renderer.FPV_FOV / 2 + renderer.FPV_FOV * t
             dist_cells = renderer.cast_ray(self.world.layout, px, py, angle)
-            if dist_cells >= renderer.FPV_MAX_DIST:
-                zones.append({"status": interface.ZONE_NO_TARGET, "distance_cm": None})
-                continue
+            beyond_range = dist_cells >= renderer.FPV_MAX_DIST
             # cast_ray() overshoots: it marches in FPV_STEP increments and
             # returns the first step already inside the wall, so the true
             # crossing lies in (dist - FPV_STEP, dist]. Report the lower
@@ -235,10 +239,29 @@ class MockRobot(RobotInterface):
             # read is the one direction this must not round.
             free_cells = dist_cells - renderer.FPV_STEP - ROBOT_HALF_CELL
             clearance = max(0.0, free_cells) * cell_cm
-            zones.append({
-                "status": interface.ZONE_RANGE,
-                "distance_cm": round(clearance, 1),
-            })
+
+            if self.sensor is None:
+                # Exact, as everywhere else in this backend by default.
+                zones.append(
+                    {"status": interface.ZONE_NO_TARGET, "distance_cm": None}
+                    if beyond_range else
+                    {"status": interface.ZONE_RANGE, "distance_cm": round(clearance, 1)}
+                )
+                continue
+
+            # Phase M3. Each zone draws its own dropout, exactly as the
+            # zones of a real VL53L5CX fail independently -- one zone's
+            # status byte says nothing about its neighbour's. This is what
+            # makes the grid degrade where the scalar cannot: a dropped
+            # beam blinds get_distance() completely, while a dropped zone
+            # leaves seven others to answer with.
+            reading = self.sensor.read_zone_cm(clearance)
+            if reading is None:
+                zones.append({"status": interface.ZONE_UNUSABLE, "distance_cm": None})
+            elif beyond_range:
+                zones.append({"status": interface.ZONE_NO_TARGET, "distance_cm": None})
+            else:
+                zones.append({"status": interface.ZONE_RANGE, "distance_cm": reading})
 
         self.world._record(f"DEPTH view_heading={view.name} cols={cols}")
         return {"rows": 1, "cols": cols, "zones": zones}

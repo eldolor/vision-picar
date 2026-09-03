@@ -142,9 +142,16 @@ def test_depth_grid_comes_from_the_robot_not_from_the_interface_default(robot_ov
         "the sim robot on the other end has a sensor -- reporting none means "
         "the interface default was inherited instead of the route being called"
     )
-    assert grid == fresh_mock_robot().get_depth_grid(), (
+    local = fresh_mock_robot().get_depth_grid()
+    assert {k: grid[k] for k in ("rows", "cols", "zones")} == local, (
         "the wire must not change the grid: same robot, same start pose"
     )
+    # It may *add* to it, and since M3 it does: the route composes the
+    # server's own safety reduction onto the backend's grid, so the twin can
+    # draw which zones the veto reads without re-implementing that rule in
+    # the browser. Additive only -- `zones` above is byte-for-byte what the
+    # backend produced, which is what keeps this a passthrough.
+    assert grid["path"]["source"] == "depth_grid"
 
 
 def test_a_server_with_no_depth_route_reports_no_sensor_rather_than_failing():

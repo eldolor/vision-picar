@@ -30,6 +30,7 @@ past which measuring the real sensor beats modeling it further.
 
 import random
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
@@ -61,11 +62,50 @@ class DistanceSensorModel:
     rng: random.Random = field(default_factory=random.Random)
 
     def read(self, cells: int) -> float:
-        if self.dropout_rate and self.rng.random() < self.dropout_rate:
+        """The scalar reading. `0.0` on dropout -- see the class docstring."""
+        if self._dropped():
             return 0.0
+        return self._perturb(cells * self.cell_cm)
 
-        distance = cells * self.cell_cm
+    def read_zone_cm(self, distance_cm: float) -> Optional[float]:
+        """One zone of a depth grid -- phase M3.
+
+        **Returns `None` on dropout, where `read()` returns `0.0`, and the
+        difference is the whole point.** A lone scalar has no way to say
+        "I could not tell", so it fails toward stop and that is the right
+        trade (see above). A grid does have a way to say it: the zone is
+        reported `ZONE_UNUSABLE` and `robot/safety.py` drops it from the
+        comparison entirely.
+
+        That distinction is load-bearing rather than tidy. A veto that
+        takes the nearest zone over a grid whose failed zones read `0.0`
+        would stop on every dropout, and with eight zones a dropout is
+        eight times as likely to happen somewhere as it is on one beam --
+        so collapsing the two here would make the grid *worse* than the
+        scalar it is meant to improve on. The same trap arrives
+        differently on hardware: a VL53L5CX zone failure is a status byte,
+        not a range.
+
+        Takes centimetres, not cells: the grid's rays are cast at angles
+        and land on continuous distances, unlike `distance_ahead()`'s
+        whole cells.
+        """
+        if self._dropped():
+            return None
+        return self._perturb(distance_cm)
+
+    # ---------- internal ----------
+
+    def _dropped(self) -> bool:
+        # Guarded by the truthiness check so dropout_rate=0.0 never draws
+        # from the rng at all -- a test with a seeded rng must see the same
+        # sequence it saw before dropout was configurable.
+        return bool(self.dropout_rate) and self.rng.random() < self.dropout_rate
+
+    def _perturb(self, distance_cm: float) -> float:
+        """Noise and the real sensor's range, shared by both reads so the
+        grid and the scalar cannot drift into describing different
+        hardware."""
         if self.noise_stddev_cm:
-            distance += self.rng.gauss(0.0, self.noise_stddev_cm)
-
-        return round(max(self.min_range_cm, min(self.max_range_cm, distance)), 1)
+            distance_cm += self.rng.gauss(0.0, self.noise_stddev_cm)
+        return round(max(self.min_range_cm, min(self.max_range_cm, distance_cm)), 1)

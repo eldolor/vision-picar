@@ -1,6 +1,6 @@
 # Plan: what to take from Microduck
 
-Status: M1 built and measured (see its entry -- the replays settled more than the sim run did), M2 built 2026-09-03, M3-M12 proposed (M7b added 2026-09-03) · Date: 2026-09-02 · Phase IDs: `M1`-`M12`
+Status: M1 built and measured (see its entry -- the replays settled more than the sim run did), M2 and M3 built 2026-09-03, M4-M12 proposed (M7b added 2026-09-03) · Date: 2026-09-02 · Phase IDs: `M1`-`M12`
 
 [Microduck](https://github.com/pollen-robotics/microduck) (Apache-2.0, read
 2026-09-02) is Pollen Robotics' open-source brain for a 25cm bipedal robot:
@@ -82,7 +82,7 @@ Seven of the twelve phases need no hardware.
 |---|---|---|---|
 | M1 | Settle the gate reading | pre-hardware | **DONE.** The replay table gained two columns; the sim leg is blocked on the renderer |
 | M2 | A depth grid on the interface, and in the sim | pre-hardware | **DONE.** A depth strip under the FPV canvas, tracking the view |
-| M3 | The tri-state zone, and a centre-zone veto | pre-hardware | Dropout reads grey, not "wall". The collar fires off-centre |
+| M3 | The tri-state zone, and a centre-zone veto | pre-hardware | **DONE.** Dropout reads grey, not "wall". The off-centre half is M10's |
 | M4 | Refusals are state, manual preempts autonomous | pre-hardware | Tap the D-pad mid-mission. It ends `preempted`, and says by whom |
 | M5 | One health command | pre-hardware | Kill the brain. Settings flips and the command exits non-zero |
 | M6 | A process start never moves the robot | pre-hardware | Restart the robot server mid-mission. The map does not twitch |
@@ -384,7 +384,84 @@ coloured by range, grey where unusable. Drive the D-pad at a wall.
 **Done when** the strip tracks the FPV view and the contract suite passes on
 all four backends.
 
-### M3 -- The tri-state zone, and a centre-zone veto
+### M3 -- The tri-state zone, and a centre-zone veto -- **BUILT 2026-09-03**
+
+**What it is.** M2 put a depth grid on the interface with nobody reading
+it. This is the consumer: `robot/safety.py` reduces the zones the next
+move crosses to one number and compares that to `min_distance_cm`, exactly
+as it always compared `get_distance()`. The safety layer's shape does not
+change. What changes is which sensor answers, and what happens when it
+cannot.
+
+Built:
+
+- **`DistanceSensorModel.read_zone_cm()`** returns `None` on dropout where
+  `read()` returns `0.0`, and the difference is the phase. The scalar's
+  collapse stays exactly as it was and is still right -- a lone float has
+  no way to say "I could not tell", so it fails toward stop.
+- **`MockRobot` draws dropout and noise per zone**, because the zones of a
+  real VL53L5CX fail independently: one status byte says nothing about its
+  neighbour's. With no sensor model configured the grid stays exact, the
+  same promise `get_distance()` makes.
+- **`SafetyController.path_clearance()`** -- three outcomes, in order.
+  `depth_grid` (a path zone answered: the nearest of them), then
+  `depth_grid_no_target` (all answered, nothing within range: clearance
+  `None`, never a veto), then `distance_sensor` (no grid, or every path
+  zone unusable: the pre-M3 scalar veto, including its `0.0` collapse, so
+  a blind robot still stops). **A failed zone never enters the comparison
+  in either direction** -- read as a distance it would stop the robot
+  constantly, read as clear it would drive through what the sensor could
+  not see.
+- **`PATH_FRACTION = 0.5`, and the number is geometry.** The middle half
+  of the sim's 60-degree render is +/-15 degrees, spanning 16cm at one
+  grid cell -- a PiCar-X is about 16.5cm wide. Both neighbours of that
+  choice are real failures, and both are observable in the starter house:
+  the whole grid vetoes every corridor (the outer rays read the side walls
+  at ~18cm, under the 20cm threshold, on every legal step), and a single
+  centre zone is the one beam `get_distance()` already was. Two tests pin
+  the ends -- every pose in the house with a free cell ahead stays legal,
+  and the one-cell doorway stays passable.
+- **The grid answering means the scalar is not fetched at all**, so the
+  common case is the same one call it always was. Over `RemoteRobot` that
+  matters: it would otherwise be a second HTTP round trip per FORWARD.
+- **`GET /depth` publishes the reduction** as `path` -- which zones, what
+  clearance, which source, and whether a FORWARD would be vetoed. The twin
+  renders it and must not compute it: which zones are "the path" is
+  robot-runtime safety logic, and CLAUDE.md section 6 allows the browser
+  to duplicate the *brain* role only. Same reason `/health` already
+  publishes `min_distance_cm`.
+
+**What it buys, measured.** At a 30% dropout rate the single beam vetoes
+about a third of legal moves -- the reading is `0.0` and there is nothing
+else to consult. The grid needs all four path zones to fail at once,
+0.3^4, under one percent. Same sensor, same dropout, two orders of
+magnitude fewer spurious stops. That is
+`test_dropout_does_not_stop_the_robot_dead_the_way_the_scalar_does`, and
+reading a failed zone as `0.0` turns it red immediately -- it would then
+veto *more* often than the scalar, not less.
+
+**Press this.** Set `sim.sensor_noise.enabled: true` with a `dropout_rate`
+of, say, 0.2, restart the robot server, and drive the D-pad at a wall. The
+path zones are outlined on the strip; the readout names the clearance the
+veto reads and where it came from; dropped zones hatch grey and the robot
+keeps going, because seven others answered. Against the wall the strip
+turns red and says FORWARD is vetoed.
+
+**One honest gap in the "done when".** "A wall approached off-centre stops
+the robot at the same distance as one approached head-on" is not
+demonstrable in this simulator, and that is a property of the grid world
+rather than of the code. Walls are axis-aligned and cells are 30cm, so a
++/-15-degree cone and a single ray hit the same wall at nearly the same
+distance -- the geometry that makes a cone worth having (a chair leg, a
+table edge, a wall met at 40 degrees) does not exist here. Said out loud
+rather than covered by a test that would pass because the failure it
+guards against cannot occur, the same way M8 says it. **M10 is where that
+half is measured**, against the sensor and a real room.
+
+**Not deployed**, same as M2: the route change ships with the next ECS
+redeploy.
+
+**As originally specified**, kept below the way M1's and M2's are.
 
 **Why.** `tof/src/lib.rs` distinguishes three outcomes and argues for it:
 

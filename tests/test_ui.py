@@ -870,13 +870,121 @@ def test_the_strip_lines_up_with_the_camera_view_it_measures(browser, twin_serve
     page.close()
 
 
-def test_the_readout_names_the_nearest_zone(browser, twin_server):
-    """The number a person standing next to the robot actually wants, and
-    the one M3's veto will compare against a threshold."""
+def test_the_readout_names_the_clearance_the_veto_actually_reads(browser, twin_server):
+    """The number a person standing next to the robot wants is the one the
+    safety layer is about to compare against a threshold -- not the nearest
+    zone anywhere in the grid, which in a corridor is a side wall the robot
+    is supposed to drive past. Phase M3 changed this readout for exactly
+    that reason."""
     page, _ = _connect_for_depth(browser, twin_server)
     text = page.inner_text("#depth-readout")
-    assert "nearest" in text and "cm" in text, text
+    assert "path" in text and "cm" in text, text
     assert "1×8" in text, f"the readout should name the grid's own shape: {text}"
+    page.close()
+
+
+# ---------- the veto's own zones (phase M3) ----------
+
+
+def test_the_zones_the_veto_reads_are_marked_and_come_from_the_server(browser, twin_server):
+    """Which zones are "the path" is robot-runtime safety logic, so the page
+    must render the server's answer rather than work it out. Marking them at
+    all is the phase's point: "the collar fired" and "the collar fired on
+    THAT" are different things to be able to see."""
+    page, errors = _connect_for_depth(browser, twin_server)
+    served = page.evaluate(
+        "async () => (await (await fetch(document.getElementById('cfg-server-url').value"
+        " + '/depth')).json()).path.indices")
+    marked = page.evaluate(
+        "() => Array.from(document.querySelectorAll('#depth-strip .depth-zone'))"
+        ".map((el, i) => el.classList.contains('path') ? i : -1).filter(i => i >= 0)")
+    assert marked == served, f"page marked {marked}, server said {served}"
+    assert 0 < len(marked) < 8, (
+        f"{len(marked)} of 8 zones marked -- all of them is the whole-grid veto "
+        "that refuses every corridor, one of them is the single beam again")
+    assert not errors, errors
+    page.close()
+
+
+def test_a_blocked_path_says_the_move_would_be_vetoed(browser, twin_server):
+    """The collar firing has to be visible on the strip that explains it,
+    not only as a log line after the fact."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/depth", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "rows": 1, "cols": 4,
+            "zones": [{"status": "range", "distance_cm": 90.0},
+                      {"status": "range", "distance_cm": 8.0},
+                      {"status": "range", "distance_cm": 9.0},
+                      {"status": "range", "distance_cm": 90.0}],
+            "path": {"indices": [1, 2], "clearance_cm": 8.0, "source": "depth_grid",
+                     "blocked": True, "min_distance_cm": 20},
+        })))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_selector("#depth-strip .depth-zone.path", state="visible", timeout=5000)
+    assert "vetoed" in page.inner_text("#depth-readout")
+    assert page.locator("#depth-strip.blocked").count() == 1
+    assert not errors, errors
+    page.close()
+
+
+def test_a_blind_path_says_it_fell_back_to_the_single_beam(browser, twin_server):
+    """The same centimetres from a different sensor is a different
+    situation. "Every path zone was unusable, so this is the old one beam"
+    must not read like "the grid answered" -- that is the distinction the
+    tri-state exists to preserve, and erasing it in the readout would undo
+    the phase in the one place a person looks."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/depth", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "rows": 1, "cols": 4,
+            "zones": [{"status": "range", "distance_cm": 90.0},
+                      {"status": "unusable", "distance_cm": None},
+                      {"status": "unusable", "distance_cm": None},
+                      {"status": "range", "distance_cm": 90.0}],
+            "path": {"indices": [1, 2], "clearance_cm": 45.0,
+                     "source": "distance_sensor", "blocked": False,
+                     "min_distance_cm": 20},
+        })))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_selector("#depth-strip .depth-zone", state="visible", timeout=5000)
+    text = page.inner_text("#depth-readout")
+    assert "single beam" in text, text
+    assert "2 unusable" in text, text
+    assert not errors, errors
+    page.close()
+
+
+def test_nothing_within_range_is_not_reported_as_a_distance(browser, twin_server):
+    """`no_target` carries no number, and the readout must not invent one.
+    Printing "path 0cm" for "nothing is there" would be the exact
+    two-outcome collapse M3 argues against, surfacing in the UI."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/depth", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "rows": 1, "cols": 2,
+            "zones": [{"status": "no_target", "distance_cm": None},
+                      {"status": "no_target", "distance_cm": None}],
+            "path": {"indices": [0, 1], "clearance_cm": None,
+                     "source": "depth_grid_no_target", "blocked": False,
+                     "min_distance_cm": 20},
+        })))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_selector("#depth-strip .depth-zone", state="visible", timeout=5000)
+    text = page.inner_text("#depth-readout")
+    assert "clear beyond range" in text, text
+    assert "0cm" not in text, text
+    assert "vetoed" not in text, text
+    assert not errors, errors
     page.close()
 
 

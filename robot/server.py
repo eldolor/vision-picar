@@ -98,7 +98,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from robot.factory import get_robot, load_config
-from robot.safety import SafetyController, SafetyViolation
+from robot.safety import SafetyController, SafetyViolation, path_zone_indices
 
 logger = logging.getLogger("server")
 
@@ -263,8 +263,31 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
         Unauthenticated backends and pre-M2 servers are the reason
         `RemoteRobot` treats a 404 here as "this server has no depth
-        route", rather than as a transport failure."""
-        return robot.get_depth_grid()
+        route", rather than as a transport failure.
+
+        **`path` is the safety layer's own reduction, published rather than
+        recomputed** (phase M3). The twin draws which zones the veto reads
+        and what it read off them, and it must not work that out for
+        itself: which zones are "the path" is robot-runtime safety logic,
+        and CLAUDE.md section 6 allows the browser to duplicate the *brain*
+        role only. Same reason `/health` publishes `min_distance_cm`
+        instead of letting the page carry a second copy of the threshold.
+        The grid itself is untouched -- `zones` is exactly what the backend
+        returned."""
+        grid = robot.get_depth_grid()
+        clearance, source = safety.path_clearance()
+        grid["path"] = {
+            "indices": path_zone_indices(
+                int(grid.get("rows", 1)), int(grid.get("cols", 0))
+            ),
+            "clearance_cm": clearance,
+            "source": source,
+            # What the veto would say about a FORWARD issued right now.
+            # A clearance of None is "nothing within range", never a block.
+            "blocked": clearance is not None and clearance < min_distance,
+            "min_distance_cm": min_distance,
+        }
+        return grid
 
     @app.get(prefix + "/frame", dependencies=[Depends(require_secret)])
     def frame():

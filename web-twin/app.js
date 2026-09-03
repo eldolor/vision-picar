@@ -536,15 +536,28 @@
       return;
     }
 
-    strip.innerHTML = grid.zones.map(function (z) {
+    // Phase M3: `path` is the safety layer's own reduction, computed
+    // server-side and rendered here. A pre-M3 server sends no `path`, in
+    // which case no zone is marked and the readout falls back to the
+    // nearest zone anywhere -- which is a description, not the veto.
+    var path = grid.path || null;
+    var isPath = {};
+    if (path && path.indices) path.indices.forEach(function (i) { isPath[i] = true; });
+    strip.classList.toggle("blocked", !!(path && path.blocked));
+
+    strip.innerHTML = grid.zones.map(function (z, i) {
       var s = depthZoneStyle(z);
       var title = z.status === "range" ? Math.round(z.distance_cm) + "cm" : z.status;
-      return '<div class="' + s.cls + '" style="' + s.css + '" title="' + title + '"></div>';
+      if (isPath[i]) title += " (path)";
+      return '<div class="' + s.cls + (isPath[i] ? " path" : "") +
+             '" style="' + s.css + '" title="' + title + '"></div>';
     }).join("");
 
     var measured = grid.zones.filter(function (z) { return z.status === "range"; });
     var unusable = grid.zones.filter(function (z) { return z.status === "unusable"; }).length;
-    if (!measured.length) {
+    var shape = grid.rows + "\u00d7" + grid.cols;
+
+    if (!measured.length && !path) {
       // Says which kind of nothing this is. "No depth sensor" and "the
       // sensor is blind right now" are the distinction M3 is built on, and
       // a strip that showed one grey bar for both would erase it.
@@ -553,10 +566,35 @@
         : "depth: nothing within range";
       return;
     }
-    var nearest = Math.min.apply(null, measured.map(function (z) { return z.distance_cm; }));
-    readout.textContent = "depth: " + grid.rows + "\u00d7" + grid.cols +
-      ", nearest " + Math.round(nearest) + "cm" +
-      (unusable ? ", " + unusable + " unusable" : "");
+
+    if (!path) {
+      var nearest = Math.min.apply(null, measured.map(function (z) { return z.distance_cm; }));
+      readout.textContent = "depth: " + shape + ", nearest " + Math.round(nearest) + "cm" +
+        (unusable ? ", " + unusable + " unusable" : "");
+      return;
+    }
+
+    // What the veto reads, and where it got it. The source matters as much
+    // as the number: "the grid answered" and "every path zone was blind so
+    // this is the old single beam" are the same centimetres and very
+    // different situations.
+    var SOURCE_LABEL = {
+      depth_grid: "path zones",
+      depth_grid_no_target: "path zones",
+      distance_sensor: "fallback: single beam",
+    };
+    var body;
+    if (path.clearance_cm === null || path.clearance_cm === undefined) {
+      body = "path clear beyond range";
+    } else {
+      body = "path " + Math.round(path.clearance_cm) + "cm";
+      if (path.blocked) {
+        body = '<span class="veto">' + body + " \u2014 FORWARD vetoed</span>";
+      }
+    }
+    readout.innerHTML = "depth: " + shape + ", " + body +
+      ' <span class="src">(' + (SOURCE_LABEL[path.source] || path.source) +
+      (unusable ? ", " + unusable + " unusable" : "") + ")</span>";
   }
 
 
