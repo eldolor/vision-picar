@@ -67,6 +67,17 @@ and is documented in §5:
 longer included, and `HARDWARE-READINESS.md` is written for that kit
 throughout. A 2-axis SG90 pan/tilt bracket is ~$10-15 separately.
 
+**And it leaves the camera height unspecified, which reaches further than it
+looks.** Stage 0's instruction to shoot at "10cm" was justified in `CLAUDE.md`
+as *the PiCar-X camera height*; nothing here replaces it. Estimating this
+stack -- 65mm wheels, chassis plate ~40mm, a Pi deck on standoffs, the
+bracket above -- lands near **10-13cm**, so the old figure survives by
+accident rather than by reasoning. It is close enough for the re-recorded
+Stage 0 corpus, whose defect is ~150cm against ~12cm, but the real number is
+a **hardware-day pre-flight item**: it sets the viewpoint every recorded walk
+is supposed to imitate, and `robot/safety.py`'s `CHASSIS_WIDTH_CM` wants
+measuring on the same day for the same reason (§5.1).
+
 ### 1.2 Lidar: start at **(a)**, target **(b+)**. Model: **RPLidar C1**
 
 The four ways to use a lidar are in §3.3. Decided:

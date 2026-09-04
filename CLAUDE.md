@@ -325,8 +325,46 @@ instead of the raycaster render. Nothing executes. Walk toward the target
 and see whether following the actions would actually get you there; that
 tests the *loop*, which curated stills cannot.
 
-Hold the phone low, around 10cm -- the PiCar-X camera height. A
-chest-height view is not the robot's view.
+**Put the phone on a wheeled rig at floor height. Do not hold it, and do
+not crawl.** Tape or band it upright -- lens forward, not lying flat -- to a
+shoebox, a book or a small box on a furniture slider, skateboard, baking
+tray or toy truck, and push it with a broom handle while walking upright. A
+robot vacuum works too, if there is one.
+
+The rig is better data as well as easier data, and for reasons that map
+onto exactly what went wrong before: **height is fixed by construction**, so
+it cannot drift with a tiring arm; **tilt is level by construction**, which
+is what a pan/tilt at rest actually does, where the invalid corpus looks
+*down* onto furniture; and the motion is **wheeled and floor-constrained**,
+so it cannot hover over an ottoman -- the impossible viewpoint that made
+every previous walk untestable.
+
+**On the height: ~10-13cm, and do not spend effort tuning it.** The "10cm"
+this file carried for months was justified as *the PiCar-X camera height*,
+and `PLAN-onboard-perception.md` 1.1 replaced that chassis on 2026-09-03
+with a differential-drive one whose camera height **no document currently
+specifies**. Estimating the new stack -- 65mm wheels, chassis plate ~40mm, a
+Pi deck on standoffs, a 2-axis pan/tilt bracket -- lands near 10-13cm, so
+the old number happens to be about right while its stated reason is not.
+The defect being fixed is **~150cm versus ~12cm**, an order of magnitude;
+10 against 15 is a rounding error beside it, and chasing it optimises the
+one variable that was never broken. Settle the real number when the chassis
+is built -- it is a hardware-day pre-flight item.
+
+Two things to lock before starting, both of which cost nothing now and
+cannot be repaired afterwards:
+
+- **Lock landscape orientation.** Three of 33 frames in one 2026-09-02 walk
+  were portrait and the model said so itself -- *"blurry and rotated"*,
+  *"sideways image"*.
+- **Put the rig height in the walk's note** (`PUT
+  /recording/walks/{walk}/meta` takes free text), so the corpus describes
+  its own viewpoint instead of needing this paragraph to interpret it.
+
+A walk is 10-20 frames and the loop is inherently stop-and-shoot -- capture,
+read the action, move about 30cm or turn, capture again. Four to six short
+walks with breaks is the whole job; "twenty minutes" below is session
+wall-clock, not twenty minutes of crawling.
 
 Robot view pauses when the service reports `target_reached`, so a walk
 ends at arrival instead of burning calls. **That field needs an ECS
@@ -578,8 +616,10 @@ before trusting any of it, but this is where it stands:
   `distance_estimate` skew and the table above are all reproducible and all
   suspect for the same reason. **Nothing further should be spent on prompt
   wording until the corpus is re-recorded:** a target on the floor, the
-  phone at ~10cm, both rooms, several walks. That is a phone and twenty
-  minutes, and it is the cheapest high-value item left in Stage 0.
+  camera at robot height on a wheeled rig (see the Stage 0 rig note above --
+  do not hold the phone, and the "10cm" figure is a retired PiCar-X number),
+  both rooms, several walks. That is a phone and twenty minutes, and it is
+  the cheapest high-value item left in Stage 0.
 
 - **Five live walks on 2026-09-02 were evaluated on 2026-09-03. None of them
   is usable as evidence about wording, and the reasons are worth more than
@@ -1128,7 +1168,7 @@ endpoint, on purpose (real hardware has none either).
 
 | Stage | Sub-stage | Press this | You should see |
 |---|---|---|---|
-| 0 | Validate the premise | Guide tab -> Robot view, phone at ~10cm | The move the robot would make from where you stand; pauses on arrival |
+| 0 | Validate the premise | Guide tab -> Robot view, phone on a wheeled rig at ~10-13cm | The move the robot would make from where you stand; pauses on arrival |
 | 2 | B0 `RemoteRobot` | Sim tab -> D-pad, then Remote brain -> Start | Both drive the same robot through the same server; the map follows either one |
 | 2 | B1 `MissionRunner` | Remote brain -> Start | Step count, last action, rooms searched and a log tail advancing ~4 steps/second |
 | 2 | B2 the brain service | Start a mission, then close the tab and reopen it | The mission is further along, or finished. It never needed the page |

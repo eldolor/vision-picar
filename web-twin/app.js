@@ -195,7 +195,7 @@
     autopilotRunning: false, autopilotTimerId: null, autopilotTarget: null,
     autopilotInFlight: false, autopilotCallCount: 0, autopilotMaxCalls: 80,
     guidanceMode: "guide", // "guide" -> /guidance (steer a person); "robot" -> /navigate (what would the robot do)
-    guidanceRunning: false, guidanceTimerId: null, guidanceTarget: null,
+    guidanceRunning: false, guidanceStarting: false, guidanceTimerId: null, guidanceTarget: null,
     guidanceInFlight: 0, guidanceSeq: 0, guidanceLastRenderedSeq: 0,
     // Which run a vision call belongs to. Bumped on every stop, captured at
     // dispatch, compared on return -- see stopGuidance() and guidanceStep().
@@ -212,6 +212,10 @@
     watchdogTimerId: null,
     // Recording a Robot-view walk to the brain, for replay (S2b).
     recordWalk: false, recordWalkName: null, recordSaved: 0, recordFailed: 0,
+    // Which WALK a frame belongs to, which is not the same lifetime as
+    // guidanceEpoch's run -- see recordWalkFrame(). recordOrphaned counts
+    // frames dropped because their walk ended before their answer landed.
+    recordEpoch: 0, recordOrphaned: 0,
     recordSeq: 0,
     // /navigate model A/B (empty string = service default, i.e. omit
     // model_id entirely -- see fetchNavigateModels()).
@@ -2083,6 +2087,10 @@
   }
 
   function beginWalkRecording() {
+    // Any change of walk invalidates every frame still in flight under the
+    // previous one, whether or not a new walk starts. Bumped here and in
+    // endWalkRecording(), and captured at dispatch by guidanceStep().
+    state.recordEpoch++;
     if (!recordingActive()) {
       state.recordWalkName = null;
       // Silence here costs a whole walk. The toggle stays on, every frame
@@ -2098,6 +2106,7 @@
     state.recordWalkName = newWalkName();
     state.recordSaved = 0;
     state.recordFailed = 0;
+    state.recordOrphaned = 0;
     state.recordSeq = 0;
     showToast("Recording this walk as " + state.recordWalkName, "info");
     renderRecordStatus();
@@ -2114,7 +2123,31 @@
   // replays a frame short, with a manifest that disagrees with the
   // directory. Dispatch order is also capture order, which is the order
   // sim/replay_robot.py plays a walk back in.
-  function recordWalkFrame(base64, navigateResult, seq) {
+  function recordWalkFrame(base64, navigateResult, seq, epoch) {
+    // Checked before anything else, so an orphan is counted rather than
+    // falling out of one of the looser guards below unnoticed.
+    // The walk this frame was dispatched under has ended, or been replaced.
+    // Writing it now would file it under whatever walk is current, carrying
+    // the OLD walk's seq and the old walk's prompt wording -- which is
+    // exactly what happened to
+    // bottle-opus-4-5-center-third-path-20260902-163923 (16
+    // center-third-path frames and one bearing-only at seq 37), and it makes
+    // any walk recorded straight after another unattributable.
+    //
+    // guidanceEpoch cannot cover this: it tracks a Guide RUN, and a walk is
+    // a different lifetime -- beginWalkRecording() can rename the walk with
+    // the run's epoch unchanged. Same fix one layer down, its own counter.
+    //
+    // Dropped rather than filed under the old name: endWalkRecording() has
+    // already posted /recording/finish for it, so a late frame would leave
+    // walk.jsonl disagreeing with a walk the admin console has scored.
+    // Counted, because a silently thinned recording is what this whole
+    // class of bug looks like from the outside.
+    if (epoch !== undefined && epoch !== state.recordEpoch) {
+      state.recordOrphaned += 1;
+      renderRecordStatus();
+      return;
+    }
     if (!recordingActive() || !state.recordWalkName) return;
     // Captured before recording began: there is no slot reserved for it.
     if (seq === null || seq === undefined) return;
@@ -2138,6 +2171,9 @@
     if (!state.recordWalkName) return;
     const name = state.recordWalkName, saved = state.recordSaved;
     state.recordWalkName = null;
+    // A frame whose /navigate answer lands after this must not be written
+    // into whatever walk is current by then -- see recordWalkFrame().
+    state.recordEpoch++;
     renderRecordStatus();
     if (saved > 0) {
       // Tell the brain this walk is complete, and hand over the two facts
@@ -2168,7 +2204,8 @@
     if (state.recordWalkName) {
       sub.textContent = "Recording " + state.recordWalkName + " \u2014 " +
         state.recordSaved + " frames saved" +
-        (state.recordFailed ? ", " + state.recordFailed + " failed" : "") + ".";
+        (state.recordFailed ? ", " + state.recordFailed + " failed" : "") +
+        (state.recordOrphaned ? ", " + state.recordOrphaned + " from a previous walk dropped" : "") + ".";
       return;
     }
     sub.textContent = "Saves each frame to the brain service, so the same walk " +
@@ -3434,6 +3471,9 @@
     // two overlapping calls can be handed the same frame number. Null
     // when this frame is not being recorded at all.
     const recSeq = (isRobot && state.recordWalkName) ? state.recordSeq++ : null;
+    // Which WALK this frame belongs to, captured in the same synchronous
+    // block as its seq. Compared on return -- see recordWalkFrame().
+    const recEpoch = state.recordEpoch;
     state.guidanceInFlight++;
     // Budget is reserved at dispatch, not on success. A call that is sent
     // has been paid for whether or not its answer is fresh enough to
@@ -3465,7 +3505,7 @@
       // ones too stale to draw. Dropping them would silently thin a
       // recording that sim/replay_robot.py later plays back frame by
       // frame.
-      if (isRobot) recordWalkFrame(base64, result, recSeq);
+      if (isRobot) recordWalkFrame(base64, result, recSeq, recEpoch);
 
       // Everything past here changes what the person sees or the loop
       // believes, so it must not run for an answer that has been overtaken
@@ -3693,6 +3733,26 @@
   }
 
   async function startGuidance() {
+    // `guidanceRunning` is not set until the bottom of this function, three
+    // awaits away (motion permission, getUserMedia, video metadata), so the
+    // Start button's own `if (state.guidanceRunning)` guard reads false for
+    // both taps of a double-tap and TWO loops start. They share one
+    // guidanceEpoch, so neither can orphan the other's calls, and the second
+    // beginWalkRecording() renames the walk under the first loop's feet --
+    // which is how a frame from the previous walk, with its old wording and
+    // its old seq, ended up in the next walk's directory
+    // (bottle-opus-4-5-center-third-path-20260902-163923, seq 37). It also
+    // doubles the paid call rate against one budget.
+    if (state.guidanceRunning || state.guidanceStarting) return;
+    state.guidanceStarting = true;
+    try {
+      await startGuidanceInner();
+    } finally {
+      state.guidanceStarting = false;
+    }
+  }
+
+  async function startGuidanceInner() {
     document.getElementById("guide-start-error").style.display = "none";
     if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       showGuideStartError(

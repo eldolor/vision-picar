@@ -828,16 +828,34 @@ Do M7 first.
 - **`/navigate` keeps accepting `prompt_variant`** -- replay needs it -- but
   the twin stops sending one, so a live walk records the server's own
   default and can be attributed to it.
-- **Fix the stray-frame contamination** found on 2026-09-03: a `/navigate`
-  call still in flight when a Robot-view session is stopped gets written
-  into the *next* walk's directory, carrying its own wording and its own
-  sequence number. Walk `bottle-opus-4-5-center-third-path-20260902-163923`
-  holds sixteen `center-third-path` frames and one `bearing-only` frame at
-  `seq: 37`. This is the same orphaned-in-flight-call class the Robot-view
-  HUD already fixed with `guidanceEpoch`, one layer down: the recorder
-  needs the same epoch. **Until it is fixed, no walk that follows another
-  walk within one session is safely attributable**, which undercuts every
-  measurement this plan makes.
+- **The stray-frame contamination is FIXED (2026-09-04)**, and the cause was
+  not the one this entry assumed. Walk
+  `bottle-opus-4-5-center-third-path-20260902-163923` holds sixteen
+  `center-third-path` frames and one `bearing-only` frame at `seq: 37`, and
+  the diagnosis here was "a call in flight when a session is *stopped*". It
+  is not: `stopGuidance()` bumps `guidanceEpoch` before any in-flight answer
+  can return, and `recordWalkFrame()` binds the walk name synchronously, so
+  the stop path was already safe.
+
+  **The real cause is a re-entrancy race in `startGuidance()`.** It is
+  `async` and sets `guidanceRunning` only after several awaits (motion
+  permission, `getUserMedia`, video metadata, and -- when recording -- a
+  brain health check), while the Start button's guard reads it
+  synchronously. A double-tap passes the guard twice and **two loops run**.
+  They share one `guidanceEpoch`, so neither can orphan the other's calls,
+  and the second `beginWalkRecording()` renames the walk under the first
+  loop's feet. It also doubles the paid call rate against one budget.
+
+  Fixed in both layers, because they answer different questions. A
+  `guidanceStarting` flag closes the race; and the recorder gained its own
+  **`recordEpoch`** -- bumped by `beginWalkRecording()`/`endWalkRecording()`,
+  captured at dispatch beside `recSeq`, compared before the POST -- so a
+  frame whose walk has been replaced is dropped and counted rather than
+  misfiled, whatever reopens the race next. `guidanceEpoch` cannot cover
+  this: it tracks a *run*, and a walk is a different lifetime.
+
+  `tests/test_ui.py::test_double_tapping_start_does_not_begin_two_walks`
+  reproduces it: two walks from one double-tap before the fix, one after.
 
 **Files.** `web-twin/app.js` (the picker and the recorder's epoch),
 `control/brain_server.py`, `control/walk_replay.py`,

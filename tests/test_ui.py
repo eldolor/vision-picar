@@ -607,6 +607,75 @@ def test_recording_says_so_when_it_cannot_start(browser, twin_server):
         "recording was silently skipped with no brain connected"
     )
     context.close()
+def test_double_tapping_start_does_not_begin_two_walks(browser, twin_server):
+    """The attribution bug of 2026-09-02, as a test.
+
+    `startGuidance()` sets `guidanceRunning` only after several awaits
+    (motion permission, getUserMedia, video metadata, and -- when recording
+    -- a brain health check), while the Start button's guard reads it
+    synchronously. Both taps of a double-tap therefore passed it and two
+    loops ran. They share one `guidanceEpoch`, so neither orphans the
+    other's calls, and the second `beginWalkRecording()` renames the walk
+    under the first loop's feet. A frame dispatched under the old walk then
+    lands in the new walk's directory carrying the OLD wording and the OLD
+    seq -- which is how bottle-opus-4-5-center-third-path-20260902-163923
+    came to hold sixteen center-third-path frames and one bearing-only frame
+    at seq 37, and why no walk recorded straight after another was safely
+    attributable.
+
+    Counted off the toast stack because app.js is one IIFE with no test
+    hooks: `beginWalkRecording()` announces every walk it names, so two
+    toasts means two walks. The clicks are dispatched in ONE JS task, since
+    two Playwright clicks give the first enough time to finish and the race
+    window is the whole point.
+    """
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_record_walk','1');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json({"status": "ok", "mission_running": False,
+                    "recording_allowed": True, "drills_allowed": True,
+                    "tick_timeout_s": 30.0,
+                    "identity": {"git_revision": "abc1234"}})))
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+
+    # Recording needs a connected brain, or beginWalkRecording() takes its
+    # early return and never names a walk at all -- which would make this
+    # test pass against the very defect it is written for.
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+
+    page.evaluate(
+        "() => { const b = document.getElementById('btn-guidance');"
+        " b.click(); b.click(); }")
+    page.wait_for_timeout(2500)
+
+    assert not errors, errors
+    named = page.evaluate(
+        "() => Array.from(document.querySelectorAll('#toast-stack .toast'))"
+        ".filter(t => t.textContent.includes('Recording this walk as')).length")
+    assert named == 1, (
+        f"{named} walks were started by one double-tap -- a second walk "
+        "renames the first under its own loop, which is what makes frames "
+        "unattributable")
+    context.close()
+
+
 # ---------- the environment banner ----------
 
 
