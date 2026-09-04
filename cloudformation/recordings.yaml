@@ -21,6 +21,25 @@ Parameters:
 Resources:
   EfsFileSystem:
     Type: AWS::EFS::FileSystem
+    # The recorded walks are the only dataset this project has -- 39 walks
+    # and 821 frames as of 2026-09-04, plus every replay sidecar scored
+    # against them, and the corpus the whole Stage 0 gate is argued from.
+    # They exist nowhere else: Fargate's own filesystem is why this volume
+    # was created in the first place.
+    #
+    # Retain means a `delete-stack` here leaves the filesystem behind
+    # rather than destroying it. That costs an orphaned resource to clean
+    # up by hand if the teardown was deliberate, which is a far better
+    # failure than the alternative -- and the alternative is reachable by
+    # accident, not just on purpose: a failed CREATE or a rollback on an
+    # UPDATE will delete a replaced resource without ever being asked to.
+    #
+    # UpdateReplacePolicy matters for the same reason and is easy to miss:
+    # several EFS properties are replacement-triggering, so an innocuous
+    # template edit could otherwise roll a new filesystem and bin the old
+    # one with the walks still in it.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Encrypted: true
       FileSystemTags:

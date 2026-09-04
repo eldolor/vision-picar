@@ -48,6 +48,12 @@ Resources:
       RepositoryName: vision-picar-twin
       ImageScanningConfiguration:
         ScanOnPush: true
+      # Without this every image ever pushed is kept forever, for six
+      # repositories -- ECR was $0.92 of a seven-day bill and only grows.
+      # Keeps enough history to roll a deploy back (M11), and nothing more.
+      LifecyclePolicy:
+        LifecyclePolicyText: >-
+          {"rules": [{"rulePriority": 1, "description": "Expire untagged images after 7 days -- a redeploy orphans the previous build, and nothing ever pulls an untagged layer set again.", "selection": {"tagStatus": "untagged", "countType": "sinceImagePushed", "countUnit": "days", "countNumber": 7}, "action": {"type": "expire"}}, {"rulePriority": 2, "description": "Keep the 5 most recent tagged images -- enough to roll back a few deploys, which is what M11's rollback needs.", "selection": {"tagStatus": "any", "countType": "imageCountMoreThan", "countNumber": 5}, "action": {"type": "expire"}}]}
 
   LogGroup:
     Type: AWS::Logs::LogGroup

@@ -9,6 +9,27 @@ Description: >
   call Claude (via Amazon Bedrock) never touch the public internet.
 
 Parameters:
+  # Interface endpoints are billed per endpoint PER AZ per hour, so putting
+  # all five in both private subnets doubles their cost -- about $73/month
+  # at list against $36 in one AZ, which was the single largest line on the
+  # August 2026 bill. They do not need to be in every subnet: private DNS
+  # resolves to whichever ENI exists, and cross-AZ traffic inside a VPC is
+  # ordinary (~$0.01/GB, and the S3 gateway endpoint below already keeps
+  # the bulky ECR layer pulls off that path entirely).
+  #
+  # What "false" costs: if that one AZ has trouble, tasks in the other lose
+  # ECR, Logs, Secrets Manager and Bedrock. For this project that is the
+  # right trade; flip to "true" before anything depends on surviving an AZ.
+  #
+  # NOTE this is unrelated to the ALB, which REQUIRES two AZs and keeps
+  # both its subnets -- ALB/NLB hours are billed per load balancer, not per
+  # AZ, so nothing would be saved by narrowing those anyway.
+  EndpointHighAvailability:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Put interface endpoints in both AZs (about 2x the cost) rather than one.
+
   VpcCidr:
     Type: String
     Default: 10.0.0.0/16
@@ -24,6 +45,9 @@ Parameters:
   PrivateSubnetBCidr:
     Type: String
     Default: 10.0.3.0/24
+
+Conditions:
+  EndpointsInBothAzs: !Equals [!Ref EndpointHighAvailability, "true"]
 
 Resources:
   Vpc:
@@ -147,6 +171,20 @@ Resources:
   # --- VPC endpoints: replace the NAT Gateway's job for the specific AWS
   # services the ECS task needs (ECR image pull, CloudWatch Logs, Secrets
   # Manager, Bedrock), with zero internet egress from the private subnets.
+  #
+  # **The usual "endpoints are cheaper than a NAT Gateway" rule does not
+  # survive five endpoints, and zero egress is the real reason to keep
+  # them.** One NAT Gateway is ~$33/month; five interface endpoints are
+  # ~$73 across two AZs and ~$36 across one -- so on price alone a NAT wins
+  # outright today and roughly ties after the single-AZ default above. What
+  # a NAT would also do is give every task here unrestricted outbound
+  # internet, and PrivateRouteTable has no default route on purpose (see
+  # its own comment). That containment is worth more than the few dollars
+  # between the two.
+  #
+  # Revisit if something inside the VPC ever needs a host with NO interface
+  # endpoint -- pulling model weights at runtime, a non-AWS API. That is a
+  # real reason for a NAT. Cost is not.
   VpcEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -177,7 +215,10 @@ Resources:
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.api"
       VpcEndpointType: Interface
       PrivateDnsEnabled: true
-      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SubnetIds: !If
+        - EndpointsInBothAzs
+        - [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        - [!Ref PrivateSubnetA]
       SecurityGroupIds: [!Ref VpcEndpointSecurityGroup]
 
   EcrDkrEndpoint:
@@ -187,7 +228,10 @@ Resources:
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.dkr"
       VpcEndpointType: Interface
       PrivateDnsEnabled: true
-      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SubnetIds: !If
+        - EndpointsInBothAzs
+        - [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        - [!Ref PrivateSubnetA]
       SecurityGroupIds: [!Ref VpcEndpointSecurityGroup]
 
   LogsEndpoint:
@@ -197,7 +241,10 @@ Resources:
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.logs"
       VpcEndpointType: Interface
       PrivateDnsEnabled: true
-      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SubnetIds: !If
+        - EndpointsInBothAzs
+        - [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        - [!Ref PrivateSubnetA]
       SecurityGroupIds: [!Ref VpcEndpointSecurityGroup]
 
   SecretsManagerEndpoint:
@@ -207,7 +254,10 @@ Resources:
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.secretsmanager"
       VpcEndpointType: Interface
       PrivateDnsEnabled: true
-      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SubnetIds: !If
+        - EndpointsInBothAzs
+        - [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        - [!Ref PrivateSubnetA]
       SecurityGroupIds: [!Ref VpcEndpointSecurityGroup]
 
   BedrockRuntimeEndpoint:
@@ -217,7 +267,10 @@ Resources:
       ServiceName: !Sub "com.amazonaws.${AWS::Region}.bedrock-runtime"
       VpcEndpointType: Interface
       PrivateDnsEnabled: true
-      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      SubnetIds: !If
+        - EndpointsInBothAzs
+        - [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        - [!Ref PrivateSubnetA]
       SecurityGroupIds: [!Ref VpcEndpointSecurityGroup]
 
 Outputs:
