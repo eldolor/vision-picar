@@ -54,8 +54,20 @@ defaulting to `"false"`, and commit `f528126` is titled "Stop paying
 twice for endpoints." **The deployed stack has no such parameter** --
 `describe-stacks` on `vision-picar-network` does not list it, and all
 five interface endpoints are in two subnets. The template edit was never
-deployed. That is $36/month sitting in git, unapplied. It is moot if
-stage 2 happens, and it is the single cheapest win if stage 2 does not.
+deployed. That is $36/month sitting in git, unapplied.
+
+**This is an interim hedge, not part of the target state, and its saving
+must never be added to stage 3's.** The fix halves 10 ENIs to 5, saving
+$36 of the $72. Stage 3 deletes the VPC, so all five interface endpoints
+stop existing and the whole $72 goes -- the fix is superseded, not
+incorporated. Section 2's "$110 of the $159" already counts the full $72
+on that basis, alongside the load balancers and public IPv4.
+
+So: deploy it if stage 2 is more than a few days away, because $36/month
+for one `cloudformation deploy` of a template already in git is the best
+ratio on this list. Skip it if stage 2 is imminent -- it updates a stack
+that is about to be deleted. Either way it changes nothing about stage
+3.
 
 ---
 
