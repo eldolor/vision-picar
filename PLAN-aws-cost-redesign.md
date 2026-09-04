@@ -27,7 +27,7 @@ with no deployment on it:
 | `Fargate-ARM-vCPU/GB` | 1.422 | **42.66** | 6 tasks x 0.25 vCPU / 0.5 GB |
 | `LoadBalancerUsage` | 1.084 | **32.52** | NLB + internal ALB |
 | `PublicIPv4:InUseAddress` | 0.240 | **7.20** | 2 NLB addresses |
-| `SecretsManager` | 0.123 | **3.69** | 8 secrets, 6 of them this project's |
+| `SecretsManager` | 0.097 | **2.90** | 8 secrets, 6 of them this project's |
 | ECR, S3, LCU, endpoint bytes | ~0.05 | ~1.50 | endpoint *data processing* is $0.16/mo, nothing |
 | | | **~159** | |
 
@@ -42,10 +42,17 @@ the daily series was looked at. **Pull `--granularity DAILY`, drop the
 current day, drop any day with a deploy, and read the flat part.**
 
 Sanity check the Fargate line arithmetic rather than trusting a total:
-ARM Fargate in us-east-2 is $0.032384/vCPU-hr and $0.003556/GB-hr, so
-0.25 vCPU + 0.5 GB is $0.009874/hr per task, x 6 x 24 = $1.422/day. When
-the measured number matches the arithmetic to three decimals, that is a
-day with no deployment on it.
+ARM Fargate in us-east-2 was $0.032384/vCPU-hr and $0.003556/GB-hr as of
+2026-09, so 0.25 vCPU + 0.5 GB is $0.009874/hr per task, x 6 x 24 =
+$1.422/day. When the measured number matches the arithmetic to three
+decimals, that is a day with no deployment and no change in task count.
+
+The deploy-day inflation reaches further than ECS and ELB, which is why
+the rule is "drop the day" and not "drop two lines": the Secrets Manager
+figure in the table above was first recorded as $3.69/month from the same
+contaminated three-day window. Measured on clean days it is $0.093-0.103
+per day, i.e. ~$2.90 -- consistent with 8 secrets at $0.40 plus a little
+API traffic, where $3.69 was consistent with nothing.
 
 ### The one finding worth acting on immediately
 
@@ -78,16 +85,40 @@ private VPC."** Endpoints, two load balancers and public IPv4 exist only
 to get traffic in and let tasks reach ECR, Logs, Secrets Manager and
 Bedrock. None of it buys capability.
 
-And one component forces the whole chain: **EFS is the only thing in this
-deployment that genuinely requires a VPC.** Bedrock, S3, Secrets Manager
-and CloudWatch are all reachable from a Lambda with no VPC at all. EFS is
-not. Remove it and the requirement dissolves -- which is why stage 1 was
-first, and why it was worth doing even if stages 2 and 3 never happen.
+And one component was the *blocker*, which is a narrower claim than it
+first looks and is worth stating precisely, because an earlier draft of
+this document got it wrong. Three things impose a VPC on the deployment
+as it stands today (the table below), and Fargate is one of them -- so
+"EFS is the only thing that requires a VPC" is false about the current
+architecture.
 
-The workload is one phone, a few hours a week, idle >95% of the time,
-against a `/navigate` call that already takes 1-3s. Hourly-priced
-always-on infrastructure is the wrong shape for it; cold starts are free
-in practice.
+What is true, and is the load-bearing point: **EFS is the only one that
+would still require a VPC after the compute moves.** Swap Fargate for
+Lambda and the load balancers for CloudFront, and Bedrock, S3, Secrets
+Manager and CloudWatch are all reachable with no VPC at all -- EFS alone
+would have dragged one back. It is the constraint that survives every
+other substitution, which is why stage 1 was first and why it was worth
+doing even if stages 2 and 3 never happen.
+
+The workload is one phone against a `/navigate` call that already takes
+1-3 seconds, and it is bursty: Bedrock spend over the ten days to
+2026-09-03 ran $0.61 to $10.65 a day, a 17x spread, with the
+infrastructure billed at a flat ~$5.30/day underneath it regardless.
+
+Note what that data does *not* say. An earlier draft claimed the system
+was "idle >95% of the time" and used "a few hours a week"; neither was
+measured, and the daily series actually shows non-zero Bedrock activity
+on **every one of those ten days**. The defensible claim is the one
+above -- low-volume and highly variable demand priced against fixed
+always-on capacity -- not a specific idle fraction, which nothing here
+establishes.
+
+Cold starts are correspondingly cheap **relative to the call they wrap**,
+which is the only comparison that matters: a boto3-only Python function
+initialises in well under a second, against a vision call that takes one
+to three, and only on the first invocation of a warm period. That is a
+small proportional penalty, not a free one, and it should be measured
+after stage 3 rather than assumed.
 
 ### Why no VPC *at all*, rather than a cheaper one
 
@@ -126,10 +157,13 @@ This is a deliberate property being traded away, not an accident, and
 > public internet**.
 
 A VPC-less Lambda calling Bedrock reaches the public `bedrock-runtime`
-endpoint. It is still TLS and still SigV4-signed, and it still rides
-AWS's backbone rather than the open internet -- but it is a public
-endpoint rather than a private ENI, which is precisely the distinction
-the original design was built around. Security groups also stop being a
+endpoint: a publicly resolvable name, still TLS and still SigV4-signed,
+but a public endpoint rather than a private ENI -- precisely the
+distinction the original design was built around. Whether such traffic
+physically leaves AWS's network is not something this project can verify
+or control, so do not lean on "it stays on the backbone" as the
+reassurance; the honest statement is that authentication and encryption
+are unchanged and network-level isolation is gone. Security groups also stop being a
 control on those functions, and a static egress IP stops being possible.
 
 For a hobby robot with no regulated data, no database and no allowlisting
@@ -244,9 +278,17 @@ before the EFS copy stops existing.
    S3       <- corpus + static assets
 ```
 
-Target fixed cost: **under $2/month.** CloudFront ~$0, Lambda ~$0 idle,
-S3 ~$0.10, SSM Parameter Store (Standard) free where Secrets Manager was
-$0.40 each. No ECR if the Lambdas are zip-packaged.
+Target fixed cost: **an estimated under $2/month** -- CloudFront ~$0,
+Lambda ~$0 idle, S3 ~$0.10, SSM Parameter Store (Standard) free where
+Secrets Manager was $0.40 each, and no ECR if the Lambdas are
+zip-packaged. Unlike section 1's numbers this one is projected, not
+measured, and should be checked against a real bill a month after stage 3
+lands.
+
+The CloudFront component is the one part with evidence: the existing
+distribution cost **$0.005 in August 2026 and $0.0009 so far in
+September** -- it already serves the whole app and rounds to nothing, so
+the free-tier assumption is not doing much work.
 
 ### What has to be built
 
@@ -267,6 +309,17 @@ $0.40 each. No ECR if the Lambdas are zip-packaged.
   for the result). It already exceeds the 60s load-balancer timeout and
   is worked around by polling for a sidecar; Lambda makes fixing it
   natural rather than optional.
+- **`GET /recording/walks/{walk}/download` will break on a naive Lambda
+  port, and this is measured, not predicted.** A Function URL's buffered
+  response is capped at 6MB. Zipping the real corpus:
+  `red-backpack-20260829-184355` is **8.64MB** and
+  `red-backpack-20260829-185029` is **6.68MB** -- **2 of 39 walks already
+  exceed the limit**, and both are `red-backpack` walks, i.e. the ones
+  most likely to be pulled for analysis. The fix is to redirect to a
+  presigned S3 URL instead of proxying bytes through the function, which
+  is better than the status quo regardless: it takes the whole corpus off
+  the compute path. The JSON routes are nowhere near the ceiling (the
+  walk list is 29KB) and the largest single frame is 147KB.
 
 ### Things NOT to move to AWS
 
@@ -296,13 +349,28 @@ tier, not evidence that ingress works.
 
 **Stand up one throwaway Lambda Function URL and curl it from
 off-network before committing to stage 3.** Ten minutes. If it fails, the
-fallbacks that still avoid a VPC are App Runner (~$5/month, own HTTPS
-endpoint) or Lightsail containers (~$7/month) -- one service, not six.
+fallbacks that still avoid a VPC are App Runner (own HTTPS endpoint, no
+load balancer) or Lightsail containers -- one service, not six. The
+~$5/month and ~$7/month figures usually quoted for those are **carried
+over from another analysis and have not been verified against current
+pricing or against us-east-2 availability**; price them before relying on
+them, because the whole argument for this fallback is that it is cheap.
 
 By contrast, deleting the NLB and making the ALB internet-facing is *not*
-the same gate: `vision-picar-nlb` is internet-facing today and serving
-~21k requests/day, so internet-facing ELB ingress has continuous positive
-evidence on this account.
+the same gate -- but be careful which evidence you cite for that. An
+earlier draft pointed at the ALB's ~21k requests/day, which is **bad
+evidence**: that volume is dominated by health checks, including the NLB
+target group's own checks against the ALB, all of which originate inside
+AWS and prove nothing about ingress from outside it.
+
+The good evidence is first-hand: on 2026-09-04 this project pulled the
+walk list and **39 walk archives** from
+`vision-picar-nlb-...elb.us-east-2.amazonaws.com` from a laptop off the
+AWS network, every one HTTP 200. That is real internet ingress through an
+internet-facing ELB on this account, today. The open question for that
+change is only whether an internet-facing *ALB* behaves differently from
+an internet-facing *NLB*, and there is no mechanism by which the account
+restriction would distinguish them.
 
 ---
 
