@@ -544,7 +544,9 @@ The consequence for any future redesign is in
 `PLAN-aws-cost-redesign.md` section 6. In short: CloudFront in front of a
 Function URL cannot work here, and the one Lambda pattern that might is
 an API Gateway integration carrying an explicit `credentials` role, which
-assumes a role rather than relying on the function's resource policy.
+assumes a role rather than relying on the function's resource policy --
+**measured working the same day**, anonymously, from off the AWS network,
+with the function carrying no resource policy at all.
 
 ## Is this deviating from the hardware integration plan?
 

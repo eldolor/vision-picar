@@ -6,7 +6,7 @@ Status as of 2026-09-04:
 |---|---|---|
 | 1 | Recorded walks off EFS, onto S3 | **DONE** (commit `b42bee6`), data migrated and verified |
 | 2 | Tear down the VPC and everything that needs one | **SPECIFIED, NOTHING DELETED** |
-| 3 | Rebuild without a VPC | **BLOCKED** -- section 6's gate ran and killed the CloudFront->Function URL design; one untested alternative remains |
+| 3 | Rebuild without a VPC | **SPECIFIED, NOTHING BUILT.** Section 6's gate ran: Function URLs are unusable here, API Gateway + a credentials role works and is the design |
 
 Written to hand stages 2 and 3 to a session that was not present for the
 measuring. Most of the value here is in section 1 and section 7: the
@@ -261,12 +261,14 @@ before the EFS copy stops existing.
 
 ## 5. Stage 3 -- the architecture without a VPC (SUPERSEDED IN PART -- READ SECTION 6 FIRST)
 
-> **The Lambda Function URL half of this diagram cannot be built on this
-> account.** The gate in section 6 ran on 2026-09-04 and found that
-> resource-based policies do not grant invocation here, which rules out
-> CloudFront + Origin Access Control in front of a Function URL. The S3
-> static-asset half, the storage model and the cost target are unaffected.
-> What replaces the compute tier is section 6's open question.
+> **The two "Lambda Function URL" boxes below are wrong.** The gate in
+> section 6 ran on 2026-09-04: resource-based policies do not grant
+> invocation on this account, so CloudFront + Origin Access Control in
+> front of a Function URL cannot work. Lambda itself is fine -- reach it
+> through an **API Gateway HTTP API whose integration carries a
+> `credentials` role**, which is measured working. Read section 6, then
+> read this diagram with `Function URL` replaced by `API Gateway -> Lambda`.
+> The S3 half, the storage model and the cost target are unaffected.
 
 ```
                           Phone
@@ -342,7 +344,7 @@ CORS" property only covers the S3/Lambda half.
 
 ---
 
-## 6. The gate -- RUN 2026-09-04, and it changed the answer
+## 6. The gate -- RUN 2026-09-04. Lambda survives, by a different door
 
 **Result: Lambda resource-based policies do not grant invocation on this
 account. Identity-based auth works normally, including public HTTPS
@@ -384,19 +386,49 @@ not a member of an AWS Organization.
 Section 5's diagram cannot be built as drawn. Do not spend time on it
 until the item below is settled.
 
-### The one Lambda pattern that might still work -- UNTESTED
+### The pattern that works -- TESTED 2026-09-04, and Lambda survives
 
-An API Gateway integration accepts an explicit **`credentials` role ARN**.
-The gateway then *assumes that role* and invokes the function with
-identity-based auth, never consulting the resource policy -- the one
-column in the table above that works. This is plausibly also why the
-original 2026-08 attempt failed: the default wiring for both a Function
-URL and an API Gateway integration is a resource-policy grant.
+**An API Gateway HTTP API whose integration carries an explicit
+`credentials` role ARN.** The gateway *assumes that role* and invokes the
+function with identity-based auth, never consulting the resource policy
+-- the one column in the table above that works.
 
-This is the next thing to test, and it decides Stage 3's shape: Lambda at
-roughly $2/month if it works, App Runner or Lightsail otherwise.
+Measured, in the same session, with the function carrying **no resource
+policy at all** (`get-policy` returned `ResourceNotFoundException`), so
+the credentials role was the only possible authorisation:
 
-### If that fails too
+| Request | Result |
+|---|---|
+| Anonymous `GET` from a laptop off the AWS network | **200**, function invoked, real source IP logged |
+| Anonymous `POST` with a JSON body | **200**, function invoked |
+| Warm-path latency | ~0.25s |
+
+All three request ids appeared in CloudWatch, so these were real
+invocations and not an edge response. Note the `POST` in particular: it
+carried a body without trouble, because API Gateway assumes a role rather
+than signing the request, so none of the payload-signing problems that
+afflict CloudFront OAC apply.
+
+**So Stage 3 stays on Lambda.** The compute tier becomes:
+
+    CloudFront ──> S3 origin            (static SPA)
+              └──> API Gateway HTTP API (custom origin, ordinary
+                        │                 CloudFront->public-endpoint hop,
+                        │                 no OAC and no resource policy)
+                        └──> Lambda, invoked via the integration's
+                             credentials role
+
+CloudFront is still wanted -- it puts the SPA and the API under one
+origin, which keeps the path-behaviour discipline and avoids CORS -- but
+it now fronts API Gateway rather than a Function URL, which is an
+unremarkable custom-origin hop with none of the authorisation problems
+above.
+
+Cost impact is negligible: HTTP APIs are ~$1.00 per million requests,
+against a workload measured in thousands per day. Keep the section 5
+target of a couple of dollars a month.
+
+### If a later change breaks that path
 
 Fall back to a single always-on container with its own HTTPS endpoint and
 no VPC: App Runner, or Lightsail containers. One service, not six. **The
