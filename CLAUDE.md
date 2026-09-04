@@ -303,13 +303,22 @@ vision-picar/
 │                               arbitration, a health verdict and a rollback.
 │                               M1-M5 BUILT (2026-09-03, not deployed), M6-M12
 │                               proposed; seven need no hardware
-└── PLAN-onboard-perception.md  what runs on the car itself -- and the hardware
-                                chain that question turned out to be hiding.
-                                DESIGN SETTLED, NOTHING BUILT. Supersedes parts
-                                of HARDWARE-READINESS.md and retires phase S6;
-                                its section 5 says exactly what. Read it before
-                                any hardware purchase -- the chassis is no
-                                longer a PiCar-X
+├── PLAN-onboard-perception.md  what runs on the car itself -- and the hardware
+│                               chain that question turned out to be hiding.
+│                               DESIGN SETTLED, NOTHING BUILT. Supersedes parts
+│                               of HARDWARE-READINESS.md and retires phase S6;
+│                               its section 5 says exactly what. Read it before
+│                               any hardware purchase -- the chassis is no
+│                               longer a PiCar-X
+└── PLAN-aws-cost-redesign.md  the ~$159/month of fixed AWS cost, where it
+                                comes from, and the rebuild that removes
+                                ~$110 of it. Stage 1 (walks off EFS, onto
+                                S3) is DONE; the VPC teardown and the
+                                VPC-less rebuild are SPECIFIED, NOT BUILT.
+                                Read section 1 before quoting any cost
+                                number and section 6 before trusting the
+                                design -- its central assumption is still
+                                untested
 ```
 
 ---
