@@ -89,6 +89,62 @@ against a `/navigate` call that already takes 1-3s. Hourly-priced
 always-on infrastructure is the wrong shape for it; cold starts are free
 in practice.
 
+### Why no VPC *at all*, rather than a cheaper one
+
+A VPC is not infrastructure you decide to have. It is a requirement
+imposed by what you run, and exactly three things imposed it here:
+
+| Component | Why it forced a VPC |
+|---|---|
+| ECS Fargate | `awsvpc` is its only network mode; a task cannot be defined without subnets |
+| EFS | reachable only via mount targets, which are ENIs in subnets -- there is no public EFS endpoint |
+| ALB / NLB | load balancers live in subnets by definition |
+
+Stage 3 removes all three: EFS became S3 in stage 1, Fargate becomes
+Lambda, and the load balancers become CloudFront plus Function URLs --
+AWS-managed edge infrastructure, not resources in anyone's network. And
+**Lambda runs outside a VPC by default.** You attach one only when a
+function must reach something private (RDS, an internal ALB, an EFS
+mount). Nothing in the target state is private.
+
+The key realisation about the $72: **the five interface endpoints do not
+provide access, they restore access that the private-subnet choice
+removed.** `network.yaml` provisions no NAT gateway, so those subnets
+have no internet route at all, and every AWS service the tasks need --
+Bedrock, ECR, Logs, Secrets Manager -- then requires its own paid private
+door. Outside a VPC those are ordinary public API endpoints, reachable
+with SigV4 like any other AWS call. The $72/month is the price of a
+self-imposed constraint, not of a capability.
+
+### What that spends, and it is not nothing
+
+This is a deliberate property being traded away, not an accident, and
+`cloudformation/network.yaml`'s own description states it:
+
+> No NAT Gateway -- the private subnets have no internet route at all...
+> so the tasks that call Claude (via Amazon Bedrock) **never touch the
+> public internet**.
+
+A VPC-less Lambda calling Bedrock reaches the public `bedrock-runtime`
+endpoint. It is still TLS and still SigV4-signed, and it still rides
+AWS's backbone rather than the open internet -- but it is a public
+endpoint rather than a private ENI, which is precisely the distinction
+the original design was built around. Security groups also stop being a
+control on those functions, and a static egress IP stops being possible.
+
+For a hobby robot with no regulated data, no database and no allowlisting
+requirement, that is a reasonable trade. **State it as a trade.** Stage 3
+spends a deliberate security property to save ~$110/month; it does not
+discover that the property was never there.
+
+It is genuinely either/or: the property can be kept by putting the
+Lambdas *in* a VPC with interface endpoints, and that reinstates the
+entire $72, which defeats the exercise.
+
+**Reasons the VPC comes back**, so a later session recognises them: a
+database, a required fixed egress IP, anything self-hosted the functions
+must reach privately, or a compliance requirement. None apply today.
+
 ---
 
 ## 3. Stage 1 -- walks off EFS (DONE)
