@@ -539,8 +539,8 @@ Three things not to get wrong about this seam:
    `within_one_step` comes back on 60% of real walk frames, so enabling it
    would block roughly three FORWARDs in five -- the same never-FORWARD
    stall the 3x3 prompt matrix already found. See `CLAUDE.md`'s Stage 0
-   notes before turning it on, and do not carry it onto the PiCar: there
-   the ultrasonic is the obstacle sensor.
+   notes before turning it on, and do not carry it onto the car: there
+   the lidar is the obstacle sensor.
 
 ### Running it
 

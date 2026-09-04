@@ -15,14 +15,14 @@ Goal: today, walking around with a phone in Robot view proves the vision
 *model* can read a room. It proves nothing about the *brain* -- the
 mission memory, the failure budget, the timeouts, `MissionRunner`, any of
 `control/`. This plan wires Robot view into `control/brain_server.py` so
-that a walk through a real house exercises the exact same code a PiCar
+that a walk through a real house exercises the exact same code the car
 will run on, live and closed-loop, with the section 7 rule in mind:
 **a phase isn't done until someone holding a phone can watch it work.**
-Get this right and buying the PiCar-X becomes what `PLAN-brain-relocation.md`
+Get this right and buying the hardware becomes what `PLAN-brain-relocation.md`
 already promises for the robot side -- a config change, not new code --
 except now it's true for the *brain* side too: no code currently reads a
 live camera through `MissionRunner`; after this, a phone is one working
-instance of "live camera," and a PiCar is another.
+instance of "live camera," and the car is another.
 
 ---
 
@@ -115,7 +115,7 @@ decided in advance.
 - `stop()` -- ack.
 - `get_distance()` -- returns `NO_SENSOR_CM` (999.0, matching
   `replay_robot.py`'s constant and its documented reasoning: honestly
-  represent "no ultrasonic here" rather than fake a safe number).
+  represent "no distance sensor here" rather than fake a safe number).
 
 **Files.** New `sim/teleop_robot.py`. `robot/factory.py` gains a
 `mode == "teleop"` branch. `config/robot.yaml` documents the new mode

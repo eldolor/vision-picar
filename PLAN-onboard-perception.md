@@ -1,11 +1,17 @@
 # Plan: perception on the car itself
 
-Status: **design settled, nothing built** · Date: 2026-09-03 · Phase IDs: none assigned yet
+Status: **design settled, nothing built** · Date: 2026-09-03, detector revised 2026-09-04 · Phase IDs: none assigned yet
 
 Started as a holding pen after reading Microduck -- *what could run on the car
 itself?* -- and became the place where a chain of hardware and architecture
 decisions got made. Sections 1-3 are those decisions and the reasoning behind
 them. Nothing here is implemented.
+
+**Revised 2026-09-04:** the on-board detector moved from the Raspberry Pi AI
+Camera (Sony IMX500) to a **Hailo-8L AI HAT+ with a Camera Module 3**, before
+anything was ordered. 1.10 holds the decision; §4 holds the three-way
+comparison (IMX500 vs Hailo vs Jetson) that made it; 3.6's bill of materials
+is updated. Everything else in the plan stands.
 
 **It supersedes parts of two other documents.** Section 5 lists exactly what,
 because the chassis decision in 1.1 makes `HARDWARE-READINESS.md` partly wrong
@@ -175,9 +181,13 @@ in with real geometry**, and nothing implements the visual half.
 room labels and nothing else -- roughly what exists today, and not good. That is
 an honest interim rather than an elaborate workaround.
 
-**One consequence that reaches Q4:** "can the IMX500 emit an embedding, or only
-boxes?" was load-bearing while the visual-edge design was live. It is now
-**moot**, and Q4 turns on detection quality alone.
+**One consequence that reached Q4, then reversed:** "can the detector emit an
+embedding, or only boxes?" was load-bearing while the visual-edge design was
+live, and became moot when the design was cancelled. The 2026-09-04 detector
+choice (1.10) restores the capability anyway -- the Hailo model zoo carries
+re-identification and place-recognition CNNs -- so if the topological map ever
+comes back, the embedding is available without a hardware change. Nothing is
+being built on that.
 
 ### 1.7 Goal vocabulary: **closed and versioned, three verbs**
 
@@ -249,36 +259,57 @@ working a stop condition through properly.
 
 ### 1.9 A live tension -- **CLOSED by 1.10**
 
-**4.5's "accelerator possibly never" and 1.8's `approach` pull against each
+**"Accelerator possibly never" and 1.8's `approach` pulled against each
 other.** With no on-device detector the target bearing arrives at deliberation
 rate -- **1-3 seconds stale** -- so `approach` is open loop on the semantic half
 while the lidar closes the loop on clearance. This project has been burned by an
 open-loop assumption before (`sim/replay_robot.py`'s docstring).
 
-Three ways out: a **cheap CPU detector** (stock YOLO11n on the Pi 5's own cores,
-a few Hz, no accelerator and no purchase); accept open-loop `approach` over
-short hops and let the planner re-issue, which erodes the trigger discipline; or
-**let the lidar carry it once locked** -- take one bearing fix, then track that
-geometric feature in the scan while closing. The first is cheapest, the third is
-the most elegant and the most work. **Q4's subject.**
+Three ways out were weighed: a **cheap CPU detector** (stock YOLO11n on the Pi
+5's own cores, a few Hz, nothing to buy); accept open-loop `approach` over short
+hops and let the planner re-issue, which erodes the trigger discipline; or **let
+the lidar carry it once locked** -- take one bearing fix, then track that
+geometric feature in the scan while closing.
 
-**Resolved by buying the sensor (1.10).** With an on-sensor detector the bearing
-is fresh at sensor rate, so `approach` is closed loop on both halves -- the
-detector for direction, the lidar for distance. None of the three workarounds is
-needed.
+**Resolved by putting a detector on the car (1.10).** With an on-board detector
+the bearing is fresh at camera rate, so `approach` is closed loop on both halves
+-- the detector for direction, the lidar for distance. None of the three
+workarounds is needed. The CPU-only detector survives as the day-one baseline
+(4.4), not as the design.
 
-### 1.10 The reactive tier: **two layers**, and an IMX500
+### 1.10 The reactive tier: **two layers**, and a Hailo-8L
 
-**Decided: the AI Camera (Sony IMX500) up front**, not a Camera Module 3 with an
-accelerator deferred. It runs its network **on the sensor**, so detection costs
-the Pi's cores nothing -- which matters most exactly where it would be felt,
-under (b+), sharing four cores with `slam_toolbox` and nav2.
+**Decided 2026-09-04: a Hailo-8L AI HAT+ and a Camera Module 3.** The first
+decision here (2026-09-03) was the Raspberry Pi AI Camera, whose Sony IMX500
+runs a detector on the sensor itself. It was reversed a day later, before
+anything was ordered, on one requirement the original evaluation had not
+weighed: **the detector must not be locked to the nano tier.** §4 holds the
+full three-way comparison (IMX500 vs Hailo vs Jetson) and the reasoning; this
+section holds the decision and what it commits to.
 
-**And that decision simplified the design it was made for.** A three-layer
-scheme had been proposed: VLM for identity, **lidar blob tracking** for
-continuous bearing, and a CPU detector to re-acquire when tracking broke. Layer
-two existed for one reason -- *you should not have to re-detect the target ten
-times a second*. With an on-sensor detector that is free and continuous, so:
+**Why not the IMX500.** Its ~8MB of on-sensor memory is a silicon ceiling, not
+a tuning limit: one nano-class model resident at a time, no path to feed it a
+stored frame, and every capability that makes perception more interesting than
+"a box for a COCO class" sits above that line -- the `s` and `m` YOLO tiers for
+a small target across a room, floor segmentation and depth beside the detector,
+CLIP over crops for "the red one". Buying it would have paid $70 to close the
+door the project wants open. Its two real advantages -- zero Pi CPU and a free
+PCIe slot -- are worth less than that door (4.6).
+
+**Why not a Jetson.** A Jetson Orin Nano is the only board on which a Hugging
+Face model runs without a compile step. It was ruled out **for now** on cost
+(~$170-220 over the Pi 5 plan), power (three times a Pi at 15W, and no 5V USB
+supply), the loss of the Pi camera stack, and 8GB shared with the GPU that
+cannot hold SLAM, nav2, a detector and a local VLM at once. 4.7 keeps the
+evaluation, because it is the on-board upgrade path if flexible inference ever
+becomes the point rather than a wish.
+
+**And the decision simplified the design it was made for**, exactly as the
+IMX500 one had. A three-layer scheme had been proposed: VLM for identity,
+**lidar blob tracking** for continuous bearing, and a CPU detector to
+re-acquire when tracking broke. Layer two existed for one reason -- *you should
+not have to re-detect the target ten times a second*. With a continuous
+on-board detector that is free, so:
 
 | | Was going to be | Now |
 |---|---|---|
@@ -286,34 +317,62 @@ times a second*. With an on-sensor detector that is free and continuous, so:
 | Range to target | lidar at the tracked blob | **lidar at the detector's bearing** -- 1.8, already decided |
 | Re-acquisition | a CPU detector as backup | **not a thing** -- tracking cannot break if detection never stopped |
 
-**Same shape as 1.6:** an intricate mechanism designed around an absence,
-cancelled once the absence was filled. What remains is what 1.8 already
-specified -- the detector points, the lidar measures -- plus the VLM as the
-deliberation tier that already exists. No new tracking machinery.
+What remains is what 1.8 already specified -- the detector points, the lidar
+measures -- plus the VLM as the deliberation tier that already exists. No new
+tracking machinery.
 
-#### Why not a CPU detector
+#### What it commits to
 
-Under (a) a single-class detector at a few Hz is comfortable on four
-Cortex-A76 cores and costs nothing. Under (b+) it shares those cores with SLAM,
-which is a sustained load. Paying ~$40 to move the work onto the sensor buys
-CPU headroom at exactly the point the design gets tight, and closes the camera
-question rather than deferring it.
+1. **A compile step per model.** Every model goes PyTorch -> ONNX -> Hailo's
+   Dataflow Compiler -> HEF, on an x86-64 Ubuntu host with a calibration set
+   of a few hundred frames. There is no Mac path; the practical compile host
+   is an EC2 instance for an hour per model (4.3). **Build that loop before
+   the hardware arrives** -- one YOLO11n from Hugging Face to a HEF, and a
+   script that scores it over the recorded walks on EFS. If the loop exists
+   on day one the Hailo is a sandbox; if it never gets built, the Hailo is a
+   fixed-function part and the IMX500 was the cheaper way to get one.
+2. **The PCIe lane.** The AI HAT+ takes the Pi 5's single PCIe connector, and
+   so does the NVMe HAT that 3.6 calls the one optional item worth buying.
+   Decide at ordering time between a high-endurance microSD plus a
+   clean-shutdown habit, or the M.2-module form of the Hailo-8L on a
+   dual-slot switch board (~$40, reported to work, **unverified**).
+3. **5V/5A is firm.** The HAT draws ~1.5W typical and peaks higher, all from
+   the Pi's rail (1.3).
+4. **CPU is small but not zero.** The chip does the convolutions; the Pi still
+   captures, resizes and runs whatever post-processing Hailo leaves on the
+   host -- a few percent of one core for a nano detector. Fine under (a),
+   minor under (b+).
+5. **Not the Hailo-8.** The 26 TOPS part buys nothing here: the camera's 30fps
+   bounds a nano or small detector either way (4.4).
+6. **Check the AI HAT+ 2 once, then stop waiting for it.** If the Hailo-10H is
+   in stock at ~$130 and its small-VLM support is documented for real models,
+   the extra $60 turns a detection sandbox into a broader one. If either is
+   unverified at ordering time, take the 8L.
+7. **Stacking, unverified.** The HAT sits above the active cooler on 16mm
+   standoffs. Whether it passes the 40-pin header through, and whether the
+   Yahboom encoder board wants that header or wires to it, are two questions
+   for 3.8's seller list.
 
-#### What it commits to, and the one thing to verify first
+#### What it buys that the plan had not weighed
 
-The IMX500 runs models compiled through **Sony's toolchain**, not arbitrary
-ONNX -- the same class of friction as Hailo's DFC.
-
-1. **Verify the bundled model zoo covers COCO before ordering.** The Raspberry
-   Pi AI Camera ships example models (MobileNet-SSD class); COCO's 80 should
-   include `backpack` and `bottle`. If so, 4.2's zero-training finding holds.
-   **This is the one check that could undermine the choice.**
-2. **A custom class later is a toolchain project**, not an afternoon. Fine
-   while COCO covers the targets.
-
-**A limitation that no longer matters:** the IMX500 emits detections, not
-embeddings. That was the sub-question withdrawn when 1.6 cancelled the
-visual-edge design, so the decisions stay consistent.
+- **CLIP over crops answers "the red one".** COCO says `backpack`, not `red
+  backpack`. 4.2 had proposed an HSV check on the crop. With the detector for
+  boxes and CLIP's image encoder (in the Hailo model zoo, in both ViT-B/32 and
+  ResNet-50 forms) scoring each crop against the mission's actual target
+  string, the on-board layer gets a text-conditioned re-ranker -- not full
+  open-vocabulary detection, but "this one, not that one" without colour code.
+- **The detector can be scored on the recorded corpus.** A Hailo runs on
+  frames the Pi captured, so the same HEF can be fed the walks already on EFS
+  and scored with `control/walk_eval.py` before it ever drives the car. The
+  IMX500 could not be fed a stored image at all. For a project whose rule is
+  "prove it first" (`CLAUDE.md` §7), that is a material difference.
+- **Any camera, and the same frame the VLM sees.** A Camera Module 3 with
+  autofocus, a wide-angle or global-shutter module, or a USB camera all work,
+  and the detector and the cloud VLM look at the identical frame -- which
+  keeps 1.11's arbitration honest.
+- **Several models resident at once.** HailoRT's scheduler time-slices HEFs,
+  so detector + CLIP + a floor-segmentation model can run together. The
+  IMX500 runs one.
 
 ### 1.11 Arbitration: split by question, not by authority
 
@@ -336,6 +395,12 @@ COCO detector is measurably better than a VLM at the one thing `approach` needs,
 because a bounding box is a bearing and "slightly to the left" is not. Stage 0
 already established that every model identifies a red backpack -- capability was
 never the scarce thing. Precision was.
+
+**CLIP is a pre-filter, not a vote.** 1.10's crop re-ranker scores a candidate
+against the target string *before* the cloud is asked, so §2.4's
+candidate-sighting trigger fires on "backpack, and probably the red one" rather
+than on every backpack. Identity still belongs to the VLM: a high CLIP score
+raises a candidate, it never confirms one.
 
 ---
 
@@ -679,9 +744,10 @@ It also forces **an OS decision that (a) does not**. ROS 2's well-trodden path i
 Ubuntu, and Raspberry Pi OS is what `picamera2` and `rpicam-apps` target:
 
 1. **Ubuntu on the Pi** -- the standard ROS route, at the cost of the camera stack.
-2. **ROS in Docker on Pi OS** -- keeps the camera tooling, adds container
-   plumbing for the lidar device and networking. **Probably right**, and it fits
-   (b+)'s behind-a-wall shape.
+2. **ROS in Docker on Pi OS** -- keeps the camera tooling and, since
+   2026-09-04, the Hailo driver too (`hailo-all` is a Pi OS package, 4.3);
+   adds container plumbing for the lidar device and networking. **Probably
+   right**, and it fits (b+)'s behind-a-wall shape.
 3. Two boards. Overkill.
 
 #### What (b+) changes about the shopping list
@@ -740,12 +806,13 @@ should be checked before ordering.
 | **Slamtec RPLidar C1** | 99 | 1.2 |
 | Differential chassis kit, **encoder motors** | 69 | Yahboom 2WD, chosen -- 3.8 |
 | Motor driver (TB6612FNG) | 0 | **Included** with the Yahboom kit -- IC unconfirmed (3.8) |
-| **AI Camera (IMX500)** | 70 | Q4 decided -- 1.10. Was Camera Module 3 at 30 |
+| Camera Module 3 | 30 | Any CSI camera works now; autofocus. 1.10 |
+| **AI HAT+ (Hailo-8L)** | 70 | The on-board detector -- 1.10, §4. Replaced the AI Camera 2026-09-04 |
 | 2-axis pan/tilt bracket + SG90s | 12 | Replaces what the PiCar-X bundled |
 | **3S** Li-ion pack + charger | 35 | Motor rail only (1.3). **Not 2S** -- see the correction below |
 | Wiring, connectors, switch, XT60 | 15 | |
 | Standoffs, M2.5/M3 hardware | 10 | For stacking decks |
-| | **~405** | Chassis priced down (3.8), camera up (1.10) |
+| | **~440** | Chassis priced down (3.8); camera + Hailo replace the AI Camera, +30 (1.10) |
 
 **Strongly recommended -- each avoids a failure already discussed here**
 
@@ -762,23 +829,23 @@ should be checked before ordering.
 
 | Item | ~USD | Why |
 |---|---|---|
-| NVMe SSD + M.2 HAT | 45 | **SD cards corrupt on brownout**, which is the exact failure 1.3 is written about. The one item here that prevents losing work rather than an annoyance |
-| ~~AI Camera instead of Camera Module 3~~ | -- | **Decided (1.10)** -- moved into the essential list |
+| NVMe SSD + dual-slot PCIe base | 75 | **SD cards corrupt on brownout**, which is the exact failure 1.3 is written about. The one item here that prevents losing work rather than an annoyance. **The Hailo takes the Pi's one PCIe lane** (1.10 item 2), so this now means the M.2-module form of the Hailo-8L on a dual-slot switch board (~40) plus the drive (~35), not the plain M.2 HAT at 45 -- reported to work, **unverified** |
 
 **Totals**
 
 | Scenario | ~USD |
 |---|---|
-| Essential only | 405 |
-| **+ recommended** | **463** |
-| + NVMe | 508 |
-| ~~+ AI Camera instead~~ | now in the essential list |
+| Essential only | 440 |
+| **+ recommended** | **498** |
+| + NVMe | 573 |
 | Already own a Pi 5 | subtract ~100 |
 
-Already owned, 0: the power bank (1.3). Deferred, possibly never: any AI
-accelerator (4.5). **Budget ~460-510**, and the two variables that move it are whether a Pi 5 is
-already owned and how Q4 resolves. Revised down from ~450-500 once the chassis
-was priced against real listings rather than estimated (3.8).
+Already owned, 0: the power bank (1.3). **Budget ~500-575**, and the two
+variables that move it are whether a Pi 5 is already owned and whether the
+NVMe is taken. Was ~460-510 under the IMX500 (2026-09-03): the Hailo decision
+added ~30 to the essentials and ~30 to the NVMe line (1.10). Before that,
+revised down from ~450-500 once the chassis was priced against real listings
+rather than estimated (3.8).
 
 **Correction, 2026-09-03: the pack is 3S, not 2S.** The first draft of this
 table specced a 2S (7.4V) pack. Every serious differential chassis surveyed --
@@ -941,57 +1008,111 @@ concrete upper bound to design against, months before any hardware arrives.
    the tutorial documentation.
 3. Which motor driver IC (TB6612FNG preferred over L298N).
 4. Whether the with-battery variant's pack is 12.6V/3S.
+5. Whether the expansion board mounts on the 40-pin header or wires to it --
+   the AI HAT+ occupies the HAT position (1.10 item 7).
 
-None is a blocker; all four are one email to the seller.
+None is a blocker; all five are one email to the seller.
 
 ---
 
-## 4. Accelerator options -- now probably unnecessary
+## 4. The on-board detector: IMX500 vs Hailo vs Jetson
 
-Kept because the analysis is sound and the conclusion changed.
+**Decided 2026-09-04: Hailo-8L.** This section used to be headed "Accelerator
+options -- now probably unnecessary", and its conclusion has changed twice:
+first to "buy the sensor" (the IMX500, 2026-09-03), then to the Hailo. The
+reaction-budget argument in 4.4 survived both and is referenced from 3.8; the
+rest is rewritten around the comparison that actually decided it.
 
-### 4.1 The four paths
+### 4.1 The requirement that changed the answer
 
-**The Pi 5 has no NPU** -- the biggest difference from the RK3566 -- but four
-Cortex-A76 cores at 2.4GHz are a stronger CPU host than the Rockchip's A55s, so
-CPU-only is a real option here in a way it is not on a duck.
+The 2026-09-03 evaluation asked one question: *what is the cheapest way to get
+a fresh bearing on a COCO-class target?* The IMX500 won it cleanly -- zero Pi
+CPU, no PCIe slot, one part instead of two.
 
-| Option | Silicon | Inference runs | Rated | Fit |
-|---|---|---|---|---|
-| **CPU only** | 4x Cortex-A76 @ 2.4GHz | on the Pi | -- | Nothing to buy or mount |
-| **AI Camera** | Sony IMX500 | **on the sensor** | ~3 TOPS | CSI swap, negligible Pi CPU |
-| **AI HAT+** | Hailo-8L / 8 | on the module, over PCIe | 13 / 26 TOPS | GPIO/PCIe contention; real watts |
-| **Coral USB** | Edge TPU | on the stick | 4 TOPS | Pi 5 kernel support has been rough |
+The 2026-09-04 evaluation added a second: **the hardware must leave room to
+experiment with models beyond what fits on the IMX500, including ones pulled
+from Hugging Face.** That is a requirement about the *ceiling*, and the
+IMX500's ceiling is silicon.
 
-Vendor ratings at INT8. **None measured on a board.**
-
-### 4.2 The finding that lowers the risk
+### 4.2 The finding that lowers the risk -- still true
 
 **`backpack` and `bottle` are both COCO classes.** The Stage 0 targets are in
 the standard 80-class label set essentially every off-the-shelf detector
 predicts, so a stock pre-compiled YOLO11n finds them with **zero training, zero
-calibration set, zero distillation**. Distillation becomes the project only past
-COCO's 80. *(Confirm against the model's own label file.)*
+calibration set, zero distillation**. Fine-tuning becomes the project only past
+COCO's 80 -- and on the Hailo that is a documented retraining container plus a
+compile, not a research project. *(Confirm against the model's own label
+file.)*
 
 **It does not give you the colour.** COCO says `backpack`, not `red backpack`.
-Two backpacks in a room means an HSV check on the crop -- cheap and probably
-sufficient -- or a genuinely open-vocabulary model, which is a much larger
-commitment.
+The first draft proposed an HSV check on the crop. **Superseded by CLIP over
+crops** (1.10): the Hailo model zoo carries the CLIP image encoder, so each
+detected crop is scored against the mission's own target string. The same
+mechanism handles "the blue bottle" and "my backpack, not the other one".
 
-### 4.3 YOLO11n on the AI HAT+
+### 4.3 The Hailo parts, and which one
 
-Yes, and it is the most turnkey combination on the list: `sudo apt install
-hailo-all` brings the driver, HailoRT, the GStreamer bits and `rpicam-apps` with
-Hailo post-processing; pre-compiled YOLO11n HEFs exist for both parts.
+| | AI HAT+ (Hailo-8L) | AI HAT+ (Hailo-8) | AI HAT+ 2 (Hailo-10H) |
+|---|---|---|---|
+| Rated | 13 TOPS INT8 | 26 TOPS INT8 | ~40 TOPS, plus 8GB of its own LPDDR4X |
+| Price | ~$70 | ~$110 | ~$130 -- announced late 2025, **verify availability** |
+| Architecture | dataflow, no external memory, weights streamed from the host | same, larger | on-module memory, built for LLMs and transformers |
+| Runs well | CNN detection, segmentation, pose, depth, classification; CLIP via Hailo's port | same, faster or at larger inputs | the above plus small language and vision-language models |
+| Form | the Pi 5's single PCIe FFC connector, HAT position | same | same |
 
-**The friction is custom classes** -- the chip wants a HEF from Hailo's
-Dataflow Compiler, which needs **x86-64 Linux**, plus a calibration set. And it
-is **enormously overprovisioned**: high-tens-to-hundreds of FPS against a
-decision loop measured in seconds.
+**The 8L.** The Hailo-8 buys nothing here: a nano or small detector already
+runs above camera frame rate on the 8L, and 4.4's budget is bounded by the
+camera's 30fps. The 10H is the only alternative worth a look, and only for the
+VLM question -- 1.10 item 6 says how much looking.
 
-### 4.4 The corrected benchmark bar
+`sudo apt install hailo-all` on Pi OS brings the driver, HailoRT, the
+GStreamer bits and `rpicam-apps` with Hailo post-processing; `picamera2` ships
+Hailo examples that return boxes directly; pre-compiled YOLO11n HEFs exist for
+both 8-series parts. That is the turnkey starting point, and it keeps Pi OS --
+one more reason (b+)'s OS decision lands on "ROS in Docker on Pi OS" (3.3).
 
-**The original recommendation contained a circular argument and is withdrawn.**
+#### What "experiment with Hugging Face models" means on a Hailo
+
+There is no `pip install` path. Every model goes **PyTorch -> ONNX -> Hailo
+Dataflow Compiler -> HEF**, on x86-64 Ubuntu, with a Hailo developer account
+and a calibration set of a few hundred representative frames for INT8
+quantisation. A GPU speeds the optimisation step but is not required. On a Mac
+the practical compile host is an EC2 instance for an hour per model. DeGirum's
+cloud compiler and hosted Hailo zoo would remove the local toolchain entirely
+-- **unverified**.
+
+| | On the 8-series |
+|---|---|
+| **Compiles well** | the YOLO family incl. v8n/11n and the `s`/`m` tiers, EfficientDet-Lite, NanoDet, YOLOX, CenterNet, MobileNet / ResNet / EfficientNet backbones, DeepLabv3+, FCN, STDC; RT-DETR reported in newer zoo releases (**verify**) |
+| **Via Hailo's own ports** | CLIP ViT-B/32 and ResNet-50 image encoders (text encoder on the Pi CPU); FastDepth / SCDepth monocular depth; OSNet / RepVGG re-identification embeddings |
+| **Does not fit** | anything attention-heavy: DINOv2, SAM, Depth Anything, Grounding DINO, OWLv2, any VLM or LLM. The dataflow design has no efficient attention path and no memory for the weights |
+| **The 10H's job** | exactly that gap. Which models, and how well, is the thing to verify before paying $60 more |
+
+So: **a Hailo-8L satisfies the requirement for the CNN detection,
+segmentation, depth and classification families, and for CLIP. A 10H probably
+extends it to small VLMs. Neither gives you arbitrary Hugging Face models** --
+only a Jetson does (4.7).
+
+#### Models worth trying first, and why
+
+Within the size class either chip holds, YOLO is already at the accuracy
+frontier among CNN detectors: EfficientDet-Lite, NanoDet, YOLOX and CenterNet
+are peers, not upgrades. "More capable than YOLO" therefore means one of two
+things, and the Hailo allows both where the IMX500 allowed neither:
+
+- **A bigger YOLO.** YOLO11s or m at 640 or 1024 input is what improves recall
+  on a small target across a room. The IMX500 was capped at the nano tier.
+- **A different kind of model.** Floor segmentation (DeepLabv3+, Fast-SCNN,
+  STDC, YOLOv8-seg) gives a per-pixel drivable-area mask from one frame -- the
+  obstacle question five prompt wordings failed at, answered geometrically.
+  It does not replace the lidar, which sees a chair leg the mask cannot, but
+  it is the first experiment worth running. Monocular depth (FastDepth,
+  SCDepth) is relative, not metric, so no use for the collar; beside the
+  floor mask it flags a drop or a low obstacle the lidar plane misses.
+
+### 4.4 The reaction-budget bar
+
+**An earlier recommendation contained a circular argument and is withdrawn.**
 It said to benchmark YOLO11n on the Pi 5 CPU and concluded *"if it clears ~10
 FPS, no accelerator was ever needed for a 1-3s loop"* -- judging the edge option
 against the cloud latency the edge option removes.
@@ -1011,8 +1132,9 @@ waiting for the next frame):
 | 60 cm/s | 12cm | tight |
 | 100 cm/s | 20cm | the whole collar, before deciding |
 
-**The binding number is unmeasured: how fast the car actually moves.** It
-belongs on the hardware-day pre-flight list.
+**The binding number is unmeasured: how fast the car actually moves.** 3.8
+gives it an upper bound of ~1 m/s from the vendor's motor figures, which is the
+worst row. It belongs on the hardware-day pre-flight list.
 
 Two things relax the bar. **The range sensor owns emergency stop, not the
 camera** -- so the detector's latency budget is about steering, not collision.
@@ -1020,22 +1142,104 @@ And **motion is discrete today** (speed 50 for 0.5s per move), capping decisions
 near 2Hz. The FPS question only sharpens with *continuous* driving, which is a
 design choice not yet made.
 
-### 4.5 Why the conclusion changed
+**On the Hailo-8L the bar is not close.** A nano detector runs at well over
+camera rate with single-digit-millisecond inference, so the 200ms row is the
+CPU-only case, not the shipped one. **Stock YOLO11n on the Pi 5's own cores is
+still the day-one baseline** -- it needs no HEF, and it measures the real
+reaction budget on the real chassis before any accelerator is trusted.
 
-**Buying the lidar weakens the case for an accelerator rather than
-strengthening it.** Obstacle avoidance moves to the lidar; navigation moves to
-the map; visual edge-matching disappears (§3.2). The only remaining job for
-on-device vision is "is the target in view" -- lower-rate and not
-safety-critical, which the cloud VLM can keep doing at deliberation rate.
+### 4.5 Why "accelerator possibly never" was wrong, and what was right in it
 
-**Sequencing: lidar first, accelerator possibly never.**
+**Buying the lidar did weaken the case for an accelerator as a speed device.**
+Obstacle avoidance moved to the lidar; navigation moves to the map; visual
+edge-matching disappeared (1.6, 3.2). The only remaining job for on-device
+vision is a fresh bearing, which is low-rate and not safety-critical. That
+reasoning stands.
 
-**But 1.9 records a live tension with this**, found while working through
-`approach`'s stop condition: with no on-device detector the target bearing is
-1-3 seconds stale, which makes `approach` open loop on the semantic half. A
-**CPU-only** detector -- no accelerator, no purchase -- may re-enter the design
-there. "Accelerator possibly never" is not the same claim as "no on-device
-detection", and this section should not be read as settling Q4.
+**What it missed is that the accelerator is a capability device here, not a
+speed one.** The reasons the Hailo is in the bill (1.10) are what it can hold
+-- the larger YOLO tiers, a floor mask, depth, CLIP, several at once -- and
+that the same HEF can be scored on the recorded corpus before it drives. None
+of that is about frames per second, which is why "the loop is slow anyway"
+never bore on it.
+
+### 4.6 The three-way comparison
+
+Against the job the plan gives the detector -- find a target, report its
+bearing at camera rate, leave range to the lidar and identity to the VLM --
+plus the requirement in 4.1.
+
+| | IMX500 AI Camera | Hailo-8L AI HAT+ | Jetson Orin Nano Super | Pi 5 CPU only |
+|---|---|---|---|---|
+| Cost | ~$70, replaces the ~$30 camera | ~$70 plus a ~$30 camera | ~$249 replacing the ~$80 Pi 5, plus camera and power conversion | $0 |
+| Where inference runs | on the sensor | on a PCIe module | on-board GPU, CUDA | the four A76 cores |
+| Pi CPU cost | ~0 | a few percent of a core | n/a | one to two cores for a nano model |
+| Model ceiling | ~8MB on-chip, nano class, one at a time | hundreds of MB, several resident; CNNs only | anything that fits 8GB shared with the OS | limited by speed, not memory |
+| Custom / HF models | Sony toolchain, or Ultralytics `format=imx` for YOLO | ONNX -> DFC on x86 Linux, per model | `transformers` just works | plain PyTorch / ONNX, no compile step |
+| Open-vocabulary | no | CLIP re-ranking over crops | YOLO-World, OWLv2, Grounding DINO at usable rates | too slow to matter |
+| Score on recorded walks | **no** -- cannot be fed a stored frame | yes | yes | yes |
+| Camera choice | fixed: the IMX500 itself, fixed focus | any CSI or USB camera | IMX219 / IMX477 out of the box, others need drivers, **no IMX500** | any |
+| Extra power | well under 1W | ~1.5W typical, peaks higher | 7 / 15 / 25W modes, 9-19V input, no 5V USB | cores at load |
+| PCIe slot | free for NVMe | **taken** -- 1.10 item 2 | own NVMe slot | free |
+| OS | Pi OS | Pi OS (`hailo-all`) | Ubuntu 22.04 / JetPack | Pi OS |
+
+**Read down the "model ceiling" and "score on recorded walks" rows and the
+decision is there.** The IMX500 loses on both; the Jetson wins on both and on
+open vocabulary, and loses on cost, power and the camera stack; the Hailo-8L
+is the compromise that keeps the Pi plan intact.
+
+### 4.7 The Jetson path, kept for later
+
+**Ruled out for now, 2026-09-04** -- not on capability, where it is plainly the
+strongest, but on what it costs the rest of the plan. Recorded so the
+re-evaluation does not start from zero.
+
+The part is the **Jetson Orin Nano Super Developer Kit**, ~$249 list: the older
+Orin Nano 8GB kit with a firmware and JetPack update that raised the clocks and
+halved the price. Supply has been tight since; expect reseller markups.
+
+| | Pi 5 (8GB) | Jetson Orin Nano Super |
+|---|---|---|
+| CPU | 4x Cortex-A76 @ 2.4GHz | 6x Cortex-A78AE @ 1.7GHz |
+| Inference | none on-board | 1024 CUDA cores, 32 tensor cores, ~67 TOPS INT8 sparse |
+| Memory | 8GB | 8GB LPDDR5, **shared** CPU/GPU |
+| OS | Pi OS | Ubuntu 22.04 via JetPack 6 |
+| Power | ~5W, 5V USB-C | 7 / 15 / 25W, 9-19V barrel jack |
+| Storage | microSD, or NVMe via the one PCIe lane | microSD plus a dedicated M.2 Key M slot; Wi-Fi on a Key E slot, included |
+| Cameras | full Pi camera stack | 2x CSI; IMX219 / IMX477 out of the box, others need vendor drivers |
+| Size / mass | 85x56mm, ~50g | ~103x91x35mm with fan, ~175g (**verify**) |
+
+**What it would change in this plan.** 1.10's detector becomes a TensorRT model
+on the GPU and the COCO limit dissolves -- YOLO-World, OWLv2 and Grounding DINO
+tiny run at usable rates, so the detector can match the mission's actual target
+string. A local 2-3B VLM (Qwen2-VL-2B, Moondream, SmolVLM, via
+`jetson-containers` or Ollama) becomes a genuine offline deliberation tier --
+**not** a replacement for Opus 4.5, since Stage 0 shows even Sonnet 4.5 stalls
+on the navigation question, but an upgrade over the rule-based wall-follower as
+the degraded mode (2.5). 3.3's (b+) OS dilemma dissolves: JetPack is Ubuntu
+22.04, ROS 2 Humble's native platform, and Isaac ROS adds GPU perception nodes.
+1.3's power plan has to change: a USB-PD trigger board pulling 12-15V from a PD
+bank, a filtered buck from the 3S pack, or a second pack -- the 3S range sits
+inside the Jetson's input range, but running it directly puts motor noise on
+the compute rail, which 1.3 forbids. Net bill change roughly **+$170-220**.
+
+**What ruled it out.** 8GB shared memory is the binding limit -- SLAM, nav2, an
+open-vocabulary detector and a local VLM will not all be resident, so the plan
+would have to pick two. JetPack upgrades and NVMe flashing go through NVIDIA's
+SDK Manager, which needs an x86 Ubuntu host (initial microSD setup works from a
+Mac). The camera ecosystem is thinner: `nvarguscamerasrc` or V4L2, and anything
+beyond IMX219 / IMX477 means a vendor driver and a device-tree overlay. PyTorch
+comes from NVIDIA's wheel index, not plain pip. The fan is always on under
+load. And nothing in the code cares: the brain talks to `RobotInterface` over
+HTTP, so the swap is a board change, not a rewrite -- which is exactly why it
+can wait.
+
+**When to re-open it.** Two tests, either one a yes: the robot must run an
+open-vocabulary detector for the mission's target string with no cloud in the
+loop; or a new Hugging Face model needs to run *on the robot* most weeks. Until
+then experiments run off-robot behind the perception seam (2.7), fed by the
+robot's frames or the recorded walks, and are promoted to the Hailo by compile
+once they have earned it in replay.
 
 ---
 
@@ -1049,10 +1253,11 @@ not discovered on hardware day.
 | `HARDWARE-READINESS.md` | Written for the PiCar-X **throughout**. §1's parts table, §4's verb-to-motor path and §5's pre-flight checklist all assume Ackermann + Robot HAT + `picarx`. **§5.2's arc concern resolves to the pivot branch.** §5.3 (where the ultrasonic is mounted) is superseded by the lidar |
 | `PLAN-sim-hardening.md` | **S6 (Ackermann turns, continuous pose, scaled map) is unnecessary** -- `grid_world.py`'s pivot assumption is now correct. §3.3's divergence is closed by hardware choice rather than by code |
 | `PLAN-microduck-transplants.md` | **M2/M3 are built (2026-09-03) and the seam holds.** `PATH_FRACTION` did not -- §5.1, the one concrete defect this decision created in existing code, **fixed 2026-09-03**. **M10** (clearance from a real sensor) is satisfied far better by 360-degree metric returns than by one ultrasonic beam |
-| `CLAUDE.md` | The status table and build order reference S6 and the PiCar-X hardware path |
+| `CLAUDE.md` | The status table and build order referenced S6, the PiCar-X hardware path and, for one day, the IMX500. **Updated 2026-09-04** for the Hailo decision and the new bill |
 
 `HARDWARE-READINESS.md` and `PLAN-sim-hardening.md` have had staleness notes
-added pointing here. Nothing else has been edited.
+added pointing here; `CLAUDE.md`'s status row and buy list were updated on
+2026-09-04. Nothing else has been edited.
 
 ### 5.1 `PATH_FRACTION` breaks on a 360-degree sensor -- **FIXED 2026-09-03**
 
@@ -1214,8 +1419,10 @@ waiting on that.
 Q4 the detector and arbitration (1.10, 1.11) · Q5 the sim (1.12). Q1's map and
 persistence questions are 1.5-1.6.
 
-What remains open is **not design** but measurement and verification: 3.8's four
-seller questions, 1.10's model-zoo check, and the re-recorded Stage 0 corpus.
+What remains open is **not design** but measurement and verification: 3.8's
+five seller questions, 1.10's ordering-time checks (the storage decision, the
+AI HAT+ 2), the compile loop 1.10 item 1 asks for before hardware day, and the
+re-recorded Stage 0 corpus.
 **6.1's free trigger-count experiment is done** (2026-09-03) -- it is the one
 item on that list that needed neither a seller nor a walk.
 
@@ -1226,7 +1433,7 @@ Kept as an index into where each landed:
 | Q1 | Is there a map, and where does memory live? | **1.5** persistence -- only the map persists, planner is a pure function · **1.6** the visual-edge mechanism is cancelled |
 | Q2 | Closed or open goal vocabulary? | **1.7** closed and versioned, three verbs, unknown verbs refuse by name |
 | Q3 | Who owns the stop condition? | **1.8** typed success from the planner, typed failure from the robot, lidar x bearing |
-| Q4 | Is there an on-device detector, and who arbitrates? | **1.10** IMX500 on-sensor, two layers · **1.11** arbitration split by question, not authority |
+| Q4 | Is there an on-device detector, and who arbitrates? | **1.10** a Hailo-8L, two layers (the IMX500 for one day -- §4 has the comparison) · **1.11** arbitration split by question, not authority |
 | Q5 | Does the sim participate? | **1.12** yes, with synthesised detections; occlusion-aware, tri-state, noise behind a flag |
 
 ### 6.3 What it owes the twin
@@ -1237,6 +1444,11 @@ work, not when its tests pass.
 - **The lidar:** a live 360-degree clearance ring under the FPV canvas. Drive at
   a chair leg the old ultrasonic beam would have missed and watch the collar
   fire.
+- **The detector:** its boxes drawn on the FPV canvas, the HEF's name and the
+  CLIP score against the mission's target string, and a tri-state readout
+  (`detected` / `absent` / `unavailable`, 1.12) -- so a wedged capture never
+  looks like a missing target. Swap the HEF and the name on screen changes;
+  that is the experiment loop made watchable.
 - **The tiers:** the current goal, when it was set, and what triggered it -- plus
   a deliberation-call counter that **visibly does not climb every step**. That
   single number makes the whole architecture watchable.
@@ -1253,7 +1465,11 @@ work, not when its tests pass.
 |---|---|
 | **TOPS** | Tera-Operations Per Second. A throughput rating for accelerators, usually at INT8. Marketing-adjacent: real speed depends on the model |
 | **INT8** | 8-bit integer arithmetic. Quantising from 32-bit floats makes a model ~4x smaller and much faster, at some accuracy cost |
-| **NPU** | Neural Processing Unit -- on-chip inference accelerator. The RK3566 has one; **the Pi 5 does not** |
+| **NPU** | Neural Processing Unit -- on-chip inference accelerator. The RK3566 has one; **the Pi 5 does not**, which is why the Hailo is a separate HAT |
+| **IMX500** | Sony's stacked image sensor with an inference DSP and ~8MB of model memory on the die -- the Raspberry Pi AI Camera. Evaluated and not chosen (§4): the ceiling is silicon |
+| **Hailo-8L / 8 / 10H** | Hailo's dataflow inference chips, on the Raspberry Pi AI HAT+ (8L, 8) and AI HAT+ 2 (10H). The 8-series runs CNNs; the 10H adds on-module memory for transformers. **The 8L is chosen** (1.10) |
+| **HailoRT** | Hailo's runtime -- loads HEFs, schedules several at once, exposes a Python API. Installed by `hailo-all` on Pi OS |
+| **Jetson / JetPack / TensorRT** | NVIDIA's embedded GPU boards / their Ubuntu-based OS image / NVIDIA's inference compiler. The on-board upgrade path, ruled out for now (4.7) |
 | **ONNX** | Open Neural Network Exchange. A portable model format |
 | **HEF** | Hailo Executable Format -- Hailo's compiled model file; the chip will not take an ONNX |
 | **DFC** | Dataflow Compiler. Hailo's ONNX-to-HEF toolchain. x86-64 Linux only |
@@ -1261,10 +1477,10 @@ work, not when its tests pass.
 | **COCO** | Common Objects in Context. The 80-class label set most detectors predict; includes `backpack` and `bottle` |
 | **mAP50 / IoU** | mean Average Precision at 50% Intersection over Union -- the usual detection score, and the box-overlap measure it thresholds on |
 | **XNNPACK / ncnn / TFLite** | Optimised CPU inference backends and runtimes for ARM |
-| **CLIP** | Contrastive Language-Image Pre-training. Matches images to text; what makes open-vocabulary detection possible |
+| **CLIP** | Contrastive Language-Image Pre-training. Matches images to text; what makes open-vocabulary detection possible. On the Hailo it re-ranks detector crops against the mission's target string (1.10, 4.2) |
 | **VLM / LLM** | Vision-Language Model / Large Language Model. The cloud tier -- what `/navigate` calls |
 | **MiDaS / Depth Anything** | Monocular depth models. **Relative**, not metric -- which is why they do not close the gate |
-| **HSV** | Hue-Saturation-Value. The colour space for an "is that backpack red" check |
+| **HSV** | Hue-Saturation-Value. The colour space the first draft proposed for an "is that backpack red" check -- superseded by CLIP over crops (4.2) |
 
 ### 7.2 Mapping and navigation
 
@@ -1364,6 +1580,7 @@ work, not when its tests pass.
   `PLAN-microduck-transplants.md` §1-§2 · `HARDWARE-READINESS.md` §1, §5 ·
   `control/mission_runner.py:255` · `brain/memory.py`
 
-Hardware claims about the Pi 5, the AI HAT+, the AI Camera, Coral and the lidars
-are from general knowledge as of this date, **not verified against a board**.
+Hardware claims about the Pi 5, the AI HAT+ and AI HAT+ 2, the AI Camera, the
+Jetson Orin Nano and the lidars are from general knowledge as of this date,
+**not verified against a board**.
 Every one is cheap to check and should be checked before money moves.

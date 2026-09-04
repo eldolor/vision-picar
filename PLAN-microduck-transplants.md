@@ -8,8 +8,8 @@ seven Rust daemons on a Rockchip RK3566, a 50Hz control loop driving fifteen
 servos from ONNX policies trained in MuJoCo.
 
 **None of its code should be ported.** Different language, different board,
-different locomotion problem -- a PiCar-X has two degrees of freedom and no
-gait to learn. What transfers is the design record, because it has already
+different locomotion problem -- a wheeled car has two degrees of freedom and
+no gait to learn. What transfers is the design record, because it has already
 worked through several problems that are still open here.
 
 Phase IDs are `M*`, alongside `S*` (`PLAN-sim-hardening.md`), `B*`
@@ -88,9 +88,9 @@ Seven of the twelve phases need no hardware.
 | M6 | A process start never moves the robot | pre-hardware | Restart the robot server mid-mission. The map does not twitch |
 | M7 | Nothing falls back silently | pre-hardware | A misspelled env variant refuses at boot instead of serving `default` |
 | M7b | One shipped wording | pre-hardware | The mission panel names no wording, because there is only one |
-| M8 | Floor rejection and the too-close band | hardware day | Tilt the camera down. The strip stays clear |
+| M8 | The too-close band and range projection | hardware day | A hand 3cm from the lidar reads `unusable`, not 3cm |
 | M9 | The camera cannot wedge `stop` | hardware day | Pull the ribbon mid-mission. `/frame` errors, `/stop` answers |
-| M10 | Clearance from a real sensor | buy list | D-pad at a chair leg the ultrasonic beam misses. The collar flashes |
+| M10 | Clearance from a real sensor | buy list (lidar) | D-pad at a chair leg a single forward beam would miss. The collar flashes |
 | M11 | The small updater | hardware day | Install a broken build. The Pi returns to the previous one and says so |
 | M12 | Novelty-grid exploration memory | conditional | The log shows the model told what it already tried here |
 
@@ -146,7 +146,7 @@ unclear" or "a blank gray wall", and the frames bore that out: from the start
 cell `sim/renderer.py` rendered mostly black with two grey slabs. **The sim's
 frames were too information-poor for a closed-loop run to discriminate
 between wordings at all.** M1's design assumed the sim's distance sensor
-could stand in for a ToF and settle the gate reading empirically; that
+could stand in for a real range sensor and settle the gate reading empirically; that
 assumption is sound and the instrument was not ready.
 
 **The lighting half of that has since been fixed** (see
@@ -234,7 +234,7 @@ replay over frames that already exist.
 
 The second is whether a depth sensor changes what Stage 0 is measuring. Robot
 view and `ReplayRobot` have no depth sensor and never will -- a phone walk has
-no ToF. So if hardware gets one, Stage 0's dominant failure mode is being
+no range sensor. So if hardware gets one, Stage 0's dominant failure mode is being
 measured on a configuration that will not ship. That reads two ways: either the
 gate is partly moot (vision was never going to be the obstacle sensor), or it
 still stands (a robot that navigates only because a sensor vetoes its bad
@@ -243,7 +243,7 @@ decisions has not been shown to navigate).
 It is not resolvable by argument, and it does not need to be. **The sim has a
 distance sensor.** `bearing-only` run closed-loop in the grid world, with
 `sim.sensor_noise.enabled: true`, is the noisy distance model standing in for
-the ToF. If the target is reached with the obstacle question removed and is not
+the lidar. If the target is reached with the obstacle question removed and is not
 reached with it present, the reading is settled empirically.
 
 **Build.**
@@ -414,7 +414,8 @@ Built:
   not see.
 - **`PATH_FRACTION = 0.5`, and the number is geometry.** The middle half
   of the sim's 60-degree render is +/-15 degrees, spanning 16cm at one
-  grid cell -- a PiCar-X is about 16.5cm wide. Both neighbours of that
+  grid cell -- the PiCar-X was about 16.5cm wide; the chassis since chosen
+  is 14.8cm, and M10 re-measures `CHASSIS_WIDTH_CM`. Both neighbours of that
   choice are real failures, and both are observable in the starter house:
   the whole grid vetoes every corridor (the outer rays read the side walls
   at ~18cm, under the 20cm threshold, on every legal step), and a single
@@ -880,38 +881,40 @@ five, and two back-to-back walks are cleanly separated.
 
 ## 5. Hardware-day phases
 
-### M8 -- Floor rejection and the too-close band
+### M8 -- The too-close band and range projection
 
 **Why.** `kinematics/src/tof.rs` is pure geometry turning a raw grid into
-usable points, and it handles the two nuisances that appear on day one:
+usable points, and it handles two nuisances that appear on day one with a
+downward-tilted depth sensor: floor returns, and a too-close noise band.
 
-- **Floor returns.** A downward-tilted sensor sees the floor at every range. A
-  beam whose slant range times its downward component reaches sensor height
-  (times a safety factor, for pose error) hit floor, not obstacle.
-- **A too-close noise band.** Sub-10cm returns are cover-glass crosstalk and
-  pulse pile-up -- discarded rather than believed.
+**The floor half is mostly moot on the sensor actually chosen.** The
+RPLidar C1 (`PLAN-onboard-perception.md` 1.2) scans one horizontal plane
+from a raised plate, so there are no floor returns unless the chassis
+pitches -- a ramp, a rug edge -- and the fix for that is a level mount and
+an IMU pitch check, not per-beam rejection. What survives:
 
-Its output type is the one M3's veto wants: `Hit { point, range }`, where
-`range` is horizontal distance from the vertical axis -- "the number obstacle
-avoidance compares against a stop threshold". This is also what defines "the
-path cells" that M10 reduces: without it, there is no principled way to say
-which zones are in the way.
+- **A too-close noise band.** Returns under the lidar's rated minimum range
+  (a few cm) are unreliable and are discarded rather than believed --
+  reported as `unusable`, never as a small distance, so the collar does not
+  stop the robot on its own mounting bracket.
+- **Horizontal-range projection.** `range` is horizontal distance from the
+  robot's vertical axis -- "the number obstacle avoidance compares against a
+  stop threshold". For a level 2D lidar the projection is the identity, and
+  the offset from the lidar's centre to the chassis edge is the one number
+  to get right.
 
 It lives in `HardwareRobot`, on the hardware side of the abstraction, not on
 `RobotInterface`. Ports as Python geometry, with no Rust.
 
-**Most of this cannot be validated in the sim**, and belongs in
-`PLAN-sim-hardening.md` section 7 with the other hardware-only items: the grid
-world has no floor and no vertical dimension, so there are no floor returns to
-reject. Only the too-close band and the horizontal-range projection are
-testable before the sensor exists. Say so rather than writing a sim test that
+**None of this can be validated in the sim.** The grid world has no vertical
+dimension and no minimum range. Say so rather than writing a sim test that
 passes because the failure it guards against cannot occur.
 
-**Press this.** Tilt the camera down with the twin's look controls; the depth
-strip stays clear instead of reporting an obstacle in every zone. Before
-hardware this phase has **no UI proof**, and that is this plan's one written
-exemption -- the readout that would show it if it broke is M2's strip going
-uniformly red on a downward tilt.
+**Press this.** On hardware: hold a hand 3cm from the lidar. The depth strip
+hatches that zone grey (`unusable`) instead of reading 3cm and vetoing every
+FORWARD. Before hardware this phase has **no UI proof**, and that is this
+plan's one written exemption -- the readout that would show it if it broke is
+M2's strip going uniformly red for no reason.
 
 ### M9 -- The camera cannot wedge `stop`
 
@@ -940,42 +943,46 @@ errors, `/stop` still answers, and the mission ends on the vision budget.
 ### M10 -- Clearance from a real sensor
 
 **Why.** `tofd` publishes an 8x8 depth matrix from a VL53L5CX at 15Hz over
-I2C. `center-third-path` asks what is in the bottom half of the centre third of
-the frame -- which is a description of a depth matrix's centre columns and
-lower rows, answered in hardware.
+I2C, and this phase was first written around that sensor on a pan/tilt.
+`PLAN-onboard-perception.md` 1.2 chose a **360-degree lidar (RPLidar C1)**
+instead, and its 3.2 says why that is the stronger M10: metric clearance at
+every bearing, ~10Hz, over USB -- and it sees a doorway's frame slide past,
+which is what makes `traverse`'s stop condition checkable at all (1.8
+there). `center-third-path` asked what is in the bottom half of the centre
+third of the frame; the ring answers that at every angle, in centimetres.
 
-It also settles `HARDWARE-READINESS.md` 5.3 by construction. That item warns
-that the frontier policy's `look_left(); get_distance()` peek silently degrades
-to noise if the ultrasonic turns out to be chassis-mounted, and says the fix
-would then be "a real design change (turn the chassis to peek, or add a second
-distance source)". **Mount the ToF on the pan/tilt with the camera** and the
-peek is metric as well as visual. A 45-degree field of view means chassis
-mounting would also work, but that is the fallback, not the preference --
-gimbal mounting gives both.
+It also deletes `HARDWARE-READINESS.md`'s old 5.3 by construction: the
+frontier policy's `look_left(); get_distance()` peek needed the sensor to
+turn with the camera, and a ring answers every bearing whichever way the
+camera points.
 
 **Build.**
 
-- Add the sensor to the buy list next to the kit.
-- `HardwareRobot` fills `get_depth_grid()` from the sensor and reduces the path
-  cells (M8's geometry) for `get_distance()` when fitted, the ultrasonic
-  otherwise. `RobotInterface` does not change again.
-- Write the fusion rule into `HARDWARE-READINESS.md` 5.4: camera for bearing
-  and room, sensor for clearance, the prompt is never asked for distance.
+- The sensor is already on the buy list (`PLAN-onboard-perception.md` 3.6).
+- `HardwareRobot` fills `get_depth_grid()` from one revolution, reduced to
+  zones, publishing `fov_deg: 360` so `path_zone_indices()` selects by
+  angle -- 5.1 there is the fix that makes a 360-degree grid usable at all.
+  `get_distance()` becomes `path_clearance()` over that grid; there is no
+  second sensor to fall back to. `RobotInterface` does not change again.
+- The fusion rule is written into `HARDWARE-READINESS.md` 5.4 (2026-09-04):
+  camera for bearing and room, lidar for clearance, the prompt is never
+  asked for distance.
 - Compare against M1's recorded "what the sensor must catch" column.
 - **Set `robot/safety.py`'s `PATH_HALF_ANGLE_DEG` inputs from the real
-  sensor**, and measure the close-range gap it documents.
-  `PLAN-onboard-perception.md` 5.1 replaced the fraction-of-columns rule with
-  an angular one (2026-09-03) so a 360-degree unit selects a path rather than
-  the forward hemisphere -- but zones are chosen by centre bearing, so the
-  cone is sized at one move's travel and subtends only ~10.7cm at the 20cm
-  stop threshold against a 16.5cm chassis. Pre-existing, not introduced, and
-  not observable in the grid world (axis-aligned walls 30cm apart). The real
-  answer is a cone that widens as range shortens, which needs a sensor whose
-  geometry is known -- i.e. this phase. `CHASSIS_WIDTH_CM` is still the
-  PiCar-X's and wants re-measuring on the chassis actually bought.
+  chassis**, and measure the close-range gap it documents. Zones are chosen
+  by centre bearing, so the cone is sized at one move's travel and subtends
+  only ~10.7cm at the 20cm stop threshold against a 16.5cm chassis.
+  Pre-existing, not introduced, and not observable in the grid world
+  (axis-aligned walls 30cm apart). The real answer is a cone that widens as
+  range shortens, which needs a sensor whose geometry is known -- i.e. this
+  phase. `CHASSIS_WIDTH_CM` is still the PiCar-X's 16.5 and wants
+  re-measuring on the 148mm Yahboom chassis (`HARDWARE-READINESS.md` 5.5).
+- Validate scans in the actual house before the collar reads them
+  (`HARDWARE-READINESS.md` 5.3): glass, mirrors, dark fabric, vibration.
 
-**Press this.** D-pad toward a chair leg a single ultrasonic beam misses. The
-safety collar flashes before contact.
+**Press this.** D-pad toward a chair leg that a single forward beam would
+miss. The safety collar flashes before contact, and the strip shows which
+zone caught it.
 
 ### M11 -- The small updater
 
@@ -1053,15 +1060,17 @@ already tried from this spot; the twin map shades visited cells.
 - **Signed releases, channels, a boot counter, BLE provisioning.** Fleet
   machinery. One robot on one LAN gets M11's subset.
 - **The ONNX policies** (`policies/`, MuJoCo, PPO). They walk a biped. A
-  PiCar-X has nothing to learn.
+  wheeled car has nothing to learn.
 - **The 16-state mood machine** (Chill, Zoomies, Preen, Nap...). Charm, where
   this robot's job is task completion. M12 is the one input worth extracting.
 - **BLE presence, the chorale, the shared beat, the theremin.** Multi-robot
   social behaviour, with one robot.
-- **A local target detector on an NPU.** Deferred, not rejected. If it is ever
-  wanted, the recorded walks on EFS are already robot-height footage with
-  operator labels -- which is the dataset Microduck says is the real project
-  ("Data is the project, not the model").
+- **A local target detector on an NPU.** Was deferred; **decided 2026-09-04**
+  -- a Hailo-8L AI HAT+ (`PLAN-onboard-perception.md` 1.10 and §4). The
+  recorded walks on EFS are already robot-height footage with operator
+  labels -- the dataset Microduck says is the real project ("Data is the
+  project, not the model"), and the one a compiled HEF is scored against
+  before it drives.
 
 ---
 
@@ -1072,10 +1081,11 @@ Stage 0 gate is measuring. See M1's "Why".
 
 **Hardware facts, none verified here:**
 
-- Does the PiCar-X Robot HAT leave an I2C address and bus free for a VL53L5CX?
-- Does the pan/tilt have the payload capacity and cable routing for it? M10
-  prefers gimbal mounting; chassis mounting is the fallback.
-- Current price and availability of a breakout.
+- The lidar is USB and needs no bus. Whether the Yahboom driver board takes
+  the 40-pin header the AI HAT+ occupies, and whether the AI HAT+ 2 is
+  available, are `PLAN-onboard-perception.md` 3.8 and 1.10 items.
+- Current price and availability of every part -- 3.6 there is unverified
+  against a retailer.
 
 **Provenance.** Everything cited above, checkable at source.
 

@@ -1,63 +1,52 @@
-# Hardware transition: what the PiCar-X kit actually changes
+# Hardware transition: what the real robot changes
 
-> **STALE IN PART, 2026-09-03 -- the chassis decision changed.**
-> `PLAN-onboard-perception.md` §1.1 records a decision to use a **differential-drive
-> chassis** rather than the PiCar-X's Ackermann steering, so a lidar can rotate in
-> place for scan matching. This document is written for the PiCar-X throughout and
-> has not been revised. What is affected:
->
-> - **§1** (parts table, `picarx` library, Ackermann note) -- the body changed.
-> - **§4** (verb-to-motor path) -- `LEFT`/`RIGHT` become real pivots, not arcs.
-> - **§5.2** (`LEFT`/`RIGHT` skip the distance check, "correct for a pivot and
->   wrong for an arc") -- **resolves to the pivot branch**, i.e. the safe one.
-> - **§5.3** (where the ultrasonic is mounted) -- superseded; a 360-degree lidar
->   is the obstacle sensor (`PLAN-onboard-perception.md` §1.2, §3.2).
-> - **§5.4** (do not carry the vision proximity veto onto the car) -- unchanged
->   and still correct; the lidar strengthens it.
->
-> §2, §6 and §7 are chassis-independent and stand as written.
+> **Revised 2026-09-04 for the hardware actually chosen.** This document was
+> written on 2026-08-27 for the SunFounder PiCar-X kit, and
+> `PLAN-onboard-perception.md` replaced that kit before purchase: a
+> **differential-drive chassis** (its 1.1), an **RPLidar C1** as the obstacle
+> sensor (1.2), and a **Hailo-8L AI HAT+ with a Camera Module 3** for on-board
+> detection (1.10). Sections 1, 3, 4 and 5 below are rewritten for that
+> hardware; the PiCar-X version is in git history. Sections 2, 6 and 7 were
+> chassis-independent and stand as written.
 
-Status: explainer, written 2026-08-27 while deciding whether to buy the
-kit. Nothing built. Companion to `PLAN-sim-hardening.md`, which covers
-the simulation work worth doing first; this doc covers what the physical
-robot changes about the architecture.
-
-Kit under consideration: SunFounder PiCar-X AI Robot Smart Car Kit
-(Raspberry Pi not included).
+Status: explainer. Nothing built. Companion to `PLAN-sim-hardening.md`,
+which covers the simulation work worth doing first, and to
+`PLAN-onboard-perception.md`, which holds the parts list, the bill of
+materials and the reasoning behind each part; this doc covers what the
+physical robot changes about the architecture and what to check on
+hardware day.
 
 ---
 
 ## 1. What you're actually buying
 
-Most of the product listing is SunFounder's own software stack --
-Openclaw, ChatGPT/Gemini/Grok integrations, TTS/STT, Scratch. **You will
-use almost none of it.** This project already has its own brain
-(`brain/`), its own vision service (`service/vision_analyze/`), and its
-own safety layer (`robot/safety.py`). Running their AI stack on top would
-be two robots fighting for the same actuators.
-
-What's actually being bought is the **body**:
+The parts and prices are `PLAN-onboard-perception.md` 3.6; the reasoning
+for each is in its section 1. What matters here is how the parts map onto
+`robot/interface.py`'s `RobotInterface`, because that mapping is the whole
+of `robot/hardware_robot.py`, the one file still unwritten:
 
 | Part | What this repo needs it for |
 |---|---|
-| Chassis + 2 drive motors | `drive_forward()`, `reverse()` |
-| Front steering servo | `turn_left()` / `turn_right()` |
-| Pan/tilt camera mount | `look_left()` / `look_right()` / `look_center()` |
-| Ultrasonic sensor | `get_distance()` |
-| Camera | `get_camera_frame()` |
+| Yahboom 2WD chassis, two encoder motors, STM32 driver board | `drive_forward()`, `reverse()`, and -- because it pivots in place -- `turn_left()` / `turn_right()` as literal turns |
+| 2-axis pan/tilt bracket, two SG90s | `look_left()` / `look_right()` / `look_center()` |
+| RPLidar C1, USB | `get_depth_grid()` -- the 360-degree ring -- and `get_distance()` as the path reduction of it (`robot/safety.py`'s `path_clearance()`) |
+| Camera Module 3 | `get_camera_frame()` |
+| Hailo-8L AI HAT+ | the on-board detector: a bearing to the target at camera rate. Reaches the brain over HTTP, never around `RobotInterface` (`PLAN-onboard-perception.md` 2.6) |
+| Raspberry Pi 5 | `robot/server.py` and `control/brain_server.py`, both -- section 7 |
 
-That maps one-to-one onto `robot/interface.py`'s `RobotInterface`. The
-only SunFounder software involved is their `picarx` Python library --
-roughly `px.forward(speed)`, `px.set_dir_servo_angle(angle)`,
-`px.stop()`, `px.ultrasonic.read()` -- as the guts of the one file still
-to be written, `robot/hardware_robot.py`. Everything else in that listing
-is a different project. (Check SunFounder's current API before writing
-against those names.)
+**Use the vendor's protocol, not the vendor's stack.** Yahboom ships a
+Python library and ROS packages for its driver board. What
+`hardware_robot.py` needs from it is the serial or I2C protocol for "set
+wheel velocities" and "read encoder counts", and nothing else -- this
+project already has its own brain, vision service and safety layer, and
+running a second stack on top would be two robots fighting for the same
+motors. Check the board's protocol documentation before writing against
+any library names.
 
-**One line in the listing genuinely matters: the steering servo.** It
-confirms Ackermann steering -- the car steers with its front wheels like
-a real car and *cannot spin in place*. `sim/grid_world.py` assumes it
-can. See `PLAN-sim-hardening.md` section 3.3.
+**The one line that matters for the sim is the pivot.** Differential drive
+rotates in place, which is what `sim/grid_world.py` has always assumed.
+The PiCar-X could not, and the largest phase in `PLAN-sim-hardening.md`
+(S6) existed to model that; the purchase retired it.
 
 ---
 
@@ -144,8 +133,8 @@ transfers concretely:
   one.**
 
 What none of this tells you is anything below the divergence point:
-whether `min_distance_cm: 20` is survivable, how the car arcs through a
-turn, whether the ultrasonic sees a sofa. That half has never run against
+whether `min_distance_cm: 20` is survivable, how far the car coasts after
+a stop, whether the lidar sees a glass door. That half has never run against
 anything real -- see section 3 and `PLAN-sim-hardening.md` section 7.
 
 ---
@@ -154,35 +143,32 @@ anything real -- see section 3 and `PLAN-sim-hardening.md` section 7.
 
 **Do these first** (they are correctness work, not simulation work):
 
-- **Phases S1-S4 of `PLAN-sim-hardening.md`** -- pin the interface
-  contract, make `get_camera_frame()` return real image bytes, build the
-  Python HTTP client, put time in the loop so the watchdog is actually
-  tested. **All four are now built** -- S1 and S3 on 2026-08-28, S4 the
-  same day, and S2 on 2026-08-31 (`sim/renderer.py`). S5 is built too,
-  which `PLAN-sim-hardening.md` Q4 puts past the point where measuring
-  beats modelling.
+- **Phases S1-S5 of `PLAN-sim-hardening.md`** -- pin the interface
+  contract, real image bytes, the Python HTTP client, time in the loop,
+  sensor noise. **All built** (S1, S3 and S4 on 2026-08-28; S2 on
+  2026-08-31; S5 with its cone deferred).
 - **The cheap real-world test:** photograph real rooms with a phone and
-  replay those JPEGs through `/navigate`, the same way Guide already
-  replays them through `/guidance`. **No robot required.** This answers
-  whether Claude can navigate from real photos -- and if it can't, no
-  amount of hardware fixes that.
+  replay those JPEGs through `/navigate`. **No robot required.** Done many
+  times over -- `CLAUDE.md`'s Stage 0 notes hold the results, and the
+  standing finding is that the corpus has to be re-recorded at robot height
+  with the target on the floor before it says anything about wording.
+- **The Hailo compile loop** (`PLAN-onboard-perception.md` 1.10 item 1):
+  one model from Hugging Face to a HEF on an EC2 box, scored over the
+  recorded walks. Nothing on the car depends on it, but without it the
+  accelerator arrives as a fixed-function part.
 
-**Then buy.** Past that point the work shifts to modeling things that
-could simply be measured: ultrasonic behavior on an actual sofa, actual
-turning radius on actual carpet, real stopping distance. A ~$100 kit
-measures those better than a week of simulator work does.
+**Then buy.** Past that point the work shifts to modelling things that
+could simply be measured: how far the car rolls in one 0.5s move, how far
+it coasts after `stop()`, what the lidar returns from glass, mirrors and a
+dark sofa, and how many encoder ticks make a 90-degree pivot on carpet.
+About $500 of parts (`PLAN-onboard-perception.md` 3.6) measures those
+better than a week of simulator work does.
 
-**Both prerequisites are met as of 2026-08-31**, so this is now the live
-recommendation rather than a future one. Note the kit has shipping
-latency that no other item here has, and section 5.3 -- whether the
-ultrasonic pans with the camera -- is answerable only by looking at the
-assembly diagram, decides whether the peek-based policy works at all, and
-blocks nothing else. That makes ordering the highest-value action
-available, and it can happen in parallel with everything below.
-
-The genuinely unbuyable-around items: how far the car coasts between
-"sensor says 20cm" and "motors stopped," and whether the ultrasonic sees
-curtains at all. Both are in `PLAN-sim-hardening.md` section 7.
+The genuinely unbuyable-around items -- coasting distance against
+`min_distance_cm`, and lidar behaviour on real surfaces -- are in
+`PLAN-sim-hardening.md` section 7. Before ordering, the open items are
+`PLAN-onboard-perception.md` 3.8's five seller questions and 1.10's
+ordering-time checks; none blocks anything else.
 
 ---
 
@@ -199,8 +185,7 @@ Pi.** It has to, for two reasons.
 (`safety.watchdog_timeout_s`). A round trip to us-east-1 and back is
 100-300ms on a good day and *unbounded* when Wi-Fi hiccups. If the safety
 decision lives in AWS, a dropped packet means the car keeps driving. The
-ultrasonic re-check in `robot/safety.py` has to happen inches from the
-sensor.
+sensor re-check in `robot/safety.py` has to happen inches from the lidar.
 
 **Reason 2 -- home NAT.** The Pi sits behind a home router. Nothing on
 the public internet can open a connection *to* it. And this design is
@@ -214,7 +199,7 @@ The shape after hardware:
   ─────────────────────────────────────           ──────────────────────
 
   ┌─────────────────────────────┐
-  │ PiCar-X + Raspberry Pi      │
+  │ chassis + Raspberry Pi 5    │
   │   robot/server.py           │
   │   mode: hardware            │
   │   robot/safety.py  ◄── veto happens HERE, locally
@@ -230,9 +215,9 @@ The shape after hardware:
                                            └──────────────────────┘
 ```
 
-(Where the brain itself should run -- MacBook or Pi -- is re-examined
-in section 7; this section assumes the MacBook split the build plan
-originally specified.)
+(Where the brain runs is settled in section 7: on the Pi, as its own
+process. The diagram shows it as a separate box because it is one,
+wherever it runs.)
 
 **The car never talks to AWS. The brain does.** The car only ever talks
 to the brain, over home Wi-Fi. What crosses the internet is one JPEG up
@@ -247,18 +232,20 @@ One `FORWARD`, all the way down:
    over LAN.
 2. FastAPI on the Pi stamps `last_command_at` -- this is what keeps the
    watchdog quiet.
-3. `SafetyController` **re-reads the real ultrasonic sensor.** It never
+3. `SafetyController` **re-reads the real sensor** -- the lidar's path
+   zones, via `path_clearance()`. It never
    trusts what the brain claims (`robot/safety.py`).
 4. If under `min_distance_cm`: motors stop, HTTP 200 with
    `{"executed": false}`. The AI's decision is overruled by a sensor
    reading, locally, in milliseconds.
-5. If clear: `HardwareRobot.drive_forward(50, 0.5)` -- roughly
-   `px.forward(50)`, wait 0.5s, `px.stop()`.
-6. A turn is where reality bites: `px.set_dir_servo_angle(-30)` *plus*
-   forward motion. The car **arcs**. The sim pivots in place.
+5. If clear: `HardwareRobot.drive_forward(50, 0.5)` -- set both wheel
+   velocities on the driver board, wait 0.5s, set them to zero.
+6. A turn is a pivot: opposite wheel velocities until the encoders (or the
+   IMU) report 90 degrees. The sim pivots in place too -- since the chassis
+   decision this step is no longer where reality bites.
 
-Steps 1-5 are already written and already tested. Step 5's guts are the
-only genuinely new code.
+Steps 1-4 are already written and already tested. Steps 5-6's guts, and
+the lidar feed behind step 3, are the only genuinely new code.
 
 ### From a verb to the motors
 
@@ -290,32 +277,32 @@ backend-agnostic, which is why it doesn't change on hardware day. **All
 the reality lands in `robot/hardware_robot.py`**, the one file still
 unwritten.
 
-What that file has to do, roughly, with the `picarx` library (verify the
-current SunFounder API before writing against these names):
+What that file has to do, roughly (verify the driver board's protocol
+before writing against it):
 
 | Verb | Interface call | Real hardware |
 |---|---|---|
-| `FORWARD` | `drive_forward(50, 0.5)` | `px.forward(50)` -> sleep 0.5 -> `px.stop()` |
-| `REVERSE` | `reverse(50, 0.5)` | `px.backward(50)` -> sleep 0.5 -> `px.stop()` |
-| `LEFT` | `turn_left(90)` | **no such primitive** -- see below |
-| `STOP` | `stop()` | `px.stop()` (cuts power; the car then coasts) |
-| `LOOK_LEFT` | `look_left()` | `px.set_cam_pan_angle(-30)` |
-| -- | `get_distance()` | `px.ultrasonic.read()` |
+| `FORWARD` | `drive_forward(50, 0.5)` | both wheels at the mapped velocity -> sleep 0.5 -> both wheels zero |
+| `REVERSE` | `reverse(50, 0.5)` | the same, negative |
+| `LEFT` | `turn_left(90)` | wheels in opposite directions until the encoder delta (or IMU yaw) reads 90 degrees, then zero |
+| `STOP` | `stop()` | both wheels zero (the car then coasts -- 5.1) |
+| `LOOK_LEFT` | `look_left()` | pan servo to -30 degrees |
+| -- | `get_depth_grid()` | one lidar revolution reduced to zones, published with `fov_deg: 360` so `path_zone_indices()` selects by angle (`PLAN-onboard-perception.md` 5.1) |
+| -- | `get_distance()` | `path_clearance()` over that grid; the scalar exists for the contract, not as a second sensor |
 
-**There is no "turn 90 degrees" on a PiCar-X.** The hardware offers a
-steering angle (`px.set_dir_servo_angle`, roughly +/-30 degrees) and
-forward motion. So `turn_left(90)` must be implemented as: steer full
-left, drive forward for T seconds, straighten. T is calibrated until the
-heading change is about 90 degrees -- and T shifts with speed, floor
-surface, and battery charge.
+**A 90-degree turn is real on this chassis, and it is a calibration, not a
+timer.** Encoder counts per degree of pivot depend on the wheel base and
+wheel diameter and shift a little with the floor surface; the IMU, if
+fitted, closes the loop directly. Measure the count on carpet and on hard
+floor once, and prefer the IMU where the two disagree.
 
 ---
 
 ## 5. Pre-flight checklist before hardware day
 
-Three things the current simulation structurally cannot surface. Each was
-found by tracing the verb-to-motor path above; none is discoverable from
-a passing test suite.
+Things the current simulation structurally cannot surface. Each was found
+by tracing the verb-to-motor path above; none is discoverable from a
+passing test suite.
 
 ### 5.1 Every vision-driven move is hardcoded to speed 50 for 0.5s
 
@@ -331,46 +318,42 @@ Measure it before tuning anything else; several other constants
 (`min_distance_cm`, the map scale in `PLAN-sim-hardening.md` section 3.4)
 are only meaningful relative to it.
 
-### 5.2 `LEFT` and `RIGHT` skip the distance check -- real safety gap
+**And the top speed is a safety parameter.** The chosen motors reach about
+1 m/s on 65mm wheels (`PLAN-onboard-perception.md` 3.8), at which a 200ms
+reaction latency consumes the entire 20cm collar. "Speed 50" has to map to
+a wheel velocity chosen against that budget (4.4 there), not to half of
+whatever the driver board allows.
 
-`robot/safety.py:27` reads:
+### 5.2 `LEFT` and `RIGHT` skip the distance check -- resolved by the chassis
 
-```python
-FORWARD_ACTIONS = {"FORWARD"}
-```
+`robot/safety.py:27` reads `FORWARD_ACTIONS = {"FORWARD"}`, so only
+`FORWARD` triggers the sensor re-read before dispatch. On the PiCar-X that
+was a real gap -- an Ackermann turn is a forward arc. On a differential
+chassis a turn is a pivot, and a pivot does not consume forward space, so
+the line is **correct as written**. Leave it. (`REVERSE` also skips the
+check; the 360-degree ring could cover it, and whether it should is a
+hardware-day question.)
 
-so only `FORWARD` triggers the ultrasonic re-read before dispatch. That
-is **correct for the simulation** -- `GridWorld` pivots in place, and a
-pivot cannot hit anything.
+One residue: a rectangular chassis sweeps a circle wider than itself when
+it pivots (`PLAN-onboard-perception.md` 3.7), so a pivot hard against a
+wall can clip it. The ring can see that too; whether it is worth a
+side-clearance check before a pivot is a measurement, not a sim question.
 
-It is **wrong for the hardware**. A real Ackermann turn *is* a forward
-move, arcing perhaps 30-40cm ahead (see section 4). As written, turns
-would drive the car forward with no obstacle check at all.
+### 5.3 Validate the lidar in the actual house before wiring the collar to it
 
-The fix is one line -- `FORWARD_ACTIONS = {"FORWARD", "LEFT", "RIGHT"}`
--- but **nothing in the current simulation can ever surface the need for
-it**, because turning is free there. Apply it as part of writing
-`hardware_robot.py`, not after the first collision. (`REVERSE` also skips
-the check, but that is inherent: there is no rear sensor.)
+The old item here asked whether the ultrasonic panned with the camera,
+because the frontier policy's `look_left(); get_distance()` peek only works
+if the sensor turns with the view. A 360-degree lidar answers every bearing
+at once, so the peek is metric whichever way the camera points, and the
+question is gone.
 
-### 5.3 Verify where the ultrasonic sensor is mounted
-
-The entire frontier-preference exploration policy peeks by calling
-`look_left()` and then `get_distance()`. That works in sim because
-`GridWorld.distance_ahead()` casts its ray along `_view_heading()`, which
-includes camera pan -- panning the camera changes the measured distance.
-
-On the real kit that only holds **if the ultrasonic sensor sits on the
-pan/tilt gimbal with the camera.** If it is fixed to the chassis instead,
-`look_left(); get_distance()` returns the *forward* distance, every peek
-returns the same number, and the exploration algorithm silently runs on
-noise while appearing to work.
-
-This could not be confirmed from this repo -- the build plan lives in the
-Claude Project, not here. **Check the kit's assembly diagram before
-hardware day.** It decides whether the policy works at all, and if the
-sensor is chassis-mounted the fix is a real design change (turn the
-chassis to peek, or add a second distance source), not a constant.
+What replaces it is `PLAN-onboard-perception.md` 3.3's opening move: get
+scans into Python and check them against the real rooms -- glass, mirrors,
+dark matte fabric, mounting vibration -- **before** `path_clearance()`
+reads them. Layering a veto onto scans that have not been validated is how
+a mounting problem gets debugged as a safety-layer problem. The lidar sees
+one plane: chair legs, not seats; the camera still owns everything above
+and below it.
 
 ### 5.4 Do not carry the vision proximity veto onto the car
 
@@ -382,7 +365,7 @@ a `FORWARD` when the model's own `distance_estimate` says
 `robot/safety.py`'s veto is dead code and a whole recorded walk says
 nothing about collision avoidance.
 
-`HardwareRobot` will have a real ultrasonic, which makes the veto both
+`HardwareRobot` will have a real lidar, which makes the veto both
 unnecessary and actively wrong there. Two reasons, and the second is the
 one that bites:
 
@@ -393,12 +376,20 @@ one that bites:
 2. **The signal is not calibrated and the models disagree wildly.** On
    identical frames one model reports `obstacle_ahead` ~100% of the time
    and another ~0%; `distance_estimate` says `within_one_step` on 60% of
-   real walk frames. On hardware the ultrasonic is the obstacle sensor.
+   real walk frames. On hardware the lidar is the obstacle sensor.
    Do not let the vision policy be the thing relying on either field.
 
 Nothing needs doing on hardware day except *not* copying it into
 `robot/hardware_robot.py`. It is listed here because the tempting move --
 "we already have obstacle logic, reuse it" -- is the wrong one.
+
+### 5.5 Re-measure the chassis width
+
+`robot/safety.py`'s `CHASSIS_WIDTH_CM` is still the PiCar-X's 16.5cm, kept
+deliberately because it over-states the Yahboom chassis (148mm) and so errs
+wide. It sets the path cone's half-angle. Measure the real chassis with its
+wheels on, set the constant, and re-run `tests/test_depth_veto.py`. M10 in
+`PLAN-microduck-transplants.md` owns the rest of that cone.
 
 ---
 

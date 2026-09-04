@@ -45,7 +45,7 @@ on buying hardware, Phase 11):
 - **Robot view** is the same real-pixel test as Guide me, but asks "what
   would the robot do" instead of "where should the person go" -- the
   cheapest go/no-go gate for the navigation *policy* before spending
-  money on a PiCar-X.
+  money on hardware.
 
 So: Sim validates the software that will eventually run the robot; Guide
 me and Robot view validate the vision model that software depends on, on
@@ -360,7 +360,7 @@ never look like arrival).
   ticks, both to avoid pausing on one noisy read and because (unlike
   Guide) the run is meant to be a continuous decision readout, not a
   one-shot "you found it."
-- Hold the phone low, ~10cm -- roughly PiCar-X camera height. A
+- Hold the phone low, ~10cm -- roughly the car's camera height. A
   chest-height view isn't the robot's view, and the whole point of this
   mode is testing the vision policy on the actual geometry it will see.
 
@@ -550,7 +550,7 @@ stop.
 - `drive_forward`/`reverse`/`turn_left`/`turn_right`/`look_*` -- log-only
   acks, no position tracked.
 - `get_distance()` -- always `999.0` (`NO_SENSOR_CM`), the same "honestly
-  no ultrasonic here" constant `ReplayRobot` uses, so `robot/safety.py`
+  no distance sensor here" constant `ReplayRobot` uses, so `robot/safety.py`
   never blocks a move against this backend.
 - `TeleopStall` (a `RuntimeError`) needs no special handling in
   `control/mission_runner.py` -- it surfaces from `agent.step()` straight
@@ -572,8 +572,8 @@ time inside the call).
 **What this doesn't solve:** room-level step memory (a photograph still
 carries no room label -- a teleop mission can revisit an already-searched
 room; only the step cap stops it, same limitation as every vision-policy
-mission today), and Ackermann-style motion realism (not relevant here
-since nothing physically moves under this mode anyway).
+mission today). Motion realism is not a concern here since nothing
+physically moves under this mode anyway.
 
 ---
 
@@ -790,7 +790,7 @@ else does before hardware exists.
 `within_one_step` comes back on 60% of them. Wired on, that would block
 roughly three FORWARDs in five and reproduce the never-FORWARD stall the
 3x3 prompt matrix already found. **Do not copy this into
-`robot/hardware_robot.py`** -- on the PiCar the ultrasonic is the obstacle
+`robot/hardware_robot.py`** -- on the car the lidar is the obstacle
 sensor, and on identical frames one model reports `obstacle_ahead` ~100%
 of the time and another ~0%.
 

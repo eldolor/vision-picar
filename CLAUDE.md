@@ -58,11 +58,13 @@ task role's IAM permissions, not an API key.
 
 ## 2. What this project is
 
-An indoor autonomous robot: PiCar-X chassis + Raspberry Pi 5 (robot
-runtime) + a MacBook running a Vision LLM (high-level reasoning).
-(That MacBook placement dates from before vision moved to Bedrock, and is
-re-examined in `HARDWARE-READINESS.md` section 7 -- the brain no longer
-computes anything. Nothing in the code has changed yet.)
+An indoor autonomous robot: a differential-drive chassis + Raspberry Pi 5
+(robot runtime, and since B0-B4 the autonomy loop too) + a vision LLM on
+Amazon Bedrock (high-level reasoning). It began as a PiCar-X plus a
+MacBook-hosted brain; both halves of that changed before any hardware was
+bought -- the brain moved to the Pi in design (`HARDWARE-READINESS.md`
+section 7) and the chassis, obstacle sensor and detector were re-decided in
+`PLAN-onboard-perception.md` (2026-09-03/04).
 **Development approach is simulation-first**: all decision-making logic
 is built and validated against a grid-world simulator before any
 hardware is purchased. See `README.md`'s "Final Architecture" section
@@ -78,7 +80,7 @@ instead of a rewrite -- do not introduce a new code path that imports
 `sim.mock_robot` directly from `brain/`.
 
 The second constraint follows from the first: **build it, prove it in the
-digital twin's UI, then put it on the PiCar** -- section 7 has the rule
+digital twin's UI, then put it on the car** -- section 7 has the rule
 and what each phase owes because of it. The abstraction above is what
 makes that possible at all (the twin drives the same API the hardware
 will, so the tap that works in the sim is the tap that works on the
@@ -117,7 +119,7 @@ the original build plan phases, reordered simulation-first):
 | M3 | The tri-state zone, and a centre-zone veto | Done (2026-09-03), not deployed -- `SafetyController.path_clearance()` reduces the middle half of the grid's columns to one number and compares it to `min_distance_cm`, exactly as it compared `get_distance()` before. A failed zone never enters the comparison in either direction; a wholly blind path falls back to the scalar and keeps its `0.0`-on-dropout stop. `GET /depth` publishes the reduction so the twin never recomputes it. |
 | M4 | Refusals are state, manual preempts autonomous | Done (2026-09-03), not deployed -- `robot/server.py` arbitrates `/action` by a decided order (`stop > twin-dpad > brain > twin-local-brain`, `AGENT-HARNESS.md` 4.1) instead of letting the last writer win, every refusal carries a machine-readable `reason`, `RemoteRobot` raises `Preempted` rather than `SafetyViolation`, and a preempted mission ends `preempted` with the robot stopped. |
 | M5 | One health command | Done (2026-09-03), not deployed -- `python -m control.health` (and a Settings health line) asks both halves and exits non-zero when either is unhealthy or unreachable. Verdict inputs are reachability, the robot watchdog loop's own poll freshness, and a running mission's tick liveness; everything else is description and never changes the exit code. Both servers now log an identity line at start-up. |
-| -- | On-car perception + the hardware chain (`PLAN-onboard-perception.md`) | **DESIGN SETTLED 2026-09-03, NOTHING BUILT.** Started as "what could run on the car itself" after reading Microduck and ended up rewriting the hardware plan. Decided: a **differential-drive chassis** rather than the PiCar-X's Ackermann (which **retires S6** and makes `grid_world.py`'s pivot assumption correct); a **lidar** used first as a 360-degree clearance ring and only later as SLAM behind an HTTP wall; an **IMX500 AI Camera** for on-sensor detection; and a **tiered architecture** where the VLM becomes an event-triggered deliberation tier -- which is what finally gives `brain/planner.py` a job. Also settles the goal vocabulary, stop conditions, arbitration and what the sim can test. Bill of materials ~$463. **Read it before buying anything**, and note its section 5: `HARDWARE-READINESS.md` is now partly wrong. |
+| -- | On-car perception + the hardware chain (`PLAN-onboard-perception.md`) | **DESIGN SETTLED 2026-09-03, DETECTOR REVISED 2026-09-04, NOTHING BUILT.** Started as "what could run on the car itself" after reading Microduck and ended up rewriting the hardware plan. Decided: a **differential-drive chassis** rather than the PiCar-X's Ackermann (which **retires S6** and makes `grid_world.py`'s pivot assumption correct); a **lidar** used first as a 360-degree clearance ring and only later as SLAM behind an HTTP wall; a **Hailo-8L AI HAT+ with a Camera Module 3** for on-board detection -- chosen on 2026-09-04 over the IMX500 AI Camera (its nano-only ceiling is silicon, and it cannot be fed a recorded frame) and over a Jetson (the right board for arbitrary Hugging Face models, ruled out for now on cost, power and the camera stack; its section 4 has the three-way comparison and the conditions for re-opening it); and a **tiered architecture** where the VLM becomes an event-triggered deliberation tier -- which is what finally gives `brain/planner.py` a job. Also settles the goal vocabulary, stop conditions, arbitration and what the sim can test. Bill of materials ~$498, ~$573 with NVMe. **Read it before buying anything**, and note its section 5: `HARDWARE-READINESS.md` is now partly wrong. The one thing it asks for *before* hardware day is the Hailo compile loop (its 1.10 item 1): without it the Hailo is a fixed-function part and the IMX500 was cheaper. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. **The chassis is no longer a PiCar-X** -- see the row above. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -276,9 +278,10 @@ vision-picar/
 ├── PLAN-ar-guidance.md        the Guide tab: spec, redesign, changelog (BUILT)
 ├── PLAN-sim-hardening.md      how the sim diverges from hardware, phased fixes,
 │                               definition of done before a hardware swap
-│                               (S1 and S3 BUILT, S2/S2b partial, S4-S7 PROPOSED)
-├── HARDWARE-READINESS.md      what the PiCar-X kit changes: verb-to-motor path,
-│                               pre-flight checklist, where the brain should live
+│                               (S1-S5 BUILT, S6 RETIRED, S7 PROPOSED)
+├── HARDWARE-READINESS.md      what the real robot changes: verb-to-motor path,
+│                               pre-flight checklist, where the brain lives.
+│                               Rewritten 2026-09-04 for the chosen hardware
 ├── PLAN-brain-relocation.md   moving the autonomy loop onto the Pi (B0-B4 BUILT,
 │                               B5 needs the Pi)
 ├── PLAN-teleop-robot.md       a live phone walk driving the real MissionRunner
@@ -307,7 +310,7 @@ vision-picar/
 Sequenced across the three plan documents, which hold the detail. Phase
 IDs are `S*` = `PLAN-sim-hardening.md`, `B*` = `PLAN-brain-relocation.md`.
 
-**None of stages 0-5 needs the PiCar-X.** Each stage is independently
+**None of stages 0-5 needs the hardware.** Each stage is independently
 useful, so stopping at the end of any of them leaves the project in a
 coherent state.
 
@@ -408,7 +411,7 @@ before trusting any of it, but this is where it stands:
 - **`obstacle_ahead` is not calibrated and should not be trusted.** On the
   same frames Opus reports it on ~100% and Qwen on ~0%. On a frame that is
   nothing but a wall, Opus and Sonnet turn away; Qwen and Nova drive into it.
-  On hardware the ultrasonic is the real obstacle sensor -- do not let the
+  On hardware the lidar is the real obstacle sensor -- do not let the
   vision policy be the thing relying on this field.
 - **The prompt is at least as strong a lever as the model, and the obvious
   fix is wrong.** Rewording the obstacle question to be about the next step
@@ -596,7 +599,7 @@ before trusting any of it, but this is where it stands:
   targets:
 
   1. **The target is on raised furniture.** The red backpack sits on an
-     ottoman; the blue bottle sits on a console table. A PiCar-X is a floor
+     ottoman; the blue bottle sits on a console table. The car is a floor
      robot. It cannot arrive at either, so `target_reached` is not merely
      rare in these walks -- it is unachievable, and the collision flags are
      *correct*: the only way to approach the target is to drive into the
@@ -647,8 +650,8 @@ before trusting any of it, but this is where it stands:
 
   **The corpus defects recorded above are fully reproduced.** The frames were
   opened, not just the JSON: the camera is at standing height looking *down*
-  onto furniture, and the bottle is on a round cafe table (~75cm). A
-  PiCar-X cannot arrive at it, so `collision` is again the correct flag and
+  onto furniture, and the bottle is on a round cafe table (~75cm). A floor
+  robot cannot arrive at it, so `collision` is again the correct flag and
   the walk again tests a task the robot cannot perform. Also 3 of 33 frames
   are portrait against 28 landscape -- the model says so itself ("blurry and
   rotated", "sideways image"). **The re-recording called for above is still
@@ -827,9 +830,12 @@ which is B5.
 
 **Read `PLAN-onboard-perception.md` first -- the chassis is no longer a
 PiCar-X.** Its section 1 holds the decided parts list (differential chassis,
-RPLidar C1, IMX500 AI Camera, two power rails, ~$463) and section 3.8 the
-four questions still to ask the seller. Its section 5 lists what that
-decision invalidates elsewhere, including in `HARDWARE-READINESS.md`.
+RPLidar C1, Hailo-8L AI HAT+ with a Camera Module 3, two power rails, ~$498)
+and section 3.8 the five questions still to ask the seller. Its section 4 is
+the detector decision -- IMX500 vs Hailo vs Jetson -- and its 1.10 lists the
+ordering-time checks (storage vs the PCIe lane, the AI HAT+ 2) and the compile
+loop to build first. Its section 5 lists what that decision invalidates
+elsewhere, including in `HARDWARE-READINESS.md`.
 
 `HARDWARE-READINESS.md` section 5's pre-flight items still apply where they
 are chassis-independent, with two now answered by the purchase: **5.2**
@@ -1115,10 +1121,11 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
 
 ---
 
-## 7. Twin first, then the PiCar
+## 7. Twin first, then the car
 
 The project's ordering rule, stated by the user 2026-08-27 and binding on
-everything below:
+everything below (the quote predates the chassis change; "the PiCar" means
+the real robot, whatever it is built from):
 
 > **Build it, prove it in the digital twin's UI, and only then put it on
 > the PiCar.** A phase is not done when its tests pass. It is done when

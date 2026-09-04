@@ -208,7 +208,7 @@ the house again for every change. Frames land in the brain's
 `recording_dir`, one directory per walk, with a `walk.jsonl` beside them
 so a replayed run can be diffed against what the service said at the time.
 
-Hold the phone low, about 10cm -- the PiCar-X camera's height. A
+Hold the phone low, about 10cm -- roughly the car's camera height. A
 chest-height walk is not the robot's walk.
 
 `brain.allow_recording: false` removes the endpoint entirely.

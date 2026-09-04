@@ -343,7 +343,7 @@
       work out where to go next.
     </p>
     <div class="masthead-meta">
-      <span>SunFounder PiCar-X</span>
+      <span>A small robot car on a Raspberry Pi 5</span>
       <span>Claude vision models on AWS Bedrock</span>
       <span>Simulation built first, hardware next</span>
     </div>
@@ -503,7 +503,7 @@
 
         <div class="body-card next">
           <span class="chip ahead">Next phase</span>
-          <h4>The real PiCar-X</h4>
+          <h4>The real car</h4>
           <dl class="spec">
             <dt>Eyes</dt><dd>The camera bolted to the car</dd>
             <dt>Brain</dt><dd>The vision model, called for real</dd>
@@ -758,7 +758,7 @@
           <div class="phase-n">11</div>
           <div class="phase-body">
             <h4>Put it in the car &mdash; next</h4>
-            <p>Same brain, same safety rules, real motors and a real ultrasonic sensor. Say the object out loud; let it go and find it.</p>
+            <p>Same brain, same safety rules, real motors and a real lidar. Say the object out loud; let it go and find it.</p>
           </div>
         </div>
       </div>
@@ -812,8 +812,8 @@
     <div class="panel">
       <dl class="glossary">
         <div>
-          <dt>PiCar-X</dt>
-          <dd>An off-the-shelf robot car kit built around a Raspberry Pi &mdash; two drive motors, steering, a camera on a small pan-tilt mount, and an ultrasonic distance sensor.</dd>
+          <dt>The car</dt>
+          <dd>A small two-wheeled robot built around a Raspberry Pi 5: a camera on a small pan-tilt mount, a spinning lidar that measures distance in every direction, and a small AI chip that spots the target on board. The first plan used an off-the-shelf PiCar-X kit; it was swapped before purchase because that kit steers like a car and cannot turn on the spot.</dd>
         </div>
         <div>
           <dt>Vision model</dt>
@@ -824,8 +824,8 @@
           <dd>A working stand-in for the real machine that you can drive and watch. Not a mock-up &mdash; it runs the same movement, sensing and safety code the car will.</dd>
         </div>
         <div>
-          <dt>Ultrasonic sensor</dt>
-          <dd>A small emitter that measures distance by timing an echo, like a bat. Cheap and reliable, but it only sees a narrow cone directly ahead.</dd>
+          <dt>Lidar</dt>
+          <dd>A spinning laser rangefinder. It measures the distance to the nearest thing at every angle around the car, many times a second &mdash; a floor plan&rsquo;s worth of distances from one small puck. It sees one flat slice of the room: chair legs, not chair seats.</dd>
         </div>
         <div>
           <dt>Safety veto</dt>
@@ -866,7 +866,7 @@
   </section>
 
   <div class="closer">
-    <span>vision-picar &mdash; simulation-first build of the PiCar-X vision agent</span>
+    <span>vision-picar &mdash; simulation-first build of a vision-driven robot car</span>
     <span>Phase 11 next: real hardware</span>
   </div>
 

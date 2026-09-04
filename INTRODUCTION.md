@@ -6,7 +6,7 @@ A small robot car you can send to find something. Not by giving it a map or a
 route — by letting it look at the room, the way you would, and work out where to
 go next.
 
-- SunFounder PiCar-X
+- A small robot car on a Raspberry Pi 5 (parts chosen, not yet bought)
 - Claude vision models on AWS Bedrock
 - Simulation built first, hardware next
 
@@ -65,7 +65,7 @@ put a different one in its place. The eyes and the brain stay exactly the same.
 That's what lets the project be tested long before any hardware is finished — and
 it's the thing worth understanding before you try the app.
 
-| | **A simulated car** | **You, on foot** | **The real PiCar-X** |
+| | **A simulated car** | **You, on foot** | **The real car** |
 |---|---|---|---|
 | **Status** | Working today | Working today | **Next phase** |
 | **Eyes** | A drawn first-person view of a make-believe house | Your phone's actual camera | The camera bolted to the car |
@@ -212,7 +212,7 @@ file.
 | **09** | Splitting brain from body | Thinking happens on one machine, moving on another, with an HTTP link between them — exactly the split the real car needs. |
 | **10** | The digital twin, and Guide | A phone app that drives the simulation for real, plus the vision service in the cloud — and the first-person mode you can walk around with. |
 | **B** | The car stops needing a laptop | The search itself became a small program that runs on the car. The phone starts it and then only watches — close the app and the car carries on. Three separate ways for it to stop itself, and a way to test each one from the phone. |
-| **11** | **Put it in the car — next** | Same brain, same safety rules, real motors and a real ultrasonic sensor. Say the object out loud; let it go and find it. |
+| **11** | **Put it in the car — next** | Same brain, same safety rules, real motors and a real lidar. Say the object out loud; let it go and find it. |
 
 ---
 
@@ -252,10 +252,10 @@ theoretical.
 
 | Term | What it means |
 |---|---|
-| **PiCar-X** | An off-the-shelf robot car kit built around a Raspberry Pi — two drive motors, steering, a camera on a small pan-tilt mount, and an ultrasonic distance sensor. |
+| **The car** | A small two-wheeled robot built around a Raspberry Pi 5: a camera on a small pan-tilt mount, a spinning lidar that measures distance in every direction, and a small AI chip that spots the target on board. The first plan used an off-the-shelf PiCar-X kit; it was swapped before purchase because that kit steers like a car and cannot turn on the spot. |
 | **Vision model** | An AI model that accepts an image and a question about it, and answers in words. Here it's asked things like "is a red backpack visible, and roughly where in this frame?" |
 | **Digital twin** | A working stand-in for the real machine that you can drive and watch. Not a mock-up — it runs the same movement, sensing and safety code the car will. |
-| **Ultrasonic sensor** | A small emitter that measures distance by timing an echo, like a bat. Cheap and reliable, but it only sees a narrow cone directly ahead. |
+| **Lidar** | A spinning laser rangefinder. It measures the distance to the nearest thing at every angle around the car, many times a second — a floor plan's worth of distances from one small puck. It sees one flat slice of the room: chair legs, not chair seats. |
 | **Safety veto** | The rule that lets the body overrule the brain. Every proposed move is checked against the distance reading before any wheel turns. |
 | **Watchdog** | A timer on the body's side. If no command arrives for about a second, it stops the motors without asking anyone. |
 | **Failsafe drill** | Deliberately breaking one thing to check the guard that should catch it. Available from the app, and only ever able to end with the car stopped. |
@@ -275,7 +275,7 @@ That last clause is the whole method.
 
 ---
 
-*vision-picar — simulation-first build of the PiCar-X vision agent.
+*vision-picar — simulation-first build of a vision-driven robot car.
 The engineering reference for the searching loop itself is
 [`AGENT-HARNESS.md`](AGENT-HARNESS.md).
 Phase 11 next: real hardware. See [`README.md`](README.md) for the engineering

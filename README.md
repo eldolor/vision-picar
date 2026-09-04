@@ -1,8 +1,9 @@
 # vision-picar
 
-Simulation-first build of the PiCar-X Vision Agent: all decision-making
+Simulation-first build of a vision-driven robot car: all decision-making
 is built and validated against a grid-world simulator before any hardware
-is bought.
+is bought. (It began as a PiCar-X build; the chassis was changed before
+purchase on 2026-09-03 -- see `PLAN-onboard-perception.md`.)
 
 **Where things stand.** Phases 0-6 and the simulation checkpoint are
 done; Phase 9's Wi-Fi control API is done and sim-testable; the web twin
@@ -16,8 +17,10 @@ setup, assembly, real camera, hardware swap-in) are unstarted, by design.
 |---|---|
 | `CLAUDE.md` | orientation: status table, repo map, gotchas. Start here. |
 | `INTRODUCTION.md` | what the project is, for a non-technical reader |
-| `HARDWARE-READINESS.md` | before buying the kit: what changes, pre-flight checklist |
+| `PLAN-onboard-perception.md` | the hardware decided on: chassis, lidar, detector, bill of materials, and the tiered architecture they imply |
+| `HARDWARE-READINESS.md` | before hardware day: verb-to-motor path, pre-flight checklist, where the brain lives |
 | `PLAN-sim-hardening.md` | where the sim diverges from hardware, and the phased fix |
+| `PLAN-microduck-transplants.md` | designs borrowed from Microduck: depth grid, refusal reasons, arbitration, health verdict |
 | `PLAN-brain-relocation.md` | moving the autonomy loop onto the Pi |
 | `PLAN-ar-guidance.md` | the Guide tab, as built |
 | `PLAN-teleop-robot.md` | a live phone walk driving the real brain, closed loop |
@@ -555,8 +558,22 @@ choice, not a change to that boundary.
 config change away, and the codebase no longer has two competing
 implementations of the robot's behavior.
 
+## Hardware decided, not bought (2026-09-03 and 2026-09-04)
+
+Reading Microduck (`PLAN-microduck-transplants.md`) turned into a rewrite
+of the hardware plan (`PLAN-onboard-perception.md`). The PiCar-X is out:
+it cannot pivot in place, which the grid world always assumed and which
+lidar scan matching wants. In: a differential-drive chassis with encoder
+motors, an RPLidar C1 as a 360-degree clearance ring (SLAM later, behind
+an HTTP wall), and -- after a three-way comparison against the IMX500 AI
+Camera and a Jetson -- a Hailo-8L AI HAT+ with a Camera Module 3 for
+on-board detection. About $500 of parts. Retires S6, rewrites
+`HARDWARE-READINESS.md`, and gives `brain/planner.py` its job as an
+event-triggered deliberation tier.
+
 ## Swapping to real hardware (Phase 11, later)
 
 Change `mode: sim` to `mode: hardware` in `config/robot.yaml`, and add
-`robot/hardware_robot.py` implementing `RobotInterface` for real GPIO/PiCar-X
-calls. Nothing in `brain/` should need to change.
+`robot/hardware_robot.py` implementing `RobotInterface` for the chosen
+chassis, lidar and camera (`HARDWARE-READINESS.md` section 4 has the
+verb-to-motor table). Nothing in `brain/` should need to change.

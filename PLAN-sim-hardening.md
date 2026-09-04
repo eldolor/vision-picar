@@ -4,7 +4,7 @@ Status: proposal, nothing built yet. Written against the repo as of
 `183b99f`, with `pytest tests/ -q` at 61 passed.
 
 Goal: exercise the robot <-> brain loop hard enough in simulation that
-buying the PiCar-X and flipping `config/robot.yaml`'s `mode` is genuinely
+buying the hardware and flipping `config/robot.yaml`'s `mode` is genuinely
 the only change. This doc first corrects the mental model of how the loop
 actually works today, then lists the specific places where "config change
 only" is currently **not** true, then phases the work.
@@ -203,8 +203,10 @@ structurally sound and completely uncalibrated.
 
 Also: the sim caps at `max_range=10` cells = 300cm; an HC-SR04 reads
 roughly 2-400cm. And `distance_ahead()` casts a perfect 1-cell-wide ray
-along a grid axis; the real sensor has a ~15 degree cone, +/- a few cm of
-noise, returns garbage on soft or angled surfaces, and takes ~40ms.
+along a grid axis; the real sensor -- since 2026-09-03 a 360-degree lidar,
+not an ultrasonic (`PLAN-onboard-perception.md` 1.2) -- returns a whole ring
+of beams per revolution, with a few cm of noise, unreliable returns from
+glass, mirrors and dark matte surfaces, and one scan plane only.
 
 ### 3.3 Motion is discrete, instantaneous, and always succeeds
 
@@ -212,11 +214,13 @@ noise, returns garbage on soft or angled surfaces, and takes ~40ms.
   duration=0.01` still moves a full 30cm cell. Speed and duration are
   very nearly decorative.
 - Turns are exactly 90 degrees, in place, always successful, no drift.
-- **A PiCar-X has Ackermann steering and cannot turn in place.** A real
-  `turn_left(90)` is a steering-servo angle plus forward motion -- an
-  *arc* that consumes forward space. Every "turn in a tight spot"
-  decision validated in sim is validated against a maneuver the robot
-  cannot perform.
+- **Turning in place -- closed by hardware choice (2026-09-03).** This
+  bullet used to say the PiCar-X's Ackermann steering could not pivot, so
+  every "turn in a tight spot" validated in sim was a manoeuvre the robot
+  could not perform. `PLAN-onboard-perception.md` 1.1 chose a
+  differential-drive chassis, so an in-place 90-degree pivot is what the
+  real robot does. The residue is calibration -- encoder counts per degree
+  -- not geometry.
 - No wheel slip, so heading error never accumulates. Real dead reckoning
   drifts within a few meters.
 
@@ -228,10 +232,10 @@ noise, returns garbage on soft or angled surfaces, and takes ~40ms.
 - living room (3x3 cells): **90cm x 90cm**
 - doorways (1 cell): **30cm wide**
 
-A PiCar-X is roughly 26cm long, 17cm wide, with a turning radius in the
-40-50cm range. **It cannot execute a turn inside the 90cm living room**,
-and a 30cm doorway leaves ~6cm clearance per side. The map is a fine
-logic puzzle and a poor physical proxy.
+The chosen chassis is 228 x 148mm and pivots in place, so the 90cm living
+room is navigable -- but a 30cm doorway leaves ~7.6cm clearance per side,
+and one grid cell is barely larger than the robot. The map is a fine logic
+puzzle and a poor physical proxy.
 
 ### 3.5 The synthetic camera is a flat-shaded raycaster -- now the top fidelity risk
 
@@ -287,15 +291,15 @@ Each phase: what gets built, files touched, the test that proves it, and
 **the UI proof it ships with** -- see `CLAUDE.md` section 7. A phase is
 not done when its tests pass; it is done when someone holding a phone can
 watch the thing it built do its job.
-Phases S1-S3 close architecture gaps; S4-S6 close fidelity gaps; S7 is
-chaos.
+Phases S1-S3 close architecture gaps; S4-S5 close fidelity gaps (S6 was
+retired); S7 is chaos.
 
 **Priority after Q1's answer (vision):** S2 and S2b first -- together they
 are the entire hardware path, and neither needs hardware to build.
 **S1, S3, S4 and (mostly) S5 are now built** -- see each phase below for
-what shipped and, for S5, what was deliberately deferred. **S6 is still
-optional** -- revisit it only if real-world runs show the robot failing in
-ways that trace back to grid geometry. **S7 remains proposed.**
+what shipped and, for S5, what was deliberately deferred. **S6 is retired**
+(2026-09-03 -- the chassis became differential drive). **S7 remains
+proposed.**
 
 ### Phase S1 -- Pin the contract -- **BUILT (2026-08-28)**
 
@@ -622,9 +626,12 @@ type, `robot/server.py`'s JSON response, and `RemoteRobot.get_distance()`'s
 
 **Deferred, per this phase's own Q4 (below): the cone.** `distance_ahead()`
 is still a single ray, matching `GridWorld`'s discrete-position geometry --
-modeling a real ~15-degree cone needs continuous sub-cell position, which
-is S6's job and, per Q4, past the point where measuring the real sensor
-beats modeling it further. Test (b), the collision-rate sweep across a
+modeling off-axis returns needs continuous sub-cell position, which no
+phase now owns (S6 retired) and, per Q4, is past the point where measuring
+the real sensor beats modeling it further. (The ~15-degree cone this note
+once described was the ultrasonic's; the lidar's beams are narrow, and what
+it needs represented is the ring, not a cone -- `PLAN-microduck-transplants.md`
+M10.) Test (b), the collision-rate sweep across a
 long simulated run, is also not built for the same reason: it is a
 statistical claim about exploration behavior under noise, which is more
 honestly answered once there is a real sensor to compare against than by
@@ -639,38 +646,11 @@ tuning a synthetic distribution to look reasonable.
 > divergence is closed by the hardware choice rather than by this code.
 >
 > The Ackermann turn model, the arc blocking and the minimum-radius parameter
-> below are **no longer needed**. Continuous pose and a to-scale map may still
+> this phase specified are **no longer needed** (the spec was removed on
+> 2026-09-04 and is in git history). Continuous pose and a to-scale map may still
 > be wanted for their own sake if a lidar lands and the sim has to represent
 > metric geometry -- but that is a different phase with a different
 > justification, and it is not this one.
-
-
-**Build.** Continuous pose (float x, y, heading in degrees) underneath
-the grid, with the discrete grid derived from it for room lookup. An
-Ackermann turn model where `turn_left(angle)` traces an arc with a
-configurable minimum radius and can be blocked mid-arc. Optional
-per-move heading drift. Rescale the starter map, or add a to-scale
-second map, so the geometry admits a real PiCar-X.
-
-**Files.** `sim/grid_world.py` (largest change in the plan);
-`sim/mock_robot.py`; new `sim/maps/scaled_house.py`;
-`config/robot.yaml`.
-
-**Test.** (a) With `min_turn_radius` set to a PiCar-X-like value, assert
-`demo_active_search.py` still completes on the scaled map -- if it does
-not, the exploration policy needs work *before* hardware, which is
-exactly the finding worth having now. (b) Assert a turn in a corridor
-narrower than the turning circle is refused or arcs into a blocked state
-rather than teleporting. (c) With drift enabled, assert the safety layer
-still prevents all collisions over a long run.
-
-**UI proof.** The map draws the robot **arcing** through a turn instead of
-pivoting on the spot, and refuses a turn that will not fit the corridor
-it is in. Both are visible on the canvas with no new controls.
-
-**Note.** This is the biggest change and the most deferrable, because
-safety re-checks distance every step regardless of pose error. Do it
-last, and be willing to stop at "scaled map + arc turns" without drift.
 
 ### Phase S7 -- Chaos and soak
 
@@ -721,7 +701,8 @@ Consequences, applied throughout this document:
   only structural blocker between Vision Autopilot and hardware.
 - Phase S6 (Ackermann, continuous pose, scaled map) drops far down: a
   policy that never reasons about grid cells does not care how faithful
-  the grid is.
+  the grid is. (Retired outright on 2026-09-03, when the chassis became
+  differential drive.)
 - Section 2.2 stops being a blocker -- see there.
 - Section 3.5 (raycaster fidelity) gets *more* important, not less: the
   render is now the model's actual input, not a demo visual.
@@ -752,12 +733,12 @@ tests and the `tests/demo_*.py` scripts, which construct a backend
 directly and should keep doing so.
 
 **Q4. How much fidelity is worth buying before just buying the robot?**
-A PiCar-X kit is roughly the cost of a few days of this work. Phases
-S1-S4 are worth doing regardless (they are correctness work, not
-simulation work). Phases S5-S6 approach the point where measuring the
-real thing beats modeling it -- consider capping the sim work at S4 and
-buying hardware, with S5-S7 as calibration work done *against* real
-measurements.
+The parts list is about $500 (`PLAN-onboard-perception.md` 3.6), roughly
+the cost of a few days of this work. Phases S1-S4 are worth doing
+regardless (they are correctness work, not simulation work) and are built.
+S5 approaches the point where measuring the real thing beats modeling it,
+which is why its cone was deferred; S6 was retired by the chassis choice.
+S7 remains, as calibration work best done *against* real measurements.
 
 **Q5. `brain/planner.py`.** `CLAUDE.md` lists it as a real gap. It is
 out of scope here, but note it would sit exactly where Q1's answer lands
@@ -790,8 +771,10 @@ Before trusting a hardware swap-in, all of these:
    `sim/sensors.py`). Out-of-range reads are clamped to the configured
    `min_range_cm`/`max_range_cm`, also tested. Cone-shaped false negatives
    (an object off-axis that a ray-cast sensor can't see at all) are not
-   modeled -- see S5's own "deferred" note; that needs the continuous pose
-   S6 would add, not a fail-safe policy decision.
+   modeled -- see S5's own "deferred" note; that needs a continuous pose no
+   phase now owns (S6 retired), not a fail-safe policy decision. On the
+   360-degree lidar the off-axis case is the ring's to catch, which the
+   grid cannot represent (`PLAN-microduck-transplants.md` M10).
 6. `get_camera_frame()` returns real image bytes on every backend, and no
    policy reads grid coordinates on the path intended for hardware
    (Phase S2 + Q1).
@@ -810,8 +793,9 @@ Before trusting a hardware swap-in, all of these:
    the only check that speaks to the model's real-world accuracy.
 7. A mission completes with no collisions under 200ms latency and 5%
    packet loss (Phase S7).
-8. A to-scale map with arc-based turning is navigable by the chosen
-   policy (Phase S6) -- or this is consciously waived as known risk.
+8. **Retired with S6 (2026-09-03).** Arc-based turning is not the
+   hardware's behaviour any more. A to-scale map may return if a lidar map
+   has to be represented in the sim, under a different phase.
 9. `robot/server.py`, `robot/safety.py`, and `brain/` are unchanged by
    the hardware swap. If any of them needs a change, the abstraction
    leaked and the swap is not a config change.
@@ -839,8 +823,9 @@ them:
 - **Actuation reality.** Motor deadband, battery-voltage-dependent speed,
   carpet vs. hardwood, wheel slip, servo backlash. Modelable, not
   verifiable.
-- **Ultrasonic behavior on real surfaces.** Curtains, sofas, glass, and
-  table legs all defeat an HC-SR04 in ways no grid predicts.
+- **Lidar behaviour on real surfaces.** Glass, mirrors and dark matte
+  fabric defeat a 2D lidar in ways no grid predicts, and anything above or
+  below its scan plane -- a chair seat, a low step -- is invisible to it.
 - **Camera characteristics.** FOV, rolling shutter, motion blur, exposure
   in a dim hallway, and the real capture-to-decision latency budget.
 - **Wi-Fi in a real house.** Roaming between APs, dead spots, contention.
