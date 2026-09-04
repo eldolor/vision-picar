@@ -20,3 +20,9 @@ pytest-playwright
 
 # Coverage, for the command in CLAUDE.md section 6.
 pytest-cov
+
+# S3-backed recorded-walk storage (control/walk_store.py's S3WalkStore) and
+# the Bedrock calls control/admin_server.py's judge tier makes. Was an
+# ambient install before the walks left EFS; named here now that a code
+# path in control/ imports it.
+boto3

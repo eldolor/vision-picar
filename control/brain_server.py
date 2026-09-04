@@ -63,7 +63,6 @@ import logging
 import os
 import re
 import time
-from pathlib import Path
 from typing import Callable, Optional
 
 import httpx
@@ -76,6 +75,7 @@ from control import drills
 from control.brain_config import load_brain_config
 from control.mission_runner import MissionRunner
 from control.remote_robot import RemoteRobot
+from control.walk_store import WalkStoreError, walk_store_from_config
 from robot.identity import log_identity
 from robot.interface import RobotInterface
 
@@ -220,6 +220,7 @@ def create_app(
     config_path: Optional[str] = None,
     robot_factory: Optional[Callable[[], RobotInterface]] = None,
     runner_factory: Optional[Callable[..., MissionRunner]] = None,
+    store=None,
 ) -> FastAPI:
     """Builds a brain app. Tests call this directly to inject a robot
     (an in-process RemoteRobot, or a recording stub) and a runner; the
@@ -238,6 +239,11 @@ def create_app(
     # interim ECS Fargate brain -- see PLAN-brain-relocation.md).
     robot_secret = os.environ.get("ROBOT_SHARED_SECRET", secret)
     vision_secret = os.environ.get("VISION_SHARED_SECRET", secret)
+
+    # Where recorded walks go. Built even when allow_recording is false, so
+    # that flipping the flag needs no restart-time reasoning about which
+    # half of the config was read; a store is inert until something writes.
+    store = store if store is not None else walk_store_from_config(config)
 
     def default_robot_factory() -> RobotInterface:
         return RemoteRobot(
@@ -472,17 +478,17 @@ def create_app(
         except (binascii.Error, ValueError):
             raise HTTPException(status_code=400, detail="image_base64 is not valid base64.")
 
-        base = Path(config["recording_dir"]).resolve()
-        walk_dir = (base / req.walk).resolve()
-        # The name is already sanitised; this is the belt to that braces.
-        if base != walk_dir.parent:
+        # The name is already sanitised; walk_store refuses a separator or
+        # a `..` again on the way in, on either backend.
+        try:
+            store.create_walk(req.walk)
+        except WalkStoreError:
             raise HTTPException(status_code=400, detail="Bad walk name.")
-        walk_dir.mkdir(parents=True, exist_ok=True)
 
         # "starts with frame-", not "isn't walk.jsonl": control/admin_server.py
-        # can leave a tags.json sidecar in this same directory, which a
-        # suffix-exclusion check would miscount as a frame.
-        existing = sorted(p for p in walk_dir.iterdir() if p.name.startswith("frame-"))
+        # can leave a tags.json sidecar beside these, which a suffix-exclusion
+        # check would miscount as a frame.
+        existing = store.list_names(req.walk, prefix="frame-")
         if len(existing) >= MAX_FRAMES_PER_WALK:
             raise HTTPException(
                 status_code=409,
@@ -490,16 +496,15 @@ def create_app(
             )
 
         suffix = FRAME_SUFFIX.get(req.media_type, ".jpg")
-        path = walk_dir / f"frame-{req.seq:04d}{suffix}"
-        path.write_bytes(image)
-        with (walk_dir / "walk.jsonl").open("a") as f:
-            f.write(json.dumps({
-                "seq": req.seq, "file": path.name, "media_type": req.media_type,
-                "navigate": req.navigate,
-            }) + "\n")
+        name = f"frame-{req.seq:04d}{suffix}"
+        store.write_bytes(req.walk, name, image)
+        store.append_text(req.walk, "walk.jsonl", json.dumps({
+            "seq": req.seq, "file": name, "media_type": req.media_type,
+            "navigate": req.navigate,
+        }) + "\n")
 
-        return {"saved": path.name, "walk": req.walk, "frames": len(existing) + 1,
-                "dir": str(walk_dir)}
+        return {"saved": name, "walk": req.walk, "frames": len(existing) + 1,
+                "dir": store.location(req.walk)}
 
     @app.post(prefix + "/recording/finish", dependencies=[Depends(require_secret)])
     async def finish_walk(req: FinishWalkRequest):
@@ -518,25 +523,20 @@ def create_app(
         if not WALK_NAME.match(req.walk):
             raise HTTPException(status_code=400, detail="Bad walk name.")
 
-        base = Path(config["recording_dir"]).resolve()
-        walk_dir = (base / req.walk).resolve()
-        if base != walk_dir.parent or not walk_dir.is_dir():
-            raise HTTPException(status_code=404, detail="No such walk.")
+        try:
+            if not store.walk_exists(req.walk):
+                raise HTTPException(status_code=404, detail="No such walk.")
+        except WalkStoreError:
+            raise HTTPException(status_code=400, detail="Bad walk name.")
 
-        meta_path = walk_dir / "meta.json"
-        meta = {}
-        if meta_path.exists():
-            try:
-                meta = json.loads(meta_path.read_text())
-            except (json.JSONDecodeError, OSError):
-                meta = {}
+        meta = store.read_json(req.walk, "meta.json") or {}
         meta["finished_at"] = time.time()
-        meta["frames"] = len([p for p in walk_dir.iterdir() if p.name.startswith("frame-")])
+        meta["frames"] = len(store.list_names(req.walk, prefix="frame-"))
         if req.model_id:
             meta["model_id"] = req.model_id
         if req.target_object:
             meta["target_object"] = req.target_object
-        meta_path.write_text(json.dumps(meta, indent=1))
+        store.write_json(req.walk, "meta.json", meta)
         return {"walk": req.walk, "meta": meta}
 
     @app.get(prefix + "/health")

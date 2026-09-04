@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Persistent storage for Robot-view "Record this walk" data: one S3 bucket,
+  replacing the EFS volume in cloudformation/recordings.yaml.
+
+  Why it moved (2026-09-04): EFS was the only component in this deployment
+  that genuinely REQUIRED a VPC. A VPC forces private subnets, which force
+  either interface endpoints (~$72/month measured here) or a NAT gateway,
+  plus an internal ALB to reach anything inside it -- roughly $110/month of
+  networking whose only job was to let two containers open a file. The
+  walks are 59MB of write-once, read-occasionally blobs across 39 walks and
+  821 frames; that is what S3 is. Moving them is what lets everything else
+  leave the VPC.
+
+  Deliberately NO dependency on the network stack -- not even an
+  Fn::ImportValue. That is the entire point: this stack has to outlive
+  vision-picar-network, and a single import would make it undeletable in
+  the right order. S3 is reached over the AWS API from anywhere with
+  credentials, in a VPC or out of one.
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: ""
+    Description: >
+      Leave empty to get vision-picar-recordings-<account>-<region>, which is
+      unique by construction. S3 bucket names are globally unique across all
+      AWS accounts, so a bare "vision-picar-recordings" would collide with a
+      stranger's bucket and fail the stack with a misleading AccessDenied.
+
+Conditions:
+  GenerateBucketName: !Equals [!Ref BucketName, ""]
+
+Resources:
+  RecordingsBucket:
+    Type: AWS::S3::Bucket
+    # The recorded walks are the only dataset this project has, and the
+    # corpus the whole Stage 0 gate is argued from. Retain means a
+    # `delete-stack` leaves them behind rather than destroying them --
+    # exactly the reasoning cloudformation/recordings.yaml applied to the
+    # EFS volume, and for a stronger reason now: this stack is created
+    # immediately before the old storage is deliberately torn down, so for
+    # a window it is the only copy in AWS.
+    #
+    # UpdateReplacePolicy matters just as much and is easy to miss: a
+    # bucket name change is replacement-triggering, so an innocuous edit
+    # could otherwise roll a new bucket and bin the old one with the walks
+    # still in it.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !If
+        - GenerateBucketName
+        - !Sub "vision-picar-recordings-${AWS::AccountId}-${AWS::Region}"
+        - !Ref BucketName
+      # Versioning is the reason this is safer than the EFS it replaces.
+      # admin_server exposes DELETE on a walk and on a single frame, and
+      # walk.jsonl is rewritten wholesale when a frame is deleted -- on EFS
+      # a mistake there was unrecoverable. Here the previous version is
+      # still addressable.
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          # Same intent as the EFS TransitionToIA rule this replaces: walks
+          # are write-once and read-occasionally (replay, admin review, a
+          # future training job). Nothing is ever expired -- this is exactly
+          # the data meant to accumulate.
+          - Id: current-to-infrequent-access
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 30
+          # Old versions exist to recover from a mistaken delete, which is
+          # noticed in days, not months. Keeping them forever would grow the
+          # bill for no added safety.
+          - Id: expire-noncurrent-versions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 90
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  # Attachable by whatever runs the brain and admin roles -- a managed
+  # policy rather than inline statements on two task roles, because the
+  # next architecture changes what those principals are (Lambda, or a
+  # process on the Pi) and the permission set does not.
+  RecordingsAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${AWS::StackName}-access"
+      Description: Read/write recorded walks in the recordings bucket.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # ListBucket is on the BUCKET arn; object actions are on the
+          # objects arn. Getting these two the same way round is the usual
+          # cause of a store that can read a walk it cannot list.
+          - Effect: Allow
+            Action:
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: !GetAtt RecordingsBucket.Arn
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: !Sub "${RecordingsBucket.Arn}/*"
+
+Outputs:
+  RecordingsBucketName:
+    Value: !Ref RecordingsBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
+  RecordingsBucketArn:
+    Value: !GetAtt RecordingsBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketArn"
+  RecordingsAccessPolicyArn:
+    Value: !Ref RecordingsAccessPolicy
+    Export:
+      Name: !Sub "${AWS::StackName}-AccessPolicyArn"

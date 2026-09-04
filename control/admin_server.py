@@ -73,7 +73,6 @@ import json
 import logging
 import os
 import re
-import shutil
 import time
 import zipfile
 from pathlib import Path
@@ -86,6 +85,7 @@ from pydantic import BaseModel
 
 from control.brain_config import load_brain_config
 from control import walk_eval, walk_replay
+from control.walk_store import WalkStoreError, walk_store_from_config
 
 logger = logging.getLogger("admin_server")
 
@@ -266,27 +266,18 @@ class MetaRequest(BaseModel):
     note: Optional[str] = None
 
 
-def _read_json_sidecar(walk_dir: Path, name: str) -> Optional[dict]:
-    path = walk_dir / name
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def _read_label(walk_dir: Path) -> Optional[str]:
-    tags = _read_json_sidecar(walk_dir, TAG_FILE_NAME)
+def _read_label(store, walk: str) -> Optional[str]:
+    tags = store.read_json(walk, TAG_FILE_NAME)
     return tags.get("label") if tags else None
 
 
-def _walk_entries(walk_dir: Path) -> list:
-    jsonl_path = walk_dir / "walk.jsonl"
-    if not jsonl_path.exists():
+def _walk_entries(store, walk: str) -> list:
+    try:
+        text = store.read_text(walk, "walk.jsonl")
+    except FileNotFoundError:
         return []
     entries = []
-    for line in jsonl_path.read_text().splitlines():
+    for line in text.splitlines():
         if line.strip():
             try:
                 entries.append(json.loads(line))
@@ -295,14 +286,14 @@ def _walk_entries(walk_dir: Path) -> list:
     return sorted(entries, key=lambda e: e.get("seq", 0))
 
 
-def _walk_model_id(walk_dir: Path, entries: list) -> Optional[str]:
+def _walk_model_id(store, walk: str, entries: list) -> Optional[str]:
     """Per-frame model_id (present since the model picker shipped) wins;
     meta.json is the fallback for walks recorded before that."""
     for e in entries:
         mid = (e.get("navigate") or {}).get("model_id")
         if mid:
             return mid
-    meta = _read_json_sidecar(walk_dir, META_FILE_NAME) or {}
+    meta = store.read_json(walk, META_FILE_NAME) or {}
     return meta.get("model_id")
 
 
@@ -310,7 +301,7 @@ def _walk_model_id(walk_dir: Path, entries: list) -> Optional[str]:
 WALK_TIMESTAMP = re.compile(r"(\d{8})-(\d{6})$")
 
 
-def _walk_recorded_at(walk_name: str, walk_dir: Path) -> Optional[float]:
+def _walk_recorded_at(walk_name: str, store, walk: str) -> Optional[float]:
     """When this walk was recorded, as an epoch seconds float.
 
     Parsed from the name rather than taken from the directory's mtime: the
@@ -332,15 +323,15 @@ def _walk_recorded_at(walk_name: str, walk_dir: Path) -> Optional[float]:
                 m.group(1) + m.group(2), "%Y%m%d%H%M%S").timestamp()
         except ValueError:
             pass
-    meta = _read_json_sidecar(walk_dir, META_FILE_NAME) or {}
+    meta = store.read_json(walk, META_FILE_NAME) or {}
     return meta.get("finished_at")
 
 
-def _walk_target(walk_dir: Path, walk_name: str) -> str:
+def _walk_target(store, walk_name: str) -> str:
     """The target object, for the judge's prompt. meta.json if recorded;
     otherwise recovered from the walk name, which newWalkName() builds as
     "<target>-<model tag>-<timestamp>"."""
-    meta = _read_json_sidecar(walk_dir, META_FILE_NAME) or {}
+    meta = store.read_json(walk_name, META_FILE_NAME) or {}
     if meta.get("target_object"):
         return meta["target_object"]
     stem = re.sub(r"-\d{8}-\d{6}$", "", walk_name)
@@ -353,12 +344,11 @@ def _walk_target(walk_dir: Path, walk_name: str) -> str:
     return stem.replace("-", " ") or "the target object"
 
 
-def _is_frame_file(p: Path) -> bool:
-    # Matches record_frame()'s naming exactly (frame-{seq:04d}{suffix}) --
-    # deliberately "starts with frame-", not "isn't walk.jsonl/tags.json",
-    # so a future sidecar file doesn't silently get counted as a frame the
-    # way tags.json briefly would have under a suffix-exclusion check.
-    return p.is_file() and p.name.startswith("frame-")
+FRAME_PREFIX = "frame-"
+# Matches record_frame()'s naming exactly (frame-{seq:04d}{suffix}) --
+# deliberately "starts with frame-", not "isn't walk.jsonl/tags.json", so a
+# future sidecar file doesn't silently get counted as a frame the way
+# tags.json briefly would have under a suffix-exclusion check.
 
 
 def require_secret(x_app_secret: str = Header(default="")):
@@ -371,8 +361,12 @@ def require_secret(x_app_secret: str = Header(default="")):
         raise HTTPException(status_code=401, detail="Missing or invalid x-app-secret header.")
 
 
-def create_app(config_path=None) -> FastAPI:
+def create_app(config_path=None, store=None) -> FastAPI:
     config = load_brain_config(config_path)
+    # The one place this service decides where walks live. Injectable so a
+    # test can hand in a store without a config file, the same way the
+    # Bedrock client factory is injectable.
+    store = store if store is not None else walk_store_from_config(config)
 
     app = FastAPI(title="vision-picar admin server")
     app.add_middleware(
@@ -382,76 +376,79 @@ def create_app(config_path=None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    def _resolve_walk_dir(walk: str) -> Path:
+    def _require_walk(walk: str) -> str:
+        """Validate the name and confirm the walk exists, or 400/404.
+
+        The traversal guard now lives in control/walk_store.py, which
+        refuses a separator or a `..` on either backend -- this kept
+        comparing resolved parents, which only ever worked because
+        Path.resolve() collapses `..` and an S3 key does not."""
         if not WALK_NAME.match(walk):
             raise HTTPException(status_code=400, detail="Bad walk name.")
-        base = Path(config["recording_dir"]).resolve()
-        walk_dir = (base / walk).resolve()
-        if base != walk_dir.parent or not walk_dir.is_dir():
+        if not store.walk_exists(walk):
             raise HTTPException(status_code=404, detail="No such walk.")
-        return walk_dir
+        return walk
 
-    def _resolve_frame_path(walk_dir: Path, filename: str) -> Path:
+    def _require_frame(walk: str, filename: str) -> str:
         if not FRAME_FILENAME.match(filename):
             raise HTTPException(status_code=400, detail="Bad frame filename.")
-        frame_path = (walk_dir / filename).resolve()
-        if walk_dir != frame_path.parent or not frame_path.is_file():
+        if not store.file_exists(walk, filename):
             raise HTTPException(status_code=404, detail="No such frame.")
-        return frame_path
+        return filename
 
     @app.get("/recording/walks", dependencies=[Depends(require_secret)])
     async def list_walks():
-        base = Path(config["recording_dir"]).resolve()
-        if not base.is_dir():
-            return {"recording_dir": str(base), "walks": []}
+        if not store.available():
+            return {"recording_dir": store.describe(), "walks": []}
         walks = []
-        for walk_dir in sorted(p for p in base.iterdir() if p.is_dir()):
-            frames = [p for p in walk_dir.iterdir() if _is_frame_file(p)]
+        for name in store.list_walks():
+            frames = [(f, size) for f, size in store.list_files(name)
+                      if f.startswith(FRAME_PREFIX)]
             walks.append({
-                "walk": walk_dir.name,
+                "walk": name,
                 "frames": len(frames),
-                "bytes": sum(p.stat().st_size for p in frames),
-                "label": _read_label(walk_dir),
-                "model_id": _walk_model_id(walk_dir, _walk_entries(walk_dir)),
-                "finished": (walk_dir / META_FILE_NAME).exists(),
-                "recorded_at": _walk_recorded_at(walk_dir.name, walk_dir),
-                "eval": _eval_summary(walk_dir),
-                "replays": _replay_summaries(walk_dir),
+                "bytes": sum(size for _, size in frames),
+                "label": _read_label(store, name),
+                "model_id": _walk_model_id(store, name, _walk_entries(store, name)),
+                "finished": store.file_exists(name, META_FILE_NAME),
+                "recorded_at": _walk_recorded_at(name, store, name),
+                "eval": _eval_summary(name),
+                "replays": _replay_summaries(name),
             })
-        return {"recording_dir": str(base), "walks": walks}
+        return {"recording_dir": store.describe(), "walks": walks}
 
     @app.get("/recording/walks/{walk}", dependencies=[Depends(require_secret)])
     async def get_walk(walk: str):
-        walk_dir = _resolve_walk_dir(walk)
+        _require_walk(walk)
         frames = sorted(
-            ({"file": p.name, "bytes": p.stat().st_size}
-             for p in walk_dir.iterdir() if _is_frame_file(p)),
+            ({"file": f, "bytes": size} for f, size in store.list_files(walk)
+             if f.startswith(FRAME_PREFIX)),
             key=lambda f: f["file"],
         )
-        entries = _walk_entries(walk_dir)
+        entries = _walk_entries(store, walk)
         return {
             "walk": walk, "frames": frames, "entries": entries,
-            "label": _read_label(walk_dir),
-            "model_id": _walk_model_id(walk_dir, entries),
-            "meta": _read_json_sidecar(walk_dir, META_FILE_NAME),
-            "eval": _read_json_sidecar(walk_dir, EVAL_FILE_NAME),
+            "label": _read_label(store, walk),
+            "model_id": _walk_model_id(store, walk, entries),
+            "meta": store.read_json(walk, META_FILE_NAME),
+            "eval": store.read_json(walk, EVAL_FILE_NAME),
         }
 
     @app.get("/recording/walks/{walk}/frames/{filename}", dependencies=[Depends(require_secret)])
     async def get_frame(walk: str, filename: str):
-        walk_dir = _resolve_walk_dir(walk)
-        frame_path = _resolve_frame_path(walk_dir, filename)
-        media_type = FRAME_CONTENT_TYPE.get(frame_path.suffix, "application/octet-stream")
-        return Response(content=frame_path.read_bytes(), media_type=media_type)
+        _require_walk(walk)
+        _require_frame(walk, filename)
+        suffix = "." + filename.rsplit(".", 1)[-1]
+        media_type = FRAME_CONTENT_TYPE.get(suffix, "application/octet-stream")
+        return Response(content=store.read_bytes(walk, filename), media_type=media_type)
 
     @app.get("/recording/walks/{walk}/download", dependencies=[Depends(require_secret)])
     async def download_walk(walk: str):
-        walk_dir = _resolve_walk_dir(walk)
+        _require_walk(walk)
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for p in sorted(walk_dir.iterdir()):
-                if p.is_file():
-                    zf.write(p, arcname=p.name)
+            for name, _size in store.list_files(walk):
+                zf.writestr(name, store.read_bytes(walk, name))
         return Response(
             content=buf.getvalue(),
             media_type="application/zip",
@@ -460,41 +457,43 @@ def create_app(config_path=None) -> FastAPI:
 
     @app.put("/recording/walks/{walk}/tag", dependencies=[Depends(require_secret)])
     async def tag_walk(walk: str, req: TagRequest):
-        walk_dir = _resolve_walk_dir(walk)
-        tag_path = walk_dir / TAG_FILE_NAME
+        _require_walk(walk)
         if req.label is None or req.label == "":
-            tag_path.unlink(missing_ok=True)
+            if store.file_exists(walk, TAG_FILE_NAME):
+                store.delete_file(walk, TAG_FILE_NAME)
             return {"walk": walk, "label": None}
         if req.label not in VALID_LABELS:
             raise HTTPException(
                 status_code=400,
                 detail=f"label must be one of {sorted(VALID_LABELS)} or omitted to clear it.",
             )
-        tag_path.write_text(json.dumps({"label": req.label}))
+        store.write_json(walk, TAG_FILE_NAME, {"label": req.label})
         return {"walk": walk, "label": req.label}
 
     # ---- the scorecard (control/walk_eval.py) ----
 
-    def _evaluate(walk_dir: Path, walk_name: str, use_judge: bool) -> dict:
+    def _evaluate(walk_name: str, use_judge: bool) -> dict:
         """Compute and persist one walk's scorecard. Synchronous and
         blocking (the judge is several Bedrock calls), so routes run it in a
         worker thread rather than on the event loop."""
-        entries = _walk_entries(walk_dir)
+        entries = _walk_entries(store, walk_name)
         metrics = walk_eval.compute_metrics(entries)
 
         def frame_bytes_for(entry):
             name = entry.get("file") or ""
             if not FRAME_FILENAME.match(name):
                 return None
-            path = walk_dir / name
-            return path.read_bytes() if path.is_file() else None
+            try:
+                return store.read_bytes(walk_name, name)
+            except FileNotFoundError:
+                return None
 
         judge = None
         if use_judge and JUDGE_ENABLED and entries:
             try:
                 judge = walk_eval.judge_walk(
                     _bedrock_client(), JUDGE_MODEL_ID, entries, frame_bytes_for,
-                    _walk_target(walk_dir, walk_name), sample=JUDGE_SAMPLE_FRAMES,
+                    _walk_target(store, walk_name), sample=JUDGE_SAMPLE_FRAMES,
                 )
             except Exception as e:  # noqa: BLE001 -- fall back to metrics-only
                 logger.warning("judge tier failed for %s: %s", walk_name, e)
@@ -505,7 +504,7 @@ def create_app(config_path=None) -> FastAPI:
             try:
                 collisions = walk_eval.check_collisions(
                     _bedrock_client(), JUDGE_MODEL_ID, entries, frame_bytes_for,
-                    target_object=_walk_target(walk_dir, walk_name),
+                    target_object=_walk_target(store, walk_name),
                     max_checks=COLLISION_MAX_CHECKS)
             except Exception as e:  # noqa: BLE001 -- degrade, don't fail the walk
                 logger.warning("collision check failed for %s: %s", walk_name, e)
@@ -514,37 +513,36 @@ def create_app(config_path=None) -> FastAPI:
         result = {
             "schema": walk_eval.SCHEMA_VERSION,
             "walk": walk_name,
-            "model_id": _walk_model_id(walk_dir, entries),
-            "target_object": _walk_target(walk_dir, walk_name),
+            "model_id": _walk_model_id(store, walk_name, entries),
+            "target_object": _walk_target(store, walk_name),
             **scored,
             "metrics": metrics,
             "judge": judge,
             "collisions": collisions,
         }
         try:
-            (walk_dir / EVAL_FILE_NAME).write_text(json.dumps(result, indent=1))
-        except OSError as e:
+            store.write_json(walk_name, EVAL_FILE_NAME, result)
+        except (OSError, WalkStoreError) as e:
             logger.warning("could not persist eval for %s: %s", walk_name, e)
         return result
 
-    def _replay_summaries(walk_dir: Path) -> list:
+    def _replay_summaries(walk_name: str) -> list:
         """The compact form the walk list shows -- never the per-frame diff,
         which is large and only wanted on one walk at a time."""
         out = []
-        for path in sorted(walk_dir.glob(REPLAY_PREFIX + "*.json")):
-            try:
-                r = json.loads(path.read_text())
-            except (json.JSONDecodeError, OSError):
+        for name in store.list_names(walk_name, REPLAY_PREFIX, ".json"):
+            r = store.read_json(walk_name, name)
+            if r is None:
                 continue
             out.append({k: r.get(k) for k in
                         ("model_id", "prompt_variant", "score", "verdict", "flags",
                          "agreement", "errors", "coverage")})
         return out
 
-    def _eval_summary(walk_dir: Path) -> Optional[dict]:
+    def _eval_summary(walk_name: str) -> Optional[dict]:
         """The compact form the walk list shows -- never the full per-frame
         judge output, which is large and only wanted on one walk at a time."""
-        ev = _read_json_sidecar(walk_dir, EVAL_FILE_NAME)
+        ev = store.read_json(walk_name, EVAL_FILE_NAME)
         if not ev:
             return None
         return {k: ev.get(k) for k in ("score", "verdict", "flags", "basis", "model_id")}
@@ -553,8 +551,8 @@ def create_app(config_path=None) -> FastAPI:
     async def evaluate_walk(walk: str, judge: bool = True):
         """Score one walk, overwriting any previous scorecard. `judge=false`
         runs the free deterministic tier only."""
-        walk_dir = _resolve_walk_dir(walk)
-        return await asyncio.to_thread(_evaluate, walk_dir, walk, judge)
+        _require_walk(walk)
+        return await asyncio.to_thread(_evaluate, walk, judge)
 
     @app.get("/recording/walks/{walk}/evaluation", dependencies=[Depends(require_secret)])
     async def get_evaluation(walk: str):
@@ -565,30 +563,32 @@ def create_app(config_path=None) -> FastAPI:
         connection (or a tab closed mid-walk) never sends it, and a walk
         nobody can score is worse than one scored a few seconds late.
         """
-        walk_dir = _resolve_walk_dir(walk)
-        existing = _read_json_sidecar(walk_dir, EVAL_FILE_NAME)
+        _require_walk(walk)
+        existing = store.read_json(walk, EVAL_FILE_NAME)
         if existing and existing.get("schema") == walk_eval.SCHEMA_VERSION:
             return existing
-        return await asyncio.to_thread(_evaluate, walk_dir, walk, True)
+        return await asyncio.to_thread(_evaluate, walk, True)
 
     # ---- replay: the same pixels, a different model ----
 
-    def _replay(walk_dir: Path, walk_name: str, model_id, prompt_variant=None) -> dict:
+    def _replay(walk_name: str, model_id, prompt_variant=None) -> dict:
         # Checked before any frame is read: a deployment with no vision
         # service configured should say so once, not once per frame.
         if not config["vision_url"]:
             raise RuntimeError(
                 "No vision service configured. Set brain.vision_url in "
                 "config/robot.yaml, or VISION_URL in this task's environment.")
-        entries = _walk_entries(walk_dir)
-        target = _walk_target(walk_dir, walk_name)
+        entries = _walk_entries(store, walk_name)
+        target = _walk_target(store, walk_name)
 
         def frame_bytes_for(entry):
             name = entry.get("file") or ""
             if not FRAME_FILENAME.match(name):
                 return None
-            path = walk_dir / name
-            return path.read_bytes() if path.is_file() else None
+            try:
+                return store.read_bytes(walk_name, name)
+            except FileNotFoundError:
+                return None
 
         def call(image_bytes, target_object, chosen, variant):
             # replay_timeout_s, NOT the mission's vision_timeout_s -- see
@@ -661,9 +661,9 @@ def create_app(config_path=None) -> FastAPI:
             "diff": out["diff"],
         }
         try:
-            (walk_dir / _replay_file(result["model_id"], prompt_variant)).write_text(
-                json.dumps(result, indent=1))
-        except OSError as e:
+            store.write_json(walk_name,
+                             _replay_file(result["model_id"], prompt_variant), result)
+        except (OSError, WalkStoreError) as e:
             logger.warning("could not persist replay for %s: %s", walk_name, e)
         return result
 
@@ -675,9 +675,9 @@ def create_app(config_path=None) -> FastAPI:
         one variable. Comparing two live walks instead mixes model quality
         with where the operator pointed the phone.
         """
-        walk_dir = _resolve_walk_dir(walk)
+        _require_walk(walk)
         try:
-            return await asyncio.to_thread(_replay, walk_dir, walk, req.model_id,
+            return await asyncio.to_thread(_replay, walk, req.model_id,
                                            req.prompt_variant)
         except RuntimeError as e:
             raise HTTPException(status_code=503, detail=str(e))
@@ -718,44 +718,43 @@ def create_app(config_path=None) -> FastAPI:
     async def list_replays(walk: str):
         """Every stored replay of this walk, so it accumulates a comparison
         table instead of overwriting one."""
-        walk_dir = _resolve_walk_dir(walk)
+        _require_walk(walk)
         out = []
-        for p in sorted(walk_dir.glob(REPLAY_PREFIX + "*.json")):
-            try:
-                out.append(json.loads(p.read_text()))
-            except (json.JSONDecodeError, OSError):
-                continue
+        for name in store.list_names(walk, REPLAY_PREFIX, ".json"):
+            r = store.read_json(walk, name)
+            if r is not None:
+                out.append(r)
         return {"walk": walk, "replays": out}
 
     @app.put("/recording/walks/{walk}/meta", dependencies=[Depends(require_secret)])
     async def set_meta(walk: str, req: MetaRequest):
         """Set walk-level metadata -- in practice the model, for the walks
         recorded before /navigate echoed it back per frame."""
-        walk_dir = _resolve_walk_dir(walk)
-        meta = _read_json_sidecar(walk_dir, META_FILE_NAME) or {}
+        _require_walk(walk)
+        meta = store.read_json(walk, META_FILE_NAME) or {}
         for field in ("model_id", "target_object", "note"):
             value = getattr(req, field)
             if value is not None:
                 meta[field] = value
-        (walk_dir / META_FILE_NAME).write_text(json.dumps(meta, indent=1))
+        store.write_json(walk, META_FILE_NAME, meta)
         return {"walk": walk, "meta": meta}
 
     @app.delete("/recording/walks/{walk}", dependencies=[Depends(require_secret)])
     async def delete_walk(walk: str):
-        walk_dir = _resolve_walk_dir(walk)
-        shutil.rmtree(walk_dir)
+        _require_walk(walk)
+        store.delete_walk(walk)
         return {"deleted": walk}
 
     @app.delete("/recording/walks/{walk}/frames/{filename}", dependencies=[Depends(require_secret)])
     async def delete_frame(walk: str, filename: str):
-        walk_dir = _resolve_walk_dir(walk)
-        frame_path = _resolve_frame_path(walk_dir, filename)
-        frame_path.unlink()
-        jsonl_path = walk_dir / "walk.jsonl"
-        if jsonl_path.exists():
-            lines = [ln for ln in jsonl_path.read_text().splitlines() if ln.strip()]
+        _require_walk(walk)
+        _require_frame(walk, filename)
+        store.delete_file(walk, filename)
+        if store.file_exists(walk, "walk.jsonl"):
+            lines = [ln for ln in store.read_text(walk, "walk.jsonl").splitlines()
+                     if ln.strip()]
             kept = [ln for ln in lines if json.loads(ln).get("file") != filename]
-            jsonl_path.write_text("".join(ln + "\n" for ln in kept))
+            store.write_text(walk, "walk.jsonl", "".join(ln + "\n" for ln in kept))
         return {"deleted": filename, "walk": walk}
 
     @app.get("/admin")
@@ -783,8 +782,7 @@ def create_app(config_path=None) -> FastAPI:
         trustworthy evidence: it holds the pixels fixed and varies one thing,
         where two live walks vary the operator's path as well.
         """
-        base = Path(config["recording_dir"]).resolve()
-        if not base.is_dir():
+        if not store.available():
             return {"rows": []}
 
         acc = {}
@@ -810,15 +808,14 @@ def create_app(config_path=None) -> FastAPI:
             for f in (ev.get("flags") or []):
                 row["flags"][f] = row["flags"].get(f, 0) + 1
 
-        for walk_dir in sorted(p for p in base.iterdir() if p.is_dir()):
-            entries = _walk_entries(walk_dir)
-            ev = _read_json_sidecar(walk_dir, EVAL_FILE_NAME)
-            add(_walk_model_id(walk_dir, entries),
+        for name in store.list_walks():
+            entries = _walk_entries(store, name)
+            ev = store.read_json(name, EVAL_FILE_NAME)
+            add(_walk_model_id(store, name, entries),
                 (ev or {}).get("prompt_variant"), ev, "recorded")
-            for path in sorted(walk_dir.glob(REPLAY_PREFIX + "*.json")):
-                try:
-                    r = json.loads(path.read_text())
-                except (json.JSONDecodeError, OSError):
+            for fname in store.list_names(name, REPLAY_PREFIX, ".json"):
+                r = store.read_json(name, fname)
+                if r is None:
                     continue
                 add(r.get("model_id"), r.get("prompt_variant"), r, "replay")
 
@@ -842,27 +839,23 @@ def create_app(config_path=None) -> FastAPI:
 
     @app.get("/stats", dependencies=[Depends(require_secret)])
     async def stats():
-        base = Path(config["recording_dir"]).resolve()
-        if not base.is_dir():
+        if not store.available():
             return {"walks": 0, "frames": 0, "bytes": 0}
         walk_count = 0
         frame_count = 0
         total_bytes = 0
-        for walk_dir in base.iterdir():
-            if not walk_dir.is_dir():
-                continue
+        for name in store.list_walks():
             walk_count += 1
-            for p in walk_dir.iterdir():
-                if _is_frame_file(p):
+            for fname, size in store.list_files(name):
+                if fname.startswith(FRAME_PREFIX):
                     frame_count += 1
-                    total_bytes += p.stat().st_size
+                    total_bytes += size
         return {"walks": walk_count, "frames": frame_count, "bytes": total_bytes}
 
     @app.get("/health")
     async def health():
-        base = Path(config["recording_dir"]).resolve()
-        return {"status": "ok", "recording_dir": str(base),
-                "recording_dir_exists": base.is_dir(),
+        return {"status": "ok", "recording_dir": store.describe(),
+                "recording_dir_exists": store.available(),
                 # Which deployment this is. Unauthenticated on purpose --
                 # /health already is, and the console has to know which
                 # environment it is before anyone has typed a secret, which

@@ -1160,14 +1160,19 @@ def test_a_scorecard_that_cannot_be_written_is_still_returned(client, monkeypatc
     c, root = client
     make_walk(root, "walk-ro", ["FORWARD"] * 3)
 
-    real = Path.write_text
+    # write_bytes, not write_text: every write goes through
+    # control/walk_store.py's LocalWalkStore now, and it funnels text
+    # through write_bytes so the two backends cannot drift on encoding.
+    # Still patching the real filesystem, which is the point -- the
+    # scenario is a read-only volume, not a misbehaving store.
+    real = Path.write_bytes
 
     def refuse(self, *a, **kw):
         if self.name in ("eval.json", "replay-m.json"):
             raise OSError("read-only file system")
         return real(self, *a, **kw)
 
-    monkeypatch.setattr(Path, "write_text", refuse)
+    monkeypatch.setattr(Path, "write_bytes", refuse)
     body = c.post("/recording/walks/walk-ro/evaluate?judge=false").json()
     assert "score" in body
     assert not (root / "recordings" / "walk-ro" / "eval.json").exists()
@@ -1177,15 +1182,20 @@ def test_a_replay_that_cannot_be_written_is_still_returned(vision, monkeypatch):
     c, root, _calls = vision
     make_walk(root, "walk-ro2", ["FORWARD"])
 
-    real = Path.write_text
+    # See the sibling test above for why this is write_bytes.
+    real = Path.write_bytes
 
     def refuse(self, *a, **kw):
         if self.name.startswith("replay-"):
             raise OSError("no space left on device")
         return real(self, *a, **kw)
 
-    monkeypatch.setattr(Path, "write_text", refuse)
+    monkeypatch.setattr(Path, "write_bytes", refuse)
     assert "score" in c.post("/recording/walks/walk-ro2/replay", json={}).json()
+    # Asserted, not assumed: without this the test passes whether or not
+    # the refusal ever fired, which is how it kept passing after the write
+    # seam moved into control/walk_store.py.
+    assert not list((root / "recordings" / "walk-ro2").glob("replay-*.json"))
 
 
 def test_a_missing_frame_file_is_a_404(client):

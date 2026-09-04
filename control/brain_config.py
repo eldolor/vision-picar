@@ -69,6 +69,14 @@ DEFAULTS = {
     # LAN, not something an internet-reachable brain should accept.
     "allow_recording": True,
     "recording_dir": "recordings",
+    # Which control/walk_store.py backend holds the walks: "local" (a
+    # directory -- what a developer running the servers gets, and what the
+    # EFS mount was) or "s3" (a bucket, which needs no VPC and is why the
+    # deployed services can leave one). "local" stays the default so a
+    # checkout with no AWS at all still records.
+    "recording_backend": "local",
+    "recording_bucket": "",
+    "recording_prefix": "recordings",
     # When this brain can't record locally (allow_recording: false, e.g.
     # teleop-brain has no EFS mount), forward POST /recording/frame to a
     # peer brain that can, instead of just rejecting it. Empty means "just
@@ -126,5 +134,14 @@ def load_brain_config(config_path=None) -> dict:
         merged["recording_proxy_url"] = os.environ["RECORDING_PROXY_URL"]
     if os.environ.get("RECORDING_PROXY_SECRET"):
         merged["recording_proxy_secret"] = os.environ["RECORDING_PROXY_SECRET"]
+    # Same one-generic-image rule as ROBOT_URL above: the bucket name is a
+    # per-deployment value, so it arrives as a task env var rather than
+    # being baked into config/robot.yaml.
+    if os.environ.get("RECORDING_BACKEND"):
+        merged["recording_backend"] = os.environ["RECORDING_BACKEND"].strip().lower()
+    if os.environ.get("RECORDING_BUCKET"):
+        merged["recording_bucket"] = os.environ["RECORDING_BUCKET"]
+    if os.environ.get("RECORDING_PREFIX"):
+        merged["recording_prefix"] = os.environ["RECORDING_PREFIX"]
 
     return merged
