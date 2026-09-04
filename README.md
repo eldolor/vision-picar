@@ -506,18 +506,45 @@ aws cloudformation deploy --stack-name vision-picar-service \
 This started as a Lambda Function URL (and, after that, an API Gateway
 HTTP API in front of the same Lambda) -- both code-complete and correct
 (verified via direct `aws lambda invoke`), but every public entry point
-into that specific AWS account was silently rejected before the
-function ever ran. Root cause: this account's Lambda concurrency quota
-was pinned at 10 instead of AWS's normal default of 1000, with no
-history of anyone requesting that reduction -- i.e. AWS had placed the
-account in some reduced-trust tier that blocked Lambda-based public
-ingress specifically. ECS Fargate behind a load balancer is a
-completely different invocation path (long-running container, not a
-Lambda-invoke permission), so it isn't subject to whatever that
-restriction was. The Lambda code and its API Gateway have been deleted;
-this is documented here rather than left to be rediscovered from git
-history, since it explains a real architectural choice, not just
-"we changed our minds."
+into that specific AWS account was silently rejected before the function
+ever ran. ECS Fargate behind a load balancer is a completely different
+invocation path, so it isn't subject to the restriction. The Lambda code
+and its API Gateway have been deleted; this is documented here rather
+than left to be rediscovered from git history, since it explains a real
+architectural choice, not just "we changed our minds."
+
+**The original root-cause guess on this line was wrong, and the real one
+was measured on 2026-09-04.** It used to blame the account's Lambda
+concurrency quota, which was pinned at 10 instead of the default 1000 --
+read as AWS having placed the account in a reduced-trust tier blocking
+"Lambda-based public ingress". Two things are now known:
+
+- **The quota was never the constraint.** It reads 1000 today, and a cap
+  of 10 was always ample for one phone -- Robot view allows two
+  `/navigate` calls in flight (`GUIDANCE_MAX_IN_FLIGHT`).
+- **It is not about ingress, and not about "public" at all.** A probe
+  built and torn down on 2026-09-04 established that **Lambda
+  resource-based policies do not grant invocation on this account**,
+  while identity-based auth works normally. A Function URL called with a
+  SigV4 signature from an IAM user with `AdministratorAccess` returned
+  200 from a laptop off the AWS network, and the function logged the
+  caller's real public IP -- so HTTPS ingress to Lambda plainly works.
+  The same URL returned 403 for anonymous access, for CloudFront with
+  Origin Access Control, and for a role holding *only* a resource-policy
+  grant, and CloudWatch shows the function was never invoked in any of
+  those three cases. The account is not in an AWS Organization, so no SCP
+  or RCP explains it.
+
+That is why *both* original attempts failed: a Function URL and an API
+Gateway integration each invoke Lambda through a resource-based policy.
+It also explains why `aws lambda invoke` worked throughout -- that path
+is identity-based.
+
+The consequence for any future redesign is in
+`PLAN-aws-cost-redesign.md` section 6. In short: CloudFront in front of a
+Function URL cannot work here, and the one Lambda pattern that might is
+an API Gateway integration carrying an explicit `credentials` role, which
+assumes a role rather than relying on the function's resource policy.
 
 ## Is this deviating from the hardware integration plan?
 

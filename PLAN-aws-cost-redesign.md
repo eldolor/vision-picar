@@ -6,7 +6,7 @@ Status as of 2026-09-04:
 |---|---|---|
 | 1 | Recorded walks off EFS, onto S3 | **DONE** (commit `b42bee6`), data migrated and verified |
 | 2 | Tear down the VPC and everything that needs one | **SPECIFIED, NOTHING DELETED** |
-| 3 | Rebuild without a VPC | **SPECIFIED, NOTHING BUILT** |
+| 3 | Rebuild without a VPC | **BLOCKED** -- section 6's gate ran and killed the CloudFront->Function URL design; one untested alternative remains |
 
 Written to hand stages 2 and 3 to a session that was not present for the
 measuring. Most of the value here is in section 1 and section 7: the
@@ -259,7 +259,14 @@ before the EFS copy stops existing.
 
 ---
 
-## 5. Stage 3 -- the architecture without a VPC (SPECIFIED, NOTHING BUILT)
+## 5. Stage 3 -- the architecture without a VPC (SUPERSEDED IN PART -- READ SECTION 6 FIRST)
+
+> **The Lambda Function URL half of this diagram cannot be built on this
+> account.** The gate in section 6 ran on 2026-09-04 and found that
+> resource-based policies do not grant invocation here, which rules out
+> CloudFront + Origin Access Control in front of a Function URL. The S3
+> static-asset half, the storage model and the cost target are unaffected.
+> What replaces the compute tier is section 6's open question.
 
 ```
                           Phone
@@ -335,42 +342,77 @@ CORS" property only covers the S3/Lambda half.
 
 ---
 
-## 6. The gate this whole design rests on, and it is untested
+## 6. The gate -- RUN 2026-09-04, and it changed the answer
 
-`README.md:504` documents why ECS exists: every public entry point into
-this account was silently rejected before a Lambda ever ran, with
-concurrency pinned at 10 instead of 1000.
+**Result: Lambda resource-based policies do not grant invocation on this
+account. Identity-based auth works normally, including public HTTPS
+ingress.** This is not the constraint anyone thought it was, and it
+invalidates the CloudFront-in-front-of-a-Function-URL design in section 5.
 
-**The quota is now 1000** (`aws lambda get-account-settings`, checked
-2026-09-04). But a concurrency cap of 10 was always adequate for one
-phone -- **the quota was never the real problem, the ingress rejection
-was**, and the quota reading is evidence the account left a reduced-trust
-tier, not evidence that ingress works.
+A throwaway function, a Function URL, a CloudFront distribution with
+Origin Access Control and two IAM roles were created, exercised and
+deleted. CloudWatch log lines -- not status codes -- were the
+discriminator for "did the request reach the function":
 
-**Stand up one throwaway Lambda Function URL and curl it from
-off-network before committing to stage 3.** Ten minutes. If it fails, the
-fallbacks that still avoid a VPC are App Runner (own HTTPS endpoint, no
-load balancer) or Lightsail containers -- one service, not six. The
-~$5/month and ~$7/month figures usually quoted for those are **carried
-over from another analysis and have not been verified against current
-pricing or against us-east-2 availability**; price them before relying on
-them, because the whole argument for this fallback is that it is cheap.
+| Auth path | Authorised by | Reached the function | Result |
+|---|---|---|---|
+| `aws lambda invoke` | identity (admin user) | yes | **200** |
+| Function URL, SigV4 signed by that user | identity | yes, logged caller IP | **200** |
+| Function URL `AuthType: NONE` | resource policy, `Principal: "*"` | **no** | 403 |
+| CloudFront + OAC | resource policy, `Service: cloudfront.amazonaws.com` | **no** | 403 |
+| Function URL, SigV4 by a role with **no** identity permissions | resource policy only | **no** | 403 |
 
-By contrast, deleting the NLB and making the ALB internet-facing is *not*
-the same gate -- but be careful which evidence you cite for that. An
-earlier draft pointed at the ALB's ~21k requests/day, which is **bad
-evidence**: that volume is dominated by health checks, including the NLB
-target group's own checks against the ALB, all of which originate inside
-AWS and prove nothing about ingress from outside it.
+The last row is the isolating experiment: same signing mechanism as the
+row that returned 200, same account, differing only in whether the
+authorisation came from an identity policy or the function's resource
+policy. Only two `INGRESS-PROBE INVOKED` lines were ever logged, matching
+the two identity-authenticated calls.
 
-The good evidence is first-hand: on 2026-09-04 this project pulled the
-walk list and **39 walk archives** from
-`vision-picar-nlb-...elb.us-east-2.amazonaws.com` from a laptop off the
-AWS network, every one HTTP 200. That is real internet ingress through an
-internet-facing ELB on this account, today. The open question for that
-change is only whether an internet-facing *ALB* behaves differently from
-an internet-facing *NLB*, and there is no mechanism by which the account
-restriction would distinguish them.
+Ruled out along the way: it is not ingress (a signed call from a laptop
+off the AWS network returned 200 and the function saw the real public
+source IP); it is not the concurrency quota (1000, and 10 was always
+ample for one phone); and it is not an SCP or RCP, because the account is
+not a member of an AWS Organization.
+
+### What this kills
+
+- **CloudFront -> Lambda Function URL with OAC** -- dead. OAC authorises
+  via the function's resource policy.
+- **Anonymous Function URLs** -- dead, same reason.
+- **ALB -> Lambda target** -- dead, same reason.
+
+Section 5's diagram cannot be built as drawn. Do not spend time on it
+until the item below is settled.
+
+### The one Lambda pattern that might still work -- UNTESTED
+
+An API Gateway integration accepts an explicit **`credentials` role ARN**.
+The gateway then *assumes that role* and invokes the function with
+identity-based auth, never consulting the resource policy -- the one
+column in the table above that works. This is plausibly also why the
+original 2026-08 attempt failed: the default wiring for both a Function
+URL and an API Gateway integration is a resource-policy grant.
+
+This is the next thing to test, and it decides Stage 3's shape: Lambda at
+roughly $2/month if it works, App Runner or Lightsail otherwise.
+
+### If that fails too
+
+Fall back to a single always-on container with its own HTTPS endpoint and
+no VPC: App Runner, or Lightsail containers. One service, not six. **The
+~$5/month and ~$7/month figures usually quoted for those are carried over
+from another analysis and have not been verified against current pricing
+or us-east-2 availability** -- price them before relying on them, because
+cheapness is the entire argument for this fallback.
+
+### Unrelated, and still true
+
+Deleting the NLB and making the ALB internet-facing is *not* gated on any
+of this. On 2026-09-04 this project pulled the walk list and 39 walk
+archives through the internet-facing NLB from a laptop off the AWS
+network, every one HTTP 200 -- ELB ingress demonstrably works. (Do not
+cite the ALB's ~21k requests/day as evidence for that: it is dominated by
+health checks originating inside AWS.)
 
 ---
 
