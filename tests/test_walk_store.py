@@ -55,7 +55,7 @@ class FakeS3:
             raise self._missing("NoSuchBucket")
         return {}
 
-    def put_object(self, Bucket, Key, Body):
+    def put_object(self, Bucket, Key, Body, ContentType=None):
         self.calls.append("put_object")
         assert Bucket == self.bucket
         self.objects[Key] = Body
@@ -90,6 +90,10 @@ class FakeS3:
         for o in Delete["Objects"]:
             self.objects.pop(o["Key"], None)
         return {}
+
+    def generate_presigned_url(self, op, Params, ExpiresIn):
+        self.calls.append("generate_presigned_url")
+        return f"https://presigned/{Params['Key']}?exp={ExpiresIn}"
 
     def list_objects_v2(self, Bucket, Prefix="", Delimiter=None,
                         MaxKeys=None, ContinuationToken=None):
@@ -344,6 +348,33 @@ def test_location_ends_with_the_walk_name_and_carries_no_scheme_prefix_locally(s
 
 
 # ---------- the two documented divergences ----------
+
+
+def test_local_offers_no_download_url_and_s3_does(tmp_path):
+    """Decided per backend, never per size. A route that streamed small
+    walks and redirected large ones would pass every test and fail only on
+    the two walks in the corpus that are over the Lambda response cap."""
+    assert LocalWalkStore(tmp_path).download_url("w.zip", b"x", "application/zip") is None
+
+    fake = FakeS3()
+    s3 = S3WalkStore("test-bucket", "recordings", client=fake)
+    url = s3.download_url("w.zip", b"payload", "application/zip")
+    assert url and url.startswith("https://presigned/")
+    assert "put_object" in fake.calls
+
+
+def test_an_export_is_keyed_outside_the_walk_prefix(tmp_path):
+    """An export under `recordings/` would be listed by list_walks() as a
+    walk named `exports`, because that reads S3 common prefixes and cannot
+    tell one of them is not a walk."""
+    fake = FakeS3()
+    s3 = S3WalkStore("test-bucket", "recordings", client=fake)
+    seed(s3, "real-walk", {"frame-0000.jpg": b"x"})
+    s3.download_url("real-walk.zip", b"zipbytes", "application/zip")
+
+    assert s3.list_walks() == ["real-walk"]
+    assert any(k.startswith("exports/") for k in fake.objects)
+    assert not any(k.startswith("recordings/exports") for k in fake.objects)
 
 
 def test_an_empty_walk_exists_locally_and_not_on_s3(tmp_path):

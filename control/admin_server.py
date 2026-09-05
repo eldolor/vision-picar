@@ -80,10 +80,11 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
 from control.brain_config import load_brain_config
+from control.recording_routes import mount_recording_routes
 from control import walk_eval, walk_replay
 from control.walk_store import WalkStoreError, walk_store_from_config
 
@@ -396,6 +397,24 @@ def create_app(config_path=None, store=None) -> FastAPI:
             raise HTTPException(status_code=404, detail="No such frame.")
         return filename
 
+    # The write half of the recording API. In the cloud this process IS the
+    # thing holding the bucket, so /recording/frame and /recording/finish
+    # belong here rather than on a brain that is going back to the Pi and
+    # should not carry AWS credentials. Mounted from the same module
+    # control/brain_server.py mounts, so there is one implementation.
+    mount_recording_routes(app, store, require_secret=require_secret)
+
+    @app.get("/recording/health")
+    async def recording_health():
+        """Same answer as /health, under the prefix this service owns.
+
+        Two services sit behind one API Gateway and each needs a health path
+        that routes to it; "/health" can only point at one of them. This is
+        the infrastructure showing through slightly, and it is preferable to
+        the alternative of a health check that silently reports on the wrong
+        process."""
+        return await health()
+
     @app.get("/recording/walks", dependencies=[Depends(require_secret)])
     async def list_walks():
         if not store.available():
@@ -449,8 +468,18 @@ def create_app(config_path=None, store=None) -> FastAPI:
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for name, _size in store.list_files(walk):
                 zf.writestr(name, store.read_bytes(walk, name))
+        data = buf.getvalue()
+
+        # Where the backend can hand out a URL, redirect instead of
+        # returning the bytes. On S3 + Lambda that is not an optimisation:
+        # a function can return at most ~6MB and two walks in the corpus zip
+        # to 8.64MB and 6.68MB, so proxying them through is already broken.
+        # Backend decides, not size -- see WalkStore.download_url().
+        url = store.download_url(f"{walk}.zip", data, "application/zip")
+        if url:
+            return RedirectResponse(url, status_code=307)
         return Response(
-            content=buf.getvalue(),
+            content=data,
             media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="{walk}.zip"'},
         )

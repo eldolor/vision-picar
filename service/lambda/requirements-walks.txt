@@ -1,0 +1,7 @@
+# Runtime deps for service/lambda/walks_handler.py (control/admin_server.py).
+# boto3 comes from the Lambda runtime; see requirements-vision.txt.
+fastapi
+pydantic
+mangum
+pyyaml
+httpx

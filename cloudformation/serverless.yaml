@@ -1,0 +1,326 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  vision-picar without a VPC: static SPA on S3, two Lambdas behind one API
+  Gateway HTTP API, all under one CloudFront distribution. Replaces six ECS
+  Fargate services, an NLB, an internal ALB and five interface endpoints.
+  See PLAN-aws-cost-redesign.md, and the comments below before editing.
+
+# ---------------------------------------------------------------------------
+# The one thing not to "simplify"
+#
+# These functions are invoked through an API Gateway integration carrying an
+# explicit CREDENTIALS ROLE, which the gateway assumes. That looks like a
+# detour -- a Lambda Function URL is fewer resources -- and it is not.
+#
+# Measured on this account on 2026-09-04 (PLAN-aws-cost-redesign.md section
+# 6): Lambda resource-based policies DO NOT GRANT INVOCATION here. Anonymous
+# Function URLs, CloudFront with Origin Access Control in front of a Function
+# URL, and a role holding only a resource-policy grant all return 403 and the
+# function is never invoked -- there is nothing in its log to look at.
+# Identity-based auth works normally, which is what an assumed credentials
+# role gives. There is deliberately no AWS::Lambda::Permission resource here:
+# the gateway does not need one, and adding one would imply the
+# resource-policy path works.
+#
+# Untested assumption, flagged rather than buried
+#
+# The static bucket is private and read by CloudFront through an S3 Origin
+# Access Control, which works via an S3 BUCKET POLICY -- a resource policy,
+# on a different service. The restriction above was measured on Lambda only;
+# S3 was not tested. If the first deploy serves the API but returns 403 for
+# the SPA, that is this assumption failing rather than a template bug, and
+# the fallback is a public-read static bucket (acceptable -- it is a JS
+# bundle, not data). Test it early.
+# ---------------------------------------------------------------------------
+
+Parameters:
+  LambdaCodeBucket:
+    Type: String
+    Description: Bucket holding the two zips built by service/lambda/build.sh.
+  VisionCodeKey:
+    Type: String
+  WalksCodeKey:
+    Type: String
+  RecordingsStackName:
+    Type: String
+    Default: vision-picar-recordings-s3
+    Description: Stack owning the recordings bucket and its access policy.
+  NavigateModelId:
+    Type: String
+    Default: us.anthropic.claude-opus-4-5-20251101-v1:0
+    Description: >
+      Keep in step with service/vision_analyze/vision_core.py's code default.
+      These have drifted before: the env var wins, so a template default that
+      disagrees with the code silently decides which model every walk used,
+      and walks recorded for days were attributed to the wrong one.
+  EnvLabel:
+    Type: String
+    Default: ""
+
+Conditions:
+  HasEnvLabel: !Not [!Equals [!Ref EnvLabel, ""]]
+
+Resources:
+
+  # ---------------------------------------------------------------- static
+
+  StaticBucket:
+    Type: AWS::S3::Bucket
+    # No Retain: unlike the recordings bucket this holds build output, every
+    # byte of which is reproducible from the repo by re-running the sync.
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+
+  StaticBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref StaticBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: cloudfront.amazonaws.com}
+            Action: s3:GetObject
+            Resource: !Sub "${StaticBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                "AWS:SourceArn": !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  StaticOac:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-static"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # ---------------------------------------------------------------- lambdas
+
+  VisionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: sts:AssumeRole}]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: bedrock
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [bedrock:InvokeModel]
+                # Inference profiles are cross-region by construction, so the
+                # foundation-model ARNs they route to are not all in this
+                # region -- scoping this to the local region would break the
+                # profile the navigate route uses.
+                Resource: "*"
+
+  WalksRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: sts:AssumeRole}]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        # Read/write the recorded walks. Owned by the recordings stack so the
+        # permission set survives this stack being replaced.
+        - Fn::ImportValue: !Sub "${RecordingsStackName}-AccessPolicyArn"
+      Policies:
+        - PolicyName: bedrock-judge
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # control/walk_eval.py's judge and collision tiers.
+              - {Effect: Allow, Action: [bedrock:InvokeModel], Resource: "*"}
+
+  VisionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Architectures: [arm64]      # ~20% cheaper, and matches build.sh's wheels
+      Handler: vision_handler.handler
+      Role: !GetAtt VisionRole.Arn
+      Code: {S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref VisionCodeKey}
+      # A vision call is 1-3s and Robot view allows two in flight; 30s leaves
+      # room for a slow model without letting a hung call bill for minutes.
+      Timeout: 30
+      MemorySize: 1024
+      Environment:
+        Variables:
+          BEDROCK_NAVIGATE_MODEL_ID: !Ref NavigateModelId
+          ENV_LABEL: !If [HasEnvLabel, !Ref EnvLabel, !Ref "AWS::NoValue"]
+
+  WalksFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.12
+      Architectures: [arm64]
+      Handler: walks_handler.handler
+      Role: !GetAtt WalksRole.Arn
+      Code: {S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref WalksCodeKey}
+      # A replay re-asks every frame of a walk and already outlived the old
+      # 60s load-balancer timeout. 15 min is Lambda's ceiling; the honest fix
+      # is still to make replay a job, which PLAN-aws-cost-redesign.md notes.
+      Timeout: 900
+      MemorySize: 1024
+      Environment:
+        Variables:
+          RECORDING_BACKEND: s3
+          RECORDING_BUCKET:
+            Fn::ImportValue: !Sub "${RecordingsStackName}-BucketName"
+          RECORDING_PREFIX: recordings
+          ENV_LABEL: !If [HasEnvLabel, !Ref EnvLabel, !Ref "AWS::NoValue"]
+
+  # ------------------------------------------------------------ api gateway
+
+  # The role the GATEWAY assumes to invoke the functions. This is the whole
+  # reason the design works on this account -- see the header.
+  ApiInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{Effect: Allow, Principal: {Service: apigateway.amazonaws.com}, Action: sts:AssumeRole}]
+      Policies:
+        - PolicyName: invoke
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: [!GetAtt VisionFunction.Arn, !GetAtt WalksFunction.Arn]
+
+  Api:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-api"
+      ProtocolType: HTTP
+
+  VisionIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref Api
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt VisionFunction.Arn
+      PayloadFormatVersion: "2.0"
+      CredentialsArn: !GetAtt ApiInvokeRole.Arn
+
+  WalksIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref Api
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt WalksFunction.Arn
+      PayloadFormatVersion: "2.0"
+      CredentialsArn: !GetAtt ApiInvokeRole.Arn
+
+  # One route per public path. Deliberately explicit rather than a single
+  # ANY /{proxy+}: two different functions answer here, and the route table
+  # is what says which. tests/test_serverless_routes.py checks these against
+  # the real FastAPI apps -- the same job tests/test_alb_routes.py did for
+  # the ListenerRules, for the same reason (a missing route is a 404 on one
+  # feature while the page still loads).
+  RouteAnalyze:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref Api, RouteKey: "POST /analyze", Target: !Sub "integrations/${VisionIntegration}"}
+  RouteDescribe:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref Api, RouteKey: "POST /describe", Target: !Sub "integrations/${VisionIntegration}"}
+  RouteNavigate:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref Api, RouteKey: "POST /navigate", Target: !Sub "integrations/${VisionIntegration}"}
+  RouteNavigateModels:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref Api, RouteKey: "GET /navigate/models", Target: !Sub "integrations/${VisionIntegration}"}
+  RouteGuidance:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref Api, RouteKey: "POST /guidance", Target: !Sub "integrations/${VisionIntegration}"}
+  RouteHealth:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref Api, RouteKey: "GET /health", Target: !Sub "integrations/${VisionIntegration}"}
+  # The walks service answers /recording/health for the same purpose: one
+  # path can only route to one function, and both services need a health
+  # check that reaches the right process.
+  RouteRecording:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref Api, RouteKey: "ANY /recording/{proxy+}", Target: !Sub "integrations/${WalksIntegration}"}
+  RouteStats:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref Api, RouteKey: "GET /stats", Target: !Sub "integrations/${WalksIntegration}"}
+
+  Stage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref Api
+      StageName: $default
+      AutoDeploy: true
+
+  # ------------------------------------------------------------- cloudfront
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "${AWS::StackName} -- SPA on S3, API on API Gateway"
+        HttpVersion: http2
+        DefaultRootObject: index.html
+        Origins:
+          - Id: static
+            DomainName: !GetAtt StaticBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt StaticOac.Id
+            S3OriginConfig: {OriginAccessIdentity: ""}
+          - Id: api
+            DomainName: !Sub "${Api}.execute-api.${AWS::Region}.amazonaws.com"
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              HTTPSPort: 443
+              OriginSSLProtocols: {Quantity: 1, Items: [TLSv1.2]}
+        # Static by default; every API path is an explicit behaviour below.
+        DefaultCacheBehavior:
+          TargetOriginId: static
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6   # Managed-CachingOptimized
+        CacheBehaviors:
+          # Every one of these is dynamic, carries the x-app-secret header and
+          # a fresh body, and must not be cached -- caching would be actively
+          # wrong, not merely unhelpful.
+          #
+          # OriginRequestPolicy is AllViewerExceptHostHeader, NOT AllViewer:
+          # forwarding the viewer's Host to an execute-api origin makes API
+          # Gateway reject the request, because the host it receives is not
+          # one it serves. This is the classic CloudFront-in-front-of-API-
+          # Gateway failure and it looks like a 403 from the gateway.
+          - {PathPattern: "/analyze",          TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET,HEAD,OPTIONS,PUT,POST,PATCH,DELETE], CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac}
+          - {PathPattern: "/describe",         TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET,HEAD,OPTIONS,PUT,POST,PATCH,DELETE], CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac}
+          - {PathPattern: "/navigate",         TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET,HEAD,OPTIONS,PUT,POST,PATCH,DELETE], CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac}
+          - {PathPattern: "/navigate/*",       TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET,HEAD,OPTIONS,PUT,POST,PATCH,DELETE], CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac}
+          - {PathPattern: "/guidance",         TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET,HEAD,OPTIONS,PUT,POST,PATCH,DELETE], CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac}
+          - {PathPattern: "/health",           TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET,HEAD,OPTIONS],                     CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac}
+          - {PathPattern: "/stats",            TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET,HEAD,OPTIONS],                     CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac}
+          - {PathPattern: "/recording/*",      TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET,HEAD,OPTIONS,PUT,POST,PATCH,DELETE], CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac}
+
+Outputs:
+  SiteUrl:
+    Description: The whole app. HTTPS by default, which is what getUserMedia needs.
+    Value: !Sub "https://${Distribution.DomainName}/"
+  ApiEndpoint:
+    Description: The gateway itself, for curling a route without CloudFront in the way.
+    Value: !Sub "https://${Api}.execute-api.${AWS::Region}.amazonaws.com"
+  StaticBucketName:
+    Description: Sync the SPA here, then invalidate the distribution.
+    Value: !Ref StaticBucket
+  DistributionId:
+    Value: !Ref Distribution

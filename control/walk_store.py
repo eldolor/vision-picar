@@ -146,6 +146,27 @@ class WalkStore(ABC):
     def delete_walk(self, walk: str) -> None:
         ...
 
+    def download_url(self, filename: str, data: bytes, content_type: str,
+                     expires_s: int = 900) -> Optional[str]:
+        """Somewhere a caller can be REDIRECTED to fetch `data`, or None if
+        this backend has no such place and the caller must send the bytes
+        itself.
+
+        Exists because of a hard limit rather than a preference: a Lambda
+        behind API Gateway can return at most ~6MB, and
+        `GET /recording/walks/{walk}/download` zips a whole walk. Two of the
+        39 walks in the corpus are already 8.64MB and 6.68MB, so proxying
+        the bytes through the function is not a thing that merely might
+        break -- it is broken today for the two most-analysed walks.
+
+        The default is None, which keeps `LocalWalkStore` streaming inline
+        exactly as it always has. Note this is decided per BACKEND, never
+        per size: a route that streams small walks and redirects large ones
+        would work in every test and fail only on the walks nobody tries
+        until they matter.
+        """
+        return None
+
     @abstractmethod
     def location(self, walk: str) -> str:
         """Where one walk's files are, as a string a consumer can act on.
@@ -265,10 +286,13 @@ class S3WalkStore(WalkStore):
     constructing one inline.
     """
 
-    def __init__(self, bucket: str, prefix: str = "recordings", client=None):
+    def __init__(self, bucket: str, prefix: str = "recordings", client=None,
+                 export_prefix: str = "exports"):
         if not bucket:
             raise WalkStoreError("S3WalkStore needs a bucket name.")
         self.bucket = bucket
+        # A SIBLING of `prefix`, never inside it -- see download_url().
+        self.export_prefix = export_prefix.strip("/")
         # Normalised to exactly one trailing slash internally, and stored
         # without one, so key building never doubles or drops a separator.
         self.prefix = prefix.strip("/")
@@ -388,6 +412,26 @@ class S3WalkStore(WalkStore):
 
     def location(self, walk: str) -> str:
         return f"s3://{self.bucket}/{self._walk_prefix(walk).rstrip('/')}"
+
+    def download_url(self, filename: str, data: bytes, content_type: str,
+                     expires_s: int = 900) -> Optional[str]:
+        """Put the bytes in the bucket and presign a GET for them.
+
+        Deliberately keyed OUTSIDE this store's own prefix. An export under
+        `recordings/` would be listed by `list_walks()` as a walk called
+        `exports`, because that method reads S3 common prefixes and has no
+        way to know one of them is not a walk. The bucket's lifecycle rules
+        expire this prefix; nothing here is meant to be kept.
+        """
+        key = f"{self.export_prefix}/{filename}"
+        self.client.put_object(Bucket=self.bucket, Key=key, Body=data,
+                               ContentType=content_type)
+        return self.client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": key,
+                    "ResponseContentDisposition": f'attachment; filename="{filename}"'},
+            ExpiresIn=expires_s,
+        )
 
     def describe(self) -> str:
         return f"s3://{self.bucket}/{self.prefix}"

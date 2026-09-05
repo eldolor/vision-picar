@@ -263,8 +263,14 @@ def test_a_walk_hitting_the_frame_cap_is_refused(tmp_path, monkeypatch):
     import base64
 
     import control.brain_server as bs
+    import control.recording_routes as rr
 
-    monkeypatch.setattr(bs, "MAX_FRAMES_PER_WALK", 2)
+    # Patched on recording_routes, not brain_server: the two write routes
+    # moved there so the recordings Lambda can mount the same code, and the
+    # cap is read from that module's namespace. brain_server still re-exports
+    # the name, so patching it there would bind nothing and this test would
+    # pass against 500 frames instead of 2.
+    monkeypatch.setattr(rr, "MAX_FRAMES_PER_WALK", 2)
     config = tmp_path / "robot.yaml"
     config.write_text(f"brain:\n  allow_recording: true\n  recording_dir: {tmp_path / 'rec'}\n")
 

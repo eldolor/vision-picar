@@ -86,6 +86,20 @@ INTENTIONALLY_UNROUTED = {
     # does route it, at its own prefix. The twin runs mode: sim, where it
     # would 400 anyway.
     ("twin.yaml", "/teleop/frame"),
+    # admin_server mounts control/recording_routes.py so the recordings
+    # Lambda has the write path (the walks left EFS, and the brain is going
+    # back to the Pi where it should not hold AWS credentials). In THIS
+    # topology those two paths belong to the brain, and brain.yaml already
+    # claims them -- one ALB path can only forward to one target group, so
+    # adding them here would be a routing conflict, not a fix. The admin
+    # container simply never receives them.
+    ("admin.yaml", "/recording/frame"),
+    ("admin.yaml", "/recording/finish"),
+    # Exists because two functions sit behind one API Gateway and "/health"
+    # can only route to one of them. On ECS each service has its own target
+    # group whose health check hits the task directly, so this alias has no
+    # job here -- same reasoning as ("admin.yaml", "/health") above.
+    ("admin.yaml", "/recording/health"),
 }
 
 

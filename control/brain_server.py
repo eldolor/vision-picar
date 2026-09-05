@@ -74,8 +74,17 @@ from brain.navigate import vision_fn_for
 from control import drills
 from control.brain_config import load_brain_config
 from control.mission_runner import MissionRunner
+from control.recording_routes import (  # noqa: F401 -- re-exported, see above
+    FRAME_SUFFIX,
+    MAX_FRAME_BYTES,
+    MAX_FRAMES_PER_WALK,
+    WALK_NAME,
+    FinishWalkRequest,
+    RecordFrameRequest,
+    mount_recording_routes,
+)
 from control.remote_robot import RemoteRobot
-from control.walk_store import WalkStoreError, walk_store_from_config
+from control.walk_store import walk_store_from_config
 from robot.identity import log_identity
 from robot.interface import RobotInterface
 
@@ -97,39 +106,11 @@ def require_secret(x_app_secret: str = Header(default="")):
 # one's live /navigate answer is appended to walk.jsonl beside them -- so a
 # replay can be compared against what the service said at the time, on the
 # same pixels.
-WALK_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-MAX_FRAME_BYTES = 4 * 1024 * 1024
-MAX_FRAMES_PER_WALK = 500
-FRAME_SUFFIX = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
-
-
-class RecordFrameRequest(BaseModel):
-    walk: str
-    seq: int
-    image_base64: str
-    media_type: str = "image/jpeg"
-    # The /navigate answer this frame got live, if there was one.
-    navigate: Optional[dict] = None
-
-
-class FinishWalkRequest(BaseModel):
-    """Sent once by the twin when a Robot-view recording stops.
-
-    Frames arrive one at a time and nothing in the stream says which one is
-    last, so without this a walk is only "finished" in the sense that no
-    more frames happened to arrive. The marker it writes (meta.json) is what
-    lets control/admin_server.py tell a completed walk from one still in
-    progress, and it is where the walk-level model_id and target live --
-    both facts the twin knows and the frames do not carry on their own.
-
-    Best-effort by design: a closed tab or a dead battery never sends it,
-    which is why admin also scores lazily on first read.
-    """
-    walk: str
-    model_id: Optional[str] = None
-    target_object: Optional[str] = None
-
-
+# The walk naming contract, the frame models and the two write routes now
+# live in control/recording_routes.py so the recordings Lambda can mount the
+# same code -- see that module's docstring for why the write path follows
+# the storage rather than the brain. Re-exported here because this module
+# was their home and both tests and callers still import them from it.
 class MissionStartRequest(BaseModel):
     target_object: Optional[str] = None
     target_room: Optional[str] = None
@@ -453,91 +434,18 @@ def create_app(
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
         return resp.json()
 
-    @app.post(prefix + "/recording/frame", dependencies=[Depends(require_secret)])
-    async def record_frame(req: RecordFrameRequest):
-        """Save one walk frame. Off by default on any brain that should not
-        be accepting writes from whoever can reach it."""
-        if not config["allow_recording"]:
-            if config["recording_proxy_url"]:
-                return await _proxy_recording("/recording/frame", req)
-            raise HTTPException(status_code=403, detail="Recording is disabled on this brain.")
-        if not WALK_NAME.match(req.walk):
-            raise HTTPException(
-                status_code=400,
-                detail="walk must be 1-64 chars of letters, digits, dot, dash or underscore.",
-            )
-        if not 0 <= req.seq <= 9999:
-            raise HTTPException(status_code=400, detail="seq out of range.")
-        # Checked before decoding -- base64 is 4/3 the size of what it
-        # carries, so this bounds the allocation rather than discovering the
-        # size after paying for it.
-        if len(req.image_base64) > MAX_FRAME_BYTES * 4 // 3 + 4:
-            raise HTTPException(status_code=413, detail="Frame too large.")
-        try:
-            image = base64.b64decode(req.image_base64, validate=True)
-        except (binascii.Error, ValueError):
-            raise HTTPException(status_code=400, detail="image_base64 is not valid base64.")
-
-        # The name is already sanitised; walk_store refuses a separator or
-        # a `..` again on the way in, on either backend.
-        try:
-            store.create_walk(req.walk)
-        except WalkStoreError:
-            raise HTTPException(status_code=400, detail="Bad walk name.")
-
-        # "starts with frame-", not "isn't walk.jsonl": control/admin_server.py
-        # can leave a tags.json sidecar beside these, which a suffix-exclusion
-        # check would miscount as a frame.
-        existing = store.list_names(req.walk, prefix="frame-")
-        if len(existing) >= MAX_FRAMES_PER_WALK:
-            raise HTTPException(
-                status_code=409,
-                detail=f"This walk already has {MAX_FRAMES_PER_WALK} frames.",
-            )
-
-        suffix = FRAME_SUFFIX.get(req.media_type, ".jpg")
-        name = f"frame-{req.seq:04d}{suffix}"
-        store.write_bytes(req.walk, name, image)
-        store.append_text(req.walk, "walk.jsonl", json.dumps({
-            "seq": req.seq, "file": name, "media_type": req.media_type,
-            "navigate": req.navigate,
-        }) + "\n")
-
-        return {"saved": name, "walk": req.walk, "frames": len(existing) + 1,
-                "dir": store.location(req.walk)}
-
-    @app.post(prefix + "/recording/finish", dependencies=[Depends(require_secret)])
-    async def finish_walk(req: FinishWalkRequest):
-        """Mark a recorded walk complete and record what produced it.
-
-        Only ever writes meta.json beside the frames -- it deliberately does
-        not score anything. Scoring lives in control/admin_server.py, which
-        is the process that owns reviewing recordings and the one that has
-        Bedrock permissions; the brain's job ends when the frames are safely
-        on the volume.
-        """
-        if not config["allow_recording"]:
-            if config["recording_proxy_url"]:
-                return await _proxy_recording("/recording/finish", req)
-            raise HTTPException(status_code=403, detail="Recording is disabled on this brain.")
-        if not WALK_NAME.match(req.walk):
-            raise HTTPException(status_code=400, detail="Bad walk name.")
-
-        try:
-            if not store.walk_exists(req.walk):
-                raise HTTPException(status_code=404, detail="No such walk.")
-        except WalkStoreError:
-            raise HTTPException(status_code=400, detail="Bad walk name.")
-
-        meta = store.read_json(req.walk, "meta.json") or {}
-        meta["finished_at"] = time.time()
-        meta["frames"] = len(store.list_names(req.walk, prefix="frame-"))
-        if req.model_id:
-            meta["model_id"] = req.model_id
-        if req.target_object:
-            meta["target_object"] = req.target_object
-        store.write_json(req.walk, "meta.json", meta)
-        return {"walk": req.walk, "meta": meta}
+    # Mounted, not defined here: the recordings Lambda mounts the same two
+    # routes against the same store. `proxy` keeps this brain's
+    # forward-to-a-peer behaviour (teleop-brain has no storage of its own),
+    # and allow_recording is read per request so flipping it needs no
+    # restart-time reasoning.
+    mount_recording_routes(
+        app, store,
+        prefix=prefix,
+        require_secret=require_secret,
+        allow_recording=lambda: bool(config["allow_recording"]),
+        proxy=_proxy_recording if config["recording_proxy_url"] else None,
+    )
 
     @app.get(prefix + "/health")
     async def health():
