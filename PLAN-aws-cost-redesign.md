@@ -376,6 +376,26 @@ source IP); it is not the concurrency quota (1000, and 10 was always
 ample for one phone); and it is not an SCP or RCP, because the account is
 not a member of an AWS Organization.
 
+### How far it reaches: Lambda only, tested
+
+The obvious follow-up question -- is this resource-based policies in
+general, or Lambda's? -- was measured the same day, because the whole
+static half of section 5 rests on the answer. A **private** S3 bucket with
+public access fully blocked, read by CloudFront through an S3 Origin
+Access Control and a bucket policy granting `cloudfront.amazonaws.com`
+with a `SourceArn` condition:
+
+| Request | Result |
+|---|---|
+| Anonymous `GET` through CloudFront | **200**, real object content |
+| Direct `GET` on the S3 URL | **403**, still private |
+
+That is the identical *pattern* to the CloudFront-OAC row that fails on
+Lambda -- service principal, resource policy, SourceArn condition -- and
+it works. **The restriction is specific to Lambda resource policies.** S3
+bucket policies are unaffected, so the SPA can be served from a private
+bucket in the normal way and no public-read fallback is needed.
+
 ### What this kills
 
 - **CloudFront -> Lambda Function URL with OAC** -- dead. OAC authorises

@@ -22,15 +22,20 @@ Description: >
 # the gateway does not need one, and adding one would imply the
 # resource-policy path works.
 #
-# Untested assumption, flagged rather than buried
+# The static half was the other open question, and it is now closed
 #
 # The static bucket is private and read by CloudFront through an S3 Origin
 # Access Control, which works via an S3 BUCKET POLICY -- a resource policy,
-# on a different service. The restriction above was measured on Lambda only;
-# S3 was not tested. If the first deploy serves the API but returns 403 for
-# the SPA, that is this assumption failing rather than a template bug, and
-# the fallback is a public-read static bucket (acceptable -- it is a JS
-# bundle, not data). Test it early.
+# on a different service than the one that is broken here. That was flagged
+# as untested when this template was written, and was tested on 2026-09-04:
+# a private bucket with public access fully blocked, an OAC, and exactly the
+# bucket policy below returned 200 through CloudFront for an anonymous
+# request, while a direct S3 GET stayed 403.
+#
+# So the restriction is specific to LAMBDA resource policies, not to
+# resource policies in general. Nothing else in this template needs a
+# workaround, and the fallback that was being held in reserve -- a
+# public-read static bucket -- is not needed.
 # ---------------------------------------------------------------------------
 
 Parameters:
