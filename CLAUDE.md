@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 675 passed, with a browser
+# Confirm everything still works (should show 692 passed, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -203,6 +203,10 @@ vision-picar/
 │   │                           prompt. The ONLY controlled comparison this
 │   │                           project has: two live walks vary the
 │   │                           operator's path as well as the model
+│   ├── recording_routes.py   the two routes that WRITE a walk, mounted by
+│   │                           brain_server AND the recordings Lambda --
+│   │                           the write path follows the storage, not the
+│   │                           brain (which is going back to the Pi)
 │   ├── walk_store.py         where recorded walks live -- one abstraction,
 │   │                           two backends (a directory, or an S3 bucket).
 │   │                           RobotInterface's shape one layer down, and
@@ -214,7 +218,7 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    675 tests, 99% line coverage of brain/,
+├── tests/                    692 tests, 99% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
 │                              75 tests over five backends,
@@ -228,6 +232,11 @@ vision-picar/
 │                              test_walk_store.py (both storage backends
 │                              through one suite, the way
 │                              test_robot_contract.py does robot backends),
+│                              test_serverless_routes.py + test_static_assets.py
+│                              (the VPC-less stack: every route across
+│                              CloudFront AND API Gateway, and every file
+│                              the pages reference -- the successors to
+│                              test_alb_routes.py, same failure mode),
 │                              test_ui.py + test_ui_admin.py (Playwright,
 │                              real browser at a phone viewport),
 │                              test_ui_pipeline.py (Playwright too, but

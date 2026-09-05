@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "Every file served from the static bucket, and the S3 key it lands on.",
+    "",
+    "One source of truth on purpose: service/static/sync.sh uploads exactly",
+    "this list and tests/test_static_assets.py checks it against what the two",
+    "HTML pages actually reference. A file referenced by a page but missing",
+    "here is the /app.js bug again -- the page loads and one feature is dead",
+    "-- which has shipped five times in this project against the ALB.",
+    "",
+    "Keys mirror the URL paths exactly, because every reference in the pages",
+    "is RELATIVE (src=\"app.js\", href=\"icons/icon-192.png\"). Renaming a key",
+    "silently 404s the reference.",
+    "",
+    "Note 'admin' has no extension: control/admin.html is served at /admin",
+    "today and the console's links assume that, so the key is extensionless",
+    "and the content type has to be set explicitly rather than guessed.",
+    "",
+    "cache: 'none' for the two scripts and the two pages, matching the",
+    "no-cache headers robot/server.py and admin_server.py already send --",
+    "this project deliberately does not use content-hashed filenames, so a",
+    "cached app.js is a stale UI nobody can explain. Icons and the manifest",
+    "are immutable in practice and cache for a day."
+  ],
+  "assets": [
+    {"src": "web-twin/index.html",              "key": "index.html",              "type": "text/html; charset=utf-8",       "cache": "none"},
+    {"src": "web-twin/app.js",                  "key": "app.js",                  "type": "application/javascript",         "cache": "none"},
+    {"src": "web-twin/manifest.json",           "key": "manifest.json",           "type": "application/manifest+json",      "cache": "day"},
+    {"src": "web-twin/icons/icon-192.png",      "key": "icons/icon-192.png",      "type": "image/png",                      "cache": "day"},
+    {"src": "web-twin/icons/icon-512.png",      "key": "icons/icon-512.png",      "type": "image/png",                      "cache": "day"},
+    {"src": "web-twin/icons/apple-touch-icon.png", "key": "icons/apple-touch-icon.png", "type": "image/png",               "cache": "day"},
+    {"src": "control/admin.html",               "key": "admin",                   "type": "text/html; charset=utf-8",       "cache": "none"},
+    {"src": "control/admin.js",                 "key": "admin.js",                "type": "application/javascript",         "cache": "none"}
+  ]
+}

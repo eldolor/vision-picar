@@ -330,6 +330,63 @@ the free-tier assumption is not doing much work.
   the compute path. The JSON routes are nowhere near the ceiling (the
   walk list is 29KB) and the largest single frame is 147KB.
 
+### Deploying it (nothing below has been run)
+
+    # 1. build and upload the two function zips
+    bash service/lambda/build.sh <a-deployment-bucket>
+    #    prints the exact deploy command with the code keys filled in
+
+    # 2. the stack
+    aws cloudformation deploy --template-file cloudformation/serverless.yaml \
+      --stack-name vision-picar-serverless --capabilities CAPABILITY_NAMED_IAM \
+      --region us-east-2 --parameter-overrides \
+        LambdaCodeBucket=... VisionCodeKey=... WalksCodeKey=...
+
+    # 3. the SPA and the console
+    aws cloudformation describe-stacks --stack-name vision-picar-serverless \
+      --query 'Stacks[0].Outputs' --output table      # bucket + distribution id
+    bash service/static/sync.sh <static-bucket> <distribution-id>
+
+Then open the `SiteUrl` output on a phone. This runs ALONGSIDE the existing
+ECS stack -- it shares nothing with it but the recordings bucket -- so it
+can be verified before anything is torn down, which is the whole reason
+stage 3 comes before stage 2.
+
+**Check in this order, because each one fails differently:**
+
+1. `GET <SiteUrl>/` returns the twin -- S3 origin and the OAC bucket policy.
+2. `GET <SiteUrl>/health` returns JSON, not HTML. HTML means the CloudFront
+   behaviour is missing and the request went to the static origin.
+3. `POST <SiteUrl>/navigate` with a real frame -- the whole chain, including
+   the credentials role and Bedrock.
+4. Guide tab -> Robot view on a phone. `getUserMedia` needs the secure
+   context CloudFront provides, and this is the Stage 0 path that matters.
+5. `GET <SiteUrl>/recording/walks` lists 39 walks from S3.
+6. Download `red-backpack-20260829-184355` -- the 8.64MB walk. A 307 to a
+   presigned URL is correct; bytes through the function would be the 6MB
+   failure.
+
+### Pointing the twin at a robot
+
+The SPA is static now, so the page's own origin serves the *vision and
+recording* APIs and nothing else. The Sim and Robot tabs still need a robot
+server and a brain, and those are not in AWS -- they are two `uvicorn`
+processes on a laptop or, after B5, on the Pi.
+
+`web-twin/app.js` defaults the robot URL to `location.origin`, which was
+right when `robot/server.py` served the page and is wrong here. Set it in
+Settings to wherever the robot actually is. The twin already supports this
+deliberately: pointing a URL field at another host shows the endpoint
+mismatch notice rather than an error, because a tunnel or split local dev
+is legitimate (CLAUDE.md section 7's table).
+
+For a Pi reachable from a phone off the LAN, it needs its own HTTPS -- a
+CloudFront page cannot call an `http://` LAN address, the browser blocks it
+as mixed content. Tailscale or a Cloudflare Tunnel gives it that without a
+load balancer. That call is cross-origin, which `robot/server.py`'s
+`server.allowed_origins` already handles; the "same-origin, no CORS"
+property covers only the S3-and-Lambda half.
+
 ### Things NOT to move to AWS
 
 The simulator, the robot API and the brain. `PLAN-brain-relocation.md`
