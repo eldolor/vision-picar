@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Build-artifact bucket for the Lambda zips that service/lambda/build.sh
+  produces and cloudformation/serverless.yaml deploys from.
+
+# ---------------------------------------------------------------------------
+# Why this template exists at all
+#
+# The bucket was created by hand with `aws s3api create-bucket` during the
+# 2026-09-04 deploy, which left the one piece of this project's
+# infrastructure that was not in CloudFormation. It was adopted into this
+# stack by resource import rather than recreated, because the serverless
+# stack references objects in it by key and deleting it would break the next
+# stack update until a rebuild.
+#
+# Bringing it in was not tidiness. On 2026-09-05 an EFS volume was destroyed
+# by a `DeletionPolicy: Retain` that existed in git and had never been
+# deployed -- so "managed by CloudFormation" and "the template says so" are
+# different claims, and the second is worth nothing. A hand-made bucket is
+# the same class of gap one step earlier: nothing describes it, so nothing
+# can be checked against it.
+#
+# After changing anything here, verify against the BUCKET, not the template:
+#   aws s3api get-bucket-lifecycle-configuration --bucket <name>
+# ---------------------------------------------------------------------------
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: ""
+    Description: >
+      Leave empty for vision-picar-deploy-<account>-<region>, which is what
+      the existing bucket is called. S3 names are globally unique, so this
+      carries the account and region.
+  ExpireAfterDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    Description: >
+      How long a build artifact is kept. These zips are the ONLY pre-built
+      rollback path now that stage 2 emptied and deleted the ECR
+      repositories -- redeploying an older function means either an artifact
+      still in here or a fresh `bash service/lambda/build.sh`. 30 days is a
+      compromise between that and unbounded growth at ~39MB per build.
+
+Conditions:
+  GenerateBucketName: !Equals [!Ref BucketName, ""]
+
+Resources:
+  DeployBucket:
+    Type: AWS::S3::Bucket
+    # Retain because the objects in here are what a rollback would use, and
+    # because a stack delete should never be the thing that removes them.
+    # Unlike the recordings bucket this holds nothing irreplaceable --
+    # build.sh regenerates every byte -- so this is convenience, not the
+    # last line of defence for anything.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !If
+        - GenerateBucketName
+        - !Sub "vision-picar-deploy-${AWS::AccountId}-${AWS::Region}"
+        - !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      # Not decoration. A resource IMPORT adopts the bucket without touching
+      # it, so the stack is drifted the moment it exists: CloudFormation
+      # records the template as truth while the bucket has none of it. The
+      # first follow-up deploy here differed only in Outputs, which changes
+      # no resource, so the lifecycle rules below were never applied and
+      # `get-bucket-lifecycle-configuration` returned NoSuchLifecycleConfiguration
+      # against a stack reporting UPDATE_COMPLETE.
+      #
+      # Adding a real property is what forces the reconciliation that makes
+      # the rest of this block true. After ANY import, change something and
+      # then verify against the resource, never the stack status.
+      Tags:
+        - Key: Project
+          Value: vision-picar
+        - Key: ManagedBy
+          Value: cloudformation/deploy-bucket.yaml
+      LifecycleConfiguration:
+        Rules:
+          # build.sh writes lambda/<name>-<timestamp>.zip on every run and
+          # never removes one, so without this the bucket grows by ~39MB per
+          # build forever.
+          - Id: expire-lambda-artifacts
+            Status: Enabled
+            Prefix: lambda/
+            ExpirationInDays: !Ref ExpireAfterDays
+          # A failed multipart upload leaves parts that are billed and are
+          # invisible to `s3 ls`.
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+Outputs:
+  DeployBucketName:
+    Value: !Ref DeployBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
