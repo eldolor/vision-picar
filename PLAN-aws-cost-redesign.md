@@ -5,7 +5,7 @@ Status as of 2026-09-04:
 | Stage | What | Status |
 |---|---|---|
 | 1 | Recorded walks off EFS, onto S3 | **DONE** (commit `b42bee6`), data migrated and verified |
-| 2 | Tear down the VPC and everything that needs one | **SPECIFIED, NOTHING DELETED** |
+| 2 | Tear down the VPC and everything that needs one | **DONE 2026-09-05.** Nine stacks deleted; only `recordings-s3` and `serverless` remain |
 | 3 | Rebuild without a VPC | **DEPLOYED AND VERIFIED 2026-09-04**, running alongside the ECS stack. See section 5's deployment note |
 
 Written to hand stages 2 and 3 to a session that was not present for the
@@ -209,7 +209,7 @@ waste. If stage 2 is abandoned, this becomes real work.
 
 ---
 
-## 4. Stage 2 -- the teardown (SPECIFIED, NOTHING DELETED)
+## 4. Stage 2 -- the teardown (DONE 2026-09-05)
 
 ### Order, derived from the real export/import graph
 
@@ -256,6 +256,49 @@ NEVER: vision-picar-recordings-s3  <- holds the corpus, imports nothing,
 Re-verify the corpus. The verification in section 3 was run on
 2026-09-04; if EFS has been written to since, S3 is stale. Diff the two
 before the EFS copy stops existing.
+
+### What actually happened
+
+Order held. Everything above is gone: 0 VPCs, 0 VPC endpoints, 0 load
+balancers, 0 ECS clusters, 0 EFS filesystems, 0 vision-picar secrets, 0
+vision-picar ECR repos. The replacement answered `/`, `/health`,
+`/recording/walks` (39 walks / 821 frames) and `/navigate` immediately
+after.
+
+**Two surprises, one of them serious.**
+
+**ECR repositories cannot be deleted while they hold images**, so all five
+leaf stacks came back DELETE_FAILED on that one resource -- everything else
+in them, including the billable Fargate services, had already gone. Emptying
+the repos (388 images across six) and re-issuing the deletes cleared it.
+Worth knowing that this makes a rollback a REBUILD rather than a redeploy:
+the Dockerfiles are in git, so the images are reproducible, but they are no
+longer sitting there.
+
+**`DeletionPolicy: Retain` did not protect the EFS filesystem, and this
+document said it would.** The filesystem was destroyed with its stack.
+
+The cause is one this document had already identified and failed to follow
+through. Commit `f528126` -- "Stop paying twice for endpoints, and keep the
+walks when a stack goes" -- added BOTH the `EndpointHighAvailability`
+parameter AND the `Retain` policy on the EFS, and its own message says
+"none deployed." Section 1 reports the first half of that as an unapplied
+fix. Nobody checked the second half, and section 4 then asserted as fact
+that a `delete-stack` would leave the filesystem behind. It was true of the
+template in git and false of the deployed stack, whose stored template
+predated the policy.
+
+**The corpus survived on the belt, not the braces**: a verified local
+backup, the S3 migration, and a re-verification run minutes before the
+delete. After the deletion S3 still holds 39 walks / 821 frames /
+58,860,594 bytes, with one frame per walk sha256-verified against the local
+copy. Nothing was lost, and nothing about the safeguard worked.
+
+**The lesson, which generalises past this project:** a `DeletionPolicy`
+protects nothing until the template carrying it has been deployed. Check
+`describe-stacks` for the parameter or `get-template --stack-name` for the
+policy before trusting either. Drift is not only a cosmetic problem, and
+"the template says so" is not the same claim as "the stack does."
 
 ---
 
