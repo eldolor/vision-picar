@@ -13,3 +13,6 @@ venv/
 .env
 *.pem
 recordings/
+
+# Lambda packaging output (service/lambda/build.sh)
+.build/
