@@ -346,6 +346,38 @@ nothing with it but the recordings bucket. Verified end to end:
 | Download the 8.64MB walk | **307** to a presigned URL, not bytes |
 | Unauthenticated `/navigate`, `/recording/walks`, `DELETE` | 401 |
 
+Then, on being asked whether the stack had actually been validated -- it had
+not, only its read-side happy path -- **every remaining route**:
+
+| Check | Result |
+|---|---|
+| `/describe`, `/guidance`, `/analyze`, `/navigate/models` | 200 |
+| `/recording/health`, `/stats`, `/recording/models`, `/recording/summary` | 200 |
+| Walk detail | 200, 22 frames / 22 entries, model id intact |
+| **Binary frame through API Gateway** | 200, `image/jpeg`, **sha256 identical to the original** |
+| **Follow the 307** | valid zip, 9,055,958 bytes, 123 members -- well past the 6MB Lambda cap |
+| `POST /recording/frame` x3 | 200, seqs 0/1/2 all present -- the S3 read-modify-write append holds |
+| `POST /recording/finish` | 200, meta.json written |
+| `PUT tag`, `PUT meta`, `POST evaluate?judge=false` | 200, scored 33/poor/degenerate |
+| `DELETE` one frame | 200, frames 3->2 AND walk.jsonl rewritten to 2 |
+| `DELETE` the walk | 200 |
+| Corpus afterwards | **39 walks / 821 frames / 58,860,594 bytes** -- exactly the original |
+
+The binary-frame check was the one most worth running: API Gateway needs
+base64 for binary bodies, and a misconfigured adapter returns a 200 with
+corrupt bytes rather than an error. Mangum handles it; the hash proves it.
+
+**That pass also found a real bug.** `control/walk_store.py`'s
+`download_url()` docstring claimed "the bucket's lifecycle rules expire this
+prefix" and **no such rule existed** -- `recordings-s3.yaml` predates the
+method. Every walk download was accumulating a permanent duplicate zip.
+Fixed: an `expire-exports` rule at one day, deployed and confirmed.
+
+Still NOT validated, and neither can be from a terminal: the SPA working in
+a real browser on a phone (which is CLAUDE.md section 7's actual bar for
+"done"), and the replay/judge tiers, which cost real Bedrock money across
+many frames.
+
 **Three things went wrong, all of them packaging or shape errors rather
 than design errors, and each is now covered by a test.**
 

@@ -420,8 +420,15 @@ class S3WalkStore(WalkStore):
         Deliberately keyed OUTSIDE this store's own prefix. An export under
         `recordings/` would be listed by `list_walks()` as a walk called
         `exports`, because that method reads S3 common prefixes and has no
-        way to know one of them is not a walk. The bucket's lifecycle rules
-        expire this prefix; nothing here is meant to be kept.
+        way to know one of them is not a walk.
+
+        Nothing written here is meant to be kept: it duplicates data already
+        in the walk prefix and is re-creatable on demand. The
+        `expire-exports` lifecycle rule in cloudformation/recordings-s3.yaml
+        deletes it after a day. That rule was MISSING for a day after this
+        method shipped, while this docstring already claimed it existed --
+        if you are adding a second bucket, check the rule is there rather
+        than trusting this paragraph.
         """
         key = f"{self.export_prefix}/{filename}"
         self.client.put_object(Bucket=self.bucket, Key=key, Body=data,

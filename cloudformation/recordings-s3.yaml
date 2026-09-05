@@ -90,6 +90,21 @@ Resources:
             Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
+          # Walk-download exports (control/walk_store.py's download_url).
+          # A Lambda cannot return the 8.64MB walk zip, so the download route
+          # writes it here and redirects to a presigned URL. These are pure
+          # duplicates of data already in `recordings/` and are re-creatable
+          # on demand, so they expire fast -- without this every download
+          # would add a permanent copy of a walk. The presigned URL lasts 15
+          # minutes; a day is generous.
+          #
+          # Added 2026-09-05, after walk_store.py's docstring had claimed for
+          # a day that "the bucket's lifecycle rules expire this prefix"
+          # while no such rule existed.
+          - Id: expire-exports
+            Status: Enabled
+            Prefix: exports/
+            ExpirationInDays: 1
 
   # Attachable by whatever runs the brain and admin roles -- a managed
   # policy rather than inline statements on two task roles, because the
