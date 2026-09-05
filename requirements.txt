@@ -26,3 +26,11 @@ pytest-cov
 # ambient install before the walks left EFS; named here now that a code
 # path in control/ imports it.
 boto3
+
+# CloudFormation template linting (tests/test_cfn_templates.py). Earns its
+# place: an OriginSSLProtocols written in the CloudFront API's shape instead
+# of CloudFormation's passed validate-template and then failed the change set
+# with "AWS::EarlyValidation::PropertyValidation" -- a message naming neither
+# resource nor property, with nothing in describe-events or list-hook-results.
+# cfn-lint found it in one run. Tests skip without it, as with Playwright.
+cfn-lint

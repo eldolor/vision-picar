@@ -1,6 +1,12 @@
-# Runtime deps for service/lambda/vision_handler.py. boto3 is already in the
-# Lambda runtime image and is deliberately NOT listed -- bundling it costs
-# ~10MB of package for a copy that is usually older than the one AWS ships.
-fastapi
-pydantic
+# Vision function deps.
+#
+# The service's OWN requirements are installed alongside this file by
+# build.sh -- see there. Listing them again here is what broke the first
+# deploy: this file was hand-written as fastapi/pydantic/mangum, which
+# missed pillow-heif (iPhones upload HEIC) and the function died at import
+# with Runtime.ImportModuleError before any request reached it.
+#
+# So this file holds ONLY what Lambda adds on top of the service's own list.
+# boto3 comes from the Lambda runtime image and is deliberately not pinned
+# here -- bundling it costs ~10MB for a copy usually older than AWS ships.
 mangum

@@ -1,7 +1,13 @@
-# Runtime deps for service/lambda/walks_handler.py (control/admin_server.py).
-# boto3 comes from the Lambda runtime; see requirements-vision.txt.
+# Walks function deps (control/admin_server.py + control/recording_routes.py).
+#
+# control/ has no requirements file of its own -- the repo root's covers the
+# whole project including pytest, playwright and pillow -- so this list is
+# curated, and tests/test_lambda_packaging.py checks it against the actual
+# third-party imports under control/ so it cannot silently fall behind.
+#
+# boto3/botocore come from the Lambda runtime image.
 fastapi
 pydantic
-mangum
-pyyaml
 httpx
+pyyaml
+mangum

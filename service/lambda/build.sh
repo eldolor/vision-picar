@@ -38,6 +38,11 @@ deps() {  # deps <target-dir> <requirements-file>
 }
 
 echo "==> vision"
+# The service's OWN requirements, plus what Lambda adds. Derived rather than
+# duplicated: a hand-written copy of this list missed pillow-heif and the
+# first deploy died at import. uvicorn comes along unused, which is a few MB
+# of a 250MB budget and cheaper than a list that can drift.
+deps "$BUILD/vision" "$ROOT/service/vision_analyze/requirements.txt"
 deps "$BUILD/vision" "$ROOT/service/lambda/requirements-vision.txt"
 # FLAT, at the zip root -- app.py does `from vision_core import ...`, which
 # is the layout its Dockerfile creates with one WORKDIR. Nesting these under

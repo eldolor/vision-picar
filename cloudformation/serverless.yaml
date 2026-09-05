@@ -61,9 +61,29 @@ Parameters:
   EnvLabel:
     Type: String
     Default: ""
+  VisionSharedSecret:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: >
+      x-app-secret required by the vision function. EMPTY MEANS NO AUTH --
+      require_secret() is a no-op when APP_SHARED_SECRET is unset, which
+      leaves /navigate publicly callable and billable. Always pass one.
+  WalksSharedSecret:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: >
+      x-app-secret for the recordings function. DELIBERATELY A DIFFERENT
+      SECRET from the vision one: reviewing and DELETING recorded walks is a
+      different privilege from asking the model a question, and the corpus is
+      the only dataset this project has. Same reasoning as
+      control/admin_server.py's require_secret docstring.
 
 Conditions:
   HasEnvLabel: !Not [!Equals [!Ref EnvLabel, ""]]
+  HasVisionSecret: !Not [!Equals [!Ref VisionSharedSecret, ""]]
+  HasWalksSecret: !Not [!Equals [!Ref WalksSharedSecret, ""]]
 
 Resources:
 
@@ -164,6 +184,7 @@ Resources:
       Environment:
         Variables:
           BEDROCK_NAVIGATE_MODEL_ID: !Ref NavigateModelId
+          APP_SHARED_SECRET: !If [HasVisionSecret, !Ref VisionSharedSecret, !Ref "AWS::NoValue"]
           ENV_LABEL: !If [HasEnvLabel, !Ref EnvLabel, !Ref "AWS::NoValue"]
 
   WalksFunction:
@@ -185,6 +206,7 @@ Resources:
           RECORDING_BUCKET:
             Fn::ImportValue: !Sub "${RecordingsStackName}-BucketName"
           RECORDING_PREFIX: recordings
+          APP_SHARED_SECRET: !If [HasWalksSecret, !Ref WalksSharedSecret, !Ref "AWS::NoValue"]
           ENV_LABEL: !If [HasEnvLabel, !Ref EnvLabel, !Ref "AWS::NoValue"]
 
   # ------------------------------------------------------------ api gateway
@@ -291,7 +313,11 @@ Resources:
             CustomOriginConfig:
               OriginProtocolPolicy: https-only
               HTTPSPort: 443
-              OriginSSLProtocols: {Quantity: 1, Items: [TLSv1.2]}
+              # A plain list. The CloudFront *API* takes {Quantity, Items}
+              # here and CloudFormation does not -- carrying the API shape
+              # into a template fails EarlyValidation with a message that
+              # names neither the property nor the resource.
+              OriginSSLProtocols: [TLSv1.2]
         # Static by default; every API path is an explicit behaviour below.
         DefaultCacheBehavior:
           TargetOriginId: static

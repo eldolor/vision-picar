@@ -6,7 +6,7 @@ Status as of 2026-09-04:
 |---|---|---|
 | 1 | Recorded walks off EFS, onto S3 | **DONE** (commit `b42bee6`), data migrated and verified |
 | 2 | Tear down the VPC and everything that needs one | **SPECIFIED, NOTHING DELETED** |
-| 3 | Rebuild without a VPC | **SPECIFIED, NOTHING BUILT.** Section 6's gate ran: Function URLs are unusable here, API Gateway + a credentials role works and is the design |
+| 3 | Rebuild without a VPC | **DEPLOYED AND VERIFIED 2026-09-04**, running alongside the ECS stack. See section 5's deployment note |
 
 Written to hand stages 2 and 3 to a session that was not present for the
 measuring. Most of the value here is in section 1 and section 7: the
@@ -330,7 +330,54 @@ the free-tier assumption is not doing much work.
   the compute path. The JSON routes are nowhere near the ceiling (the
   walk list is 29KB) and the largest single frame is 147KB.
 
-### Deploying it (nothing below has been run)
+### Deployed 2026-09-04, and what it took
+
+Live at `https://d114x92g7i4syl.cloudfront.net/` (stack
+`vision-picar-serverless`), running **alongside** the ECS stack, sharing
+nothing with it but the recordings bucket. Verified end to end:
+
+| Check | Result |
+|---|---|
+| `GET /` -- SPA from a private bucket via OAC | 200 |
+| `/app.js`, `/admin`, `/admin.js` | 200, correct content types |
+| `GET /health` | 200 JSON (not the SPA -- the behaviour routed correctly) |
+| `POST /navigate` with a real corpus frame | 200 in 3.3s, Opus 4.5, sane action |
+| `GET /recording/walks` | 39 walks / 821 frames, from S3 |
+| Download the 8.64MB walk | **307** to a presigned URL, not bytes |
+| Unauthenticated `/navigate`, `/recording/walks`, `DELETE` | 401 |
+
+**Three things went wrong, all of them packaging or shape errors rather
+than design errors, and each is now covered by a test.**
+
+1. `OriginSSLProtocols: {Quantity, Items}` -- the CloudFront *API* shape,
+   which is right in an `aws cloudfront create-distribution` call and wrong
+   in CloudFormation, which wants a plain list. `validate-template` passed
+   it; the change set failed with
+   `AWS::EarlyValidation::PropertyValidation`, a message naming neither
+   resource nor property, and `describe-events` and `list-hook-results`
+   were both empty. cfn-lint found it in one run --
+   `tests/test_cfn_templates.py` now runs cfn-lint over every template.
+2. The vision function's requirements were hand-written and missed
+   `pillow-heif`, so it died at import with `Runtime.ImportModuleError`,
+   which from outside is a 500 that looks like an application bug.
+   build.sh now installs the service's OWN requirements.txt, and
+   `tests/test_lambda_packaging.py` checks the curated walks list against
+   the real imports under `control/`.
+3. That test then found a pre-existing latent bug: `app.py` does
+   `from PIL import Image` while Pillow was present only transitively via
+   pillow-heif. Now declared.
+
+**And one thing I got wrong that was not a packaging error:** the first
+deploy had no `APP_SHARED_SECRET` on either function, so `require_secret()`
+was a no-op and the URL let anyone burn Bedrock money and DELETE the walk
+corpus. The ECS stack it replaces was secret-gated; this was a regression
+introduced by the rewrite, not an inherited gap. Now two NoEcho template
+parameters -- deliberately two, because reviewing and deleting walks is a
+different privilege from asking the model a question, which is the
+distinction `control/admin_server.py`'s require_secret docstring already
+draws. **Empty means no auth**, so always pass both.
+
+### Deploying it
 
     # 1. build and upload the two function zips
     bash service/lambda/build.sh <a-deployment-bucket>

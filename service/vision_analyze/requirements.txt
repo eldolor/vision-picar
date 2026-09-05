@@ -2,3 +2,9 @@ fastapi
 uvicorn[standard]
 boto3
 pillow-heif
+# app.py does `from PIL import Image` directly, so Pillow is a DIRECT
+# dependency and is declared as one. It was previously present only because
+# pillow-heif happens to pull it in -- which works until pillow-heif changes
+# what it depends on, and then fails at import in a container that built
+# cleanly. Found by tests/test_lambda_packaging.py.
+pillow
