@@ -23,9 +23,9 @@ highest point on the robot, which eliminates the under-furniture collision by
 construction and makes a 3D lidar (~$400-750) unnecessary; the camera lands at
 ~10cm as a *consequence* of the stack rather than a wish; and the camera keeps
 **both** pan and tilt, which adds a report-only goal type to 1.7. **1.16 is the
-gap register** from that review -- ten items, two closed by 1.15, three of the
-rest changing what gets bought, and #10 (the invalid corpus) blocked on nothing
-at all.
+gap register** from that review -- eleven items, two closed by 1.15, three of
+the rest changing what gets bought, and #10 (the invalid corpus) blocked on
+nothing at all.
 
 **Decided 2026-09-06: motion becomes continuous** (1.14). The robot will hold a
 velocity and perceive while moving, instead of stopping between timed bursts.
@@ -492,6 +492,27 @@ The precedent is `MockRobot` already keeping grid facts beside its pixels, and
 and does not have**, so no run can look as though it exercised perception it
 never had. A synthesised detection is marked as such.
 
+#### Two more to synthesise, added 2026-09-06
+
+This section was written when the reactive tier consumed **one detector**. It
+now consumes two more things (4.2, 4.3), and per §7 of `CLAUDE.md` the twin
+cannot show C4 working without both:
+
+- **A floor mask.** Nearly free, and by an argument this project has already
+  used: the grid world knows exactly where the floor is, the same way M2
+  synthesised a depth grid out of `renderer.cast_ray()`. Emit the mask from grid
+  truth, not from the render.
+- **A CLIP score.** Harder, but not hard. The grid world already carries *named*
+  objects (`starter_house.py`'s red backpack), so a synthesised similarity is a
+  comparison against that name plus a plausible margin. It must be marked
+  synthesised like everything else here.
+
+**The rule above governs both**: the sim leg tests the *consumers* -- does a
+match gate a trigger, does a mask reach the drive loop, does arbitration behave
+when the mask and the lidar disagree -- and **never** the models. No claim about
+CLIP's accuracy or a mask's quality may come from a synthesised one. Those come
+from real frames, which is 1.16 #10.
+
 #### Perfect, but occlusion-aware -- fidelity, not noise
 
 "Perfect" must not mean *the sim always says where the target is*. A detector
@@ -792,15 +813,36 @@ not exist yet (2.7). Proposed phases, IDs not yet assigned:
 
 | | What | Depends on hardware? |
 |---|---|---|
-| **C1** | `set_velocity` on `RobotInterface`, all five backends, contract tests. Nothing uses it yet. **Plus two items 1.16 found**: a pose/odometry method (#5) and a timestamp on every reading (#3) -- both are interface changes and belong in the same conformance pass | no |
+| **C1** | `set_velocity` on `RobotInterface`, all five backends, contract tests. Nothing uses it yet. **Plus two items 1.16 found**: a pose/odometry method (#5) and a timestamp on every reading (#3) -- both are interface changes and belong in the same conformance pass. **Amended 2026-09-06:** the timestamp must ride the published *feature*, not only the sensor read -- 2.8's fusion is three-way now (bearing from a detection, range from a scan, a CLIP score from a crop of a frame), and 2.7's rule is *features, not frames*, so a derived feature carries the frame time it came from. C1 timestamps the sensor layer and C4 introduces the feature layer; without this nothing bridges them | no |
 | **C2** | Continuous pose in `grid_world.py`; delete the boundary conversion; press-and-hold D-pad in the twin | no |
 | **C3** | Watchdog timeout down to ~150ms; clearance-derived speed replacing the fixed collar. **Plus the ESP32's own deadman** (1.16 #6) -- the innermost guard, and the only one that survives the Pi locking up. It needs a drill, per §7 | no |
-| **C4** | The reactive drive loop as its own process (2.7), holding a goal | no |
-| **C5** | Deliberation becomes event-driven against it (2.4) | no |
+| **C4** | The reactive drive loop as its own process (2.7), holding a goal. **Re-scoped 2026-09-06:** it hosts a *pipeline*, not a detector -- detector -> crops -> CLIP -> match (4.2), plus floor segmentation (4.3), co-resident on one 13 TOPS part and all owing 2.1's 15-30Hz row. So it also owes a **throughput budget and a scheduling policy** (segmentation has no reason to run at the detector's rate). See the note below: 4.9's "headroom" was costed for one nano detector | no |
+| **C5** | Deliberation becomes event-driven against it (2.4) -- **including the `cold search` trigger added 2026-09-06**, whose "found nothing for a while" condition inherits §6.1's hysteresis requirement like every other field-derived trigger | no |
 
 **None of C1-C5 needs the robot**, which means all of it is provable in the twin
 before hardware day -- and C3 in particular is much better discovered in the sim
-than on a chassis moving at half a metre per second.
+than on a chassis moving at half a metre per second. **Nor does any of it need
+1.16 #10's re-recorded corpus**: 1.12's synthesised detections carry the whole
+sequence, so the re-recording and the C-phases proceed in parallel rather than
+in series.
+
+**Reviewed against the 2026-09-06 perception changes (4.2, 4.3.1, 2.8), and the
+phasing survives -- which is itself the result.** Those changes are about
+perception *content* -- which model, which vocabulary, which crops -- while
+C1-C5 are about motion and the loop. They sit on opposite sides of the seam 2.6
+exists to keep. A perception rewrite that forces no change to `set_velocity`,
+the watchdog or the collar is evidence the layering is right; had it forced one,
+that would have been the finding. C2 and C3 are untouched; C1, C4 and C5 gained
+the scope recorded in the table above, and none of it reorders anything.
+
+**The one number to watch is C4's.** 4.9's tier table gives the 8L *"10-30x with
+headroom"* over 2.1's perception row -- **costed for a single nano detector**.
+YOLO11s at 92 FPS (4.3.1) plus per-crop CLIP plus a floor mask spends that
+headroom rather than leaving it spare, and 4.3's *"several resident"* is a claim
+about **memory, not throughput**. Nothing in this plan has yet costed the three
+together. If they do not fit, the resolutions are ordinary -- run segmentation
+at a fraction of camera rate, gate CLIP on the crop count -- but the budget has
+to be written down before C4 is built against an assumption of slack.
 
 ### 1.15 Physical layout: **the lidar is the highest point**
 
@@ -995,6 +1037,7 @@ hardware day. Three were verified against the code, not guessed.
 | 8 | **Tilt cannot be represented in the twin at all** | **OPEN, verified**: `renderer.render(layout, objects, px, py, base_angle, ...)` is a 2D raycaster with **no pitch parameter**, and `grid_world.look_left()` sets `pan = -1` -- pan is tri-state snapped to cardinal headings, not a continuous servo. Tilt would be **the first feature to reach hardware with no twin representation**, which `CLAUDE.md` §7 forbids. Either the renderer gains a pitch (real work; it is 2D by construction) or tilt takes §7's written once-per-phase exemption. **Do not let this one pass silently** |
 | 9 | **No power budget and no runtime estimate** | **OPEN.** Pi 5 under load + Hailo + lidar + camera + servos, now *sustained* rather than bursty. A Pi 5 with a HAT wants 5V/5A and many banks will not hold 25W -- and 3.6 carries the bank as "already owned, 0". Servos are motors, so 1.3's own rule about keeping motor noise off the compute rail applies to them; SG90s on the Pi's 5V rail is the textbook brownout. Runtime decides how long a test session can be, which decides how the corpus gets recorded |
 | 10 | **The recorded corpus is invalid, and three things now wait on it** (added 2026-09-06) | **OPEN, and the only item here blocked on nothing at all.** Every walk on S3 was shot at standing height with the target on raised furniture (`CLAUDE.md` Stage 0) -- a viewpoint the robot will never have, at a task a floor robot cannot perform. It was already invalidating the five-wording prompt result. It now also blocks **4.2's caveat** (whether a COCO detector and CLIP work at all at 10cm -- 4.3.1's `45.1 mAP` is a standing-height number) and **4.3's floor-segmentation score**, which is the compile loop's first subject. Needs no seller, no part and no hardware: a phone on a wheeled rig, a target on the floor, landscape locked, rig height written into the walk's own `meta` note. **Four to six short walks** |
+| 11 | **Does the floor mask get a veto?** (added 2026-09-06) | **OPEN.** 4.3 says floor segmentation *"does not replace the lidar, which sees a chair leg the mask cannot"* -- but **"does not replace" is not "has no vote"**, and the plan never says which. M3 already built the precedent one sensor over: `path_clearance()` reduces a depth grid to one number and a failed zone never enters the comparison **in either direction**, because as a distance it stops the robot on every dropout and as clear it drives through what the sensor could not see. A mask has exactly that tri-state and exactly that trap. Decide it explicitly: an input to the drive loop's steering, or a veto beside the collar. **If a veto, it is C3-shaped, not C4-shaped**, and `robot/safety.py` grows a second consumer -- which 5.1's `PATH_FRACTION` bug says is where this project's sensor reductions go wrong |
 
 **Three of these change what gets bought** -- #7 (which servos), #9 (whether the
 power bank is adequate, and whether servos need their own supply) and 1.15.4's
@@ -1007,6 +1050,11 @@ It is also the only row that can invalidate work already done rather than merely
 delay work not yet started, which is how it earned a place in a register
 otherwise about hardware. It had been tracked only in `CLAUDE.md`'s Stage 0
 notes, where a reader of this plan would not find it.
+
+**#11 is a decision, not a discovery**, and it is listed because the plan
+currently contains both halves of it and neither is marked as the answer. It
+should be settled before C3 or C4 is built, since which phase owns it depends on
+the answer.
 
 ---
 
