@@ -32,7 +32,7 @@ velocity and perceive while moving, instead of stopping between timed bursts.
 That makes §2's tiering mandatory rather than an optimisation, **puts the
 accelerator on the first order**, un-retires the continuous-pose half of S6 at a
 fraction of its estimated cost, and makes two safety numbers wrong -- the 1.0s
-watchdog and the fixed 20cm collar. C1-C5 in 1.14 are the phasing; none of them
+watchdog and the fixed 20cm collar. C1-C9 in 1.14 are the phasing; none of them
 needs hardware.
 
 **Reviewed 2026-09-06:** 4.8 re-examines the three-way against what the
@@ -496,7 +496,7 @@ never had. A synthesised detection is marked as such.
 
 This section was written when the reactive tier consumed **one detector**. It
 now consumes two more things (4.2, 4.3), and per §7 of `CLAUDE.md` the twin
-cannot show C4 working without both:
+cannot show C6 working without both:
 
 - **A floor mask.** Nearly free, and by an argument this project has already
   used: the grid world knows exactly where the floor is, the same way M2
@@ -805,44 +805,82 @@ The chassis (1.1 was already differential), the lidar (1.2), the two power rails
 call faster; it makes it *stop blocking the wheels*, which was always the point
 of tiering.
 
-#### Scope, honestly, and a phasing
+#### Scope, honestly, and a phasing -- **C1-C9, assigned 2026-09-06**
 
 **This is the largest change in the plan since the chassis decision** --
 interface, safety, sim, runner and twin, plus a reactive drive loop that does
-not exist yet (2.7). Proposed phases, IDs not yet assigned:
+not exist yet (2.7).
+
+**It was five provisional labels until 2026-09-06, and it was five because
+2.8's mission had never been walked step by step against the repo.** Doing that
+found four things the phasing did not cover at all -- the goal vocabulary as a
+*type*, the feature transport, the cloud contracts, and `brain/planner.py`
+itself -- plus one interface method (range at a bearing). The old C4 and C5 are
+now **C6 and C9**; C1-C3 keep their numbers and their scope.
 
 | | What | Depends on hardware? |
 |---|---|---|
-| **C1** | `set_velocity` on `RobotInterface`, all five backends, contract tests. Nothing uses it yet. **Plus two items 1.16 found**: a pose/odometry method (#5) and a timestamp on every reading (#3) -- both are interface changes and belong in the same conformance pass. **Amended 2026-09-06:** the timestamp must ride the published *feature*, not only the sensor read -- 2.8's fusion is three-way now (bearing from a detection, range from a scan, a CLIP score from a crop of a frame), and 2.7's rule is *features, not frames*, so a derived feature carries the frame time it came from. C1 timestamps the sensor layer and C4 introduces the feature layer; without this nothing bridges them | no |
+| **C1** | **The interface pass.** `set_velocity` on `RobotInterface`, all five backends, contract tests. **Plus three items**: a pose/odometry method (1.16 #5); a timestamp (1.16 #3) that rides the published *feature* and not only the sensor read -- 2.8's fusion is three-way (bearing from a detection, range from a scan, a CLIP score from a crop of a frame) and 2.7's rule is *features, not frames*; and **range at a bearing**, which `approach` needs in C6 and which `get_depth_grid()` does not give (M2's grid is forward-facing; a 360 ring sampled at an arbitrary bearing is a different question). One conformance pass, not three | no |
 | **C2** | Continuous pose in `grid_world.py`; delete the boundary conversion; press-and-hold D-pad in the twin | no |
 | **C3** | Watchdog timeout down to ~150ms; clearance-derived speed replacing the fixed collar. **Plus the ESP32's own deadman** (1.16 #6) -- the innermost guard, and the only one that survives the Pi locking up. It needs a drill, per §7 | no |
-| **C4** | The reactive drive loop as its own process (2.7), holding a goal. **Re-scoped 2026-09-06:** it hosts a *pipeline*, not a detector -- detector -> crops -> CLIP -> match (4.2), plus floor segmentation (4.3), co-resident on one 13 TOPS part and all owing 2.1's 15-30Hz row. So it also owes a **throughput budget and a scheduling policy** (segmentation has no reason to run at the detector's rate). See the note below: 4.9's "headroom" was costed for one nano detector | no |
-| **C5** | Deliberation becomes event-driven against it (2.4) -- **including the `cold search` trigger added 2026-09-06**, whose "found nothing for a while" condition inherits §6.1's hysteresis requirement like every other field-derived trigger | no |
+| **C4** | **The goal vocabulary as a type.** 1.7's three verbs and 1.8's stop conditions, as data with validation -- **`grep` finds no `approach`/`traverse`/`explore` anywhere in the repo today; §1.7 is prose.** Pure, no I/O, testable alone, and it unblocks C5-C9. Nothing produces or consumes a goal until this exists, which is what made the old C4 ("holding a goal") rest on air | no |
+| **C5** | **The feature transport.** 2.6 requires perception to reach the brain over HTTP like everything else: routes on `robot/server.py`, `RemoteRobot` over them, conformance cases, **and the ALB path patterns** whose absence has shipped five times as a silently dead feature. Carries **1.12's synthesised** detections, floor mask and CLIP scores -- so it is provable in the twin with no HEF, no accelerator and no corpus | no |
+| **C6** | **The reactive drive loop as its own process** (2.7) -- *was C4* -- now holding **and executing** goals, with C4's type, C5's pipe and C1's methods already in place. It hosts a *pipeline*, not a detector: detector -> crops -> CLIP -> match (4.2) plus floor segmentation (4.3), all owing 2.1's 15-30Hz row, so it also owes a **throughput budget and a scheduling policy** (segmentation has no reason to run at the detector's rate) | no -- against synthesised features. **The real HEFs are hardware day**, and so is confirming the budget on the real part |
+| **C7** | **The two cloud contracts.** `/navigate` returns an *action*; 2.8 needs a call that returns a **goal** (step 1) and one that answers **identity and reachability** (step 4). New routes on `service/vision_analyze/`, server-side allow-lists, validation at mission start the way M1 validated `model_id`, and their own ALB patterns | no |
+| **C8** | **`brain/planner.py`** -- the deliberation tier itself, over `MissionMemory.as_context()`, emitting C4 goals through C7's contract. 2.3 already says *"it is `brain/planner.py`"*; `CLAUDE.md` calls it the main hardware-path gap; the file does not exist | no |
+| **C9** | **Deliberation becomes event-driven** against 2.4 -- *was C5* -- including the `cold search` trigger, whose "found nothing for a while" condition inherits §6.1's hysteresis requirement like every other field-derived trigger | no |
 
-**None of C1-C5 needs the robot**, which means all of it is provable in the twin
-before hardware day -- and C3 in particular is much better discovered in the sim
-than on a chassis moving at half a metre per second. **Nor does any of it need
-1.16 #10's re-recorded corpus**: 1.12's synthesised detections carry the whole
-sequence, so the re-recording and the C-phases proceed in parallel rather than
-in series.
+#### Why this order, so it can be argued with
 
-**Reviewed against the 2026-09-06 perception changes (4.2, 4.3.1, 2.8), and the
-phasing survives -- which is itself the result.** Those changes are about
-perception *content* -- which model, which vocabulary, which crops -- while
-C1-C5 are about motion and the loop. They sit on opposite sides of the seam 2.6
-exists to keep. A perception rewrite that forces no change to `set_velocity`,
-the watchdog or the collar is evidence the layering is right; had it forced one,
-that would have been the finding. C2 and C3 are untouched; C1, C4 and C5 gained
-the scope recorded in the table above, and none of it reorders anything.
+Numbering is sequencing, so the dependencies are stated rather than implied:
 
-**The one number to watch is C4's.** 4.9's tier table gives the 8L *"10-30x with
+- **C1 first** because everything downstream calls it, and because four interface
+  additions in one conformance pass is cheaper than four passes.
+- **C2, C3 before anything perceptual** -- unchanged reasoning: C3 in particular
+  is *"much better discovered in the sim than on a chassis moving at half a metre
+  per second."* Safety precedes capability.
+- **C4 before C5-C9** because it is the vocabulary all four speak. It is also the
+  cheapest phase here, which makes putting it late strictly worse.
+- **C5 before C6**, which is the ordering most likely to be questioned. The
+  instinct is to build the pipeline and then ship its output. The argument for
+  the reverse is M2's, which this project has already run once: `get_depth_grid()`
+  landed with an honest all-unusable default and a synthesised implementation
+  *before* any depth sensor existed, and the twin could draw it immediately. Build
+  the pipe against 1.12's synthesised features and C6 plugs into something already
+  proven; build it after, and the transport's own failure mode -- a missing ALB
+  pattern, five times now -- surfaces while the pipeline is also new.
+- **C7 after C6, not before**, which is the other arguable call. C7 is independent
+  of every motion phase and could be done at any point. It is placed here because
+  **a reply shape should be designed against a consumer that exists**: settle what
+  an executor actually needs from a goal (C6) before fixing the contract that
+  delivers one. The cost of being wrong the other way is a route on a deployed
+  service, with an allow-list and an ALB rule, that nothing can use.
+- **C8 before C9** because C9 schedules C8. The old C5 read *"deliberation becomes
+  event-driven"*, which presumed a deliberation tier existed; it never has.
+
+**None of C1-C9 needs the robot** -- the property the five-phase version had, kept
+deliberately. C6 holds the only asterisk: it is provable in the twin against
+synthesised features, and the real HEFs and the real throughput measurement are
+hardware day. **Nor does any of it need 1.16 #10's re-recorded corpus**: 1.12's
+synthesised features carry the whole sequence, so the re-recording proceeds in
+parallel rather than in series.
+
+**A note on what the 2026-09-06 perception changes did and did not do.** They are
+about perception *content* -- which model, which vocabulary, which crops -- while
+C1-C3 are about motion and the loop, on opposite sides of the seam 2.6 exists to
+keep. A perception rewrite that forces no change to `set_velocity`, the watchdog
+or the collar is evidence the layering is right. What it *did* expose is that the
+phasing had been written for the motion half only, which is what C4-C9 above
+repair.
+
+**The one number to watch is C6's.** 4.9's tier table gives the 8L *"10-30x with
 headroom"* over 2.1's perception row -- **costed for a single nano detector**.
 YOLO11s at 92 FPS (4.3.1) plus per-crop CLIP plus a floor mask spends that
 headroom rather than leaving it spare, and 4.3's *"several resident"* is a claim
 about **memory, not throughput**. Nothing in this plan has yet costed the three
-together. If they do not fit, the resolutions are ordinary -- run segmentation
-at a fraction of camera rate, gate CLIP on the crop count -- but the budget has
-to be written down before C4 is built against an assumption of slack.
+together. If they do not fit, the resolutions are ordinary -- run segmentation at
+a fraction of camera rate, gate CLIP on the crop count -- but the budget has to be
+written down before C6 is built against an assumption of slack.
 
 ### 1.15 Physical layout: **the lidar is the highest point**
 
@@ -1031,13 +1069,13 @@ hardware day. Three were verified against the code, not guessed.
 | 2 | Camera height determined by the stack, not chosen; the 10-13cm corpus instruction assumed otherwise | **CLOSED by 1.15.1** -- it lands at ~10cm, and is now a measurement |
 | 3 | **Time synchronisation does not exist** | **OPEN.** Parked, a frame + scan + encoder count + pan angle were all "now". At 0.4 m/s with a 10Hz lidar they are up to 100ms and 4cm apart, so 1.8's *"lidar range at the detector's bearing"* mixes a bearing from one pose with a range from another. **Nothing in `RobotInterface` carries a timestamp.** Belongs in C1 |
 | 4 | **Camera-lidar extrinsic calibration unspecced**, and pan/tilt makes it time-varying | **OPEN.** 1.8's fusion assumes a known transform between the two sensors; with two servo angles it is a function, not a constant. No procedure, no accuracy target |
-| 5 | **`RobotInterface` reports no pose or odometry** | **OPEN, verified**: eleven methods, none says where the robot is. Discrete driving counted moves instead. A drive loop holding a goal must know how far it has got -- a new method in `get_depth_grid()`'s class (honest default, five backends, conformance suite). **1.14's C1-C5 missed it.** Note also that encoders measure *wheel* rotation, not ground travel: on carpet that drifts, the IMU fixes only heading, and scan matching is the real answer -- which pulls 3.3's (b+) forward |
+| 5 | **`RobotInterface` reports no pose or odometry** | **OPEN, verified**: eleven methods, none says where the robot is. Discrete driving counted moves instead. A drive loop holding a goal must know how far it has got -- a new method in `get_depth_grid()`'s class (honest default, five backends, conformance suite). **1.14's phasing missed it until C1-C9 was assigned.** Note also that encoders measure *wheel* rotation, not ground travel: on carpet that drifts, the IMU fixes only heading, and scan matching is the real answer -- which pulls 3.3's (b+) forward |
 | 6 | **The ESP32 needs its own deadman -- a fourth failsafe** | **OPEN.** B3.1/2/3 cover the robot watchdog, the vision budget and a hung tick. None covers the Pi-to-ESP32 link dying while the ESP32 holds a velocity. It is also the **only** guard that can stop the wheels if the Pi itself locks up. Per §7 of `CLAUDE.md` it needs a drill |
 | 7 | **Open-loop servos: pan/tilt is commanded, not measured** | **OPEN.** SG90s have no feedback. A stalled, slipped or knocked servo makes every bearing wrong by that amount with nothing to notice -- the same silent-corruption class as the stray-frame bug. Since bearing is the camera's one job (1.11), this may justify **ST3215 bus servos** (position feedback, driven natively by the Waveshare board). Minimum: startup homing plus a plausibility check |
 | 8 | **Tilt cannot be represented in the twin at all** | **OPEN, verified**: `renderer.render(layout, objects, px, py, base_angle, ...)` is a 2D raycaster with **no pitch parameter**, and `grid_world.look_left()` sets `pan = -1` -- pan is tri-state snapped to cardinal headings, not a continuous servo. Tilt would be **the first feature to reach hardware with no twin representation**, which `CLAUDE.md` §7 forbids. Either the renderer gains a pitch (real work; it is 2D by construction) or tilt takes §7's written once-per-phase exemption. **Do not let this one pass silently** |
 | 9 | **No power budget and no runtime estimate** | **OPEN.** Pi 5 under load + Hailo + lidar + camera + servos, now *sustained* rather than bursty. A Pi 5 with a HAT wants 5V/5A and many banks will not hold 25W -- and 3.6 carries the bank as "already owned, 0". Servos are motors, so 1.3's own rule about keeping motor noise off the compute rail applies to them; SG90s on the Pi's 5V rail is the textbook brownout. Runtime decides how long a test session can be, which decides how the corpus gets recorded |
 | 10 | **The recorded corpus is invalid, and three things now wait on it** (added 2026-09-06) | **OPEN, and the only item here blocked on nothing at all.** Every walk on S3 was shot at standing height with the target on raised furniture (`CLAUDE.md` Stage 0) -- a viewpoint the robot will never have, at a task a floor robot cannot perform. It was already invalidating the five-wording prompt result. It now also blocks **4.2's caveat** (whether a COCO detector and CLIP work at all at 10cm -- 4.3.1's `45.1 mAP` is a standing-height number) and **4.3's floor-segmentation score**, which is the compile loop's first subject. Needs no seller, no part and no hardware: a phone on a wheeled rig, a target on the floor, landscape locked, rig height written into the walk's own `meta` note. **Four to six short walks** |
-| 11 | **Does the floor mask get a veto?** (added 2026-09-06) | **OPEN.** 4.3 says floor segmentation *"does not replace the lidar, which sees a chair leg the mask cannot"* -- but **"does not replace" is not "has no vote"**, and the plan never says which. M3 already built the precedent one sensor over: `path_clearance()` reduces a depth grid to one number and a failed zone never enters the comparison **in either direction**, because as a distance it stops the robot on every dropout and as clear it drives through what the sensor could not see. A mask has exactly that tri-state and exactly that trap. Decide it explicitly: an input to the drive loop's steering, or a veto beside the collar. **If a veto, it is C3-shaped, not C4-shaped**, and `robot/safety.py` grows a second consumer -- which 5.1's `PATH_FRACTION` bug says is where this project's sensor reductions go wrong |
+| 11 | **Does the floor mask get a veto?** (added 2026-09-06) | **OPEN.** 4.3 says floor segmentation *"does not replace the lidar, which sees a chair leg the mask cannot"* -- but **"does not replace" is not "has no vote"**, and the plan never says which. M3 already built the precedent one sensor over: `path_clearance()` reduces a depth grid to one number and a failed zone never enters the comparison **in either direction**, because as a distance it stops the robot on every dropout and as clear it drives through what the sensor could not see. A mask has exactly that tri-state and exactly that trap. Decide it explicitly: an input to the drive loop's steering, or a veto beside the collar. **If a veto, it is C3-shaped, not C6-shaped**, and `robot/safety.py` grows a second consumer -- which 5.1's `PATH_FRACTION` bug says is where this project's sensor reductions go wrong |
 
 **Three of these change what gets bought** -- #7 (which servos), #9 (whether the
 power bank is adequate, and whether servos need their own supply) and 1.15.4's
@@ -1053,7 +1091,7 @@ notes, where a reader of this plan would not find it.
 
 **#11 is a decision, not a discovery**, and it is listed because the plan
 currently contains both halves of it and neither is marked as the answer. It
-should be settled before C3 or C4 is built, since which phase owns it depends on
+should be settled before C3 or C6 is built, since which phase owns it depends on
 the answer.
 
 ---
