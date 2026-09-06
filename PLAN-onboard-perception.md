@@ -1,6 +1,6 @@
 # Plan: perception on the car itself
 
-Status: **design settled, nothing built** · Date: 2026-09-03, detector revised 2026-09-04 · Phase IDs: none assigned yet
+Status: **design settled, nothing built** · Date: 2026-09-03, detector revised 2026-09-04, models and phasing revised 2026-09-06 · Phase IDs: **C1-C9 assigned** (1.14); the rest still unassigned
 
 Started as a holding pen after reading Microduck -- *what could run on the car
 itself?* -- and became the place where a chain of hardware and architecture
@@ -697,7 +697,10 @@ cost wall-clock while parked. Continuous driving spends it in centimetres.
 it, and both named this decision as the one trigger that would reverse them.
 The rest of 4.9's recommendation is unchanged -- an **8L in M.2 module form**,
 which clears the perception row by 10-30x with headroom for the larger YOLO
-tiers, floor segmentation and CLIP.
+tiers, floor segmentation and CLIP. **Caveat added 2026-09-06: that figure was
+costed for a single nano detector.** Running the three together spends the
+headroom rather than leaving it spare -- see C6's note in the phasing below, and
+4.3's *"several resident"*, which is a claim about **memory, not throughput**.
 
 #### 3. `RobotInterface` gains a held-velocity verb
 
@@ -2072,8 +2075,10 @@ reasoning stands.
 
 **What it missed is that the accelerator is a capability device here, not a
 speed one.** The reasons the Hailo is in the bill (1.10) are what it can hold
--- the larger YOLO tiers, a floor mask, depth, CLIP, several at once -- and
-that the same HEF can be scored on the recorded corpus before it drives. None
+-- the larger YOLO tiers, a floor mask, depth, CLIP, several at once (**how
+many at once, at what rate, is C6's unwritten budget** -- 1.14) -- and that the
+same HEF can be scored on the recorded corpus before it drives, which 1.16 #10
+says is not yet a corpus worth scoring against. None
 of that is about frames per second, which is why "the loop is slow anyway"
 never bore on it.
 
@@ -2658,10 +2663,27 @@ waiting on that.
 Q4 the detector and arbitration (1.10, 1.11) · Q5 the sim (1.12). Q1's map and
 persistence questions are 1.5-1.6.
 
-What remains open is **not design** but measurement and verification: 3.8's
-five seller questions, 1.10's ordering-time checks (the storage decision, the
-AI HAT+ 2), the compile loop 1.10 item 1 asks for before hardware day, and the
-re-recorded Stage 0 corpus.
+**Amended 2026-09-06, because the sentence that stood here is no longer true.**
+It read *"what remains open is not design but measurement and verification"*,
+and three things have since reopened design:
+
+- **1.16 #11** -- whether the floor mask gets a veto -- is a decision, not a
+  measurement, and the plan currently contains both halves of it.
+- **C4-C9** (1.14) named four things no phase covered: the goal vocabulary as a
+  *type*, the feature transport, the two cloud contracts, and `brain/planner.py`.
+  That is design and build work, not verification.
+- **4.2's open-vocabulary path** is a design choice with no implementation and no
+  measurement behind it.
+
+What remains open on the **measurement and verification** side, which is what
+that sentence was reaching for: **3.8's seven seller questions** (five when this
+was written; 6 and 7 were added 2026-09-06, and 6 is the only one in this
+document that cannot be fixed after delivery), the compile loop 1.10 item 1 asks
+for before hardware day -- which 4.3's note now points at floor segmentation and
+which is therefore **downstream of the corpus** -- and **1.16 #10's re-recorded
+Stage 0 corpus**, which three things now wait on.
+**1.10's ordering-time checks are closed**, not open: 4.9 settled the storage
+decision (configuration C or D) and the AI HAT+ 2 question (take the 8L).
 **6.1's free trigger-count experiment is done** (2026-09-03) -- it is the one
 item on that list that needed neither a seller nor a walk.
 
