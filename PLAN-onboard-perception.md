@@ -44,6 +44,20 @@ NVMe, and because the 10H's measured tokens/s make its generative half a
 fallback rather than a capability. Both sections argue for buying the
 accelerator *after* the first order rather than with it.
 
+**Also 2026-09-06, on the models rather than the parts.** 4.3.1 replaces the
+Hailo-8 marketing chart with the **8L's own measured benchmarks** -- YOLO11
+n/s/m are all downloadable HEFs for the 8L, `s` is the tier to ship, and even
+`m` clears camera rate, which *confirms* 1.10 item 5 rather than weakening it.
+4.2 then opens the vocabulary: CLIP scores crops, so **crops from a
+class-agnostic source make the search open-vocabulary on-board**, and the class
+list decides who *proposes*, never who *confirms*. Two cautions land with it --
+the COCO and CLIP benchmarks are **standing-height numbers** (1.13's own
+argument, never previously applied to the detector), and this is not a fallback
+chain: an out-of-vocabulary object produces silence or a confident wrong label,
+never a failure signal to hand off on. **2.8 walks one mission end to end**
+through all three models, and 4.3's floor-segmentation note records that it now
+carries three consumers and should be the compile loop's first subject.
+
 **It supersedes parts of two other documents.** Section 5 lists exactly what,
 because the chassis decision in 1.1 makes `HARDWARE-READINESS.md` partly wrong
 and retires a phase of `PLAN-sim-hardening.md`.
@@ -1055,6 +1069,7 @@ Tiering pays off only if deliberation is **event-driven, never periodic**.
 | Goal impossible | reactive | boxed in, or the target left frame and did not return |
 | Room change suspected | reactive (**lidar geometry**, 1.13) | crossed a doorway; memory needs updating. Not a semantic classifier -- the transition is geometric, the label comes back on the reply |
 | **Candidate sighting** | reactive | detector thinks it sees the target; cloud confirms identity and reachability |
+| **Cold search** (added 2026-09-06) | runner / reactive | nothing on-board has a lock -- see below. Runs the opposite way to candidate sighting: **cloud proposes, on-board tracks** |
 | Staleness | timer | a goal older than N seconds is suspect |
 
 The saving is exactly **reactive steps per goal**. It was derived here as ~8x
@@ -1070,6 +1085,32 @@ rather than events -- so **the trigger policy needs the same hysteresis
 saving: it is what keeps a cheap local detector honest. The detector says
 `backpack`; the cloud says whether it is the *red* one and whether the robot can
 reach it.
+
+#### Cold search -- the trigger that runs the other way
+
+**Added 2026-09-06.** Candidate sighting is **on-board proposes, cloud
+confirms**, and it therefore requires the detector to fire first. For a target
+outside COCO's 80 -- and absent 4.2's open-vocabulary crop path -- it never
+does, so the trigger never fires and **the robot can drive past its target
+indefinitely without ever thinking to ask.** A trigger table with only that
+direction in it has no cold-start entry.
+
+The inverse: at mission start, on a room change, or after a stretch of finding
+nothing, send **one** frame up and ask *"is what I am looking for in this room,
+and roughly which way?"* The VLM is bounded by no class list, which is exactly
+the property being bought. On-board then carries it, because at the 3.6s/step
+measured to Opus 4.5 the cloud cannot steer anything.
+
+**Ask it *what*, never precisely *where*.** Stage 0's whole finding is that the
+model is unreliable about position and distance -- `obstacle_ahead`
+uncalibrated across models, no metric depth in a monocular frame -- which is why
+`bearing-only` (M1) exists at all. So the reply is a coarse *"off to your
+left"*, and the bearing that gets driven on comes from something geometric.
+Same division of labour as 2.1: the cloud owns identity, never geometry.
+
+Cost is bounded the way every other row here is -- it is an event, not a timer,
+and §6.1's hysteresis applies to its "found nothing" condition as much as to
+`target_visible`.
 
 ### 2.5 Never block, and the degraded mode
 
@@ -1112,6 +1153,99 @@ The failure mode it buys: **a stalled detector degrades perception rather than
 adding jitter to motor control.** Here that is the difference between a wedged
 `picamera2` capture and a `/stop` that still answers -- today undefined, and
 exactly what M9 exists to test.
+
+### 2.8 A mission, end to end -- the worked example
+
+**Added 2026-09-06.** Everything above is stated as rates, seams and rules.
+This is the same design as one mission, in order, because the split is much
+easier to get wrong when it is only ever described in the abstract. Nothing
+here is new -- it is 2.1's three rates, 2.4's triggers, 1.8's stop conditions
+and 4.2's two CLIP paths, walked through once.
+
+#### The cast, and the one question each is asked
+
+| | Runs where | Rate | The question it answers -- **and only this one** |
+|---|---|---|---|
+| **lidar** | robot | 10-50 Hz | *how far?* Knows nothing about what anything is |
+| **detector** (YOLO11s) | robot, Hailo | ~92 FPS (4.3.1) | *where are the objects?* -- boxes, plus one of COCO's 80 words |
+| **CLIP** | robot, Hailo | ms per crop | *is this crop the thing we want?* -- against arbitrary text |
+| **the VLM** (Opus 4.5) | AWS, `service/vision_analyze/` | ~3.6 s/step, paid | *what should we do about it?* -- reasoning, in sentences |
+
+**The failure this prevents is the one vision-picar has today**: 2.1's
+*"collapses all three into one"* -- a single cloud call asked for bearing and
+distance and the next action at 1-3s, with its answer driving the robot.
+
+#### The mission
+
+Target: **"red backpack"**.
+
+**1. Start -- one paid call.** CLIP encodes the target string once and the
+vector is cached for the mission (4.2: the text encoder runs on the Pi CPU, and
+the string does not change). One frame goes up with it. The VLM replies with a
+goal in 1.7's vocabulary -- *"living room, no backpack visible, the doorway at
++0.4 rad probably leads to the hall"* -> `traverse(doorway at +0.4)`. This is
+2.4's `mission start` trigger, and 2.5 notes it is the one genuinely blocking
+call -- or it is not, if the opening default is "look around".
+
+**2. Driving -- no calls at all.** The reactive tier holds that goal and drives
+continuously (1.14). The lidar keeps the collar honest at ~50 Hz; the detector
+looks at every frame at ~92 FPS. **The cloud is silent, and the robot is not
+waiting on it** -- 2.5's rule.
+
+**3. A candidate -- still no call.** The detector returns `backpack` at some
+bearing. COCO has no colour (4.2), so this could be anyone's backpack. The crop
+goes to CLIP, scored against the cached vector: strong match. Note what has
+*not* happened -- no network, no seconds, no money, and the target string did
+the work a fine-tune would otherwise have done.
+
+**4. Confirmation -- the second paid call.** 2.4's **candidate sighting**, and
+the trigger that does real work rather than merely saving money. One frame up:
+*"I think I have it -- is this the red backpack, and can I reach it?"* The VLM
+answers what neither on-board model can: **reachability**. *"Yes, but it is on
+a chair; a floor robot cannot arrive at the top of a chair."* That is not a
+hypothetical -- it is the exact defect that invalidated the whole Stage 0
+corpus (`CLAUDE.md`), discovered by reading frames rather than by any model
+saying so.
+
+**5. Approach -- no calls.** `approach(backpack)`, 1.8. The **detector** supplies
+a fresh bearing at camera rate: which way to steer. The **lidar** supplies range
+at that bearing: how far, and when to stop. This is 1.10's *"the detector points,
+the lidar measures"*, and 1.9's open-loop tension resolved -- both halves are
+closed-loop, and neither asks the cloud anything.
+
+**6. Ending -- one more call.** Arrival fires 2.4's `goal achieved`; the target
+leaving frame and not returning fires `goal impossible`. Either way, one call:
+*"what next?"*
+
+#### What that costs
+
+Roughly **four to six paid calls for the whole mission**, against thousands of
+detector frames and hundreds of CLIP scores -- which is exactly the 4-6x §6.1
+measured, arrived at from the other direction. And the calls are **events**, not
+a timer: §6.1's third finding is that the staleness timer stops binding past
+`stale_n` ~10, so cost is set by the event rate, and stabilising the fields that
+generate events (hysteresis) is the lever, not tuning the clock.
+
+#### Why it has to be three, in one line each
+
+- **The detector** is fast but knows 80 words and has no judgement. It says
+  *where*, never whether it matters.
+- **CLIP** has unlimited vocabulary but can only *compare* -- it cannot reason,
+  and it cannot find anything unaided; something must hand it a crop (4.2).
+- **The VLM** reasons about anything, and 3.6 s is an eternity at 0.5 m/s.
+  **You cannot steer with it.**
+
+The rule underneath, and the one to protect: **the fast tiers never think, and
+the thinking tier is never in the driving loop.**
+
+#### And when the link dies
+
+The detector and CLIP are on the robot, so perception does not degrade at all --
+the car keeps seeing and keeps avoiding. What it loses is *new goals*, and 2.5
+already names the fallback: `brain/agent.py`'s rule-based explorer, which
+`PLAN-sim-hardening.md` 2.2 says to keep and not extend, becomes the defined
+degradation. **This is the payoff of the split**, and it is worth noticing that
+it is free: the code exists and is tested.
 
 ---
 
@@ -1560,6 +1694,95 @@ crops** (1.10): the Hailo model zoo carries the CLIP image encoder, so each
 detected crop is scored against the mission's own target string. The same
 mechanism handles "the blue bottle" and "my backpack, not the other one".
 
+#### But the crops still come from the class list, and they need not
+
+**Added 2026-09-06.** As written above, CLIP sits *downstream* of the detector:
+YOLO draws a box and labels it `backpack`, and CLIP decides whether it is the
+red one. That inherits COCO's 80 classes wholesale -- for a target with no COCO
+word (`router`, `slipper`, `charging cable`) the detector never draws the box,
+so CLIP never receives a crop to score.
+
+**CLIP does not need the label; it needs the crop.** It scores an image region
+against arbitrary text, so anything that can say *"there is some object here"*
+without saying what it is called will do:
+
+| Source of crops | How it is class-agnostic |
+|---|---|
+| the detector's own proposals at a **very low confidence threshold**, labels discarded | *see the correction below -- noisier than it sounds on YOLO11* |
+| **floor segmentation** (4.3's first experiment) | anything that is not floor but stands on it is an object |
+| **lidar clusters** projected into the image | geometry, no vocabulary at all |
+
+Feed any of those to CLIP and the mission's own target string becomes the
+classifier -- **open-vocabulary search, on-board, at frame rate, with no
+retraining and no cloud call**, on parts already in the bill (4.3 carries the
+CLIP image encoder; the *text* encoder runs on the Pi CPU **once per mission**,
+since the target string does not change, so the per-frame cost is one image
+encode and a dot product).
+
+So the rule is: **the class list decides who proposes, never who confirms.**
+Fine-tuning past COCO's 80 (above) stays the answer only for something that
+must be *proposed* fast and repeatedly -- and it needs labelled floor-height
+data that does not exist.
+
+Two limits, so this is not read as more than it is. CLIP returns a *similarity*,
+not a probability, so it needs competing strings and a threshold or it will
+always pick something. And it does not localise -- bearing still comes from
+whatever drew the crop, which is the same division of labour 1.8 and M1 already
+impose.
+
+**Correction, same day: YOLO11 has no objectness head.** The first draft of the
+table above justified the low-threshold trick as *"YOLO proposes regions before
+it classifies them"*. True of YOLOv5-era anchor-based models, which carried a
+separate objectness score; **YOLOv8 and YOLO11 are anchor-free and dropped it**,
+so the class score *is* the confidence. The trick still works -- threshold at
+~0.05, keep the boxes, discard the labels, and an out-of-vocabulary object
+surfaces as a weak `microwave` -- but it harvests weak class activations rather
+than reading a clean "something is here" signal. **It is the noisiest of the
+three crop sources, not the cleanest**, which argues for floor segmentation or
+lidar clusters as the primary one.
+
+#### It is not a fallback -- both paths run, and the target string picks which
+
+**The handoff people expect does not exist, because there is nothing to hand off
+*on*.** For an out-of-vocabulary object the detector reports *nothing*, and
+nothing is indistinguishable from an empty room -- there is no "unknown" class
+and no error. The likelier case is worse: asked to score a box-shaped object
+against 80 classes, it returns a confident wrong label, so a failure-triggered
+fallback would never fire at all. Same silent-corruption class as 1.16 #7.
+
+So CLIP is not a rescue path. It runs every frame, and what changes with the
+mission's target is only **where the crops come from**, decided once at mission
+start:
+
+| Target | Crops from | CLIP's job | Cost |
+|---|---|---|---|
+| **in COCO's 80** -- `backpack`, `bottle`, the Stage 0 targets | the boxes the detector already labelled with that class | disambiguate: *"the red one"* | cheap -- the label is a **gate**, and few crops survive it |
+| **outside it** -- `router`, `slipper`, `charging cable` | the class-agnostic sources above | decide identity outright | more crops to score, still on-board, still milliseconds |
+
+**The detector's labels are therefore a cheap prefilter, not a first attempt.**
+Where the target has a COCO word, that gate is what keeps CLIP's work down to a
+handful of crops per frame; the open-vocabulary path replaces the gate only when
+there is no word to gate on.
+
+#### The COCO numbers are standing-height numbers -- **caveat added 2026-09-06**
+
+1.13 rejected a Places365 room classifier because such models are *"trained on
+photographs taken by standing humans"* while this camera sits at 10-13cm --
+*"the standing-height corpus defect, re-introduced as a model choice instead of
+a data choice."*
+
+**That argument applies to a COCO detector too, and to CLIP, and this plan had
+not been applying it.** COCO is web photography shot from about 150cm. A chair
+from 150cm is a chair; a chair from 10cm is four poles and the underside of a
+seat. So 4.3.1's `45.1 mAP` is a COCO-validation number, **not a prediction of
+performance at 10cm**, and it may be materially worse there.
+
+This is not an argument against the part -- no detector is trained at 10cm, and
+the accelerator is bought for the ceiling (4.5), not for this number. It is a
+warning against reading a zoo benchmark as a promise. **The measurement that
+would settle it needs the re-recorded floor-height corpus** (`CLAUDE.md` Stage
+0), which is now blocking two things rather than one.
+
 ### 4.3 The Hailo parts, and which one
 
 | | AI HAT+ (Hailo-8L) | AI HAT+ (Hailo-8) | AI HAT+ 2 (Hailo-10H) |
@@ -1572,14 +1795,67 @@ mechanism handles "the blue bottle" and "my backpack, not the other one".
 
 **The 8L.** The Hailo-8 buys nothing here: a nano or small detector already
 runs above camera frame rate on the 8L, and 4.4's budget is bounded by the
-camera's 30fps. The 10H is the only alternative worth a look, and only for the
-VLM question -- 1.10 item 6 says how much looking.
+camera's 30fps. **Re-checked against the 8L's own benchmarks 2026-09-06 and it
+survives -- even the `m` tier clears 30fps on the 8L (4.3.1).** The 10H is the
+only alternative worth a look, and only for the VLM question -- 1.10 item 6
+says how much looking.
 
 `sudo apt install hailo-all` on Pi OS brings the driver, HailoRT, the
 GStreamer bits and `rpicam-apps` with Hailo post-processing; `picamera2` ships
-Hailo examples that return boxes directly; pre-compiled YOLO11n HEFs exist for
-both 8-series parts. That is the turnkey starting point, and it keeps Pi OS --
-one more reason (b+)'s OS decision lands on "ROS in Docker on Pi OS" (3.3).
+Hailo examples that return boxes directly; pre-compiled HEFs exist for both
+8-series parts, and for the whole `n`/`s`/`m` range rather than nano alone
+(4.3.1). That is the turnkey starting point, and it keeps Pi OS -- one more
+reason (b+)'s OS decision lands on "ROS in Docker on Pi OS" (3.3).
+
+#### 4.3.1 The 8L's own numbers, measured -- **verified 2026-09-06**
+
+The zoo publishes per-chip benchmarks, and reading the **8L's** table rather
+than the 8's settles three things this section had been asserting from the
+wrong column. Batch 1, COCO, 640x640:
+
+| model | mAP float | **mAP on-chip** | **FPS on the 8L** | FPS on the 8 |
+|---|---|---|---|---|
+| yolo11n | 39.0 | 37.5 | 157 | ~185 |
+| yolo11s | 46.3 | **45.1** | **92.0** | ~115 |
+| yolo11m | 51.1 | **49.9** | **35.3** | ~50 |
+
+**1. Ship `s`, not `n`.** +7.6 mAP on-chip for a third of the frame rate, and
+92 FPS is still 3x the camera. 4.4's "stock YOLO11n" is the *day-one baseline*
+that needs no HEF -- it is not the shipped detector, and this table is why.
+
+**2. `m` clears camera rate on the 8L, which confirms 1.10 item 5 rather than
+weakening it.** 35.3 FPS > 30fps. The line "the 26 TOPS part buys nothing here"
+was argued for a nano or small detector; it holds for the medium tier too. *An
+intermediate reading of the Hailo-8 chart -- ~50 FPS for `m`, halved for the
+8L -- suggested the 8L was capped below `m` and that the $40 was worth
+re-opening. The 8L is 75-85% of the 8 on these models, not 50%. It is not.*
+
+**3. Quantisation is nearly free here.** 1.2-1.5 mAP from float to on-chip
+across all three tiers -- small enough that the tier choice dominates it. Read
+the zoo's chart with **Quantized** selected, not **Original**: the "Original"
+column is the fp32 source model (it matches Ultralytics' published mAP to
+within noise) and is not what the HEF delivers.
+
+**The public comparison tool is not the availability index.** Switching its
+chip selector clears the model multi-select, so the chart empties and reads as
+"no models for this part". Availability is
+`hailo_model_zoo/docs/public_models/HAILO8L/`, which carries downloadable
+pre-compiled HEFs (DFC v3.33.0) for yolov8n/s/m and yolov11n/s/m alike. *(A
+DeepWiki summary of the same repo omits YOLO11 from its 8L list. The `.rst` is
+the source of truth.)*
+
+**HEFs are architecture-specific.** A `hailo8` HEF does not run on a `hailo8l`.
+Download from the `HAILO8L/` directory. This is the sort of thing that costs an
+afternoon on hardware day.
+
+**None of this removes the compile loop (1.10 item 1), and the loop should not
+be built against YOLO.** Every capability past the pre-compiled zoo -- floor
+segmentation, CLIP over crops, any fine-tune past COCO's 80 -- still needs
+ONNX -> DFC -> HEF on x86-64. Building that loop against a model you could
+simply download proves less than building it against one you actually need, so
+**make floor segmentation its first subject**. *(Ultralytics now documents a
+Hailo export path, which may shorten the YOLO half considerably -- **verify**;
+this plan predates it.)*
 
 #### What "experiment with Hugging Face models" means on a Hailo
 
@@ -1619,6 +1895,36 @@ things, and the Hailo allows both where the IMX500 allowed neither:
   it is the first experiment worth running. Monocular depth (FastDepth,
   SCDepth) is relative, not metric, so no use for the collar; beside the
   floor mask it flags a drop or a low obstacle the lidar plane misses.
+
+#### Floor segmentation is the priority model, and it now carries three jobs
+
+**Added 2026-09-06.** It entered this plan as one of two ideas above. It has
+since accumulated two more consumers without anyone deciding it should, which
+makes it the highest-value non-detector model here and the right first subject
+for 1.10 item 1's compile loop:
+
+1. **A drivable-area mask** -- the original reason. The obstacle question five
+   `/navigate` wordings failed at, answered geometrically instead of by asking
+   a model to describe depth it cannot see.
+2. **Floor-level hazards COCO cannot name.** What stops a 10cm robot is cables,
+   socks, shoes, rug thresholds, floor vents and drops -- almost none are COCO
+   classes, and most sit *below* the lidar plane. A mask needs no vocabulary:
+   it does not have to know what a cable is, only that the floor is interrupted.
+   **This is the honest answer to "are 80 classes enough for a house"** -- for
+   targets, largely yes; for hazards, the class list is the wrong instrument.
+3. **Class-agnostic crops for CLIP** (4.2). Promoted to *primary* by the
+   objectness correction there: not-floor-but-standing-on-floor is a cleaner
+   "something is here" signal than a weak class activation from an anchor-free
+   detector.
+
+**So build the compile loop against this, not against YOLO.** 1.10 item 1 asks
+for the loop before hardware day and 4.3.1 establishes that YOLO11 n/s/m are
+simply downloadable for the 8L -- which means a loop built against YOLO proves
+only that the loop runs. Building it against a model you actually need proves
+that the Hailo is the sandbox 1.10 item 1 says it must be, rather than the
+fixed-function part it warns it will otherwise become.
+
+It still **does not replace the lidar**, which sees a chair leg the mask cannot.
 
 ### 4.4 The reaction-budget bar
 
