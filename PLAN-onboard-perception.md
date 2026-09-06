@@ -23,8 +23,9 @@ highest point on the robot, which eliminates the under-furniture collision by
 construction and makes a 3D lidar (~$400-750) unnecessary; the camera lands at
 ~10cm as a *consequence* of the stack rather than a wish; and the camera keeps
 **both** pan and tilt, which adds a report-only goal type to 1.7. **1.16 is the
-gap register** from that review -- nine items, two closed by 1.15, three of the
-rest changing what gets bought.
+gap register** from that review -- ten items, two closed by 1.15, three of the
+rest changing what gets bought, and #10 (the invalid corpus) blocked on nothing
+at all.
 
 **Decided 2026-09-06: motion becomes continuous** (1.14). The robot will hold a
 velocity and perceive while moving, instead of stopping between timed bursts.
@@ -993,10 +994,19 @@ hardware day. Three were verified against the code, not guessed.
 | 7 | **Open-loop servos: pan/tilt is commanded, not measured** | **OPEN.** SG90s have no feedback. A stalled, slipped or knocked servo makes every bearing wrong by that amount with nothing to notice -- the same silent-corruption class as the stray-frame bug. Since bearing is the camera's one job (1.11), this may justify **ST3215 bus servos** (position feedback, driven natively by the Waveshare board). Minimum: startup homing plus a plausibility check |
 | 8 | **Tilt cannot be represented in the twin at all** | **OPEN, verified**: `renderer.render(layout, objects, px, py, base_angle, ...)` is a 2D raycaster with **no pitch parameter**, and `grid_world.look_left()` sets `pan = -1` -- pan is tri-state snapped to cardinal headings, not a continuous servo. Tilt would be **the first feature to reach hardware with no twin representation**, which `CLAUDE.md` §7 forbids. Either the renderer gains a pitch (real work; it is 2D by construction) or tilt takes §7's written once-per-phase exemption. **Do not let this one pass silently** |
 | 9 | **No power budget and no runtime estimate** | **OPEN.** Pi 5 under load + Hailo + lidar + camera + servos, now *sustained* rather than bursty. A Pi 5 with a HAT wants 5V/5A and many banks will not hold 25W -- and 3.6 carries the bank as "already owned, 0". Servos are motors, so 1.3's own rule about keeping motor noise off the compute rail applies to them; SG90s on the Pi's 5V rail is the textbook brownout. Runtime decides how long a test session can be, which decides how the corpus gets recorded |
+| 10 | **The recorded corpus is invalid, and three things now wait on it** (added 2026-09-06) | **OPEN, and the only item here blocked on nothing at all.** Every walk on S3 was shot at standing height with the target on raised furniture (`CLAUDE.md` Stage 0) -- a viewpoint the robot will never have, at a task a floor robot cannot perform. It was already invalidating the five-wording prompt result. It now also blocks **4.2's caveat** (whether a COCO detector and CLIP work at all at 10cm -- 4.3.1's `45.1 mAP` is a standing-height number) and **4.3's floor-segmentation score**, which is the compile loop's first subject. Needs no seller, no part and no hardware: a phone on a wheeled rig, a target on the floor, landscape locked, rig height written into the walk's own `meta` note. **Four to six short walks** |
 
 **Three of these change what gets bought** -- #7 (which servos), #9 (whether the
 power bank is adequate, and whether servos need their own supply) and 1.15.4's
 bumper and ToF pair. The rest are design work that can proceed while parts ship.
+
+**#10 is in neither group, and that is the point of listing it here.** It is not
+design and it is not a purchase question -- it is a *measurement*, and unlike
+every other row it waits on nothing: no seller reply, no delivery, no decision.
+It is also the only row that can invalidate work already done rather than merely
+delay work not yet started, which is how it earned a place in a register
+otherwise about hardware. It had been tracked only in `CLAUDE.md`'s Stage 0
+notes, where a reader of this plan would not find it.
 
 ---
 
