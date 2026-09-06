@@ -18,6 +18,32 @@ CNN beside it -- room identity stays a VLM field on the deliberation reply and
 the lidar owns the room *transition*. It is the first worked example of the rule
 that a model earns accelerator space by having a consumer in the fast loop.
 
+**Also 2026-09-06:** 1.15 settles the **physical layout** -- the lidar is the
+highest point on the robot, which eliminates the under-furniture collision by
+construction and makes a 3D lidar (~$400-750) unnecessary; the camera lands at
+~10cm as a *consequence* of the stack rather than a wish; and the camera keeps
+**both** pan and tilt, which adds a report-only goal type to 1.7. **1.16 is the
+gap register** from that review -- nine items, two closed by 1.15, three of the
+rest changing what gets bought.
+
+**Decided 2026-09-06: motion becomes continuous** (1.14). The robot will hold a
+velocity and perceive while moving, instead of stopping between timed bursts.
+That makes §2's tiering mandatory rather than an optimisation, **puts the
+accelerator on the first order**, un-retires the continuous-pose half of S6 at a
+fraction of its estimated cost, and makes two safety numbers wrong -- the 1.0s
+watchdog and the fixed 20cm collar. C1-C5 in 1.14 are the phasing; none of them
+needs hardware.
+
+**Reviewed 2026-09-06:** 4.8 re-examines the three-way against what the
+delivery-robot companies actually run and against two price moves -- the Jetson
+line was repriced upward in July 2026 and the AI HAT+ 2 is now shipping at $130.
+The Pi-plus-Hailo decision stands. **4.9 then prices the option space inside
+that family** and settles the part: a **Hailo-8L in M.2 module form**, because
+the module is what survives a Jetson pivot and shares the PCIe lane with the
+NVMe, and because the 10H's measured tokens/s make its generative half a
+fallback rather than a capability. Both sections argue for buying the
+accelerator *after* the first order rather than with it.
+
 **It supersedes parts of two other documents.** Section 5 lists exactly what,
 because the chassis decision in 1.1 makes `HARDWARE-READINESS.md` partly wrong
 and retires a phase of `PLAN-sim-hardening.md`.
@@ -282,9 +308,13 @@ the bearing is fresh at camera rate, so `approach` is closed loop on both halves
 workarounds is needed. The CPU-only detector survives as the day-one baseline
 (4.4), not as the design.
 
-### 1.10 The reactive tier: **two layers**, and a Hailo-8L
+### 1.10 The reactive tier: **two layers**, and a Hailo
 
-**Decided 2026-09-04: a Hailo-8L AI HAT+ and a Camera Module 3.** The first
+**Decided 2026-09-04: a Hailo-8L AI HAT+ and a Camera Module 3.**
+**Amended 2026-09-06: a Hailo-8L in M.2 module form** -- briefly the AI HAT+ 2
+by item 6's own test (4.8), reverted the same day on the 10H's measured
+tokens/s (4.9). The platform decision below is unchanged; only the part and its
+form are, and 4.9 argues for buying either one *after* the first order. The first
 decision here (2026-09-03) was the Raspberry Pi AI Camera, whose Sony IMX500
 runs a detector on the sensor itself. It was reversed a day later, before
 anything was ordered, on one requirement the original evaluation had not
@@ -303,7 +333,8 @@ PCIe slot -- are worth less than that door (4.6).
 
 **Why not a Jetson.** A Jetson Orin Nano is the only board on which a Hugging
 Face model runs without a compile step. It was ruled out **for now** on cost
-(~$170-220 over the Pi 5 plan), power (three times a Pi at 15W, and no 5V USB
+(~$170-220 over the Pi 5 plan at the time -- **~$320-430 since the July 2026
+repricing**, 4.8), power (three times a Pi at 15W, and no 5V USB
 supply), the loss of the Pi camera stack, and 8GB shared with the GPU that
 cannot hold SLAM, nav2, a detector and a local VLM at once. 4.7 keeps the
 evaluation, because it is the on-board upgrade path if flexible inference ever
@@ -352,11 +383,21 @@ tracking machinery.
 6. **Check the AI HAT+ 2 once, then stop waiting for it.** If the Hailo-10H is
    in stock at ~$130 and its small-VLM support is documented for real models,
    the extra $60 turns a detection sandbox into a broader one. If either is
-   unverified at ordering time, take the 8L.
-7. **Stacking, unverified.** The HAT sits above the active cooler on 16mm
-   standoffs. Whether it passes the 40-pin header through, and whether the
-   Yahboom encoder board wants that header or wires to it, are two questions
-   for 3.8's seller list.
+   unverified at ordering time, take the 8L. **Checked 2026-09-06: both
+   conditions read yes** -- shipping at $130 with 8GB of its own RAM and named
+   1.5B-class LLMs and a VLM through `hailo-ollama`. That briefly settled it for
+   the 10H (4.8), and **4.9 reversed it the same day**: at 5.89 tokens/s on a
+   1.5B model the generative half is a network-down fallback, not the broader
+   sandbox this item was buying. **Take the 8L, as a module.** The item was
+   written to test availability when it should have tested throughput.
+7. **Stacking, half-answered 2026-09-06 (4.9).** The HAT sits above the active
+   cooler on 16mm standoffs. **The 40-pin header does pass through, but only
+   deliberately**: the AI HAT+ 2 ships an extension header that, seated fully,
+   leaves no pins accessible, so a 2x20 extra-tall stacking header is a line
+   item and clearance against cooler, HAT and lidar deck is a measurement. This
+   robot needs that header for the motor driver, two servos, the encoders and
+   the IMU. Whether the Yahboom encoder board wants the header or wires to it
+   is still a question for 3.8's seller list.
 
 #### What it buys that the plan had not weighed
 
@@ -388,7 +429,7 @@ different: each question goes to whichever source can actually answer it.
 | Question | Who wins | Why |
 |---|---|---|
 | **Is it a red backpack?** | **VLM** | more capable at semantics, and it holds the mission's definition of the target |
-| **What bearing?** | **detector** | geometric precision beats a natural-language direction |
+| **What bearing?** | **detector** | geometric precision beats a natural-language direction. **Body-relative bearing = pan + tilt-corrected in-frame bearing (1.15.3)** -- both servo angles must ride in the frame's own metadata, or a servo still moving corrupts it silently |
 | **How far?** | **lidar** | 1.8's fusion -- range at the detector's bearing |
 | **Is it there right now?** | **detector** (fresh) | but a VLM "not here" **triggers re-confirmation**, never a silent override |
 | **Which room is this?** | **VLM** | semantics again -- and it arrives free on a reply already being paid for (1.13) |
@@ -585,6 +626,363 @@ floor segmentation first, then a larger YOLO tier, then CLIP over crops. Each ha
 a consumer in the fast loop. **A room label has no consumer faster than the
 planner, and the planner is the thing producing it** -- which is the general rule
 this section is one instance of.
+
+### 1.14 Motion becomes **continuous**, not discrete
+
+**Decided 2026-09-06.** The robot holds a velocity and perceives *while moving*.
+Timed bursts stop being the only motion primitive.
+
+Today every verb on `RobotInterface` is a bounded burst --
+`drive_forward(speed=50, duration=0.5)`, `turn_left(angle=90)` -- so a tick is
+capture, decide, move, stop, capture. **The robot is stationary the whole time
+it thinks**, which is why 4.4 could conclude that the Pi's own cores clear the
+reaction budget: a 3.6s decision cost 3.6s parked, never a centimetre of travel.
+That stops being true here, and several numbers stop being true with it.
+
+#### 1. It makes §2's tiering mandatory rather than an optimisation
+
+**You cannot drive continuously from a 0.5Hz cloud loop.** Something on-board
+has to close the loop at 10-50Hz. 1.4 already says the reactive tier *"never
+blocks"* on deliberation and *"always holds a current goal"* -- but under
+discrete driving that text was aspirational, because nothing was moving to hold
+a goal *for*. **It is operational now.** The reactive tier stops being the
+interesting future half of this plan and becomes the thing that drives the car.
+
+2.1's diagnosis -- *"vision-picar collapses all three rates into one"* -- was a
+description of a design smell. It is now a blocker.
+
+#### 2. The accelerator stops being deferrable
+
+4.9's tier table gives the Pi 5's own cores 5-13 FPS, **below** 2.1's 15-30Hz
+perception row. Discrete driving hid that, because a slow perception tier only
+cost wall-clock while parked. Continuous driving spends it in centimetres.
+
+**Put the Hailo-8L on the first order.** 4.8 and 4.9 both argued for deferring
+it, and both named this decision as the one trigger that would reverse them.
+The rest of 4.9's recommendation is unchanged -- an **8L in M.2 module form**,
+which clears the perception row by 10-30x with headroom for the larger YOLO
+tiers, floor segmentation and CLIP.
+
+#### 3. `RobotInterface` gains a held-velocity verb
+
+Natural form for a differential chassis (1.1): a linear and an angular rate,
+e.g. `set_velocity(linear_cm_s, angular_deg_s)`. Four constraints on it:
+
+- **It is a held command with an expiry, not fire-and-forget.** The watchdog is
+  the expiry (item 4).
+- **The burst verbs stay.** The twin's D-pad, `ReplayRobot`, `TeleopRobot` and
+  most of the suite depend on them, and each is expressible as velocity plus a
+  duration plus a stop. This is an addition, not a replacement.
+- **All five backends implement it**, and the two with no motor no-op it
+  honestly -- the pattern `replay_robot.py` and `teleop_robot.py` already use.
+- **`tests/test_robot_contract.py` gains cases**, since it is the thing that
+  makes a new verb mean the same on every backend.
+
+#### 4. `watchdog_timeout_s: 1.0` becomes unsafe
+
+At 1.0s and 50cm/s the robot travels **50cm after the commanding process dies**
+-- two and a half times the 20cm collar. The timeout has to come down to roughly
+**100-200ms**, which means the drive loop must command faster than that, which
+is item 1 restated from the safety side.
+
+**The watchdog stops being a backstop and becomes the primary deadman.** Its
+decision function is already pure and tested (`robot/server.py:143`), and M4
+already made authority lapse on the same clock, so the shape is right and the
+number is not.
+
+#### 5. The collar becomes speed-dependent, and 20cm is already marginal
+
+`SafetyController` holds a fixed `min_distance_cm = 20.0` and `path_clearance()`
+compares against it (`robot/safety.py:188`, `:257`). The right quantity under
+continuous motion is **stopping distance**:
+
+```text
+stopping distance = v * t_react + v^2 / (2a)
+```
+
+At 200ms of reaction and 1 m/s^2 of braking:
+
+| Speed | Reaction | Braking | Total | Against a 20cm collar |
+|---|---|---|---|---|
+| 30 cm/s | 6cm | 4.5cm | **10.5cm** | fine |
+| 45 cm/s | 9cm | 10cm | **19cm** | **the limit** |
+| 50 cm/s | 10cm | 12.5cm | **22.5cm** | already past it |
+| 100 cm/s | 20cm | 50cm | **70cm** | 3.5x the collar |
+
+**So the collar as it stands is good for about 0.45 m/s**, and 3.8's vendor
+figures put the chassis's upper bound near 1 m/s. Two ways out, and the second
+is better: make the collar a function of the commanded speed, or **make the
+speed a function of the measured clearance**. The second degrades smoothly
+instead of vetoing, it is what a real robot does, and it gives M3's
+`path_clearance()` a second consumer -- it already returns the one number this
+would divide by.
+
+#### 6. Encoders become load-bearing, and closed-loop
+
+A timed burst can be open loop. A held velocity cannot: without a controller on
+wheel speed the robot curves, and the error integrates for as long as it drives.
+That means a PID on encoder counts. This retroactively validates 3.6's
+**encoder-motor** chassis choice and promotes the **IMU** from "strongly
+recommended" to effectively essential for heading.
+
+#### 7. Continuous pose in the sim -- and it is far cheaper than S6 assumed
+
+`sim/grid_world.py` holds `robot_x, robot_y` as **integers** and a four-value
+`Heading` enum, and `move(cells)` steps whole cells. That has to become
+`(x, y, theta)` floats integrated over dt.
+
+**But `sim/renderer.py` needs no change at all.** It is already continuous:
+`cast_ray(layout, px: float, py: float, angle: float)` and
+`render(..., px, py, base_angle)` take floats and radians, and the *discretising
+step is a two-line conversion at the boundary* --
+`base_angle = renderer.HEADING_ANGLE[view.name]` and
+`px, py = self.world.robot_x + 0.5, self.world.robot_y + 0.5`
+(`sim/mock_robot.py:227-228`). S2's port was written against a float pose from
+the start.
+
+**This un-retires the continuous-pose half of S6**, which §5 had deliberately
+left alive -- *"continuous pose and a to-scale map may still be wanted if a
+lidar lands"* -- at a small fraction of S6's estimated cost, because the
+expensive half was already built for a different reason.
+
+#### 8. `MissionRunner`'s tick decouples into two loops
+
+`tick()` is one blocking sense-decide-act step today. Continuous motion needs a
+**drive loop** at 10-50Hz holding the current goal and a **mission loop**
+updating that goal asynchronously. `AGENT-HARNESS.md`'s tick contract, its
+concurrency section and the status shape all move; the failsafes B3.2 and B3.3
+keep their jobs but change what they are timing.
+
+#### 9. What it owes the twin
+
+Per §7 of `CLAUDE.md`. The D-pad becomes press-and-hold; the FPV canvas and the
+depth strip update *while the robot moves* rather than between moves; and the
+proof to press is **watching it cross a room without stopping**, with the
+clearance-derived speed visible as it slows near a wall.
+
+#### What it does not change
+
+The chassis (1.1 was already differential), the lidar (1.2), the two power rails
+(1.3), the camera, the arbitration order (M4), the goal vocabulary (1.7), and
+1.13's room-identity split. **And the cloud VLM stays exactly where 2.1 put it**
+-- event-driven, ~0.5Hz, off-board. Continuous driving does not make the cloud
+call faster; it makes it *stop blocking the wheels*, which was always the point
+of tiering.
+
+#### Scope, honestly, and a phasing
+
+**This is the largest change in the plan since the chassis decision** --
+interface, safety, sim, runner and twin, plus a reactive drive loop that does
+not exist yet (2.7). Proposed phases, IDs not yet assigned:
+
+| | What | Depends on hardware? |
+|---|---|---|
+| **C1** | `set_velocity` on `RobotInterface`, all five backends, contract tests. Nothing uses it yet. **Plus two items 1.16 found**: a pose/odometry method (#5) and a timestamp on every reading (#3) -- both are interface changes and belong in the same conformance pass | no |
+| **C2** | Continuous pose in `grid_world.py`; delete the boundary conversion; press-and-hold D-pad in the twin | no |
+| **C3** | Watchdog timeout down to ~150ms; clearance-derived speed replacing the fixed collar. **Plus the ESP32's own deadman** (1.16 #6) -- the innermost guard, and the only one that survives the Pi locking up. It needs a drill, per §7 | no |
+| **C4** | The reactive drive loop as its own process (2.7), holding a goal | no |
+| **C5** | Deliberation becomes event-driven against it (2.4) | no |
+
+**None of C1-C5 needs the robot**, which means all of it is provable in the twin
+before hardware day -- and C3 in particular is much better discovered in the sim
+than on a chassis moving at half a metre per second.
+
+### 1.15 Physical layout: **the lidar is the highest point**
+
+**Decided 2026-09-06**, working through the first gap 1.16 found. The plan had a
+sensor suite and a bill of materials but never a *stack-up*, and continuous
+driving (1.14) plus a pan/tilt camera turned that omission into a collision
+hazard.
+
+#### The failure it fixes
+
+A 2D lidar scans **one horizontal plane**. Let the robot occupy heights
+`[0, H_max]` and the plane sit at `h_lidar`:
+
+| Obstacle | Detected? | Actually a collision? |
+|---|---|---|
+| entirely above `H_max` | no | **no** -- the robot fits under it |
+| intersecting the plane | yes | yes |
+| below the plane, inside `[0, H_max]` | **no** | **yes** |
+
+**Set `h_lidar` = `H_max` and the middle failure mode cannot occur.** A table
+stops being an obstacle and becomes a tunnel the robot genuinely fits through.
+The hazard that prompted this -- driving under a chair and striking a camera
+mast -- exists only when something is mounted *above* the scan plane, so the
+rule is: **nothing on the robot may be taller than the lidar's scan plane.**
+
+What survives is the **under-plane residual**: shoes, cables, thresholds, pet
+bowls, a low sofa rail. That is a real gap and it is answered in 1.15.4, not by
+the lidar.
+
+#### A 3D lidar would also fix it, and is the most expensive way to
+
+| Option | ~USD | Against a ~$500 build |
+|---|---|---|
+| Unitree 4D L2 | ~400 | 80% |
+| Livox Mid-360 (360° x 59°) | ~749 | 150% |
+| Orbbec Gemini 335 depth camera | ~250 | 50% |
+| **RPLidar C1 mounted on top** | **0** | -- |
+
+And it is not only money. The Mid-360 is ~265g and ~6.5W on a chassis whose
+whole compute stack is ~10W, and its ~200k points/s needs real processing --
+which walks straight back into the Jetson comparison 4.8 closed. **Rejected.**
+
+**If the under-plane residual proves real in testing, the upgrade to reach for
+is a depth camera (~$250), not a 3D lidar** -- because it also feeds the floor
+segmentation model 4.3 already wants, which a lidar does not.
+
+#### 1.15.1 The stack-up
+
+**Verified figures**, from vendor documentation on 2026-09-06:
+
+| Part | Dimensions | Source |
+|---|---|---|
+| RPLidar C1 | **55.6 x 55.6 x 41.3mm, 110g**, 5V, UART | Slamtec / retailer specs |
+| Pi 5 + Active Cooler -> HAT | **16mm board-to-board** (Raspberry Pi: "at least 15mm; 16mm ideal"; the M.2 HAT+ ships a 16mm stacking header and spacers) | Raspberry Pi docs |
+| 2-axis SG90 pan/tilt bracket | **32 x 28 x 65mm, 42g**; pan 180°, tilt 130°; fits a 28x28mm camera | retailer specs |
+| Camera Module 3 | ~25 x 24 x 11.5mm | general knowledge, **unverified** |
+
+**Estimated stack**, and every row is an estimate until measured:
+
+| Height (mm) | What |
+|---|---|
+| 0-45 | Wheels (65mm, axle at 32.5), motors, chassis plate, Waveshare driver board, 3S pack |
+| ~55-60 | Pi 5 PCB, on standoffs off the plate |
+| +16 | HAT / M.2 carrier board -- **verified spacing** |
+| ~85-90 | Top of the electronics stack |
+| **45-110, at the front** | **Pan/tilt bracket -- lens centre lands at ~100mm** |
+| **~123-140** | **Lidar scan plane**, on a pedestal above the stack |
+| ~155 | `H_max` -- top of the lidar body |
+
+**Two results fall out, and the first is a relief.** The camera lands at
+**~10cm** without anyone choosing it -- inside the 10-13cm band `CLAUDE.md`
+asks the Stage 0 corpus to be recorded at. That number survives the chassis
+change after all, and 1.16's gap #2 closes: **camera height stops being a wish
+and becomes a consequence of the stack.**
+
+#### 1.15.2 The conflict, and the number to optimise
+
+The naive arrangement -- bolt the lidar straight onto the HAT -- puts its scan
+plane at roughly **123mm** while the pan/tilt bracket tops out at **110mm**, and
+a camera tilted up rises further. **That is single-digit millimetres of
+clearance, which is not a margin**, and if the camera ever enters the plane it
+blinds the lidar in the forward arc -- the one arc that matters.
+
+So the lidar needs a **deliberate pedestal**, not a bracket. And the quantity to
+optimise is precise:
+
+> **Put the scan plane as low as it can go while still clearing the camera's
+> swept envelope at full tilt.**
+
+Every millimetre higher raises `H_max`, and `H_max` *is* the under-plane blind
+volume. Raising the lidar to buy clearance is not free -- it is paid for in
+exactly the blind spot 1.15.4 then has to cover. A shorter pan/tilt bracket buys
+back margin at both ends.
+
+#### 1.15.3 Pan **and** tilt, both angles in the frame
+
+**Decided 2026-09-06, after an argument that reversed the first answer.** The
+first take kept pan and dropped the tilt servo, reasoning that tilt only buys
+looking up onto furniture, which Stage 0 ruled out as a navigation target. **That
+was a category error: a navigation constraint used to rule out a perception
+capability.** Stage 0 says the goal you *drive to* must be reachable. It never
+said the robot should be blind above the floor.
+
+The geometry settles it. Camera at 12cm with Camera Module 3's ~41° vertical
+field, pointed level -- the top of frame sits at `12cm + 0.374 x distance`:
+
+| Distance | Highest thing in frame | |
+|---|---|---|
+| 1 m | **49 cm** | below a table (75cm), below a counter (90cm) |
+| 2 m | 87 cm | table height, barely |
+| 3 m | 124 cm | |
+
+**At normal indoor working distance a level camera cannot see a tabletop at
+all** -- it sees table legs, and the failure is silent, because the object is
+not misidentified, it is simply out of frame. Tilting +30° at 1m swings the view
+to **29-133cm**: tables, counters, sofa seats, low shelves. That is the
+difference between a floor inspector and a robot you can ask questions.
+
+**And M3 is what makes it safe.** While the camera (or a camera-aimed
+ultrasonic) was the obstacle sensor, tilting up while driving would have blinded
+the safety layer. Post-M3 the collar reads the lidar and 1.11 gives the camera
+identity while the lidar keeps geometry -- **the sensor split is exactly what
+frees the camera to look wherever it likes.** Tilt is a capability M3 unlocked
+and nobody noticed.
+
+Two consequences, both worth having:
+
+- **The goal vocabulary gains a report-only type.** 1.7's three verbs all assume
+  you drive to the thing. Tilt makes *"find and report"* a distinct legitimate
+  goal -- *"it is on the console table, here is the frame"* -- whose outcome is
+  **success**, not failure. 1.8's stop conditions need a "found, not reachable,
+  and that is fine" terminal state. **This is a design gain that came out of the
+  hardware argument, not the other way round.**
+- **Both angles ride with the frame.** The detector's body-relative bearing is
+  `pan + tilt-corrected in-frame bearing`, so the commanded angles must be
+  captured *in the frame metadata*, not read separately afterwards -- otherwise a
+  servo still moving silently corrupts the bearing. 1.11's "What bearing? ->
+  detector" row is amended accordingly.
+- **Capture must be pan-settled.** An SG90 is ~0.1s/60° plus settling; driving
+  and panning smears a frame twice. Discrete pan positions, settle, capture --
+  **not** a continuous sweep. This bounds how fast a scan can sweep and is a
+  requirement, not an implementation detail.
+
+#### 1.15.4 The under-plane residual, for ~$20
+
+What the lidar-on-top rule does not cover, and what does:
+
+| Mitigation | ~USD | Covers |
+|---|---|---|
+| **Floor segmentation** on the camera | 0 | The drivable-floor question directly. 4.3 already calls it "the first experiment worth running" -- it is now **safety-relevant**, not exploratory |
+| **Camera tilt-down** | 0 | Near floor ahead, using the axis 1.15.3 just added |
+| **2x VL53L1X ToF**, forward-down | ~12 | Cliffs, thresholds, low obstacles the plane misses |
+| **Compliant bumper + microswitches** | ~5 | The physical last resort, and the only one that works when every model is wrong |
+
+**The bumper is not optional.** Everything above it is an inference; the bumper
+is a measurement. On a robot that now moves continuously it is the cheapest
+guard in the build.
+
+#### 1.15.5 What must be measured before this is real
+
+Hardware-day pre-flight, and the first three block the pedestal design:
+
+1. **Where the C1's scan plane sits inside its 41.3mm body.** Not published in
+   the datasheet's specification tables -- it is in the mechanical drawing
+   (Figure 4-1). Budget ~25-30mm above the base and **confirm on the bench**;
+   whatever body sits above the plane is unprotected by the rule in 1.15.
+2. **The real stack height**, with your cooler, standoffs and M.2 carrier. Sets
+   everything else, including whether the camera actually lands at 10cm.
+3. **The camera's swept envelope at full tilt**, which sets the pedestal.
+4. **The C1's current draw** (5V confirmed, current not) -- it goes in the power
+   budget 1.16 #9 says does not exist.
+5. **Lidar occlusion check, all 360°** -- with the pedestal built, confirm no
+   part of the robot enters the plane at any pan/tilt position.
+
+---
+
+### 1.16 Gap register, 2026-09-06
+
+Found by review after 1.14 and 1.15 were decided. **#1 and #2 are closed by
+1.15**; the rest are open and are recorded here so they are not rediscovered on
+hardware day. Three were verified against the code, not guessed.
+
+| # | Gap | Status |
+|---|---|---|
+| 1 | 2D lidar plane routes the robot under furniture into its own mast | **CLOSED by 1.15** -- lidar is the highest point |
+| 2 | Camera height determined by the stack, not chosen; the 10-13cm corpus instruction assumed otherwise | **CLOSED by 1.15.1** -- it lands at ~10cm, and is now a measurement |
+| 3 | **Time synchronisation does not exist** | **OPEN.** Parked, a frame + scan + encoder count + pan angle were all "now". At 0.4 m/s with a 10Hz lidar they are up to 100ms and 4cm apart, so 1.8's *"lidar range at the detector's bearing"* mixes a bearing from one pose with a range from another. **Nothing in `RobotInterface` carries a timestamp.** Belongs in C1 |
+| 4 | **Camera-lidar extrinsic calibration unspecced**, and pan/tilt makes it time-varying | **OPEN.** 1.8's fusion assumes a known transform between the two sensors; with two servo angles it is a function, not a constant. No procedure, no accuracy target |
+| 5 | **`RobotInterface` reports no pose or odometry** | **OPEN, verified**: eleven methods, none says where the robot is. Discrete driving counted moves instead. A drive loop holding a goal must know how far it has got -- a new method in `get_depth_grid()`'s class (honest default, five backends, conformance suite). **1.14's C1-C5 missed it.** Note also that encoders measure *wheel* rotation, not ground travel: on carpet that drifts, the IMU fixes only heading, and scan matching is the real answer -- which pulls 3.3's (b+) forward |
+| 6 | **The ESP32 needs its own deadman -- a fourth failsafe** | **OPEN.** B3.1/2/3 cover the robot watchdog, the vision budget and a hung tick. None covers the Pi-to-ESP32 link dying while the ESP32 holds a velocity. It is also the **only** guard that can stop the wheels if the Pi itself locks up. Per §7 of `CLAUDE.md` it needs a drill |
+| 7 | **Open-loop servos: pan/tilt is commanded, not measured** | **OPEN.** SG90s have no feedback. A stalled, slipped or knocked servo makes every bearing wrong by that amount with nothing to notice -- the same silent-corruption class as the stray-frame bug. Since bearing is the camera's one job (1.11), this may justify **ST3215 bus servos** (position feedback, driven natively by the Waveshare board). Minimum: startup homing plus a plausibility check |
+| 8 | **Tilt cannot be represented in the twin at all** | **OPEN, verified**: `renderer.render(layout, objects, px, py, base_angle, ...)` is a 2D raycaster with **no pitch parameter**, and `grid_world.look_left()` sets `pan = -1` -- pan is tri-state snapped to cardinal headings, not a continuous servo. Tilt would be **the first feature to reach hardware with no twin representation**, which `CLAUDE.md` §7 forbids. Either the renderer gains a pitch (real work; it is 2D by construction) or tilt takes §7's written once-per-phase exemption. **Do not let this one pass silently** |
+| 9 | **No power budget and no runtime estimate** | **OPEN.** Pi 5 under load + Hailo + lidar + camera + servos, now *sustained* rather than bursty. A Pi 5 with a HAT wants 5V/5A and many banks will not hold 25W -- and 3.6 carries the bank as "already owned, 0". Servos are motors, so 1.3's own rule about keeping motor noise off the compute rail applies to them; SG90s on the Pi's 5V rail is the textbook brownout. Runtime decides how long a test session can be, which decides how the corpus gets recorded |
+
+**Three of these change what gets bought** -- #7 (which servos), #9 (whether the
+power bank is adequate, and whether servos need their own supply) and 1.15.4's
+bumper and ToF pair. The rest are design work that can proceed while parts ship.
 
 ---
 
@@ -902,10 +1300,10 @@ should be checked before ordering.
 | microSD 64GB A2 | 12 | See the SSD row below |
 | **Slamtec RPLidar C1** | 99 | 1.2 |
 | Differential chassis kit, **encoder motors** | 69 | Yahboom 2WD, chosen -- 3.8 |
-| Motor driver (TB6612FNG) | 0 | **Included** with the Yahboom kit -- IC unconfirmed (3.8) |
+| Motor driver board | 0-30 | **Included** with the Yahboom kit -- IC unconfirmed (3.8). **Under 1.14 the recommendation is the Waveshare General Driver for Robots (~30) instead**: its **ESP32** runs the velocity PID off Linux's scheduler, which a 20-50Hz loop in CPython cannot do reliably. Verified 2026-09-06 to carry TB6612FNG, encoder inputs for 2 motors, a **9-axis IMU** (QMI8658C + AK09918), a lidar interface, current monitoring and 7-13V input taking the 3S pack directly. **It collapses the separate IMU line below.** Cost is a new Pi-to-ESP32 serial protocol, which becomes a seam under `RobotInterface` -- and 1.16 #6's fourth deadman |
 | Camera Module 3 | 30 | Any CSI camera works now; autofocus. 1.10 |
-| **AI HAT+ (Hailo-8L)** | 70 | The on-board detector -- 1.10, §4. Replaced the AI Camera 2026-09-04 |
-| 2-axis pan/tilt bracket + SG90s | 12 | Replaces what the PiCar-X bundled |
+| **Hailo-8L, M.2 module form** | 70 | The on-board detector -- 1.10, §4, and 4.9 configuration C/D. Replaced the AI Camera 2026-09-04. Briefly the 10H at 130 on 2026-09-06, reverted the same day on its measured tokens/s (4.9). **The module, not the soldered AI HAT+** -- it is the form that survives a Jetson pivot and the form the NVMe needs anyway. The AI Kit that used to bundle it is out of production, so this is a standalone module plus a carrier. 4.8 and 4.9 argued for leaving this off the first order; **1.14 reversed that the same day** -- continuous motion puts the perception tier above what the Pi's cores deliver, so it ships with the first order |
+| 2-axis pan/tilt bracket + servos | 12 | Replaces what the PiCar-X bundled. **Both axes are kept -- 1.15.3.** Bracket measures 32 x 28 x 65mm and takes a 28x28mm camera, which the Camera Module 3 fits. **Two open questions**: the Waveshare board's PWM output does **not** support MG90S/SG90-class servos (drive them from the Pi's own GPIO instead), and 1.16 #7 asks whether bearing-critical axes justify **ST3215 bus servos** with position feedback (~25 each, driven natively by that board) |
 | **3S** Li-ion pack + charger | 35 | Motor rail only (1.3). **Not 2S** -- see the correction below |
 | Wiring, connectors, switch, XT60 | 15 | |
 | Standoffs, M2.5/M3 hardware | 10 | For stacking decks |
@@ -916,30 +1314,35 @@ should be checked before ordering.
 | Item | ~USD | Avoids |
 |---|---|---|
 | Powered USB hub | 15 | The 600mA USB cap browning out the Pi (1.3) |
-| IMU (MPU6050 / BNO055) | 10 | Heading drift between scans -- **matters much more under (b+)**. May be **0** if the motor-driver board carries one; verify before buying separately |
+| IMU (MPU6050 / BNO055) | 0-10 | Heading drift between scans -- **matters much more under (b+)**, and more again under 1.14, where heading error integrates for as long as the robot drives. **0 if the Waveshare board is taken**: verified 2026-09-06 to carry a 9-axis QMI8658C + AK09918, which is better than the part specced here |
+| **2x VL53L1X ToF, forward-down** | 12 | The under-plane residual 1.15.4 names -- cliffs, thresholds and low obstacles the scan plane misses |
+| **Compliant bumper + microswitches** | 5 | 1.15.4. **Not optional under 1.14**: everything else in the safety chain is an inference, and this is the only measurement. The cheapest guard in the build |
 | 5V buck converter | 8 | If the Pi is ever taken off the bank and onto the pack |
-| Lidar mount, 3D printed | 15 | 0 with a printer |
+| **Lidar pedestal**, 3D printed | 15 | 0 with a printer. **Not a bracket -- it has a job (1.15.2)**: hold the scan plane as low as it can go while still clearing the camera's swept envelope at full tilt. Too low blinds the lidar in the forward arc; too high grows the under-plane blind volume |
 | Jumper wires, misc | 10 | |
-| | **~58** | |
+| | **~75** | |
 
 **Worth considering**
 
 | Item | ~USD | Why |
 |---|---|---|
-| NVMe SSD + dual-slot PCIe base | 75 | **SD cards corrupt on brownout**, which is the exact failure 1.3 is written about. The one item here that prevents losing work rather than an annoyance. **The Hailo takes the Pi's one PCIe lane** (1.10 item 2), so this now means the M.2-module form of the Hailo-8L on a dual-slot switch board (~40) plus the drive (~35), not the plain M.2 HAT at 45 -- reported to work, **unverified** |
+| NVMe SSD + dual-slot PCIe base | 83 | **SD cards corrupt on brownout**, which is the exact failure 1.3 is written about. The one item here that prevents losing work rather than an annoyance. **The Hailo takes the Pi's one PCIe lane** (1.10 item 2), so this means the M.2-module form of the Hailo-8L on a dual-slot switch board plus the drive, not the plain M.2 HAT at 45. **Now vendor-documented rather than rumoured** (4.9): the Pineboards HatDrive! Dual, ~48, carries an ASM1182e PCIe switch and names Hailo support -- but it is **discontinued at some retailers, so check stock**, and its slots are 2230/2242 only, so the drive must be short. Drive ~35 |
 
 **Totals**
 
 | Scenario | ~USD |
 |---|---|
 | Essential only | 440 |
-| **+ recommended** | **498** |
-| + NVMe | 573 |
+| **+ recommended** | **515** |
+| + NVMe and the dual-slot base | 598 |
 | Already own a Pi 5 | subtract ~100 |
+| ~~Accelerator deferred~~ | **No longer on offer** -- 1.14 item 2 |
 
-Already owned, 0: the power bank (1.3). **Budget ~500-575**, and the two
-variables that move it are whether a Pi 5 is already owned and whether the
-NVMe is taken. Was ~460-510 under the IMX500 (2026-09-03): the Hailo decision
+Already owned, 0: the power bank (1.3). **Budget ~515-600**, and the two
+variables that move it are whether a Pi 5 is already owned and whether the NVMe
+plus its dual-slot base is taken. **Raised ~17 on 2026-09-06** by 1.15.4's ToF
+pair and bumper; the Waveshare board and the IMU it absorbs roughly cancel. **The accelerator is no longer one of them:
+4.8 and 4.9 had it as deferrable, and 1.14 put it back on the first order.** Was ~460-510 under the IMX500 (2026-09-03): the Hailo decision
 added ~30 to the essentials and ~30 to the NVMe line (1.10). Before that,
 revised down from ~450-500 once the chassis was priced against real listings
 rather than estimated (3.8).
@@ -1107,8 +1510,18 @@ concrete upper bound to design against, months before any hardware arrives.
 4. Whether the with-battery variant's pack is 12.6V/3S.
 5. Whether the expansion board mounts on the 40-pin header or wires to it --
    the AI HAT+ occupies the HAT position (1.10 item 7).
+6. **Which motor RPM variant ships** (added 2026-09-06). Yahboom sells several
+   and the figure is printed on the motor label. On a 65mm wheel the 520's
+   quoted 333 RPM is **1.13 m/s** top speed, which covers 1.14's spec-for-0.5,
+   run-at-0.3 comfortably (26% and 44% duty). **A 130 RPM variant tops out at
+   0.44 m/s and fails the spec.** This is the one question on this list that
+   cannot be fixed after delivery.
+7. **The motors' running and stall current** (added 2026-09-06). TB6612FNG is
+   ~1.2A continuous per channel. Under 1.14's continuous driving that draw is
+   sustained rather than bursty -- probably fine on hard floor at 26-44% duty,
+   marginal near stall or on carpet.
 
-None is a blocker; all five are one email to the seller.
+None is a blocker except 6; all seven are one email to the seller.
 
 ---
 
@@ -1152,7 +1565,7 @@ mechanism handles "the blue bottle" and "my backpack, not the other one".
 | | AI HAT+ (Hailo-8L) | AI HAT+ (Hailo-8) | AI HAT+ 2 (Hailo-10H) |
 |---|---|---|---|
 | Rated | 13 TOPS INT8 | 26 TOPS INT8 | ~40 TOPS, plus 8GB of its own LPDDR4X |
-| Price | ~$70 | ~$110 | ~$130 -- announced late 2025, **verify availability** |
+| Price | ~$70 | ~$110 | **$130, shipping** -- verified 2026-09-06 (4.8) |
 | Architecture | dataflow, no external memory, weights streamed from the host | same, larger | on-module memory, built for LLMs and transformers |
 | Runs well | CNN detection, segmentation, pose, depth, classification; CLIP via Hailo's port | same, faster or at larger inputs | the above plus small language and vision-language models |
 | Form | the Pi 5's single PCIe FFC connector, HAT position | same | same |
@@ -1237,7 +1650,9 @@ Two things relax the bar. **The range sensor owns emergency stop, not the
 camera** -- so the detector's latency budget is about steering, not collision.
 And **motion is discrete today** (speed 50 for 0.5s per move), capping decisions
 near 2Hz. The FPS question only sharpens with *continuous* driving, which is a
-design choice not yet made.
+design choice not yet made. **Made 2026-09-06: continuous (1.14).** So the
+second relaxation above expires, this section's CPU-only conclusion expires with
+it, and the accelerator moves onto the first order -- 1.14 item 2.
 
 **On the Hailo-8L the bar is not close.** A nano detector runs at well over
 camera rate with single-digit-millisecond inference, so the 200ms row is the
@@ -1268,7 +1683,7 @@ plus the requirement in 4.1.
 
 | | IMX500 AI Camera | Hailo-8L AI HAT+ | Jetson Orin Nano Super | Pi 5 CPU only |
 |---|---|---|---|---|
-| Cost | ~$70, replaces the ~$30 camera | ~$70 plus a ~$30 camera | ~$249 replacing the ~$80 Pi 5, plus camera and power conversion | $0 |
+| Cost | ~$70, replaces the ~$30 camera | ~$70 (8L) / $110 (8) / $130 (10H) plus a ~$30 camera -- **4.9 prices the whole family and picks the 8L as a module** | **~$399-480** replacing the ~$80 Pi 5, plus camera and power conversion -- repriced July 2026, was ~$249 | $0 |
 | Where inference runs | on the sensor | on a PCIe module | on-board GPU, CUDA | the four A76 cores |
 | Pi CPU cost | ~0 | a few percent of a core | n/a | one to two cores for a nano model |
 | Model ceiling | ~8MB on-chip, nano class, one at a time | hundreds of MB, several resident; CNNs only | anything that fits 8GB shared with the OS | limited by speed, not memory |
@@ -1291,9 +1706,11 @@ is the compromise that keeps the Pi plan intact.
 strongest, but on what it costs the rest of the plan. Recorded so the
 re-evaluation does not start from zero.
 
-The part is the **Jetson Orin Nano Super Developer Kit**, ~$249 list: the older
-Orin Nano 8GB kit with a firmware and JetPack update that raised the clocks and
-halved the price. Supply has been tight since; expect reseller markups.
+The part is the **Jetson Orin Nano Super Developer Kit**, launched at ~$249
+list: the older Orin Nano 8GB kit with a firmware and JetPack update that raised
+the clocks and halved the price. Supply has been tight since; expect reseller
+markups. **Repriced to $399 in July 2026 with no announcement, ~$480 street**
+(4.8) -- every dollar figure below predates that and is corrected there.
 
 | | Pi 5 (8GB) | Jetson Orin Nano Super |
 |---|---|---|
@@ -1318,7 +1735,8 @@ the degraded mode (2.5). 3.3's (b+) OS dilemma dissolves: JetPack is Ubuntu
 1.3's power plan has to change: a USB-PD trigger board pulling 12-15V from a PD
 bank, a filtered buck from the 3S pack, or a second pack -- the 3S range sits
 inside the Jetson's input range, but running it directly puts motor noise on
-the compute rail, which 1.3 forbids. Net bill change roughly **+$170-220**.
+the compute rail, which 1.3 forbids. Net bill change roughly **+$170-220** at the launch price, and
+**+$320-430** at the July 2026 one (4.8).
 
 **What ruled it out.** 8GB shared memory is the binding limit -- SLAM, nav2, an
 open-vocabulary detector and a local VLM will not all be resident, so the plan
@@ -1338,23 +1756,345 @@ then experiments run off-robot behind the perception seam (2.7), fed by the
 robot's frames or the recorded walks, and are promoted to the Hailo by compile
 once they have earned it in replay.
 
+### 4.8 Re-examined 2026-09-06: what the industry runs, and two price moves
+
+**The decision does not change -- Pi 5 plus a Hailo -- but three of its inputs
+do, and one of them flips a choice this plan had already pre-registered.**
+Prompted by a direct question: is the Hailo a regrettable spend against a later
+pivot to a Jetson?
+
+#### The two price moves
+
+| | 2026-09-04, as written | 2026-09-06, checked |
+|---|---|---|
+| Jetson Orin Nano Super devkit | ~$249 list | **$399 list**, ~$480 street. NVIDIA repriced the whole Jetson line in July 2026 with no announcement -- Orin NX 8GB module $399 -> $649, up to 101% across the range. LPDDR pricing is the implicated cause, so it may not be permanent |
+| AI HAT+ 2 (Hailo-10H) | "~$130, announced late 2025, **verify availability**" | **$130, shipping.** 8GB of its own LPDDR4X, 40 TOPS INT4, named models (Llama 3.2 1B, Qwen2.5 1.5B, DeepSeek-R1-Distill 1.5B), a `hailo-ollama` backend, documented LoRA fine-tuning |
+
+**4.7's "+$170-220" for the Jetson path is wrong and is corrected to
++$320-430.** The Jetson did not become a worse board; it became a 1.6x more
+expensive one, against a plan whose entire compute budget is ~$150.
+
+**And 1.10 item 6's pre-registered test is now satisfied.** It said: *if the
+Hailo-10H is in stock at ~$130 and its small-VLM support is documented for real
+models, the extra $60 turns a detection sandbox into a broader one. If either is
+unverified at ordering time, take the 8L.* Both conditions now read yes, so
+**the order is the AI HAT+ 2, not the 8L.** Writing that condition down in
+advance is what turned this into a lookup instead of an argument.
+
+**Amended hours later by 4.9, and the amendment is the more useful half.** The
+test passed on its own terms, but its *purpose* was to buy a broader sandbox,
+and the 10H's published generative numbers -- 5.89 tokens/s on a 1.5B model --
+make a local VLM slower than the cloud call it would replace. **The order goes
+back to a Hailo-8L, in M.2 module form.** A pre-registered test is only as good
+as the quantity it names, and this one named availability where it should have
+named throughput.
+
+#### What the delivery-robot companies actually run
+
+| Company | On-board compute | Notes |
+|---|---|---|
+| **Coco Robotics** (Coco 2, Feb 2026) | **Jetson Orin NX** | Explicitly "without needing the cloud". Trained in Isaac Sim / Isaac Lab on Cosmos-generated synthetic data |
+| **Serve Robotics** (Gen3) | **Jetson Orin** | 5x the Gen2 Xavier; the stated wins are hardware video encode and 12h of battery |
+| **Cartken** | **Jetson AGX Orin** | six cameras for mapping and navigation plus wheel odometry, running SLAM |
+| **Kiwibot** | Jetson TX2 -> Xavier | sidewalk-centring, obstacle avoidance, traffic-light recognition |
+| **Starship** | Tegra TK1, then **x86 AMD Ryzen** + an FPGA | the exception -- left the NVIDIA path entirely. Some signal processing is too time-sensitive even for the CPU |
+
+**The unanimity is real, and four of the five reasons for it do not apply
+here.**
+
+- **Multi-camera visual odometry.** Cartken runs six cameras through SLAM. This
+  project has one camera and a 2D lidar, and 3.2 already hands the geometry to
+  the lidar.
+- **Outdoor, safety-critical, at pedestrian speed.** Their perception owns
+  collision avoidance among people. Here the lidar and the collar own it (1.11:
+  *"Will I hit something?" -- lidar + collar -- no vote, ever*), and 4.4's
+  reaction budget is set by discrete ~2Hz motion indoors.
+- **CUDA as an ecosystem, not as TOPS.** Isaac ROS, cuVSLAM, Isaac Sim, GPU
+  nav2 nodes. They are buying a stack, not an accelerator. (b+) here is
+  `slam_toolbox` and nav2 on CPU, which is what a 2D lidar map costs.
+- **Fleet economics invert the per-unit comparison.** $400 against a $10k robot
+  amortised over thousands of units, with an NRE budget behind it, is noise.
+  $400 against this bill of materials is most of the robot. **A fleet buys the
+  ceiling once and uses it thousands of times; one robot pays for it once and
+  uses it once.**
+
+**The fifth reason does apply, and it is the finding worth keeping: hardware
+video encode.** Every teleoperated fleet above streams camera video to a remote
+operator, and NVENC is why a Jetson is the natural home for that. **The Pi 5 has
+no hardware H.264 or H.265 encoder at all** -- it lost the one the Pi 4 had, and
+only decodes; a software 1080p stream is roughly the four A76 cores. If a live
+operator video feed ever becomes a requirement here, that is a **Pi 5 problem
+that no accelerator fixes** -- neither the 8L nor the 10H encodes video. It is a
+reason to move to a Jetson, and the only one on this list that could arrive
+without warning.
+
+#### The one thing that does transfer, and it argues *for* deferring
+
+All five run perception on-board and treat the network as optional. That is the
+endgame this plan describes too (2.5's degraded mode, 4.7's re-open tests) --
+but note **how they got there**. Coco ran *teleoperated*, with remote humans
+taking control in under 300ms, for years before Coco 2 moved the intelligence
+on-board. The remote intelligence came first and the silicon followed the
+evidence.
+
+That is this project's architecture at a different latency scale: a cloud VLM as
+the deliberation tier, a local collar owning safety, and an on-board tier that
+has to earn its place. **The industry's trajectory is an argument for buying the
+accelerator late, not for buying a bigger one early.**
+
+#### Pi-only, stated fairly
+
+The plan has treated "no accelerator" as the null option. It is stronger than
+that as a *starting* position. Stock YOLO11n on the Pi 5's own cores runs at
+roughly 5-13 FPS depending on export path -- ONNX INT8 at the low end, NCNN and
+quantised builds at the high end -- which **already clears 4.4's reaction bar**,
+because motion is discrete at ~2Hz and the range sensor owns the emergency stop.
+Pi-only fails on the **ceiling** (4.1), never on the rate. 4.4 said so; the
+numbers agree.
+
+The consequence is a sequencing fact worth more than either chip. **The
+accelerator is the only line in 3.6 that is purely deferrable.** It changes no
+other decision -- same chassis, same lidar, same camera, same two power rails,
+same Pi OS, same code -- and it plugs into a machine that will already be
+running. Every other item on that list is load-bearing on hardware day.
+
+#### So: is it a regrettable spend?
+
+Three questions, and only the first is about money.
+
+**1. Does the hardware transfer? Yes -- if you buy the module, not the board.**
+HailoRT runs on aarch64 as well as x86-64, and a Hailo-8 M.2 module has been
+brought up on a Jetson Orin Nano Super under JetPack 6.2 / Ubuntu 22.04
+(community-reported, **unverified here**). The Orin Nano has an M.2 Key M slot,
+and the Hailo-10H is sold as a standalone Key-M module as well as soldered onto
+the AI HAT+ 2. **The soldered HAT does not move; the M.2 module does.**
+
+**This collapses into a decision 1.10 item 2 was going to make anyway.** The
+PCIe lane is contested between the accelerator and the NVMe, and the resolution
+already on the table was the M.2-module form on a dual-slot switch board (~$40).
+That same purchase shape is the one that survives a Jetson pivot. **One
+decision, two problems** -- and it is the whole difference between a part that
+moves and a part that does not. *(Verify the switch board against the 10H
+specifically: 3.6 flags the combination as unverified even for the 8L, the
+standalone 10H module's price is not confirmed and may exceed the $130 HAT, and
+its power and thermal envelope is its own question.)*
+
+**2. Does the work transfer? Mostly -- and it is the larger cost.** The compile
+loop 1.10 item 1 insists on building first is PyTorch -> ONNX -> {Hailo DFC ->
+HEF | TensorRT engine}. The ONNX export, the calibration corpus, and the harness
+that scores a candidate model over the recorded walks with
+`control/walk_eval.py` are all platform-independent. **Only the final step is
+Hailo-specific**, and on a Jetson it becomes `trtexec`. A pivot therefore loses
+one compile step, not the pipeline -- and the pipeline was always the expensive
+part, which is exactly why item 1 asks for it before the hardware arrives.
+
+**3. What is the exposure? $130, on a ~$560 build, for a part that resells.**
+Set against a pivot that costs +$320-430 at current prices, redesigns 1.3's
+power plan, and gives up the Pi camera stack. And on the specific wish --
+larger models from Hugging Face -- **the 10H's 8GB is dedicated, where the
+Jetson's 8GB is shared with the OS, SLAM and nav2.** That shared memory is the
+binding reason 1.10 gave for ruling the Jetson out, and it does not apply to the
+HAT. For model work specifically the $130 part has the better memory position.
+Neither runs an arbitrary Hugging Face checkpoint without a compile step *and* a
+size ceiling -- the 10H's is around the 1.5B class, the Jetson's is 8GB minus
+whatever else is resident -- so the honest gap is narrower than "a Jetson runs
+anything".
+
+**The answer is no, and the better move is a third one.** The regrettable
+purchase in this project is not the wrong accelerator; it is **any accelerator
+bought before the corpus is valid.** Stage 0's gate is not cleared and its
+recordings are unusable for reasons that have nothing to do with compute -- a
+target on furniture a floor robot cannot reach, and a camera at standing height
+(`CLAUDE.md` Stage 0). No chip fixes a data problem. So:
+
+- **Order the chassis, Pi, lidar and camera. Leave the accelerator off the first
+  order.**
+- Re-record the corpus at 10-13cm on the wheeled rig -- needs none of this
+  hardware.
+- Build the compile loop against a rented x86 host and score YOLO11n over the
+  walks -- also needs none of it.
+- Then buy the AI HAT+ 2, in **M.2 module form**, once a detector has earned its
+  place in replay.
+
+That sequencing costs one extra shipping charge and removes the question
+entirely: by the time the $130 is spent, the evidence for spending it exists. It
+is 4.7's own promotion rule -- *experiments run off-robot behind the perception
+seam and are promoted to the Hailo by compile once they have earned it in
+replay* -- applied to the purchase as well as to the models.
+
+#### Re-open triggers, extended
+
+4.7 lists two conditions for re-opening the Jetson. Two more, from this review:
+
+3. **A live operator video feed becomes a requirement.** The Pi 5 has no
+   hardware encoder; every teleoperated fleet above has one. The only trigger
+   here that is a *Pi* problem rather than an accelerator one.
+4. **Jetson pricing returns to roughly $249.** At that number the delta is ~$170
+   and the comparison is genuinely close. At $399-480 it is not.
+
+### 4.9 The Pi-plus-Hailo option space, priced and checked
+
+**Checked 2026-09-06**, after 4.8 narrowed the platform question to this family.
+Three axes -- which accelerator, which *form* it comes in, and how it coexists
+with the rest of the robot -- and the third is the one that has been invisible
+in this plan so far.
+
+#### The parts, as actually sold
+
+| Configuration | Part | Form | ~USD | Notes |
+|---|---|---|---|---|
+| **A. Nothing** | -- | -- | **0** | YOLO11n at ~5-13 FPS on the Pi 5's own cores, by export path. Clears 4.4's bar. Fails on the ceiling (4.1), never on the rate |
+| **B. AI HAT+ 13 TOPS** | Hailo-8L | **soldered** | **70** | The plan's original choice. Cheapest real accelerator |
+| **C. Hailo-8L M.2 + M.2 HAT+** | Hailo-8L | **module**, 2242 B+M | **~70** | Same silicon as B. This was the **AI Kit**, now *out of production* -- so it means a standalone module plus the M.2 HAT+. **The module moves** (4.8) |
+| **D. C, on a dual-slot switch board** | Hailo-8L | **module** | **~70 + 48** | Pineboards HatDrive! Dual: an ASMedia ASM1182e PCIe Gen 2 switch, two M-key 2230/2242 slots, and **documented Hailo support** (`dtoverlay=pineboards-hat-ai`). Accelerator *and* NVMe on the one lane. **Discontinued at some retailers -- check stock** |
+| **E. AI HAT+ 26 TOPS** | Hailo-8 | soldered | 110 | 4.3 already rules this out: the camera's 30fps bounds a nano or small detector either way |
+| **F. AI HAT+ 2** | Hailo-10H | **soldered** + a separate 8GB chip | **130** | CV throughput equivalent to the 26 TOPS part, plus generative. See the measured numbers below |
+| **G. Hailo-10H M.2 module** | Hailo-10H | module | **unverified** | Exists as a standalone Key-M module through distributors. Industrial part; **assume it is not $130** until priced. Whether it carries its own 8GB (the HAT's is a separate IC on the board) is **unverified** |
+
+Not evaluated: the **CM5** ($45 and up, ECC RAM, same single PCIe Gen 2 lane).
+It is the right module for a finished product and the wrong one for a first
+build -- it needs a carrier board, which is a project of its own.
+
+#### The two integration facts that actually choose between these
+
+**1. There is one PCIe lane, and the accelerator wants it.** Known since 1.10
+item 2. What is new is that the resolution is a **verified product**, not a
+hope: the HatDrive! Dual carries a real PCIe switch and Pineboards document the
+Hailo module in one slot beside another device. 1.10 item 2 recorded this as
+"reported to work, **unverified**" -- it is now vendor-documented for the 8L
+module, which is configuration D. *(Slots are 2230/2242 only, so the NVMe must
+be a short one.)*
+
+**2. Every one of these sits on the 40-pin header, and this robot needs it.**
+The motor driver, two pan/tilt servos, the wheel encoders and the IMU all want
+GPIO. The AI HAT+ 2 ships a 40-pin extension header, and the reviews are
+explicit about the trap: seat it fully and **the pins are no longer
+accessible** -- you must leave it proud, or fit a taller stacking header, to put
+anything else on top. **This answers 1.10 item 7**, which had it as an open
+question for the seller: the header passes through, but only deliberately, and
+the mounting hardware in the box does not do it for you. Budget a 2x20 extra-tall
+stacking header and check clearance against the active cooler, the HAT and the
+lidar deck.
+
+#### First -- which of 2.1's three rates any of this touches
+
+**Scoping this explicitly, because the first draft of this section did not and
+was misread accordingly.** 2.1's three rates are the whole reason an accelerator
+is in the bill at all, and the tokens/s below bear on exactly one of them:
+
+| 2.1's tier | Rate | Who answers it | What an 8L does for it |
+|---|---|---|---|
+| reflex | ~50 Hz | lidar + collar, no model at all | **nothing** -- it needs no accelerator |
+| **perception** | **15-30 Hz** | **the detector -> bearing** | **the entire job.** YOLOv8n at 640 is ~2-7ms on an 8-series part (431 FPS batch-1 reported on the Hailo-8; ~137 FPS batch-8 on an 8L for a custom nano; YOLO11m 24-50 FPS). The Pi 5's own cores manage 5-13 FPS -- **below this row, not above it** |
+| deliberation | ~0.5 Hz | the LLM, **off-board by design** | **nothing** -- 2.1 already puts it in the cloud |
+
+**On the question it actually answers, on-board inference is roughly 500-1500x
+faster than the cloud call** -- single-digit milliseconds against the 3.6s/step
+measured to Opus 4.5. That gap is the argument for the accelerator, it is the
+middle row of 2.1, and nothing below disturbs it.
+
+**This also sharpens 4.4, which is easy to read as the opposite.** 4.4 concludes
+that stock YOLO11n on the Pi's cores clears the reaction budget -- true, but only
+because motion today is *discrete*, 0.5s per move at ~2Hz. Against 2.1's
+perception row the CPU is a tier short. **The accelerator is what makes that row
+exist**, and the day driving becomes continuous -- which a differential chassis
+with encoders and a 360-degree lidar invites -- it stops being a capability
+argument and becomes a latency one.
+
+#### What the 10H's generative capability actually measures, and what it does not
+
+**It bears on the deliberation row only, and only on a proposal to move that row
+on-board** -- which 2.1 never asked for and which is not why the accelerator is
+being bought.
+
+4.8 recommended the 10H partly because a local VLM would make 2.5's degraded
+mode real. **The published review numbers weaken that argument and it should be
+weakened in writing:**
+
+| Model | tokens/s on the Hailo-10H |
+|---|---|
+| DeepSeek-R1-Distill 1.5B | 6.72 |
+| Qwen2 1.5B | 5.89 |
+| Llama 3.2 3B | 2.60 |
+
+Qwen2-VL-2B-Instruct does describe a camera image. But this project's
+deliberation reply is an action plus its reasoning -- call it 60-100 tokens --
+which at ~6 tokens/s is **ten to seventeen seconds, before image prefill**.
+The measured cloud round trip to Opus 4.5 in the sim runs was **3.6s/step**
+(`CLAUDE.md` Stage 0). So the on-board VLM is **slower than the cloud call it
+would replace, and worse at the task** -- Stage 0 has Sonnet 4.5 stalling on
+this question, and a 2B model is well below that.
+
+**None of that is an argument against on-board inference, and it must not be
+read as one.** It is an argument against one *reason* that was offered for
+paying $130 instead of $70 -- a local VLM standing in for the cloud one. The
+detector's case is in the table above and is untouched: it is the fastest thing
+in the system by three orders of magnitude. It lands exactly where 4.7 put the Jetson's local VLM -- *"not a
+replacement for Opus 4.5 ... an upgrade over the rule-based wall-follower as the
+degraded mode"* -- and now there is a number attached. **A local VLM here is a
+2.5 fallback for when the network is gone, not a deliberation tier.**
+
+Power is the quiet win instead: 7.2-7.6W running a 1.5B model on the HAT against
+10.2-10.6W doing it on the CPU. On a battery robot, offloading is worth more than
+the tokens are.
+
+#### Recommendation, amending 4.8
+
+**Configuration C or D with a Hailo-8L, not F.** 4.8 said take the 10H on
+1.10 item 6's pre-registered test, and that test did pass on its own terms --
+in stock at $130, real named models. But item 6's *purpose* was "turn a
+detection sandbox into a broader one", and the tokens-per-second above say the
+broader half is a fallback rather than a capability. Meanwhile:
+
+- **The job 1.10 gives the detector is detection**, and 4.3 already establishes
+  the 8L runs a nano or small detector above camera rate. The families that
+  matter here -- larger YOLO tiers, floor segmentation, monocular depth, CLIP
+  over crops -- are 8-series families, not 10H-only ones.
+- **The module form is worth more than the extra TOPS.** It moves to a Jetson
+  (4.8), it shares the lane with the NVMe (D), and it is the only form that
+  keeps both of those open. The 10H is soldered at $130; as a module it is
+  unpriced.
+- **~~$60 saved is not the point; the $130 not yet spent is.~~ Superseded the
+  same day by 1.14.** The sequencing argument -- leave the accelerator off the
+  first order and buy once a detector has earned its place in replay -- was
+  explicitly conditional on motion staying discrete, which was the one thing
+  that made a 5-13 FPS perception tier survivable. **Motion is now continuous,
+  so the accelerator ships with the first order.** The rest stands: re-record
+  the corpus and build the compile loop against a rented x86 host regardless,
+  because neither needs the part.
+
+**And on the Hugging Face wish specifically, the honest answer is that no
+accelerator is the way to satisfy it.** The Hailo family's generative ceiling is
+the 1.5-3B class at single-digit tokens/s, behind a compile step; a Jetson's is
+8GB shared. Any model worth evaluating runs at full size, unquantised, on a
+rented GPU against the recorded walks -- which is 2.7's perception seam and
+4.7's promotion rule doing exactly what they were written for. **The car does
+not need to be the laboratory.** Buy the accelerator for what has to be *on* the
+car at frame rate, and nothing else.
+
 ---
 
 ## 5. What this invalidates elsewhere
 
-The chassis decision has documentation consequences. Recorded here so they are
-not discovered on hardware day.
+The chassis decision has documentation consequences, and **1.14's move to
+continuous driving has more**. Recorded here so they are not discovered on
+hardware day.
 
 | Document | What is now wrong |
 |---|---|
 | `HARDWARE-READINESS.md` | Written for the PiCar-X **throughout**. §1's parts table, §4's verb-to-motor path and §5's pre-flight checklist all assume Ackermann + Robot HAT + `picarx`. **§5.2's arc concern resolves to the pivot branch.** §5.3 (where the ultrasonic is mounted) is superseded by the lidar |
-| `PLAN-sim-hardening.md` | **S6 (Ackermann turns, continuous pose, scaled map) is unnecessary** -- `grid_world.py`'s pivot assumption is now correct. §3.3's divergence is closed by hardware choice rather than by code |
+| `PLAN-sim-hardening.md` | **S6's Ackermann half is unnecessary** -- `grid_world.py`'s pivot assumption is now correct, and §3.3's divergence closes by hardware choice rather than by code. **But 1.14 un-retires S6's continuous-pose half (2026-09-06)**, for a different reason than S6 gave and at a much smaller cost: `sim/renderer.py` already takes a float pose, so only `grid_world.py` and a two-line boundary conversion in `mock_robot.py` are discrete |
+| `AGENT-HARNESS.md` | **1.14 splits the tick.** Its tick contract, concurrency model and status shape all assume one blocking sense-decide-act step. Continuous driving needs a drive loop and a mission loop at different rates. B3.2 and B3.3 keep their jobs but change what they time |
+| `robot/safety.py`, `config/robot.yaml` | **Two numbers are wrong under 1.14, in code, today.** `watchdog_timeout_s: 1.0` is 50cm of travel at 50cm/s, and the fixed `min_distance_cm: 20.0` is a stopping distance good for only ~0.45 m/s. Neither is wrong for discrete motion, which is why neither was caught |
+| `robot/interface.py` | Has no way to express a held velocity. 1.14 item 3 adds one, and `tests/test_robot_contract.py` has to carry it across all five backends |
 | `PLAN-microduck-transplants.md` | **M2/M3 are built (2026-09-03) and the seam holds.** `PATH_FRACTION` did not -- §5.1, the one concrete defect this decision created in existing code, **fixed 2026-09-03**. **M10** (clearance from a real sensor) is satisfied far better by 360-degree metric returns than by one ultrasonic beam |
 | `CLAUDE.md` | The status table and build order referenced S6, the PiCar-X hardware path and, for one day, the IMX500. **Updated 2026-09-04** for the Hailo decision and the new bill |
 
 `HARDWARE-READINESS.md` and `PLAN-sim-hardening.md` have had staleness notes
 added pointing here; `CLAUDE.md`'s status row and buy list were updated on
-2026-09-04. Nothing else has been edited.
+2026-09-04. **The four rows added for 1.14 on 2026-09-06 are recorded, not yet
+acted on** -- the last two name defects in shipped code, and C1-C3 of 1.14's
+phasing are where they get fixed.
 
 ### 5.1 `PATH_FRACTION` breaks on a 360-degree sensor -- **FIXED 2026-09-03**
 
@@ -1530,7 +2270,7 @@ Kept as an index into where each landed:
 | Q1 | Is there a map, and where does memory live? | **1.5** persistence -- only the map persists, planner is a pure function · **1.6** the visual-edge mechanism is cancelled |
 | Q2 | Closed or open goal vocabulary? | **1.7** closed and versioned, three verbs, unknown verbs refuse by name |
 | Q3 | Who owns the stop condition? | **1.8** typed success from the planner, typed failure from the robot, lidar x bearing |
-| Q4 | Is there an on-device detector, and who arbitrates? | **1.10** a Hailo-8L, two layers (the IMX500 for one day -- §4 has the comparison) · **1.11** arbitration split by question, not authority · **1.13** room identity is not one of the detector's jobs |
+| Q4 | Is there an on-device detector, and who arbitrates? | **1.10** a Hailo-8L, two layers (the IMX500 for one day -- §4 has the comparison) · **1.11** arbitration split by question, not authority · **1.13** room identity is not one of the detector's jobs · **4.8**/**4.9** re-checked against industry practice and 2026 prices; the part settles as a Hailo-8L in M.2 module form · **1.15** the physical layout it has to live in |
 | Q5 | Does the sim participate? | **1.12** yes, with synthesised detections; occlusion-aware, tri-state, noise behind a flag |
 
 ### 6.3 What it owes the twin
@@ -1600,6 +2340,9 @@ work, not when its tests pass.
 | **Costmap** | An occupancy grid inflated by robot radius, so a planner can treat the robot as a point |
 | **Back-EMF** | Voltage a spinning motor generates back into its supply. Why motors get their own rail |
 | **BEC / buck converter** | A step-down regulator -- how to take a clean 5V off a higher-voltage pack |
+| **Discrete vs continuous driving** | Motion as bounded timed bursts with the robot stopped between them, perceiving only while parked -- versus holding a velocity and perceiving *while moving*. This project was the first and became the second on 2026-09-06 (**1.14**). The distinction decides whether perception latency costs wall-clock or centimetres |
+| **Stopping distance** | `v * t_react + v^2 / (2a)` -- how far the robot travels between an obstacle becoming visible and the wheels being stopped. The quantity a safety collar must exceed once motion is continuous (1.14 item 5) |
+| **Deadman** | A control that stops the machine unless it is actively and repeatedly reasserted. `robot/server.py`'s watchdog is one, and 1.14 promotes it from backstop to primary |
 
 ### 7.3 Hardware and buses
 
@@ -1677,7 +2420,71 @@ work, not when its tests pass.
   `PLAN-microduck-transplants.md` §1-§2 · `HARDWARE-READINESS.md` §1, §5 ·
   `control/mission_runner.py:255` · `brain/memory.py`
 
+**Checked on the web 2026-09-06, for 4.8** (prices and availability, not
+bench-verified):
+
+- Raspberry Pi, *Introducing the Raspberry Pi AI HAT+ 2* -- Hailo-10H, 8GB
+  on-board RAM, 40 TOPS INT4, $130, `hailo-ollama`, LoRA, and the named
+  1.5B-class models
+- CNX Software / Hardware Busters, July 2026 -- the Jetson repricing: Orin Nano
+  Super devkit $249 -> $399, Orin NX 8GB module $399 -> $649
+- NVIDIA case study and Serve Robotics' own blog -- Serve Gen3 on Jetson Orin,
+  5x over Xavier · NVIDIA blog -- Cartken on AGX Orin, six cameras and SLAM ·
+  Kiwibot on TX2 / Xavier
+- Coco Robotics' Coco 2 launch coverage (PR Newswire, Semafor, The Robot
+  Report), Feb 2026 -- Jetson Orin NX, Isaac Sim / Cosmos, and the earlier
+  sub-300ms teleoperation
+- Wevolver / Starship engineering blog -- Tegra TK1 then x86 AMD Ryzen, plus an
+  FPGA for the time-critical signal processing
+- Hailo community and product pages -- HailoRT on aarch64, a Hailo-8 M.2 brought
+  up on a Jetson Orin Nano Super under JetPack 6.2, and the standalone Hailo-10H
+  Key-M module
+- Raspberry Pi forums / Ultralytics docs -- no hardware H.264 or H.265 encoder
+  on the Pi 5, and YOLO11n at roughly 5-13 FPS on its CPU by export path
+
+**Also checked 2026-09-06, for 4.9:**
+
+- Raspberry Pi, *Introducing the Raspberry Pi AI HAT+* and the AI HATs
+  documentation -- the accelerator is soldered on the AI HAT+ where the AI Kit
+  used an M.2 connector; 13 TOPS $70 / 26 TOPS $110; **the AI Kit is out of
+  production**
+- CNX Software's AI HAT+ 2 review, Jan 2026 -- the Hailo-10H and an 8GB IC both
+  soldered; the GPIO extension header must be left proud to stay usable;
+  DeepSeek-R1 1.5B at 6.72 tok/s, Qwen2 1.5B at 5.89, Llama 3.2 3B at 2.60;
+  Qwen2-VL-2B-Instruct describing a camera image; 7.2-7.6W against 10.2-10.6W
+  on CPU; the SDK's Python-version sensitivity and the Docker workaround
+- Hackster's AI HAT+ 2 review -- the bundled mounting hardware exposes no pins
+- Pineboards HatDrive! Dual product and documentation pages, and Jeff Geerling's
+  Raspberry Pi PCIe database -- ASMedia ASM1182e PCIe Gen 2 switch, two M-key
+  2230/2242 slots, **documented Hailo-8L support** via
+  `dtoverlay=pineboards-hat-ai`; listed discontinued by at least one retailer
+- Hailo product pages / PCIe database -- the Hailo-8L M.2 in 2242 B+M and 2230
+  A+E, and the standalone Hailo-10H Key-M module
+- Raspberry Pi, *Compute Module 5 on sale now* -- from $45, ECC LPDDR5, one
+  PCIe Gen 2 lane
+
+**Also checked 2026-09-06, for 1.15 and 1.16** (vendor specs, none bench-verified):
+
+- Slamtec RPLidar C1 datasheet and retailer specs -- **55.6 x 55.6 x 41.3mm,
+  110g**, 5V UART, 10Hz typical (8-12Hz), 5kHz sample rate, 0.72° angular
+  resolution, 0.05-12m. **The scan-plane height inside the body is in the
+  mechanical drawing (Figure 4-1), not the specification tables** -- 1.15.5
+  item 1
+- Raspberry Pi Active Cooler mechanical drawing and M.2 HAT+ documentation --
+  **16mm board-to-board** clears the cooler ("at least 15mm; 16mm ideal"), and
+  the M.2 HAT+ ships that stacking header and spacers
+- 2-axis SG90/MG90S pan-tilt bracket, retailer specs -- **32 x 28 x 65mm, 42g**,
+  180° pan, 130° tilt, fits a 28 x 28mm camera module
+- Livox Mid-360 (~$749, 360° x 59°, ~265g, ~6.5W), Unitree 4D L2 (~$400),
+  Orbbec Gemini 335 (~$250) -- the 3D options 1.15 rejects
+- Waveshare General Driver for Robots wiki and product page -- ESP32-WROOM-32,
+  **TB6612FNG**, 2 encoder-motor channels, **9-axis IMU (QMI8658C + AK09918)**,
+  lidar interface, current monitoring, 7-13V input. **Its PWM servo output does
+  not support MG90S or MG996R**, which conflicts with 3.6's SG90-class pan/tilt
+- Yahboom motor documentation -- the 520 encoder motor quoted at 333 RPM after
+  reduction, and the RPM printed on the motor label (3.8 question 6)
+
 Hardware claims about the Pi 5, the AI HAT+ and AI HAT+ 2, the AI Camera, the
-Jetson Orin Nano and the lidars are from general knowledge as of this date,
-**not verified against a board**.
+Jetson Orin Nano and the lidars are otherwise from general knowledge as of this
+date, **not verified against a board**.
 Every one is cheap to check and should be checked before money moves.
