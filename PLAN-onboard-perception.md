@@ -13,6 +13,11 @@ anything was ordered. 1.10 holds the decision; §4 holds the three-way
 comparison (IMX500 vs Hailo vs Jetson) that made it; 3.6's bill of materials
 is updated. Everything else in the plan stands.
 
+**Also 2026-09-04:** 1.13 records a decision *not* to add a room-classification
+CNN beside it -- room identity stays a VLM field on the deliberation reply and
+the lidar owns the room *transition*. It is the first worked example of the rule
+that a model earns accelerator space by having a consumer in the fast loop.
+
 **It supersedes parts of two other documents.** Section 5 lists exactly what,
 because the chassis decision in 1.1 makes `HARDWARE-READINESS.md` partly wrong
 and retires a phase of `PLAN-sim-hardening.md`.
@@ -386,6 +391,8 @@ different: each question goes to whichever source can actually answer it.
 | **What bearing?** | **detector** | geometric precision beats a natural-language direction |
 | **How far?** | **lidar** | 1.8's fusion -- range at the detector's bearing |
 | **Is it there right now?** | **detector** (fresh) | but a VLM "not here" **triggers re-confirmation**, never a silent override |
+| **Which room is this?** | **VLM** | semantics again -- and it arrives free on a reply already being paid for (1.13) |
+| **Did I just change rooms?** | **lidar** | a transition is geometric: the doorframe's returns slide ahead -> beside -> behind (1.8, 1.13) |
 | **Can I reach it?** | **planner** | it knows the mission, the memory and the map |
 | **Will I hit something?** | **lidar + collar** | no vote, ever |
 
@@ -491,6 +498,96 @@ enables is decorative** -- the same failure as an encoder nothing reads (3.8).
 
 ---
 
+### 1.13 Room identity: the **VLM names it, the lidar detects the change**
+
+**Decided 2026-09-04.** A room-classification CNN on the Hailo (a Places365-class
+model on a ResNet backbone -- it compiles on the 8-series without difficulty) was
+proposed and **rejected**. `room_guess` stays a VLM field on the deliberation
+reply, and the *transition* between rooms becomes a lidar event.
+
+**On the live path it is already free**, which is the economic half of the
+argument. Two mechanisms produce a room label in this repo, and only one of them
+is on the hardware path:
+
+| Route | How | On the hardware path? |
+|---|---|---|
+| `/analyze` | `identify_room()` -- `brain/rooms.py`'s substring matcher over the VLM's `important_objects` (`service/vision_analyze/app.py:219`) | no |
+| **`/navigate`** | **a field the VLM emits directly**, a line in the prompt's own JSON schema beside `action` and `reasoning` (`vision_core.py:254`, `:391`, `:467`) | **yes** |
+
+So the marginal cost of a room label on the deliberation path is **one field in a
+reply already being paid for**. A CNN would spend a compile cycle, accelerator
+capacity and a calibration corpus to replace something that currently costs
+nothing.
+
+#### The circularity that made a classifier look necessary
+
+The real argument for on-board classification was structural, not economic. §2.4
+fires **"room change suspected"** from the *reactive* tier -- but if room labels
+only arrive on deliberation replies, that trigger is circular: the cloud has to
+be called to learn that the cloud should be called. The only escapes are polling,
+which violates §2.4's *event-driven, never periodic*, or a local classifier.
+
+**The reactive tier does not need a label, it needs a transition -- and that is
+geometric.** 1.8 already worked this out for `traverse`'s stop condition: a
+doorway is a narrow gap between two returns, and passing through means those
+returns slide from ahead, to beside, to behind. The lidar watches the doorframe
+go past.
+
+So the split is the one the rest of this plan already runs on: **the lidar
+detects that the room changed; the VLM names the room.** No classifier, no
+circularity, and the trigger fires on a physical event rather than on a semantic
+guess. §2.4's table is updated accordingly.
+
+#### The flicker argument reverses on inspection
+
+§6.1 measured `room_guess` changing on **12.7% of frames** -- `control/walk_eval.py`'s
+`unstable-identity` flag seen from the cost side -- which reads as an argument for
+a stable local model with frame-level hysteresis. It is not. That number was
+measured on a corpus where the question was asked **every frame, including frames
+pointed at a blank wall in the middle of a room**: most of the flicker is an
+unanswerable question asked repeatedly.
+
+Sampling only at lidar-detected transitions removes the noise **by construction
+rather than by filtering** -- the question is asked exactly when the view is most
+informative, five to eight times a mission. That is a better estimator than
+hysteresis over a noisy stream, and it needs no new model. It does **not** repeal
+§6.1's hysteresis finding: `target_visible` flips on 24.1% of frames and has no
+geometric event to gate it, so it still needs the filter.
+
+#### Where the CNN would have been actively worse
+
+Places365-class models are trained on **photographs taken by standing humans**.
+This camera sits at 10-13cm (1.1) looking at chair legs, table undersides and
+floor. That is out of distribution in precisely the way Stage 0 spent a month
+learning to care about -- **the standing-height corpus defect, re-introduced as a
+model choice instead of a data choice.**
+
+Fine-tuning it out would need a calibration set of labelled floor-height walks
+across every room type, and that corpus does not exist: the 39 walks on EFS are
+the invalid standing-height ones. A VLM is markedly more robust to that viewpoint
+shift than a fixed classifier, because it reasons from what is visible rather
+than matching a learned scene prior.
+
+#### And 1.6's argument applies unchanged
+
+Under (b+), §3.2 has rooms becoming **regions of an occupancy grid**, with
+`room_guess` labelling a place whose geometry is already known -- room identity
+turns into a *localisation* answer applied once per region, not a per-frame
+perception answer at all.
+
+A Hailo room classifier would therefore be built toward something already
+scheduled for demolition. That is the argument that cancelled the visual-edge
+memory in 1.6, and if it was good enough to kill the most elaborate design in
+this plan it is good enough to kill a bonus CNN.
+
+**What the accelerator's cycles should go to instead** is unchanged from 4.3:
+floor segmentation first, then a larger YOLO tier, then CLIP over crops. Each has
+a consumer in the fast loop. **A room label has no consumer faster than the
+planner, and the planner is the thing producing it** -- which is the general rule
+this section is one instance of.
+
+---
+
 ## 2. The tiered architecture
 
 ### 2.1 Three rates
@@ -558,7 +655,7 @@ Tiering pays off only if deliberation is **event-driven, never periodic**.
 | Mission start | runner | there is no goal yet |
 | Goal achieved | reactive | "I am at the doorway. Now what?" |
 | Goal impossible | reactive | boxed in, or the target left frame and did not return |
-| Room change suspected | reactive | crossed a doorway; memory needs updating |
+| Room change suspected | reactive (**lidar geometry**, 1.13) | crossed a doorway; memory needs updating. Not a semantic classifier -- the transition is geometric, the label comes back on the reply |
 | **Candidate sighting** | reactive | detector thinks it sees the target; cloud confirms identity and reachability |
 | Staleness | timer | a goal older than N seconds is suspect |
 
@@ -1433,7 +1530,7 @@ Kept as an index into where each landed:
 | Q1 | Is there a map, and where does memory live? | **1.5** persistence -- only the map persists, planner is a pure function · **1.6** the visual-edge mechanism is cancelled |
 | Q2 | Closed or open goal vocabulary? | **1.7** closed and versioned, three verbs, unknown verbs refuse by name |
 | Q3 | Who owns the stop condition? | **1.8** typed success from the planner, typed failure from the robot, lidar x bearing |
-| Q4 | Is there an on-device detector, and who arbitrates? | **1.10** a Hailo-8L, two layers (the IMX500 for one day -- §4 has the comparison) · **1.11** arbitration split by question, not authority |
+| Q4 | Is there an on-device detector, and who arbitrates? | **1.10** a Hailo-8L, two layers (the IMX500 for one day -- §4 has the comparison) · **1.11** arbitration split by question, not authority · **1.13** room identity is not one of the detector's jobs |
 | Q5 | Does the sim participate? | **1.12** yes, with synthesised detections; occlusion-aware, tri-state, noise behind a flag |
 
 ### 6.3 What it owes the twin
