@@ -1462,6 +1462,16 @@ delay work not yet started, which is how it earned a place in a register
 otherwise about hardware. It had been tracked only in `CLAUDE.md`'s Stage 0
 notes, where a reader of this plan would not find it.
 
+**A pattern behind several of these, recorded in 4.10 and pointed at from
+here** so a reader of the register finds it: three of this document's sections
+argue that off-robot evaluation is possible -- it is a *deciding* argument for
+the Hailo over the IMX500 -- and none of them assigned it to a phase. 1.10 item
+1's compile loop was in the same state. **A reason to buy does not
+automatically become a thing to do**, and this document had no mechanism
+carrying a capability from a purchasing section into a phasing one. When a
+section argues that something is possible, ask in the same breath which phase
+owns doing it.
+
 **#11 is a decision, not a discovery**, and it is listed because the plan
 currently contains both halves of it and neither is marked as the answer. It
 should be settled before C3 or C6 is built, since which phase owns it depends on
@@ -3034,6 +3044,70 @@ deliberation-call counter that visibly does not climb every step. That single
 number makes the whole architecture watchable."* `TierStats.as_dict()` is that
 number, and it reports `frames_per_call` directly comparable to 6.1's measured
 4-6x. Drawing it is C5's transport plus a panel, and it is the §7 proof for P2.
+
+#### Why this was not in C1-C9, which is the more useful question
+
+Asked directly on 2026-09-07, and the answer is worth recording because the
+plan was *right about this capability every time it mentioned it* and still
+did not schedule it. Four reasons, and the third is the general one.
+
+**1. P3's synthesis half was in C5 -- as a clause, not as scope.** C5 reads
+*"Carries 1.12's synthesised detections, floor mask and CLIP scores"*, while its
+actual scope is transport: routes, `RemoteRobot`, conformance cases, routing
+patterns. The synthesis -- the occlusion ray, the tri-state, the noise flag and
+the tests written *with* the flag -- is the larger half, and it appears as a
+subordinate clause inside another phase's sentence. **Half-counted is worse than
+absent**, because it reads as covered.
+
+**2. C6 already schedules this pipeline -- on the robot, and only there.** C6
+*"hosts a pipeline, not a detector: detector -> crops -> CLIP -> match (4.2)
+plus floor segmentation (4.3)"*. So the work was phased. What the phasing never
+considered is that **the identical pipeline runs on a laptop against recorded or
+teleop frames, months earlier, with no HEF, no accelerator and no robot.**
+1.14's closing note diagnoses the shape of the miss without quite catching it:
+it frames the split as *"perception content"* against *"motion and the loop"*
+and says C4-C9 repaired the gap. C4-C9 repaired the **goal and planner** gap.
+The missing piece is neither content nor motion -- it is *where the content
+runs*, and that axis had no representation in the phasing at all.
+
+**3. The capability was named three times as a reason to BUY, and never once as
+a task.** This is the general failure and the one to guard against. Every
+mention of off-robot evaluation in this document lives in a **purchasing
+argument**:
+
+| Where | Section | What it says |
+|---|---|---|
+| 1.10 | *"What it buys that the plan had not weighed"* | *"The detector can be scored on the recorded corpus... The IMX500 could not be fed a stored image at all"* |
+| 4.7 | *"The Jetson path, kept for later"* | *"experiments run off-robot behind the perception seam... promoted to the Hailo by compile"* |
+| 4.8 | *"So: is it a regrettable spend?"* | the same promotion rule, as risk mitigation |
+
+It is **load-bearing in all three** -- it is a deciding argument for the Hailo
+over the IMX500, which is to say the plan spent $70 partly on the grounds that
+this was possible, and then never wrote down that it should happen.
+
+> **A reason to buy does not automatically become a thing to do.** Purchasing
+> sections argue; phasing sections assign. Nothing in this document's structure
+> carried a capability across that boundary, and nothing was shaped to notice
+> the omission.
+
+1.10 item 1's compile loop was in exactly the same state and was found by the
+same review -- *the one thing this plan says to do before hardware day*, in no
+phase at all. Two instances of one pattern is a pattern. **When a section
+argues that something is possible, ask in the same breath which phase owns
+doing it.**
+
+**4. And the derivation method had a bias worth naming.** C1-C9 was produced by
+walking **2.8's mission** against the repo, and 2.8 is a mission *on the robot*.
+Walking a robot mission end to end reliably produces robot-shaped phases. The
+complementary exercise -- **what could be tested today, with no robot at all**
+-- was never run, and it yields a different list, which is this one. The rule
+already exists in 4.7; it had simply never been turned on the plan itself.
+
+**None of the four is a reasoning error**, which is what makes them worth
+recording. Each is a bookkeeping failure of the same family as 1.15.3 adding a
+fourth goal verb that 1.7 never heard about, and 3.6's totals pricing a
+configuration 1.14 tells you not to buy: correct local reasoning, with no
+mechanism to propagate it.
 
 #### Three cautions, so no result here is over-read
 
