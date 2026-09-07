@@ -32,6 +32,39 @@ exactly one move. Then it does it again.
 It's a deliberately simple idea with a lot hiding inside it, which is why most of
 the work so far has gone into building somewhere safe to test it.
 
+### And that premise did not survive contact with the evidence
+
+**Added 2026-09-07.** The paragraph above is how this project started and it is
+no longer where it is going. Worth saying here rather than only in a planning
+document, because a reader who finds this page and stops will otherwise carry
+away a description of a different robot.
+
+Testing the loop against real photographs (the "Stage 0" gate in `CLAUDE.md`)
+established two things. Every vision model **identifies** a red backpack, so
+recognition was never the hard part. And no model can reliably say **how far
+away** anything is from a single photograph -- five different phrasings of the
+question were tried and measured, and the failure was the same each time,
+because a flat image genuinely does not contain that information. Asking harder
+was not going to work.
+
+So the plan changed, and `PLAN-onboard-perception.md` is where. The car gets a
+**lidar** -- a spinning laser that measures distance directly -- and the
+division of labour becomes: the camera says *what* and *which way*, the lidar
+says *how far*. Once the car can measure the room, building a map stops being
+something to avoid and becomes something it gets nearly for free. The intended
+destination is now a real navigation stack (ROS 2), kept behind a wall so it
+cannot swallow the rest of the system.
+
+**That is the opposite of "no map at all", and the reversal is the point.** The
+original premise was a reasonable bet that a language model's judgement could
+substitute for a sensor. It was tested rather than assumed, and it lost. The
+loop above still runs -- it is still one photograph, one decision, one move --
+but it now runs at three different speeds, with the slow, expensive, clever tier
+asked only when something interesting happens.
+
+The rest of this page describes the loop as built. Read
+`PLAN-onboard-perception.md` for where it is going.
+
 ---
 
 ## The mechanism: one loop, about once a second

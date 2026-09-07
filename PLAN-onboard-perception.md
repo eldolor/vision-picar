@@ -3109,6 +3109,38 @@ fourth goal verb that 1.7 never heard about, and 3.6's totals pricing a
 configuration 1.14 tells you not to buy: correct local reasoning, with no
 mechanism to propagate it.
 
+#### Two findings from the same review, recorded so they are not lost
+
+**The project's own introduction now describes a different robot, and nothing
+said so.** `INTRODUCTION.md` defines the project *against* mapping -- *"This
+project takes the other road: **no map at all**"* -- while this document buys a
+lidar, moves depth off the VLM, and names ROS 2 with `slam_toolbox` and nav2 as
+the destination. **The reversal is correct**: Stage 0 tested the original
+premise honestly and it lost. But §0 of this document only says that *this
+document* ends somewhere different from where it started. It never says the
+**project** does, and a reader arriving at the introduction and stopping would
+carry away a description of a robot that is no longer being built. Fixed in
+`INTRODUCTION.md` on 2026-09-07; recorded here because the class of error --
+a decision propagating into the planning documents but not the explaining ones
+-- is the same one this whole subsection is about.
+
+**And the honest note on pace.** The stretch that produced 1.14, 1.15, 1.16 and
+C1-C9 -- four major decisions and roughly 1,500 lines of plan -- contained **no
+code and no measurements**, in a project whose expensive errors have every time
+been found by contact with reality rather than by planning: the invalid corpus
+(found by opening the frames), the `NavigateModelId` env-var trap, the model
+picker that rendered 40px wide. Planning here has genuinely paid -- §5.1's
+`PATH_FRACTION` bug was found and fixed the same day, the 2S/3S correction came
+from pricing real parts, §6.1 turned a guessed 8x into a measured 4.1x -- but it
+paid most while it was **pruning**, and it became expensive once it started
+**generating** work and purchases on unmeasured premises. 1.14 is the worked
+example: it is the only major decision in this document with **no stated
+requirement**, and it makes a $70 part non-deferrable and a nine-phase rewrite
+necessary. Before C1-C3 is built, answer the question that section skipped --
+*what does continuous motion buy, and what fails without it?* -- and if the
+honest answer is a preference rather than a requirement, measure a room crossing
+first and let the number decide.
+
 #### Three cautions, so no result here is over-read
 
 **Throughput is not measurable on a laptop.** 2.9 budgets three models against
