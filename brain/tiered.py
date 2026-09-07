@@ -84,12 +84,39 @@ TRIGGER_COLD_SEARCH = "cold_search"
 # 2.4's other four. Named, not implemented -- each needs a tier that does
 # not exist yet, and a trigger that cannot fire is worse than one that is
 # absent, because it looks like coverage.
+TRIGGER_STALE = "staleness"
+
 UNAVAILABLE_TRIGGERS = {
     "goal_achieved": "needs C6 -- nothing holds a goal to achieve",
     "goal_impossible": "needs C6, and the lidar for the boxed-in case",
     "room_change": "needs the lidar -- 1.13 makes the transition geometric",
-    "staleness": "needs a goal with an age (C4/C6)",
 }
+
+# 2.4's staleness trigger. This module used to list it as unavailable --
+# "needs a goal with an age (C4/C6)" -- and that reading was too strict:
+# the CALL has an age, and that is enough.
+#
+# **Implemented 2026-09-07 because a real run found the hole.** Once
+# perception got good (the open-vocabulary crop path, two rig walks), it
+# reported `detected` on 23 of 38 and 32 of 43 frames -- and the mission
+# then never finished. The reason is worth stating plainly, because it is
+# a property of the whole architecture and not of this file:
+#
+#   * `candidate_sighting` fires on the EDGE into `detected`, once.
+#   * `cold_search` fires only after a run of `absent`.
+#   * So a robot that can see its target continuously fires nothing after
+#     the first frame -- and **arrival is the VLM's call** (1.11: identity
+#     and reachability belong to the cloud), so it is never made.
+#
+# Better perception starved the trigger policy. Both walks went from
+# `found` to `max_steps` on exactly this. A deliberation tier that can be
+# silenced by things going well is not event-driven, it is edge-driven,
+# and 2.4's own list already had the fix in it.
+#
+# 6.1 measured that this timer is NOT the cost driver -- past stale_n ~10
+# it stops binding entirely, contributing 5.7% of triggers at 8 -- so the
+# floor it puts under the call rate is cheap. 8 is 6.1's own figure.
+DEFAULT_STALE_AFTER = 8
 
 # Section 6.1: two consecutive frames of agreement before an edge is
 # believed. One reproduces the naive count; three buys 4.5x against 4.1x,
@@ -188,12 +215,17 @@ class TieredVision:
         *,
         consecutive_frames: int = DEFAULT_CONSECUTIVE,
         cold_search_after: int = DEFAULT_COLD_SEARCH_AFTER,
+        stale_after: int = DEFAULT_STALE_AFTER,
         max_calls: Optional[int] = None,
     ):
         self.pipeline = pipeline
         self.cloud_vision_fn = cloud_vision_fn
         self.consecutive_frames = max(1, int(consecutive_frames))
         self.cold_search_after = max(1, int(cold_search_after))
+        # 0 disables the floor entirely, which reproduces the pre-2026-09-07
+        # edge-only behaviour -- worth having for measuring the difference,
+        # and worth NOT having as the default.
+        self.stale_after = max(0, int(stale_after))
         self.max_calls = max_calls
         self.stats = TierStats()
         # 6.3 asks for **the detector's own name** on screen, not just its
@@ -219,6 +251,7 @@ class TieredVision:
         self._run: list = []          # the recent status history
         self._absent_streak = 0
         self._last_confirmed = ABSENT
+        self._since_call = 0
 
     # -- the vision_fn contract ------------------------------------------
 
@@ -230,6 +263,7 @@ class TieredVision:
 
         trigger = self._trigger_for(perception)
         if trigger is None:
+            self._since_call += 1
             return self._local_scene(perception)
 
         if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
@@ -240,6 +274,7 @@ class TieredVision:
         self.stats.cloud_calls += 1
         self.stats.triggers[trigger] = self.stats.triggers.get(trigger, 0) + 1
         self._absent_streak = 0
+        self._since_call = 0
 
         scene = self.cloud_vision_fn(frame)
         return self._annotate(scene, perception, trigger)
@@ -291,6 +326,11 @@ class TieredVision:
             self._absent_streak += 1
             if self._absent_streak >= self.cold_search_after:
                 return TRIGGER_COLD_SEARCH
+
+        # The floor. Last, so it never pre-empts an event that says
+        # something more specific about why we are calling.
+        if self.stale_after and self._since_call >= self.stale_after:
+            return TRIGGER_STALE
         return None
 
     # -- what comes back -------------------------------------------------
@@ -379,6 +419,7 @@ def tiered_vision_fn_for(target: str, cloud_vision_fn: Callable[[dict], dict],
 __all__ = [
     "TieredVision", "TierStats", "tiered_vision_fn_for", "CENTER_BAND_DEG",
     "TRIGGER_START", "TRIGGER_CANDIDATE", "TRIGGER_COLD_SEARCH",
+    "TRIGGER_STALE", "DEFAULT_STALE_AFTER",
     "UNAVAILABLE_TRIGGERS", "SCAN_ACTION",
     "DEFAULT_CONSECUTIVE", "DEFAULT_COLD_SEARCH_AFTER",
 ]

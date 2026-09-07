@@ -38,6 +38,7 @@ from brain.perceive import (
     PerceptionUnavailable,
     CROP_PATH_AUTO,
     LOW_CONFIDENCE,
+    DEFAULT_MATCH_PROBABILITY,
     coco_class_for,
 )
 
@@ -91,6 +92,14 @@ def det(label, conf=0.9, x1=100.0, w=50.0):
 
 
 def pipeline(target, detections=(), table=None, **kwargs):
+    """4.2's own rule, selected explicitly.
+
+    `crop_path` defaulted to this until 2026-09-07, when two rig walks
+    measured the label gate losing most of the true positives and the
+    default flipped to the open-vocabulary path. These tests are about the
+    RULE, not about which one ships, so they name it -- otherwise flipping
+    the default silently stops testing 4.2 at all."""
+    kwargs.setdefault("crop_path", CROP_PATH_AUTO)
     return PerceptionPipeline(FakeDetector(detections), FakeScorer(table),
                               target, **kwargs)
 
@@ -414,10 +423,21 @@ def test_an_unreadable_image_leaves_the_bearing_null_rather_than_failing():
 # The override does not overturn 4.2 -- it makes it measurable.
 
 
-def test_auto_is_the_default_and_is_still_4_2s_rule():
+def test_the_open_vocabulary_path_is_the_default_now():
+    """Flipped 2026-09-07 on two rig walks. 4.2's rule is still selectable
+    and still right about who proposes -- but gating crops on the label
+    costs most of the true positives, because at close range the detector
+    relabels the object."""
+    p = PerceptionPipeline(FakeDetector(), FakeScorer(), "blue bottle")
+    assert p.crop_source == CROP_LOW_CONFIDENCE
+    assert p.coco_class == "bottle", "the COCO word is still recorded, it just does not gate"
+
+
+def test_auto_is_still_available_and_is_still_4_2s_rule():
     kw = dict(detector=FakeDetector(), scorer=FakeScorer(), target="blue bottle")
-    assert PerceptionPipeline(**kw).crop_source == CROP_LABEL_GATE
+    assert PerceptionPipeline(crop_path=CROP_PATH_AUTO, **kw).crop_source == CROP_LABEL_GATE
     assert PerceptionPipeline(detector=FakeDetector(), scorer=FakeScorer(),
+                              crop_path=CROP_PATH_AUTO,
                               target="charging cable").crop_source == CROP_LOW_CONFIDENCE
 
 
@@ -428,7 +448,8 @@ def test_forcing_the_open_vocabulary_path_stops_the_label_gating():
     forced = PerceptionPipeline(detector, FakeScorer({"_default": (0.9, 0.1)}),
                                 "blue bottle", crop_path=CROP_LOW_CONFIDENCE)
     auto = PerceptionPipeline(FakeDetector([det("vase"), det("bottle", x1=300.0)]),
-                              FakeScorer({"_default": (0.9, 0.1)}), "blue bottle")
+                              FakeScorer({"_default": (0.9, 0.1)}), "blue bottle",
+                              crop_path=CROP_PATH_AUTO)
 
     assert len(forced.perceive(frame()).candidates) == 2
     assert len(auto.perceive(frame()).candidates) == 1, "auto should keep only the bottle"
@@ -457,3 +478,69 @@ def test_forcing_the_label_gate_on_a_target_with_no_coco_word_is_refused():
 def test_an_unknown_crop_path_is_refused():
     with pytest.raises(ValueError):
         PerceptionPipeline(FakeDetector(), FakeScorer(), "bottle", crop_path="magic")
+
+
+# ---------- the gate is a probability, not a margin (measured 2026-09-07) ----------
+#
+# Two valid rig walks showed the raw margin cannot be thresholded
+# consistently, because a CLIP similarity is not comparable across text
+# queries: margin 0.05 detected 0 of 18 on "blue bottle" and 8 of 31 on
+# "red backpack"; margin 0.02 fixed the bottle and gave the backpack false
+# positives. A softmax over the same scores separates both at one number.
+
+
+def scored(target_score, *distractors):
+    """A pipeline whose single crop gets exactly these scores."""
+    class Scorer:
+        def score(self, image, box, texts):
+            # Padded to the full text tuple: the pipeline treats a short
+            # score list as a broken scorer (`unavailable`), which is
+            # correct and not what these tests are about.
+            vals = list(distractors) or [0.0]
+            while len(vals) < len(texts) - 1:
+                vals.append(vals[-1])
+            return [target_score] + vals[:len(texts) - 1]
+    return PerceptionPipeline(FakeDetector([det("bottle")]), Scorer(), "blue bottle")
+
+
+def test_the_probability_is_computed_over_every_score_not_just_the_winner():
+    """A softmax over two numbers is a different function from a softmax over
+    seven, so the whole score vector has to be carried."""
+    p = scored(0.31, 0.28, 0.27, 0.26, 0.25, 0.24, 0.23)
+    best = max(p.perceive(frame()).candidates, key=lambda c: c.probability)
+    assert len(best.scores) == 7
+    assert 0.0 < best.probability < 1.0
+
+
+def test_a_small_margin_over_many_weak_distractors_still_passes():
+    """The bottle case. Margin +0.03 is under the old 0.05 gate, but the
+    target beats every distractor, which is what the question actually is."""
+    p = scored(0.31, 0.28, 0.20, 0.19, 0.18, 0.17, 0.16)
+    r = p.perceive(frame())
+    assert r.status == DETECTED
+    assert r.best.margin < 0.05, "this is exactly the case the old gate rejected"
+    assert r.best.probability >= 0.8
+
+
+def test_a_crop_the_distractors_beat_is_absent():
+    p = scored(0.20, 0.31, 0.30)
+    r = p.perceive(frame())
+    assert r.status == ABSENT
+    assert "P " in r.reason, r.reason
+
+
+def test_the_margin_override_still_works_for_sweeping_a_corpus():
+    """Kept so the raw number can be swept on a new corpus -- and when set,
+    it wins, so a walk scored under it is scored under it entirely."""
+    p = scored(0.31, 0.28, 0.20)
+    p.match_margin = 0.05
+    r = p.perceive(frame())
+    assert r.status == ABSENT
+    assert "margin" in r.reason
+
+
+def test_both_numbers_are_published_so_a_walk_can_be_rescored():
+    p = scored(0.31, 0.28, 0.20)
+    d = p.perceive(frame()).as_dict()
+    assert d["match_probability"] is not None
+    assert d["match_margin"] is not None

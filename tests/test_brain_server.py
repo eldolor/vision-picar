@@ -1181,8 +1181,7 @@ def test_the_real_wrapper_builds_a_tiered_vision_fn_over_the_cloud_one(tmp_path,
     tier = bs._tiered_vision_fn("red backpack", lambda frame: cloud_calls.append(frame) or {
         "safest_direction": "FORWARD", "_navigate": {"reasoning": "cloud"}}, config)
 
-    assert seen["kwargs"] == {"weights": "fake.pt", "clip_model": "FakeCLIP",
-                              "crop_path": "auto"}
+    assert seen["kwargs"] == {"weights": "fake.pt", "clip_model": "FakeCLIP"}
     assert tier.consecutive_frames == 3
     assert tier.cold_search_after == 9
     assert tier.max_calls == 5
@@ -1224,6 +1223,11 @@ def test_the_clip_margin_is_settable_without_editing_code(tmp_path, monkeypatch)
     bs._tiered_vision_fn("red backpack", lambda f: {}, config)
     assert seen["match_margin"] == 0.02
 
+    seen.clear()
+    config = load_brain_config(tiered_config(tmp_path, perception_match_probability=0.9))
+    bs._tiered_vision_fn("red backpack", lambda f: {}, config)
+    assert seen["match_probability"] == 0.9
+
     # Unset means "whatever brain/perceive.py says", passed as an absent
     # kwarg rather than a number this module invented.
     seen.clear()
@@ -1242,13 +1246,23 @@ class _FakePipeline:
         return Perception(status=ABSENT)
 
 
-def test_health_reports_the_margin_a_mission_would_use(tmp_path):
-    app = create_app(config_path=tiered_config(tmp_path, perception_match_margin=0.02),
+def test_health_reports_the_gate_a_mission_would_use(tmp_path):
+    """The gate is the probability; the margin is an override and reads null
+    unless one is set. Both are reported so a walk can say which produced
+    it -- the raw margin is not comparable across targets, and a walk that
+    cannot name its gate cannot be compared with another."""
+    app = create_app(config_path=tiered_config(tmp_path),
                      robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
     with TestClient(app) as client:
-        assert client.get("/health").json()["perception_match_margin"] == 0.02
+        h = client.get("/health").json()
+        assert h["perception_match_probability"] == 0.8
+        assert h["perception_match_margin"] is None
 
-    app2 = create_app(config_path=tiered_config(tmp_path),
-                      robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    app2 = create_app(
+        config_path=tiered_config(tmp_path, perception_match_probability=0.9,
+                                  perception_match_margin=0.02),
+        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
     with TestClient(app2) as client:
-        assert client.get("/health").json()["perception_match_margin"] == 0.05
+        h = client.get("/health").json()
+        assert h["perception_match_probability"] == 0.9
+        assert h["perception_match_margin"] == 0.02

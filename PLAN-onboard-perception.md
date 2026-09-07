@@ -3411,6 +3411,81 @@ eventually fired the arrival call.
 does not record the rig height, which Stage 0 asks for in writing so the
 corpus describes its own viewpoint.
 
+#### The second valid walk, and the three things it changed -- 2026-09-07
+
+`recordings/red-backpack-20260907-144856`, 38 frames, floor height, backpack
+on the floor, 37/38 landscape. Two walks and two targets is what 4.10 said
+would decide the crop path. It decided it, and it overturned one more thing
+on the way.
+
+**1. The threshold is not a margin at all.** The backpack walk did NOT
+confirm the bottle's number -- it contradicted it, which is the useful
+outcome:
+
+| target | margin gate 0.05 | margin gate 0.02 |
+|---|---|---|
+| blue bottle | 0 of 18 | 18 of 18, 0 false pos |
+| red backpack | 8 of 31 | 24 of 31, **2 false pos** |
+
+No single margin serves both, and the reason is a property of the model
+rather than of this corpus: **a raw CLIP similarity is not comparable across
+text queries.** `"red backpack"` is simply a stronger phrase than
+`"blue bottle"` -- its target frames sit at a median margin of +0.069
+against the bottle's +0.032.
+
+The fix is the standard one and costs nothing: **softmax over the same
+scores**, giving `P(target | crop, texts)`. That IS comparable across
+targets, and one number now serves both -- the bottle's target frames sit
+at P >= 0.85 against a non-target maximum of 0.39. `P >= 0.8` is the
+shipped gate (`DEFAULT_MATCH_PROBABILITY`); the margin remains reported,
+and settable as an override for sweeping a corpus. **What would falsify
+it**: a target whose non-target frames also reach 0.8 -- the backpack walk
+already shows two, so this is a better metric, not a solved problem, and
+near-neighbour distractors are the next thing to try.
+
+**2. The crop path flips to open vocabulary.** Both walks, one gate:
+
+| target | `auto` (4.2's label gate) | open vocabulary |
+|---|---|---|
+| blue bottle | 7/18, 0 false pos | **18/18, 0 false pos** |
+| red backpack | 9/31, 1 false pos | **25/31, 2 false pos** |
+
+Consistent in direction on both, and large: 16 recovered detections for one
+extra false positive. **And the trade is 1.11's, not a preference.**
+Arbitration is split by question -- on-board *proposes*, the cloud
+*confirms identity* -- so a false positive costs one deliberation call that
+the VLM then rejects, while a miss means the robot drives past its target.
+`auto` remains selectable and remains right about who proposes.
+
+**3. And better perception broke the mission, which is the finding that
+generalises.** With the two changes above, perception reported `detected`
+on 23 of 38 and 32 of 43 frames -- and both walks went from `found` to
+`max_steps`, never arriving. The cause is structural:
+
+> `candidate_sighting` fires on the **edge** into `detected`. `cold_search`
+> needs a run of `absent`. So a robot that can see its target continuously
+> fires nothing after the opening call -- and **arrival is the VLM's call**
+> (1.11), so it is never made. An all-detected walk made exactly **one**
+> cloud call, because the opening call also seeds the edge detector.
+
+A deliberation tier that can be silenced by things going well is
+edge-driven, not event-driven. 2.4's own list already carried the fix:
+**`staleness`**, which this module had listed as unavailable ("needs a goal
+with an age") on a reading that was too strict -- the *call* has an age, and
+that is enough. `DEFAULT_STALE_AFTER = 8`, 6.1's own figure, which it
+measured contributing 5.7% of triggers. It is a floor, not a metronome: any
+real event resets it, and the call cap still bounds it.
+
+With all three, both walks arrive:
+
+| walk | outcome | paid calls | saving | triggers |
+|---|---|---|---|---|
+| blue bottle | **found** (step 37) | 6 / 38 frames | 1 per 6.33 | start 1, candidate 2, cold 1, stale 2 |
+| red backpack | **found** (step 35) | 5 / 36 frames | 1 per 7.2 | start 1, candidate 1, stale 3 |
+
+Both above 6.1's 4-6x band rather than inside it -- better perception really
+does buy fewer calls, once the floor stops it buying zero.
+
 #### Three cautions, so no result here is over-read
 
 **Throughput is not measurable on a laptop.** 2.9 budgets three models against

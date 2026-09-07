@@ -27,6 +27,7 @@ from brain.tiered import (
     SCAN_ACTION,
     TRIGGER_CANDIDATE,
     TRIGGER_COLD_SEARCH,
+    TRIGGER_STALE,
     TRIGGER_START,
     UNAVAILABLE_TRIGGERS,
     TieredVision,
@@ -305,12 +306,59 @@ def test_the_factory_does_not_need_the_heavy_dependencies_when_given_a_pipeline(
 
 def test_the_triggers_this_cannot_fire_are_named_rather_than_missing():
     """A trigger that cannot fire is worse than one that is absent,
-    because it looks like coverage. 2.4 lists seven; three are reachable
-    without C6 and C8, and the other four say why not."""
+    because it looks like coverage. 2.4 lists seven; FOUR are reachable
+    now (staleness joined them 2026-09-07), and the other three say why
+    not -- each needs a tier that holds a goal, or the lidar."""
     assert set(UNAVAILABLE_TRIGGERS) == {
-        "goal_achieved", "goal_impossible", "room_change", "staleness"}
+        "goal_achieved", "goal_impossible", "room_change"}
     assert all(v for v in UNAVAILABLE_TRIGGERS.values())
     assert DEFAULT_CONSECUTIVE == 2
+
+
+# ---------- the staleness floor (found by a real run, 2026-09-07) ----------
+#
+# Once perception got good, both rig walks stopped finishing: the mission
+# went from `found` to `max_steps` because nothing triggered after the
+# first frame. `candidate_sighting` fires on the EDGE into detected and
+# `cold_search` needs a run of `absent`, so a robot that can see its
+# target continuously asks the cloud once and never again -- and arrival
+# is the cloud's call. Better perception starved the deliberation tier.
+
+
+def test_a_continuously_visible_target_still_gets_a_call():
+    """The regression, pinned. Twenty frames of uninterrupted `detected`
+    used to buy exactly one call after the opening one."""
+    tier, cloud, _ = run([DETECTED] * 20)
+    assert cloud.calls > 2, (
+        "a robot that can see its target continuously stopped deliberating "
+        "-- and arrival is the VLM's call, so the mission never ends")
+    assert tier.stats.triggers.get(TRIGGER_STALE, 0) >= 1
+
+
+def test_the_floor_does_not_fire_while_events_are_firing():
+    """It is a floor, not a metronome: anything that says something more
+    specific about why we are calling resets it."""
+    tier, _, _ = run([ABSENT, DETECTED] * 12, cold_search_after=2)
+    stale = tier.stats.triggers.get(TRIGGER_STALE, 0)
+    assert stale <= 1, tier.stats.triggers
+
+
+def test_the_floor_is_disablable_for_measuring_the_difference():
+    """0 reproduces the pre-2026-09-07 edge-only behaviour, which is worth
+    being able to measure against and not worth defaulting to."""
+    tier, cloud, _ = run([DETECTED] * 20, stale_after=0)
+    assert TRIGGER_STALE not in tier.stats.triggers
+    # ONE call in twenty frames, and worse than it looks: the opening call
+    # seeds the edge detector (see _trigger_for), so a mission that starts
+    # already looking at its target never fires `candidate_sighting`
+    # either. That is the whole regression in one number.
+    assert cloud.calls == 1, "mission_start, then silence for the whole walk"
+
+
+def test_the_floor_is_bounded_by_the_call_cap():
+    """It must not become a way around the hard stop on spend."""
+    tier, cloud, _ = run([DETECTED] * 40, stale_after=2, max_calls=3)
+    assert cloud.calls == 3
 
 
 # ---------- what 6.3 draws (phase P2's twin surface) ----------

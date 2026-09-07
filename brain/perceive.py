@@ -98,6 +98,7 @@ import base64
 import binascii
 import io
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import Optional, Protocol, Sequence
 
@@ -138,6 +139,27 @@ CROP_SOURCES = (CROP_LABEL_GATE, CROP_LOW_CONFIDENCE,
 CROP_PATH_AUTO = "auto"
 CROP_PATHS = (CROP_PATH_AUTO, CROP_LABEL_GATE, CROP_LOW_CONFIDENCE)
 
+# **The default is the open-vocabulary path, since 2026-09-07.** 4.2's rule
+# ("auto") is still selectable and still right about who PROPOSES; what two
+# valid rig walks measured is that gating the crops on the label costs most
+# of the true positives:
+#
+#   target          auto (label gate)   open vocabulary
+#   blue bottle     7/18,  0 false pos  18/18, 0 false pos
+#   red backpack    9/31,  1 false pos  25/31, 2 false pos
+#
+# The cause is identity, not rate: at close range YOLO relabels the object
+# (a bottle 30cm from a 10cm camera is a `vase`, once a `refrigerator`), so
+# the gate discards exactly the frames where the target fills the view.
+#
+# **Recall is worth more than precision here, and that is 1.11's design, not
+# a preference.** Arbitration is split by question: on-board PROPOSES, the
+# cloud CONFIRMS identity. So a false positive costs one deliberation call
+# that the VLM then rejects -- money -- while a miss means the robot drives
+# past the target. Trading 1 extra false positive for 16 recovered
+# detections is the trade this architecture was built to make.
+DEFAULT_CROP_PATH = CROP_LOW_CONFIDENCE
+
 # Ship `s`, not `n` -- 4.3.1 measured +7.6 mAP on-chip for a third of the
 # frame rate, and 92 FPS is still 3x the camera. `n` is the day-one
 # baseline that needs no HEF (4.4), not the shipped detector.
@@ -162,6 +184,36 @@ LOW_CONFIDENCE = 0.05
 # pick something. `score_crops()` therefore scores against the target AND a
 # set of distractors, and the margin is what this gates on.
 DEFAULT_MATCH_MARGIN = 0.05
+
+# CLIP's own logit scale, used to turn the raw similarities over
+# (target + distractors) into a probability. Not a tuning knob -- it is the
+# constant the model was trained with.
+CLIP_LOGIT_SCALE = 100.0
+
+# **The gate, since 2026-09-07.** P(target | this crop, these texts), from a
+# softmax over the same scores the margin was computed from -- so it costs
+# nothing extra and uses no new information.
+#
+# The margin above cannot be thresholded consistently, and two valid rig
+# walks measured exactly how badly. A raw CLIP similarity is not comparable
+# ACROSS text queries -- a well-known property of the model, and this
+# project's own data now shows it:
+#
+#   target          margin gate 0.05     margin gate 0.02
+#   blue bottle     0 of 18 detected     18 of 18, 0 false positives
+#   red backpack    8 of 31 detected     24 of 31, 2 false positives
+#
+# There is no single margin that serves both. Under the softmax the same
+# two walks separate at one number: the bottle's target frames sit at
+# P >= 0.85 against a non-target maximum of 0.39, and the backpack's median
+# is 0.96. P >= 0.8 gives 18/18 and 25/31.
+#
+# **What would falsify this**: a target whose non-target frames also reach
+# 0.8. The backpack walk already shows two, so this is a better metric and
+# not a solved problem -- the distractor set is what bounds it, which is why
+# DEFAULT_DISTRACTORS exists and why near-neighbours ("a vase" for a bottle)
+# are the next thing to try.
+DEFAULT_MATCH_PROBABILITY = 0.8
 
 # Scored alongside the target so a similarity has something to be
 # relative to. Deliberately bland and household-generic: they exist to
@@ -249,13 +301,29 @@ class Candidate:
     similarity: float = 0.0
     best_distractor: float = 0.0
     bearing_deg: Optional[float] = None
+    # Every score this crop got, target first. Kept so `probability` can be
+    # computed over the whole set rather than just the winner -- a softmax
+    # over two numbers is not the same thing.
+    scores: tuple = ()
 
     @property
     def margin(self) -> float:
         """How much better the target string fits this crop than the best
-        competing string does. **This, not `similarity`, is the number to
-        threshold on** -- see DEFAULT_MATCH_MARGIN."""
+        competing string does. Reported and still useful for reading a walk
+        by eye, but **not the gate** -- see DEFAULT_MATCH_PROBABILITY for
+        the measurement that retired it."""
         return self.similarity - self.best_distractor
+
+    @property
+    def probability(self) -> float:
+        """P(target | this crop, these texts). **This is what to threshold
+        on.** Comparable across different target strings, which the margin
+        provably is not."""
+        scores = self.scores or (self.similarity, self.best_distractor)
+        xs = [s * CLIP_LOGIT_SCALE for s in scores]
+        top = max(xs)
+        exps = [math.exp(x - top) for x in xs]
+        return exps[0] / sum(exps)
 
 
 @dataclass
@@ -301,6 +369,8 @@ class Perception:
             "tilt_deg": self.tilt_deg,
             "bearing_deg": self.bearing_deg,
             "match_margin": round(self.best.margin, 4) if self.best else None,
+            "match_probability": (round(self.best.probability, 4)
+                                  if self.best else None),
             "similarity": round(self.best.similarity, 4) if self.best else None,
             "label": self.best.detection.label if self.best else None,
             "candidates": len(self.candidates),
@@ -346,10 +416,11 @@ class PerceptionPipeline:
         target: str,
         *,
         hfov_deg: float = 66.0,
-        match_margin: float = DEFAULT_MATCH_MARGIN,
+        match_margin: Optional[float] = None,
+        match_probability: float = DEFAULT_MATCH_PROBABILITY,
         distractors: Sequence[str] = DEFAULT_DISTRACTORS,
         max_crops: int = 4,
-        crop_path: str = CROP_PATH_AUTO,
+        crop_path: str = DEFAULT_CROP_PATH,
     ):
         if not target or not target.strip():
             raise ValueError("PerceptionPipeline needs a target string")
@@ -357,7 +428,11 @@ class PerceptionPipeline:
         self.scorer = scorer
         self.target = target.strip()
         self.hfov_deg = hfov_deg
+        # The gate is the probability. `match_margin` is an override kept
+        # for the walks and tests written against the old metric, and for
+        # sweeping the raw number on a new corpus -- set it and it wins.
         self.match_margin = match_margin
+        self.match_probability = match_probability
         self.distractors = tuple(distractors)
         # 2.9's gate. Scoring every proposal is what turns a 61%-duty
         # schedule into an over-budget one, and off-robot it is just slow.
@@ -438,18 +513,25 @@ class PerceptionPipeline:
                               crop_source=self.crop_source,
                               pan_deg=pan, tilt_deg=tilt)
 
-        best = max(candidates, key=lambda c: c.margin)
-        if best.margin < self.match_margin:
+        if self.match_margin is not None:
+            best = max(candidates, key=lambda c: c.margin)
+            passed, got, gate, unit = (best.margin >= self.match_margin,
+                                       best.margin, self.match_margin, "margin")
+        else:
+            best = max(candidates, key=lambda c: c.probability)
+            passed, got, gate, unit = (best.probability >= self.match_probability,
+                                       best.probability, self.match_probability, "P")
+        if not passed:
             return Perception(
                 status=ABSENT, candidates=candidates,
                 crop_source=self.crop_source, pan_deg=pan, tilt_deg=tilt,
-                reason=(f"{len(candidates)} proposal(s), best margin "
-                        f"{best.margin:.3f} < {self.match_margin}"))
+                reason=(f"{len(candidates)} proposal(s), best {unit} "
+                        f"{got:.3f} < {gate}"))
 
         return Perception(status=DETECTED, candidates=candidates, best=best,
                           crop_source=self.crop_source, pan_deg=pan,
                           tilt_deg=tilt,
-                          reason=f"{best.detection.label} @ margin {best.margin:.3f}")
+                          reason=f"{best.detection.label} @ {unit} {got:.3f}")
 
     def _crops(self, proposals: Sequence[Detection]) -> list:
         """4.2's gate. With a COCO word the label is a cheap prefilter and
@@ -476,6 +558,7 @@ class PerceptionPipeline:
                 detection=det,
                 similarity=scores[0],
                 best_distractor=max(scores[1:]) if len(scores) > 1 else 0.0,
+                scores=tuple(scores),
                 bearing_deg=self._bearing(det.box, width, pan),
             ))
         return out
@@ -655,11 +738,12 @@ def pipeline_for(target: str, *, weights: str = DEFAULT_DETECTOR,
 __all__ = [
     "ABSENT", "DETECTED", "UNAVAILABLE",
     "CROP_LABEL_GATE", "CROP_LOW_CONFIDENCE", "CROP_SOURCES",
-    "CROP_PATH_AUTO", "CROP_PATHS",
+    "CROP_PATH_AUTO", "CROP_PATHS", "DEFAULT_CROP_PATH",
     "COCO_CLASSES", "coco_class_for",
     "Box", "Detection", "Candidate", "Perception",
     "Detector", "CropScorer", "PerceptionPipeline", "PerceptionUnavailable",
     "YoloDetector", "ClipScorer", "pipeline_for",
     "DEFAULT_DETECTOR", "DEFAULT_CLIP", "DEFAULT_MATCH_MARGIN",
+    "DEFAULT_MATCH_PROBABILITY", "CLIP_LOGIT_SCALE",
     "DEFAULT_DISTRACTORS", "LOW_CONFIDENCE",
 ]

@@ -83,7 +83,7 @@ from pydantic import BaseModel, ConfigDict
 
 from brain.navigate import vision_fn_for
 from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
-                            DEFAULT_MATCH_MARGIN, PerceptionUnavailable)
+                            DEFAULT_MATCH_PROBABILITY, PerceptionUnavailable)
 from brain.tiered import tiered_vision_fn_for
 from control import drills
 from control.brain_config import load_brain_config
@@ -267,6 +267,7 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict):
     kwargs = {
         "consecutive_frames": config["tier_consecutive_frames"],
         "cold_search_after": config["tier_cold_search_after"],
+        "stale_after": config["tier_stale_after"],
         "max_calls": config["tier_max_calls"] or None,
     }
     pipeline_kwargs = {}
@@ -274,6 +275,8 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict):
         pipeline_kwargs["weights"] = config["perception_detector"]
     if config["perception_clip_model"]:
         pipeline_kwargs["clip_model"] = config["perception_clip_model"]
+    if config["perception_match_probability"]:
+        pipeline_kwargs["match_probability"] = float(config["perception_match_probability"])
     if config["perception_match_margin"]:
         pipeline_kwargs["match_margin"] = float(config["perception_match_margin"])
     if config["perception_crop_path"]:
@@ -604,8 +607,9 @@ def create_app(
             "perception_available": _perception_available(),
             "perception_detector": config["perception_detector"] or DEFAULT_DETECTOR,
             "perception_clip_model": config["perception_clip_model"] or DEFAULT_CLIP,
-            "perception_match_margin": (config["perception_match_margin"]
-                                        or DEFAULT_MATCH_MARGIN),
+            "perception_match_probability": (config["perception_match_probability"]
+                                             or DEFAULT_MATCH_PROBABILITY),
+            "perception_match_margin": config["perception_match_margin"] or None,
             "perception_crop_path": config["perception_crop_path"],
             "tier_consecutive_frames": config["tier_consecutive_frames"],
             "tier_cold_search_after": config["tier_cold_search_after"],

@@ -104,14 +104,26 @@ brain:
   # them. Left as a config value rather than a new module default because
   # this is one walk and one target -- the old corpus found handbags scoring
   # +0.039 against "red backpack", which 0.02 would admit.
-  perception_match_margin: 0.02
+  # The gate is now P(target | crop, texts) -- a softmax over the same CLIP
+  # scores. MEASURED across both rig walks (2026-09-07): the raw margin
+  # cannot be thresholded consistently because a CLIP similarity is not
+  # comparable across text queries. Margin 0.05 gave the bottle 0/18; margin
+  # 0.02 gave the backpack false positives. Under the softmax, P >= 0.8
+  # gives 18/18 (bottle) and 25/31 (backpack). 0 uses the module default.
+  perception_match_probability: 0.0
+  # Override, for sweeping the raw margin on a new corpus. 0 = use P above.
+  perception_match_margin: 0.0
   # "auto" is PLAN-onboard-perception.md 4.2's rule (the target's COCO word
   # picks the path). The same walk measured it losing 11 of 18 true positives:
   # at close range YOLO relabels the bottle as a `vase`, and the label gate
   # discards exactly the frames where the target fills the view. Set this to
   # "low_confidence" to force the open-vocabulary path, which recovered
   # 18/18 with no false positives on that walk.
-  perception_crop_path: "auto"
+  # "" uses brain/perceive.py's default, which is now the OPEN-VOCABULARY
+  # path: both rig walks measured 4.2's label gate ("auto") losing most of
+  # the true positives, because at close range YOLO relabels the object.
+  # Set "auto" for 4.2's original rule or "label_gate" to force it.
+  perception_crop_path: ""
   # Section 6.1's hysteresis: how many consecutive frames must agree before
   # an edge is believed. 1 reproduces the naive trigger count (2.8x saving),
   # 2 is the measured 4.1x. This is not a tuning knob -- it is what makes
@@ -122,6 +134,14 @@ brain:
   # target is even in this room. Without it a target outside COCO's 80 never
   # fires anything at all. The number is a guess; tune it on a real walk.
   tier_cold_search_after: 6
+  # 2.4's staleness trigger, and a floor under the call rate rather than a
+  # metronome -- any real event resets it. Added 2026-09-07 after both rig
+  # walks stopped finishing once perception got good: candidate_sighting
+  # fires on the EDGE into detected and cold_search needs a run of absent,
+  # so a robot that can SEE its target asks the cloud once and never again.
+  # 6.1 measured this timer contributing 5.7% of triggers at 8, so the floor
+  # is cheap. 0 disables it.
+  tier_stale_after: 8
   # Hard cap on paid deliberation calls per mission. 0 is no cap -- max_steps
   # still bounds the mission, but under this policy most steps cost nothing,
   # so the step budget is a poor proxy for the bill.

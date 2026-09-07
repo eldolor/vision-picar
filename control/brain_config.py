@@ -62,13 +62,20 @@ DEFAULTS = {
     # learn it is to vary this on a rig walk and read the margins off the
     # panel. Changing the default on that evidence would be the
     # NavigateModelId mistake again.
+    # The gate: P(target | crop, texts). 0 means brain/perceive.py's
+    # DEFAULT_MATCH_PROBABILITY (0.8), measured across two rig walks.
+    "perception_match_probability": 0.0,
+    # Override: threshold the raw CLIP margin instead. 0 means "use the
+    # probability". Kept for sweeping the raw number on a new corpus -- it
+    # is NOT comparable across target strings, which is why it stopped
+    # being the gate.
     "perception_match_margin": 0.0,
     # Which of 4.2's crop paths a tiered mission takes: "auto" (the target's
     # COCO word decides -- 4.2's own rule), "label_gate" or "low_confidence".
     # The first valid rig walk measured "auto" losing 11 of 18 true positives
     # because YOLO relabels a close-up bottle as a `vase`; see
     # brain/perceive.py's CROP_PATHS note.
-    "perception_crop_path": "auto",
+    "perception_crop_path": "",   # "" = brain/perceive.py's DEFAULT_CROP_PATH
     # 6.1's hysteresis, in frames. 1 reproduces the naive trigger count
     # (2.8x); 2 is the measured 4.1x. Not tuning -- see brain/tiered.py.
     "tier_consecutive_frames": 2,
@@ -76,6 +83,11 @@ DEFAULTS = {
     # the target is even in this room. brain/tiered.py's own note says this
     # number is a guess and is the first thing to tune against a real walk.
     "tier_cold_search_after": 6,
+    # 2.4's staleness trigger: call out if nothing else has in this many
+    # frames. 0 disables the floor. Without it a robot that can see its
+    # target continuously stops deliberating entirely -- and arrival is the
+    # cloud's call, so the mission never ends. See brain/tiered.py.
+    "tier_stale_after": 8,
     # A hard cap on paid deliberation calls per mission, the same shape as
     # Robot view's 120-call cap. 0 means "no cap" -- max_steps still bounds
     # the mission, and under this policy most steps cost nothing, so the
