@@ -3184,6 +3184,32 @@ necessary. Before C1-C3 is built, answer the question that section skipped --
 honest answer is a preference rather than a requirement, measure a room crossing
 first and let the number decide.
 
+#### The corpus these were measured on **no longer exists** -- deleted 2026-09-07
+
+Everything in the next three subsections was measured on the 39-walk
+standing-height corpus, which was deleted from S3 and from the local backup
+on 2026-09-07, deliberately and on the owner's instruction: the walks were
+invalid by their own viewpoint, so measurements taken on them were suspect
+anyway, and leaving them in the bucket is how someone scores against them by
+accident -- a mistake this document has already recorded twice.
+
+**Read every number below as a recorded observation, not a reproducible
+one.** They are kept because the *reasoning* they support is still the best
+available and because deleting the conclusions along with the data would
+lose the argument as well as the evidence. But nothing here can be re-run,
+and **anything load-bearing must be re-derived on the new corpus**. Two
+things in particular are now assertions rather than measurements:
+
+- **The handbag negative control** (+0.039 against `"red backpack"`), which
+  is the entire basis for *"one threshold does not serve both targets"*.
+  Re-measure it on the next backpack rig walk before trusting the claim.
+- **6.1's 4.1x trigger count**, measured over 821 frames of that corpus. The
+  live tiered runs since (1 per 3.5, 1 per 5.17) are consistent with it, and
+  are on frames that still exist.
+
+The corpus is now **one walk**: `blue-bottle-20260907-142454`, in
+`s3://vision-picar-recordings-303351622021-us-east-2/recordings/`.
+
 #### The first real run: **`DEFAULT_MATCH_MARGIN` is about 2x too high**, measured 2026-09-07
 
 `python -m tests.manual_perceive_walk` over

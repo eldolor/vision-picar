@@ -458,6 +458,18 @@ Opus 4.5 was chosen by measurement: all 22 frames of walk
 model on the account, same pixels and prompt. See `vision_core.py`'s
 "Per-route models" note for the result. `/guidance` remains on Nova Lite.
 
+**The corpus every finding below was measured on was DELETED on
+2026-09-07** -- all 39 walks, from S3 and from the local backup, on purpose.
+They were invalid by their own viewpoint (standing height, target on
+furniture), so their numbers were suspect regardless, and an invalid corpus
+sitting in the bucket is how it gets scored against by accident. **Treat
+every number in this section as a recorded observation that can no longer be
+re-run**, and re-derive anything you intend to rely on from the new corpus,
+which is currently one walk: `blue-bottle-20260907-142454`. The findings are
+kept because the arguments they support are still the best available -- see
+`PLAN-onboard-perception.md` 4.10, which names the two claims that are now
+assertions rather than measurements.
+
 **What the gate has actually shown, as of 2026-08-30** -- run it yourself
 before trusting any of it, but this is where it stands:
 
