@@ -3560,6 +3560,71 @@ object and proposing near it. That is a reason to build the compile loop
 (P4) around segmentation, which 4.3's note already suggested for a different
 reason.
 
+#### Near-neighbour distractors: **measured, and rejected** -- 2026-09-07
+
+The experiment the previous two sections kept pointing at. Three
+configurations over all three walks, offline, no cloud calls: the current
+generic set; that set plus a global near-neighbour list (`"a vase"`,
+`"a cup"`, `"a handbag"`, `"a cushion"`, `"a slipper"`,
+`"a cardboard box"`); and that set plus per-target near neighbours.
+
+Scored **threshold-free** on purpose -- the metric is how many visible
+frames are detected at the strictest threshold that still admits zero false
+positives. A fixed `P >= 0.8` would have confounded "cleaner signal" with
+"more competitors in a softmax mechanically lowers every P".
+
+| walk | base | +global | +per-target |
+|---|---|---|---|
+| blue bottle | **18**/18 | 18/18 | 18/18 |
+| red backpack | **15**/31 | 13/31 | 14/31 |
+| shoes | **10**/13 | 9/13 | 10/13 |
+
+**No configuration beats the base set on any walk, and two are worse.**
+The mechanism is visible in the numbers: adding near neighbours does lower
+the top score on non-target frames (the backpack's worst case falls from
+0.97 to 0.61), but it lowers the score on *target* crops by as much. The
+distractors compete with the truth as effectively as with the error.
+**Do not add them.** `DEFAULT_DISTRACTORS` stands.
+
+#### ...and the experiment was measuring a phantom, which is the larger finding
+
+The two backpack "false positives" the near-neighbour idea existed to
+suppress were **opened and looked at**. The backpack is plainly visible in
+both, sitting under the table, and CLIP scored it 0.97 and 0.93. What the
+VLM said was:
+
+> *"No red backpack is visible in the current view, only a burgundy/maroon
+> fabric item under the table."*
+
+It rejected the target **over the colour word**, having accepted the same
+object on the frames either side. So the backpack walk has **zero** false
+positives, not two, and the recall figures for it are understated.
+
+**Every TP/FP number in this section uses the VLM's own `target_visible` as
+ground truth, and it is not ground truth.** It disagrees with itself about
+one object across adjacent frames. That is a methodological hole under all
+three walks, and the fix is cheap and manual: a per-frame human label in the
+walk's own directory, which is what P3's corpus-wide scoring should read
+instead of `walk.jsonl`.
+
+**And the two tiers fail the same way, which is the part worth carrying
+forward.** An inaccurate colour word costs recall in *both*:
+
+| target string | frames detected of 38 |
+|---|---|
+| `"red backpack"` | 27 |
+| `"burgundy backpack"` | **30** |
+| `"maroon backpack"` | **30** |
+| `"a dark red backpack"` | 30 |
+
+CLIP loses three frames to the wrong colour word; the VLM rejects two
+outright and says so in its reasoning. This is the third walk's target-string
+finding arriving independently on the second walk's data, and it converges
+on the same instruction: **1.7's goal vocabulary carries a description, and
+the description has to be accurate.** `"red backpack"` for a burgundy bag is
+not a small imprecision -- it is the single biggest lever measured in this
+document that costs nothing to pull.
+
 #### Three cautions, so no result here is over-read
 
 **Throughput is not measurable on a laptop.** 2.9 budgets three models against
