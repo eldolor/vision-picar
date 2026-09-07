@@ -2958,6 +2958,99 @@ rented GPU against the recorded walks -- which is 2.7's perception seam and
 not need to be the laboratory.** Buy the accelerator for what has to be *on* the
 car at frame rate, and nothing else.
 
+### 4.10 The harness: running these models before buying the part -- **P1-P4**
+
+**Added 2026-09-06, and P1/P2 are built.** Everything above decides *which*
+models go on the car. This is how they get tried first, and the question that
+prompted it is worth recording because the obvious answer is wrong:
+
+> *Can the digital twin test YOLO + CLIP + Opus 4.5 before I buy the hardware?*
+
+**Not the twin -- and you can do better than the twin.** Three questions are
+hiding in one, and they have three different instruments:
+
+| Question | Instrument | Needs hardware? |
+|---|---|---|
+| Does the **tiered loop** work -- goal issued, trigger fires, arbitration behaves, collar vetoes | the twin, on 1.12's synthesised features | no |
+| Do **YOLO and CLIP actually find things at 10cm** | real pixels through `ReplayRobot` / `TeleopRobot`, models on a laptop | **no** |
+| Throughput, HEF context-switch cost, latency, anything lidar | -- | yes |
+
+The middle row is the one that gates a purchase, and **the twin cannot answer
+it, by 1.12's deliberate design**: `sim/renderer.py` draws flat-shaded raycaster
+walls, a COCO detector finds nothing in them, and *"the sim leg tests the
+detector's consumers, never the detector."*
+
+**And the tempting repair is worse than the gap.** 1.12 weighed "make the
+renderer detectable by drawing real objects" and rejected it. Texture-map a
+photograph of a backpack onto a sprite, have YOLO find it, and what you have
+learned is that YOLO detects sprites -- a **false** positive signal, which is
+worse than none, and the standing-height corpus error wearing a new costume.
+
+#### What makes this possible at all
+
+Two things this project already owns, neither of which was bought for it.
+
+**Two `RobotInterface` backends made of real photons.** `sim/replay_robot.py`
+plays a recorded walk back one frame per move -- open loop, which does not
+matter here, because a detector does not care whether the next frame was caused
+by its own decision. `sim/teleop_robot.py` is the closed-loop one: a live phone
+camera and a human as the motor, already built and deployed as T1-T4.
+
+**And the models do not need the Hailo.** The chain is PyTorch -> ONNX -> DFC ->
+HEF and **only the last step is Hailo-specific** (4.8). Running a model to find
+out whether it *finds things* needs nothing but `pip`. That is the whole reason
+the Hailo beat the IMX500, which *"could not be fed a stored image at all"*
+(1.10) -- and until now nothing had exercised it.
+
+So the highest-fidelity pre-hardware test available is: **phone on the wheeled
+rig -> `TeleopRobot` -> real frames -> YOLO11s + CLIP locally -> candidate
+sighting -> Opus 4.5 confirms identity and reachability -> the decision comes
+back to the phone.** That is 2.8's entire mission, all three tiers in order, on
+real pixels, closed loop, with no robot in existence.
+
+#### The phases
+
+| | What | Status |
+|---|---|---|
+| **P1** | **The pipeline.** `brain/perceive.py` -- detector -> crops -> CLIP -> match, with 4.2's two crop paths chosen by whether the target has a COCO word, 1.12's three-way output, and bearing from the box plus the frame's own pan angle (1.15.3). `Detector` and `CropScorer` are Protocols, so a HEF substitutes later with nothing in between changing | **BUILT 2026-09-06.** `tests/test_perceive.py`, 22 tests, all against fakes |
+| **P2** | **The trigger discipline.** `brain/tiered.py` -- a `vision_fn` that runs perception locally and calls the cloud only on `mission_start`, `candidate_sighting` or `cold_search`, with 6.1's two-frame hysteresis and a call counter. Plugs into `MissionRunner`'s existing seam, so nothing in `control/` learns perception grew a tier (2.6) | **BUILT 2026-09-06.** `tests/test_tiered.py`, 23 tests |
+| **P3** | **Score it on the corpus.** Run P1 over a rig walk and report hit rate, margin distribution and the n/s/m comparison on *your* pixels rather than COCO's. `tests/manual_perceive_walk.py` is the single-walk version and exists; the corpus-wide scoring beside `control/walk_eval.py` does not | **PARTLY BUILT.** Blocked on 1.16 #10 -- there is nothing valid to score against |
+| **P4** | **The compile step.** ONNX -> Hailo DFC -> HEF on a rented x86-64 host, with floor segmentation as its first subject rather than YOLO (4.3). This is 1.10 item 1, and it is the remaining fifth | **NOT BUILT.** Needs an EC2 hour and a Hailo developer account. No robot |
+
+**P1-P4 is where 1.10 item 1's compile loop lives, and its absence from C1-C9
+was a real gap** -- the consistency review found that the one thing this plan
+says to do *before hardware day* had no phase at all. It has one now, and it is
+a different series on purpose: C1-C9 is about motion and the loop, P1-P4 is
+about perception content, and 1.14's own note says a perception change that
+forces no change to `set_velocity` is evidence the layering is right.
+
+#### What it owes the twin
+
+6.3 already specifies this and P1's output shape was built to match it: the
+detector's boxes on the FPV canvas, the model's name, the CLIP score against the
+mission's target string, and the tri-state readout so a wedged capture never
+looks like a missing target. **Plus the counter** -- 6.3's *"a
+deliberation-call counter that visibly does not climb every step. That single
+number makes the whole architecture watchable."* `TierStats.as_dict()` is that
+number, and it reports `frames_per_call` directly comparable to 6.1's measured
+4-6x. Drawing it is C5's transport plus a panel, and it is the §7 proof for P2.
+
+#### Three cautions, so no result here is over-read
+
+**Throughput is not measurable on a laptop.** 2.9 budgets three models against
+an 8L's 33ms frame; a Mac is not one. The timings the harness prints compare
+*models to each other*, never model to robot.
+
+**A high match rate is not automatically good.** CLIP returns a similarity, not
+a probability, so the margin over competing strings is the number that means
+something -- which is why `DEFAULT_DISTRACTORS` exists and why every match here
+is scored against them rather than against a bare threshold.
+
+**And this measures finding, not navigating.** Stage 0's failure was never
+recognition -- *"every cloud model identifies a red backpack"* -- so a perfect
+score here would leave the actual gap untouched. That gap is `brain/planner.py`,
+and it is C8.
+
 ---
 
 ## 5. What this invalidates elsewhere
@@ -3163,7 +3256,15 @@ was written; 6 and 7 were added 2026-09-06, and 6 is the only one in this
 document that cannot be fixed after delivery), the compile loop 1.10 item 1 asks
 for before hardware day -- which 4.3's note now points at floor segmentation and
 which is therefore **downstream of the corpus** -- and **1.16 #10's re-recorded
-Stage 0 corpus**, which three things now wait on.
+Stage 0 corpus**, which four things now wait on.
+
+**Two of these moved on 2026-09-06.** The compile loop now has a phase series
+(4.10's P1-P4) rather than being an item with no home, and **its first four
+fifths are built**: `brain/perceive.py` and `brain/tiered.py` run the real
+detector, CLIP and trigger policy against real photographs, on any machine,
+with no accelerator and no robot. What is left of it is P4 -- one EC2 hour and
+a Hailo developer account. And the corpus count went from three to four,
+because P3 has nothing valid to score against either.
 **1.10's ordering-time checks are closed**, not open: 4.9 settled the storage
 decision (configuration C or D) and the AI HAT+ 2 question (take the 8L).
 **6.1's free trigger-count experiment is done** (2026-09-03) -- it is the one

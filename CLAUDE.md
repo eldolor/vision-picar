@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 709 passed, with a browser
+# Confirm everything still works (should show 760 passed, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -119,7 +119,7 @@ the original build plan phases, reordered simulation-first):
 | M3 | The tri-state zone, and a centre-zone veto | Done (2026-09-03), not deployed -- `SafetyController.path_clearance()` reduces the middle half of the grid's columns to one number and compares it to `min_distance_cm`, exactly as it compared `get_distance()` before. A failed zone never enters the comparison in either direction; a wholly blind path falls back to the scalar and keeps its `0.0`-on-dropout stop. `GET /depth` publishes the reduction so the twin never recomputes it. |
 | M4 | Refusals are state, manual preempts autonomous | Done (2026-09-03), not deployed -- `robot/server.py` arbitrates `/action` by a decided order (`stop > twin-dpad > brain > twin-local-brain`, `AGENT-HARNESS.md` 4.1) instead of letting the last writer win, every refusal carries a machine-readable `reason`, `RemoteRobot` raises `Preempted` rather than `SafetyViolation`, and a preempted mission ends `preempted` with the robot stopped. |
 | M5 | One health command | Done (2026-09-03), not deployed -- `python -m control.health` (and a Settings health line) asks both halves and exits non-zero when either is unhealthy or unreachable. Verdict inputs are reachability, the robot watchdog loop's own poll freshness, and a running mission's tick liveness; everything else is description and never changes the exit code. Both servers now log an identity line at start-up. |
-| -- | On-car perception + the hardware chain (`PLAN-onboard-perception.md`) | **DESIGN SETTLED 2026-09-03, DETECTOR REVISED 2026-09-04, NOTHING BUILT.** Started as "what could run on the car itself" after reading Microduck and ended up rewriting the hardware plan. Decided: a **differential-drive chassis** rather than the PiCar-X's Ackermann (which **retires S6** and makes `grid_world.py`'s pivot assumption correct); a **lidar** used first as a 360-degree clearance ring and only later as SLAM behind an HTTP wall; a **Hailo-8L in M.2 module form, with a Camera Module 3** for on-board detection (the AI HAT+ until 4.9 settled on the module, 2026-09-06) -- chosen on 2026-09-04 over the IMX500 AI Camera (its nano-only ceiling is silicon, and it cannot be fed a recorded frame) and over a Jetson (the right board for arbitrary Hugging Face models, ruled out for now on cost, power and the camera stack; its section 4 has the three-way comparison and the conditions for re-opening it); and a **tiered architecture** where the VLM becomes an event-triggered deliberation tier -- which is what finally gives `brain/planner.py` a job. Also settles the goal vocabulary, stop conditions, arbitration and what the sim can test. **Revised 2026-09-06 on three counts** (its 4.8, 4.9 and 1.14): the Jetson was re-checked against what delivery-robot fleets actually run and against a July 2026 NVIDIA repricing that put the Orin Nano Super at $399-480, so Pi-plus-Hailo stands more firmly than before; the part is now a **Hailo-8L in M.2 module form**, because the module survives a Jetson pivot and shares the one PCIe lane with the NVMe, and because the 10H's measured 5.89 tok/s makes a local VLM slower than the cloud call it would replace; and **motion becomes continuous rather than discrete** (1.14); a fourth revision the same day settled the models rather than the parts (4.3.1 the 8L's measured benchmarks, 4.2 the open-vocabulary crop path and the standing-height caveat, 2.8 one mission walked end to end), which makes the tiered architecture mandatory instead of an optimisation, puts the accelerator on the first order, and makes two shipped numbers wrong -- `watchdog_timeout_s: 1.0` and the fixed `min_distance_cm: 20.0`, which is a stopping distance good for only ~0.45 m/s. Its C1-C9 phasing (extended from five 2026-09-06, after walking 2.8's mission against the repo) needs no hardware. Bill of materials **~$555-620** (3.6, recomputed 2026-09-06 -- the earlier ~$498/~$581 priced the bundled motor driver rather than the recommended Waveshare board, bought an M.2 module with no carrier, and had no servo rail). **Read it before buying anything**, and note its section 5: `HARDWARE-READINESS.md` is now partly wrong. The one thing it asks for *before* hardware day is the Hailo compile loop (its 1.10 item 1): without it the Hailo is a fixed-function part and the IMX500 was cheaper. |
+| -- | On-car perception + the hardware chain (`PLAN-onboard-perception.md`) | **DESIGN SETTLED 2026-09-03, DETECTOR REVISED 2026-09-04, NOTHING BUILT.** Started as "what could run on the car itself" after reading Microduck and ended up rewriting the hardware plan. Decided: a **differential-drive chassis** rather than the PiCar-X's Ackermann (which **retires S6** and makes `grid_world.py`'s pivot assumption correct); a **lidar** used first as a 360-degree clearance ring and only later as SLAM behind an HTTP wall; a **Hailo-8L in M.2 module form, with a Camera Module 3** for on-board detection (the AI HAT+ until 4.9 settled on the module, 2026-09-06) -- chosen on 2026-09-04 over the IMX500 AI Camera (its nano-only ceiling is silicon, and it cannot be fed a recorded frame) and over a Jetson (the right board for arbitrary Hugging Face models, ruled out for now on cost, power and the camera stack; its section 4 has the three-way comparison and the conditions for re-opening it); and a **tiered architecture** where the VLM becomes an event-triggered deliberation tier -- which is what finally gives `brain/planner.py` a job. Also settles the goal vocabulary, stop conditions, arbitration and what the sim can test. **Revised 2026-09-06 on three counts** (its 4.8, 4.9 and 1.14): the Jetson was re-checked against what delivery-robot fleets actually run and against a July 2026 NVIDIA repricing that put the Orin Nano Super at $399-480, so Pi-plus-Hailo stands more firmly than before; the part is now a **Hailo-8L in M.2 module form**, because the module survives a Jetson pivot and shares the one PCIe lane with the NVMe, and because the 10H's measured 5.89 tok/s makes a local VLM slower than the cloud call it would replace; and **motion becomes continuous rather than discrete** (1.14); a fourth revision the same day settled the models rather than the parts (4.3.1 the 8L's measured benchmarks, 4.2 the open-vocabulary crop path and the standing-height caveat, 2.8 one mission walked end to end), which makes the tiered architecture mandatory instead of an optimisation, puts the accelerator on the first order, and makes two shipped numbers wrong -- `watchdog_timeout_s: 1.0` and the fixed `min_distance_cm: 20.0`, which is a stopping distance good for only ~0.45 m/s. Its C1-C9 phasing (extended from five 2026-09-06, after walking 2.8's mission against the repo) needs no hardware. **A second series, P1-P4 (its 4.10), is the perception harness: P1 and P2 are BUILT (`brain/perceive.py`, `brain/tiered.py`) and run the real YOLO + CLIP + Opus 4.5 chain against real photographs with no robot and no accelerator -- the twin cannot test this, by 1.12's design, but a phone on a wheeled rig can.** Bill of materials **~$555-620** (3.6, recomputed 2026-09-06 -- the earlier ~$498/~$581 priced the bundled motor driver rather than the recommended Waveshare board, bought an M.2 module with no carrier, and had no servo rail). **Read it before buying anything**, and note its section 5: `HARDWARE-READINESS.md` is now partly wrong. The one thing it asks for *before* hardware day is the Hailo compile loop (its 1.10 item 1): without it the Hailo is a fixed-function part and the IMX500 was cheaper. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. **The chassis is no longer a PiCar-X** -- see the row above. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -155,6 +155,20 @@ vision-picar/
 │   │                           the cloud /navigate route -> one action (S2b)
 │   ├── vision_agent.py        VisionAgent -- trusts the model's action; the
 │   │                           policy that IS on the hardware path
+│   ├── perceive.py            P1 -- the on-board perception pipeline, run
+│   │                           OFF the robot: detector -> crops -> CLIP ->
+│   │                           match. Protocols, so a fake drives it in
+│   │                           tests and a HEF drives it later. Heavy deps
+│   │                           are lazy (requirements-perception.txt) and
+│   │                           no test needs them. Real pixels only --
+│   │                           never sim frames, see 1.12
+│   ├── tiered.py              P2 -- the trigger discipline as a vision_fn:
+│   │                           perception is local and free, the cloud is
+│   │                           called only on mission_start /
+│   │                           candidate_sighting / cold_search, with
+│   │                           6.1's two-frame hysteresis. Carries the
+│   │                           call counter 6.3 calls the one number that
+│   │                           makes the architecture watchable
 │   └── planner.py             NOT YET BUILT -- room-level planning over
 │                               MissionMemory.as_context(); see gap table above
 │
@@ -218,7 +232,7 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    709 tests, 99% line coverage of brain/,
+├── tests/                    760 tests, 99% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
 │                              75 tests over five backends,
@@ -226,6 +240,11 @@ vision-picar/
 │                              test_depth_veto.py [M3],
 │                              test_authority.py [M4],
 │                              test_health.py [M5],
+                              test_perceive.py + test_tiered.py
+                              (P1/P2 -- the off-robot perception
+                              harness and its trigger discipline,
+                              both entirely against fakes so the
+                              suite never needs torch),
 │                              test_watchdog_integration.py [S4],
 │                              test_walk_eval.py + test_admin_server.py
 │                              (the recorded-walk scorecard and replay),

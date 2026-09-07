@@ -1,0 +1,30 @@
+# Optional -- phase P1/P2 only (PLAN-onboard-perception.md 4.10).
+#
+# Deliberately NOT in requirements.txt. These are a multi-gigabyte install
+# and nothing in the automated suite may need them: `brain/perceive.py`
+# imports them lazily inside YoloDetector and ClipScorer, and every test
+# runs against fakes. Same rule the repo already applies to paid API
+# calls -- the logic is exercised in CI, the model is exercised by hand.
+#
+#   pip install -r requirements-perception.txt
+#
+# What this buys you is the ability to run the models the plan intends to
+# put on a Hailo, on real recorded frames, on this machine, before any
+# hardware is ordered. Only the final compile step (ONNX -> Hailo DFC ->
+# HEF, on x86-64 Linux) is platform-specific -- 4.8.
+
+# The detector. 4.3.1 says ship `s`, not `n`: +7.6 mAP on-chip for a third
+# of the frame rate, and 92 FPS is still 3x the camera. Weights download
+# on first use.
+ultralytics>=8.3.0
+
+# CLIP over crops (4.2). RN50 by default rather than ViT-B/32 -- 7-10ms
+# per crop against 25-50, and ~25M parameters against ~88M, which matters
+# twice on a part whose weights stream over one PCIe lane (2.9).
+open_clip_torch>=2.24.0
+
+# Pulled in by both, pinned to nothing: let pip resolve the build that
+# matches this machine (CUDA / MPS / CPU). On an Apple Silicon Mac the
+# default wheel already carries MPS.
+torch>=2.2.0
+torchvision>=0.17.0
