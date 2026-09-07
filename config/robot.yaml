@@ -124,6 +124,14 @@ brain:
   # the true positives, because at close range YOLO relabels the object.
   # Set "auto" for 4.2's original rule or "label_gate" to force it.
   perception_crop_path: ""
+  # 4.2's class-agnostic crop source: anything that is not floor, stands on
+  # the floor, and does not reach the top of the frame. UNIONED with the
+  # detector's boxes, never a replacement -- measured on the three-walk
+  # corpus, detector alone is 86% recall, the mask alone 59%, both 94%.
+  # It recovers the close-ups the detector cannot propose on at all.
+  # Off by default: a third model per frame, and 2.9's budget says
+  # segmentation must not run at the detector's rate on the real part.
+  perception_floor_mask: false
   # Section 6.1's hysteresis: how many consecutive frames must agree before
   # an edge is believed. 1 reproduces the naive trigger count (2.8x saving),
   # 2 is the measured 4.1x. This is not a tuning knob -- it is what makes

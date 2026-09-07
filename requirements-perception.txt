@@ -28,3 +28,11 @@ open_clip_torch>=2.24.0
 # default wheel already carries MPS.
 torch>=2.2.0
 torchvision>=0.17.0
+
+# 4.3's floor segmentation -- brain/perceive.py's SegformerFloorProposer,
+# the second crop source. SegFormer-B0 on ADE20K is ~14MB, and ADE20K is
+# one of the few segmentation sets carrying `floor`/`rug`/`earth` as
+# classes. scipy is for the connected components that turn a mask into
+# boxes. Only needed with brain.perception_floor_mask on.
+transformers>=4.40
+scipy>=1.11

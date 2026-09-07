@@ -544,3 +544,70 @@ def test_both_numbers_are_published_so_a_walk_can_be_rescored():
     d = p.perceive(frame()).as_dict()
     assert d["match_probability"] is not None
     assert d["match_margin"] is not None
+
+
+# ---------- 4.2's second crop source: the floor mask (measured 2026-09-07) ----------
+#
+# Of the 11 labelling errors in the three-walk corpus, NINE were crop
+# proposals and none were matching. The detector can only propose what COCO
+# has a word for, and stops proposing at all once the object fills the
+# view. A floor mask proposes by geometry instead: not floor, standing on
+# the floor, not reaching the top of the frame.
+#
+# Unioned with the detector, never substituted -- measured at P >= 0.8
+# against the adjudicated labels: detector 55/64, mask alone 38/64, both
+# 60/64. Worse alone, better together, because they fail on different
+# frames.
+
+
+class FakeProposer:
+    """Region proposals with no class attached, which is the whole point."""
+
+    def __init__(self, boxes=()):
+        self.boxes = list(boxes)
+        self.calls = 0
+
+    def propose(self, image):
+        self.calls += 1
+        return self.boxes
+
+
+def test_floor_regions_are_added_to_the_detectors_boxes_not_swapped_for_them():
+    """The measurement says union. A pipeline that replaced the detector
+    would score 59% where it now scores 94%."""
+    proposer = FakeProposer([Box(400.0, 100.0, 480.0, 200.0)])
+    p = PerceptionPipeline(FakeDetector([det("bottle")]),
+                           FakeScorer({"_default": (0.9, 0.1)}), "blue bottle",
+                           proposer=proposer)
+    result = p.perceive(frame())
+    assert proposer.calls == 1
+    assert len(result.candidates) == 2, "the detector's box and the region's"
+
+
+def test_a_pipeline_with_no_proposer_never_asks_for_one():
+    """Off by default: it is a third model per frame, and 2.9's budget says
+    segmentation must not run at the detector's rate on the real part."""
+    p = PerceptionPipeline(FakeDetector([det("bottle")]),
+                           FakeScorer({"_default": (0.9, 0.1)}), "blue bottle")
+    assert p.proposer is None
+    assert p.perceive(frame()).status == DETECTED
+
+
+def test_a_region_with_no_class_survives_when_the_detector_proposes_nothing():
+    """The two close-ups in the corpus: the target fills the view and the
+    detector proposes NOTHING at all. The mask is the only thing that can
+    put a crop there."""
+    p = PerceptionPipeline(FakeDetector([]),
+                           FakeScorer({"_default": (0.9, 0.1)}), "blue bottle",
+                           proposer=FakeProposer([Box(0.0, 0.0, 600.0, 400.0)]))
+    assert p.perceive(frame()).status == DETECTED
+
+
+def test_the_label_gate_plus_a_proposer_is_refused_rather_than_silently_useless():
+    """A class-agnostic region has no class to gate on, so the label gate
+    discards every one of them -- the exact combination that would look
+    configured and do nothing."""
+    with pytest.raises(ValueError) as exc:
+        PerceptionPipeline(FakeDetector(), FakeScorer(), "blue bottle",
+                           crop_path=CROP_LABEL_GATE, proposer=FakeProposer())
+    assert "no class to gate on" in str(exc.value)

@@ -3025,7 +3025,7 @@ real pixels, closed loop, with no robot in existence.
 | **P1** | **The pipeline.** `brain/perceive.py` -- detector -> crops -> CLIP -> match, with 4.2's two crop paths chosen by whether the target has a COCO word, 1.12's three-way output, and bearing from the box plus the frame's own pan angle (1.15.3). `Detector` and `CropScorer` are Protocols, so a HEF substitutes later with nothing in between changing | **BUILT 2026-09-06.** `tests/test_perceive.py`, 22 tests, all against fakes |
 | **P2** | **The trigger discipline.** `brain/tiered.py` -- a `vision_fn` that runs perception locally and calls the cloud only on `mission_start`, `candidate_sighting` or `cold_search`, with 6.1's two-frame hysteresis and a call counter. Plugs into `MissionRunner`'s existing seam, so nothing in `control/` learns perception grew a tier (2.6) | **BUILT 2026-09-06; twin surface 2026-09-07.** `tests/test_tiered.py`, 26 tests, plus `policy: "tiered"` end to end -- see below |
 | **P3** | **Score it on the corpus.** Run P1 over a rig walk and report hit rate, margin distribution and the n/s/m comparison on *your* pixels rather than COCO's. `tests/manual_perceive_walk.py` is the single-walk version and exists; the corpus-wide scoring beside `control/walk_eval.py` does not | **PARTLY BUILT.** Blocked on 1.16 #10 -- there is nothing valid to score against. **First real run 2026-09-07, on the invalid corpus, and it moved a number anyway -- see below** |
-| **P4** | **The compile step.** ONNX -> Hailo DFC -> HEF on a rented x86-64 host, with floor segmentation as its first subject rather than YOLO (4.3). This is 1.10 item 1, and it is the remaining fifth | **NOT BUILT.** Needs an EC2 hour and a Hailo developer account. No robot |
+| **P4** | **The compile step.** ONNX -> Hailo DFC -> HEF on a rented x86-64 host, with floor segmentation as its first subject rather than YOLO (4.3). This is 1.10 item 1, and it is the remaining fifth | **NOT BUILT, but its subject now exists.** `SegformerFloorProposer` (2026-09-07) is the model 4.3 says to compile first, in this repo behind a `RegionProposer` Protocol and measured at +8 points of recall. Still needs an EC2 hour and a Hailo developer account. No robot |
 
 **P1-P4 is where 1.10 item 1's compile loop lives, and its absence from C1-C9
 was a real gap** -- the consistency review found that the one thing this plan
@@ -3670,6 +3670,63 @@ proposals, 0 are matching.** 4.2 lists four crop sources and ships the
 weakest of them. Floor segmentation (4.3) is not an optimisation -- on this
 evidence it is the single highest-value thing left before hardware, and it
 is what P4's compile loop should be built around.
+
+#### Floor segmentation: **built and measured** -- 2026-09-07
+
+The previous section said this was *"the single highest-value thing left
+before hardware"*. It was built the same day, and the measurement is more
+interesting than that claim was.
+
+**What it does.** 4.2's second crop source, as pure geometry: *anything
+that is not floor, stands on the floor, and does not reach the top of the
+frame is an object worth cropping.* No class list at any point, which is
+exactly where the corpus's errors live. `SegformerFloorProposer` in
+`brain/perceive.py`, behind a `RegionProposer` Protocol so the laptop model
+and P4's HEF are interchangeable. SegFormer-B0 on ADE20K, ~14MB, chosen
+because ADE20K is one of the few segmentation sets carrying `floor`, `rug`
+and `earth` as classes at all.
+
+**The first implementation returned zero proposals on every frame**, and
+the reason is worth keeping. Taking connected components of a *binary*
+not-floor mask finds one enormous blob per frame -- wall, furniture and
+object are all touching -- and it reaches the ceiling, so the "does not
+reach the top" test rejects everything. The fix is to split the not-floor
+region **by class region** first: the segmenter's labels are used for
+exactly two things, deciding which pixels are floor and separating the
+object from the wall it stands against, and are then discarded. The
+object's own class is never consulted, so the method stays open-vocabulary.
+
+**Measured at `P >= 0.8` over all three walks against the adjudicated
+labels in `labels.json`:**
+
+| crop source | detected of 64 visible | false pos | recall |
+|---|---|---|---|
+| detector only (shipped) | 55 | 0 | 86% |
+| **floor mask only** | 38 | 1 | **59%** |
+| **both** | **60** | 1 | **94%** |
+
+**It is worse alone and better together**, which contradicts the previous
+section's framing and is the useful finding. The mask proposes coarse
+regions and misses small distant targets the detector finds easily; the
+detector cannot propose on an out-of-vocabulary object and stops proposing
+at all once one fills the view. They fail on different frames. Of the nine
+crop-source failures, the union recovers **five** -- including **both**
+close-ups that previously produced no proposal whatsoever, at P=0.99 and
+P=1.00.
+
+**Shipped off by default** (`brain.perception_floor_mask`), and not because
+of the false positive. It is a **third model per frame**, and 2.1's 15-30Hz
+row with 2.9's budget say segmentation has no business running at the
+detector's rate on the real part. Turning it on off-robot costs only time;
+**deciding its schedule is C6's job**, and this measurement is what that
+decision now has to work from -- +8 points of recall for one more model per
+frame, or for whatever slower rate C6 chooses to run it at.
+
+**And it makes P4 concrete.** 4.3 says to make floor segmentation the
+compile loop's first subject rather than YOLO, on the grounds that
+compiling something you could simply download proves less. That model now
+exists, in this repo, behind a Protocol, with a number attached to what it
+buys.
 
 #### Three cautions, so no result here is over-read
 

@@ -172,6 +172,15 @@ DEFAULT_DETECTOR = "yolo11s.pt"
 # PCIe lane (2.9). Off-robot the difference is only speed.
 DEFAULT_CLIP = "RN50"
 
+# The floor segmenter (4.3). SegFormer-B0 on ADE20K: ~14MB, and ADE20K is
+# one of the few segmentation sets that carries `floor`, `rug` and `earth`
+# as classes at all.
+DEFAULT_SEGMENTER = "nvidia/segformer-b0-finetuned-ade-512-512"
+
+# Which ADE20K labels count as floor. Words rather than indices because the
+# index set is a property of the checkpoint and the words are not.
+FLOOR_WORDS = ("floor", "rug", "carpet", "earth", "ground")
+
 # Keep the detector's own boxes when the target has a COCO word.
 DEFAULT_CONFIDENCE = 0.25
 # 4.2's class-agnostic path. Deliberately far below it.
@@ -394,6 +403,22 @@ class CropScorer(Protocol):
     def score(self, image: bytes, box: Box, texts: Sequence[str]) -> Sequence[float]: ...
 
 
+class RegionProposer(Protocol):
+    """Anything that proposes object regions **without a class list**.
+
+    4.2's second crop source, and the reason it matters is measured: of the
+    11 labelling errors in the three-walk corpus, **9 were crop proposals
+    and 0 were matching**. The detector can only propose what COCO has a
+    word for, and it stops proposing at all once the object fills the view.
+
+    A Protocol for the same reason `Detector` is one: the concrete
+    implementation today is a semantic segmenter run on a laptop, and on
+    the robot it is a HEF. Nothing between changes.
+    """
+
+    def propose(self, image: bytes) -> Sequence[Box]: ...
+
+
 class PerceptionUnavailable(Exception):
     """The pipeline could not look, as distinct from looking and finding
     nothing. Raised by a backend; converted to `UNAVAILABLE` by the
@@ -421,6 +446,7 @@ class PerceptionPipeline:
         distractors: Sequence[str] = DEFAULT_DISTRACTORS,
         max_crops: int = 4,
         crop_path: str = DEFAULT_CROP_PATH,
+        proposer: Optional["RegionProposer"] = None,
     ):
         if not target or not target.strip():
             raise ValueError("PerceptionPipeline needs a target string")
@@ -441,7 +467,26 @@ class PerceptionPipeline:
         if crop_path not in CROP_PATHS:
             raise ValueError(
                 f"Unknown crop_path {crop_path!r}. Known: {', '.join(CROP_PATHS)}")
+        if crop_path == CROP_LABEL_GATE and proposer is not None:
+            raise ValueError(
+                "crop_path='label_gate' discards every region the proposer "
+                "produces -- they have no class to gate on, which is why the "
+                "proposer exists. Use 'low_confidence' (the default) or drop "
+                "the proposer.")
         self.crop_path = crop_path
+        # UNIONED with the detector's boxes, never substituted for them.
+        # Measured over the three-walk corpus at P >= 0.8, against the
+        # adjudicated labels in each walk's labels.json:
+        #
+        #   detector only    55/64 recall 86%, 0 false positives
+        #   floor mask only  38/64 recall 59%, 1 false positive
+        #   BOTH             60/64 recall 94%, 1 false positive
+        #
+        # The mask is *worse alone* -- it proposes coarse regions and misses
+        # small distant targets the detector finds easily -- and better
+        # together, because the two fail on different frames. It recovers
+        # both close-ups the detector could not propose on at all.
+        self.proposer = proposer
         self.coco_class = coco_class_for(self.target)
         if crop_path == CROP_LOW_CONFIDENCE:
             # Forced open vocabulary: the COCO word is still recorded (it is
@@ -482,6 +527,16 @@ class PerceptionPipeline:
 
         try:
             proposals = list(self.detector.detect(image, self.confidence))
+            if self.proposer is not None:
+                # A region with no class. The label is a placeholder that
+                # exists only so the crop reads sensibly in a log -- the
+                # label gate is never applied to these (they have no class
+                # to gate on, which is the entire point), so a `crop_path`
+                # of `label_gate` silently drops them. That combination is
+                # refused at construction rather than surprising anyone.
+                proposals += [Detection(box=b, label=CROP_FLOOR_MASK,
+                                        confidence=0.0)
+                              for b in self.proposer.propose(image)]
         except PerceptionUnavailable as exc:
             return Perception(status=UNAVAILABLE, reason=str(exc),
                               crop_source=self.crop_source,
@@ -721,16 +776,116 @@ class ClipScorer:
         return [float(v) for v in sims]
 
 
+class SegformerFloorProposer:
+    """Class-agnostic region proposals from a floor mask (4.2, 4.3).
+
+    **The rule is geometry, not vocabulary**: anything that is not floor,
+    stands on the floor, and does not reach the top of the frame is an
+    object worth cropping. A wall reaches the top; a ceiling reaches the
+    top; a shoe does not.
+
+    SegFormer-B0 fine-tuned on ADE20K is the model, chosen because ADE20K
+    carries `floor`, `rug` and `earth` as classes and B0 is ~14MB. **Its
+    class map is used for exactly two things** -- deciding which pixels are
+    floor, and splitting the not-floor region into connected components --
+    and its labels are then thrown away. That matters: the first attempt
+    here took connected components of a binary not-floor mask and produced
+    *zero* proposals on every frame, because wall, furniture and object are
+    one blob that touches the ceiling. Splitting by class region is what
+    separates the object from the wall it stands against, without the
+    object's own class ever being consulted.
+
+    This is P4's first compile subject (4.3), so keeping it behind the
+    `RegionProposer` Protocol is the point rather than a nicety.
+    """
+
+    def __init__(self, model: str = DEFAULT_SEGMENTER,
+                 min_area_frac: float = 0.0008,
+                 max_area_frac: float = 0.5,
+                 max_regions: int = 8,
+                 device: Optional[str] = None):
+        try:
+            import numpy  # noqa: F401
+            import torch
+            from scipy import ndimage  # noqa: F401
+            from transformers import (SegformerForSemanticSegmentation,
+                                      SegformerImageProcessor)
+        except ImportError as exc:  # pragma: no cover - exercised by hand
+            raise PerceptionUnavailable(
+                "the floor mask needs transformers + scipy. `pip install -r "
+                "requirements-perception.txt`."
+            ) from exc
+        self._torch = torch
+        self.processor = SegformerImageProcessor.from_pretrained(model)
+        self.model = SegformerForSemanticSegmentation.from_pretrained(model).eval()
+        self.model_name = model
+        self.min_area_frac = min_area_frac
+        self.max_area_frac = max_area_frac
+        self.max_regions = max_regions
+        self.floor_ids = [i for i, label in self.model.config.id2label.items()
+                          if any(w in label.lower() for w in FLOOR_WORDS)]
+
+    def propose(self, image: bytes) -> Sequence[Box]:  # pragma: no cover
+        import numpy as np
+        from PIL import Image
+        from scipy import ndimage
+
+        img = Image.open(io.BytesIO(image)).convert("RGB")
+        with self._torch.no_grad():
+            logits = self.model(
+                **self.processor(images=img, return_tensors="pt")).logits
+        seg = self._torch.nn.functional.interpolate(
+            logits, size=img.size[::-1], mode="bilinear", align_corners=False
+        ).argmax(1)[0].numpy()
+
+        floor = np.isin(seg, self.floor_ids)
+        height, width = floor.shape
+        # Dilated, so a region resting ON the floor counts as touching it
+        # even where the segmentation leaves a one-pixel seam.
+        near_floor = ndimage.binary_dilation(floor, iterations=4)
+        found = []
+        for cls in np.unique(seg):
+            if cls in self.floor_ids:
+                continue
+            labelled, count = ndimage.label(seg == cls)
+            for i in range(1, count + 1):
+                region = labelled == i
+                area = int(region.sum())
+                if not (self.min_area_frac * height * width <= area
+                        <= self.max_area_frac * height * width):
+                    continue
+                if region[0, :].any():          # reaches the ceiling: not an object
+                    continue
+                if not (region & near_floor).any():   # not standing on the floor
+                    continue
+                ys, xs = np.where(region)
+                found.append((area, Box(float(xs.min()), float(ys.min()),
+                                        float(xs.max()), float(ys.max()))))
+        found.sort(key=lambda pair: -pair[0])
+        return [box for _, box in found[:self.max_regions]]
+
+
 def pipeline_for(target: str, *, weights: str = DEFAULT_DETECTOR,
                  clip_model: str = DEFAULT_CLIP,
                  device: Optional[str] = None,
+                 floor_mask: bool = False,
+                 segmenter: str = DEFAULT_SEGMENTER,
                  **kwargs) -> PerceptionPipeline:
     """The real pipeline, models loaded. Raises `PerceptionUnavailable`
-    with a usable message if the optional dependencies are absent."""
+    with a usable message if the optional dependencies are absent.
+
+    `floor_mask` adds 4.2's class-agnostic crop source alongside the
+    detector's. It is **off by default** despite measuring better (86% ->
+    94% recall on the corpus) for one reason: it is a third model per
+    frame, and 2.1's 15-30Hz row plus 2.9's budget mean segmentation has no
+    business running at the detector's rate on the real part. Turning it on
+    off-robot costs only time; deciding its schedule is C6's job.
+    """
     return PerceptionPipeline(
         detector=YoloDetector(weights, device=device),
         scorer=ClipScorer(clip_model, device=device),
         target=target,
+        proposer=SegformerFloorProposer(segmenter, device=device) if floor_mask else None,
         **kwargs,
     )
 
@@ -741,9 +896,11 @@ __all__ = [
     "CROP_PATH_AUTO", "CROP_PATHS", "DEFAULT_CROP_PATH",
     "COCO_CLASSES", "coco_class_for",
     "Box", "Detection", "Candidate", "Perception",
-    "Detector", "CropScorer", "PerceptionPipeline", "PerceptionUnavailable",
+    "Detector", "CropScorer", "RegionProposer", "PerceptionPipeline",
+    "PerceptionUnavailable", "SegformerFloorProposer",
     "YoloDetector", "ClipScorer", "pipeline_for",
     "DEFAULT_DETECTOR", "DEFAULT_CLIP", "DEFAULT_MATCH_MARGIN",
     "DEFAULT_MATCH_PROBABILITY", "CLIP_LOGIT_SCALE",
+    "DEFAULT_SEGMENTER", "FLOOR_WORDS",
     "DEFAULT_DISTRACTORS", "LOW_CONFIDENCE",
 ]

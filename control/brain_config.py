@@ -75,7 +75,13 @@ DEFAULTS = {
     # The first valid rig walk measured "auto" losing 11 of 18 true positives
     # because YOLO relabels a close-up bottle as a `vase`; see
     # brain/perceive.py's CROP_PATHS note.
-    "perception_crop_path": "",   # "" = brain/perceive.py's DEFAULT_CROP_PATH
+    "perception_crop_path": "",
+    # 4.2's class-agnostic crop source, unioned with the detector's boxes.
+    # Measured on the three-walk corpus: detector alone 86% recall, floor
+    # mask alone 59%, BOTH 94% -- it is worse alone and better together.
+    # Off by default because it is a third model per frame and 2.9's budget
+    # says segmentation must not run at the detector's rate on the real part.
+    "perception_floor_mask": False,   # "" = brain/perceive.py's DEFAULT_CROP_PATH
     # 6.1's hysteresis, in frames. 1 reproduces the naive trigger count
     # (2.8x); 2 is the measured 4.1x. Not tuning -- see brain/tiered.py.
     "tier_consecutive_frames": 2,

@@ -281,6 +281,8 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict):
         pipeline_kwargs["match_margin"] = float(config["perception_match_margin"])
     if config["perception_crop_path"]:
         pipeline_kwargs["crop_path"] = config["perception_crop_path"]
+    if config["perception_floor_mask"]:
+        pipeline_kwargs["floor_mask"] = True
     try:
         from brain.perceive import pipeline_for
 
@@ -611,6 +613,7 @@ def create_app(
                                              or DEFAULT_MATCH_PROBABILITY),
             "perception_match_margin": config["perception_match_margin"] or None,
             "perception_crop_path": config["perception_crop_path"],
+            "perception_floor_mask": bool(config["perception_floor_mask"]),
             "tier_consecutive_frames": config["tier_consecutive_frames"],
             "tier_cold_search_after": config["tier_cold_search_after"],
             # "Will a POST /recording/frame actually succeed here" -- true
