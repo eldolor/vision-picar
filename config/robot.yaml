@@ -131,7 +131,7 @@ brain:
   # It recovers the close-ups the detector cannot propose on at all.
   # Off by default: a third model per frame, and 2.9's budget says
   # segmentation must not run at the detector's rate on the real part.
-  perception_floor_mask: false
+  perception_floor_mask: true   # ON since 2026-09-07 -- 86% -> 94% recall
   # Section 6.1's hysteresis: how many consecutive frames must agree before
   # an edge is believed. 1 reproduces the naive trigger count (2.8x saving),
   # 2 is the measured 4.1x. This is not a tuning knob -- it is what makes

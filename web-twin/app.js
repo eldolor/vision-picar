@@ -1754,7 +1754,15 @@
 
     const models = (tier && tier.models) || {};
     setBrainText("brain-tel-detector",
-      models.detector ? models.detector + " + " + (models.scorer || "?") : null);
+      models.detector
+        ? models.detector + " + " + (models.scorer || "?")
+          // Named only when it is actually running. Which crop sources were
+          // on is the first thing you need to know reading a walk back --
+          // the detector alone measured 86% recall on the corpus and the
+          // detector plus the mask 94%, so a walk that cannot say which it
+          // used cannot be compared with one that can.
+          + (models.proposer ? " + " + models.proposer.split("/").pop() : "")
+        : null);
 
     const stats = (tier && tier.stats) || {};
     if (stats.frames == null) {

@@ -478,3 +478,27 @@ def test_an_absent_target_is_still_not_visible():
     """The one case where `not_visible` is the honest answer."""
     assert _local(ABSENT)["_navigate"]["target_direction"] == "not_visible"
     assert _local(ABSENT)["_navigate"]["target_visible"] is False
+
+
+def test_the_readout_names_the_floor_mask_only_when_it_is_running():
+    """Which crop sources were on is the first thing you need reading a walk
+    back: the detector alone measured 86% recall on the corpus, the detector
+    plus the mask 94%. A walk that cannot say which it used cannot be
+    compared with one that can."""
+
+    class Pipeline:
+        detector = type("D", (), {"weights": "yolo11s.pt"})()
+        scorer = type("S", (), {"model_name": "RN50"})()
+        proposer = None
+
+        def perceive(self, frame):
+            return Perception(status=ABSENT)
+
+    off = TieredVision(Pipeline(), FakeCloud())
+    assert off.models["proposer"] is None
+
+    class WithMask(Pipeline):
+        proposer = type("P", (), {"model_name": "nvidia/segformer-b0"})()
+
+    on = TieredVision(WithMask(), FakeCloud())
+    assert on.models["proposer"] == "nvidia/segformer-b0"

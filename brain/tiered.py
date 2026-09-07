@@ -243,6 +243,12 @@ class TieredVision:
         self.models = {
             "detector": _name_of(getattr(pipeline, "detector", None), "weights"),
             "scorer": _name_of(getattr(pipeline, "scorer", None), "model_name"),
+            # None when the floor mask is off, which is the default -- and
+            # the readout has to show that difference, because "which crop
+            # sources were running" is the first thing you need to know
+            # when reading a walk back (detector alone measured 86% recall
+            # on the corpus, detector + mask 94%).
+            "proposer": _name_of(getattr(pipeline, "proposer", None), "model_name"),
             "target": getattr(pipeline, "target", None),
             "crop_source": getattr(pipeline, "crop_source", None),
         }
