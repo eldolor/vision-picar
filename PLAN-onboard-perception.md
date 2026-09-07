@@ -3625,6 +3625,52 @@ the description has to be accurate.** `"red backpack"` for a burgundy bag is
 not a small imprecision -- it is the single biggest lever measured in this
 document that costs nothing to pull.
 
+#### The corpus has ground truth now, and it cost eleven frames -- 2026-09-07
+
+The hole the previous section opened -- *"the VLM's `target_visible` is not
+ground truth"* -- turned out to be cheap to close, and the reason is worth
+keeping as a method rather than a one-off.
+
+**Label by agreement, adjudicate only the disagreements.** Across all three
+walks, CLIP and the VLM agree on **79 of 90 frames**. Agreement is taken as
+correct; only the **11** disputed frames need an eye, and they were opened
+and judged. Twelve per cent of the corpus, not all of it.
+
+**All eleven have the target plainly in view.** So:
+
+| | frames | verdict |
+|---|---|---|
+| VLM wrong | 2 | the colour-word rejections (§ above) |
+| CLIP wrong | 9 | every one a **crop-source** failure |
+
+The labels are now `labels.json` beside each walk, in the directory and in
+S3, carrying the per-frame flag, which frames were adjudicated, and a note
+saying plainly that the VLM's own answer is not the reference. **P3's
+scoring should read that file**, never `walk.jsonl`.
+
+#### And the nine misses are all the same failure, which settles where the effort goes
+
+Each of the nine was re-run with the proposals printed:
+
+| what happened | n | frames |
+|---|---|---|
+| **no proposal at all** | 2 | both **close-ups**, target filling the view |
+| proposals existed, none on the target | 7 | all `chair` / `couch` / `vase` / `bed` |
+
+**Not one is a CLIP failure.** In the seven, CLIP was shown furniture and
+correctly scored furniture low; in the two, it was shown nothing. The
+matcher is not the bottleneck -- **the crop source is**, and it fails in
+both directions at once: it proposes nothing when the object is close
+enough to fill the frame, and proposes only furniture when it is further
+away.
+
+That is the third walk's conclusion arriving again on the second walk's
+data, and it now has a number: **9 of the 11 errors in the corpus are crop
+proposals, 0 are matching.** 4.2 lists four crop sources and ships the
+weakest of them. Floor segmentation (4.3) is not an optimisation -- on this
+evidence it is the single highest-value thing left before hardware, and it
+is what P4's compile loop should be built around.
+
 #### Three cautions, so no result here is over-read
 
 **Throughput is not measurable on a laptop.** 2.9 budgets three models against
