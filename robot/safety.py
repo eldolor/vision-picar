@@ -95,6 +95,36 @@ FORWARD_ACTIONS = {"FORWARD"}
 # direction. **Re-measure it on the real chassis** -- that is a hardware-day
 # pre-flight item, not a guess to leave standing.
 CHASSIS_WIDTH_CM = 16.5
+
+# How far the range sensor sits BEHIND the leading edge of the chassis.
+# Subtracted from every measured clearance, so `min_distance_cm` means
+# what everyone reads it as: room between the *bumper* and the obstacle,
+# not between the sensor and the obstacle.
+#
+# **0.0 is correct for every backend that exists today and will be wrong
+# the day a lidar is fitted.** The PiCar-X's ultrasonic points forward from
+# the front of the chassis, so sensor origin and bumper coincide and the
+# term vanishes; the sim's rays are cast from a robot that is a point and
+# has no bumper at all. A 360-degree lidar moves the origin to the middle
+# of a ~228 x 148mm deck -- roughly 11-14cm back -- at which point a
+# reading of "20cm" is 6-9cm of actual gap, inside the travel of the
+# compliant bumper that is supposed to be the last resort.
+#
+# That is why this exists now rather than on hardware day: the number is
+# currently zero, so nothing changes, but the *meaning* of the comparison
+# at `check_and_execute()` is pinned before a sensor move can alter it
+# silently. Measure it on the real chassis and set
+# `safety.sensor_to_bumper_cm` -- a hardware-day pre-flight item alongside
+# `CHASSIS_WIDTH_CM` above.
+#
+# One offset, applied to both the grid and the scalar, because today one
+# sensor answers both. A robot carrying a deck-centre lidar AND a
+# front-mounted ToF has two different mounts and needs the offset to ride
+# on the grid the way `fov_deg` does (PLAN-onboard-perception.md 5.1 is
+# the precedent for exactly that move). Don't infer a second copy here --
+# publish it from the backend when that day comes.
+SENSOR_TO_BUMPER_CM = 0.0
+
 # How far ahead the cone is required to bracket the chassis: one move's
 # travel, since that is the ground `path_zone_indices()` is asked about.
 # One grid cell in the sim, and what the original arithmetic used.
@@ -185,9 +215,21 @@ class SafetyViolation(Exception):
 
 
 class SafetyController:
-    def __init__(self, robot: RobotInterface, min_distance_cm: float = 20.0):
+    def __init__(self, robot: RobotInterface, min_distance_cm: float = 20.0,
+                 sensor_to_bumper_cm: float = SENSOR_TO_BUMPER_CM):
         self.robot = robot
         self.min_distance_cm = min_distance_cm
+        self.sensor_to_bumper_cm = sensor_to_bumper_cm
+
+    def _to_bumper(self, distance_cm: float) -> float:
+        """A sensor-frame range as clearance ahead of the bumper.
+
+        Clamped at zero: a negative clearance means the obstacle is already
+        inside the chassis outline, and `0.0` is the reading that always
+        vetoes. Rounded because the subtraction otherwise turns the sim's
+        exact multiples of 30 into binary noise in the log line.
+        """
+        return round(max(0.0, distance_cm - self.sensor_to_bumper_cm), 6)
 
     def path_clearance(self) -> Tuple[Optional[float], str]:
         """How much room the next forward move has, and where that came
@@ -198,6 +240,11 @@ class SafetyController:
         the path, which is a fact about the room and never a veto. The
         cases it cannot answer at all resolve to the scalar instead, so
         there is no third meaning to get wrong.
+
+        **Centimetres are measured from the bumper, not from the sensor**
+        -- `SENSOR_TO_BUMPER_CM` is subtracted from every real range (see
+        that constant for why, and why it is 0.0 today). `None` is left
+        alone: there is no distance to a thing that is not there.
 
         Three outcomes, in the order they are tried:
 
@@ -239,11 +286,11 @@ class SafetyController:
                 if z.get("status") == ZONE_RANGE and z.get("distance_cm") is not None
             ]
             if measured:
-                return min(measured), "depth_grid"
+                return self._to_bumper(min(measured)), "depth_grid"
             if path and not all(z.get("status") == ZONE_UNUSABLE for z in path):
                 return None, "depth_grid_no_target"
 
-        return self.robot.get_distance(), "distance_sensor"
+        return self._to_bumper(self.robot.get_distance()), "distance_sensor"
 
     def check_and_execute(self, action: str, **kwargs) -> dict:
         """

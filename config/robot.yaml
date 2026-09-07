@@ -51,6 +51,14 @@ teleop:
 safety:
   min_distance_cm: 20 # ultrasonic/simulated-distance floor before forced STOP
   watchdog_timeout_s: 1.0 # max silence from MacBook before Pi stops motors
+  # How far the range sensor sits BEHIND the leading edge of the chassis,
+  # subtracted from every measured clearance so min_distance_cm above is
+  # bumper-to-obstacle rather than sensor-to-obstacle. 0.0 is correct for
+  # a front-mounted ultrasonic and for the sim (a robot that is a point);
+  # a deck-centre lidar makes it ~11-14cm, at which point 20cm of reported
+  # clearance is 6-9cm of real gap. MEASURE IT on the real chassis --
+  # hardware-day pre-flight, same day as robot/safety.py's CHASSIS_WIDTH_CM.
+  sensor_to_bumper_cm: 0.0
 
 server:
   # Origins allowed to call robot/server.py's HTTP API (e.g. the web

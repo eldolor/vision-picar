@@ -4,7 +4,7 @@
 > written on 2026-08-27 for the SunFounder PiCar-X kit, and
 > `PLAN-onboard-perception.md` replaced that kit before purchase: a
 > **differential-drive chassis** (its 1.1), an **RPLidar C1** as the obstacle
-> sensor (1.2), and a **Hailo-8L AI HAT+ with a Camera Module 3** for on-board
+> sensor (1.2), and a **Hailo-8L M.2 module with a Camera Module 3** for on-board
 > detection (1.10). Sections 1, 3, 4 and 5 below are rewritten for that
 > hardware; the PiCar-X version is in git history. Sections 2, 6 and 7 were
 > chassis-independent and stand as written.
@@ -31,7 +31,7 @@ of `robot/hardware_robot.py`, the one file still unwritten:
 | 2-axis pan/tilt bracket, two SG90s | `look_left()` / `look_right()` / `look_center()` |
 | RPLidar C1, USB | `get_depth_grid()` -- the 360-degree ring -- and `get_distance()` as the path reduction of it (`robot/safety.py`'s `path_clearance()`) |
 | Camera Module 3 | `get_camera_frame()` |
-| Hailo-8L AI HAT+ | the on-board detector: a bearing to the target at camera rate. Reaches the brain over HTTP, never around `RobotInterface` (`PLAN-onboard-perception.md` 2.6) |
+| Hailo-8L, M.2 module form (4.9) | the on-board detector: a bearing to the target at camera rate. Reaches the brain over HTTP, never around `RobotInterface` (`PLAN-onboard-perception.md` 2.6) |
 | Raspberry Pi 5 | `robot/server.py` and `control/brain_server.py`, both -- section 7 |
 
 **Use the vendor's protocol, not the vendor's stack.** Yahboom ships a
@@ -161,7 +161,7 @@ anything real -- see section 3 and `PLAN-sim-hardening.md` section 7.
 could simply be measured: how far the car rolls in one 0.5s move, how far
 it coasts after `stop()`, what the lidar returns from glass, mirrors and a
 dark sofa, and how many encoder ticks make a 90-degree pivot on carpet.
-About $500 of parts (`PLAN-onboard-perception.md` 3.6) measures those
+About $555-620 of parts (`PLAN-onboard-perception.md` 3.6) measures those
 better than a week of simulator work does.
 
 The genuinely unbuyable-around items -- coasting distance against

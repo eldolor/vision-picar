@@ -436,3 +436,74 @@ def test_the_simulator_declares_the_field_of_view_it_actually_casts_on():
     other number would aim the veto's cone somewhere the rays never went."""
     grid = robot_at(2, 1, Heading.E).get_depth_grid()
     assert grid["fov_deg"] == pytest.approx(math.degrees(renderer.FPV_FOV))
+
+
+# ---------- the sensor is not the bumper ----------
+#
+# Found 2026-09-06 by review (PLAN-onboard-perception.md 1.16 #12). The
+# collar compares a SENSOR-frame range to min_distance_cm and there has
+# never been a term for where the sensor sits on the robot. That is
+# correct today and only today: a front-mounted ultrasonic IS the bumper,
+# and the sim's rays leave a robot that is a point. A deck-centre lidar
+# moves the origin ~11-14cm back, and the same code then reads 20cm of
+# clearance when the real gap is 6-9cm.
+#
+# These pin the behaviour while the number is still zero, which is the
+# whole point of writing them now -- exactly S5's argument, where
+# min_distance_cm sat on a quantization boundary undiscovered for months
+# because nothing ever enabled the noise that would show it.
+
+
+def test_the_offset_is_load_bearing_and_defaults_to_a_no_op():
+    """Zero changes nothing (every backend today), and a real mount
+    changes the number the veto reads."""
+    zones = [rng(300), rng(300), rng(25), rng(25), rng(300), rng(300)]
+
+    assert SafetyController(GridRobot(zones)).path_clearance() == (25, "depth_grid")
+
+    offset = SafetyController(GridRobot(zones), sensor_to_bumper_cm=12.0)
+    assert offset.path_clearance() == (13.0, "depth_grid"), (
+        "25cm from a sensor 12cm behind the bumper is 13cm of gap")
+
+
+def test_a_lidar_mount_turns_a_passing_clearance_into_a_veto():
+    """The defect stated as behaviour: the identical scene, the identical
+    threshold, and the only difference is where the sensor is bolted."""
+    zones = [rng(300), rng(300), rng(24), rng(24), rng(300), rng(300)]
+
+    front = SafetyController(GridRobot(zones), min_distance_cm=20.0)
+    assert front.check_and_execute("FORWARD")["action"] == "drive_forward"
+
+    deck = SafetyController(GridRobot(zones), min_distance_cm=20.0,
+                            sensor_to_bumper_cm=12.0)
+    with pytest.raises(SafetyViolation):
+        deck.check_and_execute("FORWARD")
+
+
+def test_the_offset_applies_to_the_scalar_fallback_too():
+    """One sensor answers both paths today, so one offset covers both. A
+    robot with a deck lidar AND a front ToF has two mounts and needs the
+    offset on the grid -- see SENSOR_TO_BUMPER_CM."""
+    bot = GridRobot([], scalar=30.0)
+    bot.zones = []
+    safety = SafetyController(bot, sensor_to_bumper_cm=12.0)
+    assert safety.path_clearance() == (18.0, "distance_sensor")
+
+
+def test_clearance_never_goes_negative_and_a_dropout_still_stops():
+    """An obstacle inside the chassis outline reads 0.0, which is the
+    value that always vetoes -- and `sim/sensors.py`'s 0.0-on-dropout keeps
+    failing toward stop rather than wrapping to a large positive."""
+    safety = SafetyController(GridRobot([], scalar=0.0), sensor_to_bumper_cm=12.0)
+    assert safety.path_clearance() == (0.0, "distance_sensor")
+
+    near = SafetyController(GridRobot([rng(5)] * 6), sensor_to_bumper_cm=12.0)
+    assert near.path_clearance()[0] == 0.0
+
+
+def test_nothing_within_range_is_left_alone_by_the_offset():
+    """There is no distance to a thing that is not there. `None` must not
+    become a number, in either direction."""
+    zones = [rng(300), NO_TARGET, NO_TARGET, rng(300)]
+    safety = SafetyController(GridRobot(zones), sensor_to_bumper_cm=12.0)
+    assert safety.path_clearance() == (None, "depth_grid_no_target")

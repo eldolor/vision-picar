@@ -19,13 +19,28 @@ the lidar owns the room *transition*. It is the first worked example of the rule
 that a model earns accelerator space by having a consumer in the fast loop.
 
 **Also 2026-09-06:** 1.15 settles the **physical layout** -- the lidar is the
-highest point on the robot, which eliminates the under-furniture collision by
-construction and makes a 3D lidar (~$400-750) unnecessary; the camera lands at
-~10cm as a *consequence* of the stack rather than a wish; and the camera keeps
-**both** pan and tilt, which adds a report-only goal type to 1.7. **1.16 is the
-gap register** from that review -- eleven items, two closed by 1.15, three of
-the rest changing what gets bought, and #10 (the invalid corpus) blocked on
-nothing at all.
+highest point on the robot, which *reduces* the under-furniture collision to a
+~15mm slab (**not** "eliminates by construction", which 1.15.1's own stack-up
+contradicts -- corrected below) and makes a 3D lidar (~$400-750) unnecessary;
+the camera lands at ~10cm as a *consequence* of the stack rather than a wish;
+and the camera keeps **both** pan and tilt, which adds a report-only goal type
+to 1.7. **1.16 is the gap register** from that review -- eleven items, two
+closed by 1.15, three of the rest changing what gets bought, and #10 (the
+invalid corpus) blocked on nothing at all.
+
+**Reviewed again 2026-09-06, and the corrections are load-bearing.** The gap
+register runs to **twenty** items. The perception budget is costed for the first
+time (**2.9**) and the three models do *not* fit at camera rate -- "10-30x
+headroom" was read off the wrong chip's column, the same error 4.3.1 exists to
+prevent. 1.14 item 5's `t_react` and the collar's missing sensor-to-bumper term
+roughly **halve** the safe speed. 1.14 item 7's "the renderer needs no change at
+all" is false, and it is the claim the continuous-pose cost estimate rested on.
+C5 and C7 specify an **ALB that was deleted the day before they were written**.
+The bill of materials under-read by ~8% and its "essential only" build could not
+be assembled. And the tilt axis turns out to be triple-booked, which is why
+1.15.3 now recommends dropping it for v1. **One defect was fixed in code the
+same day** -- the collar had no term for where the sensor sits, which is exactly
+zero today and 11-14cm the moment a lidar is fitted.
 
 **Decided 2026-09-06: motion becomes continuous** (1.14). The robot will hold a
 velocity and perceive while moving, instead of stopping between timed bursts.
@@ -149,29 +164,101 @@ binding constraint** -- the `rplidar` package is `for scan in
 lidar.iter_scans()`, where LD06 means owning a community parser. `rplidar_ros`
 also exists for the day (b+) arrives.
 
-### 1.3 Power: **two rails, one ground**
+### 1.3 Power: **one pack, three rails, one ground**
+
+**Revised 2026-09-06 by review.** The original diagram said **2S**, which 3.6
+had already corrected to 3S without the diagram following -- and it is the
+diagram a reader builds from. The bank has been removed from the robot entirely
+(it fails both of this section's own tests, below), the servos have been given a
+supply they never had, and 1.16 #9's missing power budget is now written down.
 
 ```text
-  [ power bank ]──USB──► Pi 5                 clean, regulated, protected
-       └───────────────► lidar                data-only line to the Pi
-  [ 2S Li-ion  ]───────► motor driver         separate, noisy, isolated
-                            └── common ground to the Pi, nothing else shared
+  [ 3S Li-ion, 11.1V nom / 12.6V full ]
+       ├──────────────────────────────► Waveshare driver board (7-13V direct)
+       │                                   motors, encoders, IMU, ESP32
+       ├── buck #1, 5V/5A + bulk cap ──► Pi 5, Hailo, camera, lidar
+       └── buck #2, 5V/2-3A ──────────► pan/tilt servos ONLY
+                                   common ground, nothing else shared
 ```
 
-**Power the lidar from the bank, not through the Pi.** If the bank turns out to
-be 5V/3A rather than 5A, the Pi 5 runs in its reduced mode and caps total USB
-peripheral current near 600mA -- which an RPLidar's ~500mA would nearly consume.
-A powered hub or the adapter's separate power input removes the whole class of
-problem for a few dollars, whatever the bank measures.
+**One pack, three rails -- and that is not a relaxation of the old rule.** The
+rule is *motors never share the Pi's **rail***, and the first draft read it as
+*never share the cell pack*, which is a different and much more expensive
+claim. Separate buck converters with their own bulk capacitance off one pack is
+how every robot of this class is built. It removes USB-PD negotiation from the
+design entirely, and it gives one battery and one state of charge to reason
+about instead of two.
 
 **Motors never share the Pi's rail.** DC motors produce current spikes and
 back-EMF that a USB bank's protection may simply trip on, cutting power to the
-Pi mid-mission.
+Pi mid-mission. That is why buck #1 exists and why it wants real bulk
+capacitance, not why a second battery does.
 
-The 50000mAh / 22.5W bank already owned is **an excellent bench supply**, and
-goes on the robot only if it weighs under ~400g and does 5V/5A. Four numbers to
-read off the unit: weight, 5V current per port, USB-PD or QC only, and whether
-outputs are independently regulated.
+**The servos get their own rail, because the plan contradicted itself about
+them.** 3.6 says the Waveshare board's PWM does not drive SG90/MG90S-class
+servos, so drive them from the Pi's GPIO; 1.16 #9 says SG90s on the Pi's 5V
+rail is the textbook brownout. Both are in this document and only one can be
+the build. An SG90 stalls at ~600-750mA, two repositioning together with inrush
+is a ~1.5A transient, and 1.15.3 mandates repeated pan-settle-capture cycles --
+so this is a routine event, not a fault case. Buck #2 is ~$8 and closes it.
+
+#### The bank is a bench supply, and that is now settled rather than conditional
+
+The first draft said the 50000mAh / 22.5W bank already owned goes on the robot
+"only if it weighs under ~400g and does 5V/5A". **Checked 2026-09-06: it fails
+both, and both were knowable without a scale.**
+
+- 50Ah at 3.7V nominal is **185Wh**. At a realistic 150-200 Wh/kg that is
+  **0.9-1.2kg**, not 400g. (It is also well over the 100Wh air-travel limit,
+  which is a free sanity check on any bank's stated capacity.)
+- **"22.5W" is a QC/PD headline measured at 9V or 12V.** Such banks deliver
+  5V/3A at best per port, commonly 5V/2.4A. 5V/5A is a Raspberry-Pi-specific PD
+  profile that almost no bank advertises.
+
+So the Pi would negotiate <=3A, run in its reduced mode, and cap total USB
+peripheral current near 600mA -- which an RPLidar's ~500mA nearly consumes.
+That was written above as a contingency (*"if the bank turns out to be 5V/3A"*);
+it is the **expected outcome**. It stays an excellent bench supply and comes off
+the robot's parts list, which also removes 3.6's "already owned, 0" line.
+
+#### The power budget 1.16 #9 says does not exist
+
+| Load | Typical | Peak |
+|---|---|---|
+| Pi 5 (8GB), sustained load | 7-9W | 12W |
+| Hailo-8L M.2 | 1.5-2.5W | ~4W |
+| Camera Module 3 | 0.8W | 1W |
+| RPLidar C1 | 1.5-2.5W | higher at spin-up |
+| NVMe, if fitted | 1-3W | 5W |
+| 2x SG90 | 0.5W idle | 7W stalled |
+| 2x 12V gear motors at 26-44% duty | 7-14W | 30W+ at stall |
+| **Total** | **~20-30W** | **~55W** |
+
+On a typical 3S 2200-2600mAh pack (24-29Wh) at 85% buck efficiency that is
+**40-60 minutes of driving**, less on carpet. **Buy two packs.** This is the
+number 1.16 #9 says decides how long a test session can be, and therefore how
+the re-recorded corpus gets captured.
+
+It also corrects 1.15's aside that this is *"a chassis whose whole compute stack
+is ~10W"*, used to reject the Livox Mid-360. It is 12-17W. The rejection stands
+on price and mass regardless.
+
+#### Two electrical items the plan had not carried at all
+
+- **The TB6612FNG has no current limiting -- only thermal shutdown.** 1.2A per
+  channel continuous, 3.2A peak, against a 12V gear motor whose stall is
+  typically 1.5-3A. 3.8 item 7 files this as a question for the seller; it is a
+  **design decision**, because 1.15.4's bumper strategy *guarantees* stall
+  events (hitting things is what a bumper is for) and 1.14's velocity PID
+  commands full duty into a blocked wheel. Either choose a driver with current
+  sense and limiting, or cap current in ESP32 firmware -- the Waveshare board
+  has current monitoring, so use it. This is a fourth job for 1.16 #6's deadman.
+- **Regenerative braking has ~3% of headroom.** A charged 3S is 12.6V against
+  the board's 7-13V input, and 1.14 item 5's whole design brakes actively at
+  1 m/s^2. A decelerating DC motor pumps its rail up. The TB6612's absolute-max
+  Vm of 15V survives it; the board's 13V rating has no room. Add bulk
+  electrolytic across the motor rail (>=470uF) and a TVS -- about $2, and
+  currently absent from the bill.
 
 ### 1.4 The tiered architecture
 
@@ -235,9 +322,27 @@ re-identification and place-recognition CNNs -- so if the topological map ever
 comes back, the embedding is available without a hardware change. Nothing is
 being built on that.
 
-### 1.7 Goal vocabulary: **closed and versioned, three verbs**
+### 1.7 Goal vocabulary: **closed and versioned, four verbs**
 
-- `approach(target, stop_within_cm)` · `traverse(bearing)` · `explore(bearing)`.
+**Was three until 2026-09-06**, when 1.15.3's tilt argument added a report-only
+goal and this section was not updated with it -- nor were 1.8, 6.2 or C4, so the
+fourth type had fallen out of the phasing entirely. Corrected here.
+
+- `approach(target, stop_within_cm)` · `traverse(bearing)` · `explore(bearing)`
+  · **`report(target)`**.
+- **`report(target)` is 1.15.3's**: find the thing, aim the camera at it, return
+  the frame and the bearing, and **succeed without driving to it**. Its outcome
+  is success, not failure. It exists because a floor robot can legitimately be
+  asked about a thing it cannot reach -- which is not a hypothetical but the
+  exact defect that invalidated the Stage 0 corpus, where every target sat on
+  furniture. It is also the terminal state `approach` degrades *into* when
+  1.15.3's plane-consistency precondition fails.
+- **A note on `explore`, before C4 makes these types.** The name collides with
+  the twin's existing `btn-explore` (`web-twin/index.html:1460`) and with
+  `brain/agent.py`'s frontier explorer -- which 2.5 assigns the *opposite* role,
+  the degraded mode that runs when the planner is unreachable. Rename one of
+  them in C4; a goal verb and a fallback behaviour sharing a word is how a log
+  line stops being readable.
 - **An unknown verb refuses by name.** Never a best-effort approximation --
   M7's rule, and the two silent-fallback bugs this project has already paid for
   (`prompt_variant` dropped by pydantic; the `NavigateModelId` env-var trap).
@@ -268,6 +373,12 @@ the reactive tier's work.
 
 - **Success is semantic, so the goal carries it**, with a threshold. The verb
   sets the shape; the parameter tunes it.
+- **`found_not_reachable` is a success, not a failure -- added 2026-09-06 with
+  1.7's fourth verb.** `report(target)` terminates on it, and `approach`
+  degrades into it when the target is real but unreachable (on furniture, or
+  off the lidar's scan plane per 1.15.3's precondition). A planner that reads
+  "could not reach the bottle" as failure will re-plan forever against a house
+  that is not going to change.
 - **Failure is physical, so the reactive tier infers it -- and names it.**
   A boolean is useless to a planner: `blocked`, `lost_target`, `no_progress`,
   `oscillating` and `timeout` lead to different next goals. This is
@@ -379,7 +490,7 @@ tracking machinery.
    of a few hundred frames. There is no Mac path; the practical compile host
    is an EC2 instance for an hour per model (4.3). **Build that loop before
    the hardware arrives** -- one YOLO11n from Hugging Face to a HEF, and a
-   script that scores it over the recorded walks on EFS. If the loop exists
+   script that scores it over the recorded walks on S3. If the loop exists
    on day one the Hailo is a sandbox; if it never gets built, the Hailo is a
    fixed-function part and the IMX500 was the cheaper way to get one.
 2. **The PCIe lane.** The AI HAT+ takes the Pi 5's single PCIe connector, and
@@ -423,7 +534,7 @@ tracking machinery.
   string, the on-board layer gets a text-conditioned re-ranker -- not full
   open-vocabulary detection, but "this one, not that one" without colour code.
 - **The detector can be scored on the recorded corpus.** A Hailo runs on
-  frames the Pi captured, so the same HEF can be fed the walks already on EFS
+  frames the Pi captured, so the same HEF can be fed the walks already on S3
   and scored with `control/walk_eval.py` before it ever drives the car. The
   IMX500 could not be fed a stored image at all. For a project whose rule is
   "prove it first" (`CLAUDE.md` §7), that is a material difference.
@@ -640,7 +751,7 @@ learning to care about -- **the standing-height corpus defect, re-introduced as 
 model choice instead of a data choice.**
 
 Fine-tuning it out would need a calibration set of labelled floor-height walks
-across every room type, and that corpus does not exist: the 39 walks on EFS are
+across every room type, and that corpus does not exist: the 39 walks on S3 are
 the invalid standing-height ones. A VLM is markedly more robust to that viewpoint
 shift than a fixed classifier, because it reasons from what is visible rather
 than matching a learned scene prior.
@@ -695,9 +806,25 @@ cost wall-clock while parked. Continuous driving spends it in centimetres.
 
 **Put the Hailo-8L on the first order.** 4.8 and 4.9 both argued for deferring
 it, and both named this decision as the one trigger that would reverse them.
-The rest of 4.9's recommendation is unchanged -- an **8L in M.2 module form**,
-which clears the perception row by 10-30x with headroom for the larger YOLO
-tiers, floor segmentation and CLIP. **Caveat added 2026-09-06: that figure was
+The rest of 4.9's recommendation is unchanged -- an **8L in M.2 module form**.
+
+**Corrected 2026-09-06, hours after it was written: "10-30x with headroom for
+the larger YOLO tiers, floor segmentation and CLIP" is wrong, and it is wrong in
+the exact way 4.3.1 exists to prevent.** The figure traces to 4.9's tier table,
+which sources it from *"431 FPS batch-1 reported on the **Hailo-8**"* and
+*"~137 FPS **batch-8** on an 8L"* -- the wrong chip's column, and a throughput
+number standing in for a latency one. 4.3.1 is the section that caught precisely
+this and said so: *"reading the 8L's table rather than the 8's settles three
+things this section had been asserting from the wrong column."* Then 1.14 and
+4.9 asserted from it again.
+
+Against 4.3.1's own verified 8L batch-1 numbers and the detector this plan
+actually ships (YOLO11s, 92 FPS): **92 / 30 = 3.1x at camera rate**, 6.1x at
+the 15Hz floor. Not 10-30x, and not headroom -- see the budget in 2.9, which is
+where the three models are costed together for the first time. The conclusion of
+this item is unchanged and if anything strengthened: 3.1x from the accelerator
+against **0.2-0.4x** from the Pi's own cores is still the difference between
+having a perception tier and not having one. **Caveat added 2026-09-06: that figure was
 costed for a single nano detector.** Running the three together spends the
 headroom rather than leaving it spare -- see C6's note in the phasing below, and
 4.3's *"several resident"*, which is a claim about **memory, not throughput**.
@@ -756,6 +883,61 @@ instead of vetoing, it is what a real robot does, and it gives M3's
 `path_clearance()` a second consumer -- it already returns the one number this
 would divide by.
 
+##### Both terms above are optimistic, and the review that found it is worth recording
+
+**Revised 2026-09-06.** The table's arithmetic is exact -- every cell recomputes,
+and 0.2v + v^2/2 = 0.2 does solve at 0.46 m/s. But `t_react = 200ms` was
+**asserted rather than composed**, and the collar is measured from the wrong
+origin. Both errors cut the same way.
+
+**(a) 200ms is a ceiling, not a budget.** Built from its parts:
+
+| Term | ms |
+|---|---|
+| RPLidar C1 scan period at 10Hz (avg 150 to a given bearing's re-measurement) | 100 |
+| Serialise and publish the feature over C5's transport | 2-10 |
+| Drive-loop period at 30Hz | up to 33 |
+| Pi -> ESP32 serial, plus the ESP32's own loop | 5-15 |
+| Motor current reversal, mechanical | 20-50 |
+| **Collar path, total** | **160-260ms** |
+
+So `t_react` is **250-300ms**, not 200. At 0.3s the collar is good for
+**0.40 m/s**.
+
+**(b) The collar has never had a footprint term, and today that is harmless.**
+`path_clearance()` returns a range and `check_and_execute()` compares it
+directly to `min_distance_cm` (`robot/safety.py:257`). The PiCar-X's ultrasonic
+points forward from the front of the chassis, so sensor origin and bumper
+coincide and the missing term is exactly zero; the sim casts rays from a robot
+that is a point and has no bumper at all.
+
+**A 360-degree lidar moves the sensor origin to the middle of a 228 x 148mm
+deck** -- roughly **11-14cm behind the leading edge**. A reading of "20cm" is
+then 6-9cm of real gap, which is inside the travel of the compliant bumper that
+1.15.4 calls the last resort. And it changes **silently**, because the same
+number keeps working with a different physical meaning.
+
+**Fixed in code 2026-09-06, while the number is still zero.** `robot/safety.py`
+carries `SENSOR_TO_BUMPER_CM`, `path_clearance()` returns bumper-relative
+clearance, `config/robot.yaml` has `safety.sensor_to_bumper_cm: 0.0`, and
+`GET /depth` publishes it so the twin's strip shows what the veto reads rather
+than re-deriving it. `tests/test_depth_veto.py` pins that a real mount turns a
+passing clearance into a veto. This is S5's argument applied on purpose: pin the
+property while the flag is off, or it sits undiscovered until a sensor moves.
+
+**(c) Composed, the two terms roughly halve the answer.** At `t_react` = 0.3s
+with 11-14cm of the collar spent on the offset, the usable collar is ~7cm and
+the safe speed is **roughly 0.15-0.2 m/s** -- below this section's own "spec for
+0.5, run at 0.3", and it inverts 3.8 item 6's conclusion that the 333 RPM
+variant "covers 1.14's spec comfortably." The preferred fix (speed as a function
+of measured clearance) survives intact; **the constant in it is about half what
+this section assumed.**
+
+**(d) And there is no closing-speed term anywhere.** Every row above is a
+stationary obstacle. A person walking toward the robot at 1 m/s makes the
+closing speed 1.5 m/s and the required stopping distance ~1.4m. Dynamic
+obstacles are absent from the whole safety analysis, and a house has them.
+
 #### 6. Encoders become load-bearing, and closed-loop
 
 A timed burst can be open loop. A held velocity cannot: without a controller on
@@ -770,14 +952,37 @@ recommended" to effectively essential for heading.
 `Heading` enum, and `move(cells)` steps whole cells. That has to become
 `(x, y, theta)` floats integrated over dt.
 
-**But `sim/renderer.py` needs no change at all.** It is already continuous:
-`cast_ray(layout, px: float, py: float, angle: float)` and
-`render(..., px, py, base_angle)` take floats and radians, and the *discretising
-step is a two-line conversion at the boundary* --
-`base_angle = renderer.HEADING_ANGLE[view.name]` and
-`px, py = self.world.robot_x + 0.5, self.world.robot_y + 0.5`
-(`sim/mock_robot.py:227-228`). S2's port was written against a float pose from
-the start.
+**`sim/renderer.py`'s primitives need no change.** They are already
+continuous: `cast_ray(layout, px: float, py: float, angle: float)` and
+`render(..., px, py, base_angle)` take floats and radians. S2's port was written
+against a float pose from the start.
+
+**Corrected 2026-09-06: the stronger claim this section made -- that
+`sim/renderer.py` needs no change *at all*, and that the discretising step is
+*a* two-line conversion at `sim/mock_robot.py:227-228` -- is false, and it is
+the claim the cost estimate rested on.** Those two lines are real and exact, but
+they are inside `get_depth_grid()`. The **camera** path has its own copy:
+
+```text
+sim/renderer.py:273-279   view = world._view_heading()
+                          return render(world.layout, world.objects,
+                                        world.robot_x + 0.5, world.robot_y + 0.5,
+                                        HEADING_ANGLE[view.name], ...)
+```
+
+`MockRobot.get_camera_frame()` reaches it through `render_world_base64()`
+(`sim/mock_robot.py:158`), and `render_world_image` / `render_world` /
+`render_world_base64` all take a `GridWorld` and discretise it. Two further
+discrete sites the estimate omitted: `grid_world.distance_ahead()`
+(`:147-155`) marches integer cells along `_view_heading().value`, and
+`frame_description()` (`:163-186`) reads three cells ahead the same way.
+Neither is a boundary conversion.
+
+**So C2's "delete the boundary conversion" is plural**, and the *"far cheaper
+than S6 assumed"* conclusion needs re-costing against four sites rather than
+one. It is still cheaper than S6 -- the ray-casting mathematics genuinely is
+float-native already, which was the expensive half -- but "no change at all" was
+the wrong summary of "no change to the primitives".
 
 **This un-retires the continuous-pose half of S6**, which §5 had deliberately
 left alive -- *"continuous pose and a to-scale map may still be wanted if a
@@ -801,8 +1006,9 @@ clearance-derived speed visible as it slows near a wall.
 
 #### What it does not change
 
-The chassis (1.1 was already differential), the lidar (1.2), the two power rails
-(1.3), the camera, the arbitration order (M4), the goal vocabulary (1.7), and
+The chassis (1.1 was already differential), the lidar (1.2), the power design
+(1.3 -- one pack and three rails since the 2026-09-06 review), the camera, the
+arbitration order (M4), the goal vocabulary (1.7), and
 1.13's room-identity split. **And the cloud VLM stays exactly where 2.1 put it**
 -- event-driven, ~0.5Hz, off-board. Continuous driving does not make the cloud
 call faster; it makes it *stop blocking the wheels*, which was always the point
@@ -825,11 +1031,11 @@ now **C6 and C9**; C1-C3 keep their numbers and their scope.
 |---|---|---|
 | **C1** | **The interface pass.** `set_velocity` on `RobotInterface`, all five backends, contract tests. **Plus three items**: a pose/odometry method (1.16 #5); a timestamp (1.16 #3) that rides the published *feature* and not only the sensor read -- 2.8's fusion is three-way (bearing from a detection, range from a scan, a CLIP score from a crop of a frame) and 2.7's rule is *features, not frames*; and **range at a bearing**, which `approach` needs in C6 and which `get_depth_grid()` does not give (M2's grid is forward-facing; a 360 ring sampled at an arbitrary bearing is a different question). One conformance pass, not three | no |
 | **C2** | Continuous pose in `grid_world.py`; delete the boundary conversion; press-and-hold D-pad in the twin | no |
-| **C3** | Watchdog timeout down to ~150ms; clearance-derived speed replacing the fixed collar. **Plus the ESP32's own deadman** (1.16 #6) -- the innermost guard, and the only one that survives the Pi locking up. It needs a drill, per §7 | no |
-| **C4** | **The goal vocabulary as a type.** 1.7's three verbs and 1.8's stop conditions, as data with validation -- **`grep` finds no `approach`/`traverse`/`explore` anywhere in the repo today; §1.7 is prose.** Pure, no I/O, testable alone, and it unblocks C5-C9. Nothing produces or consumes a goal until this exists, which is what made the old C4 ("holding a goal") rest on air | no |
-| **C5** | **The feature transport.** 2.6 requires perception to reach the brain over HTTP like everything else: routes on `robot/server.py`, `RemoteRobot` over them, conformance cases, **and the ALB path patterns** whose absence has shipped five times as a silently dead feature. Carries **1.12's synthesised** detections, floor mask and CLIP scores -- so it is provable in the twin with no HEF, no accelerator and no corpus | no |
+| **C3** | Watchdog timeout down to ~150ms; clearance-derived speed replacing the fixed collar, **against 1.14 item 5's corrected constants** -- `t_react` ~250-300ms and a sensor-to-bumper offset, which roughly halve the safe speed. **Plus the ESP32's own deadman** (1.16 #6) -- the innermost guard, and the only one that survives the Pi locking up. It needs a drill, per §7 | **yes, partly** -- see below |
+| **C4** | **The goal vocabulary as a type.** 1.7's **four** verbs (the fourth is 1.15.3's report-only goal, which had fallen out of this phasing) and 1.8's stop conditions **including `found_not_reachable`**, plus 1.15.3's plane-consistency precondition on `approach` and the `explore` rename, as data with validation -- **`grep` finds no `approach`/`traverse`/`explore` anywhere in the repo today; §1.7 is prose.** Pure, no I/O, testable alone, and it unblocks C5-C9. Nothing produces or consumes a goal until this exists, which is what made the old C4 ("holding a goal") rest on air | no |
+| **C5** | **The feature transport.** 2.6 requires perception to reach the brain over HTTP like everything else: routes on `robot/server.py`, `RemoteRobot` over them, conformance cases, **and the routing entries** whose absence has shipped five times as a silently dead feature. **Corrected 2026-09-06: that is no longer an ALB path pattern.** Every ECS/ALB stack was deleted 2026-09-05, one day before this phasing was written; routing is now a **CloudFront behaviour *and* an API Gateway route** (`cloudformation/serverless.yaml`), so the failure mode has *doubled* rather than disappeared -- two tables to keep in step. `tests/test_serverless_routes.py` is the successor to `test_alb_routes.py` and is where the drift check lives. Carries **1.12's synthesised** detections, floor mask and CLIP scores -- so it is provable in the twin with no HEF, no accelerator and no corpus. **Note this phase is larger than "transport"**: producing those synthesised features in `MockRobot` -- with 1.12's occlusion ray, its three-way output and its noise flag written *with* the flag -- is the bigger half and had fallen between C5 and C6 | no |
 | **C6** | **The reactive drive loop as its own process** (2.7) -- *was C4* -- now holding **and executing** goals, with C4's type, C5's pipe and C1's methods already in place. It hosts a *pipeline*, not a detector: detector -> crops -> CLIP -> match (4.2) plus floor segmentation (4.3), all owing 2.1's 15-30Hz row, so it also owes a **throughput budget and a scheduling policy** (segmentation has no reason to run at the detector's rate) | no -- against synthesised features. **The real HEFs are hardware day**, and so is confirming the budget on the real part |
-| **C7** | **The two cloud contracts.** `/navigate` returns an *action*; 2.8 needs a call that returns a **goal** (step 1) and one that answers **identity and reachability** (step 4). New routes on `service/vision_analyze/`, server-side allow-lists, validation at mission start the way M1 validated `model_id`, and their own ALB patterns | no |
+| **C7** | **The two cloud contracts.** `/navigate` returns an *action*; 2.8 needs a call that returns a **goal** (step 1) and one that answers **identity and reachability** (step 4). New routes on `service/vision_analyze/`, server-side allow-lists, validation at mission start the way M1 validated `model_id`, and their own **CloudFront behaviour + API Gateway route** (not ALB patterns -- see C5) | no |
 | **C8** | **`brain/planner.py`** -- the deliberation tier itself, over `MissionMemory.as_context()`, emitting C4 goals through C7's contract. 2.3 already says *"it is `brain/planner.py`"*; `CLAUDE.md` calls it the main hardware-path gap; the file does not exist | no |
 | **C9** | **Deliberation becomes event-driven** against 2.4 -- *was C5* -- including the `cold search` trigger, whose "found nothing for a while" condition inherits §6.1's hysteresis requirement like every other field-derived trigger | no |
 
@@ -862,9 +1068,39 @@ Numbering is sequencing, so the dependencies are stated rather than implied:
   event-driven"*, which presumed a deliberation tier existed; it never has.
 
 **None of C1-C9 needs the robot** -- the property the five-phase version had, kept
-deliberately. C6 holds the only asterisk: it is provable in the twin against
-synthesised features, and the real HEFs and the real throughput measurement are
-hardware day. **Nor does any of it need 1.16 #10's re-recorded corpus**: 1.12's
+deliberately, **with two asterisks rather than the one this claimed.**
+
+C6's was acknowledged: it is provable in the twin against synthesised features,
+and the real HEFs and the real throughput measurement are hardware day.
+
+**C3's was not, and it is unqualified.** The ESP32's deadman lives on the
+Waveshare board, which is unordered, and nothing in this repo simulates a serial
+peer -- so a deadman on a microcontroller you do not have cannot be built and
+its drill cannot be run. Either that half moves to hardware day, or C3 grows a
+simulated serial peer first, which is real work nobody has costed.
+
+**And C3's other half has no consumer until C6.** Clearance-derived speed
+replaces a fixed collar, but nothing holds a velocity until the drive loop
+exists; 1.14 item 9 names the twin proof as *"watching it cross a room without
+stopping, with the clearance-derived speed visible as it slows near a wall"*,
+which is a **C6** observation. As ordered, C3 ships a rule nothing exercises and
+a proof nobody can press -- which §7 forbids. The "safety precedes capability"
+argument justifies the *rule* landing first; it does not exempt the phase from
+shipping something to press. Ship C3's speed law with a **pressable stand-in**
+(the D-pad's commanded speed clamped by live clearance) or accept the exemption
+in writing.
+
+**C1 also silently contains a piece of C5.** `RemoteRobot` is one of the five
+backends, so `set_velocity` needs a route on `robot/server.py`, a client, and
+its routing entries -- exactly the work C5 is defined as owning, and exactly the
+failure that has shipped five times. Do it once, in C1, and say so.
+
+**One concrete C1 hazard no phase names.** `_HaltGate.MOVEMENT`
+(`control/mission_runner.py:125-128`) is a **hardcoded tuple of method names**.
+A `set_velocity` not added to it passes straight through the mission-end gate --
+the stop that Stage 2 promises *"is enforced at the robot, not just in the
+loop"* would silently stop enforcing for the one verb that holds a velocity.
+Same silent-fallback class as 1.7 and M7. **Nor does any of it need 1.16 #10's re-recorded corpus**: 1.12's
 synthesised features carry the whole sequence, so the re-recording proceeds in
 parallel rather than in series.
 
@@ -909,9 +1145,61 @@ The hazard that prompted this -- driving under a chair and striking a camera
 mast -- exists only when something is mounted *above* the scan plane, so the
 rule is: **nothing on the robot may be taller than the lidar's scan plane.**
 
-What survives is the **under-plane residual**: shoes, cables, thresholds, pet
-bowls, a low sofa rail. That is a real gap and it is answered in 1.15.4, not by
-the lidar.
+#### The rule is contradicted by 1.15.1's own stack-up -- **corrected 2026-09-06**
+
+`h_lidar = H_max` is **impossible by construction, and this document's own table
+says so two subsections later**: the scan plane lands at ~123-140mm while
+`H_max` is listed at ~155mm, *the top of the lidar body*. The C1's plane sits
+~25-30mm inside a 41.3mm housing, so **11-18mm of lidar is always above its own
+scan plane**. 1.15.5 item 1 notices the fact -- *"whatever body sits above the
+plane is unprotected by the rule in 1.15"* -- and never propagates it back here.
+The symbol also changes meaning between the two: `H_max` is "top of the robot"
+in the rule and "top of the lidar body" in the table.
+
+**The honest statement is that the class is reduced to a ~15mm slab, not
+eliminated.** And that slab is the original hazard in miniature: a low shelf
+lip, a bed frame or a sofa rail at 125-155mm is invisible and is struck by the
+top cover of the $99 sensor. Mitigation is a chamfered or sacrificial top cap,
+and accepting that the sensor is the part that takes the hit.
+
+#### Four cases the argument misses, and the first is the largest
+
+1. **Pitch, which is unmentioned anywhere in this plan.** The rule is a
+   statement about a *static horizontal* plane. A 2WD chassis with a caster
+   pitches under acceleration and braking (1 m/s^2 against a ~8cm centre of
+   gravity) and over thresholds (a 10mm lip against a 32.5mm wheel radius is a
+   transient of several degrees). **At 5 degrees of pitch the plane is
+   displaced +/-17cm at 2m range** -- diving into the floor for spurious near
+   returns and a spurious veto, or lifting over a real obstacle. This is the
+   largest single error source in the whole geometry. The mitigation is cheap
+   and already bought: the Waveshare board's IMU gives pitch, so reject or flag
+   scans while it exceeds a threshold -- **exactly M3's rule for an unusable
+   zone**, one sensor over.
+2. **Dynamic obstacles.** The whole analysis is of stationary furniture; 1.14
+   item 5 has no closing-speed term either.
+3. **The near-field blind box, sized below.**
+4. **Descending profiles.** *"Entirely above `H_max` -> the robot fits under"*
+   is a claim about a volume the lidar never samples, and it holds only where an
+   object's lowest point is where the plane crosses it. True of table legs;
+   false of a recliner footrest, a wall-shelf bracket, a hanging coat, or a
+   chair pushed in at an angle.
+
+#### The under-plane residual, sized
+
+With the camera at 12cm and a level 41-degree vertical field, the lower ray
+strikes the floor at `0.12 / tan(20.5 deg)` = **32cm ahead**. The lidar plane is
+at 12-14cm. So the volume from the bumper out to **32cm**, below **12cm**, is
+seen by **nothing** -- not the lidar, not the camera, not the floor mask. At
+0.5 m/s the robot crosses it in 0.64s, which is *less than* 1.14 item 5's
+corrected reaction budget.
+
+**That is the specification for 1.15.4's ToF pair, and it makes them mandatory
+rather than "strongly recommended".** It gets worse if the camera captures
+16:9 -- see 1.15.3.
+
+What survives beyond it is the rest of the **under-plane residual**: shoes,
+cables, thresholds, pet bowls, a low sofa rail. That is a real gap and it is
+answered in 1.15.4, not by the lidar.
 
 #### A 3D lidar would also fix it, and is the most expensive way to
 
@@ -975,8 +1263,18 @@ optimise is precise:
 
 Every millimetre higher raises `H_max`, and `H_max` *is* the under-plane blind
 volume. Raising the lidar to buy clearance is not free -- it is paid for in
-exactly the blind spot 1.15.4 then has to cover. A shorter pan/tilt bracket buys
-back margin at both ends.
+exactly the blind spot 1.15.4 then has to cover.
+
+**And that means the pedestal is the wrong lever -- corrected 2026-09-06.**
+Going 123 -> 140mm to buy camera clearance makes roughly **14% more of the
+frontal area blind**, immediately after a section spent eliminating that blind
+volume. The better fix is named here in a single clause and then not adopted:
+*a shorter pan/tilt bracket buys back margin at both ends.* **Adopt it.** Mount
+the camera on the front edge of the chassis at **70-90mm** rather than on a
+65mm mast. That lowers `H_max`, shortens the pitch lever arm above, and brings
+the near floor into frame -- which is the blind box in 1.15 and the floor mask
+in 1.15.3, both improved by the same change. It costs the tilt range that
+1.15.3 argues for, which is the trade that subsection now has to answer.
 
 #### 1.15.3 Pan **and** tilt, both angles in the frame
 
@@ -988,7 +1286,15 @@ capability.** Stage 0 says the goal you *drive to* must be reachable. It never
 said the robot should be blind above the floor.
 
 The geometry settles it. Camera at 12cm with Camera Module 3's ~41° vertical
-field, pointed level -- the top of frame sits at `12cm + 0.374 x distance`:
+field, pointed level -- the top of frame sits at `12cm + 0.374 x distance`.
+**(Two caveats added 2026-09-06.** 1.15.1's stack-up says the lens lands at
+~**100mm**, not 120 -- at 10cm the table below reads 47/85/122cm, conclusions
+unchanged, but 1.15.2's clearance analysis uses 110mm and this uses 120mm and
+the pedestal cannot be designed until one number is picked. And **41° is the
+4:3 full-sensor figure**; capture 16:9 and the vertical field drops to ~33°,
+which moves "top of frame at 1m" from 49cm to 44cm and pushes the nearest
+visible floor from 32cm to **41cm** -- making 1.15's blind box worse. **Pin the
+capture mode.)**
 
 | Distance | Highest thing in frame | |
 |---|---|---|
@@ -1009,7 +1315,7 @@ identity while the lidar keeps geometry -- **the sensor split is exactly what
 frees the camera to look wherever it likes.** Tilt is a capability M3 unlocked
 and nobody noticed.
 
-Two consequences, both worth having:
+Three consequences, all worth having:
 
 - **The goal vocabulary gains a report-only type.** 1.7's three verbs all assume
   you drive to the thing. Tilt makes *"find and report"* a distinct legitimate
@@ -1026,6 +1332,53 @@ Two consequences, both worth having:
   and panning smears a frame twice. Discrete pan positions, settle, capture --
   **not** a continuous sweep. This bounds how fast a scan can sweep and is a
   requirement, not an implementation detail.
+
+#### The tilt axis is triple-booked -- **found 2026-09-06, and it is a conflict, not a number**
+
+Three consumers want the tilt axis in three incompatible positions, and no
+section had put them beside each other. At 12cm with a 41-degree vertical field:
+
+| Tilt | Nearest floor in frame |
+|---|---|
+| **+30°** (this subsection, for tabletops) | **never** -- the lower ray is +9.5°, the floor is not in the image at all |
+| 0° | 32cm |
+| −10° | 20cm, i.e. just reaches the collar |
+| −20° | 14cm |
+
+**Tilt-up and the floor mask are mutually exclusive.** And the floor mask is not
+a nice-to-have: 1.15.4 lists it as mitigation #1 for the under-plane residual
+and 4.3 promotes it to *safety-relevant*. It needs **at least −10°** merely to
+see as far in as the collar distance.
+
+Meanwhile a reposition costs ~0.3-0.5s (0.1s/60° plus settling), during which
+the perception tier's bearing output is invalid -- against 2.1's 15-30Hz row.
+**That is a servo duty cycle nobody has written**, and it belongs in C6's
+scheduling policy beside 2.9's throughput budget.
+
+**Tilt also breaks `approach`'s stop condition, which 1.8 and this subsection
+were never reconciled about.** A 2D lidar cannot range anything off its plane.
+Detect a bottle on a console table with the camera tilted +30°, and the lidar at
+that azimuth returns the range to the **table edge** -- or to a person walking
+past at the same azimuth. `approach` then terminates on the wrong object with no
+way to notice. So `approach` needs a **plane-consistency precondition**: if the
+detection's elevation is inconsistent with the scan plane at the returned range,
+the goal degrades to this subsection's own report-only type rather than being
+driven. That is a genuine addition to 1.8, and it is C4-shaped.
+
+**Which reopens the decision, honestly.** 1.15.2 now argues for a low fixed
+front-edge camera at 70-90mm; this subsection argues for a 65mm mast with two
+axes. The tilt case remains sound in the abstract -- *a navigation constraint
+must not rule out a perception capability* -- but its price is now legible:
+raising `H_max` and the blind volume with it, a time-varying extrinsic (1.16
+#4), open-loop bearing corruption (1.16 #7), the first feature to reach hardware
+with no twin representation (1.16 #8), a servo schedule that competes with the
+perception row, a new precondition on `approach`, and up to $50 if bearing
+accuracy forces ST3215 bus servos. **The recommendation is to drop the tilt
+servo for v1**: fix the camera low and at a slight downward pitch, which serves
+the floor mask and the near-field blind box for free, keep pan, and revisit tilt
+when a mission actually fails for want of it. That is the plan's own rule from
+1.7 -- *add it when the log shows the planner reaching for it, a measured signal
+rather than a guess* -- applied to a servo instead of a verb.
 
 #### 1.15.4 The under-plane residual, for ~$20
 
@@ -1064,7 +1417,9 @@ Hardware-day pre-flight, and the first three block the pedestal design:
 
 Found by review after 1.14 and 1.15 were decided. **#1 and #2 are closed by
 1.15**; the rest are open and are recorded here so they are not rediscovered on
-hardware day. Three were verified against the code, not guessed.
+hardware day. Three were verified against the code, not guessed -- #3, #5 and
+#8, of which only the last two are labelled as such below. **Extended to twenty
+items on 2026-09-06** by a second review; see the table after this one.
 
 | # | Gap | Status |
 |---|---|---|
@@ -1080,9 +1435,24 @@ hardware day. Three were verified against the code, not guessed.
 | 10 | **The recorded corpus is invalid, and three things now wait on it** (added 2026-09-06) | **OPEN, and the only item here blocked on nothing at all.** Every walk on S3 was shot at standing height with the target on raised furniture (`CLAUDE.md` Stage 0) -- a viewpoint the robot will never have, at a task a floor robot cannot perform. It was already invalidating the five-wording prompt result. It now also blocks **4.2's caveat** (whether a COCO detector and CLIP work at all at 10cm -- 4.3.1's `45.1 mAP` is a standing-height number) and **4.3's floor-segmentation score**, which is the compile loop's first subject. Needs no seller, no part and no hardware: a phone on a wheeled rig, a target on the floor, landscape locked, rig height written into the walk's own `meta` note. **Four to six short walks** |
 | 11 | **Does the floor mask get a veto?** (added 2026-09-06) | **OPEN.** 4.3 says floor segmentation *"does not replace the lidar, which sees a chair leg the mask cannot"* -- but **"does not replace" is not "has no vote"**, and the plan never says which. M3 already built the precedent one sensor over: `path_clearance()` reduces a depth grid to one number and a failed zone never enters the comparison **in either direction**, because as a distance it stops the robot on every dropout and as clear it drives through what the sensor could not see. A mask has exactly that tri-state and exactly that trap. Decide it explicitly: an input to the drive loop's steering, or a veto beside the collar. **If a veto, it is C3-shaped, not C6-shaped**, and `robot/safety.py` grows a second consumer -- which 5.1's `PATH_FRACTION` bug says is where this project's sensor reductions go wrong |
 
-**Three of these change what gets bought** -- #7 (which servos), #9 (whether the
-power bank is adequate, and whether servos need their own supply) and 1.15.4's
-bumper and ToF pair. The rest are design work that can proceed while parts ship.
+#### Extended 2026-09-06, by a second review
+
+| # | Gap | Status |
+|---|---|---|
+| 12 | **The collar compared a sensor-frame range to `min_distance_cm`, with no term for where the sensor sits** | **CLOSED 2026-09-06, in code.** Exactly zero for a front-mounted ultrasonic, 11-14cm for a deck-centre lidar -- so "20cm" would have become 6-9cm of real gap, silently, on fitting day. `SENSOR_TO_BUMPER_CM` + `safety.sensor_to_bumper_cm`, `path_clearance()` returns bumper-relative, `GET /depth` publishes the offset, `tests/test_depth_veto.py` pins it. Fixed while the number is still zero |
+| 13 | **The perception budget does not fit at camera rate, and "10-30x headroom" came off the wrong chip's column** | **CLOSED as an analysis, OPEN as a C6 requirement** -- 2.9. YOLO11s + segmentation + CLIP is 3.1x, not 10-30x, and the three together need a rate-division schedule. Also: "several resident" is a *streaming-bandwidth* problem on a part with no on-chip DRAM, not the benign memory claim 1.14 called it, and the NVMe contends for the same lane |
+| 14 | **Pitch is absent from the entire lidar geometry** | **OPEN.** ±17cm of plane displacement at 2m for 5° of pitch -- the largest single error source in 1.15, and it appears under exactly the braking 1.14 introduces. The Waveshare IMU already measures it; the fix is M3's own rule (reject or flag the scan) one sensor over |
+| 15 | **The fusion timing analysis picks the benign error term** | **OPEN.** 1.16 #3 reasons about 4cm of translation, but 1.8's fusion is a *bearing* operation: 90°/s gives 9° in 100ms = **31cm of lateral error at 2m**, and it appears while pivoting, where the translation term is zero. Also unaddressed: **scan de-skewing** (a 10Hz spinning lidar's samples are not simultaneous, which directly breaks `traverse`'s "watch the doorframe go past"), and C1's timestamp is specified on the **publish** event where fusion needs the **acquisition** event -- plus one shared clock across Pi/ESP32/lidar and an interpolatable pose history, or a timestamp has nothing to query against |
+| 16 | **The camera-lidar lever arm makes the bearing comparison invalid, not merely imprecise** | **OPEN, and it re-shapes 1.16 #4.** Bearings measured from origins ~11cm apart are not comparable: a target at 0.5m and 30° off-axis is at 24.7° from the lidar and 30° from the camera -- 5.3° of systematic error, growing as range shortens, i.e. worst exactly while `approach` is closing. The fix is **formulating the fusion in the body frame**, not calibrating harder: it is a rewrite of 1.8's sentence. And 1.16 #7 makes calibration unsolvable as stated anyway -- you cannot calibrate a transform whose parameters you cannot observe, and SG90 repeatability of ±1-2° is ±5-16cm at 3m. Short of bus servos: **trust bearing only at a mechanically-homed pan = 0**, and use pan only while stopped |
+| 17 | **The tilt axis is triple-booked and unscheduled** | **OPEN** -- 1.15.3. Tilt-up and the floor mask are mutually exclusive, the mask needs ≥−10° to reach the collar distance, and each reposition costs 0.3-0.5s of invalid bearing against a 15-30Hz row. Belongs in C6's scheduling policy. **The recommendation is to drop the tilt servo for v1** |
+| 18 | **The TB6612FNG has no current limit, only thermal shutdown** | **OPEN** -- 1.3. 1.2A/channel against a 1.5-3A stall, with a bumper strategy that *guarantees* stalls and a velocity PID that commands full duty into a blocked wheel. 3.8 files it as a seller question; it is a design decision, and the Waveshare board's current monitoring is the cheap answer |
+| 19 | **No physical emergency stop** | **OPEN, and absent from the plan entirely.** A robot that holds a velocity, whose innermost deadman (#6) is an unbuilt firmware feature on an unordered board. A latching button in the motor rail is ~$3 and is not in the bill |
+| 20 | **No plan for a dead-on-arrival or backordered part, and no tool inventory** | **OPEN.** 1.15.5 asks for three bench measurements with no calipers in the bill; 3.6 prices a 3D-printed pedestal at "0 with a printer" without asking whether there is one, and the pedestal blocks the build. Seven seller questions, one of which (3.8 #6) cannot be fixed after delivery, and no plan for "the answer is wrong" |
+
+**Five of these change what gets bought** -- #7 (which servos), #9 (the power
+supply, now settled in 1.3), 1.15.4's bumper and ToF pair, #19's e-stop, and #17
+(dropping the tilt servo). The rest are design work that can proceed while parts
+ship, except #12 and #13, which are done.
 
 **#10 is in neither group, and that is the point of listing it here.** It is not
 design and it is not a purchase question -- it is a *measurement*, and unlike
@@ -1346,6 +1716,73 @@ already names the fallback: `brain/agent.py`'s rule-based explorer, which
 degradation. **This is the payoff of the split**, and it is worth noticing that
 it is free: the code exists and is tested.
 
+### 2.9 The perception budget, costed -- **added 2026-09-06**
+
+1.14's closing note said *"the one number to watch is C6's"* and that nothing in
+this plan had yet costed the three models together. This is that costing, and
+**they do not fit at camera rate.**
+
+Chip occupancy per invocation on the 8L, from 4.3.1 where it exists and
+comparable 8-series zoo figures derated to the 8L's measured 75-85% where it
+does not:
+
+| Stage | Per invocation | Source |
+|---|---|---|
+| YOLO11s @640 | **10.9ms** | 4.3.1, 92 FPS |
+| Floor segmentation @512 (DeepLabv3+/MobileNetV2, Fast-SCNN, STDC class) | **20-40ms**, call it 25 | 8-series zoo, derated |
+| CLIP image encoder per crop -- **ViT-B/32** (88M params) | **25-50ms** | attention-heavy on a part with no local DRAM |
+| CLIP image encoder per crop -- **ResNet-50** (25M params) | **7-10ms** | the alternative 4.3 also lists |
+
+The frame budget at 30Hz is 33.3ms.
+
+| Schedule | Chip time per frame | Verdict |
+|---|---|---|
+| detector alone | 10.9ms (33%) | fits |
+| detector + segmentation every frame | ~36ms (108%) | **already over** |
+| detector + seg + 3 crops, ViT-B/32 | 111-186ms | **5-9Hz achieved** |
+| detector + seg + 2 crops, ResNet-50 | ~52ms | **19Hz** -- bottom of 2.1's row, no margin, before host cost |
+
+**A schedule that does fit:** detector at 30Hz (327ms/s) + segmentation at 5Hz
+(125ms/s) + ResNet-50 CLIP on <=2 crops at 10Hz (160ms/s) = **61% duty.** That
+is the resolution 1.14 guessed at -- *"run segmentation at a fraction of camera
+rate, gate CLIP on the crop count"* -- but it is a **rate-division requirement,
+not spare capacity**, and C6 must be specified against it.
+
+**Pick ResNet-50 over ViT-B/32.** 4.3 lists both and never chooses; the choice
+is 3-5x on compute and again on weight-streaming below.
+
+#### "Several models resident" is the dangerous claim, not the benign one
+
+1.14 item 2 wrote that 4.3's *"several resident"* is *"a claim about memory, not
+throughput"*, filing residency as the harmless axis. **On this part it is the
+opposite.** 4.3's own table says the 8-series is *"dataflow, no external memory,
+weights streamed from the host"*. There is no on-chip DRAM, so a HEF that is not
+resident is re-streamed over the Pi 5's **single PCIe Gen 2 x1 lane** -- ~450
+MB/s usable at best. CLIP ViT-B/32's ~88MB of INT8 weights is **~200ms of lane
+time per swap**: six frame periods, dwarfing every inference figure in the table
+above. If HailoRT's scheduler round-robins three HEFs per frame, swap cost
+dominates the budget entirely.
+
+**And configuration D puts the NVMe on that same lane** (1.10 item 2, 4.9). An
+SSD write burst steals directly from weight-streaming bandwidth. The "solve the
+one-lane problem" fix and the "several models resident" claim are competing for
+the same 450 MB/s, and nothing in this plan had noticed.
+
+**Three consequences for C6.** Pin the detector resident and never swap it.
+Express the budget as a schedule with fixed sub-rates, not as headroom. And add
+**"measure HEF context-switch cost"** to the hardware-day list beside 1.15.5's
+mechanical measurements -- it is the single number most likely to invalidate
+this design, and it cannot be looked up.
+
+#### One more latency correction, for 1.14 item 5's benefit
+
+4.9's *"single-digit milliseconds"* and 4.4's FPS figures are **inference-kernel
+throughput**. Real capture-to-feature latency on this pipeline -- capture, ISP,
+resize, transfer, inference, post-process -- is **40-80ms**. 4.9's
+"500-1500x faster than the cloud call" survives comfortably. But it is the wrong
+number to build a reaction budget from, and 1.14 item 5's `t_react` is built
+from exactly this.
+
 ---
 
 ## 3. Mapping
@@ -1482,8 +1919,14 @@ Ubuntu, and Raspberry Pi OS is what `picamera2` and `rpicam-apps` target:
 
 | | Under (a) alone | With (b+) as the near plan |
 |---|---|---|
-| **Encoder motors** | nice to have -- the lidar is the odometer | **required.** nav2's local planner wants wheel odometry fused with scan matching; scan matching alone is meaningfully worse |
-| **IMU** | not needed | **desirable** -- ~$10, stabilises heading between scans |
+| **Encoder motors** | ~~nice to have~~ **required** (1.14 item 6) | **required.** nav2's local planner wants wheel odometry fused with scan matching; scan matching alone is meaningfully worse |
+| **IMU** | ~~not needed~~ **required** (1.14 item 6, 1.16 #14) | **desirable** -- ~$10, stabilises heading between scans |
+
+*(Both left-hand cells updated 2026-09-06: 1.14 item 6 makes encoders and the
+IMU load-bearing under (a) as well, because a held velocity needs a PID on wheel
+speed and heading error integrates for as long as the robot drives. 1.16 #14
+adds a third job for the IMU -- rejecting a scan taken while the chassis is
+pitched.)*
 
 ### 3.4 Persistence
 
@@ -1491,8 +1934,11 @@ Decided in 1.5. The reasoning behind the two that matter most:
 
 **Only the map persists.** `MissionMemory` is constructed at
 `control/mission_runner.py:255`, held on the runner, kept in
-`control/brain_server.py`'s `state`, running on ECS Fargate -- **RAM only, no
-serialisation anywhere, one mission's lifetime, no copy on the Pi.** Persisting
+`control/brain_server.py`'s `state` -- **RAM only, no serialisation anywhere,
+one mission's lifetime, no copy on the Pi.** *(Corrected 2026-09-06: this said
+"running on ECS Fargate". That stack was deleted 2026-09-05 and the brain is
+deployed nowhere at present -- which is B5's whole point, and which also means
+C5's "provable in the twin" assumes a locally-run robot server.)* Persisting
 it would buy mid-mission resumption that cannot be used: a robot that crashed
 does not know where it is any more, which is the no-map problem again. The map
 is what needs to outlive a mission, because the whole value of mapping a house
@@ -1537,10 +1983,13 @@ should be checked before ordering.
 | Camera Module 3 | 30 | Any CSI camera works now; autofocus. 1.10 |
 | **Hailo-8L, M.2 module form** | 70 | The on-board detector -- 1.10, §4, and 4.9 configuration C/D. Replaced the AI Camera 2026-09-04. Briefly the 10H at 130 on 2026-09-06, reverted the same day on its measured tokens/s (4.9). **The module, not the soldered AI HAT+** -- it is the form that survives a Jetson pivot and the form the NVMe needs anyway. The AI Kit that used to bundle it is out of production, so this is a standalone module plus a carrier. 4.8 and 4.9 argued for leaving this off the first order; **1.14 reversed that the same day** -- continuous motion puts the perception tier above what the Pi's cores deliver, so it ships with the first order |
 | 2-axis pan/tilt bracket + servos | 12 | Replaces what the PiCar-X bundled. **Both axes are kept -- 1.15.3.** Bracket measures 32 x 28 x 65mm and takes a 28x28mm camera, which the Camera Module 3 fits. **Two open questions**: the Waveshare board's PWM output does **not** support MG90S/SG90-class servos (drive them from the Pi's own GPIO instead), and 1.16 #7 asks whether bearing-critical axes justify **ST3215 bus servos** with position feedback (~25 each, driven natively by that board) |
-| **3S** Li-ion pack + charger | 35 | Motor rail only (1.3). **Not 2S** -- see the correction below |
+| **3S** Li-ion pack + charger, **x2** | 70 | 1.3. **Not 2S** -- see the correction below. Two packs since 2026-09-06: the bank is off the robot, so this pack now feeds everything through two bucks, and 1.3's budget gives one pack 40-60 minutes of driving |
 | Wiring, connectors, switch, XT60 | 15 | |
 | Standoffs, M2.5/M3 hardware | 10 | For stacking decks |
-| | **~440** | Chassis priced down (3.8); camera + Hailo replace the AI Camera, +30 (1.10) |
+| **Hailo carrier** (M.2 HAT+, or configuration D's dual-slot board) | 20-48 | **Added 2026-09-06.** The row above buys a bare M.2 module and 4.9's own table prices configuration C as *"a standalone module plus the M.2 HAT+"* and D as *"~70 + 48"*. The note on that row even says "a standalone module plus a carrier" while pricing no carrier. **The "essential only" build as previously listed could not be assembled.** Take D's $48 board if the NVMe is wanted, ~$20 for a plain M.2 HAT+ if not |
+| **Buck converter #2, 5V/2-3A** | 8 | 1.3. The pan/tilt servos' own rail. The plan had them on the Pi's GPIO in one section and called that the textbook brownout in another |
+| **Bulk electrolytic (>=470uF) + TVS, motor rail** | 2 | 1.3. Regenerative braking against a 3% input-voltage margin |
+| | **~490-518** | Was "~440" -- wrong on three counts (2026-09-06). It took the motor driver at **0** while 1.14 recommends the Waveshare board at **30**; it bought an M.2 module with no carrier; and it had no servo rail. See the totals below |
 
 **Strongly recommended -- each avoids a failure already discussed here**
 
@@ -1548,12 +1997,12 @@ should be checked before ordering.
 |---|---|---|
 | Powered USB hub | 15 | The 600mA USB cap browning out the Pi (1.3) |
 | IMU (MPU6050 / BNO055) | 0-10 | Heading drift between scans -- **matters much more under (b+)**, and more again under 1.14, where heading error integrates for as long as the robot drives. **0 if the Waveshare board is taken**: verified 2026-09-06 to carry a 9-axis QMI8658C + AK09918, which is better than the part specced here |
-| **2x VL53L1X ToF, forward-down** | 12 | The under-plane residual 1.15.4 names -- cliffs, thresholds and low obstacles the scan plane misses |
+| **2x VL53L1X ToF, forward-down** | 12 | The under-plane residual 1.15.4 names -- cliffs, thresholds and low obstacles the scan plane misses. **Effectively mandatory since 2026-09-06**: 1.15 sizes the volume nothing sees at bumper-to-32cm, below 12cm, which the robot crosses in 0.64s at 0.5 m/s. Also the only sensor here that sees a descending step |
 | **Compliant bumper + microswitches** | 5 | 1.15.4. **Not optional under 1.14**: everything else in the safety chain is an inference, and this is the only measurement. The cheapest guard in the build |
-| 5V buck converter | 8 | If the Pi is ever taken off the bank and onto the pack |
+| ~~5V buck converter~~ | -- | **Moved to essentials as buck #1** (1.3): the Pi is off the bank and onto the pack by design now, not conditionally |
 | **Lidar pedestal**, 3D printed | 15 | 0 with a printer. **Not a bracket -- it has a job (1.15.2)**: hold the scan plane as low as it can go while still clearing the camera's swept envelope at full tilt. Too low blinds the lidar in the forward arc; too high grows the under-plane blind volume |
 | Jumper wires, misc | 10 | |
-| | **~75** | |
+| | **~65** | The IMU falls to 0 (absorbed by the Waveshare board) and the 5V buck moves to essentials as buck #1, since 1.3 no longer runs the Pi off a bank |
 
 **Worth considering**
 
@@ -1565,15 +2014,30 @@ should be checked before ordering.
 
 | Scenario | ~USD |
 |---|---|
-| Essential only | 440 |
-| **+ recommended** | **515** |
-| + NVMe and the dual-slot base | 598 |
+| Essential only (plain M.2 carrier, no NVMe) | **~490** |
+| **+ recommended** | **~555** |
+| + NVMe and the dual-slot base (carrier becomes D's 48) | **~618** |
 | Already own a Pi 5 | subtract ~100 |
+| + ST3215 bus servos, if 1.16 #7 forces them | add ~38 |
 | ~~Accelerator deferred~~ | **No longer on offer** -- 1.14 item 2 |
 
-Already owned, 0: the power bank (1.3). **Budget ~515-600**, and the two
-variables that move it are whether a Pi 5 is already owned and whether the NVMe
-plus its dual-slot base is taken. **Raised ~17 on 2026-09-06** by 1.15.4's ToF
+**Recomputed 2026-09-06, and the old totals under-read by ~8%.** The previous
+440 / 515 / 598 summed correctly *only* by taking the motor driver at $0 and the
+IMU at $10 -- i.e. by pricing the bundled Yahboom board, which is not what 1.14
+recommends. This document reconciled that with *"the Waveshare board and the IMU
+it absorbs roughly cancel"*, but the IMU line was **$0-10** against a **$30**
+board, so it is a net **+$20-30, not a cancellation.** Three items were also
+missing entirely: the Hailo's carrier, the servo rail, and the motor-rail bulk
+capacitance.
+
+**The power bank is no longer "already owned, 0".** 1.3 removes it from the
+robot -- it fails both of that section's own tests, and the design now runs
+everything off the 3S pack through two bucks. **Buy a second 3S pack** (1.3's
+runtime budget is 40-60 minutes), which is the ~$35 line doubled.
+
+**Budget ~555-620**, and the variables that move it are whether a Pi 5 is
+already owned, whether the NVMe and its dual-slot board are taken, and whether
+bearing accuracy forces bus servos. **Raised ~17 on 2026-09-06** by 1.15.4's ToF
 pair and bumper; the Waveshare board and the IMU it absorbs roughly cancel. **The accelerator is no longer one of them:
 4.8 and 4.9 had it as deferrable, and 1.14 put it back on the first order.** Was ~460-510 under the IMX500 (2026-09-03): the Hailo decision
 added ~30 to the essentials and ~30 to the NVMe line (1.10). Before that,
@@ -2249,19 +2713,26 @@ the deliberation tier, a local collar owning safety, and an on-board tier that
 has to earn its place. **The industry's trajectory is an argument for buying the
 accelerator late, not for buying a bigger one early.**
 
-#### Pi-only, stated fairly
+#### Pi-only, stated fairly -- and then overtaken the same day
+
+> **Superseded by 1.14.** Everything in this subsection is conditional on
+> discrete motion, which was decided against hours after it was written. Kept
+> because the reasoning is sound on its own premise, and because the premise's
+> failure is the interesting part.
 
 The plan has treated "no accelerator" as the null option. It is stronger than
 that as a *starting* position. Stock YOLO11n on the Pi 5's own cores runs at
 roughly 5-13 FPS depending on export path -- ONNX INT8 at the low end, NCNN and
-quantised builds at the high end -- which **already clears 4.4's reaction bar**,
-because motion is discrete at ~2Hz and the range sensor owns the emergency stop.
-Pi-only fails on the **ceiling** (4.1), never on the rate. 4.4 said so; the
-numbers agree.
+quantised builds at the high end -- which **already cleared 4.4's reaction
+bar**, *because motion was discrete at ~2Hz* and the range sensor owns the
+emergency stop. Pi-only fails on the **ceiling** (4.1), never on the rate.
+**Under 1.14 it fails on the rate too**: 5-13 FPS is 0.2-0.4x of 2.1's
+perception row, and continuous driving spends the shortfall in centimetres
+rather than in wall-clock.
 
-The consequence is a sequencing fact worth more than either chip. **The
-accelerator is the only line in 3.6 that is purely deferrable.** It changes no
-other decision -- same chassis, same lidar, same camera, same two power rails,
+The consequence was a sequencing fact worth more than either chip: **the
+accelerator was the only line in 3.6 that was purely deferrable.** It changes no
+other decision -- same chassis, same lidar, same camera, same power design,
 same Pi OS, same code -- and it plugs into a machine that will already be
 running. Every other item on that list is load-bearing on hardware day.
 
@@ -2295,7 +2766,11 @@ Hailo-specific**, and on a Jetson it becomes `trtexec`. A pivot therefore loses
 one compile step, not the pipeline -- and the pipeline was always the expensive
 part, which is exactly why item 1 asks for it before the hardware arrives.
 
-**3. What is the exposure? $130, on a ~$560 build, for a part that resells.**
+**3. What is the exposure? $70-130, on a ~$555-620 build (3.6), for a part that
+resells.** *(Written when the answer was the $130 10H; 4.9 reverted it to the
+$70 8L hours later, and 3.6's totals were recomputed 2026-09-06. The argument
+below still reads as a case for the 10H and is superseded on that point -- kept
+for the memory-position comparison, which stands.)*
 Set against a pivot that costs +$320-430 at current prices, redesigns 1.3's
 power plan, and gives up the Pi camera stack. And on the specific wish --
 larger models from Hugging Face -- **the 10H's 8GB is dedicated, where the
@@ -2314,14 +2789,18 @@ recordings are unusable for reasons that have nothing to do with compute -- a
 target on furniture a floor robot cannot reach, and a camera at standing height
 (`CLAUDE.md` Stage 0). No chip fixes a data problem. So:
 
-- **Order the chassis, Pi, lidar and camera. Leave the accelerator off the first
-  order.**
+- ~~**Order the chassis, Pi, lidar and camera. Leave the accelerator off the
+  first order.**~~ **Reversed by 1.14 item 2 the same day** -- continuous motion
+  puts the perception tier above what the Pi's cores deliver, so the accelerator
+  ships with the first order. The two bullets below still stand and need none of
+  the hardware.
 - Re-record the corpus at 10-13cm on the wheeled rig -- needs none of this
   hardware.
 - Build the compile loop against a rented x86 host and score YOLO11n over the
   walks -- also needs none of it.
-- Then buy the AI HAT+ 2, in **M.2 module form**, once a detector has earned its
-  place in replay.
+- ~~Then buy the AI HAT+ 2, in **M.2 module form**, once a detector has earned
+  its place in replay.~~ **Doubly reversed**: the part is the **8L** (4.9, on
+  the 10H's measured tokens/s) and the timing is the first order (1.14).
 
 That sequencing costs one extra shipping charge and removes the question
 entirely: by the time the $130 is spent, the evidence for spending it exists. It
@@ -2489,11 +2968,12 @@ hardware day.
 
 | Document | What is now wrong |
 |---|---|
-| `HARDWARE-READINESS.md` | Written for the PiCar-X **throughout**. §1's parts table, §4's verb-to-motor path and §5's pre-flight checklist all assume Ackermann + Robot HAT + `picarx`. **§5.2's arc concern resolves to the pivot branch.** §5.3 (where the ultrasonic is mounted) is superseded by the lidar |
+| `HARDWARE-READINESS.md` | **This row was stale and is corrected 2026-09-06.** It described the file as *"written for the PiCar-X throughout"*, but that document was rewritten 2026-09-04 -- its §1 already lists the Yahboom chassis and the RPLidar C1, its §5.2 is already headed "resolved by the chassis", and its §5.3 is no longer about the ultrasonic at all. **What is still stale in it:** "Hailo-8L **AI HAT+**" (4.9 settled on the M.2 module) and "~$500 of parts" (3.6 now says ~555-620). CLAUDE.md repeats the old version of this row and needs the same fix |
 | `PLAN-sim-hardening.md` | **S6's Ackermann half is unnecessary** -- `grid_world.py`'s pivot assumption is now correct, and §3.3's divergence closes by hardware choice rather than by code. **But 1.14 un-retires S6's continuous-pose half (2026-09-06)**, for a different reason than S6 gave and at a much smaller cost: `sim/renderer.py` already takes a float pose, so only `grid_world.py` and a two-line boundary conversion in `mock_robot.py` are discrete |
 | `AGENT-HARNESS.md` | **1.14 splits the tick.** Its tick contract, concurrency model and status shape all assume one blocking sense-decide-act step. Continuous driving needs a drive loop and a mission loop at different rates. B3.2 and B3.3 keep their jobs but change what they time |
-| `robot/safety.py`, `config/robot.yaml` | **Two numbers are wrong under 1.14, in code, today.** `watchdog_timeout_s: 1.0` is 50cm of travel at 50cm/s, and the fixed `min_distance_cm: 20.0` is a stopping distance good for only ~0.45 m/s. Neither is wrong for discrete motion, which is why neither was caught |
+| `robot/safety.py`, `config/robot.yaml` | **Two numbers are wrong under 1.14, in code, today.** `watchdog_timeout_s: 1.0` is 50cm of travel at 50cm/s, and the fixed `min_distance_cm: 20.0` is a stopping distance good for only ~0.45 m/s -- **~0.15-0.2 m/s once 1.14 item 5's corrected `t_react` and the sensor offset are applied.** Neither is wrong for discrete motion, which is why neither was caught. **A third was found and FIXED 2026-09-06**: the collar had no sensor-to-bumper term, which is exactly zero for a front-mounted ultrasonic and 11-14cm for a deck-centre lidar. `SENSOR_TO_BUMPER_CM` and `safety.sensor_to_bumper_cm` now carry it, `path_clearance()` returns bumper-relative clearance, `GET /depth` publishes the offset, and `tests/test_depth_veto.py` pins it. Fixed while the number is still zero, so a sensor move cannot change the comparison's meaning silently |
 | `robot/interface.py` | Has no way to express a held velocity. 1.14 item 3 adds one, and `tests/test_robot_contract.py` has to carry it across all five backends |
+| `PLAN-aws-cost-redesign.md` | **Missing from this table until 2026-09-06, and it invalidates two phases.** Nine stacks -- every ECS service, the NLB, the ALB, the VPC and EFS -- were deleted 2026-09-05, *one day before* C1-C9 was written. So C5 and C7's "ALB path patterns" name infrastructure that does not exist, 3.4's "running on ECS Fargate" is wrong, and this document's five references to the corpus being "on EFS" contradict 1.16 #10, which correctly says S3. All corrected in place |
 | `PLAN-microduck-transplants.md` | **M2/M3 are built (2026-09-03) and the seam holds.** `PATH_FRACTION` did not -- §5.1, the one concrete defect this decision created in existing code, **fixed 2026-09-03**. **M10** (clearance from a real sensor) is satisfied far better by 360-degree metric returns than by one ultrasonic beam |
 | `CLAUDE.md` | The status table and build order referenced S6, the PiCar-X hardware path and, for one day, the IMX500. **Updated 2026-09-04** for the Hailo decision and the new bill |
 
@@ -2595,7 +3075,7 @@ item, not a guess to leave standing.
 
 ### 6.1 Measurable today, for free -- **MEASURED 2026-09-03**
 
-**Replay the trigger policy over recorded walks.** Every walk on EFS carries
+**Replay the trigger policy over recorded walks.** Every walk on S3 carries
 `walk.jsonl` -- frames plus the `/navigate` reply at the time, including
 `room_guess`. Running a candidate trigger policy over that data offline counts
 **how many deliberation calls it would have fired** versus the number of frames.
@@ -2604,7 +3084,9 @@ into a number, on data already owned -- the same move `control/walk_replay.py`
 already makes for prompts.
 
 **Run: `python -m tests.manual_trigger_count`** -- 39 walks, 821 recorded
-frames, §2.4's six triggers, `stale_n=8`. Two of them are not witnessable in
+frames, §2.4's six triggers, `stale_n=8`. *(Six was the table's full set when
+this ran; 2.4 gained a seventh, `cold search`, on 2026-09-06. The measurement
+predates it and has not been re-run -- the count is not an error.)* Two of them are not witnessable in
 a recorded walk and are therefore *undercounted*: "goal impossible / boxed in"
 needs the lidar this corpus predates, and a goal the reactive tier would have
 finished early leaves no trace in a walk the model drove step by step. So the
@@ -2692,7 +3174,7 @@ Kept as an index into where each landed:
 | # | Question | Where it landed |
 |---|---|---|
 | Q1 | Is there a map, and where does memory live? | **1.5** persistence -- only the map persists, planner is a pure function · **1.6** the visual-edge mechanism is cancelled |
-| Q2 | Closed or open goal vocabulary? | **1.7** closed and versioned, three verbs, unknown verbs refuse by name |
+| Q2 | Closed or open goal vocabulary? | **1.7** closed and versioned, **four** verbs (three until 1.15.3 added the report-only goal), unknown verbs refuse by name |
 | Q3 | Who owns the stop condition? | **1.8** typed success from the planner, typed failure from the robot, lidar x bearing |
 | Q4 | Is there an on-device detector, and who arbitrates? | **1.10** a Hailo-8L, two layers (the IMX500 for one day -- §4 has the comparison) · **1.11** arbitration split by question, not authority · **1.13** room identity is not one of the detector's jobs · **4.8**/**4.9** re-checked against industry practice and 2026 prices; the part settles as a Hailo-8L in M.2 module form · **1.15** the physical layout it has to live in |
 | Q5 | Does the sim participate? | **1.12** yes, with synthesised detections; occlusion-aware, tri-state, noise behind a flag |
@@ -2817,7 +3299,7 @@ work, not when its tests pass.
 |---|---|
 | **ALB / NLB** | Application / Network Load Balancer -- the pair all five services share |
 | **ECS / Fargate / ECR** | Elastic Container Service · its serverless mode · Elastic Container Registry |
-| **EFS** | Elastic File System. Holds recorded walks; survives a redeploy |
+| **EFS** | Elastic File System. **Deleted 2026-09-05** -- it held the recorded walks and was the only component that required a VPC; the corpus is on S3 now (`PLAN-aws-cost-redesign.md`) |
 | **DynamoDB** | AWS's key-value store -- §1.5's choice for the map |
 | **VPC / IAM** | Virtual Private Cloud · Identity and Access Management |
 | **CDN / CloudFront** | The HTTPS front door |

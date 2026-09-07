@@ -651,6 +651,18 @@ tuning a synthetic distribution to look reasonable.
 > be wanted for their own sake if a lidar lands and the sim has to represent
 > metric geometry -- but that is a different phase with a different
 > justification, and it is not this one.
+>
+> **Un-retired in half, 2026-09-06.** `PLAN-onboard-perception.md` 1.14 decides
+> motion becomes **continuous**, which is exactly the "different justification"
+> anticipated above, and it arrived. **The continuous-pose half is live again**
+> as that plan's phase C2; the Ackermann half stays retired. It is much cheaper
+> than this phase costed it, because `sim/renderer.py`'s ray-casting primitives
+> already take a float pose and radians -- but **not as cheap as 1.14 first
+> claimed**: that section said the renderer needs no change at all and named a
+> single two-line boundary conversion, and there are four discrete sites
+> (`render_world_image()` at `sim/renderer.py:273-279`, `get_depth_grid()`'s
+> conversion at `sim/mock_robot.py:227-228`, and `grid_world`'s
+> `distance_ahead()` and `frame_description()`). Corrected there 2026-09-06.
 
 ### Phase S7 -- Chaos and soak
 

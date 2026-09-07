@@ -156,6 +156,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     config = load_config(config_path) if config_path else load_config()
     watchdog_timeout = config.get("safety", {}).get("watchdog_timeout_s", 1.0)
     min_distance = config.get("safety", {}).get("min_distance_cm", 20.0)
+    sensor_to_bumper = config.get("safety", {}).get("sensor_to_bumper_cm", 0.0)
     # Same resolution get_robot() uses internally -- reported in /health so
     # a client can tell "wrong deployment" (e.g. Robot view's "drive via
     # brain" pointed at a mode: sim server) apart from "not reachable at
@@ -163,7 +164,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     mode = os.environ.get("ROBOT_MODE") or config.get("mode", "sim")
 
     robot = get_robot(config_path) if config_path else get_robot()
-    safety = SafetyController(robot, min_distance_cm=min_distance)
+    safety = SafetyController(robot, min_distance_cm=min_distance,
+                              sensor_to_bumper_cm=sensor_to_bumper)
     state = {
         "last_command_at": time.monotonic(),
         # Phase M4. Who last drove, when, and what was last refused. The
@@ -401,6 +403,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # A clearance of None is "nothing within range", never a block.
             "blocked": clearance is not None and clearance < min_distance,
             "min_distance_cm": min_distance,
+            # Published for the same reason `clearance_cm` is: the strip
+            # must draw what the veto reads. `clearance_cm` above is
+            # already bumper-relative, so a page that re-added this would
+            # subtract it twice -- it is here to be *shown* ("measured from
+            # the bumper, sensor is Ncm back"), never to be applied.
+            "sensor_to_bumper_cm": sensor_to_bumper,
         }
         return grid
 
