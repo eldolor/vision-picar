@@ -630,17 +630,54 @@ grid rendering, a JS port of `sim/grid_world.py`'s starter-house layout.
   stopped. A **watchdog readout** shows `robot/server.py`'s own B3.1
   silence counter.
 
-  A **policy picker** chooses between the free rule-based explorer and the
+  A **policy picker** chooses between the free rule-based explorer, the
   **vision policy** (`brain/vision_agent.py`), which spends one `/navigate`
-  call per step and is the policy that will be on the robot. Picking it sends
-  the Guide tab's `model_id` and `prompt_variant` along with the start, and
-  reveals those two pickers -- the Remote brain panel is their second
+  call per step, and the **tiered policy** (below). Picking either paid one
+  sends the Guide tab's `model_id` and `prompt_variant` along with the start,
+  and reveals those two pickers -- the Remote brain panel is their second
   consumer -- with a one-tap jump to them. Before you spend anything the panel
   states, in words, which model and which wording the mission would ask with,
   resolved the same way the server resolves them (your pick, then whatever the
   brain pins, then the vision service's own default). Both are validated
   against the service's published allow-lists in a single round trip at start,
   so a typo is a refusal rather than three burnt vision failures.
+
+  The **tiered policy** (`brain/tiered.py` over `brain/perceive.py`, phase P2
+  of `PLAN-onboard-perception.md` 4.10) is the vision policy with a local
+  perception tier in front of it: a YOLO detector and a CLIP scorer run **in
+  the brain process** on every frame, for free, and the paid `/navigate` call
+  goes out only on `mission_start`, `candidate_sighting` or `cold_search`,
+  with two frames of hysteresis before an edge is believed. Four readouts
+  appear with it (§6.3 of that plan), and vanish under any policy with no
+  perception tier rather than drawing zeroes:
+
+  - **Perception** -- the tri-state `detected` / `absent` / `unavailable`,
+    with the matched label and its bearing. `unavailable` is styled as a
+    fault and `absent` is not: "the frame was good and the thing is not in
+    it" and "I could not look" mean opposite things, and a wedged capture
+    must never read as a missing target.
+  - **CLIP margin** -- how much better the target string fits the crop than
+    the best distractor does. The *margin*, not the similarity: CLIP returns
+    a similarity rather than a probability, so a bare threshold will always
+    pick something.
+  - **Models** -- the detector and encoder by name, read off the loaded
+    backends. Change `brain.perception_detector` and this line changes, which
+    is what makes swapping one watchable.
+  - **Deliberation** -- cloud calls *and* frames, plus the live ratio. This
+    is the number the whole architecture is judged on ("a deliberation-call
+    counter that visibly does not climb every step"), and it is directly
+    comparable to the 4-6x measured over recorded walks. The mission log
+    marks each paid step `[cloud: <trigger>]`.
+
+  `ultralytics`/`torch` are an **optional** install
+  (`requirements-perception.txt`). A brain without them reports
+  `perception_available: false` on `/health`, the panel says so before you
+  press Start, and a tiered mission refuses at start with the pip command --
+  never mid-tick, where it would be counted as a vision failure and end the
+  mission reporting the wrong cause. The detector's *boxes* are deliberately
+  not drawn on the FPV canvas: those frames are raycaster renders, and a
+  detector run against them would produce a false positive signal rather than
+  a weak one.
 - **Local brain, rule-based** (`Explore` / `Find backpack` / `Reset
   mission`) -- the frontier-preference exploration algorithm from
   `brain/agent.py`, re-implemented in this page's JavaScript, driving

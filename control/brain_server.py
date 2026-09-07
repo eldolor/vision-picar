@@ -10,7 +10,8 @@ HTTP request that started it -- which is the point. Today the browser IS
 the loop, so backgrounding the phone's tab halts autonomy.
 
     POST /mission/start   {"target_object": "red backpack", "max_steps": 120,
-                           "policy": "frontier" | "vision", "fault": "none"}
+                           "policy": "frontier" | "vision" | "tiered",
+                           "fault": "none"}
     POST /mission/stop    always available, always stops the robot too
     GET  /mission/status  what the loop is doing right now
     POST /recording/frame save one frame of a Robot-view walk, for replay
@@ -44,8 +45,18 @@ and tests/test_brain_server.py asserts the import surface directly.
 `policy: "vision"` hands each decision to the model via
 brain/navigate.py, and needs both `brain.vision_url` and a backend whose
 frames carry pixels (`sim/replay_robot.py` today; MockRobot cannot until
-phase S2). `fault` runs one of control/drills.py's failsafe drills instead
-of a normal mission -- the only way to demonstrate B3.2 and B3.3 from the twin,
+phase S2). `policy: "tiered"` is the same call wrapped in
+brain/tiered.py's trigger discipline (P2): a local YOLO + CLIP pipeline
+looks at every frame for free and the paid call goes out only on
+`mission_start`, `candidate_sighting` or `cold_search`. **Those models
+run in THIS process**, which is why the pipeline is built at mission
+start rather than on the first tick: `ultralytics`/`torch` are optional
+(requirements-perception.txt), and a missing one has to be a 400 naming
+it, never a vision failure discovered three ticks into a mission that is
+already driving a robot.
+
+`fault` runs one of control/drills.py's failsafe drills instead of a
+normal mission -- the only way to demonstrate B3.2 and B3.3 from the twin,
 since neither can be provoked by pressing anything. See that module.
 
 Failsafe B3.3 lives here: the loop's own dead-man. If a tick doesn't
@@ -71,6 +82,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 
 from brain.navigate import vision_fn_for
+from brain.perceive import DEFAULT_CLIP, DEFAULT_DETECTOR, PerceptionUnavailable
+from brain.tiered import tiered_vision_fn_for
 from control import drills
 from control.brain_config import load_brain_config
 from control.mission_runner import MissionRunner
@@ -197,6 +210,85 @@ def _validate_navigate_choices(model_id: Optional[str], prompt_variant: Optional
         )
 
 
+# The policies that reach the cloud vision service, and therefore need a
+# vision_url, a target object and a validated model/wording. "tiered"
+# reaches it far less often (that is the whole point of P2), but "less
+# often" is not "never" -- mission_start alone guarantees one call.
+CLOUD_POLICIES = ("vision", "tiered")
+
+
+def _perception_available() -> bool:
+    """Whether this process COULD build a tiered mission's pipeline.
+
+    `find_spec`, not an import: importing torch costs seconds and this is
+    answered inside a health check the twin polls. The question being
+    answered is "is the package installed", which find_spec answers
+    exactly; whether the weights then load is a mission-start question and
+    stays one -- _tiered_vision_fn() is the thing that actually knows.
+
+    Reported so the twin can say the policy is unavailable BEFORE the
+    operator picks it, rather than only after a 400. It is a description,
+    never a verdict: control/health.py owns what "unhealthy" means, and a
+    brain with no perception extras installed is a perfectly healthy brain
+    for the other two policies.
+    """
+    from importlib.util import find_spec
+
+    try:
+        return all(find_spec(m) is not None
+                   for m in ("ultralytics", "open_clip", "torch"))
+    except (ImportError, ValueError):
+        # find_spec raises on a half-installed package rather than
+        # returning None. Same answer either way: it cannot be used.
+        return False
+
+
+def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict):
+    """Wrap the cloud vision_fn in brain/tiered.py's trigger discipline.
+
+    **This is where the optional heavy dependencies are actually loaded**,
+    and it is deliberately on the mission-start path rather than the first
+    tick. `ultralytics` and `torch` are kept out of requirements.txt on
+    purpose (brain/perceive.py's own note: a multi-gigabyte install that
+    no automated test may need), so a checkout that has never installed
+    requirements-perception.txt is a normal state, not a broken one -- and
+    the honest answer to it is a 400 naming the missing package before a
+    single motor turns.
+
+    Discovering it inside a tick would be much worse than merely late: a
+    `PerceptionUnavailable` there is counted by failsafe B3.2 as a vision
+    failure, so the mission would limp through three of them and die
+    reporting "vision unavailable 3 times in a row" -- the same
+    diagnose-the-wrong-thing failure `_validate_navigate_choices()` was
+    written to prevent for model ids, with a robot standing in a room for
+    the duration.
+    """
+    kwargs = {
+        "consecutive_frames": config["tier_consecutive_frames"],
+        "cold_search_after": config["tier_cold_search_after"],
+        "max_calls": config["tier_max_calls"] or None,
+    }
+    pipeline_kwargs = {}
+    if config["perception_detector"]:
+        pipeline_kwargs["weights"] = config["perception_detector"]
+    if config["perception_clip_model"]:
+        pipeline_kwargs["clip_model"] = config["perception_clip_model"]
+    try:
+        from brain.perceive import pipeline_for
+
+        pipeline = pipeline_for(target, **pipeline_kwargs)
+    except PerceptionUnavailable as e:
+        # Re-raised as ValueError because start_mission() maps that to a
+        # 400 with the message intact, and the message is the useful part:
+        # it names the pip command.
+        raise ValueError(f"The tiered policy cannot start: {e}") from e
+    except Exception as e:  # noqa: BLE001 -- a bad weights file, a dead download
+        raise ValueError(
+            f"The tiered policy could not load its perception models: {e}"
+        ) from e
+    return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
+
+
 def create_app(
     config_path: Optional[str] = None,
     robot_factory: Optional[Callable[[], RobotInterface]] = None,
@@ -233,20 +325,27 @@ def create_app(
 
     def default_runner_factory(robot: RobotInterface, req: MissionStartRequest) -> MissionRunner:
         vision_fn = None
-        if req.policy == "vision":
+        if req.policy in CLOUD_POLICIES:
             # The policy exists (brain/vision_agent.py); what it needs is an
             # endpoint to ask and a target to look for. Both are checked here
             # rather than failing on the first tick, so a misconfigured brain
             # says so at start time instead of after a paid call.
+            #
+            # The tiered policy needs both for the same reasons and one
+            # more of its own: the target string is what CLIP scores every
+            # crop against, so a mission with no object has nothing to
+            # perceive as well as nothing to ask about.
             if not config["vision_url"]:
                 raise ValueError(
-                    "The vision policy needs a vision service. Set brain.vision_url "
-                    "in config/robot.yaml (or VISION_URL in the environment)."
+                    f"The {req.policy} policy needs a vision service. Set "
+                    "brain.vision_url in config/robot.yaml (or VISION_URL in the "
+                    "environment)."
                 )
             if not req.target_object:
                 raise ValueError(
-                    "The vision policy searches for an object -- /navigate takes a "
-                    "target_object. A target_room-only mission needs policy='frontier'."
+                    f"The {req.policy} policy searches for an object -- /navigate "
+                    "takes a target_object. A target_room-only mission needs "
+                    "policy='frontier'."
                 )
             model_id = req.model_id or config["navigate_model_id"] or None
             prompt_variant = (
@@ -264,6 +363,8 @@ def create_app(
                 model_id=model_id,
                 prompt_variant=prompt_variant,
             )
+            if req.policy == "tiered":
+                vision_fn = _tiered_vision_fn(req.target_object, vision_fn, config)
 
         kwargs = dict(
             target_object=req.target_object,
@@ -488,6 +589,18 @@ def create_app(
             # the wrong model, and wording moved a FORWARD rate from 0.000 to
             # 1.000 in this project's own 3x3 matrix.
             "navigate_prompt_variant": config["navigate_prompt_variant"] or None,
+            # Phase P2. Whether `policy: "tiered"` can run here at all, and
+            # which models it would load if it did -- so the twin can name
+            # the detector on screen before anything is spent, and grey the
+            # policy out instead of offering one that will 400. Same reason
+            # navigate_model_id is reported above: the failure this project
+            # actually hit was a week of walks attributed to a model that
+            # was never running.
+            "perception_available": _perception_available(),
+            "perception_detector": config["perception_detector"] or DEFAULT_DETECTOR,
+            "perception_clip_model": config["perception_clip_model"] or DEFAULT_CLIP,
+            "tier_consecutive_frames": config["tier_consecutive_frames"],
+            "tier_cold_search_after": config["tier_cold_search_after"],
             # "Will a POST /recording/frame actually succeed here" -- true
             # either because this brain stores locally, or because it
             # forwards to one that does (recording_proxy_url). Before the

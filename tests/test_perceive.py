@@ -322,3 +322,77 @@ def test_the_real_backends_say_what_to_install_rather_than_traceback():
     with pytest.raises(PerceptionUnavailable) as exc:
         YoloDetector()
     assert "requirements-perception.txt" in str(exc.value)
+
+
+# ---------- the bearing, which had never once been a number ----------
+#
+# Found 2026-09-07 by running a real walk end to end: `bearing_deg` was
+# `None` on every frame, because **no RobotInterface backend publishes
+# `image_width`** and `_bearing()` needs a width to place a box in the
+# frame. 1.11 makes the bearing perception's own answer to "which way is
+# it", so an output that can never populate is a gap, not a default.
+#
+# The width is read off the image itself rather than widening the frame
+# contract across every backend and the conformance suite.
+
+pil_image = pytest.importorskip(
+    "PIL.Image", reason="the width fallback needs Pillow (perception extras)")
+
+
+def real_png(width: int, height: int = 32) -> str:
+    """A real image of a known size, base64'd -- so the width is READ and
+    not asserted into existence."""
+    import io
+
+    buf = io.BytesIO()
+    pil_image.new("RGB", (width, height), (10, 20, 30)).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def undeclared(image):
+    """A frame shaped like sim/replay_robot.py's: pixels, media type, room
+    -- and no width, which is the whole defect."""
+    return {"image_base64": image, "media_type": "image/jpeg", "room": "unknown"}
+
+
+def test_the_bearing_is_a_number_even_when_the_frame_declares_no_width():
+    """The defect exactly. Every recorded walk in the corpus produced a null
+    bearing, so 1.11's "which way is it" had never been answered once."""
+    pipeline = PerceptionPipeline(
+        FakeDetector([det("backpack", x1=150.0, w=40.0)]),
+        FakeScorer({"_default": (0.9, 0.1)}), "red backpack")
+    perception = pipeline.perceive(undeclared(real_png(200)))
+
+    assert perception.status == DETECTED
+    assert perception.bearing_deg is not None, "bearing is still null"
+    # The box sits right of centre in a 200px frame, so the bearing does too.
+    assert perception.bearing_deg > 0
+
+
+def test_a_declared_width_still_wins_over_the_image():
+    """A backend that declares one knows something the pixels cannot -- a
+    frame downscaled after its boxes were computed, say."""
+    image = real_png(200)
+    pipeline = PerceptionPipeline(
+        FakeDetector([det("backpack", x1=150.0, w=40.0)]),
+        FakeScorer({"_default": (0.9, 0.1)}), "red backpack")
+
+    from_image = pipeline.perceive(undeclared(image)).bearing_deg
+    declared = pipeline.perceive(
+        dict(undeclared(image), image_width=400)).bearing_deg
+    # Same box, a frame declared twice as wide: it sits nearer the centre.
+    assert abs(declared) < abs(from_image)
+
+
+def test_an_unreadable_image_leaves_the_bearing_null_rather_than_failing():
+    """A width we cannot read is a bearing we do not have, which is already
+    a state -- it must never fail a perception step the detector completed.
+    Every other test in this file passes bytes PIL cannot open, and they all
+    have to keep working."""
+    pipeline = PerceptionPipeline(
+        FakeDetector([det("backpack")]),
+        FakeScorer({"_default": (0.9, 0.1)}), "red backpack")
+    perception = pipeline.perceive(undeclared(IMAGE))
+
+    assert perception.status == DETECTED
+    assert perception.bearing_deg is None

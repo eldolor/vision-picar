@@ -199,6 +199,15 @@
     padding: 10px 12px; border-radius: 9px; min-height: 44px;
     border: 1px solid var(--border-strong); background: var(--field-bg); color: var(--text);
     font-family: var(--mono); font-size: var(--fs-input);
+    /* A flex item's min-width is `auto`, which for a <select> is the width
+       of its LONGEST OPTION -- so a descriptive option label silently
+       pushes the whole page wider than the phone and the panel starts
+       scrolling sideways. #brain-fault was already 21px over at 390px
+       before anything was added here, and the tiered policy's label took
+       it to 213px. Shrinking is what flex:1 was asking for; the native
+       control clips its own text, and the hint underneath is where the
+       full sentence lives. */
+    min-width: 0;
   }
 
   #photo-preview {
@@ -1320,6 +1329,22 @@
         </span>
         <input type="checkbox" id="cfg-drive-via-brain" class="switch">
       </label>
+      <!-- Which policy the walk's mission runs. Its own control rather than
+           the Sim tab's, because they start two different missions: that
+           one drives the grid world, this one drives a phone on a wheeled
+           rig. The tiered option is the only place in this app where YOLO
+           and CLIP get real pixels -- PLAN-onboard-perception.md 4.10's
+           whole point is that the twin's raycaster frames cannot test a
+           detector, and a phone walk can. "frontier" is deliberately not
+           offered: a photograph carries no grid coordinates and
+           TeleopRobot has no distance sensor, so the rule-based policy
+           degenerates to a blind wall-follower here. -->
+      <div class="btn-row" id="drive-policy-row" style="display:none;">
+        <select id="cfg-drive-policy" class="select-input" style="flex:1;">
+          <option value="vision">Vision policy &middot; a model call per frame</option>
+          <option value="tiered">Tiered policy &middot; YOLO + CLIP local, model on a trigger</option>
+        </select>
+      </div>
       <div class="btn-row" style="margin-top:8px;">
         <input type="text" id="guidance-target" class="text-input" value="red backpack" list="target-history-list" style="flex:2;">
         <button id="btn-guidance" class="primary" style="flex:1;">Start</button>
@@ -1396,6 +1421,7 @@
         <select id="brain-policy" class="select-input" style="flex:1;">
           <option value="frontier">Rule-based policy &middot; free</option>
           <option value="vision">Vision policy &middot; paid, one model call per step</option>
+          <option value="tiered">Tiered policy &middot; on-board perception, model on a trigger</option>
         </select>
       </div>
       <div class="hint" id="brain-policy-hint" style="display:none;"></div>
@@ -1427,6 +1453,27 @@
              identical from here. -->
         <div class="full">Driving: <span class="val" id="brain-tel-driver">&ndash;</span></div>
         <div class="full">Last refusal: <span class="val" id="brain-tel-refusal">&ndash;</span></div>
+      </div>
+      <!-- Phase P2 / PLAN-onboard-perception.md 6.3. Its own block rather
+           than four more rows in the telemetry grid above, because the
+           whole group appears and disappears with the policy: a tiered
+           mission has a perception tier, the other two do not, and a
+           counter reading "0 calls over 0 frames" under the frontier
+           policy would look like an architecture that had stopped
+           deliberating rather than one that was never running.
+
+           The deliberation counter is the load-bearing one. 6.3: "a
+           deliberation-call counter that visibly does not climb every
+           step. That single number makes the whole architecture
+           watchable." It shows calls AND frames because a call count
+           climbing by one is indistinguishable from a call on every
+           step, which is the thing this policy claims not to do. -->
+      <div class="telemetry" id="brain-tier-rows" style="display:none;">
+        <div class="full" style="opacity:0.75;">On-board perception &middot; free, every frame</div>
+        <div class="full">Perception: <span class="val" id="brain-tel-perception">&ndash;</span></div>
+        <div class="full">CLIP margin: <span class="val" id="brain-tel-margin">&ndash;</span></div>
+        <div class="full">Models: <span class="val" id="brain-tel-detector">&ndash;</span></div>
+        <div class="full">Deliberation: <span class="val" id="brain-tel-calls">&ndash;</span></div>
       </div>
       <div id="brain-log" role="log" aria-live="polite"></div>
       <details class="disclosure">

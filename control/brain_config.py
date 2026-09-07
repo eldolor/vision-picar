@@ -40,6 +40,28 @@ DEFAULTS = {
     # name here either -- the allow-list lives in the vision service (GET
     # /navigate/models publishes it as `prompts`) and is validated there.
     "navigate_prompt_variant": "",
+    # ---- policy: "tiered" (PLAN-onboard-perception.md 4.10, phase P2) ----
+    # Which weights the local detector loads, and which CLIP encoder scores
+    # the crops. Empty means brain/perceive.py's own defaults (yolo11s.pt,
+    # RN50), which is where the reasoning for each choice is written down --
+    # 4.3.1 measured the detector on-chip and 4.9 chose the encoder. These
+    # exist so a candidate model can be swapped WITHOUT editing code, which
+    # is 4.7's promotion rule in its cheapest form: the name the twin shows
+    # changes with it, and that is the experiment loop made watchable (6.3).
+    "perception_detector": "",
+    "perception_clip_model": "",
+    # 6.1's hysteresis, in frames. 1 reproduces the naive trigger count
+    # (2.8x); 2 is the measured 4.1x. Not tuning -- see brain/tiered.py.
+    "tier_consecutive_frames": 2,
+    # How many consecutive `absent` frames before asking the cloud whether
+    # the target is even in this room. brain/tiered.py's own note says this
+    # number is a guess and is the first thing to tune against a real walk.
+    "tier_cold_search_after": 6,
+    # A hard cap on paid deliberation calls per mission, the same shape as
+    # Robot view's 120-call cap. 0 means "no cap" -- max_steps still bounds
+    # the mission, and under this policy most steps cost nothing, so the
+    # step budget is a poor proxy for the bill.
+    "tier_max_calls": 0,
     "max_steps": 120,
     "min_distance_cm": 30.0,
     "request_timeout_s": 10.0,

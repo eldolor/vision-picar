@@ -1295,3 +1295,357 @@ def test_a_stalled_watchdog_loop_reads_as_unhealthy(browser, twin_server):
     sync_api.expect(page.locator("#system-health-detail")).to_contain_text("watchdog loop")
     assert not errors, errors
     page.close()
+
+
+# ---------- the tiered policy, and what makes it watchable (phase P2) ----------
+#
+# `PLAN-onboard-perception.md` 6.3 is the specification these cover, and its
+# own sentence is the reason they are UI tests at all: *"a deliberation-call
+# counter that visibly does not climb every step. That single number makes
+# the whole architecture watchable."* A tiered mission whose saving can only
+# be read out of a JSON status is, by CLAUDE.md section 7, not shipped.
+#
+# The brain is stubbed by request interception, exactly as the M4 and M5
+# tests stub it: nothing here starts a mission, loads a model or spends
+# anything. What is under test is whether a person holding a phone can see
+# the three tiers doing their separate jobs.
+
+TIERED_BRAIN_HEALTH = {
+    "status": "ok", "mission_running": False, "tick_timeout_s": 30.0,
+    "drills_allowed": True, "recording_allowed": True,
+    "identity": {"git_revision": "abc1234"},
+    "perception_available": True,
+    "perception_detector": "yolo11s.pt",
+    "perception_clip_model": "RN50",
+    "tier_consecutive_frames": 2,
+    "tier_cold_search_after": 6,
+}
+
+
+def tiered_status(*, frames=12, cloud_calls=3, status="detected", margin=0.21,
+                  detector="yolo11s.pt", running=True):
+    """A /mission/status body shaped as control/mission_runner.py emits one
+    under `policy: "tiered"`."""
+    return {
+        "running": running, "outcome": "running" if running else "found",
+        "policy": "tiered", "mission": "Find the red backpack.",
+        "target_object": "red backpack", "step": frames, "max_steps": 120,
+        "found": False, "room_reached": False, "complete": False,
+        "last_action": "FORWARD", "last_reasoning": "target ahead -- because",
+        "rooms_visited": [], "rooms_searched": [], "vision_failures": 0,
+        "ticks": frames, "seconds_since_last_tick": 0.2, "tick_rate_hz": 1.0,
+        "sighting": None, "log_tail": ["step 1: FORWARD (ok)"],
+        "perception": {
+            "status": status, "crop_source": "label_gate", "reason": "scripted",
+            "synthesised": False, "pan_deg": 0.0, "tilt_deg": 0.0,
+            "bearing_deg": 4.2, "match_margin": margin, "similarity": 0.31,
+            "label": "backpack", "candidates": 2,
+        },
+        "tier": {
+            "cloud_called": True, "trigger": "candidate_sighting",
+            "models": {"detector": detector, "scorer": "RN50",
+                       "target": "red backpack", "crop_source": "label_gate"},
+            "stats": {"frames": frames, "cloud_calls": cloud_calls,
+                      "frames_per_call": round(frames / cloud_calls, 2),
+                      "triggers": {"mission_start": 1, "candidate_sighting": 2},
+                      "perception": {"detected": 4, "absent": 8}},
+        },
+    }
+
+
+def frontier_status():
+    """The same panel under a policy with no perception tier -- both keys
+    null, which is what the runner really sends."""
+    return {
+        "running": True, "outcome": "running", "policy": "frontier",
+        "step": 4, "max_steps": 120, "last_action": "FORWARD",
+        "last_reasoning": "free space clear", "vision_failures": 0,
+        "rooms_searched": [], "log_tail": [], "tier": None, "perception": None,
+    }
+
+
+def open_with_brain(browser, twin_server, *, status=None, health=None):
+    """The Sim tab with a stubbed brain connected. Connecting polls
+    /mission/status once, which is what draws the readouts."""
+    page, errors = open_twin(browser, twin_server, mode="guide")
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json(health if health is not None else TIERED_BRAIN_HEALTH)))
+    if status is not None:
+        page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+            status=200, content_type="application/json", body=_json(status)))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+    return page, errors
+
+
+def test_the_remote_brain_can_be_set_to_the_tiered_policy(browser, twin_server):
+    """P1 and P2 have existed since 2026-09-06 with no way to ask for them
+    from a phone -- the same state `policy: "vision"` was in before M1, and
+    the same verdict applies."""
+    page, _ = open_sim_tab(browser, twin_server, mode="guide")
+    select = page.locator("#brain-policy")
+    select.select_option("tiered")
+    assert select.input_value() == "tiered"
+    page.close()
+
+
+def test_the_tiered_hint_says_the_models_are_local_and_the_cloud_is_on_a_trigger(browser, twin_server):
+    """The cost story is the opposite of the vision policy's and has to read
+    that way before anything is spent: perception every frame for free, the
+    paid call only on an event."""
+    page, _ = open_with_brain(browser, twin_server)
+    page.locator("#brain-policy").select_option("tiered")
+    hint = page.locator("#brain-policy-hint")
+    sync_api.expect(hint).to_be_visible()
+    sync_api.expect(hint).to_contain_text("yolo11s.pt")
+    sync_api.expect(hint).to_contain_text("RN50")
+    sync_api.expect(hint).to_contain_text("trigger")
+    page.close()
+
+
+def test_the_tiered_policy_brings_the_model_and_prompt_pickers_with_it(browser, twin_server):
+    """It still makes a paid /navigate call -- fewer of them, not none -- so
+    a tiered walk has to be as attributable as a vision one."""
+    page, _ = open_sim_tab(browser, twin_server, mode="guide")
+    page.locator("#brain-policy").select_option("tiered")
+    sync_api.expect(page.locator("#brain-policy-pickers-row")).to_be_visible()
+    page.click('.tab-btn[data-tab="guide"]')
+    sync_api.expect(page.locator("#navigate-model-row")).to_be_visible()
+    sync_api.expect(page.locator("#navigate-prompt-row")).to_be_visible()
+    page.close()
+
+
+def test_the_deliberation_counter_is_on_the_panel(browser, twin_server):
+    """6.3's *"single number"*. It has to show BOTH terms -- calls and
+    frames -- because a bare call count climbing by one is indistinguishable
+    from a call on every step, which is the thing this architecture claims
+    not to do."""
+    page, errors = open_with_brain(
+        browser, twin_server, status=tiered_status(frames=12, cloud_calls=3))
+    readout = page.locator("#brain-tel-calls")
+    sync_api.expect(readout).to_be_visible(timeout=5000)
+    text = readout.inner_text()
+    assert "3" in text and "12" in text, text
+    # 6.1 measured 4-6x, and this number is directly comparable to it.
+    assert "4" in text, f"the saving is not shown: {text!r}"
+    assert not errors, errors
+    page.close()
+
+
+def test_the_perception_tri_state_is_shown_and_unavailable_is_not_absent(browser, twin_server):
+    """1.12's whole reason for a three-way output, at the surface: *"a wedged
+    capture never looks like a missing target."* Two words that mean opposite
+    things must not render the same way."""
+    page, _ = open_with_brain(browser, twin_server, status=tiered_status(status="absent"))
+    readout = page.locator("#brain-tel-perception")
+    sync_api.expect(readout).to_contain_text("absent", timeout=5000)
+    absent_class = readout.get_attribute("class") or ""
+    page.close()
+
+    page2, _ = open_with_brain(browser, twin_server,
+                               status=tiered_status(status="unavailable"))
+    readout2 = page2.locator("#brain-tel-perception")
+    sync_api.expect(readout2).to_contain_text("unavailable", timeout=5000)
+    assert (readout2.get_attribute("class") or "") != absent_class, (
+        "`absent` and `unavailable` render identically -- which is the one "
+        "thing 1.12's tri-state exists to prevent")
+    page2.close()
+
+
+def test_the_clip_margin_and_the_detector_name_are_on_the_panel(browser, twin_server):
+    """The margin, not the similarity: CLIP returns a similarity rather than
+    a probability, so the margin over the distractors is the number that
+    means anything (brain/perceive.py's DEFAULT_MATCH_MARGIN). And the
+    detector's own name, because swapping it is the experiment loop."""
+    page, _ = open_with_brain(browser, twin_server,
+                              status=tiered_status(margin=0.21, detector="yolo11n.pt"))
+    sync_api.expect(page.locator("#brain-tel-margin")).to_contain_text("0.21", timeout=5000)
+    sync_api.expect(page.locator("#brain-tel-detector")).to_contain_text("yolo11n.pt")
+    page.close()
+
+
+def test_the_tier_readouts_stay_hidden_under_a_policy_that_has_no_tier(browser, twin_server):
+    """Same choice the depth strip makes about a server with no /depth: say
+    nothing rather than draw a zero. A counter reading 0 calls over 0 frames
+    would look like a tiered mission that had stopped deliberating."""
+    page, _ = open_with_brain(browser, twin_server, status=frontier_status())
+    page.wait_for_timeout(600)
+    rows = page.locator("#brain-tier-rows")
+    # Present-and-hidden, not absent: a missing element is also "hidden" to
+    # Playwright, and this test would then pass against a build with no tier
+    # readouts at all -- which is the trap CLAUDE.md records two tests in
+    # this project falling into.
+    assert rows.count() == 1, "the tier readouts are not in the page at all"
+    sync_api.expect(rows).to_be_hidden()
+    page.close()
+
+
+def test_a_brain_with_no_perception_models_says_so_before_you_start(browser, twin_server):
+    """`ultralytics`/`torch` are an optional install, so this is a normal
+    state for a fresh checkout. The mission does refuse with a usable
+    message -- but reading it requires having already pressed Start, and the
+    panel can say it first."""
+    health = dict(TIERED_BRAIN_HEALTH, perception_available=False)
+    page, _ = open_with_brain(browser, twin_server, health=health)
+    page.locator("#brain-policy").select_option("tiered")
+    hint = page.locator("#brain-policy-hint")
+    sync_api.expect(hint).to_contain_text("requirements-perception.txt", timeout=5000)
+    page.close()
+
+
+def test_the_tier_readouts_are_readable_on_a_phone(browser, twin_server):
+    """The lesson of the 40px model picker, applied to the readouts this
+    phase adds: they are only proof if they can be read at 390px without the
+    panel scrolling sideways."""
+    page, _ = open_with_brain(browser, twin_server, status=tiered_status())
+    sync_api.expect(page.locator("#brain-tel-calls")).to_be_visible(timeout=5000)
+    for eid in ("brain-tel-perception", "brain-tel-margin",
+                "brain-tel-detector", "brain-tel-calls"):
+        box = page.locator("#" + eid).bounding_box()
+        assert box is not None, eid
+        assert box["width"] >= 40, f"{eid} is {box['width']:.0f}px wide"
+        assert box["x"] + box["width"] <= PHONE["width"] + 1, (
+            f"{eid} runs off the right edge of a {PHONE['width']}px screen: {box}")
+    overflow = page.evaluate(
+        "() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 0, f"the page scrolls sideways by {overflow}px"
+    page.close()
+
+
+# ---------- the tiered policy on the phone path (4.10's actual goal) ----------
+#
+# The Remote brain panel above drives the GRID WORLD, and
+# PLAN-onboard-perception.md 1.12 is explicit that a COCO detector finds
+# nothing in a raycaster render -- so a tiered mission started there
+# exercises the loop and never the detector. The walk that can actually
+# test YOLO + CLIP is the Robot-view one: real phone frames pushed into
+# TeleopRobot, perception running in the brain process beside it. 4.10
+# calls that "the highest-fidelity pre-hardware test available", and it is
+# the thing the policy was built for.
+#
+# "Drive via brain" hardcoded `policy: "vision"` until 2026-09-07, so the
+# one path where these models see real pixels could not ask for them.
+
+
+def open_robot_view(browser, twin_server, *, health=None):
+    page, errors = open_twin(browser, twin_server, mode="robot")
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json(health if health is not None else TIERED_BRAIN_HEALTH)))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="guide"]')
+    return page, errors
+
+
+def test_a_walk_can_choose_the_tiered_policy(browser, twin_server):
+    """The picker appears with the toggle it belongs to, and offers no
+    "frontier": a photograph carries no grid coordinates and TeleopRobot has
+    no distance sensor, so the rule-based policy is a blind wall-follower
+    here rather than a cheaper option."""
+    page, errors = open_robot_view(browser, twin_server)
+    sync_api.expect(page.locator("#drive-policy-row")).to_be_hidden()
+
+    page.check("#cfg-drive-via-brain")
+    sync_api.expect(page.locator("#drive-policy-row")).to_be_visible()
+    values = page.eval_on_selector_all(
+        "#cfg-drive-policy option", "els => els.map(e => e.value)")
+    assert values == ["vision", "tiered"], values
+
+    page.locator("#cfg-drive-policy").select_option("tiered")
+    assert page.locator("#cfg-drive-policy").input_value() == "tiered"
+    assert not errors, errors
+    page.close()
+
+
+def test_the_walk_says_the_perception_models_run_on_its_own_frames(browser, twin_server):
+    """The whole point of doing this on a phone rather than in the twin, said
+    where the walk is started: these are the frames the detector will
+    actually see."""
+    page, _ = open_robot_view(browser, twin_server)
+    page.check("#cfg-drive-via-brain")
+    page.locator("#cfg-drive-policy").select_option("tiered")
+    sub = page.locator("#drive-via-brain-sub")
+    sync_api.expect(sub).to_contain_text("yolo11s.pt")
+    sync_api.expect(sub).to_contain_text("your frames")
+    page.close()
+
+
+def test_a_walk_warns_before_you_start_when_the_models_are_missing(browser, twin_server):
+    """Standing in a room holding a phone is the worst moment to discover an
+    optional dependency. The mission does refuse with the pip command, but
+    the row can say it first."""
+    page, _ = open_robot_view(
+        browser, twin_server,
+        health=dict(TIERED_BRAIN_HEALTH, perception_available=False))
+    page.check("#cfg-drive-via-brain")
+    page.locator("#cfg-drive-policy").select_option("tiered")
+    sync_api.expect(page.locator("#drive-via-brain-sub")).to_contain_text(
+        "requirements-perception.txt")
+    page.close()
+
+
+def test_the_walk_sends_the_policy_it_was_set_to(browser, twin_server):
+    """The bug this closes: "Drive via brain" sent `policy: "vision"` no
+    matter what, so the one path where YOLO and CLIP get real pixels could
+    not ask for them. Asserted on the request body, because every other
+    symptom of getting this wrong is invisible -- a vision walk and a tiered
+    walk look identical from the phone until the bill arrives."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    started = []
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    # "Drive via brain" refuses unless the robot server reports mode: teleop,
+    # and it primes one frame before the mission exists.
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+
+    def capture_start(route):
+        started.append(route.request.post_data_json)
+        route.fulfill(status=200, content_type="application/json",
+                      body=_json({"started": True, "status": {"running": True}}))
+
+    page.route("**/brain-stub/mission/start", capture_start)
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json(tiered_status())))
+
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")
+    page.wait_for_timeout(3000)
+
+    assert started, "no mission was started -- drive via brain never fired"
+    assert started[0]["policy"] == "tiered", started[0]
+    assert started[0]["target_object"] == "red backpack"
+    assert not errors, errors
+    context.close()

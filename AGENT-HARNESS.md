@@ -43,16 +43,27 @@ separates them is which backends they can run against.
 | **The harness** -- goal, memory, perceive-decide-act loop, tool surface, guardrails, lifecycle | **Built** (`control/`) |
 | **The intelligence** -- a model looking at a frame and choosing the move | **Built** (`brain/navigate.py` + `brain/vision_agent.py`), and runnable **only against frames that carry pixels** |
 
-### The two policies
+### The three policies
 
 | `policy=` | Decides with | Runs against | Costs |
 |---|---|---|---|
 | `"frontier"` (default) | rule-based exploration: frontier-preference where the frame carries grid coordinates, a plain wall-follower where it does not (§3 step 5) | anything | nothing |
 | `"vision"` | `/navigate` -- one model call per step, one action back | **every backend**, since phase S2 gave the grid world a camera of its own (`sim/renderer.py`): `MockRobot`, `ReplayRobot`, `TeleopRobot`, and hardware later | one paid call per step |
+| `"tiered"` | the same `/navigate` call, behind `brain/tiered.py`'s trigger discipline: a local YOLO + CLIP pipeline looks at every frame for free and the model is asked only on `mission_start`, `candidate_sighting` or `cold_search` | the same backends, but the *result* is only meaningful on real pixels -- a COCO detector finds nothing in a raycaster render (`PLAN-onboard-perception.md` 1.12), so a sim run exercises the loop and not the detector | one paid call per **event**; 4-6x fewer than `"vision"` on the recorded corpus |
 
-`POST /mission/start` with `policy: "vision"` needs `brain.vision_url` and
-a `target_object`; both are checked at start time rather than failing on
-the first paid call.
+`POST /mission/start` with `policy: "vision"` or `"tiered"` needs
+`brain.vision_url` and a `target_object`; both are checked at start time
+rather than failing on the first paid call.
+
+**`"tiered"` is checked harder, and the reason generalises.** Its models run
+in the brain process and `ultralytics`/`torch` are an optional install, so
+the pipeline is built at mission start rather than on the first tick. A
+missing dependency discovered *inside* a tick is a `vision_fn` exception,
+which §6's budget counts as a vision failure -- the mission would limp
+through three of them and die reporting "vision unavailable 3 times in a
+row", which is true and useless, with the robot standing in a room for the
+duration. **Anything a mission cannot recover from belongs in the start
+path**, next to `model_id`'s allow-list check, for exactly that reason.
 
 ### What still isn't there
 
@@ -309,7 +320,7 @@ Four places designed to have something else plugged into them:
 |---|---|---|
 | `vision_fn(frame) -> scene` | callable | **The policy seam.** Swap in the LLM. Section 10. |
 | `RobotInterface` | ABC | **The body seam.** `MockRobot` and `RemoteRobot` today; `HardwareRobot` *(does not exist -- Phase 11)*. The runner never touches a backend. |
-| `policy=` | string | **The decision seam.** `"frontier"` or `"vision"`; which backends each can run against is a §1 question. |
+| `policy=` | string | **The decision seam.** `"frontier"`, `"vision"` or `"tiered"`; which backends each can run against is a §1 question. Note that `"tiered"` is not a fourth kind of decision -- it is `"vision"` with a different `vision_fn` bound in, which is the point: nothing in `control/` learned that perception grew a tier. |
 | `robot_factory` / `runner_factory` on `create_app()` | callables | **The test seam.** How the drills, the recording stub, and the two-hop tests inject what they need without the production path knowing. |
 
 The `vision_fn` contract is `brain/vision.py`'s schema, and both existing
@@ -411,6 +422,14 @@ Consequences worth knowing:
 | `sighting` | step, object, room, position -- when found |
 | `log_tail` | the last 20 log lines |
 | `fault` | which drill, or `none` (added by the server, not the runner) |
+| `tier` | `policy: "tiered"` only -- whether the last step called out and on which trigger, the loaded models by name, and the counters (`frames`, `cloud_calls`, `frames_per_call`). Copied straight off the scene's `_tier`, never computed here |
+| `perception` | `policy: "tiered"` only -- the last frame's tri-state, CLIP margin, matched label and bearing, off the scene's `_perception` |
+
+Both perception fields are `null` under any policy with no perception
+tier, and that has to stay distinguishable from zeroes: "this policy does
+not deliberate on triggers" and "it has stopped deliberating" are
+different claims, and the twin hides the readouts rather than drawing the
+second one.
 
 `last_reasoning` is an observation today ("hallway, facing N, free space
 clear, sees red backpack"), because the rule-based policy has no

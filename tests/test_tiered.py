@@ -20,7 +20,8 @@ Run with: pytest tests/test_tiered.py -v
 
 import pytest
 
-from brain.perceive import ABSENT, DETECTED, UNAVAILABLE, Perception
+from brain.perceive import (ABSENT, DETECTED, UNAVAILABLE, Box, Candidate,
+                            Detection, Perception)
 from brain.tiered import (
     DEFAULT_CONSECUTIVE,
     SCAN_ACTION,
@@ -310,3 +311,122 @@ def test_the_triggers_this_cannot_fire_are_named_rather_than_missing():
         "goal_achieved", "goal_impossible", "room_change", "staleness"}
     assert all(v for v in UNAVAILABLE_TRIGGERS.values())
     assert DEFAULT_CONSECUTIVE == 2
+
+
+# ---------- what 6.3 draws (phase P2's twin surface) ----------
+
+
+def test_the_scene_names_the_models_that_produced_it():
+    """6.3: the detector's own name on screen, because *"swap the HEF and
+    the name on screen changes; that is the experiment loop made
+    watchable."* A readout that showed only the output could not tell one
+    model's answer from another's."""
+
+    class NamedDetector:
+        weights = "yolo11s.pt"
+
+    class NamedScorer:
+        model_name = "RN50"
+
+    class Pipeline:
+        detector = NamedDetector()
+        scorer = NamedScorer()
+        target = "red backpack"
+        crop_source = "label_gate"
+
+        def perceive(self, frame):
+            return Perception(status=ABSENT)
+
+    tier = TieredVision(Pipeline(), FakeCloud())
+    scene = tier({"image_base64": "x"})
+    assert scene["_tier"]["models"]["detector"] == "yolo11s.pt"
+    assert scene["_tier"]["models"]["scorer"] == "RN50"
+    assert scene["_tier"]["models"]["target"] == "red backpack"
+
+
+def test_a_pipeline_that_is_only_a_duck_still_reports_something():
+    """The stand-ins in this file are a `perceive()` method and nothing
+    else. A readout is not worth crashing a mission loop for, and a blank
+    detector name would read as "no detector" rather than "a fake"."""
+    tier, _, scenes = run([ABSENT, ABSENT])
+    assert scenes[0]["_tier"]["models"]["detector"] is None
+    assert tier.models["scorer"] is None
+
+
+def test_the_name_falls_back_to_the_class_rather_than_going_blank():
+    """A backend with no declared name is still a backend, and saying so is
+    the difference between "a fake is loaded" and "nothing is loaded"."""
+
+    class Anonymous:
+        pass
+
+    class Pipeline:
+        detector = Anonymous()
+        scorer = Anonymous()
+
+        def perceive(self, frame):
+            return Perception(status=ABSENT)
+
+    tier = TieredVision(Pipeline(), FakeCloud())
+    assert tier.models["detector"] == "Anonymous"
+
+
+# ---------- the direction the stand-in reports (found in a real run) ----------
+#
+# The local scene set `target_direction: "not_visible"` unconditionally
+# while setting `target_visible` from the tri-state -- so a frame where
+# perception had found the target at a +0.068 margin logged as "target
+# not_visible". The two fields contradicted each other on exactly the
+# frames perception did its job on, which is the worst place for a readout
+# to be wrong.
+
+
+def _perception(status, bearing=None):
+    class P:
+        detector = None
+        scorer = None
+
+        def perceive(self, frame):
+            return Perception(status=status,
+                              best=(Candidate(
+                                  detection=Detection(Box(0, 0, 1, 1), "backpack", 0.9),
+                                  similarity=0.3, best_distractor=0.2,
+                                  bearing_deg=bearing) if bearing is not None else None))
+    return P()
+
+
+def _local(status, bearing=None):
+    tier = TieredVision(_perception(status, bearing), FakeCloud())
+    tier({"image_base64": "x"})            # the mission_start call
+    return tier({"image_base64": "x"})     # a free frame
+
+
+def test_a_detected_target_is_never_logged_as_not_visible():
+    """The contradiction, pinned. `not_visible` beside `target_visible: True`
+    is not a cosmetic problem -- the two fields mean opposite things to
+    anything reading them."""
+    scene = _local(DETECTED, bearing=0.0)
+    nav = scene["_navigate"]
+    assert nav["target_visible"] is True
+    assert nav["target_direction"] != "not_visible"
+
+
+def test_the_direction_comes_from_the_bearing_perception_measured():
+    """1.11: the bearing is perception's own output, from the box. Reporting
+    it is not the stand-in growing into a policy -- inventing one would be."""
+    assert _local(DETECTED, bearing=-40.0)["_navigate"]["target_direction"] == "left"
+    assert _local(DETECTED, bearing=0.0)["_navigate"]["target_direction"] == "center"
+    assert _local(DETECTED, bearing=40.0)["_navigate"]["target_direction"] == "right"
+
+
+def test_a_detected_target_with_no_bearing_is_unknown_not_not_visible():
+    """The state a recorded walk actually produces when the frame carries no
+    width. "I see it but cannot say where" and "I do not see it" must not
+    collapse into one word."""
+    assert _local(DETECTED)["_navigate"]["target_direction"] == "unknown"
+
+
+def test_an_absent_target_is_still_not_visible():
+    """The one case where `not_visible` is the honest answer."""
+    assert _local(ABSENT)["_navigate"]["target_direction"] == "not_visible"
+    assert _local(ABSENT)["_navigate"]["target_visible"] is False

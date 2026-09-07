@@ -107,6 +107,48 @@ DEFAULT_COLD_SEARCH_AFTER = 6
 SCAN_ACTION = "RIGHT"
 
 
+# How far off centre a target may be and still be called "center". Matches
+# the vocabulary /navigate answers in, so a consumer cannot tell a local
+# bearing from a cloud one by its shape -- only by `_tier.cloud_called`,
+# which is the field that actually means it.
+CENTER_BAND_DEG = 10.0
+
+
+def _direction_for(perception) -> str:
+    """`left` / `center` / `right`, or an honest non-answer.
+
+    Three outcomes, and the third is the one that matters: a target that
+    is detected but whose bearing could not be measured is `unknown`, not
+    `not_visible`. The two mean opposite things to anything reading the
+    field, and "not_visible" beside `target_visible: True` is a straight
+    contradiction.
+    """
+    if perception.status != DETECTED:
+        return "not_visible"
+    bearing = perception.bearing_deg
+    if bearing is None:
+        return "unknown"
+    if bearing < -CENTER_BAND_DEG:
+        return "left"
+    if bearing > CENTER_BAND_DEG:
+        return "right"
+    return "center"
+
+
+def _name_of(backend, attr: str) -> Optional[str]:
+    """What to call a detector or a scorer on screen.
+
+    Its own declared name if it has one -- `yolo11s.pt` today, a `.hef`
+    after P4 -- and its class name otherwise, so a fake reads as a fake
+    rather than as a blank. Never None for a backend that exists: a blank
+    name in 6.3's readout would say "no detector", which is a different
+    and much more alarming claim.
+    """
+    if backend is None:
+        return None
+    return getattr(backend, attr, None) or type(backend).__name__
+
+
 @dataclass
 class TierStats:
     """Counters, for 6.3's readout and for measuring 2.4's claim live."""
@@ -154,6 +196,24 @@ class TieredVision:
         self.cold_search_after = max(1, int(cold_search_after))
         self.max_calls = max_calls
         self.stats = TierStats()
+        # 6.3 asks for **the detector's own name** on screen, not just its
+        # output: *"swap the HEF and the name on screen changes; that is
+        # the experiment loop made watchable."* Read off the backends
+        # rather than passed in, so a fake, a `.pt` file and a `.hef`
+        # each report themselves and none of them can be misdescribed by
+        # a caller. Falling back to the class name keeps a fake legible
+        # instead of blank -- a blank name would read as "no detector".
+        # `getattr` twice over, because a pipeline is only a duck here --
+        # the fakes in tests/test_tiered.py are a `perceive()` method and
+        # nothing else, and a readout that crashed the mission loop
+        # because a stand-in had no detector attribute would be a poor
+        # trade for a label.
+        self.models = {
+            "detector": _name_of(getattr(pipeline, "detector", None), "weights"),
+            "scorer": _name_of(getattr(pipeline, "scorer", None), "model_name"),
+            "target": getattr(pipeline, "target", None),
+            "crop_source": getattr(pipeline, "crop_source", None),
+        }
 
         self._started = False
         self._run: list = []          # the recent status history
@@ -254,7 +314,15 @@ class TieredVision:
             "safest_direction": SCAN_ACTION,
             "_navigate": {
                 "target_visible": perception.status == DETECTED,
-                "target_direction": "not_visible",
+                # "not_visible" would contradict target_visible above on
+                # exactly the frames perception did its job on -- the log
+                # read "target not_visible" under a +0.068 match. The
+                # honest answer when the target IS seen is the bearing
+                # perception already measured, or "unknown" when the frame
+                # gave nothing to measure it from. This is perception's own
+                # output (1.11: bearing from the box), not a decision --
+                # the stand-in still must not grow into a policy.
+                "target_direction": _direction_for(perception),
                 "target_reached": False,
                 "obstacle_ahead": None,
                 "room_guess": "unclear",
@@ -263,6 +331,7 @@ class TieredVision:
             },
             "_perception": perception.as_dict(),
             "_tier": {"cloud_called": False, "trigger": None,
+                      "models": dict(self.models),
                       "stats": self.stats.as_dict()},
         }
 
@@ -278,6 +347,7 @@ class TieredVision:
         out = dict(scene)
         out["_perception"] = perception.as_dict()
         out["_tier"] = {"cloud_called": True, "trigger": trigger,
+                        "models": dict(self.models),
                         "stats": self.stats.as_dict()}
         return out
 
@@ -307,7 +377,7 @@ def tiered_vision_fn_for(target: str, cloud_vision_fn: Callable[[dict], dict],
 
 
 __all__ = [
-    "TieredVision", "TierStats", "tiered_vision_fn_for",
+    "TieredVision", "TierStats", "tiered_vision_fn_for", "CENTER_BAND_DEG",
     "TRIGGER_START", "TRIGGER_CANDIDATE", "TRIGGER_COLD_SEARCH",
     "UNAVAILABLE_TRIGGERS", "SCAN_ACTION",
     "DEFAULT_CONSECUTIVE", "DEFAULT_COLD_SEARCH_AFTER",

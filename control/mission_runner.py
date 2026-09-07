@@ -83,8 +83,17 @@ LOG_TAIL_LINES = 20
 
 # Which policy decides the moves. "frontier" is the rule-based explorer
 # (free, deterministic, not on the hardware path); "vision" hands each
-# decision to the model through the caller's vision_fn.
-POLICIES = ("frontier", "vision")
+# decision to the model through the caller's vision_fn; "tiered" is the
+# same seam with brain/tiered.py's trigger discipline in front of it, so
+# perception runs locally on every frame and the model is asked only on
+# an event (PLAN-onboard-perception.md 2.4, phase P2).
+POLICIES = ("frontier", "vision", "tiered")
+
+# The two that hand the decision to a model. They differ only in what is
+# bound into vision_fn -- which is the point of P2: `control/` never
+# learns that perception grew a tier (2.6's first invariant), it only
+# learns that this policy, like "vision", cannot run without one.
+VISION_POLICIES = ("vision", "tiered")
 
 # Mission outcomes. "running" is the only non-terminal one.
 RUNNING = "running"
@@ -230,13 +239,14 @@ class MissionRunner:
     ):
         if policy not in POLICIES:
             raise ValueError(f"Unknown policy: {policy!r}. Known: {', '.join(POLICIES)}")
-        if policy == "vision" and vision_fn is None:
+        if policy in VISION_POLICIES and vision_fn is None:
             # The default vision_fn is the offline grid converter. Running
             # the vision policy on top of it would produce a mission that
             # looks like it used the model and did not.
             raise ValueError(
-                "The vision policy needs a vision_fn -- see brain/navigate.py's "
-                "vision_fn_for(), which binds a target and the vision service URL."
+                f"The {policy} policy needs a vision_fn -- see brain/navigate.py's "
+                "vision_fn_for(), which binds a target and the vision service URL"
+                " (and brain/tiered.py's tiered_vision_fn_for(), which wraps one)."
             )
         if not target_object and not target_room:
             raise ValueError(
@@ -260,7 +270,7 @@ class MissionRunner:
         # The agent drives a gated robot; self.robot stays the raw one so
         # stop() is never gated. The policy decides which agent class runs;
         # everything else about the mission is identical either way.
-        agent_class = VisionAgent if policy == "vision" else ObjectSearchAgent
+        agent_class = VisionAgent if policy in VISION_POLICIES else ObjectSearchAgent
         self.agent = agent_class(
             _HaltGate(robot, self.is_running),
             self.memory,
@@ -270,7 +280,7 @@ class MissionRunner:
             # against MockRobot, which has a real distance reading, so the
             # veto would return immediately anyway. Passing it either way
             # would just be a flag that cannot fire.
-            vision_proximity_veto=vision_proximity_veto and policy == "vision",
+            vision_proximity_veto=vision_proximity_veto and policy in VISION_POLICIES,
         )
 
         self._lock = threading.RLock()
@@ -283,6 +293,15 @@ class MissionRunner:
         self._vision_failures = 0
         self._last_action: Optional[str] = None
         self._last_reasoning: Optional[str] = None
+        # Phase P2's readouts, and the only thing in this file that knows
+        # a tier exists at all. Both are whatever the last scene carried
+        # under `_tier` / `_perception` -- copied, never computed here, so
+        # `control/` stays free of perception logic (2.6) and a policy
+        # that publishes neither simply leaves them null. `vision` does
+        # exactly that, which is what makes an absent readout mean
+        # "this policy has no perception tier" rather than "it failed".
+        self._tier: Optional[dict] = None
+        self._perception: Optional[dict] = None
         self._log: list = []
 
     # ---------- lifecycle ----------
@@ -350,6 +369,13 @@ class MissionRunner:
             self._vision_failures = 0
             self._last_action = result.action
             self._last_reasoning = self._describe(result)
+            scene = result.scene or {}
+            # Held rather than overwritten with None: a tiered mission's
+            # counters must survive a frame whose scene arrived from
+            # somewhere else, or 6.3's "single number" would blink out
+            # exactly when something unusual happened.
+            self._tier = scene.get("_tier") or self._tier
+            self._perception = scene.get("_perception") or self._perception
             self._log_line(
                 f"step {result.step}: {result.action} "
                 f"({'ok' if result.executed else 'blocked'}) -- {self._last_reasoning}"
@@ -401,6 +427,14 @@ class MissionRunner:
                 "rooms_visited": sorted(self.memory.visited_rooms),
                 "rooms_searched": sorted(self.memory.searched_rooms),
                 "vision_failures": self._vision_failures,
+                # Phase P2 / 6.3. `tier` carries the deliberation-call
+                # counter -- *"that single number makes the whole
+                # architecture watchable"* -- and the model names beside
+                # it; `perception` is the tri-state and the CLIP margin
+                # for the most recent frame. Null under every policy that
+                # has no perception tier, which is all of them but one.
+                "tier": self._tier,
+                "perception": self._perception,
                 # Phase M5, all three description-only in themselves. The
                 # verdict is built from them by control/health.py, which is
                 # the only place that decides what "unhealthy" means.
@@ -521,6 +555,15 @@ class MissionRunner:
             )
             if nav.get("target_reached"):
                 seen = "target reached"
+            # Under the tiered policy, whether this step cost money is the
+            # single most useful thing the line can say -- the local
+            # scene's own reasoning already announces itself, so this only
+            # has to label the frames that DID call out. Absent for every
+            # other policy, where every step calls out and a label saying
+            # so would be noise.
+            tier = scene.get("_tier") or {}
+            if tier.get("cloud_called"):
+                return f"[cloud: {tier.get('trigger')}] {seen} -- {nav['reasoning']}"
             return f"{seen} -- {nav['reasoning']}"
 
         objects = ", ".join(scene.get("important_objects", [])) or "nothing of note"

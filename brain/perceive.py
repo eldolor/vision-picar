@@ -388,7 +388,7 @@ class PerceptionPipeline:
                               reason="no proposals survived the crop gate",
                               pan_deg=pan, tilt_deg=tilt)
 
-        width = float(frame.get("image_width") or 0.0)
+        width = float(frame.get("image_width") or 0.0) or _image_width(image)
         try:
             candidates = self._score(image, crops, width, pan, tilt)
         except PerceptionUnavailable as exc:
@@ -456,6 +456,36 @@ class PerceptionPipeline:
         if width <= 0:
             return None
         return (box.centre_x / width - 0.5) * self.hfov_deg + pan
+
+
+def _image_width(image: bytes) -> float:
+    """The frame's pixel width, read from the image itself.
+
+    **No `RobotInterface` backend publishes `image_width`** -- checked
+    2026-09-07, and the consequence was that `bearing_deg` was `None` on
+    every frame this project can produce, so 1.11's "which way is it"
+    output existed and had never once been a number. Widening the frame
+    contract would touch every backend and the conformance suite for a
+    value the pixels already carry, so it is read here instead.
+
+    The frame's own `image_width` still wins when present: a backend that
+    declares one knows something this cannot, such as a frame that was
+    downscaled after the box coordinates were computed.
+
+    Returns 0.0 rather than raising, and `_bearing()` maps that to `None`.
+    Anything unreadable here is a bearing we do not have -- which is
+    already a state -- and never a reason to fail a perception step that
+    the detector itself completed. PIL arrives with the optional extras
+    (both concrete backends import it), so a fake-driven test simply gets
+    the old behaviour.
+    """
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(image)) as img:
+            return float(img.width)
+    except Exception:  # noqa: BLE001 -- an unreadable size is not an error
+        return 0.0
 
 
 def _decode(frame: dict) -> bytes:

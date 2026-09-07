@@ -78,6 +78,33 @@ brain:
   # route, and the one call control/admin_server.py makes (walk replay).
   vision_url: ""
 
+  # policy: "tiered" (PLAN-onboard-perception.md 4.10, phase P2) -- YOLO +
+  # CLIP run IN THE BRAIN PROCESS on every frame, for free, and the paid
+  # /navigate call goes out only on a trigger. The models are an optional
+  # install (requirements-perception.txt) and the mission refuses to start
+  # without them, naming the pip command.
+  #
+  # Blank means brain/perceive.py's own defaults (yolo11s.pt and RN50),
+  # where the reasoning for each is written down. Name a different file
+  # here to try another detector without touching code -- the twin shows
+  # whichever name is loaded, which is what makes the swap watchable.
+  perception_detector: ""
+  perception_clip_model: ""
+  # Section 6.1's hysteresis: how many consecutive frames must agree before
+  # an edge is believed. 1 reproduces the naive trigger count (2.8x saving),
+  # 2 is the measured 4.1x. This is not a tuning knob -- it is what makes
+  # trigger discipline work at all, because target_visible flips on 24% of
+  # frames.
+  tier_consecutive_frames: 2
+  # How many consecutive "absent" frames before asking the cloud whether the
+  # target is even in this room. Without it a target outside COCO's 80 never
+  # fires anything at all. The number is a guess; tune it on a real walk.
+  tier_cold_search_after: 6
+  # Hard cap on paid deliberation calls per mission. 0 is no cap -- max_steps
+  # still bounds the mission, but under this policy most steps cost nothing,
+  # so the step budget is a poor proxy for the bill.
+  tier_max_calls: 0
+
   # The reference backpack hunt takes 83 steps with the frontier policy.
   # Under a vision policy each step is a paid call -- lower this then.
   max_steps: 120

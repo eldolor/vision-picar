@@ -228,14 +228,32 @@
     brainNavigatePromptVariant: null,
     // Which policy the Remote brain panel starts a mission under. "frontier"
     // is the free rule-based explorer; "vision" spends a model call a step
-    // and is the one on the hardware path (PLAN-sim-hardening.md 2.2).
+    // and is the one on the hardware path (PLAN-sim-hardening.md 2.2);
+    // "tiered" runs YOLO + CLIP inside the brain process on every frame and
+    // spends a call only on a trigger (PLAN-onboard-perception.md 2.4, P2).
     brainPolicy: "frontier",
+    // What the connected brain says about its own perception models --
+    // whether they are installed at all, and which two would load. Null
+    // until a brain has been asked: "not known yet" and "not available"
+    // are different answers and the hint says so differently.
+    brainPerception: null,
     // Driving Robot view through a real MissionRunner mission instead of a
     // one-off /navigate call (PLAN-teleop-robot.md, Phase T3). driveViaBrain
     // is the live toggle; guidanceViaBrain is latched at Start so Stop knows
     // whether *this* running session actually started a brain mission, even
     // if the toggle or brain connection changes mid-walk.
     driveViaBrain: false, guidanceViaBrain: false,
+    // Which policy a "Drive via brain" walk runs. Separate from
+    // brainPolicy above because they start two different missions -- that
+    // one drives the grid world, this one drives a phone on a wheeled rig
+    // -- and because "frontier" is not on offer here: a photograph carries
+    // no grid coordinates and TeleopRobot has no distance sensor.
+    //
+    // This is the only path in the app where the tiered policy sees real
+    // pixels. PLAN-onboard-perception.md 4.10: the twin cannot test a
+    // detector by 1.12's design, and a phone on a rig is the
+    // highest-fidelity pre-hardware test available.
+    drivePolicy: "vision",
     // Synced from the connected server's own /health reply
     // (renderWatchdog()) -- see MIN_DISTANCE_CM_FALLBACK above.
     minDistanceCm: MIN_DISTANCE_CM_FALLBACK,
@@ -263,6 +281,7 @@
     debugReadouts: "vp_debug_readouts",
     recordWalk: "vp_record_walk",
     driveViaBrain: "vp_drive_via_brain",
+    drivePolicy: "vp_drive_policy",
     navigateModelId: "vp_navigate_model_id",
     navigatePromptVariant: "vp_navigate_prompt_variant",
     brainPolicy: "vp_brain_policy",
@@ -1619,6 +1638,7 @@
       (status.rooms_searched && status.rooms_searched.length) ? status.rooms_searched.join(", ") : null);
     setBrainText("brain-tel-why", status.error || status.last_reasoning,
       status.error ? "alert" : null);
+    renderTierReadouts(status);
 
     // The mission log comes from the brain, so it is rewritten wholesale
     // each poll rather than appended to -- there is no local copy to keep
@@ -1640,6 +1660,87 @@
         }).join("");
         el.scrollTop = el.scrollHeight;
       }
+    }
+  }
+
+  // ---------- phase P2: the three tiers, made watchable ----------
+  //
+  // PLAN-onboard-perception.md 6.3 asks for four things here, and each one
+  // answers a question the panel could not answer before:
+  //
+  //   * the tri-state, so a wedged capture never reads as a missing target
+  //     (1.12 -- the same distinction the depth grid's ZONE_UNUSABLE makes
+  //     one sensor over, and for the same reason);
+  //   * the CLIP margin, NOT the bare similarity: CLIP returns a similarity
+  //     rather than a probability, so the margin over the distractors is
+  //     the only number that means anything;
+  //   * the detector's own name, because swapping it is the experiment loop
+  //     (4.7's promotion rule) and a swap you cannot see is not one;
+  //   * the deliberation-call counter -- "that single number makes the whole
+  //     architecture watchable" -- shown as calls AND frames, since a count
+  //     climbing by one is indistinguishable from a call every step.
+  //
+  // The whole group hides under a policy with no perception tier. Drawing
+  // zeroes there would say the architecture had stopped deliberating, which
+  // is a different and much more alarming claim than "not running".
+
+  const PERCEPTION_CLASS = {
+    detected: "safe",
+    // Neither safe nor alert: the frame was good and the thing is not in
+    // it, which is information and often the correct state for most of a
+    // mission.
+    absent: null,
+    // The absence of information, which is a fault -- and the one state
+    // that must never look like `absent`.
+    unavailable: "alert",
+  };
+
+  function renderTierReadouts(status) {
+    const rows = document.getElementById("brain-tier-rows");
+    if (!rows) return;
+    const tier = status.tier;
+    const perception = status.perception;
+    if (!tier && !perception) {
+      rows.style.display = "none";
+      return;
+    }
+    rows.style.display = "";
+
+    const p = perception || {};
+    const bits = [p.status || "\u2013"];
+    if (p.label) bits.push(p.label);
+    if (typeof p.bearing_deg === "number") {
+      bits.push((p.bearing_deg >= 0 ? "+" : "") + p.bearing_deg.toFixed(0) + "\u00b0");
+    }
+    if (p.status === "unavailable" && p.reason) bits.push(p.reason);
+    if (p.status === "absent" && p.candidates) bits.push(p.candidates + " candidate(s)");
+    setBrainText("brain-tel-perception", bits.join(" \u00b7 "),
+      PERCEPTION_CLASS[p.status]);
+
+    setBrainText("brain-tel-margin", typeof p.match_margin === "number"
+      ? p.match_margin.toFixed(2) + " over the best distractor"
+        + (typeof p.similarity === "number"
+          ? " (similarity " + p.similarity.toFixed(2) + ")" : "")
+      : "no candidate scored");
+
+    const models = (tier && tier.models) || {};
+    setBrainText("brain-tel-detector",
+      models.detector ? models.detector + " + " + (models.scorer || "?") : null);
+
+    const stats = (tier && tier.stats) || {};
+    if (stats.frames == null) {
+      setBrainText("brain-tel-calls", null);
+    } else {
+      // "1 per N frames" rather than "Nx", because the panel is read while a
+      // mission is running and the raw pair is what makes the ratio
+      // checkable by eye. 6.1 measured 4-6x on recorded walks; this is the
+      // same quantity, live.
+      const per = stats.frames_per_call;
+      setBrainText("brain-tel-calls",
+        stats.cloud_calls + (stats.cloud_calls === 1 ? " cloud call / " : " cloud calls / ")
+        + stats.frames + (stats.frames === 1 ? " frame" : " frames")
+        + (per ? " \u00b7 1 per " + per.toFixed(1) : ""),
+        stats.cloud_calls && stats.cloud_calls >= stats.frames ? "alert" : "safe");
     }
   }
 
@@ -1880,26 +1981,71 @@
     updateBrainPickersRow();
   }
 
+  // The two policies that reach the cloud vision service. They differ in
+  // how OFTEN they call it, not in whether they can -- so everything that
+  // exists because a mission spends money (the pickers, the hint, the
+  // model and wording sent at start) applies to both.
+  function isCloudPolicy(policy) {
+    return policy === "vision" || policy === "tiered";
+  }
+
   // The vision policy spends money and its result is only interpretable if
   // you know which model and which wording produced it -- so say both, in
   // words, before the mission starts rather than leaving them to be inferred
   // from a log afterwards.
+  //
+  // The tiered policy needs the same sentence and one more: the local half
+  // is where its cost story lives, and it is invisible from everything else
+  // on this panel. Naming the detector here is also what makes swapping one
+  // watchable (PLAN-onboard-perception.md 6.3) -- change the weights the
+  // brain loads and this line changes with it.
   function renderBrainPolicyHint() {
     const hint = document.getElementById("brain-policy-hint");
     if (!hint) return;
-    if (state.brainPolicy !== "vision") {
+    if (!isCloudPolicy(state.brainPolicy)) {
       hint.style.display = "none";
       return;
     }
     hint.style.display = "";
-    hint.innerHTML = "Every step is a paid <code>/navigate</code> call. "
-      + "Model: <b>" + escapeHtml(brainModelLabel()) + "</b>. "
+    const asked = "Model: <b>" + escapeHtml(brainModelLabel()) + "</b>. "
       + "Wording: <b>" + escapeHtml(brainPromptLabel()) + "</b>.";
+    if (state.brainPolicy === "vision") {
+      hint.innerHTML = "Every step is a paid <code>/navigate</code> call. " + asked;
+      return;
+    }
+    hint.innerHTML = tieredCostSentence() + " " + asked + tieredWarning();
+  }
+
+  function tieredCostSentence() {
+    const p = state.brainPerception;
+    // Not connected yet: the brain is the only thing that knows which
+    // models it would load, and guessing them here would be the
+    // NavigateModelId trap in a new place -- a name on screen that no
+    // process ever agreed to.
+    const models = p
+      ? "<b>" + escapeHtml(p.detector) + "</b> + <b>" + escapeHtml(p.clip) + "</b>"
+      : "its detector and CLIP encoder (connect the brain to see which)";
+    return "Perception runs in the brain process on every frame, free \u2014 "
+      + models + ". A paid <code>/navigate</code> call goes out only on a "
+      + "trigger: mission start, a candidate sighting, or a cold search.";
+  }
+
+  // `ultralytics` and `torch` are a deliberately optional install, so a
+  // brain without them is a normal state rather than a broken one. The
+  // mission does refuse with a usable message -- but reading it costs a
+  // press of Start, and the panel already knows.
+  function tieredWarning() {
+    const p = state.brainPerception;
+    if (!p || p.available !== false) return "";
+    return " <span class=\"alert\">This brain has no perception models "
+      + "installed, so a tiered mission will refuse to start. Run "
+      + "<code>pip install -r requirements-perception.txt</code> where the "
+      + "brain runs.</span>";
   }
 
   function updateBrainPickersRow() {
     const row = document.getElementById("brain-policy-pickers-row");
-    if (row) row.style.display = state.brainPolicy === "vision" ? "" : "none";
+    if (row) row.style.display = isCloudPolicy(state.brainPolicy) ? "" : "none";
   }
 
   // The two pickers live on the Guide tab, next to Robot view -- the flow
@@ -1930,7 +2076,7 @@
     // picked: an absent field means "whatever the brain, and then the vision
     // service, defaults to". Sending null instead would be the same value
     // with a worse story about where it came from.
-    if (state.brainPolicy === "vision") {
+    if (isCloudPolicy(state.brainPolicy)) {
       if (state.navigateModelId) body.model_id = state.navigateModelId;
       if (state.navigatePromptVariant) body.prompt_variant = state.navigatePromptVariant;
     }
@@ -2001,6 +2147,16 @@
       // default applies" -- resolved for display in brainModelLabel().
       state.brainNavigateModelId = health.navigate_model_id || null;
       state.brainNavigatePromptVariant = health.navigate_prompt_variant || null;
+      // Phase P2. A brain older than this simply omits the field, and the
+      // absence has to stay "not known" rather than becoming "not
+      // available" -- the stacks are redeployed one at a time, and greying
+      // out a policy that would actually have worked is the same class of
+      // wrong as offering one that will 400.
+      state.brainPerception = ("perception_available" in health) ? {
+        available: !!health.perception_available,
+        detector: health.perception_detector || "unnamed detector",
+        clip: health.perception_clip_model || "unnamed encoder",
+      } : null;
       prefSet(PREF.brainUrl, url);
       setConnStatus(statusEl, "ok", "Connected" + (health.drills_allowed ? "" : " (drills disabled)"),
         url + " \u2014 driving the robot at " + health.robot_url);
@@ -2014,6 +2170,7 @@
       if (state.brainMissionRunning) startBrainPolling();
     } catch (e) {
       state.brainConnected = false;
+      state.brainPerception = null;
       setConnStatus(statusEl, "err", "Not connected", silent
         ? url + " didn't respond. Tap Connect to retry."
         : "Could not reach " + url + " (" + e.message + "). Is control/brain_server.py running?");
@@ -2231,7 +2388,11 @@
     // remote brain when it is set to the vision policy. Both send the same
     // two fields to the same allow-list, so they share one pair of pickers
     // rather than growing a second, driftable copy in the Sim tab.
-    return state.guidanceMode === "robot" || state.brainPolicy === "vision";
+    // The tiered policy is the third consumer. It calls /navigate far less
+    // often -- that is its whole point -- but "less often" is not "never",
+    // and a walk nobody can attribute to a model and a wording is not a
+    // measurement whether it cost one call or forty.
+    return state.guidanceMode === "robot" || isCloudPolicy(state.brainPolicy);
   }
 
   function updateModelPickerRow() {
@@ -2411,17 +2572,39 @@
   function renderDriveViaBrainStatus() {
     const sub = document.getElementById("drive-via-brain-sub");
     if (!sub) return;
-    sub.textContent = state.brainConnected
-      ? "Runs a real mission on the brain service (PLAN-teleop-robot.md) "
-        + "instead of a one-off /navigate call -- mission memory, the step "
-        + "budget and the failsafes all apply to your walk. "
-        + "Would run: " + brainModelLabel() + "."
-      : "Needs the brain service connected — set it up in Settings.";
+    if (!state.brainConnected) {
+      sub.textContent = "Needs the brain service connected — set it up in Settings.";
+      return;
+    }
+    let text = "Runs a real mission on the brain service (PLAN-teleop-robot.md) "
+      + "instead of a one-off /navigate call -- mission memory, the step "
+      + "budget and the failsafes all apply to your walk. "
+      + "Would run: " + brainModelLabel() + ".";
+    if (state.drivePolicy === "tiered") {
+      const p = state.brainPerception;
+      text += p
+        ? " Perception runs in the brain process on your frames: "
+          + p.detector + " + " + p.clip + "."
+        : " Perception runs in the brain process on your frames.";
+      if (p && p.available === false) {
+        text += " This brain has no perception models installed, so the walk "
+          + "will refuse to start — run pip install -r "
+          + "requirements-perception.txt where the brain runs.";
+      }
+    }
+    sub.textContent = text;
   }
 
   function updateDriveViaBrainRow() {
+    const wanted = state.guidanceMode === "robot";
     const row = document.getElementById("drive-via-brain-row");
-    if (row) row.style.display = state.guidanceMode === "robot" ? "" : "none";
+    if (row) row.style.display = wanted ? "" : "none";
+    // The policy only means anything once the walk is actually being driven
+    // by a mission -- a one-off /navigate call has no policy at all.
+    const policyRow = document.getElementById("drive-policy-row");
+    if (policyRow) {
+      policyRow.style.display = (wanted && state.driveViaBrain) ? "" : "none";
+    }
     renderDriveViaBrainStatus();
   }
 
@@ -2435,6 +2618,14 @@
       document.getElementById("cfg-record-walk").checked = false;
       renderRecordStatus();
     }
+    updateDriveViaBrainRow();
+  });
+
+  document.getElementById("cfg-drive-policy").addEventListener("change", function () {
+    state.drivePolicy = this.value;
+    prefSet(PREF.drivePolicy, this.value);
+    // The tiered policy has a second pair of models to name, and the row
+    // above is where the walk's operator reads what they are about to run.
     renderDriveViaBrainStatus();
   });
 
@@ -3849,7 +4040,15 @@
         // falling back to the service default.
         await brainApi("POST", "/mission/start", {
           target_object: state.guidanceTarget,
-          policy: "vision",
+          // The walk's own policy, not the Sim tab's. "tiered" runs
+          // brain/perceive.py's detector and CLIP over these frames inside
+          // the brain process and calls /navigate only on a trigger -- the
+          // one path in this app where those models see real pixels
+          // (PLAN-onboard-perception.md 4.10). A brain without the optional
+          // models refuses here, at start, naming the pip command; the
+          // catch below surfaces that message rather than letting the walk
+          // begin and fail frame by frame.
+          policy: state.drivePolicy,
           model_id: state.navigateModelId || null,
           prompt_variant: state.navigatePromptVariant || null,
         });
@@ -5193,7 +5392,7 @@
   // load for the many setups that run no brain service at all.
   const brainPolicyEl = document.getElementById("brain-policy");
   const savedPolicy = prefGet(PREF.brainPolicy);
-  if (savedPolicy === "vision" || savedPolicy === "frontier") {
+  if (savedPolicy === "vision" || savedPolicy === "frontier" || savedPolicy === "tiered") {
     state.brainPolicy = savedPolicy;
     brainPolicyEl.value = savedPolicy;
     // A remembered "vision" has to bring the Guide tab's pickers back with
@@ -5208,6 +5407,12 @@
   const driveViaBrainToggleEl = document.getElementById("cfg-drive-via-brain");
   state.driveViaBrain = prefGet(PREF.driveViaBrain) === "1";
   driveViaBrainToggleEl.checked = state.driveViaBrain;
+  const drivePolicyEl = document.getElementById("cfg-drive-policy");
+  const savedDrivePolicy = prefGet(PREF.drivePolicy);
+  if (savedDrivePolicy === "vision" || savedDrivePolicy === "tiered") {
+    state.drivePolicy = savedDrivePolicy;
+    drivePolicyEl.value = savedDrivePolicy;
+  }
   updateDriveViaBrainRow();
   if (prefGet(PREF.brainUrl)) {
     connectBrain({ silent: true });

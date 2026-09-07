@@ -316,3 +316,144 @@ def test_a_stop_landing_mid_tick_does_not_record_the_step():
     assert runner.tick() is False
     assert runner.status()["running"] is False
     assert "stop" in robot.calls
+
+
+# ---------- policy: "tiered" (PLAN-onboard-perception.md 4.10, phase P2) ----------
+#
+# The runner's whole involvement with the tiered policy is that it is a
+# vision policy whose vision_fn happens to have a trigger discipline
+# inside it -- 2.6's first invariant is that `control/` never learns
+# perception grew a tier. So what is worth pinning here is exactly two
+# things: that the policy is refused without a vision_fn the same way
+# "vision" is, and that whatever the scene publishes about the tier
+# reaches status() intact rather than being recomputed on this side.
+
+
+def test_the_tiered_policy_requires_a_vision_fn_too():
+    """Same reason as the vision policy's: the default vision_fn is the
+    offline grid converter, and a mission that ran on it would look like it
+    used the models and did not."""
+    from control.mission_runner import POLICIES
+
+    assert "tiered" in POLICIES
+    with pytest.raises(ValueError) as exc:
+        MissionRunner(fresh_mock_robot(), target_object="red backpack", policy="tiered")
+    # Not merely "it raised": an unknown policy raises too, and this test
+    # would then pass against a build where "tiered" does not exist at all.
+    assert "vision_fn" in str(exc.value), str(exc.value)
+
+
+def _tier_scene(*, cloud_called, trigger=None, frames=1, calls=1, status="absent"):
+    """A scene shaped exactly as brain/tiered.py emits one."""
+    return {
+        "obstacles_ahead": [], "free_space": "unknown", "doorway_visible": False,
+        "important_objects": [], "safest_direction": "RIGHT",
+        "_navigate": {"target_visible": False, "target_direction": "not_visible",
+                      "target_reached": False, "obstacle_ahead": None,
+                      "room_guess": "unclear", "distance_estimate": "unknown",
+                      "reasoning": "because"},
+        "_perception": {"status": status, "crop_source": "label_gate",
+                        "match_margin": 0.21, "similarity": 0.31,
+                        "label": "backpack", "candidates": 2,
+                        "synthesised": False, "bearing_deg": 4.0},
+        "_tier": {"cloud_called": cloud_called, "trigger": trigger,
+                  "models": {"detector": "yolo11s.pt", "scorer": "RN50"},
+                  "stats": {"frames": frames, "cloud_calls": calls,
+                            "frames_per_call": frames / calls if calls else None,
+                            "triggers": {}, "perception": {}}},
+    }
+
+
+def _run_one_tick(scenes):
+    """One runner, one tick per scene, driven by a stub agent."""
+    runner = MissionRunner(robot=fresh_mock_robot(), target_object="red backpack",
+                           max_steps=50)
+    runner.start()
+
+    class Stub:
+        history = []
+
+        def __init__(self):
+            self.i = 0
+
+        def step(self):
+            scene = scenes[self.i]
+            self.i += 1
+            Stub.history = list(range(self.i))
+
+            class Result:
+                step = self.i
+                action = "RIGHT"
+                executed = True
+            Result.scene = scene
+            Result.frame = {"room": "living_room", "facing": "north"}
+            return Result()
+
+    runner.agent = Stub()
+    for _ in scenes:
+        runner.tick()
+    return runner
+
+
+def test_the_deliberation_counter_reaches_the_status_panel():
+    """6.3 calls this *"the single number that makes the whole architecture
+    watchable"*. It is watchable only if it gets out of the vision_fn --
+    which is the one thing this side of the seam has to do."""
+    runner = _run_one_tick([_tier_scene(cloud_called=True, trigger="mission_start",
+                                        frames=1, calls=1),
+                            _tier_scene(cloud_called=False, frames=2, calls=1)])
+    status = runner.status()
+    assert status["tier"]["stats"]["cloud_calls"] == 1
+    assert status["tier"]["stats"]["frames"] == 2
+    assert status["tier"]["stats"]["frames_per_call"] == 2.0
+
+
+def test_the_tri_state_and_the_clip_margin_reach_the_status_panel():
+    """6.3's detector readout: the tri-state so a wedged capture never looks
+    like a missing target, and the margin -- which is the number that means
+    something, not the bare similarity."""
+    runner = _run_one_tick([_tier_scene(cloud_called=True, trigger="mission_start",
+                                        status="detected")])
+    perception = runner.status()["perception"]
+    assert perception["status"] == "detected"
+    assert perception["match_margin"] == 0.21
+    assert perception["label"] == "backpack"
+
+
+def test_the_detector_name_reaches_the_status_panel():
+    """*"Swap the HEF and the name on screen changes; that is the experiment
+    loop made watchable."*"""
+    runner = _run_one_tick([_tier_scene(cloud_called=True, trigger="mission_start")])
+    assert runner.status()["tier"]["models"]["detector"] == "yolo11s.pt"
+
+
+def test_a_policy_with_no_perception_tier_reports_none_rather_than_zero():
+    """An absent readout has to mean "this policy has no perception tier",
+    not "it perceived nothing" -- the same distinction the tri-state itself
+    exists for, one layer up."""
+    runner = MissionRunner(robot=fresh_mock_robot(), target_object="red backpack",
+                           max_steps=3)
+    runner.start()
+    runner.tick()
+    status = runner.status()
+    assert status["tier"] is None
+    assert status["perception"] is None
+
+
+def test_the_log_says_which_steps_cost_money():
+    """Under this policy most steps are free, and a log that did not
+    distinguish them would hide the entire point of the architecture."""
+    runner = _run_one_tick([_tier_scene(cloud_called=True, trigger="candidate_sighting"),
+                            _tier_scene(cloud_called=False, frames=2, calls=1)])
+    lines = runner.status()["log_tail"]
+    assert any("[cloud: candidate_sighting]" in line for line in lines), lines
+    assert sum("[cloud:" in line for line in lines) == 1, lines
+
+
+def test_the_counters_survive_a_step_whose_scene_carries_no_tier():
+    """The counter blinking out mid-mission would be worse than it being
+    absent: it reads as the architecture having stopped."""
+    runner = _run_one_tick([_tier_scene(cloud_called=True, trigger="mission_start",
+                                        frames=1, calls=1),
+                            {"safest_direction": "STOP", "important_objects": []}])
+    assert runner.status()["tier"]["stats"]["cloud_calls"] == 1

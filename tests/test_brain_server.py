@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from brain.agent import ObjectSearchAgent
 from brain.memory import MissionMemory
 from brain.vision import describe_grid_frame
+from control.brain_config import load_brain_config
 from control.brain_server import MissionStartRequest, create_app
 from control.mission_runner import MissionRunner
 from control.remote_robot import RemoteRobot
@@ -946,3 +947,261 @@ def test_health_reports_null_when_the_brain_pins_nothing(tmp_path):
                         robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
     with TestClient(app) as client:
         assert client.get("/health").json()["navigate_model_id"] is None
+
+
+# ---------- policy: "tiered" (PLAN-onboard-perception.md 4.10, phase P2) ----------
+#
+# The models run IN THIS PROCESS, and `ultralytics`/`torch` are a
+# deliberately optional install (requirements-perception.txt -- a
+# multi-gigabyte download no automated test may need). So the property
+# that matters most here is a negative one: a brain that cannot load them
+# must say so at mission start, naming the fix, rather than starting a
+# mission that dies three ticks later reporting "vision unavailable 3
+# times in a row" with a robot standing in a room throughout. That is the
+# same diagnose-the-wrong-thing failure _validate_navigate_choices() was
+# written to prevent for model ids.
+#
+# Nothing below installs or loads a model: brain_server's own
+# _tiered_vision_fn is the seam, and it is patched.
+
+
+def tiered_config(tmp_path, **extra):
+    return vision_config(tmp_path, **extra)
+
+
+def capture_tiered(monkeypatch, wrapped=None):
+    """Intercept the pipeline build, which is the only line that needs the
+    heavy dependencies."""
+    import control.brain_server as bs
+
+    seen = {}
+
+    def fake_tiered(target, cloud_vision_fn, config):
+        seen["target"] = target
+        seen["cloud_vision_fn"] = cloud_vision_fn
+        seen["config"] = config
+        return wrapped or (lambda frame: {})
+
+    monkeypatch.setattr(bs, "_tiered_vision_fn", fake_tiered)
+    return seen
+
+
+def test_the_tiered_policy_wraps_the_cloud_call_rather_than_replacing_it(tmp_path, monkeypatch):
+    """2.6's invariant: the cloud vision_fn is unchanged and the tier goes
+    in FRONT of it. If the tier replaced it, deliberation would be gone
+    rather than rationed."""
+    import control.brain_server as bs
+
+    seen_model = capture_model_id(monkeypatch)
+    seen_tier = capture_tiered(monkeypatch)
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
+    app = bs.create_app(config_path=tiered_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "red backpack", "policy": "tiered",
+            "model_id": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+            "prompt_variant": "bearing-only",
+        })
+        client.post("/mission/stop")
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"]["policy"] == "tiered"
+    assert seen_tier["target"] == "red backpack"
+    # The cloud fn the tier was handed is the one vision_fn_for built, with
+    # this mission's model and wording bound into it -- a tiered walk has to
+    # be as attributable as a vision one.
+    assert seen_tier["cloud_vision_fn"] is not None
+    assert seen_model["model_id"] == "us.anthropic.claude-opus-4-5-20251101-v1:0"
+    assert seen_model["prompt_variant"] == "bearing-only"
+
+
+def test_the_tiered_policy_passes_the_configured_trigger_discipline(tmp_path, monkeypatch):
+    """6.1's hysteresis is the finding most likely to be skipped, so it has
+    to be reachable without editing code."""
+    import control.brain_server as bs
+
+    capture_model_id(monkeypatch)
+    seen = capture_tiered(monkeypatch)
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
+    app = bs.create_app(
+        config_path=tiered_config(tmp_path, tier_consecutive_frames=3,
+                                  tier_cold_search_after=9, tier_max_calls=12),
+        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        client.post("/mission/start", json={"target_object": "x", "policy": "tiered"})
+        client.post("/mission/stop")
+
+    assert seen["config"]["tier_consecutive_frames"] == 3
+    assert seen["config"]["tier_cold_search_after"] == 9
+    assert seen["config"]["tier_max_calls"] == 12
+
+
+def test_a_brain_without_the_perception_models_refuses_at_start_not_mid_tick(tmp_path, monkeypatch):
+    """The one that matters. `ultralytics`/`torch` are optional by design,
+    so this is a normal state for a fresh checkout -- and the answer to it
+    has to be a 400 naming the pip command, before any motor turns."""
+    import control.brain_server as bs
+    from brain.perceive import PerceptionUnavailable
+
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
+
+    def no_models(target, **kwargs):
+        raise PerceptionUnavailable(
+            "ultralytics is not installed. `pip install -r "
+            "requirements-perception.txt`")
+
+    monkeypatch.setattr("brain.perceive.pipeline_for", no_models)
+    app = bs.create_app(config_path=tiered_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "red backpack", "policy": "tiered"})
+        status = client.get("/mission/status").json()
+
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert "requirements-perception.txt" in detail, detail
+    # And no mission was left running behind the refusal.
+    assert status["running"] is False
+
+
+def test_a_broken_weights_file_is_also_a_start_time_refusal(tmp_path, monkeypatch):
+    """Not only the ImportError path: a named detector that will not load is
+    the same class of problem and must not become three vision failures."""
+    import control.brain_server as bs
+
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "brain.perceive.pipeline_for",
+        lambda target, **kw: (_ for _ in ()).throw(OSError("no such file: nope.pt")))
+    app = bs.create_app(config_path=tiered_config(tmp_path, perception_detector="nope.pt"),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "x", "policy": "tiered"})
+
+    assert resp.status_code == 400, resp.text
+    assert "nope.pt" in resp.json()["detail"]
+
+
+def test_the_tiered_policy_needs_a_vision_service_and_an_object(tmp_path, monkeypatch):
+    """`mission_start` alone guarantees one paid call, so "cheaper" is not
+    "offline" -- and the target string is what CLIP scores every crop
+    against, so a room-only mission has nothing to perceive either."""
+    import control.brain_server as bs
+
+    capture_tiered(monkeypatch)
+    no_vision = tmp_path / "robot.yaml"
+    no_vision.write_text('brain:\n  vision_url: ""\n')
+    app = bs.create_app(config_path=str(no_vision),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "x", "policy": "tiered"})
+    assert resp.status_code == 400
+    assert "vision_url" in resp.json()["detail"]
+
+    app2 = bs.create_app(config_path=tiered_config(tmp_path),
+                         robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app2) as client:
+        resp = client.post("/mission/start", json={
+            "target_room": "kitchen", "policy": "tiered"})
+    assert resp.status_code == 400
+    assert "target_object" in resp.json()["detail"]
+
+
+def test_health_says_whether_the_tiered_policy_can_run_here(tmp_path):
+    """So the twin can grey the policy out rather than offering one that
+    will 400 -- and can name the detector on screen before anything is
+    spent. Description, never verdict: a brain with no perception extras is
+    perfectly healthy for the other two policies."""
+    app = create_app(config_path=tiered_config(tmp_path),
+                     robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        health = client.get("/health").json()
+
+    assert isinstance(health["perception_available"], bool)
+    assert health["perception_detector"] == "yolo11s.pt"
+    assert health["perception_clip_model"] == "RN50"
+    assert health["tier_consecutive_frames"] == 2
+
+
+def test_health_names_the_detector_the_config_actually_pins(tmp_path):
+    """*"Swap the HEF and the name on screen changes; that is the experiment
+    loop made watchable."* It is only watchable if the name comes from what
+    would really be loaded."""
+    app = create_app(
+        config_path=tiered_config(tmp_path, perception_detector="yolo11n.pt",
+                                  perception_clip_model="ViT-B-32"),
+        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        health = client.get("/health").json()
+
+    assert health["perception_detector"] == "yolo11n.pt"
+    assert health["perception_clip_model"] == "ViT-B-32"
+
+
+def test_the_real_wrapper_builds_a_tiered_vision_fn_over_the_cloud_one(tmp_path, monkeypatch):
+    """The wiring itself, with only `pipeline_for` faked -- every test above
+    stubs `_tiered_vision_fn` wholesale, which leaves the line that actually
+    assembles the tier unexercised. A fake pipeline is enough: what is under
+    test is that the config's knobs reach brain/tiered.py and that the cloud
+    fn ends up behind it rather than beside it."""
+    import control.brain_server as bs
+    from brain.perceive import ABSENT, Perception
+
+    class FakePipeline:
+        target = "red backpack"
+        crop_source = "label_gate"
+        detector = type("D", (), {"weights": "fake.pt"})()
+        scorer = type("S", (), {"model_name": "FakeCLIP"})()
+
+        def perceive(self, frame):
+            return Perception(status=ABSENT, reason="fake")
+
+    seen = {}
+
+    def fake_pipeline_for(target, **kwargs):
+        seen["target"] = target
+        seen["kwargs"] = kwargs
+        return FakePipeline()
+
+    monkeypatch.setattr("brain.perceive.pipeline_for", fake_pipeline_for)
+
+    config = load_brain_config(tiered_config(
+        tmp_path, perception_detector="fake.pt", perception_clip_model="FakeCLIP",
+        tier_consecutive_frames=3, tier_cold_search_after=9, tier_max_calls=5))
+    cloud_calls = []
+
+    tier = bs._tiered_vision_fn("red backpack", lambda frame: cloud_calls.append(frame) or {
+        "safest_direction": "FORWARD", "_navigate": {"reasoning": "cloud"}}, config)
+
+    assert seen["kwargs"] == {"weights": "fake.pt", "clip_model": "FakeCLIP"}
+    assert tier.consecutive_frames == 3
+    assert tier.cold_search_after == 9
+    assert tier.max_calls == 5
+    # The first frame is mission_start, which is the one genuinely blocking
+    # call (2.5); the rest are free, which is the whole architecture.
+    scenes = [tier({"image_base64": "eA==", "image_width": 640}) for _ in range(4)]
+    assert len(cloud_calls) == 1
+    assert scenes[0]["_tier"]["trigger"] == "mission_start"
+    assert scenes[-1]["_tier"]["cloud_called"] is False
+    assert scenes[-1]["_tier"]["models"]["detector"] == "fake.pt"
+
+
+def test_a_half_installed_perception_package_reads_as_unavailable(monkeypatch):
+    """`find_spec` raises rather than returning None when a package is
+    present but broken. Either way it cannot be used, and the health field
+    must not become an exception inside a route the twin polls."""
+    import control.brain_server as bs
+
+    def boom(name):
+        raise ValueError(f"{name}.__spec__ is None")
+
+    monkeypatch.setattr("importlib.util.find_spec", boom)
+    assert bs._perception_available() is False

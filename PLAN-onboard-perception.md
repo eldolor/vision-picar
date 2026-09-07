@@ -3023,8 +3023,8 @@ real pixels, closed loop, with no robot in existence.
 | | What | Status |
 |---|---|---|
 | **P1** | **The pipeline.** `brain/perceive.py` -- detector -> crops -> CLIP -> match, with 4.2's two crop paths chosen by whether the target has a COCO word, 1.12's three-way output, and bearing from the box plus the frame's own pan angle (1.15.3). `Detector` and `CropScorer` are Protocols, so a HEF substitutes later with nothing in between changing | **BUILT 2026-09-06.** `tests/test_perceive.py`, 22 tests, all against fakes |
-| **P2** | **The trigger discipline.** `brain/tiered.py` -- a `vision_fn` that runs perception locally and calls the cloud only on `mission_start`, `candidate_sighting` or `cold_search`, with 6.1's two-frame hysteresis and a call counter. Plugs into `MissionRunner`'s existing seam, so nothing in `control/` learns perception grew a tier (2.6) | **BUILT 2026-09-06.** `tests/test_tiered.py`, 23 tests |
-| **P3** | **Score it on the corpus.** Run P1 over a rig walk and report hit rate, margin distribution and the n/s/m comparison on *your* pixels rather than COCO's. `tests/manual_perceive_walk.py` is the single-walk version and exists; the corpus-wide scoring beside `control/walk_eval.py` does not | **PARTLY BUILT.** Blocked on 1.16 #10 -- there is nothing valid to score against |
+| **P2** | **The trigger discipline.** `brain/tiered.py` -- a `vision_fn` that runs perception locally and calls the cloud only on `mission_start`, `candidate_sighting` or `cold_search`, with 6.1's two-frame hysteresis and a call counter. Plugs into `MissionRunner`'s existing seam, so nothing in `control/` learns perception grew a tier (2.6) | **BUILT 2026-09-06; twin surface 2026-09-07.** `tests/test_tiered.py`, 26 tests, plus `policy: "tiered"` end to end -- see below |
+| **P3** | **Score it on the corpus.** Run P1 over a rig walk and report hit rate, margin distribution and the n/s/m comparison on *your* pixels rather than COCO's. `tests/manual_perceive_walk.py` is the single-walk version and exists; the corpus-wide scoring beside `control/walk_eval.py` does not | **PARTLY BUILT.** Blocked on 1.16 #10 -- there is nothing valid to score against. **First real run 2026-09-07, on the invalid corpus, and it moved a number anyway -- see below** |
 | **P4** | **The compile step.** ONNX -> Hailo DFC -> HEF on a rented x86-64 host, with floor segmentation as its first subject rather than YOLO (4.3). This is 1.10 item 1, and it is the remaining fifth | **NOT BUILT.** Needs an EC2 hour and a Hailo developer account. No robot |
 
 **P1-P4 is where 1.10 item 1's compile loop lives, and its absence from C1-C9
@@ -3034,7 +3034,7 @@ a different series on purpose: C1-C9 is about motion and the loop, P1-P4 is
 about perception content, and 1.14's own note says a perception change that
 forces no change to `set_velocity` is evidence the layering is right.
 
-#### What it owes the twin
+#### What it owes the twin -- **PAID 2026-09-07 for P2**
 
 6.3 already specifies this and P1's output shape was built to match it: the
 detector's boxes on the FPV canvas, the model's name, the CLIP score against the
@@ -3043,7 +3043,50 @@ looks like a missing target. **Plus the counter** -- 6.3's *"a
 deliberation-call counter that visibly does not climb every step. That single
 number makes the whole architecture watchable."* `TierStats.as_dict()` is that
 number, and it reports `frames_per_call` directly comparable to 6.1's measured
-4-6x. Drawing it is C5's transport plus a panel, and it is the §7 proof for P2.
+4-6x.
+
+**Built, and it needed no transport phase.** The estimate above said *"C5's
+transport plus a panel"*, and C5 turned out not to be on the path at all: C5
+moves *synthesised* features off the robot for the sim leg, and P2's models run
+in the **brain process**, where the panel already polls `GET /mission/status`.
+So the whole surface is one new policy plus four readouts:
+
+- **`policy: "tiered"`** on `control/mission_runner.py`'s `POLICIES`, a branch
+  in `control/brain_server.py` that wraps `brain/navigate.py`'s `vision_fn_for()`
+  in `brain/tiered.py`'s `TieredVision`, and the option in the Remote brain
+  panel's policy picker beside "frontier" and "vision".
+- **Validated at mission start**, exactly as M1 validated `model_id` and for the
+  same reason: `ultralytics`/`torch` are an optional install, and a missing one
+  discovered *inside* a tick is counted by B3.2 as a vision failure -- so the
+  mission would limp through three of them and die reporting "vision unavailable
+  3 times in a row" with a robot standing in a room throughout. It is a 400
+  naming the pip command instead. `GET /health` publishes
+  `perception_available` so the panel can say so before Start is pressed.
+- **Four readouts**, hidden under any policy with no perception tier (a counter
+  reading "0 calls over 0 frames" would say the architecture had stopped
+  deliberating rather than that it was never running): the tri-state with the
+  matched label and bearing, the **CLIP margin** rather than the bare similarity,
+  the detector and encoder by name, and the counter as **calls *and* frames** --
+  a call count climbing by one is indistinguishable from a call every step,
+  which is precisely the thing this policy claims not to do.
+- **The mission log names the paid steps**, `[cloud: candidate_sighting]`, so
+  the saving is legible line by line and not only as a ratio.
+
+Not built here, because both need something that does not exist yet: the
+detector's **boxes on the FPV canvas** (the frames a tiered mission perceives are
+the robot's own, and drawing boxes over the twin's FPV would be drawing them over
+a raycaster render -- 1.12's ban, since the sim leg tests the detector's
+consumers and never the detector), and the **HEF name changing on a swap**, which
+is P4. The name shown is whatever `brain.perception_detector` pins, which is the
+same mechanism one file earlier.
+
+A live check on 2026-09-07, against two real uvicorns with the extras
+deliberately *not* installed: the policy appears, the panel warns before Start,
+and the mission refuses with `ultralytics is not installed. pip install -r
+requirements-perception.txt` and no mission left running. Playwright covers all
+four readouts at a 390px viewport, and found a pre-existing bug on the way in --
+`.select-input` had no `min-width: 0`, so `#brain-fault` was already pushing the
+Sim tab 21px wider than a phone and the tiered option's label took it to 213px.
 
 #### Why this was not in C1-C9, which is the more useful question
 
@@ -3140,6 +3183,126 @@ necessary. Before C1-C3 is built, answer the question that section skipped --
 *what does continuous motion buy, and what fails without it?* -- and if the
 honest answer is a preference rather than a requirement, measure a room crossing
 first and let the number decide.
+
+#### The first real run: **`DEFAULT_MATCH_MARGIN` is about 2x too high**, measured 2026-09-07
+
+`python -m tests.manual_perceive_walk` over
+`red-backpack-20260829-195904` (22 frames, the **invalid** standing-height
+corpus), YOLO11s + CLIP RN50 on a MacBook, ~206ms/frame. **0 of 22
+detected** -- and the reason is not the detector.
+
+| | n | min | mean | max |
+|---|---|---|---|---|
+| crops YOLO labelled `backpack`, scored against `"red backpack"` | 14 | **+0.016** | +0.028 | **+0.034** |
+| every other crop in the same frames | 78 | -0.109 | -0.034 | +0.039 |
+
+**The detector found the backpack on 14 of 22 frames** (best confidence
+0.62; 21 frames at `conf 0.05`), and CLIP scored every one of those crops
+*positive* against the distractors, in a tight band. The pipeline still
+returned `absent` on all 22 because `DEFAULT_MATCH_MARGIN` is **0.05** and
+no true positive ever got there. That constant's own comment calls itself
+*"provisional and uncalibrated"*; this is the first evidence of which way,
+and it says the whole true-positive band sits under the threshold.
+
+**It has NOT been changed, and should not be until a rig walk exists.** Two
+reasons, and the second is the one that matters. The corpus is the invalid
+one -- standing height, target across the room on an ottoman -- so a
+threshold fitted to it would be fitted to the wrong viewpoint, which is the
+`NavigateModelId` mistake in a new place. And the negative column shows the
+distributions **overlap**: the five highest non-target margins are all
+`handbag`, topping out at **+0.039**, above every true backpack. The label
+gate happens to filter those out on this target (4.2's path A keeps only
+crops YOLO labelled `backpack`), so the overlap costs nothing *here* -- but
+on 4.2's open-vocabulary path there is no label gate, and a threshold
+tuned to +0.015 on this data would admit every handbag in the house.
+
+**What this does settle**: the harness works, the two models load and run
+on any machine, RN50's absolute similarities are ~0.18-0.21 with
+distractors at ~0.16, and the quantity to calibrate is a **band, not a
+point** -- which is what P3's corpus-wide scoring should report when there
+is finally something valid to run it on.
+
+#### And the corpus-wide version, run the same day -- **the target string matters more than the walk**
+
+All **39 walks, 821 frames**, YOLO11s + CLIP RN50, at the shipped 0.05
+threshold. `unavailable`: **0**, everywhere -- 1.12's wedged-capture state
+never fired on a real corpus, which is the first evidence that the tri-state
+is not hiding a decoding problem.
+
+| target string | walks | frames | label-gated | detected @0.05 | best margin seen |
+|---|---|---|---|---|---|
+| `"red backpack"` | 25 | 508 | 41% | **13%** | +0.100 |
+| `"blue bottle"` | 9 | 176 | 49% | **0%** | +0.041 |
+| `"bottle"` | 5 | 137 | 23% | **0%** | +0.014 |
+
+**The single biggest lever is the words in the target string, not the
+walk.** `"blue bottle"` is gated *more* often than `"red backpack"` -- YOLO
+finds bottles fine -- and never once clears the threshold, while `"bottle"`
+tops out at +0.014, an order of magnitude below the backpack walks. That is
+CLIP behaving exactly as its own caveat predicts: a generic noun sits close
+to `"a household object"` in the distractor set, so the margin collapses
+even when the detection is perfect. **A two-word target with a colour and a
+noun is worth roughly 5x the margin of the bare noun.** 1.7's goal
+vocabulary should say so, and P3's scoring should report margin *per target
+string*, not only per walk.
+
+The spread across walks of one target is real but secondary: for
+`"red backpack"`, the Aug 30 sessions reach +0.06-0.10 while
+`red-backpack-20260829-184355` (120 frames) gates 3 times with **negative**
+margins. Best walk of the corpus is
+`red-backpack-qwen3-vl-235b-a22b-20260829-214954` at 8 detected of 11.
+
+#### And the whole chain, end to end -- **YOLO -> CLIP -> Opus 4.5, 2026-09-07**
+
+`python -m tests.demo_replay_mission <walk> "red backpack" --policy tiered`
+over `red-backpack-opus-4-5-20260829-214849` (14 frames; 12 label-gated, 6
+over the threshold -- picked from the table above as a walk with *both*
+states, so all three implementable triggers could fire). Real deployed
+`/navigate`, Opus 4.5, **shipped 0.05 threshold, nothing tuned**:
+
+| | |
+|---|---|
+| outcome | `found` -- the model reported `target_reached` |
+| steps | 18 (perception: 12 `absent`, 6 `detected`) |
+| **paid calls** | **4** |
+| triggers | `mission_start` 1, `candidate_sighting` 1, `cold_search` 2 |
+| saving | 1 call per 4.5 steps -- **1 per 3.5 distinct frames** |
+| wall clock | 15.0s, 0.8s/step |
+
+**2.4's claim is now measured live rather than replayed, and it lands
+inside 6.1's 4-6x band** on the first attempt, at a threshold nobody tuned
+for it. All three triggers that P2 can honestly fire did fire, and
+`cold_search` earned its place twice: the run spent six consecutive frames
+`absent` before the cloud found the backpack that perception had missed --
+which is exactly 2.4's inverse case, the cloud proposing and on-board
+tracking.
+
+**Read the saving as 1-per-3.5, not 1-per-4.5.** The walk is 14 frames and
+the mission took 18 steps, so the last four re-perceive `frame-0013.jpg` --
+`ReplayRobot` running off the end. Those frames are free and inflate the
+denominator. And `found` is **not** a navigation result: a replay is open
+loop, and the arrival came on the walk's final frame, which is where the
+person holding the phone had already chosen to stop.
+
+**Two defects in P1/P2 were found by this run, both now fixed**, and both
+are the kind only a real run surfaces:
+
+1. **`bearing_deg` had never once been a number.** `_bearing()` needs the
+   frame's pixel width and **no `RobotInterface` backend publishes
+   `image_width`** -- so 1.11's "which way is it", the output the whole
+   bearing-from-the-box design exists for, was `None` on every frame this
+   project can produce. Fixed inside `brain/perceive.py` by reading the
+   width off the image itself when the frame declares none, rather than
+   widening the frame contract across every backend and the conformance
+   suite for a value the pixels already carry.
+2. **A detected target logged as `not_visible`.** `brain/tiered.py`'s local
+   scene set `target_visible` from the tri-state but hardcoded
+   `target_direction: "not_visible"`, so a frame matched at +0.068 read
+   "target not_visible" in the mission log -- the two fields contradicting
+   each other on precisely the frames perception got right. The direction
+   now comes from the bearing above (`left`/`center`/`right`), or
+   `unknown` when there is no bearing to report, which is a third state
+   and not the same as `not_visible`.
 
 #### Three cautions, so no result here is over-read
 
@@ -3399,9 +3562,18 @@ work, not when its tests pass.
   (`detected` / `absent` / `unavailable`, 1.12) -- so a wedged capture never
   looks like a missing target. Swap the HEF and the name on screen changes;
   that is the experiment loop made watchable.
+  **PARTLY BUILT 2026-09-07** (4.10's "What it owes the twin"): the name, the
+  margin and the tri-state are on the Remote brain panel under
+  `policy: "tiered"`. The boxes are not, and cannot be until there is a camera
+  whose frames a detector may honestly be run against -- over the twin's FPV
+  canvas they would be boxes on a raycaster render, which 1.12 forbids.
 - **The tiers:** the current goal, when it was set, and what triggered it -- plus
   a deliberation-call counter that **visibly does not climb every step**. That
   single number makes the whole architecture watchable.
+  **BUILT 2026-09-07**, as calls *and* frames plus the live ratio, with the
+  trigger named on every paid line of the mission log. The *goal* half is still
+  owed and belongs to C4/C6 -- nothing holds a goal yet, which is also why
+  `UNAVAILABLE_TRIGGERS` lists four of 2.4's seven triggers as unfirable.
 - **The map:** the graph or occupancy grid, the edge being executed, and a way
   to delete a bad edge (§1.5's staleness decision guarantees there will be some).
 
