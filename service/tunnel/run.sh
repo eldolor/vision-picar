@@ -46,18 +46,32 @@ export VISION_SHARED_SECRET="$VISION_SECRET"
 export ROBOT_MODE="${ROBOT_MODE:-sim}"
 echo "robot mode: $ROBOT_MODE   vision: $VISION_URL"
 
-trap 'kill 0' EXIT INT TERM
+# Kill only what THIS script started. `kill 0` would have been shorter and
+# signals the whole process group -- which on a normal setup includes the
+# ngrok agent running in the same shell session, so stopping the servers
+# would silently take the tunnel down with them and the phone would report
+# a bare "Load failed" with nothing to point at.
+pids=()
+cleanup() { for pid in "${pids[@]:-}"; do kill "$pid" 2>/dev/null || true; done; }
+trap cleanup EXIT INT TERM
 
 python -m uvicorn robot.server:app --port 8000 --host 127.0.0.1 --log-level warning &
+pids+=($!)
 ROUTE_PREFIX=/brain python -m uvicorn control.brain_server:app \
   --port 8001 --host 127.0.0.1 --log-level warning &
+pids+=($!)
 python -m uvicorn service.tunnel.proxy:app --port 8080 --host 127.0.0.1 --log-level warning &
+pids+=($!)
 
 sleep 3
 echo
 echo "  robot  http://127.0.0.1:8000"
 echo "  brain  http://127.0.0.1:8001/brain"
 echo "  proxy  http://127.0.0.1:8080   <- point ngrok at this one"
+echo
+echo "Restarting this kills any mission in flight, and the phone reports it"
+echo "as a bare \"Load failed\" -- Safari's words for a fetch that never"
+echo "reached anything. Press Start again once this line reappears."
 echo
 echo "Warm the perception models once before a rig walk -- the first tiered"
 echo "mission downloads yolo11s.pt (18MB) inside POST /mission/start:"

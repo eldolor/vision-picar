@@ -50,6 +50,19 @@ DEFAULTS = {
     # changes with it, and that is the experiment loop made watchable (6.3).
     "perception_detector": "",
     "perception_clip_model": "",
+    # The CLIP margin a crop must beat to count as a sighting. 0 means
+    # brain/perceive.py's DEFAULT_MATCH_MARGIN (0.05), which that module
+    # calls "provisional and uncalibrated" and which the 2026-09-07 corpus
+    # run found to be ~2x too high: true positives on recorded walks band at
+    # +0.016..+0.034, so every one of them read `absent`.
+    #
+    # Exposed rather than lowered, deliberately. The corpus it was measured
+    # on is the invalid standing-height one, and the negative column
+    # overlaps -- so the number to ship is not yet known, and the way to
+    # learn it is to vary this on a rig walk and read the margins off the
+    # panel. Changing the default on that evidence would be the
+    # NavigateModelId mistake again.
+    "perception_match_margin": 0.0,
     # 6.1's hysteresis, in frames. 1 reproduces the naive trigger count
     # (2.8x); 2 is the measured 4.1x. Not tuning -- see brain/tiered.py.
     "tier_consecutive_frames": 2,

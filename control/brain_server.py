@@ -82,7 +82,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 
 from brain.navigate import vision_fn_for
-from brain.perceive import DEFAULT_CLIP, DEFAULT_DETECTOR, PerceptionUnavailable
+from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
+                            DEFAULT_MATCH_MARGIN, PerceptionUnavailable)
 from brain.tiered import tiered_vision_fn_for
 from control import drills
 from control.brain_config import load_brain_config
@@ -273,6 +274,8 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict):
         pipeline_kwargs["weights"] = config["perception_detector"]
     if config["perception_clip_model"]:
         pipeline_kwargs["clip_model"] = config["perception_clip_model"]
+    if config["perception_match_margin"]:
+        pipeline_kwargs["match_margin"] = float(config["perception_match_margin"])
     try:
         from brain.perceive import pipeline_for
 
@@ -599,6 +602,8 @@ def create_app(
             "perception_available": _perception_available(),
             "perception_detector": config["perception_detector"] or DEFAULT_DETECTOR,
             "perception_clip_model": config["perception_clip_model"] or DEFAULT_CLIP,
+            "perception_match_margin": (config["perception_match_margin"]
+                                        or DEFAULT_MATCH_MARGIN),
             "tier_consecutive_frames": config["tier_consecutive_frames"],
             "tier_cold_search_after": config["tier_cold_search_after"],
             # "Will a POST /recording/frame actually succeed here" -- true

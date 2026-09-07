@@ -90,6 +90,14 @@ brain:
   # whichever name is loaded, which is what makes the swap watchable.
   perception_detector: ""
   perception_clip_model: ""
+  # The CLIP margin a crop must beat to count as a sighting. 0 means
+  # brain/perceive.py's default (0.05), which is PROVISIONAL: the 2026-09-07
+  # corpus run found true positives banding at +0.016..+0.034, i.e. every one
+  # of them read "absent". Lower this on a rig walk and read the margins off
+  # the twin's panel -- that is how the shippable number gets measured. It is
+  # exposed rather than lowered because the corpus it was measured on is the
+  # invalid one and the negative column overlaps.
+  perception_match_margin: 0.0
   # Section 6.1's hysteresis: how many consecutive frames must agree before
   # an edge is believed. 1 reproduces the naive trigger count (2.8x saving),
   # 2 is the measured 4.1x. This is not a tuning knob -- it is what makes

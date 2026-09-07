@@ -1205,3 +1205,49 @@ def test_a_half_installed_perception_package_reads_as_unavailable(monkeypatch):
 
     monkeypatch.setattr("importlib.util.find_spec", boom)
     assert bs._perception_available() is False
+
+
+def test_the_clip_margin_is_settable_without_editing_code(tmp_path, monkeypatch):
+    """DEFAULT_MATCH_MARGIN is uncalibrated by its own admission, and the way
+    to calibrate it is to vary it on a rig walk. That needs a config key, not
+    a source edit -- and the default must stay put until a valid corpus says
+    otherwise."""
+    import control.brain_server as bs
+
+    seen = {}
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
+    monkeypatch.setattr("brain.perceive.pipeline_for",
+                        lambda target, **kw: seen.update(kw) or _FakePipeline())
+
+    config = load_brain_config(tiered_config(tmp_path, perception_match_margin=0.02))
+    bs._tiered_vision_fn("red backpack", lambda f: {}, config)
+    assert seen["match_margin"] == 0.02
+
+    # Unset means "whatever brain/perceive.py says", passed as an absent
+    # kwarg rather than a number this module invented.
+    seen.clear()
+    bs._tiered_vision_fn("red backpack", lambda f: {}, load_brain_config(tiered_config(tmp_path)))
+    assert "match_margin" not in seen
+
+
+class _FakePipeline:
+    target = "red backpack"
+    crop_source = "label_gate"
+    detector = type("D", (), {"weights": "fake.pt"})()
+    scorer = type("S", (), {"model_name": "FakeCLIP"})()
+
+    def perceive(self, frame):
+        from brain.perceive import ABSENT, Perception
+        return Perception(status=ABSENT)
+
+
+def test_health_reports_the_margin_a_mission_would_use(tmp_path):
+    app = create_app(config_path=tiered_config(tmp_path, perception_match_margin=0.02),
+                     robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        assert client.get("/health").json()["perception_match_margin"] == 0.02
+
+    app2 = create_app(config_path=tiered_config(tmp_path),
+                      robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app2) as client:
+        assert client.get("/health").json()["perception_match_margin"] == 0.05
