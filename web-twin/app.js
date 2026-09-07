@@ -359,10 +359,39 @@
   // ---------- MacBook<->Pi split, talking to the robot over HTTP just  ----------
   // ---------- like brain/agent.py's MissionAgent talks to RobotInterface ----------
 
+  // ngrok's free tier answers a request carrying a browser User-Agent with
+  // an HTML interstitial instead of proxying it -- so every fetch() from
+  // this page to a tunnelled robot or brain comes back as a page, and
+  // res.json() throws on markup rather than saying what happened. The
+  // documented escape is this header, with any value.
+  //
+  // Added ONLY for ngrok hosts, on purpose. It is a custom header, so it
+  // forces a CORS preflight on requests that would otherwise be simple --
+  // and one of those is the /health poll behind the watchdog readout,
+  // twice a second. Both servers answer the preflight with
+  // access-control-max-age: 600, so the cost on a tunnel is one extra
+  // round trip per ten minutes; on a LAN or localhost there is no cost at
+  // all because the header is never added.
+  //
+  // This is a workaround for someone else's free tier, not a protocol.
+  // A tunnel with its own domain (a paid plan, Cloudflare, Tailscale) or
+  // B5's brain-on-the-Pi needs none of it, and nothing breaks if the
+  // header goes out to a host that has never heard of it.
+  const NGROK_HOST = /(^|\.)ngrok(-free)?\.(app|dev|io)$/i;
+
+  function tunnelHeaders(url, headers) {
+    try {
+      if (NGROK_HOST.test(new URL(url, location.href).hostname)) {
+        headers["ngrok-skip-browser-warning"] = "1";
+      }
+    } catch (e) { /* a URL we cannot parse is not an ngrok URL */ }
+    return headers;
+  }
+
   function authHeaders(extra) {
     const headers = Object.assign({}, extra);
     if (state.serverSecret) headers["x-app-secret"] = state.serverSecret;
-    return headers;
+    return tunnelHeaders(state.serverUrl, headers);
   }
   // A server that answered is a different problem from a server that
   // could not be reached, and only the caller knows how to say so. The
@@ -1600,7 +1629,7 @@
   function brainAuthHeaders(extra) {
     const headers = Object.assign({}, extra);
     if (state.brainSecret) headers["x-app-secret"] = state.brainSecret;
-    return headers;
+    return tunnelHeaders(state.brainUrl, headers);
   }
   async function brainApi(method, path, body) {
     const res = await fetch(state.brainUrl + path, {
@@ -1777,7 +1806,8 @@
   async function renderWatchdog() {
     if (!state.connected) { setBrainText("brain-tel-watchdog", null); return; }
     try {
-      const res = await fetch(state.serverUrl + "/health");
+      const res = await fetch(state.serverUrl + "/health",
+        { headers: tunnelHeaders(state.serverUrl, {}) });
       const health = await res.json();
       const age = health.seconds_since_last_command;
       const timeout = health.watchdog_timeout_s;
@@ -1817,7 +1847,7 @@
   async function probeHealth(url, secret) {
     if (!url) return { status: "not configured" };
     try {
-      const headers = secret ? { "x-app-secret": secret } : {};
+      const headers = tunnelHeaders(url, secret ? { "x-app-secret": secret } : {});
       const res = await fetch(url.replace(/\/$/, "") + "/health", { headers: headers });
       if (!res.ok) return { status: "unreachable", problem: "HTTP " + res.status };
       return { status: "ok", body: await res.json() };

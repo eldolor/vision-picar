@@ -282,6 +282,14 @@ vision-picar/
 │   │                           the top-level `tests/` package)
 │   └── requirements.txt, Dockerfile
 │
+├── service/tunnel/            reaching the LOCAL robot + brain from the
+│   ├── proxy.py               DEPLOYED twin. One ngrok free-tier domain
+│   └── run.sh                  serves both, split by path: /brain/* to the
+│                               brain (ROUTE_PREFIX=/brain), the rest to the
+│                               robot. Needed because policy: "tiered" loads
+│                               YOLO + CLIP into the brain process, which is
+│                               why the brain cannot be deployed at all
+│
 ├── service/twin/              ECS Fargate: robot/server.py + web-twin/index.html
 │   ├── Dockerfile              built from the REPO ROOT (needs real robot/, sim/,
 │   │                           config/ -- not dependency-light copies)
@@ -1085,36 +1093,57 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   out of a ListenerRule's paths doesn't affect that service's health
   checks -- only the public reachability of that literal path.
 
-- **The twin is a deployed artifact, and the deployed copy is behind the
-  repo as of 2026-09-07.** `web-twin/index.html` and `web-twin/app.js` are
-  uploaded to the serverless stack's static bucket and served by CloudFront
-  (`service/static/sync.sh <bucket> <distribution-id>`, values from the
-  `vision-picar-serverless` stack outputs). Until P2 they were byte-identical
-  to `main`; the tiered-policy work changed both and **was deliberately not
-  synced**. Three things to know before deciding to:
+- **The twin is a deployed artifact -- `web-twin/` changes are not shipped
+  until they are synced.** `index.html` and `app.js` go to the serverless
+  stack's static bucket and are served by CloudFront:
+  `bash service/static/sync.sh <bucket> <distribution-id>`, both values from
+  the `vision-picar-serverless` stack outputs. Synced for P2 on 2026-09-07.
+  **Check parity rather than assuming it** -- `curl -s
+  https://<dist>/app.js` diffed against `git show HEAD:web-twin/app.js` is
+  the whole test, and it is worth running before calling a twin change
+  shipped. Two related traps:
 
-  1. **Both new controls would be dead on the deployed page.** The tiered
-     policy's models run in the *brain* process, the brain has not been in
-     AWS since 2026-09-05, and an HTTPS CloudFront page cannot call an
-     `http://` LAN brain -- mixed-content blocking, the same constraint
-     `web-twin/README.md` and `PLAN-brain-relocation.md` already record.
-     Shipping a policy picker that cannot reach a brain is worse than not
-     shipping it. The real unblock is B5 (brain on the Pi) or a tunnel.
-  2. **One change in that diff is worth having there anyway**, if you sync
-     for another reason: `.select-input { min-width: 0 }` fixes a
-     *pre-existing* overflow where `#brain-fault` alone pushed the Sim tab
-     21px wider than a 390px phone.
-  3. **`config/robot.yaml` and `control/brain_config.py` must move
+  1. **`config/robot.yaml` and `control/brain_config.py` must move
      together.** `service/lambda/build.sh` copies both into the walks
      Lambda, and `load_brain_config()` *rejects unknown keys* -- so a new
      yaml beside an old `brain_config.py` is a cold-start `ValueError`, not
      a silently ignored setting. The build script copies both from one tree,
      so the documented path is safe; hand-patching one file in a zip is not.
+  2. **CloudFront caches `app.js` with `no-cache`, but sync.sh invalidates
+     anyway.** Wait for the invalidation to report `Completed` before
+     testing, or you are testing the previous build.
 
-  Check parity before assuming either way -- `aws s3 cp
-  s3://<static-bucket>/app.js -` against `git show HEAD:web-twin/app.js` is
-  the whole test, and it is worth running before any twin change is called
-  shipped.
+- **The brain cannot be deployed, so the deployed twin reaches it through a
+  tunnel** (`service/tunnel/`, 2026-09-07). `policy: "tiered"` loads YOLO and
+  CLIP into the brain process, and the brain has not been in AWS since
+  2026-09-05 -- its home is the Pi (B5). `bash service/tunnel/run.sh` starts
+  the robot, the brain and a fan-out proxy; `ngrok start picar` publishes it.
+  Three things that are not obvious and cost an afternoon each:
+
+  1. **One tunnel, two services, split by path.** ngrok's free plan gives a
+     single static domain per account; a second endpoint on it is
+     `ERR_NGROK_334`. So the brain runs with `ROUTE_PREFIX=/brain` and
+     `service/tunnel/proxy.py` fans `/brain/*` to it and everything else to
+     the robot -- the same mechanism that let both share one ALB on ECS.
+     Settings then wants `https://<domain>` and `https://<domain>/brain`.
+  2. **ngrok's free tier serves an HTML interstitial to anything with a
+     browser User-Agent**, so every `fetch()` from the twin came back as
+     markup and `res.json()` threw on a `<`. `app.js` sends
+     `ngrok-skip-browser-warning` -- but only to ngrok hostnames, because it
+     is a custom header and would otherwise force a CORS preflight on the
+     twice-a-second `/health` poll of every LAN setup. `tests/test_ui.py`
+     pins both halves.
+  3. **Set `APP_SHARED_SECRET`.** `require_secret()` is inert without it,
+     and a tunnel puts the robot and a brain with `allow_drills: true` on the
+     public internet. `run.sh` reads it from `~/.vision-picar-local-secrets`
+     (mode 600, never in the repo), and sets `VISION_SHARED_SECRET`
+     separately because the deployed vision service has its own.
+
+  **Warm the models before a rig walk.** The first tiered mission downloads
+  `yolo11s.pt` (18MB) *inside* `POST /mission/start`, so the panel sits on
+  "Starting..." for tens of seconds and the first status poll shows step 0.
+  `python -c 'from brain.perceive import pipeline_for; pipeline_for("x")'`
+  once, and start is a second or two thereafter.
 
 - **A public route needs an ALB path pattern, or it 404s.** Both public
   services share one listener and are routed by EXACT path patterns (see the

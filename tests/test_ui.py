@@ -1649,3 +1649,94 @@ def test_the_walk_sends_the_policy_it_was_set_to(browser, twin_server):
     assert started[0]["target_object"] == "red backpack"
     assert not errors, errors
     context.close()
+
+
+# ---------- reaching a tunnelled robot or brain (ngrok) ----------
+#
+# The brain cannot be deployed -- policy "tiered" loads YOLO and CLIP into
+# that process -- so the deployed twin reaches it through a tunnel. ngrok's
+# free tier answers any request carrying a browser User-Agent with an HTML
+# interstitial instead of proxying it, which means every fetch() from this
+# page comes back as markup and res.json() throws on a `<`. The documented
+# escape is a request header, and only this page can send it.
+#
+# Scoped to ngrok hosts because it is a custom header: it forces a CORS
+# preflight on requests that would otherwise be simple, one of which is the
+# twice-a-second /health poll behind the watchdog readout.
+
+
+def _headers_for(page, url_state):
+    """What the page would send to a given robot/brain URL. Read through a
+    real request rather than by calling internals -- app.js is one IIFE with
+    no test hooks, and the header only matters if it reaches the wire."""
+    seen = {}
+
+    def capture(route):
+        seen.update({k.lower(): v for k, v in route.request.headers.items()})
+        route.fulfill(status=200, content_type="application/json",
+                      body=_json({"status": "ok", "mode": "sim",
+                                  "seconds_since_last_command": 0.1,
+                                  "watchdog_timeout_s": 1.0}))
+
+    page.route("**/health", capture)
+    page.evaluate(url_state)
+    page.wait_for_timeout(900)
+    return seen
+
+
+def test_a_tunnelled_robot_gets_the_interstitial_bypass(browser, twin_server):
+    """Without this the twin looks broken in a way that says nothing useful:
+    the request succeeds, the body is an HTML page, and the only symptom is
+    a JSON parse error."""
+    page, errors = open_twin(browser, twin_server)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", "https://salami-turbulent-engorge.ngrok-free.dev")
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    headers = _headers_for(page, "() => {}")
+
+    assert headers.get("ngrok-skip-browser-warning") == "1", sorted(headers)
+    assert not errors, errors
+    page.close()
+
+
+def test_a_plain_host_is_left_alone(browser, twin_server):
+    """The header is a workaround for someone else's free tier, not a
+    protocol -- and adding it everywhere would put a CORS preflight on the
+    twice-a-second health poll of every LAN and localhost setup."""
+    page, errors = open_twin(browser, twin_server)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    headers = _headers_for(page, "() => {}")
+
+    assert "ngrok-skip-browser-warning" not in headers, sorted(headers)
+    assert not errors, errors
+    page.close()
+
+
+def test_the_brain_gets_it_too_and_a_path_prefixed_url_still_works(browser, twin_server):
+    """One ngrok free domain serves both services by path
+    (`https://host/` robot, `https://host/brain` brain), so the brain URL
+    carries a path -- which the header check must not be confused by, and
+    which brainApi's plain string concatenation has to keep handling."""
+    page, errors = open_twin(browser, twin_server)
+    seen = {}
+
+    def capture(route):
+        seen.update({k.lower(): v for k, v in route.request.headers.items()})
+        seen["url"] = route.request.url
+        route.fulfill(status=200, content_type="application/json",
+                      body=_json(TIERED_BRAIN_HEALTH))
+
+    page.route("**/brain/health", capture)
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", "https://salami-turbulent-engorge.ngrok-free.dev/brain")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(900)
+
+    assert seen.get("ngrok-skip-browser-warning") == "1", sorted(seen)
+    assert seen.get("url", "").endswith("/brain/health"), seen.get("url")
+    assert not errors, errors
+    page.close()

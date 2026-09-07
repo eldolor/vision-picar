@@ -16,3 +16,8 @@ recordings/
 
 # Lambda packaging output (service/lambda/build.sh)
 .build/
+
+# Detector weights, downloaded on first use by brain/perceive.py
+# (requirements-perception.txt). ~18MB, and reproducible from the model
+# name -- there is no reason for it to be in the repo.
+yolo*.pt
