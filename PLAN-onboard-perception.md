@@ -3207,8 +3207,15 @@ things in particular are now assertions rather than measurements:
   live tiered runs since (1 per 3.5, 1 per 5.17) are consistent with it, and
   are on frames that still exist.
 
-The corpus is now **one walk**: `blue-bottle-20260907-142454`, in
-`s3://vision-picar-recordings-303351622021-us-east-2/recordings/`.
+The corpus is now **three rig walks**, all valid (floor height, target on
+the floor), in
+`s3://vision-picar-recordings-303351622021-us-east-2/recordings/`:
+`blue-bottle-20260907-142454`, `red-backpack-20260907-144856`,
+`blue-shoes-20260907-152528`.
+
+**Recording writes to the MacBook, not to S3** -- `brain.recording_backend`
+is `local`, so a walk lands in `./recordings/` and has to be uploaded. Two
+of these three existed only on one disk until someone thought to check.
 
 #### The first real run: **`DEFAULT_MATCH_MARGIN` is about 2x too high**, measured 2026-09-07
 
@@ -3485,6 +3492,73 @@ With all three, both walks arrive:
 
 Both above 6.1's 4-6x band rather than inside it -- better perception really
 does buy fewer calls, once the floor stops it buying zero.
+
+#### The third walk: the out-of-vocabulary case, and the target STRING dominates -- 2026-09-07
+
+`recordings/blue-shoes-20260907-152528`, 19 frames, 19/19 landscape, one
+shoe stood upright, ending with the pair filling the view. The first target
+with **no COCO word at all**, which is the case 4.2's open-vocabulary path
+exists for and which neither earlier walk could test -- `bottle` and
+`backpack` are both COCO classes, so the detector was always proposing boxes
+on the target even when it mislabelled them.
+
+**The detector never proposes a shoe.** At conf 0.05 over the whole walk the
+labels are `couch` 12, `bed` 11, `chair` 8, `vase` 6, and one each of `cat`,
+`potted plant`, `book`. Not one proposal is of the target. Only 2 of 19
+frames had no proposal at all, so crops exist -- they are just **furniture
+boxes that happen to overlap the shoes**, which is 4.2's low-confidence path
+working exactly as described and no better.
+
+**And then the target string moved the result 7x.** Same frames, same gate,
+same crops:
+
+| target string | detected / 13 visible | false pos | best P |
+|---|---|---|---|
+| `"shoes on the floor"` | **0** | 0 | 0.75 |
+| `"blue shoes"` | 1 | 0 | 0.84 |
+| `"sneakers"` | 1 | 0 | 0.89 |
+| `"running shoes"` | 3 | 0 | 0.99 |
+| `"a pair of running shoes"` | 4 | 0 | 0.99 |
+| `"blue and yellow running shoes"` | **7** | 0 | **1.00** |
+
+Zero false positives in every row, so this is recall bought for nothing.
+Two things in that table are worth more than the headline:
+
+**The best string is the most ACCURATE one, not the longest.** The shoes are
+navy with lime accents. `"blue shoes"` is a poor description of them and
+scores like one; `"blue and yellow running shoes"` is what they actually
+look like. This is not prompt engineering -- it is the target string being a
+*description* that CLIP matches against pixels, and 1.7's goal vocabulary
+currently treats it as a label.
+
+**`"shoes on the floor"` scores WORST, and that confirms the distractor
+collision.** `"a floor"` is in `DEFAULT_DISTRACTORS`, so putting the word in
+the target string hands the softmax a competitor built from the same words.
+This is the near-neighbour problem predicted at the end of the second walk,
+arriving from the opposite direction: not a distractor too close to the
+target, but a target too close to a distractor.
+
+**Both strings still complete the mission**, which is the tiering working as
+designed -- the cloud is what recovers a weak local signal:
+
+| target string | outcome | perception | paid calls | triggers |
+|---|---|---|---|---|
+| `"blue shoes"` | **found** (step 19) | 1 detected, 19 absent | 4 / 20, 1 per 5.0 | start 1, cold_search 3 |
+| `"blue and yellow running shoes"` | **found** (step 22) | 7 detected, 16 absent | 4 / 23, 1 per 5.75 | start 1, candidate 2, cold 1 |
+
+Read the trigger columns: with a poor description the mission runs almost
+entirely on `cold_search` -- the on-board tier contributes nothing and the
+cloud does all the work, at the same price. That is the degraded mode 2.5
+describes, reached not by a failure but by a badly chosen noun.
+
+**What this says for the hardware.** 4.2 lists four crop sources and only
+two are reachable today; this walk is the first evidence about what the
+other two are worth. An out-of-vocabulary target gets crops **only where
+furniture happens to overlap it**, so floor segmentation (4.3) is not an
+optimisation for this case -- it is the difference between proposing on the
+object and proposing near it. That is a reason to build the compile loop
+(P4) around segmentation, which 4.3's note already suggested for a different
+reason.
 
 #### Three cautions, so no result here is over-read
 
