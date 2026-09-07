@@ -63,6 +63,12 @@ DEFAULTS = {
     # panel. Changing the default on that evidence would be the
     # NavigateModelId mistake again.
     "perception_match_margin": 0.0,
+    # Which of 4.2's crop paths a tiered mission takes: "auto" (the target's
+    # COCO word decides -- 4.2's own rule), "label_gate" or "low_confidence".
+    # The first valid rig walk measured "auto" losing 11 of 18 true positives
+    # because YOLO relabels a close-up bottle as a `vase`; see
+    # brain/perceive.py's CROP_PATHS note.
+    "perception_crop_path": "auto",
     # 6.1's hysteresis, in frames. 1 reproduces the naive trigger count
     # (2.8x); 2 is the measured 4.1x. Not tuning -- see brain/tiered.py.
     "tier_consecutive_frames": 2,

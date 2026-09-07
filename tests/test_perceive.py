@@ -36,6 +36,8 @@ from brain.perceive import (
     Detection,
     PerceptionPipeline,
     PerceptionUnavailable,
+    CROP_PATH_AUTO,
+    LOW_CONFIDENCE,
     coco_class_for,
 )
 
@@ -396,3 +398,62 @@ def test_an_unreadable_image_leaves_the_bearing_null_rather_than_failing():
 
     assert perception.status == DETECTED
     assert perception.bearing_deg is None
+
+
+# ---------- forcing 4.2's crop path (measured 2026-09-07) ----------
+#
+# 4.2's rule is that the target's COCO word picks the path. The first
+# VALID rig walk -- camera at floor height, target on the floor -- found
+# that rule losing 11 of 18 true positives, and losing them at the worst
+# possible moment: **at close range YOLO relabels the object.** A bottle
+# 30cm from a 10cm camera is a large blue cylinder, which COCO calls a
+# `vase`, so the label gate discarded every frame from the approach
+# onward. Forcing the open-vocabulary path recovered 18/18 with no false
+# positives.
+#
+# The override does not overturn 4.2 -- it makes it measurable.
+
+
+def test_auto_is_the_default_and_is_still_4_2s_rule():
+    kw = dict(detector=FakeDetector(), scorer=FakeScorer(), target="blue bottle")
+    assert PerceptionPipeline(**kw).crop_source == CROP_LABEL_GATE
+    assert PerceptionPipeline(detector=FakeDetector(), scorer=FakeScorer(),
+                              target="charging cable").crop_source == CROP_LOW_CONFIDENCE
+
+
+def test_forcing_the_open_vocabulary_path_stops_the_label_gating():
+    """The measured fix. A `vase` box must survive when the target is a
+    bottle, because at 10cm that is what the bottle is labelled."""
+    detector = FakeDetector([det("vase"), det("bottle", x1=300.0)])
+    forced = PerceptionPipeline(detector, FakeScorer({"_default": (0.9, 0.1)}),
+                                "blue bottle", crop_path=CROP_LOW_CONFIDENCE)
+    auto = PerceptionPipeline(FakeDetector([det("vase"), det("bottle", x1=300.0)]),
+                              FakeScorer({"_default": (0.9, 0.1)}), "blue bottle")
+
+    assert len(forced.perceive(frame()).candidates) == 2
+    assert len(auto.perceive(frame()).candidates) == 1, "auto should keep only the bottle"
+
+
+def test_forcing_the_open_vocabulary_path_lowers_the_detector_threshold():
+    """It is not only the gate: 4.2's path B harvests low-confidence
+    proposals, so the confidence handed to the detector changes with it."""
+    detector = FakeDetector([det("vase", conf=0.08)])
+    p = PerceptionPipeline(detector, FakeScorer({"_default": (0.9, 0.1)}),
+                           "blue bottle", crop_path=CROP_LOW_CONFIDENCE)
+    p.perceive(frame())
+    assert detector.calls == [LOW_CONFIDENCE]
+
+
+def test_forcing_the_label_gate_on_a_target_with_no_coco_word_is_refused():
+    """It would discard every proposal and report `absent` on every frame --
+    a configuration that cannot work should say so at construction, not
+    look like an empty room."""
+    with pytest.raises(ValueError) as exc:
+        PerceptionPipeline(FakeDetector(), FakeScorer(), "charging cable",
+                           crop_path=CROP_LABEL_GATE)
+    assert "COCO word" in str(exc.value)
+
+
+def test_an_unknown_crop_path_is_refused():
+    with pytest.raises(ValueError):
+        PerceptionPipeline(FakeDetector(), FakeScorer(), "bottle", crop_path="magic")

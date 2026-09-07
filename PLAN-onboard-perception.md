@@ -3304,6 +3304,87 @@ are the kind only a real run surfaces:
    `unknown` when there is no bearing to report, which is a third state
    and not the same as `not_visible`.
 
+#### The first VALID walk, and it overturns a design decision -- 2026-09-07
+
+`recordings/blue-bottle-20260907-142454`. **33 frames, camera at floor
+height on a wheeled rig, the target standing on the floor** -- the
+re-recording 1.16 #10 has been asking for since 2026-09-02, and the first
+walk in this project that is not disqualified by its own viewpoint. Four
+things were blocked on it. Two of them move here.
+
+**1. The threshold. `DEFAULT_MATCH_MARGIN` is measured wrong, and now by two
+independent corpora.**
+
+| | n | min | median | max |
+|---|---|---|---|---|
+| frames the VLM called the bottle visible | 18 | **+0.025** | +0.032 | **+0.038** |
+| frames it called it not visible | 15 | -0.067 | -0.013 | **+0.004** |
+
+A gap of 0.021 with nothing in it. At **0.02: 18 of 18, zero false
+positives.** At the shipped 0.05: **none**. The old corpus put the band at
++0.016..+0.034; this one puts it at +0.025..+0.038. The module default is
+**still not changed**, and the reason is in the old corpus's negative
+column: handbags scored +0.039 against `"red backpack"`, which 0.02 would
+admit. **One threshold does not serve both targets** -- either it becomes
+per-target, or the distractor set has to carry the near-neighbours
+(`"a handbag"` for a backpack, `"a vase"` for a bottle). That is the real
+open question, and it is now a sharp one rather than a guess.
+`brain.perception_match_margin` exists so it can be varied on a walk;
+`config/robot.yaml` sets 0.02 with this measurement written beside it.
+
+**2. The bigger finding: 4.2's label gate is losing most of the true
+positives, and losing them at the worst possible moment.**
+
+YOLO11s found the bottle on **7 of the 18 frames** the VLM called it
+visible. Zero false positives -- but eleven misses, and reading *what the
+detector said instead* explains all of them:
+
+| frames | YOLO's label | what is actually in shot |
+|---|---|---|
+| 0026-0030, 0032 | `vase` | the bottle, filling the centre of the frame |
+| 0031 | `refrigerator` | the bottle, closer still |
+| 0019, 0020, 0024 | `vase` | the bottle on the approach |
+
+**At close range the detector relabels the object.** A bottle 30cm from a
+10cm-high camera is a large blue cylinder, and COCO's word for a large
+cylinder is `vase`. 4.2's label gate keeps only crops labelled `bottle`, so
+it discarded every frame **from the approach onward** -- precisely the
+frames where the target is unmissable and where a robot most needs to know.
+
+Forcing 4.2's other path -- open vocabulary, labels discarded, CLIP deciding
+identity outright -- recovers **18 of 18, still with zero false positives**
+at 0.02. The path 4.2 calls *"the noisiest of the three sources"* is, on
+this walk, strictly better than the one it recommends. **The noise is in the
+labels, not in CLIP.**
+
+This is 4.3.1's standing-height caveat arriving with a number:
+*"a chair from 150cm is a chair; a chair from 10cm is four poles and the
+underside of a seat."* It was written about detection rate. The measured
+failure is not rate, it is **identity** -- and a class-gated pipeline
+inherits that failure whole.
+
+**Not resolved by fiat.** 4.2's rule is about who *proposes*, and is still
+right in the general case: an out-of-vocabulary target has no label to gate
+on at all. What has changed is that the rule is now measurable --
+`brain.perception_crop_path` takes `auto` (4.2's rule, still the default),
+`label_gate` or `low_confidence`. The next two rig walks, on different
+targets, decide whether the default moves. **Do not move it on one walk**;
+that is the mistake this document has recorded twice already.
+
+**3. And the whole chain ran on it.** `--policy tiered --margin 0.02`
+against the deployed `/navigate`: outcome **`found`**, arrived at step 30,
+**6 paid calls over 31 frames -- 1 per 5.17**, triggers `mission_start` 1 /
+`candidate_sighting` 2 / `cold_search` 3. Inside 6.1's 4-6x band on a real
+walk, at a threshold measured rather than guessed. The label-gate defect is
+legible in that run too: frames 0026-0029 read `absent` with the bottle
+filling the view, and `cold_search` -- not `candidate_sighting` -- is what
+eventually fired the arrival call.
+
+**What is still owed from this walk**: 3 of 33 frames are portrait again
+(the model has complained about that twice before), and the walk's meta note
+does not record the rig height, which Stage 0 asks for in writing so the
+corpus describes its own viewpoint.
+
 #### Three cautions, so no result here is over-read
 
 **Throughput is not measurable on a laptop.** 2.9 budgets three models against

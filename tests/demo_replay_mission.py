@@ -79,6 +79,14 @@ def main():
     if "--policy" in sys.argv:
         policy = sys.argv[sys.argv.index("--policy") + 1]
         args = [a for a in args if a != policy]
+    # The CLIP threshold, for calibrating it on a rig walk -- which is the
+    # only way the shippable number gets found. See brain/perceive.py's
+    # DEFAULT_MATCH_MARGIN, which is provisional and measured too high.
+    margin = None
+    if "--margin" in sys.argv:
+        raw = sys.argv[sys.argv.index("--margin") + 1]
+        margin = float(raw)
+        args = [a for a in args if a != raw]
     if len(args) != 2 or policy not in ("vision", "tiered"):
         sys.exit("Usage: python -m tests.demo_replay_mission <walk-dir> "
                  "<target object> [--policy vision|tiered]")
@@ -97,7 +105,10 @@ def main():
         # be counted as a vision failure and reported as the wrong cause.
         from brain.tiered import tiered_vision_fn_for
 
-        vision_fn = tiered_vision_fn_for(target, vision_fn)
+        from brain.perceive import pipeline_for
+
+        pipeline = pipeline_for(target, **({"match_margin": margin} if margin is not None else {}))
+        vision_fn = tiered_vision_fn_for(target, vision_fn, pipeline=pipeline)
         print(f"perception: {vision_fn.models['detector']} + "
               f"{vision_fn.models['scorer']}, crops via "
               f"{vision_fn.models['crop_source']}, "

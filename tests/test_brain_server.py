@@ -1181,7 +1181,8 @@ def test_the_real_wrapper_builds_a_tiered_vision_fn_over_the_cloud_one(tmp_path,
     tier = bs._tiered_vision_fn("red backpack", lambda frame: cloud_calls.append(frame) or {
         "safest_direction": "FORWARD", "_navigate": {"reasoning": "cloud"}}, config)
 
-    assert seen["kwargs"] == {"weights": "fake.pt", "clip_model": "FakeCLIP"}
+    assert seen["kwargs"] == {"weights": "fake.pt", "clip_model": "FakeCLIP",
+                              "crop_path": "auto"}
     assert tier.consecutive_frames == 3
     assert tier.cold_search_after == 9
     assert tier.max_calls == 5

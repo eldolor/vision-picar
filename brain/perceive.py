@@ -120,6 +120,24 @@ CROP_LIDAR_CLUSTER = "lidar_cluster"      # needs the sensor
 CROP_SOURCES = (CROP_LABEL_GATE, CROP_LOW_CONFIDENCE,
                 CROP_FLOOR_MASK, CROP_LIDAR_CLUSTER)
 
+# Which of 4.2's two reachable paths to take. "auto" is 4.2's own rule --
+# the target's COCO word picks the path -- and stays the default.
+#
+# The override exists because the first VALID rig walk (2026-09-07,
+# blue-bottle, camera at floor height, target on the floor) measured the
+# auto rule losing 11 of 18 true positives, and losing them exactly where
+# it matters most: **at close range YOLO relabels the object.** A bottle
+# 30cm from a 10cm-high camera is a large blue cylinder, and COCO's word
+# for that is `vase` -- so the label gate, which keeps only crops labelled
+# `bottle`, discarded every frame from the approach onward. Forcing the
+# open-vocabulary path recovered 18/18 with zero false positives.
+#
+# This does not overturn 4.2's rule, which is about who PROPOSES and is
+# still right in the general case. It makes the rule measurable on one
+# walk instead of settled by argument.
+CROP_PATH_AUTO = "auto"
+CROP_PATHS = (CROP_PATH_AUTO, CROP_LABEL_GATE, CROP_LOW_CONFIDENCE)
+
 # Ship `s`, not `n` -- 4.3.1 measured +7.6 mAP on-chip for a third of the
 # frame rate, and 92 FPS is still 3x the camera. `n` is the day-one
 # baseline that needs no HEF (4.4), not the shipped detector.
@@ -331,6 +349,7 @@ class PerceptionPipeline:
         match_margin: float = DEFAULT_MATCH_MARGIN,
         distractors: Sequence[str] = DEFAULT_DISTRACTORS,
         max_crops: int = 4,
+        crop_path: str = CROP_PATH_AUTO,
     ):
         if not target or not target.strip():
             raise ValueError("PerceptionPipeline needs a target string")
@@ -344,11 +363,29 @@ class PerceptionPipeline:
         # schedule into an over-budget one, and off-robot it is just slow.
         self.max_crops = max_crops
 
+        if crop_path not in CROP_PATHS:
+            raise ValueError(
+                f"Unknown crop_path {crop_path!r}. Known: {', '.join(CROP_PATHS)}")
+        self.crop_path = crop_path
         self.coco_class = coco_class_for(self.target)
-        self.crop_source = (
-            CROP_LABEL_GATE if self.coco_class else CROP_LOW_CONFIDENCE)
+        if crop_path == CROP_LOW_CONFIDENCE:
+            # Forced open vocabulary: the COCO word is still recorded (it is
+            # useful to know there was one) but it gates nothing.
+            self.crop_source = CROP_LOW_CONFIDENCE
+        elif crop_path == CROP_LABEL_GATE:
+            if not self.coco_class:
+                raise ValueError(
+                    f"crop_path='label_gate' needs a target with a COCO word; "
+                    f"{self.target!r} has none, so the gate would discard "
+                    "every proposal and the pipeline would report `absent` "
+                    "on every frame.")
+            self.crop_source = CROP_LABEL_GATE
+        else:
+            self.crop_source = (
+                CROP_LABEL_GATE if self.coco_class else CROP_LOW_CONFIDENCE)
         self.confidence = (
-            DEFAULT_CONFIDENCE if self.coco_class else LOW_CONFIDENCE)
+            DEFAULT_CONFIDENCE if self.crop_source == CROP_LABEL_GATE
+            else LOW_CONFIDENCE)
 
     def perceive(self, frame: dict) -> Perception:
         """One frame in, one `Perception` out.
@@ -418,7 +455,7 @@ class PerceptionPipeline:
         """4.2's gate. With a COCO word the label is a cheap prefilter and
         few crops survive it; without one every proposal is a candidate and
         CLIP does the whole job."""
-        if self.coco_class:
+        if self.crop_source == CROP_LABEL_GATE:
             kept = [d for d in proposals
                     if d.label.strip().lower() == self.coco_class]
         else:
@@ -618,6 +655,7 @@ def pipeline_for(target: str, *, weights: str = DEFAULT_DETECTOR,
 __all__ = [
     "ABSENT", "DETECTED", "UNAVAILABLE",
     "CROP_LABEL_GATE", "CROP_LOW_CONFIDENCE", "CROP_SOURCES",
+    "CROP_PATH_AUTO", "CROP_PATHS",
     "COCO_CLASSES", "coco_class_for",
     "Box", "Detection", "Candidate", "Perception",
     "Detector", "CropScorer", "PerceptionPipeline", "PerceptionUnavailable",
