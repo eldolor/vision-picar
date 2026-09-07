@@ -3728,6 +3728,43 @@ compiling something you could simply download proves less. That model now
 exists, in this repo, behind a Protocol, with a number attached to what it
 buys.
 
+#### Two things measured while choosing a fourth walk -- 2026-09-07
+
+**Precision is not the problem, and it was free to check.** Ask each walk
+for the *other* walks' targets: every off-diagonal cell should be zero,
+because that object is not in that room.
+
+| walk | `"blue bottle"` | `"burgundy backpack"` | `"...running shoes"` |
+|---|---|---|---|
+| blue-bottle | **11/33*** | 0/33 | 0/33 |
+| red-backpack | 0/38 | **23/38*** | 0/38 |
+| blue-shoes | 1/19 | 0/19 | **9/19*** |
+
+*(\* = the walk's own target, where a hit is correct.)* **One false positive
+in 171 wrong-target frames.** The distractor set is doing its job, which is
+a second reason the near-neighbour experiment found nothing to fix.
+
+**And that table exposed a bug shipped the same hour.** The diagonal reads
+11/33 for the bottle where the section above measured 18 of 18. The cause is
+`max_crops`, which was 4 -- sized for **one** crop source. With the floor
+mask unioned in, crops are ranked by **area**, and a target is usually much
+smaller than the furniture beside it, so the mask's large regions crowded
+the target out of the budget:
+
+| `max_crops` | bottle detected / 18 visible | false pos |
+|---|---|---|
+| 4 | 11 | 0 |
+| 6 | 16 | 0 |
+| **8** | **18** | 0 |
+
+The cap now scales with the number of sources (`DEFAULT_MAX_CROPS` 4,
+`DEFAULT_MAX_CROPS_WITH_PROPOSER` 8) and the shipped defaults reproduce the
+measured 60/64 again. **Ranking by area is the underlying weakness** and is
+deliberately left alone: replacing it is a design change that wants its own
+measurement, and raising the cap is the fix this data supports. Note the
+shape of the failure -- adding a capability silently *reduced* accuracy
+through a constant sized for the old one, and only a cross-check caught it.
+
 #### Three cautions, so no result here is over-read
 
 **Throughput is not measurable on a laptop.** 2.9 budgets three models against

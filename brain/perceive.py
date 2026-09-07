@@ -224,6 +224,12 @@ CLIP_LOGIT_SCALE = 100.0
 # are the next thing to try.
 DEFAULT_MATCH_PROBABILITY = 0.8
 
+# How many crops per frame reach CLIP. One image encode each, so this is
+# 2.9's per-frame budget knob -- and it has to grow with the number of crop
+# sources. See PerceptionPipeline.max_crops for the measurement.
+DEFAULT_MAX_CROPS = 4
+DEFAULT_MAX_CROPS_WITH_PROPOSER = 8
+
 # Scored alongside the target so a similarity has something to be
 # relative to. Deliberately bland and household-generic: they exist to
 # absorb "some object, but not that one", not to enumerate a house.
@@ -444,7 +450,7 @@ class PerceptionPipeline:
         match_margin: Optional[float] = None,
         match_probability: float = DEFAULT_MATCH_PROBABILITY,
         distractors: Sequence[str] = DEFAULT_DISTRACTORS,
-        max_crops: int = 4,
+        max_crops: Optional[int] = None,
         crop_path: str = DEFAULT_CROP_PATH,
         proposer: Optional["RegionProposer"] = None,
     ):
@@ -460,9 +466,26 @@ class PerceptionPipeline:
         self.match_margin = match_margin
         self.match_probability = match_probability
         self.distractors = tuple(distractors)
-        # 2.9's gate. Scoring every proposal is what turns a 61%-duty
-        # schedule into an over-budget one, and off-robot it is just slow.
-        self.max_crops = max_crops
+        # 2.9's gate: one CLIP image encode per crop, so this is the per-frame
+        # cost knob. Off-robot it is only slow; on the part it is the
+        # difference between a 61%-duty schedule and an over-budget one.
+        #
+        # **It scales with the number of crop SOURCES, and getting that wrong
+        # silently costs detections.** Measured 2026-09-07 on the bottle walk
+        # with the floor mask on: at 4 the pipeline found 11 of 18, at 8 it
+        # found 18 of 18, with no false positives at either. The cause is the
+        # sort below -- crops are ranked by AREA, and a target is usually much
+        # smaller than the furniture it sits beside, so a cap sized for one
+        # source lets the other source's large regions crowd the target out.
+        #
+        # Ranking by area is itself the weak part and is left alone
+        # deliberately: replacing it is a design change that wants its own
+        # measurement, and raising the cap is the fix the data actually
+        # supports.
+        self.max_crops = (
+            max_crops if max_crops is not None
+            else (DEFAULT_MAX_CROPS_WITH_PROPOSER if proposer is not None
+                  else DEFAULT_MAX_CROPS))
 
         if crop_path not in CROP_PATHS:
             raise ValueError(
@@ -902,5 +925,6 @@ __all__ = [
     "DEFAULT_DETECTOR", "DEFAULT_CLIP", "DEFAULT_MATCH_MARGIN",
     "DEFAULT_MATCH_PROBABILITY", "CLIP_LOGIT_SCALE",
     "DEFAULT_SEGMENTER", "FLOOR_WORDS",
+    "DEFAULT_MAX_CROPS", "DEFAULT_MAX_CROPS_WITH_PROPOSER",
     "DEFAULT_DISTRACTORS", "LOW_CONFIDENCE",
 ]

@@ -611,3 +611,26 @@ def test_the_label_gate_plus_a_proposer_is_refused_rather_than_silently_useless(
         PerceptionPipeline(FakeDetector(), FakeScorer(), "blue bottle",
                            crop_path=CROP_LABEL_GATE, proposer=FakeProposer())
     assert "no class to gate on" in str(exc.value)
+
+
+def test_the_crop_budget_grows_when_a_second_source_is_added():
+    """A bug shipped and caught the same day. `max_crops` was sized for one
+    crop source; with the floor mask unioned in, the area-descending sort
+    let furniture crowd the target out and the bottle walk fell from 18 of
+    18 detections to 11. The cap has to scale with the number of sources."""
+    from brain.perceive import DEFAULT_MAX_CROPS, DEFAULT_MAX_CROPS_WITH_PROPOSER
+
+    alone = PerceptionPipeline(FakeDetector(), FakeScorer(), "blue bottle")
+    both = PerceptionPipeline(FakeDetector(), FakeScorer(), "blue bottle",
+                              proposer=FakeProposer())
+    assert alone.max_crops == DEFAULT_MAX_CROPS
+    assert both.max_crops == DEFAULT_MAX_CROPS_WITH_PROPOSER
+    assert both.max_crops > alone.max_crops
+
+
+def test_an_explicit_crop_budget_still_wins():
+    """It is 2.9's per-frame cost knob, so a caller that has a budget must
+    be able to state it."""
+    p = PerceptionPipeline(FakeDetector(), FakeScorer(), "blue bottle",
+                           proposer=FakeProposer(), max_crops=2)
+    assert p.max_crops == 2
