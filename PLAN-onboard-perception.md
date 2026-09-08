@@ -3850,6 +3850,118 @@ is exactly where the floor mask does not help either -- but it is the
 failure that makes a robot *slow*, not the one that makes it confidently
 wrong about where it is going.
 
+### 1.11a Corroborated identity -- **PROPOSED 2026-09-07, not decided**
+
+An amendment to 1.11, written up because the fourth walk broke that
+section's rule badly enough that leaving it unstated would be worse than
+arguing about it. **Nothing here is implemented.** It needs a decision.
+
+#### The rule as it stands, and what happened to it
+
+1.11 splits arbitration by question and gives **identity to the VLM**:
+*on-board proposes, the cloud confirms.* On the 209-frame search walk that
+produced:
+
+| tier | recall | precision |
+|---|---|---|
+| VLM (Opus 4.5) | 10/10 | **10/44 (23%)** |
+| on-board (YOLO + CLIP) | 2/10 | 2/4 |
+
+34 confident, specifically-worded claims about a teal storage bin in the
+wrong room. Under 1.11 as written, the robot believes all 34 -- and the one
+component that was right on every single one of them has no vote.
+
+#### Two cheaper fixes were tried first, and both fail
+
+**A better target string does not help.** Walk 2 and walk 3 both showed
+description accuracy moving results a long way, so it was the first thing
+to test. Re-asking eight of the bin frames as *"a light blue metal water
+bottle, tall and cylindrical"* rather than *"Blue bottle"*: **8 of 8 still
+claimed**, with the four true frames still found. The confabulation is not
+a wording problem.
+
+**Asking again from somewhere else does not help either.** The obvious
+mitigation for a one-off error is a second look, and the bin claim survived
+**34 frames from many angles across two thirds of a walk**. It is stable,
+not transient.
+
+#### The proposal: asymmetric corroboration, at a lower bar than detection
+
+Three parts, and the second is the one that makes it work.
+
+**1. The VLM's negative is trusted; only its positive needs support.** Its
+recall was 10/10 here and has never missed a sighting on any walk. There is
+no evidence it says "not visible" when the target is there, so nothing is
+gained by second-guessing that direction and recall would be all that was
+lost.
+
+**2. Corroboration uses a LOWER threshold than detection.** This is the
+part that is easy to get wrong, and the naive version -- require the local
+tier to *detect*, at its shipped `P >= 0.8` -- keeps only **2 of 10** true
+sightings and is unusable. But detection and corroboration are different
+questions: `P >= 0.8` asks *"is this a sighting on its own evidence"*, and
+corroboration asks *"is the local tier seeing anything consistent with a
+claim the cloud has already made"*. The second deserves a lower bar,
+because the VLM has already contributed evidence. Measured on the walk:
+
+| bar | true sightings kept | bin claims rejected |
+|---|---|---|
+| 0.80 (the detection gate) | 2/10 | 34/34 |
+| 0.60 | 7/10 | 34/34 |
+| **0.50** | **8/10** | **34/34** |
+| 0.30 | 9/10 | 33/34 |
+| 0.25 | 10/10 | 31/34 |
+
+**0.50 rejects every false claim and keeps 8 of 10 true ones.** The local
+scores separate cleanly: the bin frames run 0.00-0.44 (median 0.14) and the
+true frames 0.25-0.98 (median 0.69).
+
+**3. Disagreement is `unclear`, not either answer** -- M3's tri-state
+argument one tier up, and for the same reason it was right about a depth
+zone: read as "absent" it discards a real sighting, read as "present" it
+keeps the failure this amendment exists to stop. An `unclear` sighting may
+**steer** (turning toward something costs little and resolves itself) but
+may not **commit** -- not `target_reached`, not a `found` outcome, not a
+sighting written to `MissionMemory`. That split matters because 1.8 makes
+arrival the planner's call too, and it inherits this exposure whole.
+
+#### What it costs, checked against the other three walks
+
+| walk | true sightings | corroborated at 0.5 | lost |
+|---|---|---|---|
+| blue-bottle (approach) | 18 | 18 | **0** |
+| red-backpack | 33 | 33 | **0** |
+| blue-shoes | 13 | 10 | **3** |
+| blue-bottle (search) | 10 | 8 | 2 |
+
+**Free on two walks, and it costs three sightings on the shoes** -- which is
+the out-of-vocabulary target the local tier is weakest on, exactly as
+expected. On the search walk the two it loses are the most extreme
+close-ups; note that **arrival still survives**, because of the two frames
+where the VLM fired `target_reached` one corroborates at 0.62.
+
+#### What would falsify it, and what it still needs
+
+**The failure mode to look for is a target the local tier cannot see at
+all.** On such a walk every sighting reads `unclear`, the mission can steer
+but never commit, and the robot circles its target forever -- strictly worse
+than believing a VLM that is right most of the time. The shoes walk is the
+near miss: 10 of 13 corroborate, and a harder target could go the other way.
+**Two more searches, on targets with no COCO word, before this ships.**
+
+Three smaller things unsettled, listed so they are not discovered later:
+`unclear` needs a representation on `Perception` and in the status payload
+(it currently has three states, and this is a fourth *relationship*, not a
+fourth state); the counter in 6.3 should show corroborated-versus-claimed,
+or the twin cannot show this working; and if the bar is a constant it wants
+the same treatment `DEFAULT_MATCH_PROBABILITY` got -- measured, named, and
+settable in config rather than compiled in.
+
+**Status: proposed. Not implemented, and it should not be until the two
+extra searches exist.** One walk that breaks a rule is a reason to write
+this down; it is not yet a reason to change the robot's mind about what it
+is looking at.
+
 #### Three cautions, so no result here is over-read
 
 **Throughput is not measurable on a laptop.** 2.9 budgets three models against
@@ -4092,7 +4204,7 @@ Kept as an index into where each landed:
 | Q1 | Is there a map, and where does memory live? | **1.5** persistence -- only the map persists, planner is a pure function · **1.6** the visual-edge mechanism is cancelled |
 | Q2 | Closed or open goal vocabulary? | **1.7** closed and versioned, **four** verbs (three until 1.15.3 added the report-only goal), unknown verbs refuse by name |
 | Q3 | Who owns the stop condition? | **1.8** typed success from the planner, typed failure from the robot, lidar x bearing |
-| Q4 | Is there an on-device detector, and who arbitrates? | **1.10** a Hailo-8L, two layers (the IMX500 for one day -- §4 has the comparison) · **1.11** arbitration split by question, not authority · **1.13** room identity is not one of the detector's jobs · **4.8**/**4.9** re-checked against industry practice and 2026 prices; the part settles as a Hailo-8L in M.2 module form · **1.15** the physical layout it has to live in |
+| Q4 | Is there an on-device detector, and who arbitrates? | **1.11a** PROPOSED 2026-09-07: the VLM's identity claims need local corroboration on a search, where its precision measured 23% · **1.10** a Hailo-8L, two layers (the IMX500 for one day -- §4 has the comparison) · **1.11** arbitration split by question, not authority · **1.13** room identity is not one of the detector's jobs · **4.8**/**4.9** re-checked against industry practice and 2026 prices; the part settles as a Hailo-8L in M.2 module form · **1.15** the physical layout it has to live in |
 | Q5 | Does the sim participate? | **1.12** yes, with synthesised detections; occlusion-aware, tri-state, noise behind a flag |
 
 ### 6.3 What it owes the twin
