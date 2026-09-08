@@ -3940,6 +3940,50 @@ expected. On the search walk the two it loses are the most extreme
 close-ups; note that **arrival still survives**, because of the two frames
 where the VLM fired `target_reached` one corroborates at 0.62.
 
+#### The walk replayed through the real policy, which is what 1.11a is for
+
+`--policy tiered` over all 209 frames against the deployed `/navigate`.
+**Outcome `found`, 36 paid calls over 212 steps, 1 per 5.89**, arrival at
+step 211. Read as a headline it looks like a success. It is worth reading
+line by line instead:
+
+| | |
+|---|---|
+| perception across the whole mission | **211 `absent`, 1 `detected`** |
+| `candidate_sighting` triggers | **0** |
+| `cold_search` triggers | 35 |
+| paid calls claiming the target | 8 -- **7 of them the storage bin** |
+| actions those 7 commanded | FORWARD x6, LEFT |
+
+**The on-board tier was silent for an entire mission.** Zero
+`candidate_sighting`, one detection in 212 frames. The tiered architecture
+ran as a **six-frame timer** from start to finish -- it never once did the
+thing it exists to do, and the 1-per-5.89 saving is entirely the timer's.
+
+**Seven paid calls steered the robot at the storage bin**, six of them
+FORWARD. Those moves are inert in a replay because the frames come from the
+walk rather than from the robot's own decisions -- **which is exactly why
+the run reports success.** Closed loop, on a real robot, six FORWARDs
+toward a bin in the wrong room is a collision and a mission that never
+leaves the living room. The `found` at the end belongs to the person who
+walked to the desk, not to the policy.
+
+**Two things did work, and both deserve saying.** The room memory is real:
+28 of the 36 calls answer "not visible", and from step 25 onward the model
+reasons *"this appears to be a living room which has already been searched,
+so turn right to explore new areas"* -- that is `searched_rooms` crossing
+the seam and being used. And the final two calls are correct and decisive:
+it finds the bottle under the desk at step 206 and calls arrival at 212.
+
+Under 1.11a's rule, the seven bin calls read `unclear` -- local `P` on those
+frames is 0.00-0.44, well under the 0.50 bar -- so they could steer but not
+commit, and the six FORWARDs would not have been issued as approach moves
+toward a confirmed target. The two real calls corroborate. **That is the
+whole amendment, on one walk, and it is also the strongest argument that
+the amendment is not free**: a policy whose local tier is silent for 212
+frames gets very little from a rule that asks the local tier for a second
+opinion.
+
 #### What would falsify it, and what it still needs
 
 **The failure mode to look for is a target the local tier cannot see at
