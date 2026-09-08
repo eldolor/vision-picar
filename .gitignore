@@ -21,3 +21,9 @@ recordings/
 # (requirements-perception.txt). ~18MB, and reproducible from the model
 # name -- there is no reason for it to be in the repo.
 yolo*.pt
+# CLIP / YOLO-World checkpoints, downloaded on first use by the perception
+# extras. ViT-B-32.pt alone is 338MB -- over GitHub's 100MB file limit,
+# which is how this was noticed. All of them are reproducible from the
+# model name, so none belongs in the repo.
+weights/
+*.pt

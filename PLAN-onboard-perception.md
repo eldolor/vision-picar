@@ -4006,6 +4006,89 @@ extra searches exist.** One walk that breaks a rule is a reason to write
 this down; it is not yet a reason to change the robot's mind about what it
 is looking at.
 
+### 4.11 Is the local tier worth the part? -- **measured 2026-09-08**
+
+Asked directly after the search walk, where the on-board tier was silent
+for 212 frames: *if it contributes nothing, what is the Hailo for, and
+would a Jetson run models good enough to change the answer?* The honest
+route to an answer was to try the model a Jetson would be bought for.
+
+#### The open-vocabulary detector loses to the pipeline it would replace
+
+YOLO-World takes the target string **into the detector** -- no crop
+proposals, no CLIP, no COCO list, one model instead of three. It is the
+shape of thing the "run arbitrary Hugging Face models" argument (4.7) is
+really about. Run over all four walks against the adjudicated labels
+(74 visible frames of 299):
+
+| | recall | false positives |
+|---|---|---|
+| YOLO-World @ conf 0.30 | 35/74 | **0** |
+| YOLO-World @ conf 0.10 | 41/74 | 5 |
+| YOLO-World @ conf 0.02 | 63/74 | 14 |
+| **current: YOLO + floor mask + CLIP @ P>=0.8** | **62/74** | **3** |
+| current @ P>=0.50 | 69/74 | 16 |
+
+**The three-model pipeline dominates at every operating point.** At ~3
+false positives it finds 62 where YOLO-World finds ~36; at ~14-16 it finds
+69 where YOLO-World finds 63. The composed pipeline is not a workaround for
+lacking a better detector -- on this corpus it *is* the better detector.
+
+Two further results from the same run, both load-bearing:
+
+- **YOLO-World never falls for the storage bin either** -- 0 of the 34
+  frames the VLM claimed. Its 13 false positives on the search walk are a
+  **vacuum cleaner**, at frames 0136-0155. So the confabulation is specific
+  to the cloud tier, and 1.11a's premise survives a second local model.
+- **Its recall is excellent where the target is large** (33/33 on the
+  backpack walk, perfect precision) and poor where the target is small.
+  Same failure axis as the current pipeline.
+
+#### So the recall problem is not a model problem
+
+Sweeping the current pipeline's own gate says where the information is:
+
+| gate | total recall | false pos | **search-walk recall** |
+|---|---|---|---|
+| 0.80 (shipped) | 62/74 | 3 | **2/10** |
+| 0.60 | 68/74 | 13 | 7/10 |
+| 0.50 | 69/74 | 16 | **8/10** |
+
+**The signal for six more search sightings is already in the scores** -- it
+sits between 0.5 and 0.8, which is exactly the band 1.11a measured for
+corroboration. Lowering the gate globally is not the answer (3 -> 16 false
+positives), but that is the only thing a bigger model or a faster part would
+change, and it is not what is limiting the system.
+
+**The recall fix and the confabulation fix are therefore the same change**:
+one threshold for a standalone sighting (0.8, precision-first) and a lower
+one for corroborating a claim the cloud has already made (0.5). That is
+1.11a, and this is a second, independent argument for it.
+
+#### What this says about the part
+
+The case for on-board perception **shifts rather than weakens**, and the new
+version is stronger:
+
+- **It was never mainly about saving calls.** On the search walk the saving
+  came from the timer, not the tier. But on approaches the tier does fire,
+  and approaches are where collisions and arrival happen.
+- **It is the only thing that caught the cloud being wrong** -- 34 of 34,
+  and YOLO-World agrees. That is a correctness role, not a cost role, and
+  nothing in the cloud tier can perform it by construction.
+- **The measured bottleneck is small distant targets and crop proposals**,
+  neither of which more compute fixes. A Jetson buys model *capacity*; the
+  evidence says capacity is not what is short.
+
+**The honest limit of this argument**: only one open-vocabulary model was
+tested. Grounding DINO and OWLv2 are stronger and too heavy for a Hailo, and
+SAM would give class-agnostic proposals directly -- the exact weakness
+measured. **None of those has been tried**, and a Jetson is the only way to
+run them. So this is evidence that the *current* plan is sound, not proof
+that a Jetson would not help. 4.7's promotion rule already covers the
+follow-up: try them off-robot first, behind the `RegionProposer` and
+`Detector` Protocols, which is now a two-line substitution.
+
 #### Three cautions, so no result here is over-read
 
 **Throughput is not measurable on a laptop.** 2.9 budgets three models against
