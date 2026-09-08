@@ -3765,6 +3765,91 @@ measurement, and raising the cap is the fix this data supports. Note the
 shape of the failure -- adding a capability silently *reduced* accuracy
 through a constant sized for the old one, and only a cross-check caught it.
 
+#### The fourth walk: a 209-frame two-room SEARCH, and the arbitration is backwards -- 2026-09-07
+
+`recordings/blue-bottle-20260907-185007`. **209 frames, 209/209 landscape**,
+living room -> doorway -> second room, bottle on the floor under a desk.
+The first walk that is a *search* rather than an approach: the target is
+visible on **10 of 209 frames**, and everything before that is looking.
+
+**The cost claim survives the case that could have broken it.** Every
+saving measured before this came from a successful approach, where the
+target is in view most of the time. A search is the opposite, and
+`cold_search` fires on a timer, so it could plausibly have cost *more* per
+step:
+
+| | |
+|---|---|
+| paid calls | **35** over 209 frames -> **1 per 5.97** |
+| triggers | `cold_search` 34, `mission_start` 1 |
+| a per-frame policy | 209 calls |
+
+1-per-6 sits inside the same band as the approach walks (3.5-7.2). **2.4's
+economics hold on searches.**
+
+**But read the trigger column before celebrating it.** 34 of 35 calls were
+`cold_search`. The on-board tier contributed **one** trigger, at start. The
+saving came from the *timer*, not from event-driven deliberation -- which is
+2.5's degraded mode, and a saving achieved by idling at a fixed rate is not
+the architecture working. Same shape as the poorly-described shoes walk,
+reached this time by distance rather than wording.
+
+Also, first real per-frame number: **609ms/frame** for three models on a
+MacBook. Not comparable to an 8L's 33ms budget (2.9), but it is a number.
+
+#### And then the reference disagreed with the pixels, 34 times
+
+The VLM called the bottle visible on **44** frames. The bottle is in the
+second room. All 44 were opened, in two contact sheets, and **34 of them are
+a teal storage bin behind the living-room couch** -- confirmed by the owner
+-- which the model described in confident, specific, entirely invented
+detail: *"A blue bottle is visible under the couch in the center of the
+image, but the couch is blocking direct forward movement."*
+
+Adjudicated ground truth is now `labels.json` beside the walk. It gives:
+
+| tier | recall | precision |
+|---|---|---|
+| **VLM (Opus 4.5)** | **10/10** | **10/44 (23%)** |
+| **on-board (YOLO + CLIP)** | 2/10 (20%) | 2/4 (50%) |
+
+**The two tiers fail in opposite directions, and the split is stark.** The
+VLM misses nothing and invents constantly; the on-board tier finds little
+and invents little. **The on-board tier rejected all 34 bin frames.**
+
+#### Why this is an architecture finding and not a model complaint
+
+1.11 splits arbitration by question and gives **identity to the VLM**:
+*on-board proposes, the cloud confirms.* This walk is that rule's worst
+case. Under it the robot would have accepted "the bottle is under the
+couch, turn right" **34 times** and driven at a storage bin in the wrong
+room -- and the one component that knew better, on every single frame,
+has no vote on identity by design.
+
+Three things follow, and none of them is "use a better model":
+
+- **A confident VLM identity claim needs corroboration on a search.** Not on
+  an approach, where it is right; on a search, where 77% of its claims were
+  wrong. The cheapest form is the one already built: require the local tier
+  to agree before a sighting is believed, and treat disagreement as
+  `unclear` rather than as either answer. That is M3's tri-state argument
+  one tier up, and 1.16 #11 already asks the analogous question of the floor
+  mask.
+- **`target_reached` inherits the problem.** Arrival is the VLM's call
+  (1.8), and on this walk it fired only on the two genuinely-arrived frames
+  -- but nothing in the design would have stopped it firing on frame 20.
+- **The corpus's reference has to be adjudicated, always.** This is the
+  second walk where `walk.jsonl` was wrong, and this time by 77% rather than
+  by two frames. **`labels.json` is the reference; `walk.jsonl` records what
+  a model said at the time and is evidence about the model, not about the
+  room.**
+
+The on-board tier's own 20% recall on this walk is a separate and real
+problem -- the target is small and distant for most of its ten frames, which
+is exactly where the floor mask does not help either -- but it is the
+failure that makes a robot *slow*, not the one that makes it confidently
+wrong about where it is going.
+
 #### Three cautions, so no result here is over-read
 
 **Throughput is not measurable on a laptop.** 2.9 budgets three models against
