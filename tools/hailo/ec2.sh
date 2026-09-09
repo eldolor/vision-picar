@@ -211,7 +211,14 @@ cmd_run() {
   local id script b64 params cid status
   id="$(require_instance)"
   [ $# -gt 0 ] || die "run needs a command"
-  script="$*"
+  # SSM's shell carries almost no environment -- notably no HOME, which the
+  # Dataflow Compiler reads unconditionally (`os.environ['HOME']` in
+  # hailo_model_optimization's logger) and dies on with a bare KeyError.
+  # VIRTUAL_ENV is set for the same reason: the DFC prefers it and would
+  # otherwise scatter its working folder into /root.
+  script="export HOME=\"\${HOME:-/root}\"
+export VIRTUAL_ENV=\"\${VIRTUAL_ENV:-/opt/hailo/venv}\"
+$*"
 
   # Base64, not `--parameters commands=[...]`. The CLI's shorthand syntax
   # treats { } [ ] , = as structure, so any real shell script sent that way
