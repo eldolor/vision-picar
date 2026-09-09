@@ -208,18 +208,34 @@ PY
 
 # --------------------------------------------------------------- ssm -------
 cmd_run() {
-  local id cid; id="$(require_instance)"
+  local id script b64 params cid status
+  id="$(require_instance)"
   [ $# -gt 0 ] || die "run needs a command"
+  script="$*"
+
+  # Base64, not `--parameters commands=[...]`. The CLI's shorthand syntax
+  # treats { } [ ] , = as structure, so any real shell script sent that way
+  # comes out mangled -- which showed up here as a `Syntax error: end of
+  # file unexpected` on line 2 of a script that is fine.
+  #
+  # And `| bash` is the other half: AWS-RunShellScript executes its payload
+  # with /bin/sh, which on Ubuntu is dash. Everything sent through here is
+  # written as bash.
+  b64="$(printf '%s' "$script" | base64 | tr -d '\n')"
+  params="$(mktemp)"
+  trap 'rm -f "$params"' RETURN
+  python3 -c 'import json,sys; print(json.dumps({"commands": ["echo " + sys.argv[1] + " | base64 -d | bash"]}))' "$b64" > "$params"
+
   cid="$(aws_ ssm send-command --instance-ids "$id" \
     --document-name AWS-RunShellScript \
     --comment "tools/hailo" \
     --timeout-seconds 3600 \
     --cloud-watch-output-config CloudWatchOutputEnabled=false \
-    --parameters "commands=[$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$*")]" \
+    --parameters "file://$params" \
     --query 'Command.CommandId' --output text)"
+
   # Poll rather than `wait`: the DFC prints for minutes and a silent wait is
   # indistinguishable from a hang.
-  local status=""
   while true; do
     status="$(aws_ ssm get-command-invocation --command-id "$cid" \
       --instance-id "$id" --query Status --output text 2>/dev/null || echo Pending)"
