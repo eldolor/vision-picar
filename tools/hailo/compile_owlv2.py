@@ -82,7 +82,7 @@ def _calibration(build: Path, layout: str, limit: int | None):
     return np.ascontiguousarray(data)
 
 
-def _model_script(layout: str, meta: dict) -> str | None:
+def _model_script(layout: str, meta: dict, extra: str = "") -> str | None:
     """The .alls script, when the graph needs one.
 
     Only the uint8 layout does: the parsed graph's input is OWLv2's already
@@ -91,15 +91,30 @@ def _model_script(layout: str, meta: dict) -> str | None:
     the robot -- it keeps a per-frame float conversion off the Pi's CPU --
     which is why both layouts are tried rather than just the easy one.
     """
+    lines = []
+    if extra:
+        # Allocator / performance directives, from the command line. The
+        # 3.34.0 SDK accepts allocator_param, performance_param,
+        # resources_param, model_optimization_flavor, input_conversion,
+        # context_switch_param, change_output_activation and nms_postprocess
+        # -- enumerated off the installed SDK rather than guessed, because a
+        # wrong directive fails optimize and reads like a model result.
+        lines.extend(x.strip() for x in extra.split(";") if x.strip())
     if layout != "uint8":
-        return None
+        return ("\n".join(lines) + "\n") if lines else None
     mean = [round(m * 255.0, 4) for m in meta["image_mean"]]
     std = [round(s * 255.0, 4) for s in meta["image_std"]]
-    return (f"normalization1 = normalization({mean}, {std})\n")
+    # NOT `normalization1`: the DFC already auto-names layers on that
+    # pattern while parsing, and a model script that reuses one fails the
+    # whole optimize stage with "Given layer names [...] exist in the model"
+    # -- which reads like a graph problem and is really a naming collision.
+    lines.append(f"owlv2_input_norm = normalization({mean}, {std})")
+    return "\n".join(lines) + "\n"
 
 
 def attempt(build: Path, arch: str, opset: int, head: str, size: int,
-            layout: str, meta: dict, calib, out_dir: Path) -> dict:
+            layout: str, meta: dict, calib, out_dir: Path,
+            extra_script: str = "") -> dict:
     """One matrix cell, three stages, never raising."""
     onnx_path = build / onnx_name(opset, head, size)
     tag = f"{size}_op{opset}_{head}_{layout}"
@@ -164,7 +179,7 @@ def attempt(build: Path, arch: str, opset: int, head: str, size: int,
     except BaseException:
         pass
 
-    script = _model_script(layout, meta)
+    script = _model_script(layout, meta, extra_script)
     if script:
         record["model_script"] = script.strip()
         try:
@@ -199,6 +214,9 @@ def main(argv=None):
                     choices=["normalized", "uint8"])
     ap.add_argument("--calib-limit", type=int, default=None,
                     help="fewer calibration frames, for a fast first pass")
+    ap.add_argument("--extra-script", default="",
+                    help="model-script lines, ';'-separated, e.g. "
+                         "'performance_param(compiler_optimization_level=max)'")
     ap.add_argument("--report", type=Path, default=None)
     ap.add_argument("--stop-on-success", action="store_true",
                     help="stop at the first variant that produces a HEF")
@@ -232,7 +250,8 @@ def main(argv=None):
             calib_cache[layout] = _calibration(build, layout,
                                                args.calib_limit)
         record = attempt(build, args.arch, opset, head, size, layout,
-                         meta, calib_cache[layout], out_dir)
+                         meta, calib_cache[layout], out_dir,
+                         args.extra_script)
         report["attempts"].append(record)
         _write(report, args.report or out_dir / "compile_report.json")
         if record["hef"] and args.stop_on_success:

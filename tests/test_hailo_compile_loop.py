@@ -263,8 +263,13 @@ def test_the_uint8_layout_ships_a_normalization_model_script(build, monkeypatch)
     report = _sweep(build, monkeypatch, runner,
                     ["--layout", "uint8", "--opset", "17"])
     script = report["attempts"][0]["model_script"]
-    assert "normalization1 = normalization(" in script
+    assert "= normalization(" in script
     assert "123.675" in script          # 0.485 * 255
+    # The DFC auto-names parsed layers `normalization<N>`, so a model script
+    # reusing that name fails optimize with "Given layer names [...] exist in
+    # the model" -- a naming collision that reads like a graph problem.
+    # Measured on DFC 3.34.0, 2026-09-09.
+    assert "normalization1 =" not in script
     assert "model_script" in runner.calls
 
     report = _sweep(build, monkeypatch, _FakeRunner(),

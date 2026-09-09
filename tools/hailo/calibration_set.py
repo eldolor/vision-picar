@@ -144,7 +144,12 @@ def build(out_dir: Path, recordings: Path = DEFAULT_RECORDINGS,
         # anti-aliasing pre-filter whose sigma it derives from the scale
         # factor -- hand-rolling that was tried here and came out 2.0 off in
         # normalised units, which is most of the input range.
-        chw = proc(images=img, return_tensors="np")["pixel_values"][0]
+        # size= is not optional on the non-native path: without it the
+        # processor happily returns 960px tensors into an array shaped
+        # for `size`, and the mismatch only surfaces as a shape error
+        # much later, on the rented box.
+        chw = proc(images=img, return_tensors="np",
+                   size={"height": size, "width": size})["pixel_values"][0]
         normalized[i] = chw.transpose(1, 2, 0)
         # The uint8 array is the same frames with the normalisation undone,
         # so a model script carrying a normalization() layer reproduces the
