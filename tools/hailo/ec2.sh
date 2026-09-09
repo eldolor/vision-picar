@@ -223,7 +223,10 @@ cmd_run() {
   # written as bash.
   b64="$(printf '%s' "$script" | base64 | tr -d '\n')"
   params="$(mktemp)"
-  trap 'rm -f "$params"' RETURN
+  # No `trap ... RETURN` here: a RETURN trap stays installed after this
+  # function returns and fires again on the NEXT function's return, where
+  # $params is out of scope -- which under `set -u` aborts the script with
+  # "params: unbound variable" somewhere unrelated. Clean up inline instead.
   python3 -c 'import json,sys; print(json.dumps({"commands": ["echo " + sys.argv[1] + " | base64 -d | bash"]}))' "$b64" > "$params"
 
   cid="$(aws_ ssm send-command --instance-ids "$id" \
@@ -233,6 +236,7 @@ cmd_run() {
     --cloud-watch-output-config CloudWatchOutputEnabled=false \
     --parameters "file://$params" \
     --query 'Command.CommandId' --output text)"
+  rm -f "$params"
 
   # Poll rather than `wait`: the DFC prints for minutes and a silent wait is
   # indistinguishable from a hang.
