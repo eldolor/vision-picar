@@ -123,6 +123,23 @@ ensure_sg() {
   printf '%s' "$sg"
 }
 
+# --------------------------------------------------------------- cli ------
+ensure_cli() {
+  # The Ubuntu AMI ships no AWS CLI. `push` needs it to pull from S3, and it
+  # runs BEFORE `setup` -- which is where the install used to live, so the
+  # remote sync failed silently and left the instance empty. A property of
+  # the host belongs at the host, not inside one step.
+  cmd_run 'command -v aws >/dev/null && { aws --version; exit 0; }
+    export DEBIAN_FRONTEND=noninteractive
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq unzip curl >/dev/null
+    curl -sS https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscli.zip
+    unzip -q -o /tmp/awscli.zip -d /tmp
+    sudo /tmp/aws/install --update >/dev/null
+    aws --version' >/dev/null
+  say "aws cli present on the host"
+}
+
 # ---------------------------------------------------------------- up -------
 cmd_up() {
   local id; id="$(instance_id)"
@@ -157,7 +174,7 @@ cmd_up() {
         --filters "Key=InstanceIds,Values=$id" \
         --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null \
         | grep -q Online; then
-      say "SSM online"; cmd_status; return
+      say "SSM online"; ensure_cli; cmd_status; return
     fi
     sleep 10
   done
@@ -229,6 +246,7 @@ cmd_shell() {
 # -------------------------------------------------------------- files ------
 cmd_push() {
   [ -d "$LOCAL_BUILD" ] || die "$LOCAL_BUILD does not exist -- export first"
+  ensure_cli
   say "uploading $LOCAL_BUILD -> $(s3_uri)/build/"
   aws_ s3 sync "$LOCAL_BUILD" "$(s3_uri)/build/" --exclude '*.hef' --exclude 'logs/*'
   say "uploading tools/hailo -> $(s3_uri)/tools/"
