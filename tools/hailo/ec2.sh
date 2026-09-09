@@ -49,7 +49,12 @@ instance_id() {
     --filters "Name=tag:Name,Values=$NAME" \
               "Name=instance-state-name,Values=pending,running,stopping,stopped" \
     --query 'Reservations[].Instances[0].InstanceId' --output text 2>/dev/null \
-    | grep -v '^None$' | head -1
+    | grep -v '^None$' | head -1 || true
+  # `|| true` is load-bearing under `set -euo pipefail`: with no instance,
+  # grep matches nothing and exits 1, pipefail promotes that to the
+  # pipeline's status, and the caller's `id="$(instance_id)"` then takes the
+  # whole script down -- silently, on the ONE path that has to work first,
+  # which is `up` with nothing running yet.
 }
 
 require_instance() {
