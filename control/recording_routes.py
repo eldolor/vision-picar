@@ -68,6 +68,17 @@ class RecordFrameRequest(BaseModel):
     media_type: str = "image/jpeg"
     # The /navigate answer this frame got live, if there was one.
     navigate: Optional[dict] = None
+    # The robot's own id for this frame under teleop (sim/teleop_robot.py
+    # stamps one on every push and echoes it back).
+    #
+    # It exists so a recorded walk can say WHICH decision saw these pixels.
+    # Under "Drive via brain" the twin pushes frames on one timer, polls
+    # /mission/status on another, and the mission ticks on a third -- median
+    # 2.5 pushed frames per step, range 1-10 -- so the status stored beside a
+    # frame routinely belongs to an earlier one. Pair this with the status's
+    # `last_frame_seq` and the alignment is exact instead of coincidental.
+    # Null outside teleop, where there is nothing to align.
+    teleop_seq: Optional[int] = None
 
 
 class FinishWalkRequest(BaseModel):
@@ -86,6 +97,20 @@ class FinishWalkRequest(BaseModel):
     walk: str
     model_id: Optional[str] = None
     target_object: Optional[str] = None
+    # The pixel size the frames were CAPTURED at, which is a property of the
+    # corpus and not of any one frame.
+    #
+    # Added 2026-09-08, because the whole Stage 0 corpus turned out to be
+    # 640x480 and nobody noticed for a month: the twin asked getUserMedia for
+    # a camera with no resolution constraint, the browser returned its
+    # default, and every finding about small distant targets in
+    # PLAN-onboard-perception.md 4.10/4.11 was measured on VGA. A walk that
+    # records its own capture size cannot hide that from the next reader --
+    # the same argument Stage 0 already makes for writing the rig height into
+    # the note, applied to the one number the browser knows and a person
+    # cannot see.
+    capture_width: Optional[int] = None
+    capture_height: Optional[int] = None
 
 
 def mount_recording_routes(
@@ -157,6 +182,7 @@ def mount_recording_routes(
         store.append_text(req.walk, "walk.jsonl", json.dumps({
             "seq": req.seq, "file": name, "media_type": req.media_type,
             "navigate": req.navigate,
+            "teleop_seq": req.teleop_seq,
         }) + "\n")
 
         return {"saved": name, "walk": req.walk, "frames": len(existing) + 1,
@@ -192,5 +218,8 @@ def mount_recording_routes(
             meta["model_id"] = req.model_id
         if req.target_object:
             meta["target_object"] = req.target_object
+        if req.capture_width and req.capture_height:
+            meta["capture"] = {"width": req.capture_width,
+                               "height": req.capture_height}
         store.write_json(req.walk, "meta.json", meta)
         return {"walk": req.walk, "meta": meta}

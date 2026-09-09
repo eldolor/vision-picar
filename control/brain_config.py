@@ -99,6 +99,15 @@ DEFAULTS = {
     # the mission, and under this policy most steps cost nothing, so the
     # step budget is a poor proxy for the bill.
     "tier_max_calls": 0,
+    # 1.11a's corroboration bar -- **reported, never enforced.** The local
+    # probability at or above which the on-board tier is taken to agree with
+    # a sighting the cloud has already claimed. It gates nothing today: the
+    # verdict is computed, counted and published so the next rig walks
+    # measure the amendment live, and 1.11a asks for two searches on
+    # out-of-vocabulary targets before any behaviour changes. Named here
+    # rather than compiled in because 1.11a asks for exactly the treatment
+    # DEFAULT_MATCH_PROBABILITY got.
+    "tier_corroboration_bar": 0.5,
     "max_steps": 120,
     "min_distance_cm": 30.0,
     "request_timeout_s": 10.0,

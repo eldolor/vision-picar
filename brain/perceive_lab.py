@@ -1,0 +1,497 @@
+"""
+perceive_lab.py
+
+Perception backends that are **candidates, not parts**.
+
+`brain/perceive.py` holds what the robot is planned to run: YOLO11s, CLIP
+RN50, and SegFormer-B0's floor mask, all of which are small enough for a
+Hailo-8L and all of which have earned their place by measurement. This
+module holds the models that have *not*, and it exists because
+`PLAN-onboard-perception.md` 4.11 closed with an honest limit:
+
+> *"Only one open-vocabulary model was tested. Grounding DINO and OWLv2 are
+> stronger and too heavy for a Hailo, and SAM would give class-agnostic
+> proposals directly -- the exact weakness measured. **None of those has
+> been tried**, and a Jetson is the only way to run them."*
+
+That is a hardware argument resting on an untested assumption, and the
+assumption is testable for free. 4.7's promotion rule already says how:
+**experiments run off-robot behind the perception seam and are promoted by
+compile once they have earned it.** Everything here plugs into the
+`Detector` and `RegionProposer` Protocols, so the substitution really is
+two lines and `control/perception_eval.py` scores all of them against the
+same adjudicated labels.
+
+## Why these three, and what each one is evidence about
+
+| | what it is | what it would settle |
+|---|---|---|
+| **Grounding DINO** | text-conditioned detection, DETR-shaped | whether a stronger open-vocabulary detector beats the composed pipeline where YOLO-World did not |
+| **OWLv2** | ViT + CLIP-style text tower, one-shot | the same question with a very different architecture, so a single model's weakness is not mistaken for the family's |
+| **SAM** | class-agnostic segment-everything | **the measured failure directly** -- 9 of the corpus's 11 errors are crop proposals and 0 are matching, so region proposals are what is actually short |
+
+SAM is the one that matters. The other two replace the whole pipeline; SAM
+replaces only the part the corpus says is broken, and feeds the CLIP
+matcher that the corpus says is not.
+
+## None of these can go on a Hailo, which is the point
+
+They are here to answer *"would a Jetson buy anything"*, so a result that
+says "yes, and by this much" is a purchase argument and a result that says
+"no" is a saved $400 and a simpler robot. Either is worth an afternoon.
+Read every number against 4.11's three cautions -- throughput is not
+measurable on a laptop, a high match rate is not automatically good, and
+this measures finding rather than navigating.
+
+## Weights are large and are not in the repo
+
+`weights/` and `*.pt` are gitignored, and that rule exists because a 338MB
+CLIP checkpoint was swept into a commit and GitHub's 100MB limit caught
+it. Everything here downloads to the Hugging Face cache on first use and
+is reproducible from the model name, which is the same argument the
+detector weights get.
+"""
+
+from __future__ import annotations
+
+import io
+import logging
+from typing import Optional, Sequence
+
+from brain.perceive import (ABSENT, DETECTED, UNAVAILABLE, Box, Candidate,
+                            DEFAULT_CLIP, DEFAULT_DETECTOR, DEFAULT_CROP_PATH,
+                            DEFAULT_SEGMENTER, Detection, Perception,
+                            PerceptionPipeline, PerceptionUnavailable,
+                            SegformerFloorProposer, ClipScorer, YoloDetector)
+
+logger = logging.getLogger("perceive_lab")
+
+# Open-vocabulary detectors: the target string goes INTO the detector, so
+# there are no crops, no distractors and no CLIP. The number they threshold
+# on is their own box confidence -- which is why
+# control/perception_eval.py's METRIC_CONFIDENCE exists and why a table may
+# never compare one of these against a probability without saying so.
+GDINO = "gdino"
+OWLV2 = "owlv2"
+YOLOWORLD = "yoloworld"
+OPEN_VOCAB = (GDINO, OWLV2, YOLOWORLD)
+
+DEFAULT_GDINO = "IDEA-Research/grounding-dino-tiny"
+DEFAULT_OWLV2 = "google/owlv2-base-patch16-ensemble"
+DEFAULT_YOLOWORLD = "yolov8s-worldv2.pt"
+
+# SlimSAM-77, ~40MB, rather than SAM ViT-H at 2.4GB. The small one is the
+# honest choice for a first pass: if class-agnostic proposals are the
+# missing ingredient, the cheapest model that produces them should already
+# show it, and a null result from the big one costs an hour of downloads to
+# reach the same place. `--sam-model` swaps it.
+DEFAULT_SAM = "Zigeng/SlimSAM-uniform-77"
+
+# The proposal filters, shared with SegformerFloorProposer so a region from
+# either source is admitted on the same terms. Without these SAM returns
+# the whole wall, the whole floor and every highlight on a cushion.
+DEFAULT_MIN_AREA_FRAC = 0.0008
+DEFAULT_MAX_AREA_FRAC = 0.5
+DEFAULT_MAX_REGIONS = 8
+
+# What an open-vocabulary detector calls a detection when nobody is
+# sweeping. Only the tri-state depends on it -- every table in
+# perception_eval re-thresholds from the raw scores.
+DEFAULT_OPEN_VOCAB_CONFIDENCE = 0.30
+
+
+def _pil(image: bytes):
+    from PIL import Image
+
+    return Image.open(io.BytesIO(image)).convert("RGB")
+
+
+class NullDetector:
+    """Proposes nothing, so a `RegionProposer` can be measured alone.
+
+    The floor mask was measured this way (59% alone, 86% for the detector
+    alone, 94% together) and the finding was that it is **worse alone and
+    better together** -- which only a proposer-only row can show. Any new
+    proposer gets the same three rows or it cannot be compared with it.
+    """
+
+    weights = "none"
+
+    def detect(self, image: bytes, confidence: float) -> Sequence[Detection]:
+        return ()
+
+
+class SamProposer:
+    """SAM's automatic mask generation as class-agnostic region proposals.
+
+    **This is the model 4.11 says would address the measured failure
+    directly.** 9 of the 11 errors in the corpus are crop-source failures
+    and 0 are matching failures: the detector proposes nothing when the
+    target fills the frame and only furniture when it is far away. SAM's
+    whole premise is proposing regions without a class list, which is
+    exactly the gap.
+
+    Segment-everything is expensive -- a grid of point prompts, one mask
+    decode per point -- so it is seconds per frame rather than
+    milliseconds, and `control/perception_eval.py --save` exists so a
+    corpus is paid for once. That cost is also the finding: 2.9 budgets
+    three models against an 8L's 33ms frame and this is not a model that
+    fits on an 8L at any rate, which is the whole reason it is evidence
+    about a Jetson.
+    """
+
+    def __init__(self, model: str = DEFAULT_SAM,
+                 points_per_side: int = 16,
+                 min_area_frac: float = DEFAULT_MIN_AREA_FRAC,
+                 max_area_frac: float = DEFAULT_MAX_AREA_FRAC,
+                 max_regions: int = DEFAULT_MAX_REGIONS,
+                 device: Optional[str] = None):
+        try:
+            import numpy  # noqa: F401
+            import torch  # noqa: F401
+            from transformers import pipeline as hf_pipeline
+        except ImportError as exc:  # pragma: no cover - exercised by hand
+            raise PerceptionUnavailable(
+                "SAM needs transformers + torch. `pip install -r "
+                "requirements-perception.txt`.") from exc
+        self.model_name = model
+        self.points_per_side = points_per_side
+        self.min_area_frac = min_area_frac
+        self.max_area_frac = max_area_frac
+        self.max_regions = max_regions
+        # CPU by default: SAM's mask decoder loops over a point grid and MPS
+        # has repeatedly been slower than CPU on that shape. `device` forces
+        # it either way, and neither number means anything about the robot.
+        self.pipe = hf_pipeline("mask-generation", model=model,
+                                device=device or "cpu")
+
+    def propose(self, image: bytes) -> Sequence[Box]:  # pragma: no cover
+        import numpy as np
+
+        img = _pil(image)
+        out = self.pipe(img, points_per_batch=64,
+                        points_per_crop=self.points_per_side)
+        height, width = img.size[1], img.size[0]
+        found = []
+        for mask in out.get("masks", []):
+            m = np.asarray(mask)
+            area = int(m.sum())
+            if not (self.min_area_frac * height * width <= area
+                    <= self.max_area_frac * height * width):
+                continue
+            ys, xs = np.where(m)
+            if not len(xs):
+                continue
+            # Same "reaches the top of the frame" rule the floor mask uses:
+            # a wall and a ceiling do, an object standing on the floor does
+            # not. Kept identical on purpose -- if SAM wins it should be
+            # because its regions are better, not because it was admitted on
+            # easier terms.
+            if m[0, :].any():
+                continue
+            found.append((area, Box(float(xs.min()), float(ys.min()),
+                                    float(xs.max()), float(ys.max()))))
+        found.sort(key=lambda pair: -pair[0])
+        return [box for _, box in found[:self.max_regions]]
+
+
+class OpenVocabPipeline:
+    """A text-conditioned detector standing in for the whole pipeline.
+
+    Same `perceive(frame) -> Perception` shape as `PerceptionPipeline`, so
+    `control/perception_eval.py` and `brain/tiered.py` take it unchanged --
+    but there is no crop stage and no CLIP, so `Candidate.probability` is
+    meaningless here and `confidence` is the number to threshold on.
+
+    Deliberately NOT a `Detector` feeding the existing matcher. 4.11
+    compared YOLO-World as a *replacement* -- one model instead of three --
+    because that is the shape of the "run arbitrary Hugging Face models"
+    argument, and comparing it any other way would answer a question nobody
+    asked.
+    """
+
+    def __init__(self, backend, target: str, *, hfov_deg: float = 66.0,
+                 match_confidence: float = DEFAULT_OPEN_VOCAB_CONFIDENCE):
+        if not target or not target.strip():
+            raise ValueError("OpenVocabPipeline needs a target string")
+        self.backend = backend
+        self.target = target.strip()
+        self.hfov_deg = hfov_deg
+        self.match_confidence = match_confidence
+        self.crop_source = "open_vocabulary"
+        # Named so 6.3's readout and every saved record say which model
+        # produced a number. `detector`/`scorer` mirror PerceptionPipeline's
+        # attribute names so TieredVision's _name_of() finds them.
+        self.detector = backend
+        self.scorer = None
+        self.proposer = None
+
+    def perceive(self, frame: dict) -> Perception:
+        from brain.perceive import _decode
+
+        pan = float(frame.get("pan_deg") or 0.0)
+        tilt = float(frame.get("tilt_deg") or 0.0)
+        try:
+            image = _decode(frame)
+        except PerceptionUnavailable as exc:
+            return Perception(status=UNAVAILABLE, reason=str(exc),
+                              crop_source=self.crop_source,
+                              pan_deg=pan, tilt_deg=tilt)
+        try:
+            detections = list(self.backend.detect_text(image, self.target))
+        except PerceptionUnavailable as exc:
+            return Perception(status=UNAVAILABLE, reason=str(exc),
+                              crop_source=self.crop_source,
+                              pan_deg=pan, tilt_deg=tilt)
+        except Exception as exc:   # a wedged model is not an empty room
+            logger.warning("open-vocabulary detector failed: %s", exc)
+            return Perception(status=UNAVAILABLE,
+                              reason=f"detector failed: {exc}",
+                              crop_source=self.crop_source,
+                              pan_deg=pan, tilt_deg=tilt)
+
+        if not detections:
+            return Perception(status=ABSENT, crop_source=self.crop_source,
+                              reason="no box for the target string",
+                              pan_deg=pan, tilt_deg=tilt)
+
+        width = float(frame.get("image_width") or 0.0)
+        candidates = [
+            Candidate(detection=d, similarity=d.confidence,
+                      best_distractor=0.0, scores=(d.confidence,),
+                      bearing_deg=((d.box.centre_x / width - 0.5) * self.hfov_deg
+                                   + pan) if width > 0 else None)
+            for d in detections]
+        best = max(candidates, key=lambda c: c.detection.confidence)
+        if best.detection.confidence < self.match_confidence:
+            return Perception(status=ABSENT, candidates=candidates,
+                              crop_source=self.crop_source,
+                              pan_deg=pan, tilt_deg=tilt,
+                              reason=(f"{len(candidates)} box(es), best "
+                                      f"conf {best.detection.confidence:.3f} "
+                                      f"< {self.match_confidence}"))
+        return Perception(status=DETECTED, candidates=candidates, best=best,
+                          crop_source=self.crop_source, pan_deg=pan,
+                          tilt_deg=tilt,
+                          reason=(f"{best.detection.label} @ conf "
+                                  f"{best.detection.confidence:.3f}"))
+
+
+class GroundingDino:
+    """IDEA-Research's Grounding DINO, text-conditioned detection.
+
+    The prompt convention is the model's own and is not decoration: text
+    queries are lowercased and terminated with a period, and a query
+    without one silently detects worse.
+    """
+
+    def __init__(self, model: str = DEFAULT_GDINO,
+                 box_threshold: float = 0.05,
+                 text_threshold: float = 0.05,
+                 device: Optional[str] = None):
+        try:
+            import torch
+            from transformers import (AutoModelForZeroShotObjectDetection,
+                                      AutoProcessor)
+        except ImportError as exc:  # pragma: no cover
+            raise PerceptionUnavailable(
+                "Grounding DINO needs transformers + torch. `pip install -r "
+                "requirements-perception.txt`.") from exc
+        self._torch = torch
+        self.device = device or "cpu"
+        self.processor = AutoProcessor.from_pretrained(model)
+        self.model = AutoModelForZeroShotObjectDetection.from_pretrained(
+            model).to(self.device).eval()
+        # Low on purpose. The sweep is what picks an operating point, so a
+        # threshold here would throw away the scores the sweep needs -- the
+        # same "score once, threshold afterwards" rule perception_eval
+        # follows one layer up.
+        self.box_threshold = box_threshold
+        self.text_threshold = text_threshold
+        self.weights = model
+        self.model_name = model
+
+    def detect_text(self, image: bytes, text: str) -> Sequence[Detection]:  # pragma: no cover
+        img = _pil(image)
+        prompt = text.strip().lower()
+        if not prompt.endswith("."):
+            prompt += "."
+        inputs = self.processor(images=img, text=prompt,
+                                return_tensors="pt").to(self.device)
+        with self._torch.no_grad():
+            outputs = self.model(**inputs)
+        results = self.processor.post_process_grounded_object_detection(
+            outputs, inputs["input_ids"], threshold=self.box_threshold,
+            text_threshold=self.text_threshold,
+            target_sizes=[img.size[::-1]])[0]
+        out = []
+        labels = results.get("text_labels", results.get("labels", []))
+        for box, score, label in zip(results["boxes"], results["scores"], labels):
+            x1, y1, x2, y2 = (float(v) for v in box.tolist())
+            out.append(Detection(box=Box(x1, y1, x2, y2),
+                                 label=str(label) or text,
+                                 confidence=float(score)))
+        return out
+
+
+class Owlv2:
+    """Google's OWLv2 -- a ViT detector with a CLIP-style text tower.
+
+    Included as the architectural counterweight to Grounding DINO: two
+    open-vocabulary detectors that fail the same way is a family result,
+    and two that disagree says the family is not the variable.
+    """
+
+    def __init__(self, model: str = DEFAULT_OWLV2,
+                 threshold: float = 0.02,
+                 device: Optional[str] = None):
+        try:
+            import torch
+            from transformers import Owlv2ForObjectDetection, Owlv2Processor
+        except ImportError as exc:  # pragma: no cover
+            raise PerceptionUnavailable(
+                "OWLv2 needs transformers + torch. `pip install -r "
+                "requirements-perception.txt`.") from exc
+        self._torch = torch
+        self.device = device or "cpu"
+        self.processor = Owlv2Processor.from_pretrained(model)
+        self.model = Owlv2ForObjectDetection.from_pretrained(
+            model).to(self.device).eval()
+        self.threshold = threshold
+        self.weights = model
+        self.model_name = model
+
+    def detect_text(self, image: bytes, text: str) -> Sequence[Detection]:  # pragma: no cover
+        img = _pil(image)
+        inputs = self.processor(text=[[text]], images=img,
+                                return_tensors="pt").to(self.device)
+        with self._torch.no_grad():
+            outputs = self.model(**inputs)
+        target_sizes = self._torch.tensor([img.size[::-1]])
+        # `post_process_grounded_object_detection`, NOT
+        # `post_process_object_detection`: the Owlv2*Processor* has only the
+        # first, while the Owlv2*ImageProcessor* one layer down has only the
+        # second. Checking the wrong one of the two cost a full 299-frame
+        # run that came back `unavailable` on every single frame -- which
+        # 1.12's tri-state is exactly why that read as "the harness is
+        # broken" rather than as "OWLv2 finds nothing".
+        results = self.processor.post_process_grounded_object_detection(
+            outputs=outputs, threshold=self.threshold,
+            target_sizes=target_sizes)[0]
+        out = []
+        for box, score in zip(results["boxes"], results["scores"]):
+            x1, y1, x2, y2 = (float(v) for v in box.tolist())
+            out.append(Detection(box=Box(x1, y1, x2, y2), label=text,
+                                 confidence=float(score)))
+        return out
+
+
+class YoloWorld:
+    """Ultralytics YOLO-World, the model 4.11 already measured.
+
+    Kept here so the table can be re-run rather than quoted: 4.11's numbers
+    were produced by an ad-hoc script that no longer exists, which is
+    precisely the problem P3 was written to stop.
+    """
+
+    def __init__(self, weights: str = DEFAULT_YOLOWORLD,
+                 confidence: float = 0.02,
+                 device: Optional[str] = None):
+        try:
+            from ultralytics import YOLOWorld as _YW
+        except ImportError as exc:  # pragma: no cover
+            raise PerceptionUnavailable(
+                "YOLO-World needs ultralytics. `pip install -r "
+                "requirements-perception.txt`.") from exc
+        self.model = _YW(weights)
+        self.confidence = confidence
+        self.device = device
+        self.weights = weights
+        self.model_name = weights
+        self._classes = None
+
+    def detect_text(self, image: bytes, text: str) -> Sequence[Detection]:  # pragma: no cover
+        if self._classes != [text]:
+            self.model.set_classes([text])
+            self._classes = [text]
+        results = self.model.predict(_pil(image), conf=self.confidence,
+                                     verbose=False, device=self.device)
+        out = []
+        for r in results:
+            for b in getattr(r, "boxes", []):
+                x1, y1, x2, y2 = (float(v) for v in b.xyxy[0].tolist())
+                out.append(Detection(box=Box(x1, y1, x2, y2), label=text,
+                                     confidence=float(b.conf[0])))
+        return out
+
+
+OPEN_VOCAB_BACKENDS = {
+    GDINO: (GroundingDino, DEFAULT_GDINO),
+    OWLV2: (Owlv2, DEFAULT_OWLV2),
+    YOLOWORLD: (YoloWorld, DEFAULT_YOLOWORLD),
+}
+
+
+def _open_vocab(spec: str, device=None):
+    name, _, override = spec.partition(":")
+    cls, default = OPEN_VOCAB_BACKENDS[name]
+    return cls(override or default, device=device)
+
+
+def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
+                      clip_model: str = DEFAULT_CLIP,
+                      proposer: str = "none",
+                      segmenter: str = DEFAULT_SEGMENTER,
+                      sam_model: str = DEFAULT_SAM,
+                      crop_path: str = DEFAULT_CROP_PATH,
+                      max_crops: Optional[int] = None,
+                      device: Optional[str] = None,
+                      imgsz: Optional[int] = None,
+                      **kwargs):
+    """One string per stage -> something with `perceive(frame)`.
+
+    `detector` is a YOLO weights file (the shipped path), `none` (so a
+    proposer can be measured alone, which is the row that showed the floor
+    mask is worse alone and better together), or one of `gdino` / `owlv2` /
+    `yoloworld` -- optionally `name:model_id` -- which replace the whole
+    pipeline rather than a stage of it.
+    """
+    if detector.partition(":")[0] in OPEN_VOCAB:
+        if proposer != "none":
+            raise ValueError(
+                f"{detector} takes the target string into the detector, so "
+                "there is no crop stage for a proposer to feed. Compare it as "
+                "a replacement for the pipeline (4.11), or use a YOLO "
+                "detector with --proposer.")
+        return OpenVocabPipeline(_open_vocab(detector, device=device),
+                                 target, **kwargs)
+
+    if proposer == "floor":
+        region = SegformerFloorProposer(segmenter, device=device)
+    elif proposer == "sam":
+        region = SamProposer(sam_model, device=device)
+    elif proposer == "none":
+        region = None
+    else:
+        raise ValueError(f"unknown proposer {proposer!r}: none, floor or sam")
+
+    backend = (NullDetector() if detector == "none"
+               else YoloDetector(detector, device=device, imgsz=imgsz))
+    return PerceptionPipeline(
+        detector=backend,
+        scorer=ClipScorer(clip_model, device=device),
+        target=target,
+        proposer=region,
+        crop_path=crop_path,
+        **({"max_crops": max_crops} if max_crops is not None else {}),
+        **kwargs,
+    )
+
+
+__all__ = [
+    "GDINO", "OWLV2", "YOLOWORLD", "OPEN_VOCAB", "OPEN_VOCAB_BACKENDS",
+    "DEFAULT_GDINO", "DEFAULT_OWLV2", "DEFAULT_YOLOWORLD", "DEFAULT_SAM",
+    "DEFAULT_OPEN_VOCAB_CONFIDENCE",
+    "GroundingDino", "Owlv2", "YoloWorld", "SamProposer", "NullDetector",
+    "OpenVocabPipeline", "pipeline_for_spec",
+]

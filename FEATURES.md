@@ -647,9 +647,9 @@ grid rendering, a JS port of `sim/grid_world.py`'s starter-house layout.
   perception tier in front of it: a YOLO detector and a CLIP scorer run **in
   the brain process** on every frame, for free, and the paid `/navigate` call
   goes out only on `mission_start`, `candidate_sighting` or `cold_search`,
-  with two frames of hysteresis before an edge is believed. Four readouts
-  appear with it (§6.3 of that plan), and vanish under any policy with no
-  perception tier rather than drawing zeroes:
+  with two frames of hysteresis before an edge is believed. Five readouts
+  appear with it (§6.3 of that plan, plus §1.11a's), and vanish under any
+  policy with no perception tier rather than drawing zeroes:
 
   - **Perception** -- the tri-state `detected` / `absent` / `unavailable`,
     with the matched label and its bearing. `unavailable` is styled as a
@@ -668,6 +668,17 @@ grid rendering, a JS port of `sim/grid_world.py`'s starter-house layout.
     counter that visibly does not climb every step"), and it is directly
     comparable to the 4-6x measured over recorded walks. The mission log
     marks each paid step `[cloud: <trigger>]`.
+  - **Corroboration** -- whether the local tier sees anything consistent with
+    a sighting the cloud has just claimed, at a **lower** bar (0.5) than the
+    0.8 needed to claim one alone, plus the running corroborated-of-claimed
+    tally. It exists because on the 209-frame search walk the cloud claimed
+    the target on 44 frames of which 34 were a storage bin in the wrong room,
+    and the local tier rejected all 34. **It is reported and enforces
+    nothing** -- the row says "not enforced" on every line, and the mission
+    believes the cloud exactly as it did before. §1.11a is an undecided
+    amendment, and this is how the next walks measure it without the panel
+    letting a measurement read as a decision. A free step (no cloud call, so
+    no claim) says so rather than holding the previous verdict.
 
   `ultralytics`/`torch` are an **optional** install
   (`requirements-perception.txt`). A brain without them reports

@@ -1323,7 +1323,8 @@ TIERED_BRAIN_HEALTH = {
 
 
 def tiered_status(*, frames=12, cloud_calls=3, status="detected", margin=0.21,
-                  detector="yolo11s.pt", running=True):
+                  detector="yolo11s.pt", running=True, verdict="corroborated",
+                  local_p=0.69, claims=3, corroborated=2):
     """A /mission/status body shaped as control/mission_runner.py emits one
     under `policy: "tiered"`."""
     return {
@@ -1348,7 +1349,13 @@ def tiered_status(*, frames=12, cloud_calls=3, status="detected", margin=0.21,
             "stats": {"frames": frames, "cloud_calls": cloud_calls,
                       "frames_per_call": round(frames / cloud_calls, 2),
                       "triggers": {"mission_start": 1, "candidate_sighting": 2},
-                      "perception": {"detected": 4, "absent": 8}},
+                      "perception": {"detected": 4, "absent": 8},
+                      "claims": claims, "corroborated": corroborated,
+                      "verdicts": {verdict: 1}},
+            # 1.11a, reported and not enforced.
+            "corroboration": (None if verdict is None else {
+                "verdict": verdict, "claimed": verdict != "no_claim",
+                "bar": 0.5, "local_probability": local_p, "enforced": False}),
         },
     }
 
@@ -1364,10 +1371,15 @@ def frontier_status():
     }
 
 
-def open_with_brain(browser, twin_server, *, status=None, health=None):
+def open_with_brain(browser, twin_server, *, status=None, health=None,
+                    mode="guide"):
     """The Sim tab with a stubbed brain connected. Connecting polls
-    /mission/status once, which is what draws the readouts."""
-    page, errors = open_twin(browser, twin_server, mode="guide")
+    /mission/status once, which is what draws the readouts.
+
+    `mode` seeds the Guide tab's own sub-mode: the Robot-view switches
+    ("Record this walk", "Drive via brain") are display:none outside it, so a
+    test about them has to ask for "robot"."""
+    page, errors = open_twin(browser, twin_server, mode=mode)
     page.route("**/brain-stub/health", lambda route: route.fulfill(
         status=200, content_type="application/json",
         body=_json(health if health is not None else TIERED_BRAIN_HEALTH)))
@@ -1739,4 +1751,238 @@ def test_the_brain_gets_it_too_and_a_path_prefixed_url_still_works(browser, twin
     assert seen.get("ngrok-skip-browser-warning") == "1", sorted(seen)
     assert seen.get("url", "").endswith("/brain/health"), seen.get("url")
     assert not errors, errors
+    page.close()
+
+
+# ---------- 1.11a on the panel: measured, and visibly not enforced ----------
+#
+# The amendment is proposed and undecided, and CLAUDE.md section 7 is why
+# these are UI tests: *"a phase is not done when its tests pass. It is done
+# when someone holding a phone can watch the thing it built do its job."*
+# The job here is unusual -- the thing being watched is a measurement, not a
+# behaviour -- so the row has one extra duty no other readout has: it must
+# make it impossible to mistake the verdict for a decision the robot acted
+# on. That is what the "not enforced" assertions below are protecting.
+
+
+def test_the_corroboration_verdict_is_on_the_panel(browser, twin_server):
+    """1.11a's falsifier is a walk that does not exist yet, so the verdict
+    has to be visible on the walks that are about to be recorded -- by
+    replay it can only ever be re-derived from frames already collected."""
+    page, errors = open_with_brain(
+        browser, twin_server,
+        status=tiered_status(verdict="unclear", local_p=0.14))
+    readout = page.locator("#brain-tel-corroboration")
+    sync_api.expect(readout).to_contain_text("unclear", timeout=5000)
+    text = readout.inner_text()
+    # The local number AND the bar it was read against: a verdict without
+    # its threshold is not readable, and 1.11a's whole finding is that the
+    # bar for corroborating is not the bar for detecting.
+    assert "0.14" in text and "0.5" in text, text
+    assert not errors, errors
+    page.close()
+
+
+def test_the_panel_says_the_verdict_is_not_enforced(browser, twin_server):
+    """The one thing this row must never do is look like a decision. Under
+    the shipped rule the mission still believes the cloud on every one of
+    these frames -- including the `unclear` ones."""
+    page, _ = open_with_brain(browser, twin_server,
+                              status=tiered_status(verdict="unclear"))
+    sync_api.expect(page.locator("#brain-tel-corroboration")).to_contain_text(
+        "not enforced", timeout=5000)
+    page.close()
+
+
+def test_the_corroborated_of_claimed_tally_is_shown(browser, twin_server):
+    """1.11a's own list of what it still needs: *"the counter in 6.3 should
+    show corroborated-versus-claimed, or the twin cannot show this
+    working."* Two counts rather than a rate, for the same reason the
+    deliberation counter is calls and frames."""
+    page, _ = open_with_brain(
+        browser, twin_server,
+        status=tiered_status(claims=17, corroborated=4))
+    text = page.locator("#brain-tel-corroboration").inner_text()
+    assert "4/17" in text, text
+    page.close()
+
+
+def test_a_free_step_says_no_claim_rather_than_holding_the_last_verdict(browser, twin_server):
+    """Most steps under this policy cost nothing, so most steps have no
+    claim to corroborate. A verdict held over from the last paid call would
+    be read as this step's -- the same staleness the deliberation counter
+    avoids by showing both terms."""
+    page, _ = open_with_brain(browser, twin_server,
+                              status=tiered_status(verdict=None))
+    sync_api.expect(page.locator("#brain-tel-corroboration")).to_contain_text(
+        "no claim", timeout=5000)
+    page.close()
+
+
+def test_the_corroboration_row_hides_under_a_policy_with_no_tier(browser, twin_server):
+    """Same rule as every other readout in this group: say nothing rather
+    than draw a zero. "0/0 claims corroborated" would read as a tier that
+    had stopped agreeing with anything."""
+    page, _ = open_with_brain(browser, twin_server, status=frontier_status())
+    page.wait_for_timeout(600)
+    row = page.locator("#brain-tel-corroboration")
+    assert row.count() == 1, "the corroboration readout is not in the page at all"
+    sync_api.expect(page.locator("#brain-tier-rows")).to_be_hidden()
+    page.close()
+
+
+def test_the_corroboration_row_is_readable_on_a_phone(browser, twin_server):
+    """The 40px model picker again. A fifth row in this group is the one
+    most likely to push the panel past 390px, and `.select-input` already
+    did exactly that once."""
+    page, _ = open_with_brain(browser, twin_server,
+                              status=tiered_status(verdict="unclear", claims=17))
+    box = page.locator("#brain-tel-corroboration").bounding_box()
+    assert box is not None and box["width"] >= 40, box
+    assert box["x"] + box["width"] <= PHONE["width"] + 1, box
+    overflow = page.evaluate(
+        "() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 0, f"the page scrolls sideways by {overflow}px"
+    page.close()
+
+
+# ---------- the cloud endpoint's own connection check ----------
+#
+# Added 2026-09-08, after a real rig session was blocked by it. The vision
+# service publishes no CORS headers and never needed any: the deployed twin
+# is served from the same CloudFront distribution it calls. Serve the page
+# from an ngrok tunnel instead and every vision call becomes cross-origin,
+# the preflight 404s, and the operator sees "Load failed" on the Robot view
+# camera -- with five URL fields on the Settings tab and nothing saying
+# which one is wrong. curl says the service is fine, because it is.
+
+
+def test_the_cloud_endpoint_has_a_connection_check(browser, twin_server):
+    """The brain has had one since B4. The half that actually blocks a walk
+    did not."""
+    page, errors = open_twin(browser, twin_server, mode="guide")
+    page.click("#btn-settings")
+    assert page.locator("#btn-vision-connect").count() == 1
+    sync_api.expect(page.locator("#vision-connection-status")).to_contain_text(
+        "Not checked")
+    assert not errors, errors
+    page.close()
+
+
+def test_a_healthy_but_cross_origin_vision_service_is_reported_as_the_fault(
+        browser, twin_server):
+    """The finding this exists for: **reachable and unusable are different
+    states.** Retrying, changing the secret and restarting the service all do
+    nothing, so the message has to name the origin mismatch rather than say
+    "not reachable" about a service that answered."""
+    page, errors = open_twin(browser, twin_server, mode="guide")
+    # Healthy, and deliberately NOT the origin serving the page.
+    page.route("https://vision.example.com/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"status": "ok"})))
+    page.click("#btn-settings")
+    page.fill("#cfg-url", "https://vision.example.com")
+    page.click("#btn-vision-connect")
+    status = page.locator("#vision-connection-status")
+    sync_api.expect(status).to_contain_text("blocked by the browser", timeout=5000)
+    text = status.inner_text()
+    # It must name BOTH origins -- the whole failure is that they differ, and
+    # the operator is looking at five URL fields.
+    assert "vision.example.com" in text, text
+    assert "Load failed" in text, text
+    assert not errors, errors
+    page.close()
+
+
+def test_a_same_origin_vision_service_reads_as_connected(browser, twin_server):
+    """Served from the origin it calls, which is the deployed arrangement:
+    no preflight, so no CORS to get wrong."""
+    page, errors = open_twin(browser, twin_server, mode="guide")
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"status": "ok"})))
+    page.click("#btn-settings")
+    page.fill("#cfg-url", twin_server)
+    page.click("#btn-vision-connect")
+    sync_api.expect(page.locator("#vision-connection-status")).to_contain_text(
+        "Connected", timeout=5000)
+    assert not errors, errors
+    page.close()
+
+
+def test_an_unreachable_vision_service_says_so_without_blaming_cors(browser, twin_server):
+    """A dead service and a blocked one need different fixes, so they must
+    not render the same."""
+    page, _ = open_twin(browser, twin_server, mode="guide")
+    page.route("**/health", lambda route: route.abort())
+    page.click("#btn-settings")
+    page.fill("#cfg-url", twin_server)
+    page.click("#btn-vision-connect")
+    status = page.locator("#vision-connection-status")
+    sync_api.expect(status).to_contain_text("Not reachable", timeout=5000)
+    assert "blocked by the browser" not in status.inner_text()
+    page.close()
+
+
+def test_the_cloud_check_is_readable_on_a_phone(browser, twin_server):
+    page, _ = open_twin(browser, twin_server, mode="guide")
+    page.click("#btn-settings")
+    box = page.locator("#btn-vision-connect").bounding_box()
+    assert box is not None and box["width"] >= 40, box
+    assert box["x"] + box["width"] <= PHONE["width"] + 1, box
+    overflow = page.evaluate(
+        "() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 0, f"the page scrolls sideways by {overflow}px"
+    page.close()
+
+
+# ---------- recording a tiered walk (the exclusion that expired) ----------
+#
+# "Record this walk" and "Drive via brain" were mutually exclusive from T3
+# until 2026-09-08, on the grounds that recording saves a /navigate reply per
+# frame and driving via brain never produces one. T4 made that false --
+# missionStatusToRobotResult() returns the whole mission status, which since
+# P2 carries the perception tri-state, the tier counters and 1.11a's
+# corroboration verdict, i.e. strictly MORE than a /navigate reply.
+#
+# The exclusion had therefore become exactly backwards: the tiered walk is the
+# only path where YOLO and CLIP ever see real pixels, so it is the single most
+# valuable walk to keep, and it was the only one the twin refused to record.
+# It cost a rig session. These tests are here so it cannot come back.
+
+
+def test_turning_on_drive_via_brain_leaves_recording_alone(browser, twin_server):
+    page, errors = open_with_brain(browser, twin_server, status=tiered_status(),
+                                   mode="robot")
+    page.click('.tab-btn[data-tab="guide"]')
+    page.locator("#cfg-record-walk").check()
+    page.locator("#cfg-drive-via-brain").check()
+    assert page.locator("#cfg-record-walk").is_checked(), (
+        "enabling Drive via brain switched recording off -- the tiered walk is "
+        "the one most worth keeping")
+    assert not errors, errors
+    page.close()
+
+
+def test_turning_on_recording_leaves_drive_via_brain_alone(browser, twin_server):
+    """The same exclusion, from the other side. Both handlers enforced it."""
+    page, errors = open_with_brain(browser, twin_server, status=tiered_status(),
+                                   mode="robot")
+    page.click('.tab-btn[data-tab="guide"]')
+    page.locator("#cfg-drive-via-brain").check()
+    page.locator("#cfg-record-walk").check()
+    assert page.locator("#cfg-drive-via-brain").is_checked(), (
+        "enabling recording switched Drive via brain off")
+    assert not errors, errors
+    page.close()
+
+
+def test_both_switches_can_be_on_at_once(browser, twin_server):
+    """The state a tiered rig walk actually needs: a real mission driving the
+    robot AND every frame kept for the corpus."""
+    page, _ = open_with_brain(browser, twin_server, status=tiered_status(),
+                              mode="robot")
+    page.click('.tab-btn[data-tab="guide"]')
+    page.locator("#cfg-record-walk").check()
+    page.locator("#cfg-drive-via-brain").check()
+    assert page.locator("#cfg-record-walk").is_checked()
+    assert page.locator("#cfg-drive-via-brain").is_checked()
     page.close()

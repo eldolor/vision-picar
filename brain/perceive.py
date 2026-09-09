@@ -330,6 +330,20 @@ class Candidate:
         return self.similarity - self.best_distractor
 
     @property
+    def confidence(self) -> float:
+        """The proposal's own confidence, before CLIP had an opinion.
+
+        Not the gate here and never was -- the shipped pipeline thresholds
+        on `probability` and this number only says the detector was sure
+        there was *an object*. It is named because an open-vocabulary
+        detector (4.11) has no CLIP stage and no distractors, so this is
+        the only score it produces, and `control/perception_eval.py` has to
+        be able to ask for it by name rather than reach through the
+        detection.
+        """
+        return self.detection.confidence
+
+    @property
     def probability(self) -> float:
         """P(target | this crop, these texts). **This is what to threshold
         on.** Comparable across different target strings, which the margin
@@ -712,7 +726,18 @@ class YoloDetector:
     over the IMX500, which could not be fed a stored frame at all (1.10).
     """
 
-    def __init__(self, weights: str = DEFAULT_DETECTOR, device: Optional[str] = None):
+    def __init__(self, weights: str = DEFAULT_DETECTOR, device: Optional[str] = None,
+                 imgsz: Optional[int] = None):
+        """`imgsz` is the detector's input resolution.
+
+        Default (None) leaves Ultralytics on 640, which is what 4.3.1's 92 FPS
+        on the 8L was measured at. Raising it is the standard fix for small
+        distant objects -- and on the 8L it is a real option rather than a
+        wish, because the headroom is there: 92 FPS against a 30fps camera
+        buys roughly a 4x cost increase before the detector stops clearing
+        camera rate. **A HEF is compiled for a fixed input size**, so changing
+        this is a compile-time decision on the robot, not a runtime one.
+        """
         try:
             from ultralytics import YOLO
         except ImportError as exc:  # pragma: no cover - exercised by hand
@@ -723,14 +748,19 @@ class YoloDetector:
             ) from exc
         self.model = YOLO(weights)
         self.device = device
-        self.weights = weights
+        self.imgsz = imgsz
+        # Named so 6.3's readout and every saved record say which resolution
+        # produced a number -- 640 and 1280 are different detectors for this
+        # purpose, and a table that cannot tell them apart is unreadable.
+        self.weights = weights if not imgsz else f"{weights}@{imgsz}"
 
     def detect(self, image: bytes, confidence: float) -> Sequence[Detection]:  # pragma: no cover
         from PIL import Image
 
         img = Image.open(io.BytesIO(image)).convert("RGB")
         results = self.model.predict(img, conf=confidence, verbose=False,
-                                     device=self.device)
+                                     device=self.device,
+                                     **({"imgsz": self.imgsz} if self.imgsz else {}))
         names = self.model.names
         out = []
         for r in results:

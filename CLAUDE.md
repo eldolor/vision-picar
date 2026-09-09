@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 786 passed, with a browser
+# Confirm everything still works (should show 894 passed, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -122,6 +122,7 @@ the original build plan phases, reordered simulation-first):
 | -- | On-car perception + the hardware chain (`PLAN-onboard-perception.md`) | **DESIGN SETTLED 2026-09-03, DETECTOR REVISED 2026-09-04, NOTHING BUILT.** Started as "what could run on the car itself" after reading Microduck and ended up rewriting the hardware plan. Decided: a **differential-drive chassis** rather than the PiCar-X's Ackermann (which **retires S6** and makes `grid_world.py`'s pivot assumption correct); a **lidar** used first as a 360-degree clearance ring and only later as SLAM behind an HTTP wall; a **Hailo-8L in M.2 module form, with a Camera Module 3** for on-board detection (the AI HAT+ until 4.9 settled on the module, 2026-09-06) -- chosen on 2026-09-04 over the IMX500 AI Camera (its nano-only ceiling is silicon, and it cannot be fed a recorded frame) and over a Jetson (the right board for arbitrary Hugging Face models, ruled out for now on cost, power and the camera stack; its section 4 has the three-way comparison and the conditions for re-opening it); and a **tiered architecture** where the VLM becomes an event-triggered deliberation tier -- which is what finally gives `brain/planner.py` a job. Also settles the goal vocabulary, stop conditions, arbitration and what the sim can test. **Revised 2026-09-06 on three counts** (its 4.8, 4.9 and 1.14): the Jetson was re-checked against what delivery-robot fleets actually run and against a July 2026 NVIDIA repricing that put the Orin Nano Super at $399-480, so Pi-plus-Hailo stands more firmly than before; the part is now a **Hailo-8L in M.2 module form**, because the module survives a Jetson pivot and shares the one PCIe lane with the NVMe, and because the 10H's measured 5.89 tok/s makes a local VLM slower than the cloud call it would replace; and **motion becomes continuous rather than discrete** (1.14); a fourth revision the same day settled the models rather than the parts (4.3.1 the 8L's measured benchmarks, 4.2 the open-vocabulary crop path and the standing-height caveat, 2.8 one mission walked end to end), which makes the tiered architecture mandatory instead of an optimisation, puts the accelerator on the first order, and makes two shipped numbers wrong -- `watchdog_timeout_s: 1.0` and the fixed `min_distance_cm: 20.0`, which is a stopping distance good for only ~0.45 m/s. Its C1-C9 phasing (extended from five 2026-09-06, after walking 2.8's mission against the repo) needs no hardware. **A second series, P1-P4 (its 4.10), is the perception harness: P1 and P2 are BUILT (`brain/perceive.py`, `brain/tiered.py`) and run the real YOLO + CLIP + Opus 4.5 chain against real photographs with no robot and no accelerator -- the twin cannot test the *detector*, by 1.12's design, but a phone on a wheeled rig can. **P2 became startable from the twin on 2026-09-07** (`policy: "tiered"`, and 6.3's four readouts on the Remote brain panel) -- see the row below.** Bill of materials **~$555-620** (3.6, recomputed 2026-09-06 -- the earlier ~$498/~$581 priced the bundled motor driver rather than the recommended Waveshare board, bought an M.2 module with no carrier, and had no servo rail). **Read it before buying anything**, and note its section 5: `HARDWARE-READINESS.md` is now partly wrong. The one thing it asks for *before* hardware day is the Hailo compile loop (its 1.10 item 1): without it the Hailo is a fixed-function part and the IMX500 was cheaper. |
 | -- | **The first valid Stage 0 walk** (`blue-bottle-20260907-142454`) | Recorded 2026-09-07 -- 33 frames, camera at floor height on a wheeled rig, target **on the floor**. The re-recording 1.16 #10 has demanded since 2026-09-02, and the first walk not disqualified by its own viewpoint. Two findings, both in `PLAN-onboard-perception.md` 4.10: **(a)** the CLIP threshold is measured -- true positives band +0.025..+0.038, non-target frames top out at +0.004, so **0.02 separates them perfectly and the shipped 0.05 detects none of them** (`brain.perception_match_margin`, now 0.02 in config; the module default is deliberately unchanged because the old corpus had handbags at +0.039 against "red backpack", so one threshold does not serve both targets); **(b) 4.2's label gate is losing 11 of 18 true positives** -- at close range YOLO relabels the bottle as a `vase` (once `refrigerator`), so the gate discards exactly the frames where the target fills the view. Forcing the open-vocabulary path recovers 18/18 with zero false positives. `brain.perception_crop_path` makes that measurable; the default stays `auto` until two more walks say otherwise. The full chain ran on it: `found`, **6 paid calls over 31 frames, 1 per 5.17**. |
 | P2 (twin) | `policy: "tiered"`, and the readouts that make the architecture watchable -- on the Sim tab **and on the phone walk**, which is the one that matters | Done (2026-09-07), not deployed -- the brain has been deployed nowhere since 2026-09-05 and these models run *in the brain process*, so this is a local two-uvicorn feature by construction. The Remote brain panel's policy picker gains **Tiered**; `control/brain_server.py` wraps `brain/navigate.py`'s cloud `vision_fn` in `brain/tiered.py`'s `TieredVision` and **validates at mission start** -- `ultralytics`/`torch` stay an optional install (`requirements-perception.txt`) and a missing one is a 400 naming the pip command, never a B3.2 vision failure discovered three ticks in. `GET /health` publishes `perception_available` so the panel warns before Start. Four readouts (`PLAN-onboard-perception.md` 6.3): the tri-state, the CLIP **margin** (not the similarity), the detector and encoder by name, and the deliberation counter as **calls and frames** -- 6.3's "single number that makes the whole architecture watchable", comparable to 6.1's measured 4-6x. The mission log names the paid steps `[cloud: <trigger>]`. The detector's *boxes* are deliberately absent: over the twin's FPV they would be boxes on a raycaster render, which 1.12 forbids. **Guide -> Robot view -> "Drive via brain" also carries the policy now** (it hardcoded `policy: "vision"` before), which is the only path where YOLO and CLIP get real pixels -- the Sim tab's tiered mission exercises the loop and never the detector, by 1.12's design. **Run end to end the same day, YOLO -> CLIP -> Opus 4.5** (`python -m tests.demo_replay_mission <walk> "<target>" --policy tiered`, which is new): on `red-backpack-opus-4-5-20260829-214849`, outcome `found`, **4 paid calls over 18 steps -- 1 per 3.5 distinct frames**, all three implementable triggers fired, nothing tuned. That puts 2.4's cost claim inside 6.1's measured 4-6x band *live* for the first time. Three findings in `PLAN-onboard-perception.md` 4.10: `DEFAULT_MATCH_MARGIN` (0.05) is ~2x too high and **has not been changed** -- the corpus is the invalid one and the negative column overlaps on handbags; **the target STRING is a bigger lever than the walk** (`"red backpack"` 13% detected, `"blue bottle"` 0%, bare `"bottle"` 0% -- a colour+noun is worth ~5x the margin of the bare noun); and two defects the run surfaced, both fixed -- `bearing_deg` had never once been a number (no backend publishes `image_width`; the width is now read off the image) and a detected target logged as `not_visible`. |
+| P3 | Corpus-wide perception scoring (`control/perception_eval.py`), and 1.11a **reported** | Done (2026-09-08), not deployed. **P3** is the instrument every finding in `PLAN-onboard-perception.md` 4.10/4.11 rests on and it had been written ad hoc three times and lost each time: it reads each walk's adjudicated `labels.json` (**never** `walk.jsonl`), refuses a walk that has none, scores once and sweeps the gate afterwards, and matches two configs on a false-positive budget before reporting either one's recall. It reproduced 4.11's shipped row exactly on first run -- 62/74 at `P>=0.8`, 3 false positives -- which is the only validation a scorer can have. Its new per-walk split is the finding: **100%/97% recall on the two approach walks and 20% on the search walk**, so the corpus-wide 84% is an average over two different problems. **1.11a** (corroborated identity) is now computed, counted and shown on the Remote brain panel and carried in walk data -- and **enforces nothing**, which a test pins: an `unclear` frame passes `target_visible` and `target_reached` through untouched. It stays that way until the two out-of-vocabulary searches 1.11a asks for exist. |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. **The chassis is no longer a PiCar-X** -- see the row above. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -172,7 +173,17 @@ vision-picar/
 │   │                           call counter 6.3 calls the one number that
 │   │                           makes the architecture watchable.
 │   │                           Reachable from the twin since
-│   │                           2026-09-07 as policy: "tiered"
+│   │                           2026-09-07 as policy: "tiered".
+│   │                           Since 2026-09-08 it also computes
+│   │                           1.11a's corroboration verdict --
+│   │                           REPORTED, never enforced
+│   ├── perceive_lab.py       candidate perception backends that are NOT
+│   │                           parts: Grounding DINO, OWLv2, YOLO-World and
+│   │                           SAM, behind the same Detector /
+│   │                           RegionProposer Protocols. They exist to
+│   │                           answer "would a Jetson buy anything" off the
+│   │                           robot, which 4.11 left open. None can run on
+│   │                           a Hailo -- that is the point
 │   └── planner.py             NOT YET BUILT -- room-level planning over
 │                               MissionMemory.as_context(); see gap table above
 │
@@ -221,6 +232,14 @@ vision-picar/
 │   │                           prompt. The ONLY controlled comparison this
 │   │                           project has: two live walks vary the
 │   │                           operator's path as well as the model
+│   ├── perception_eval.py    P3 -- scores the ON-BOARD tier over the whole
+│   │                           corpus against each walk's adjudicated
+│   │                           labels.json (never walk.jsonl), sweeps the
+│   │                           gate, and matches two configs on a
+│   │                           false-positive budget before reporting
+│   │                           either one's recall. walk_eval.py's sibling:
+│   │                           that one grades the walk, this one grades
+│   │                           the perception
 │   ├── recording_routes.py   the two routes that WRITE a walk, mounted by
 │   │                           brain_server AND the recordings Lambda --
 │   │                           the write path follows the storage, not the
@@ -236,7 +255,7 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    786 tests, 98% line coverage of brain/,
+├── tests/                    894 tests, 96% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
 │                              75 tests over five backends,
@@ -245,9 +264,11 @@ vision-picar/
 │                              test_authority.py [M4],
 │                              test_health.py [M5],
                               test_perceive.py + test_tiered.py
-                              (P1/P2 -- the off-robot perception
-                              harness and its trigger discipline,
-                              both entirely against fakes so the
+                              + test_perception_eval.py
+                              (P1/P2/P3 -- the off-robot
+                              perception harness, its trigger
+                              discipline and the corpus scorer,
+                              all entirely against fakes so the
                               suite never needs torch),
 │                              test_watchdog_integration.py [S4],
 │                              test_walk_eval.py + test_admin_server.py
@@ -751,6 +772,24 @@ before trusting any of it, but this is where it stands:
   best-on-one-walk is how the `NavigateModelId` mistake happened. Phase M7b
   of `PLAN-microduck-transplants.md`, gated on M7.
 
+- **The re-recording two bullets above call "the cheapest high-value item
+  left in Stage 0" WAS done, on 2026-09-07.** Those bullets are dated
+  findings and are left as written; this is the correction. The corpus is
+  now **four valid rig walks** -- floor height, target on the floor, each
+  with an adjudicated `labels.json` beside it -- and the 39 invalid walks
+  were deleted the same day. Everything the new corpus settled is in
+  `PLAN-onboard-perception.md` 4.10.
+
+- **What to record next is a different question now, and it has an
+  answer**: two out-of-vocabulary **searches** plus one control, driven
+  under `policy: "tiered"` so 1.11a's corroboration verdict is measured
+  live. `PLAN-onboard-perception.md`'s "What to record next, and why these
+  walks" (2026-09-08) has the targets, the shape and the two COCO nouns
+  that look out-of-vocabulary and are not. **This is now the cheapest
+  high-value item left**, and unlike the last one it is not about the
+  viewpoint -- it is the falsifier for an amendment that is otherwise
+  going to be decided on one walk.
+
 Secondary: `python -m tests.manual_replay_navigate <dir> "<target>"`
 replays a folder of photos and prints an action-spread summary. Use it to
 produce a recordable finding -- the failure that matters (the same action
@@ -1170,10 +1209,10 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   condition allows at most 5 path values, so a sixth route means a second
   rule, as `twin.yaml`, `teleop-brain.yaml` and `admin.yaml` all now do.
 
-- **Coverage is 98% of `brain/`, `control/`, `robot/` and `sim/`, and the
-  last 2% is deliberate.** (This line read 99% until 2026-09-07; the
-  measurement below has been reporting 98% for a while and nobody re-ran
-  it. Quote what the command prints, not this sentence.) Measure it with:
+- **Coverage is 96% of `brain/`, `control/`, `robot/` and `sim/`, and the
+  last 4% is deliberate.** (This line read 99% until 2026-09-07 and 98%
+  until 2026-09-08. Quote what the command prints, not this sentence.)
+  Measure it with:
 
   ```bash
   pytest tests/ --cov=brain --cov=control --cov=robot --cov=sim --cov-report=term-missing
@@ -1188,6 +1227,17 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   trade. `brain/agent.py` sits at 92% because the rule-based agent is
   explicitly not on the hardware path (`PLAN-sim-hardening.md` 2.2) -- keep
   it, don't extend it, and don't chase its branches.
+
+  **The 98% -> 96% step on 2026-09-08 is `brain/perceive_lab.py` (60%) and
+  `brain/perceive.py` (87%), and both are the same uncoverable thing: a
+  constructor whose body downloads and loads a model.** The lab module is
+  mostly constructors by weight -- four candidate backends and almost no
+  logic between them -- so its percentage is low for a module with 17 tests
+  over everything a fake can reach. The alternative was `# pragma: no cover`
+  on those constructors, which would raise the number and make this module
+  describe itself differently from the shipped one beside it doing exactly
+  the same thing. Consistency won; `control/perception_eval.py`, which holds
+  the arithmetic that actually decides things, is at 97%.
 
   Chasing the number is not the point, but the exercise paid for itself
   twice: it found `MissionRunner.tick()` carrying an unreachable duplicate of
@@ -1341,6 +1391,7 @@ endpoint, on purpose (real hardware has none either).
 | -- | environment banner | Run the robot server with `ENV_LABEL=Lab`, reload the twin | An orange "LAB ENVIRONMENT" bar at the top, a coloured rule on the tab bar, and `LAB ·` prefixing the tab title. Unset it and everything disappears -- that absence *is* production's state |
 | -- | endpoint mismatch notice | Settings -> point any of the three URL fields at a host other than the one serving the page | A note under that field naming both hosts. Not an error: it says what will be called, because a tunnel or split local dev is legitimate |
 | P2 | the three tiers, on real pixels | Guide -> Robot view -> "Drive via brain" -> "Tiered policy", phone on the wheeled rig, then Start | The only path where YOLO and CLIP see real pixels. Needs the robot server in `mode: teleop` and `pip install -r requirements-perception.txt` where the **brain** runs -- the models are in that process, and the brain is deployed nowhere since 2026-09-05, so this is laptop-plus-phone-on-one-LAN |
+| P3 | 1.11a being measured, and visibly not applied | Sim tab -> Remote brain -> "Tiered policy" -> Start, and watch the Corroboration row | This step's verdict with the local P and the bar it was read against, the running corroborated-of-claimed tally, and the words **"not enforced"** on every line. That phrase is the feature: the amendment is undecided, and a panel that let a measurement read as a decision would corrupt the walks meant to decide it. A step that cost nothing says "no claim this step" rather than holding the last verdict |
 | P2 | the three tiers, in the sim | Sim tab -> Remote brain -> policy "Tiered policy", then Start | The hint names the two local models and says the paid call fires only on a trigger. Then, per step: the tri-state, the CLIP margin, the detector by name, and **the deliberation counter -- calls *and* frames.** The counter is the proof: it must visibly NOT climb every step, and 6.1 measured 4-6x. The log marks the paid steps `[cloud: <trigger>]` and the free ones say "no cloud call" in the model's own place. Without `requirements-perception.txt` installed, the panel says so *before* Start and the mission refuses with the pip command rather than dying three ticks in |
 
 ### What the remaining phases owe
@@ -1356,6 +1407,7 @@ phase rather than bolted on after:
 | M5 one health command | **Built 2026-09-03.** The Settings health line and its Check health button |
 | M4 authority + refusal reasons | **Built 2026-09-03.** "Driving" and "Last refusal" beside the watchdog readout, and the mission log naming the refusal instead of stamping every one of them `[VETOED]` |
 | M3 tri-state veto | **Built 2026-09-03.** The path zones outlined on that strip, and a readout naming the clearance the veto reads and its source. The "off-centre approach" half of its done-when is **not** demonstrable here and is deliberately left to M10 -- the grid world's walls are axis-aligned and 30cm apart, so a cone and a single ray hit them at nearly the same distance, and a sim test for it would pass because the failure cannot occur |
+| P3 corpus scoring | **Built 2026-09-08.** No new UI of its own -- it is a terminal instrument, and this is that phase's one written "no UI change". **The readout that would show it if it broke** is the per-walk table's own agreement with 4.11's published row: a scorer that has drifted stops reproducing 62/74 at 3 false positives on the four walks in `recordings/`. What P3 *did* put on the panel is 1.11a's corroboration row, next to it in this table |
 | P2 tiered policy | **Built 2026-09-07.** The Remote brain panel's Tiered option and 6.3's four readouts, above. The detector's *boxes* on the FPV canvas are the one part of 6.3 deliberately not built: the twin's frames are raycaster renders and 1.12 forbids running a detector against them, so boxes there would be a false positive signal rather than a weak one |
 | S2b Python vision agent | **Built 2026-09-02 (M1).** The Remote brain panel has a policy picker; `policy: "vision"` runs the Python agent and the log carries Claude's own reasoning instead of "free space clear". The panel names the model and the wording it would ask with, before you spend anything |
 | S7 chaos and soak | New drills: added latency, dropped requests, a killed link mid-mission. Same picker, same fail-safe rule |

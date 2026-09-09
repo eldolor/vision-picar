@@ -484,6 +484,48 @@ def test_finishing_a_walk_records_the_model_that_produced_it(tmp_path):
     assert meta["finished_at"] > 0
 
 
+def test_a_walk_records_the_resolution_it_was_captured_at(tmp_path):
+    """So the corpus describes its own viewpoint instead of needing a
+    document to interpret it.
+
+    The whole Stage 0 corpus was 640x480 and nobody noticed for a month --
+    the twin asked getUserMedia for a camera with no resolution constraint
+    and got the browser's default, so every finding about small distant
+    targets in PLAN-onboard-perception.md 4.10/4.11 was measured on VGA. The
+    capture size is the one number the browser knows and a person reading
+    the frames later cannot see, so the walk carries it.
+    """
+    import json as _json
+
+    with TestClient(recording_app(tmp_path)) as client:
+        post_frame(client, 0)
+        walk_dir = post_frame(client, 1).json()["dir"]
+        resp = client.post("/recording/finish", json={
+            "walk": "walk-1", "capture_width": 1280, "capture_height": 720,
+        })
+
+    assert resp.status_code == 200, resp.text
+    meta = _json.loads((Path(walk_dir) / "meta.json").read_text())
+    assert meta["capture"] == {"width": 1280, "height": 720}
+
+
+def test_a_walk_that_cannot_report_its_capture_size_still_finishes(tmp_path):
+    """A phone that never produced a frame, or an older twin build: the
+    marker still has to be written, because it is what tells a completed
+    walk from one that merely stopped arriving."""
+    import json as _json
+
+    with TestClient(recording_app(tmp_path)) as client:
+        post_frame(client, 0)
+        walk_dir = post_frame(client, 1).json()["dir"]
+        resp = client.post("/recording/finish", json={"walk": "walk-1"})
+
+    assert resp.status_code == 200, resp.text
+    meta = _json.loads((Path(walk_dir) / "meta.json").read_text())
+    assert "capture" not in meta
+    assert meta["frames"] == 2
+
+
 def test_finishing_an_unknown_walk_is_a_404_not_a_new_directory(tmp_path):
     """A typo'd walk name must not conjure an empty walk into the listing."""
     with TestClient(recording_app(tmp_path)) as client:

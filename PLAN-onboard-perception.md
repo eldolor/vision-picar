@@ -2827,6 +2827,54 @@ replay* -- applied to the purchase as well as to the models.
    here that is a *Pi* problem rather than an accelerator one.
 4. **Jetson pricing returns to roughly $249.** At that number the delta is ~$170
    and the comparison is genuinely close. At $399-480 it is not.
+5. **An open-weight VLM is measured beating Opus 4.5 on PRECISION over the
+   search walk.** Asked directly 2026-09-08 -- *"what if I distilled an
+   open-weight frontier model from Hugging Face and ran it on a Jetson?"* --
+   and it is the strongest form of the Jetson case, because 4.9 only ever
+   costed the **Hailo** version of it. 5.89 tok/s is a statement about a 26
+   TOPS part with no memory bandwidth, not about an 8GB board at ~102GB/s.
+   Sized fairly, decode there is bandwidth-bound at roughly `bandwidth / weight
+   bytes`: a 3B at INT4 lands near **4s** for a 60-100 token reply and a 7B
+   near **8s**, against the measured **3.6s** cloud round trip. **Parity at 3B,
+   worse at 7B -- estimates, not measurements**, and this document's own rule
+   is not to trust an unmeasured number.
+
+   **What it would genuinely buy is not speed**, and 4.9 undersells this
+   because it was arguing about a different part: the per-call cost disappears
+   (which retires most of 2.4), the network stops being a failure mode (2.5's
+   degraded mode becomes the normal one and B3.2 stops ending missions), the
+   deliberation rate becomes unbounded, and camera frames from inside a house
+   never leave it.
+
+   **But distillation specifically is the wrong first move, for three reasons
+   this corpus already supports.** The cloud tier's measured failure is
+   **precision, not capability** -- recall 10/10, precision 10/44 -- and
+   distillation transfers a teacher's behaviour including its failure modes,
+   so a smaller student grounds worse and the confabulation is what gets
+   compressed. Opus cannot be the teacher anyway (closed weights), so the
+   ceiling is the open model's own grounding and the honest experiment is to
+   run that model directly. And **there is no eval to distil against**: this
+   corpus scores *perception*, while `control/walk_eval.py`'s judge over
+   navigation is explicitly advisory, so the metric the student would be
+   optimised on does not exist yet.
+
+   **The cheap experiment that settles it, and it needs no Jetson.** Run a
+   full-size open-weight VLM on a rented GPU against the four walks and score
+   its precision on the 209-frame search walk with `control/perception_eval.py`
+   -- can it beat **10/44** on the bin frames? If yes, that is the first real
+   evidence for on-board deliberation and the Jetson is worth costing
+   properly. If no, distilling it smaller cannot fix it. That is 4.7's
+   promotion rule and 4.9's own closing line doing their job: **the car does
+   not need to be the laboratory.**
+
+   **And note what it still would not fix**, which is why this is a re-open
+   trigger rather than a plan: the local tier's measured bottleneck is crop
+   proposals (9 of 11 errors, 0 matching) and a VLM does not propose crops;
+   the navigation gap is that a single-step `/navigate` has no memory of which
+   way it already turned, which is C8 and is inherited whole by any model.
+   4.11's own measurements are the pattern -- Grounding DINO added capacity on
+   the wrong axis and lost at every matched operating point, while SAM
+   addressed the measured weakness and took the search walk from 2/10 to 8/10.
 
 ### 4.9 The Pi-plus-Hailo option space, priced and checked
 
@@ -3024,7 +3072,7 @@ real pixels, closed loop, with no robot in existence.
 |---|---|---|
 | **P1** | **The pipeline.** `brain/perceive.py` -- detector -> crops -> CLIP -> match, with 4.2's two crop paths chosen by whether the target has a COCO word, 1.12's three-way output, and bearing from the box plus the frame's own pan angle (1.15.3). `Detector` and `CropScorer` are Protocols, so a HEF substitutes later with nothing in between changing | **BUILT 2026-09-06.** `tests/test_perceive.py`, 22 tests, all against fakes |
 | **P2** | **The trigger discipline.** `brain/tiered.py` -- a `vision_fn` that runs perception locally and calls the cloud only on `mission_start`, `candidate_sighting` or `cold_search`, with 6.1's two-frame hysteresis and a call counter. Plugs into `MissionRunner`'s existing seam, so nothing in `control/` learns perception grew a tier (2.6) | **BUILT 2026-09-06; twin surface 2026-09-07.** `tests/test_tiered.py`, 26 tests, plus `policy: "tiered"` end to end -- see below |
-| **P3** | **Score it on the corpus.** Run P1 over a rig walk and report hit rate, margin distribution and the n/s/m comparison on *your* pixels rather than COCO's. `tests/manual_perceive_walk.py` is the single-walk version and exists; the corpus-wide scoring beside `control/walk_eval.py` does not | **PARTLY BUILT.** Blocked on 1.16 #10 -- there is nothing valid to score against. **First real run 2026-09-07, on the invalid corpus, and it moved a number anyway -- see below** |
+| **P3** | **Score it on the corpus.** Run P1 over the whole corpus against each walk's adjudicated `labels.json`, sweep the gate, and report recall and precision per walk and in total. `tests/manual_perceive_walk.py` is the single-walk version | **BUILT 2026-09-08** -- `control/perception_eval.py`, beside `control/walk_eval.py` as the phase always said, with `tests/test_perception_eval.py` (31 tests, all against fakes). It reproduces 4.11's shipped row exactly on first run, which is the only validation a scorer can have. See "P3 is a tool now" below |
 | **P4** | **The compile step.** ONNX -> Hailo DFC -> HEF on a rented x86-64 host, with floor segmentation as its first subject rather than YOLO (4.3). This is 1.10 item 1, and it is the remaining fifth | **NOT BUILT, but its subject now exists.** `SegformerFloorProposer` (2026-09-07) is the model 4.3 says to compile first, in this repo behind a `RegionProposer` Protocol and measured at +8 points of recall. Still needs an EC2 hour and a Hailo developer account. No robot |
 
 **P1-P4 is where 1.10 item 1's compile loop lives, and its absence from C1-C9
@@ -3850,6 +3898,75 @@ is exactly where the floor mask does not help either -- but it is the
 failure that makes a robot *slow*, not the one that makes it confidently
 wrong about where it is going.
 
+#### P3 is a tool now, and it agrees with every number above -- 2026-09-08
+
+`control/perception_eval.py`, beside `control/walk_eval.py`, which is where
+4.10 said it belonged. Everything in this section and in 4.11 had been
+computed by an ad-hoc script written into a scratchpad and thrown away --
+three times, on three different days -- so no figure here could be re-derived
+without rewriting the instrument that produced it. That is the same defect as
+quoting a walk's prompt wording from prose instead of from its own recorded
+`model_id`, one level up: the measurement was reproducible in principle and
+not in practice.
+
+**What it does.** Reads each walk's adjudicated `labels.json`, runs the
+pipeline over every labelled frame, and reports recall and precision per walk
+and in total, at any number of gates. Three decisions in it are worth stating,
+because each one is a mistake this document has already made:
+
+- **The reference is `labels.json` and a walk without one cannot be scored at
+  all.** Not a default, a refusal -- with the reason in the error message. An
+  unlabelled walk scored against `walk.jsonl` produces a number that looks
+  exactly like a real one, and on the search walk that number would have been
+  wrong by 77%.
+- **Score once, threshold afterwards.** A run records `max(candidate
+  probability)` per frame, gate-free, and every table is arithmetic over
+  those. Re-running three models per gate measures nothing new, and `--save`
+  makes a slow config -- SAM is 14 seconds a frame -- payable once.
+- **Recall is never printed without its false-positive count**, and `compare`
+  matches two configs on a false-positive budget *before* reporting either
+  one's recall. 4.11's own caution is the reason: a detector run at low enough
+  confidence beats anything on recall while inventing targets.
+
+**It reproduces 4.11's shipped row exactly, on the first run**, which is the
+only validation a scorer can really have -- 62/74 at `P>=0.8` with 3 false
+positives, 68 at 0.60 with 13, 69 at 0.50 with 16. The per-walk split it adds
+is new and is worth reading, because the corpus total hides the shape
+completely:
+
+| walk | visible | detected at 0.8 | FP | recall |
+|---|---|---|---|---|
+| blue-bottle (approach) | 18 | 18 | 0 | **100%** |
+| red-backpack | 33 | 32 | 0 | **97%** |
+| blue-shoes | 13 | 10 | 1 | 77% |
+| blue-bottle (**search**) | 10 | 2 | 2 | **20%** |
+
+**The local tier is near-perfect on approaches and nearly blind on the
+search**, and the corpus-wide 84% is an average over two different problems
+rather than a description of either. That is the same split 1.11a and 4.11
+each found from their own direction, arriving here as one table.
+
+**And matching on false positives immediately found something a single-gate
+table cannot show.** The floor mask's own result -- *"+8 points of recall for
+one false positive"* -- is true at `P >= 0.8` and stops being true at zero
+tolerance:
+
+| FP budget | detector only | detector + floor mask |
+|---|---|---|
+| 0 | **59/74 (80%)** | **11/74 (15%)** |
+| 3 | 59/74 (80%) | 63/74 (85%) |
+| 16 | 62/74 (84%) | 69/74 (93%) |
+
+**The mask's single false positive scores `P = 0.9998`** -- higher than all
+but eleven of the 74 true positives -- so a threshold that excludes it
+excludes almost every true positive with it. The mask is not
+"better by 8 points"; it is better *given a tolerance for error at all*, and
+strictly worse without one. Nothing here overturns the decision to union the
+sources -- 1.11's arbitration means a false positive costs one deliberation
+call the VLM then rejects, while a miss means driving past the target -- but
+it does say the mask must not be described as free, and it is a second reason
+C6 owns the mask's schedule rather than this section.
+
 ### 1.11a Corroborated identity -- **PROPOSED 2026-09-07, not decided**
 
 An amendment to 1.11, written up because the fourth walk broke that
@@ -4006,6 +4123,433 @@ extra searches exist.** One walk that breaks a rule is a reason to write
 this down; it is not yet a reason to change the robot's mind about what it
 is looking at.
 
+#### Reported, not enforced -- **BUILT 2026-09-08**
+
+The status above stands unchanged: **no behaviour is different.** What was
+built is the measurement, and the reason it is worth building before the
+decision is that the decision needs evidence a replay cannot supply.
+
+1.11a's own falsifier is *"a target the local tier cannot see at all"*, and
+no walk in the corpus is one -- so replaying the four walks can only ever
+re-derive the numbers already in this section. The next walks can answer it,
+but only if the verdict is being computed while they are recorded. Hence the
+split: **compute it, count it, show it, act on none of it.**
+
+- `brain/tiered.py`'s `corroboration_for(scene, perception, bar)` is the rule
+  as a pure function. It costs nothing: `_annotate()` already holds the
+  `Perception` beside the cloud's answer, so this is a comparison between two
+  numbers both of which were already computed.
+- Four verdicts. `corroborated`, `unclear`, `no_claim` (the cloud says not
+  visible -- **its negative is trusted**, part 1 of the proposal), and
+  `unavailable` (the local tier could not tell, which 1.12 forbids reading as
+  disagreement). Note where they live: `_tier.corroboration`, **not**
+  `Perception.status`. This section's own open list asked for that and named
+  the reason -- `unclear` is a *relationship between two tiers*, not a fourth
+  perception state, and putting it on the tri-state would make a wedged camera
+  and a disputed sighting the same kind of thing.
+- `tier_corroboration_bar: 0.5` in `config/robot.yaml`, which is the treatment
+  this section asked for -- *"measured, named, and settable in config rather
+  than compiled in"*.
+- The twin's Remote brain panel gains a fifth readout: this step's verdict
+  with the local probability and the bar it was read against, the running
+  **corroborated-of-claimed tally** (the other thing this section's open list
+  asked for), and the words **"not enforced"** on every line.
+
+**That last phrase is load-bearing and is pinned by a test.** A reporting-only
+variant that quietly began gating would be the worst available outcome,
+because the walks meant to decide the amendment would then be measuring the
+decision. `tests/test_tiered.py` asserts that a frame reading `unclear`
+passes `target_visible` **and** `target_reached` through untouched.
+
+**What to read on the next walks.** The tally is the whole instrument. A
+search walk whose claims come back mostly `unclear` is the storage-bin failure
+being caught live; a walk on an out-of-vocabulary target whose claims come
+back mostly `unclear` *and which still arrives* is the falsifier firing, and
+says the amendment must not ship as written.
+
+**Watched working end to end, 2026-09-08**, against two real uvicorns and a
+free stand-in for `/navigate` -- the stand-in claims the target on every
+frame, which is the storage-bin case stated as a fixture, and it costs
+nothing so the check can be repeated:
+
+```
+step 0: FORWARD (ok) -- [cloud: mission_start] target center
+        -- "a red backpack is visible under the couch"
+perception   : absent | 3 proposal(s), best P 0.113 < 0.8
+claims       : 1   corroborated 0   verdicts {'unclear': 1}
+```
+
+Three things in that trace are the whole design. The cloud is confident and
+specific and wrong, in almost the wording the real model used on the bin. The
+local tier scores it **0.113**, far under the 0.5 bar, so the verdict is
+`unclear`. **And the robot drove FORWARD on it anyway** -- which is correct
+today and is exactly what 1.11a would change. The final status carries
+`corroboration: null` because the last step was a free one with no claim to
+corroborate, which is why the running tally exists beside the per-step
+verdict rather than instead of it.
+
+#### The three untried models, tested -- **2026-09-08**
+
+4.11 closed by naming its own limit: *"only one open-vocabulary model was
+tested... none of those has been tried, and a Jetson is the only way to run
+them."* All four are now tested, off the robot, behind the shipped
+`Detector` and `RegionProposer` Protocols
+(`brain/perceive_lab.py`), scored by `control/perception_eval.py` against the
+same adjudicated labels. **Recall over the 74 visible frames, read at four
+false-positive budgets** -- matched on false positives first, because that is
+the only comparison that means anything:
+
+| config | 0 FP | 1 FP | 3 FP | 16 FP | ms/frame |
+|---|---|---|---|---|---|
+| YOLO + floor + CLIP (**shipped**) | 15% | 55% | 85% | 93% | 847 |
+| YOLO + CLIP (detector only) | **80%** | 80% | 80% | 84% | **214** |
+| YOLO + SAM + CLIP | 47% | 85% | 85% | 95% | 9 620 |
+| SAM + CLIP (no detector) | 47% | 74% | 82% | 88% | 9 535 |
+| Grounding DINO | 72% | 77% | 78% | 84% | 4 802 |
+| **OWLv2** | 26% | **91%** | **96%** | **100%** | 2 380 |
+| YOLO-World | 51% | 51% | 51% | 85% | 196 |
+
+Four things, and the third is the one that changes a decision.
+
+**1. The "one model instead of three" thesis fails again, on a stronger
+model.** Grounding DINO loses at every matched point -- 72/77/78/84 against
+the shipped 15/55/85/93 and the detector-only 80/80/80/84. It reads **100%
+recall at confidence 0.30**, which quoted alone looks decisive and costs
+**205 false positives on 225 non-target frames**. That is this section's own
+caution arriving as a live example rather than a warning.
+
+**2. SAM confirms the crop-proposal diagnosis, and goes further than the floor
+mask did.** 9 of the corpus's 11 errors are crop proposals and 0 are matching,
+so a class-agnostic proposer is aimed at the measured weakness. It lands: 63/74
+at **one** false positive where the floor mask needs three for the same recall.
+And the per-walk split is the finding, because the totals hide it completely --
+63 against 62 is a wash, and the composition is opposite:
+
+| walk | floor mask | SAM | neither |
+|---|---|---|---|
+| blue-bottle (approach) | **18**/18 | 11/18 | **18**/18 |
+| blue-bottle (**209-frame search**) | 2/10 | **8**/10 | 1/10 |
+| blue-shoes (out of vocabulary) | 10/13 | **11**/13 | 7/13 |
+| red-backpack (approach) | 32/33 | **33**/33 | 30/33 |
+
+**SAM fixes the search walk** -- the one walk where the local tier was silent
+for 212 frames and where 1.11a's whole problem lives -- and gives up ground
+only on an approach that was already solved. **And unlike the floor mask it is
+better than the detector ALONE** (82% against 76%), where the mask measured
+59% against 86%. That is a stronger claim than "worse alone, better together":
+SAM's proposals are simply better than YOLO's on this corpus.
+
+**3. OWLv2 wins, decisively, and that reverses part of this section's
+conclusion.** 91% at one false positive, 96% at three, **100% at sixteen** --
+against a shipped pipeline that manages 55/85/93. Per walk at three false
+positives: **18/18, 10/10, 13/13, 30/33**, including 13 of 13 on the
+out-of-vocabulary shoes walk where the shipped pipeline gets 10. It scored
+every visible frame, so its ceiling really is 74/74 rather than an artifact of
+a truncated curve.
+
+**And it is the only model that cleanly separates the storage bin**, which is
+the exact failure 1.11a exists for. Scores on the search walk's 34
+confabulated frames against its 10 true sightings:
+
+| config | bin max | bin median | true min | separated? |
+|---|---|---|---|---|
+| **OWLv2** | **0.035** | 0.025 | **0.369** | **yes -- an order of magnitude, no overlap** |
+| Grounding DINO | 0.786 | 0.446 | 0.861 | yes, but by 0.075 |
+| YOLO + SAM + CLIP | 0.300 | 0.187 | 0.255 | **no -- overlaps** |
+| YOLO + floor + CLIP | 0.436 | 0.144 | 0.255 | **no -- overlaps** |
+
+Every other config's bin scores run into its true scores, so corroboration
+under 1.11a has to pick a bar inside an overlap. **OWLv2 has no overlap at
+all**, and would corroborate correctly at any bar between 0.04 and 0.36.
+
+**4. And this is the first real evidence FOR a heavier part** -- which
+everything else measured here argues against, so it should be stated plainly
+rather than buried. This section concluded *"a Jetson buys model capacity; the
+evidence says capacity is not what is short."* On the crop-proposal axis that
+still holds. On **identity under adversarial conditions** it does not: OWLv2 is
+a ViT-B/16 dual-tower model at high input resolution, it is not an 8L-class
+part, and it is the only thing tested that gets the bin right by construction
+rather than by luck.
+
+#### The architecture that falls out of it -- **PROPOSED, not decided**
+
+The obvious reading of the row above is "replace YOLO with OWLv2", and that is
+wrong on 2.9's budget: **2 380ms a frame on a laptop** is nowhere near the
+reactive tier's 15-30Hz row, and 2.1 puts the detector there for good reasons.
+
+But **corroboration does not run at the reactive tier's rate.** 1.11a asks the
+local tier a question only when the cloud has already claimed a sighting --
+44 frames of 209 on the search walk, about one in five, and it is allowed to
+take a deliberation-tier interval to answer. So the shape the measurement
+actually suggests is **three local roles, not one model**:
+
+| role | rate | model | why |
+|---|---|---|---|
+| obstacle / reactive | 15-30Hz | YOLO11s + depth | 214ms, and 2.9's budget is built around it |
+| candidate proposal | every frame | YOLO, + a proposer | SAM's row above; the crop source is the measured bottleneck |
+| **identity corroboration** | **only on a cloud claim** | **OWLv2-class** | the only thing that separates the bin, and it can afford a second |
+
+**Not decided, and deliberately not built.** It needs the two
+out-of-vocabulary searches below before 1.11a is settled at all, it needs
+OWLv2 timed on the real part rather than on a MacBook, and P4's compile loop
+has never been run on anything -- a ViT at OWLv2's input resolution is a much
+harder first HEF than the floor mask 4.3 nominates. What this table does
+establish is that the **corroboration role is worth a model of its own**,
+which is not something this plan had considered.
+
+#### Three cautions, so nothing above is over-read
+
+**The timings are relative, not predictive.** 2.9 budgets against an 8L's
+33ms frame and a MacBook is not one. The `ms/frame` column ranks models
+against each other and says nothing about whether any of them fits.
+
+**An internally-thresholded detector has a truncated curve.** Each
+open-vocabulary model applies its own confidence floor before this harness ever
+sees a score, so at a loose budget the comparison quietly favours whichever
+model has the lowest floor. It bites once here: **YOLO-World produced no score
+at all on 222 of 299 frames, 11 of them containing the target**, so its
+ceiling is 63/74 no matter how low the gate goes. Grounding DINO and OWLv2
+scored every frame and their curves are complete.
+
+**And the corpus is four walks and 74 visible frames.** OWLv2's margin is
+large and consistent across all four, but 1.16 #10's lesson is that a corpus
+can be wrong in a way no amount of internal consistency reveals. The two
+searches below are what this result should be re-checked against.
+
+#### The first live tiered walks, and the defect they exposed -- 2026-09-08
+
+Three walks for a **woven laundry basket**, 358 frames, all 1280x720, all under
+`policy: "tiered"` with recording on -- which was impossible until the same day
+(the twin made "Record this walk" and "Drive via brain" mutually exclusive on a
+reason that expired at T4, so the one walk where YOLO and CLIP see real pixels
+was the one walk it refused to keep).
+
+**Three things worked for the first time.**
+
+| | |
+|---|---|
+| `candidate_sighting` fired | **twice**, on walk 3 -- 5 detections in 38 steps. Every previous search walk fired zero |
+| an **out-of-vocabulary** target was found locally | "woven laundry basket" has no COCO word; YOLO proposed it as `handbag` and CLIP scored **0.999**. 4.2's open-vocabulary crop path, working as designed |
+| 1.11a **corroborated**, correctly | 2 claims, 2 corroborated, both genuine sightings at P ~ 0.998 |
+
+Cost held at 6 calls per walk, 1 per 5.7-6.3 frames -- inside 6.1's band on a
+search, with the local tier contributing triggers rather than idling.
+
+#### ...and it nearly published the opposite finding
+
+Read straight from `walk.jsonl`, those two corroborations sat beside frames
+showing **a bare wall**. That reads as the worst possible result: both tiers
+confabulating a basket at P=0.998, which would have destroyed 1.11a's premise
+that the local tier is an independent check.
+
+It was wrong, and the reason is a measurement defect rather than a model one.
+**Under "Drive via brain" the recorded frame and the recorded decision are not
+the same frame.** The twin pushes frames on one timer, polls `/mission/status`
+on another, and the mission ticks on a third: measured at a **median of 2.5
+pushed frames per mission step, range 1-10**. So the status saved beside frame
+N routinely describes a decision taken seconds earlier.
+
+Frame-exact perception settles it -- the basket really is visible where the
+decision was made and really is absent where the decision was filed:
+
+| frames | perception | P |
+|---|---|---|
+| 0017, 0019, 0022 | **detected** | 0.999, 0.996, 0.807 |
+| 0026-0028 (*where the verdict was filed*) | absent | 0.02-0.05 |
+| 0080-0083 | **detected** | 0.991-0.998 |
+| 0087-0089 (*where the verdict was filed*) | absent | 0.03-0.08 |
+
+**Fixed the same day, on both ends.** `sim/teleop_robot.py` already stamped
+every pushed frame with a sequence number and echoed it to the pusher; what was
+missing was carrying it through. `MissionRunner` now records the id of the
+frame its last decision was taken on and publishes it as `last_frame_seq`; the
+twin records the id it got back from the push as `teleop_seq`; and
+`control/perception_eval.py`'s `decisions_by_frame()` joins the two. A walk
+with no alignment returns **nothing** rather than the naive pairing -- which is
+the whole point, because the naive pairing looks identical to a real one.
+
+**The general lesson is the one this document keeps relearning.** A walk's own
+log is evidence about a model only if you know which pixels the model saw. That
+was `walk.jsonl` vs `labels.json` at the corpus level (the VLM is not ground
+truth); it is now frame alignment at the row level. Both failures produce
+confident, plausible, wrong numbers.
+
+#### 1.11a measured live, with exact alignment -- and it is NET NEGATIVE on
+#### these walks -- 2026-09-08
+
+Three more laundry-basket walks, 267 frames, all 1280x720, all under
+`policy: "tiered"` with recording on **and with the frame/decision alignment
+built earlier the same day**. These are the first walks in the project where a
+decision can be tied to the exact pixels that produced it.
+
+**The alignment was not a theoretical worry.** Measured on these walks: the
+recorded frame runs a **median of 4 frames ahead** of the decision stored
+beside it, **maximum 12**. On a walking rig four frames is a different view of
+a different part of the room. Every per-frame number below would have been
+wrong without it, and the previous session's walks can only be scored in
+aggregate for exactly this reason.
+
+**Every cloud claim, adjudicated by eye at the frame it was actually made on:**
+
+| walk | frame | cloud said | verdict | local P | truth |
+|---|---|---|---|---|---|
+| 215252 | 0012 | *"a woven laundry basket is visible in the center"* | **`unclear`** | 0.10 | **basket IS there** -- small and distant, beside the grey chair |
+| 215351 | 0017 | *"the woven laundry basket is visible in the center"* | `corroborated` | 0.99 | correct, close |
+| 215351 | 0076 | *"a woven basket is visible in the center"* | `corroborated` | 0.86 | correct, close |
+| (11 others) | -- | *"not visible"* | `no_claim` | -- | spot-checked; correct |
+
+**So on these three walks the amendment caught nothing and cost one true
+sighting.** There were no confabulations to reject -- the VLM was right on all
+14 calls -- and the one claim it did gate was correct and got suppressed.
+
+**And the shape of the failure is the one that matters for a search.** The two
+corroborated frames are close-range; the rejected one is the distant one. The
+local tier's confidence tracks distance, so `unclear` will preferentially fire
+on **exactly the sightings a search depends on** -- the first, far-away glimpse
+of the target across a room. That is the falsifier 1.11a wrote down for itself,
+arriving on the third walk of a target it was designed for.
+
+**One more number, from the negatives.** On walk 215140 frame 0044 the VLM
+correctly said "not visible" -- a living room with no basket in it -- and the
+local tier scored **0.70** on some piece of furniture. That is above 1.11a's
+0.50 corroboration bar. The asymmetry saved it (only a positive needs support,
+so an uncontested local 0.70 does nothing) but it says the local scores are not
+clean in the 0.5-0.7 band in this house, and a symmetric rule would have
+invented a sighting there.
+
+#### What this does and does not settle
+
+**It does not overturn the search-walk result.** On `blue-bottle-...-185007`
+the VLM claimed a storage bin 34 times and the local tier rejected all 34;
+1.11a would have prevented six FORWARDs at the wrong object in the wrong room.
+That measurement stands.
+
+**What it settles is that the rule is not free, and the cost is not evenly
+spread.** Both findings are now on the table:
+
+| the cloud tier is... | 1.11a | why |
+|---|---|---|
+| confabulating (search walk, 23% precision) | **strongly positive** -- 34/34 rejected | the local tier disagrees with an invented object |
+| accurate (these walks, 14/14 correct) | **negative** -- 1 true sighting suppressed, 0 errors caught | the local tier merely fails to see a distant one |
+
+**And there is no threshold that separates those two cases**, because the
+quantity that decides them is *how far away the target is*, not how confident
+either tier is. Lowering the bar to admit the 0.10 frame would admit the 0.70
+furniture too.
+
+**Recommendation, and it is a change of position.** Do not ship 1.11a as a
+gate on `target_visible`. Two alternatives are better supported by the same
+data and neither needs a new measurement:
+
+- **Gate the commitment, not the sighting.** 1.11a's own text already says an
+  `unclear` sighting *"may steer but may not commit"*. These walks say the
+  steering half is the valuable half and the suppression half is the costly
+  one. Applying the rule only to `target_reached` / `found` / a `MissionMemory`
+  sighting -- never to whether the robot may turn toward something -- keeps the
+  storage-bin protection (six FORWARDs at a bin are steering, but arrival is a
+  commitment) while costing nothing on a distant true sighting.
+- **Or make it a two-frame rule.** The bin claim survived 34 frames; the
+  distant basket was corroborated within a few frames once the rig closed on
+  it. Requiring disagreement to *persist* before it suppresses anything
+  distinguishes a stable confabulation from a target the local tier has not
+  resolved yet.
+
+**Status: still proposed, still not implemented, and now with evidence on both
+sides.** The reporting-only variant is doing exactly the job it was built for.
+
+#### And the local tier's real limit, finally isolated
+
+The three walks split cleanly by distance, which no earlier corpus did -- one
+walk never reaches the basket at all, one sees it only from across a doorway,
+one starts on top of it. Scored frame-exact against adjudicated labels:
+
+| walk | frames | visible | recall @P>=0.8 | false pos @0.8 | false pos @0.5 |
+|---|---|---|---|---|---|
+| 215140 -- **basket never present** | 95 | 0 | -- | 1 | **7** |
+| 215252 -- **distant**, through a doorway | 86 | 18 | **1/18 = 6%** | 0 | 0 |
+| 215351 -- **close**, same room | 86 | 37 | **32/37 = 86%** | 2 | 6 |
+| total | 267 | 55 | 33/55 = 60% | 3 (92% precision) | 13 |
+
+**6% against 86% is the whole story of this tier.** It is not a
+model-quality problem and no threshold reaches it: the distant basket is
+simply not resolvable from the crops the detector proposes at that range. It
+is the same axis 4.11 identified from the other direction ("its recall is
+excellent where the target is large and poor where it is small"), now measured
+on one object at two distances in one house.
+
+**Two consequences.**
+
+**For 1.11a**: the amendment's cost is not a tuning constant, it is this curve.
+Corroboration will reject a distant sighting roughly fifteen times out of
+sixteen, and distant sightings are what a search consists of.
+
+**For the part**: this is the sharpest statement yet of what on-board
+perception is *for*. It works, and it works at close range -- which is where
+collisions and arrival happen (4.11's own defence of the tier). It does not
+work at search range, and buying a bigger accelerator does not change that,
+because the limit is the crop source at distance, not the classifier. The
+honest reading is that the reactive/arrival tier is real and the
+search-assistance tier is not, on this hardware, at this camera height.
+
+**And the false-positive column is the argument against lowering the gate.**
+Walk 215140 contains no basket anywhere in 95 frames, and the local tier still
+puts **7 frames over 0.5**. A corroboration bar there is not free precision --
+it is a bar most of the room can clear.
+
+#### What to record next, and why these walks -- 2026-09-08
+
+1.11a is undecided, and the reporting-only variant above exists so the next
+walks decide it. This is what those walks have to be. **Two out-of-vocabulary
+searches, plus one cheap control.**
+
+**Why out-of-vocabulary, and why searches.** 1.11a's falsifier is *"a target
+the local tier cannot see at all"*, and no walk in the corpus is one. The
+reason is structural rather than bad luck: `bottle` and `backpack` are both
+COCO classes, so the detector was proposing boxes on the target in three of
+the four walks even where it mislabelled them. Only the shoes walk is
+genuinely out of vocabulary, and it corroborates 10 of 13 -- a near miss that
+settles nothing in either direction. And it has to be a **search**: the
+approach walks corroborate 18/18 and 33/33, so they cannot discriminate at
+all. That also repairs a quieter weakness -- every statement this document
+makes about search behaviour currently rests on **one walk**.
+
+**Two targets, chosen to bracket the answer rather than sample it once.**
+
+| | target | why this one |
+|---|---|---|
+| moderate | **"a woven laundry basket"** | no COCO word, but large and distinctively textured, so the floor mask has a real chance at it. If this corroborates, 1.11a survives its intended case |
+| hard | **"a white phone charger cable"** | no COCO word, thin, small, low-contrast on most floors. The local tier almost certainly cannot see it -- which is the falsifier, stated as an object |
+
+**Two nouns to avoid, checked rather than assumed.** `coco_class_for()` maps
+*"a grey TV remote"* to COCO's `remote` and *"a bicycle helmet"* to
+`bicycle`. Either would quietly reproduce the case the corpus already has,
+and the walk would look out-of-vocabulary while not being one.
+
+**Shape.** Second room, through a doorway, 150-250 frames, target visible on
+well under 10% of them -- the 209-frame walk's shape, which is the only one
+that has ever exercised `cold_search` or the arbitration.
+
+**Drive them via the brain under `policy: "tiered"`**, not Robot view alone.
+That is what makes the verdict a live measurement rather than a replay, and
+the thing to read is not only the corroborated-of-claimed tally but **whether
+the mission still arrives**. A walk whose claims come back mostly `unclear`
+*and which still arrives* is 1.11a working; one that steers without ever
+committing is 1.11a failing, in precisely the way this section predicted.
+
+**The control, and it is the cheap part.** An *approach* on the same hard
+target, 15-20 frames. Without it a failure on the hard search is confounded
+between "the local tier cannot see this object" and "the local tier cannot
+see this object at that distance", and those have different answers -- the
+first is a vocabulary problem the crop sources own, the second is the
+small-distant-target limit 4.11 already identified and which no amount of
+model capacity fixes.
+
+**And the standing items from 1.16 #10**, which cost nothing now and cannot
+be repaired afterwards: lock landscape, write the rig height into the walk's
+meta note, and use an **accurate** description -- the shoes walk moved recall
+7x on the target string alone, and `"blue shoes"` for navy-and-lime shoes
+scored like the poor description it was.
+
 ### 4.11 Is the local tier worth the part? -- **measured 2026-09-08**
 
 Asked directly after the search walk, where the on-board tier was silent
@@ -4088,6 +4632,13 @@ run them. So this is evidence that the *current* plan is sound, not proof
 that a Jetson would not help. 4.7's promotion rule already covers the
 follow-up: try them off-robot first, behind the `RegionProposer` and
 `Detector` Protocols, which is now a two-line substitution.
+
+> **That limit was closed the next day, and it did not hold. See "The three
+> untried models" below: Grounding DINO and YOLO-World lose as this section
+> predicts, SAM confirms the crop-proposal diagnosis -- and **OWLv2 beats the
+> shipped pipeline at every operating point that admits a single false
+> positive**, which reverses the "capacity is not what is short" conclusion
+> for one specific job.**
 
 #### Three cautions, so no result here is over-read
 

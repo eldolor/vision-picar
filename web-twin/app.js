@@ -211,6 +211,9 @@
     brainMissionRunning: false, brainPollTimerId: null, brainLogSignature: "",
     watchdogTimerId: null,
     // Recording a Robot-view walk to the brain, for replay (S2b).
+    // The robot's own id for the most recently pushed teleop frame, so a
+    // recorded frame can name the id the mission will report deciding on.
+    lastTeleopSeq: null,
     recordWalk: false, recordWalkName: null, recordSaved: 0, recordFailed: 0,
     // Which WALK a frame belongs to, which is not the same lifetime as
     // guidanceEpoch's run -- see recordWalkFrame(). recordOrphaned counts
@@ -1764,6 +1767,46 @@
           + (models.proposer ? " + " + models.proposer.split("/").pop() : "")
         : null);
 
+    // 1.11a, reported only. Two things have to be on screen together or the
+    // row is unreadable: this frame's verdict, and the running
+    // corroborated-of-claimed tally -- which is 1.11a's own list of what it
+    // still needs ("the counter in 6.3 should show corroborated-versus-
+    // claimed, or the twin cannot show this working").
+    //
+    // "not enforced" is printed every time, deliberately. The whole point of
+    // the reporting-only variant is that a person watching this panel can
+    // see the amendment being measured and cannot mistake it for the
+    // amendment being applied -- the mission still believes the cloud.
+    const corroboration = tier && tier.corroboration;
+    const cstats = (tier && tier.stats) || {};
+    if (!tier || cstats.claims == null) {
+      setBrainText("brain-tel-corroboration", null);
+    } else {
+      let text;
+      if (!corroboration) {
+        // A free frame made no cloud call, so there is no claim to
+        // corroborate. Said rather than left blank: a stale verdict held
+        // over from the last paid call would read as this frame's.
+        text = "no claim this step";
+      } else if (corroboration.verdict === "no_claim") {
+        text = "cloud says not visible";
+      } else if (corroboration.verdict === "unavailable") {
+        text = "local tier could not tell";
+      } else {
+        const local = typeof corroboration.local_probability === "number"
+          ? corroboration.local_probability.toFixed(2) : "\u2013";
+        text = corroboration.verdict + " (local P " + local
+          + " vs bar " + corroboration.bar + ")";
+      }
+      text += " \u00b7 " + cstats.corroborated + "/" + cstats.claims
+        + " claims corroborated \u00b7 not enforced";
+      setBrainText("brain-tel-corroboration", text,
+        // `unclear` is the state 1.11a exists to name, so it is worth
+        // seeing -- but it is not an error and must not be dressed as one:
+        // under the shipped rule the robot believes the claim anyway.
+        corroboration && corroboration.verdict === "unclear" ? "alert" : null);
+    }
+
     const stats = (tier && tier.stats) || {};
     if (stats.frames == null) {
       setBrainText("brain-tel-calls", null);
@@ -2222,6 +2265,83 @@
 
   document.getElementById("btn-brain-connect").onclick = function () { connectBrain(); };
 
+  // ---------- the cloud endpoint's own connection check ----------
+  //
+  // The brain has had one of these since B4 and the vision service never
+  // did, which meant the single most common misconfiguration in this
+  // project produced no diagnosis at all: **the vision service publishes no
+  // CORS headers.** It has never needed them -- the deployed twin is served
+  // from the same CloudFront distribution it calls, so every vision request
+  // is same-origin. Serve the page from anywhere else (an ngrok tunnel, a
+  // local uvicorn, a second deployment) and the browser preflights, the
+  // service answers OPTIONS with a 404, and the only thing the operator
+  // sees is "Load failed" on the Robot view camera -- with five URL fields
+  // on this page and no indication which one is wrong.
+  //
+  // So this check does two things in order, and the second is the one worth
+  // having: reach /health, and separately compare origins. A cross-origin
+  // vision URL is reported as the fault it is even when the service itself
+  // is perfectly healthy, because it IS healthy -- curl proves it, and the
+  // browser still cannot use it.
+  function sameOrigin(url) {
+    try {
+      return new URL(url, window.location.href).origin === window.location.origin;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function checkVision(opts) {
+    const silent = !!(opts && opts.silent);
+    const url = document.getElementById("cfg-url").value.trim().replace(/\/$/, "");
+    const statusEl = document.getElementById("vision-connection-status");
+    const btn = document.getElementById("btn-vision-connect");
+    if (!url) {
+      if (!silent) setConnStatus(statusEl, "err", "No URL yet",
+        "Enter the vision service's address above, then tap Connect.");
+      return;
+    }
+    const cross = !sameOrigin(url);
+    setButtonBusy(btn, true, "Checking\u2026");
+    try {
+      // /health is deliberately unauthenticated on this service (the ALB
+      // health check cannot send custom headers), so it needs no secret and
+      // triggers no preflight -- which is exactly why it can still answer
+      // when the calls that DO carry x-app-secret are being blocked.
+      // tunnelHeaders only adds a header for ngrok hostnames, so a normal
+      // vision URL still sends none -- which keeps /health free of the
+      // preflight that a custom header would otherwise force, and is the
+      // whole reason this probe can answer when the real calls cannot.
+      const res = await fetch(url + "/health", { headers: tunnelHeaders(url, {}) });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const body = await res.json().catch(function () { return {}; });
+      if (cross) {
+        // Healthy and unusable. The distinction matters: retrying, changing
+        // the secret, or restarting the service all do nothing here.
+        setConnStatus(statusEl, "err", "Reachable, but blocked by the browser",
+          url + " answered (" + (body.status || "ok") + "), but it is a "
+          + "different origin from this page (" + window.location.origin
+          + ") and publishes no CORS headers, so vision calls will fail as "
+          + "\u201cLoad failed\u201d. Open the twin from " + url + " instead.");
+        if (!silent) showToast("Vision service is up, but this page must be served from it.", "err");
+      } else {
+        setConnStatus(statusEl, "ok", "Connected",
+          url + " \u2014 same origin as this page, so vision calls are not preflighted.");
+        if (!silent) showToast("Vision service reachable.", "ok");
+      }
+    } catch (e) {
+      setConnStatus(statusEl, "err", "Not reachable",
+        "Could not reach " + url + " (" + e.message + ")."
+        + (cross ? " It is also a different origin from this page, which "
+                 + "blocks vision calls even when the service is healthy." : ""));
+      if (!silent) showToast("Couldn't reach the vision service.", "err");
+    } finally {
+      setButtonBusy(btn, false);
+    }
+  }
+
+  document.getElementById("btn-vision-connect").onclick = function () { checkVision(); };
+
   // ---------- recording a Robot-view walk, for replay (phase S2b) ----------
   //
   // Robot view discards every frame the moment its /navigate answer is
@@ -2272,11 +2392,23 @@
   }
 
   // Phase T3 of PLAN-teleop-robot.md: Robot view pushes frames into a real
-  // MissionRunner mission (policy: "vision") instead of calling /navigate
-  // itself. Same gating shape as recordingActive() -- both need a brain and
-  // Robot view specifically -- and the two are mutually exclusive (see the
-  // checkbox handlers below): recording saves a /navigate reply per frame,
-  // which driving via brain never produces.
+  // MissionRunner mission instead of calling /navigate itself. Same gating
+  // shape as recordingActive() -- both need a brain and Robot view.
+  //
+  // **They used to be mutually exclusive, and that was removed 2026-09-08.**
+  // The reason given was "recording saves a /navigate reply per frame, which
+  // driving via brain never produces", which was true when T3 shipped and
+  // stopped being true at T4: missionStatusToRobotResult() returns the whole
+  // mission status under `_missionStatus`, carrying the action, the model's
+  // reasoning, the perception tri-state, the tier counters and (since P2)
+  // 1.11a's corroboration verdict. That is strictly MORE than a /navigate
+  // reply, not less.
+  //
+  // Left alone, the exclusion had become exactly backwards: the tiered walk
+  // is the only path where YOLO and CLIP ever see real pixels (4.10 -- the
+  // sim cannot test the detector by 1.12's design), so it is the one walk
+  // most worth keeping, and it was the one walk the twin refused to record.
+  // It cost a rig session before anyone noticed.
   function driveViaBrainActive() {
     return state.driveViaBrain && state.brainConnected && state.guidanceMode === "robot";
   }
@@ -2318,7 +2450,7 @@
   // replays a frame short, with a manifest that disagrees with the
   // directory. Dispatch order is also capture order, which is the order
   // sim/replay_robot.py plays a walk back in.
-  function recordWalkFrame(base64, navigateResult, seq, epoch) {
+  function recordWalkFrame(base64, navigateResult, seq, epoch, teleopSeq) {
     // Checked before anything else, so an orphan is counted rather than
     // falling out of one of the looser guards below unnoticed.
     // The walk this frame was dispatched under has ended, or been replaced.
@@ -2352,6 +2484,10 @@
       image_base64: base64,
       media_type: "image/jpeg",
       navigate: navigateResult || null,
+      // The robot's id for THIS frame. Pairs with the mission status's
+      // last_frame_seq to say which decision actually saw these pixels.
+      // Null outside teleop, where there is nothing to align.
+      teleop_seq: teleopSeq,
     }).then(function () {
       state.recordSaved += 1;
       renderRecordStatus();
@@ -2382,6 +2518,13 @@
         walk: name,
         model_id: state.navigateModelId || null,
         target_object: state.guidanceTarget || null,
+        // What the frames were actually captured at. Read off the canvas
+        // that encoded them rather than off the constraint we asked for --
+        // getUserMedia's `ideal` is a request, not a promise, and a phone
+        // that could only manage 640 must say so in the walk rather than
+        // leave the next reader to infer it from the plan.
+        capture_width: guidanceCaptureCanvas.width || null,
+        capture_height: guidanceCaptureCanvas.height || null,
       }).catch(function () { /* admin's lazy path covers this */ });
 
       showToast(saved + " frames saved as " + name + " -- replay it with " +
@@ -2547,12 +2690,6 @@
   document.getElementById("cfg-record-walk").addEventListener("change", function () {
     state.recordWalk = this.checked;
     prefSet(PREF.recordWalk, this.checked ? "1" : "0");
-    if (this.checked) {
-      // Mutually exclusive with driving via brain -- see driveViaBrainActive().
-      state.driveViaBrain = false;
-      prefSet(PREF.driveViaBrain, "0");
-      document.getElementById("cfg-drive-via-brain").checked = false;
-    }
     renderRecordStatus();
   });
 
@@ -2649,14 +2786,10 @@
   document.getElementById("cfg-drive-via-brain").addEventListener("change", function () {
     state.driveViaBrain = this.checked;
     prefSet(PREF.driveViaBrain, this.checked ? "1" : "0");
-    if (this.checked) {
-      // Mutually exclusive with recording -- see driveViaBrainActive().
-      state.recordWalk = false;
-      prefSet(PREF.recordWalk, "0");
-      document.getElementById("cfg-record-walk").checked = false;
-      renderRecordStatus();
-    }
     updateDriveViaBrainRow();
+    // Recording stays on if it was on: a tiered walk is the most worth
+    // keeping, not the least. See driveViaBrainActive().
+    renderRecordStatus();
   });
 
   document.getElementById("cfg-drive-policy").addEventListener("change", function () {
@@ -2716,7 +2849,6 @@
   // quota is account-and-region scoped, so this contends with whatever
   // else is running in the account -- including production.
   const GUIDANCE_MAX_IN_FLIGHT = 2;
-  const GUIDANCE_MAX_CAPTURE_DIM = 960; // longest edge, px -- smaller upload + faster inference
   // Anthropic downscales images server-side above ~1568px on the long
   // edge anyway (see Claude's vision docs), so sending a full phone-camera
   // photo (often 3000px+, several MB) past that point burns upload time
@@ -2725,6 +2857,39 @@
   // "analyze this photo" action rather than a several-times-a-second loop,
   // so it gets a higher ceiling and quality than their real-time captures.
   const PHOTO_MAX_CAPTURE_DIM = 1568;
+
+  // ONE size for every consumer -- the cloud call, the perception tier and
+  // the recorded walk all get the same pixels.
+  //
+  // **The entire Stage 0 corpus was captured at 640x480 and nobody noticed
+  // until 2026-09-08**, because getUserMedia below was called with no
+  // resolution constraint and the browser handed back its default. The 960
+  // ceiling never even engaged -- min(1, 960/640) is 1 -- so it was capping
+  // nothing, and the walk recorder saves the same base64 the cloud call
+  // gets, so no larger copy ever existed. Every finding about small distant
+  // targets in PLAN-onboard-perception.md 4.10/4.11 rests on VGA frames,
+  // including the search walk where the local tier scores 2 of 10.
+  //
+  // 1280, for three reasons that agree:
+  //
+  //   * it is the largest input YOLO11s clears camera rate at on a Hailo-8L
+  //     (4.3.1's 92 FPS at 640, and compute scales with pixel count), so a
+  //     corpus above it would describe a robot this one is not;
+  //   * it is under Anthropic's ~1568 downscale threshold, so the cloud
+  //     actually uses every pixel rather than resizing them away;
+  //   * and it keeps the corpus IDENTICAL to what the cloud was asked, which
+  //     is what makes control/walk_replay.py a reproduction rather than a
+  //     different experiment. A twin that recorded 1280 while asking the
+  //     cloud at 960 would put every replayed walk quietly out of step with
+  //     the live one it claims to re-run -- the same class of mismatch that
+  //     produced a week of walks attributed to a model that was never
+  //     running.
+  //
+  // The cost of carrying the cloud at 1280 rather than 960 is about +540
+  // input tokens per call (images tokenize near w*h/750), or ~19k tokens
+  // across a 209-frame search walk's paid calls. That is the price of the
+  // corpus and the replay agreeing, and it is worth paying.
+  const CAPTURE_MAX_DIM = 1280;
   const guidanceVideo = document.getElementById("guidance-video");
   const guidanceFullscreen = document.getElementById("guide-fullscreen");
   const guidanceChevron = document.getElementById("guide-chevron");
@@ -2734,22 +2899,21 @@
   const guidanceEdgeGlowRight = document.getElementById("guide-edge-glow-right");
   const guidanceCaptureCanvas = document.createElement("canvas");
 
-  // Downscales to GUIDANCE_MAX_CAPTURE_DIM on the long edge before encoding
-  // -- Bedrock doesn't need full sensor resolution to answer a coarse
-  // position/proximity/bounding-box question, and a smaller payload
-  // uploads and (typically) infers faster, which is most of what actually
-  // makes the guidance loop feel responsive (the fixed GUIDANCE_THROTTLE_MS
-  // gap is the other, smaller, lever).
+  // Downscales to CAPTURE_MAX_DIM on the long edge before encoding. One
+  // frame, one size, every consumer -- see CAPTURE_MAX_DIM above for why the
+  // cloud is no longer given a smaller copy than the corpus keeps.
   function captureGuidanceFrame() {
     const nativeW = guidanceVideo.videoWidth, nativeH = guidanceVideo.videoHeight;
-    const scale = Math.min(1, GUIDANCE_MAX_CAPTURE_DIM / Math.max(nativeW, nativeH));
-    const w = Math.round(nativeW * scale), h = Math.round(nativeH * scale);
-    guidanceCaptureCanvas.width = w;
-    guidanceCaptureCanvas.height = h;
-    const ctx2 = guidanceCaptureCanvas.getContext("2d");
-    ctx2.drawImage(guidanceVideo, 0, 0, w, h);
+    const scale = Math.min(1, CAPTURE_MAX_DIM / Math.max(nativeW, nativeH));
+    guidanceCaptureCanvas.width = Math.round(nativeW * scale);
+    guidanceCaptureCanvas.height = Math.round(nativeH * scale);
+    guidanceCaptureCanvas.getContext("2d").drawImage(
+      guidanceVideo, 0, 0,
+      guidanceCaptureCanvas.width, guidanceCaptureCanvas.height);
     return guidanceCaptureCanvas.toDataURL("image/jpeg", 0.8).split(",")[1];
   }
+
+
 
   function callGuidanceEndpoint(base64, targetObject) {
     const url = document.getElementById("cfg-url").value.trim();
@@ -2801,8 +2965,18 @@
   // read back from control/brain_server.py's real MissionRunner -- the
   // exact loop a PiCar will run, not a simulation of it.
 
+  // Returns the robot's own sequence number for this frame. sim/teleop_robot.py
+  // stamps one and echoes it back, and MissionRunner now reports which id its
+  // last decision was made on -- so a recorded walk can align decisions to
+  // pixels exactly. Without both halves the pairing is wall-clock coincidence:
+  // the mission ticks once per ~2.5 pushed frames (range 1-10), so the status
+  // saved beside a frame usually describes an earlier one.
   function pushTeleopFrame(base64) {
-    return apiPost("/teleop/frame", { image_base64: base64, media_type: "image/jpeg" });
+    return apiPost("/teleop/frame", { image_base64: base64, media_type: "image/jpeg" })
+      .then(function (res) {
+        state.lastTeleopSeq = (res && typeof res.seq === "number") ? res.seq : null;
+        return res;
+      });
   }
 
   // Reshapes a GET /mission/status payload into the {action, reasoning,
@@ -2827,11 +3001,19 @@
       // failsafe firing.
       return { error: status.error || ("mission ended: " + status.outcome), _missionStatus: status };
     }
+    // `target_visible` was hardcoded `false` here, which was harmless while
+    // these results were only drawn on screen and became misleading the
+    // moment they started being RECORDED (2026-09-08): a walk.jsonl full of
+    // "target_visible: false" reads as a claim the robot made, and this
+    // project has twice been burned by trusting a walk's own log. Report the
+    // local tier's actual tri-state when there is one, and leave it null --
+    // not false -- when there is not.
+    const perception = status.perception;
     return {
       action: status.last_action,
       reasoning: status.last_reasoning || "",
       target_reached: arrived,
-      target_visible: false,
+      target_visible: perception ? perception.status === "detected" : null,
       target_direction: null,
       obstacle_ahead: false,
       _missionStatus: status,
@@ -3734,7 +3916,8 @@
       // ones too stale to draw. Dropping them would silently thin a
       // recording that sim/replay_robot.py later plays back frame by
       // frame.
-      if (isRobot) recordWalkFrame(base64, result, recSeq, recEpoch);
+      if (isRobot) recordWalkFrame(base64, result, recSeq, recEpoch,
+                                   state.lastTeleopSeq);
 
       // Everything past here changes what the person sees or the loop
       // believes, so it must not run for an answer that has been overtaken
@@ -4000,7 +4183,20 @@
     if (await requestMotionPermissionIfNeeded()) startMotionTracking();
 
     try {
-      state.guidanceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      // `ideal`, not `exact`: a device that cannot do 1920x1080 returns its
+      // best effort rather than failing outright with OverconstrainedError,
+      // which is what `exact` would do to anyone on an older phone. Asking
+      // for more than PERCEPTION_MAX_CAPTURE_DIM on purpose -- the encoder
+      // downscales to it, and starting above the target means the crop a
+      // distant object lands in was sampled from real sensor pixels rather
+      // than upscaled from a stream that was already too small.
+      state.guidanceStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      });
     } catch (e) {
       showGuideStartError("Camera access failed: " + e.message);
       return;

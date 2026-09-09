@@ -12,6 +12,13 @@ actually find household things from 10cm?*
 
     python -m tests.manual_perceive_walk ~/walks/backpack-rig-01 "red backpack"
 
+**For more than one walk, use `control/perception_eval.py` instead** (P3,
+built 2026-09-08). This script has no ground truth: it reports what the
+pipeline said, which is the right answer straight after a rig session and
+the wrong one for a measurement. The corpus tool scores against each walk's
+adjudicated `labels.json`, sweeps the gate without re-running the models,
+and never prints a recall without the false positives it cost.
+
 Not in the automated suite, for the usual reason: it needs the optional
 heavy dependencies (`pip install -r requirements-perception.txt`) and the
 first run downloads model weights. It costs **no money** -- perception is

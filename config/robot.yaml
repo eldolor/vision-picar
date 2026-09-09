@@ -154,6 +154,20 @@ brain:
   # still bounds the mission, but under this policy most steps cost nothing,
   # so the step budget is a poor proxy for the bill.
   tier_max_calls: 0
+  # 1.11a: the local probability at which the on-board tier is taken to
+  # CORROBORATE a sighting the cloud has already claimed -- a lower bar than
+  # the 0.8 needed to claim one alone, because the VLM has already
+  # contributed evidence. Measured on the 209-frame search walk: at 0.8 it
+  # keeps 2 of 10 true sightings, at 0.5 it keeps 8 and still rejects 34 of
+  # 34 storage-bin claims.
+  #
+  # **REPORTED, NOT ENFORCED.** Nothing acts on the verdict: it appears on
+  # the Remote brain panel and in walk data so the next walks measure it,
+  # and 1.11a wants two more searches on out-of-vocabulary targets before
+  # the behaviour changes. The falsifier is real -- a target the local tier
+  # cannot see makes every sighting `unclear`, and the robot would steer
+  # forever without committing.
+  tier_corroboration_bar: 0.5
 
   # The reference backpack hunt takes 83 steps with the frontier policy.
   # Under a vision policy each step is a paid call -- lower this then.

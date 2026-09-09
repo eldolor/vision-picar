@@ -457,3 +457,63 @@ def test_the_counters_survive_a_step_whose_scene_carries_no_tier():
                                         frames=1, calls=1),
                             {"safest_direction": "STOP", "important_objects": []}])
     assert runner.status()["tier"]["stats"]["cloud_calls"] == 1
+
+
+# ---------- which frame a decision was made on (teleop alignment) ----------
+#
+# Added 2026-09-08, after a walk nearly produced a false published finding.
+# Under "Drive via brain" the twin pushes frames on one timer, polls
+# /mission/status on another, and the mission ticks on a third: measured at a
+# median of 2.5 pushed frames per mission step, range 1-10. So the status a
+# recorder saves beside frame N routinely describes a decision taken on an
+# earlier frame.
+#
+# On walk woven-laundry-basket-20260908-212719 that read as both tiers
+# confabulating a laundry basket at P=0.998 against a bare wall. Frame-exact
+# perception showed the opposite: the decision was correct and had been filed
+# against frames captured seconds later. A corpus that cannot say which frame
+# a decision saw cannot be scored per-frame at all.
+
+
+class StampingRobot:
+    """A mock robot whose frames carry a teleop sequence number, the way
+    sim/teleop_robot.py stamps every pushed frame."""
+
+    def __init__(self):
+        self._inner = fresh_mock_robot()
+        self.seq = 40
+
+    def get_camera_frame(self):
+        frame = dict(self._inner.get_camera_frame())
+        self.seq += 1
+        frame["metadata"] = {"source": "teleop", "seq": self.seq}
+        return frame
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+def test_the_status_names_the_frame_the_last_decision_saw():
+    """sim/teleop_robot.py stamps every pushed frame with a sequence number.
+    Carrying it through is what turns a coincidental pairing into an exact
+    one."""
+    runner = MissionRunner(StampingRobot(), target_object="red backpack",
+                           max_steps=BUDGET)
+    runner.start()
+    runner.tick()
+    first = runner.status()["last_frame_seq"]
+    runner.tick()
+    second = runner.status()["last_frame_seq"]
+    assert first == 41, first
+    assert second == 42, second
+
+
+def test_a_backend_that_stamps_no_frame_id_reports_none_rather_than_a_guess():
+    """The sim and a replay have no teleop sequence. Reporting 0, or the step
+    number, would imply an alignment the walk does not have -- which is the
+    exact failure this field exists to prevent."""
+    runner = MissionRunner(fresh_mock_robot(), target_object="red backpack",
+                           max_steps=BUDGET)
+    runner.start()
+    runner.tick()
+    assert runner.status()["last_frame_seq"] is None

@@ -1474,6 +1474,14 @@
         <div class="full">CLIP margin: <span class="val" id="brain-tel-margin">&ndash;</span></div>
         <div class="full">Models: <span class="val" id="brain-tel-detector">&ndash;</span></div>
         <div class="full">Deliberation: <span class="val" id="brain-tel-calls">&ndash;</span></div>
+        <!-- 1.11a, REPORTED and not enforced. The row exists so the next rig
+             walks measure the amendment live instead of by replay, which is
+             the one thing a replay cannot give it: 1.11a's falsifier is a
+             target the local tier cannot see at all, and no walk in the
+             corpus is one. Nothing on this row changes a decision -- the
+             mission believes the cloud exactly as it did before, and the
+             row says so. -->
+        <div class="full">Corroboration: <span class="val" id="brain-tel-corroboration">&ndash;</span></div>
       </div>
       <div id="brain-log" role="log" aria-live="polite"></div>
       <details class="disclosure">
@@ -1739,9 +1747,27 @@
     <div class="panel">
       <div class="section-label">Cloud endpoint settings</div>
       <div class="lede">Powers Guide, Vision Autopilot, and photo analysis.</div>
-      <input type="text" id="cfg-url" class="text-input settings-input" placeholder="Vision service base URL (https://...)" style="margin-top:8px;">
+      <div class="btn-row" style="margin-top:8px;">
+        <input type="text" id="cfg-url" class="text-input" placeholder="Vision service base URL (https://...)" style="flex:2;">
+        <button id="btn-vision-connect" class="primary" style="flex:1;">Connect</button>
+      </div>
       <input type="text" id="cfg-secret" class="text-input settings-input" placeholder="x-app-secret value">
       <div class="endpoint-note" id="cfg-url-mismatch" hidden></div>
+      <!-- The same shape the brain connection has, and it exists because the
+           failure it diagnoses is invisible without it. The vision service
+           has NO CORS: it never needed any, because the deployed twin is
+           served from the same origin it calls. Load the page from anywhere
+           else -- an ngrok tunnel, a local uvicorn -- and every vision call
+           becomes cross-origin, the preflight 404s, and Safari reports the
+           whole thing as "Load failed" on the Robot view camera with no clue
+           which of five URLs is at fault. This check names it. -->
+      <div class="conn-status" id="vision-connection-status" role="status" aria-live="polite">
+        <span class="conn-status-dot"></span>
+        <span class="conn-status-body">
+          <span class="conn-status-label">Not checked</span>
+          <span class="conn-status-detail"></span>
+        </span>
+      </div>
       <details class="disclosure">
         <summary><span class="disclosure-caret" data-icon="chevronRight"></span>What goes in these fields</summary>
         <div class="hint">

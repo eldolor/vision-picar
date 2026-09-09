@@ -502,3 +502,172 @@ def test_the_readout_names_the_floor_mask_only_when_it_is_running():
 
     on = TieredVision(WithMask(), FakeCloud())
     assert on.models["proposer"] == "nvidia/segformer-b0"
+
+
+# ---------- 1.11a: corroborated identity, REPORTED and not enforced ----------
+#
+# The amendment is proposed and undecided. What is under test here is
+# therefore two things at once, and the second matters as much as the first:
+# that the verdict is computed correctly, **and that it changes nothing**.
+# 1.11a's own status line is explicit -- *"it should not be implemented until
+# the two extra searches exist"* -- and a reporting-only variant that quietly
+# started gating would be the worst of both, because the walks meant to
+# decide it would then be measuring the decision.
+
+from brain.perceive import CLIP_LOGIT_SCALE  # noqa: E402
+from brain.tiered import (  # noqa: E402
+    CORROBORATED,
+    CORROBORATION_UNAVAILABLE,
+    DEFAULT_CORROBORATION_P,
+    NO_CLAIM,
+    UNCLEAR,
+    corroboration_for,
+)
+
+
+def _perception_at(probability, status=DETECTED):
+    """A Perception whose best candidate scores exactly `probability`.
+
+    Built by inverting the softmax over two texts rather than by writing a
+    similarity and hoping: the gate is P, and a test that set a similarity
+    would be pinning the wrong number.
+    """
+    if probability is None:
+        return Perception(status=status, reason="scripted")
+    import math
+
+    # P = e^(a*s) / (e^(a*s) + e^(a*d)) => a*(s-d) = logit(P)
+    delta = math.log(probability / (1 - probability)) / CLIP_LOGIT_SCALE
+    candidate = Candidate(
+        detection=Detection(box=Box(0, 0, 10, 10), label="bottle",
+                            confidence=0.5),
+        similarity=delta, best_distractor=0.0, scores=(delta, 0.0))
+    return Perception(status=status, candidates=[candidate], best=candidate,
+                      reason="scripted")
+
+
+def _scene(target_visible):
+    return {"safest_direction": "FORWARD",
+            "_navigate": {"target_visible": target_visible,
+                          "reasoning": "cloud said so"}}
+
+
+def test_a_claim_the_local_tier_supports_is_corroborated():
+    out = corroboration_for(_scene(True), _perception_at(0.69))
+    assert out["verdict"] == CORROBORATED
+    assert out["local_probability"] == pytest.approx(0.69, abs=1e-3)
+
+
+def test_a_claim_the_local_tier_does_not_support_is_unclear_not_absent():
+    """M3's tri-state argument one tier up. Read as absent it discards a
+    real sighting; read as present it keeps the confabulation. The storage
+    bin frames scored 0.00-0.44 locally -- this is that frame."""
+    assert corroboration_for(_scene(True), _perception_at(0.14))["verdict"] == UNCLEAR
+
+
+def test_the_bar_is_lower_than_the_detection_gate_and_that_is_the_finding():
+    """At the shipped 0.8 gate, corroboration keeps 2 of 10 true sightings
+    and is unusable; at 0.5 it keeps 8 and still rejects 34 of 34 bin
+    claims. `P >= 0.8` asks *is this a sighting on its own evidence*;
+    corroboration asks a different question and deserves a lower bar."""
+    from brain.perceive import DEFAULT_MATCH_PROBABILITY
+
+    assert DEFAULT_CORROBORATION_P < DEFAULT_MATCH_PROBABILITY
+    borderline = _perception_at(0.62)   # the frame that saved arrival on walk 4
+    assert corroboration_for(_scene(True), borderline)["verdict"] == CORROBORATED
+    assert corroboration_for(_scene(True), borderline,
+                             bar=DEFAULT_MATCH_PROBABILITY)["verdict"] == UNCLEAR
+
+
+def test_the_clouds_negative_is_trusted_and_not_second_guessed():
+    """1.11a part 1: the VLM's recall is 10/10 across the corpus and it has
+    never missed a sighting, so only its positive needs support. A local
+    detection under a cloud `not visible` is not a disagreement worth
+    naming -- naming it would cost recall and buy nothing."""
+    out = corroboration_for(_scene(False), _perception_at(0.99))
+    assert out["verdict"] == NO_CLAIM
+    assert out["claimed"] is False
+
+
+def test_a_wedged_camera_does_not_read_as_a_failure_to_corroborate():
+    """1.12 again: `unavailable` is the absence of information. Treating it
+    as "the local tier disagrees" would make a dead camera look like the
+    cloud confabulating."""
+    out = corroboration_for(_scene(True), _perception_at(None, status=UNAVAILABLE))
+    assert out["verdict"] == CORROBORATION_UNAVAILABLE
+
+
+def test_a_claim_with_no_candidate_at_all_is_unclear():
+    """No crop survived, so there is no local evidence either way -- which
+    under 1.11a is exactly the state that may steer and may not commit."""
+    out = corroboration_for(_scene(True), Perception(status=ABSENT))
+    assert out["verdict"] == UNCLEAR
+    assert out["local_probability"] is None
+
+
+def test_the_verdict_rides_on_the_scene_and_the_counters_tally_it():
+    """1.11a's own list of what it still needs: the counter has to show
+    corroborated-versus-claimed, or the twin cannot show this working."""
+    cloud = FakeCloud()
+
+    def claiming(frame):
+        cloud.calls += 1
+        return _scene(True)
+
+    pipeline = ScriptedPipeline([DETECTED])
+    pipeline.perceive = lambda frame: _perception_at(0.9)
+    tier = TieredVision(pipeline, claiming)
+    scene = tier({"image_base64": "x", "image_width": 640})
+    corroboration = scene["_tier"]["corroboration"]
+    assert corroboration["verdict"] == CORROBORATED
+    assert corroboration["bar"] == DEFAULT_CORROBORATION_P
+    stats = scene["_tier"]["stats"]
+    assert stats["claims"] == 1 and stats["corroborated"] == 1
+    assert stats["verdicts"][CORROBORATED] == 1
+
+
+def test_a_free_frame_carries_no_verdict_rather_than_the_last_one():
+    """A stale verdict held over from the previous paid call would read as
+    this frame's, on a panel that updates every tick."""
+    tier, cloud, scenes = run([ABSENT, ABSENT])
+    assert scenes[1]["_tier"]["cloud_called"] is False
+    assert scenes[1]["_tier"]["corroboration"] is None
+
+
+def test_nothing_is_enforced_and_the_payload_says_so():
+    """**The behaviour change is NOT implemented.** 1.11a asks for two more
+    searches on out-of-vocabulary targets first, because its falsifier is
+    real: a target the local tier cannot see makes every sighting `unclear`
+    and the robot steers forever without committing. This test is what
+    stops the reporting-only variant drifting into the enforced one."""
+    cloud = FakeCloud()
+
+    def claiming(frame):
+        cloud.calls += 1
+        return dict(_scene(True), _navigate={"target_visible": True,
+                                             "target_reached": True,
+                                             "reasoning": "arrived"})
+
+    pipeline = ScriptedPipeline([DETECTED])
+    pipeline.perceive = lambda frame: _perception_at(0.02)   # a bin frame
+    tier = TieredVision(pipeline, claiming)
+    scene = tier({"image_base64": "x", "image_width": 640})
+
+    assert scene["_tier"]["corroboration"]["verdict"] == UNCLEAR
+    assert scene["_tier"]["corroboration"]["enforced"] is False
+    # The cloud's answer is passed through untouched, in both fields the
+    # amendment would eventually gate: identity and arrival.
+    assert scene["_navigate"]["target_visible"] is True
+    assert scene["_navigate"]["target_reached"] is True
+
+
+def test_the_bar_is_settable_rather_than_compiled_in():
+    """1.11a asks for the same treatment DEFAULT_MATCH_PROBABILITY got --
+    measured, named, and settable in config."""
+    cloud = FakeCloud()
+    pipeline = ScriptedPipeline([DETECTED])
+    pipeline.perceive = lambda frame: _perception_at(0.4)
+    tier = TieredVision(pipeline, lambda f: _scene(True), corroboration_bar=0.3)
+    scene = tier({"image_base64": "x", "image_width": 640})
+    assert scene["_tier"]["corroboration"]["verdict"] == CORROBORATED
+    assert scene["_tier"]["corroboration"]["bar"] == 0.3

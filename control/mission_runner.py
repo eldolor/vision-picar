@@ -302,6 +302,7 @@ class MissionRunner:
         # "this policy has no perception tier" rather than "it failed".
         self._tier: Optional[dict] = None
         self._perception: Optional[dict] = None
+        self._last_frame_seq: Optional[int] = None
         self._log: list = []
 
     # ---------- lifecycle ----------
@@ -376,6 +377,29 @@ class MissionRunner:
             # exactly when something unusual happened.
             self._tier = scene.get("_tier") or self._tier
             self._perception = scene.get("_perception") or self._perception
+            # WHICH frame this decision was made on.
+            #
+            # Under teleop the twin pushes frames on its own timer and polls
+            # /mission/status separately, while the mission ticks on a third
+            # clock -- measured at a median of 2.5 pushed frames per step,
+            # range 1-10. So the status a recorder saves beside frame N
+            # routinely describes a decision taken on some earlier frame, and
+            # a walk scored per-frame from walk.jsonl is scored against the
+            # wrong pixels. That nearly published a false finding on
+            # 2026-09-08: two corroborated sightings looked like both tiers
+            # confabulating, and were in fact correct answers filed against
+            # frames captured seconds later.
+            #
+            # sim/teleop_robot.py already stamps every pushed frame with a
+            # sequence number and echoes it to the pusher, so the id exists
+            # on both ends and only had to be carried through. Absent for
+            # every backend that does not stamp one, which is honest: a
+            # walk that cannot say which frame a decision saw should say so
+            # rather than imply an alignment it does not have.
+            self._last_frame_seq = (
+                (result.frame or {}).get("metadata", {}).get("seq")
+                if isinstance(result.frame, dict) else None
+            ) or self._last_frame_seq
             self._log_line(
                 f"step {result.step}: {result.action} "
                 f"({'ok' if result.executed else 'blocked'}) -- {self._last_reasoning}"
@@ -435,6 +459,11 @@ class MissionRunner:
                 # has no perception tier, which is all of them but one.
                 "tier": self._tier,
                 "perception": self._perception,
+                # The teleop frame id the last decision was made on, so a
+                # recorded walk can align decisions to pixels exactly instead
+                # of by wall-clock coincidence. None for a backend that does
+                # not stamp frames.
+                "last_frame_seq": self._last_frame_seq,
                 # Phase M5, all three description-only in themselves. The
                 # verdict is built from them by control/health.py, which is
                 # the only place that decides what "unhealthy" means.

@@ -134,6 +134,92 @@ DEFAULT_COLD_SEARCH_AFTER = 6
 SCAN_ACTION = "RIGHT"
 
 
+# -- 1.11a: corroborated identity, REPORTED ONLY -------------------------
+#
+# `PLAN-onboard-perception.md` 1.11a is **proposed and not decided**, and
+# nothing below changes a single decision. It computes the verdict, counts
+# it and publishes it, so the next rig walks measure it live instead of by
+# replay -- which is the one thing a replay cannot give it, because 1.11a's
+# own falsifier is a walk that does not exist yet.
+#
+# The rule it would apply, if it were applied:
+#
+#   * the VLM's **negative** is trusted (10/10 recall across the corpus,
+#     never a missed sighting), so only a positive claim needs support;
+#   * corroboration uses a LOWER bar than detection -- `P >= 0.8` asks *is
+#     this a sighting on its own evidence*, corroboration asks *is the
+#     local tier seeing anything consistent with a claim the cloud already
+#     made*, and the second deserves the lower bar because the VLM has
+#     already contributed evidence. At 0.8 corroboration keeps 2 of 10 true
+#     sightings and is unusable; at 0.5 it keeps 8 and still rejects 34 of
+#     34 storage-bin claims;
+#   * disagreement is `unclear` -- M3's tri-state argument one tier up. Read
+#     as absent it discards a real sighting; read as present it keeps the
+#     confabulation. An `unclear` sighting may steer and may not commit.
+#
+# **The third bullet is the behaviour, and it is NOT implemented.** No
+# `target_visible` is rewritten, no `target_reached` is suppressed, no
+# sighting is withheld from `MissionMemory`. 1.11a asks for two more
+# searches on out-of-vocabulary targets first, because a target the local
+# tier cannot see at all would make every sighting `unclear` and leave the
+# robot steering forever without committing -- strictly worse than
+# believing a VLM that is right most of the time.
+#
+# Costs nothing: `_annotate()` already holds the `Perception` beside the
+# cloud's answer, so the verdict is a comparison between two numbers that
+# have both already been computed.
+DEFAULT_CORROBORATION_P = 0.5
+
+# The four verdicts. `UNCLEAR` is the one 1.11a is about -- and note it is
+# a **relationship between two tiers**, not a fourth perception state, which
+# is why it lives on `_tier` and not on `Perception.status`.
+CORROBORATED = "corroborated"
+UNCLEAR = "unclear"
+NO_CLAIM = "no_claim"            # the cloud says the target is not visible
+CORROBORATION_UNAVAILABLE = "unavailable"   # the local tier could not tell
+CORROBORATION_VERDICTS = (CORROBORATED, UNCLEAR, NO_CLAIM,
+                          CORROBORATION_UNAVAILABLE)
+
+
+def corroboration_for(scene: dict, perception: Perception,
+                      bar: float = DEFAULT_CORROBORATION_P) -> dict:
+    """Does the local tier see anything consistent with the cloud's claim?
+
+    Pure, and reporting-only: it reads both answers and returns a verdict.
+    Nothing acts on the result today -- see the block above.
+
+    The local number is the **best candidate's probability**, taken over
+    every candidate rather than off `perception.best`: `best` is the argmax
+    under the *detection* gate, and corroboration is a different question
+    asked at a different bar. On the frames that matter this is the whole
+    measurement -- the storage-bin frames score 0.00-0.44 locally and the
+    true sightings 0.25-0.98.
+    """
+    nav = scene.get("_navigate") or {}
+    claimed = bool(nav.get("target_visible"))
+    local = None
+    if perception.status != UNAVAILABLE and perception.candidates:
+        local = max(c.probability for c in perception.candidates)
+
+    if not claimed:
+        verdict = NO_CLAIM
+    elif perception.status == UNAVAILABLE:
+        verdict = CORROBORATION_UNAVAILABLE
+    elif local is not None and local >= bar:
+        verdict = CORROBORATED
+    else:
+        verdict = UNCLEAR
+    return {
+        "verdict": verdict,
+        "claimed": claimed,
+        "bar": bar,
+        "local_probability": round(local, 4) if local is not None else None,
+        # Says plainly that the verdict changed nothing, so no reader of a
+        # walk or a status payload can mistake a measurement for a policy.
+        "enforced": False,
+    }
+
+
 # How far off centre a target may be and still be called "center". Matches
 # the vocabulary /navigate answers in, so a consumer cannot tell a local
 # bearing from a cloud one by its shape -- only by `_tier.cloud_called`,
@@ -184,12 +270,23 @@ class TierStats:
     cloud_calls: int = 0
     triggers: dict = field(default_factory=dict)
     perception: dict = field(default_factory=dict)
+    # 1.11a's own list of what it still needs: *"the counter in 6.3 should
+    # show corroborated-versus-claimed, or the twin cannot show this
+    # working."* Two counters rather than a rate, for the same reason the
+    # deliberation counter is calls AND frames -- "80% corroborated" over
+    # five claims is a different statement from the same figure over fifty.
+    claims: int = 0
+    corroborated: int = 0
+    verdicts: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         saving = (self.frames / self.cloud_calls) if self.cloud_calls else None
         return {
             "frames": self.frames,
             "cloud_calls": self.cloud_calls,
+            "claims": self.claims,
+            "corroborated": self.corroborated,
+            "verdicts": dict(self.verdicts),
             # The number 6.1 puts at 4-6x. Measured live here rather than
             # replayed, and directly comparable.
             "frames_per_call": round(saving, 2) if saving else None,
@@ -217,6 +314,7 @@ class TieredVision:
         cold_search_after: int = DEFAULT_COLD_SEARCH_AFTER,
         stale_after: int = DEFAULT_STALE_AFTER,
         max_calls: Optional[int] = None,
+        corroboration_bar: float = DEFAULT_CORROBORATION_P,
     ):
         self.pipeline = pipeline
         self.cloud_vision_fn = cloud_vision_fn
@@ -227,6 +325,11 @@ class TieredVision:
         # and worth NOT having as the default.
         self.stale_after = max(0, int(stale_after))
         self.max_calls = max_calls
+        # 1.11a asks that the bar get the same treatment
+        # DEFAULT_MATCH_PROBABILITY got -- measured, named, and settable in
+        # config rather than compiled in. It is settable here and in
+        # config/robot.yaml, and it gates nothing.
+        self.corroboration_bar = float(corroboration_bar)
         self.stats = TierStats()
         # 6.3 asks for **the detector's own name** on screen, not just its
         # output: *"swap the HEF and the name on screen changes; that is
@@ -378,6 +481,12 @@ class TieredVision:
             "_perception": perception.as_dict(),
             "_tier": {"cloud_called": False, "trigger": None,
                       "models": dict(self.models),
+                      # No cloud call means no claim to corroborate. Stated
+                      # rather than omitted: a missing key would leave the
+                      # panel showing the previous call's verdict for however
+                      # many free frames follow it, which is exactly how a
+                      # stale readout becomes a believed one.
+                      "corroboration": None,
                       "stats": self.stats.as_dict()},
         }
 
@@ -390,10 +499,24 @@ class TieredVision:
         never confirms one. Both are recorded so a walk can be scored on
         how often they agreed.
         """
+        corroboration = corroboration_for(scene, perception,
+                                          self.corroboration_bar)
+        verdict = corroboration["verdict"]
+        self.stats.verdicts[verdict] = self.stats.verdicts.get(verdict, 0) + 1
+        if corroboration["claimed"]:
+            self.stats.claims += 1
+            if verdict == CORROBORATED:
+                self.stats.corroborated += 1
+
         out = dict(scene)
         out["_perception"] = perception.as_dict()
         out["_tier"] = {"cloud_called": True, "trigger": trigger,
                         "models": dict(self.models),
+                        # 1.11a, reported and NOT enforced. `scene` above is
+                        # passed through untouched -- deliberately, and it is
+                        # the whole difference between measuring the
+                        # amendment and shipping it.
+                        "corroboration": corroboration,
                         "stats": self.stats.as_dict()}
         return out
 
@@ -428,4 +551,7 @@ __all__ = [
     "TRIGGER_STALE", "DEFAULT_STALE_AFTER",
     "UNAVAILABLE_TRIGGERS", "SCAN_ACTION",
     "DEFAULT_CONSECUTIVE", "DEFAULT_COLD_SEARCH_AFTER",
+    "DEFAULT_CORROBORATION_P", "corroboration_for",
+    "CORROBORATED", "UNCLEAR", "NO_CLAIM", "CORROBORATION_UNAVAILABLE",
+    "CORROBORATION_VERDICTS",
 ]
