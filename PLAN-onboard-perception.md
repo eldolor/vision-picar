@@ -4496,6 +4496,250 @@ Walk 215140 contains no basket anywhere in 95 frames, and the local tier still
 puts **7 frames over 0.5**. A corroboration bar there is not free precision --
 it is a bar most of the room can clear.
 
+#### P5: an open-weight VLM as the crop source -- **HARNESS BUILT 2026-09-09**
+
+Asked directly after the basket walks: *would distilled open-weight (Chinese)
+VLMs run at the edge beat the models measured here?* It is the first VLM
+proposal in this document aimed at the failure that was actually measured, so
+it gets a phase rather than a paragraph.
+
+**Why this one is different from 4.11's losers.** Grounding DINO added
+capacity on the axis that already worked and lost at every matched operating
+point. The measured failure is elsewhere: **86% recall close against 6%
+distant**, caused by the crop source proposing nothing containing a small far
+object. Qwen2.5-VL and InternVL do not letterbox to a fixed 640 -- they tile at
+native resolution and can emit boxes directly. That is a different mechanism
+pointed at the frames that fail, which is the only reason to spend a run on it.
+
+**But it forces the Jetson, and that is the honest cost.** The Hailo-8L is a
+13 TOPS CNN part with no practical generative path, and even the 10H measured
+**5.89 tok/s** on a 1.5B model (4.9). "VLM at the edge" and "Pi + Hailo-8L" are
+mutually exclusive, so this experiment is the strongest remaining route to
+re-opening the part decision -- which is exactly why it should be run off-robot
+first.
+
+**Do not distil.** Three reasons, none of them about model quality. The vendors
+already ship the small sizes (Qwen2.5-VL-3B, InternVL3-2B, MiniCPM-V) -- that
+distillation is done. Opus cannot be the teacher (closed weights), so the
+ceiling is the open model's own grounding and the honest experiment is to run
+that model directly. And fine-tuning on this corpus would overfit to one
+basement: ~900 frames from one house is far too few, and it would look like it
+worked *on this corpus*.
+
+**What was built.** `VlmDetector` in `brain/perceive_lab.py`, behind the same
+`Detector` Protocol as everything else, reachable as `--detector vlm:<model
+id>`. One design decision is load-bearing:
+
+> **The score is `P(yes)` read from the logits of the first generated token,
+> not the presence of a grounding box.** A box is present or absent, which
+> gives one operating point and no curve -- and a single point is how a model
+> gets compared at whatever threshold happens to flatter it. Every
+> matched-precision table in 4.11 needs a sweepable score, so the yes/no
+> probability is the score and the grounding pass runs only to place a box.
+
+An ungrounded answer is labelled `vlm:ungrounded` rather than given a
+full-frame box quietly: a full-frame box puts the bearing dead ahead, and a
+wrong bearing is worse than an absent one (1.16 #4, which cost this project a
+field that was never once a number).
+
+`--vlm-max-pixels` exposes the tiling budget, because that -- not the parameter
+count -- is the variable actually under test.
+
+#### First measurements: the yes/no score is bluffable, and tiling is non-monotonic
+
+**Two findings within an hour of the harness existing, and the first one
+changed its design.**
+
+**1. A VLM will answer "yes" to a frame it then refuses to point at.**
+
+| frame | P(yes) | grounding |
+|---|---|---|
+| basket close | 0.925 | `[918, 287, 1073, 442]` |
+| **basket distant** | **0.884** | **`[]`** |
+| no basket in the room | 0.097 | `[]` |
+
+0.884 on a frame the same model declines to localise. A yes/no question can be
+answered from prior -- a home gym plausibly contains a laundry basket -- and
+that is the cloud tier's 23%-precision failure reproduced in a 3B model. **The
+score is now `P(it localises)`**, taken at the token where the model commits to
+`{` or `]`. Grounding cannot be bluffed: a box is a claim about a location.
+
+**And that score is decisive rather than graded** -- 1.0000 or 0.0000, nothing
+between. So a VLM used this way yields **one operating point, not a curve**,
+and cannot be put through `recall_at_fp_budget` the way the detectors were. The
+constraint is real and worth stating plainly: *a sweepable score that can be
+answered from prior, or an honest one that cannot be swept.* Grounding wins;
+its row in any comparison carries a footnote instead of a curve.
+
+**2. The tiling budget is non-monotonic, and native resolution is the peak.**
+
+| `max_pixels` | distant basket | close basket |
+|---|---|---|
+| model default | ungrounded | grounded |
+| **921 600 = native 1280x720** | **grounded, P=0.257** | grounded |
+| 3 686 400 | ungrounded | grounded |
+| 8 847 360 | ungrounded | grounded |
+
+**At exactly native resolution the distant basket becomes groundable**, and
+above it fails again -- which is mechanically sensible, because `smart_resize`
+upscales to fill the budget and upscaling adds patches without adding detail.
+So the lever is *no resampling*, not *more pixels*, and "give it a bigger
+budget" is the wrong instruction.
+
+Weak (0.257), n=1 per cell, and the close frame degraded at that setting, so
+this is a reason to run the full walk rather than a result. **The full distant
+walk at native tiling is the measurement that decides it** -- 18 visible frames
+against the shipped pipeline's 1/18.
+
+#### The result: **Qwen3-VL-4B gets 91% where the shipped tier gets 4%** -- 2026-09-09
+
+The distant walk (`...215252`, 86 frames, 23 with the basket visible), every
+model at native tiling, scored on grounding:
+
+| config | recall | false pos | s/frame (MPS laptop) |
+|---|---|---|---|
+| YOLO + floor + CLIP @0.8 (**shipped**) | 1/23 = **4%** | 0 | 1.2 |
+| Qwen2.5-VL-3B | 5/23 = 22% | 0 | 16.1 |
+| Qwen3-VL-2B | 9/23 = 39% | 2 | 8.4 |
+| **Qwen3-VL-4B** | **21/23 = 91%** | **1** | 13.2 |
+
+**A 23x improvement on the exact failure that has blocked this plan**, at 95%
+precision -- and not the recall-bought-with-false-positives shape that 4.11
+warns about. The 2B model shows that shape (39% for 2 FP, worse than 2.5-VL-3B
+at matched precision); the 4B does not.
+
+**One generation and 1B parameters moved 22% to 91%**, which retires the
+conclusion drawn from Qwen2.5-VL two sections above. That section generalised
+from a single model to the family and was wrong to.
+
+#### And the labels were wrong in the model's favour
+
+Qwen3-VL-4B grounded a **contiguous run** at frames 0081-0085 that the
+adjudication had marked absent. Opened: the basket is plainly visible through
+the doorway, and the first labelling pass simply missed the second span where
+the rig turns back. `labels.json` is corrected, everything is rescored, and the
+shipped baseline drops from 6% to **4%** as a result.
+
+**A contiguous run of false positives is almost always a labelling error
+rather than a model error**, and it is worth adding to the method: the earlier
+walks were adjudicated frame-by-frame from contact sheets, where a *span* is
+easy to lose. Reading the model's disagreements as a hypothesis about the
+labels -- rather than only as the model's mistakes -- is what caught it.
+
+#### What this does to the hardware decision -- **it re-opens it**
+
+The position taken in 4.9 and reinforced in 4.11 was that a local VLM is *"a
+2.5 fallback for when the network is gone, not a deliberation tier"*, and that
+a Jetson buys capacity the evidence says is not short. **The first half of that
+survives; the second does not.**
+
+- **The 8L still owns the reactive tier.** 92 FPS, obstacles and arrival at
+  close range, where YOLO measures 86%. Nothing here displaces it, and no VLM
+  runs at 15-30Hz on any edge part.
+- **But search proposal is not a tier the 8L can serve at all.** 4% is not a
+  weak tier, it is an absent one -- and 2.4's trigger discipline has been
+  running on `cold_search`'s timer for exactly this reason.
+- **A 4B VLM at an estimated 3-6s/frame on an Orin Nano could serve it**, and
+  an 8GB board runs 4B at INT4 comfortably. The 8L runs no VLM at any size.
+
+**The test that could still settle it for the Pi is unrun**: a **1280 HEF**.
+The shipped detector letterboxes 1280 captures down to 640, and *not
+resampling* was the entire mechanism in the tiling sweep -- so the 4%
+baseline is YOLO measured after throwing half the pixels away. If a 1280 HEF
+takes it to 40%+, the cheap path survives; if it moves it to 10%, the Jetson
+case is made on measurement rather than on the "run arbitrary models" wish.
+
+**That is an EC2 hour against a $400 board, and it is now the highest-value
+experiment left in this plan.** Do not order until it has been run.
+
+#### OWLv2 answers it, and the answer is not a Jetson -- **2026-09-09**
+
+The VLM thread pulled attention away from a model that had already won 4.11's
+own bench, and running it across three targets settles the hardware question
+more cleanly than any VLM did. **68 of 68 visible frames, three targets, three
+resolutions, zero false positives:**
+
+| walk | capture | target | OWLv2 @ 0 FP |
+|---|---|---|---|
+| blue-shoes-...210511 | 1280 | out of vocabulary | **25/25 = 100%** |
+| red-backpack-...144856 | VGA | COCO `backpack` | **33/33 = 100%** |
+| blue-bottle-...185007 | VGA | the 209-frame search | **10/10 = 100%** |
+
+**And it beats the cloud on the walk that broke 1.11:**
+
+| | recall | precision |
+|---|---|---|
+| Opus 4.5 | 10/10 | **10/44 = 23%** |
+| **OWLv2** | **10/10** | **10/10 = 100%** |
+
+The storage-bin frames top out at **0.035** against true sightings at
+**0.73-0.76** -- a 20x gap with nothing in it. On the negative frames OWLv2
+mostly emits **no box at all**, which is the cleanest behaviour available: it
+declines rather than guessing quietly.
+
+**At 2.1s/frame and ~150M parameters**, against 8-16s and 2-4B for the VLMs.
+
+#### What that does to the part decision
+
+The Jetson case rested on *"only a 2-4B VLM can do open-vocabulary search
+proposal, and the 8L runs no VLM."* **A 150M ViT does it better** -- better
+than the VLMs, better than the cloud, better than the shipped pipeline, on
+every walk tested. So the capability that was going to justify $400 turns out
+to cost 150M parameters.
+
+**The decision now rests on one unanswered question, and it is a compile
+question rather than an accuracy one:**
+
+> **Can OWLv2 compile to a Hailo HEF?** It is a ViT-B/16 with a text tower,
+> which is unusual for a toolchain built around CNNs -- though Hailo ships
+> some ViT support. The text side can be precomputed on the Pi's CPU exactly
+> as CLIP's already is (4.2), so only the image tower and the detection head
+> have to compile.
+
+- **Compiles** -> Pi 5 + Hailo-8L, decisively, and the perception is *better*
+  than the Jetson plan would have delivered.
+- **Does not** -> a Jetson, but for a 150M model rather than a 4B one, which
+  changes the board and the power budget it needs.
+
+**This retires the experiment 1.10 item 1 was going to be pointed at.** "Test
+a 1280 HEF" is answered and dead: PyTorch YOLO11s at 1280 reaches 2/23 on the
+distant walk against 640's 1/23, because the limit is *vocabulary* -- a COCO
+detector has no class for a laundry basket at any resolution. The compile loop
+is still needed, but its first subject is now **OWLv2**, not a wider YOLO and
+not the floor mask.
+
+#### A method note worth more than the result
+
+**OWLv2's fixed-gate table reads 3/25 on the shoes walk and its swept table
+reads 25/25.** Its confidence scale simply sits low. A single-threshold
+comparison would have discarded the best model in the bench -- which is
+precisely why `recall_at_fp_budget` exists and why 4.11 insists every recall be
+read at a matched false-positive count. The instrument earned itself here.
+
+#### The two win conditions, and they come from the corpus
+
+| test | current best | the VLM wins if |
+|---|---|---|
+| distant basket, walk 215252 | **1/18 = 6%** (YOLO + floor + CLIP) | recall meaningfully above that |
+| storage-bin frames, walk 185007 | **10/44 = 23%** precision (Opus 4.5) | fewer false claims |
+
+**Clearing both** makes it a genuine third option and justifies costing a
+Jetson properly. **Clearing neither** ends the question for the price of a
+rented GPU hour. **Clearing only the first** says it belongs in the *proposal*
+tier and not the identity tier, which is a useful answer and a cheaper one.
+
+**And it must beat the cheap fix, not the current state.** If a tiling encoder
+recovers the distant basket, that is evidence the floor mask and lidar
+clusters would too -- on a $70 part rather than a $400 one. The comparison that
+decides hardware is against those, not against today's 6%.
+
+**Two cautions.** Published benchmark scores do not transfer: a camera at
+10-13cm in one basement is out of distribution for every model in this family,
+and this corpus is the only eval that means anything about it. And latency on
+an Orin Nano for a 2-3B model at INT4 is roughly **2-4s per answer** including
+tiled prefill -- deliberation rate (2.1's 0.2-1Hz row), never the reactive
+tier's 15-30Hz. It would supplement YOLO, never replace it.
+
 #### What to record next, and why these walks -- 2026-09-08
 
 1.11a is undecided, and the reporting-only variant above exists so the next

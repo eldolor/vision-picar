@@ -104,6 +104,13 @@ METRIC_MARGIN = "margin"
 # the number it thresholds on is its own box confidence. Recorded under its
 # own name so no table can silently compare a probability against one.
 METRIC_CONFIDENCE = "confidence"
+
+# The smallest gap between the weakest true positive and the strongest false
+# one that still counts as a separation. Below this the model is saturating
+# rather than ranking, and an operating point derived from it is arithmetic
+# rather than a threshold anyone could set. 1e-4 is four decimal places --
+# the precision these scores are reported and reasoned about at.
+MIN_USABLE_MARGIN = 1e-4
 METRICS = (METRIC_PROBABILITY, METRIC_MARGIN, METRIC_CONFIDENCE)
 
 
@@ -303,6 +310,24 @@ def recall_at_fp_budget(records: Sequence[FrameScore], budget: int) -> dict:
         gate = math.nextafter(negatives[budget], math.inf)
     out = score_at(records, gate)
     out["budget"] = budget
+    # **How much room the operating point actually has.**
+    #
+    # A saturated model scores 0.9999999999856 on its true sightings and
+    # 0.9999999999766 on the frames it invented, and the arithmetic above
+    # will happily separate those -- reporting 10/10 at zero false positives
+    # off a gap of 9e-12. That number is real and completely useless: no
+    # threshold anyone can set lives there, and at any usable gate the same
+    # model fires on 34 of 34 confabulated frames.
+    #
+    # Measured on Qwen3-VL-4B, 2026-09-09, and it flattered exactly the model
+    # the hardware decision was leaning toward. `separable` is the caller's
+    # guard: a margin this thin means the score does not rank, it saturates.
+    positives = [r.score for r in records if r.visible and r.scored
+                 and r.score >= gate]
+    margin = (min(positives) - negatives[budget]) if (positives and
+              len(negatives) > budget) else None
+    out["margin"] = margin
+    out["separable"] = margin is None or margin >= MIN_USABLE_MARGIN
     return out
 
 
@@ -466,11 +491,21 @@ def _add_score_args(ap) -> None:
                     help="corpus root (default: recordings/)")
     ap.add_argument("--walk", action="append", default=[],
                     help="score only this walk; repeatable")
+    ap.add_argument("--vlm-max-pixels", type=int, default=None,
+                    help="tiling budget for --detector vlm, in pixels. This "
+                         "is the variable under test: it decides how many "
+                         "pixels a small distant object survives the vision "
+                         "encoder with. Default: the model's own")
+    ap.add_argument("--no-vlm-boxes", action="store_true",
+                    help="skip the VLM's grounding pass. Halves the cost and "
+                         "loses the bearing; the score is unaffected, because "
+                         "it comes from the yes/no logits rather than the box")
     ap.add_argument("--detector", default=DEFAULT_DETECTOR,
                     help=f"detector: a YOLO weights file (default "
                          f"{DEFAULT_DETECTOR}), `none` for proposer-only, or "
-                         f"an open-vocabulary model -- gdino, owlv2, yoloworld "
-                         f"(4.11). See brain/perceive_lab.py")
+                         f"an open-vocabulary model -- gdino, owlv2, "
+                         f"yoloworld, or vlm:<model id> (4.11). See "
+                         f"brain/perceive_lab.py")
     ap.add_argument("--clip", default=DEFAULT_CLIP,
                     help=f"CLIP encoder (default {DEFAULT_CLIP})")
     ap.add_argument("--proposer", default="none",
@@ -517,6 +552,8 @@ def _build_pipeline(args, target: str):
         crop_path=args.crop_path,
         max_crops=args.max_crops,
         imgsz=args.imgsz,
+        vlm_max_pixels=args.vlm_max_pixels,
+        vlm_ground=not args.no_vlm_boxes,
     )
 
 
@@ -529,6 +566,8 @@ def _config_of(args) -> dict:
         "metric": args.metric,
         "max_crops": args.max_crops,
         "imgsz": args.imgsz,
+        "vlm_max_pixels": args.vlm_max_pixels,
+        "vlm_ground": not args.no_vlm_boxes,
     }
 
 
@@ -655,7 +694,7 @@ __all__ = [
     "save_records", "load_records",
     "format_gate_table", "format_per_walk", "format_comparison",
     "DEFAULT_GATES", "METRICS", "METRIC_PROBABILITY", "METRIC_MARGIN",
-    "METRIC_CONFIDENCE",
+    "METRIC_CONFIDENCE", "MIN_USABLE_MARGIN",
 ]
 
 

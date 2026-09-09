@@ -1,0 +1,1954 @@
+{
+ "woven-laundry-basket-20260908-215140": {
+  "frame-0000.jpg": {
+   "p": 0.1646,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0001.jpg": {
+   "p": 0.1788,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0002.jpg": {
+   "p": 0.1955,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0003.jpg": {
+   "p": 0.1022,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0004.jpg": {
+   "p": 0.1113,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0005.jpg": {
+   "p": 0.1289,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0006.jpg": {
+   "p": 0.141,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0007.jpg": {
+   "p": 0.3413,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0008.jpg": {
+   "p": 0.1245,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0009.jpg": {
+   "p": 0.0798,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0010.jpg": {
+   "p": 0.1054,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0011.jpg": {
+   "p": 0.1204,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": "no_claim",
+    "reasoning": "[cloud: cold_search] target not visible -- This appears to be a home gym which has already been searched, but I can see a doorway ahead leading to ano"
+   }
+  },
+  "frame-0012.jpg": {
+   "p": 0.3544,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0013.jpg": {
+   "p": 0.0674,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0014.jpg": {
+   "p": 0.0997,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0015.jpg": {
+   "p": 0.0549,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0016.jpg": {
+   "p": 0.0921,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0017.jpg": {
+   "p": 0.0281,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0018.jpg": {
+   "p": 0.1103,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0019.jpg": {
+   "p": 0.0421,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0020.jpg": {
+   "p": 0.0282,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0021.jpg": {
+   "p": 0.0591,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0022.jpg": {
+   "p": 0.0302,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0023.jpg": {
+   "p": 0.0041,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0024.jpg": {
+   "p": 0.0166,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0025.jpg": {
+   "p": 0.0,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": "no_claim",
+    "reasoning": "[cloud: cold_search] target not visible -- The robot is facing a blank wall with no visible laundry basket, so it should turn right to explore and fin"
+   }
+  },
+  "frame-0026.jpg": {
+   "p": 0.0001,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0027.jpg": {
+   "p": 0.0,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0028.jpg": {
+   "p": 0.0241,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0029.jpg": {
+   "p": 0.0002,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0030.jpg": {
+   "p": 0.0395,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0031.jpg": {
+   "p": 0.1164,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0032.jpg": {
+   "p": 0.1295,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0033.jpg": {
+   "p": 0.0973,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0034.jpg": {
+   "p": 0.0923,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0035.jpg": {
+   "p": 0.1123,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0036.jpg": {
+   "p": 0.1292,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0037.jpg": {
+   "p": 0.0479,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0038.jpg": {
+   "p": 0.0363,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0039.jpg": {
+   "p": 0.0673,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0040.jpg": {
+   "p": 0.2152,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0041.jpg": {
+   "p": 0.488,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0042.jpg": {
+   "p": 0.8906,
+   "detected": true,
+   "label": "chair",
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target right -- [reactive tier, no cloud call] no trigger (detected)"
+   }
+  },
+  "frame-0043.jpg": {
+   "p": 0.4523,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0044.jpg": {
+   "p": 0.6984,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": "no_claim",
+    "reasoning": "[cloud: cold_search] target not visible -- No woven laundry basket is visible in this sparsely furnished basement/family room area; turning right to e"
+   }
+  },
+  "frame-0045.jpg": {
+   "p": 0.7202,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0046.jpg": {
+   "p": 0.3644,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0047.jpg": {
+   "p": 0.5256,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0048.jpg": {
+   "p": 0.6831,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0049.jpg": {
+   "p": 0.4721,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0050.jpg": {
+   "p": 0.7062,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0051.jpg": {
+   "p": 0.1215,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0052.jpg": {
+   "p": 0.1528,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0053.jpg": {
+   "p": 0.0445,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0054.jpg": {
+   "p": 0.0878,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0055.jpg": {
+   "p": 0.0545,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0056.jpg": {
+   "p": 0.1005,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0057.jpg": {
+   "p": 0.4047,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0058.jpg": {
+   "p": 0.1473,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0059.jpg": {
+   "p": 0.2368,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0060.jpg": {
+   "p": 0.2594,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0061.jpg": {
+   "p": 0.1358,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0062.jpg": {
+   "p": 0.0,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": "no_claim",
+    "reasoning": "[cloud: cold_search] target not visible -- No woven laundry basket is visible in this view showing a carpeted room with beige walls; moving forward to"
+   }
+  },
+  "frame-0063.jpg": {
+   "p": 0.0,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0064.jpg": {
+   "p": 0.0045,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0065.jpg": {
+   "p": 0.0762,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0066.jpg": {
+   "p": 0.0413,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0067.jpg": {
+   "p": 0.1965,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0068.jpg": {
+   "p": 0.1309,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0069.jpg": {
+   "p": 0.1402,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0070.jpg": {
+   "p": 0.1298,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0071.jpg": {
+   "p": 0.074,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0072.jpg": {
+   "p": 0.1411,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0073.jpg": {
+   "p": 0.1002,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0074.jpg": {
+   "p": 0.3193,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0075.jpg": {
+   "p": 0.0957,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0076.jpg": {
+   "p": 0.2606,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0077.jpg": {
+   "p": 0.4651,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0078.jpg": {
+   "p": 0.4498,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0079.jpg": {
+   "p": 0.1307,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0080.jpg": {
+   "p": 0.0712,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": "no_claim",
+    "reasoning": "[cloud: cold_search] target not visible -- This appears to be a home gym which has already been searched, so I should turn right to explore toward the"
+   }
+  },
+  "frame-0081.jpg": {
+   "p": 0.1208,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0082.jpg": {
+   "p": 0.0442,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0083.jpg": {
+   "p": 0.133,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0084.jpg": {
+   "p": 0.1194,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0085.jpg": {
+   "p": 0.0204,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0086.jpg": {
+   "p": 0.1672,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0087.jpg": {
+   "p": 0.109,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0088.jpg": {
+   "p": 0.1239,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0089.jpg": {
+   "p": 0.1888,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0090.jpg": {
+   "p": 0.1195,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0091.jpg": {
+   "p": 0.6973,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0092.jpg": {
+   "p": 0.1452,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0093.jpg": {
+   "p": 0.0734,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0094.jpg": {
+   "p": 0.0348,
+   "detected": false,
+   "label": null,
+   "decision": null
+  }
+ },
+ "woven-laundry-basket-20260908-215252": {
+  "frame-0000.jpg": {
+   "p": 0.0306,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0001.jpg": {
+   "p": 0.0473,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0002.jpg": {
+   "p": 0.0402,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0003.jpg": {
+   "p": 0.0598,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0004.jpg": {
+   "p": 0.2477,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0005.jpg": {
+   "p": 0.1854,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0006.jpg": {
+   "p": 0.2376,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0007.jpg": {
+   "p": 0.13,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0008.jpg": {
+   "p": 0.2398,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0009.jpg": {
+   "p": 0.7629,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0010.jpg": {
+   "p": 0.4519,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0011.jpg": {
+   "p": 0.1371,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0012.jpg": {
+   "p": 0.1,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": true,
+    "verdict": "unclear",
+    "reasoning": "[cloud: cold_search] target center -- A woven laundry basket is visible in the center of the image next to the gray chair, but it's still across the r"
+   }
+  },
+  "frame-0013.jpg": {
+   "p": 0.1463,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0014.jpg": {
+   "p": 0.0847,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0015.jpg": {
+   "p": 0.1058,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0016.jpg": {
+   "p": 0.8958,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": null
+  },
+  "frame-0017.jpg": {
+   "p": 0.3916,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0018.jpg": {
+   "p": 0.1402,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0019.jpg": {
+   "p": 0.1952,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0020.jpg": {
+   "p": 0.3596,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0021.jpg": {
+   "p": 0.0381,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0022.jpg": {
+   "p": 0.0424,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0023.jpg": {
+   "p": 0.099,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0024.jpg": {
+   "p": 0.1443,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0025.jpg": {
+   "p": 0.0682,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0026.jpg": {
+   "p": 0.0969,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0027.jpg": {
+   "p": 0.1583,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0028.jpg": {
+   "p": 0.0278,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0029.jpg": {
+   "p": 0.0085,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0030.jpg": {
+   "p": 0.0219,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0031.jpg": {
+   "p": 0.1707,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0032.jpg": {
+   "p": 0.0178,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": "no_claim",
+    "reasoning": "[cloud: cold_search] target not visible -- There is a dark wooden stool or table directly ahead blocking the path, and no woven laundry basket is visi"
+   }
+  },
+  "frame-0033.jpg": {
+   "p": 0.2561,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0034.jpg": {
+   "p": 0.0745,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0035.jpg": {
+   "p": 0.0723,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0036.jpg": {
+   "p": 0.0373,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0037.jpg": {
+   "p": 0.0163,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0038.jpg": {
+   "p": 0.0245,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0039.jpg": {
+   "p": 0.0467,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0040.jpg": {
+   "p": 0.1959,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0041.jpg": {
+   "p": 0.1422,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0042.jpg": {
+   "p": 0.0763,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0043.jpg": {
+   "p": 0.2549,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0044.jpg": {
+   "p": 0.2035,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0045.jpg": {
+   "p": 0.2857,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0046.jpg": {
+   "p": 0.2839,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0047.jpg": {
+   "p": 0.1079,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0048.jpg": {
+   "p": 0.1454,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0049.jpg": {
+   "p": 0.1496,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0050.jpg": {
+   "p": 0.0973,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0051.jpg": {
+   "p": 0.0131,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": "no_claim",
+    "reasoning": "[cloud: cold_search] target not visible -- No woven laundry basket is visible in this carpeted room that appears to be a bedroom (already searched), s"
+   }
+  },
+  "frame-0052.jpg": {
+   "p": 0.0133,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0053.jpg": {
+   "p": 0.0604,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0054.jpg": {
+   "p": 0.1006,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0055.jpg": {
+   "p": 0.1547,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0056.jpg": {
+   "p": 0.1208,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0057.jpg": {
+   "p": 0.096,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0058.jpg": {
+   "p": 0.1412,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0059.jpg": {
+   "p": 0.0292,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0060.jpg": {
+   "p": 0.1705,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0061.jpg": {
+   "p": 0.1485,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0062.jpg": {
+   "p": 0.0412,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0063.jpg": {
+   "p": 0.0249,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0064.jpg": {
+   "p": 0.0288,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0065.jpg": {
+   "p": 0.0639,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0066.jpg": {
+   "p": 0.0498,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0067.jpg": {
+   "p": 0.0527,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0068.jpg": {
+   "p": 0.285,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0069.jpg": {
+   "p": 0.0836,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": "no_claim",
+    "reasoning": "[cloud: cold_search] target not visible -- No woven laundry basket is visible, there's exercise equipment blocking the path ahead, and this appears to"
+   }
+  },
+  "frame-0070.jpg": {
+   "p": 0.0826,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0071.jpg": {
+   "p": 0.077,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0072.jpg": {
+   "p": 0.0521,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0073.jpg": {
+   "p": 0.0762,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0074.jpg": {
+   "p": 0.1096,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0075.jpg": {
+   "p": 0.1401,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0076.jpg": {
+   "p": 0.0864,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0077.jpg": {
+   "p": 0.1108,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0078.jpg": {
+   "p": 0.0484,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0079.jpg": {
+   "p": 0.1213,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0080.jpg": {
+   "p": 0.1082,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0081.jpg": {
+   "p": 0.2564,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0082.jpg": {
+   "p": 0.1835,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0083.jpg": {
+   "p": 0.4464,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0084.jpg": {
+   "p": 0.0556,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0085.jpg": {
+   "p": 0.116,
+   "detected": false,
+   "label": null,
+   "decision": null
+  }
+ },
+ "woven-laundry-basket-20260908-215351": {
+  "frame-0000.jpg": {
+   "p": 0.8149,
+   "detected": true,
+   "label": "airplane",
+   "decision": null
+  },
+  "frame-0001.jpg": {
+   "p": 0.8753,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": null
+  },
+  "frame-0002.jpg": {
+   "p": 0.8732,
+   "detected": true,
+   "label": "airplane",
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target left -- [reactive tier, no cloud call] no trigger (detected)"
+   }
+  },
+  "frame-0003.jpg": {
+   "p": 0.9198,
+   "detected": true,
+   "label": "handbag",
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target right -- [reactive tier, no cloud call] no trigger (detected)"
+   }
+  },
+  "frame-0004.jpg": {
+   "p": 0.9309,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  },
+  "frame-0005.jpg": {
+   "p": 0.2456,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0006.jpg": {
+   "p": 0.2538,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0007.jpg": {
+   "p": 0.2354,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0008.jpg": {
+   "p": 0.9949,
+   "detected": true,
+   "label": "handbag",
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target right -- [reactive tier, no cloud call] no trigger (detected)"
+   }
+  },
+  "frame-0009.jpg": {
+   "p": 0.9991,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  },
+  "frame-0010.jpg": {
+   "p": 0.9987,
+   "detected": true,
+   "label": "handbag",
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target right -- [reactive tier, no cloud call] no trigger (detected)"
+   }
+  },
+  "frame-0011.jpg": {
+   "p": 0.9983,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  },
+  "frame-0012.jpg": {
+   "p": 0.9977,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target right -- [reactive tier, no cloud call] no trigger (detected)"
+   }
+  },
+  "frame-0013.jpg": {
+   "p": 0.9906,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": null
+  },
+  "frame-0014.jpg": {
+   "p": 0.9998,
+   "detected": true,
+   "label": "handbag",
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target center -- [reactive tier, no cloud call] no trigger (detected)"
+   }
+  },
+  "frame-0015.jpg": {
+   "p": 0.9826,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": null
+  },
+  "frame-0016.jpg": {
+   "p": 0.9908,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  },
+  "frame-0017.jpg": {
+   "p": 0.992,
+   "detected": true,
+   "label": "handbag",
+   "decision": {
+    "claimed": true,
+    "verdict": "corroborated",
+    "reasoning": "[cloud: staleness] target center -- The woven laundry basket is visible in the center of the image near the gray armchair, but it's still across the r"
+   }
+  },
+  "frame-0018.jpg": {
+   "p": 0.9965,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  },
+  "frame-0019.jpg": {
+   "p": 0.9971,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  },
+  "frame-0020.jpg": {
+   "p": 0.9979,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  },
+  "frame-0021.jpg": {
+   "p": 0.9974,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  },
+  "frame-0022.jpg": {
+   "p": 0.6245,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0023.jpg": {
+   "p": 0.1287,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0024.jpg": {
+   "p": 0.0446,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0025.jpg": {
+   "p": 0.0561,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0026.jpg": {
+   "p": 0.1811,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0027.jpg": {
+   "p": 0.0385,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0028.jpg": {
+   "p": 0.0204,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0029.jpg": {
+   "p": 0.0232,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0030.jpg": {
+   "p": 0.0574,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0031.jpg": {
+   "p": 0.0063,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0032.jpg": {
+   "p": 0.0281,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0033.jpg": {
+   "p": 0.0,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0034.jpg": {
+   "p": 0.0349,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": "no_claim",
+    "reasoning": "[cloud: cold_search] target not visible -- No woven laundry basket is visible in this image showing only a bare wall with an electrical outlet; turnin"
+   }
+  },
+  "frame-0035.jpg": {
+   "p": 0.0196,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0036.jpg": {
+   "p": 0.0125,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0037.jpg": {
+   "p": 0.0,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0038.jpg": {
+   "p": 0.033,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0039.jpg": {
+   "p": 0.0676,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0040.jpg": {
+   "p": 0.04,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0041.jpg": {
+   "p": 0.0137,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0042.jpg": {
+   "p": 0.0,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0043.jpg": {
+   "p": 0.0138,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0044.jpg": {
+   "p": 0.0639,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0045.jpg": {
+   "p": 0.0229,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0046.jpg": {
+   "p": 0.0314,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0047.jpg": {
+   "p": 0.0239,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0048.jpg": {
+   "p": 0.0147,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0049.jpg": {
+   "p": 0.0557,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0050.jpg": {
+   "p": 0.0588,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0051.jpg": {
+   "p": 0.0287,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0052.jpg": {
+   "p": 0.1408,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0053.jpg": {
+   "p": 0.0346,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": "no_claim",
+    "reasoning": "[cloud: cold_search] target not visible -- This appears to be a home gym which has already been searched, and no woven laundry basket is visible, so I"
+   }
+  },
+  "frame-0054.jpg": {
+   "p": 0.0127,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0055.jpg": {
+   "p": 0.1576,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0056.jpg": {
+   "p": 0.0553,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0057.jpg": {
+   "p": 0.0566,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0058.jpg": {
+   "p": 0.1084,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0059.jpg": {
+   "p": 0.1208,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0060.jpg": {
+   "p": 0.1054,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0061.jpg": {
+   "p": 0.2674,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0062.jpg": {
+   "p": 0.8827,
+   "detected": true,
+   "label": "chair",
+   "decision": null
+  },
+  "frame-0063.jpg": {
+   "p": 0.6601,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0064.jpg": {
+   "p": 0.8102,
+   "detected": true,
+   "label": "person",
+   "decision": null
+  },
+  "frame-0065.jpg": {
+   "p": 0.2178,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0066.jpg": {
+   "p": 0.462,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0067.jpg": {
+   "p": 0.5389,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0068.jpg": {
+   "p": 0.6614,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0069.jpg": {
+   "p": 0.7601,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0070.jpg": {
+   "p": 0.1677,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0071.jpg": {
+   "p": 0.4196,
+   "detected": false,
+   "label": null,
+   "decision": null
+  },
+  "frame-0072.jpg": {
+   "p": 0.1572,
+   "detected": false,
+   "label": null,
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target not visible -- [reactive tier, no cloud call] no trigger (absent)"
+   }
+  },
+  "frame-0073.jpg": {
+   "p": 0.9285,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": null
+  },
+  "frame-0074.jpg": {
+   "p": 0.9914,
+   "detected": true,
+   "label": "handbag",
+   "decision": {
+    "claimed": false,
+    "verdict": null,
+    "reasoning": "target right -- [reactive tier, no cloud call] no trigger (detected)"
+   }
+  },
+  "frame-0075.jpg": {
+   "p": 0.8108,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": null
+  },
+  "frame-0076.jpg": {
+   "p": 0.856,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": {
+    "claimed": true,
+    "verdict": "corroborated",
+    "reasoning": "[cloud: candidate_sighting] target center -- A woven basket is visible in the center of the image near the gray armchair, but it's still across the ro"
+   }
+  },
+  "frame-0077.jpg": {
+   "p": 0.8763,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": null
+  },
+  "frame-0078.jpg": {
+   "p": 0.9983,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": null
+  },
+  "frame-0079.jpg": {
+   "p": 0.9974,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": null
+  },
+  "frame-0080.jpg": {
+   "p": 0.8701,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": null
+  },
+  "frame-0081.jpg": {
+   "p": 0.9989,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  },
+  "frame-0082.jpg": {
+   "p": 0.9989,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  },
+  "frame-0083.jpg": {
+   "p": 0.9635,
+   "detected": true,
+   "label": "floor_mask",
+   "decision": null
+  },
+  "frame-0084.jpg": {
+   "p": 0.9996,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  },
+  "frame-0085.jpg": {
+   "p": 0.9996,
+   "detected": true,
+   "label": "handbag",
+   "decision": null
+  }
+ }
+}

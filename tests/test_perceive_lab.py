@@ -200,13 +200,13 @@ def test_an_unknown_proposer_is_named():
         pipeline_for_spec("blue bottle", proposer="lidar")
 
 
-def test_the_open_vocabulary_names_are_the_ones_4_11_left_untried():
-    """Grounding DINO, OWLv2 and SAM are named in 4.11 as the models that
-    were NOT tried and that a Jetson would be bought for. If a name here
+def test_the_open_vocabulary_names_are_the_ones_the_plan_argues_about():
+    """Grounding DINO, OWLv2 and SAM are 4.11's untried three; `vlm` was
+    added 2026-09-09 for the distilled-open-weights question. If a name here
     drifts, the evidence stops matching the argument it was gathered for."""
     from brain.perceive_lab import OPEN_VOCAB, OPEN_VOCAB_BACKENDS
 
-    assert set(OPEN_VOCAB) == {"gdino", "owlv2", "yoloworld"}
+    assert set(OPEN_VOCAB) == {"gdino", "owlv2", "yoloworld", "vlm"}
     assert set(OPEN_VOCAB_BACKENDS) == set(OPEN_VOCAB)
 
 
@@ -245,3 +245,66 @@ def test_a_backend_that_fails_on_every_frame_reports_unavailable_not_absent():
     results = [pipeline.perceive(frame()) for _ in range(3)]
     assert all(r.status == UNAVAILABLE for r in results)
     assert not any(r.status == ABSENT for r in results)
+
+
+# ---------- the VLM backend (2026-09-09) ----------
+#
+# Aimed at one measured failure: 86% recall on a close target against 6% on a
+# distant one, where the cause is the crop source rather than the classifier.
+# A tiling vision encoder attacks exactly that, which is why this is worth
+# measuring where Grounding DINO -- more capacity on the axis that already
+# worked -- was not.
+
+
+class FakeVlm:
+    """Answers a yes/no probability and optionally a box, which is the whole
+    contract `VlmDetector` presents to the pipeline."""
+
+    weights = "fake-vlm"
+    model_name = "fake-vlm"
+
+    def __init__(self, p_yes, box=None):
+        self.p_yes, self.box = p_yes, box
+
+    def detect_text(self, image, text):
+        from brain.perceive import Box as B
+        box = self.box or B(0.0, 0.0, 640.0, 480.0)
+        label = "vlm:grounded" if self.box else "vlm:ungrounded"
+        return [Detection(box=box, label=label, confidence=self.p_yes)]
+
+
+def test_the_vlm_score_is_sweepable_like_every_other_backend():
+    """The reason the score is P(yes) from the logits and not the presence of
+    a box: a box is one operating point and no curve, and a single point is
+    how a model gets compared at whatever threshold flatters it. Every
+    matched-precision table in 4.11 needs a continuous score."""
+    from control.perception_eval import METRIC_CONFIDENCE, best_score
+
+    for p in (0.05, 0.5, 0.97):
+        perc = OpenVocabPipeline(FakeVlm(p), "woven laundry basket").perceive(frame())
+        assert best_score(perc, METRIC_CONFIDENCE) == pytest.approx(p)
+
+
+def test_an_ungrounded_answer_is_labelled_so_the_bearing_is_not_trusted():
+    """A full-frame box puts the bearing dead ahead, which is a claim rather
+    than a measurement. The label carries the distinction so a walk cannot
+    quietly report 0 degrees for 'somewhere in this picture' -- 1.16 #4's
+    lesson, which cost this project a field that was never once a number."""
+    perc = OpenVocabPipeline(FakeVlm(0.9), "x").perceive(frame())
+    assert perc.best.detection.label == "vlm:ungrounded"
+
+
+def test_a_grounded_answer_gives_a_real_bearing():
+    from brain.perceive import Box as B
+
+    left = OpenVocabPipeline(FakeVlm(0.9, B(0, 0, 40, 40)), "x").perceive(frame(width=640))
+    assert left.best.detection.label == "vlm:grounded"
+    assert left.bearing_deg < -20
+
+
+def test_the_vlm_is_reachable_by_spec_and_refuses_a_proposer():
+    """`vlm:<model id>` picks a model; a proposer makes no sense against a
+    backend that has no crop stage at all."""
+    with pytest.raises(ValueError, match="no crop stage"):
+        pipeline_for_spec("x", detector="vlm:Qwen/Qwen2.5-VL-3B-Instruct",
+                          proposer="floor")

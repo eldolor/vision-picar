@@ -74,11 +74,20 @@ logger = logging.getLogger("perceive_lab")
 GDINO = "gdino"
 OWLV2 = "owlv2"
 YOLOWORLD = "yoloworld"
-OPEN_VOCAB = (GDINO, OWLV2, YOLOWORLD)
+VLM = "vlm"
+OPEN_VOCAB = (GDINO, OWLV2, YOLOWORLD, VLM)
 
 DEFAULT_GDINO = "IDEA-Research/grounding-dino-tiny"
 DEFAULT_OWLV2 = "google/owlv2-base-patch16-ensemble"
 DEFAULT_YOLOWORLD = "yolov8s-worldv2.pt"
+
+# The VLM default. Qwen2.5-VL-3B for three reasons that are not "it scores
+# well": its grounding is trained rather than emergent, its vision encoder
+# tiles at native resolution (the mechanism actually under test), and it is
+# Apache-2.0. InternVL3-2B and MiniCPM-V are the other two worth trying --
+# pass them as `vlm:<model id>`. Check the licence before any commercial use;
+# they differ across this family.
+DEFAULT_VLM = "Qwen/Qwen2.5-VL-3B-Instruct"
 
 # SlimSAM-77, ~40MB, rather than SAM ViT-H at 2.4GB. The small one is the
 # honest choice for a first pass: if class-agnostic proposals are the
@@ -425,17 +434,221 @@ class YoloWorld:
         return out
 
 
+class VlmDetector:
+    """An open-weight VLM asked whether the target is in the frame.
+
+    Added 2026-09-09, and it is aimed at ONE measured failure rather than at
+    "a better model". The three basket walks isolated the local tier's limit:
+    **86% recall on a close target against 6% on a distant one**, and the
+    cause is the crop source, not the classifier -- CLIP scores the close
+    basket 0.99 and the distant one 0.10 because the detector proposes no
+    crop containing it at that range.
+
+    A VLM of this family does not letterbox to a fixed 640. Qwen2.5-VL and
+    InternVL tile at native resolution and can emit boxes directly, which is
+    a different mechanism aimed exactly at the frames that fail. That makes
+    this worth measuring where Grounding DINO was not: DINO added capacity on
+    the axis that was already working (4.11 -- it loses at every matched
+    operating point), and this one addresses the axis that is not.
+
+    ## What it thresholds on, and why it is not the box
+
+    Every other backend here produces a sweepable score, and the whole
+    harness -- `recall_at_fp_budget`, the matched-precision tables -- depends
+    on that. A grounding output has no such number: a box is present or it is
+    not, which gives one operating point and no curve, and a single point is
+    how a model gets compared at whatever threshold happens to flatter it.
+
+    So the score is **P(yes)** for a yes/no question, read out of the logits
+    of the first generated token rather than from the generated text. That is
+    continuous, comparable across models, and sweepable like everything else.
+    The grounding pass runs only to place a box (and therefore a bearing),
+    and only when the answer was yes.
+
+    ## Read the cautions before trusting a number from this
+
+    **Benchmark scores do not transfer here.** A camera at 10-13cm in one
+    basement is out of distribution for every model in this family, and their
+    published MMBench-style figures say nothing about it. This corpus is the
+    only eval that means anything, which is the entire reason it exists.
+
+    **And it has to beat the cheap fix, not the current state.** If a tiling
+    VLM recovers the distant basket, that is evidence the floor mask and
+    lidar clusters would too -- on a $70 part rather than a $400 one. The
+    comparison that matters is against those, not against today's 6%.
+    """
+
+    def __init__(self, model: str = DEFAULT_VLM,
+                 ground: bool = True,
+                 max_pixels: Optional[int] = None,
+                 device: Optional[str] = None):
+        try:
+            import torch
+            from transformers import AutoModelForImageTextToText, AutoProcessor
+        except ImportError as exc:  # pragma: no cover
+            raise PerceptionUnavailable(
+                "the VLM backend needs transformers + torch. `pip install -r "
+                "requirements-perception.txt`.") from exc
+        self._torch = torch
+        # cuda -> mps -> cpu, matching ClipScorer. Omitting mps here cost a
+        # smoke test 4-16 MINUTES a frame on an Apple laptop against a couple
+        # of minutes, and the number would have read as "a VLM is hopeless at
+        # the edge" when it was really "this backend picked the wrong device".
+        self.device = device or ("cuda" if torch.cuda.is_available()
+                                 else "mps" if torch.backends.mps.is_available()
+                                 else "cpu")
+        kwargs = {}
+        if max_pixels:
+            # The tiling budget IS the variable under test -- it is what gives
+            # a small distant object enough pixels to survive the encoder.
+            # Left at the model's default unless asked, so a run says which.
+            kwargs["max_pixels"] = max_pixels
+        self.processor = AutoProcessor.from_pretrained(model, **kwargs)
+        self.model = AutoModelForImageTextToText.from_pretrained(
+            model, dtype="auto").to(self.device).eval()
+        self.ground = ground
+        self.weights = model
+        self.model_name = model
+        self._yes, self._no = self._answer_tokens()
+
+    def _answer_tokens(self):
+        """Token ids that count as yes and as no.
+
+        Several spellings each, because tokenizers differ on leading spaces
+        and case, and a missing variant silently costs probability mass to
+        the wrong side -- which would look like a badly calibrated model
+        rather than a harness bug.
+        """
+        tok = self.processor.tokenizer
+        def ids(words):
+            out = set()
+            for w in words:
+                for form in (w, " " + w, w.capitalize(), " " + w.capitalize()):
+                    enc = tok.encode(form, add_special_tokens=False)
+                    if len(enc) == 1:
+                        out.add(enc[0])
+            return sorted(out)
+        return ids(["yes"]), ids(["no"])
+
+    def _ask(self, img, prompt: str, max_new_tokens: int = 1):  # pragma: no cover
+        messages = [{"role": "user", "content": [
+            {"type": "image", "image": img}, {"type": "text", "text": prompt}]}]
+        inputs = self.processor.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=True,
+            return_dict=True, return_tensors="pt").to(self.device)
+        with self._torch.no_grad():
+            out = self.model.generate(**inputs, max_new_tokens=max_new_tokens,
+                                      do_sample=False, output_scores=True,
+                                      return_dict_in_generate=True)
+        return inputs, out
+
+    def detect_text(self, image: bytes, text: str) -> Sequence[Detection]:  # pragma: no cover
+        """One grounding pass. The score is **P(it localises)**, not P(yes).
+
+        Measured 2026-09-09 on three frames, and it changed this backend's
+        design within an hour of writing it:
+
+        | frame | P(yes) | grounding |
+        |---|---|---|
+        | basket close | 0.925 | `[918, 287, 1073, 442]` |
+        | **basket distant** | **0.884** | **`[]`** |
+        | no basket in the room | 0.097 | `[]` |
+
+        **The model answers "yes, visible" at 0.88 on a frame it then refuses
+        to point at.** A yes/no question can be answered from prior -- a home
+        gym plausibly contains a laundry basket -- without anything having
+        been found, and that is exactly the confabulation this project already
+        measured in the cloud tier at 23% precision. Grounding cannot be
+        answered that way: a box is a claim about a location.
+
+        So the score comes from the localisation, and it is still continuous
+        and sweepable: after the opening `[` the model emits either `{` (a box
+        follows) or `]` (empty), and the softmax over those two IS the
+        probability that it found something. Same shape as the yes/no readout,
+        asked about the question that cannot be bluffed.
+        """
+        img = _pil(image)
+        p_found, box = self._locate(img, text)
+        if box is not None:
+            return [Detection(box=box, label="vlm:grounded", confidence=p_found)]
+        # No box, but the probability it *nearly* emitted one is the score --
+        # dropping to 0.0 here would collapse the curve to two points and make
+        # every matched-precision comparison meaningless.
+        return [Detection(box=Box(0.0, 0.0, float(img.width), float(img.height)),
+                          label="vlm:ungrounded", confidence=p_found)]
+
+    def _locate(self, img, text: str):  # pragma: no cover
+        """-> (probability it localised, Box or None).
+
+        An unparseable or empty answer keeps its probability and returns no
+        box: a full-frame box would put the bearing dead ahead, and a wrong
+        bearing is worse than an absent one (1.16 #4, which cost this project
+        a field that was never once a number).
+        """
+        import json as _json
+        import re
+        _, out = self._ask(
+            img, f"Output the bounding box of the {text} as JSON: "
+                 '[{"bbox_2d": [x1, y1, x2, y2]}]. If it is not visible, '
+                 "output []. Output JSON only.", max_new_tokens=96)
+        ids = out.sequences[0][-len(out.scores):].tolist()
+        p_found = self._p_localised(ids, out.scores)
+        # ONLY the generated tokens. Decoding the whole sequence includes the
+        # prompt, and the prompt contains the literal example
+        # `[{"bbox_2d": [x1, y1, x2, y2]}]` -- which the regex below matches
+        # first, json.loads then chokes on "x1", and a perfectly good
+        # grounding is reported as `vlm:ungrounded`. It read as the model
+        # refusing to localise a basket it had in fact boxed correctly.
+        text_out = self.processor.batch_decode(
+            [ids], skip_special_tokens=True)[0]
+        m = re.search(r"\[\s*\{.*?\}\s*\]", text_out, re.S)
+        if not m:
+            return p_found, None
+        try:
+            items = _json.loads(m.group(0))
+            x1, y1, x2, y2 = (float(v) for v in items[0]["bbox_2d"])
+        except Exception:
+            return p_found, None
+        if x2 <= x1 or y2 <= y1:
+            return p_found, None
+        return p_found, Box(x1, y1, x2, y2)
+
+    def _p_localised(self, ids, scores) -> float:  # pragma: no cover
+        """Softmax over `{` against `]` at the step right after the opening
+        `[` -- the exact token where the model commits to having found
+        something or not."""
+        tok = self.processor.tokenizer
+        opens = {i for w in ("[", " [") for i in tok.encode(w, add_special_tokens=False)[:1]}
+        brace = [i for w in ('{', ' {', '{"') for i in tok.encode(w, add_special_tokens=False)[:1]]
+        close = [i for w in ("]", " ]") for i in tok.encode(w, add_special_tokens=False)[:1]]
+        for pos, tid in enumerate(ids):
+            if tid in opens and pos + 1 < len(scores):
+                probs = self._torch.nn.functional.softmax(
+                    scores[pos + 1][0].float(), dim=-1)
+                b = float(probs[brace].sum()); c = float(probs[close].sum())
+                return b / (b + c) if (b + c) > 0 else 0.0
+        return 0.0
+
+
 OPEN_VOCAB_BACKENDS = {
     GDINO: (GroundingDino, DEFAULT_GDINO),
     OWLV2: (Owlv2, DEFAULT_OWLV2),
     YOLOWORLD: (YoloWorld, DEFAULT_YOLOWORLD),
+    VLM: (VlmDetector, DEFAULT_VLM),
 }
 
 
-def _open_vocab(spec: str, device=None):
+def _open_vocab(spec: str, device=None, **extra):
     name, _, override = spec.partition(":")
     cls, default = OPEN_VOCAB_BACKENDS[name]
-    return cls(override or default, device=device)
+    kwargs = {}
+    if name == VLM:
+        # Only the VLM takes these, and passing them to a detector that does
+        # not would be a TypeError three minutes into a corpus run.
+        if extra.get("vlm_max_pixels"):
+            kwargs["max_pixels"] = extra["vlm_max_pixels"]
+        kwargs["ground"] = extra.get("vlm_ground", True)
+    return cls(override or default, device=device, **kwargs)
 
 
 def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
@@ -447,6 +660,8 @@ def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
                       max_crops: Optional[int] = None,
                       device: Optional[str] = None,
                       imgsz: Optional[int] = None,
+                      vlm_max_pixels: Optional[int] = None,
+                      vlm_ground: bool = True,
                       **kwargs):
     """One string per stage -> something with `perceive(frame)`.
 
@@ -463,8 +678,10 @@ def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
                 "there is no crop stage for a proposer to feed. Compare it as "
                 "a replacement for the pipeline (4.11), or use a YOLO "
                 "detector with --proposer.")
-        return OpenVocabPipeline(_open_vocab(detector, device=device),
-                                 target, **kwargs)
+        return OpenVocabPipeline(
+            _open_vocab(detector, device=device,
+                        vlm_max_pixels=vlm_max_pixels, vlm_ground=vlm_ground),
+            target, **kwargs)
 
     if proposer == "floor":
         region = SegformerFloorProposer(segmenter, device=device)
@@ -492,6 +709,7 @@ __all__ = [
     "GDINO", "OWLV2", "YOLOWORLD", "OPEN_VOCAB", "OPEN_VOCAB_BACKENDS",
     "DEFAULT_GDINO", "DEFAULT_OWLV2", "DEFAULT_YOLOWORLD", "DEFAULT_SAM",
     "DEFAULT_OPEN_VOCAB_CONFIDENCE",
-    "GroundingDino", "Owlv2", "YoloWorld", "SamProposer", "NullDetector",
+    "GroundingDino", "Owlv2", "YoloWorld", "VlmDetector", "DEFAULT_VLM",
+    "VLM", "SamProposer", "NullDetector",
     "OpenVocabPipeline", "pipeline_for_spec",
 ]

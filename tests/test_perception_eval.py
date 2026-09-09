@@ -574,3 +574,28 @@ def test_a_walk_with_no_jsonl_is_empty_not_an_error(tmp_path):
     d = tmp_path / "bare"
     d.mkdir()
     assert decisions_by_frame(d) == {}
+
+
+# ---------- a separation too thin to use is not a separation ----------
+
+def test_a_saturated_score_is_reported_as_unseparable():
+    """Qwen3-VL-4B, 2026-09-09: true sightings at 0.9999999999856 and
+    confabulated frames at 0.9999999999766. The arithmetic separates them and
+    reports 10/10 at zero false positives off a **9e-12** margin -- while at
+    any usable gate the same model fires on 34 of 34 invented frames. The
+    number was real and useless, and it flattered the model the hardware
+    decision was leaning toward."""
+    records = [record(visible=True, score=0.9999999999856) for _ in range(3)]
+    records += [record(visible=False, score=0.9999999999766) for _ in range(5)]
+    s = recall_at_fp_budget(records, 0)
+    assert s["tp"] == 3              # the arithmetic still finds it
+    assert s["separable"] is False   # and the caller is told not to believe it
+    assert s["margin"] < 1e-6
+
+
+def test_a_real_separation_is_reported_as_separable():
+    records = [record(visible=True, score=0.75) for _ in range(3)]
+    records += [record(visible=False, score=0.14) for _ in range(5)]
+    s = recall_at_fp_budget(records, 0)
+    assert s["tp"] == 3 and s["separable"] is True
+    assert s["margin"] > 0.5
