@@ -7,10 +7,13 @@
 #
 #   sudo bash setup_host.sh s3://bucket/hailo/dfc/hailo_dataflow_compiler-*.whl
 #
-# Ubuntu 22.04 is assumed, which is Python 3.10 -- the version the DFC
-# targets. 3.11 is installed alongside as a fallback because the wheel is
-# tagged py3-none while its dependency pins are not that liberal, and
-# finding that out on a rented box is cheaper than finding it out twice.
+# Ubuntu 22.04 and Python 3.10, and NOT as a preference: Hailo documents the
+# Dataflow Compiler as supporting Ubuntu 20.04/22.04 and Python 3.8, 3.9 or
+# 3.10 only. 3.11 and 3.12 are not on that list, which is why this does not
+# fall back to a newer interpreter and why ec2.sh launches Jammy rather than
+# Noble (24.04 ships 3.12). The wheel is tagged py3-none, so pip will install
+# it under an unsupported Python and fail later, further in, for reasons that
+# look like a model problem.
 set -euo pipefail
 
 WHEEL_URI="${1:?usage: setup_host.sh s3://.../hailo_dataflow_compiler-*.whl}"
@@ -28,14 +31,6 @@ apt-get install -y -qq \
   graphviz libgraphviz-dev pkg-config unzip curl \
   python3-pip >/dev/null
 
-if ! command -v python3.11 >/dev/null 2>&1; then
-  echo "== python3.11 (fallback interpreter)"
-  add-apt-repository -y ppa:deadsnakes/ppa >/dev/null 2>&1 || true
-  apt-get update -qq || true
-  apt-get install -y -qq python3.11 python3.11-dev python3.11-venv >/dev/null 2>&1 || \
-    echo "   (deadsnakes unavailable -- 3.10 only)"
-fi
-
 if ! command -v aws >/dev/null 2>&1; then
   echo "== awscli"
   curl -sS "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
@@ -48,26 +43,16 @@ aws s3 cp "$WHEEL_URI" $ROOT/dfc/ --only-show-errors
 WHEEL="$(ls $ROOT/dfc/*.whl | head -1)"
 echo "   $WHEEL"
 
-install_into() {
-  local py="$1" venv="$2"
-  echo "== trying $($py --version 2>&1)"
-  rm -rf "$venv"
-  $py -m venv "$venv"
-  "$venv/bin/pip" install -q --upgrade pip setuptools wheel
-  # pygraphviz is a frequent DFC dependency that needs the headers found
-  # above; install it first so a failure names itself clearly.
-  "$venv/bin/pip" install -q pygraphviz >/dev/null 2>&1 || true
-  "$venv/bin/pip" install "$WHEEL"
-}
-
-if install_into python3.10 "$VENV"; then
-  echo "== installed under python3.10"
-elif command -v python3.11 >/dev/null 2>&1 && install_into python3.11 "$VENV"; then
-  echo "== installed under python3.11"
-else
-  echo "!! the wheel would not install under 3.10 or 3.11"
-  exit 1
-fi
+PY=python3.10
+command -v $PY >/dev/null || { echo "!! $PY missing -- this host is not Ubuntu 22.04"; exit 1; }
+echo "== installing into a $PY venv ($($PY --version 2>&1))"
+rm -rf "$VENV"
+$PY -m venv "$VENV"
+"$VENV/bin/pip" install -q --upgrade pip setuptools wheel
+# pygraphviz is a frequent DFC dependency and needs the headers installed
+# above; doing it first makes a headers failure name itself.
+"$VENV/bin/pip" install -q pygraphviz >/dev/null 2>&1 || true
+"$VENV/bin/pip" install "$WHEEL"
 
 echo "== supporting packages"
 # numpy/pillow are almost certainly pulled in by the DFC already; onnx and

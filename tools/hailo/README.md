@@ -40,6 +40,13 @@ three different decisions — see "Reading the report" below.
 | `ec2.sh` | laptop | launch, drive, **tear down** the compile host |
 | `setup_host.sh` | EC2 | installs the DFC and its dependencies |
 
+The host is **Ubuntu 22.04 / Python 3.10**, and that is a hard requirement
+rather than a preference: Hailo documents the DFC as supporting Ubuntu
+20.04/22.04 and Python 3.8/3.9/3.10 only. The wheel is tagged `py3-none`, so
+pip will happily install it under 3.11 or 3.12 and fail later, further in,
+for reasons that look like a model problem. `ec2.sh` launches Jammy for this
+reason; Noble ships 3.12.
+
 `tests/test_hailo_compile_loop.py` covers the head arithmetic and the
 sweep's bookkeeping against fakes. Nothing in the test suite imports torch,
 transformers or `hailo_sdk_client` — the same rule `tests/test_perceive.py`
