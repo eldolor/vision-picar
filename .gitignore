@@ -27,3 +27,8 @@ yolo*.pt
 # model name, so none belongs in the repo.
 weights/
 *.pt
+
+# tools/hailo build products -- ~1.4GB of ONNX and ~1.8GB of calibration
+# arrays, all reproducible from the corpus by two commands. The compile
+# REPORT is the artifact worth keeping, and it goes in the plan document.
+build/

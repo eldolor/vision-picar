@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 894 passed, with a browser
+# Confirm everything still works (should show 928 passed, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -123,6 +123,7 @@ the original build plan phases, reordered simulation-first):
 | -- | **The first valid Stage 0 walk** (`blue-bottle-20260907-142454`) | Recorded 2026-09-07 -- 33 frames, camera at floor height on a wheeled rig, target **on the floor**. The re-recording 1.16 #10 has demanded since 2026-09-02, and the first walk not disqualified by its own viewpoint. Two findings, both in `PLAN-onboard-perception.md` 4.10: **(a)** the CLIP threshold is measured -- true positives band +0.025..+0.038, non-target frames top out at +0.004, so **0.02 separates them perfectly and the shipped 0.05 detects none of them** (`brain.perception_match_margin`, now 0.02 in config; the module default is deliberately unchanged because the old corpus had handbags at +0.039 against "red backpack", so one threshold does not serve both targets); **(b) 4.2's label gate is losing 11 of 18 true positives** -- at close range YOLO relabels the bottle as a `vase` (once `refrigerator`), so the gate discards exactly the frames where the target fills the view. Forcing the open-vocabulary path recovers 18/18 with zero false positives. `brain.perception_crop_path` makes that measurable; the default stays `auto` until two more walks say otherwise. The full chain ran on it: `found`, **6 paid calls over 31 frames, 1 per 5.17**. |
 | P2 (twin) | `policy: "tiered"`, and the readouts that make the architecture watchable -- on the Sim tab **and on the phone walk**, which is the one that matters | Done (2026-09-07), not deployed -- the brain has been deployed nowhere since 2026-09-05 and these models run *in the brain process*, so this is a local two-uvicorn feature by construction. The Remote brain panel's policy picker gains **Tiered**; `control/brain_server.py` wraps `brain/navigate.py`'s cloud `vision_fn` in `brain/tiered.py`'s `TieredVision` and **validates at mission start** -- `ultralytics`/`torch` stay an optional install (`requirements-perception.txt`) and a missing one is a 400 naming the pip command, never a B3.2 vision failure discovered three ticks in. `GET /health` publishes `perception_available` so the panel warns before Start. Four readouts (`PLAN-onboard-perception.md` 6.3): the tri-state, the CLIP **margin** (not the similarity), the detector and encoder by name, and the deliberation counter as **calls and frames** -- 6.3's "single number that makes the whole architecture watchable", comparable to 6.1's measured 4-6x. The mission log names the paid steps `[cloud: <trigger>]`. The detector's *boxes* are deliberately absent: over the twin's FPV they would be boxes on a raycaster render, which 1.12 forbids. **Guide -> Robot view -> "Drive via brain" also carries the policy now** (it hardcoded `policy: "vision"` before), which is the only path where YOLO and CLIP get real pixels -- the Sim tab's tiered mission exercises the loop and never the detector, by 1.12's design. **Run end to end the same day, YOLO -> CLIP -> Opus 4.5** (`python -m tests.demo_replay_mission <walk> "<target>" --policy tiered`, which is new): on `red-backpack-opus-4-5-20260829-214849`, outcome `found`, **4 paid calls over 18 steps -- 1 per 3.5 distinct frames**, all three implementable triggers fired, nothing tuned. That puts 2.4's cost claim inside 6.1's measured 4-6x band *live* for the first time. Three findings in `PLAN-onboard-perception.md` 4.10: `DEFAULT_MATCH_MARGIN` (0.05) is ~2x too high and **has not been changed** -- the corpus is the invalid one and the negative column overlaps on handbags; **the target STRING is a bigger lever than the walk** (`"red backpack"` 13% detected, `"blue bottle"` 0%, bare `"bottle"` 0% -- a colour+noun is worth ~5x the margin of the bare noun); and two defects the run surfaced, both fixed -- `bearing_deg` had never once been a number (no backend publishes `image_width`; the width is now read off the image) and a detected target logged as `not_visible`. |
 | P3 | Corpus-wide perception scoring (`control/perception_eval.py`), and 1.11a **reported** | Done (2026-09-08), not deployed. **P3** is the instrument every finding in `PLAN-onboard-perception.md` 4.10/4.11 rests on and it had been written ad hoc three times and lost each time: it reads each walk's adjudicated `labels.json` (**never** `walk.jsonl`), refuses a walk that has none, scores once and sweeps the gate afterwards, and matches two configs on a false-positive budget before reporting either one's recall. It reproduced 4.11's shipped row exactly on first run -- 62/74 at `P>=0.8`, 3 false positives -- which is the only validation a scorer can have. Its new per-walk split is the finding: **100%/97% recall on the two approach walks and 20% on the search walk**, so the corpus-wide 84% is an average over two different problems. **1.11a** (corroborated identity) is now computed, counted and shown on the Remote brain panel and carried in walk data -- and **enforces nothing**, which a test pins: an `unclear` frame passes `target_visible` and `target_reached` through untouched. It stays that way until the two out-of-vocabulary searches 1.11a asks for exist. |
+| P6 | The Hailo compile loop (`tools/hailo/`), built and aimed at OWLv2 | Built 2026-09-09, **not yet run** -- it needs the Dataflow Compiler wheel, which is a gated Developer Zone download and not on PyPI. `PLAN-onboard-perception.md` 1.10 item 1 has asked for this since 2026-09-04 and it was the one pre-hardware item never started. **It is the last thing between the model evaluation and a purchase:** P5 recommends Pi 5 + Hailo-8L with OWLv2 on measured accuracy (68/68 visible frames, three targets, zero false positives, ~150M params) and rests it entirely on *can OWLv2 compile to a HEF*. Hailo's own table lists OWLv2 under "does not fit -- anything attention-heavy", so failure is expected and is a good answer: it buys a Jetson sized for a 150M ViT rather than the 4B VLM that thread was going to justify. What the loop adds over a yes/no is **which** failure -- an unsupported op may be one line moved to the CPU (the `minimal` head already tests that), a host OOM at 3600 tokens argues for `--image-size 640` and a re-score, and a resource wall at `compile` is the cleanest possible "buy a Jetson". The ONNX split is verified against the unmodified model on a real frame before anything is rented (max |d score| 1.6e-05, top-50 set identical) -- a HEF of a subtly wrong graph compiles perfectly and nothing would surface until the part was bought. ~$1.01/hr on an r6i.4xlarge, torn down by `ec2.sh down` |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. **The chassis is no longer a PiCar-X** -- see the row above. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -252,10 +253,36 @@ vision-picar/
 │   │                           EFS -- the only component that REQUIRED a VPC
 │   ├── admin.html/.js        the recorded-walk console (see admin_server.py)
 │
+├── tools/hailo/            the Hailo compile loop -- 1.10 item 1, finally
+│   │                        built (2026-09-09), and pointed at OWLv2
+│   │                        because P5 rests the whole hardware
+│   │                        recommendation on one unrun test: can it
+│   │                        compile to a HEF at all
+│   ├── export_owlv2_onnx.py  OWLv2 -> ONNX, IMAGE SIDE ONLY (the text
+│   │                          tower stays on the Pi's CPU, as CLIP's
+│   │                          does). Verifies the split reassembles
+│   │                          into the real model's own numbers -- a
+│   │                          HEF of a wrong graph compiles fine and
+│   │                          is worthless
+│   ├── owlv2_host_head.py    the half that stays on the CPU: the text
+│   │                          einsum, and three ops the `minimal`
+│   │                          export moves off the accelerator
+│   ├── calibration_set.py    128 frames out of recordings/, stratified
+│   │                          by walk and balanced on labels.json
+│   ├── compile_owlv2.py      the sweep: translate -> optimize ->
+│   │                          compile, per variant, never letting one
+│   │                          failure end the run. The REPORT is the
+│   │                          deliverable -- three stages fail for
+│   │                          three different reasons and imply three
+│   │                          different purchases
+│   ├── ec2.sh / setup_host.sh  the rented x86 box (no Mac, no ARM
+│   │                          path for the DFC) and its teardown
+│   └── README.md             read this before running any of it
+│
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    894 tests, 96% line coverage of brain/,
+├── tests/                    928 tests, 96% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
 │                              75 tests over five backends,

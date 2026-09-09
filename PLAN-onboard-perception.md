@@ -493,6 +493,12 @@ tracking machinery.
    script that scores it over the recorded walks on S3. If the loop exists
    on day one the Hailo is a sandbox; if it never gets built, the Hailo is a
    fixed-function part and the IMX500 was the cheaper way to get one.
+   **BUILT 2026-09-09 as `tools/hailo/` -- see P6.** Not against YOLO11n,
+   which 4.3.1 shows is simply downloadable for the 8L so a loop built
+   against it would prove only that the loop runs, and no longer against the
+   floor mask either: P5 put a harder and more decisive subject in front of
+   both. It is pointed at **OWLv2**, and it has not been run -- it needs the
+   Dataflow Compiler wheel, which is a Developer Zone download.
 2. **The PCIe lane.** The AI HAT+ takes the Pi 5's single PCIe connector, and
    so does the NVMe HAT that 3.6 calls the one optional item worth buying.
    Decide at ordering time between a high-endurance microSD plus a
@@ -4707,6 +4713,95 @@ distant walk against 640's 1/23, because the limit is *vocabulary* -- a COCO
 detector has no class for a laundry basket at any resolution. The compile loop
 is still needed, but its first subject is now **OWLv2**, not a wider YOLO and
 not the floor mask.
+
+#### P6: the compile loop, built and pointed at OWLv2 -- **BUILT 2026-09-09, NOT YET RUN**
+
+1.10 item 1 has asked for this since 2026-09-04 and it was never started:
+*"Build that loop before the hardware arrives. If the loop exists on day one
+the Hailo is a sandbox; if it never gets built, the Hailo is a
+fixed-function part and the IMX500 was the cheaper way to get one."* It is
+built now, in `tools/hailo/`, and aimed at the model the paragraph above
+names rather than at a YOLO that 4.3.1 already established is simply
+downloadable.
+
+**The split, and it is the same one CLIP already uses.** OWLv2 is a ViT-B/16
+image tower, a CLIP-style text tower and three small MLP heads. Only the
+image side is compiled; the text tower stays on the Pi's CPU exactly as
+CLIP's does (4.2) -- not for convenience, but because it runs once per
+*target string* and not once per frame. The seam is one op inside
+`Owlv2ClassPredictionHead`:
+
+```
+image_class_embeds = dense0(image_feats)            # image only  -> Hailo
+pred_logits = image_class_embeds @ query_embeds.T   # the only text op -> CPU
+pred_logits = (pred_logits + logit_shift) * logit_scale
+```
+
+So the accelerator returns five per-patch tensors and the Pi does a
+`[3600, 512] x [512, Q]` matmul in microseconds.
+
+**The split is verified against the unmodified model, on a real frame, and
+this is the part that would otherwise go wrong silently.** A HEF of a subtly
+wrong graph compiles perfectly and is worthless, and nothing would surface
+until the part was bought. On
+`woven-laundry-basket-20260908-215252/frame-0005.jpg`, all four export
+variants: max |d score| **1.6e-05**, max |d box| **2.1e-04**, top-1 patch
+agrees, top-50 set identical. The tolerance is on *scores*, not logits,
+deliberately -- OWLv2's logits span about -39..0, so an absolute tolerance
+on them is a tolerance on a number nothing downstream reads, and a 4e-4
+relative wobble from fp32 reduction order in a 12-layer ViT read as a
+failure while changing no decision.
+
+**Three axes, because "it failed" is not an answer.** Hailo's own table in
+1.10 lists OWLv2 under *"does not fit -- anything attention-heavy"*, so
+failure is the expected outcome and a perfectly good one. But three failures
+mean three different purchases, so the loop walks a matrix and records what
+each cell died of:
+
+| axis | why |
+|---|---|
+| opset **17** vs **14** | at >= 17 torch emits `LayerNormalization` as one op; below it the same maths decomposes. A parser that rejects the fused op may take the decomposition -- and a difference between these two is a toolchain fact, not a statement about the part |
+| head **full** vs **minimal** | `minimal` moves the `ReduceL2`, the `Elu` and the box `Sigmoid` to the CPU. Those are the three ops here least likely to exist in a CNN toolchain, and they cost microseconds on `[3600, 512]` and `[3600, 1]`. A test pins that the two heads produce the same numbers, so the fallback is the same model rather than a similar one |
+| calibration **normalized** vs **uint8** | the uint8 path adds a `normalization()` layer so the part takes raw camera bytes and does the mean/std itself -- the arrangement worth having on the robot |
+| `--image-size` | **the most likely thing to exhaust the part.** Native 960 is 60x60 = **3600 tokens**, against ~196 for the ImageNet ViTs in Hailo's zoo, and attention is quadratic in that. 640 gives 1600. **Any non-native size changes accuracy and must be re-scored** -- P5's own tiling sweep found the peak at native and worse either side, so this is a lever with a known cost |
+
+For the record, what the exporter emits at 960 under opset 17: 575 nodes, 23
+distinct ops -- 105 `MatMul`, 27 `LayerNormalization`, 12 `Softmax`, 4 `Erf`,
+and exactly **one `Conv`** (the patch embedding). That last number is the
+whole risk in one figure: this is not a CNN.
+
+**The calibration set is the corpus, and it is drawn deliberately.** 128
+frames stratified across all eleven rig walks and balanced on each walk's
+adjudicated `labels.json` -- never on `walk.jsonl`, the same rule P3
+enforces. Target-visible frames are a small minority of the corpus (74 of
+299 in the four adjudicated walks) and are exactly the frames whose
+activations decide recall, so a random draw would under-represent them by
+construction. Deterministic given `--seed`, because a calibration set that
+changes between runs makes two compiles incomparable. Preprocessing calls
+OWLv2's own processor rather than reproducing it: a hand-rolled version was
+written here first and came out **2.0 off in normalised units**, most of the
+input range, because the processor derives a Gaussian anti-aliasing sigma
+from the scale factor before it resizes.
+
+**What the report will decide.** Three stages fail independently, and each
+points somewhere different:
+
+| stage | a failure means |
+|---|---|
+| `translate` | **op coverage**, and the headline names the op. `ReduceL2` or `Elu` -> try the `minimal` head; that is a fix. `Softmax` or the attention block -> a wall |
+| `optimize` | **numerics or host memory.** A `MemoryError` at 3600 tokens is the predicted outcome; try 640 and re-score |
+| `compile` | **resource allocation on the part.** The graph is understood and does not fit in the 8L. The cleanest possible "buy a Jetson" |
+
+**A HEF is not an accuracy result.** INT8 post-training quantisation changes
+scores, and re-scoring a compiled OWLv2 needs real silicon -- so that is a
+hardware-day item, under P5's unchanged method rules: score on grounding,
+read recall only at a matched false-positive budget, and check `separable`.
+
+**Cost, stated because 1.10 item 1 estimated it at "an EC2 hour per model"
+and that is roughly right**: an `r6i.4xlarge` in us-east-2 at ~$1.01/hr plus
+~$0.02/hr of gp3, torn down by `tools/hailo/ec2.sh down`. Access is SSM
+Session Manager, so there is no key pair and the security group authorises
+no inbound rules at all.
 
 #### A method note worth more than the result
 
