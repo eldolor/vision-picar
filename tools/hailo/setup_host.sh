@@ -7,13 +7,25 @@
 #
 #   sudo bash setup_host.sh s3://bucket/hailo/dfc/hailo_dataflow_compiler-*.whl
 #
-# Ubuntu 22.04 and Python 3.10, and NOT as a preference: Hailo documents the
-# Dataflow Compiler as supporting Ubuntu 20.04/22.04 and Python 3.8, 3.9 or
-# 3.10 only. 3.11 and 3.12 are not on that list, which is why this does not
-# fall back to a newer interpreter and why ec2.sh launches Jammy rather than
-# Noble (24.04 ships 3.12). The wheel is tagged py3-none, so pip will install
-# it under an unsupported Python and fail later, further in, for reasons that
-# look like a model problem.
+# Ubuntu 22.04 and Python 3.10, and NOT as a preference. Read out of the
+# 3.34.0 wheel itself rather than from the docs, which are stale on this:
+#
+#   Requires-Python  NOT DECLARED   -- pip will not gate the interpreter at
+#                                      all, so a wrong one fails much later
+#                                      and looks like a model problem
+#   jax==0.5.3, networkx==3.4.2     -- both need Python >= 3.10, so the
+#                                      3.8/3.9 in Hailo's published docs are
+#                                      no longer true for 3.34
+#   tensorflow==2.18.0, numpy==1.26.4, onnxruntime==1.18.0
+#                                   -- ceilings around 3.12
+#
+# So the real window for 3.34.0 is 3.10-3.12 and Jammy's 3.10 sits inside it.
+# ec2.sh launches Jammy rather than Noble for this reason (24.04 ships 3.12,
+# which is at the top edge rather than the middle of that window).
+#
+# No ABI-tagged .so in the wheel -- the 47 native libraries are plain shared
+# objects (HSim, or-tools), not cpython-3XX extensions -- so nothing binds it
+# to one interpreter beyond those pins.
 set -euo pipefail
 
 WHEEL_URI="${1:?usage: setup_host.sh s3://.../hailo_dataflow_compiler-*.whl}"
@@ -54,11 +66,14 @@ $PY -m venv "$VENV"
 "$VENV/bin/pip" install -q pygraphviz >/dev/null 2>&1 || true
 "$VENV/bin/pip" install "$WHEEL"
 
-echo "== supporting packages"
-# numpy/pillow are almost certainly pulled in by the DFC already; onnx and
-# onnxruntime are for inspecting the graph and for a CPU reference run on
-# the same host. Pinned to nothing: whatever satisfies the DFC's own pins.
-"$VENV/bin/pip" install -q onnx onnxruntime pillow || true
+echo "== dependency check"
+# Deliberately NOT installing onnx/onnxruntime/numpy here. The DFC hard-pins
+# onnx==1.16.0, onnxruntime==1.18.0, numpy==1.26.4 and protobuf==3.20.3, and
+# a bare `pip install onnx onnxruntime` after the wheel silently upgrades
+# them and breaks the compiler in ways that surface as a parse failure --
+# i.e. as an answer to the question this loop is asking. `pip check` is the
+# guard: if it complains, the environment is not the one Hailo tested.
+"$VENV/bin/pip" check || echo "!! pip check reported conflicts -- see above"
 
 echo "== versions"
 "$VENV/bin/python" - <<'PY'
