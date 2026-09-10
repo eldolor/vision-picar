@@ -298,7 +298,7 @@ against three different questions, and the slow one never blocks the fast one.
                                 no model                  never blocks
  15-30 Hz - reactive                                      -> motors
    Camera Mod 3 --frame-->  YOLO11s INT8  --bearing-->        ^
-                            86% close range                   |
+                            TensorRT, 86% close range         |
  0.2-1 Hz - deliberation                                      | egocentric
    Camera ------frame--->  OWLv2 ViT-B/16                     | goal, never
                            image tower -> accelerator  2.1s/f | a motor
@@ -329,7 +329,7 @@ rather than stopping the robot.
   REJECTED - Pi 5 + Hailo-8L ($70)      RECOMMENDED - Jetson Orin Nano (~$400)
   ---------------------------------     -------------------------------------
   YOLO11s reactive   --------> gate     YOLO11s reactive   --------> gate
-  compiles, 92 FPS                      unchanged
+  compiles, 92 FPS (HEF)                same role, TensorRT
                                                           candidate_sighting
   OWLv2 search        ...x... gate      OWLv2 search       --------> gate
   DOES NOT ALLOCATE                     runs, 2.1 s/frame
@@ -339,6 +339,42 @@ rather than stopping the robot.
   Search proposal recall: 4%            Search proposal recall: 74-100%
   The robot can drive past its target.  8 GB left for SLAM and nav2.
 ```
+
+### Does YOLO survive the board change?
+
+**Yes -- but for one reason, and it is rate, not accuracy.** OWLv2 runs at
+2.1s/frame, which is 0.5 Hz. At 0.3 m/s that is **63 cm of travel between
+decisions**. Nothing steers on that. The reactive tier needs 15-30 Hz and OWLv2
+cannot serve it at any input size.
+
+This is *not* an accuracy argument. At close range OWLv2 is the better detector
+-- 33/33 on the approach walk against the shipped pipeline's 86%. YOLO stays
+because it is fast, and only because it is fast.
+
+**Its justification changes between the two boards.** On Pi + Hailo, YOLO was
+the only detector that could run at all. On a Jetson it is a deliberate choice
+to spend a cheap model on the fast loop. Three concrete things change with it:
+
+- **The runtime is not a HEF.** It becomes a TensorRT INT8 engine. The compile
+  step still exists; it is a different toolchain, and a far less exotic one.
+- **The 92 FPS figure does not transfer.** That is 10.9ms per invocation
+  measured on the Hailo-8 series (4.3.1). YOLO11s on an Orin Nano is
+  *unmeasured in this project*. It will comfortably clear 30 Hz, but that is an
+  expectation, not a number.
+- **The 86% does transfer** -- it is a property of the model and the corpus, not
+  of the chip.
+
+**And two models now share one processor, one of them 63x the other's frame
+budget.** This is the real cost of consolidating onto one board. On Pi + Hailo
+the accelerator ran the detector while the CPU stayed free for the text tower.
+On a Jetson, YOLO and OWLv2 contend for the same GPU. The reactive frame budget
+at 30 Hz is 33.3ms; an OWLv2 inference is 2.1s -- **63 reactive frames long**.
+
+Contention itself is not new (2.9 already budgeted a detector, a floor mask and
+CLIP against one 33ms frame), but the magnitude is: those were 7-50ms jobs. A
+2.1-second one needs a real answer -- preemption, separate CUDA streams with
+priority, or simply accepting dropped reactive frames while a search inference
+runs. **There is no answer yet, and it is an open item, not a solved one.**
 
 **One missing edge is the whole decision.** Both boards run the reactive tier
 identically -- YOLO compiles for the Hailo off the shelf. The difference is the
@@ -374,6 +410,12 @@ paying for it.
 
 ### What is still open
 
+- **Two tiers now share one GPU.** An OWLv2 inference is 63 reactive frames
+  long. Scheduling that against a 15-30 Hz loop is unsolved, and it is a problem
+  the two-chip Hailo plan did not have.
+- **YOLO11s on an Orin Nano is unmeasured.** The 92 FPS everyone quotes is a
+  Hailo-8 number. The expectation is comfortable, but a hardware-day benchmark
+  should replace the expectation.
 - **Nothing here was measured on silicon.** No executable was produced, so INT8
   quantization effects on accuracy are unmeasured. Hardware-day item.
 - **Calibration data is at the limit.** The compiler wants 1024 frames for its
