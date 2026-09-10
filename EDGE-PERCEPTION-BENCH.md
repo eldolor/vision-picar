@@ -33,6 +33,79 @@ objection to the Jetson rather than paying for it.
 
 ---
 
+## 0. Orientation: what the system is
+
+An indoor autonomous robot car. A differential-drive chassis carrying a camera,
+a 360-degree lidar and a single-board computer, driving itself around a house
+looking for a named object -- *"find the woven laundry basket"* -- with a vision
+LLM in the cloud for the reasoning it cannot do on board.
+
+Four parts, four different questions. The whole engineering problem is deciding
+which part answers which, because they differ by three orders of magnitude in
+speed and by real money per call.
+
+```
+ THE ROBOT CAR - differential drive, ~0.15-0.5 m/s        |  CLOUD - Bedrock
+ ---------------------------------------------------------+------------------
+  ┌────────────────────┐                                   |
+  │ Camera Module 3    │--frames-->┌──────────────────┐    |
+  │ 30 fps             │           │  AI AT THE EDGE  │    |
+  │ 10-13 cm off floor │           │                  │    |
+  │ "what is in front  │           │ reactive detector│    |
+  │  of me"            │           │ open-vocab search│    |
+  └────────────────────┘           │ safety collar    │    |
+                                   │                  │    |
+  ┌────────────────────┐           │ free, every frame│    |
+  │ RPLidar C1         │--stop---->│ "is the target   │    |
+  │ 360° metric ring   │ authority │   here"          │    |
+  │ "am I about to hit │           └────────┬─────────┘    |
+  │  something"        │                    │              |
+  └────────────────────┘                    │  ~1 call per 4 frames,
+                                            │  on a trigger
+                                            ├──────────────>  Claude Opus 4.5
+                                            │              |  vision LLM
+                                            v              |  ~3.5 s round trip
+                                   ┌──────────────────┐    |  costs money/call
+                                   │ Drive loop       │<---+-- a goal,
+                                   │  -> motors       │    |   not a move
+                                   │ "where do I go"  │    |
+                                   └──────────────────┘    |  "what should I
+                                                           |   do next"
+```
+
+The camera is the only sensor that can tell a laundry basket from a bin; the
+lidar is the only one trusted to stop the car. The edge board runs perception
+on every frame for free, and decides whether the cloud is worth waking. The
+cloud reasons about the whole scene and answers in seconds -- so it returns a
+goal the drive loop can hold, never a move to execute now.
+
+### Why the work is split at all
+
+Sending every frame to the cloud would be simpler. Three measured reasons it is
+not done that way, and the third is the one nobody predicts.
+
+- **Cost.** A five-minute walk is hundreds of frames. Paying a frontier model
+  for each one turns a hobby robot into a metered service. With the trigger
+  discipline in place, a measured mission spent **4 paid calls over 18 steps**.
+- **Latency.** A cloud round trip is ~3.5s. A robot moving at 0.3 m/s covers a
+  metre in that time, so the cloud *cannot* sit in the driving loop. It returns
+  an egocentric goal and the drive loop holds it; staleness is the cost, not
+  stopping.
+- **Correctness.** The surprise. On one walk a rack of storage bins convinced
+  the cloud model it had found the target -- **23% precision across 44 claims**.
+  The on-board tier rejected all 34 bin frames. Nothing in the cloud tier can
+  catch the cloud tier being wrong; only a second, independent pair of eyes can.
+
+That last point is what turns on-board perception from an optimisation into a
+requirement -- and it is why the rest of this document is about finding a model
+good enough to hold that job, and a board that can run it.
+
+Everything here is validated simulation-first: a digital twin drives the same
+control API the hardware will, so a change is proven on a phone before it is put
+on a car. The evaluation below is the exception that cannot be simulated -- a
+detector has to see real pixels, so the corpus is real photographs from a rig
+pushed across a real floor.
+
 ## 1. The question
 
 The robot has three jobs for a camera: *don't hit things*, *steer toward the
