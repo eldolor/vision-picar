@@ -87,7 +87,7 @@ def _torch():
             "pip install -r requirements-perception.txt") from exc
 
 
-def build_wrapper(model, head: str = "full"):
+def build_wrapper(model, head: str = "full", factor_patch: bool = False):
     """Wrap `Owlv2ForObjectDetection` as an image-only, text-free graph."""
     if head not in HEADS:
         raise ValueError(f"head must be one of {HEADS}, got {head!r}")
@@ -99,6 +99,12 @@ def build_wrapper(model, head: str = "full"):
             super().__init__()
             self.head = head
             self.vision_model = owl.owlv2.vision_model
+            if factor_patch:
+                # Swapped in place: the ViT's own forward calls
+                # embeddings.patch_embedding, so replacing the module is
+                # enough and nothing else in the graph changes.
+                self.vision_model.embeddings.patch_embedding = \
+                    factor_patch_embedding(owl, owl.config.vision_config.patch_size)
             self.layer_norm = owl.layer_norm
             self.class_head = owl.class_head
             self.box_head = owl.box_head
@@ -140,6 +146,93 @@ def build_wrapper(model, head: str = "full"):
     return _ImageTower(model).eval()
 
 
+
+def factor_patch_embedding(model, patch: int, split: int = 4):
+    """Rewrite the 16x16-stride-16 patch conv as two small convs.
+
+    **Why this exists.** DFC 3.34 translates and quantizes OWLv2 happily and
+    then fails allocation with::
+
+        Reshape is needed for layers: conv1, but adding a reshape has failed
+
+    `conv1` is the patch embedding: the single Conv in a 575-node graph, and
+    an unusual one -- 16x16 kernel at stride 16, 3 channels in, 768 out. The
+    allocator wants to rewrite it as a space-to-depth plus a 1x1 (the SDK
+    carries a `SPACE_TO_DEPTH` conversion type) and cannot place the reshape.
+    Measured: neither `--image-size 640` nor
+    `allocator_param(automatic_reshapes=enabled)` changes it.
+
+    So do the factorisation in the export, where it is exact arithmetic
+    rather than an allocator heuristic, and in a form that keeps everything
+    inside a CNN toolchain's comfort zone -- **an image-shaped input and two
+    small-kernel convs**, rather than a 768-channel input tensor:
+
+        conv_a: 3 -> 48,  k=4, s=4   one-hot weights; a space-to-depth by 4
+        conv_b: 48 -> 768, k=4, s=4  the original weights, re-indexed
+
+    A 16x16 patch is a 4x4 grid of 4x4 blocks, so composing the two covers
+    exactly the same receptive field with exactly the same weights. This is
+    an identity, not an approximation, and `verify()` checks it the same way
+    it checks the text-tower split.
+    """
+    torch = _torch()
+    nn = torch.nn
+    conv = model.owlv2.vision_model.embeddings.patch_embedding
+    weight = conv.weight.data                      # [768, 3, 16, 16]
+    out_ch, in_ch, kh, kw = weight.shape
+    if (kh, kw) != (patch, patch) or patch % split:
+        raise SystemExit(f"cannot factor a {kh}x{kw} patch by {split}")
+    step = patch // split                          # 4
+
+    mid = in_ch * step * step                      # 48
+    conv_a = nn.Conv2d(in_ch, mid, kernel_size=step, stride=step, bias=False)
+    wa = torch.zeros(mid, in_ch, step, step)
+    for c in range(in_ch):
+        for i in range(step):
+            for j in range(step):
+                wa[c * step * step + i * step + j, c, i, j] = 1.0
+    conv_a.weight.data = wa
+
+    conv_b = nn.Conv2d(mid, out_ch, kernel_size=split, stride=split,
+                       bias=conv.bias is not None)
+    wb = torch.zeros(out_ch, mid, split, split)
+    for c in range(in_ch):
+        for i in range(step):
+            for j in range(step):
+                p_ = c * step * step + i * step + j
+                for bi in range(split):
+                    for bj in range(split):
+                        wb[:, p_, bi, bj] = weight[:, c, bi * step + i,
+                                                   bj * step + j]
+    conv_b.weight.data = wb
+    if conv.bias is not None:
+        conv_b.bias.data = conv.bias.data.clone()
+
+    class _FactoredPatchEmbedding(nn.Module):
+        # Not a bare nn.Sequential: Owlv2VisionTransformer.forward reads
+        # `self.embeddings.patch_embedding.weight.dtype` to decide the input
+        # dtype, so the replacement has to keep a `.weight` that means the
+        # same thing. conv_b carries the real weights; conv_a is a constant
+        # one-hot rearrangement.
+        def __init__(self):
+            super().__init__()
+            self.space_to_depth = conv_a
+            self.projection = conv_b
+
+        @property
+        def weight(self):
+            return self.projection.weight
+
+        @property
+        def bias(self):
+            return self.projection.bias
+
+        def forward(self, x):
+            return self.projection(self.space_to_depth(x))
+
+    return _FactoredPatchEmbedding().eval()
+
+
 def load(model_id: str = DEFAULT_MODEL):
     torch = _torch()
     from transformers import Owlv2ForObjectDetection, Owlv2Processor
@@ -148,14 +241,17 @@ def load(model_id: str = DEFAULT_MODEL):
     return proc, model
 
 
-def onnx_name(opset: int, head: str, size: int) -> str:
-    return f"owlv2_image_tower_{size}_op{opset}_{head}.onnx"
+def onnx_name(opset: int, head: str, size: int,
+              factor_patch: bool = False) -> str:
+    tail = "_factored" if factor_patch else ""
+    return f"owlv2_image_tower_{size}_op{opset}_{head}{tail}.onnx"
 
 
 def export(out_dir: Path, model_id: str = DEFAULT_MODEL,
            opsets: Sequence[int] = OPSETS,
            heads: Sequence[str] = HEADS,
-           image_size: int | None = None) -> list[Path]:
+           image_size: int | None = None,
+           factor_patch: bool = False) -> list[Path]:
     torch = _torch()
     out_dir.mkdir(parents=True, exist_ok=True)
     proc, model = load(model_id)
@@ -174,11 +270,11 @@ def export(out_dir: Path, model_id: str = DEFAULT_MODEL,
     dummy = torch.zeros(1, 3, size, size)
     written = []
     for head in heads:
-        tower = build_wrapper(model, head)
+        tower = build_wrapper(model, head, factor_patch)
         if interpolate:
             _patch_for_size(tower, model, size)
         for opset in opsets:
-            path = out_dir / onnx_name(opset, head, size)
+            path = out_dir / onnx_name(opset, head, size, factor_patch)
             print(f"[export] {head} head, opset {opset} -> {path}",
                   flush=True)
             torch.onnx.export(
@@ -209,6 +305,7 @@ def export(out_dir: Path, model_id: str = DEFAULT_MODEL,
         "image_std": list(proc.image_processor.image_std),
         "opsets": list(opsets),
         "heads": list(heads),
+        "factor_patch": factor_patch,
         # `minimal` needs this on the host; `full` has it baked in.
         "box_bias": _box_bias_for(model, size).tolist(),
         "files": [p.name for p in written],
@@ -242,7 +339,8 @@ def _patch_for_size(tower, model, size: int):
 
 def verify(out_dir: Path, image: Path | None, text: str,
            model_id: str = DEFAULT_MODEL, opset: int = OPSETS[0],
-           head: str = "full", image_size: int | None = None) -> bool:
+           head: str = "full", image_size: int | None = None,
+           factor_patch: bool = False) -> bool:
     """Reassemble the split graph and compare it to the real model."""
     torch = _torch()
     try:
@@ -257,7 +355,7 @@ def verify(out_dir: Path, image: Path | None, text: str,
 
     proc, model = load(model_id)
     size = image_size or model.config.vision_config.image_size
-    onnx_path = out_dir / onnx_name(opset, head, size)
+    onnx_path = out_dir / onnx_name(opset, head, size, factor_patch)
     if not onnx_path.exists():
         raise SystemExit(f"no export at {onnx_path} -- "
                          f"run without --verify-only first")
@@ -330,6 +428,9 @@ def main(argv=None):
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--opset", type=int, action="append", default=None)
     ap.add_argument("--head", action="append", default=None, choices=HEADS)
+    ap.add_argument("--factor-patch", action="store_true",
+                    help="split the 16x16 patch conv into two 4x4 convs "
+                         "(exact); routes around the conv1 allocator failure")
     ap.add_argument("--image-size", type=int, default=None,
                     help="non-native input; changes accuracy, re-score it")
     ap.add_argument("--verify-only", action="store_true")
@@ -342,7 +443,8 @@ def main(argv=None):
     opsets = tuple(args.opset) if args.opset else OPSETS
     heads = tuple(args.head) if args.head else HEADS
     if not args.verify_only:
-        export(args.out, args.model, opsets, heads, args.image_size)
+        export(args.out, args.model, opsets, heads, args.image_size,
+               args.factor_patch)
     if args.no_verify:
         return 0
     # Verification runs against the real processor, which always feeds the
@@ -351,7 +453,8 @@ def main(argv=None):
         print("[verify] skipped: a non-native export cannot be compared to "
               "the stock processor's own preprocessing")
         return 0
-    ok = all(verify(args.out, args.image, args.text, args.model, o, h)
+    ok = all(verify(args.out, args.image, args.text, args.model, o, h,
+                    None, args.factor_patch)
              for h in heads for o in opsets)
     return 0 if ok else 1
 

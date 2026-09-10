@@ -211,12 +211,17 @@ cmd_run() {
   local id script b64 params cid status
   id="$(require_instance)"
   [ $# -gt 0 ] || die "run needs a command"
-  # SSM's shell carries almost no environment -- notably no HOME, which the
-  # Dataflow Compiler reads unconditionally (`os.environ['HOME']` in
-  # hailo_model_optimization's logger) and dies on with a bare KeyError.
-  # VIRTUAL_ENV is set for the same reason: the DFC prefers it and would
-  # otherwise scatter its working folder into /root.
+  # SSM's shell carries almost no environment, and the DFC reads several
+  # variables unconditionally: HOME in hailo_model_optimization's logger
+  # (import time), and USER inside the COMPILE stage. Each surfaces as a
+  # bare KeyError at a different point, and the second one is the dangerous
+  # kind -- `KeyError: 'USER'` raised from runner.compile() is recorded by
+  # this loop as "compile failed", which is an ANSWER to the question the
+  # whole exercise is asking. It is not one. VIRTUAL_ENV is set so the DFC
+  # keeps its working folder in the venv rather than scattering it.
   script="export HOME=\"\${HOME:-/root}\"
+export USER=\"\${USER:-root}\"
+export LOGNAME=\"\${LOGNAME:-root}\"
 export VIRTUAL_ENV=\"\${VIRTUAL_ENV:-/opt/hailo/venv}\"
 $*"
 
