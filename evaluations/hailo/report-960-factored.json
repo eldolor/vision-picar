@@ -1,0 +1,59 @@
+{
+ "started_at": "2026-09-10T00:51:10Z",
+ "arch": "hailo8l",
+ "model_id": "google/owlv2-base-patch16-ensemble",
+ "image_size": 960,
+ "num_patches": 3600,
+ "factor_patch": true,
+ "dfc_version": "3.34.0",
+ "host": "ip-172-31-2-23",
+ "calibration": {
+  "n": 16,
+  "seed": 0,
+  "walks": [
+   "blue-bottle-20260907-142454",
+   "blue-bottle-20260907-185007",
+   "blue-shoes-20260907-152528",
+   "blue-shoes-20260908-210511",
+   "red-backpack-20260907-144856",
+   "woven-laundry-basket-20260908-212419",
+   "woven-laundry-basket-20260908-212549",
+   "woven-laundry-basket-20260908-212719",
+   "woven-laundry-basket-20260908-215140",
+   "woven-laundry-basket-20260908-215252",
+   "woven-laundry-basket-20260908-215351"
+  ]
+ },
+ "attempts": [
+  {
+   "tag": "960_op17_full_normalized_factored",
+   "onnx": "owlv2_image_tower_960_op17_full_factored.onnx",
+   "opset": 17,
+   "head": "full",
+   "image_size": 960,
+   "layout": "normalized",
+   "arch": "hailo8l",
+   "stages": {
+    "translate": {
+     "ok": true,
+     "seconds": 48.9
+    },
+    "optimize": {
+     "ok": true,
+     "seconds": 1008.5
+    },
+    "compile": {
+     "ok": false,
+     "seconds": 9.3,
+     "error_type": "BackendAllocatorException",
+     "error": "Compilation failed: Reshape is needed for layers: reduce_mean1_layer_normalization1, ew_sub1_layer_normalization1, square1_layer_normalization1, ew_mult1_layer_normalization1, precision_change25, precision_change0, reduce_mean1_layer_normalization2, ew_sub1_layer_normalization2, square1_layer_normalization2, ew_mult1_layer_normalization2, precision_change26, reduce_max_softmax1, ew_sub_softmax1, reduce_sum_softmax1, ew_mult_softmax1, matmul2, precision_change1, reduce_mean1_layer_normalization3, ew_sub1_layer_normalization3, square1_layer_normalization3, ew_mult1_layer_normalization3, precision_change27, conv6, precision_change2, reduce_mean1_layer_normalization4, ew_sub1_layer_normalization4, square1_layer_normalization4, ew_mult1_layer_normalization4, precision_change28, reduce_max_softmax2, ew_sub_softmax2, reduce_sum_softmax2, ew_mult_softmax2, matmul4, precision_change3, reduce_mean1_layer_normalization5, ew_sub1_layer_normalization5, square1_layer_normalization5, ew_mult1_layer_normalization5, precision_change29, conv10, precision_change4, reduce_mean1_layer_normalization6, ew_sub1_layer_normalization6, square1_layer_normalization6, ew_mult1_layer_normalization6, precision_change30, reduce_max_softmax3, ew_sub_softmax3, ne_activation_ew_sub_softmax3, reduce_sum_softmax3, ew_mult_softmax3, matmul6, precision_change5, reduce_mean1_layer_normalization7, ew_sub1_layer_normalization7, square1_layer_normalization7, ew_mult1_layer_normalization7, precision_change31, conv14, precision_change6, reduce_mean1_layer_normalization8, ew_sub1_layer_normalization8, square1_layer_normalization8, ew_mult1_layer_normalization8, precision_change32, reduce_max_softmax4, ew_sub_softmax4, reduce_sum_softmax4, ew_mult_softmax4, matmul8, precision_change7, reduce_mean1_layer_normalization9, ew_sub1_layer_normalization9, square1_layer_normalization9, ew_mult1_layer_normalization9, precision_change33, conv18, precision_change8, reduce_mean1_layer_normalization10, ew_sub1_layer_normalization10, square1_layer_normalization10, ew_mult1_layer_normalization10, precision_change34, reduce_max_softmax5, ew_sub_softmax5, reduce_sum_softmax5, ew_mult_softmax5, matmul10, precision_change9, reduce_mean1_layer_normalization11, ew_sub1_layer_normalization11, square1_layer_normalization11, ew_mult1_layer_normalization11, precision_change35, conv22, precision_change10, reduce_mean1_layer_normalization12, ew_sub1_layer_normalization12, square1_layer_normalization12, ew_mult1_layer_normalization12, precision_change36, reduce_max_softmax6, ew_sub_softmax6, reduce_sum_softmax6, ew_mult_softmax6, matmul12, precision_change11, reduce_mean1_layer_normalization13, ew_sub1_layer_normalization13, square1_layer_normalization13, ew_mult1_layer_normalization13, precision_change37, conv26, precision_change12, reduce_mean1_layer_normalization14, ew_sub1_layer_normalization14, square1_layer_normalization14, ew_mult1_layer_normalization14, precision_change38, reduce_max_softmax7, ew_sub_softmax7, reduce_sum_softmax7, ew_mult_softmax7, matmul14, precision_change13, reduce_mean1_layer_normalization15, ew_sub1_layer_normalization15, square1_layer_normalization15, ew_mult1_layer_normalization15, precision_change39, conv30, precision_change14, reduce_mean1_layer_normalization16, ew_sub1_layer_normalization16, square1_layer_normalization16, ew_mult1_layer_normalization16, precision_change40, reduce_max_softmax8, ew_sub_softmax8, reduce_sum_softmax8, ew_mult_softmax8, matmul16, precision_change15, reduce_mean1_layer_normalization17, ew_sub1_layer_normalization17, square1_layer_normalization17, ew_mult1_layer_normalization17, precision_change41, conv34, precision_change16, reduce_mean1_layer_normalization18, ew_sub1_layer_normalization18, square1_layer_normalization18, ew_mult1_layer_normalization18, precision_change42, reduce_max_softmax9, ew_sub_softmax9, ne_activation_ew_sub_softmax9, reduce_sum_softmax9, ew_mult_softmax9, matmul18, precision_change17, reduce_mean1_layer_normalization",
+     "log": "logs/960_op17_full_normalized_factored.compile.log",
+     "headline": "Compilation failed: Reshape is needed for layers: reduce_mean1_layer_normalization1, ew_sub1_layer_normalization1, square1_layer_normalization1, ew_mult1_layer_normalization1, precision_change25, precision_change0, reduce_mean1_layer_normalization2, ew_sub1_layer_normalization2, square1_layer_normalization2, ew_mult1_layer_normalization2, precision_change26, reduce_max_softmax1, ew_sub_softmax1, r"
+    }
+   },
+   "reached": "optimize",
+   "hef": null,
+   "har": "owlv2_960_op17_full_normalized_factored.har"
+  }
+ ]
+}

@@ -116,8 +116,13 @@ def attempt(build: Path, arch: str, opset: int, head: str, size: int,
             layout: str, meta: dict, calib, out_dir: Path,
             extra_script: str = "") -> dict:
     """One matrix cell, three stages, never raising."""
-    onnx_path = build / onnx_name(opset, head, size)
-    tag = f"{size}_op{opset}_{head}_{layout}"
+    # The export writes `factor_patch` into its metadata and suffixes the
+    # filename to match; read it rather than assuming, or a factored build
+    # reports "missing <un-suffixed name>" as a TRANSLATE failure -- which
+    # is indistinguishable in the report from the model being rejected.
+    factored = bool(meta.get("factor_patch", False))
+    onnx_path = build / onnx_name(opset, head, size, factored)
+    tag = f"{size}_op{opset}_{head}_{layout}" + ("_factored" if factored else "")
     record = {"tag": tag, "onnx": onnx_path.name, "opset": opset,
               "head": head, "image_size": size, "layout": layout,
               "arch": arch, "stages": {}, "reached": None, "hef": None}
@@ -238,6 +243,7 @@ def main(argv=None):
         "model_id": meta["model_id"],
         "image_size": size,
         "num_patches": meta["num_patches"],
+        "factor_patch": bool(meta.get("factor_patch", False)),
         "dfc_version": _dfc_version(),
         "host": os.uname().nodename if hasattr(os, "uname") else "?",
         "calibration": _calib_meta(build, args.calib_limit),

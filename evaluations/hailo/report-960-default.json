@@ -1,0 +1,85 @@
+{
+ "started_at": "2026-09-09T23:13:31Z",
+ "arch": "hailo8l",
+ "model_id": "google/owlv2-base-patch16-ensemble",
+ "image_size": 960,
+ "num_patches": 3600,
+ "dfc_version": "3.34.0",
+ "host": "ip-172-31-2-23",
+ "calibration": {
+  "n": 16,
+  "seed": 0,
+  "walks": [
+   "blue-bottle-20260907-142454",
+   "blue-bottle-20260907-185007",
+   "blue-shoes-20260907-152528",
+   "blue-shoes-20260908-210511",
+   "red-backpack-20260907-144856",
+   "woven-laundry-basket-20260908-212419",
+   "woven-laundry-basket-20260908-212549",
+   "woven-laundry-basket-20260908-212719",
+   "woven-laundry-basket-20260908-215140",
+   "woven-laundry-basket-20260908-215252",
+   "woven-laundry-basket-20260908-215351"
+  ]
+ },
+ "attempts": [
+  {
+   "tag": "960_op17_full_normalized",
+   "onnx": "owlv2_image_tower_960_op17_full.onnx",
+   "opset": 17,
+   "head": "full",
+   "image_size": 960,
+   "layout": "normalized",
+   "arch": "hailo8l",
+   "stages": {
+    "translate": {
+     "ok": true,
+     "seconds": 46.0
+    },
+    "optimize": {
+     "ok": true,
+     "seconds": 993.4
+    },
+    "compile": {
+     "ok": false,
+     "seconds": 9.3,
+     "error_type": "BackendAllocatorException",
+     "error": "Compilation failed: Reshape is needed for layers: conv1, but adding a reshape has failed.",
+     "log": "logs/960_op17_full_normalized.compile.log",
+     "headline": "Compilation failed: Reshape is needed for layers: conv1, but adding a reshape has failed."
+    }
+   },
+   "reached": "optimize",
+   "hef": null,
+   "har": "owlv2_960_op17_full_normalized.har"
+  },
+  {
+   "tag": "960_op17_full_uint8",
+   "onnx": "owlv2_image_tower_960_op17_full.onnx",
+   "opset": 17,
+   "head": "full",
+   "image_size": 960,
+   "layout": "uint8",
+   "arch": "hailo8l",
+   "stages": {
+    "translate": {
+     "ok": true,
+     "seconds": 48.6
+    },
+    "optimize": {
+     "ok": false,
+     "seconds": 0.4,
+     "error_type": "AllocatorScriptParserException",
+     "error": "Given layer names ['owlv2_960_op17_full_uint8/normalization1'] exist in the model. Please use different names",
+     "log": "logs/960_op17_full_uint8.optimize.log",
+     "headline": "Given layer names ['owlv2_960_op17_full_uint8/normalization1'] exist in the model. Please use different names"
+    }
+   },
+   "reached": "translate",
+   "hef": null,
+   "har": "owlv2_960_op17_full_uint8.har",
+   "model_script": "normalization1 = normalization([122.7709, 116.746, 104.0937], [68.5005, 66.6322, 70.3232])"
+  }
+ ]
+}

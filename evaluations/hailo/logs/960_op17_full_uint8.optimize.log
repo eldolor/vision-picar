@@ -1,0 +1,20 @@
+Traceback (most recent call last):
+  File "/opt/hailo/tools/hailo/compile_owlv2.py", line 122, in run
+    value = fn()
+  File "/opt/hailo/tools/hailo/compile_owlv2.py", line 175, in <lambda>
+    _, ok = run("optimize", lambda: runner.optimize(calib))
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_common/states/states.py", line 16, in wrapped_func
+    return func(self, *args, **kwargs)
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 2206, in optimize
+    result = self._optimize(
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_common/states/states.py", line 16, in wrapped_func
+    return func(self, *args, **kwargs)
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 2008, in _optimize
+    self._sdk_backend.optimize_full_precision(data_continer)
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 1664, in optimize_full_precision
+    model, params = self._apply_model_modification_commands(model, params, update_model_and_params)
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 1549, in _apply_model_modification_commands
+    command.validate_command([layer.name for layer in model])
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/script_parser/model_modifications_commands.py", line 296, in validate_command
+    raise AllocatorScriptParserException(
+hailo_sdk_client.sdk_backend.sdk_backend_exceptions.AllocatorScriptParserException: Given layer names ['owlv2_960_op17_full_uint8/normalization1'] exist in the model. Please use different names

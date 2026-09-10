@@ -1,0 +1,97 @@
+[info] No GPU chosen and no suitable GPU found, falling back to CPU.
+
+=== 960_op17_full_normalized_factored ===
+[info] Translation started on ONNX model owlv2_960_op17_full_normalized_factored
+[info] Restored ONNX model owlv2_960_op17_full_normalized_factored (completion time: 00:00:01.73)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:10.19)
+[info] Simplified ONNX model for a parsing retry attempt (completion time: 00:00:32.65)
+[info] Start nodes mapped from original model: 'pixel_values': 'owlv2_960_op17_full_normalized_factored/input_layer1'.
+[info] End nodes mapped from original model: '/Div', '/logit_shift/Add', '/Add_1', '/Sigmoid', '/Gather'.
+[info] Translation completed on ONNX model owlv2_960_op17_full_normalized_factored (completion time: 00:00:47.16)
+[info] Saved HAR to: /opt/hailo/build/owlv2-factored/owlv2_960_op17_full_normalized_factored.har
+[info] Found model with 3 input channels, using real RGB images for calibration instead of sampling random data.
+[info] Starting Model Optimization
+[warning] Reducing optimization level to 0 (the accuracy won't be optimized and compression won't be used) because there's less data than the recommended amount (1024), and there's no available GPU
+[warning] Running model optimization with zero level of optimization is not recommended for production use and might lead to suboptimal accuracy results
+[info] Model received quantization params from the hn
+[info] MatmulDecompose skipped
+[info] Starting Mixed Precision
+[info] Model Optimization Algorithm Mixed Precision is done (completion time is 00:00:01.41)
+[info] Starting LayerNorm Decomposition
+[info] Using dataset with 16 entries for calibration
+[info] Model Optimization Algorithm LayerNorm Decomposition is done (completion time is 00:01:16.83)
+[info] Starting Statistics Collector
+[info] Using dataset with 16 entries for calibration
+[info] Model Optimization Algorithm Statistics Collector is done (completion time is 00:07:02.58)
+[info] Output layer owlv2_960_op17_full_normalized_factored/conv58 with sigmoid activation was detected. Forcing its output range to be [0, 1] (original range was [0.0020350099075585604, 0.9999393224716187]).
+[info] Starting Fix zp_comp Encoding
+[info] Model Optimization Algorithm Fix zp_comp Encoding is done (completion time is 00:00:00.00)
+[info] Starting Matmul Equalization
+[info] Model Optimization Algorithm Matmul Equalization is done (completion time is 00:00:00.67)
+[info] Starting MatmulDecomposeFix
+[info] Model Optimization Algorithm MatmulDecomposeFix is done (completion time is 00:00:00.00)
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax1/act_op
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax2/act_op
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax3/act_op
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax4/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv16/conv_op, using max shift instead. delta=0.5768
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv16/conv_op, using max shift instead. delta=0.2884
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax5/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv20/conv_op, using max shift instead. delta=1.1392
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv20/conv_op, using max shift instead. delta=0.5696
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax6/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv24/conv_op, using max shift instead. delta=1.8516
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv24/conv_op, using max shift instead. delta=0.9258
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax7/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv28/conv_op, using max shift instead. delta=1.8087
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv28/conv_op, using max shift instead. delta=0.9044
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax8/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv32/conv_op, using max shift instead. delta=1.9923
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv32/conv_op, using max shift instead. delta=0.9961
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax9/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv36/conv_op, using max shift instead. delta=2.6257
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv36/conv_op, using max shift instead. delta=1.3129
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv38/conv_op, using max shift instead. delta=1.0920
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv38/conv_op, using max shift instead. delta=0.5460
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax10/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv40/conv_op, using max shift instead. delta=1.7836
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv40/conv_op, using max shift instead. delta=0.8918
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv42/conv_op, using max shift instead. delta=0.9820
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv42/conv_op, using max shift instead. delta=0.4910
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax11/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv44/conv_op, using max shift instead. delta=2.1171
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv44/conv_op, using max shift instead. delta=1.0585
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum_softmax12/act_op
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/ne_activation_reduce_sum_softmax12/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv48/conv_op, using max shift instead. delta=1.5176
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv48/conv_op, using max shift instead. delta=0.7588
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv50/conv_op, using max shift instead. delta=1.0391
+[info] No shifts available for layer owlv2_960_op17_full_normalized_factored/conv50/conv_op, using max shift instead. delta=0.5196
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/reduce_sum1/act_op
+[info] activation fitting started for owlv2_960_op17_full_normalized_factored/mul_and_add62/act_op
+[info] Finetune encoding skipped
+[info] Bias Correction skipped
+[info] Adaround skipped
+[info] Quantization-Aware Fine-Tuning skipped
+[info] Layer Noise Analysis skipped
+[info] The calibration set seems to not be normalized, because the values range is [(-1.7922626, 1.9303361), (-1.7520971, 2.0748837), (-1.4802198, 2.145897)].
+Since the neural core works in 8-bit (between 0 to 255), a quantization will occur on the CPU of the runtime platform.
+Add a normalization layer to the model to offload the normalization to the neural core.
+Refer to the user guide Hailo Dataflow Compiler user guide / Model Optimization / Optimization Related Model Script Commands / model_modification_commands / normalization for details.
+[info] Model Optimization is done
+[info] To achieve optimal performance, set the compiler_optimization_level to "max" by adding performance_param(compiler_optimization_level=max) to the model script. Note that this may increase compilation time.
+[info] Loading network parameters
+[info] Starting Hailo allocation and compilation flow
+[error] Mapping Failed (allocation time: 1s)
+Reshape is needed for layers: reduce_mean1_layer_normalization1, ew_sub1_layer_normalization1, square1_layer_normalization1, ew_mult1_layer_normalization1, precision_change25, precision_change0, reduce_mean1_layer_normalization2, ew_sub1_layer_normalization2, square1_layer_normalization2, ew_mult1_layer_normalization2, precision_change26, reduce_max_softmax1, ew_sub_softmax1, reduce_sum_softmax1, ew_mult_softmax1, matmul2, precision_change1, reduce_mean1_layer_normalization3, ew_sub1_layer_normalization3, square1_layer_normalization3, ew_mult1_layer_normalization3, precision_change27, conv6, precision_change2, reduce_mean1_layer_normalization4, ew_sub1_layer_normalization4, square1_layer_normalization4, ew_mult1_layer_normalization4, precision_change28, reduce_max_softmax2, ew_sub_softmax2, reduce_sum_softmax2, ew_mult_softmax2, matmul4, precision_change3, reduce_mean1_layer_normalization5, ew_sub1_layer_normalization5, square1_layer_normalization5, ew_mult1_layer_normalization5, precision_change29, conv10, precision_change4, reduce_mean1_layer_normalization6, ew_sub1_layer_normalization6, square1_layer_normalization6, ew_mult1_layer_normalization6, precision_change30, reduce_max_softmax3, ew_sub_softmax3, ne_activation_ew_sub_softmax3, reduce_sum_softmax3, ew_mult_softmax3, matmul6, precision_change5, reduce_mean1_layer_normalization7, ew_sub1_layer_normalization7, square1_layer_normalization7, ew_mult1_layer_normalization7, precision_change31, conv14, precision_change6, reduce_mean1_layer_normalization8, ew_sub1_layer_normalization8, square1_layer_normalization8, ew_mult1_layer_normalization8, precision_change32, reduce_max_softmax4, ew_sub_softmax4, reduce_sum_softmax4, ew_mult_softmax4, matmul8, precision_change7, reduce_mean1_layer_normalization9, ew_sub1_layer_normalization9, square1_layer_normalization9, ew_mult1_layer_normalization9, precision_change33, conv18, precision_change8, reduce_mean1_layer_normalization10, ew_sub1_layer_normalization10, square1_layer_normalization10, ew_mult1_layer_normalization10, precision_change34, reduce_max_softmax5, ew_sub_softmax5, reduce_sum_softmax5, ew_mult_softmax5, matmul10, precision_change9, reduce_mean1_layer_normalization11, ew_sub1_layer_normalization11, square1_layer_normalization11, ew_mult1_layer_normalization11, precision_change35, conv22, precision_change10, reduce_mean1_layer_normalization12, ew_sub1_layer_normalization12, square1_layer_normalization12, ew_mult1_layer_normalization12, precision_change36, reduce_max_softmax6, ew_sub_softmax6, reduce_sum_softmax6, ew_mult_softmax6, matmul12, precision_change11, reduce_mean1_layer_normalization13, ew_sub1_layer_normalization13, square1_layer_normalization13, ew_mult1_layer_normalization13, precision_change37, conv26, precision_change12, reduce_mean1_layer_normalization14, ew_sub1_layer_normalization14, square1_layer_normalization14, ew_mult1_layer_normalization14, precision_change38, reduce_max_softmax7, ew_sub_softmax7, reduce_sum_softmax7, ew_mult_softmax7, matmul14, precision_change13, reduce_mean1_layer_normalization15, ew_sub1_layer_normalization15, square1_layer_normalization15, ew_mult1_layer_normalization15, precision_change39, conv30, precision_change14, reduce_mean1_layer_normalization16, ew_sub1_layer_normalization16, square1_layer_normalization16, ew_mult1_layer_normalization16, precision_change40, reduce_max_softmax8, ew_sub_softmax8, reduce_sum_softmax8, ew_mult_softmax8, matmul16, precision_change15, reduce_mean1_layer_normalization17, ew_sub1_layer_normalization17, square1_layer_normalization17, ew_mult1_layer_normalization17, precision_change41, conv34, precision_change16, reduce_mean1_layer_normalization18, ew_sub1_layer_normalization18, square1_layer_normalization18, ew_mult1_layer_normalization18, precision_change42, reduce_max_softmax9, ew_sub_softmax9, ne_activation_ew_sub_softmax9, reduce_sum_softmax9, ew_mult_softmax9, matmul18, precision_change17, reduce_mean1_layer_normalization19, ew_sub1_layer_normalization19, square1_layer_normalization19, ew_mult1_layer_normalization19, precision_change43, conv38, precision_change18, reduce_mean1_layer_normalization20, ew_sub1_layer_normalization20, square1_layer_normalization20, ew_mult1_layer_normalization20, precision_change44, reduce_max_softmax10, ew_sub_softmax10, ne_activation_ew_sub_softmax10, reduce_sum_softmax10, ew_mult_softmax10, matmul20, precision_change19, reduce_mean1_layer_normalization21, ew_sub1_layer_normalization21, square1_layer_normalization21, ew_mult1_layer_normalization21, precision_change45, conv42, precision_change20, reduce_mean1_layer_normalization22, ew_sub1_layer_normalization22, square1_layer_normalization22, ew_mult1_layer_normalization22, precision_change46, reduce_max_softmax11, ew_sub_softmax11, reduce_sum_softmax11, ew_mult_softmax11, matmul22, precision_change21, reduce_mean1_layer_normalization23, ew_sub1_layer_normalization23, square1_layer_normalization23, ew_mult1_layer_normalization23, precision_change47, conv46, precision_change22, reduce_mean1_layer_normalization24, ew_sub1_layer_normalization24, square1_layer_normalization24, ew_mult1_layer_normalization24, precision_change48, reduce_max_softmax12, ew_sub_softmax12, reduce_sum_softmax12, ew_mult_softmax12, matmul24, precision_change23, reduce_mean1_layer_normalization25, ew_sub1_layer_normalization25, square1_layer_normalization25, ew_mult1_layer_normalization25, precision_change49, conv50, reduce_mean1_layer_normalization26, ew_sub1_layer_normalization26, square1_layer_normalization26, ew_mult1_layer_normalization26, precision_change50, but adding a reshape has failed.
+[?25h
+[error] Failed to produce compiled graph
+
+========================================================================
+OWLv2 -> hailo8l   DFC 3.34.0   960px / 3600 tokens
+========================================================================
+  960_op17_full_normalized_factored  translate=ok  optimize=ok  compile=FAIL
+      compile: Compilation failed: Reshape is needed for layers: reduce_mean1_layer_normalization1, ew_sub1_layer_normalization1, square1_layer_normalization1, ew_mult1_layer_normalization1, precision_change25, precision_change0, reduce_mean1_layer_normalization2, ew_sub1_layer_normalization2, square1_layer_normalization2, ew_mult1_layer_normalization2, precision_change26, reduce_max_softmax1, ew_sub_softmax1, r
+
+VERDICT: no HEF. Furthest stage reached: ['optimize'].
+Read the per-stage headlines above before concluding anything about the part: a parser gap and a resource wall argue for different hardware.

@@ -497,8 +497,10 @@ tracking machinery.
    which 4.3.1 shows is simply downloadable for the 8L so a loop built
    against it would prove only that the loop runs, and no longer against the
    floor mask either: P5 put a harder and more decisive subject in front of
-   both. It is pointed at **OWLv2**, and it has not been run -- it needs the
-   Dataflow Compiler wheel, which is a Developer Zone download.
+   both. It is pointed at **OWLv2**, and it **RAN 2026-09-09 on DFC 3.34.0**:
+   OWLv2 translates and quantizes and does not allocate, the wall being every
+   layernorm and softmax rather than the weights. See P6. The loop cost $3.20
+   and answered a $400 question, which is the case 1.10 item 1 was making.
 2. **The PCIe lane.** The AI HAT+ takes the Pi 5's single PCIe connector, and
    so does the NVMe HAT that 3.6 calls the one optional item worth buying.
    Decide at ordering time between a high-endurance microSD plus a
@@ -4707,6 +4709,13 @@ question rather than an accuracy one:**
 - **Does not** -> a Jetson, but for a 150M model rather than a 4B one, which
   changes the board and the power budget it needs.
 
+> **MEASURED 2026-09-09: it does not.** The second branch is the live one.
+> OWLv2 parses and quantizes on DFC 3.34 and then fails allocation on 73
+> layernorm and 38 softmax layers -- every per-token reduction in the
+> transformer. `conv1` failed first and hid this for three attempts; an exact
+> factored patch embedding removed it and exposed the real wall. Full record
+> in P6 and `evaluations/hailo/`.
+
 **This retires the experiment 1.10 item 1 was going to be pointed at.** "Test
 a 1280 HEF" is answered and dead: PyTorch YOLO11s at 1280 reaches 2/23 on the
 distant walk against 640's 1/23, because the limit is *vocabulary* -- a COCO
@@ -4714,7 +4723,7 @@ detector has no class for a laundry basket at any resolution. The compile loop
 is still needed, but its first subject is now **OWLv2**, not a wider YOLO and
 not the floor mask.
 
-#### P6: the compile loop, built and pointed at OWLv2 -- **BUILT 2026-09-09, NOT YET RUN**
+#### P6: the compile loop, and what it decided -- **RUN 2026-09-09**
 
 1.10 item 1 has asked for this since 2026-09-04 and it was never started:
 *"Build that loop before the hardware arrives. If the loop exists on day one
@@ -4802,6 +4811,104 @@ and that is roughly right**: an `r6i.4xlarge` in us-east-2 at ~$1.01/hr plus
 ~$0.02/hr of gp3, torn down by `tools/hailo/ec2.sh down`. Access is SSM
 Session Manager, so there is no key pair and the security group authorises
 no inbound rules at all.
+
+#### The answer: **it does not compile, and conv1 was hiding why** -- 2026-09-09
+
+Run against **DFC 3.34.0**, `hw_arch=hailo8l`, on an `r6i.4xlarge` for 3.1
+hours (**$3.13** compute + $0.07 EBS). Every record is in
+`evaluations/hailo/`; the instance is gone.
+
+| variant | translate | optimize | compile |
+|---|---|---|---|
+| 960px, stock graph | ok | ok | FAIL -- `conv1` |
+| 640px (1600 tokens) | ok | ok | FAIL -- `conv1` |
+| 640px + `allocator_param(automatic_reshapes=enabled)` | ok | ok | FAIL -- `conv1` |
+| 960px, **patch conv factored** | ok | ok | **FAIL -- the whole transformer body** |
+
+**Translation and quantization are not the problem, and that is the
+surprise.** OWLv2's ViT-B/16 image tower parses in 44-107s and quantizes with
+no OOM, at 3600 tokens *and* at 1600. DFC 3.34 carries a **LayerNorm
+Decomposition** pass, **Matmul Equalization** and **MatmulDecompose**, and
+uses all three on this graph. So 1.10's *"no efficient attention path and no
+memory for the weights"* is wrong on the second half and imprecise on the
+first.
+
+**The first three rows all die on `conv1`** -- the single Conv in a 575-node
+graph, the 16x16-stride-16 patch embedding:
+
+```
+Reshape is needed for layers: conv1, but adding a reshape has failed
+```
+
+Resolution does not move it and neither does the allocator's own reshape
+policy, so it is neither capacity nor a missing flag. The SDK carries a
+`SPACE_TO_DEPTH` conversion type, which says what the allocator is trying to
+do and failing at.
+
+**So the fourth row does that rewrite in the export, exactly**, as
+`--factor-patch`: `3->48 k4s4` with one-hot weights (a space-to-depth by 4),
+then `48->768 k4s4` carrying the original weights re-indexed. A 16x16 patch
+is a 4x4 grid of 4x4 blocks, so the composition has the same receptive field
+and the same weights. Verified against the unmodified model on a real frame
+at the same bar as the text-tower split -- max |d score| **1.4e-05**, top-50
+patch set identical. **An identity, not an approximation.** The form was
+chosen deliberately over the other obvious one (host-side `unfold` into a
+768-channel 1x1 conv) because it keeps an image-shaped input and two
+small-kernel convs, which is where a CNN toolchain is comfortable.
+
+**It works, and what it reveals is the real wall.** `conv1` disappears from
+the error. In its place:
+
+| layers named in the failure | count |
+|---|---|
+| layer normalization (reduce_mean / sub / square / mult) | **73** |
+| softmax (reduce_max / sub / sum / mult) | **38** |
+| precision change | 36 |
+| matmul | 9 |
+| conv | 8 |
+
+**Every attention and every layernorm, not a subset.** The Hailo allocator
+cannot place the reshapes that per-token reductions require. That is an
+architectural property of the dataflow design rather than a size limit --
+which is exactly why no smaller input and no flag moved it, and why `conv1`
+failing first was actively misleading for three attempts.
+
+#### So the part decision resolves, against the Hailo
+
+P5 set the two branches. This is the second one:
+
+> **Does not** -> a Jetson, but for a 150M model rather than a 4B one, which
+> changes the board and the power budget it needs.
+
+That is now the recommendation, and it is a **much cheaper Jetson case than
+the one 4.8 costed**. The board was going to be bought to run a 2-4B VLM at
+INT4 in 8GB at 2-4s per answer. It is now being bought to run a **150M ViT at
+2.1s/frame**, which an Orin Nano does comfortably and which leaves the 8GB
+mostly for SLAM and nav2 -- the exact objection 1.10 raised against the
+Jetson (*"8GB shared with the GPU that cannot hold SLAM, nav2, a detector and
+a local VLM at once"*). Dropping the local VLM removes that objection rather
+than paying for it.
+
+**Three things this does NOT change**, and they matter:
+
+- **The reactive tier is untouched.** YOLO11 n/s/m compile for the 8L off the
+  shelf (4.3.1) and measure 86% close range at 92 FPS. Nothing here was
+  pointed at them. If the platform stays Pi + Hailo for the reactive tier and
+  gains a second board for search proposal, that is a real option -- and a
+  worse one on power and cost than one Jetson doing both.
+- **OWLv2's accuracy stands.** 68/68 visible frames, three targets, zero
+  false positives, and 100% precision against Opus 4.5's 23% on the walk that
+  broke 1.11. Those are PyTorch numbers and remain the reason this model is
+  worth a board at all.
+- **The split is already built and still correct.** `owlv2_host_head.py` puts
+  the text tower on the CPU and joins five per-patch tensors with one matmul.
+  That division is right on a Jetson too; only the accelerator changes.
+
+**And the loop itself was the point.** 1.10 item 1 asked for it so the part
+would be a sandbox rather than a fixed function. It answered a $400 question
+for $3.20 in about three hours, and it is one `ec2.sh up` away from re-running
+against a newer DFC -- which is the only thing that could reverse this
+result, since the limit is the allocator rather than the model.
 
 #### A method note worth more than the result
 

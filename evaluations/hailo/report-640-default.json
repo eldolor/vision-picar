@@ -1,0 +1,58 @@
+{
+ "started_at": "2026-09-09T23:41:20Z",
+ "arch": "hailo8l",
+ "model_id": "google/owlv2-base-patch16-ensemble",
+ "image_size": 640,
+ "num_patches": 1600,
+ "dfc_version": "3.34.0",
+ "host": "ip-172-31-2-23",
+ "calibration": {
+  "n": 16,
+  "seed": 0,
+  "walks": [
+   "blue-bottle-20260907-142454",
+   "blue-bottle-20260907-185007",
+   "blue-shoes-20260907-152528",
+   "blue-shoes-20260908-210511",
+   "red-backpack-20260907-144856",
+   "woven-laundry-basket-20260908-212419",
+   "woven-laundry-basket-20260908-212549",
+   "woven-laundry-basket-20260908-212719",
+   "woven-laundry-basket-20260908-215140",
+   "woven-laundry-basket-20260908-215252",
+   "woven-laundry-basket-20260908-215351"
+  ]
+ },
+ "attempts": [
+  {
+   "tag": "640_op17_full_normalized",
+   "onnx": "owlv2_image_tower_640_op17_full.onnx",
+   "opset": 17,
+   "head": "full",
+   "image_size": 640,
+   "layout": "normalized",
+   "arch": "hailo8l",
+   "stages": {
+    "translate": {
+     "ok": true,
+     "seconds": 108.8
+    },
+    "optimize": {
+     "ok": true,
+     "seconds": 679.8
+    },
+    "compile": {
+     "ok": false,
+     "seconds": 8.5,
+     "error_type": "BackendAllocatorException",
+     "error": "Compilation failed: Reshape is needed for layers: conv1, but adding a reshape has failed.",
+     "log": "logs/640_op17_full_normalized.compile.log",
+     "headline": "Compilation failed: Reshape is needed for layers: conv1, but adding a reshape has failed."
+    }
+   },
+   "reached": "optimize",
+   "hef": null,
+   "har": "owlv2_640_op17_full_normalized.har"
+  }
+ ]
+}

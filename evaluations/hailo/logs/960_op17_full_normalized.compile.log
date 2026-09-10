@@ -1,0 +1,22 @@
+Traceback (most recent call last):
+  File "/opt/hailo/tools/hailo/compile_owlv2.py", line 122, in run
+    value = fn()
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 911, in compile
+    return self._compile()
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_common/states/states.py", line 16, in wrapped_func
+    return func(self, *args, **kwargs)
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 1128, in _compile
+    serialized_hef = self._sdk_backend.compile(fps, self.model_script, mapping_timeout)
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 1852, in compile
+    hef, mapped_graph_file = self._compile(fps, allocator_script, mapping_timeout)
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 1846, in _compile
+    hef, mapped_graph_file, auto_alls = self.hef_full_build(fps, mapping_timeout, model_params, allocator_script)
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 1822, in hef_full_build
+    auto_alls, self._hef_data, self._integrated_graph = allocator.create_mapping_and_full_build_hef(
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/allocator/hailo_tools_runner.py", line 764, in create_mapping_and_full_build_hef
+    self.call_builder(
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/allocator/hailo_tools_runner.py", line 696, in call_builder
+    self.run_builder(network_graph_path, output_path, **kwargs)
+  File "/opt/hailo/venv/lib/python3.10/site-packages/hailo_sdk_client/allocator/hailo_tools_runner.py", line 570, in run_builder
+    raise e.internal_exception("Compilation failed:", hailo_tools_error=compiler_msg) from None
+hailo_sdk_client.sdk_backend.sdk_backend_exceptions.BackendAllocatorException: Compilation failed: Reshape is needed for layers: conv1, but adding a reshape has failed.

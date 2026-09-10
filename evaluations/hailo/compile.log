@@ -1,0 +1,120 @@
+[info] No GPU chosen and no suitable GPU found, falling back to CPU.
+
+=== 960_op17_full_normalized ===
+[info] Translation started on ONNX model owlv2_960_op17_full_normalized
+[info] Restored ONNX model owlv2_960_op17_full_normalized (completion time: 00:00:01.70)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:09.90)
+[info] Simplified ONNX model for a parsing retry attempt (completion time: 00:00:30.93)
+[info] Start nodes mapped from original model: 'pixel_values': 'owlv2_960_op17_full_normalized/input_layer1'.
+[info] End nodes mapped from original model: '/Div', '/logit_shift/Add', '/Add_1', '/Sigmoid', '/Gather'.
+[info] Translation completed on ONNX model owlv2_960_op17_full_normalized (completion time: 00:00:44.29)
+[info] Saved HAR to: /opt/hailo/build/owlv2/owlv2_960_op17_full_normalized.har
+[info] Found model with 3 input channels, using real RGB images for calibration instead of sampling random data.
+[info] Starting Model Optimization
+[warning] Reducing optimization level to 0 (the accuracy won't be optimized and compression won't be used) because there's less data than the recommended amount (1024), and there's no available GPU
+[warning] Running model optimization with zero level of optimization is not recommended for production use and might lead to suboptimal accuracy results
+[info] Model received quantization params from the hn
+[info] MatmulDecompose skipped
+[info] Starting Mixed Precision
+[info] Model Optimization Algorithm Mixed Precision is done (completion time is 00:00:01.40)
+[info] Starting LayerNorm Decomposition
+[info] Using dataset with 16 entries for calibration
+[info] Model Optimization Algorithm LayerNorm Decomposition is done (completion time is 00:01:17.12)
+[info] Starting Statistics Collector
+[info] Using dataset with 16 entries for calibration
+[info] Model Optimization Algorithm Statistics Collector is done (completion time is 00:06:58.44)
+[info] Output layer owlv2_960_op17_full_normalized/conv57 with sigmoid activation was detected. Forcing its output range to be [0, 1] (original range was [0.002035019686445594, 0.9999393224716187]).
+[info] Starting Fix zp_comp Encoding
+[info] Model Optimization Algorithm Fix zp_comp Encoding is done (completion time is 00:00:00.00)
+[info] Starting Matmul Equalization
+[info] Model Optimization Algorithm Matmul Equalization is done (completion time is 00:00:00.66)
+[info] Starting MatmulDecomposeFix
+[info] Model Optimization Algorithm MatmulDecomposeFix is done (completion time is 00:00:00.00)
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax1/act_op
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax2/act_op
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax3/act_op
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax4/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv15/conv_op, using max shift instead. delta=0.5768
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv15/conv_op, using max shift instead. delta=0.2884
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax5/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv19/conv_op, using max shift instead. delta=1.1392
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv19/conv_op, using max shift instead. delta=0.5696
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax6/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv23/conv_op, using max shift instead. delta=1.8516
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv23/conv_op, using max shift instead. delta=0.9258
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax7/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv27/conv_op, using max shift instead. delta=1.8087
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv27/conv_op, using max shift instead. delta=0.9044
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax8/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv31/conv_op, using max shift instead. delta=1.9923
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv31/conv_op, using max shift instead. delta=0.9961
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax9/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv35/conv_op, using max shift instead. delta=2.6257
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv35/conv_op, using max shift instead. delta=1.3129
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv37/conv_op, using max shift instead. delta=1.0920
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv37/conv_op, using max shift instead. delta=0.5460
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax10/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv39/conv_op, using max shift instead. delta=1.7836
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv39/conv_op, using max shift instead. delta=0.8918
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv41/conv_op, using max shift instead. delta=0.9820
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv41/conv_op, using max shift instead. delta=0.4910
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax11/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv43/conv_op, using max shift instead. delta=2.1171
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv43/conv_op, using max shift instead. delta=1.0585
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum_softmax12/act_op
+[info] activation fitting started for owlv2_960_op17_full_normalized/ne_activation_reduce_sum_softmax12/act_op
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv47/conv_op, using max shift instead. delta=1.5176
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv47/conv_op, using max shift instead. delta=0.7588
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv49/conv_op, using max shift instead. delta=1.0391
+[info] No shifts available for layer owlv2_960_op17_full_normalized/conv49/conv_op, using max shift instead. delta=0.5196
+[info] activation fitting started for owlv2_960_op17_full_normalized/reduce_sum1/act_op
+[info] activation fitting started for owlv2_960_op17_full_normalized/mul_and_add62/act_op
+[info] Finetune encoding skipped
+[info] Bias Correction skipped
+[info] Adaround skipped
+[info] Quantization-Aware Fine-Tuning skipped
+[info] Layer Noise Analysis skipped
+[info] The calibration set seems to not be normalized, because the values range is [(-1.7922626, 1.9303361), (-1.7520971, 2.0748837), (-1.4802198, 2.145897)].
+Since the neural core works in 8-bit (between 0 to 255), a quantization will occur on the CPU of the runtime platform.
+Add a normalization layer to the model to offload the normalization to the neural core.
+Refer to the user guide Hailo Dataflow Compiler user guide / Model Optimization / Optimization Related Model Script Commands / model_modification_commands / normalization for details.
+[info] Model Optimization is done
+[info] To achieve optimal performance, set the compiler_optimization_level to "max" by adding performance_param(compiler_optimization_level=max) to the model script. Note that this may increase compilation time.
+[info] Loading network parameters
+[info] Starting Hailo allocation and compilation flow
+[warning] Failed to add spatial reshapes
+[error] Mapping Failed (allocation time: 1s)
+Reshape is needed for layers: conv1, but adding a reshape has failed.
+[?25h
+[error] Failed to produce compiled graph
+
+=== 960_op17_full_uint8 ===
+[info] Translation started on ONNX model owlv2_960_op17_full_uint8
+[info] Restored ONNX model owlv2_960_op17_full_uint8 (completion time: 00:00:01.17)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:10.16)
+[info] Simplified ONNX model for a parsing retry attempt (completion time: 00:00:32.50)
+[info] Start nodes mapped from original model: 'pixel_values': 'owlv2_960_op17_full_uint8/input_layer1'.
+[info] End nodes mapped from original model: '/Div', '/logit_shift/Add', '/Add_1', '/Sigmoid', '/Gather'.
+[info] Translation completed on ONNX model owlv2_960_op17_full_uint8 (completion time: 00:00:47.10)
+[info] Saved HAR to: /opt/hailo/build/owlv2/owlv2_960_op17_full_uint8.har
+[info] Loading model script commands to owlv2_960_op17_full_uint8 from string
+
+=== 960_op14_full_normalized ===
+[info] Translation started on ONNX model owlv2_960_op14_full_normalized
+[info] Restored ONNX model owlv2_960_op14_full_normalized (completion time: 00:00:01.70)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:11.37)
+[info] Simplified ONNX model for a parsing retry attempt (completion time: 00:00:39.00)
+[info] Start nodes mapped from original model: 'pixel_values': 'owlv2_960_op14_full_normalized/input_layer1'.
+[info] End nodes mapped from original model: '/Div', '/logit_shift/Add', '/Add_1', '/Sigmoid', '/Gather'.
+[info] Translation completed on ONNX model owlv2_960_op14_full_normalized (completion time: 00:00:53.85)
+[info] Saved HAR to: /opt/hailo/build/owlv2/owlv2_960_op14_full_normalized.har
+[info] Found model with 3 input channels, using real RGB images for calibration instead of sampling random data.
+[info] Starting Model Optimization
+[warning] Reducing optimization level to 0 (the accuracy won't be optimized and compression won't be used) because there's less data than the recommended amount (1024), and there's no available GPU
+[warning] Running model optimization with zero level of optimization is not recommended for production use and might lead to suboptimal accuracy results
+[info] Model received quantization params from the hn
+[info] MatmulDecompose skipped
+[info] Starting Mixed Precision
+[info] Model Optimization Algorithm Mixed Precision is done (completion time is 00:00:01.50)
+[info] Starting LayerNorm Decomposition
+[info] Using dataset with 16 entries for calibration
