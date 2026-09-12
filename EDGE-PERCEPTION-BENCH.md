@@ -1,8 +1,8 @@
 # Edge Perception Bench
 
-**Phases P1-P6, 2026-09-07 -> 2026-09-09.** Nine model configurations scored on
-adjudicated rig walks, then one toolchain experiment that overturned the
-hardware plan.
+**Phases P1-P7, 2026-09-07 -> 2026-09-12.** Eleven configurations scored on all
+eight adjudicated rig walks, one toolchain experiment that overturned the
+hardware plan, and the corpus error that moved every headline.
 
 Published version: https://claude.ai/code/artifact/f3dd0506-0e26-4cd2-aea9-e64998966380
 
