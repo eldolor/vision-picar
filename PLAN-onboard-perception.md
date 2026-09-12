@@ -4604,6 +4604,14 @@ against the shipped pipeline's 1/18.
 The distant walk (`...215252`, 86 frames, 23 with the basket visible), every
 model at native tiling, scored on grounding:
 
+> **CORRECTION, 2026-09-11 (P7): the two Qwen3-VL rows below were NOT at
+> native tiling.** `--vlm-max-pixels` is silently ignored by Qwen3-VL --
+> measured at 897 input tokens with the flag and 897 without. It works on
+> Qwen2.5-VL (1224 -> 1153), which is the model the tiling sweep above
+> actually ran on. The sweep's conclusion was then carried to a model where
+> the control does not exist, so these two rows are real numbers at an
+> unknown tiling budget.
+
 | config | recall | false pos | s/frame (MPS laptop) |
 |---|---|---|---|
 | YOLO + floor + CLIP @0.8 (**shipped**) | 1/23 = **4%** | 0 | 1.2 |
@@ -4910,6 +4918,230 @@ for $3.20 in about three hours, and it is one `ec2.sh up` away from re-running
 against a newer DFC -- which is the only thing that could reverse this
 result, since the limit is the allocator rather than the model.
 
+
+#### P7: the whole corpus, on a rented GPU -- **RUN 2026-09-11/12**
+
+Two A10G instances (g5.xlarge), 3.7 hours, **$3.70**, both torn down. Every
+record is in `evaluations/gpu/` with its own README naming the control, the
+invalid runs and the model that was deliberately not run.
+
+**It exists because of a scope error, not a hardware need.** Every row in
+4.11 and P5 above was scored on **four** walks. The corpus has **eight**
+labelled walks -- 610 frames, 159 visible -- and nothing had ever been
+scored against all of it. So the comparison those sections rest on mixes a
+subset with a corpus, and the four excluded walks are the hard ones,
+including `...215140`: **95 frames with nothing to find**, a pure
+false-positive test that can never contribute recall and had never been
+scored by anything.
+
+**The control is what licenses reading any of it.** CUDA fp32 reproduced the
+committed CPU record **exactly** -- 26% / 96% / 100% at gates 0.677 / 0.119
+/ 0.067, same true positives, same false positives. A GPU changes nothing
+about what a detection is. Without that check every row below would carry an
+unfalsifiable "different hardware" caveat, which is the same discipline the
+ONNX split verification in P6 exists to provide.
+
+##### The table 4.11 should have had
+
+Recall at matched false-positive budgets, all 8 walks, one A10G:
+
+| config | @0 FP | @3 FP | @16 FP | ms |
+|---|---|---|---|---|
+| OWLv2-large | 8% | **86%** | **97%** | 717 |
+| **OWLv2-base fp16** | 12% | **82%** | 92% | **111** |
+| Qwen2.5-VL-3B | 42% | 79% | 79% | 725 |
+| InternVL3-2B | 3% | 75% | 89% | 625 |
+| YOLO11s + floor + CLIP (**shipped**) | 8% | 58% | 70% | 1210 |
+| **Grounding DINO** | **50%** | 55% | 71% | 226 |
+| YOLO-World | 47% | 53% | 74% | **16** |
+| LLMDet | 11% | 18% | 72% | 276 |
+| OmDet-Turbo | 7% | 7% | 13% | 49 |
+
+Latency is PyTorch eager and **includes CPU preprocessing**; it compares
+models to each other, never to the robot's budget (2.9).
+
+##### Four findings, in order of how much they change
+
+**1. fp16 costs nothing, and that assumption was load-bearing.** Identical
+true positives at every budget, gates matching to three decimals, **1.8x
+faster**. P5, P6 and 4.9 all assume a quantised ViT keeps its accuracy and
+none of them measured it. It does. **INT8 is still unmeasured** -- ViTs
+often need quantisation-aware training to hold it -- and every latency
+projection below assumes INT8, so that gap is now the load-bearing one.
+
+**2. OWLv2 reads 82%, not 96% -- and its margin WIDENS.** The gate must
+climb 0.119 -> 0.209 to stay inside three false positives, costing 14
+points. But the shipped pipeline falls further, 85% -> 58%, so the gap goes
+from 11 points to **24** at **11x the speed**. The recommendation is
+stronger than the number that was published for it.
+
+**3. 4.11's central claim is false.** It says *"the three-model pipeline
+dominates at every operating point."* At zero false positives **Grounding
+DINO gets 50% where the shipped pipeline gets 8%**, beating every model in
+the bench including OWLv2's 12%. That claim was measured on the subset and
+does not generalise -- and it is the claim that justified keeping the
+composed pipeline at all.
+
+  The useful corollary is for **1.11a**: a model that finds half the
+  sightings with *literally zero* false positives is a better corroborator
+  than one finding 82% with three. 1.11a's "lower bar for corroboration" may
+  be better served by a different model than by a lower threshold on the
+  same one. First evidence either way, and it does not require deciding
+  1.11a now.
+
+**4. The field was not as covered as this document assumed.** 4.11 and P5
+tested the models this plan happened to name. HuggingFace's own zero-shot
+detection list carries three families nobody had tried. Two ran:
+**OmDet-Turbo loses decisively** (7% at 3 FP, and its scores barely separate)
+and **LLMDet loses** (18%). Neither displaces OWLv2 -- a real result rather
+than a null one, for about forty cents. The lesson is procedural: "we tested
+the alternatives" meant "we tested the alternatives we had named."
+
+##### And the two VLM rows that were far better than their 4-walk rows
+
+Qwen2.5-VL-3B reads **42% / 79%** and InternVL3-2B **3% / 75%**, against the
+much weaker figures the distant walk alone implied. Both still lose to
+OWLv2 on every engineering axis -- 6x the latency, 13-20x the parameters --
+and both are **non-separable**: their gates sit pinned (1.000 for InternVL3,
+0.000 for Qwen2.5) across budgets, so they offer one operating point rather
+than a curve, the same shape P5 caught on Qwen3-VL-4B's 4e-07 margin.
+OWLv2's gate slides 0.68 -> 0.13 over the same budgets, which is what
+ranking looks like.
+
+##### Qwen3-VL was not run, and the reason corrects P5
+
+Three independent problems, all measured:
+
+- **An upstream performance bug.** 5262 ms/token against Qwen2.5-VL-3B's 77
+  -- 68x slower on a *smaller* model with *fewer* input tokens (897 vs
+  1224) and the same `sdpa` attention. Known and unfixed upstream
+  (QwenLM/Qwen3-VL#1811, sgl-project/sglang#14078); a community
+  optimisation pass moved it 6%. 4.5 h per model.
+- **`--vlm-max-pixels` is silently ignored by Qwen3-VL.** 897 input tokens
+  at budget `None` *and* at `921600`. It works on Qwen2.5-VL (1224 ->
+  1153). **So P5's "every model at native tiling" is wrong for the two
+  Qwen3-VL rows** -- the flag was passed and discarded. P5's tiling sweep,
+  which established that native resolution is the peak, ran on
+  Qwen2.5-VL-3B (the default), and that conclusion was then carried to a
+  model where the control does not exist.
+- Its score is **non-separable**, so it cannot be read at a matched budget
+  at all.
+
+$9 of GPU time for two rows that are mislabelled, unreadable and losing. The
+diagnosis is the more valuable output and it is recorded here instead.
+
+##### Two runs in `evaluations/gpu/` are INVALID
+
+Kept so nobody re-derives them, and labelled in that directory's README.
+`a10g-sam-8walk.json` scored every frame exactly 0.0 -- run with `--metric
+confidence` when SAM + CLIP yields a probability. `a10g-owlvit-8walk.json`
+is 610/610 `unavailable` -- OWL-ViT v1 loaded through Grounding DINO's
+post-processing, so the model never ran. Both are harness errors. Neither is
+a statement about either model.
+
+#### P7b: what the latency actually says about an Orin -- and what it does not
+
+The A10G measurement was taken to make the Orin extrapolation rest on one
+variable instead of three. It does, and **the answer moved by 2.4x once
+assumptions were replaced by measurements** -- which is the main thing to
+carry forward from it.
+
+**Measured directly**, separating GPU from CPU rather than deriving them:
+
+| | GPU | CPU preprocessing |
+|---|---|---|
+| fp32 | 123.3 ms | VGA **17.1 ms** |
+| fp16 | **38.8 ms** (3.18x) | 1280 **91.5 ms** |
+
+An earlier derivation had assumed a 2.75x fp16 speedup and solved for the
+split; it was wrong by 24% on GPU and **65% on CPU at VGA**. The lesson is
+small and repeats all through this document: a four-measurement system with
+four unknowns is rank-deficient, and the missing input was supplied by
+recall rather than by a fifth measurement that took two minutes.
+
+**Projected to an Orin Nano Super** at the measured 20% utilisation of fp16
+peak, with CPU scaled 2.5x for an A78AE:
+
+| | GPU | CPU | total |
+|---|---|---|---|
+| fp16, VGA | 163 | 43 | **205 ms** (4.9 Hz) |
+| fp16, 1280 | 163 | 229 | 391 ms (2.6 Hz) |
+| INT8, VGA | 81 | 43 | **124 ms** (8.1 Hz) |
+| INT8, 1280 | 81 | 229 | 310 ms (3.2 Hz) |
+
+**The bottleneck is not the model.** At INT8 on a 1280 capture the Orin
+spends **36 ms detecting and 229 ms resizing a photograph** -- OWLv2's own
+anti-aliasing resize, in Python, on the CPU. Three fixes in order of
+preference: do the resize on the GPU; capture nearer 960 so there is less
+rescaling; or drop the anti-aliasing filter, which needs its accuracy cost
+measured first because small distant targets are what it protects. **Do not
+simply capture at VGA to dodge it** -- VGA is *upscaled* to 960 and loses
+detail, where 1280 is downscaled and keeps it, and the distant-target walks
+are the 1280 ones.
+
+**What this measurement structurally cannot see** is Orin's memory
+bandwidth. OWLv2's attention score matrices are **3.7 GB/frame** at 3600
+tokens: 6 ms on the A10G's 600 GB/s, **37 ms on the Orin's 102 GB/s**, or
+half the entire INT8 GPU estimate. The measured run used `sdpa`, so fusion
+is probably already reflected in that 20% utilisation -- but that is an
+inference from a stack trace. A second GPU with a different compute:bandwidth
+ratio (an L4, ~$1) would resolve it; so would the board.
+
+#### P7c: what P7 reopens in the design
+
+Three questions the latency result changes, none of which needs hardware to
+think about and all of which need hardware to settle.
+
+**1. YOLO is NOT redundant, and an earlier claim here is withdrawn.** When
+OWLv2 looked like 51 ms it appeared able to serve the 15-30 Hz reactive tier
+outright, collapsing three models into one. At the corrected **124 ms / 8
+Hz** it cannot. The reactive tier keeps a fast detector, and 1.10's two-layer
+split stands. **What does change is the justification**: on Pi + Hailo, YOLO
+was the only detector that could run at all; on a Jetson it is a deliberate
+choice to spend a cheap model on the fast loop, and its 92 FPS figure is a
+Hailo-8 number that does not transfer (YOLO11s on an Orin is unmeasured).
+
+**2. The vocabulary hole in the reactive tier, and why 1.10's deleted layer
+two stays deleted anyway.** 1.10 removed lidar blob tracking on the grounds
+that *"tracking cannot break if detection never stopped."* That held when
+the identifying detector ran at 92 FPS. It does not hold for an
+out-of-vocabulary target, where **only OWLv2 can identify the target at
+all** and it runs at 8 Hz -- YOLO has no COCO class for a woven laundry
+basket, so it cannot supply that bearing.
+
+  The resolution is not a tracker. **The target is static**; the only thing
+  changing the bearing is the robot's own motion, which encoders and the
+  motion board's 9-axis IMU already measure. So a detection becomes a
+  **goal pose in the odom frame**, not a per-frame bearing: the reactive
+  tier recomputes the bearing to a stored point at 30 Hz from odometry, and
+  re-detection corrects drift rather than supplying the answer. This is
+  1.8's *"the detector points, the lidar measures"* with a clock added, and
+  it is the same rule 2.3 already applies to the cloud tier ("an egocentric
+  goal, never a coordinate the reactive tier cannot resolve"), applied one
+  layer down.
+
+  At 8 Hz the gap is 125 ms -- 2.5 cm at 0.2 m/s, which odometry covers
+  trivially. It also **reinforces the differential-drive choice from a new
+  direction**: mecanum slips, and this design spends odometry accuracy.
+
+**3. `target_reached` must move off the cloud.** `brain/navigate.py:169`
+reads it from the `/navigate` reply and `control/mission_runner.py:585` ends
+the mission on it -- so arrival is declared **~5.6 s late** (2.1 s
+perception plus a 3.5 s round trip), which is 1.7 m of overshoot at 0.3 m/s
+past the one thing the robot was trying to stop at. Worse,
+`brain/tiered.py:475` forces `target_reached: False` on every free step, so
+arrival is only *declarable* on a paid one.
+
+  Arrival should be local and needs no YOLO: **OWLv2 supplies a bearing, the
+  lidar measures range at that bearing, and a threshold fires.** Both are
+  on-board and under 33 ms. This converges with 1.11a's own open
+  recommendation -- gate the *commitment* rather than the sighting -- from
+  an unrelated direction, which is the strongest kind of agreement.
+
+**None of the three is built.** They are recorded here because the
+measurement that provoked them is recorded here, and because two of them
+contradict text elsewhere in this document.
+
 #### A method note worth more than the result
 
 **OWLv2's fixed-gate table reads 3/25 on the shoes walk and its swept table
@@ -5023,6 +5255,15 @@ really about. Run over all four walks against the adjudicated labels
 false positives it finds 62 where YOLO-World finds ~36; at ~14-16 it finds
 69 where YOLO-World finds 63. The composed pipeline is not a workaround for
 lacking a better detector -- on this corpus it *is* the better detector.
+
+> **FALSIFIED on the full corpus, 2026-09-11 -- see P7.** This row and
+> the claim above were measured on FOUR of the corpus's eight labelled
+> walks. Scored over all 610 frames, the shipped pipeline reads **58%** at
+> 3 FP rather than 85%, and **Grounding DINO gets 50% at ZERO false
+> positives where the shipped pipeline gets 8%** -- so it does not
+> dominate at every operating point. OWLv2's margin over it *widens*
+> (11 points -> 24), so the conclusion this section draws about the PART
+> survives; the claim about the pipeline does not.
 
 Two further results from the same run, both load-bearing:
 
