@@ -76,13 +76,17 @@ OWLV2 = "owlv2"
 YOLOWORLD = "yoloworld"
 OMDET = "omdet"
 LLMDET = "llmdet"
+TRTOWLV2 = "trtowlv2"
 VLM = "vlm"
-OPEN_VOCAB = (GDINO, OWLV2, YOLOWORLD, VLM, OMDET, LLMDET)
+OPEN_VOCAB = (GDINO, OWLV2, YOLOWORLD, VLM, OMDET, LLMDET, TRTOWLV2)
 
 DEFAULT_GDINO = "IDEA-Research/grounding-dino-tiny"
 DEFAULT_OWLV2 = "google/owlv2-base-patch16-ensemble"
 DEFAULT_OMDET = "omlab/omdet-turbo-swin-tiny-hf"
 DEFAULT_LLMDET = "iSEE-Laboratory/llmdet_base"
+# A path, not a hub id: an engine is built for one GPU and one
+# precision, so it is never a default that could be silently reused.
+DEFAULT_TRTOWLV2 = ""
 DEFAULT_YOLOWORLD = "yolov8s-worldv2.pt"
 
 # The VLM default. Qwen2.5-VL-3B for three reasons that are not "it scores
@@ -730,12 +734,24 @@ OPEN_VOCAB_BACKENDS = {
     YOLOWORLD: (YoloWorld, DEFAULT_YOLOWORLD),
     OMDET: (OmDetTurbo, DEFAULT_OMDET),
     LLMDET: (LlmDet, DEFAULT_LLMDET),
+    TRTOWLV2: (None, DEFAULT_TRTOWLV2),   # resolved lazily -- importing
+                                          # TensorRT at module load would
+                                          # break every machine without it
     VLM: (VlmDetector, DEFAULT_VLM),
 }
 
 
 def _open_vocab(spec: str, device=None, dtype=None, **extra):
     name, _, override = spec.partition(":")
+    if name == TRTOWLV2:
+        # Imported here, not at module scope: TensorRT exists on one rented
+        # GPU box and nowhere else, and `import brain.perceive_lab` must keep
+        # working on a laptop.
+        from tools.trt.trt_owlv2 import TrtOwlv2
+        if not override:
+            raise ValueError("trtowlv2 needs an engine path: "
+                             "--detector trtowlv2:/path/to/owlv2_int8.engine")
+        return TrtOwlv2(override, device=device)
     cls, default = OPEN_VOCAB_BACKENDS[name]
     kwargs = {}
     if name == OWLV2 and dtype:

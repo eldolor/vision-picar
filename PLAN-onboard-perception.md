@@ -5142,6 +5142,88 @@ arrival is only *declarable* on a paid one.
 measurement that provoked them is recorded here, and because two of them
 contradict text elsewhere in this document.
 
+
+#### P7d: INT8 destroys OWLv2 -- **MEASURED 2026-09-12**
+
+P7 left one gap and called it load-bearing: fp16 was measured and free, INT8
+was assumed and never tested, and **every Orin latency figure in P7b assumed
+INT8**. Measured now, on a g5.xlarge with TensorRT 10.13 (JetPack 6.x ships
+10.3, same API), all 8 walks:
+
+| budget | fp16 | **INT8** |
+|---|---|---|
+| @0 FP | 12% | **4%** |
+| @3 FP | **82%** | **7%** |
+| @16 FP | 92% | **16%** |
+
+**82% to 7% is not degradation, it is collapse.** OWLv2 does not survive
+naive post-training quantisation, which is the behaviour ViTs are known for
+and the reason quantisation-aware training exists. Nothing here says a
+QAT'd OWLv2 would fail; it says the free path does.
+
+##### The first attempt produced a false positive, and the tells are worth keeping
+
+The obvious route -- `IInt8EntropyCalibrator2`, deprecated in TRT >= 10.1 --
+built without error and produced an engine whose scores were **bit-identical
+to fp16 on all 610 frames**. That reads as a clean "INT8 is free" result and
+is the measurement not happening: the build log carried `Missing scale and
+zero-point for tensor layer_norm.bias_output, expect fall back to non-int8
+implementation`, so every layer ran fp16 behind an INT8 flag.
+
+Three checks caught it, and all three are cheap:
+
+- **Identical to three decimals is suspicious, not clean.** Quantisation
+  that changes no score changed nothing.
+- **Latency did not move** (150 vs 153 ms).
+- **The engine did not shrink.** INT8 weights are half the size; the "INT8"
+  engine was 14KB *larger* than the fp16 one.
+
+The real run inverts all three: 0 of 610 scores identical, mean |delta|
+0.112, max 0.665, engine **98MB against fp16's 184MB**, quantised ONNX 183MB
+against 365MB.
+
+This is the same failure class as P6's `KeyError: 'USER'` -- an environment
+problem arriving dressed as an answer to the question being asked. It is the
+second time in this document, which makes it a pattern worth naming rather
+than an anecdote.
+
+**The supported path on TRT >= 10 is explicit quantisation**: Q/DQ nodes
+inserted into the ONNX by `nvidia-modelopt` with real calibration data, then
+an ordinary build. Note also that **TensorRT 11 removes implicit
+quantisation entirely** -- no calibrator classes, no INT8/FP16 builder flags
+-- and `pip install tensorrt` gets 11.x by default, so the calibrator recipe
+now fails on two different versions for two different reasons.
+
+##### What it does to P7b's numbers
+
+The INT8 rows are withdrawn. **fp16 is the deployment precision by
+elimination**, not by preference:
+
+| | GPU | CPU | total | rate |
+|---|---|---|---|---|
+| ~~INT8, VGA~~ | ~~81~~ | ~~43~~ | ~~124 ms~~ | **withdrawn -- 7% recall** |
+| **fp16, VGA** | 163 | 43 | **205 ms** | **4.9 Hz** |
+| fp16, 1280 | 163 | 229 | 391 ms | 2.6 Hz |
+
+**The Orin estimate has now moved three times -- 51 -> 124 -> 205 ms -- and
+every move was an assumption being replaced by a measurement, always
+downward.** That is the shape to expect when the optimistic path is the
+assumed one, and it is the argument for buying the board rather than
+extrapolating a fourth time.
+
+A secondary result worth carrying: **INT8 was no faster** on the A10G (151
+vs 153 ms), because latency there is dominated by CPU preprocessing rather
+than the GPU. On that hardware INT8 bought nothing and cost everything.
+
+##### What survives
+
+The recommendation. OWLv2 at fp16 still reads **82% at 3 FP against the
+shipped pipeline's 58%**, at a ninth of the latency. What weakens is the
+*speed* case: 4.9 Hz is comfortably a search-proposal tier at 2.1's
+0.2-1Hz row, and further than ever from a reactive tier -- so **P7c's
+conclusion that YOLO stays is now strongly supported rather than
+marginal.**
+
 #### A method note worth more than the result
 
 **OWLv2's fixed-gate table reads 3/25 on the shoes walk and its swept table
