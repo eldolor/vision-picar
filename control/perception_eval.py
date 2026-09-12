@@ -484,8 +484,9 @@ def format_comparison(named: Sequence[tuple], budgets: Sequence[int]) -> str:
 # ---------------------------------------------------------------------------
 
 def _add_score_args(ap) -> None:
-    from brain.perceive import (DEFAULT_CLIP, DEFAULT_CROP_PATH,
-                                DEFAULT_DETECTOR, DEFAULT_SEGMENTER)
+    from brain.perceive import (DEFAULT_AFFINITY_K, DEFAULT_CLIP,
+                                DEFAULT_CROP_PATH, DEFAULT_DETECTOR,
+                                DEFAULT_SEGMENTER)
 
     ap.add_argument("--recordings", default="recordings",
                     help="corpus root (default: recordings/)")
@@ -517,8 +518,18 @@ def _add_score_args(ap) -> None:
     ap.add_argument("--segmenter", default=DEFAULT_SEGMENTER,
                     help="floor-mask model")
     ap.add_argument("--crop-path", default=DEFAULT_CROP_PATH,
-                    help=f"auto | label_gate | low_confidence "
+                    help=f"auto | label_gate | low_confidence | soft_gate "
                          f"(default {DEFAULT_CROP_PATH})")
+    ap.add_argument("--affinity-k", type=int, default=DEFAULT_AFFINITY_K,
+                    help="soft_gate only: how many COCO labels the accept "
+                         "set holds, ranked by CLIP text similarity to the "
+                         "target. k=1 is close to the hard gate and k=80 is "
+                         "the open-vocabulary path exactly, so this is the "
+                         f"swept axis between them (default {DEFAULT_AFFINITY_K})")
+    ap.add_argument("--confidence", type=float, default=None,
+                    help="override the detector confidence. Pin it when "
+                         "sweeping --affinity-k, or the axis moves the gate "
+                         "and the proposal threshold at the same time")
     ap.add_argument("--metric", default=METRIC_PROBABILITY, choices=METRICS,
                     help="what to threshold on (default probability -- the "
                          "only one comparable across target strings)")
@@ -561,6 +572,8 @@ def _build_pipeline(args, target: str):
         proposer=("floor" if args.floor_mask else args.proposer),
         segmenter=args.segmenter,
         crop_path=args.crop_path,
+        affinity_k=getattr(args, "affinity_k", None),
+        confidence=getattr(args, "confidence", None),
         max_crops=args.max_crops,
         imgsz=args.imgsz,
         vlm_max_pixels=args.vlm_max_pixels,
@@ -579,6 +592,11 @@ def _config_of(args) -> dict:
         "clip": args.clip,
         "proposer": "floor" if args.floor_mask else args.proposer,
         "crop_path": args.crop_path,
+        # Recorded because two soft-gate runs at different k are different
+        # configs, and a saved record that cannot name its own k cannot be
+        # compared against anything.
+        "affinity_k": getattr(args, "affinity_k", None),
+        "confidence": getattr(args, "confidence", None),
         "metric": args.metric,
         "max_crops": args.max_crops,
         "imgsz": args.imgsz,
@@ -592,7 +610,10 @@ def _label_for(config: dict) -> str:
     bits = [str(config.get("detector"))]
     if proposer != "none":
         bits.append(proposer)
-    return " + ".join(bits)
+    label = " + ".join(bits)
+    if config.get("crop_path") == "soft_gate":
+        label += f" [soft k={config.get('affinity_k')}]"
+    return label
 
 
 def cmd_score(args) -> int:
@@ -616,6 +637,20 @@ def cmd_score(args) -> int:
             pipeline = _build_pipeline(args, walk.target)
         except PerceptionUnavailable as exc:
             return _fail(str(exc))
+
+        # The vocabulary verdict, printed per walk because it is per target.
+        # It is the thing a mission reads at start to know whether `absent`
+        # from this tier means anything -- printing it here is how a corpus
+        # run stays readable when half the walks are out of vocabulary and
+        # half are not.
+        vocab = getattr(pipeline, "vocabulary", None)
+        if vocab is not None:
+            word = vocab.coco_class or "-- none --"
+            print(f"    vocabulary: COCO word {word}   "
+                  f"crop source {vocab.crop_source}")
+            if vocab.affinity:
+                print(f"    accept set (k={vocab.affinity_k}): "
+                      f"{', '.join(vocab.affinity)}")
 
         def on_frame(r, _n=len(walk.frames)):
             if args.quiet:

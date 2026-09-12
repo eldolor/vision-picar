@@ -315,6 +315,7 @@ class TieredVision:
         stale_after: int = DEFAULT_STALE_AFTER,
         max_calls: Optional[int] = None,
         corroboration_bar: float = DEFAULT_CORROBORATION_P,
+        oov_cold_search_after: Optional[int] = None,
     ):
         self.pipeline = pipeline
         self.cloud_vision_fn = cloud_vision_fn
@@ -330,6 +331,30 @@ class TieredVision:
         # config rather than compiled in. It is settable here and in
         # config/robot.yaml, and it gates nothing.
         self.corroboration_bar = float(corroboration_bar)
+
+        # 4.2's quiet failure, made explicit at mission start (2026-09-12).
+        #
+        # `absent` from a class-gated pipeline and `absent` from a clear
+        # room are the same string. There is no `unknown` class and no
+        # error: for a target COCO has no word for, the detector reports
+        # nothing, and nothing is indistinguishable from an empty room.
+        # Today that is discovered three frames in, when `cold_search`
+        # happens to fire. The pipeline can say it at step zero.
+        #
+        # **Reported, and NOT enforced by default** -- deliberately, and
+        # for the reason 1.11a is: `in_vocabulary` is a measured-bad
+        # predictor of local visibility. `bottle` is one of COCO's 80 and
+        # the local tier still lost 11 of 18 sightings on the bottle walk;
+        # the shoes walk has no COCO word at all and still detected 7 of
+        # 13. So the flag is evidence about the *detector's vocabulary*,
+        # never a capability claim, and shortening the cold-search wait on
+        # it is an experiment rather than a fix. Set
+        # `oov_cold_search_after` to run that experiment; leave it None and
+        # the trigger policy is bit-for-bit what it was.
+        self.vocabulary = getattr(pipeline, "vocabulary", None)
+        self.oov_cold_search_after = (
+            None if oov_cold_search_after is None
+            else max(1, int(oov_cold_search_after)))
         self.stats = TierStats()
         # 6.3 asks for **the detector's own name** on screen, not just its
         # output: *"swap the HEF and the name on screen changes; that is
@@ -433,7 +458,7 @@ class TieredVision:
 
         if perception.status == ABSENT:
             self._absent_streak += 1
-            if self._absent_streak >= self.cold_search_after:
+            if self._absent_streak >= self._cold_search_bar():
                 return TRIGGER_COLD_SEARCH
 
         # The floor. Last, so it never pre-empts an event that says
@@ -441,6 +466,20 @@ class TieredVision:
         if self.stale_after and self._since_call >= self.stale_after:
             return TRIGGER_STALE
         return None
+
+    def _cold_search_bar(self) -> int:
+        """How many `absent` frames before the cloud is asked to propose.
+
+        One number unless the experiment above is switched on, in which
+        case an out-of-vocabulary target gets the shorter wait -- because
+        its `absent` carries less information, not because it is more
+        likely to be present.
+        """
+        if (self.oov_cold_search_after is not None
+                and self.vocabulary is not None
+                and not self.vocabulary.in_vocabulary):
+            return self.oov_cold_search_after
+        return self.cold_search_after
 
     # -- what comes back -------------------------------------------------
 
@@ -487,6 +526,7 @@ class TieredVision:
                       # many free frames follow it, which is exactly how a
                       # stale readout becomes a believed one.
                       "corroboration": None,
+                      "vocabulary": self._vocabulary_readout(),
                       "stats": self.stats.as_dict()},
         }
 
@@ -517,7 +557,20 @@ class TieredVision:
                         # the whole difference between measuring the
                         # amendment and shipping it.
                         "corroboration": corroboration,
+                        "vocabulary": self._vocabulary_readout(),
                         "stats": self.stats.as_dict()}
+        return out
+
+    def _vocabulary_readout(self) -> Optional[dict]:
+        """The verdict, for 6.3's panel. Carries `enforced` explicitly for
+        the same reason every corroboration line carries "not enforced":
+        a measurement that a reader can mistake for a decision will corrupt
+        the walks meant to decide it."""
+        if self.vocabulary is None:
+            return None
+        out = self.vocabulary.as_dict()
+        out["cold_search_after"] = self._cold_search_bar()
+        out["enforced"] = self.oov_cold_search_after is not None
         return out
 
     # -- passthrough -----------------------------------------------------

@@ -1,0 +1,40 @@
+[
+  {
+    "config": "soft-k8+floor",
+    "crops_per_frame": 4.177,
+    "ms_per_frame": 2236.0,
+    "frames": 610,
+    "seconds": 1364.2,
+    "recall@0fp": 0.06918238993710692,
+    "gate@0fp": 0.9998187013950187,
+    "tp@0fp": 11,
+    "fp@0fp": 0,
+    "recall@3fp": 0.5408805031446541,
+    "gate@3fp": 0.8829749269554901,
+    "tp@3fp": 86,
+    "fp@3fp": 3,
+    "recall@16fp": 0.7295597484276729,
+    "gate@16fp": 0.502238380813422,
+    "tp@16fp": 116,
+    "fp@16fp": 16
+  },
+  {
+    "config": "soft-k80+floor",
+    "crops_per_frame": 5.507,
+    "ms_per_frame": 2962.2,
+    "frames": 610,
+    "seconds": 1807.0,
+    "recall@0fp": 0.07547169811320754,
+    "gate@0fp": 0.9998187013950187,
+    "tp@0fp": 12,
+    "fp@0fp": 0,
+    "recall@3fp": 0.5786163522012578,
+    "gate@3fp": 0.8829749269554901,
+    "tp@3fp": 92,
+    "fp@3fp": 3,
+    "recall@16fp": 0.6981132075471698,
+    "gate@16fp": 0.6825745256022159,
+    "tp@16fp": 111,
+    "fp@16fp": 16
+  }
+]

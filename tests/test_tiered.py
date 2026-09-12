@@ -671,3 +671,78 @@ def test_the_bar_is_settable_rather_than_compiled_in():
     scene = tier({"image_base64": "x", "image_width": 640})
     assert scene["_tier"]["corroboration"]["verdict"] == CORROBORATED
     assert scene["_tier"]["corroboration"]["bar"] == 0.3
+
+
+# ---------------------------------------------------------------------------
+# The vocabulary verdict on the tier readout (2026-09-12)
+# ---------------------------------------------------------------------------
+
+from brain.perceive import Vocabulary  # noqa: E402
+
+
+class VocabPipeline:
+    """A `perceive()` and a `vocabulary`, which is all the tier reads."""
+
+    def __init__(self, statuses, in_vocabulary=True):
+        self.statuses = list(statuses)
+        self.vocabulary = Vocabulary(
+            target="a woven laundry basket",
+            coco_class="suitcase" if in_vocabulary else None,
+            affinity=("suitcase", "handbag"),
+            crop_source="soft_gate", affinity_k=2)
+
+    def perceive(self, frame):
+        status = self.statuses.pop(0) if self.statuses else ABSENT
+        return Perception(status=status, reason="test")
+
+
+def _tiered(pipeline, **kwargs):
+    return TieredVision(pipeline, FakeCloud(), **kwargs)
+
+
+def test_the_verdict_rides_on_every_tier_readout_free_frames_included():
+    """A panel that only shows it on a paid step shows it one frame in six,
+    which is how a mission-start fact becomes invisible."""
+    tier = _tiered(VocabPipeline([ABSENT] * 3, in_vocabulary=False))
+    out = tier({"image_base64": "x"})          # mission_start -- paid
+    assert out["_tier"]["vocabulary"]["in_vocabulary"] is False
+    free = tier({"image_base64": "x"})         # no trigger -- free
+    assert free["_tier"]["cloud_called"] is False
+    assert free["_tier"]["vocabulary"]["in_vocabulary"] is False
+
+
+def test_the_verdict_says_it_is_not_enforced_until_it_is():
+    off = _tiered(VocabPipeline([ABSENT], in_vocabulary=False))
+    assert off({"image_base64": "x"})["_tier"]["vocabulary"]["enforced"] is False
+
+    on = _tiered(VocabPipeline([ABSENT], in_vocabulary=False),
+                 oov_cold_search_after=2)
+    assert on({"image_base64": "x"})["_tier"]["vocabulary"]["enforced"] is True
+
+
+def test_the_trigger_policy_is_bit_for_bit_unchanged_by_default():
+    """The experiment is opt-in. Left off, an out-of-vocabulary target
+    waits exactly as long for `cold_search` as any other."""
+    tier = _tiered(VocabPipeline([ABSENT] * 20, in_vocabulary=False),
+                   cold_search_after=6)
+    assert tier._cold_search_bar() == 6
+
+
+def test_an_out_of_vocabulary_target_can_be_given_the_shorter_wait():
+    """Because its `absent` carries less information -- not because the
+    target is more likely to be there."""
+    oov = _tiered(VocabPipeline([ABSENT] * 20, in_vocabulary=False),
+                  cold_search_after=6, oov_cold_search_after=2)
+    assert oov._cold_search_bar() == 2
+
+    known = _tiered(VocabPipeline([ABSENT] * 20, in_vocabulary=True),
+                    cold_search_after=6, oov_cold_search_after=2)
+    assert known._cold_search_bar() == 6
+
+
+def test_a_pipeline_with_no_verdict_still_works():
+    """Every fake in this file is a `perceive()` and nothing else, and a
+    readout that crashed the mission loop over a missing attribute would be
+    a poor trade for a label."""
+    tier = TieredVision(ScriptedPipeline([ABSENT]), FakeCloud())
+    assert tier({"image_base64": "x"})["_tier"]["vocabulary"] is None

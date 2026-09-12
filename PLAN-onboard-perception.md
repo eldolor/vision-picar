@@ -5224,6 +5224,119 @@ shipped pipeline's 58%**, at a ninth of the latency. What weakens is the
 conclusion that YOLO stays is now strongly supported rather than
 marginal.**
 
+#### P8: the soft label gate, swept -- **2026-09-12**
+
+Records and full tables in `evaluations/gpu/softgate/`. One A10G, 4.2 h,
+**~$4.20**, torn down. The harness is new and committed --
+`tools/gpu/ec2.sh` plus `tools/gpu/sweep.py`, the GPU sibling of
+`tools/hailo/ec2.sh`. P7 rented two of these boxes and left no runner
+behind; this is the third time that script was written and the first time
+it survives.
+
+**The question came from 4.2's own history.** The hard `label_gate` lost 11
+of 18 true positives on the bottle walk because at 10cm the detector
+*relabels* the target, so the default moved to open vocabulary on
+2026-09-07. That fixed recall by deleting the gate, and **2.9's per-frame
+budget is what now pays for it**: every surviving proposal is one more CLIP
+image encode, against 3.1x headroom on an 8L. So: is there a useful point
+*between* the two settings already measured?
+
+`brain/perceive.py`'s `soft_gate` is that axis. COCO's 80 class names are
+ranked against the target string in CLIP's **text** space, once at mission
+start (on the robot: the Pi's CPU, beside the target encode 2.8 step 1
+already pays for), and the top `k` become the accept set. k=1 is close to
+the hard gate; **k=80 is the open-vocabulary path exactly**.
+
+**Three controls hold.** `soft-k80` reproduces `shipped-lowconf` frame for
+frame; `soft-k80+floor` reproduces `shipped-lowconf+floor` likewise; and
+`shipped-lowconf+floor` reproduces **P7's committed published row** at
+7.5% / 57.9% / 69.8% against 8% / 58% / 70%.
+
+**The answer, in one line: alone the gate strictly costs recall; beside a
+class-agnostic proposer it cuts 24-38% of the CLIP budget for accuracy that
+is a wash.** Detector only, every k below 80 is worse than shipped at every
+budget. With the floor mask unioned in, `soft-k1` reads 3.39 crops/frame
+against 5.51 and `soft-k8` 4.18, both at 73.0% @16 FP against 69.8%. It is
+worth having as an option. **It is not a new default**, and this document
+should not acquire one on the strength of it.
+
+**Why it fails alone, and this is the part that generalises.** The accept
+sets were recorded with every run rather than summarised, written that way
+before the run because a flat curve cannot distinguish "the gate does not
+matter" from "the ordering is nonsense." For `"blue bottle"` CLIP's text
+space ranks `bottle`(0.792), `bicycle`(0.736), `cup`(0.735), `apple`,
+`bird`. **`vase` is 31st of 80 and `refrigerator` is 61st** -- the two
+labels that caused the defect the gate was built to fix.
+
+**The empirical table says it from the other side.** What YOLO11s actually
+calls the target, on frames where it is visible: the bottle is `vase` x12
+against `bottle` x5; the shoes are `bed` x5 and `couch` x5; the basket is
+`handbag` x20; the backpack is `backpack` x27. **The detector's confusions
+are geometric at 10cm** -- a bottle from below is a vase, a shoe on the
+floor is a large flat thing, a basket is a handbag -- where **CLIP's text
+space encodes semantic relatedness**. They coincide twice and miss twice.
+
+So: **any scheme that derives an in-vocabulary noun from the target string
+predicts what the target *is*, where the gate needs to predict what the
+detector will *say*.** That is 4.3.1's standing-height caveat arriving a
+third time, as a statement about label space rather than about mAP, and it
+applies to the obvious "extract the head noun and search for that" design
+as much as to this one.
+
+**Why it works beside the mask** is mechanism rather than inference. The
+mask proposes on geometry and carries no class, so it passes the gate
+untouched by construction and supplies the recall the gate would otherwise
+cost -- leaving the gate to suppress the detector's junk boxes. The
+17th-highest non-target score falls from **0.683** (shipped) to
+**0.469-0.502** (gated): a lower false-positive floor lets a lower
+threshold fit the same budget. That is the same "they fail on different
+frames" result already in `PerceptionPipeline`'s comment (detector 86%,
+mask 59%, both 94%), seen from the precision side.
+
+**And a methodological finding that outlasts the result.** A matched-FP
+comparison at a *small* budget is hostage to single frames. At 3 FP over
+610 frames the gate is set by the 4th-highest non-target score, and
+`soft-k1+floor` excludes exactly **one** crop scoring 0.910 -- which moves
+the gate 0.883 -> 0.743 and carries **16 true positives** with it. That one
+crop is the whole of k=1's apparent +5.6 points and k=2's apparent -4.4.
+P7 added `recall_at_fp_budget` because a fixed threshold discarded the best
+model in the bench; this is the opposite failure and needs the opposite
+guard. **Quote @16 FP**, where the gate sits in a smooth part of the
+distribution, and read the per-walk table beside it -- which, at each
+walk's own 0-FP point, reads 100 / 105 / 100 / 102 true positives out of
+159 across the four floor configs. A wash.
+
+**What stays open.** `max_crops` ranks crops by AREA, which
+`PerceptionPipeline` already calls "the weak part"; a better ranking cuts
+encodes with no gate and no recall cost. And an **empirical** confusion map
+-- which labels the detector puts on a target's box at 10cm -- is the thing
+CLIP text space was standing in for. The table above is that map for four
+targets; whether it generalises to a target with no labelled walk is the
+case a gate actually has to serve, and is untested.
+
+**Also built alongside it, and deliberately inert**: the up-front
+out-of-vocabulary verdict. 4.2's quiet failure is that `absent` from a
+class-gated pipeline and `absent` from a clear room are the same string --
+there is no `unknown` class and no error. `PerceptionPipeline.vocabulary`
+says which at mission start instead of leaving it to be discovered when
+`cold_search` happens to fire, and `brain/tiered.py` publishes it on every
+`_tier` readout, free frames included. **It enforces nothing**, and a test
+pins that: `oov_cold_search_after` can shorten the cold-search wait for a
+target COCO has no word for, and defaults to `None`, leaving the trigger
+policy bit-for-bit unchanged. Same discipline as 1.11a and for the same
+reason -- **`in_vocabulary` is a measured-bad predictor of local
+visibility.** `bottle` is one of COCO's 80 and the local tier lost 11 of 18
+sightings on the bottle walk; the shoes walk has no COCO word at all and
+detected 7 of 13.
+
+**A run note.** The first sweep died silently about three hours in -- no
+OOM, no traceback, the log stopped mid-walk and read as a slow run rather
+than a dead one. `nohup ... &` under SSM RunShellScript, whose agent reaps
+the document's process group when the command completes. `ec2.sh` uses
+`setsid` now and `sweep.py` grew `--only`. Third time an environment
+failure has arrived dressed as an answer here, after P6's `KeyError:
+'USER'` and P7d's fp16-behind-an-INT8-flag.
+
 #### A method note worth more than the result
 
 **OWLv2's fixed-gate table reads 3/25 on the shoes walk and its swept table

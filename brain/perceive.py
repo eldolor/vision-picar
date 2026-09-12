@@ -116,9 +116,10 @@ UNAVAILABLE = "unavailable"
 # reader can see what is missing rather than infer that it was rejected.
 CROP_LABEL_GATE = "label_gate"
 CROP_LOW_CONFIDENCE = "low_confidence"
+CROP_SOFT_GATE = "soft_gate"
 CROP_FLOOR_MASK = "floor_mask"            # needs 4.3's segmentation model
 CROP_LIDAR_CLUSTER = "lidar_cluster"      # needs the sensor
-CROP_SOURCES = (CROP_LABEL_GATE, CROP_LOW_CONFIDENCE,
+CROP_SOURCES = (CROP_LABEL_GATE, CROP_LOW_CONFIDENCE, CROP_SOFT_GATE,
                 CROP_FLOOR_MASK, CROP_LIDAR_CLUSTER)
 
 # Which of 4.2's two reachable paths to take. "auto" is 4.2's own rule --
@@ -137,7 +138,8 @@ CROP_SOURCES = (CROP_LABEL_GATE, CROP_LOW_CONFIDENCE,
 # still right in the general case. It makes the rule measurable on one
 # walk instead of settled by argument.
 CROP_PATH_AUTO = "auto"
-CROP_PATHS = (CROP_PATH_AUTO, CROP_LABEL_GATE, CROP_LOW_CONFIDENCE)
+CROP_PATHS = (CROP_PATH_AUTO, CROP_LABEL_GATE, CROP_LOW_CONFIDENCE,
+              CROP_SOFT_GATE)
 
 # **The default is the open-vocabulary path, since 2026-09-07.** 4.2's rule
 # ("auto") is still selectable and still right about who PROPOSES; what two
@@ -279,6 +281,146 @@ def coco_class_for(target: str) -> Optional[str]:
 def _words(text: str) -> list:
     return [w for w in "".join(
         ch.lower() if ch.isalnum() else " " for ch in text).split() if w]
+
+
+# ---------------------------------------------------------------------------
+# The soft label gate, and the vocabulary verdict (added 2026-09-12)
+# ---------------------------------------------------------------------------
+#
+# 4.2's gate is a string equality: keep the crops YOLO labelled with the
+# target's COCO word, discard the rest. Two rig walks measured what that
+# costs -- at close range the detector *relabels* the object (`bottle` ->
+# `vase` -> `refrigerator`), so the gate discards exactly the frames where
+# the target fills the view -- and the default moved to the open-vocabulary
+# path on 2026-09-07 as a result.
+#
+# That fixed recall by removing the gate entirely, which leaves 2.9's
+# per-frame budget paying for it: every surviving proposal is one more CLIP
+# image encode, and on an 8L the three models together have 3.1x headroom,
+# not 10-30x. So the question this answers is not "hard gate or no gate" --
+# that is settled -- but whether there is a useful point BETWEEN them.
+#
+# `label_affinity()` builds that point. The COCO class names are scored in
+# CLIP's *text* space against the mission's target string, once, at mission
+# start (on the robot: the Pi's CPU, alongside the target encode 2.8 step 1
+# already pays for), and the top `k` become the gate's accept set. So:
+#
+#   k = 1   ~ the hard gate, with the affinity set standing in for the
+#             literal COCO word -- and note it need not AGREE with it
+#   k = 80  = the open-vocabulary path exactly, every label admitted
+#
+# which makes the whole thing one swept axis between the two paths already
+# measured, rather than a third path with its own separate argument.
+#
+# **The known risk, stated up front so a null result is readable.** CLIP was
+# trained to align image and text, not text with text; text-text cosine in
+# this space is usable but not calibrated, and short noun phrases tend to
+# crowd together near the top of the range. That is why this ranks and takes
+# top-k rather than thresholding on an absolute similarity, and it is why the
+# sweep is the deliverable rather than one chosen k.
+DEFAULT_AFFINITY_K = 8
+
+
+class TextScorer(Protocol):
+    """A `CropScorer` that can also compare text with text.
+
+    Optional: `PerceptionPipeline` checks for it and falls back to the
+    literal COCO word when a scorer does not provide it, so a fake, a HEF
+    that ships only an image encoder, and a full CLIP all stay usable
+    through the one Protocol. Same reason `RobotInterface.get_depth_grid()`
+    carries an honest all-unusable default rather than being mandatory.
+    """
+
+    def text_similarity(self, anchor: str,
+                        texts: Sequence[str]) -> Sequence[float]: ...
+
+
+@dataclass(frozen=True)
+class Vocabulary:
+    """Whether the local tier can even propose on this target, decided once.
+
+    4.2's real problem is that `absent` from a class-gated pipeline is
+    indistinguishable from an empty room: there is no `unknown` class and
+    no error, so a target the detector has no word for reports exactly what
+    a clear room reports. This is that distinction, made explicit at
+    mission start instead of inferred three frames in when `cold_search`
+    happens to fire.
+
+    `coco_class` is the literal word, `affinity` is the accept set the soft
+    gate actually uses, and `in_vocabulary` says whether COCO has a word at
+    all. **None of them is a promise that the target is findable** -- the
+    blue-bottle walk is `in_vocabulary` and the local tier still lost 11 of
+    18 sightings -- so `advisory` says so in words rather than letting a
+    caller read the flag as a capability.
+    """
+
+    target: str
+    coco_class: Optional[str]
+    affinity: tuple
+    crop_source: str
+    affinity_k: int
+    ranked: tuple = ()
+
+    @property
+    def in_vocabulary(self) -> bool:
+        return self.coco_class is not None
+
+    @property
+    def advisory(self) -> str:
+        if not self.in_vocabulary:
+            return ("no COCO word: the detector cannot propose on this "
+                    "target by name, so `absent` from this pipeline is weak "
+                    "evidence and the cloud tier owns identity")
+        return ("COCO word present, which is not a promise of visibility -- "
+                "the detector relabels objects at close range")
+
+    def as_dict(self) -> dict:
+        return {
+            "target": self.target,
+            "coco_class": self.coco_class,
+            "in_vocabulary": self.in_vocabulary,
+            "affinity": list(self.affinity),
+            "affinity_k": self.affinity_k,
+            "crop_source": self.crop_source,
+            "advisory": self.advisory,
+        }
+
+
+def label_affinity(target: str, scorer, k: int = DEFAULT_AFFINITY_K,
+                   classes: Sequence[str] = COCO_CLASSES):
+    """The `k` COCO labels closest to `target` in CLIP's text space.
+
+    Returns `(accept_set, ranked)` where `ranked` is every class paired
+    with its similarity, best first -- kept because a gate that cannot be
+    inspected is a gate nobody can debug, and because the sweep wants the
+    whole ordering rather than one cut of it.
+
+    The literal COCO word, when there is one, is **always** in the accept
+    set regardless of where the text encoder ranks it. It is the one label
+    that is correct by construction, and letting a text-space ranking drop
+    it would be a regression dressed as a tuning result.
+    """
+    k = max(0, int(k))
+    literal = coco_class_for(target)
+    fn = getattr(scorer, "text_similarity", None)
+    if fn is None:
+        # No text encoder: fall back to the literal word. Reported, never
+        # silent -- a run that quietly became a hard gate would look like a
+        # measurement of the soft one.
+        accept = (literal,) if literal else ()
+        return accept, ()
+
+    sims = list(fn(target, list(classes)))
+    if len(sims) != len(classes):
+        raise PerceptionUnavailable(
+            f"text_similarity returned {len(sims)} scores for "
+            f"{len(classes)} classes")
+    ranked = tuple(sorted(zip(classes, (float(v) for v in sims)),
+                          key=lambda pair: pair[1], reverse=True))
+    accept = [name for name, _ in ranked[:k]]
+    if literal and literal not in accept:
+        accept.append(literal)
+    return tuple(accept), ranked
 
 
 @dataclass(frozen=True)
@@ -467,6 +609,8 @@ class PerceptionPipeline:
         max_crops: Optional[int] = None,
         crop_path: str = DEFAULT_CROP_PATH,
         proposer: Optional["RegionProposer"] = None,
+        affinity_k: int = DEFAULT_AFFINITY_K,
+        confidence: Optional[float] = None,
     ):
         if not target or not target.strip():
             raise ValueError("PerceptionPipeline needs a target string")
@@ -504,6 +648,12 @@ class PerceptionPipeline:
         if crop_path not in CROP_PATHS:
             raise ValueError(
                 f"Unknown crop_path {crop_path!r}. Known: {', '.join(CROP_PATHS)}")
+        # `soft_gate` is deliberately NOT in this guard. The proposer's
+        # boxes carry no class, and the soft gate passes them through
+        # untouched for exactly the reason the hard gate cannot: an accept
+        # SET is a filter on labels that exist, not a requirement that one
+        # does. So floor-mask regions and gated detector boxes compose,
+        # which is the union the 94%-recall row above is measured on.
         if crop_path == CROP_LABEL_GATE and proposer is not None:
             raise ValueError(
                 "crop_path='label_gate' discards every region the proposer "
@@ -537,12 +687,58 @@ class PerceptionPipeline:
                     "every proposal and the pipeline would report `absent` "
                     "on every frame.")
             self.crop_source = CROP_LABEL_GATE
+        elif crop_path == CROP_SOFT_GATE:
+            self.crop_source = CROP_SOFT_GATE
         else:
             self.crop_source = (
                 CROP_LABEL_GATE if self.coco_class else CROP_LOW_CONFIDENCE)
+
+        # The accept set, built once. `ranked` is kept whole so the sweep
+        # can re-cut it at any k without re-encoding, and so a gate that
+        # behaves oddly can be read rather than guessed at.
+        self.affinity_k = max(0, int(affinity_k))
+        self.affinity: tuple = ()
+        self.affinity_ranked: tuple = ()
+        if self.crop_source == CROP_SOFT_GATE:
+            self.affinity, self.affinity_ranked = label_affinity(
+                self.target, self.scorer, self.affinity_k)
+            if not self.affinity_ranked:
+                # No text encoder on this scorer. The gate has silently
+                # become the hard one, which is a different measurement --
+                # say so rather than let a run be mislabelled.
+                logger.warning(
+                    "crop_path='soft_gate' but the scorer has no "
+                    "text_similarity(); falling back to the literal COCO "
+                    "word %r. This run is a LABEL GATE, not a soft one.",
+                    self.coco_class)
+
+        # The confidence the detector is asked for. The soft gate sits on
+        # the open-vocabulary path's threshold, not the hard gate's: the
+        # whole point is to admit the relabelled crops, and a `vase` the
+        # detector is only 0.1 sure of is exactly one of those. An explicit
+        # `confidence=` overrides it so a sweep can hold this fixed and
+        # vary only k -- otherwise the axis moves two things at once.
         self.confidence = (
-            DEFAULT_CONFIDENCE if self.crop_source == CROP_LABEL_GATE
+            confidence if confidence is not None
+            else DEFAULT_CONFIDENCE if self.crop_source == CROP_LABEL_GATE
             else LOW_CONFIDENCE)
+
+    @property
+    def vocabulary(self) -> "Vocabulary":
+        """The up-front verdict: can the local tier propose on this target?
+
+        Read at mission start by `brain/tiered.py`, so an out-of-vocabulary
+        search declares itself instead of being discovered three frames in
+        when `cold_search` happens to fire.
+        """
+        return Vocabulary(
+            target=self.target,
+            coco_class=self.coco_class,
+            affinity=self.affinity,
+            crop_source=self.crop_source,
+            affinity_k=self.affinity_k,
+            ranked=self.affinity_ranked,
+        )
 
     def perceive(self, frame: dict) -> Perception:
         """One frame in, one `Perception` out.
@@ -628,10 +824,19 @@ class PerceptionPipeline:
     def _crops(self, proposals: Sequence[Detection]) -> list:
         """4.2's gate. With a COCO word the label is a cheap prefilter and
         few crops survive it; without one every proposal is a candidate and
-        CLIP does the whole job."""
+        CLIP does the whole job. `soft_gate` is the interior of that axis:
+        the prefilter is an accept SET from CLIP's text space rather than
+        one string, so a relabelled target survives and an unrelated label
+        still does not."""
         if self.crop_source == CROP_LABEL_GATE:
             kept = [d for d in proposals
                     if d.label.strip().lower() == self.coco_class]
+        elif self.crop_source == CROP_SOFT_GATE:
+            # A class-agnostic proposal has no label to judge, so it is
+            # never judged -- see the construction guard above.
+            kept = [d for d in proposals
+                    if d.label == CROP_FLOOR_MASK
+                    or d.label.strip().lower() in self.affinity]
         else:
             kept = list(proposals)
         kept.sort(key=lambda d: d.box.area, reverse=True)
@@ -814,6 +1019,25 @@ class ClipScorer:
             self._text_cache[key] = feats
         return self._text_cache[key]
 
+    def text_similarity(self, anchor: str,
+                        texts: Sequence[str]) -> Sequence[float]:  # pragma: no cover
+        """Cosine between `anchor` and each of `texts`, in CLIP text space.
+
+        Used once per mission to build the soft gate's accept set, so it
+        costs one text encode of the 80 COCO names on top of the target
+        encode 2.8 step 1 already pays for -- on the Pi's CPU, where the
+        text tower lives on the robot (4.2), and never per frame.
+
+        **Not calibrated, and it must not be read as a probability.** CLIP
+        aligns image with text; text-text cosine here is a ranking signal
+        and nothing stronger, which is why `label_affinity()` takes a top-k
+        of it rather than thresholding it.
+        """
+        feats = self._text_features(tuple(texts))
+        anchor_feat = self._text_features((anchor,))
+        sims = (anchor_feat @ feats.T)[0]
+        return [float(v) for v in sims]
+
     def score(self, image: bytes, box: Box, texts: Sequence[str]) -> Sequence[float]:  # pragma: no cover
         from PIL import Image
 
@@ -945,9 +1169,11 @@ def pipeline_for(target: str, *, weights: str = DEFAULT_DETECTOR,
 
 __all__ = [
     "ABSENT", "DETECTED", "UNAVAILABLE",
-    "CROP_LABEL_GATE", "CROP_LOW_CONFIDENCE", "CROP_SOURCES",
+    "CROP_LABEL_GATE", "CROP_LOW_CONFIDENCE", "CROP_SOFT_GATE",
+    "CROP_SOURCES",
     "CROP_PATH_AUTO", "CROP_PATHS", "DEFAULT_CROP_PATH",
-    "COCO_CLASSES", "coco_class_for",
+    "COCO_CLASSES", "coco_class_for", "label_affinity", "Vocabulary",
+    "TextScorer", "DEFAULT_AFFINITY_K",
     "Box", "Detection", "Candidate", "Perception",
     "Detector", "CropScorer", "RegionProposer", "PerceptionPipeline",
     "PerceptionUnavailable", "SegformerFloorProposer",

@@ -634,3 +634,220 @@ def test_an_explicit_crop_budget_still_wins():
     p = PerceptionPipeline(FakeDetector(), FakeScorer(), "blue bottle",
                            proposer=FakeProposer(), max_crops=2)
     assert p.max_crops == 2
+
+
+# ---------------------------------------------------------------------------
+# The soft label gate (2026-09-12)
+# ---------------------------------------------------------------------------
+#
+# The defect these are written against is measured, not imagined:
+# `blue-bottle-20260907-142454` has YOLO11s calling the bottle a `vase` on
+# six frames and a `refrigerator` on one, all of them from the approach
+# onward, and 4.2's hard gate discarded every one. Each test below that
+# names `vase` is that walk in miniature.
+
+from brain.perceive import (  # noqa: E402
+    CROP_SOFT_GATE,
+    DEFAULT_AFFINITY_K,
+    Vocabulary,
+    label_affinity,
+)
+
+
+class FakeTextScorer(FakeScorer):
+    """A `FakeScorer` that also compares text with text.
+
+    The table is {class_name: similarity}; anything absent scores 0. That
+    is enough to pin the ranking, which is all `label_affinity` uses -- and
+    deliberately not a model, for the same reason nothing else here is one.
+    """
+
+    def __init__(self, text_table=None, **kwargs):
+        super().__init__(**kwargs)
+        self.text_table = text_table or {}
+        self.text_calls = []
+
+    def text_similarity(self, anchor, texts):
+        self.text_calls.append((anchor, tuple(texts)))
+        return [self.text_table.get(t, 0.0) for t in texts]
+
+
+def soft_pipeline(target, detections=(), text_table=None, table=None,
+                  **kwargs):
+    kwargs.setdefault("crop_path", CROP_SOFT_GATE)
+    scorer = FakeTextScorer(text_table=text_table, table=table)
+    return PerceptionPipeline(FakeDetector(detections), scorer, target,
+                              **kwargs)
+
+
+NEAR_BOTTLE = {"bottle": 0.9, "vase": 0.8, "cup": 0.7, "bowl": 0.6,
+               "refrigerator": 0.5, "person": 0.1, "truck": 0.05}
+
+
+def test_the_soft_gate_admits_the_relabelled_target_the_hard_gate_discards():
+    """The blue-bottle walk in miniature: YOLO says `vase`, and it is the
+    bottle filling the frame."""
+    detections = [det("vase", conf=0.3)]
+
+    hard = pipeline("blue bottle", detections, crop_path=CROP_LABEL_GATE)
+    assert hard.perceive(frame()).status == ABSENT
+
+    soft = soft_pipeline("blue bottle", detections, text_table=NEAR_BOTTLE,
+                         table={"_default": (0.9, 0.1)})
+    assert soft.perceive(frame()).status == DETECTED
+
+
+def test_the_soft_gate_still_refuses_a_label_that_is_nothing_like_the_target():
+    """Otherwise it is not a gate, it is the open-vocabulary path with a
+    longer construction path."""
+    soft = soft_pipeline("blue bottle", [det("truck", conf=0.3)],
+                         text_table=NEAR_BOTTLE,
+                         table={"_default": (0.9, 0.1)}, affinity_k=3)
+    assert soft.perceive(frame()).status == ABSENT
+    assert "truck" not in soft.affinity
+
+
+def test_the_accept_set_is_the_top_k_and_k_is_the_axis():
+    accept3, ranked = label_affinity("blue bottle", FakeTextScorer(NEAR_BOTTLE),
+                                     k=3)
+    assert accept3 == ("bottle", "vase", "cup")
+    # The whole ordering is kept, not just the cut -- a gate that cannot be
+    # inspected is one nobody can debug.
+    assert ranked[0] == ("bottle", 0.9)
+    assert len(ranked) == len(COCO_CLASSES)
+
+    accept1, _ = label_affinity("blue bottle", FakeTextScorer(NEAR_BOTTLE), k=1)
+    assert accept1 == ("bottle",)
+
+
+def test_k_at_eighty_is_the_open_vocabulary_path_exactly():
+    """The two ends of the axis have to be the two paths already measured,
+    or the sweep is not between them."""
+    detections = [det("truck", conf=0.3)]
+    wide = soft_pipeline("blue bottle", detections, text_table=NEAR_BOTTLE,
+                         table={"_default": (0.9, 0.1)},
+                         affinity_k=len(COCO_CLASSES))
+    assert wide.perceive(frame()).status == DETECTED
+    assert set(wide.affinity) == set(COCO_CLASSES)
+
+
+def test_the_literal_coco_word_survives_a_ranking_that_would_drop_it():
+    """It is the one label correct by construction. A text-space ranking
+    dropping it would be a regression wearing a tuning result's clothes."""
+    hostile = {"person": 0.99, "truck": 0.98, "bottle": 0.01}
+    accept, _ = label_affinity("blue bottle", FakeTextScorer(hostile), k=2)
+    assert accept[:2] == ("person", "truck")
+    assert "bottle" in accept
+
+
+def test_a_target_with_no_coco_word_gets_an_accept_set_anyway():
+    """`basket` is not one of COCO's 80 -- checked, not assumed -- so the
+    literal word contributes nothing and the ranking is the whole gate."""
+    assert coco_class_for("a woven laundry basket") is None
+    accept, _ = label_affinity(
+        "a woven laundry basket",
+        FakeTextScorer({"suitcase": 0.8, "handbag": 0.7, "backpack": 0.6}), k=2)
+    assert accept == ("suitcase", "handbag")
+
+
+def test_a_scorer_with_no_text_encoder_falls_back_and_says_so(caplog):
+    """A run that quietly became a hard gate would be mislabelled, which is
+    worse than one that failed."""
+    plain = FakeScorer(table={"_default": (0.9, 0.1)})
+    with caplog.at_level("WARNING"):
+        p = PerceptionPipeline(FakeDetector([det("vase", conf=0.3)]), plain,
+                               "blue bottle", crop_path=CROP_SOFT_GATE)
+    assert p.affinity == ("bottle",)
+    assert p.affinity_ranked == ()
+    assert "LABEL GATE, not a soft one" in caplog.text
+    assert p.perceive(frame()).status == ABSENT
+
+
+def test_the_soft_gate_sits_on_the_open_vocabulary_confidence():
+    """The relabelled crops are the weakly-confident ones, so asking the
+    detector for 0.25 would discard them before the gate ever ran."""
+    p = soft_pipeline("blue bottle", text_table=NEAR_BOTTLE)
+    p.perceive(frame())
+    assert p.detector.calls == [LOW_CONFIDENCE]
+
+
+def test_the_confidence_override_pins_the_axis():
+    """Sweeping k has to move one thing. Without this the proposal
+    threshold moves with the crop path and the result is unattributable."""
+    p = soft_pipeline("blue bottle", text_table=NEAR_BOTTLE, confidence=0.4)
+    p.perceive(frame())
+    assert p.detector.calls == [0.4]
+
+
+def test_the_soft_gate_composes_with_a_proposer_where_the_hard_gate_cannot():
+    """A class-agnostic region has no label to judge, so it is not judged.
+    The hard gate refuses this combination at construction; the soft one is
+    the reason that refusal was never about gating in general."""
+
+    class FakeProposer:
+        def propose(self, image):
+            return [Box(300.0, 100.0, 360.0, 200.0)]
+
+    with pytest.raises(ValueError, match="discards every region"):
+        PerceptionPipeline(FakeDetector(), FakeTextScorer(NEAR_BOTTLE),
+                           "blue bottle", crop_path=CROP_LABEL_GATE,
+                           proposer=FakeProposer())
+
+    p = PerceptionPipeline(
+        FakeDetector([det("truck", conf=0.3)]),
+        FakeTextScorer(text_table=NEAR_BOTTLE, table={"_default": (0.9, 0.1)}),
+        "blue bottle", crop_path=CROP_SOFT_GATE, proposer=FakeProposer(),
+        affinity_k=2)
+    # The truck is gated out; the classless region is not.
+    result = p.perceive(frame())
+    assert result.status == DETECTED
+    assert len(result.candidates) == 1
+
+
+# ---------- the vocabulary verdict ----------
+
+
+def test_the_vocabulary_verdict_separates_no_word_from_an_empty_room():
+    """4.2's real problem: `absent` from a class-gated pipeline and `absent`
+    from a clear room are the same string. This is the distinction, made at
+    mission start rather than inferred three frames in."""
+    known = soft_pipeline("blue bottle", text_table=NEAR_BOTTLE).vocabulary
+    unknown = soft_pipeline("a woven laundry basket",
+                            text_table={"suitcase": 0.8}).vocabulary
+
+    assert known.in_vocabulary and known.coco_class == "bottle"
+    assert not unknown.in_vocabulary and unknown.coco_class is None
+    assert "the cloud tier owns identity" in unknown.advisory
+
+
+def test_being_in_vocabulary_is_not_a_promise_of_visibility():
+    """Written because the flag invites exactly that reading, and the
+    corpus refutes it: `bottle` is in COCO and the local tier still lost 11
+    of 18 sightings on the bottle walk."""
+    vocab = soft_pipeline("blue bottle", text_table=NEAR_BOTTLE).vocabulary
+    assert vocab.in_vocabulary
+    assert "not a promise of visibility" in vocab.advisory
+
+
+def test_the_verdict_publishes_the_accept_set_it_will_actually_use():
+    vocab = soft_pipeline("blue bottle", text_table=NEAR_BOTTLE,
+                          affinity_k=2).vocabulary
+    d = vocab.as_dict()
+    assert d["affinity"] == ["bottle", "vase"]
+    assert d["affinity_k"] == 2
+    assert d["crop_source"] == CROP_SOFT_GATE
+
+
+def test_every_pipeline_has_a_verdict_not_only_the_soft_gated_one():
+    """`tiered.py` reads this at mission start regardless of crop path, so
+    it may not be absent on the shipped one."""
+    p = pipeline("blue bottle", crop_path=CROP_LOW_CONFIDENCE)
+    assert isinstance(p.vocabulary, Vocabulary)
+    assert p.vocabulary.in_vocabulary
+    assert p.vocabulary.affinity == ()
+
+
+def test_the_default_affinity_k_is_an_interior_point_not_an_endpoint():
+    """If it were 1 or 80 the soft gate would be one of the two paths that
+    already exist, and this module would have gained nothing."""
+    assert 1 < DEFAULT_AFFINITY_K < len(COCO_CLASSES)

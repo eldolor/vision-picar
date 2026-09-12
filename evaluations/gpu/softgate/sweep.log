@@ -1,0 +1,73 @@
+corpus: 8 walks, 610 labelled frames, 159 visible
+loading models once, shared across every config below
+/opt/eval/venv/lib/python3.10/site-packages/open_clip/factory.py:450: UserWarning: QuickGELU mismatch between final model config (quick_gelu=False) and pretrained tag 'openai' (quick_gelu=True).
+  warnings.warn(
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+WARNING:huggingface_hub.utils._http:Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/208 [00:00<?, ?it/s]Loading weights: 100%|██████████| 208/208 [00:00<00:00, 3180.72it/s]
+--only: running ['soft-k8+floor', 'soft-k80+floor']
+
+=== soft-k8+floor ===============================================
+  blue-bottle-20260907-142454                  33 frames   18 visible  crops/frame  2.76  scored   31
+  blue-bottle-20260907-185007                 209 frames   10 visible  crops/frame  3.04  scored  184
+  blue-shoes-20260907-152528                   19 frames   13 visible  crops/frame  3.26  scored   19
+  blue-shoes-20260908-210511                   44 frames   25 visible  crops/frame  5.34  scored   44
+  red-backpack-20260907-144856                 38 frames   33 visible  crops/frame  5.82  scored   38
+  woven-laundry-basket-20260908-215140         95 frames    0 visible  crops/frame  5.01  scored   86
+  woven-laundry-basket-20260908-215252         86 frames   23 visible  crops/frame  4.33  scored   83
+  woven-laundry-basket-20260908-215351         86 frames   37 visible  crops/frame  5.30  scored   82
+  -> crops/frame 4.18   @0FP 0.06918238993710692   @3FP 0.5408805031446541   @16FP 0.7295597484276729
+
+=== soft-k80+floor ==============================================
+  blue-bottle-20260907-142454                  33 frames   18 visible  crops/frame  4.82  scored   33
+  blue-bottle-20260907-185007                 209 frames   10 visible  crops/frame  4.87  scored  200
+  blue-shoes-20260907-152528                   19 frames   13 visible  crops/frame  4.74  scored   19
+  blue-shoes-20260908-210511                   44 frames   25 visible  crops/frame  7.45  scored   44
+  red-backpack-20260907-144856                 38 frames   33 visible  crops/frame  6.61  scored   38
+  woven-laundry-basket-20260908-215140         95 frames    0 visible  crops/frame  5.71  scored   91
+  woven-laundry-basket-20260908-215252         86 frames   23 visible  crops/frame  5.52  scored   86
+  woven-laundry-basket-20260908-215351         86 frames   37 visible  crops/frame  5.77  scored   83
+  -> crops/frame 5.51   @0FP 0.07547169811320754   @3FP 0.5786163522012578   @16FP 0.6981132075471698
+
+[
+  {
+    "config": "soft-k8+floor",
+    "crops_per_frame": 4.177,
+    "ms_per_frame": 2236.0,
+    "frames": 610,
+    "seconds": 1364.2,
+    "recall@0fp": 0.06918238993710692,
+    "gate@0fp": 0.9998187013950187,
+    "tp@0fp": 11,
+    "fp@0fp": 0,
+    "recall@3fp": 0.5408805031446541,
+    "gate@3fp": 0.8829749269554901,
+    "tp@3fp": 86,
+    "fp@3fp": 3,
+    "recall@16fp": 0.7295597484276729,
+    "gate@16fp": 0.502238380813422,
+    "tp@16fp": 116,
+    "fp@16fp": 16
+  },
+  {
+    "config": "soft-k80+floor",
+    "crops_per_frame": 5.507,
+    "ms_per_frame": 2962.2,
+    "frames": 610,
+    "seconds": 1807.0,
+    "recall@0fp": 0.07547169811320754,
+    "gate@0fp": 0.9998187013950187,
+    "tp@0fp": 12,
+    "fp@0fp": 0,
+    "recall@3fp": 0.5786163522012578,
+    "gate@3fp": 0.8829749269554901,
+    "tp@3fp": 92,
+    "fp@3fp": 3,
+    "recall@16fp": 0.6981132075471698,
+    "gate@16fp": 0.6825745256022159,
+    "tp@16fp": 111,
+    "fp@16fp": 16
+  }
+]
+
+records -> out
