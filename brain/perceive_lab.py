@@ -74,11 +74,15 @@ logger = logging.getLogger("perceive_lab")
 GDINO = "gdino"
 OWLV2 = "owlv2"
 YOLOWORLD = "yoloworld"
+OMDET = "omdet"
+LLMDET = "llmdet"
 VLM = "vlm"
-OPEN_VOCAB = (GDINO, OWLV2, YOLOWORLD, VLM)
+OPEN_VOCAB = (GDINO, OWLV2, YOLOWORLD, VLM, OMDET, LLMDET)
 
 DEFAULT_GDINO = "IDEA-Research/grounding-dino-tiny"
 DEFAULT_OWLV2 = "google/owlv2-base-patch16-ensemble"
+DEFAULT_OMDET = "omlab/omdet-turbo-swin-tiny-hf"
+DEFAULT_LLMDET = "iSEE-Laboratory/llmdet_base"
 DEFAULT_YOLOWORLD = "yolov8s-worldv2.pt"
 
 # The VLM default. Qwen2.5-VL-3B for three reasons that are not "it scores
@@ -353,7 +357,8 @@ class Owlv2:
 
     def __init__(self, model: str = DEFAULT_OWLV2,
                  threshold: float = 0.02,
-                 device: Optional[str] = None):
+                 device: Optional[str] = None,
+                 dtype: Optional[str] = None):
         try:
             import torch
             from transformers import Owlv2ForObjectDetection, Owlv2Processor
@@ -364,8 +369,17 @@ class Owlv2:
         self._torch = torch
         self.device = device or "cpu"
         self.processor = Owlv2Processor.from_pretrained(model)
+        # fp16 is not a micro-optimisation here: it is the precision an Orin
+        # Nano would most plausibly run this at, and a ViT's accuracy under
+        # reduced precision is exactly the thing the hardware decision assumes
+        # and has never measured. `None` keeps the historical fp32 behaviour so
+        # existing scored records stay reproducible.
+        self._dtype = {"fp16": torch.float16, "float16": torch.float16,
+                       "bf16": torch.bfloat16, "fp32": torch.float32,
+                       None: None}[dtype]
         self.model = Owlv2ForObjectDetection.from_pretrained(
-            model).to(self.device).eval()
+            model, torch_dtype=self._dtype).to(self.device).eval()
+        self.dtype = dtype or "fp32"
         self.threshold = threshold
         self.weights = model
         self.model_name = model
@@ -374,8 +388,15 @@ class Owlv2:
         img = _pil(image)
         inputs = self.processor(text=[[text]], images=img,
                                 return_tensors="pt").to(self.device)
+        if self._dtype is not None:
+            # Only pixel_values: input_ids must stay integral.
+            inputs["pixel_values"] = inputs["pixel_values"].to(self._dtype)
         with self._torch.no_grad():
             outputs = self.model(**inputs)
+        # post_process wants fp32 -- it compares against a float threshold and
+        # builds boxes in image coordinates.
+        outputs.logits = outputs.logits.float()
+        outputs.pred_boxes = outputs.pred_boxes.float()
         target_sizes = self._torch.tensor([img.size[::-1]])
         # `post_process_grounded_object_detection`, NOT
         # `post_process_object_detection`: the Owlv2*Processor* has only the
@@ -393,6 +414,79 @@ class Owlv2:
             out.append(Detection(box=Box(x1, y1, x2, y2), label=text,
                                  confidence=float(score)))
         return out
+
+
+
+class OmDetTurbo:
+    """omlab's OmDet-Turbo -- open-vocabulary detection built for real time.
+
+    Added 2026-09-11 because the bench had never been checked against the
+    HuggingFace zero-shot-detection list, only against the models this
+    document happened to name. OmDet-Turbo is the one candidate whose stated
+    goal is the axis the edge actually cares about: open vocabulary AT frame
+    rate, rather than open vocabulary at any cost.
+
+    Its processor takes a LIST of classes rather than a sentence, which is a
+    different prompt convention from Grounding DINO's period-terminated
+    phrase -- and getting it wrong degrades quietly rather than raising.
+    """
+
+    def __init__(self, model: str = DEFAULT_OMDET,
+                 threshold: float = 0.02,
+                 device: Optional[str] = None):
+        try:
+            import torch
+            from transformers import (AutoProcessor,
+                                      OmDetTurboForObjectDetection)
+        except ImportError as exc:  # pragma: no cover
+            raise PerceptionUnavailable(
+                "OmDet-Turbo needs transformers + torch. `pip install -r "
+                "requirements-perception.txt`.") from exc
+        self._torch = torch
+        self.device = device or "cpu"
+        self.processor = AutoProcessor.from_pretrained(model)
+        self.model = OmDetTurboForObjectDetection.from_pretrained(
+            model).to(self.device).eval()
+        # Low on purpose -- score once, sweep the gate afterwards.
+        self.threshold = threshold
+        self.weights = model
+        self.model_name = model
+
+    def detect_text(self, image: bytes, text: str) -> Sequence[Detection]:  # pragma: no cover
+        img = _pil(image)
+        inputs = self.processor(img, text=[text],
+                               return_tensors="pt").to(self.device)
+        with self._torch.no_grad():
+            outputs = self.model(**inputs)
+        results = self.processor.post_process_grounded_object_detection(
+            outputs, text_labels=[[text]], threshold=self.threshold,
+            nms_threshold=0.5, target_sizes=[img.size[::-1]])[0]
+        out = []
+        labels = results.get("text_labels", results.get("labels", []))
+        for box, score, label in zip(results["boxes"], results["scores"],
+                                     labels):
+            x1, y1, x2, y2 = (float(v) for v in box.tolist())
+            out.append(Detection(box=Box(x1, y1, x2, y2),
+                                 label=str(label) or text,
+                                 confidence=float(score)))
+        return out
+
+
+class LlmDet(GroundingDino):
+    """iSEE-Laboratory's LLMDet.
+
+    A Grounding DINO derivative trained with an LLM supplying richer
+    captions, so it loads through the same Auto classes and keeps the same
+    period-terminated prompt convention -- which is why this subclasses
+    rather than copies. If a future transformers ships a dedicated
+    LlmDetForObjectDetection, only the parent needs to change.
+
+    166k downloads on the hub against Grounding DINO's 1.65M, and never
+    tested here.
+    """
+
+    def __init__(self, model: str = DEFAULT_LLMDET, **kwargs):
+        super().__init__(model, **kwargs)
 
 
 class YoloWorld:
@@ -634,14 +728,21 @@ OPEN_VOCAB_BACKENDS = {
     GDINO: (GroundingDino, DEFAULT_GDINO),
     OWLV2: (Owlv2, DEFAULT_OWLV2),
     YOLOWORLD: (YoloWorld, DEFAULT_YOLOWORLD),
+    OMDET: (OmDetTurbo, DEFAULT_OMDET),
+    LLMDET: (LlmDet, DEFAULT_LLMDET),
     VLM: (VlmDetector, DEFAULT_VLM),
 }
 
 
-def _open_vocab(spec: str, device=None, **extra):
+def _open_vocab(spec: str, device=None, dtype=None, **extra):
     name, _, override = spec.partition(":")
     cls, default = OPEN_VOCAB_BACKENDS[name]
     kwargs = {}
+    if name == OWLV2 and dtype:
+        # Only OWLv2 carries a dtype today; passing it to a backend that does
+        # not would be a TypeError three minutes into a corpus run, which is
+        # the same trap the VLM branch below exists to avoid.
+        kwargs["dtype"] = dtype
     if name == VLM:
         # Only the VLM takes these, and passing them to a detector that does
         # not would be a TypeError three minutes into a corpus run.
@@ -659,6 +760,7 @@ def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
                       crop_path: str = DEFAULT_CROP_PATH,
                       max_crops: Optional[int] = None,
                       device: Optional[str] = None,
+                      dtype: Optional[str] = None,
                       imgsz: Optional[int] = None,
                       vlm_max_pixels: Optional[int] = None,
                       vlm_ground: bool = True,
@@ -679,7 +781,7 @@ def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
                 "a replacement for the pipeline (4.11), or use a YOLO "
                 "detector with --proposer.")
         return OpenVocabPipeline(
-            _open_vocab(detector, device=device,
+            _open_vocab(detector, device=device, dtype=dtype,
                         vlm_max_pixels=vlm_max_pixels, vlm_ground=vlm_ground),
             target, **kwargs)
 
@@ -710,6 +812,8 @@ __all__ = [
     "DEFAULT_GDINO", "DEFAULT_OWLV2", "DEFAULT_YOLOWORLD", "DEFAULT_SAM",
     "DEFAULT_OPEN_VOCAB_CONFIDENCE",
     "GroundingDino", "Owlv2", "YoloWorld", "VlmDetector", "DEFAULT_VLM",
+    "OmDetTurbo", "LlmDet", "OMDET", "LLMDET", "DEFAULT_OMDET",
+    "DEFAULT_LLMDET",
     "VLM", "SamProposer", "NullDetector",
     "OpenVocabPipeline", "pipeline_for_spec",
 ]

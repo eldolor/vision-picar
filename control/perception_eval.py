@@ -527,6 +527,15 @@ def _add_score_args(ap) -> None:
                          "(default 0.8, the shipped gate)")
     ap.add_argument("--gates", default=None,
                     help="comma-separated sweep, e.g. 0.9,0.8,0.5")
+    ap.add_argument("--device", default=None,
+                    help="torch device for the models: cpu, cuda, mps. "
+                         "Default cpu -- every published record was scored "
+                         "that way and stays reproducible")
+    ap.add_argument("--dtype", default=None, choices=["fp32", "fp16", "bf16"],
+                    help="inference precision. fp16 is what an edge GPU would "
+                         "most plausibly run a ViT at, and its accuracy cost "
+                         "is assumed rather than measured everywhere in "
+                         "PLAN-onboard-perception.md")
     ap.add_argument("--imgsz", type=int, default=None,
                     help="detector input resolution (default 640, which is "
                          "what 4.3.1's 92 FPS on the 8L was measured at). "
@@ -545,6 +554,8 @@ def _build_pipeline(args, target: str):
 
     return pipeline_for_spec(
         target,
+        device=getattr(args, "device", None),
+        dtype=getattr(args, "dtype", None),
         detector=args.detector,
         clip_model=args.clip,
         proposer=("floor" if args.floor_mask else args.proposer),
@@ -560,6 +571,11 @@ def _build_pipeline(args, target: str):
 def _config_of(args) -> dict:
     return {
         "detector": args.detector,
+        # Recorded because a latency figure is meaningless without them, and
+        # because an accuracy figure at reduced precision is a DIFFERENT
+        # measurement from the fp32 one it will be compared against.
+        "device": getattr(args, "device", None) or "cpu",
+        "dtype": getattr(args, "dtype", None) or "fp32",
         "clip": args.clip,
         "proposer": "floor" if args.floor_mask else args.proposer,
         "crop_path": args.crop_path,
