@@ -185,14 +185,21 @@ cmd_up() {
 cmd_status() {
   local id; id="$(instance_id)" || true
   if [ -z "$id" ]; then say "no instance ($NAME)"; return; fi
-  local launched state
+  local launched state itype
   state="$(aws_ ec2 describe-instances --instance-ids "$id" \
     --query 'Reservations[0].Instances[0].State.Name' --output text)"
+  # Read the type from AWS, not from $TYPE. The env var describes what the
+  # NEXT `up` would launch; a status call made without the same exports
+  # reported the wrong instance type beside a cost figure derived from
+  # $HOURLY -- which is how a readout lies about money rather than about a
+  # label.
+  itype="$(aws_ ec2 describe-instances --instance-ids "$id" \
+    --query 'Reservations[0].Instances[0].InstanceType' --output text)"
   launched="$(aws_ ec2 describe-instances --instance-ids "$id" \
     --query 'Reservations[0].Instances[0].LaunchTime' --output text)"
   # Args, not string interpolation: an f-string with nested quotes is a
   # syntax error on the Pythons this might run against.
-  python3 - "$id" "$TYPE" "$state" "$launched" "$HOURLY" "$VOLUME_GB" <<'PY'
+  python3 - "$id" "$itype" "$state" "$launched" "$HOURLY" "$VOLUME_GB" <<'PY'
 import datetime, sys
 iid, itype, state, launched, hourly, gb = sys.argv[1:7]
 up = (datetime.datetime.now(datetime.timezone.utc)
@@ -200,6 +207,9 @@ up = (datetime.datetime.now(datetime.timezone.utc)
 hours = up.total_seconds() / 3600
 ebs = int(gb) * 0.08 / 730
 print(f"[hailo] {iid}  {itype}  {state}  up {hours:.2f}h")
+if itype not in ("r6i.4xlarge",) and abs(float(hourly) - 1.008) < 1e-6:
+    print("[hailo] NOTE: $/hr is the default for r6i.4xlarge; "
+          f"this is a {itype}. Export HAILO_HOURLY for a true figure.")
 print(f"[hailo] compute so far: ${hours * float(hourly):.2f} "
       f"at ${hourly}/hr, plus EBS ~${ebs:.3f}/hr "
       f"({hours * ebs:.2f} so far)")
