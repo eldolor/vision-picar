@@ -17,9 +17,13 @@ and P6 hold the reasoning and the dated findings; `evaluations/` and
 **Run OWLv2 as the search-proposal tier, on a Jetson Orin Nano -- not on a
 Hailo-8L.**
 
-OWLv2 won the accuracy bench outright: 68 of 68 visible frames across three
-targets at zero false positives, beating three VLMs, two open-vocabulary
-detectors and the cloud model itself, at ~150M parameters and 2.1s/frame.
+OWLv2 won the accuracy bench outright. Scored across all eight labelled
+walks -- 610 frames, 159 visible -- it reads **82% at three false
+positives** against the shipped pipeline's 58%, at a ninth of the latency,
+and it beats four VLMs and four other open-vocabulary detectors. Per walk,
+tuned per walk, it reaches **68 of 68 visible frames at zero false
+positives** across three targets. Those are different measurements and the
+difference matters: one gate per walk is not one gate for a house.
 
 It does **not** compile to a Hailo-8L. The image tower translates and quantizes
 cleanly; it fails at hardware allocation on 73 layernorm and 38 softmax layers
@@ -170,19 +174,41 @@ down*, from 6% to 4%.
 
 ## 4. The bench
 
-### Whole corpus -- 299 frames, 74 visible
+### The whole corpus -- 610 frames, 159 visible, 11 models
 
-| configuration | @ 0 FP | @ 3 FP | shape |
-|---|---|---|---|
-| **OWLv2** (ViT-B/16, ~150M) | 26% | **96%** | ranks |
-| YOLO-World | **51%** | 51% | flat -- cannot be swept |
-| YOLO11s + floor mask + CLIP (shipped) | 15% | 85% | ranks |
+**Corrected 2026-09-11.** This section previously read "whole corpus -- 299
+frames" and reported 96% for OWLv2. Those were **four** of the corpus's
+**eight** labelled walks. Nothing had ever been scored against all of it.
+Re-run on one GPU, every model on the same 610 frames:
 
-**YOLO-World genuinely wins at exactly zero false positives** -- 51% against
-OWLv2's 26%. But it is flat: identical recall at 0 and 3 FP, because its
-confidence saturates. OWLv2 climbs 26% -> 96% over the same budget. That is why
-the claim is worded as *"wins at every operating point that admits a single
-false positive."*
+| configuration | @ 0 FP | @ 3 FP | @ 16 FP | ms |
+|---|---|---|---|---|
+| OWLv2-large | 8% | **86%** | **97%** | 717 |
+| **OWLv2-base fp16** | 12% | **82%** | 92% | **111** |
+| Qwen2.5-VL-3B | 42% | 79% | 79% | 725 |
+| InternVL3-2B | 3% | 75% | 89% | 625 |
+| YOLO11s + floor + CLIP (shipped) | 8% | 58% | 70% | 1210 |
+| **Grounding DINO** | **50%** | 55% | 71% | 226 |
+| YOLO-World | 47% | 53% | 74% | **16** |
+| LLMDet | 11% | 18% | 72% | 276 |
+| OmDet-Turbo | 7% | 7% | 13% | 49 |
+
+**Every headline moved, and the conclusion survived.** OWLv2 reads 82%, not
+96%. But the shipped pipeline falls further -- 85% to 58% -- so OWLv2's
+margin over it **widens from 11 points to 24**, at 11x the speed. The four
+excluded walks were the hard ones, including 95 frames with nothing in them
+at all: a pure false-positive test that can only ever cost recall.
+
+**Grounding DINO owns the zero-false-positive point** -- 50% where the
+shipped pipeline gets 8% and OWLv2 gets 12%. That falsifies a published
+claim that the composed pipeline "dominates at every operating point," and
+it suggests something useful: a model that is *never wrong* is a better
+corroborator than one that is more often right.
+
+**And two models nobody had tried both lose.** The earlier bench tested the
+models this project happened to name; HuggingFace's own zero-shot detection
+list had three untried families. OmDet-Turbo (7% at 3 FP) and LLMDet (18%)
+are real results rather than null ones, for about forty cents of GPU time.
 
 ### The distant-target walk -- 86 frames, 23 visible
 
@@ -383,6 +409,45 @@ can serve it, `candidate_sighting` never fires on evidence and the system falls
 back to a timer. The board is not being bought for throughput; it is being
 bought for one arrow.
 
+## 6b. What the GPU re-run changed -- 2026-09-11
+
+Two A10G instances, 3.7 hours, $3.70, both torn down. Records in
+`evaluations/gpu/`.
+
+**fp16 costs no accuracy.** Identical true positives at every budget, gates
+matching to three decimals, 1.8x faster. Every latency figure and every
+hardware argument in this document assumed a quantised ViT keeps its
+accuracy; none had measured it. **INT8 still has not been measured**, and
+the projections below assume INT8 -- that is now the load-bearing gap.
+
+**The Orin projection moved 2.4x when assumptions became measurements** --
+from 51 ms to **124 ms** (8 Hz). Measuring GPU and CPU separately rather
+than deriving them corrected a derivation that was 65% wrong on the CPU
+term.
+
+**And the bottleneck is not the model.** At INT8 on a 1280 capture an Orin
+would spend **36 ms detecting and 229 ms resizing the photograph** --
+OWLv2's own anti-aliased resize, in Python, on the CPU. Fix the resize
+(GPU, or capture nearer 960); do not fix it by capturing at VGA, because VGA
+is upscaled to 960 and loses the detail the distant targets need.
+
+**Three consequences for the architecture**, all recorded in
+`PLAN-onboard-perception.md` P7c:
+
+- **YOLO is not redundant.** At 8 Hz OWLv2 cannot serve a 15-30 Hz reactive
+  tier. An earlier claim in this document's own figures that one model could
+  replace three is withdrawn.
+- **The out-of-vocabulary gap is an odometry problem, not a perception
+  one.** YOLO has no COCO class for a laundry basket, so only OWLv2 can
+  identify it -- at 8 Hz. But the target is *static*: the only thing moving
+  the bearing is the robot, which encoders and the IMU already measure. A
+  detection becomes a goal pose; the reactive tier recomputes the bearing
+  from odometry at 30 Hz and re-detection corrects drift.
+- **Arrival must move off the cloud.** `target_reached` is read from the
+  cloud reply today, so it lands ~5.6 s late -- 1.7 m of overshoot at
+  0.3 m/s, past the thing the robot was stopping at. It should be the lidar
+  measuring range at the bearing OWLv2 supplies.
+
 ## 7. Decision
 
 **A Jetson Orin Nano, sized for a 150M ViT rather than a 2-4B VLM.** The board
@@ -401,9 +466,12 @@ paying for it.
   shelf and measure 86% close range at 92 FPS. A two-board split -- Hailo for
   reactive, a second board for search -- stays a real option, and a worse one
   on power and cost than one Jetson doing both.
-- **OWLv2's accuracy.** 68/68 visible frames, zero false positives, 100%
-  precision against the cloud's 23% on the walk that broke the identity tier.
-  Those are PyTorch numbers and they are why the model is worth a board at all.
+- **OWLv2's accuracy.** 82% at three false positives over the full 610-frame
+  corpus -- 24 points clear of the shipped pipeline at a ninth of the
+  latency -- and, per walk, 68/68 visible frames at zero false positives
+  with 100% precision against the cloud's 23% on the walk that broke the
+  identity tier. Those are PyTorch numbers and they are why the model is
+  worth a board at all.
 - **The host/accelerator split.** Text tower on the CPU, five per-patch tensors
   joined with one matmul on the host (`tools/hailo/owlv2_host_head.py`). That
   division is correct on a Jetson too; only the accelerator changes.
