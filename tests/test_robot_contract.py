@@ -410,15 +410,21 @@ def test_a_wrapper_reports_the_odometry_of_what_it_WRAPS(tmp_path):
     around a MockRobot must report the MockRobot's odometry, because the
     thing driving is the MockRobot."""
     from control.mission_runner import _HaltGate
+    from tests.conftest import RecordingRobot
 
-    inner = MockRobot(build_starter_world())
-    gate = _HaltGate(inner, lambda: True)
+    # BOTH wrappers, because the docstring names both and only checking one
+    # is how the other falls behind. RecordingRobot had, in fact, already
+    # fallen behind when this was written.
+    for name, wrap in (("_HaltGate", lambda r: _HaltGate(r, lambda: True)),
+                       ("RecordingRobot", RecordingRobot)):
+        inner = MockRobot(build_starter_world())
+        outer = wrap(inner)
 
-    assert inner.get_odometry()["usable"] is True
-    assert gate.get_odometry()["usable"] is True, (
-        "the gate inherited RobotInterface's honest no-op while wrapping a "
-        "robot with working odometry -- every mission would report no "
-        "encoders and a distance-based rule would never fire")
+        assert inner.get_odometry()["usable"] is True
+        assert outer.get_odometry()["usable"] is True, (
+            f"{name} inherited RobotInterface's honest no-op while wrapping "
+            "a robot with working odometry -- every mission would report no "
+            "encoders and a distance-based rule would never fire")
 
-    gate.drive_forward(50, 0.5)
-    assert gate.get_odometry()["distance_m"] == inner.get_odometry()["distance_m"]
+        outer.drive_forward(50, 0.5)
+        assert outer.get_odometry()["distance_m"] == inner.get_odometry()["distance_m"], name

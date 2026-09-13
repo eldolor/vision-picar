@@ -142,6 +142,15 @@ class RecordingRobot(RobotInterface):
     def get_depth_grid(self) -> dict:
         return self._record("get_depth_grid", self.delegate.get_depth_grid())
 
+    def get_odometry(self) -> dict:
+        # Phase B. This wrapper HAD fallen behind -- it inherited the
+        # honest no-op while wrapping a MockRobot with working odometry,
+        # which is exactly the failure
+        # tests/test_robot_contract.py::test_a_wrapper_reports_the_odometry
+        # _of_what_it_WRAPS is written against, arriving in the test
+        # helpers rather than in shipped code.
+        return self._record("get_odometry", self.delegate.get_odometry())
+
 
 def fresh_mock_robot():
     """A MockRobot on a brand-new starter house."""

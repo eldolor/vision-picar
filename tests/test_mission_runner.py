@@ -517,3 +517,76 @@ def test_a_backend_that_stamps_no_frame_id_reports_none_rather_than_a_guess():
     runner.start()
     runner.tick()
     assert runner.status()["last_frame_seq"] is None
+
+
+# ---------------------------------------------------------------------------
+# Phase A, through the runner rather than inside the policy
+# ---------------------------------------------------------------------------
+#
+# tests/test_tiered.py pins the dispatch, the epoch guard and the held
+# goal inside TieredVision. None of that is Phase A's stated done-when,
+# which is about the MISSION: the tick keeps advancing while a
+# deliberation call is outstanding. That crosses _HaltGate, the runner's
+# lock, B3.2's timeout and _finish()'s cleanup, and it is the seam where
+# an in-flight call could outlive the mission.
+
+
+def test_the_tick_keeps_advancing_while_a_deliberation_call_is_in_flight():
+    """Synchronously, `call_with_timeout` holds the tick for the whole
+    round trip -- 3.6s measured, against a 0.25s tick. This is the
+    difference, measured through the real runner."""
+    import threading
+    import time
+
+    release = threading.Event()
+    entered = threading.Event()
+
+    def slow_vision(frame):
+        entered.set()
+        release.wait(timeout=5)
+        return {"obstacles_ahead": [], "free_space": "clear",
+                "doorway_visible": False, "important_objects": [],
+                "safest_direction": "FORWARD",
+                "_navigate": {"reasoning": "slow cloud"}}
+
+    class DispatchingVision:
+        """The shape TieredVision presents to the runner: it returns at
+        once and does the slow work elsewhere. Stood in for here so this
+        test needs no torch."""
+
+        def __init__(self):
+            self.pool = __import__("concurrent.futures",
+                                   fromlist=["ThreadPoolExecutor"]).ThreadPoolExecutor(1)
+            self.fut = None
+            self.closed = False
+
+        def __call__(self, frame):
+            if self.fut is None:
+                self.fut = self.pool.submit(slow_vision, frame)
+            return {"obstacles_ahead": [], "free_space": "unknown",
+                    "doorway_visible": False, "important_objects": [],
+                    "safest_direction": "RIGHT",
+                    "_navigate": {"reasoning": "[reactive tier] in flight"}}
+
+        def close(self):
+            self.closed = True
+            self.pool.shutdown(wait=False, cancel_futures=True)
+
+    vision = DispatchingVision()
+    runner = MissionRunner(fresh_mock_robot(), target_object="red backpack",
+                           policy="vision", vision_fn=vision, max_steps=BUDGET)
+    runner.start()
+    for _ in range(5):
+        runner.tick()
+    assert entered.is_set(), "the slow call never started"
+
+    # The mission advanced while the call was still outstanding. That is
+    # the whole of Phase A.
+    assert runner.status()["step"] >= 3, (
+        "the tick did not advance while a deliberation call was in flight")
+
+    release.set()
+    runner.stop()
+    assert vision.closed, (
+        "_finish() did not close the policy -- a worker thread leaks and a "
+        "late answer could be applied to a robot that has stopped")

@@ -1986,3 +1986,172 @@ def test_both_switches_can_be_on_at_once(browser, twin_server):
     assert page.locator("#cfg-record-walk").is_checked()
     assert page.locator("#cfg-drive-via-brain").is_checked()
     page.close()
+
+
+# ---------------------------------------------------------------------------
+# Phases A-C: the three readouts they owe the twin (section 7)
+# ---------------------------------------------------------------------------
+#
+# In a real browser at a phone viewport, because that is where every UI bug
+# in this project has actually been found -- a model picker that rendered
+# empty, one that rendered 40px wide, an admin console usable only sideways.
+# None of those were visible to a DOM-only check.
+
+
+def test_the_odometry_line_reports_the_real_robot_and_is_readable_on_a_phone(
+        browser, twin_server):
+    """Phase B. `mode: sim` has working odometry, so this must show metres
+    and a heading -- not the honest no-op, which is what a wrapper falling
+    behind the interface would produce."""
+    page, errors = _connect_for_depth(browser, twin_server)
+    page.wait_for_function(
+        "() => !/not connected/.test("
+        "document.getElementById('odometry-readout').innerText)", timeout=5000)
+    text = page.inner_text("#odometry-readout")
+    assert "odometry:" in text
+    assert "m travelled" in text, text
+    assert "heading" in text, text
+    # Path length, not displacement -- said on the line itself, because the
+    # difference is the whole reason a robot searching one small room still
+    # triggers a distance rule.
+    assert "path length" in text, text
+
+    box = page.locator("#odometry-readout").bounding_box()
+    assert box and box["width"] > 200, (
+        f"odometry line is {box and box['width']}px wide on a 390px phone")
+    assert not errors, errors
+    page.close()
+
+
+def test_the_odometry_line_says_NO_ENCODERS_rather_than_zero(browser, twin_server):
+    """The state every teleop rig walk is in, and the one that must not be
+    mistaken for a robot that has not moved. Routed, because `mode: sim`
+    cannot produce it and the point is what the page does with the honest
+    no-op."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/odometry", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body='{"usable": false, "distance_m": null, "heading_deg": null}'))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => /no encoders/.test("
+        "document.getElementById('odometry-readout').innerText)", timeout=5000)
+    text = page.inner_text("#odometry-readout")
+    assert "no encoders" in text
+    # And it must say what happens as a result, or a reader has to know the
+    # pacing rules to interpret it.
+    assert "frame count" in text, text
+    assert "0.00" not in text, "a no-encoder backend rendered as zero travel"
+    assert not errors, errors
+    page.close()
+
+
+def test_a_server_with_no_odometry_route_says_so_rather_than_going_blank(
+        browser, twin_server):
+    """A 404 means the server predates the route, which is a real state
+    while stacks are redeployed one at a time. Blank and "no motion" must
+    not look alike -- the same rule the depth strip already follows."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/odometry", lambda route: route.fulfill(status=404, body="{}"))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => /not reported/.test("
+        "document.getElementById('odometry-readout').innerText)", timeout=5000)
+    assert "not reported by this server" in page.inner_text("#odometry-readout")
+    assert not errors, errors
+    page.close()
+
+
+def _tier_status_with(**tier_extra):
+    """`tiered_status()` with the Phase A/C keys layered on, so these tests
+    share the shape every other brain-panel test already asserts against
+    rather than inventing a second one that can drift from the runner."""
+    status = tiered_status()
+    status["tier"].update(tier_extra)
+    return status
+
+
+def test_the_pacing_row_names_the_rule_in_force(browser, twin_server):
+    """Phase C. A silent fallback from distance to frame count is how a
+    walk becomes unattributable -- the same failure `crop_source` is
+    reported for, one tier up. So the row says which."""
+    page, errors = open_with_brain(browser, twin_server, status=_tier_status_with(
+        pacing={"rule": "distance", "frames_absent": 2, "frames_bar": 6,
+                "cm_since_call": 12.0, "cm_bar": 40.0,
+                "odometry_usable": True, "reason": None}))
+    sync_api.expect(page.locator("#brain-tel-pacing")).to_contain_text(
+        "by distance", timeout=5000)
+    text = page.inner_text("#brain-tel-pacing")
+    assert "12/40cm" in text, text
+    # The number a person actually wants while watching: how much further
+    # before anything looks again.
+    assert "next look in 28cm" in text, text
+    assert not errors, errors
+    page.close()
+
+
+def test_the_pacing_row_says_WHY_it_fell_back_to_frames(browser, twin_server):
+    """The state every teleop rig walk is in -- a phone has no encoders --
+    so this is the row a reader sees on the walks that matter."""
+    page, errors = open_with_brain(browser, twin_server, status=_tier_status_with(
+        pacing={"rule": "frames", "frames_absent": 3, "frames_bar": 6,
+                "cm_since_call": None, "cm_bar": 40.0,
+                "odometry_usable": False,
+                "reason": "this backend reports no odometry"}))
+    sync_api.expect(page.locator("#brain-tel-pacing")).to_contain_text(
+        "by frame count", timeout=5000)
+    text = page.inner_text("#brain-tel-pacing")
+    assert "3/6" in text, text
+    assert "no odometry" in text, text
+    assert not errors, errors
+    page.close()
+
+
+def test_a_held_goal_never_looks_like_a_fresh_answer(browser, twin_server):
+    """Phase A. Three states that must not look alike: waiting while
+    driving on the last goal, waiting with no goal yet, and not waiting."""
+    page, errors = open_with_brain(browser, twin_server, status=_tier_status_with(
+        in_flight="cold_search", holding="FORWARD"))
+    sync_api.expect(page.locator("#brain-tel-inflight")).to_contain_text(
+        "in flight", timeout=5000)
+    text = page.inner_text("#brain-tel-inflight")
+    assert "cold_search call in flight" in text
+    assert "holding goal FORWARD" in text, text
+    assert not errors, errors
+    page.close()
+
+
+def test_waiting_with_no_goal_yet_is_distinguished_from_holding_one(
+        browser, twin_server):
+    """The opening call has nothing to hold, so the robot scans. A
+    different state from driving on a confirmed goal, and it reads
+    differently."""
+    page, errors = open_with_brain(browser, twin_server, status=_tier_status_with(
+        in_flight="mission_start", holding=None))
+    sync_api.expect(page.locator("#brain-tel-inflight")).to_contain_text(
+        "in flight", timeout=5000)
+    text = page.inner_text("#brain-tel-inflight")
+    assert "mission_start call in flight" in text
+    assert "scanning, no goal yet" in text, text
+    assert "holding goal" not in text
+    assert not errors, errors
+    page.close()
+
+
+def test_no_call_outstanding_reads_as_idle_rather_than_blank(browser, twin_server):
+    """Blank and "nothing is happening" must not look alike -- the rule the
+    depth strip already follows, applied to the deliberation row."""
+    page, errors = open_with_brain(browser, twin_server,
+                                   status=_tier_status_with(in_flight=None,
+                                                            holding=None))
+    sync_api.expect(page.locator("#brain-tel-inflight")).to_contain_text(
+        "idle", timeout=5000)
+    assert "no call outstanding" in page.inner_text("#brain-tel-inflight")
+    assert not errors, errors
+    page.close()
