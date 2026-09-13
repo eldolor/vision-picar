@@ -5568,6 +5568,46 @@ meta note, and use an **accurate** description -- the shoes walk moved recall
 7x on the target string alone, and `"blue shoes"` for navy-and-lime shoes
 scored like the poor description it was.
 
+##### The three 2026-09-12/13 walks, adjudicated -- **2026-09-13**
+
+The corpus is **11 labelled walks**. Counts: 231358 **37/180**, 115414
+**30/231**, 115703 **97/213**. Method in each file; three things it found
+that are worth more than the counts.
+
+**1. Each walk has its own tan distractor, and they are not the same
+object.** 231358's is a grey **cable-knit bolster** on a weight bench --
+woven texture, basket-sized, on the floor line, and the shipped pipeline
+puts **5 of its 9 detections on this walk inside that span**. 115414's is
+the beige **exercise ball**: tan, round, floor-standing. Between them the
+corpus now offers two distinct woven/tan confusions with adjudicated
+labels, which is what a false-positive budget needs to mean anything.
+
+**2. 115414 is the hard walk, and the reason is geometric rather than
+semantic.** The target is only ever seen **at long range through a
+doorway** -- 24 frames of 231, never approached, never close. That is
+4.11's small-distant-target limit, which no amount of model capacity
+fixes, and NOT the out-of-vocabulary problem the crop sources own.
+Scoring it beside an approach walk without saying so averages two
+different problems, exactly as P3's per-walk split found for the
+corpus-wide 84%.
+
+**3. `walk.jsonl` was wrong again, and in the same way.** The 2026-09-13
+handoff records 115414 as seeing the target on *"only 2 steps"*. It is in
+frame on **24**. That number was `walk.jsonl`'s LOCAL-tier status, which
+is the mislabelling this document already recorded twice (3925, and the
+handoff's own section 7). **`labels.json` is the reference; `walk.jsonl`
+is evidence about the model, not about the room** -- stated a third time
+because it has now cost three readings.
+
+**On scoring these with OWLv2, read the `method` field first.** 231358's
+sheets were read before the prepass finished, so its labels are
+independent and scoring OWLv2 against them is fair (36/37 at 16 false
+positives). For 115703 and 115414 the OWLv2 spans were in hand while
+reading: **recall on those two is optimistic and precision is the
+trustworthy half.** Every span was still confirmed or rejected against
+the pixels, so the labels are not OWLv2's output -- they are just not
+blind to it. A genuinely blind re-read is cheap and has not been done.
+
 #### P7e: the first walk that ARRIVED, and the two reasons nothing noticed -- **2026-09-13**
 
 P7c item 3 argued, from latency alone, that `target_reached` must move off
