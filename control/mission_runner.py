@@ -189,6 +189,14 @@ class _HaltGate(RobotInterface):
         # now one of the backends in tests/test_robot_contract.py.
         return self._robot.get_depth_grid()
 
+    def get_odometry(self) -> dict:
+        # Phase B, and the third sensing method to pass through here for
+        # the same reason. A gate that inherited the honest no-op would
+        # report "this robot cannot measure its own motion" while wrapping
+        # one that can -- and a distance-based cold-search interval would
+        # then simply never fire, on every mission, silently.
+        return self._robot.get_odometry()
+
 
 def call_with_timeout(fn: Callable, *args, timeout_s: Optional[float] = None):
     """Run `fn(*args)`, raising TimeoutError if it outlasts `timeout_s`.
@@ -494,6 +502,25 @@ class MissionRunner:
         set_searched_rooms = getattr(self.vision_fn, "set_searched_rooms", None)
         if set_searched_rooms is not None:
             set_searched_rooms(sorted(self.memory.searched_rooms))
+
+        # Phase C's seam. Odometry rides IN THE FRAME, the way pan/tilt
+        # already do (1.15.3), rather than being handed to the policy as a
+        # second channel -- so a policy that wants it reads one dict and a
+        # policy that does not is unchanged. It is attached here rather
+        # than where the frame is built because this is the only place
+        # that holds both the robot and the vision call.
+        #
+        # A backend with no encoders returns the honest no-op and the
+        # frame carries `usable: False`, which the tiered policy reads as
+        # "fall back to counting frames" -- never as "has not moved".
+        # Failure to read it at all is non-fatal on purpose: odometry is
+        # an input to a *pacing* decision, and a mission that died because
+        # an encoder route 500'd would be a worse robot than one that
+        # paced itself on frame count for a while.
+        try:
+            frame = {**frame, "odometry": self.robot.get_odometry()}
+        except Exception as e:  # noqa: BLE001
+            logger.debug("odometry unavailable this frame: %s", e)
         try:
             return call_with_timeout(self.vision_fn, frame, timeout_s=self.vision_timeout_s)
         except TimeoutError as e:
@@ -525,6 +552,19 @@ class MissionRunner:
             self._log_line(f"mission ended ({outcome}): {note}")
         # Outside the lock: this is an HTTP call when the robot is remote.
         self._safe_stop()
+        # Phase A. A policy that dispatches its cloud calls holds a worker
+        # thread and may have one answer outstanding right now. Closing it
+        # here bumps its epoch, so a late answer is dropped rather than
+        # applied to a robot that has stopped -- the same orphaned-call
+        # rule `guidanceEpoch` enforces in the twin. `getattr` because a
+        # vision_fn is only a callable by contract: the rule-based default
+        # is a plain function and must stay usable.
+        closer = getattr(self.vision_fn, "close", None)
+        if closer is not None:
+            try:
+                closer()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("closing the vision policy failed: %s", e)
 
     def _tick_rate_hz(self):
         """Ticks per second since the mission started -- phase M5.

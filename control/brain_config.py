@@ -89,6 +89,11 @@ DEFAULTS = {
     # the target is even in this room. brain/tiered.py's own note says this
     # number is a guess and is the first thing to tune against a real walk.
     "tier_cold_search_after": 6,
+    # Phase C: centimetres of new ground before the cloud looks again.
+    # 0 disables, and is the shipped setting until Phase D measures one.
+    "tier_cold_search_after_cm": 0.0,
+    # Phase A: dispatch the deliberation call rather than blocking on it.
+    "tier_async_cloud": True,
     # 2.4's staleness trigger: call out if nothing else has in this many
     # frames. 0 disables the floor. Without it a robot that can see its
     # target continuously stops deliberating entirely -- and arrival is the

@@ -30,7 +30,7 @@ import time
 from typing import Optional
 
 from robot import interface
-from sim.grid_world import GridWorld
+from sim.grid_world import GridWorld, Heading
 from sim.sensors import DistanceSensorModel
 from sim import renderer
 from robot.interface import RobotInterface
@@ -46,6 +46,12 @@ DEGREES_PER_TURN = 90  # grid-world only supports 90-degree turns
 # is how the grid and the scalar would start disagreeing about the same
 # wall.
 DEFAULT_CELL_CM = 30.0
+
+# Compass degrees for the four cardinal headings, so `get_odometry()` can
+# report an angle rather than a name. Clockwise from north, matching the
+# convention every other bearing in this project uses (1.15.3's pan, the
+# depth grid's columns): positive is to the robot's right.
+_HEADING_DEG = {Heading.N: 0, Heading.E: 90, Heading.S: 180, Heading.W: 270}
 # The robot occupies its cell, so clearance is measured from the front of
 # that cell rather than from its centre -- see get_depth_grid().
 ROBOT_HALF_CELL = 0.5
@@ -65,6 +71,11 @@ class MockRobot(RobotInterface):
     ):
         self.world = world
         self.realtime = realtime
+        # Path length, in cells, actually covered -- see get_odometry().
+        # Counted here rather than read off the world because the world
+        # knows only where the robot IS, and odometry is about where it
+        # has BEEN.
+        self._cells_travelled = 0
         # Phase S2. On by default because the pixels are now part of the
         # RobotInterface contract -- the conformance suite asserts every
         # backend returns a decodable image. `render=False` is the
@@ -86,12 +97,14 @@ class MockRobot(RobotInterface):
     def drive_forward(self, speed: int = 50, duration: float = 0.5) -> dict:
         cells = self._speed_duration_to_cells(speed, duration)
         result = self.world.move(cells)
+        self._cells_travelled += abs(result["moved"])
         self._settle(duration)
         return {"action": "drive_forward", "speed": speed, "duration": duration, **result}
 
     def reverse(self, speed: int = 50, duration: float = 0.5) -> dict:
         cells = self._speed_duration_to_cells(speed, duration)
         result = self.world.move(-cells)
+        self._cells_travelled += abs(result["moved"])
         self._settle(duration)
         return {"action": "reverse", "speed": speed, "duration": duration, **result}
 
@@ -271,6 +284,28 @@ class MockRobot(RobotInterface):
         # never went.
         return {"rows": 1, "cols": cols,
                 "fov_deg": math.degrees(renderer.FPV_FOV), "zones": zones}
+
+    def get_odometry(self) -> dict:
+        """Real odometry, because the grid world knows where it put us.
+
+        Path length rather than displacement, per the interface: every
+        cell actually moved adds `cell_cm`, including a reverse, and a
+        move that was BLOCKED adds nothing because the robot did not go
+        anywhere. `world.move()` already returns how many cells it really
+        managed, so this is a sum of truths rather than of intentions --
+        which is what an encoder measures and a commanded distance is not.
+
+        Heading is the body heading, never the view heading: a pan changes
+        what the camera sees and moves no wheels. `get_depth_grid()` casts
+        off the VIEW heading and this reports the BODY one, and the two
+        differing is correct rather than an inconsistency.
+        """
+        cell_cm = self.sensor.cell_cm if self.sensor else DEFAULT_CELL_CM
+        return {
+            "usable": True,
+            "distance_m": round(self._cells_travelled * cell_cm / 100.0, 4),
+            "heading_deg": float(_HEADING_DEG[self.world.heading]),
+        }
 
     def get_distance(self) -> float:
         """Distance in cm, matching the real ultrasonic sensor's units.

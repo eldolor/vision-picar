@@ -141,6 +141,25 @@ def unusable_grid(cols: int = DEPTH_COLS_DEFAULT) -> dict:
 
 
 
+def unusable_odometry() -> dict:
+    """The honest answer from a backend that cannot measure its own motion.
+
+    Same choice `unusable_grid()` and `NO_SENSOR_CM` make: say so rather
+    than fabricate. `usable: False` and both quantities `None`, which no
+    consumer may compare against a threshold -- so a backend driven by
+    photographs cannot make a walk look as though it had measured
+    distance travelled that it never did.
+
+    **This matters more than it looks.** The only real-pixels backend this
+    project has is `TeleopRobot` -- a phone on a wheeled rig -- and a phone
+    has no encoders. So the walks that validate perception are exactly the
+    walks that cannot report odometry, and a consumer that silently
+    treated "no odometry" as "travelled 0cm" would freeze every
+    distance-based rule on precisely those runs, invisibly.
+    """
+    return {"usable": False, "distance_m": None, "heading_deg": None}
+
+
 class RobotInterface(ABC):
     @abstractmethod
     def drive_forward(self, speed: int, duration: float) -> dict: ...
@@ -250,3 +269,40 @@ class RobotInterface(ABC):
         grid is all-unusable, so nothing regresses.
         """
         return unusable_grid()
+
+    def get_odometry(self) -> dict:
+        """How far this robot has travelled, and which way it now faces.
+
+            {"usable": bool,             # False means the other two are None
+             "distance_m": float|None,   # cumulative path length since start,
+                                         #   monotonically non-decreasing
+             "heading_deg": float|None}  # body heading, degrees, 0 = start
+
+        **Not abstract, for the same reason `get_depth_grid()` is not.**
+        Most backends here cannot measure motion -- a recorded walk is a
+        list of photographs and a teleoperated phone has no encoders -- so
+        the default is `unusable_odometry()`, and a backend that really
+        has wheel encoders and an IMU overrides it.
+
+        **`distance_m` is PATH LENGTH, not displacement.** A robot that
+        drives a metre out and a metre back reports 2.0, not 0.0. The
+        consumer is the tiered policy's cold-search interval
+        (`brain/tiered.py`), which asks *"how much new ground has been
+        covered since the cloud last looked"* -- and ground covered is
+        path, not how far from home you ended up. Displacement would make
+        a robot searching a small room never trigger.
+
+        **Turning counts as no distance.** A pivot changes `heading_deg`
+        and leaves `distance_m` alone, which is correct for a differential
+        chassis (1.1) and is why the two are reported separately: a scan
+        in place reveals new *view* without new *ground*, and a policy may
+        want to treat those differently.
+
+        The units are metres and degrees rather than the centimetres
+        `get_distance()` uses, deliberately: that one is a proximity
+        reading off a sensor with centimetre resolution, this one is an
+        accumulating pose estimate that will be metres before a mission
+        ends. Mixing them in one unit would guarantee an off-by-100
+        somewhere.
+        """
+        return unusable_odometry()

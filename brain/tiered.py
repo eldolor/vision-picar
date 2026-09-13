@@ -70,6 +70,8 @@ cap, for the same reason.
 from __future__ import annotations
 
 import logging
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -127,6 +129,29 @@ DEFAULT_CONSECUTIVE = 2
 # thing is even in this room. 2.4 gives no number; this one is a guess and
 # is the first thing to tune against a real walk.
 DEFAULT_COLD_SEARCH_AFTER = 6
+
+# Phase C. How much NEW GROUND may be covered, in centimetres, before the
+# cloud is asked to look again while the local tier is seeing nothing.
+#
+# **Why distance rather than frames.** Frame count is a proxy for ground
+# covered, and the robot now has the real quantity (`get_odometry()`).
+# The proxy breaks at both ends: a robot stopped while the operator reads
+# the log burns calls for no new information, and a robot at 0.5 m/s under
+# 1.14's continuous motion travels a metre between looks at the same frame
+# count. Distance couples the poll interval to the thing that actually
+# changes the view.
+#
+# **Turning is not travel**, and that is deliberate rather than an
+# oversight -- `get_odometry()` reports a pivot as zero path. A robot
+# scanning in place reveals new *view* without new *ground*, so on
+# distance alone a scan would never re-trigger. The frame floor below is
+# what covers that case, and it is why the two rules are an OR rather than
+# a replacement.
+#
+# **None disables it**, which is the shipped default until Phase D
+# measures a number. `PLAN-onboard-perception.md`'s own lesson, recorded
+# twice: do not move a default on one walk.
+DEFAULT_COLD_SEARCH_AFTER_CM = None
 
 # The scan step the stand-in emits. RIGHT rather than LEFT for no better
 # reason than that a consistent direction makes an oscillation obvious in
@@ -312,15 +337,27 @@ class TieredVision:
         *,
         consecutive_frames: int = DEFAULT_CONSECUTIVE,
         cold_search_after: int = DEFAULT_COLD_SEARCH_AFTER,
+        cold_search_after_cm: Optional[float] = DEFAULT_COLD_SEARCH_AFTER_CM,
         stale_after: int = DEFAULT_STALE_AFTER,
         max_calls: Optional[int] = None,
         corroboration_bar: float = DEFAULT_CORROBORATION_P,
         oov_cold_search_after: Optional[int] = None,
+        async_cloud: bool = False,
     ):
         self.pipeline = pipeline
         self.cloud_vision_fn = cloud_vision_fn
         self.consecutive_frames = max(1, int(consecutive_frames))
         self.cold_search_after = max(1, int(cold_search_after))
+        # The distance rule, and the state it needs. `_odometry_at_call` is
+        # the reading when the cloud last looked; None means "never looked
+        # or the backend has no encoders", and both resolve to the frame
+        # rule rather than to a fabricated zero.
+        self.cold_search_after_cm = (
+            None if cold_search_after_cm is None
+            else max(1.0, float(cold_search_after_cm)))
+        self._odometry_at_call: Optional[float] = None
+        self._odometry_usable: Optional[bool] = None
+        self._distance_since_call: Optional[float] = None
         # 0 disables the floor entirely, which reproduces the pre-2026-09-07
         # edge-only behaviour -- worth having for measuring the difference,
         # and worth NOT having as the default.
@@ -355,6 +392,44 @@ class TieredVision:
         self.oov_cold_search_after = (
             None if oov_cold_search_after is None
             else max(1, int(oov_cold_search_after)))
+        # -------- Phase A: the cloud call stops blocking the tick --------
+        #
+        # 2.5 has specified this since the tiered architecture was written
+        # -- *"the reactive tier always holds a current goal; a new one
+        # arrives asynchronously and replaces it"* -- and the code did the
+        # opposite. `control/mission_runner.py` calls the policy through
+        # `call_with_timeout`, so a paid step froze the mission for the
+        # round trip (3.6s measured, `vision_timeout_s` 20.0) against a
+        # 0.25s tick. With 79% of calls fired by the cold-search counter,
+        # that is a stall roughly every nine frames.
+        #
+        # Two halves, and they only work together:
+        #
+        #   1. **Dispatch, don't wait.** The call runs on one worker
+        #      thread and the tick returns now.
+        #   2. **Hold the goal while it is in flight.** Without this the
+        #      stand-in emits SCAN_ACTION, so the robot spins through
+        #      every frame it is waiting on -- which is the degenerate
+        #      RIGHT-on-every-frame mode this project has already recorded
+        #      once, arrived at from a different direction.
+        #
+        # **Off by default.** It changes what the robot does on a free
+        # frame, and nothing has measured that yet. Phase D is where a
+        # number gets chosen and this gets turned on deliberately.
+        self.async_cloud = bool(async_cloud)
+        self._executor = None
+        self._inflight = None
+        self._inflight_trigger: Optional[str] = None
+        self._inflight_perception: Optional[Perception] = None
+        self._perception_this_frame: Optional[Perception] = None
+        # The epoch is the `guidanceEpoch` trick one layer down. A call
+        # still in flight when the mission ends must not have its answer
+        # applied -- that is the orphaned-in-flight-call class that put a
+        # dead session's decision over a live camera view in Robot view,
+        # and that filed one walk's frame into the next walk's directory.
+        self._epoch = 0
+        self._last_cloud_scene: Optional[dict] = None
+        self._pending_error: Optional[BaseException] = None
         self.stats = TierStats()
         # 6.3 asks for **the detector's own name** on screen, not just its
         # output: *"swap the HEF and the name on screen changes; that is
@@ -390,10 +465,25 @@ class TieredVision:
     # -- the vision_fn contract ------------------------------------------
 
     def __call__(self, frame: dict) -> dict:
+        self._read_odometry(frame)
+        # An answer that landed since the last frame becomes the current
+        # goal now, BEFORE the trigger policy runs -- so a call that has
+        # already returned is never counted as still in flight.
+        self._collect_inflight()
         perception = self.pipeline.perceive(frame)
+        self._perception_this_frame = perception
         self.stats.frames += 1
         self.stats.perception[perception.status] = (
             self.stats.perception.get(perception.status, 0) + 1)
+
+        # B3.2 still owns the failure budget. An async call that failed is
+        # raised on the first frame after it lands rather than swallowed,
+        # so `MissionRunner._guarded_vision()` converts it to
+        # VisionUnavailable exactly as it does a synchronous failure and
+        # the budget counts the same events it always did.
+        if self._pending_error is not None:
+            err, self._pending_error = self._pending_error, None
+            raise err
 
         trigger = self._trigger_for(perception)
         if trigger is None:
@@ -405,13 +495,120 @@ class TieredVision:
                            self.max_calls, trigger)
             return self._local_scene(perception, note="call cap reached")
 
+        if self.async_cloud and self._inflight is not None:
+            # One call at a time. A second dispatch while the first is
+            # outstanding is how replays used to lose frames (CLAUDE.md's
+            # note on stacking replays on one vision task), and it would
+            # also spend twice for one answer.
+            return self._local_scene(
+                perception,
+                note=f"{self._inflight_trigger} call still in flight")
+
         self.stats.cloud_calls += 1
         self.stats.triggers[trigger] = self.stats.triggers.get(trigger, 0) + 1
         self._absent_streak = 0
         self._since_call = 0
+        self._mark_odometry_call()
+
+        if self.async_cloud:
+            self._dispatch(frame, trigger)
+            return self._local_scene(perception,
+                                     note=f"[cloud: {trigger}] dispatched")
 
         scene = self.cloud_vision_fn(frame)
         return self._annotate(scene, perception, trigger)
+
+    # -- Phase A: dispatch, collect, and hold the goal --------------------
+
+    def _dispatch(self, frame: dict, trigger: str) -> None:
+        """Start the cloud call on a worker thread and return immediately."""
+        if self._executor is None:
+            # One worker, created lazily so a synchronous mission (the
+            # default) never starts a thread at all.
+            self._executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="tiered-cloud")
+        epoch = self._epoch
+        self._inflight_trigger = trigger
+        # Corroboration (1.11a) compares the cloud's claim against the
+        # LOCAL evidence from the same frame. Async breaks that pairing
+        # unless the perception is carried along with the call, so it is.
+        self._inflight_perception = self._perception_this_frame
+        self._inflight = self._executor.submit(
+            self._call_cloud, frame, epoch)
+
+    def _call_cloud(self, frame: dict, epoch: int) -> Optional[dict]:
+        """Runs on the worker. Returns None if the mission moved on.
+
+        The epoch check is here as well as at collection because the two
+        answer different questions: this one avoids doing work nobody
+        wants, and the one in `_collect_inflight` is the guard that
+        actually matters -- it is what stops a superseded answer being
+        applied.
+        """
+        if epoch != self._epoch:
+            return None
+        return self.cloud_vision_fn(frame)
+
+    def _collect_inflight(self) -> None:
+        """Apply a landed answer, or note that it failed. Never waits."""
+        fut = self._inflight
+        if fut is None or not fut.done():
+            return
+        self._inflight = None
+        trigger, self._inflight_trigger = self._inflight_trigger, None
+        try:
+            scene = fut.result()
+        except BaseException as exc:  # noqa: BLE001
+            # Held, not raised here: this runs before perception, and a
+            # failure surfaced mid-frame would skip the local tier's work
+            # for that frame. Raised at the top of the NEXT call, where
+            # B3.2's budget sees it as it always did.
+            logger.warning("async cloud call failed: %s", exc)
+            self._pending_error = exc
+            return
+        if scene is None:
+            # Superseded: the mission ended or reset while this was out.
+            # Dropping it silently is the point -- applying it is the
+            # orphaned-call bug.
+            return
+        self._last_cloud_scene = scene
+        # Run the annotation for its SIDE EFFECTS -- corroboration and the
+        # stats 6.3 puts on the panel -- against the perception this call
+        # was actually made on, not whatever is in front of the camera now.
+        # The annotated scene itself is not returned: the decision for this
+        # frame belongs to this frame's pixels, and what carries forward is
+        # the goal, not the whole answer.
+        if self._inflight_perception is not None:
+            self._annotate(scene, self._inflight_perception, trigger or "")
+        self._inflight_perception = None
+
+    def reset_epoch(self) -> None:
+        """Invalidate anything in flight. Called when a mission ends, so a
+        late answer cannot be applied to a robot that has stopped."""
+        self._epoch += 1
+        self._inflight = None
+        self._inflight_trigger = None
+        self._inflight_perception = None
+        self._pending_error = None
+
+    def close(self) -> None:
+        """Release the worker thread. Safe to call more than once."""
+        self.reset_epoch()
+        if self._executor is not None:
+            self._executor.shutdown(wait=False, cancel_futures=True)
+            self._executor = None
+
+    def _held_direction(self) -> Optional[str]:
+        """The last direction the cloud gave, if there is one.
+
+        2.5's *"the reactive tier always holds a current goal"*. Used only
+        while a call is in flight: on an ordinary free frame the stand-in
+        keeps its scan, because holding a goal indefinitely with nothing
+        confirming it is a different design and an unmeasured one.
+        """
+        if not self._last_cloud_scene:
+            return None
+        return self._last_cloud_scene.get("safest_direction")
 
     # -- the trigger policy ----------------------------------------------
 
@@ -458,7 +655,13 @@ class TieredVision:
 
         if perception.status == ABSENT:
             self._absent_streak += 1
+            # An OR, not a replacement. Distance is the better measure of
+            # "how much new view is there to look at" while the robot is
+            # driving; the frame floor is what still fires when it is
+            # scanning in place, which covers new view at zero path.
             if self._absent_streak >= self._cold_search_bar():
+                return TRIGGER_COLD_SEARCH
+            if self._distance_bar_reached():
                 return TRIGGER_COLD_SEARCH
 
         # The floor. Last, so it never pre-empts an event that says
@@ -466,6 +669,73 @@ class TieredVision:
         if self.stale_after and self._since_call >= self.stale_after:
             return TRIGGER_STALE
         return None
+
+    def _read_odometry(self, frame: dict) -> None:
+        """Pull this frame's odometry reading, if the backend has any.
+
+        `MissionRunner._guarded_vision()` attaches it. A frame with no
+        `odometry` key at all is a caller that predates Phase C -- a
+        replay harness, a test, a policy driven directly -- and is treated
+        exactly like a backend with no encoders, which is the honest
+        reading of "nobody told me how far this thing went."
+        """
+        odo = frame.get("odometry") or {}
+        usable = bool(odo.get("usable")) and odo.get("distance_m") is not None
+        self._odometry_usable = usable
+        if not usable:
+            self._distance_since_call = None
+            return
+        travelled_cm = float(odo["distance_m"]) * 100.0
+        if self._odometry_at_call is None:
+            self._odometry_at_call = travelled_cm
+        self._distance_since_call = max(0.0, travelled_cm - self._odometry_at_call)
+
+    def _mark_odometry_call(self) -> None:
+        """Reset the distance baseline to here, because the cloud just
+        looked. Called on EVERY trigger rather than only on cold_search:
+        a candidate_sighting call has looked at this view too, and
+        counting the ground it covered again would fire a redundant
+        cold_search moments later."""
+        if self._distance_since_call is not None:
+            self._odometry_at_call = (
+                (self._odometry_at_call or 0.0) + self._distance_since_call)
+            self._distance_since_call = 0.0
+
+    def _distance_bar_reached(self) -> bool:
+        if self.cold_search_after_cm is None:
+            return False
+        if self._distance_since_call is None:
+            return False
+        return self._distance_since_call >= self.cold_search_after_cm
+
+    def _pacing_readout(self) -> dict:
+        """What is pacing the cloud right now, for 6.3's panel.
+
+        Names the rule in force rather than leaving it to be inferred. A
+        silent fallback from distance to frames is how a walk becomes
+        unattributable -- the same failure mode `crop_source` is reported
+        for, one tier up.
+        """
+        distance_armed = (self.cold_search_after_cm is not None
+                          and self._odometry_usable
+                          and self._distance_since_call is not None)
+        return {
+            "rule": "distance" if distance_armed else "frames",
+            "frames_absent": self._absent_streak,
+            "frames_bar": self._cold_search_bar(),
+            "cm_since_call": (None if self._distance_since_call is None
+                              else round(self._distance_since_call, 1)),
+            "cm_bar": self.cold_search_after_cm,
+            "odometry_usable": self._odometry_usable,
+            # Why the distance rule is not in force, when it is not. Three
+            # different reasons, and they want different fixes: not
+            # configured, no encoders on this backend, or nothing measured
+            # yet this mission.
+            "reason": (
+                None if distance_armed
+                else "cold_search_after_cm is not set" if self.cold_search_after_cm is None
+                else "this backend reports no odometry"),
+        }
 
     def _cold_search_bar(self) -> int:
         """How many `absent` frames before the cloud is asked to propose.
@@ -490,6 +760,16 @@ class TieredVision:
         model's reasoning when nothing was called is exactly the kind of
         thing this project has been burned by."""
         why = note or f"no trigger ({perception.status})"
+        # 2.5's held goal, and ONLY while a call is outstanding. Without
+        # this the stand-in scans through every frame it is waiting on,
+        # which turns a 3.6s round trip into a visible spin -- the
+        # stutter Phase A exists to remove. On an ordinary free frame the
+        # scan stays, because holding a goal with nothing confirming it is
+        # a different design and an unmeasured one.
+        held = self._held_direction() if self._inflight is not None else None
+        direction = held or SCAN_ACTION
+        if held:
+            why = f"{why} -- holding last cloud goal {held}"
         return {
             "obstacles_ahead": [],
             # Nothing local measures depth. M1's argument exactly: the
@@ -499,7 +779,7 @@ class TieredVision:
             "free_space": "unknown",
             "doorway_visible": False,
             "important_objects": [],
-            "safest_direction": SCAN_ACTION,
+            "safest_direction": direction,
             "_navigate": {
                 "target_visible": perception.status == DETECTED,
                 # "not_visible" would contradict target_visible above on
@@ -526,7 +806,12 @@ class TieredVision:
                       # many free frames follow it, which is exactly how a
                       # stale readout becomes a believed one.
                       "corroboration": None,
+                      # What the robot is doing while it waits, named so a
+                      # held goal can never be mistaken for a fresh answer.
+                      "in_flight": self._inflight_trigger,
+                      "holding": held,
                       "vocabulary": self._vocabulary_readout(),
+                      "pacing": self._pacing_readout(),
                       "stats": self.stats.as_dict()},
         }
 
@@ -558,6 +843,7 @@ class TieredVision:
                         # amendment and shipping it.
                         "corroboration": corroboration,
                         "vocabulary": self._vocabulary_readout(),
+                        "pacing": self._pacing_readout(),
                         "stats": self.stats.as_dict()}
         return out
 

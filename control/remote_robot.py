@@ -38,7 +38,8 @@ from typing import Optional
 
 import httpx
 
-from robot.interface import Preempted, RobotInterface, unusable_grid
+from robot.interface import (Preempted, RobotInterface, unusable_grid,
+                             unusable_odometry)
 from robot.safety import SafetyViolation
 
 logger = logging.getLogger("remote_robot")
@@ -129,6 +130,23 @@ class RemoteRobot(RobotInterface):
 
     def get_distance(self) -> float:
         return float(self._request("GET", "/distance")["distance_cm"])
+
+    def get_odometry(self) -> dict:
+        """Phase B. Overrides the all-unusable default for the same reason
+        `get_depth_grid()` does: the robot on the other end may well have
+        encoders, and inheriting the default would report that it did not.
+
+        A 404 means the server predates the route and is answered with the
+        honest no-op. Every other status raises, so a *broken* encoder is
+        never quietly reported as an absent one."""
+        try:
+            return self._request("GET", "/odometry")
+        except RobotTransportError as e:
+            if "HTTP 404" in str(e):
+                logger.info(
+                    "robot server has no /odometry route -- reporting no odometry")
+                return unusable_odometry()
+            raise
 
     def get_depth_grid(self) -> dict:
         """Phase M2. Overrides `RobotInterface`'s all-unusable default,

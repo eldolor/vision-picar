@@ -541,6 +541,7 @@
     // for the same reason -- renderDepth() says "not reported" and the rest
     // of the page carries on.
     refreshDepth();
+    refreshOdometry();
     return frame;
   }
 
@@ -564,6 +565,45 @@
       // the strip on one dropped request.
     }
     renderDepth();
+  }
+
+  // ---------- phase B: odometry ----------
+  // Its own route for the same reason /depth is one: a third sensor, and a
+  // wedged camera must not take it down with it. A 404 means the server
+  // predates the route, which is a real state while stacks are redeployed
+  // one at a time -- and is reported as "no route", never as "no motion".
+  async function refreshOdometry() {
+    if (state.odometryUnsupported) return;
+    try {
+      state.lastOdometry = await apiGet("/odometry");
+    } catch (e) {
+      if (e.status === 404) {
+        state.odometryUnsupported = true;
+        state.lastOdometry = null;
+      }
+    }
+    renderOdometry();
+  }
+
+  function renderOdometry() {
+    var el = document.getElementById("odometry-readout");
+    if (!el) return;
+    var o = state.lastOdometry;
+    if (state.odometryUnsupported) {
+      el.textContent = "odometry: not reported by this server";
+      return;
+    }
+    if (!o) { el.textContent = "odometry: not connected"; return; }
+    if (!o.usable) {
+      // The honest no-op, shown as one. This is what a teleop rig reads,
+      // and it is the state Phase C's distance rule falls back from.
+      el.innerHTML = "odometry: <span class=\"src\">no encoders on this backend"
+        + " \u2014 pacing falls back to frame count</span>";
+      return;
+    }
+    el.innerHTML = "odometry: <strong>" + o.distance_m.toFixed(2)
+      + "m</strong> travelled \u00b7 heading " + Math.round(o.heading_deg)
+      + "\u00b0 <span class=\"src\">(path length, not displacement)</span>";
   }
 
   // Range zones ramp from alert (close) to safe (far), so the strip reads
@@ -1805,6 +1845,38 @@
         // seeing -- but it is not an error and must not be dressed as one:
         // under the shipped rule the robot believes the claim anyway.
         corroboration && corroboration.verdict === "unclear" ? "alert" : null);
+    }
+
+    // Phase C. The pacing rule, and the distance to the next look. Reads
+    // "frames" on every teleop walk, because a phone on a wheeled rig has
+    // no encoders -- and that has to be legible rather than inferred from
+    // a distance readout that never moves.
+    const pacing = tier && tier.pacing;
+    if (!pacing) {
+      setBrainText("brain-tel-pacing", null);
+    } else if (pacing.rule === "distance") {
+      const left = Math.max(0, pacing.cm_bar - (pacing.cm_since_call || 0));
+      setBrainText("brain-tel-pacing",
+        "by distance \u00b7 " + (pacing.cm_since_call || 0).toFixed(0) + "/"
+        + pacing.cm_bar + "cm \u00b7 next look in " + left.toFixed(0) + "cm");
+    } else {
+      setBrainText("brain-tel-pacing",
+        "by frame count \u00b7 " + pacing.frames_absent + "/" + pacing.frames_bar
+        + (pacing.reason ? " \u00b7 " + pacing.reason : ""));
+    }
+
+    // Phase A. Three states, and they must not look alike: waiting on an
+    // answer while driving on the last goal, waiting with no goal to hold,
+    // and not waiting at all.
+    if (!tier) {
+      setBrainText("brain-tel-inflight", null);
+    } else if (tier.in_flight) {
+      setBrainText("brain-tel-inflight",
+        tier.in_flight + " call in flight \u00b7 "
+        + (tier.holding ? "holding goal " + tier.holding : "scanning, no goal yet"),
+        "alert");
+    } else {
+      setBrainText("brain-tel-inflight", "idle \u00b7 no call outstanding");
     }
 
     const stats = (tier && tier.stats) || {};

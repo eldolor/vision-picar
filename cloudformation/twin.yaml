@@ -205,6 +205,26 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
 
+  # A THIRD rule, for the same reason there is a second: the condition
+  # above is full at five path values. Odometry (phase B) is its own route
+  # rather than a field on /distance or /frame, because it is a different
+  # sensor again -- wheel encoders and an IMU, not a ToF and not a camera
+  # -- and CLAUDE.md section 6 records that a route added to the app and
+  # not to this file has shipped five times as a silently dead feature.
+  AlbListenerRuleOdometry:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 12
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /odometry
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:

@@ -237,6 +237,11 @@ Resources:
             # all-unusable -- a live phone walk has no ToF -- which is a
             # real answer and has to be reachable to be read as one.
             - /teleop-robot/depth
+            # Odometry (phase B). Under mode: teleop this answers
+            # `usable: false` -- a phone on a wheeled rig has no encoders
+            # -- which is a real answer and has to be reachable to be read
+            # as one. Same argument as /depth directly above.
+            - /teleop-robot/odometry
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

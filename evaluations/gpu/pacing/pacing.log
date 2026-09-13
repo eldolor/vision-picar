@@ -1,0 +1,409 @@
+corpus: 8 walks, 610 frames, 159 visible
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+WARNING:huggingface_hub.utils._http:Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+/opt/eval/venv/lib/python3.10/site-packages/open_clip/factory.py:450: UserWarning: QuickGELU mismatch between final model config (quick_gelu=False) and pretrained tag 'openai' (quick_gelu=True).
+  warnings.warn(
+Loading weights:   0%|          | 0/208 [00:00<?, ?it/s]Loading weights: 100%|██████████| 208/208 [00:00<00:00, 3242.73it/s]
+
+perceiving each walk once -- the sweep reuses these
+  blue-bottle-20260907-142454                  33 frames,  18 not-absent
+  blue-bottle-20260907-185007                 209 frames,   4 not-absent
+  blue-shoes-20260907-152528                   19 frames,  11 not-absent
+  blue-shoes-20260908-210511                   44 frames,  11 not-absent
+  red-backpack-20260907-144856                 38 frames,  32 not-absent
+  woven-laundry-basket-20260908-215140         95 frames,   1 not-absent
+  woven-laundry-basket-20260908-215252         86 frames,   1 not-absent
+  woven-laundry-basket-20260908-215351         86 frames,  35 not-absent
+
+=== frames-2 ============================================
+  blue-bottle-20260907-142454                calls  11  spans  3  looked  2  missed  1
+  blue-bottle-20260907-185007                calls 103  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   6  spans  3  looked  2  missed  1
+  blue-shoes-20260908-210511                 calls  18  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   8  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  47  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  43  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls  30  spans  2  looked  2  missed  0
+  -> calls 266  looked 13/15  median look-latency 1  max 2
+
+=== frames-2-async ======================================
+  blue-bottle-20260907-142454                calls   6  spans  3  looked  3  missed  0
+  blue-bottle-20260907-185007                calls  51  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   4  spans  3  looked  2  missed  1
+  blue-shoes-20260908-210511                 calls   9  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   5  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  23  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  21  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls  16  spans  2  looked  2  missed  0
+  -> calls 135  looked 14/15  median look-latency 1.0  max 3
+
+=== frames-3 ============================================
+  blue-bottle-20260907-142454                calls   8  spans  3  looked  2  missed  1
+  blue-bottle-20260907-185007                calls  69  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   4  spans  3  looked  1  missed  2
+  blue-shoes-20260908-210511                 calls  12  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   6  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  32  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  29  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls  22  spans  2  looked  2  missed  0
+  -> calls 182  looked 12/15  median look-latency 1.0  max 3
+
+=== frames-3-async ======================================
+  blue-bottle-20260907-142454                calls   6  spans  3  looked  3  missed  0
+  blue-bottle-20260907-185007                calls  51  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   4  spans  3  looked  2  missed  1
+  blue-shoes-20260908-210511                 calls   9  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   5  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  23  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  21  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls  16  spans  2  looked  2  missed  0
+  -> calls 135  looked 14/15  median look-latency 1.0  max 3
+
+=== frames-4 ============================================
+  blue-bottle-20260907-142454                calls   7  spans  3  looked  2  missed  1
+  blue-bottle-20260907-185007                calls  52  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   4  spans  3  looked  2  missed  1
+  blue-shoes-20260908-210511                 calls  10  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   6  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  24  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  22  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls  17  spans  2  looked  2  missed  0
+  -> calls 142  looked 13/15  median look-latency 1  max 4
+
+=== frames-4-async ======================================
+  blue-bottle-20260907-142454                calls   6  spans  3  looked  3  missed  0
+  blue-bottle-20260907-185007                calls  51  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   4  spans  3  looked  2  missed  1
+  blue-shoes-20260908-210511                 calls   9  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   5  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  23  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  21  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls  15  spans  2  looked  2  missed  0
+  -> calls 134  looked 14/15  median look-latency 1.0  max 3
+
+=== frames-6 ============================================
+  blue-bottle-20260907-142454                calls   5  spans  3  looked  2  missed  1
+  blue-bottle-20260907-185007                calls  35  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   3  spans  3  looked  1  missed  2
+  blue-shoes-20260908-210511                 calls   7  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   6  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  16  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  15  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls  13  spans  2  looked  2  missed  0
+  -> calls 100  looked 12/15  median look-latency 1.0  max 4
+
+=== frames-6-async ======================================
+  blue-bottle-20260907-142454                calls   5  spans  3  looked  3  missed  0
+  blue-bottle-20260907-185007                calls  34  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   3  spans  3  looked  2  missed  1
+  blue-shoes-20260908-210511                 calls   7  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   5  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  15  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  14  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls  11  spans  2  looked  2  missed  0
+  -> calls 94  looked 14/15  median look-latency 1.0  max 2
+
+=== frames-9 ============================================
+  blue-bottle-20260907-142454                calls   5  spans  3  looked  2  missed  1
+  blue-bottle-20260907-185007                calls  24  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   3  spans  3  looked  1  missed  2
+  blue-shoes-20260908-210511                 calls   5  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   6  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  11  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  10  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls  11  spans  2  looked  2  missed  0
+  -> calls 75  looked 12/15  median look-latency 1.0  max 8
+
+=== frames-9-async ======================================
+  blue-bottle-20260907-142454                calls   5  spans  3  looked  3  missed  0
+  blue-bottle-20260907-185007                calls  23  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   3  spans  3  looked  2  missed  1
+  blue-shoes-20260908-210511                 calls   5  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   5  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  11  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  10  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls   9  spans  2  looked  2  missed  0
+  -> calls 71  looked 14/15  median look-latency 0.5  max 4
+
+=== frames-12 ===========================================
+  blue-bottle-20260907-142454                calls   5  spans  3  looked  2  missed  1
+  blue-bottle-20260907-185007                calls  24  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   3  spans  3  looked  1  missed  2
+  blue-shoes-20260908-210511                 calls   5  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   6  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  11  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  10  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls  11  spans  2  looked  2  missed  0
+  -> calls 75  looked 12/15  median look-latency 1.0  max 8
+
+=== frames-12-async =====================================
+  blue-bottle-20260907-142454                calls   5  spans  3  looked  3  missed  0
+  blue-bottle-20260907-185007                calls  23  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   3  spans  3  looked  2  missed  1
+  blue-shoes-20260908-210511                 calls   5  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   5  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  11  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  10  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls   9  spans  2  looked  2  missed  0
+  -> calls 71  looked 14/15  median look-latency 0.5  max 4
+
+=== cm-20 ===============================================
+  blue-bottle-20260907-142454                calls   5  spans  3  looked  2  missed  1
+  blue-bottle-20260907-185007                calls  48  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   5  spans  3  looked  1  missed  2
+  blue-shoes-20260908-210511                 calls  17  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   6  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  12  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  11  spans  2  looked  1  missed  1
+  woven-laundry-basket-20260908-215351       calls  12  spans  2  looked  2  missed  0
+  -> calls 116  looked 11/15  median look-latency 1  max 4
+
+=== cm-40 ===============================================
+  blue-bottle-20260907-142454                calls   5  spans  3  looked  2  missed  1
+  blue-bottle-20260907-185007                calls  32  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   4  spans  3  looked  1  missed  2
+  blue-shoes-20260908-210511                 calls  10  spans  2  looked  2  missed  0
+  red-backpack-20260907-144856               calls   6  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  11  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  10  spans  2  looked  1  missed  1
+  woven-laundry-basket-20260908-215351       calls  11  spans  2  looked  2  missed  0
+  -> calls 89  looked 11/15  median look-latency 1  max 4
+
+=== cm-80 ===============================================
+  blue-bottle-20260907-142454                calls   5  spans  3  looked  2  missed  1
+  blue-bottle-20260907-185007                calls  27  spans  1  looked  1  missed  0
+  blue-shoes-20260907-152528                 calls   4  spans  3  looked  1  missed  2
+  blue-shoes-20260908-210511                 calls   7  spans  2  looked  1  missed  1
+  red-backpack-20260907-144856               calls   6  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215140       calls  11  spans  0  looked  0  missed  0
+  woven-laundry-basket-20260908-215252       calls  10  spans  2  looked  2  missed  0
+  woven-laundry-basket-20260908-215351       calls  11  spans  2  looked  2  missed  0
+  -> calls 81  looked 11/15  median look-latency 1  max 4
+
+[
+  {
+    "name": "frames-2",
+    "cold_after": 2,
+    "cold_cm": null,
+    "async_cloud": false,
+    "odometry": "n/a",
+    "cloud_calls": 266,
+    "frames": 610,
+    "spans": 15,
+    "looked": 13,
+    "missed": 2,
+    "median_latency": 1,
+    "mean_latency": 0.62,
+    "max_latency": 2
+  },
+  {
+    "name": "frames-2-async",
+    "cold_after": 2,
+    "cold_cm": null,
+    "async_cloud": true,
+    "odometry": "n/a",
+    "cloud_calls": 135,
+    "frames": 610,
+    "spans": 15,
+    "looked": 14,
+    "missed": 1,
+    "median_latency": 1.0,
+    "mean_latency": 1.07,
+    "max_latency": 3
+  },
+  {
+    "name": "frames-3",
+    "cold_after": 3,
+    "cold_cm": null,
+    "async_cloud": false,
+    "odometry": "n/a",
+    "cloud_calls": 182,
+    "frames": 610,
+    "spans": 15,
+    "looked": 12,
+    "missed": 3,
+    "median_latency": 1.0,
+    "mean_latency": 1,
+    "max_latency": 3
+  },
+  {
+    "name": "frames-3-async",
+    "cold_after": 3,
+    "cold_cm": null,
+    "async_cloud": true,
+    "odometry": "n/a",
+    "cloud_calls": 135,
+    "frames": 610,
+    "spans": 15,
+    "looked": 14,
+    "missed": 1,
+    "median_latency": 1.0,
+    "mean_latency": 1.14,
+    "max_latency": 3
+  },
+  {
+    "name": "frames-4",
+    "cold_after": 4,
+    "cold_cm": null,
+    "async_cloud": false,
+    "odometry": "n/a",
+    "cloud_calls": 142,
+    "frames": 610,
+    "spans": 15,
+    "looked": 13,
+    "missed": 2,
+    "median_latency": 1,
+    "mean_latency": 1.31,
+    "max_latency": 4
+  },
+  {
+    "name": "frames-4-async",
+    "cold_after": 4,
+    "cold_cm": null,
+    "async_cloud": true,
+    "odometry": "n/a",
+    "cloud_calls": 134,
+    "frames": 610,
+    "spans": 15,
+    "looked": 14,
+    "missed": 1,
+    "median_latency": 1.0,
+    "mean_latency": 1.21,
+    "max_latency": 3
+  },
+  {
+    "name": "frames-6",
+    "cold_after": 6,
+    "cold_cm": null,
+    "async_cloud": false,
+    "odometry": "n/a",
+    "cloud_calls": 100,
+    "frames": 610,
+    "spans": 15,
+    "looked": 12,
+    "missed": 3,
+    "median_latency": 1.0,
+    "mean_latency": 1.25,
+    "max_latency": 4
+  },
+  {
+    "name": "frames-6-async",
+    "cold_after": 6,
+    "cold_cm": null,
+    "async_cloud": true,
+    "odometry": "n/a",
+    "cloud_calls": 94,
+    "frames": 610,
+    "spans": 15,
+    "looked": 14,
+    "missed": 1,
+    "median_latency": 1.0,
+    "mean_latency": 0.71,
+    "max_latency": 2
+  },
+  {
+    "name": "frames-9",
+    "cold_after": 9,
+    "cold_cm": null,
+    "async_cloud": false,
+    "odometry": "n/a",
+    "cloud_calls": 75,
+    "frames": 610,
+    "spans": 15,
+    "looked": 12,
+    "missed": 3,
+    "median_latency": 1.0,
+    "mean_latency": 1.83,
+    "max_latency": 8
+  },
+  {
+    "name": "frames-9-async",
+    "cold_after": 9,
+    "cold_cm": null,
+    "async_cloud": true,
+    "odometry": "n/a",
+    "cloud_calls": 71,
+    "frames": 610,
+    "spans": 15,
+    "looked": 14,
+    "missed": 1,
+    "median_latency": 0.5,
+    "mean_latency": 0.86,
+    "max_latency": 4
+  },
+  {
+    "name": "frames-12",
+    "cold_after": 12,
+    "cold_cm": null,
+    "async_cloud": false,
+    "odometry": "n/a",
+    "cloud_calls": 75,
+    "frames": 610,
+    "spans": 15,
+    "looked": 12,
+    "missed": 3,
+    "median_latency": 1.0,
+    "mean_latency": 1.83,
+    "max_latency": 8
+  },
+  {
+    "name": "frames-12-async",
+    "cold_after": 12,
+    "cold_cm": null,
+    "async_cloud": true,
+    "odometry": "n/a",
+    "cloud_calls": 71,
+    "frames": 610,
+    "spans": 15,
+    "looked": 14,
+    "missed": 1,
+    "median_latency": 0.5,
+    "mean_latency": 0.86,
+    "max_latency": 4
+  },
+  {
+    "name": "cm-20",
+    "cold_after": 999,
+    "cold_cm": 20.0,
+    "async_cloud": false,
+    "odometry": "DERIVED from the walk's own actions",
+    "cloud_calls": 116,
+    "frames": 610,
+    "spans": 15,
+    "looked": 11,
+    "missed": 4,
+    "median_latency": 1,
+    "mean_latency": 1,
+    "max_latency": 4
+  },
+  {
+    "name": "cm-40",
+    "cold_after": 999,
+    "cold_cm": 40.0,
+    "async_cloud": false,
+    "odometry": "DERIVED from the walk's own actions",
+    "cloud_calls": 89,
+    "frames": 610,
+    "spans": 15,
+    "looked": 11,
+    "missed": 4,
+    "median_latency": 1,
+    "mean_latency": 1,
+    "max_latency": 4
+  },
+  {
+    "name": "cm-80",
+    "cold_after": 999,
+    "cold_cm": 80.0,
+    "async_cloud": false,
+    "odometry": "DERIVED from the walk's own actions",
+    "cloud_calls": 81,
+    "frames": 610,
+    "spans": 15,
+    "looked": 11,
+    "missed": 4,
+    "median_latency": 1,
+    "mean_latency": 1.36,
+    "max_latency": 4
+  }
+]

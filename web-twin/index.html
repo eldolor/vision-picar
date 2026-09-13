@@ -1482,6 +1482,15 @@
              mission believes the cloud exactly as it did before, and the
              row says so. -->
         <div class="full">Corroboration: <span class="val" id="brain-tel-corroboration">&ndash;</span></div>
+        <!-- Phase C. WHICH rule is pacing the cloud right now, named rather
+             than left to be inferred: a silent fall back from distance to
+             frame count is how a walk becomes unattributable, which is the
+             same failure `crop_source` is reported for one tier up. -->
+        <div class="full">Cloud pacing: <span class="val" id="brain-tel-pacing">&ndash;</span></div>
+        <!-- Phase A. What the robot is doing while a deliberation call is
+             outstanding. A held goal must never be mistaken for a fresh
+             answer, so it says which it is. -->
+        <div class="full">Deliberation: <span class="val" id="brain-tel-inflight">&ndash;</span></div>
       </div>
       <div id="brain-log" role="log" aria-live="polite"></div>
       <details class="disclosure">
@@ -1549,6 +1558,12 @@
         <div class="depth-strip" id="depth-strip" role="img"
              aria-label="Depth zones across the camera's field of view"></div>
         <div class="depth-readout" id="depth-readout">depth: not connected</div>
+        <!-- Phase B. Its own line beside the depth strip, and its own
+             route, because it is a third sensor: wheel encoders and an
+             IMU, not a ToF and not a camera. A backend with none says so
+             rather than reading 0.0m, which would be indistinguishable
+             from a robot that has not moved. -->
+        <div class="depth-readout" id="odometry-readout">odometry: not connected</div>
       </div>
       <div class="fpv-source" id="fpv-source">frame source: <span class="local">not connected</span></div>
       <div class="fpv-hud" id="fpv-hud">Not running.</div>

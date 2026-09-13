@@ -746,3 +746,332 @@ def test_a_pipeline_with_no_verdict_still_works():
     a poor trade for a label."""
     tier = TieredVision(ScriptedPipeline([ABSENT]), FakeCloud())
     assert tier({"image_base64": "x"})["_tier"]["vocabulary"] is None
+
+
+# ---------------------------------------------------------------------------
+# Phase C -- pacing the cloud by ground covered, not by frame count
+# ---------------------------------------------------------------------------
+
+
+def odo_frame(distance_m=None, usable=True, **extra):
+    f = {"image_base64": "x", "image_width": 640}
+    if distance_m is not None or not usable:
+        f["odometry"] = {"usable": usable,
+                         "distance_m": distance_m,
+                         "heading_deg": 0.0}
+    f.update(extra)
+    return f
+
+
+def test_distance_is_off_by_default_and_the_frame_rule_is_untouched():
+    """Phase C ships inert. The project's own lesson, recorded twice: do
+    not move a default on one walk."""
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 20), cloud,
+                        cold_search_after=6)
+    assert tier.cold_search_after_cm is None
+    for m in range(20):
+        tier(odo_frame(distance_m=m * 10.0))
+    # start + one cold_search every 6 absent frames, and nothing extra
+    assert cloud.calls == 1 + 19 // 6
+
+
+def test_a_moving_robot_triggers_on_ground_covered():
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 12), cloud,
+                        cold_search_after=100,      # frame rule out of the way
+                        cold_search_after_cm=50.0)
+    for m in range(12):
+        tier(odo_frame(distance_m=m * 0.25))        # 25cm per frame
+    # mission_start, then one call per 50cm of the ~2.75m covered
+    assert cloud.calls > 1
+    assert tier.stats.triggers.get("cold_search")
+
+
+def test_a_STOPPED_robot_burns_no_calls_on_the_distance_rule():
+    """The half of the frame-count proxy that wastes money: a robot parked
+    while the operator reads the log covers no new view, and there is
+    nothing new for the cloud to say about the same pixels."""
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 30), cloud,
+                        cold_search_after=100, cold_search_after_cm=50.0,
+                        # The staleness floor is a third rule and fires on
+                        # its own clock; disabled here so this test
+                        # measures the distance rule and nothing else.
+                        stale_after=0)
+    for _ in range(30):
+        tier(odo_frame(distance_m=1.0))             # never moves
+    assert cloud.calls == 1, "only mission_start should have fired"
+
+
+def test_the_frame_floor_still_fires_for_a_robot_scanning_in_place():
+    """Turning is zero path by design (a pivot on a differential chassis
+    covers no ground), so distance alone would never re-trigger during a
+    scan -- which is exactly when the view IS changing. The two rules are
+    an OR for this case."""
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 20), cloud,
+                        cold_search_after=6, cold_search_after_cm=500.0)
+    for _ in range(20):
+        tier(odo_frame(distance_m=1.0))             # scanning, not driving
+    assert cloud.calls == 1 + 19 // 6
+
+
+def test_no_encoders_falls_back_to_frames_and_SAYS_so():
+    """The teleop rig -- the only real-pixels backend -- has no encoders,
+    so this is the path every validation walk takes. A silent fallback
+    would make those walks unattributable."""
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 14), cloud,
+                        cold_search_after=6, cold_search_after_cm=50.0)
+    out = [tier(odo_frame(usable=False)) for _ in range(14)]
+    assert cloud.calls == 1 + 13 // 6
+    pacing = out[-1]["_tier"]["pacing"]
+    assert pacing["rule"] == "frames"
+    assert pacing["odometry_usable"] is False
+    assert "no odometry" in pacing["reason"]
+    # Unknown, NOT zero. A readout saying "0.0cm since the last call" on a
+    # backend with no encoders is indistinguishable from a robot that has
+    # genuinely not moved, and that is the reading a distance rule would
+    # act on.
+    assert pacing["cm_since_call"] is None
+
+
+def test_a_frame_with_no_odometry_key_is_treated_as_no_encoders():
+    """A replay harness, a test, or any caller predating Phase C. Reading
+    a missing key as "travelled 0cm" would freeze the distance rule
+    permanently and invisibly."""
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 8), cloud,
+                        cold_search_after=4, cold_search_after_cm=10.0)
+    out = [tier({"image_base64": "x"}) for _ in range(8)]
+    assert out[-1]["_tier"]["pacing"]["rule"] == "frames"
+    assert cloud.calls == 1 + 7 // 4
+
+
+def test_the_pacing_readout_names_the_rule_in_force():
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 6), cloud,
+                        cold_search_after=100, cold_search_after_cm=40.0)
+    out = [tier(odo_frame(distance_m=i * 0.1)) for i in range(6)]
+    p = out[-1]["_tier"]["pacing"]
+    assert p["rule"] == "distance"
+    assert p["cm_bar"] == 40.0
+    assert p["odometry_usable"] is True
+    assert p["reason"] is None
+
+
+def test_any_cloud_call_resets_the_distance_baseline():
+    """Not just cold_search. A candidate_sighting call looked at this view
+    too, so counting the same ground again would fire a redundant
+    cold_search moments later."""
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([DETECTED, DETECTED] + [ABSENT] * 6),
+                        cloud, cold_search_after=100, cold_search_after_cm=30.0,
+                        stale_after=0)
+    out = [tier(odo_frame(distance_m=i * 0.05)) for i in range(8)]
+    # 35cm covered, a 30cm bar: exactly one cold_search after the opening
+    # call. Without the reset the already-looked-at ground is counted
+    # again and a second fires on the very next frame -- measured at 3.
+    assert cloud.calls == 2
+    # And the readout must show the baseline moving, not just the count.
+    assert out[6]["_tier"]["trigger"] == "cold_search"
+    assert out[6]["_tier"]["pacing"]["cm_since_call"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Phase A -- the cloud call stops blocking the tick
+# ---------------------------------------------------------------------------
+
+import threading as _threading  # noqa: E402
+import time as _time  # noqa: E402
+
+
+class SlowCloud(FakeCloud):
+    """A cloud that takes as long as you tell it to, and can be released."""
+
+    def __init__(self, delay=None):
+        super().__init__()
+        self.delay = delay
+        self.release = _threading.Event()
+        self.entered = _threading.Event()
+
+    def __call__(self, frame):
+        self.entered.set()
+        if self.delay is not None:
+            _time.sleep(self.delay)
+        else:
+            self.release.wait(timeout=5)
+        return super().__call__(frame)
+
+
+class AngryCloud:
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self, frame):
+        self.calls += 1
+        raise RuntimeError("bedrock said no")
+
+
+def test_a_dispatched_call_does_not_block_the_frame():
+    """The whole point. Synchronously this frame would take the round trip;
+    dispatched it returns now and the answer lands later."""
+    cloud = SlowCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 5), cloud,
+                        async_cloud=True)
+    started = _time.perf_counter()
+    out = tier({"image_base64": "x"})          # mission_start, dispatched
+    elapsed = _time.perf_counter() - started
+    assert elapsed < 1.0, "the frame waited on the cloud"
+    assert out["_tier"]["cloud_called"] is False
+    assert out["_tier"]["in_flight"] == "mission_start"
+    cloud.release.set()
+    tier.close()
+
+
+def test_only_one_call_is_outstanding_at_a_time():
+    """A second dispatch while the first is out spends twice for one
+    answer, and stacking calls on one vision task is the load that used to
+    make replays lose frames."""
+    cloud = SlowCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 30), cloud,
+                        cold_search_after=1, async_cloud=True)
+    for _ in range(10):
+        tier({"image_base64": "x"})
+    assert cloud.entered.wait(timeout=5)
+    assert tier.stats.cloud_calls == 1
+    cloud.release.set()
+    tier.close()
+
+
+def test_the_robot_holds_the_last_cloud_goal_while_waiting():
+    """Without this the stand-in scans through every frame it is waiting
+    on, and a 3.6s round trip becomes a visible spin."""
+    cloud = SlowCloud(delay=0.05)
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 20), cloud,
+                        cold_search_after=3, async_cloud=True)
+    tier({"image_base64": "x"})                       # dispatch mission_start
+    for _ in range(30):                               # let it land
+        if tier._last_cloud_scene: break
+        tier({"image_base64": "x"})
+        _time.sleep(0.02)
+    assert tier._last_cloud_scene, "the first answer never landed"
+
+    # Drive to the next trigger, then check the waiting frames.
+    seen = []
+    for _ in range(8):
+        seen.append(tier({"image_base64": "x"}))
+    holding = [s for s in seen if s["_tier"]["holding"]]
+    assert holding, "no frame held a goal while a call was outstanding"
+    assert holding[0]["safest_direction"] == cloud({"image_base64": "x"})["safest_direction"]
+    assert holding[0]["safest_direction"] != SCAN_ACTION
+    tier.close()
+
+
+def test_a_free_frame_with_nothing_in_flight_still_scans():
+    """The held goal is scoped to the wait. Holding one indefinitely with
+    nothing confirming it is a different design and an unmeasured one."""
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 10), cloud,
+                        cold_search_after=100, stale_after=0, async_cloud=True)
+    tier({"image_base64": "x"})                       # mission_start
+    for _ in range(20):
+        out = tier({"image_base64": "x"})
+        if out["_tier"]["in_flight"] is None:
+            break
+        _time.sleep(0.01)
+    assert out["_tier"]["in_flight"] is None
+    assert out["_tier"]["holding"] is None
+    assert out["safest_direction"] == SCAN_ACTION
+    tier.close()
+
+
+def test_an_answer_that_lands_after_the_mission_ends_is_DROPPED():
+    """The orphaned-in-flight-call class, one layer down. It put a dead
+    session's decision over a live camera view in Robot view, and filed one
+    walk's frame into the next walk's directory. Both were epoch bugs."""
+    cloud = SlowCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 5), cloud,
+                        async_cloud=True)
+    tier({"image_base64": "x"})
+    assert cloud.entered.wait(timeout=5)
+    tier.reset_epoch()                                # the mission ended
+    cloud.release.set()
+    _time.sleep(0.2)
+    tier({"image_base64": "x"})
+    assert tier._last_cloud_scene is None, (
+        "a superseded answer was applied to a mission that had ended")
+    tier.close()
+
+
+def test_an_async_failure_still_reaches_B3_2s_budget():
+    """The failsafe must not be quietly disarmed by moving the call off
+    the tick. It is raised on the frame after it lands, where
+    MissionRunner._guarded_vision() turns it into VisionUnavailable
+    exactly as it does a synchronous failure."""
+    cloud = AngryCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 10), cloud,
+                        async_cloud=True)
+    tier({"image_base64": "x"})                       # dispatch
+    raised = None
+    for _ in range(50):
+        try:
+            tier({"image_base64": "x"})
+        except RuntimeError as e:
+            raised = e
+            break
+        _time.sleep(0.02)
+    assert raised is not None, "an async cloud failure was swallowed"
+    assert "bedrock said no" in str(raised)
+    tier.close()
+
+
+def test_synchronous_is_still_the_default_and_is_unchanged():
+    """Phase A ships off. It changes what the robot does on a free frame
+    and nothing has measured that yet."""
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 6), cloud)
+    assert tier.async_cloud is False
+    out = tier({"image_base64": "x"})
+    assert out["_tier"]["cloud_called"] is True
+    assert out["_tier"]["trigger"] == "mission_start"
+    assert tier._executor is None, "a synchronous mission started a thread"
+
+
+def test_close_is_idempotent_and_releases_the_worker():
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 3), cloud, async_cloud=True)
+    tier({"image_base64": "x"})
+    tier.close()
+    tier.close()
+    assert tier._executor is None
+
+
+def test_a_QUEUED_call_never_reaches_the_cloud_after_the_mission_ends():
+    """The worker-side epoch check, which is about money rather than
+    correctness -- and so needs its own test, because dropping the answer
+    happens anyway.
+
+    There is one worker. A call that is still QUEUED when the mission ends
+    has not been paid for yet, and must not be. The answer-side guard
+    (`_inflight = None`) cannot help: by then the call has been made."""
+    cloud = SlowCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 5), cloud, async_cloud=True)
+
+    tier({"image_base64": "x"})                  # first call occupies the worker
+    assert cloud.entered.wait(timeout=5)
+    first = tier._inflight
+    tier._dispatch({"image_base64": "y"}, "cold_search")   # queued behind it
+    queued = tier._inflight
+
+    tier.reset_epoch()                           # mission ends
+    cloud.release.set()
+    for f in (first, queued):
+        try:
+            f.result(timeout=5)
+        except Exception:
+            pass
+    assert cloud.calls == 1, (
+        "the queued call was paid for after the mission had already ended")
+    tier.close()

@@ -313,3 +313,112 @@ def test_a_sensorless_backend_says_so_rather_than_guessing(robot):
         ), (
             "a backend with a working scalar published no usable zone at all"
         )
+
+
+# ---------------------------------------------------------------------------
+# Odometry -- phase B
+# ---------------------------------------------------------------------------
+#
+# The second method on this interface with an honest default, and it is
+# here for the reason `get_depth_grid()` is: `_HaltGate` and
+# `RecordingRobot` delegate method by method, so a wrapper that falls
+# behind the interface reports "this robot cannot measure its own motion"
+# while wrapping one that can. That is a silent lie in the direction a
+# distance-based policy must not be lied to -- it would simply never fire.
+
+
+def test_get_odometry_answers_the_same_shape_everywhere(robot):
+    odo = robot.get_odometry()
+    assert isinstance(odo, dict)
+    assert isinstance(odo.get("usable"), bool)
+    assert set(odo) >= {"usable", "distance_m", "heading_deg"}
+
+
+def test_unusable_odometry_carries_no_numbers(robot):
+    """The same rule the depth tri-state enforces one level down: a
+    consumer filtering on `usable` must never have to decide what a number
+    means on a backend that could not produce one. A sentinel 0.0 here
+    reads as "has not moved", which is exactly the wrong answer for "has
+    no encoders" -- a cold-search interval measured in centimetres would
+    wait forever."""
+    odo = robot.get_odometry()
+    if odo["usable"]:
+        assert isinstance(odo["distance_m"], (int, float))
+        assert isinstance(odo["heading_deg"], (int, float))
+    else:
+        assert odo["distance_m"] is None
+        assert odo["heading_deg"] is None
+
+
+def test_distance_travelled_never_goes_backwards(robot):
+    """Path length, not displacement. A robot that drives out and back has
+    covered ground, and a policy asking "how much NEW ground since the
+    cloud last looked" is asking about path -- displacement would leave a
+    robot searching one small room permanently below any threshold."""
+    before = robot.get_odometry()
+    if not before["usable"]:
+        pytest.skip("backend reports no odometry, which this suite allows")
+    robot.drive_forward(50, 0.5)
+    robot.turn_left(90)
+    robot.reverse(50, 0.5)
+    after = robot.get_odometry()
+    assert after["distance_m"] >= before["distance_m"]
+
+
+def test_turning_in_place_moves_the_heading_and_not_the_distance(robot):
+    """A scan reveals new view without new ground, and the two are reported
+    separately so a policy can tell them apart. On a differential chassis
+    (1.1) a pivot really is zero displacement; this pins that it is also
+    recorded as zero path."""
+    before = robot.get_odometry()
+    if not before["usable"]:
+        pytest.skip("backend reports no odometry, which this suite allows")
+    robot.turn_left(90)
+    after = robot.get_odometry()
+    assert after["distance_m"] == before["distance_m"], (
+        "a pivot covered no ground; counting it as travel would make a "
+        "robot scanning in place trigger a distance-based rule")
+    assert after["heading_deg"] != before["heading_deg"]
+
+
+def test_a_backend_with_no_encoders_says_so_rather_than_reporting_zero(robot):
+    """The biconditional, so neither half drifts. The only real-pixels
+    backend this project has is TeleopRobot -- a phone on a wheeled rig --
+    and a phone has no encoders. So the walks that validate perception are
+    exactly the walks that cannot report odometry, and that has to be
+    legible rather than inferred from a suspicious run of zeroes."""
+    odo = robot.get_odometry()
+    moved_before = odo["distance_m"]
+    robot.drive_forward(50, 0.5)
+    moved_after = robot.get_odometry()["distance_m"]
+    if odo["usable"]:
+        assert moved_after is not None and moved_before is not None
+    else:
+        assert moved_after is None and moved_before is None
+
+
+def test_a_wrapper_reports_the_odometry_of_what_it_WRAPS(tmp_path):
+    """The test the five-backend sweep above cannot write.
+
+    Every test in this file asks a backend about itself, and a wrapper
+    that inherited the honest no-op answers all of them consistently --
+    `usable: False`, both numbers None, no contradiction anywhere. It is
+    self-consistent and wrong, which is the shape of the bug that landed
+    when `get_depth_grid()` was added.
+
+    So this one holds the wrapper and the wrapped side by side. A gate
+    around a MockRobot must report the MockRobot's odometry, because the
+    thing driving is the MockRobot."""
+    from control.mission_runner import _HaltGate
+
+    inner = MockRobot(build_starter_world())
+    gate = _HaltGate(inner, lambda: True)
+
+    assert inner.get_odometry()["usable"] is True
+    assert gate.get_odometry()["usable"] is True, (
+        "the gate inherited RobotInterface's honest no-op while wrapping a "
+        "robot with working odometry -- every mission would report no "
+        "encoders and a distance-based rule would never fire")
+
+    gate.drive_forward(50, 0.5)
+    assert gate.get_odometry()["distance_m"] == inner.get_odometry()["distance_m"]

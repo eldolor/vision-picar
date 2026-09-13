@@ -235,6 +235,7 @@ cmd_push() {
   aws_ s3 cp requirements-perception.txt "$(s3_uri)/code/" --only-show-errors
   aws_ s3 cp requirements.txt "$(s3_uri)/code/" --only-show-errors
   aws_ s3 cp tools/gpu/sweep.py "$(s3_uri)/code/" --only-show-errors
+  aws_ s3 cp tools/gpu/pacing_sweep.py "$(s3_uri)/code/" --only-show-errors
   cmd_run "set -e
     sudo mkdir -p $REMOTE_DIR && sudo chown -R ubuntu:ubuntu $REMOTE_DIR
     cd $REMOTE_DIR

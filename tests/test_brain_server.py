@@ -1227,13 +1227,52 @@ def test_the_real_wrapper_builds_a_tiered_vision_fn_over_the_cloud_one(tmp_path,
     assert tier.consecutive_frames == 3
     assert tier.cold_search_after == 9
     assert tier.max_calls == 5
-    # The first frame is mission_start, which is the one genuinely blocking
-    # call (2.5); the rest are free, which is the whole architecture.
+    # Phase A is on by default since 2026-09-12, so mission_start is
+    # DISPATCHED rather than waited on. 2.5 anticipated exactly this --
+    # *"mission start is the one genuinely blocking call, or it is not, if
+    # the opening default is 'look around'"* -- and the opening default is
+    # now the stand-in's scan until the answer lands.
+    assert tier.async_cloud is True
     scenes = [tier({"image_base64": "eA==", "image_width": 640}) for _ in range(4)]
-    assert len(cloud_calls) == 1
-    assert scenes[0]["_tier"]["trigger"] == "mission_start"
+    assert scenes[0]["_tier"]["in_flight"] == "mission_start"
+    assert scenes[0]["_tier"]["cloud_called"] is False
+    assert tier.stats.cloud_calls == 1, "one call, dispatched not repeated"
     assert scenes[-1]["_tier"]["cloud_called"] is False
     assert scenes[-1]["_tier"]["models"]["detector"] == "fake.pt"
+    tier.close()
+
+
+def test_the_blocking_path_is_still_available_and_still_blocks(tmp_path, monkeypatch):
+    """Phase A is a default, not a removal. A mission configured
+    synchronously must behave exactly as it did -- the failsafe drills and
+    every pre-2026-09-12 walk were recorded against that path."""
+    import control.brain_server as bs
+
+    from brain.perceive import ABSENT, Perception
+
+    class FakePipeline:
+        target = "red backpack"
+        crop_source = "label_gate"
+        detector = type("D", (), {"weights": "fake.pt"})()
+        scorer = type("S", (), {"model_name": "FakeCLIP"})()
+
+        def perceive(self, frame):
+            return Perception(status=ABSENT, reason="fake")
+
+    monkeypatch.setattr("brain.perceive.pipeline_for",
+                        lambda target, **kw: FakePipeline())
+    config = load_brain_config(tiered_config(
+        tmp_path, perception_detector="fake.pt", tier_async_cloud=False))
+    cloud_calls = []
+    tier = bs._tiered_vision_fn("red backpack", lambda f: cloud_calls.append(f) or {
+        "safest_direction": "FORWARD", "_navigate": {"reasoning": "cloud"}}, config)
+
+    assert tier.async_cloud is False
+    scene = tier({"image_base64": "eA==", "image_width": 640})
+    assert scene["_tier"]["trigger"] == "mission_start"
+    assert scene["_tier"]["cloud_called"] is True
+    assert len(cloud_calls) == 1
+    assert tier._executor is None, "a synchronous mission started a thread"
 
 
 def test_a_half_installed_perception_package_reads_as_unavailable(monkeypatch):

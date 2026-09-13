@@ -369,6 +369,21 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     def distance():
         return {"distance_cm": robot.get_distance()}
 
+    @app.get(prefix + "/odometry", dependencies=[Depends(require_secret)])
+    def odometry():
+        """How far the robot has travelled and which way it faces -- phase B.
+
+        Its own route for the same reason `/depth` is: a different sensor,
+        and a wedged camera must not take it down with it. A backend that
+        cannot measure motion answers `usable: False` here and still
+        returns real pixels at `/frame`.
+
+        `RemoteRobot` treats a 404 as "this server predates the route",
+        not as a transport failure -- the deployed stacks are redeployed
+        one at a time and a mixed fleet is a real state.
+        """
+        return robot.get_odometry()
+
     @app.get(prefix + "/depth", dependencies=[Depends(require_secret)])
     def depth():
         """The depth grid, phase M2 -- its own route rather than a field on

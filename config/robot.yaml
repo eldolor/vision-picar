@@ -141,7 +141,38 @@ brain:
   # How many consecutive "absent" frames before asking the cloud whether the
   # target is even in this room. Without it a target outside COCO's 80 never
   # fires anything at all. The number is a guess; tune it on a real walk.
+  # MEASURED 2026-09-12 and deliberately LEFT AT 6. With tier_async_cloud
+  # on, intervals of 2, 3, 4 and 6 all cover 14 of 15 spans at a median
+  # look-latency of 1.0 frame -- so dropping to 2 costs 41 more calls for
+  # zero additional coverage. Past about 9 the staleness floor becomes the
+  # binding rule instead, which is 6.1's finding arriving from the other
+  # side, so the useful range of this number is 2..9.
   tier_cold_search_after: 6
+
+  # Phase C. How much NEW GROUND (centimetres) may be covered before the
+  # cloud is asked to look again while the local tier is seeing nothing.
+  # Fires as an OR beside the frame count above, never instead of it: a
+  # pivot covers no ground, so on distance alone a robot scanning in place
+  # would never re-trigger.
+  #
+  # 0 disables it, which is the shipped setting until a walk measures a
+  # number. NOTE this needs odometry, and the only real-pixels backend
+  # this project has -- a phone on a wheeled rig -- has none, so on those
+  # walks it falls back to the frame count and says so on the panel.
+  tier_cold_search_after_cm: 0
+
+  # Phase A. Dispatch the deliberation call instead of blocking the tick
+  # on it, and hold the last cloud goal while one is outstanding rather
+  # than scanning. 2.5 has specified this since the tiered architecture
+  # was written; the code blocked until 2026-09-12.
+  #
+  # OFF until measured: it changes what the robot does on a free frame.
+  # MEASURED 2026-09-12 and turned ON -- evaluations/gpu/pacing/. Over all
+  # 8 labelled walks, at this same interval of 6: 14 of 15 visible spans
+  # got a look against 12, with FEWER calls (94 vs 100) and half the
+  # worst-case latency (2 frames vs 4). No operating point favoured the
+  # blocking version at anything.
+  tier_async_cloud: true
   # 2.4's staleness trigger, and a floor under the call rate rather than a
   # metronome -- any real event resets it. Added 2026-09-07 after both rig
   # walks stopped finishing once perception got good: candidate_sighting

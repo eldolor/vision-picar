@@ -1713,6 +1713,37 @@ a timer: §6.1's third finding is that the staleness timer stops binding past
 `stale_n` ~10, so cost is set by the event rate, and stabilising the fields that
 generate events (hysteresis) is the lever, not tuning the clock.
 
+> **The paragraph above is FALSE in practice, measured 2026-09-12.** The six
+> tiered walks in `recordings/` carry their own trigger in every status
+> record. Across **70 cloud calls**:
+>
+> | trigger | calls | share | who fires it |
+> |---|---|---|---|
+> | `cold_search` | 55 | **79%** | a counter on consecutive `absent` |
+> | `mission_start` | 6 | 9% | the harness, once |
+> | `candidate_sighting` | 7 | **10%** | **the local tier** |
+> | `staleness` | 2 | 3% | a clock |
+>
+> **`candidate_sighting` -- the only trigger perception owns -- fired on two
+> walks of six.** The call rate is one per 8.9 frames against a
+> `cold_search_after` of 6, so a bare counter with no models at all
+> reproduces very nearly the whole of the "4-6x saving" this section claims
+> for the trigger discipline.
+>
+> **The reasoning was sound and the conclusion did not survive contact.**
+> §6.1's finding is about the *staleness* timer, and that is correct -- it
+> contributes 3%. What it missed is that `cold_search` is also a countdown,
+> written as a backstop (*"without it a target outside COCO's 80 never fires
+> anything"*) and doing the work in practice. 4.10's own note two sections
+> down says the same thing from the other end: *"on the search walk the
+> saving came from the timer, not the tier."*
+>
+> This is not a tuning failure. §4.9's re-reading records why: **search
+> proposal is not a tier the 8L can serve at all**, so on a distant or
+> out-of-vocabulary target there is no event to fire on. Phases A-D below
+> accept that and pace the timer deliberately instead of pretending it is a
+> backstop.
+
 #### Why it has to be three, in one line each
 
 - **The detector** is fast but knows 80 words and has no judgement. It says
@@ -5336,6 +5367,113 @@ the document's process group when the command completes. `ec2.sh` uses
 `setsid` now and `sweep.py` grew `--only`. Third time an environment
 failure has arrived dressed as an answer here, after P6's `KeyError:
 'USER'` and P7d's fp16-behind-an-INT8-flag.
+
+#### Phases A-E: the deliberation call stops blocking, and the timer gets chosen -- **2026-09-12**
+
+Provoked by one observation that turned out to be right and already half
+written down: *the Pi+Hailo models never triggered a call to the cloud.*
+The trigger record in `recordings/` says so exactly -- see the correction
+now inline in 2.8. Five phases followed.
+
+**A -- the deliberation call stops blocking the tick.** 2.5 has specified
+this since the tiered architecture was written (*"the reactive tier always
+holds a current goal; a new one arrives asynchronously and replaces it"*)
+and `control/mission_runner.py:498` did the opposite, calling the policy
+through `call_with_timeout`. With `vision_timeout_s` at 20.0 against a
+0.25s tick, and 79% of calls fired by a counter, that is a stall roughly
+every nine frames. Two halves, and they only work together: dispatch on
+one worker thread, and **hold the last cloud goal while the call is out**
+-- because the stand-in otherwise emits `SCAN_ACTION` on every waiting
+frame, which is the degenerate RIGHT-on-every-frame mode this document has
+already recorded once, reached from a different direction.
+
+Three guards came with it, all tested by mutation. An answer landing after
+the mission ends is **dropped** (the `guidanceEpoch` rule one layer down --
+the same orphaned-in-flight-call class that put a dead session's decision
+over a live camera view and filed one walk's frame into the next walk's
+directory). A **queued** call is never paid for after the mission ends,
+which is a cost guard rather than a correctness one and so needed its own
+test. And an async failure is raised on the next frame, so **B3.2's
+failure budget counts exactly the events it always did** -- moving the call
+off the tick must not quietly disarm a failsafe.
+
+**B -- `RobotInterface.get_odometry()`.** The second method on that
+interface with an honest default, for M2's reason: most backends here
+cannot measure motion. `distance_m` is **path length, not displacement** --
+a robot that drives a metre out and back reports 2.0 -- because the
+consumer asks *how much new ground has been covered*, and displacement
+would leave a robot searching one small room permanently below any
+threshold. A pivot changes heading and adds no distance, which is correct
+for 1.1's differential chassis.
+
+**The catch is structural and worth stating plainly: the only real-pixels
+backend this project has is a phone on a wheeled rig, and a phone has no
+encoders.** So the walks that validate perception are exactly the walks
+that cannot report odometry. `TeleopRobot` and `ReplayRobot` answer
+`usable: False`, the twin prints it, and Phase C falls back rather than
+reading it as "has not moved".
+
+**C -- pace the cloud by ground covered, not frame count.** Frame count is
+a proxy for ground covered and the robot now has the real quantity. The
+proxy breaks at both ends: a robot parked while the operator reads the log
+burns calls for no new view, and one at 0.5 m/s under 1.14's continuous
+motion travels a metre between looks at the same frame count. The two
+rules are an **OR**, never a replacement, because a scan in place reveals
+new view at zero path and distance alone would never re-trigger it.
+
+**D -- the number, measured.** `tools/gpu/pacing_sweep.py`, all 8 labelled
+walks, 610 frames, **15 visible spans**, one A10G, cloud stubbed. The
+metric is not call count -- cost is not the constraint here -- it is
+**look-latency**: frames from a visible span starting to the first cloud
+call inside it, with spans nothing looked at counted separately because an
+infinite latency has no mean. Full tables in `evaluations/gpu/pacing/`.
+
+| config | calls | spans looked at | median lat | max lat |
+|---|---|---|---|---|
+| frames-6 (shipped) | 100 | 12/15 | 1.0 | 4 |
+| **frames-6 async** | **94** | **14/15** | 1.0 | **2** |
+| frames-2 | 266 | 13/15 | 1 | 2 |
+| frames-2 async | 135 | 14/15 | 1.0 | 3 |
+| cm-40 *(derived odometry)* | 89 | 11/15 | 1 | 4 |
+
+Four findings. **Async dominates at every interval on every axis** -- at
+the shipped interval it covers 14 spans of 15 against 12, with fewer calls
+and half the worst-case latency; there is no operating point where
+blocking is better at anything. **A shorter interval buys nothing once
+async is on** -- 2, 3, 4 and 6 all read 14/15, so dropping to 2 costs 41
+more calls for zero coverage, and the instinct to poll harder for a
+smoother experience is simply wrong here. **Past about 9 the staleness
+floor becomes the binding rule** -- `frames-9` and `frames-12` are
+identical in every column, which is 6.1's finding arriving from the other
+side and bounds this parameter's useful range at 2..9. And **the distance
+rule does not help on this corpus, in a knowably weak way**: all three
+settings cover 11 of 15 and barely differ across a 4x range, but the
+odometry is **derived** from each walk's own recorded action stream at a
+nominal 30cm per FORWARD, and on search walks the policy turns far more
+than it drives. Unproven, not refuted; the real test needs encoders.
+
+So: **`tier_async_cloud: true`, `tier_cold_search_after: 6` unchanged,
+`tier_cold_search_after_cm: 0`** -- each written into `config/robot.yaml`
+with its measurement beside it, the way `DEFAULT_MATCH_PROBABILITY` was.
+
+**E -- 2.8 corrected**, inline where the claim lives.
+
+**What the sweep cannot tell you**, and it matters for how hard to read
+the Phase A row. The cloud is stubbed, so "looked at" is when the cloud was
+**asked**, not when it answered: async does not make answers arrive
+sooner. What it does is keep the robot moving on its last goal instead of
+freezing, and spread the asking more evenly. The freeze it removes is
+structural and follows from the call being non-blocking -- it is not
+measured here. Replay is also open loop, so a different pacing cannot
+change where the robot went; on a live walk it would. And this is eight
+walks in one basement with 15 spans, two of which contribute none at all.
+
+**What each phase owes the twin** (section 7), all built: an odometry line
+beside the depth strip reading "no encoders on this backend" where there
+are none; a **Cloud pacing** row naming the rule in force and the distance
+or frames to the next look; and a **Deliberation** row distinguishing the
+three states that must not look alike -- waiting while driving on a held
+goal, waiting with no goal yet, and not waiting.
 
 #### A method note worth more than the result
 
