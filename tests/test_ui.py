@@ -1663,6 +1663,75 @@ def test_the_walk_sends_the_policy_it_was_set_to(browser, twin_server):
     context.close()
 
 
+def test_a_mission_that_ENDS_says_so_instead_of_sitting_on_deciding(browser, twin_server):
+    """Observed on a real rig walk, 2026-09-12: "it eventually got stuck at
+    deciding".
+
+    `driveViaBrainStep()` pauses the run when it sees the mission has
+    ended -- and the caller then dropped that answer because the run was
+    paused, by the very pause the answer had just caused. The caption
+    stayed on the "Deciding..." set before dispatch, so the one fact a
+    person needs -- the mission ended, and why -- was the one thing the
+    HUD would not show. A mission ending on max_steps is the common case,
+    and it looked identical to a hang.
+
+    Built on the same harness as
+    `test_the_walk_sends_the_policy_it_was_set_to`, and everything in it
+    is load bearing: without `permissions=["camera"]` getUserMedia never
+    attaches, and without `/health` reporting `mode: teleop` drive-via-
+    brain refuses and the page quietly runs the plain Guide loop instead
+    -- where the caption reads "Analyzing..." and this bug does not live.
+    """
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    ended = dict(tiered_status(running=False))
+    ended["outcome"] = "max_steps"
+    ended["error"] = None
+
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json({"started": True, "status": {"running": True}})))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(ended)))
+
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "woven laundry basket")
+    page.click("#btn-guidance")
+
+    sync_api.expect(page.locator("#guide-caption-text")).to_contain_text(
+        "max_steps", timeout=15000)
+    text = page.inner_text("#guide-caption-text")
+    assert "Deciding" not in text, text
+    assert not errors, errors
+    context.close()
+
+
 # ---------- reaching a tunnelled robot or brain (ngrok) ----------
 #
 # The brain cannot be deployed -- policy "tiered" loads YOLO and CLIP into
