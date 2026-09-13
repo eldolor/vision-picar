@@ -182,14 +182,43 @@
     $("runs").innerHTML = head + rows.join("");
   }
 
+  /* Tolerate what a phone paste actually contains.
+   *
+   * The documented way to find this value is `grep WALKS_SECRET
+   * ~/.vision-picar-serverless-secrets`, whose output is the whole LINE.
+   * Pasting that sends "WALKS_SECRET=abc..." as the header and 401s, with
+   * nothing on screen to suggest why -- observed on an iPhone, 2026-09-13.
+   * Shell quoting and a trailing newline arrive the same way.
+   *
+   * Stripping them is safe: none of `KEY=`, quotes or whitespace can be
+   * part of a real secret here, because the value has to survive being an
+   * HTTP header and a shell variable.
+   */
+  function cleanSecret(raw) {
+    var v = (raw || "").trim().replace(/[\r\n]+$/, "");
+    v = v.replace(/^[A-Z_][A-Z0-9_]*\s*=\s*/, "");   // WALKS_SECRET=...
+    v = v.replace(/^["']|["']$/g, "");                // "..." or '...'
+    return v.trim();
+  }
+
   function load() {
-    var secret = $("secret").value.trim();
+    var secret = cleanSecret($("secret").value);
+    if (secret !== $("secret").value) $("secret").value = secret;
     try { localStorage.setItem(SECRET_KEY, secret); } catch (e) {}
     $("error").hidden = true;
     fetch("metrics/summary?days=" + $("days").value,
           { headers: secret ? { "x-app-secret": secret } : {} })
       .then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status + (r.status === 403 ? " -- wrong or missing secret" : ""));
+        if (!r.ok) {
+          // 401 and 403 both mean the secret, and saying so beats a bare
+          // status code on a phone where the fix is "check what you
+          // pasted".
+          throw new Error("HTTP " + r.status
+            + (r.status === 401 || r.status === 403
+               ? " -- the secret was rejected. Paste only the VALUE of "
+                 + "WALKS_SECRET, not the whole WALKS_SECRET=... line."
+               : ""));
+        }
         return r.json();
       })
       .then(function (d) {
