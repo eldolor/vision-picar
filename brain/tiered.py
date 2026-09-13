@@ -184,6 +184,35 @@ DEFAULT_SPIN_GUARD_AFTER = 8
 
 TURN_ACTIONS = ("LEFT", "RIGHT")
 
+# Phase G (2026-09-12). **Whoever can see the target, steers.**
+#
+# Measured on the newest rig walk: on the 37 frames where the local tier
+# reported the basket DETECTED, the robot went RIGHT 28 times and FORWARD
+# 4. Detection had no effect on motion. `_direction_for()` computes a
+# bearing off the box and writes it to `_navigate.target_direction`, and
+# `safest_direction` was still the held cloud goal or a scan -- so the
+# bearing was reported and never steered. `target_reached` fired 0 times
+# in any walk.
+#
+# This is 1.11's arbitration split finally honoured rather than argued:
+# the on-board tier says WHERE (it has a bearing and the cloud does not),
+# the cloud says WHAT. Until now the cloud did both and perception did
+# neither.
+#
+# It also dissolves the "give up on local after N frames and switch to the
+# cloud" question, which has no good threshold: when perception cannot see
+# the target the cloud is already driving, because there is no local
+# bearing to steer on. No mode, nothing to get stuck in.
+#
+# **The risk is a local false positive steering at the wrong object.**
+# Bounded rather than eliminated: the existing P>=0.8 gate and two-frame
+# hysteresis have to pass first, and the cloud still owns identity, so a
+# wrong lock-on is corrected at the next paid call. On this corpus the
+# local tier reads 26% and 68% at zero false positives on the basket
+# walks, so it WILL sometimes steer at a handbag. That is recoverable.
+# Not steering at all is not.
+DEFAULT_STEER_ON_SIGHT = True
+
 
 # -- 1.11a: corroborated identity, REPORTED ONLY -------------------------
 #
@@ -370,6 +399,7 @@ class TieredVision:
         oov_cold_search_after: Optional[int] = None,
         async_cloud: bool = False,
         hold_goal: bool = DEFAULT_HOLD_GOAL,
+        steer_on_sight: bool = DEFAULT_STEER_ON_SIGHT,
         spin_guard_after: int = DEFAULT_SPIN_GUARD_AFTER,
     ):
         self.pipeline = pipeline
@@ -446,6 +476,7 @@ class TieredVision:
         # number gets chosen and this gets turned on deliberately.
         self.async_cloud = bool(async_cloud)
         self.hold_goal = bool(hold_goal)
+        self.steer_on_sight = bool(steer_on_sight)
         self.spin_guard_after = max(0, int(spin_guard_after))
         self._consecutive_turns = 0
         self._executor = None
@@ -821,16 +852,24 @@ class TieredVision:
         # scan stays, because holding a goal with nothing confirming it is
         # a different design and an unmeasured one.
         landed, self._landed_corroboration = self._landed_corroboration, None
+        # Phase G, and it takes precedence over the held goal: a bearing
+        # measured on THIS frame is better evidence about where to go than
+        # a direction the cloud gave several seconds ago.
+        steer = self._steer_to(perception)
         held = (self._held_direction()
                 if (self.hold_goal or self._inflight is not None) else None)
-        direction = held or SCAN_ACTION
-        if held:
+        direction = steer or held or SCAN_ACTION
+        if steer:
+            why = (f"{why} -- steering on local sighting "
+                   f"({_direction_for(perception)})")
+        elif held:
             why = f"{why} -- holding last cloud goal {held}"
         # The spin floor. Counted over what the robot was actually TOLD to
         # do, cloud steps included, because a spin does not care which tier
         # caused it.
         if (self.spin_guard_after
                 and direction in TURN_ACTIONS
+                and steer is None
                 and perception.status != DETECTED
                 and self._consecutive_turns >= self.spin_guard_after):
             direction = "FORWARD"
@@ -885,6 +924,30 @@ class TieredVision:
                       "pacing": self._pacing_readout(),
                       "stats": self.stats.as_dict()},
         }
+
+    def _steer_to(self, perception) -> Optional[str]:
+        """An action from the local tier's own bearing, or None.
+
+        `None` on every path that is not a measured sighting -- not
+        detected, no bearing measurable, or the feature switched off --
+        because the caller falls back to the cloud's goal and a wrong
+        default here would silently become the policy.
+        """
+        if not self.steer_on_sight or perception.status != DETECTED:
+            return None
+        where = _direction_for(perception)
+        if where == "left":
+            return "LEFT"
+        if where == "right":
+            return "RIGHT"
+        if where == "center":
+            # Centred: close the distance. The collar re-checks clearance
+            # before any FORWARD, so this proposes and never commits.
+            return "FORWARD"
+        # "unknown" -- detected, but no bearing. Steering on a direction
+        # nobody measured is exactly the fabrication `unusable_grid()` and
+        # NO_SENSOR_CM refuse elsewhere.
+        return None
 
     def _note_action(self, direction) -> None:
         """Track consecutive turns, over cloud and local steps alike."""

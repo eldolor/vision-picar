@@ -1197,3 +1197,101 @@ def test_a_landed_verdict_is_CLEARED_and_never_goes_stale():
              for _ in range(4)]
     assert all(c is None for c in after), "a landed verdict went stale"
     tier.close()
+
+
+# ---------------------------------------------------------------------------
+# Phase G -- whoever can see the target, steers
+# ---------------------------------------------------------------------------
+
+
+def seeing(bearing):
+    """A pipeline that reports the target detected at a given bearing."""
+    class P:
+        def perceive(self, frame):
+            from brain.perceive import Box, Candidate, Detection
+            det = Detection(box=Box(0, 0, 10, 10), label="handbag", confidence=0.9)
+            c = Candidate(detection=det, bearing_deg=bearing)
+            return Perception(status=DETECTED, candidates=[c], best=c,
+                              reason="scripted")
+    return P()
+
+
+def test_a_local_sighting_STEERS_instead_of_being_merely_reported():
+    """The defect, measured on a real walk: on the 37 frames where the
+    local tier said DETECTED, the robot went RIGHT 28 and FORWARD 4. The
+    bearing was written to _navigate.target_direction and never reached
+    safest_direction."""
+    tier = TieredVision(seeing(25.0), FakeCloud(), cold_search_after=100,
+                        stale_after=0)
+    tier({"image_base64": "x", "image_width": 640})       # mission_start
+    out = tier({"image_base64": "x", "image_width": 640})
+    assert out["_tier"]["cloud_called"] is False
+    assert out["safest_direction"] == "RIGHT"             # target is to the right
+    assert "steering on local sighting" in out["_navigate"]["reasoning"]
+
+
+def test_a_centred_target_closes_the_distance():
+    tier = TieredVision(seeing(0.0), FakeCloud(), cold_search_after=100,
+                        stale_after=0)
+    tier({"image_base64": "x", "image_width": 640})
+    out = tier({"image_base64": "x", "image_width": 640})
+    assert out["safest_direction"] == "FORWARD"
+
+
+def test_the_local_bearing_BEATS_a_stale_cloud_goal():
+    """A bearing measured on this frame is better evidence than a
+    direction the cloud gave seconds ago."""
+    class Leftie(FakeCloud):
+        def __call__(self, frame):
+            s = super().__call__(frame)
+            s["safest_direction"] = "LEFT"
+            return s
+
+    tier = TieredVision(seeing(25.0), Leftie(), cold_search_after=100,
+                        stale_after=0)
+    tier({"image_base64": "x", "image_width": 640})       # cloud says LEFT
+    out = tier({"image_base64": "x", "image_width": 640})
+    assert out["_tier"]["holding"] == "LEFT"
+    assert out["safest_direction"] == "RIGHT", "the stale cloud goal won"
+
+
+def test_detected_but_UNMEASURABLE_bearing_does_not_steer():
+    """Steering on a direction nobody measured is the fabrication
+    unusable_grid() and NO_SENSOR_CM refuse elsewhere. It falls back to
+    the cloud's goal."""
+    tier = TieredVision(seeing(None), FakeCloud(), cold_search_after=100,
+                        stale_after=0)
+    tier({"image_base64": "x", "image_width": 640})
+    out = tier({"image_base64": "x", "image_width": 640})
+    assert out["safest_direction"] == "FORWARD"           # the cloud's goal
+    assert "steering on local sighting" not in out["_navigate"]["reasoning"]
+
+
+def test_the_cloud_still_drives_when_perception_sees_nothing():
+    """The half that makes "give up and switch to the cloud" need no
+    threshold: with no local bearing there is nothing to steer on, so the
+    cloud is already driving."""
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 8), FakeCloud(),
+                        cold_search_after=100, stale_after=0)
+    tier({"image_base64": "x"})
+    out = tier({"image_base64": "x"})
+    assert out["safest_direction"] == "FORWARD"
+    assert out["_tier"]["holding"] == "FORWARD"
+
+
+def test_the_spin_guard_never_overrides_a_real_sighting():
+    """Turning toward something you can see is not a spin, and forcing
+    FORWARD there would drive past the thing the mission is for."""
+    tier = TieredVision(seeing(25.0), FakeCloud(), cold_search_after=100,
+                        stale_after=0, spin_guard_after=2)
+    acts = [tier({"image_base64": "x", "image_width": 640})["safest_direction"]
+            for _ in range(8)]
+    assert acts[1:] == ["RIGHT"] * 7, acts
+
+
+def test_steering_can_be_switched_off():
+    tier = TieredVision(seeing(25.0), FakeCloud(), cold_search_after=100,
+                        stale_after=0, steer_on_sight=False)
+    tier({"image_base64": "x", "image_width": 640})
+    out = tier({"image_base64": "x", "image_width": 640})
+    assert out["safest_direction"] == "FORWARD"           # the cloud's goal

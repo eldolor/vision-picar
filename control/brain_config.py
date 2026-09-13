@@ -95,6 +95,7 @@ DEFAULTS = {
     # Phase A: dispatch the deliberation call rather than blocking on it.
     "tier_async_cloud": True,
     "tier_hold_goal": True,
+    "tier_steer_on_sight": True,
     "tier_spin_guard_after": 8,
     # 2.4's staleness trigger: call out if nothing else has in this many
     # frames. 0 disables the floor. Without it a robot that can see its

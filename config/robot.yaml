@@ -187,6 +187,17 @@ brain:
   # is the same spin by another route. 0 disables. The collar still owns
   # safety -- a FORWARD it refuses is the correct outcome, not a bug.
   tier_spin_guard_after: 8
+
+  # Phase G. Whoever can SEE the target, steers. Measured on the newest
+  # rig walk: on the 37 frames the local tier called the basket DETECTED,
+  # the robot went RIGHT 28 and FORWARD 4 -- the bearing was reported and
+  # never steered. This is 1.11's split honoured: on-board says WHERE
+  # (it has a bearing, the cloud does not), the cloud says WHAT.
+  #
+  # It also removes the need to pick a "give up on local after N frames"
+  # threshold: with no local bearing there is nothing to steer on, so the
+  # cloud is already driving.
+  tier_steer_on_sight: true
   # 2.4's staleness trigger, and a floor under the call rate rather than a
   # metronome -- any real event resets it. Added 2026-09-07 after both rig
   # walks stopped finishing once perception got good: candidate_sighting
