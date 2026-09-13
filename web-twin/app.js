@@ -1838,6 +1838,15 @@
         text = corroboration.verdict + " (local P " + local
           + " vs bar " + corroboration.bar + ")";
       }
+      // Phase A. An async verdict is computed against the perception the
+      // call was MADE on and lands a frame or more later, so it must say
+      // so -- otherwise it reads as a verdict about the picture on screen
+      // now, which is the stale-readout failure this row already guards
+      // against from the other direction.
+      if (corroboration && corroboration.landed_late) {
+        text = "\u21b5 landed from the " + (corroboration.for_trigger || "earlier")
+          + " call \u00b7 " + text;
+      }
       text += " \u00b7 " + cstats.corroborated + "/" + cstats.claims
         + " claims corroborated \u00b7 not enforced";
       setBrainText("brain-tel-corroboration", text,

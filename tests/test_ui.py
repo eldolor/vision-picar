@@ -2155,3 +2155,21 @@ def test_no_call_outstanding_reads_as_idle_rather_than_blank(browser, twin_serve
     assert "no call outstanding" in page.inner_text("#brain-tel-inflight")
     assert not errors, errors
     page.close()
+
+
+def test_a_late_landed_verdict_says_it_arrived_from_an_earlier_call(
+        browser, twin_server):
+    """Phase A moves the verdict off the frame it is about. Unlabelled it
+    reads as a verdict about the picture on screen now -- the stale-readout
+    failure this row already guards against from the other direction."""
+    status = tiered_status()
+    status["tier"]["corroboration"].update(
+        {"landed_late": True, "for_trigger": "cold_search"})
+    page, errors = open_with_brain(browser, twin_server, status=status)
+    sync_api.expect(page.locator("#brain-tel-corroboration")).to_contain_text(
+        "landed from the cold_search call", timeout=5000)
+    text = page.inner_text("#brain-tel-corroboration")
+    assert "corroborated" in text
+    assert "not enforced" in text, text
+    assert not errors, errors
+    page.close()

@@ -1075,3 +1075,63 @@ def test_a_QUEUED_call_never_reaches_the_cloud_after_the_mission_ends():
     assert cloud.calls == 1, (
         "the queued call was paid for after the mission had already ended")
     tier.close()
+
+
+def test_an_async_verdict_is_shown_once_on_the_frame_it_LANDS():
+    """1.11a's per-frame measurement must survive Phase A.
+
+    Async computes corroboration against the perception the call was made
+    on, but that happens at collection time -- on a later frame. Without
+    carrying it, every frame of an async mission reports "no claim this
+    step" while the tally climbs behind it, and walk.jsonl records
+    `corroboration: null` on every line. The per-frame measurement, which
+    is the entire reason the reporting-only variant exists, would be lost
+    silently."""
+    import time as _t
+
+    class ClaimingCloud(FakeCloud):
+        def __call__(self, frame):
+            s = super().__call__(frame)
+            s["_navigate"]["target_visible"] = True
+            return s
+
+    tier = TieredVision(ScriptedPipeline([DETECTED] * 8), ClaimingCloud(),
+                        async_cloud=True, stale_after=0)
+    seen = []
+    for _ in range(6):
+        out = tier({"image_base64": "x", "image_width": 640})
+        seen.append(out["_tier"]["corroboration"])
+        _t.sleep(0.05)
+
+    landed = [c for c in seen if c]
+    assert len(landed) == 1, (
+        f"expected exactly one verdict, saw {len(landed)} -- either it was "
+        "lost entirely or it is being repeated on later frames")
+    # Marked, so a reader cannot take it for a verdict about the frame in
+    # front of the camera now.
+    assert landed[0]["landed_late"] is True
+    assert landed[0]["for_trigger"] == "mission_start"
+    tier.close()
+
+
+def test_a_landed_verdict_is_CLEARED_and_never_goes_stale():
+    """The rule _local_scene already enforces: a verdict held over from an
+    earlier call reads as this frame's, and that is how a stale readout
+    becomes a believed one."""
+    import time as _t
+
+    class ClaimingCloud(FakeCloud):
+        def __call__(self, frame):
+            s = super().__call__(frame)
+            s["_navigate"]["target_visible"] = True
+            return s
+
+    tier = TieredVision(ScriptedPipeline([DETECTED] * 12), ClaimingCloud(),
+                        async_cloud=True, stale_after=0)
+    for _ in range(2):
+        tier({"image_base64": "x", "image_width": 640})
+        _t.sleep(0.05)
+    after = [tier({"image_base64": "x", "image_width": 640})["_tier"]["corroboration"]
+             for _ in range(4)]
+    assert all(c is None for c in after), "a landed verdict went stale"
+    tier.close()

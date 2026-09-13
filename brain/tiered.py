@@ -429,6 +429,14 @@ class TieredVision:
         # and that filed one walk's frame into the next walk's directory.
         self._epoch = 0
         self._last_cloud_scene: Optional[dict] = None
+        # A verdict from an async call, held for exactly ONE frame -- the
+        # one it landed on. Without this the corroboration row reads "no
+        # claim this step" on every frame of an async mission while the
+        # tally climbs behind it, so 1.11a's per-frame measurement is lost
+        # from walk.jsonl entirely. Cleared after it is shown, because the
+        # rule `_local_scene` already enforces is that a stale verdict must
+        # never read as this frame's.
+        self._landed_corroboration: Optional[dict] = None
         self._pending_error: Optional[BaseException] = None
         self.stats = TierStats()
         # 6.3 asks for **the detector's own name** on screen, not just its
@@ -579,7 +587,16 @@ class TieredVision:
         # frame belongs to this frame's pixels, and what carries forward is
         # the goal, not the whole answer.
         if self._inflight_perception is not None:
-            self._annotate(scene, self._inflight_perception, trigger or "")
+            annotated = self._annotate(scene, self._inflight_perception,
+                                       trigger or "")
+            verdict = (annotated.get("_tier") or {}).get("corroboration")
+            if verdict:
+                # Marked `landed_late`, and carrying the trigger it belongs
+                # to, so a reader can never take it for a verdict about the
+                # frame in front of the camera now.
+                self._landed_corroboration = {**verdict,
+                                              "landed_late": True,
+                                              "for_trigger": trigger}
         self._inflight_perception = None
 
     def reset_epoch(self) -> None:
@@ -589,6 +606,7 @@ class TieredVision:
         self._inflight = None
         self._inflight_trigger = None
         self._inflight_perception = None
+        self._landed_corroboration = None
         self._pending_error = None
 
     def close(self) -> None:
@@ -766,6 +784,7 @@ class TieredVision:
         # stutter Phase A exists to remove. On an ordinary free frame the
         # scan stays, because holding a goal with nothing confirming it is
         # a different design and an unmeasured one.
+        landed, self._landed_corroboration = self._landed_corroboration, None
         held = self._held_direction() if self._inflight is not None else None
         direction = held or SCAN_ACTION
         if held:
@@ -805,7 +824,10 @@ class TieredVision:
                       # panel showing the previous call's verdict for however
                       # many free frames follow it, which is exactly how a
                       # stale readout becomes a believed one.
-                      "corroboration": None,
+                      # Normally None -- a free frame made no claim. The
+                      # exception is a verdict that LANDED this frame from
+                      # an async call, shown once and then cleared.
+                      "corroboration": landed,
                       # What the robot is doing while it waits, named so a
                       # held goal can never be mistaken for a fresh answer.
                       "in_flight": self._inflight_trigger,
