@@ -65,11 +65,41 @@ def cloudfront_patterns() -> set:
     return {m.group(1) for m in re.finditer(r'PathPattern:\s*"([^"]+)"', text)}
 
 
+def _flatten(routes) -> list:
+    """Every real route, including those behind an `include_router()`.
+
+    FastAPI changed the shape of `app.routes` between 0.136 and 0.141: the
+    older version flattens an included router's routes into the app, the
+    newer one appends one `_IncludedRouter` wrapper that has no `.path`.
+    This function used to `continue` past anything without a `.path`, so
+    on the newer FastAPI it silently skipped **every route mounted via
+    include_router** -- `/metrics/runs` and `/metrics/summary`, in this
+    repo, which made the gateway's `ANY /metrics/{proxy+}` look like an
+    orphan pointing at nothing.
+
+    That direction fails loudly. The dangerous direction is the other one:
+    this module exists because a route with no gateway entry 404s in
+    production, and a blind enumerator would report that everything is
+    covered while checking an empty set. Recurse, and keep working on both
+    versions -- the repo is currently run under two Pythons with two
+    FastAPIs, which is how this hid.
+    """
+    out = []
+    for r in routes or []:
+        if getattr(r, "path", None) is not None:
+            out.append(r)
+            continue
+        inner = getattr(r, "original_router", None)
+        if inner is not None:
+            out.extend(_flatten(getattr(inner, "routes", [])))
+    return out
+
+
 def app_routes(app) -> set:
     """(method, concrete path) for a FastAPI app, templated segments
     replaced by a sample value so they can be matched against a pattern."""
     out = set()
-    for r in getattr(app, "routes", []):
+    for r in _flatten(getattr(app, "routes", [])):
         path = getattr(r, "path", None)
         methods = getattr(r, "methods", set()) or set()
         if not path:
@@ -79,6 +109,23 @@ def app_routes(app) -> set:
                 continue
             out.add((m, path))
     return out
+
+
+def test_the_route_enumerator_can_see_through_an_included_router():
+    """A guard on the guard. If this returns an empty set the whole module
+    passes vacuously, which is worse than any single route being wrong."""
+    from fastapi import APIRouter, FastAPI
+    app = FastAPI()
+    router = APIRouter()
+
+    @router.get("/deep/route")
+    async def _deep():
+        return {}
+
+    app.include_router(router)
+    assert ("GET", "/deep/route") in app_routes(app), (
+        "app_routes() cannot see routes mounted via include_router -- see "
+        "_flatten() on why that makes this module pass vacuously")
 
 
 def _matches(path: str, pattern: str) -> bool:
