@@ -15,6 +15,14 @@
   "use strict";
 
   var SECRET_KEY = "vp_metrics_secret";
+  // The admin console is the SAME service behind the SAME secret
+  // (WALKS_SECRET guards /recording/*, /stats and /metrics/*), served from
+  // the same CloudFront origin -- so its stored value is this page's
+  // value, and localStorage is shared between them. Falling back to it
+  // means anyone already using /admin never types a 43-character secret
+  // on a phone. It is a convenience, not a second source of truth: a
+  // secret typed here still wins and is still only kept once it works.
+  var ADMIN_SECRET_KEY = "vp_admin_secret";
   var $ = function (id) { return document.getElementById(id); };
 
   function fmtMs(v) { return v == null ? "–" : Math.round(v) + "ms"; }
@@ -240,7 +248,10 @@
       });
   }
 
-  try { $("secret").value = localStorage.getItem(SECRET_KEY) || ""; } catch (e) {}
+  try {
+    $("secret").value = localStorage.getItem(SECRET_KEY)
+      || localStorage.getItem(ADMIN_SECRET_KEY) || "";
+  } catch (e) {}
   $("reveal").onclick = function () {
     var f = $("secret");
     var hidden = f.type === "password";
