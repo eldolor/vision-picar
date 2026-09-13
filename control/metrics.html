@@ -31,6 +31,12 @@
   button:hover{background:#222c3f}
   button.primary{background:var(--cloud);color:#06121f;border-color:transparent;font-weight:600}
 
+  .secretwrap{position:relative;display:inline-flex;align-items:center}
+  .secretwrap input{padding-right:52px}
+  #reveal{position:absolute;right:4px;top:4px;bottom:4px;padding:0 9px;
+    font-size:11px;background:transparent;border:none;color:var(--muted)}
+  #reveal:hover{color:var(--ink);background:transparent}
+
   .grid{display:grid;gap:13px}
   .kpis{grid-template-columns:repeat(auto-fit,minmax(168px,1fr));margin-bottom:16px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
@@ -83,7 +89,16 @@
       <span class="sub">One row per mission · local perception vs cloud deliberation</span>
     </h1>
     <div class="controls">
-      <input id="secret" type="password" placeholder="x-app-secret" autocomplete="off" size="16">
+      <span class="secretwrap">
+        <input id="secret" type="password" placeholder="x-app-secret"
+               autocomplete="off" autocapitalize="off" autocorrect="off"
+               spellcheck="false" size="16">
+        <!-- The two secrets on this account are BOTH 43 characters, so in a
+             masked field they are indistinguishable and a 401 gives you
+             nothing to act on. Revealing it is the only way to tell which
+             one you pasted. -->
+        <button id="reveal" type="button" title="Show the secret">show</button>
+      </span>
       <select id="days">
         <option value="7">7 days</option>
         <option value="14" selected>14 days</option>

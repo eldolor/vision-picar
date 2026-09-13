@@ -204,7 +204,6 @@
   function load() {
     var secret = cleanSecret($("secret").value);
     if (secret !== $("secret").value) $("secret").value = secret;
-    try { localStorage.setItem(SECRET_KEY, secret); } catch (e) {}
     $("error").hidden = true;
     fetch("metrics/summary?days=" + $("days").value,
           { headers: secret ? { "x-app-secret": secret } : {} })
@@ -222,6 +221,10 @@
         return r.json();
       })
       .then(function (d) {
+        // Remembered only once it has WORKED. Saving on every attempt
+        // means a wrong secret is what comes back next time, which is how
+        // a one-off paste error becomes a permanent one.
+        try { localStorage.setItem(SECRET_KEY, secret); } catch (e) {}
         var runs = d.runs || [];
         renderKpis(runs);
         renderCharts(runs);
@@ -238,6 +241,12 @@
   }
 
   try { $("secret").value = localStorage.getItem(SECRET_KEY) || ""; } catch (e) {}
+  $("reveal").onclick = function () {
+    var f = $("secret");
+    var hidden = f.type === "password";
+    f.type = hidden ? "text" : "password";
+    this.textContent = hidden ? "hide" : "show";
+  };
   $("reload").onclick = load;
   $("days").onchange = load;
   $("secret").addEventListener("keydown", function (e) { if (e.key === "Enter") load(); });
