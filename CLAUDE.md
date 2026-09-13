@@ -131,6 +131,13 @@ the original build plan phases, reordered simulation-first):
 
 ---
 
+**Session handoff, 2026-09-13: `HANDOFF-2026-09-13.md`.** Phases A-G (the
+deliberation call stops blocking; odometry; distance pacing; the interval
+measured; the stand-in stops scanning; a local sighting steers), plus tier
+latency instrumentation and an observability dashboard at `/metrics`. Read
+its section 6 for what is still open and section 7 for what was wrong
+along the way.
+
 ## 4. Repo map
 
 ```
