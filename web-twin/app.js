@@ -3966,6 +3966,20 @@
     // Which WALK this frame belongs to, captured in the same synchronous
     // block as its seq. Compared on return -- see recordWalkFrame().
     const recEpoch = state.recordEpoch;
+    // Whether the run was ALREADY paused when this call was dispatched.
+    //
+    // The guard below drops any answer that arrives into a paused run,
+    // which is right for a person tapping pause -- and was wrong for the
+    // one case that matters most: `driveViaBrainStep()` itself calls
+    // pauseGuidanceSearch() when it sees the mission has ended, so the
+    // terminal answer was dropped by the very pause it had just caused.
+    // The caption stayed on the "Deciding..." set below, forever, and the
+    // single most important fact -- the mission ended, and why -- was the
+    // one thing the HUD refused to show. Observed on a real rig walk,
+    // 2026-09-12, reported as "it eventually got stuck at deciding".
+    //
+    // So: a pause that began DURING this call still gets one final render.
+    const wasPausedAtDispatch = state.guidancePaused;
     state.guidanceInFlight++;
     // Budget is reserved at dispatch, not on success. A call that is sent
     // has been paid for whether or not its answer is fresh enough to
@@ -4004,7 +4018,8 @@
       // believes, so it must not run for an answer that has been overtaken
       // (latency varies per call, so seq 7 can land after seq 9) or for a
       // walk that has since been paused or stopped.
-      if (!state.guidanceRunning || state.guidancePaused) return;
+      if (!state.guidanceRunning) return;
+      if (state.guidancePaused && wasPausedAtDispatch) return;
       if (seq <= state.guidanceLastRenderedSeq) return;
       state.guidanceLastRenderedSeq = seq;
 
