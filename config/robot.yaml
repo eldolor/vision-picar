@@ -173,6 +173,20 @@ brain:
   # worst-case latency (2 frames vs 4). No operating point favoured the
   # blocking version at anything.
   tier_async_cloud: true
+
+  # Phase F, from five rig walks on 2026-09-12. Every one was dominated by
+  # RIGHT (69-107 turns of ~120 actions), and on the one walk where BOTH
+  # tiers saw the target -- perception 15 frames, cloud 30 -- it still did
+  # not converge. The stand-in scanned on every free frame, which at
+  # cold_search 6 is five frames in six, so it outvoted the cloud 5:1.
+  # Now it keeps doing what the cloud last said. 2.5's own text.
+  tier_hold_goal: true
+
+  # And a floor under that: after this many consecutive turns with the
+  # target not detected, emit one FORWARD. A held RIGHT repeated forever
+  # is the same spin by another route. 0 disables. The collar still owns
+  # safety -- a FORWARD it refuses is the correct outcome, not a bug.
+  tier_spin_guard_after: 8
   # 2.4's staleness trigger, and a floor under the call rate rather than a
   # metronome -- any real event resets it. Added 2026-09-07 after both rig
   # walks stopped finishing once perception got good: candidate_sighting

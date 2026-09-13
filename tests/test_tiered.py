@@ -207,7 +207,10 @@ def test_a_frame_with_no_trigger_returns_a_scan_and_says_no_model_was_asked():
     this project has already paid for twice."""
     _, _, scenes = run([ABSENT, ABSENT], cold_search_after=99)
     local = scenes[1]
-    assert local["safest_direction"] == SCAN_ACTION
+    # Phase F: a free frame holds the last cloud goal rather than
+    # scanning. What this test is about is unchanged -- the scene must say
+    # plainly that no model was asked.
+    assert local["safest_direction"] in (SCAN_ACTION, "FORWARD")
     assert local["_tier"]["cloud_called"] is False
     assert "no cloud call" in local["_navigate"]["reasoning"]
 
@@ -263,7 +266,7 @@ def test_the_cap_still_returns_a_usable_scene():
     _, _, scenes = run([ABSENT, DETECTED, DETECTED, DETECTED], max_calls=1,
                        cold_search_after=99)
     capped = scenes[2]
-    assert capped["safest_direction"] == SCAN_ACTION
+    assert capped["safest_direction"] in (SCAN_ACTION, "FORWARD")
     assert "cap" in capped["_navigate"]["reasoning"]
 
 
@@ -969,22 +972,81 @@ def test_the_robot_holds_the_last_cloud_goal_while_waiting():
     tier.close()
 
 
-def test_a_free_frame_with_nothing_in_flight_still_scans():
-    """The held goal is scoped to the wait. Holding one indefinitely with
-    nothing confirming it is a different design and an unmeasured one."""
+def test_a_free_frame_HOLDS_the_goal_rather_than_scanning(browser=None):
+    """Phase F, from five rig walks. The stand-in used to scan on every
+    free frame, and with cold_search at 6 that is five frames in six -- so
+    it outvoted the cloud 5:1 and the robot spun. Now it keeps doing what
+    the cloud last said."""
     cloud = FakeCloud()
     tier = TieredVision(ScriptedPipeline([ABSENT] * 10), cloud,
-                        cold_search_after=100, stale_after=0, async_cloud=True)
-    tier({"image_base64": "x"})                       # mission_start
-    for _ in range(20):
-        out = tier({"image_base64": "x"})
-        if out["_tier"]["in_flight"] is None:
-            break
-        _time.sleep(0.01)
-    assert out["_tier"]["in_flight"] is None
-    assert out["_tier"]["holding"] is None
-    assert out["safest_direction"] == SCAN_ACTION
-    tier.close()
+                        cold_search_after=100, stale_after=0, async_cloud=False)
+    first = tier({"image_base64": "x"})          # mission_start, a real call
+    assert first["safest_direction"] == "FORWARD"
+    free = tier({"image_base64": "x"})
+    assert free["_tier"]["cloud_called"] is False
+    assert free["safest_direction"] == "FORWARD", "the free frame scanned"
+    assert free["_tier"]["holding"] == "FORWARD"
+
+
+def test_scanning_is_still_available_for_a_run_that_wants_it(browser=None):
+    """`hold_goal=False` restores the pre-2026-09-12 stand-in exactly --
+    every recorded walk before then was produced by it."""
+    cloud = FakeCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 6), cloud,
+                        cold_search_after=100, stale_after=0, hold_goal=False)
+    tier({"image_base64": "x"})
+    free = tier({"image_base64": "x"})
+    assert free["safest_direction"] == SCAN_ACTION
+    assert free["_tier"]["holding"] is None
+
+
+def test_the_spin_guard_breaks_a_run_of_turns(browser=None):
+    """A held goal of RIGHT repeated forever is the same spin by another
+    route. Every one of the five walks would have tripped this."""
+    class Turner(FakeCloud):
+        def __call__(self, frame):
+            s = super().__call__(frame)
+            s["safest_direction"] = "RIGHT"
+            return s
+
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 30), Turner(),
+                        cold_search_after=100, stale_after=0,
+                        spin_guard_after=4)
+    acts = [tier({"image_base64": "x"})["safest_direction"] for _ in range(12)]
+    assert "FORWARD" in acts, f"spun forever: {acts}"
+    # And it must not fire every frame -- that would be a different
+    # degenerate mode, not a fix for this one.
+    assert acts.count("FORWARD") < len(acts) / 2, acts
+
+
+def test_the_spin_guard_does_not_fire_while_the_target_is_DETECTED(browser=None):
+    """Turning toward a target you can see is not a spin. Forcing FORWARD
+    there would drive past the thing the mission is for."""
+    class Turner(FakeCloud):
+        def __call__(self, frame):
+            s = super().__call__(frame)
+            s["safest_direction"] = "RIGHT"
+            return s
+
+    tier = TieredVision(ScriptedPipeline([DETECTED] * 20), Turner(),
+                        cold_search_after=100, stale_after=0,
+                        spin_guard_after=3)
+    acts = [tier({"image_base64": "x"})["safest_direction"] for _ in range(10)]
+    assert "FORWARD" not in acts[1:], acts
+
+
+def test_the_spin_guard_can_be_switched_off(browser=None):
+    class Turner(FakeCloud):
+        def __call__(self, frame):
+            s = super().__call__(frame)
+            s["safest_direction"] = "RIGHT"
+            return s
+
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 20), Turner(),
+                        cold_search_after=100, stale_after=0,
+                        spin_guard_after=0)
+    acts = [tier({"image_base64": "x"})["safest_direction"] for _ in range(10)]
+    assert set(acts) == {"RIGHT"}, acts
 
 
 def test_an_answer_that_lands_after_the_mission_ends_is_DROPPED():

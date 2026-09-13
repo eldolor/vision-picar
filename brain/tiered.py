@@ -158,6 +158,32 @@ DEFAULT_COLD_SEARCH_AFTER_CM = None
 # the log, which is what `control/walk_eval.py` looks for.
 SCAN_ACTION = "RIGHT"
 
+# Phase F (2026-09-12), from five real rig walks. Every one of them was
+# dominated by RIGHT -- 69 to 107 turns out of ~120 actions -- and on the
+# one walk where BOTH tiers saw the target (perception 15 frames, cloud 30)
+# the mission still did not converge. The cause is not arbitration and not
+# recognition: `_local_scene` emitted SCAN_ACTION on every free frame, and
+# with `cold_search_after` at 6 that is five frames in six. **The stand-in
+# outvoted the cloud 5:1**, whatever either tier had just seen.
+#
+# So the stand-in stops scanning by default and keeps doing what the cloud
+# last said. This is 2.5's own text -- *"the reactive tier ALWAYS holds a
+# current goal"* -- which Phase A scoped to in-flight calls only because
+# nothing had measured it. These walks are that measurement.
+DEFAULT_HOLD_GOAL = True
+
+# And a floor under it: after this many consecutive turns with the target
+# not detected, emit one FORWARD instead. A held goal of RIGHT repeated
+# forever is the same spin by another route, and every one of the five
+# walks would have tripped this. 0 disables.
+#
+# The collar still owns safety -- robot/safety.py re-checks clearance
+# before any FORWARD -- so this can propose a move it is not allowed to
+# make, and that refusal is the correct outcome rather than a bug.
+DEFAULT_SPIN_GUARD_AFTER = 8
+
+TURN_ACTIONS = ("LEFT", "RIGHT")
+
 
 # -- 1.11a: corroborated identity, REPORTED ONLY -------------------------
 #
@@ -343,6 +369,8 @@ class TieredVision:
         corroboration_bar: float = DEFAULT_CORROBORATION_P,
         oov_cold_search_after: Optional[int] = None,
         async_cloud: bool = False,
+        hold_goal: bool = DEFAULT_HOLD_GOAL,
+        spin_guard_after: int = DEFAULT_SPIN_GUARD_AFTER,
     ):
         self.pipeline = pipeline
         self.cloud_vision_fn = cloud_vision_fn
@@ -417,6 +445,9 @@ class TieredVision:
         # frame, and nothing has measured that yet. Phase D is where a
         # number gets chosen and this gets turned on deliberately.
         self.async_cloud = bool(async_cloud)
+        self.hold_goal = bool(hold_goal)
+        self.spin_guard_after = max(0, int(spin_guard_after))
+        self._consecutive_turns = 0
         self._executor = None
         self._inflight = None
         self._inflight_trigger: Optional[str] = None
@@ -524,6 +555,11 @@ class TieredVision:
                                      note=f"[cloud: {trigger}] dispatched")
 
         scene = self.cloud_vision_fn(frame)
+        # The goal the stand-in holds on later free frames. Set on BOTH
+        # paths: it lived only in _collect_inflight() at first, so a
+        # synchronous mission had nothing to hold and silently kept
+        # scanning -- the exact behaviour Phase F exists to remove.
+        self._last_cloud_scene = scene
         return self._annotate(scene, perception, trigger)
 
     # -- Phase A: dispatch, collect, and hold the goal --------------------
@@ -785,10 +821,23 @@ class TieredVision:
         # scan stays, because holding a goal with nothing confirming it is
         # a different design and an unmeasured one.
         landed, self._landed_corroboration = self._landed_corroboration, None
-        held = self._held_direction() if self._inflight is not None else None
+        held = (self._held_direction()
+                if (self.hold_goal or self._inflight is not None) else None)
         direction = held or SCAN_ACTION
         if held:
             why = f"{why} -- holding last cloud goal {held}"
+        # The spin floor. Counted over what the robot was actually TOLD to
+        # do, cloud steps included, because a spin does not care which tier
+        # caused it.
+        if (self.spin_guard_after
+                and direction in TURN_ACTIONS
+                and perception.status != DETECTED
+                and self._consecutive_turns >= self.spin_guard_after):
+            direction = "FORWARD"
+            self._consecutive_turns = 0
+            why = (f"{why} -- spin guard: {self.spin_guard_after} turns "
+                   "without a detection, forcing FORWARD")
+        self._note_action(direction)
         return {
             "obstacles_ahead": [],
             # Nothing local measures depth. M1's argument exactly: the
@@ -837,6 +886,13 @@ class TieredVision:
                       "stats": self.stats.as_dict()},
         }
 
+    def _note_action(self, direction) -> None:
+        """Track consecutive turns, over cloud and local steps alike."""
+        if direction in TURN_ACTIONS:
+            self._consecutive_turns += 1
+        else:
+            self._consecutive_turns = 0
+
     def _annotate(self, scene: dict, perception: Perception, trigger: str) -> dict:
         """A real cloud scene, with the local evidence attached beside it.
 
@@ -855,6 +911,7 @@ class TieredVision:
             if verdict == CORROBORATED:
                 self.stats.corroborated += 1
 
+        self._note_action(scene.get("safest_direction"))
         out = dict(scene)
         out["_perception"] = perception.as_dict()
         out["_tier"] = {"cloud_called": True, "trigger": trigger,

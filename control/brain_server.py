@@ -271,6 +271,8 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict):
         # a 0cm bar would fire on every frame rather than never.
         "cold_search_after_cm": (config["tier_cold_search_after_cm"] or None),
         "async_cloud": bool(config["tier_async_cloud"]),
+        "hold_goal": bool(config["tier_hold_goal"]),
+        "spin_guard_after": config["tier_spin_guard_after"],
         "stale_after": config["tier_stale_after"],
         "max_calls": config["tier_max_calls"] or None,
         # 1.11a, reported and not enforced -- see brain/tiered.py's
@@ -626,6 +628,8 @@ def create_app(
             "tier_cold_search_after": config["tier_cold_search_after"],
             "tier_cold_search_after_cm": config["tier_cold_search_after_cm"],
             "tier_async_cloud": bool(config["tier_async_cloud"]),
+            "tier_hold_goal": bool(config["tier_hold_goal"]),
+            "tier_spin_guard_after": config["tier_spin_guard_after"],
             # Published so the panel can name the bar it is reporting
             # against. A verdict shown without the number it was taken at
             # is not readable, and 1.11a's whole finding is that the bar
