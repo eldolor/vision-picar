@@ -138,6 +138,36 @@ latency instrumentation and an observability dashboard at `/metrics`. Read
 its section 6 for what is still open and section 7 for what was wrong
 along the way.
 
+**Added 2026-09-13 (same day, later session), and the one thing to know
+before reading any tiered walk's outcome: a walk ARRIVED and the system
+did not notice.** `woven-laundry-basket-20260913-115703` frames 0204-0209
+are the target at touching distance; the cloud had said `STOP` and it was
+being held, local perception read P = 0.998, and Phase G's
+steer-over-hold precedence drove FORWARD into it until `max_steps`. Two
+composing defects -- `safest_direction` is an overloaded channel (a mode
+change loses to a bearing), and `_held_direction()` drops everything but
+the direction, so `target_reached` never survives to a free frame.
+Written up as **`PLAN-onboard-perception.md` P7e**, which also records
+why "make a held STOP un-overridable" is the wrong repair. **Deliberately
+NOT built**: the fix resolves differently once a lidar exists, so it is
+settled on hardware day. **Consequence until then -- every tiered walk
+ends `max_steps` even when it physically arrives, and
+`control/walk_eval.py`'s completion score (0.25 of the total) is
+structurally zero for all of them. Do not read a tiered walk's outcome as
+a navigation result.**
+
+Two defects found alongside it WERE fixed, because both are about being
+able to read the record later. `_tier.cloud_called` was False on every
+frame of every async mission since Phase A (the dispatch branch returns
+the stand-in, which hardcoded it), so no recorded walk could say which
+frame the cloud was shown -- the twin's counter was always right, it
+reads `stats.cloud_calls`. And `tests/test_serverless_routes.py` was
+blind to every route mounted via `include_router` on FastAPI 0.141, which
+made the guard against silently-404ing routes pass vacuously. **Note the
+repo is currently run under two Pythons with two FastAPI versions
+(`.venv` 0.141, system Anaconda 0.136) and they disagreed about the
+suite** -- `pytest` from `.venv` is the one to trust.
+
 ## 4. Repo map
 
 ```

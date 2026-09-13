@@ -5173,6 +5173,13 @@ arrival is only *declarable* on a paid one.
 measurement that provoked them is recorded here, and because two of them
 contradict text elsewhere in this document.
 
+  **Item 3 now has live evidence, and it is worse than this argued --
+  see P7e (2026-09-13).** A walk physically arrived, the cloud said `STOP`
+  and it was held, the local tier read P = 0.998, and the robot drove
+  FORWARD into the target until the step cap. Arrival was not merely late;
+  Phase G's steer-over-hold precedence **overrode** it. Fixing the latency
+  alone would not have stopped that walk.
+
 
 #### P7d: INT8 destroys OWLv2 -- **MEASURED 2026-09-12**
 
@@ -5560,6 +5567,125 @@ be repaired afterwards: lock landscape, write the rig height into the walk's
 meta note, and use an **accurate** description -- the shoes walk moved recall
 7x on the target string alone, and `"blue shoes"` for navy-and-lime shoes
 scored like the poor description it was.
+
+#### P7e: the first walk that ARRIVED, and the two reasons nothing noticed -- **2026-09-13**
+
+P7c item 3 argued, from latency alone, that `target_reached` must move off
+the cloud, and named the line: *"`brain/tiered.py:475` forces
+`target_reached: False` on every free step, so arrival is only declarable on
+a paid one."* It was written on 2026-09-12 and marked **not built**.
+
+The next day's walk is the first live evidence for it, and it goes one step
+further than the argument did. **`woven-laundry-basket-20260913-115703`
+arrived.** Frames 0204-0209 are the basket at touching distance, filling the
+frame edge to edge -- the rig was pushed right up to it. The mission ended
+`max_steps`.
+
+| seq | step | action | `target_reached` | perception | P | `holding` |
+|---|---|---|---|---|---|---|
+| 203 | 117 | FORWARD | False | detected | 0.9977 | **STOP** |
+| 204 | 117 | FORWARD | False | detected | 0.9977 | **STOP** |
+| 206 | 119 | FORWARD | False | detected | 0.9973 | **STOP** |
+| 208 | 120 | -- | -- | detected | 0.9558 | **STOP** |
+
+Both tiers were right and neither was heard. The local tier was at
+**P = 0.996-0.998**, about as certain as this pipeline ever gets. The cloud
+had already returned `STOP` and it was being held. The robot drove FORWARD
+into the basket until the step cap.
+
+**This is not the lateness P7c predicted. It is an override.** P7c costed
+arrival at ~5.6 s late, 1.7 m of overshoot at 0.3 m/s; fixing only the
+latency would not have stopped this walk, because the arrival signal that
+did exist was discarded rather than delayed. Two independent defects
+compose, and either alone would have ended the mission correctly:
+
+**1. Phase G outranks a stop.** `_local_scene()` computes
+
+    direction = steer or held or SCAN_ACTION
+
+where `steer` is a bearing measured this frame and `held` is the cloud's
+last goal. Phase G's precedence is sound **for directions** -- a fresh
+bearing really is better evidence than a three-second-old one. The defect is
+that `safest_direction` is an **overloaded channel**: it carries both "which
+way" and "do not move", and `brain/navigate.py:166` also defaults to `STOP`
+for any unrecognised action. Three meanings, one token. Phase G applies
+direction-logic to a mode change, and the mode change loses.
+
+**2. Arrival is dropped in transit.** `_held_direction()` returns only
+`_last_cloud_scene["safest_direction"]`. The rest of the cloud's reply --
+`target_reached` included -- is held in `_last_cloud_scene` and never read,
+and `_local_scene()` then hardcodes `target_reached: False`. So
+`control/mission_runner.py`'s `if nav.get("target_reached")` cannot fire on
+a free frame whatever the cloud said. This is exactly P7c item 3's line,
+observed doing the thing it was predicted to do.
+
+##### Why "make a held STOP un-overridable" is the wrong repair
+
+It is the obvious one-line fix and it should not be taken:
+
+- **`STOP` is ambiguous** -- arrived, blocked, and unparseable-action all
+  produce it.
+- **A held `STOP` is stale by construction.** Holding a goal across the
+  round trip is the entire point of Phase A.
+- **It can deadlock.** A stopped robot's view does not change, so the next
+  call sees the same blocked scene and answers `STOP` again. Today's
+  override is at least what keeps the robot moving.
+
+`target_reached: True` has none of these properties. It means one thing, and
+the correct response to it -- end the mission -- cannot deadlock, because
+there is no mission left to deadlock.
+
+##### The three candidates, and what each needs
+
+1. **Carry `target_reached` on the held goal.** The smallest correct change:
+   arrival stops being undeclarable on a free frame. Still ~5.6 s late, and
+   still says nothing about the override.
+2. **Local arrival -- P7c item 3's own proposal.** OWLv2 for bearing, lidar
+   for range at that bearing, a threshold. Both on-board, both under 33 ms.
+   **Needs the lidar**, so it is hardware-day work by construction.
+3. **An interim local arrival with no lidar**, using detected-box area as a
+   range proxy. At touching distance the signal was enormous -- near-full-frame
+   box at P = 0.998 -- so it is almost certainly separable on this corpus.
+
+**Recommendation: (3) is REPORTED and NOT ENFORCED when it is built**, on
+1.11a's precedent and for 1.11a's reason. A threshold chosen from one walk is
+how `DEFAULT_MATCH_MARGIN` came to be ~2x too high, and a panel that lets a
+measurement read as a decision corrupts the walks meant to decide it. Compute
+the verdict, show it beside the corroboration row, enforce nothing, and let
+the next rig walks say where it separates.
+
+##### Status: NOT BUILT, and deliberately deferred
+
+None of the three is built, and none should be built now. The arrival
+question resolves differently once a lidar exists -- (2) becomes available
+and (3) becomes an interim nobody needs -- so writing (1) or (3) today
+optimises against a sensor suite that is about to change. The decision
+(2026-09-13) is to record the evidence and settle it when the hardware is
+bought, deployed and tested on.
+
+**What this costs in the meantime**, stated plainly so it is not discovered
+again: every tiered walk will continue to end `max_steps` rather than
+`found`, including walks that physically arrive. Walk outcomes from this
+period are evidence about steering and pacing, **not** about arrival, and
+`control/walk_eval.py`'s completion score -- 0.25 of the total, keyed on
+`target_reached` -- is structurally zero for all of them. Do not read it as a
+navigation result.
+
+##### One instrumentation fix was NOT deferred
+
+`_tier.cloud_called` was False on every frame of every async mission from
+Phase A until 2026-09-13: the dispatch branch returns `_local_scene()`, which
+hardcoded it, and only the synchronous path ever set it True. The twin's
+counter was unaffected -- it reads `stats.cloud_calls`, incremented before
+dispatch -- but `_tier` is what a recorded walk stores, so **no walk could
+say which frame the cloud had been shown**, and `[cloud: <trigger>]` never
+appeared in an async mission log. That is what made "was the cloud ever asked
+at point-blank range?" unanswerable from the record of three walks in which
+`holding` was set on 169/222/204 rows and `cloud_called` on none.
+
+Fixed the same day, with `cloud_landed` added as the separate fact, because
+the deferral above depends on the record being readable later. A walk
+recorded blind cannot be re-analysed when the hardware lands.
 
 ### 4.11 Is the local tier worth the part? -- **measured 2026-09-08**
 
