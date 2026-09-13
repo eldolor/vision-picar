@@ -627,8 +627,8 @@ class TieredVision:
 
         if self.async_cloud:
             self._dispatch(frame, trigger)
-            return self._local_scene(perception,
-                                     note=f"[cloud: {trigger}] dispatched")
+            return self._local_scene(perception, note="dispatched",
+                                     dispatched=trigger)
 
         _t0 = time.perf_counter()
         scene = self.cloud_vision_fn(frame)
@@ -893,12 +893,18 @@ class TieredVision:
 
     # -- what comes back -------------------------------------------------
 
-    def _local_scene(self, perception: Perception, note: str = "") -> dict:
+    def _local_scene(self, perception: Perception, note: str = "",
+                     dispatched: Optional[str] = None) -> dict:
         """The stand-in. Same schema `brain/navigate.py` produces, so every
         consumer is unchanged -- but `_navigate.reasoning` says plainly
         that no model was asked, because a log line that reads like a
         model's reasoning when nothing was called is exactly the kind of
-        thing this project has been burned by."""
+        thing this project has been burned by.
+
+        `dispatched` is the trigger of a call STARTED on this frame (Phase
+        A's async path). Such a frame spent money, so it must not report
+        `cloud_called: False` -- see the note on that key below.
+        """
         why = note or f"no trigger ({perception.status})"
         # 2.5's held goal, and ONLY while a call is outstanding. Without
         # this the stand-in scans through every frame it is waiting on,
@@ -957,10 +963,30 @@ class TieredVision:
                 "obstacle_ahead": None,
                 "room_guess": "unclear",
                 "distance_estimate": "unknown",
-                "reasoning": f"[reactive tier, no cloud call] {why}",
+                # A dispatch frame DID call out; only the answer is
+                # missing. It used to read "[reactive tier, no cloud call]
+                # [cloud: cold_search] dispatched" -- a line that denies
+                # and admits the same call in eleven words.
+                "reasoning": (f"[reactive tier, cloud call dispatched] {why}"
+                              if dispatched
+                              else f"[reactive tier, no cloud call] {why}"),
             },
             "_perception": perception.as_dict(),
-            "_tier": {"cloud_called": False, "trigger": None,
+            # Phase A split "the cloud was asked" from "the cloud
+            # answered", and this readout only ever expressed the second.
+            # Under `async_cloud` the dispatch branch returns here, so
+            # `cloud_called` was False on EVERY frame of every async
+            # mission. The twin's calls-and-frames counter was unaffected
+            # (it reads `stats.cloud_calls`, incremented before dispatch);
+            # what broke is the per-frame fact -- `[cloud: <trigger>]`
+            # never appeared in a mission log, and `_tier` is what a walk
+            # stores, so no recording could say which frame the cloud saw.
+            # `cloud_called` now means money was spent on THIS step, which
+            # is what it meant before Phase A and what every consumer
+            # already assumes. `cloud_landed` is the new, separate fact.
+            "_tier": {"cloud_called": dispatched is not None,
+                      "trigger": dispatched,
+                      "cloud_landed": landed is not None,
                       "models": dict(self.models),
                       # No cloud call means no claim to corroborate. Stated
                       # rather than omitted: a missing key would leave the
@@ -1033,6 +1059,8 @@ class TieredVision:
         out = dict(scene)
         out["_perception"] = perception.as_dict()
         out["_tier"] = {"cloud_called": True, "trigger": trigger,
+                        # Synchronous: asked and answered on one frame.
+                        "cloud_landed": True,
                         "models": dict(self.models),
                         # 1.11a, reported and NOT enforced. `scene` above is
                         # passed through untouched -- deliberately, and it is

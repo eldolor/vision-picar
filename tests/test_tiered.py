@@ -927,10 +927,63 @@ def test_a_dispatched_call_does_not_block_the_frame():
     out = tier({"image_base64": "x"})          # mission_start, dispatched
     elapsed = _time.perf_counter() - started
     assert elapsed < 1.0, "the frame waited on the cloud"
-    assert out["_tier"]["cloud_called"] is False
+    # Dispatched, not free. This line read `is False` until 2026-09-13,
+    # which conflated "did not block" with "did not call" -- the frame
+    # spends money either way. See the counter test below for what that
+    # cost.
+    assert out["_tier"]["cloud_called"] is True
+    assert out["_tier"]["trigger"] == "mission_start"
+    assert out["_tier"]["cloud_landed"] is False, "asked, not yet answered"
     assert out["_tier"]["in_flight"] == "mission_start"
     cloud.release.set()
     tier.close()
+
+
+def test_the_deliberation_counter_is_not_zero_on_an_async_mission():
+    """Under `async_cloud`, `_tier.cloud_called` was False on every frame
+    of every mission from Phase A until 2026-09-13: the dispatch branch
+    returned `_local_scene()`, which hardcoded it, and only the
+    synchronous path ever set it True.
+
+    **Not** the twin's counter, which reads `stats.cloud_calls` and was
+    always right -- `stats` is incremented before the dispatch. What broke
+    is the PER-FRAME fact: `control/mission_runner.py` labels a paid step
+    `[cloud: <trigger>]` from this key, so that label never appeared in an
+    async mission log, and `_tier` is what a recorded walk stores -- so no
+    walk could say which frame the cloud had seen. That is what made "did
+    the cloud ever get asked at point-blank range?" unanswerable from the
+    record of three tiered walks, while `holding` was set in 169/222/204
+    rows and `cloud_called` in none.
+
+    Pinned as a property rather than a count: whatever the pacing does,
+    a mission that spends money has to say so on the frames it spent it.
+    """
+    cloud = SlowCloud(delay=0.0)
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 30), cloud,
+                        cold_search_after=1, async_cloud=True)
+    cloud.release.set()
+    called = [tier({"image_base64": "x"})["_tier"]["cloud_called"]
+              for _ in range(10)]
+    tier.close()
+    assert any(called), "an async mission reported no paid calls at all"
+    # And not the other extreme: the trigger discipline still has to make
+    # most frames free, or the counter is just as uninformative.
+    assert not all(called), "every frame reported a paid call"
+
+
+def test_a_dispatch_frame_does_not_deny_the_call_in_its_own_reasoning():
+    """The log line used to read "[reactive tier, no cloud call] [cloud:
+    cold_search] dispatched" -- denying and admitting the same call in one
+    sentence. The reasoning is what a person reads in the mission log."""
+    cloud = SlowCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 5), cloud,
+                        async_cloud=True)
+    out = tier({"image_base64": "x"})
+    reasoning = out["_navigate"]["reasoning"]
+    cloud.release.set()
+    tier.close()
+    assert "no cloud call" not in reasoning, reasoning
+    assert "dispatched" in reasoning
 
 
 def test_only_one_call_is_outstanding_at_a_time():

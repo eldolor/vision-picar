@@ -1235,9 +1235,15 @@ def test_the_real_wrapper_builds_a_tiered_vision_fn_over_the_cloud_one(tmp_path,
     assert tier.async_cloud is True
     scenes = [tier({"image_base64": "eA==", "image_width": 640}) for _ in range(4)]
     assert scenes[0]["_tier"]["in_flight"] == "mission_start"
-    assert scenes[0]["_tier"]["cloud_called"] is False
+    # Frame 0 DISPATCHED the call, so it spent money and says so; frames
+    # 1-3 only waited on it and are free. Both of these read `is False`
+    # until 2026-09-13, which made the two indistinguishable -- and
+    # `_tier` is what a recorded walk stores, so no walk could say which
+    # frame the cloud had been shown.
+    assert scenes[0]["_tier"]["cloud_called"] is True, "frame 0 dispatched"
+    assert scenes[0]["_tier"]["cloud_landed"] is False, "asked, not answered"
     assert tier.stats.cloud_calls == 1, "one call, dispatched not repeated"
-    assert scenes[-1]["_tier"]["cloud_called"] is False
+    assert scenes[-1]["_tier"]["cloud_called"] is False, "only waiting"
     assert scenes[-1]["_tier"]["models"]["detector"] == "fake.pt"
     tier.close()
 
