@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, Optional
@@ -307,6 +308,30 @@ def corroboration_for(scene: dict, perception: Perception,
 CENTER_BAND_DEG = 10.0
 
 
+def percentiles(samples) -> Optional[dict]:
+    """n / p50 / p90 / p99 / max over a list of millisecond samples.
+
+    `None` when there are none, rather than a dict of zeroes: "no calls
+    were made" and "every call took 0ms" are different facts, and a
+    dashboard that draws the second when the first is true is the stale-
+    readout failure this project keeps meeting.
+
+    **A percentile over a handful of samples is one sample with a fancy
+    name.** `n` travels with every one of these so a reader can see that,
+    and the dashboard prints it.
+    """
+    if not samples:
+        return None
+    xs = sorted(samples)
+
+    def at(p):
+        return xs[min(len(xs) - 1, max(0, int(round(p / 100 * len(xs))) - 1))]
+
+    return {"n": len(xs), "p50": round(at(50)), "p90": round(at(90)),
+            "p99": round(at(99)), "max": round(xs[-1]),
+            "mean": round(sum(xs) / len(xs))}
+
+
 def _direction_for(perception) -> str:
     """`left` / `center` / `right`, or an honest non-answer.
 
@@ -358,10 +383,28 @@ class TierStats:
     claims: int = 0
     corroborated: int = 0
     verdicts: dict = field(default_factory=dict)
+    # Per-call wall clock, milliseconds. Kept as raw SAMPLES rather than a
+    # running mean because the question asked of them is about the tail --
+    # a mean of 3090ms and a p99 of 3875ms are different facts, and you
+    # cannot recover the second from the first. Bounded below so a long
+    # mission cannot grow this without limit.
+    cloud_ms: list = field(default_factory=list)
+    perception_ms: list = field(default_factory=list)
+
+    # Enough to characterise a walk (a mission is ~120 steps and ~20 calls)
+    # and small enough that the status payload stays a status payload.
+    MAX_SAMPLES = 500
+
+    def record(self, bucket: str, ms: float) -> None:
+        samples = getattr(self, bucket)
+        if len(samples) < self.MAX_SAMPLES:
+            samples.append(round(float(ms), 1))
 
     def as_dict(self) -> dict:
         saving = (self.frames / self.cloud_calls) if self.cloud_calls else None
         return {
+            "cloud_ms": percentiles(self.cloud_ms),
+            "perception_ms": percentiles(self.perception_ms),
             "frames": self.frames,
             "cloud_calls": self.cloud_calls,
             "claims": self.claims,
@@ -540,7 +583,9 @@ class TieredVision:
         # goal now, BEFORE the trigger policy runs -- so a call that has
         # already returned is never counted as still in flight.
         self._collect_inflight()
+        _t0 = time.perf_counter()
         perception = self.pipeline.perceive(frame)
+        self.stats.record("perception_ms", (time.perf_counter() - _t0) * 1000)
         self._perception_this_frame = perception
         self.stats.frames += 1
         self.stats.perception[perception.status] = (
@@ -585,7 +630,9 @@ class TieredVision:
             return self._local_scene(perception,
                                      note=f"[cloud: {trigger}] dispatched")
 
+        _t0 = time.perf_counter()
         scene = self.cloud_vision_fn(frame)
+        self.stats.record("cloud_ms", (time.perf_counter() - _t0) * 1000)
         # The goal the stand-in holds on later free frames. Set on BOTH
         # paths: it lived only in _collect_inflight() at first, so a
         # synchronous mission had nothing to hold and silently kept
@@ -622,7 +669,15 @@ class TieredVision:
         """
         if epoch != self._epoch:
             return None
-        return self.cloud_vision_fn(frame)
+        # Timed here, on the worker, so this is the CALL's duration and not
+        # how long the collector happened to take to notice. Under async the
+        # two differ by up to a frame, and the number people ask for is the
+        # first one.
+        started = time.perf_counter()
+        try:
+            return self.cloud_vision_fn(frame)
+        finally:
+            self.stats.record("cloud_ms", (time.perf_counter() - started) * 1000)
 
     def _collect_inflight(self) -> None:
         """Apply a landed answer, or note that it failed. Never waits."""

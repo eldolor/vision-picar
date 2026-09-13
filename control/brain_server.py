@@ -99,7 +99,7 @@ from control.recording_routes import (  # noqa: F401 -- re-exported, see above
 )
 from control.remote_robot import RemoteRobot
 from control.walk_store import walk_store_from_config
-from robot.identity import log_identity
+from robot.identity import git_revision, log_identity
 from robot.interface import RobotInterface
 
 logger = logging.getLogger("brain_server")
@@ -402,7 +402,28 @@ def create_app(
         # The dead-man deadline is per mission, not per process, so a drill
         # can shorten its own without touching anything else.
         state["tick_timeout_s"] = tick_timeout_s
-        return runner_class(robot, **kwargs)
+        runner = runner_class(robot, **kwargs)
+        # Metrics shipping, configured on the runner rather than passed
+        # through its constructor: MissionRunner's signature is the
+        # harness contract (AGENT-HARNESS.md) and a dashboard is not part
+        # of it. Off entirely unless a URL is set.
+        runner.metrics_url = config.get("metrics_url", "")
+        runner.metrics_secret = (config.get("metrics_secret")
+                                 or os.environ.get("WALKS_SHARED_SECRET", ""))
+        runner.git_revision = git_revision()
+        # The knobs whose effect the dashboard exists to watch. A trend
+        # line without the config that produced it is a set of numbers
+        # with no cause attached.
+        runner.metrics_config = {
+            k: config.get(k) for k in (
+                "tier_cold_search_after", "tier_cold_search_after_cm",
+                "tier_async_cloud", "tier_hold_goal", "tier_steer_on_sight",
+                "tier_spin_guard_after", "tier_consecutive_frames",
+                "perception_floor_mask", "perception_crop_path",
+                "navigate_model_id", "navigate_prompt_variant",
+            ) if k in config
+        }
+        return runner
 
     make_robot = robot_factory or default_robot_factory
     make_runner = runner_factory or default_runner_factory

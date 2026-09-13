@@ -84,6 +84,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
 from control.brain_config import load_brain_config
+from control.metrics_routes import register_metrics_routes
 from control.recording_routes import mount_recording_routes
 from control import walk_eval, walk_replay
 from control.walk_store import WalkStoreError, walk_store_from_config
@@ -403,6 +404,9 @@ def create_app(config_path=None, store=None) -> FastAPI:
     # should not carry AWS credentials. Mounted from the same module
     # control/brain_server.py mounts, so there is one implementation.
     mount_recording_routes(app, store, require_secret=require_secret)
+    # Tier metrics: same store, same service, same argument the
+    # recording write path makes -- the write follows the storage.
+    register_metrics_routes(app, store, require_secret)
 
     @app.get("/recording/health")
     async def recording_health():

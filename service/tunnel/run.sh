@@ -32,6 +32,13 @@ SECRETS="$HOME/.vision-picar-local-secrets"
 [ -f "$SECRETS" ] || { echo "missing $SECRETS -- see the header of this file"; exit 1; }
 # shellcheck disable=SC1090
 set -a; source "$SECRETS"; set +a
+# The DEPLOYED services have their own secrets, in their own file --
+# reviewing walks and metrics is a different privilege from driving the
+# robot. Sourced when present so METRICS_SECRET below can be the walks
+# one rather than the local one, which would 401.
+SERVERLESS_SECRETS="$HOME/.vision-picar-serverless-secrets"
+# shellcheck disable=SC1090
+[ -f "$SERVERLESS_SECRETS" ] && { set -a; source "$SERVERLESS_SECRETS"; set +a; }
 
 # Gates inbound calls to BOTH local servers. require_secret() is inert
 # without it, and these are on the public internet through the tunnel.
@@ -42,6 +49,12 @@ export ROBOT_SHARED_SECRET="$LOCAL_SECRET"
 # set separately or the brain would send the one above and get a 401.
 export VISION_URL="${VISION_URL:-https://d114x92g7i4syl.cloudfront.net}"
 export VISION_SHARED_SECRET="$VISION_SECRET"
+# One metrics row per mission, to the walks service (which owns the
+# storage). Its own secret, like the vision one -- reviewing metrics is a
+# different privilege from asking the model a question. The shipper can
+# never fail a mission; see control/metrics_client.py.
+export METRICS_URL="${METRICS_URL:-$VISION_URL}"
+export METRICS_SECRET="${WALKS_SECRET:-}"
 
 export ROBOT_MODE="${ROBOT_MODE:-sim}"
 echo "robot mode: $ROBOT_MODE   vision: $VISION_URL"

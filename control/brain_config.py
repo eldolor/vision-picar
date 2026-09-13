@@ -96,6 +96,11 @@ DEFAULTS = {
     "tier_async_cloud": True,
     "tier_hold_goal": True,
     "tier_steer_on_sight": True,
+    # Where to ship one metrics row per mission. Empty disables the
+    # shipper entirely, which is what keeps every test and every laptop
+    # run from POSTing anywhere.
+    "metrics_url": "",
+    "metrics_secret": "",
     "tier_spin_guard_after": 8,
     # 2.4's staleness trigger: call out if nothing else has in this many
     # frames. 0 disables the floor. Without it a robot that can see its
@@ -217,6 +222,12 @@ def load_brain_config(config_path=None) -> dict:
         merged["recording_backend"] = os.environ["RECORDING_BACKEND"].strip().lower()
     if os.environ.get("RECORDING_BUCKET"):
         merged["recording_bucket"] = os.environ["RECORDING_BUCKET"]
+    # Same one-generic-image rule: where to ship metrics is a property of
+    # the deployment, not of the config file baked into an artifact.
+    if os.environ.get("METRICS_URL"):
+        merged["metrics_url"] = os.environ["METRICS_URL"].strip()
+    if os.environ.get("METRICS_SECRET"):
+        merged["metrics_secret"] = os.environ["METRICS_SECRET"].strip()
     if os.environ.get("RECORDING_PREFIX"):
         merged["recording_prefix"] = os.environ["RECORDING_PREFIX"]
 

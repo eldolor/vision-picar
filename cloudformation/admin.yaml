@@ -248,6 +248,24 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
 
+  # Tier metrics. Its own rule because the condition above is at the ALB's
+  # five-path-value ceiling -- the same reason twin.yaml carries three.
+  # The dashboard page and its client are static and come from the bucket,
+  # so only the API pair is routed here.
+  AlbListenerRuleMetrics:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 46
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /metrics/*
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
   # An ALB ListenerRule condition allows at most 5 path-pattern values and the
   # rule above uses four, so the read-only /recording/* routes that are not
   # under /recording/walks get their own. Same split twin.yaml and

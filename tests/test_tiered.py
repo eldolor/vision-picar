@@ -1295,3 +1295,67 @@ def test_steering_can_be_switched_off():
     tier({"image_base64": "x", "image_width": 640})
     out = tier({"image_base64": "x", "image_width": 640})
     assert out["safest_direction"] == "FORWARD"           # the cloud's goal
+
+
+# ---------------------------------------------------------------------------
+# Latency instrumentation
+# ---------------------------------------------------------------------------
+
+
+def test_no_samples_reads_as_None_not_as_zero():
+    """"No calls were made" and "every call took 0ms" are different facts.
+    A dashboard drawing the second when the first is true is the stale
+    readout this project keeps meeting."""
+    from brain.tiered import percentiles
+    assert percentiles([]) is None
+    assert percentiles([5])["n"] == 1
+
+
+def test_the_sample_count_travels_with_every_percentile():
+    """A percentile over a handful of samples is one sample with a fancy
+    name. `n` is what lets a reader see that."""
+    from brain.tiered import percentiles
+    p = percentiles([10, 20, 30])
+    assert p["n"] == 3 and p["p99"] == 30
+
+
+def test_cloud_and_perception_latency_are_recorded_separately():
+    import time as _t
+
+    class SlowPipe(ScriptedPipeline):
+        def perceive(self, frame):
+            _t.sleep(0.02)
+            return super().perceive(frame)
+
+    tier = TieredVision(SlowPipe([ABSENT] * 4), FakeCloud(),
+                        cold_search_after=100, stale_after=0)
+    for _ in range(3):
+        tier({"image_base64": "x"})
+    stats = tier.stats.as_dict()
+    assert stats["perception_ms"]["n"] == 3
+    assert stats["perception_ms"]["p50"] >= 15
+    assert stats["cloud_ms"]["n"] == 1, "only mission_start called out"
+
+
+def test_an_async_call_is_timed_on_the_WORKER_not_on_the_wait():
+    """Under async the collector notices up to a frame late, and the
+    number people ask for is the call's own duration."""
+    import time as _t
+    cloud = SlowCloud(delay=0.05)
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 8), cloud, async_cloud=True,
+                        cold_search_after=100, stale_after=0)
+    for _ in range(6):
+        tier({"image_base64": "x"})
+        _t.sleep(0.03)
+    samples = tier.stats.cloud_ms
+    assert samples, "no cloud latency recorded on the async path"
+    assert 40 <= samples[0] <= 500, samples
+    tier.close()
+
+
+def test_samples_are_bounded_so_a_long_mission_cannot_grow_them_forever():
+    tier = TieredVision(ScriptedPipeline([ABSENT]), FakeCloud())
+    from brain.tiered import TierStats
+    for i in range(TierStats.MAX_SAMPLES + 50):
+        tier.stats.record("perception_ms", i)
+    assert len(tier.stats.perception_ms) == TierStats.MAX_SAMPLES

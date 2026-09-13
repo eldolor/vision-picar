@@ -198,6 +198,12 @@ brain:
   # threshold: with no local bearing there is nothing to steer on, so the
   # cloud is already driving.
   tier_steer_on_sight: true
+
+  # One metrics row per mission, to the walks service (which owns the
+  # storage). Empty disables it. The shipper can never fail a mission --
+  # see control/metrics_client.py.
+  metrics_url: ""
+  metrics_secret: ""
   # 2.4's staleness trigger, and a floor under the call rate rather than a
   # metronome -- any real event resets it. Added 2026-09-07 after both rig
   # walks stopped finishing once perception got good: candidate_sighting

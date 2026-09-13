@@ -264,6 +264,12 @@ class MissionRunner:
             )
 
         self.robot = robot
+        # Metrics shipping. Off unless a URL is configured, which is what
+        # keeps tests and laptop runs from POSTing anywhere.
+        self.metrics_url = ""
+        self.metrics_secret = ""
+        self.metrics_config: dict = {}
+        self.git_revision = ""
         self.policy = policy
         self.max_steps = max_steps
         self.vision_fn = vision_fn or describe_grid_frame
@@ -565,6 +571,24 @@ class MissionRunner:
                 closer()
             except Exception as e:  # noqa: BLE001
                 logger.warning("closing the vision policy failed: %s", e)
+        # One metrics row per mission, on a daemon thread. Last, and
+        # after the policy is closed, so the latency samples are complete.
+        # It can never fail a mission -- control/metrics_client.py holds
+        # that rule, the same one the odometry read above follows.
+        self._ship_metrics()
+
+    def _ship_metrics(self) -> None:
+        if not self.metrics_url:
+            return
+        try:
+            from control.metrics_client import row_for, ship_run_async
+            ship_run_async(self.metrics_url,
+                           row_for(self.status(),
+                                   git_revision=self.git_revision,
+                                   config=self.metrics_config),
+                           secret=self.metrics_secret)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("metrics row not built: %s", e)
 
     def _tick_rate_hz(self):
         """Ticks per second since the mission started -- phase M5.

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>vision-picar · tier metrics</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#131822; --panel-2:#1a2130; --line:#232c3d;
+    --ink:#e6ecf5; --muted:#8b98ad; --dim:#5d6a7f;
+    --local:#4ade80; --cloud:#60a5fa; --warn:#fbbf24; --bad:#f87171;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 18px 60px}
+
+  header{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;
+    justify-content:space-between;margin-bottom:22px}
+  h1{margin:0;font-size:19px;letter-spacing:-.01em;font-weight:650}
+  h1 .sub{display:block;font-size:12px;color:var(--muted);font-weight:400;
+    letter-spacing:0;margin-top:3px}
+  .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  input,select,button{background:var(--panel-2);color:var(--ink);
+    border:1px solid var(--line);border-radius:9px;padding:7px 11px;font:inherit;
+    font-size:13px;outline:none}
+  input:focus,select:focus{border-color:var(--cloud)}
+  button{cursor:pointer;transition:background .12s}
+  button:hover{background:#222c3f}
+  button.primary{background:var(--cloud);color:#06121f;border-color:transparent;font-weight:600}
+
+  .grid{display:grid;gap:13px}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(168px,1fr));margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:15px 16px}
+  .card .label{font-size:11px;text-transform:uppercase;letter-spacing:.07em;
+    color:var(--muted);display:flex;align-items:center;gap:6px}
+  .card .value{font-size:27px;font-weight:640;letter-spacing:-.02em;margin-top:7px;
+    font-variant-numeric:tabular-nums}
+  .card .value small{font-size:13px;color:var(--muted);font-weight:400;margin-left:2px}
+  .card .foot{font-size:11.5px;color:var(--dim);margin-top:5px;
+    font-variant-numeric:tabular-nums}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .dot.local{background:var(--local)} .dot.cloud{background:var(--cloud)}
+
+  section{background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);padding:16px 17px;margin-bottom:14px}
+  section h2{margin:0 0 3px;font-size:14px;font-weight:620}
+  section .hint{font-size:12px;color:var(--muted);margin:0 0 14px}
+  .legend{display:flex;gap:15px;font-size:12px;color:var(--muted);margin-bottom:9px}
+  .legend span{display:flex;align-items:center;gap:6px}
+
+  svg{display:block;width:100%;overflow:visible}
+  .gl{stroke:var(--line);stroke-width:1}
+  .ax{fill:var(--dim);font-size:10.5px}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;
+    font-variant-numeric:tabular-nums}
+  th{text-align:left;font-weight:560;color:var(--muted);font-size:11px;
+    text-transform:uppercase;letter-spacing:.05em;padding:0 10px 8px 0;
+    border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 10px 9px 0;border-bottom:1px solid #1a2030;vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;
+    background:var(--panel-2);border:1px solid var(--line);color:var(--muted)}
+  .pill.found{background:rgba(74,222,128,.13);border-color:rgba(74,222,128,.3);color:var(--local)}
+  .pill.bad{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.3);color:var(--bad)}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--muted)}
+  .note{font-size:12px;color:var(--dim);margin-top:11px;padding-top:11px;
+    border-top:1px solid var(--line)}
+  .empty{color:var(--muted);padding:26px 0;text-align:center}
+  .err{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.32);
+    color:#fca5a5;border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:13px}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Tier metrics
+      <span class="sub">One row per mission · local perception vs cloud deliberation</span>
+    </h1>
+    <div class="controls">
+      <input id="secret" type="password" placeholder="x-app-secret" autocomplete="off" size="16">
+      <select id="days">
+        <option value="7">7 days</option>
+        <option value="14" selected>14 days</option>
+        <option value="30">30 days</option>
+        <option value="90">90 days</option>
+      </select>
+      <button id="reload" class="primary">Load</button>
+    </div>
+  </header>
+
+  <div id="error" class="err" hidden></div>
+
+  <div class="grid kpis" id="kpis"></div>
+
+  <section>
+    <h2>Cloud deliberation latency</h2>
+    <p class="hint">Per mission, newest on the right. Each point is that run's own
+      percentile — never blended across runs, because averaging p90s does not give
+      the p90 of the pair.</p>
+    <div class="legend">
+      <span><i class="dot cloud"></i>p50</span>
+      <span><i class="dot" style="background:var(--warn)"></i>p90</span>
+      <span><i class="dot" style="background:var(--bad)"></i>p99</span>
+    </div>
+    <div id="chart-cloud"></div>
+  </section>
+
+  <section>
+    <h2>Local tier</h2>
+    <p class="hint">Perception latency per frame, and how often it actually saw the
+      target. The detection rate is the number the hardware question turns on.</p>
+    <div class="legend">
+      <span><i class="dot local"></i>perception p50 (ms)</span>
+      <span><i class="dot" style="background:var(--warn)"></i>detected %</span>
+    </div>
+    <div id="chart-local"></div>
+  </section>
+
+  <section>
+    <h2>Runs</h2>
+    <p class="hint">Newest first. Config travels with every row — a trend line
+      without the settings that produced it is a set of numbers with no cause.</p>
+    <div style="overflow-x:auto"><table id="runs"></table></div>
+    <p class="note" id="footnote"></p>
+  </section>
+</div>
+<script src="metrics.js"></script>
+</body>
+</html>
