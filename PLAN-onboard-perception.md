@@ -5568,6 +5568,65 @@ meta note, and use an **accurate** description -- the shoes walk moved recall
 7x on the target string alone, and `"blue shoes"` for navy-and-lime shoes
 scored like the poor description it was.
 
+#### DECISION 2026-09-13: no Jetson. The part is Pi + Hailo-8L, and P9 becomes the critical path
+
+**The owner has ruled out the Jetson on cost.** At $399 list / ~$480
+street after July 2026's repricing (4.8), against ~$70 for a Hailo-8L M.2
+plus a ~$30 camera, it roughly doubles a ~$555-620 build. That is a
+budget decision, not a technical one, and it is final unless the owner
+re-opens it.
+
+**What it settles.** 4.7's "Jetson path, kept for later" is closed. P7c's
+and P7d's recommendations, which assumed an Orin, are recorded but not
+actionable. Most importantly:
+
+**OWLv2 is OUT, and this is the expensive consequence.** It is the
+strongest model this project has measured -- 82% at 3 FP against the
+shipped pipeline's 58% on the same corpus -- and P6 established for $3.20
+that it does not compile to a Hailo-8L: it translated, it quantised, and
+it died at **allocation** on 73 layernorm and 38 softmax layers, which is
+an architectural limit of the dataflow design rather than a size limit.
+The same reasoning retires Grounding DINO, DINOv2, SAM and every VLM.
+**Choosing the cheaper board means choosing against the best model**, and
+that trade should be stated in those words rather than discovered later.
+
+**What the on-board tier can therefore be:** a CNN proposer plus CLIP
+re-ranking, with the text encoder on the Pi's CPU. Nothing else fits.
+
+##### This promotes P9 from interesting to load-bearing
+
+Within that constraint, P9 measured the only two candidates that exist:
+
+| at the shipped gate, P >= 0.8 | recall | precision | FP |
+|---|---|---|---|
+| YOLO11s + CLIP RN50 (shipped) | 45% | 94% | 9 |
+| **YOLO-World + CLIP RN50** | **72%** | **99%** | **2** |
+
+Better on **both** axes, and twice as fast. So the on-board tier is worth
+**45% or 72%** depending entirely on one unrun test:
+
+> **Does YOLO-World compile to a Hailo-8L HEF?**
+
+It is now the single highest-value open question in this document, and it
+is the cheapest: `tools/hailo/` already exists, P6 cost $3.20 and 3.1
+hours, and the loop is one `ec2.sh up` from running against a new model.
+**Do this before ordering the accelerator**, which is what 1.10 item 1
+has asked for since 2026-09-04 and is the reason that item existed.
+
+**The case for optimism, and why it is only a case.** YOLO-World is
+YOLOv8 with a text-conditioned head -- the image path is convolutional,
+which is 4.9's "compiles well" family, and the text encoder would sit on
+the Pi CPU exactly as CLIP's already does. **But OWLv2's table row said
+it should compile too.** P6 is the standing warning that an inference
+from architecture is not a measurement, and it is the reason this
+question gets tested rather than assumed a second time.
+
+**If it does not compile**, the on-board tier is YOLO11s + CLIP at 45%
+recall, the reactive tier gets materially weaker, and the tiered
+architecture leans harder on the cloud -- which raises cost per mission
+and makes 2.9's latency budget the binding constraint again. That is a
+worse system, not a broken one, and it is the outcome to plan against.
+
 #### P9: composing YOLO-World instead of replacing with it -- **MEASURED 2026-09-13**
 
 4.11 ran YOLO-World as a **replacement** for all three models and

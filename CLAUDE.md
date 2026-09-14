@@ -138,6 +138,25 @@ latency instrumentation and an observability dashboard at `/metrics`. Read
 its section 6 for what is still open and section 7 for what was wrong
 along the way.
 
+**HARDWARE DECISION, 2026-09-13: no Jetson, on cost** ($399 list /
+~$480 street against ~$70 for a Hailo-8L M.2 + ~$30 camera, on a
+~$555-620 build). **The part is Pi + Hailo-8L.** Any text in
+`PLAN-onboard-perception.md` 4.7/4.8/P7c/P7d that assumes an Orin is
+recorded but not actionable; its "DECISION 2026-09-13" section is the
+one that governs. The consequence to know before reading 4.11 or P7:
+**the best model measured, OWLv2 at 82%, cannot run on the chosen
+board** -- P6 proved it dies at allocation on 73 layernorm and 38
+softmax layers, which also retires Grounding DINO, DINOv2 and SAM. The
+on-board tier can only be a CNN proposer plus CLIP.
+
+**So one unrun test now decides how good the reactive tier is: does
+YOLO-World compile to a Hailo-8L HEF?** P9 (2026-09-13) measured
+YOLO-World + CLIP at **72% recall / 99% precision** at the shipped
+P>=0.8 gate against YOLO11s + CLIP's **45% / 94%**, on 11 walks / 1234
+frames, at half the latency -- so the tier is worth 45% or 72% on that
+one answer. `tools/hailo/` exists and cost $3.20 last time. **Run it
+before ordering the accelerator.**
+
 **Added 2026-09-13 (same day, later session), and the one thing to know
 before reading any tiered walk's outcome: a walk ARRIVED and the system
 did not notice.** `woven-laundry-basket-20260913-115703` frames 0204-0209
