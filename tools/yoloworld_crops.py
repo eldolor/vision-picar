@@ -68,18 +68,33 @@ class YoloWorldCrops:
 
 
 def pipeline_with_yoloworld(target: str, *, clip_model: str = "RN50",
+                            clip_pretrained: str = "openai",
                             weights: str = "yolov8s-worldv2.pt",
+                            floor_mask: bool = False,
+                            segmenter: str = None,
                             device: Optional[str] = None,
                             **kwargs):
     """The shipped `PerceptionPipeline`, with YOLO-World as its crop
     source instead of YOLO11s. Same CLIP scorer, same gate, same
     `Perception` out -- so `control/perception_eval.py` takes it unchanged
-    and the only variable between the two configs is the crop source."""
-    from brain.perceive import ClipScorer, PerceptionPipeline
+    and the only variable between the two configs is the crop source.
 
+    `floor_mask` adds 4.2's class-agnostic proposer alongside it, exactly
+    as `brain.perceive.pipeline_for` does, so the four-way comparison
+    (detector x floor mask) varies one thing at a time.
+    """
+    from brain.perceive import (DEFAULT_SEGMENTER, ClipScorer,
+                                PerceptionPipeline, SegformerFloorProposer)
+
+    proposer = None
+    if floor_mask:
+        proposer = SegformerFloorProposer(segmenter or DEFAULT_SEGMENTER,
+                                          device=device)
     return PerceptionPipeline(
         detector=YoloWorldCrops(target, weights=weights, device=device),
-        scorer=ClipScorer(clip_model, device=device),
+        scorer=ClipScorer(clip_model, pretrained=clip_pretrained,
+                          device=device),
         target=target,
+        proposer=proposer,
         **kwargs,
     )

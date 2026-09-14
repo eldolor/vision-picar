@@ -5568,6 +5568,139 @@ meta note, and use an **accurate** description -- the shoes walk moved recall
 7x on the target string alone, and `"blue shoes"` for navy-and-lime shoes
 scored like the poor description it was.
 
+#### P9: composing YOLO-World instead of replacing with it -- **MEASURED 2026-09-13**
+
+4.11 ran YOLO-World as a **replacement** for all three models and
+`brain/perceive_lab.py` wrote the reason into its docstring: *"comparing
+it any other way would answer a question nobody asked."* The question was
+asked on 2026-09-13. Two things had changed since that comment: P7
+falsified 4.11's *"the three-model pipeline dominates at every operating
+point"*, so which models to COMPOSE is open again; and the corpus is now
+**11 labelled walks / 1234 frames / 323 visible**, where every prior row
+was scored on 8 walks or fewer.
+
+**The mechanism this tests.** YOLO11s proposes crops from a fixed COCO
+list, and "woven laundry basket" is not on it -- which is why
+`crop_source` degrades to `low_confidence` on those walks, and why 4.2's
+label gate discards exactly the close-range frames where YOLO calls the
+basket a `vase`. YOLO-World proposes from the **target string**, so CLIP
+re-ranks crops that are already about the right object. The composition
+is a third pipeline, not either measured one, and the adapter is
+`tools/yoloworld_crops.py`.
+
+##### The result
+
+Recall at matched false-positive budgets, all 11 walks:
+
+| config | @0 FP | @3 FP | @16 FP | median ms | neg scored |
+|---|---|---|---|---|---|
+| YOLO11s + CLIP RN50 (**shipped**) | **31%** | 41% | 46% | 161 | 787/911 |
+| YOLO11s + CLIP ViT-B/32 | 30% | 34% | 56% | 169 | 787/911 |
+| YOLO11s + floor mask + CLIP RN50 | 4% | 49% | 66% | 773 | 866/911 |
+| **YOLO-World + CLIP RN50** | 4% | **77%** | 82% | **78** | 32/911 |
+| YOLO-World + CLIP ViT-B/32 | 0% | 76% | 81% | 84 | 32/911 |
+| YOLO-World + CLIP ViT-L/14 | 3% | 75% | **83%** | 82 | 32/911 |
+| YOLO-World + floor mask + CLIP RN50 | 4% | 75% | 80% | 733 | 755/911 |
+
+**Three findings, in order of how much they change.**
+
+**1. The gain is the CROP SOURCE, not the classifier.** Three CLIP
+variants spanning an order of magnitude in size -- RN50, ViT-B/32,
+ViT-L/14 -- land within **two points of each other at every budget**.
+Swapping the classifier moves nothing; swapping the proposer nearly
+doubles recall. 4.11 concluded the recall problem was not model capacity
+and proposed a threshold fix; this agrees it is not capacity and locates
+it one stage earlier, at **what gets proposed at all**. A classifier
+cannot rescue a crop the detector never emitted. Note also that **RN50 is
+the smallest and the one Hailo has already ported** (4.9), so the
+cheapest CLIP is also the right one and no upgrade is owed.
+
+**2. The floor mask helps YOLO11s and HURTS YOLO-World.** 41% -> 49% on
+the COCO-limited detector; 77% -> **75%** on YOLO-World, at **9x the
+latency**. The last column says why: it takes YOLO-World's scored
+negatives from **32 to 755**, re-introducing exactly the
+confident-false-positive surface the text conditioning was suppressing.
+**The floor mask is a workaround for a vocabulary-limited proposer** --
+4.2 added it as a class-agnostic crop source precisely because the COCO
+list cannot propose an out-of-vocabulary target. Fix the proposer and the
+workaround becomes a liability costing 655 ms/frame to do slightly worse.
+That also retires C6's open question of when to schedule segmentation, if
+YOLO-World is adopted: the answer becomes "never".
+
+**3. The ranking is the same at 3 FP and at 16 FP**, so it does not
+depend on where the budget is drawn -- with the one exception in the
+caveats below.
+
+**Nearly double the recall at the same error budget, at half the
+latency.** And it is not one walk carrying it -- it wins on **9 of the 10
+walks that have visible frames**:
+
+| walk | visible | shipped | YOLO-World |
+|---|---|---|---|
+| blue-bottle-142454 | 18 | **89%** | 61% |
+| blue-bottle-185007 | 10 | 0% | 50% |
+| blue-shoes-152528 | 13 | 31% | 85% |
+| blue-shoes-210511 | 25 | 32% | 64% |
+| red-backpack-144856 | 33 | 88% | **100%** |
+| basket-215252 | 23 | 0% | 61% |
+| basket-215351 | 37 | 51% | 95% |
+| basket-231358 | 37 | 5% | 78% |
+| basket-115414 | 30 | 3% | 73% |
+| basket-115703 | 97 | 55% | 74% |
+
+The basket walks are the predicted mechanism firing: **5% -> 78%** and
+**3% -> 73%** on exactly the out-of-vocabulary target where the COCO list
+has nothing to offer.
+
+##### Two caveats, and the second changes how it should be deployed
+
+**It scores only 32 of 911 negative frames.** On 879 it proposes nothing
+at all. That is *correct* rather than a gap -- a frame with no proposal
+cannot be a false positive, and recall is over all 323 visible frames so
+its 55 unscored positives count against it as misses. But it means **the
+false-positive curve saturates at 32**: there is no operating point above
+that, and the two configs' budgets are not drawn from comparable negative
+pools. Read the @0 and @3 columns; @16 is already near the ceiling.
+
+**At 0 FP it is much worse -- 4% against 31% -- and that is a property,
+not noise.** Its highest-scoring false frame scores **exactly 1.000**
+(blue-shoes 0017), which drags the zero-error gate to 1.000 and admits
+almost nothing. The cause is structural: when YOLO-World proposes one
+crop, CLIP's softmax has few competitors, so a wrong crop scores as
+confidently as a right one. This document has already recorded the same
+effect from the other direction -- *"more competitors in a softmax
+mechanically lowers every P"* (3661).
+
+So: **YOLO-World rarely fires falsely, but when it does it fires with
+total confidence.** That makes it excellent as the standalone sighting
+detector at a small error budget and bad as a zero-error corroborator --
+which is the exact inverse of Grounding DINO's profile (50% at 0 FP, P7).
+**1.11a wants both roles filled, and this says they want different
+models.**
+
+**One number not to over-read: the median ms.** On most frames
+YOLO-World proposes nothing, so CLIP never runs and the median reflects
+the detector alone -- which is why ViT-L/14 reads 82 ms against RN50's
+78. It is a fair *per-frame* cost and an unfair *model* comparison. The
+floor-mask rows are the ones where the median is doing real work, because
+segmentation runs on every frame whether anything is proposed or not.
+
+##### What it does NOT change
+
+The hardware question. YOLO-World is YOLOv8 with a text-conditioned head,
+so its image path is CNN and plausibly sits in 4.9's "compiles well"
+family with the text encoder on the Pi CPU, exactly as CLIP's already is
+-- **but that is an inference from architecture, not a measurement, and
+P6 is the standing warning about exactly that inference.** OWLv2's table
+row said it should compile too; it translated, quantised, and died at
+allocation on 73 layernorm and 38 softmax layers. Until
+`tools/hailo/` is pointed at YOLO-World, "it should compile" is worth
+what OWLv2's row was worth.
+
+**What makes it worth pointing there:** it is the only composition
+measured so far that improves the on-board tier *without* changing the
+board, and the loop is one `ec2.sh up` away.
+
 ##### The three 2026-09-12/13 walks, adjudicated -- **2026-09-13**
 
 The corpus is **11 labelled walks**. Counts: 231358 **37/180**, 115414
@@ -5773,6 +5906,16 @@ Two further results from the same run, both load-bearing:
 - **Its recall is excellent where the target is large** (33/33 on the
   backpack walk, perfect precision) and poor where the target is small.
   Same failure axis as the current pipeline.
+
+> **Composed rather than replaced, YOLO-World WINS -- see P9
+> (2026-09-13).** This section ran it as a replacement for all three
+> models, which `brain/perceive_lab.py` says was deliberate. As a crop
+> source feeding the same CLIP matcher it reads **77% at 3 FP against the
+> shipped 41%**, on 11 walks, at half the latency -- and the floor mask,
+> which helps YOLO11s, *hurts* it. The conclusion below ("not a model
+> problem") survives and is sharpened: it is not a model-capacity
+> problem, it is a **proposal** problem, one stage earlier than the
+> threshold fix this section proposes.
 
 #### So the recall problem is not a model problem
 
