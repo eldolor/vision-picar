@@ -5724,6 +5724,84 @@ not enough; `setsid` or a systemd unit is. The runs produced data at all
 only because the tool writes incrementally -- the same habit
 `tools/hailo/label_prepass.py`'s sibling learned the same week.
 
+#### P12: INT8 degrades YOLO-World's embedding path, and the rig is now PROVEN -- **2026-09-14**
+
+P11 withdrew an INT8 result because the DFC had silently dropped to
+optimization level 0. Re-run with the two causes fixed -- **1024
+calibration frames** (from 128) and a **forced `optimization_level=1`**,
+so Bias Correction actually executes -- plus three controls that P11
+lacked. The finding survives, and now it is properly attributed.
+
+##### The controls, which are the reason to believe any of this
+
+| control | result |
+|---|---|
+| body ONNX + head ONNX vs the full model | **max \|diff\| 0.0** |
+| Hailo **native** emulation vs onnxruntime, pre-normalised input | **corr +1.0000**, identical means |
+| quantized fed **uint8 0-255** vs fed 0-1 | **0.67-0.82** vs 0.54-0.70 |
+
+The second is the one that matters: native emulation reproduces
+onnxruntime **exactly**, so the split, the extracted head, the NHWC->NCHW
+transpose and the output ordering are all correct. Any difference under
+quantization is quantization.
+
+The third settles the input scale, which was a live doubt: `normalization()`
+from the model script **is** applied in `SDK_QUANTIZED` and is **not**
+applied in `SDK_NATIVE` -- feeding native raw uint8 gives corr 0.13-0.35
+and 30x magnitudes, which is what made the first control look like a
+wiring bug. Feed native 0-1 and quantized 0-255.
+
+##### The result
+
+Quantized activations against the fp32 reference, per output tensor:
+
+    cv2 (box branch)        +0.69  +0.74  +0.82
+    cv3 (embedding branch)  +0.67  +0.71  +0.74
+
+For an INT8 CNN one expects >0.95. End to end on 365 frames, scoring the
+detector's own class score against the adjudicated labels:
+
+| config | detections | recall @0/3/16 FP |
+|---|---|---|
+| fp32 ONNX | 29,331 | 14% / 34% / 38% |
+| INT8, level 0 | 370 | 0% / 0% / 0% |
+| INT8, level 0, `a16_w8_a16` on the embedding convs | 404 | 0% / 0% / 0% |
+| **INT8, level 1 (Bias Correction)** | **83** | **0% / 0% / 0%** |
+
+**Bias Correction made it worse**, which is not what that pass is for and
+is not explained here. Note the DFC also prints *"Reducing compression
+level to 0 because requested optimization level equal or less than 1"*,
+so level 1 is not simply level 0 plus an accuracy pass.
+
+##### What this does and does not establish
+
+**Establishes:** on a Hailo-8L, default INT8 quantization destroys
+YOLO-World's usable detection output, and neither 16-bit promotion of the
+embedding convs nor level-1 Bias Correction recovers it. The measurement
+rig is verified exact, so this is the model and the tool, not the harness.
+
+**Does not establish:** that the model cannot be made to work. **Levels 2+
+are untested and need a GPU** -- AdaRound and Quantization-Aware
+Fine-Tuning are training loops, and QAT in particular is the standard
+answer for a network that loses accuracy at INT8. P7d's note that ViTs
+"often need quantisation-aware training" applies to an embedding head for
+the same reason: the head is a **cosine similarity**, so it depends on the
+DIRECTION of a 512-d vector, and direction is what a per-tensor scale
+scrambles. That is also why promoting three convs did nothing -- the
+damage accumulates along the whole embedding path, not at its last layer.
+
+**So the reactive tier is still worth 45% or 72%, and the deciding test is
+now a `g5.xlarge` at `optimization_level=2` or higher.** ~$1.50.
+
+##### Process notes
+
+Both earlier runs died silently at **exactly frame 201 of 365**. It was
+SSM reaping the process group; `setsid` fixed it and the run completed all
+365. `nohup` alone is not enough on an SSM-launched job.
+
+Editing `tools/hailo/ec2.sh` while a background invocation of it was
+running corrupted that run -- bash re-reads a script as it executes.
+
 #### The Hailo-10H option, costed -- and it is BLOCKED on a download
 
 Asked for 2026-09-14: is there another Pi-compatible NPU offering a wider

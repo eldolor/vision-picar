@@ -154,9 +154,17 @@ YOLO-World compiles to a Hailo-8L** -- translate/optimize/compile all ok,
 25.5 MB HEF, 4 contexts, cut at the six Conv end nodes the DFC's own
 error recommends. That cut also keeps the vocabulary open at runtime (the
 text einsum moves to the Pi CPU, as CLIP's text encoder already does), so
-the reactive tier is worth **72%, not 45%**, on a $70 part. **Whether INT8 preserves
-that accuracy is still OPEN** -- an attempt on 2026-09-13/14 was
-WITHDRAWN (P11). The DFC silently dropped to optimization level 0,
+the reactive tier is worth **72%, not 45%**, on a $70 part. **INT8 DEGRADES it badly (P12, 2026-09-14), and levels 2+ are the
+open question.** With the rig now verified exact -- Hailo native
+emulation reproduces onnxruntime at corr +1.0000 -- quantized activations
+correlate only 0.67-0.82 with fp32 and the detector's usable output
+collapses (29,331 detections -> 83). Neither 16-bit promotion of the
+embedding convs nor level-1 Bias Correction recovers it; Bias Correction
+made it worse. **AdaRound and QAT (levels 2+) are untested and need a
+GPU, ~$1.50** -- and QAT is the standard answer for exactly this, because
+the head is a cosine similarity and depends on the DIRECTION of a 512-d
+vector. So the reactive tier is still 45% or 72% and that run decides it.
+An earlier attempt was WITHDRAWN (P11). The DFC silently dropped to optimization level 0,
 because the calibration set was 128 frames where it wants 1024 and the
 instance had no GPU, so bias correction, AdaRound and QAT were all
 skipped. That measured the crudest possible quantization, not INT8.
