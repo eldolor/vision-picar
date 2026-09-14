@@ -44,6 +44,12 @@ REMOTE_DIR="/opt/hailo"
 # us-east-2 on-demand, r6i.4xlarge. Used only for the cost readout; if you
 # change TYPE, change this or the number printed is a lie.
 HOURLY="${HAILO_HOURLY:-1.008}"
+# The target part. hailo8l/hailo8 need DFC 3.x; hailo10h and hailo15h need
+# **DFC v5.x**, which is a separate gated Developer Zone download -- 3.34.0
+# rejects them outright with "Please use Dataflow Compiler v5.x". Put the
+# v5 wheel beside the 3.x one under s3://.../hailo/dfc/ and setup picks the
+# newest; nothing else here changes.
+ARCH="${HAILO_ARCH:-hailo8l}"
 
 say() { printf '\033[1m[hailo]\033[0m %s\n' "$*"; }
 die() { printf '\033[31m[hailo] %s\033[0m\n' "$*" >&2; exit 1; }
@@ -331,7 +337,7 @@ cmd_compile() {
   local id; id="$(require_instance)"
   say "starting the sweep -- this is the long one; ^C is safe, it runs under nohup"
   cmd_run "cd $REMOTE_DIR && nohup $REMOTE_DIR/venv/bin/python -m $MODULE \
-      --build build/$MODEL --arch hailo8l $* > $REMOTE_DIR/compile.log 2>&1 &
+      --build build/$MODEL --arch $ARCH $* > $REMOTE_DIR/compile.log 2>&1 &
     echo started; sleep 5; tail -5 $REMOTE_DIR/compile.log"
   say "follow it with: tools/hailo/ec2.sh run 'tail -40 $REMOTE_DIR/compile.log'"
 }
