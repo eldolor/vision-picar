@@ -140,6 +140,15 @@ def main(argv=None) -> int:
                          "a8_w8_a16, a8_w4_*, a16_w16_*, a16_w8_*, a16_w4_*. "
                          "Empty leaves everything at the default.")
     ap.add_argument("--arch", default="hailo8l")
+    ap.add_argument("--optimization-level", type=int, default=None,
+                    help="FORCE the DFC's optimization level. Without this it "
+                         "silently drops to 0 -- 'because there's less data "
+                         "than the recommended amount (1024), and there's no "
+                         "available GPU' -- which skips bias correction, "
+                         "AdaRound and QAT and makes the run a measurement of "
+                         "nothing. P11 withdrew a whole result to that "
+                         "warning. Level 1 gets bias correction, which is not "
+                         "a training loop and runs on CPU; 2+ wants a GPU.")
     ap.add_argument("--body", type=Path, default=None,
                     help="fp32 ONNX body instead of the HAR -- the SAME head "
                          "runs either way, so a difference is INT8 and not a "
@@ -194,7 +203,11 @@ def main(argv=None) -> int:
             runner = ClientRunner(hw_arch=args.arch)
             runner.translate_onnx_model(str(args.onnx), args.onnx.stem,
                                         end_node_names=list(SPLIT_END_NODES))
-            script = YOLO_NORM + "\n" + _promotion(runner, args.promote)
+            script = YOLO_NORM + "\n"
+            if args.optimization_level is not None:
+                script += (f"model_optimization_flavor("
+                           f"optimization_level={args.optimization_level})\n")
+            script += _promotion(runner, args.promote)
             print("model script:\n" + script, flush=True)
             runner.load_model_script(script)
             calib = np.ascontiguousarray(np.load(str(args.calib)))

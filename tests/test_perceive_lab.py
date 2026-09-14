@@ -201,12 +201,27 @@ def test_an_unknown_proposer_is_named():
 
 
 def test_the_open_vocabulary_names_are_the_ones_the_plan_argues_about():
-    """Grounding DINO, OWLv2 and SAM are 4.11's untried three; `vlm` was
-    added 2026-09-09 for the distilled-open-weights question. If a name here
-    drifts, the evidence stops matching the argument it was gathered for."""
+    """Every name here is a model the plan makes an argument about, and the
+    test exists so that evidence and argument cannot drift apart.
+
+    Updated 2026-09-14: it had been RED since P7 and the fix is a judgement
+    about the document rather than the code, which is why it sat. Each of
+    the three additions earns its place:
+
+    * `omdet` and `llmdet` -- P7's two untried families from HuggingFace's
+      zero-shot list. Both LOST (7% and 18% at 3 FP), and a measured loser
+      belongs here precisely so nobody re-runs it as a fresh idea.
+    * `trtowlv2` -- P7d's TensorRT OWLv2, which is how "INT8 destroys
+      OWLv2" was measured.
+
+    The original four stand: Grounding DINO, OWLv2 and SAM are 4.11's
+    untried three, `vlm` is 2026-09-09's distilled-open-weights question,
+    and `yoloworld` is now the subject of P9 and P10.
+    """
     from brain.perceive_lab import OPEN_VOCAB, OPEN_VOCAB_BACKENDS
 
-    assert set(OPEN_VOCAB) == {"gdino", "owlv2", "yoloworld", "vlm"}
+    assert set(OPEN_VOCAB) == {"gdino", "owlv2", "yoloworld", "vlm",
+                               "omdet", "llmdet", "trtowlv2"}
     assert set(OPEN_VOCAB_BACKENDS) == set(OPEN_VOCAB)
 
 
