@@ -154,8 +154,19 @@ YOLO-World compiles to a Hailo-8L** -- translate/optimize/compile all ok,
 25.5 MB HEF, 4 contexts, cut at the six Conv end nodes the DFC's own
 error recommends. That cut also keeps the vocabulary open at runtime (the
 text einsum moves to the Pi CPU, as CLIP's text encoder already does), so
-the reactive tier is worth **72%, not 45%**, on a $70 part. **INT8 DEGRADES it badly (P12, 2026-09-14), and levels 2+ are the
-open question.** With the rig now verified exact -- Hailo native
+the reactive tier is worth **72%, not 45%**, on a $70 part. **INT8 DOES NOT PRESERVE IT, at any optimization level (P13,
+2026-09-14) -- so the reactive tier on a Hailo-8L is NOT P9's 72%.** The
+best of five configurations reaches **5% where fp32 reaches 34%**; QAT
+(level 2, needs a GPU) is worth 55x the detections over level 1 and
+16-bit embedding convs roughly double it again, and the two compose, but
+the ceiling is not usable. The rig is verified exact -- Hailo native
+emulation reproduces onnxruntime at corr +1.0000 -- so this is the model
+meeting INT8, not the harness. **The cheapest decisive test left, and the
+one to run before ordering: does YOLO11s + CLIP survive INT8?** It is the
+shipped pipeline and a Hailo-native model; its fp32 number is 45%. Two
+traps that silently produce a wrong answer are recorded in P13.
+
+Superseded, kept for the shape of the mistake: P12 and With the rig now verified exact -- Hailo native
 emulation reproduces onnxruntime at corr +1.0000 -- quantized activations
 correlate only 0.67-0.82 with fp32 and the detector's usable output
 collapses (29,331 detections -> 83). Neither 16-bit promotion of the

@@ -5802,6 +5802,86 @@ SSM reaping the process group; `setsid` fixed it and the run completed all
 Editing `tools/hailo/ec2.sh` while a background invocation of it was
 running corrupted that run -- bash re-reads a script as it executes.
 
+#### P13: INT8 does not preserve YOLO-World, at any optimization level -- **MEASURED 2026-09-14**
+
+P12 found INT8 damaging and named levels 2+ as the untested escape.
+They are tested now, on an A10G, and they do not rescue it. **The INT8
+evaluation is complete.**
+
+365 frames, the detector's own class score against the adjudicated labels:
+
+| config | detections | @0 FP | @3 FP | @16 FP |
+|---|---|---|---|---|
+| **fp32 ONNX** | 29,331 | **14%** | **34%** | **38%** |
+| INT8 level 0 | 370 | 0% | 0% | 0% |
+| INT8 L0 + `a16_w8_a16` embeddings | 404 | 0% | 0% | 0% |
+| INT8 L1 (Bias Correction) | 83 | 0% | 0% | 0% |
+| INT8 L2 (QAT) | 4,580 | 1% | 2% | 2% |
+| **INT8 L2 (QAT) + `a16_w8_a16`** | 4,577 | **3%** | **5%** | **5%** |
+
+**Both mitigations work and they compose** -- QAT is worth 55x the
+detections over level 1, and promoting the embedding convs roughly
+doubles recall on top of it. **The ceiling is still 5% against 34%.**
+
+##### Why this one is believable where P11's was not
+
+Three controls, all run before the result was read:
+
+* body ONNX + head ONNX vs the full model: **max \|diff\| 0.0**
+* Hailo **native** emulation vs onnxruntime: **corr +1.0000**, identical means
+* quantized fed uint8 vs fed 0-1: **0.67-0.82 vs 0.54-0.70**, settling the
+  input scale empirically rather than by assumption
+
+The second is the load-bearing one: native emulation reproduces
+onnxruntime exactly, so the split, the extracted head, the NHWC->NCHW
+transpose and the output ordering are all correct, and any difference
+under quantization is quantization.
+
+Two traps worth keeping, both of which silently produce a wrong answer:
+
+1. **`normalization()` from the model script is applied in
+   `SDK_QUANTIZED` and NOT in `SDK_NATIVE`.** Feed native 0-1 and
+   quantized 0-255. Getting this backwards gives corr 0.13-0.35 and 30x
+   magnitudes, which reads exactly like a wiring bug.
+2. **The DFC's TensorFlow needs its own CUDA wheels.** A Deep Learning AMI
+   supplies the driver, but `tf.config.list_physical_devices("GPU")`
+   returned `[]` until `pip install "tensorflow[and-cuda]==2.18.0"`.
+   Without that it falls back to CPU and **skips the passes again** --
+   which is precisely the failure P11 was.
+
+Also: at level 2 the log says "Bias Correction skipped" and "Adaround
+skipped" **because QAT supersedes them**, not because anything went
+wrong. Level 1 is not level 0 plus an accuracy pass -- it also prints
+"Reducing compression level to 0", which is why its 83 detections are
+*worse* than level 0's 370.
+
+##### What it does to the part decision
+
+**YOLO-World compiles to a Hailo-8L (P10) but does not survive its
+quantization.** So the reactive tier on that part is **not P9's 72%**.
+What it actually is depends on a question this evaluation raises and does
+not answer:
+
+> **Does YOLO11s + CLIP survive INT8?** It is the shipped pipeline, it is
+> a Hailo-native model with published HEFs, and 4.9 lists the family under
+> "compiles well". Its fp32 number is 45%. If it quantizes cleanly the
+> tier is 45%; if it degrades like YOLO-World the on-board tier is worth
+> very little on this part and the whole tiered argument weakens.
+
+**That is now the cheapest decisive test left**, and it is the one to run
+before ordering. The rig, the corpus, the head-split method and the
+scoring are all built.
+
+**And it strengthens the 10H case.** The failure here is a **cosine
+similarity over a 512-d embedding** meeting a per-tensor INT8 scale --
+direction is what quantization scrambles, which is also why promoting
+three convs helped only at the margin. The 10H has on-module memory and a
+transformer-oriented design, and 16-bit is cheaper there. It remains
+blocked on the gated DFC v5.x download.
+
+Records in `build/yoloworld/`, tools in `tools/hailo/`. Total spend across
+P10-P13: **~$8.50**.
+
 #### The Hailo-10H option, costed -- and it is BLOCKED on a download
 
 Asked for 2026-09-14: is there another Pi-compatible NPU offering a wider
