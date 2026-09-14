@@ -5648,6 +5648,132 @@ Records in `build/yoloworld/` and `tools/hailo/compile_yoloworld.py`.
 `ec2.sh` is now parameterised by model (`HAILO_BUILD` picks the build dir and
 the sweep module), which is what a second model cost.
 
+#### P11: the INT8 question is OPEN, not answered -- **2026-09-14**
+
+P10 proved YOLO-World compiles. The obvious follow-up -- does INT8 keep
+P9's accuracy -- was attempted on 2026-09-13/14 and **the result is
+withdrawn**. What was measured is not INT8; it is quantization with every
+accuracy-recovery pass disabled.
+
+The DFC said so, in a warning that was read past:
+
+    [warning] Reducing optimization level to 0 (the accuracy won't be
+    optimized and compression won't be used) because there's less data
+    than the recommended amount (1024), and there's no available GPU
+
+    Finetune encoding skipped / Bias Correction skipped / Adaround
+    skipped / Quantization-Aware Fine-Tuning skipped
+
+**Two independent causes, both mine.** The calibration set is 128 frames
+where the DFC wants **1024** -- the corpus has 1234 and they were right
+there -- and an `r6i.4xlarge` has no GPU. Level 0 is the crudest
+quantization the tool can produce.
+
+For the record, and **not to be quoted as an INT8 result**:
+
+| config (201 frames) | detections | recall @3 FP |
+|---|---|---|
+| fp32 ONNX | 15,334 | 42% |
+| INT8, opt-level 0 | 370 | 0% |
+| INT8 + `a16_w8_a16` on the embedding convs, opt-level 0 | 404 | 0% |
+
+The precision promotion changing nothing is consistent with the same
+cause: fixing three layers' precision while no error compensation runs
+anywhere is not a fix.
+
+**The corrected experiment**, which has not been run: calibration on
+**1024+ frames** from the 11-walk corpus, on a **GPU instance** so the
+optimization passes execute -- P7d already used a `g5.xlarge` for the
+TensorRT work, so the precedent and the instance type exist. ~$1.50.
+
+**Until then the only defensible statement is that the INT8 question is
+open.** P7d's "INT8 destroys OWLv2" is a separate, properly-run result
+and is unaffected by this.
+
+##### Four failed attempts before that, kept because each misdirects
+
+Reaching even the invalid number took four tries, and the SDK's error
+messages pointed away from the cause every time:
+
+1. promote every 512-channel layer -> 16 of them -> `Layer conv22 not
+   found in model`, because the optimizer **fuses internal tensors away**;
+2. promote the `output_layer*` markers -> `Unsupported value`, because a
+   pass-through marker has no weights for a `w8` to describe;
+3. promote the convs that feed them -> **the same** `Unsupported value`,
+   now pointing at a layer that was perfectly valid;
+4. enumerate `PrecisionMode` -> the names have **three** parts,
+   `a<in>_w<weights>_a<out>`. `a16_w8` never existed.
+
+**Step 3 to 4 is the lesson: the DFC reports a bad MODE as a problem with
+the LAYER.** Three rounds went after layer selection while the mode string
+was wrong throughout. Enumerate the enum first; it costs one call.
+
+The accepted set on 3.34.0 is `native`, `a8_w8_a8`, `a8_w8_a16`,
+`a8_w4_a8`, `a8_w4_a16`, `a16_w16_a8`, `a16_w16_a16`, `a16_w8_a8`,
+`a16_w8_a16`, `a16_w4_a8`, `a16_w4_a16`. All INT -- **the 8L has no
+floating-point units at all**, which is why there is no fp16 option and
+why precision is a compile-time decision baked into the HEF rather than a
+runtime dtype.
+
+##### One process note, because it cost two runs
+
+Both inference runs died silently at **exactly frame 201 of 365**, no
+traceback, no OOM, 115GB free. Deterministic frame count means a timer,
+almost certainly SSM reaping the process group ~8 minutes in. `nohup` is
+not enough; `setsid` or a systemd unit is. The runs produced data at all
+only because the tool writes incrementally -- the same habit
+`tools/hailo/label_prepass.py`'s sibling learned the same week.
+
+#### The Hailo-10H option, costed -- and it is BLOCKED on a download
+
+Asked for 2026-09-14: is there another Pi-compatible NPU offering a wider
+range of models? Within the Hailo family (4.9's table):
+
+| | Hailo-8L | Hailo-8 | **Hailo-10H** |
+|---|---|---|---|
+| Price | ~$70 | ~$110 | **~$130** |
+| Architecture | dataflow, no external memory | same, larger | **on-module 8GB LPDDR4X, built for transformers** |
+
+**The Hailo-8 buys nothing.** Same architecture, so it fails on OWLv2's
+layernorms exactly as the 8L did -- that is a dataflow limitation, not a
+capacity one, and more TOPS does not create an attention path.
+
+**The 10H is the only part that could change which MODELS are available**,
+and for $60 it plausibly unlocks the 82%-accuracy model rather than the
+72% one. Note 4.8/4.9 chose the 10H on 2026-09-06 and reverted it the same
+day -- **but on its generative throughput** (5.89 tok/s makes a local VLM
+pointless). **That reasoning does not apply to running OWLv2 as a
+detector**, which is one forward pass and not token generation. The 10H's
+case is therefore stronger now than when it was rejected.
+
+**The blocker, found for free 2026-09-14:**
+
+    hailo8l    OK
+    hailo8     OK
+    hailo10h   not a valid hw arch. Please use Dataflow Compiler v5.x
+
+**DFC 3.34.0 cannot target the 10H at all.** v5.x is a separate gated
+Developer Zone download. Everything in `tools/hailo/` carries over -- it is
+one `--arch` flag plus a newer wheel in S3 -- so the cost is a login, not
+engineering. **Fetch the wheel before costing anything else here.**
+
+Outside Hailo, briefly: the **IMX500** is already ruled out (4.4, nano
+ceiling in silicon and cannot be fed a recorded frame, which kills the
+replay method); **Coral** is INT8-only with a narrow op set and a static
+ecosystem; **RK3588** means a different SBC, not a Pi accessory; and
+**MemryX MX3 / DeepX DX-M1 / Kinara Ara** claim broader coverage but are
+**unverified here** -- and "the table says it should compile" is exactly
+what P6 disproved for OWLv2. The standing asset argues for the 10H over
+any of them: `tools/hailo/` took ~$5 and real engineering, it works, and
+it is Hailo-specific.
+
+**On YOLO-World + floor mask + CLIP on the 10H**, asked the same day: the
+floor mask is **SegFormer, a ViT**, so on the 8-series it should fail as
+OWLv2 did and the three-model pipeline cannot be fully on-board there.
+Worth knowing -- but P9 measured that combination at **75% against 77%
+without the mask, at 9x the latency**, so it is an option to have rather
+than one to exercise. OWLv2 is the model worth 10H budget.
+
 #### DECISION 2026-09-13: no Jetson. The part is Pi + Hailo-8L, and P9 becomes the critical path
 
 **The owner has ruled out the Jetson on cost.** At $399 list / ~$480
