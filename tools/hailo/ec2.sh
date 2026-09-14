@@ -34,6 +34,12 @@ VOLUME_GB="${HAILO_VOLUME_GB:-200}"
 BUCKET="${HAILO_BUCKET:-vision-picar-deploy-303351622021-us-east-2}"
 PREFIX="${HAILO_PREFIX:-hailo}"
 LOCAL_BUILD="${HAILO_BUILD:-build/owlv2}"
+# The sweep module and the remote build directory follow LOCAL_BUILD, so a
+# second model needs no edit here. Hardcoding `owlv2` was free when it was
+# the only model and cost an edit the first time there were two (YOLO-World,
+# 2026-09-13, after the Jetson was ruled out on cost).
+MODEL="$(basename "$LOCAL_BUILD")"
+MODULE="${HAILO_MODULE:-tools.hailo.compile_$MODEL}"
 REMOTE_DIR="/opt/hailo"
 # us-east-2 on-demand, r6i.4xlarge. Used only for the cost readout; if you
 # change TYPE, change this or the number printed is a lie.
@@ -294,11 +300,11 @@ cmd_push() {
   say "uploading tools/hailo -> $(s3_uri)/tools/"
   aws_ s3 sync tools/hailo "$(s3_uri)/tools/" --exclude '__pycache__/*'
   cmd_run "set -e
-    mkdir -p $REMOTE_DIR/build/owlv2 $REMOTE_DIR/tools/hailo
+    mkdir -p $REMOTE_DIR/build/$MODEL $REMOTE_DIR/tools/hailo
     touch $REMOTE_DIR/tools/__init__.py
-    aws s3 sync $(s3_uri)/build/ $REMOTE_DIR/build/owlv2/ --only-show-errors
+    aws s3 sync $(s3_uri)/build/ $REMOTE_DIR/build/$MODEL/ --only-show-errors
     aws s3 sync $(s3_uri)/tools/ $REMOTE_DIR/tools/hailo/ --only-show-errors
-    du -sh $REMOTE_DIR/build/owlv2; ls -la $REMOTE_DIR/build/owlv2"
+    du -sh $REMOTE_DIR/build/$MODEL; ls -la $REMOTE_DIR/build/$MODEL"
 }
 
 cmd_pull() {
@@ -324,8 +330,8 @@ cmd_setup() {
 cmd_compile() {
   local id; id="$(require_instance)"
   say "starting the sweep -- this is the long one; ^C is safe, it runs under nohup"
-  cmd_run "cd $REMOTE_DIR && nohup $REMOTE_DIR/venv/bin/python -m tools.hailo.compile_owlv2 \
-      --build build/owlv2 --arch hailo8l $* > $REMOTE_DIR/compile.log 2>&1 &
+  cmd_run "cd $REMOTE_DIR && nohup $REMOTE_DIR/venv/bin/python -m $MODULE \
+      --build build/$MODEL --arch hailo8l $* > $REMOTE_DIR/compile.log 2>&1 &
     echo started; sleep 5; tail -5 $REMOTE_DIR/compile.log"
   say "follow it with: tools/hailo/ec2.sh run 'tail -40 $REMOTE_DIR/compile.log'"
 }

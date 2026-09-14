@@ -5568,6 +5568,86 @@ meta note, and use an **accurate** description -- the shoes walk moved recall
 7x on the target string alone, and `"blue shoes"` for navy-and-lime shoes
 scored like the poor description it was.
 
+#### P10: YOLO-World COMPILES to a Hailo-8L -- **MEASURED 2026-09-13, $1.05**
+
+1.10 item 1 has asked since 2026-09-04 for the compile loop to exist before
+hardware day. P6 built it and pointed it at OWLv2, which failed. This is the
+second model through it, and the one the part decision now rests on after the
+Jetson was ruled out on cost the same day.
+
+    translate   ok      4.5s
+    optimize    ok     70.0s
+    compile     ok    723.5s   -> yoloworld-hailo8l.hef, 25.5 MB, 4 contexts
+
+**The reactive tier is therefore worth 72%, not 45%** (P9's numbers at the
+shipped P>=0.8 gate), on a $70 part rather than a $480 one. The hardware
+order is actionable on evidence.
+
+##### The first attempt failed, and the failure named its own fix
+
+Parsing the whole graph fails on DFC 3.34 with three `UnsupportedEinsumLayerError`
+(`bchw,bkc->bkhw`) and two `UnsupportedShuffleLayerError` on the DFL box
+decode. **Read the supported list in that error, because it is the result:**
+
+    Currently supporting: ['bmchw,bnmc->bmhwn', 'bchw,cj->bjhw', ...]
+
+`bmchw,bnmc->bmhwn` is **first on it** -- that is the vision-language path
+aggregation in the neck, the text-conditioned fusion, and it is the part
+one would have bet against. Hailo supports it outright.
+
+The error also recommends the end nodes to parse to, and cutting there does
+**three** things at once, which is why it is the shipped split:
+
+1. drops the DFL decode the parser cannot build a shuffle layer for --
+   the standard Hailo YOLO recipe puts that on the host anyway;
+2. drops the three rejected Einsums; and
+3. **un-bakes the vocabulary.**
+
+##### Point 3 retracts a claim made earlier the same day
+
+The naive export has one input, `images[1,3,640,640]`, and no text input:
+the class embeddings are folded constants, so it looked like a HEF would be
+a **chosen-vocabulary** detector frozen at compile time, which would have
+been a real degradation from what P9 measured with per-walk target strings.
+
+**That is false of the deployable split.** Those three Einsums *are* the
+text contrast. With them on the CPU the accelerator runs a pure image tower
+and the target string is a runtime argument again. The deployed shape is:
+
+    Hailo   the CNN image tower (4 contexts, 25.5 MB HEF)
+    Pi CPU  the text einsum, the DFL decode, NMS
+
+which is the same split CLIP's text encoder already uses (4.2), and the
+einsum is one matmul against a vector 2.8 step 1 already caches per mission.
+
+##### Why this is not OWLv2, in one line
+
+OWLv2 died at **allocation** -- three attempts, no valid partition, 73
+layernorm and 38 softmax layers the dataflow design cannot place. YOLO-World
+found a valid partition on **iteration 0** and built a HEF in 34s of kernel
+compilation. The op census predicted this (0 layernorm, 1 softmax, 68 conv
+against OWLv2's 73 / 38 / 1) and the census was free -- but P6 is the reason
+it was tested rather than quoted, and that was the right call given the
+first attempt failed.
+
+##### What is NOT established, and the next test is a real one
+
+**This is a compile, not an inference.** Nobody has run the HEF on silicon,
+measured its latency, or checked that INT8 quantization preserved P9's
+accuracy.
+
+**That last one is not a formality: P7d measured that INT8 DESTROYS
+OWLv2.** Assuming YOLO-World survives it is precisely the class of
+assumption this loop exists to stop. The DFC's `optimize` stage already
+produced the quantized model, so **it can be scored in emulation against the
+11-walk corpus without any hardware** -- and it should be, before the part is
+ordered, because a 72% that becomes 45% under INT8 changes nothing about the
+purchase but everything about what the purchase buys.
+
+Records in `build/yoloworld/` and `tools/hailo/compile_yoloworld.py`.
+`ec2.sh` is now parameterised by model (`HAILO_BUILD` picks the build dir and
+the sweep module), which is what a second model cost.
+
 #### DECISION 2026-09-13: no Jetson. The part is Pi + Hailo-8L, and P9 becomes the critical path
 
 **The owner has ruled out the Jetson on cost.** At $399 list / ~$480
@@ -5606,6 +5686,13 @@ Better on **both** axes, and twice as fast. So the on-board tier is worth
 **45% or 72%** depending entirely on one unrun test:
 
 > **Does YOLO-World compile to a Hailo-8L HEF?**
+>
+> **ANSWERED 2026-09-13: YES -- see P10.** translate/optimize/compile all
+> pass for $1.05, cut at the six Conv end nodes the DFC's own error
+> recommends. 25.5 MB HEF, 4 contexts. The split also **un-bakes the
+> vocabulary**, so the retraction below about a frozen class list does not
+> apply to the deployable form. What is still unmeasured is whether INT8
+> preserves P9's accuracy -- P7d found it destroys OWLv2.
 
 It is now the single highest-value open question in this document, and it
 is the cheapest: `tools/hailo/` already exists, P6 cost $3.20 and 3.1

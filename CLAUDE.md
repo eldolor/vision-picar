@@ -149,7 +149,16 @@ board** -- P6 proved it dies at allocation on 73 layernorm and 38
 softmax layers, which also retires Grounding DINO, DINOv2 and SAM. The
 on-board tier can only be a CNN proposer plus CLIP.
 
-**So one unrun test now decides how good the reactive tier is: does
+**That test has now been run and it PASSED (P10, 2026-09-13, $1.05):
+YOLO-World compiles to a Hailo-8L** -- translate/optimize/compile all ok,
+25.5 MB HEF, 4 contexts, cut at the six Conv end nodes the DFC's own
+error recommends. That cut also keeps the vocabulary open at runtime (the
+text einsum moves to the Pi CPU, as CLIP's text encoder already does), so
+the reactive tier is worth **72%, not 45%**, on a $70 part. **The next
+test is whether INT8 preserves that accuracy -- P7d measured that INT8
+DESTROYS OWLv2, and it is scoreable in emulation with no hardware.**
+
+**The question that test answered, kept for context: does
 YOLO-World compile to a Hailo-8L HEF?** P9 (2026-09-13) measured
 YOLO-World + CLIP at **72% recall / 99% precision** at the shipped
 P>=0.8 gate against YOLO11s + CLIP's **45% / 94%**, on 11 walks / 1234
