@@ -154,9 +154,23 @@ YOLO-World compiles to a Hailo-8L** -- translate/optimize/compile all ok,
 25.5 MB HEF, 4 contexts, cut at the six Conv end nodes the DFC's own
 error recommends. That cut also keeps the vocabulary open at runtime (the
 text einsum moves to the Pi CPU, as CLIP's text encoder already does), so
-the reactive tier is worth **72%, not 45%**, on a $70 part. **The next
-test is whether INT8 preserves that accuracy -- P7d measured that INT8
-DESTROYS OWLv2, and it is scoreable in emulation with no hardware.**
+the reactive tier is worth **72%, not 45%**, on a $70 part. **Whether INT8 preserves
+that accuracy is still OPEN** -- an attempt on 2026-09-13/14 was
+WITHDRAWN (P11). The DFC silently dropped to optimization level 0,
+because the calibration set was 128 frames where it wants 1024 and the
+instance had no GPU, so bias correction, AdaRound and QAT were all
+skipped. That measured the crudest possible quantization, not INT8.
+**Do not quote "INT8 destroys YOLO-World".** The corrected run needs
+1024+ calibration frames (the corpus has 1234) on a GPU instance, ~$1.50.
+P7d's "INT8 destroys OWLv2" is a separate, properly-run result and stands.
+
+**Also open, and blocked on a download: the Hailo-10H** (~$130,
+on-module memory, built for transformers) is the only Pi-compatible part
+that could run the attention models the 8-series cannot -- but **DFC
+3.34.0 cannot target it at all** ("Please use Dataflow Compiler v5.x"),
+and v5.x is a gated Developer Zone download. `tools/hailo/` carries over
+unchanged; the cost is a login, not engineering. The Hailo-8 buys
+nothing: same dataflow architecture, same failure on attention.
 
 **The question that test answered, kept for context: does
 YOLO-World compile to a Hailo-8L HEF?** P9 (2026-09-13) measured
