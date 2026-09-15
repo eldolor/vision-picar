@@ -325,10 +325,27 @@ cmd_pull() {
 
 # -------------------------------------------------------------- work -------
 cmd_setup() {
-  local wheel
+  local wheel wanted
+  # WHICH wheel, now that there is more than one. hailo8l/hailo8 are DFC
+  # 3.x parts; hailo10h/hailo15h need 5.x and 3.34.0 rejects them outright
+  # with "Please use Dataflow Compiler v5.x". `head -1` picked whichever
+  # sorted first, which quietly meant 3.34.0 forever.
+  case "$ARCH" in
+    hailo10h|hailo15h|hailo15l) wanted='-5\.' ;;
+    *)                          wanted='-3\.' ;;
+  esac
   wheel="$(aws_ s3 ls "$(s3_uri)/dfc/" 2>/dev/null | awk '{print $4}' \
-           | grep -i '\.whl$' | head -1 || true)"
+           | grep -i '\.whl$' | grep -E "$wanted" | sort -V | tail -1 || true)"
+  # Fall back to any wheel rather than dying, but say so -- a missing 5.x
+  # with a 3.x present would otherwise look like a compiler bug three
+  # stages later.
+  if [ -z "$wheel" ]; then
+    wheel="$(aws_ s3 ls "$(s3_uri)/dfc/" 2>/dev/null | awk '{print $4}' \
+             | grep -i '\.whl$' | sort -V | tail -1 || true)"
+    [ -n "$wheel" ] && say "WARNING: no wheel matching $wanted for $ARCH -- falling back to $wheel"
+  fi
   [ -n "$wheel" ] || die "no .whl under $(s3_uri)/dfc/ -- upload the Dataflow Compiler wheel there first"
+  say "arch $ARCH -> wheel $wheel"
   say "found wheel: $wheel"
   cmd_run "sudo bash $REMOTE_DIR/tools/hailo/setup_host.sh '$(s3_uri)/dfc/$wheel' 2>&1 | tail -60"
 }

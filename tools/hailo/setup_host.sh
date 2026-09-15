@@ -41,7 +41,31 @@ apt-get update -qq
 apt-get install -y -qq \
   build-essential python3.10 python3.10-dev python3.10-venv python3.10-distutils \
   graphviz libgraphviz-dev pkg-config unzip curl \
+  python3-tk \
   python3-pip >/dev/null
+# python3-tk is on Hailo's own requirement list (DFC docs, System
+# Requirements: "python3.X-dev, python3-tk, graphviz and libgraphviz-dev").
+# It was missing here, and a DFC install prints "[Error] Requirement
+# python3-tk not found" and then carries on -- which is easy to read as
+# harmless and is not.
+#
+# libgraphviz-dev was already here and is kept: without it pygraphviz
+# cannot build, and Hailo lists it.
+#
+# It is NOT, however, the cause of DFC v5.4.0's parse failure. Installing
+# both packages and confirming pygraphviz 2.0.1 present, v5.4.0 STILL
+# fails every parse -- every model, every arch it supports -- with
+# `networkx.exception.NetworkXUnfeasible: Graph contains a cycle or graph
+# changed during iteration` from inside stable_toposort. Ruled out on
+# 2026-09-15: the model (YOLO-World compiles fine on 3.34.0), the arch
+# (10h/15h/15l all identical), networkx (2.8.8 and 3.4.2 both), and the
+# system packages (all four of Hailo's now present, on Ubuntu 22.04 /
+# Python 3.10, which their System Requirements page allows).
+#
+# DFC 3.x is unaffected -- everything in P10-P13 was built with 3.34.0.
+# If v5.x is needed, use Hailo's Software Suite Docker rather than a
+# hand-built venv, or ask Hailo: the remaining difference is inside their
+# distribution, not in anything reachable from here.
 
 if ! command -v aws >/dev/null 2>&1; then
   echo "== awscli"

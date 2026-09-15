@@ -140,6 +140,15 @@ def main(argv=None) -> int:
                          "a8_w8_a16, a8_w4_*, a16_w16_*, a16_w8_*, a16_w4_*. "
                          "Empty leaves everything at the default.")
     ap.add_argument("--arch", default="hailo8l")
+    ap.add_argument("--end-nodes", default=None,
+                    help="comma-separated ONNX end nodes to cut at. Defaults "
+                         "to YOLO-World's. YOLO11s uses model.23's cv2/cv3.")
+    ap.add_argument("--global-precision", default="",
+                    help="precision_mode for EVERY layer, e.g. a16_w16_a16 -- "
+                         "the highest the 8L supports. Applied with the "
+                         "wildcard layer selector rather than per layer, "
+                         "because 'the maximum' is a property of the build and "
+                         "not of a branch.")
     ap.add_argument("--optimization-level", type=int, default=None,
                     help="FORCE the DFC's optimization level. Without this it "
                          "silently drops to 0 -- 'because there's less data "
@@ -201,9 +210,14 @@ def main(argv=None) -> int:
             from tools.hailo.compile_yoloworld import (SPLIT_END_NODES,
                                                        YOLO_NORM)
             runner = ClientRunner(hw_arch=args.arch)
+            ends = (args.end_nodes.split(",") if args.end_nodes
+                    else list(SPLIT_END_NODES))
             runner.translate_onnx_model(str(args.onnx), args.onnx.stem,
-                                        end_node_names=list(SPLIT_END_NODES))
+                                        end_node_names=ends)
             script = YOLO_NORM + "\n"
+            if args.global_precision:
+                script += (f"quantization_param({{*}}, "
+                           f"precision_mode={args.global_precision})\n")
             if args.optimization_level is not None:
                 script += (f"model_optimization_flavor("
                            f"optimization_level={args.optimization_level})\n")
