@@ -334,8 +334,18 @@ cmd_setup() {
     hailo10h|hailo15h|hailo15l) wanted='-5\.' ;;
     *)                          wanted='-3\.' ;;
   esac
-  wheel="$(aws_ s3 ls "$(s3_uri)/dfc/" 2>/dev/null | awk '{print $4}' \
-           | grep -i '\.whl$' | grep -E "$wanted" | sort -V | tail -1 || true)"
+  # HAILO_DFC pins an exact version. Needed because the newest 5.x is not
+  # always the one you want: 5.4.0 cannot parse a YOLOv8/11 Split node
+  # (P14), so an older 5.x may be the working one -- and 5.4.0 must STAY
+  # in the bucket, because P14's results are only reproducible against it.
+  if [ -n "${HAILO_DFC:-}" ]; then
+    wheel="$(aws_ s3 ls "$(s3_uri)/dfc/" 2>/dev/null | awk '{print $4}' \
+             | grep -i '\.whl$' | grep -F "$HAILO_DFC" | head -1 || true)"
+    [ -n "$wheel" ] || die "HAILO_DFC=$HAILO_DFC matches no wheel under $(s3_uri)/dfc/"
+  else
+    wheel="$(aws_ s3 ls "$(s3_uri)/dfc/" 2>/dev/null | awk '{print $4}' \
+             | grep -i '\.whl$' | grep -E "$wanted" | sort -V | tail -1 || true)"
+  fi
   # Fall back to any wheel rather than dying, but say so -- a missing 5.x
   # with a 3.x present would otherwise look like a compiler bug three
   # stages later.

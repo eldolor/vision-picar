@@ -5939,11 +5939,24 @@ toolchain cannot compile the models it would be bought for. The 8L with
 DFC 3.34.0 compiles everything tried and delivers 45% (YOLO11s + CLIP, 93%
 box retention at the pipeline's own confidence). **Order the 8L.**
 
-Two cheap things keep the 10H alive as a later option, neither blocking:
+**Tested against DFC 5.2.0 as well (2026-09-15), and it is NOT a
+regression.** Identical four outcomes on both releases -- tiny OK,
+yolo11s `ValueError`, yoloworld and owlv2 `NetworkXUnfeasible`. Two
+independent releases failing the same four ways makes this a property of
+the 5.x line as distributed, not a bug in one build. `ec2.sh` gained
+`HAILO_DFC` to pin an exact wheel, because 5.4.0 must stay in the bucket
+for P13's results to remain reproducible.
 
-1. **An older DFC 5.x** (5.1.0 or 5.2.0, both documented) -- if 5.4.0 is a
-   regression, an earlier release may parse. `ec2.sh` picks the newest
-   5.x, so an older one needs 5.4.0 removed or an explicit pin.
+**A third undocumented prerequisite turned up doing it:** 5.2.0 imports
+`pkg_resources` and fails without `setuptools`, which neither the wheel
+nor the System Requirements page mentions -- alongside `python3-tk` and
+`libgraphviz-dev`. Three gaps between what the docs list and what the
+toolchain needs is itself a signal about its maturity.
+
+One thing still keeps the 10H alive as a later option, and it is not
+blocking:
+
+1. ~~An older DFC 5.x~~ -- **tried, same result.**
 2. **A Hailo ticket** with the `is_null_split` traceback against a stock
    YOLO11s ONNX -- a two-line reproducer on their own model family,
    which is a far stronger report than anything about our exports.
