@@ -183,7 +183,19 @@ skipped. That measured the crudest possible quantization, not INT8.
 1024+ calibration frames (the corpus has 1234) on a GPU instance, ~$1.50.
 P7d's "INT8 destroys OWLv2" is a separate, properly-run result and stands.
 
-**Also open, and blocked on a download: the Hailo-10H** (~$130,
+**The Hailo-10H is blocked on its COMPILER, not its silicon (P14,
+2026-09-15).** DFC 5.4.0 parses a trivial 4-node model on `hailo10h` and
+`hailo15h` but fails every real one -- YOLO11s on a `Split` node
+(`is_null_split: channels is not in list`, which every YOLOv8/11 C2f
+block has), YOLO-World and OWLv2 on a graph toposort. Hailo's own v5.1.0
+Overview diagram says "Future support (for Hailo-10H)". **Order the 8L**;
+the 10H stays a later option pending an older DFC 5.x or a Hailo ticket.
+NOTE the two compiler lines are DISJOINT: 3.34.0 rejects `hailo10h`,
+5.4.0 rejects `hailo8l`, so both wheels stay in S3 and `ec2.sh` picks by
+arch. And 5.4.0 needs Python **3.10 only** (it requires torch==2.9.1);
+the v5.1/5.2 docs saying 3.8/3.9/3.10 are stale.
+
+**Superseded, kept for the shape of the mistake: the Hailo-10H** (~$130,
 on-module memory, built for transformers) is the only Pi-compatible part
 that could run the attention models the 8-series cannot -- but **DFC
 3.34.0 cannot target it at all** ("Please use Dataflow Compiler v5.x"),

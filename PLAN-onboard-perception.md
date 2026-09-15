@@ -5882,6 +5882,77 @@ blocked on the gated DFC v5.x download.
 Records in `build/yoloworld/`, tools in `tools/hailo/`. Total spend across
 P10-P13: **~$8.50**.
 
+#### P14: the 10H is blocked on its COMPILER, not its silicon -- **2026-09-15**
+
+The 10H was costed in "The Hailo-10H option" above as $60 for the model
+the 8L cannot host. Tested now, with DFC 5.4.0 (the 8L's 3.34.0 rejects
+`hailo10h` outright -- the two lines target **disjoint** hardware).
+
+| model | DFC 5.4.0 -> hailo10h |
+|---|---|
+| trivial 4-node conv | **OK** (and OK on `hailo15h`) |
+| YOLO11s | `ValueError: channels is not in list` |
+| YOLO-World | `NetworkXUnfeasible: Graph contains a cycle` |
+| OWLv2 (CLS-folded) | `NetworkXUnfeasible: Graph contains a cycle` |
+
+**The compiler runs; it cannot parse real models.** The CLI gives the
+diagnosis the Python API hides:
+
+    onnx_graph.py:6090, in is_null_split
+        axis = self.input_format.index(Dims.CHANNELS)
+    ValueError: channels is not in list
+
+That is a crash handling a **`Split`** node, which every YOLOv8/11 C2f
+block contains. A parser bug on one of the most standard detector
+families there is -- not a property of our exports, and not something a
+model change fixes.
+
+Corroborating, from Hailo's own v5.1.0 Overview page: its architecture
+diagram is labelled **"Future support (for Hailo-10H)"**.
+
+##### What was ruled out first, so it is not re-run
+
+Four rounds went into blaming the environment before the trivial-model
+control settled it:
+
+* **the model** -- YOLO-World compiles fine on 3.34.0 (P10);
+* **the arch** -- `hailo10h`, `hailo15h`, `hailo15l` fail identically;
+* **networkx** -- 2.8.8 and 3.4.2 both;
+* **system packages** -- all four Hailo lists (`python3.X-dev`,
+  `python3-tk`, `graphviz`, `libgraphviz-dev`) present, `pygraphviz`
+  built. **These were genuinely missing at first and are a real gap**
+  (`setup_host.sh` now installs them) **but they are NOT the cause**;
+* **Python version** -- 3.9 is *impossible*: 5.4.0 requires
+  `torch==2.9.1`, which has no 3.9 build. The v5.1/5.2 docs saying
+  3.8/3.9/3.10 are stale for 5.4.0; **3.10 is the only option.**
+
+**The control that settled it** was a 4-node conv ONNX. It parses. Two
+conclusions that were written down before it -- "the missing packages are
+the root cause" and "the vendor's distribution is broken, this is
+blocked" -- were both wrong, and both would have stood without it. A
+trivial-input control costs minutes and is worth running FIRST next time.
+
+##### What it does to the decision
+
+**The 10H is not a $60 upgrade that can be acted on today.** Its
+toolchain cannot compile the models it would be bought for. The 8L with
+DFC 3.34.0 compiles everything tried and delivers 45% (YOLO11s + CLIP, 93%
+box retention at the pipeline's own confidence). **Order the 8L.**
+
+Two cheap things keep the 10H alive as a later option, neither blocking:
+
+1. **An older DFC 5.x** (5.1.0 or 5.2.0, both documented) -- if 5.4.0 is a
+   regression, an earlier release may parse. `ec2.sh` picks the newest
+   5.x, so an older one needs 5.4.0 removed or an explicit pin.
+2. **A Hailo ticket** with the `is_null_split` traceback against a stock
+   YOLO11s ONNX -- a two-line reproducer on their own model family,
+   which is a far stronger report than anything about our exports.
+
+`build/owlv2/owlv2_op17_minimal_clsfold.onnx` is banked either way: the
+CLS-token `Expand` folded to a constant, verified an exact identity
+(`max |diff| 0.0` on all five outputs), which removes the one OWLv2 export
+blocker found before the compiler's own trouble eclipsed it.
+
 #### The Hailo-10H option, costed -- and it is BLOCKED on a download
 
 Asked for 2026-09-14: is there another Pi-compatible NPU offering a wider
