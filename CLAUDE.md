@@ -131,7 +131,13 @@ the original build plan phases, reordered simulation-first):
 
 ---
 
-**Session handoff, 2026-09-13: `HANDOFF-2026-09-13.md`.** Phases A-G (the
+**Session handoff, 2026-09-15: `HANDOFF-2026-09-15.md`** -- the
+hardware decision (order the Pi + Hailo-8L; the reactive tier is 45%, not
+72%), P9-P14, the corpus now at 11 labelled walks, and the AWS near-miss
+where 18 of 22 walks existed only on the laptop. Read its section 4
+before running anything on a rented box, and section 5 for what is open.
+
+**Previous handoff, 2026-09-13: `HANDOFF-2026-09-13.md`.** Phases A-G (the
 deliberation call stops blocking; odometry; distance pacing; the interval
 measured; the stand-in stops scanning; a local sighting steers), plus tier
 latency instrumentation and an observability dashboard at `/metrics`. Read
