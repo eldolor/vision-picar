@@ -2031,14 +2031,14 @@ should be checked before ordering.
 | Motor driver board | 0-30 | **Included** with the Yahboom kit -- IC unconfirmed (3.8). **Under 1.14 the recommendation is the Waveshare General Driver for Robots (~30) instead**: its **ESP32** runs the velocity PID off Linux's scheduler, which a 20-50Hz loop in CPython cannot do reliably. Verified 2026-09-06 to carry TB6612FNG, encoder inputs for 2 motors, a **9-axis IMU** (QMI8658C + AK09918), a lidar interface, current monitoring and 7-13V input taking the 3S pack directly. **It collapses the separate IMU line below.** Cost is a new Pi-to-ESP32 serial protocol, which becomes a seam under `RobotInterface` -- and 1.16 #6's fourth deadman |
 | Camera Module 3 | 30 | Any CSI camera works now; autofocus. 1.10 |
 | **Hailo-8L, M.2 module form** | 70 | The on-board detector -- 1.10, §4, and 4.9 configuration C/D. Replaced the AI Camera 2026-09-04. Briefly the 10H at 130 on 2026-09-06, reverted the same day on its measured tokens/s (4.9). **The module, not the soldered AI HAT+** -- it is the form that survives a Jetson pivot and the form the NVMe needs anyway. The AI Kit that used to bundle it is out of production, so this is a standalone module plus a carrier. 4.8 and 4.9 argued for leaving this off the first order; **1.14 reversed that the same day** -- continuous motion puts the perception tier above what the Pi's cores deliver, so it ships with the first order |
-| 2-axis pan/tilt bracket + servos | 12 | Replaces what the PiCar-X bundled. **Both axes are kept -- 1.15.3.** Bracket measures 32 x 28 x 65mm and takes a 28x28mm camera, which the Camera Module 3 fits. **Two open questions**: the Waveshare board's PWM output does **not** support MG90S/SG90-class servos (drive them from the Pi's own GPIO instead), and 1.16 #7 asks whether bearing-critical axes justify **ST3215 bus servos** with position feedback (~25 each, driven natively by that board) |
+| 2-axis bracket, **pan axis only**, **ST3215 bus servo** | 25 | **DECIDED 2026-09-16, replacing the two-SG90 row.** Buy the 2-axis bracket (32 x 28 x 65mm, takes the 28x28mm Camera Module 3) but **fit only pan** -- shim or bolt the tilt joint at a slight downward pitch. Two changes from what this row used to say, and they are separable. **(a) Drop tilt for v1**, which is 1.15.3's own recommendation: a fixed downward pitch serves the floor mask and 1.15.4's near-field blind box for free, where tilt raises `H_max` and the blind volume, makes the camera-lidar extrinsic time-varying (1.16 #4), and would be the first feature to reach hardware with no twin representation (1.16 #8). **P16 (2026-09-16) strengthens this**: the floor mask turns out to be the load-bearing crop source, and a mask wants consistent floor geometry rather than a moving horizon. Keep the bracket so tilt is recoverable when a log shows the planner reaching for it -- 1.7's rule. **(b) ST3215 rather than SG90 on the axis that survives**, closing 1.16 #7: an SG90 is open-loop, so a stalled or knocked servo makes every bearing wrong with nothing to notice, and bearing is the camera's one job (1.11). The ST3215 has position feedback, is driven natively by the Waveshare board, and needs no Pi GPIO PWM. Pan is also the axis the twin already models -- M2's depth strip is cast off the *view* heading. **Still required**: startup homing plus a plausibility check, and `tilt_deg` becomes a CONSTANT from config (the mount's real pitch, **not zero**) rather than a servo reading |
 | **3S** Li-ion pack + charger, **x2** | 70 | 1.3. **Not 2S** -- see the correction below. Two packs since 2026-09-06: the bank is off the robot, so this pack now feeds everything through two bucks, and 1.3's budget gives one pack 40-60 minutes of driving |
 | Wiring, connectors, switch, XT60 | 15 | |
 | Standoffs, M2.5/M3 hardware | 10 | For stacking decks |
 | **Hailo carrier** (M.2 HAT+, or configuration D's dual-slot board) | 20-48 | **Added 2026-09-06.** The row above buys a bare M.2 module and 4.9's own table prices configuration C as *"a standalone module plus the M.2 HAT+"* and D as *"~70 + 48"*. The note on that row even says "a standalone module plus a carrier" while pricing no carrier. **The "essential only" build as previously listed could not be assembled.** Take D's $48 board if the NVMe is wanted, ~$20 for a plain M.2 HAT+ if not |
-| **Buck converter #2, 5V/2-3A** | 8 | 1.3. The pan/tilt servos' own rail. The plan had them on the Pi's GPIO in one section and called that the textbook brownout in another |
+| Buck converter #2, 5V/2-3A | 0-8 | 1.3. Was the pan/tilt servos' own rail, because two SG90s stalling at 600-750mA on the Pi's 5V is the textbook brownout (1.16 #9). **Possibly unnecessary as of 2026-09-16**: one ST3215 driven by the Waveshare board (7-13V in) may not need a separate 5V rail at all. **Check the servo's voltage range against the board's servo output before buying this** -- it is the one line here that a part swap might have retired |
 | **Bulk electrolytic (>=470uF) + TVS, motor rail** | 2 | 1.3. Regenerative braking against a 3% input-voltage margin |
-| | **~490-518** | Was "~440" -- wrong on three counts (2026-09-06). It took the motor driver at **0** while 1.14 recommends the Waveshare board at **30**; it bought an M.2 module with no carrier; and it had no servo rail. See the totals below |
+| | **~495-531** | Was "~440" -- wrong on three counts (2026-09-06): it took the motor driver at **0** while 1.14 recommends the Waveshare board at **30**, it bought an M.2 module with no carrier, and it had no servo rail. Then **~490-518**. Now **~495-531** (2026-09-16): the servo row went 12 -> 25 (pan-only ST3215), and buck #2 went 8 -> 0-8 pending the voltage check |
 
 **Strongly recommended -- each avoids a failure already discussed here**
 
@@ -2063,12 +2063,24 @@ should be checked before ordering.
 
 | Scenario | ~USD |
 |---|---|
-| Essential only (plain M.2 carrier, no NVMe) | **~490** |
-| **+ recommended** | **~555** |
-| + NVMe and the dual-slot base (carrier becomes D's 48) | **~618** |
+| Essential only (plain M.2 carrier, no NVMe) | **~500** |
+| **+ recommended** | **~565** |
+| + NVMe and the dual-slot base (carrier becomes D's 48) | **~628** |
 | Already own a Pi 5 | subtract ~100 |
-| + ST3215 bus servos, if 1.16 #7 forces them | add ~38 |
+| **+ Hailo-10H M.2 instead of the 8L** | **add ~60** |
+| ~~+ ST3215 bus servos, if 1.16 #7 forces them~~ | **Taken, 2026-09-16** -- one pan ST3215 is in the essential row now (+13, not +38, because tilt is dropped) |
 | ~~Accelerator deferred~~ | **No longer on offer** -- 1.14 item 2 |
+
+**Accelerator, 2026-09-16.** The 8L row prices the measured-cheapest build.
+P16 measured the 10H preserving YOLO-World's embedding head where the 8L
+destroys it (22% vs 5%), and the 8L's limit is architectural rather than
+numeric -- so the 10H is what keeps open-vocabulary models on the table at
+all. It buys about **one point of tier recall today** (49% vs 49%, because
+the floor mask absorbs the damage), so it is a headroom purchase, not a
+performance one. **The 8L row's "reverted on its measured tokens/s" reason
+is void**: tokens/s bounds on-device LLM/VLM, which this robot does not do
+-- the deliberation tier is a cloud call and 4.9's own 5.89 tok/s says it
+should stay one.
 
 **Recomputed 2026-09-06, and the old totals under-read by ~8%.** The previous
 440 / 515 / 598 summed correctly *only* by taking the motor driver at $0 and the
