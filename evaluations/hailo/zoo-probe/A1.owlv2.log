@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "/local/shared_with_docker/cw/tools/hailo/compile_owlv2.py", line 51, in <module>
+    from tools.hailo.export_owlv2_onnx import HEADS, OPSETS, OUT_NAMES, onnx_name
+ModuleNotFoundError: No module named 'tools.hailo.export_owlv2_onnx'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/usr/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/local/shared_with_docker/cw/tools/hailo/compile_owlv2.py", line 54, in <module>
+    from tools.hailo.export_owlv2_onnx import HEADS, OPSETS, OUT_NAMES, onnx_name
+ModuleNotFoundError: No module named 'tools.hailo.export_owlv2_onnx'

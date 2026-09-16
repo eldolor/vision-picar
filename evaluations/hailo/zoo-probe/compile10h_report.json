@@ -1,0 +1,40 @@
+{
+ "model": "yolo-world",
+ "arch": "hailo10h",
+ "onnx": "yoloworld-vocab32.onnx",
+ "dfc": "5.4.0",
+ "attempts": [
+  {
+   "variant": "yoloworld-hailo10h",
+   "onnx": "yoloworld-vocab32.onnx",
+   "arch": "hailo10h",
+   "model_script_extra": "",
+   "stages": {
+    "translate": {
+     "ok": true,
+     "seconds": 5.4
+    },
+    "optimize": {
+     "ok": true,
+     "seconds": 62.2
+    },
+    "compile": {
+     "ok": true,
+     "seconds": 844.4
+    }
+   },
+   "end_node_names": [
+    "/model.22/cv2.0/cv2.0.2/Conv",
+    "/model.22/cv2.1/cv2.1.2/Conv",
+    "/model.22/cv2.2/cv2.2.2/Conv",
+    "/model.22/cv3.0/cv3.0.2/Conv",
+    "/model.22/cv3.1/cv3.1.2/Conv",
+    "/model.22/cv3.2/cv3.2.2/Conv"
+   ],
+   "hef": {
+    "path": "build/yoloworld/yoloworld-hailo10h.hef",
+    "bytes": 11902976
+   }
+  }
+ ]
+}

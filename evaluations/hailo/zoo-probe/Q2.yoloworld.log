@@ -1,0 +1,104 @@
+[info] No GPU chosen, selecting least used GPU. To select GPU explicitly please use CUDA_VISIBLE_DEVICES environment variable.
+[info] Selected GPU: 0
+/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/io/image.py:14: UserWarning: Failed to load image Python extension: 'Could not load this library: /local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/image.so'If you don't plan on using image functionality from `torchvision.io`, you can ignore this warning. Otherwise, there might be something wrong with your environment. Did you have `libjpeg` or `libpng` installed before building `torchvision` from source?
+  warn(
+[info] Translation started on ONNX model yoloworld-vocab32
+[info] Restored ONNX model yoloworld-vocab32 (completion time: 00:00:00.25)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:01.30)
+[info] Simplified ONNX model for a parsing retry attempt (completion time: 00:00:04.36)
+[info] Saved simplified ONNX to: build/yoloworld/yoloworld-vocab32.sim.onnx, will be used for parsing retry.
+[info] Start nodes mapped from original model: 'images': 'yoloworld-vocab32/input_layer1'.
+[info] End nodes mapped from original model: '/model.22/cv2.0/cv2.0.2/Conv', '/model.22/cv2.1/cv2.1.2/Conv', '/model.22/cv2.2/cv2.2.2/Conv', '/model.22/cv3.0/cv3.0.2/Conv', '/model.22/cv3.1/cv3.1.2/Conv', '/model.22/cv3.2/cv3.2.2/Conv'.
+[info] Translation completed on ONNX model yoloworld-vocab32 (completion time: 00:00:05.46)
+[info] Hailo HW architecture: hailo10h
+promoting 3 embedding layers to a16_w8_a16: ['yoloworld-vocab32/conv46', 'yoloworld-vocab32/conv59', 'yoloworld-vocab32/conv71']
+model script:
+yoloworld_input_norm = normalization([0.0, 0.0, 0.0], [255.0, 255.0, 255.0])
+model_optimization_flavor(optimization_level=2)
+quantization_param(yoloworld-vocab32/conv46, precision_mode=a16_w8_a16)
+quantization_param(yoloworld-vocab32/conv59, precision_mode=a16_w8_a16)
+quantization_param(yoloworld-vocab32/conv71, precision_mode=a16_w8_a16)
+
+[info] Loading model script commands to yoloworld-vocab32 from string
+optimizing on 1024 calibration frames...
+[info] Starting Model Optimization
+[info] Model received quantization params from the hn
+[info] Notice: For optimal performance, if your model has more than 10M parameters, it is recommended to set the compression level to 4. (Current model has 12.47M parameters.)
+[info] Notice: For optimal accuracy with compressed models, it is recommended to set the optimization level to 4.
+[info] MatmulDecompose skipped
+[info] Starting Mixed Precision
+[info] Model Optimization Algorithm Mixed Precision is done (completion time is 00:00:00.81)
+[info] LayerNorm Decomposition skipped
+[info] Starting Statistics Collector
+[info] Using dataset with 64 entries for calibration
+Calibration:   0%|          | 0/64 [00:00<?, ?entries/s]Calibration:  12%|█▎        | 8/64 [00:26<03:02,  3.26s/entries]Calibration:  25%|██▌       | 16/64 [00:26<01:05,  1.36s/entries]Calibration:  38%|███▊      | 24/64 [00:26<00:30,  1.32entries/s]Calibration:  50%|█████     | 32/64 [00:26<00:15,  2.13entries/s]Calibration:  62%|██████▎   | 40/64 [00:27<00:07,  3.20entries/s]Calibration:  75%|███████▌  | 48/64 [00:27<00:03,  4.59entries/s]Calibration:  88%|████████▊ | 56/64 [00:27<00:01,  6.34entries/s]Calibration: 100%|██████████| 64/64 [00:27<00:00,  8.43entries/s]Calibration: 100%|██████████| 64/64 [00:27<00:00,  8.43entries/s]Calibration: 100%|██████████| 64/64 [00:27<00:00,  2.29entries/s]
+[info] Model Optimization Algorithm Statistics Collector is done (completion time is 00:00:30.00)
+[info] Using dataset with 64 entries for calibration
+Calibration:   0%|          | 0/64 [00:00<?, ?entries/s]Calibration:  12%|█▎        | 8/64 [00:24<02:52,  3.09s/entries]Calibration:  25%|██▌       | 16/64 [00:24<01:01,  1.29s/entries]Calibration:  38%|███▊      | 24/64 [00:25<00:28,  1.40entries/s]Calibration:  50%|█████     | 32/64 [00:25<00:14,  2.24entries/s]Calibration:  62%|██████▎   | 40/64 [00:25<00:07,  3.36entries/s]Calibration:  75%|███████▌  | 48/64 [00:26<00:03,  4.82entries/s]Calibration:  88%|████████▊ | 56/64 [00:26<00:01,  6.62entries/s]Calibration: 100%|██████████| 64/64 [00:26<00:00,  8.83entries/s]Calibration: 100%|██████████| 64/64 [00:26<00:00,  8.83entries/s]Calibration: 100%|██████████| 64/64 [00:26<00:00,  2.41entries/s]
+[info] Starting Fix zp_comp Encoding
+[info] Model Optimization Algorithm Fix zp_comp Encoding is done (completion time is 00:00:00.00)
+[info] Matmul Equalization skipped
+[info] Starting MatmulDecomposeFix
+[info] Model Optimization Algorithm MatmulDecomposeFix is done (completion time is 00:00:00.00)
+[info] Starting Translate Parameters
+Create HW Params:   0%|          | 0/69 [00:00<?, ?Components/s]Create HW Params:   4%|▍         | 3/69 [00:00<00:04, 16.31Components/s]Create HW Params:   9%|▊         | 6/69 [00:00<00:04, 14.76Components/s]Create HW Params:  13%|█▎        | 9/69 [00:00<00:03, 17.82Components/s]Create HW Params:  16%|█▌        | 11/69 [00:00<00:04, 13.99Components/s]Create HW Params:  20%|██        | 14/69 [00:00<00:03, 16.61Components/s]Create HW Params:  23%|██▎       | 16/69 [00:01<00:03, 14.53Components/s]Create HW Params:  26%|██▌       | 18/69 [00:01<00:04, 12.42Components/s]Create HW Params:  30%|███       | 21/69 [00:01<00:03, 14.96Components/s]Create HW Params:  33%|███▎      | 23/69 [00:01<00:03, 13.40Components/s]Create HW Params:  36%|███▌      | 25/69 [00:01<00:03, 12.57Components/s]Create HW Params:  41%|████      | 28/69 [00:01<00:02, 14.89Components/s]Create HW Params:  43%|████▎     | 30/69 [00:02<00:03, 11.80Components/s]Create HW Params:  48%|████▊     | 33/69 [00:02<00:02, 13.67Components/s]Create HW Params:  51%|█████     | 35/69 [00:02<00:02, 11.52Components/s]Create HW Params:  55%|█████▌    | 38/69 [00:02<00:02, 13.46Components/s]Create HW Params:  59%|█████▉    | 41/69 [00:02<00:01, 15.39Components/s]Create HW Params:  64%|██████▍   | 44/69 [00:03<00:01, 16.91Components/s]/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/acceleras/hailo_layers/hailo_conv_a16_mercury.py:202: RuntimeWarning: invalid value encountered in log2
+  log_equation_max = np.log2(equation_max)
+/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/acceleras/hailo_layers/hailo_conv_a16_mercury.py:204: RuntimeWarning: invalid value encountered in log2
+  log_equation_min = np.log2(equation_min)
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/usr/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/local/shared_with_docker/cw/tools/hailo/quantized_detect.py", line 245, in <module>
+    raise SystemExit(main())
+  File "/local/shared_with_docker/cw/tools/hailo/quantized_detect.py", line 229, in main
+    runner.optimize(calib)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_common/states/states.py", line 16, in wrapped_func
+    return func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 2277, in optimize
+    result = self._optimize(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_common/states/states.py", line 16, in wrapped_func
+    return func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 2085, in _optimize
+    checkpoint_info = self._sdk_backend.full_quantization(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 1345, in full_quantization
+    new_checkpoint_info = self._full_acceleras_run(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 1570, in _full_acceleras_run
+    new_checkpoint_info = self._optimization_flow_runner(optimization_flow, checkpoint_info)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 2183, in _optimization_flow_runner
+    optimization_flow.run()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/tools/orchestator.py", line 239, in wrapper
+    return func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/flows/optimization_flow.py", line 404, in run
+    step_func()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/tools/subprocess_wrapper.py", line 152, in parent_wrapper
+    func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/flows/optimization_flow.py", line 423, in step1
+    self.core_quantization()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/flows/optimization_flow.py", line 513, in core_quantization
+    self._create_hw_params()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/flows/optimization_flow.py", line 568, in _create_hw_params
+    algo.run()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/algorithms/optimization_algorithm.py", line 55, in run
+    return super().run()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/algorithms/algorithm_base.py", line 160, in run
+    self._run_int()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/algorithms/create_hw_params/create_hw_params.py", line 294, in _run_int
+    comp_to_retry = self._create_hw_params_component(matching_component_group)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/algorithms/create_hw_params/create_hw_params.py", line 100, in _create_hw_params_component
+    layer.create_hw_params(layer_clip_cfg, self.optimization_target, hw_shifts=hw_shifts)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/acceleras/hailo_layers/hailo_conv_a16_mercury.py", line 178, in create_hw_params
+    self.conv_high_sub_layer.elwa_op.create_hw_params()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/acceleras/atomic_ops/element_wise_add_op.py", line 65, in create_hw_params
+    self.elwa_feed_repeat = self._compute_feed_repeat()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/acceleras/atomic_ops/element_wise_add_op.py", line 119, in _compute_feed_repeat
+    _, feed_repeat_elwa = int_smallnum_factorize(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/acceleras/utils/opt_utils.py", line 76, in int_smallnum_factorize
+    return BaseDecompositionElement.int_smallnum_factorize(target, bits, maxsmallnum)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/acceleras/lossy_elements/quant_element.py", line 234, in int_smallnum_factorize
+    int_fac, smallnum = cls.a_b_factorize(np.abs(target), 2 ** (bits - 1) - 1, maxsmallnum)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/acceleras/lossy_elements/quant_element.py", line 248, in a_b_factorize
+    b_fac = np.arange(max(np.floor(target / max_a), 1), max_b + 1)
+ValueError: arange: cannot compute length
+                                                                         

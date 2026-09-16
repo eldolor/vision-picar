@@ -138,6 +138,75 @@ class NullDetector:
         return ()
 
 
+class ReplayDetector:
+    """A `Detector` whose proposals were recorded by another run.
+
+    The point is to measure what QUANTIZATION costs the TIER, not just the
+    detector. P16 phase 2 measured a Hailo-10H's YOLO-World at the detector
+    level -- 99% proposal agreement at 0.5 confidence, 22% class-score
+    recall against fp32's 34% -- and those numbers cannot say what the
+    detector -> crops -> CLIP -> match tier is worth, because CLIP runs in
+    fp32 on the Pi's CPU either way. Multiplying a retention percentage by
+    P9's end-to-end 72% would produce a figure that looks measured and is
+    not.
+
+    So the recorded boxes go through the REAL pipeline, scored by the real
+    `control/perception_eval.py` against each walk's adjudicated
+    `labels.json`. `Detector` is a Protocol precisely so "a fake in tests
+    and a HEF later" can drive it; a HEF's recorded output is that seam.
+
+    **Keyed by the SHA1 of the image bytes**, not by a frame name. The
+    pipeline hands a detector bytes and nothing else, so hashing is what
+    lets this drop in without the scorer's own loop having to know it is
+    replaying. It also fails loudly rather than silently: an image the
+    detections file never saw raises instead of scoring as "found
+    nothing", which would quietly become a miss in the denominator.
+    """
+
+    def __init__(self, detections: str, recordings: str = "recordings"):
+        import hashlib
+        import json
+        from pathlib import Path
+
+        self.weights = f"replay:{Path(detections).name}"
+        raw = json.loads(Path(detections).read_text())
+        rec = Path(recordings)
+
+        # frame key -> boxes, seeding EVERY key the file carries so that a
+        # frame the detector said nothing about is still a scored frame.
+        by_key: dict = {key: [] for key in raw}
+        for key, dets in raw.items():
+            for d in dets:
+                # Detections files are CENTRE-based [cx, cy, w, h]; `Box`
+                # is corner-based, origin top-left. Getting this wrong does
+                # not crash, it silently crops the wrong region.
+                cx, cy, w, h = d["box"]
+                by_key[key].append(Detection(
+                    box=Box(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2),
+                    label=str(d.get("cls", "")),
+                    confidence=float(d["score"])))
+
+        self._by_hash: dict = {}
+        self.missing: list = []
+        for key, boxes in by_key.items():
+            path = rec / key
+            if not path.exists():
+                self.missing.append(key)
+                continue
+            digest = hashlib.sha1(path.read_bytes()).hexdigest()
+            self._by_hash[digest] = boxes
+
+    def detect(self, image: bytes, confidence: float) -> Sequence[Detection]:
+        import hashlib
+        digest = hashlib.sha1(image).hexdigest()
+        if digest not in self._by_hash:
+            raise KeyError(
+                "replay detector was handed an image its detections file "
+                "does not contain. Scoring it as 'found nothing' would "
+                "turn a coverage gap into a miss, so this raises instead.")
+        return [d for d in self._by_hash[digest] if d.confidence >= confidence]
+
+
 class SamProposer:
     """SAM's automatic mask generation as class-agnostic region proposals.
 
@@ -812,8 +881,18 @@ def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
     else:
         raise ValueError(f"unknown proposer {proposer!r}: none, floor or sam")
 
-    backend = (NullDetector() if detector == "none"
-               else YoloDetector(detector, device=device, imgsz=imgsz))
+    if detector == "none":
+        backend = NullDetector()
+    elif detector.startswith("replay:"):
+        # replay:<detections.json>[:<recordings dir>] -- recorded boxes
+        # from a quantized run, so the TIER can be scored rather than just
+        # the detector. Everything downstream is unchanged, which is the
+        # point: the only variable is where the proposals came from.
+        parts = detector.split(":")
+        backend = ReplayDetector(parts[1],
+                                 parts[2] if len(parts) > 2 else "recordings")
+    else:
+        backend = YoloDetector(detector, device=device, imgsz=imgsz)
     return PerceptionPipeline(
         detector=backend,
         scorer=ClipScorer(clip_model, device=device),

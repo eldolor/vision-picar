@@ -187,8 +187,24 @@ def load_walk(path: Path) -> Walk:
     return Walk(name=path.name, path=path, target=target, frames=frames)
 
 
-def load_corpus(root: Path, only: Sequence[str] = ()) -> list:
-    """Every scorable walk under `root`, in name order."""
+def load_corpus(root: Path, only: Sequence[str] = (),
+                frames_only: Optional[set] = None) -> list:
+    """Every scorable walk under `root`, in name order.
+
+    `frames_only` restricts scoring to a set of `<walk>/<frame>` keys. It
+    exists for the replay detector (P16): a recorded run covers the frames
+    that run was given, and scoring it against the whole corpus puts every
+    uncovered frame in the denominator. That is not a small distortion --
+    it read 869 unavailable of 1234 and made an 8L config outscore fp32,
+    which is the reverse of every detector-level measurement.
+
+    Filtering the CORPUS rather than teaching the scorer to discount
+    unreadable frames is deliberate: `score_at` counts a visible-but-
+    unavailable frame as a miss, that behaviour is pinned by
+    `test_unavailable_is_counted_apart_and_never_scored`, and a coverage
+    gap in one experiment is no reason to change what "miss" means for
+    every published number.
+    """
     if not root.is_dir():
         raise CorpusError(f"{root} is not a directory")
     dirs = sorted(p for p in root.iterdir()
@@ -204,7 +220,22 @@ def load_corpus(root: Path, only: Sequence[str] = ()) -> list:
         raise CorpusError(
             f"no walk under {root} has a {LABELS_FILE}. The corpus is four rig "
             "walks recorded 2026-09-07; see CLAUDE.md Stage 0 for where they live.")
-    return [load_walk(p) for p in dirs]
+    walks = [load_walk(p) for p in dirs]
+    if frames_only is not None:
+        kept = []
+        for w in walks:
+            w.frames = [f for f in w.frames
+                        if f"{w.name}/{f[0].name}" in frames_only]
+            if w.frames:
+                # `visible` is derived from `frames`, so trimming the list
+                # is all it takes -- there is nothing to keep in step.
+                kept.append(w)
+        walks = kept
+        if not walks:
+            raise CorpusError(
+                "the frame filter left no scorable frames -- the detections "
+                "file and the corpus do not overlap")
+    return walks
 
 
 def frame_dict(path: Path) -> dict:
@@ -490,6 +521,12 @@ def _add_score_args(ap) -> None:
 
     ap.add_argument("--recordings", default="recordings",
                     help="corpus root (default: recordings/)")
+    ap.add_argument("--frames-from", default=None, metavar="DETECTIONS",
+                    help="restrict scoring to the frames a detections JSON "
+                         "covers. Use it with --detector replay:<same file>: "
+                         "a recorded run covers only the frames it was "
+                         "given, and scoring the rest puts uncovered frames "
+                         "in the denominator as misses.")
     ap.add_argument("--walk", action="append", default=[],
                     help="score only this walk; repeatable")
     ap.add_argument("--vlm-max-pixels", type=int, default=None,
@@ -620,7 +657,10 @@ def cmd_score(args) -> int:
     from brain.perceive import PerceptionUnavailable
 
     root = Path(args.recordings).expanduser()
-    walks = load_corpus(root, args.walk)
+    frames_only = None
+    if getattr(args, "frames_from", None):
+        frames_only = set(json.loads(Path(args.frames_from).read_text()))
+    walks = load_corpus(root, args.walk, frames_only)
     total_frames = sum(len(w.frames) for w in walks)
     total_visible = sum(w.visible for w in walks)
     print(f"\ncorpus: {len(walks)} walk(s), {total_frames} labelled frames, "

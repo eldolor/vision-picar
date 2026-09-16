@@ -1,0 +1,50 @@
+[info] No GPU chosen, selecting least used GPU. To select GPU explicitly please use CUDA_VISIBLE_DEVICES environment variable.
+[info] Selected GPU: 0
+/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/io/image.py:14: UserWarning: Failed to load image Python extension: 'Could not load this library: /local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/image.so'If you don't plan on using image functionality from `torchvision.io`, you can ignore this warning. Otherwise, there might be something wrong with your environment. Did you have `libjpeg` or `libpng` installed before building `torchvision` from source?
+  warn(
+[36m<Hailo Model Zoo INFO> Start run for network clip_resnet_50_image_encoder ...[0m
+[36m<Hailo Model Zoo INFO> Initializing the hailo10h runner...[0m
+clip_resnet_50.zip:   0%|          | 0.00/87.2M [00:00<?, ?B/s]clip_resnet_50.zip:   0%|          | 64.0k/87.2M [00:00<04:02, 378kB/s]clip_resnet_50.zip:   0%|          | 352k/87.2M [00:00<01:07, 1.36MB/s]clip_resnet_50.zip:   1%|          | 776k/87.2M [00:00<00:41, 2.19MB/s]clip_resnet_50.zip:   3%|▎         | 3.03M/87.2M [00:00<00:10, 8.28MB/s]clip_resnet_50.zip:   7%|▋         | 6.23M/87.2M [00:00<00:05, 14.3MB/s]clip_resnet_50.zip:  13%|█▎        | 11.4M/87.2M [00:00<00:03, 25.5MB/s]clip_resnet_50.zip:  18%|█▊        | 15.9M/87.2M [00:00<00:02, 30.2MB/s]clip_resnet_50.zip:  23%|██▎       | 19.8M/87.2M [00:01<00:02, 32.2MB/s]clip_resnet_50.zip:  28%|██▊       | 24.1M/87.2M [00:01<00:01, 34.8MB/s]clip_resnet_50.zip:  32%|███▏      | 28.0M/87.2M [00:01<00:01, 36.2MB/s]clip_resnet_50.zip:  37%|███▋      | 31.9M/87.2M [00:01<00:01, 36.9MB/s]clip_resnet_50.zip:  41%|████      | 35.7M/87.2M [00:01<00:01, 36.9MB/s]clip_resnet_50.zip:  45%|████▌     | 39.7M/87.2M [00:01<00:01, 35.7MB/s]clip_resnet_50.zip:  51%|█████▏    | 44.8M/87.2M [00:01<00:01, 36.9MB/s]clip_resnet_50.zip:  57%|█████▋    | 49.4M/87.2M [00:01<00:00, 39.7MB/s]clip_resnet_50.zip:  62%|██████▏   | 53.9M/87.2M [00:01<00:00, 40.2MB/s]clip_resnet_50.zip:  66%|██████▌   | 57.8M/87.2M [00:02<00:00, 36.8MB/s]clip_resnet_50.zip:  72%|███████▏  | 62.5M/87.2M [00:02<00:00, 40.3MB/s]clip_resnet_50.zip:  75%|███████▌  | 65.5M/87.2M [00:02<00:00, 33.0MB/s]clip_resnet_50.zip:  81%|████████  | 70.7M/87.2M [00:02<00:00, 38.5MB/s]clip_resnet_50.zip:  85%|████████▌ | 74.5M/87.2M [00:02<00:00, 35.0MB/s]clip_resnet_50.zip:  91%|█████████▏| 79.8M/87.2M [00:02<00:00, 38.8MB/s]clip_resnet_50.zip:  97%|█████████▋| 84.7M/87.2M [00:02<00:00, 37.7MB/s]clip_resnet_50.zip: 100%|██████████| 87.2M/87.2M [00:02<00:00, 32.1MB/s]
+[info] Translation started on ONNX model clip_resnet_50_image_encoder
+[info] Restored ONNX model clip_resnet_50_image_encoder (completion time: 00:00:00.76)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:02.96)
+[info] Start nodes mapped from original model: 'onnx::Cast_0': 'clip_resnet_50_image_encoder/input_layer1'.
+[info] End nodes mapped from original model: 'Squeeze_241'.
+[info] Translation completed on ONNX model clip_resnet_50_image_encoder (completion time: 00:00:04.29)
+[info] Hailo HW architecture: hailo10h
+[info] Saved HAR to: /local/shared_with_docker/cw/clip_resnet_50_image_encoder.har
+[36m<Hailo Model Zoo INFO> Preparing calibration data...[0m
+Traceback (most recent call last):
+  File "/local/workspace/hailo_virtualenv/bin/hailomz", line 10, in <module>
+    sys.exit(main())
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main.py", line 122, in main
+    run(args)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main.py", line 111, in run
+    return handlers[args.command](args)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main_driver.py", line 256, in compile
+    _ensure_optimized(runner, logger, args, network_info)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main_driver.py", line 89, in _ensure_optimized
+    calib_feed_callback = prepare_calibration_data(
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/core/main_utils.py", line 313, in prepare_calibration_data
+    calib_feed_callback = make_calibset_callback(network_info, preproc_callback, calib_path)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/core/main_utils.py", line 274, in make_calibset_callback
+    data_feed_cb = _make_dataset_callback(network_info, preproc_callback, calib_path, dataset_name)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/core/main_utils.py", line 251, in _make_dataset_callback
+    return _make_data_feed_callback(
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/core/main_utils.py", line 230, in _make_data_feed_callback
+    raise FileNotFoundError(f"Couldn't find dataset in {data_path}. Please refer to docs/DATA.rst.")
+FileNotFoundError: Couldn't find dataset in /local/shared_with_docker/.hailomz/models_files/coco/2025-07-02/coco_clip_calib2017.tfrecord. Please refer to docs/DATA.rst.
+[info] No GPU chosen, selecting least used GPU. To select GPU explicitly please use CUDA_VISIBLE_DEVICES environment variable.
+[info] Selected GPU: 0
+/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/io/image.py:14: UserWarning: Failed to load image Python extension: 'Could not load this library: /local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/image.so'If you don't plan on using image functionality from `torchvision.io`, you can ignore this warning. Otherwise, there might be something wrong with your environment. Did you have `libjpeg` or `libpng` installed before building `torchvision` from source?
+  warn(
+[36m<Hailo Model Zoo INFO> Start run for network clip_resnet_50_image_encoder ...[0m
+[36m<Hailo Model Zoo INFO> Initializing the runner...[0m
+[info] Translation started on ONNX model clip_resnet_50_image_encoder
+[info] Restored ONNX model clip_resnet_50_image_encoder (completion time: 00:00:00.77)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:02.98)
+[info] Start nodes mapped from original model: 'onnx::Cast_0': 'clip_resnet_50_image_encoder/input_layer1'.
+[info] End nodes mapped from original model: 'Squeeze_241'.
+[info] Translation completed on ONNX model clip_resnet_50_image_encoder (completion time: 00:00:04.29)
+[info] Hailo HW architecture: hailo10h
+[info] Saved HAR to: /local/shared_with_docker/cw/clip_resnet_50_image_encoder.har

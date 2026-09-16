@@ -215,12 +215,25 @@ rejects `hailo10h`, 5.4.0 rejects `hailo8l`, so both wheels stay in S3
 and `ec2.sh` picks by arch. And 5.4.0 needs Python **3.10 only** (it
 requires torch==2.9.1); the v5.1/5.2 docs saying 3.8/3.9/3.10 are stale.
 
-**What this does NOT change: P12 and P13 stand.** Parse is not compile
-and compile is not quantization. YOLO-World's INT8 collapse was measured
-on a rig verified exact and is independent of P14/P15. **The open
-question, and the one worth paying for: does YOLO-World compile to a 10H
-HEF and survive quantization there?** 72% on a ~$130 part against 45% on
-a ~$70 one is the whole hardware decision, and it is UNMEASURED.
+**MEASURED 2026-09-16 (P16), and it moves the question off the
+accelerator entirely.** YOLO-World compiles to a 10H (11.9 MB HEF, 5
+contexts) and the 10H PRESERVES it: 22% detector recall against the 8L's
+5% (fp32 34%), and 99%/61% proposal agreement at 0.50/0.05 confidence
+against 69%/23%. But replayed through the REAL pipeline and scored by
+`control/perception_eval.py`, **the tier does not care**: YOLO-World +
+floor mask + CLIP reads 50% / 49% / 49% for fp32 / 10H / 8L. Turn the
+floor mask OFF and it is 20% / 13% / 3% -- the detector ordering exactly.
+**The floor mask is the load-bearing crop source and it fully rescues a
+wrecked detector**, so the 45%-vs-72% gap is worth about one point of
+recall in the shipped configuration.
+
+**Two consequences.** The next question is not "8L or 10H" but **does
+SegFormer-B0 survive INT8** -- the mask has never been quantized, and it
+is a third model against the Pi's four cores (handoff open item 1, now
+first-order). And the tier has a real defect: at the shipped
+`max_crops` of 8 the SAME data gives the 8L 30% against fp32's 25%,
+because crops are ranked by AREA and more proposals crowd a small target
+out of a fixed cap -- **a better detector can make the tier worse.**
 
 **The Hailo-10H** (~$130, on-module memory, built for transformers) is
 the only Pi-compatible part that could run the attention models the
@@ -420,6 +433,11 @@ vision-picar/
 │   │                          environment BY HAND, and P15 traced
 │   │                          P14's wrong conclusion to exactly that
 │   │                          -- prefer zoo_probe.sh's container
+│   ├── phase2_matrix.sh      P16 -- the tier on a 10H: YOLO-World
+│   │   zoo_compile_matrix.sh  QAT, then OWLv2/CLIP/SegFormer
+│   │                          allocation. Accuracy rows and
+│   │                          allocation rows are kept apart on
+│   │                          purpose: a HEF is not a recall number
 │   ├── zoo_probe.sh          P15 -- the vendor's AI Software Suite
 │   │   zoo_matrix.sh          container, driven over SSM: does DFC
 │   │   zoo_rawparse.py        5.x parse real models on hailo10h, or

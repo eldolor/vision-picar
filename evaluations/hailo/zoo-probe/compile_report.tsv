@@ -1,0 +1,3 @@
+row	model	arch	status	hef_mb	detail
+E1	yolov11s	hailo10h	FAIL	-	    raise core._status_to_exception(e) from None  # pylint: disable=protected-access
+E2	yolo_world_v2s	hailo10h	FAIL	-	    raise e.ag_error_metadata.to_exception(e)

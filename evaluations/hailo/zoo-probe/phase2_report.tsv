@@ -1,0 +1,6 @@
+row	kind	model	config	status	detail
+Q1	accuracy	yolo-world	L2	OK	detections=13052
+Q2	accuracy	yolo-world	L2 +a16_w8_a16	FAIL	Traceback (most recent call last):
+A1	allocation	owlv2	hailo10h	FAIL	ModuleNotFoundError: No module named 'tools.hailo.export_owlv2_onnx'
+A2	parse-only	clip_resnet_50_image_encoder	hailo10h	PARSED	compile failed:     data_feed_cb = _make_dataset_callback(network_info, preproc_callback, calib_path, dataset_name)
+A3	allocation	segformer_b0_bn	hailo10h	FAIL	    raise Exception(f"Encountered error during parsing: {err}") from None

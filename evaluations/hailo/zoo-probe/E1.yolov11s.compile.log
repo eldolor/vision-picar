@@ -1,0 +1,83 @@
+[info] First time Hailo Dataflow Compiler is being used. Checking system requirements... (this might take a few seconds)
+[[1;36mInfo[0m] No GPU connected.
+[info] No GPU chosen and no suitable GPU found, falling back to CPU.
+/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/io/image.py:14: UserWarning: Failed to load image Python extension: 'Could not load this library: /local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/image.so'If you don't plan on using image functionality from `torchvision.io`, you can ignore this warning. Otherwise, there might be something wrong with your environment. Did you have `libjpeg` or `libpng` installed before building `torchvision` from source?
+  warn(
+[36m<Hailo Model Zoo INFO> Start run for network yolov11s ...[0m
+[36m<Hailo Model Zoo INFO> Initializing the hailo10h runner...[0m
+yolo11s.zip:   0%|          | 0.00/31.0M [00:00<?, ?B/s]yolo11s.zip:   0%|          | 52.0k/31.0M [00:00<01:44, 310kB/s]yolo11s.zip:   1%|          | 256k/31.0M [00:00<00:38, 841kB/s] yolo11s.zip:   4%|▎         | 1.11M/31.0M [00:00<00:10, 2.85MB/s]yolo11s.zip:  15%|█▍        | 4.50M/31.0M [00:00<00:02, 9.85MB/s]yolo11s.zip:  29%|██▉       | 9.07M/31.0M [00:00<00:01, 16.3MB/s]yolo11s.zip:  45%|████▍     | 13.8M/31.0M [00:01<00:00, 20.6MB/s]yolo11s.zip:  60%|██████    | 18.6M/31.0M [00:01<00:00, 23.4MB/s]yolo11s.zip:  76%|███████▌  | 23.4M/31.0M [00:01<00:00, 25.2MB/s]yolo11s.zip:  92%|█████████▏| 28.4M/31.0M [00:01<00:00, 26.8MB/s]yolo11s.zip: 100%|██████████| 31.0M/31.0M [00:01<00:00, 19.8MB/s]
+[info] Translation started on ONNX model yolov11s
+[info] Restored ONNX model yolov11s (completion time: 00:00:00.19)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:00.68)
+[info] NMS structure of yolov8 (or equivalent architecture) was detected.
+[info] Start nodes mapped from original model: 'images': 'yolov11s/input_layer1'.
+[info] End nodes mapped from original model: '/model.23/cv2.0/cv2.0.2/Conv', '/model.23/cv3.0/cv3.0.2/Conv', '/model.23/cv2.1/cv2.1.2/Conv', '/model.23/cv3.1/cv3.1.2/Conv', '/model.23/cv2.2/cv2.2.2/Conv', '/model.23/cv3.2/cv3.2.2/Conv'.
+[info] Translation completed on ONNX model yolov11s (completion time: 00:00:01.77)
+[info] Hailo HW architecture: hailo10h
+[info] Appending model script commands to yolov11s from string
+[info] Added nms postprocess command to model script.
+[info] Saved HAR to: /local/workspace/yolov11s.har
+[36m<Hailo Model Zoo INFO> Preparing calibration data...[0m
+[info] Loading model script commands to yolov11s from /local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/cfg/alls/generic/yolov11s.alls
+[info] Starting Model Optimization
+[warning] Reducing optimization level to 0 (the accuracy won't be optimized and compression won't be used) because there's less data than the recommended amount (1024), and there's no available GPU
+[warning] Running model optimization with zero level of optimization is not recommended for production use and might lead to suboptimal accuracy results
+[info] Model received quantization params from the hn
+[info] MatmulDecompose skipped
+[info] Starting Mixed Precision
+[info] Model Optimization Algorithm Mixed Precision is done (completion time is 00:00:00.55)
+Traceback (most recent call last):
+  File "/local/workspace/hailo_virtualenv/bin/hailomz", line 10, in <module>
+    sys.exit(main())
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main.py", line 122, in main
+    run(args)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main.py", line 111, in run
+    return handlers[args.command](args)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main_driver.py", line 256, in compile
+    _ensure_optimized(runner, logger, args, network_info)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main_driver.py", line 92, in _ensure_optimized
+    optimize_model(
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/core/main_utils.py", line 356, in optimize_model
+    runner.optimize(calib_feed_callback)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_common/states/states.py", line 16, in wrapped_func
+    return func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 2277, in optimize
+    result = self._optimize(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_common/states/states.py", line 16, in wrapped_func
+    return func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 2085, in _optimize
+    checkpoint_info = self._sdk_backend.full_quantization(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 1345, in full_quantization
+    new_checkpoint_info = self._full_acceleras_run(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 1570, in _full_acceleras_run
+    new_checkpoint_info = self._optimization_flow_runner(optimization_flow, checkpoint_info)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 2183, in _optimization_flow_runner
+    optimization_flow.run()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/tools/orchestator.py", line 239, in wrapper
+    return func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/flows/optimization_flow.py", line 404, in run
+    step_func()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/tools/subprocess_wrapper.py", line 152, in parent_wrapper
+    func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/flows/optimization_flow.py", line 420, in step1
+    self.pre_quantization_structural()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/flows/optimization_flow.py", line 473, in pre_quantization_structural
+    self._conv_decomposition()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/flows/optimization_flow.py", line 762, in _conv_decomposition
+    algo = ConvDecomposition(self.model, self._parsed_config, logging.DEBUG, self.dataset)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/flows/optimization_flow.py", line 237, in dataset
+    if self._is_nv12_input_format_with_rgb_calibset():
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/flows/optimization_flow.py", line 219, in _is_nv12_input_format_with_rgb_calibset
+    first_image = next(iter(self.dataset.as_numpy_iterator()))[0]
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/data/ops/dataset_ops.py", line 4788, in __next__
+    return nest.map_structure(to_numpy, next(self._iterator))
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/data/ops/iterator_ops.py", line 826, in __next__
+    return self._next_internal()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/data/ops/iterator_ops.py", line 776, in _next_internal
+    ret = gen_dataset_ops.iterator_get_next(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/ops/gen_dataset_ops.py", line 3086, in iterator_get_next
+    _ops.raise_from_not_ok_status(e, name)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/framework/ops.py", line 6006, in raise_from_not_ok_status
+    raise core._status_to_exception(e) from None  # pylint: disable=protected-access
+tensorflow.python.framework.errors_impl.InvalidArgumentError: {{function_node __wrapped__IteratorGetNext_output_types_3_device_/job:localhost/replica:0/task:0/device:CPU:0}} Error in user-defined function passed to MapDataset:5 transformation with iterator: Iterator::Root::Prefetch::Map::ParallelMapV2: Unknown image file format. One of JPEG, PNG, GIF, BMP required.
+	 [[{{node DecodeJpeg}}]] [Op:IteratorGetNext] name: 

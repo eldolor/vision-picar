@@ -1,0 +1,107 @@
+[info] No GPU chosen and no suitable GPU found, falling back to CPU.
+/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/io/image.py:14: UserWarning: Failed to load image Python extension: 'Could not load this library: /local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/image.so'If you don't plan on using image functionality from `torchvision.io`, you can ignore this warning. Otherwise, there might be something wrong with your environment. Did you have `libjpeg` or `libpng` installed before building `torchvision` from source?
+  warn(
+[36m<Hailo Model Zoo INFO> Start run for network yolo_world_v2s ...[0m
+[36m<Hailo Model Zoo INFO> Initializing the hailo10h runner...[0m
+yolo_world_v2s.zip:   0%|          | 0.00/45.3M [00:00<?, ?B/s]yolo_world_v2s.zip:   0%|          | 72.0k/45.3M [00:00<01:50, 428kB/s]yolo_world_v2s.zip:   1%|          | 376k/45.3M [00:00<00:38, 1.24MB/s]yolo_world_v2s.zip:   3%|▎         | 1.53M/45.3M [00:00<00:11, 3.91MB/s]yolo_world_v2s.zip:  12%|█▏        | 5.24M/45.3M [00:00<00:03, 12.6MB/s]yolo_world_v2s.zip:  20%|██        | 9.24M/45.3M [00:00<00:02, 18.9MB/s]yolo_world_v2s.zip:  32%|███▏      | 14.6M/45.3M [00:00<00:01, 26.8MB/s]yolo_world_v2s.zip:  41%|████      | 18.5M/45.3M [00:01<00:00, 30.2MB/s]yolo_world_v2s.zip:  52%|█████▏    | 23.7M/45.3M [00:01<00:00, 34.1MB/s]yolo_world_v2s.zip:  63%|██████▎   | 28.7M/45.3M [00:01<00:00, 39.0MB/s]yolo_world_v2s.zip:  72%|███████▏  | 32.5M/45.3M [00:01<00:00, 39.3MB/s]yolo_world_v2s.zip:  80%|████████  | 36.3M/45.3M [00:01<00:00, 35.0MB/s]yolo_world_v2s.zip:  92%|█████████▏| 41.7M/45.3M [00:01<00:00, 39.5MB/s]yolo_world_v2s.zip: 100%|██████████| 45.3M/45.3M [00:01<00:00, 28.5MB/s]
+[info] Translation started on ONNX model yolo_world_v2s
+[info] Restored ONNX model yolo_world_v2s (completion time: 00:00:00.24)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:00.76)
+[info] Start nodes mapped from original model: 'input.1': 'yolo_world_v2s/input_layer1', 'x': 'yolo_world_v2s/input_layer2'.
+[info] End nodes mapped from original model: '/head_module/reg_preds.0/reg_preds.0.2/Conv', '/head_module/cls_contrasts.0/Add', '/head_module/reg_preds.1/reg_preds.1.2/Conv', '/head_module/cls_contrasts.1/Add', '/head_module/reg_preds.2/reg_preds.2.2/Conv', '/head_module/cls_contrasts.2/Add'.
+[info] Translation completed on ONNX model yolo_world_v2s (completion time: 00:00:01.75)
+[info] Hailo HW architecture: hailo10h
+[info] Saved HAR to: /local/workspace/yolo_world_v2s.har
+[36m<Hailo Model Zoo INFO> Preparing calibration data...[0m
+[info] Loading model script commands to yolo_world_v2s from /local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/cfg/alls/generic/yolo_world_v2s.alls
+[info] Starting Model Optimization
+Traceback (most recent call last):
+  File "/local/workspace/hailo_virtualenv/bin/hailomz", line 10, in <module>
+    sys.exit(main())
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main.py", line 122, in main
+    run(args)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main.py", line 111, in run
+    return handlers[args.command](args)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main_driver.py", line 256, in compile
+    _ensure_optimized(runner, logger, args, network_info)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/main_driver.py", line 92, in _ensure_optimized
+    optimize_model(
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/core/main_utils.py", line 356, in optimize_model
+    runner.optimize(calib_feed_callback)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_common/states/states.py", line 16, in wrapped_func
+    return func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 2277, in optimize
+    result = self._optimize(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_common/states/states.py", line 16, in wrapped_func
+    return func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 2085, in _optimize
+    checkpoint_info = self._sdk_backend.full_quantization(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 1345, in full_quantization
+    new_checkpoint_info = self._full_acceleras_run(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/sdk_backend.py", line 1550, in _full_acceleras_run
+    mo_config = parser.run()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/tools/mo_script_parser.py", line 86, in run
+    default_cfg = self._parse_flavor_to_default_cfg(flavors_commands)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/tools/mo_script_parser.py", line 113, in _parse_flavor_to_default_cfg
+    data_length = get_tf_dataset_length(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/acceleras/utils/tf_utils.py", line 147, in get_tf_dataset_length
+    dataset_length = convert_and_get_length(data, data_type, threshold)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/acceleras/utils/tf_utils.py", line 114, in convert_and_get_length
+    dataset, _ = data_to_dataset(data, data_type)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_model_optimization/acceleras/utils/dataset_util.py", line 274, in data_to_dataset
+    dataset = data()
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/core/main_utils.py", line 275, in <lambda>
+    return lambda: data_feed_cb().dataset
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/core/main_utils.py", line 246, in <lambda>
+    return lambda: func(*args)
+  File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/utils/data.py", line 121, in __init__
+    dataset = dataset.map(self._preproc_callback)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/data/ops/dataset_ops.py", line 2341, in map
+    return map_op._map_v2(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/data/ops/map_op.py", line 43, in _map_v2
+    return _MapDataset(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/data/ops/map_op.py", line 157, in __init__
+    self._map_func = structured_function.StructuredFunctionWrapper(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/data/ops/structured_function.py", line 265, in __init__
+    self._function = fn_factory()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/eager/polymorphic_function/polymorphic_function.py", line 1256, in get_concrete_function
+    concrete = self._get_concrete_function_garbage_collected(*args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/eager/polymorphic_function/polymorphic_function.py", line 1226, in _get_concrete_function_garbage_collected
+    self._initialize(args, kwargs, add_initializers_to=initializers)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/eager/polymorphic_function/polymorphic_function.py", line 696, in _initialize
+    self._concrete_variable_creation_fn = tracing_compilation.trace_function(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/eager/polymorphic_function/tracing_compilation.py", line 178, in trace_function
+    concrete_function = _maybe_define_function(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/eager/polymorphic_function/tracing_compilation.py", line 283, in _maybe_define_function
+    concrete_function = _create_concrete_function(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/eager/polymorphic_function/tracing_compilation.py", line 310, in _create_concrete_function
+    traced_func_graph = func_graph_module.func_graph_from_py_func(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/framework/func_graph.py", line 1060, in func_graph_from_py_func
+    func_outputs = python_func(*func_args, **func_kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/eager/polymorphic_function/polymorphic_function.py", line 599, in wrapped_fn
+    out = weak_wrapped_fn().__wrapped__(*args, **kwds)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/data/ops/structured_function.py", line 231, in wrapped_fn
+    ret = wrapper_helper(*args)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/data/ops/structured_function.py", line 161, in wrapper_helper
+    ret = autograph.tf_convert(self._func, ag_ctx)(*nested_args)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/autograph/impl/api.py", line 693, in wrapper
+    raise e.ag_error_metadata.to_exception(e)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/autograph/impl/api.py", line 690, in wrapper
+    return converted_call(f, args, kwargs, options=options)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/autograph/impl/api.py", line 439, in converted_call
+    result = converted_f(*effective_args, **kwargs)
+  File "/tmp/__autograph_generated_filepr76u4kk.py", line 21, in tf__preprocessing_fn
+    (image, image_info) = ag__.converted_call(ag__.ld(preprocessing_callback), (ag__.ld(image), ag__.ld(image_info), ag__.ld(height), ag__.ld(width)), dict(flip=ag__.ld(flip), **ag__.ld(kwargs)), fscope)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/tensorflow/python/autograph/impl/api.py", line 439, in converted_call
+    result = converted_f(*effective_args, **kwargs)
+  File "/tmp/__autograph_generated_file33fzbqa7.py", line 121, in tf__yolo_world
+    retval_ = ({f'{ag__.ld(network_name)}/input_layer1': ag__.ld(image), f'{ag__.ld(network_name)}/input_layer2': ag__.ld(image_info)['text_embeddings']}, ag__.ld(image_info))
+tensorflow.python.autograph.pyct.error_utils.MultilineMessageKeyError: in user code:
+
+    File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/core/preprocessing/preprocessing_factory.py", line 98, in preprocessing_fn  *
+        image, image_info = preprocessing_callback(image, image_info, height, width, flip=flip, **kwargs)
+    File "/local/workspace/hailo_model_zoo/hailo_model_zoo/hailo_model_zoo/core/preprocessing/detection_preprocessing.py", line 272, in yolo_world  *
+        }, image_info
+
+    KeyError: 'text_embeddings'
+

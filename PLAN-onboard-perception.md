@@ -6074,6 +6074,134 @@ Records in `evaluations/hailo/zoo-probe/`. Tools:
 `tools/hailo/zoo_probe.sh`, `zoo_matrix.sh`, `zoo_rawparse.py`. The suite
 image and the model-zoo wheel are in `s3://vision-picar-deploy-.../hailo/suite/`.
 
+#### P16: the 10H preserves YOLO-World -- and the floor mask makes it not matter -- **2026-09-15/16, $5.80**
+
+P15 removed the reason not to buy a 10H. This asked what it is worth, and
+answered a different question than the one it set out to.
+
+##### Phase 1 -- allocation
+
+Allocation is the stage that kills models on this family: P6 watched
+OWLv2 translate AND quantize on an 8L and then die there, on 73 layernorm
+and 38 softmax layers. So a HEF was the go/no-go.
+
+**YOLO-World compiles to a Hailo-10H**: 11.9 MB, 5 contexts, translate
+5.4s / optimize 62.2s / compile 844s. Same `compile_yoloworld.py`, same
+`yoloworld-vocab32.onnx`, same six Conv end nodes, same calibration array
+as P10's 8L run -- only `--arch` differs, so the 25.5 MB / 4-context 8L
+HEF is a like-for-like comparison.
+
+##### Phase 2 -- the detector, quantized
+
+A10G box, and **TensorFlow saw the GPU inside the vendor container**,
+which is the gate that makes the number readable at all: on the CPU box
+the same toolchain printed P11's warning verbatim (`Reducing optimization
+level to 0 ... no available GPU`) and skipped every accuracy pass.
+
+365 frames, all 11 labelled walks, scored against `labels.json`:
+
+| config | @0 FP | @3 FP | @16 FP |
+|---|---|---|---|
+| fp32 | 14% | **34%** | 38% |
+| **10H, QAT** | **18%** | **22%** | **22%** |
+| 8L, QAT (P13) | 1% | 2% | 2% |
+| 8L, QAT + `a16_w8_a16` (P13's best) | 3% | 5% | 5% |
+
+Proposal agreement against the same fp32 run:
+
+| confidence | 10H | 8L + a16 |
+|---|---|---|
+| 0.50 | **99%** | 69% |
+| 0.25 | **94%** | 52% |
+| 0.05 | **61%** | 23% |
+
+**The 10H retains 65% of fp32's recall where the 8L retained 15%**, and is
+near-lossless on confident boxes. P13's mechanism explains it: the head is
+a cosine similarity over a 512-d embedding, direction is what a per-tensor
+INT8 scale scrambles, and this part does not scramble it.
+
+`a16_w8_a16` could not be tested on the 10H -- it crashes **inside the
+DFC**, in `hailo_conv_a16_mercury.py` -> `a_b_factorize` ->
+`ValueError: arange: cannot compute length`. Unlike P14, that is the
+vendor's own container; and unlike P14 it should be confirmed against the
+arch's supported mode list before anyone calls it a vendor bug, because
+P13's lesson is that the DFC reports a bad precision MODE as a problem
+with the LAYER.
+
+##### Phase 3 -- the TIER, and the finding that outranks the rest
+
+A detector number cannot say what the tier is worth: the tier is detector
+-> crops -> CLIP -> match, and CLIP runs fp32 on the Pi either way.
+Multiplying a retention percentage by P9's 72% would produce a figure that
+looks measured and is not. So the recorded boxes were replayed through the
+real pipeline (`brain/perceive_lab.py`'s `ReplayDetector`, a
+`replay:<json>` detector spec) and scored by the real
+`control/perception_eval.py`.
+
+**YOLO-World + floor mask + CLIP, 195 visible frames, `P>=0.8`, 48 crops:**
+
+| config | TP | recall | precision |
+|---|---|---|---|
+| fp32 | 98 | **50%** | 99% |
+| 10H QAT | 96 | **49%** | 99% |
+| 8L QAT + a16 | 95 | **49%** | 99% |
+
+Three detections separate them. **The same three runs with the floor mask
+OFF:**
+
+| config | TP | recall |
+|---|---|---|
+| fp32 | 39 | **20%** |
+| 10H QAT | 26 | **13%** |
+| 8L QAT + a16 | 5 | **3%** |
+
+Without the mask the ordering reproduces the detector metrics exactly and
+the 8L collapses to 3%. With it, a wrecked detector and an intact one
+score the same.
+
+**So the floor mask is not an accessory to the detector. It is the load
+-bearing crop source, and it fully rescues a destroyed one.** Which means
+the 45%-vs-72% gap that drove the entire hardware decision is, in the
+shipped configuration, worth about one point of recall -- and the part
+question is much less interesting than it looked this morning.
+
+##### The crop cap is load-bearing, and it is not monotonic
+
+At the shipped `max_crops` (8 with a proposer) the SAME data gives the
+8L **30%** against fp32's **25%** -- the wrecked detector WINS. Detection
+volume is 80.4 boxes/frame fp32, 35.8 on the 10H, 12.5 on the 8L, crops
+are ranked by AREA, and a target is usually smaller than the furniture
+beside it. So more proposals crowd the target out of a fixed cap.
+
+`perceive.py` already calls area-ranking "the weak part", but the
+measurement behind that note varied the number of crop SOURCES (4 vs 8),
+not the proposal VOLUME. **A detector that gets better can make the
+shipped tier worse.** That is a defect in the tier, it is independent of
+any accelerator, and it is a candidate explanation for some of P3's
+per-walk variance.
+
+##### What this makes the next question
+
+Not "8L or 10H". **Does SegFormer-B0 survive INT8?** The mask is now the
+component the tier rests on, it has never been quantized, and if it
+degrades the way YOLO-World does on an 8L then these 49% rows are fp32
+numbers that no part can reproduce. It is also a third model per frame
+against the Pi's four cores, which is handoff open item 1 -- uncosted, and
+now first-order rather than a scheduling detail.
+
+##### Caveats, and three tables that are VOID
+
+These are 365 frames of 11 walks at one operating point, with the mask
+running fp32 on a laptop. Three earlier tier tables from this same session
+are wrong and are recorded here only so they are not quoted: a scratch
+harness that read 4%/8% (a `getattr` default silently zeroed every true
+positive, and a class filter pre-empted CLIP); a 15%/14%/18% table (869 of
+1234 frames uncovered by the detections file and counted as misses); and
+the 25%/23%/30% table above, which is the crop-cap confound. Each was
+caught by an fp32 control, which is the argument for always running one.
+
+Records in `evaluations/hailo/zoo-probe/`.
+
 #### The Hailo-10H option, costed -- the download BLOCKER is cleared (P15)
 
 Asked for 2026-09-14: is there another Pi-compatible NPU offering a wider

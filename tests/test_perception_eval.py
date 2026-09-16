@@ -599,3 +599,30 @@ def test_a_real_separation_is_reported_as_separable():
     s = recall_at_fp_budget(records, 0)
     assert s["tp"] == 3 and s["separable"] is True
     assert s["margin"] > 0.5
+
+
+def test_frames_from_restricts_the_corpus_to_a_detections_file(tmp_path):
+    """P16's replay path. A recorded detector covers the frames that run was
+    given; scoring it against the whole corpus puts every uncovered frame in
+    the denominator as a miss. That is not a small distortion -- it read 869
+    unavailable of 1234 and made a quantized config whose detector is
+    wrecked outscore fp32, which is the reverse of every detector-level
+    measurement of the same two runs."""
+    _walk_dir(tmp_path, "a-walk",
+              labels={"frame-0000.jpg": True, "frame-0001.jpg": True})
+
+    walks = perception_eval.load_corpus(tmp_path)
+    assert [len(w.frames) for w in walks] == [2]
+
+    covered = perception_eval.load_corpus(
+        tmp_path, frames_only={"a-walk/frame-0000.jpg"})
+    assert [len(w.frames) for w in covered] == [1]
+    # `visible` is derived, so trimming the frame list is the whole job.
+    assert covered[0].visible == 1
+
+
+def test_frames_from_refuses_a_filter_that_matches_nothing(tmp_path):
+    """Silently scoring zero frames would report 0% and look like a result."""
+    _walk_dir(tmp_path, "a-walk", labels={"frame-0000.jpg": True})
+    with pytest.raises(perception_eval.CorpusError, match="do not overlap"):
+        perception_eval.load_corpus(tmp_path, frames_only={"other/frame.jpg"})
