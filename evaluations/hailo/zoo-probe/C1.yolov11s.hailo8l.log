@@ -1,0 +1,5 @@
+usage: hailomz parse [-h] [--yaml YAML_PATH] [--ckpt CKPT_PATH] [--hw-arch]
+                     [--start-node-names START_NODE_NAMES [START_NODE_NAMES ...]]
+                     [--end-node-names END_NODE_NAMES [END_NODE_NAMES ...]]
+                     [model_name]
+hailomz parse: error: argument --hw-arch: invalid choice: 'hailo8l' (choose from 'hailo15h', 'hailo15m', 'hailo15l', 'hailo10h', 'hailo10p', 'hailo12l')

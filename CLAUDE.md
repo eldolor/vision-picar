@@ -131,11 +131,14 @@ the original build plan phases, reordered simulation-first):
 
 ---
 
-**Session handoff, 2026-09-15: `HANDOFF-2026-09-15.md`** -- the
-hardware decision (order the Pi + Hailo-8L; the reactive tier is 45%, not
-72%), P9-P14, the corpus now at 11 labelled walks, and the AWS near-miss
-where 18 of 22 walks existed only on the laptop. Read its section 4
-before running anything on a rented box, and section 5 for what is open.
+**Session handoff, 2026-09-15: `HANDOFF-2026-09-15.md`** -- P9-P15, the
+corpus now at 11 labelled walks, and the AWS near-miss where 18 of 22
+walks existed only on the laptop. Read its section 4 before running
+anything on a rented box, and section 5 for what is open. **Its "order
+the Pi + Hailo-8L" headline was re-opened and partly overturned the same
+day by P15**: the 8L's 45% still stands, but the 10H is no longer blocked
+and the decision now turns on one unmeasured test -- see the 10H
+paragraphs below.
 
 **Previous handoff, 2026-09-13: `HANDOFF-2026-09-13.md`.** Phases A-G (the
 deliberation call stops blocking; odometry; distance pacing; the interval
@@ -146,7 +149,11 @@ along the way.
 
 **HARDWARE DECISION, 2026-09-13: no Jetson, on cost** ($399 list /
 ~$480 street against ~$70 for a Hailo-8L M.2 + ~$30 camera, on a
-~$555-620 build). **The part is Pi + Hailo-8L.** Any text in
+~$555-620 build). **The part is a Pi plus a Hailo -- WHICH Hailo is
+re-opened as of P15 (2026-09-15): the 8L at ~$70 and 45%, or the 10H at
+~$130 and possibly 72%, pending the compile+quantization test named
+below.** The Jetson stays out either way; that half of this decision is
+unaffected. Any text in
 `PLAN-onboard-perception.md` 4.7/4.8/P7c/P7d that assumes an Orin is
 recorded but not actionable; its "DECISION 2026-09-13" section is the
 one that governs. The consequence to know before reading 4.11 or P7:
@@ -189,24 +196,39 @@ skipped. That measured the crudest possible quantization, not INT8.
 1024+ calibration frames (the corpus has 1234) on a GPU instance, ~$1.50.
 P7d's "INT8 destroys OWLv2" is a separate, properly-run result and stands.
 
-**The Hailo-10H is blocked on its COMPILER, not its silicon (P14,
-2026-09-15).** DFC 5.4.0 parses a trivial 4-node model on `hailo10h` and
-`hailo15h` but fails every real one -- YOLO11s on a `Split` node
-(`is_null_split: channels is not in list`, which every YOLOv8/11 C2f
-block has), YOLO-World and OWLv2 on a graph toposort. Hailo's own v5.1.0
-Overview diagram says "Future support (for Hailo-10H)". **Order the 8L**;
-the 10H stays a later option pending an older DFC 5.x or a Hailo ticket.
-NOTE the two compiler lines are DISJOINT: 3.34.0 rejects `hailo10h`,
-5.4.0 rejects `hailo8l`, so both wheels stay in S3 and `ec2.sh` picks by
-arch. And 5.4.0 needs Python **3.10 only** (it requires torch==2.9.1);
-the v5.1/5.2 docs saying 3.8/3.9/3.10 are stale.
+**The 10H is NOT blocked -- P14 measured our own installation, and P15
+overturned it (2026-09-15, $1.30).** P14 had concluded DFC 5.x "cannot
+parse real models". Run inside Hailo's own AI Software Suite container,
+carrying **the same DFC 5.4.0**, `hailomz parse` succeeds on yolov11s,
+yolov8s and yolo_world_v2s for `hailo10h` -- and on OUR opset-13 export,
+and on **P14's exact pre-cut graph through the raw `ClientRunner` API it
+used**. Six candidates are eliminated: the compiler, the 10H, the model
+family, YOLO11's C2PSA attention `Split`, our opset, our end-node cut.
+The only variable left is the environment we assembled around the wheel,
+which makes P14 the same failure P11 was -- an installation reported as a
+property of a part. **Use the vendor container** (`tools/hailo/zoo_probe.sh`);
+the exact root cause inside our own host is NOT established, and the
+obvious theory (a missing ONNX simplifier) was tested and is false.
+`hailo10h` is `parse`'s DEFAULT arch and 224 of the zoo's 233 networks
+declare it. NOTE the two compiler lines are still DISJOINT: 3.34.0
+rejects `hailo10h`, 5.4.0 rejects `hailo8l`, so both wheels stay in S3
+and `ec2.sh` picks by arch. And 5.4.0 needs Python **3.10 only** (it
+requires torch==2.9.1); the v5.1/5.2 docs saying 3.8/3.9/3.10 are stale.
 
-**Superseded, kept for the shape of the mistake: the Hailo-10H** (~$130,
-on-module memory, built for transformers) is the only Pi-compatible part
-that could run the attention models the 8-series cannot -- but **DFC
-3.34.0 cannot target it at all** ("Please use Dataflow Compiler v5.x"),
-and v5.x is a gated Developer Zone download. `tools/hailo/` carries over
-unchanged; the cost is a login, not engineering. The Hailo-8 buys
+**What this does NOT change: P12 and P13 stand.** Parse is not compile
+and compile is not quantization. YOLO-World's INT8 collapse was measured
+on a rig verified exact and is independent of P14/P15. **The open
+question, and the one worth paying for: does YOLO-World compile to a 10H
+HEF and survive quantization there?** 72% on a ~$130 part against 45% on
+a ~$70 one is the whole hardware decision, and it is UNMEASURED.
+
+**The Hailo-10H** (~$130, on-module memory, built for transformers) is
+the only Pi-compatible part that could run the attention models the
+8-series cannot. **DFC 3.34.0 cannot target it** ("Please use Dataflow
+Compiler v5.x") -- but v5.x is downloaded now, along with the AI Software
+Suite container and the 5.4.0 Model Zoo, all in
+`s3://vision-picar-deploy-.../hailo/`. The gate was a login, and it is
+open. The Hailo-8 buys
 nothing: same dataflow architecture, same failure on attention.
 
 **The question that test answered, kept for context: does
@@ -393,7 +415,20 @@ vision-picar/
 │   │                          three different reasons and imply three
 │   │                          different purchases
 │   ├── ec2.sh / setup_host.sh  the rented x86 box (no Mac, no ARM
-│   │                          path for the DFC) and its teardown
+│   │                          path for the DFC) and its teardown.
+│   │                          NOTE setup_host.sh builds the DFC
+│   │                          environment BY HAND, and P15 traced
+│   │                          P14's wrong conclusion to exactly that
+│   │                          -- prefer zoo_probe.sh's container
+│   ├── zoo_probe.sh          P15 -- the vendor's AI Software Suite
+│   │   zoo_matrix.sh          container, driven over SSM: does DFC
+│   │   zoo_rawparse.py        5.x parse real models on hailo10h, or
+│   │                          did we fail? Removes US from the
+│   │                          experiment one variable at a time.
+│   │                          The matrix is its own uploaded FILE
+│   │                          because the first version lived in a
+│   │                          nested heredoc and reported a harness
+│   │                          bug as a result -- the P11 hazard
 │   └── README.md             read this before running any of it
 │
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,

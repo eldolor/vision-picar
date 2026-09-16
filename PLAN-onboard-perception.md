@@ -5882,7 +5882,16 @@ blocked on the gated DFC v5.x download.
 Records in `build/yoloworld/`, tools in `tools/hailo/`. Total spend across
 P10-P13: **~$8.50**.
 
-#### P14: the 10H is blocked on its COMPILER, not its silicon -- **2026-09-15**
+#### P14: the 10H is blocked on its COMPILER, not its silicon -- **OVERTURNED 2026-09-15 by P15**
+
+> **Every conclusion in this section is wrong, and the section is kept
+> only for the shape of the mistake.** P15 ran the same DFC version
+> (5.4.0) inside Hailo's own AI Software Suite container and parsed
+> yolov11s, yolov8s and yolo_world_v2s on `hailo10h` -- and parsed OUR
+> exports too, including the exact pre-cut graph this section failed on.
+> The compiler was never the problem. **The environment we assembled
+> around the wheel was.** Read P15 instead; what follows is the record of
+> how a bad installation was written up as a property of a part.
 
 The 10H was costed in "The Hailo-10H option" above as $60 for the model
 the 8L cannot host. Tested now, with DFC 5.4.0 (the 8L's 3.34.0 rejects
@@ -5966,7 +5975,106 @@ CLS-token `Expand` folded to a constant, verified an exact identity
 (`max |diff| 0.0` on all five outputs), which removes the one OWLv2 export
 blocker found before the compiler's own trouble eclipsed it.
 
-#### The Hailo-10H option, costed -- and it is BLOCKED on a download
+#### P15: the 10H was never blocked -- P14 measured our own installation -- **2026-09-15, $1.30**
+
+P14 concluded, the same day, that DFC 5.x "runs; it cannot parse real
+models" and that the 10H was therefore not purchasable. That conclusion
+was challenged rather than accepted, and it does not survive.
+
+**Three free findings came first, before any spend.** Hailo's download
+page tags 5.1.0, 5.2.0 and 5.3.0 each with Hailo-10H / 15H / 15L, which
+contradicts the stale "Future support (for Hailo-10H)" diagram P14 leaned
+on as corroboration. The 5.4.0 Model Zoo declares `supported_hw_arch:
+[hailo15h, hailo15l, hailo10h]` on yolov11s and on **224 of its 233
+networks**. And the zoo's `parser.nodes` for yolov11s names exactly the
+six Conv end nodes we had been cutting at -- so our cut POINT was right,
+which narrowed the question rather than settling it.
+
+##### The matrix
+
+`hailomz parse` inside Hailo's AI Software Suite container
+(`hailo_ai_sw_suite_2026-08`), which carries **DFC 5.4.0 -- the same
+version P14 tested**. Parse, not compile, because parse is where P14 died
+and it needs no calibration set and no GPU, which is what made the whole
+question answerable for a dollar.
+
+| row | model | arch | ONNX | result |
+|---|---|---|---|---|
+| **A1** | yolov11s | hailo10h | Hailo's | **OK** |
+| A2 | yolov11s | hailo15h | Hailo's | OK |
+| A3 | yolov8s | hailo10h | Hailo's | OK |
+| A4 | yolo_world_v2s | hailo10h | Hailo's | OK |
+| **B1** | yolov11s | hailo10h | **ours, opset 13** | **OK** |
+| C1 | yolov11s | hailo8l | Hailo's | FAIL -- argparse, see below |
+
+Then row D, which is the load-bearing one: **P14's exact input** -- our
+hand-cut `yolo11s-body.onnx` through the raw `ClientRunner API` it used,
+not through `hailomz` -- run inside the container. **D1 OK. D2 OK**
+(`tools/hailo/zoo_rawparse.py`).
+
+##### What that eliminates
+
+Six candidates, all of them named in P14 or raised while re-opening it,
+all dead: the compiler, the 10H, the model family, YOLO11's C2PSA
+attention `Split`, our opset-13 export, and our end-node cut. The DFC
+version is identical on both sides. **The only variable left is the
+environment we built around the wheel**, which makes P14 a measurement of
+an installation reported as a property of a part -- the same failure P11
+was, where a silently-skipped optimization level was written up as INT8.
+
+`hailo10h` is `parse`'s **default** `--hw-arch`. `hailo8l` is not a valid
+choice for the 5.x line at all, which is why C1 fails at argparse: it is
+the harness control proving the matrix can report a failure, and it is
+NOT evidence about the compiler.
+
+##### What is NOT established, and was tested rather than assumed
+
+**The precise root cause inside our environment is unknown.** The DFC
+logs a "parsing retry attempt" via ONNX simplification, so the obvious
+theory was that `setup_host.sh` never installed a simplifier. **Tested,
+and false**: `onnxsim` is a hard import of `hailo_sdk_common`, so P14's
+host had it or nothing would have imported. Rather than name a third
+guess, the container's exact pins are banked for a future diff in
+`evaluations/hailo/zoo-probe/container_versions.txt` (onnx 1.17.0,
+onnxruntime 1.18.0, numpy 1.26.4, protobuf 3.20.3, networkx 2.8.8, torch
+2.9.1, Python 3.10.12). The practical answer does not need it: **use the
+vendor container**, which `tools/hailo/zoo_probe.sh` now does.
+
+##### What it does, and does not do, to the decision
+
+**Does:** the 10H is no longer blocked, and P14's "order the 8L, the 10H
+is not actionable" no longer follows from anything measured.
+
+**Does not:** parse is not compile, and compile is not quantization.
+**P12 and P13 stand untouched** -- they were measured on a rig verified
+exact (Hailo native emulation reproducing onnxruntime at corr +1.0000)
+and are independent of all of this. YOLO-World's INT8 collapse is a
+cosine similarity over a 512-d embedding meeting a per-tensor scale, and
+nothing here says the 10H handles that better. On-module memory and
+cheaper 16-bit are an argument, not a measurement.
+
+**So the open question is now worth paying for: does YOLO-World compile
+to a 10H HEF and survive quantization there?** If yes the reactive tier is
+72% on a ~$130 part rather than 45% on a ~$70 one, and that is the whole
+hardware decision.
+
+##### Process notes
+
+Two harness bugs of the reviewer's own, both caught by the C1 control or
+by reading output rather than by luck. A heredoc nested inside a
+double-quoted SSM payload had its array expansion eaten by the outer
+shell, so the first matrix ran one row and reported a FAIL that meant
+only that its output directory did not exist -- **a harness failure
+wearing a result's clothes, which is exactly the P11 hazard**; the matrix
+is now its own uploaded file (`tools/hailo/zoo_matrix.sh`). And the
+container runs as `uid=10642(hailo)`, not root, so a root-owned bind
+mount silently blocked every write.
+
+Records in `evaluations/hailo/zoo-probe/`. Tools:
+`tools/hailo/zoo_probe.sh`, `zoo_matrix.sh`, `zoo_rawparse.py`. The suite
+image and the model-zoo wheel are in `s3://vision-picar-deploy-.../hailo/suite/`.
+
+#### The Hailo-10H option, costed -- the download BLOCKER is cleared (P15)
 
 Asked for 2026-09-14: is there another Pi-compatible NPU offering a wider
 range of models? Within the Hailo family (4.9's table):

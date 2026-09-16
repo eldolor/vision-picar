@@ -1,0 +1,7 @@
+row	model	arch	onnx	status	detail
+A1	yolov11s	hailo10h	hailo	OK	[info] Saved HAR to: /local/workspace/yolov11s.har
+A2	yolov11s	hailo15h	hailo	OK	[info] Saved HAR to: /local/workspace/yolov11s.har
+A3	yolov8s	hailo10h	hailo	OK	[info] Saved HAR to: /local/workspace/yolov8s.har
+A4	yolo_world_v2s	hailo10h	hailo	OK	[info] Saved HAR to: /local/workspace/yolo_world_v2s.har
+B1	yolov11s	hailo10h	ours-op13	OK	[info] Saved HAR to: /local/workspace/yolov11s.har
+C1	yolov11s	hailo8l	hailo	FAIL	hailomz parse: error: argument --hw-arch: invalid choice: 'hailo8l' (choose from 'hailo15h', 'hailo15m', 'hailo15l', 'hailo10h', 'hailo10p', 'hailo12l')

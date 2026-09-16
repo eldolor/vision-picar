@@ -1,0 +1,21 @@
+python 3.10.12
+hailo-dataflow-compiler          5.4.0
+hailo-model-zoo                  5.4.0       /local/workspace/hailo_model_zoo/hailo_model_zoo
+hailo-tappas-core-python-binding 5.4.0
+hailort                          5.4.0
+networkx                         2.8.8
+numpy                            1.26.4
+onnx                             1.17.0
+onnx-ir                          1.0.0
+onnx-tf                          1.6.0
+onnxruntime                      1.18.0
+onnxscript                       0.5.7
+onnxsim                          0.4.36
+protobuf                         3.20.3
+pygraphviz                       1.10
+scipy                            1.12.0
+tensorflow                       2.19.1
+tensorflow-estimator             2.12.0
+tensorflow-io-gcs-filesystem     0.37.1
+tensorflow-probability           0.20.1
+torch                            2.9.1

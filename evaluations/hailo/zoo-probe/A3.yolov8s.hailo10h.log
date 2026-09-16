@@ -1,0 +1,36 @@
+[info] No GPU chosen and no suitable GPU found, falling back to CPU.
+/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/io/image.py:14: UserWarning: Failed to load image Python extension: 'Could not load this library: /local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/image.so'If you don't plan on using image functionality from `torchvision.io`, you can ignore this warning. Otherwise, there might be something wrong with your environment. Did you have `libjpeg` or `libpng` installed before building `torchvision` from source?
+  warn(
+[36m<Hailo Model Zoo INFO> Start run for network yolov8s ...[0m
+[36m<Hailo Model Zoo INFO> Initializing the runner...[0m
+yolov8s.zip:   0%|          | 0.00/36.1M [00:00<?, ?B/s]yolov8s.zip:   0%|          | 52.0k/36.1M [00:00<01:59, 316kB/s]yolov8s.zip:   1%|          | 256k/36.1M [00:00<00:43, 858kB/s] yolov8s.zip:   3%|▎         | 1.06M/36.1M [00:00<00:13, 2.77MB/s]yolov8s.zip:  12%|█▏        | 4.33M/36.1M [00:00<00:03, 9.66MB/s]yolov8s.zip:  29%|██▊       | 10.3M/36.1M [00:00<00:01, 19.6MB/s]yolov8s.zip:  45%|████▍     | 16.1M/36.1M [00:00<00:00, 29.2MB/s]yolov8s.zip:  56%|█████▌    | 20.1M/36.1M [00:01<00:00, 28.1MB/s]yolov8s.zip:  74%|███████▍  | 26.8M/36.1M [00:01<00:00, 38.0MB/s]yolov8s.zip:  87%|████████▋ | 31.5M/36.1M [00:01<00:00, 35.3MB/s]yolov8s.zip: 100%|██████████| 36.1M/36.1M [00:01<00:00, 25.9MB/s]
+[info] Translation started on ONNX model yolov8s
+[info] Restored ONNX model yolov8s (completion time: 00:00:00.22)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:00.71)
+[info] Simplified ONNX model for a parsing retry attempt (completion time: 00:00:02.27)
+[info] Saved simplified ONNX to: /local/shared_with_docker/.hailomz/models_files/ObjectDetection/Detection-COCO/yolo/yolov8s/2023-02-02/yolov8s.sim.onnx, will be used for parsing retry.
+[info] According to recommendations, retrying parsing with end node names: ['/model.22/Concat_3'].
+[info] Translation started on ONNX model yolov8s
+[info] Restored ONNX model yolov8s (completion time: 00:00:00.13)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:00.53)
+[info] Simplified ONNX model for a parsing retry attempt (completion time: 00:00:02.05)
+[info] Saved simplified ONNX to: /local/shared_with_docker/.hailomz/models_files/ObjectDetection/Detection-COCO/yolo/yolov8s/2023-02-02/yolov8s.sim.onnx, will be used for parsing retry.
+[info] NMS structure of yolov8 (or equivalent architecture) was detected.
+[info] In order to use HailoRT post-processing capabilities, these end node names should be used: /model.22/cv2.0/cv2.0.2/Conv /model.22/cv3.0/cv3.0.2/Conv /model.22/cv2.1/cv2.1.2/Conv /model.22/cv3.1/cv3.1.2/Conv /model.22/cv2.2/cv2.2.2/Conv /model.22/cv3.2/cv3.2.2/Conv.
+[info] Start nodes mapped from original model: 'images': 'yolov8s/input_layer1'.
+[info] End nodes mapped from original model: '/model.22/Concat_3'.
+[info] Translation completed on ONNX model yolov8s (completion time: 00:00:02.56)
+[info] Hailo HW architecture: hailo10h
+[info] Translation started on ONNX model yolov8s
+[info] Restored ONNX model yolov8s (completion time: 00:00:00.15)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:00.58)
+[info] Simplified ONNX model for a parsing retry attempt (completion time: 00:00:02.08)
+[info] Saved simplified ONNX to: /local/shared_with_docker/.hailomz/models_files/ObjectDetection/Detection-COCO/yolo/yolov8s/2023-02-02/yolov8s.sim.onnx, will be used for parsing retry.
+[info] NMS structure of yolov8 (or equivalent architecture) was detected.
+[info] Start nodes mapped from original model: 'images': 'yolov8s/input_layer1'.
+[info] End nodes mapped from original model: '/model.22/cv2.0/cv2.0.2/Conv', '/model.22/cv3.0/cv3.0.2/Conv', '/model.22/cv2.1/cv2.1.2/Conv', '/model.22/cv3.1/cv3.1.2/Conv', '/model.22/cv2.2/cv2.2.2/Conv', '/model.22/cv3.2/cv3.2.2/Conv'.
+[info] Translation completed on ONNX model yolov8s (completion time: 00:00:02.58)
+[info] Hailo HW architecture: hailo10h
+[info] Appending model script commands to yolov8s from string
+[info] Added nms postprocess command to model script.
+[info] Saved HAR to: /local/workspace/yolov8s.har

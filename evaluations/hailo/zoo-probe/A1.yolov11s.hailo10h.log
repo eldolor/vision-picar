@@ -1,0 +1,19 @@
+[info] First time Hailo Dataflow Compiler is being used. Checking system requirements... (this might take a few seconds)
+[[1;36mInfo[0m] No GPU connected.
+[info] No GPU chosen and no suitable GPU found, falling back to CPU.
+/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/io/image.py:14: UserWarning: Failed to load image Python extension: 'Could not load this library: /local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/image.so'If you don't plan on using image functionality from `torchvision.io`, you can ignore this warning. Otherwise, there might be something wrong with your environment. Did you have `libjpeg` or `libpng` installed before building `torchvision` from source?
+  warn(
+[36m<Hailo Model Zoo INFO> Start run for network yolov11s ...[0m
+[36m<Hailo Model Zoo INFO> Initializing the runner...[0m
+yolo11s.zip:   0%|          | 0.00/31.0M [00:00<?, ?B/s]yolo11s.zip:   0%|          | 72.0k/31.0M [00:00<01:19, 406kB/s]yolo11s.zip:   1%|          | 172k/31.0M [00:00<00:54, 596kB/s] yolo11s.zip:   2%|▏         | 512k/31.0M [00:00<00:22, 1.42MB/s]yolo11s.zip:   4%|▍         | 1.21M/31.0M [00:00<00:10, 2.99MB/s]yolo11s.zip:  13%|█▎        | 4.01M/31.0M [00:00<00:02, 9.44MB/s]yolo11s.zip:  26%|██▌       | 7.91M/31.0M [00:00<00:01, 16.4MB/s]yolo11s.zip:  42%|████▏     | 13.1M/31.0M [00:00<00:00, 23.8MB/s]yolo11s.zip:  54%|█████▍    | 16.8M/31.0M [00:01<00:00, 27.8MB/s]yolo11s.zip:  65%|██████▌   | 20.2M/31.0M [00:01<00:00, 27.8MB/s]yolo11s.zip:  82%|████████▏ | 25.5M/31.0M [00:01<00:00, 31.9MB/s]yolo11s.zip:  98%|█████████▊| 30.3M/31.0M [00:01<00:00, 36.7MB/s]yolo11s.zip: 100%|██████████| 31.0M/31.0M [00:01<00:00, 21.6MB/s]
+[info] Translation started on ONNX model yolov11s
+[info] Restored ONNX model yolov11s (completion time: 00:00:00.19)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:00.69)
+[info] NMS structure of yolov8 (or equivalent architecture) was detected.
+[info] Start nodes mapped from original model: 'images': 'yolov11s/input_layer1'.
+[info] End nodes mapped from original model: '/model.23/cv2.0/cv2.0.2/Conv', '/model.23/cv3.0/cv3.0.2/Conv', '/model.23/cv2.1/cv2.1.2/Conv', '/model.23/cv3.1/cv3.1.2/Conv', '/model.23/cv2.2/cv2.2.2/Conv', '/model.23/cv3.2/cv3.2.2/Conv'.
+[info] Translation completed on ONNX model yolov11s (completion time: 00:00:01.81)
+[info] Hailo HW architecture: hailo10h
+[info] Appending model script commands to yolov11s from string
+[info] Added nms postprocess command to model script.
+[info] Saved HAR to: /local/workspace/yolov11s.har

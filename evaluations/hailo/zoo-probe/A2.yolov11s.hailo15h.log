@@ -1,0 +1,16 @@
+[info] No GPU chosen and no suitable GPU found, falling back to CPU.
+/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/io/image.py:14: UserWarning: Failed to load image Python extension: 'Could not load this library: /local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/image.so'If you don't plan on using image functionality from `torchvision.io`, you can ignore this warning. Otherwise, there might be something wrong with your environment. Did you have `libjpeg` or `libpng` installed before building `torchvision` from source?
+  warn(
+[36m<Hailo Model Zoo INFO> Start run for network yolov11s ...[0m
+[36m<Hailo Model Zoo INFO> Initializing the runner...[0m
+[info] Translation started on ONNX model yolov11s
+[info] Restored ONNX model yolov11s (completion time: 00:00:00.19)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:00.69)
+[info] NMS structure of yolov8 (or equivalent architecture) was detected.
+[info] Start nodes mapped from original model: 'images': 'yolov11s/input_layer1'.
+[info] End nodes mapped from original model: '/model.23/cv2.0/cv2.0.2/Conv', '/model.23/cv3.0/cv3.0.2/Conv', '/model.23/cv2.1/cv2.1.2/Conv', '/model.23/cv3.1/cv3.1.2/Conv', '/model.23/cv2.2/cv2.2.2/Conv', '/model.23/cv3.2/cv3.2.2/Conv'.
+[info] Translation completed on ONNX model yolov11s (completion time: 00:00:01.51)
+[info] Hailo HW architecture: hailo15h
+[info] Appending model script commands to yolov11s from string
+[info] Added nms postprocess command to model script.
+[info] Saved HAR to: /local/workspace/yolov11s.har
