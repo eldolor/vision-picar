@@ -1,0 +1,90 @@
+{
+  "frame": "recordings/blue-bottle-20260907-142454/frame-0000.jpg",
+  "frame_size": [
+    480,
+    640
+  ],
+  "scale": [
+    3.0,
+    4.0
+  ],
+  "rows": [
+    {
+      "group": "frame",
+      "op": "JPEG decode",
+      "ms": 1.1873958457726985,
+      "rate_hz": 30,
+      "ms_per_s": 35.621875373180956,
+      "note": "every frame, before anything else can look at it"
+    },
+    {
+      "group": "frame",
+      "op": "resize -> 640 (detector)",
+      "ms": 1.429372897837311,
+      "rate_hz": 30,
+      "ms_per_s": 42.88118693511933,
+      "note": "YOLO/YOLO-World input"
+    },
+    {
+      "group": "frame",
+      "op": "resize -> 512 (segmenter)",
+      "ms": 1.8627478973940015,
+      "rate_hz": 5,
+      "ms_per_s": 9.313739486970007,
+      "note": "SegFormer input, at 2.9's 5Hz sub-rate"
+    },
+    {
+      "group": "frame-AVOIDED",
+      "op": "to float NCHW + normalise (uint8 layout avoids)",
+      "ms": 3.995666647097096,
+      "rate_hz": 30,
+      "ms_per_s": 119.86999941291288,
+      "note": "NOT in the total -- the uint8 builds put this on the chip"
+    },
+    {
+      "group": "detector-head",
+      "op": "DFL box decode (numpy)",
+      "ms": 1.5525583527050912,
+      "rate_hz": 30,
+      "ms_per_s": 46.57675058115274,
+      "note": "P10 left this on the CPU deliberately"
+    },
+    {
+      "group": "detector-head",
+      "op": "score + top-k (NMS stand-in)",
+      "ms": 0.49828540068119764,
+      "rate_hz": 30,
+      "ms_per_s": 14.94856202043593,
+      "note": "a real NMS is more; this is the floor"
+    },
+    {
+      "group": "detector-head",
+      "op": "YOLO-World text contrast (32 words, BLAS)",
+      "ms": 0.7589000044390559,
+      "rate_hz": 30,
+      "ms_per_s": 22.767000133171678,
+      "note": "only if YOLO-World is the detector; YOLO11s has none"
+    },
+    {
+      "group": "segmenter-head",
+      "op": "argmax(150) + floor membership",
+      "ms": 3.697960398858413,
+      "rate_hz": 5,
+      "ms_per_s": 18.489801994292066,
+      "note": "P18 left this on the host so the label set stays a runtime argument"
+    },
+    {
+      "group": "segmenter-head",
+      "op": "mask upsample -> frame",
+      "ms": 0.11127290199510753,
+      "rate_hz": 5,
+      "ms_per_s": 0.5563645099755377,
+      "note": "the final bilinear/nearest resize P18's export does NOT put on the part"
+    }
+  ],
+  "total_ms_per_s": 191.15528103429824,
+  "pi5_est_ms_per_s": [
+    573.4658431028947,
+    764.621124137193
+  ]
+}

@@ -2413,6 +2413,11 @@ Mainboards". Worth thirty seconds to ask.
 
 #### Retailer-verified totals, 2026-09-17 -- see `HARDWARE-BOM.md`
 
+> **The itemised two-option comparison now lives in `BOM-COMPARISON.md`**, at
+> 2026-09-17 prices. The "Part B, side by side" table earlier in this section
+> is the 2026-09-16 version and is kept as the record of what was argued then;
+> take current figures from that file.
+
 A second sourcing pass produced a full Jetson BOM with exact part numbers,
 vendor plan, bring-up order and a power budget. It is filed as
 **`HARDWARE-BOM.md`** with an editor's note; its arithmetic was re-checked
@@ -6552,6 +6557,158 @@ the 25%/23%/30% table above, which is the crop-cap confound. Each was
 caught by an fp32 control, which is the argument for always running one.
 
 Records in `evaluations/hailo/zoo-probe/`.
+
+#### The Jetson, priced against the Pi on market data -- **2026-09-17, CORRECTED**
+
+**This section first concluded "the Jetson is ~$220-300 more". That figure
+is WRONG and must not be quoted.** `BOM-COMPARISON.md`, written the same
+day in a concurrent session from retailer pages, found the error: this
+section priced the **Pi from 3.6's estimates** and the **Jetson from
+verified listings**. 3.6's Pi 5 line reads $80 against a verified $175 --
+a $95 error on the largest single line, plus $23 on the microSD. Priced
+consistently the delta collapses.
+
+| comparison | Pi all-in | Jetson all-in | delta |
+|---|---|---|---|
+| Pi at 3.6 ESTIMATES vs Jetson verified | ~$759 | ~$1,019 | ~$261 -- **invalid, mixed sources** |
+| Pi *specified* build, both verified, both with NVMe | ~$960 | ~$1,019 | **+$59** |
+| Pi *buyable* build vs Jetson, neither with NVMe | ~$858 | ~$944 | **+$86** |
+
+**The honest delta is $59-86.** 4.7 set **~$170** as the point at which the
+Jetson is worth re-opening. **$86 is well inside that**, so the
+2026-09-13 "no Jetson, on cost" decision no longer follows from cost
+alone, and this is a genuine re-opening rather than a rounding argument.
+
+##### Two availability facts that are worth more than the price
+
+1. **3.6's accelerator line cannot be bought.** It specifies the *bare*
+   Hailo-8L M.2 module, deliberately not the soldered AI HAT+. The AI Kit
+   that bundled the module is discontinued, HatDrive! Dual is sold out or
+   discontinued at both named retailers, and the one in-stock dual-slot
+   board is 2280 and fits neither carrier. **What is purchasable is the
+   $76.95 AI HAT+**, which is the form 3.6 argued against.
+2. **On the AI HAT+, the Pi path cannot have an NVMe.** The HAT consumes
+   the single PCIe lane, so the Pi boots from SD -- and 3.6 calls the NVMe
+   *"the one item that prevents losing work rather than an annoyance"*,
+   because SD cards corrupt on brownout, which is the exact failure 1.3
+   is written about. **The Jetson's M.2 slot is free.** So the NVMe
+   decision taken on 2026-09-17 is not available on the buyable Pi build,
+   and that is a safety argument rather than a convenience one.
+
+##### What the money buys, stated carefully
+
+**P17 makes the Jetson the ONLY route to OWLv2.** Four configurations
+across two input sizes and two architectures: all translate, all optimize,
+none compiles. There is no cheaper path to that model.
+
+**But the tier does not currently depend on it, and the obvious table is
+invalid.** OWLv2's **82%** is a *detector* score at a 3-false-positive
+budget; the tier's **~50%** is the *whole pipeline* at the shipped
+`P>=0.8` gate. They are different measurements on different objects and
+**must not be subtracted**. What can be said:
+
+* P16: the floor mask carries the pipeline -- 49% with it, 3% without, on
+  a detector INT8 had taken from 34% to 5%.
+* P18: that mask compiles to BOTH Hailos and survives INT8 at IoU 0.988.
+* **OWLv2 has never been run as a crop source INSIDE the tier**, only as a
+  standalone detector. Its advantage *in the pipeline* is unmeasured.
+
+**P7b also cuts against the board on its own terms**: the Orin spends
+**36 ms detecting and 229 ms resizing**, so it is host-bound on exactly
+the work C6 costs below. More GPU does not fix a preprocessing cost.
+
+##### The recommendation, changed
+
+**No longer "no Jetson, on cost" -- that argument is gone at $86.** The
+decision now rests on one unmeasured thing, and it is cheap to measure:
+**run OWLv2 as a crop source inside the tier** (`brain/perceive_lab.py`,
+off the robot, an afternoon, no hardware). If its pipeline recall beats
+49-50% by enough to matter, the Jetson is worth $86 and the NVMe it makes
+possible. If it does not, the Pi wins on power, on the 2.5W accelerator,
+and on a chassis whose software already runs.
+
+**Do not order either until that runs.** Spending $86 to reach a model
+whose in-pipeline value has never been measured is the same mistake as
+P14 -- acting on a number that was never actually taken.
+
+##### Three things the Jetson BOM settles for the Pi build regardless
+
+* **Buck #2 is confirmed unnecessary** -- `HARDWARE-BOM.md` lists both
+  bucks as not needed, verified: *"The Waveshare board powers the ST3215
+  from its own 7-13V input."* That closes 3.6's open check on that row.
+* **The ST3215 is $21.99-23.99**, confirming the pan-servo costing.
+* **The RPLidar C1 is $69**, not 3.6's $99 -- a $30 saving, subject to
+  duty and lead time.
+
+#### C6 (partial): the host budget, measured -- **2026-09-17**
+
+2.9 costs the accelerator and says so in its own table: 61% chip duty
+"before host cost". Open item 1 has said since 2026-09-15 that nobody had
+added up the host side and called it a bigger hardware-day risk than the
+accelerator choice. This is the half that can be measured off the robot.
+
+`tools/hailo/host_budget.py` times the real per-frame CPU work on a
+corpus frame and scales to a Cortex-A76. **The scaling is an assumption
+(3-4x), stated and printed as a range, not a measurement** -- hardware day
+replaces it with the board.
+
+| host work | ms/s here | Pi 5 est ms/s |
+|---|---|---|
+| JPEG decode @30Hz | 35.6 | 107-142 |
+| resize -> 640 @30Hz | 42.9 | 129-172 |
+| resize -> 512 @5Hz | 9.3 | 28-37 |
+| DFL box decode @30Hz | 46.6 | 140-186 |
+| score + top-k @30Hz | 14.9 | 45-60 |
+| YOLO-World text contrast @30Hz | 22.8 | 68-91 |
+| argmax(150) + floor membership @5Hz | 18.5 | 55-74 |
+| mask upsample @5Hz | 0.6 | 2 |
+| **TOTAL** | **191** | **573-765** |
+
+**0.57-0.76 of one core of four**, for the whole perception host side.
+
+##### Three design choices are load-bearing, and two were nearly wrong
+
+1. **The text contrast must be a BLAS gemm, not `np.einsum`.** The same
+   arithmetic measures **11.1ms as einsum and 0.65ms as a matmul -- 17x**.
+   At 30Hz that is the difference between 68-91 ms/s and **1016-1354
+   ms/s: an entire Pi core, for YOLO-World's open vocabulary.** The first
+   run of this budget used einsum and would have reported that
+   YOLO-World costs a core. It costs a rounding error. Whatever runs this
+   on the robot must use the gemm form, and that is now a requirement
+   rather than an implementation detail.
+2. **The uint8 layout is worth 0.36-0.48 of a core.** Feeding the
+   normalized layout instead puts the float conversion and mean/std on
+   the host: 120 ms/s here, **360-479 on a Pi**. Both P10's and P18's
+   builds use uint8 with `normalization()` inside the compiled graph, so
+   this is already right -- but it is a reason not to "simplify" to the
+   float path later.
+3. **Segmentation at 5Hz, not camera rate.** At 30Hz the segmenter's own
+   host work alone triples to ~370 ms/s Pi-side, and 2.9 already showed
+   the CHIP cannot take it either (108% duty).
+
+##### What is NOT in this number, and one of them could still bite
+
+Measured here: the per-frame perception work. Not measured, in rough
+order of size:
+
+* **ROS 2 in Docker, if taken.** A nav stack can be 0.5-1.5 cores on its
+  own and is by far the largest unknown left. 3.3's (b+) path assumes it.
+* **libcamera capture.** The Pi 5's ISP is hardware, but the capture path
+  is not free.
+* **The lidar at 10Hz** -- serial parsing of ~4k points/s.
+* **HailoRT's driver and PCIe DMA**, and 2.9's warning that a non-resident
+  HEF is **re-streamed over one PCIe lane at ~200ms per swap**. That is a
+  scheduling risk, not a CPU one, and it remains the single number most
+  likely to invalidate the design. It cannot be looked up.
+* `robot/server.py` and the brain: single-digit percent of a core at twin
+  poll rates, from a local run under load.
+
+**Verdict: the four cores are not the binding constraint for perception**,
+with roughly 0.6-0.8 of a core going to the tier's host side and around
+3 cores left for everything else. The risk open item 1 names is real but
+it is **ROS and HEF swap cost**, not the perception arithmetic. Re-run
+`host_budget.py` on the board itself on hardware day; it needs no
+accelerator and no network.
 
 #### P18: the floor mask runs on BOTH parts, and INT8 barely touches it -- **2026-09-17, ~$14**
 
