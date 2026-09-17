@@ -569,6 +569,14 @@ vision-picar/
 │                               arbitration, a health verdict and a rollback.
 │                               M1-M5 BUILT (2026-09-03, not deployed), M6-M12
 │                               proposed; seven need no hardware
+├── BOM-COMPARISON.md          Pi 5 + Hailo-8L vs Jetson Orin Nano Super,
+│                               like for like at 2026-09-17 prices. The
+│                               delta is ~$86 and has been stable across
+│                               four passes. Read section 4 before quoting
+│                               it: the Pi's accelerator line is the only
+│                               Hailo form still in stock, and it costs the
+│                               NVMe. **The decision is NOT made** -- P10's
+│                               ~$1 INT8 test is what makes $86 arguable
 ├── HARDWARE-BOM.md            the Jetson BOM as PRICED, 2026-09-17 -- exact
 │                               part numbers, vendor plan, bring-up order,
 │                               power budget, and the ESP32 driver board's
