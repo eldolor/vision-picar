@@ -1,0 +1,20 @@
+{
+  "model": "segformer-b0-ade",
+  "arch": "hailo15h",
+  "layout": "uint8",
+  "onnx": "segformer_b0_ade_512_op17.onnx",
+  "image_size": 512,
+  "floor_ids": [
+    3,
+    13,
+    28
+  ],
+  "stages": {
+    "translate": {
+      "ok": false,
+      "seconds": 5.1,
+      "error": "Parsing failed. The errors found in the graph are:\n UnsupportedShuffleLayerError in op node_Reshape_581: Failed to determine type of layer to create in node node_Reshape_581\n UnsupportedShuffleLayerError in op node_Reshape_654: Failed to determine type of layer to create in node node_Reshape_654\nPlease try to parse the model again, using these end node names: node_layer_norm_24, node_Transpose_579, node_Mul_583, node_transpose_54, node_upsample_bilinear2d_2, node_upsample_bilinear2d_1, node_upsample_bilinear2d"
+    }
+  },
+  "hef": null
+}

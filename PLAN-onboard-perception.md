@@ -2019,6 +2019,14 @@ Approximate US prices, from general knowledge on 2026-09-03. **Not verified
 against a retailer**, and several move a lot with sales. Every figure here
 should be checked before ordering.
 
+> **SUPERSEDED FOR PRICING BY 3.6a (2026-09-16), WHICH IS RETAILER-VERIFIED.**
+> Read this section for *what the parts are and why*; take no figure from it.
+> The Pi 5 8GB line is wrong by **$95** (the $80 board no longer exists), the
+> pan/tilt bracket row names a part the chosen servo does not fit, and the
+> bare Hailo-8L M.2 module **has no in-stock source at any price**. 3.6a also
+> carries the **Jetson Orin Nano Super BOM** beside this one; the premium is
+> **$102**, not the +$320-430 the 2026-09-13 decision rejected.
+
 **Essential -- the robot does not work without these**
 
 | Item | ~USD | Note |
@@ -2199,6 +2207,223 @@ each one is a row above rather than a preference:
    IMU line to buy.
 4. **One servo, not two.** Pan only; the tilt joint is shimmed at a fixed
    downward pitch (1.15.3, and P16's floor-mask finding).
+
+### 3.6a Verified prices, and the Jetson BOM beside them -- 2026-09-16
+
+3.6's figures are estimates *"from general knowledge on 2026-09-03. **Not
+verified against a retailer**"*. Every line below except four was read off a
+retailer page on 2026-09-16. **3.6 is left exactly as written**: its numbers
+are what the decisions were argued against, and overwriting them would make
+the reasoning unauditable. This section is the correction, not a replacement.
+
+**Not verified, and why:** Amazon and Micro Center both block automated
+reads, rpilocator would not load, and the Yahboom ASINs' bundled-battery
+voltage is only stated in listing images. Micro Center Westmont stock is
+therefore still an in-person question, and it is the one that could move the
+Pi line most.
+
+#### The finding that reframes everything: **the $80 Pi 5 no longer exists**
+
+Raspberry Pi raised the 8GB three times on DRAM cost -- **$80 -> $95 (Dec
+2025) -> $125 (Feb 2026) -> $175 (Apr 2026)**. $175 is the floor, in stock at
+PiShop and CanaKit; Adafruit is $200. So the $200 Amazon sighting was ~14%
+over list rather than a scalper, and **3.6's single largest line was wrong by
+$95**.
+
+This is the same memory-price event 4.8 already recorded from the other side
+-- NVIDIA's July 2026 Jetson repricing, *"LPDDR pricing is the implicated
+cause"*. **The whole board market moved together**, which is exactly why a
+*relative* part decision had to be re-checked rather than assumed stable.
+
+And the Jetson moved the other way: **Newegg lists the Orin Nano Super devkit
+at $399**, NVIDIA's list, not 4.8's "~$480 street".
+
+#### Common parts -- identical on both paths
+
+| Item | 3.6 est | **verified** | Source / note |
+|---|---|---|---|
+| RPLidar C1 | 99 | **69.00** | DFRobot or Seeed, ships from China; $71.92 RobotShop US. **$30 under estimate** |
+| Yahboom 2WD chassis | 69 | **69.00** | Motors confirmed L-type 520, 1:40, **11-line Hall encoder** -- 3.8's open encoder question is answered. ~79 with battery, voltage unconfirmed |
+| Waveshare General Driver | 30 | **27.99** | Spec matches |
+| ST3215 bus servo | (in the 25) | **21.99** | Waveshare 12V variant. **Avoid the 7.4V part** (Seeed C046) |
+| Pan/tilt bracket | (in the 25) | **3.99, and it does not fit** | See the flag below -- this line is wrong |
+| 2x 3S pack + charger | 70 | **44.98** | Ovonic 2x2200mAh + iMAX B3. **No BMS** |
+| Wiring, switch, XT60 | 15 | **~22.00** | |
+| Standoffs | 10 | **12.95** | |
+| Bulk cap + TVS | 2 | **~2.00** | |
+| 2x VL53L1X | 12 | **29.90** | Adafruit #3967 -- **2.5x the estimate**, and both boards are I2C 0x29, so XSHUT sequencing or a mux is required |
+| Bumper microswitches | 5 | **~11.00** | |
+| Powered USB hub | 15 | **19.99** | Waveshare's 7-36V hub at 17.99 is the better part: it runs off the pack and keeps load off the 5V rail |
+| Jumper wires | 10 | **11.85** | |
+| | | **~346.64** | |
+
+**Buck #2 is confirmed deleted.** Waveshare's wiki states the 7-13V input
+"directly powers the serial bus servo", the board is good for 5A continuous
+and the ST3215 stalls at 2.7A. 3.6's "0-8, pending the voltage check" resolves
+to **0**.
+
+#### The bracket decided on 2026-09-16 does not exist
+
+**Every ~32x28x65mm pan/tilt bracket is built for SG90 micro servos. The
+ST3215 is 45x35x25mm and will not fit any of them.** That invalidates the $25
+row two days after it was written, and the ST3215 half of it is the half worth
+keeping (1.16 #7: an open-loop servo makes every bearing wrong with nothing to
+notice). Two options:
+
+- **Waveshare's complete 2-axis ST3215 pan-tilt module, $109.99** -- +$84 over
+  the row, and it buys a tilt axis 1.15.3 deliberately chose not to use.
+- **Print it.** Waveshare publishes free STEP files. This is the recommendation:
+  the mount is a fixed downward pitch plus one pan axis, which is the simplest
+  possible bracket, and the lidar pedestal already needs a printer or a print
+  service.
+
+#### Part B, side by side
+
+| | **Pi 5 + Hailo-8L** | **Jetson Orin Nano Super** |
+|---|---|---|
+| Board | Pi 5 8GB **175.00** | Orin Nano Super devkit **399.00** (Newegg, list) |
+| Cooling | Active Cooler **10.95** | in the box |
+| Wi-Fi / BT | on board | **in the box** -- 3.6's assumed ~$20 M.2 card is not needed |
+| Accelerator | **AI HAT+ 13T, 76.95** -- see below | not needed |
+| Carrier | included in the HAT+ | not needed |
+| Camera | Camera Module 3 **29.25 + 3.95 cable** (the box ships only the 15-pin) | Arducam IMX219 **19.95**, SparkFun |
+| Storage | microSD 64GB A2 **31.99** | SanDisk 128GB A2 **42.99** |
+| 5V/5A buck | **39.95** Pololu D36V50F5 | **not needed** -- takes 9-20V from the pack directly |
+| **Part B subtotal** | **368.04** | **461.94** |
+| **All-in** (+8.75% tax, ~$50 shipping) | **~827** | **~929** |
+
+> **The Jetson premium is $102**, against the **~$170** re-open threshold
+> 4.7 sets. The 2026-09-13 decision ruled the Jetson out at a computed
+> +$320-430. **That premium no longer exists**, and it collapsed from the
+> *Pi* side -- a direction none of 4.7's four re-open conditions anticipated.
+
+#### The Hailo line is the Pi path's real problem, and it is not a price
+
+**There is no in-stock source for the bare $70 M.2 module.** The AI Kit that
+bundled the removable 2242 part is discontinued -- CanaKit sold out, SparkFun
+retired it, Seeed out of stock, last eBay unit $124.99. What is in stock:
+
+| form | price | problem |
+|---|---|---|
+| **AI HAT+ 13T**, soldered | 76.95, PiShop | **On this plan's own reject list** |
+| Hailo-8L **2280** B+M, UP Shop | 89.00 | Too long for the M.2 HAT+ *and* for HatDrive! Dual. Needs a 2280 carrier; Geekworm X1001 is $13 and **out of stock** |
+| Hailo-8L 2230 **A+E**, UP Shop | 99.00 | Wrong key |
+| M.2 HAT+ | 12.00 | Fits 2230/2242 -- i.e. only the module that cannot be bought |
+| HatDrive! Dual | -- | **Sold out at Pineboards, discontinued at The Pi Hut** |
+
+So the cheapest in-stock Pi build requires **buying the soldered AI HAT+**,
+which 3.6 rejected for two stated reasons: *"it is the form that survives a
+Jetson pivot and the form the NVMe needs anyway."*
+
+**Both reasons are now live rather than hypothetical.**
+
+1. *Survives a Jetson pivot* -- the pivot is being decided **now**. Paying a
+   premium for pivot-insurance while making the pivot decision is incoherent;
+   either pivot, or buy the cheap soldered part and stop paying for optionality
+   you just declined.
+2. *The NVMe needs it* -- the AI HAT+ consumes the Pi's single PCIe lane, so
+   **the Pi path with an AI HAT+ boots from SD and cannot have an NVMe**. 3.6
+   calls that row *"the one item that prevents losing work rather than an
+   annoyance,"* because **SD cards corrupt on brownout** and 1.3 is written
+   about exactly that failure. The Jetson devkit has a free 2280 slot and does
+   not face the trade at all.
+
+This is a cost the dollar column cannot show: the Pi path's only buyable
+configuration gives up a documented design constraint *and* the brownout
+protection, while the Jetson path gives up neither.
+
+#### What the $102 buys
+
+| | Pi 5 + Hailo-8L | Orin Nano Super |
+|---|---|---|
+| Search-proposal model | YOLO-World (P9/P10) | **OWLv2** |
+| Recall @3 FP, 8-walk corpus | **72% or 45%** -- turns on an unrun INT8 test | **82%**, measured (P7) |
+| Compile risk | P10 compiled, **INT8 accuracy unmeasured**; P7d found INT8 destroys OWLv2 | **none** -- PyTorch fp16, and P7 measured fp16 as accuracy-free |
+| NVMe | **no** (PCIe lane consumed) | yes, 2280 slot free |
+| Frame rate (P7b projection) | 92 FPS reactive | ~2.6-4.9 Hz fp16 search tier, 36ms detect |
+| Memory | 8GB, detector off-board | 8GB shared -- 1.10's objection, **dropped** once the local VLM went (OWLv2 is 150M) |
+
+**The honest summary:** $102 converts a 45-72% tier that depends on an unrun
+measurement into a measured 82% tier with no compile step, and returns the
+NVMe. That is the trade the 2026-09-13 decision would have been taking at
++$320-430 and declined. At +$102 it is a different decision.
+
+#### Verified at the counter: Micro Center Westmont, 2026-09-16
+
+The one source Cowork could not read is now read, and it lands on the Jetson
+side. **Micro Center Westmont, SKU 812057, $399.00, 7 NEW IN STOCK**, 18-minute
+pickup, aisle 1. Three things follow.
+
+**Availability now decides more than price does.** The Jetson board can be in
+hand tomorrow morning. The Pi path's accelerator **cannot be bought in the
+form this plan specifies at any price** -- the bare 2242 module is discontinued
+everywhere, both carriers are sold out or discontinued, and the only in-stock
+option is the soldered AI HAT+ that 3.6 rejected. A part that is purchasable
+beats a part that is cheaper-on-paper and out of stock.
+
+**Local pickup also trims the premium.** Board shipping goes to zero on the
+Jetson side while the Pi still ships from PiShop or CanaKit, so the all-in gap
+falls from $102 to roughly **$87**.
+
+**And it buys a return path against a real failure mode.** The listing's one
+1-star review is a bricked board after a required firmware update, *"which I
+cannot return"*; another reports theirs arrived pre-flashed. Micro Center takes
+returns with no receipt for Insider accounts. **Check the window at the
+counter**: the general policy is 30 days, but the 15-day list names
+*motherboards*, and this SKU's own component type is "Development Board /
+Mainboards". Worth thirty seconds to ask.
+
+##### Spec-sheet corrections to the table above
+
+| item | what the counter page says |
+|---|---|
+| **Wi-Fi/BT** | The spec lists *"M.2 Key E **for** Wi-Fi/Bluetooth"* -- **a slot, not a card**. Cowork's "in the box, $0" is unconfirmed. **Verify at the counter**; budget ~$20 if not. |
+| **Power** | **7-25W**, confirming that 1.3's 40-60 min pack budget must be re-derived, not assumed |
+| **Storage** | microSD **and** external NVMe (M.2 Key M) -- the free 2280 slot is confirmed, which is the Pi path's lost NVMe |
+| **Camera** | 2x MIPI CSI-2 **22-pin** -- so the Arducam's 22-pin cable must be confirmed present (SparkFun's page does not say; Arducam's does) |
+| **Power input** | **USB-C is debug/data only.** Power is a **5.5/2.5mm barrel jack**, 9-20V. A9's wiring line needs a barrel pigtail added |
+| **Display** | DisplayPort, not HDMI. Irrelevant headless, but bring-up day needs a DP cable |
+| **Memory bandwidth** | **102 GB/s**, exactly the figure P7b flagged as unmeasurable from an A10G: OWLv2's attention matrices are 3.7 GB/frame, so ~37ms of pure bandwidth, about half the INT8 GPU estimate |
+| **AI performance** | 67 TOPS **sparse INT8** -- and P7d found INT8 destroys OWLv2, so the operating mode is fp16 and this number does not describe it |
+
+#### What does NOT change
+
+- **Mecanum is still disqualifying.** This is an argument for a **bare Orin
+  Nano Super devkit on the Yahboom differential chassis**, never for a bundled
+  ROS 2 platform (3.7's closed survey, and P7c's odometry argument).
+- **The chassis, lidar, driver, servo, power and sensing parts are identical
+  on both paths.** Only Part B moves.
+- **P10's YOLO-World INT8 test is still worth its ~$1**, and should be run
+  before ordering either way: it is the only thing that can put the Pi path
+  back at 72% and make the $102 arguable.
+
+#### Two corrections to the sourcing report itself
+
+- **There is no Pi 5 4GB to reuse.** The report suggests recovering one "from
+  your PiCar-X build". No hardware has ever been ordered for this project --
+  3.8 says *"nothing has been ordered at all"* -- and the PiCar-X was retired
+  as a design in 1.1 before any purchase. The $110 4GB board is a fresh buy,
+  and 8GB is what SLAM + nav2 + a detector was sized against.
+- **The 3S pack is marginal on the Jetson.** 9.9V empty against a 9V floor is
+  0.9V of headroom, so the cutoff must sit near 3.3V/cell -- which strands
+  usable capacity and eats into 1.3's 40-60 minute figure. The packs found have
+  **no BMS**, so that cutoff is not automatic. Re-derive 1.3's budget before
+  ordering the Jetson, and price a BMS or the Waveshare UPS Module 3S ($28.95,
+  BMS + 12.6V charger + 5V/5A out, but needs loose 18650s).
+
+#### Revised totals
+
+| Scenario | 3.6 said | **verified 2026-09-16** |
+|---|---|---|
+| Pi path, essential + recommended, all-in | ~565 | **~827** |
+| **Jetson path**, essential + recommended, all-in | not costed | **~929** |
+| Pi path + NVMe | ~628 | **not available with an AI HAT+** |
+| Jetson path + NVMe (Kingston NV3 500GB, 109) | -- | **~1,047** |
+
+Both are over the ~$500-750 the plan has carried since 2026-09-03, and **the
+Pi 5's $95 rise is the largest single reason**. That target should be restated
+rather than quietly missed.
+
 
 ### 3.7 Two ways to buy this, and the second was nearly missed
 

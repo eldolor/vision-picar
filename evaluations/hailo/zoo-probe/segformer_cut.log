@@ -1,0 +1,21 @@
+########## hailo10h (DFC-recommended cut) ##########
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/onnx_translator/onnx_graph.py", line 2564, in is_shuffle
+    if last_node is not None and not last_node.is_null_operation():
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/onnx_translator/onnx_graph.py", line 6001, in is_null_operation
+    or self.is_null_reshape()[0]
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/onnx_translator/onnx_graph.py", line 6688, in is_null_reshape
+    if self.is_features_to_groups_reshape(pred.output_format)[0] and not (is_f_to_h or is_flatten_h_to_f):
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/onnx_translator/onnx_graph.py", line 4035, in is_features_to_groups_reshape
+    self.is_shuffle()[0]
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/onnx_translator/onnx_graph.py", line 2564, in is_shuffle
+    if last_node is not None and not last_node.is_null_operation():
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/onnx_translator/onnx_graph.py", line 6001, in is_null_operation
+    or self.is_null_reshape()[0]
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/onnx_translator/onnx_graph.py", line 6620, in is_null_reshape
+    if self.is_from_rank2_to_rank3_d2s() and self.get_d2s_block_size() != [1, 1]:
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/onnx_translator/onnx_graph.py", line 6723, in is_from_rank2_to_rank3_d2s
+    output_shapes = self.get_output_shapes(convert_to_nhwc=False)[0]
+IndexError: list index out of range
+[segformer] translate: FAIL -- list index out of range
+
+[segformer] VERDICT hailo10h: no HEF; reached []

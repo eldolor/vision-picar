@@ -1,0 +1,13 @@
+row	head	layout	translate	optimize	compile	hef_mb	detail
+=== O1: OWLv2 head=minimal layout=uint8 extra='' ===
+O1	minimal	uint8	ok	ok	FAIL	-	Compilation failed: No successful assignments: matmul1 errors:  Agent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 218).   Agent infea
+=== O2: OWLv2 head=minimal layout=normalized extra='' ===
+O2	minimal	normalized	ok	ok	FAIL	-	Compilation failed: No successful assignments: matmul1 errors:  Agent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 218).   Agent infea
+=== O3: OWLv2 head=full layout=uint8 extra='' ===
+O3	full	uint8	ok	ok	FAIL	-	Compilation failed: No successful assignments: matmul1 errors:  Agent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 218).   Agent infea
+
+=== OWLv2 10H matrix complete ===
+row  head     layout      translate  optimize  compile  hef_mb  detail
+O1   minimal  uint8       ok         ok        FAIL     -       Compilation failed: No successful assignments: matmul1 errors:  Agent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 218).   Agent infea
+O2   minimal  normalized  ok         ok        FAIL     -       Compilation failed: No successful assignments: matmul1 errors:  Agent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 218).   Agent infea
+O3   full     uint8       ok         ok        FAIL     -       Compilation failed: No successful assignments: matmul1 errors:  Agent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 218).   Agent infea

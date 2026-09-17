@@ -1,0 +1,29 @@
+{
+  "model": "segformer-b0-ade",
+  "arch": "hailo10h",
+  "layout": "uint8",
+  "onnx": "segformer_b0_ade_512_op17.onnx",
+  "image_size": 512,
+  "floor_ids": [
+    3,
+    13,
+    28
+  ],
+  "stages": {
+    "translate": {
+      "ok": false,
+      "seconds": 4.3,
+      "error": "list index out of range"
+    }
+  },
+  "hef": null,
+  "end_node_names": [
+    "node_transpose_54",
+    "node_upsample_bilinear2d_2",
+    "node_layer_norm_24",
+    "node_upsample_bilinear2d",
+    "node_Mul_583",
+    "node_Transpose_579",
+    "node_upsample_bilinear2d_1"
+  ]
+}

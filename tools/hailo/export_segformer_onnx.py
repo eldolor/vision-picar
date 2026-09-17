@@ -60,18 +60,89 @@ def main(argv=None) -> int:
             "wrong checkpoint for a floor mask, and compiling it would "
             "measure a model that cannot do the job.")
 
+    class ConvDecodeHead(torch.nn.Module):
+        """SegFormer's decode head with its Linear projections rewritten as
+        1x1 convolutions -- an EXACT identity, not an approximation.
+
+        `SegformerMLP.forward` is `flatten(2).transpose(1,2)` -> `Linear`,
+        and the decode head then transposes and reshapes back. Those are
+        the two ops the Hailo parser refuses:
+
+            UnsupportedShuffleLayerError in op node_Reshape_581
+            UnsupportedShuffleLayerError in op node_Reshape_654
+
+        A Linear applied independently at every spatial position IS a 1x1
+        Conv over the feature map -- same weights, same arithmetic, in the
+        layout the accelerator already wants. Rewriting it deletes the
+        flatten, both transposes and the reshape, so the unsupported nodes
+        stop existing rather than being cut around.
+
+        This is the same move as `export_owlv2_onnx.py --factor-patch`
+        (rewriting one conv as two, verified at max |d| 1.4e-05): change
+        the graph's SHAPE, never its numbers, and prove it afterwards.
+        """
+
+        def __init__(self, head):
+            super().__init__()
+            self.head = head
+            convs = []
+            for mlp in head.linear_projections:
+                lin = mlp.proj
+                conv = torch.nn.Conv2d(lin.in_features, lin.out_features, 1)
+                with torch.no_grad():
+                    conv.weight.copy_(lin.weight.view(lin.out_features,
+                                                      lin.in_features, 1, 1))
+                    conv.bias.copy_(lin.bias)
+                convs.append(conv)
+            self.convs = torch.nn.ModuleList(convs)
+
+        def forward(self, encoder_hidden_states):
+            h = self.head
+            target = encoder_hidden_states[0].shape[2:]
+            feats = []
+            for state, conv in zip(encoder_hidden_states, self.convs):
+                x = conv(state)
+                x = torch.nn.functional.interpolate(
+                    x, size=target, mode="bilinear", align_corners=False)
+                feats.append(x)
+            x = h.linear_fuse(torch.cat(feats[::-1], dim=1))
+            x = h.activation(h.batch_norm(x))
+            return h.classifier(x)
+
     class Logits(torch.nn.Module):
         """Logits only. The floor reduction is a host-side argmax over
-        `floor_ids`, so the vocabulary stays a runtime argument."""
+        `floor_ids`, so the vocabulary stays a runtime argument. Output is
+        at H/4 -- SegFormer's native logit resolution -- and the final
+        upsample to frame size stays on the host, where it is one cheap
+        bilinear resize."""
 
         def __init__(self, m):
             super().__init__()
-            self.m = m
+            self.encoder = m.segformer
+            self.head = ConvDecodeHead(m.decode_head)
 
         def forward(self, pixel_values):
-            return self.m(pixel_values=pixel_values).logits
+            states = self.encoder(pixel_values, output_hidden_states=True,
+                                  return_dict=True).hidden_states
+            return self.head(states)
 
     wrapped = Logits(model)
+
+    # Prove the rewrite before exporting it: a graph that compiles and
+    # computes something else is the worst outcome available here.
+    with torch.no_grad():
+        ref = model(pixel_values=torch.randn(1, 3, args.size, args.size)).logits
+    torch.manual_seed(0)
+    probe = torch.randn(1, 3, args.size, args.size)
+    with torch.no_grad():
+        a = model(pixel_values=probe).logits
+        b = wrapped(probe)
+    rewrite_diff = float((a - b).abs().max())
+    print(f"[segformer] conv-rewrite vs original: max |diff| {rewrite_diff:.3e}")
+    if rewrite_diff > 1e-4:
+        raise SystemExit(
+            f"the 1x1-conv rewrite is NOT an identity (max |diff| "
+            f"{rewrite_diff}) -- do not export it")
     dummy = torch.randn(1, 3, args.size, args.size)
     onnx_path = args.out / f"segformer_b0_ade_{args.size}_op{args.opset}.onnx"
     torch.onnx.export(
@@ -101,6 +172,8 @@ def main(argv=None) -> int:
         "image_std": [0.229, 0.224, 0.225],
         "onnx": onnx_path.name,
         "max_abs_diff_vs_torch": diff,
+        "conv_rewrite_max_abs_diff": rewrite_diff,
+        "output": "logits at H/4; host does the final bilinear upsample",
     }
     (args.out / "export_meta.json").write_text(json.dumps(meta, indent=2))
     print(json.dumps(meta, indent=2))

@@ -1,0 +1,236 @@
+[info] First time Hailo Dataflow Compiler is being used. Checking system requirements... (this might take a few seconds)
+[[1;36mInfo[0m] No GPU connected.
+[info] No GPU chosen and no suitable GPU found, falling back to CPU.
+/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/io/image.py:14: UserWarning: Failed to load image Python extension: 'Could not load this library: /local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/image.so'If you don't plan on using image functionality from `torchvision.io`, you can ignore this warning. Otherwise, there might be something wrong with your environment. Did you have `libjpeg` or `libpng` installed before building `torchvision` from source?
+  warn(
+
+=== 640_op17_full_uint8 ===
+[info] Translation started on ONNX model owlv2_640_op17_full_uint8
+[info] Restored ONNX model owlv2_640_op17_full_uint8 (completion time: 00:00:01.80)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:43.70)
+[info] Simplified ONNX model for a parsing retry attempt (completion time: 00:01:38.36)
+[info] Saved simplified ONNX to: build/owlv2-640/owlv2_image_tower_640_op17_full.sim.onnx, will be used for parsing retry.
+[info] Start nodes mapped from original model: 'pixel_values': 'owlv2_640_op17_full_uint8/input_layer1'.
+[info] End nodes mapped from original model: '/Div', '/logit_shift/Add', '/Add_1', '/Sigmoid', '/Gather_1'.
+[info] Translation completed on ONNX model owlv2_640_op17_full_uint8 (completion time: 00:01:44.05)
+[info] Hailo HW architecture: hailo10h
+[info] Saved HAR to: /local/shared_with_docker/cw/build/owlv2-640/owlv2_640_op17_full_uint8.har
+[info] Loading model script commands to owlv2_640_op17_full_uint8 from string
+[info] Starting Model Optimization
+[warning] Reducing optimization level to 0 (the accuracy won't be optimized and compression won't be used) because there's less data than the recommended amount (1024), and there's no available GPU
+[warning] Running model optimization with zero level of optimization is not recommended for production use and might lead to suboptimal accuracy results
+[info] Model received quantization params from the hn
+[info] Notice: For optimal performance, if your model has more than 10M parameters, it is recommended to set the compression level to 4. (Current model has 89.74M parameters.)
+[info] Notice: For optimal accuracy with compressed models, it is recommended to set the optimization level to 4.
+[info] MatmulDecompose skipped
+[info] Starting Mixed Precision
+[info] Model Optimization Algorithm Mixed Precision is done (completion time is 00:00:01.61)
+[info] Starting LayerNorm Decomposition
+[info] Using dataset with 64 entries for calibration
+Calibration:   0%|          | 0/64 [00:00<?, ?entries/s]Calibration:   2%|▏         | 1/64 [00:10<10:49, 10.31s/entries]Calibration:   3%|▎         | 2/64 [00:11<05:04,  4.91s/entries]Calibration:   5%|▍         | 3/64 [00:12<03:13,  3.18s/entries]Calibration:   6%|▋         | 4/64 [00:13<02:21,  2.36s/entries]Calibration:   8%|▊         | 5/64 [00:14<01:52,  1.91s/entries]Calibration:   9%|▉         | 6/64 [00:15<01:34,  1.64s/entries]Calibration:  11%|█         | 7/64 [00:16<01:23,  1.47s/entries]Calibration:  12%|█▎        | 8/64 [00:18<01:15,  1.35s/entries]Calibration:  14%|█▍        | 9/64 [00:19<01:10,  1.28s/entries]Calibration:  16%|█▌        | 10/64 [00:20<01:06,  1.23s/entries]Calibration:  17%|█▋        | 11/64 [00:21<01:03,  1.19s/entries]Calibration:  19%|█▉        | 12/64 [00:22<01:00,  1.16s/entries]Calibration:  20%|██        | 13/64 [00:23<00:58,  1.15s/entries]Calibration:  22%|██▏       | 14/64 [00:24<00:56,  1.14s/entries]Calibration:  23%|██▎       | 15/64 [00:25<00:55,  1.13s/entries]Calibration:  25%|██▌       | 16/64 [00:26<00:53,  1.12s/entries]Calibration:  27%|██▋       | 17/64 [00:28<00:52,  1.12s/entries]Calibration:  28%|██▊       | 18/64 [00:29<00:51,  1.12s/entries]Calibration:  30%|██▉       | 19/64 [00:30<00:50,  1.12s/entries]Calibration:  31%|███▏      | 20/64 [00:31<00:48,  1.11s/entries]Calibration:  33%|███▎      | 21/64 [00:32<00:47,  1.11s/entries]Calibration:  34%|███▍      | 22/64 [00:33<00:46,  1.11s/entries]Calibration:  36%|███▌      | 23/64 [00:34<00:45,  1.11s/entries]Calibration:  38%|███▊      | 24/64 [00:35<00:44,  1.11s/entries]Calibration:  39%|███▉      | 25/64 [00:36<00:43,  1.11s/entries]Calibration:  41%|████      | 26/64 [00:38<00:41,  1.10s/entries]Calibration:  42%|████▏     | 27/64 [00:39<00:40,  1.11s/entries]Calibration:  44%|████▍     | 28/64 [00:40<00:39,  1.11s/entries]Calibration:  45%|████▌     | 29/64 [00:41<00:38,  1.11s/entries]Calibration:  47%|████▋     | 30/64 [00:42<00:37,  1.11s/entries]Calibration:  48%|████▊     | 31/64 [00:43<00:36,  1.12s/entries]Calibration:  50%|█████     | 32/64 [00:44<00:35,  1.12s/entries]Calibration:  52%|█████▏    | 33/64 [00:45<00:34,  1.12s/entries]Calibration:  53%|█████▎    | 34/64 [00:46<00:33,  1.12s/entries]Calibration:  55%|█████▍    | 35/64 [00:48<00:32,  1.12s/entries]Calibration:  56%|█████▋    | 36/64 [00:49<00:31,  1.12s/entries]Calibration:  58%|█████▊    | 37/64 [00:50<00:30,  1.11s/entries]Calibration:  59%|█████▉    | 38/64 [00:51<00:28,  1.11s/entries]Calibration:  61%|██████    | 39/64 [00:52<00:27,  1.11s/entries]Calibration:  62%|██████▎   | 40/64 [00:53<00:26,  1.11s/entries]Calibration:  64%|██████▍   | 41/64 [00:54<00:25,  1.11s/entries]Calibration:  66%|██████▌   | 42/64 [00:55<00:24,  1.11s/entries]Calibration:  67%|██████▋   | 43/64 [00:56<00:23,  1.11s/entries]Calibration:  69%|██████▉   | 44/64 [00:58<00:22,  1.11s/entries]Calibration:  70%|███████   | 45/64 [00:59<00:21,  1.11s/entries]Calibration:  72%|███████▏  | 46/64 [01:00<00:19,  1.11s/entries]Calibration:  73%|███████▎  | 47/64 [01:01<00:18,  1.11s/entries]Calibration:  75%|███████▌  | 48/64 [01:02<00:17,  1.11s/entries]Calibration:  77%|███████▋  | 49/64 [01:03<00:16,  1.11s/entries]Calibration:  78%|███████▊  | 50/64 [01:04<00:15,  1.11s/entries]Calibration:  80%|███████▉  | 51/64 [01:05<00:14,  1.11s/entries]Calibration:  81%|████████▏ | 52/64 [01:06<00:13,  1.11s/entries]Calibration:  83%|████████▎ | 53/64 [01:08<00:12,  1.11s/entries]Calibration:  84%|████████▍ | 54/64 [01:09<00:11,  1.11s/entries]Calibration:  86%|████████▌ | 55/64 [01:10<00:09,  1.11s/entries]Calibration:  88%|████████▊ | 56/64 [01:11<00:08,  1.11s/entries]Calibration:  89%|████████▉ | 57/64 [01:12<00:07,  1.11s/entries]Calibration:  91%|█████████ | 58/64 [01:13<00:06,  1.10s/entries]Calibration:  92%|█████████▏| 59/64 [01:14<00:05,  1.10s/entries]Calibration:  94%|█████████▍| 60/64 [01:15<00:04,  1.10s/entries]Calibration:  95%|█████████▌| 61/64 [01:16<00:03,  1.10s/entries]Calibration:  97%|█████████▋| 62/64 [01:17<00:02,  1.10s/entries]Calibration:  98%|█████████▊| 63/64 [01:19<00:01,  1.10s/entries]Calibration: 100%|██████████| 64/64 [01:20<00:00,  1.10s/entries]Calibration: 100%|██████████| 64/64 [01:20<00:00,  1.10s/entries]Calibration: 100%|██████████| 64/64 [01:20<00:00,  1.25s/entries]
+[info] Model Optimization Algorithm LayerNorm Decomposition is done (completion time is 00:01:33.69)
+[info] Starting Statistics Collector
+[info] Using dataset with 64 entries for calibration
+Calibration:   0%|          | 0/64 [00:00<?, ?entries/s]Calibration:   2%|▏         | 1/64 [01:41<1:46:54, 101.81s/entries]Calibration:   3%|▎         | 2/64 [01:46<46:02, 44.56s/entries]   Calibration:   5%|▍         | 3/64 [01:50<26:41, 26.25s/entries]Calibration:   6%|▋         | 4/64 [01:55<17:38, 17.64s/entries]Calibration:   8%|▊         | 5/64 [01:59<12:38, 12.85s/entries]Calibration:   9%|▉         | 6/64 [02:03<09:38,  9.97s/entries]Calibration:  11%|█         | 7/64 [02:08<07:45,  8.16s/entries]Calibration:  12%|█▎        | 8/64 [02:12<06:31,  6.99s/entries]Calibration:  14%|█▍        | 9/64 [02:17<05:39,  6.18s/entries]Calibration:  16%|█▌        | 10/64 [02:21<05:04,  5.65s/entries]Calibration:  17%|█▋        | 11/64 [02:26<04:40,  5.28s/entries]Calibration:  19%|█▉        | 12/64 [02:30<04:20,  5.02s/entries]Calibration:  20%|██        | 13/64 [02:34<04:06,  4.83s/entries]Calibration:  22%|██▏       | 14/64 [02:39<03:54,  4.70s/entries]Calibration:  23%|██▎       | 15/64 [02:43<03:46,  4.62s/entries]Calibration:  25%|██▌       | 16/64 [02:48<03:38,  4.54s/entries]Calibration:  27%|██▋       | 17/64 [02:52<03:31,  4.49s/entries]Calibration:  28%|██▊       | 18/64 [02:56<03:24,  4.45s/entries]Calibration:  30%|██▉       | 19/64 [03:01<03:19,  4.43s/entries]Calibration:  31%|███▏      | 20/64 [03:05<03:14,  4.41s/entries]Calibration:  33%|███▎      | 21/64 [03:09<03:08,  4.39s/entries]Calibration:  34%|███▍      | 22/64 [03:14<03:04,  4.39s/entries]Calibration:  36%|███▌      | 23/64 [03:19<03:13,  4.71s/entries]Calibration:  38%|███▊      | 24/64 [03:24<03:04,  4.62s/entries]Calibration:  39%|███▉      | 25/64 [03:28<02:57,  4.55s/entries]Calibration:  41%|████      | 26/64 [03:32<02:50,  4.50s/entries]Calibration:  42%|████▏     | 27/64 [03:37<02:45,  4.49s/entries]Calibration:  44%|████▍     | 28/64 [03:41<02:40,  4.47s/entries]Calibration:  45%|████▌     | 29/64 [03:46<02:35,  4.44s/entries]Calibration:  47%|████▋     | 30/64 [03:50<02:30,  4.42s/entries]Calibration:  48%|████▊     | 31/64 [03:54<02:25,  4.40s/entries]Calibration:  50%|█████     | 32/64 [03:59<02:21,  4.41s/entries]Calibration:  52%|█████▏    | 33/64 [04:03<02:16,  4.40s/entries]Calibration:  53%|█████▎    | 34/64 [04:08<02:12,  4.41s/entries]Calibration:  55%|█████▍    | 35/64 [04:12<02:07,  4.40s/entries]Calibration:  56%|█████▋    | 36/64 [04:16<02:02,  4.39s/entries]Calibration:  58%|█████▊    | 37/64 [04:21<01:58,  4.39s/entries]Calibration:  59%|█████▉    | 38/64 [04:25<01:54,  4.39s/entries]Calibration:  61%|██████    | 39/64 [04:30<01:50,  4.41s/entries]Calibration:  62%|██████▎   | 40/64 [04:34<01:45,  4.40s/entries]Calibration:  64%|██████▍   | 41/64 [04:38<01:41,  4.40s/entries]Calibration:  66%|██████▌   | 42/64 [04:43<01:36,  4.39s/entries]Calibration:  67%|██████▋   | 43/64 [04:47<01:31,  4.37s/entries]Calibration:  69%|██████▉   | 44/64 [04:52<01:27,  4.38s/entries]Calibration:  70%|███████   | 45/64 [04:56<01:23,  4.39s/entries]Calibration:  72%|███████▏  | 46/64 [05:00<01:18,  4.39s/entries]Calibration:  73%|███████▎  | 47/64 [05:05<01:14,  4.37s/entries]Calibration:  75%|███████▌  | 48/64 [05:09<01:09,  4.36s/entries]Calibration:  77%|███████▋  | 49/64 [05:13<01:05,  4.36s/entries]Calibration:  78%|███████▊  | 50/64 [05:18<01:01,  4.37s/entries]Calibration:  80%|███████▉  | 51/64 [05:22<00:56,  4.37s/entries]Calibration:  81%|████████▏ | 52/64 [05:26<00:52,  4.36s/entries]Calibration:  83%|████████▎ | 53/64 [05:31<00:47,  4.36s/entries]Calibration:  84%|████████▍ | 54/64 [05:35<00:43,  4.37s/entries]Calibration:  86%|████████▌ | 55/64 [05:40<00:39,  4.36s/entries]Calibration:  88%|████████▊ | 56/64 [05:44<00:34,  4.37s/entries]Calibration:  89%|████████▉ | 57/64 [05:48<00:30,  4.37s/entries]Calibration:  91%|█████████ | 58/64 [05:53<00:26,  4.39s/entries]Calibration:  92%|█████████▏| 59/64 [05:57<00:21,  4.38s/entries]Calibration:  94%|█████████▍| 60/64 [06:01<00:17,  4.37s/entries]Calibration:  95%|█████████▌| 61/64 [06:06<00:13,  4.41s/entries]Calibration:  97%|█████████▋| 62/64 [06:10<00:08,  4.40s/entries]Calibration:  98%|█████████▊| 63/64 [06:15<00:04,  4.40s/entries]Calibration: 100%|██████████| 64/64 [06:19<00:00,  4.39s/entries]Calibration: 100%|██████████| 64/64 [06:19<00:00,  4.39s/entries]Calibration: 100%|██████████| 64/64 [06:19<00:00,  5.93s/entries]
+[info] Model Optimization Algorithm Statistics Collector is done (completion time is 00:06:23.12)
+[info] Using dataset with 64 entries for calibration
+Calibration:   0%|          | 0/64 [00:00<?, ?entries/s]Calibration:   2%|▏         | 1/64 [01:51<1:56:33, 111.01s/entries]Calibration:   3%|▎         | 2/64 [01:55<50:00, 48.40s/entries]   Calibration:   5%|▍         | 3/64 [02:00<28:50, 28.36s/entries]Calibration:   6%|▋         | 4/64 [02:04<18:55, 18.93s/entries]Calibration:   8%|▊         | 5/64 [02:09<13:28, 13.71s/entries]Calibration:   9%|▉         | 6/64 [02:13<10:13, 10.57s/entries]Calibration:  11%|█         | 7/64 [02:17<08:09,  8.58s/entries]Calibration:  12%|█▎        | 8/64 [02:22<06:46,  7.27s/entries]Calibration:  14%|█▍        | 9/64 [02:26<05:50,  6.37s/entries]Calibration:  16%|█▌        | 10/64 [02:31<05:11,  5.76s/entries]Calibration:  17%|█▋        | 11/64 [02:35<04:43,  5.35s/entries]Calibration:  19%|█▉        | 12/64 [02:40<04:22,  5.05s/entries]Calibration:  20%|██        | 13/64 [02:44<04:08,  4.87s/entries]Calibration:  22%|██▏       | 14/64 [02:48<03:56,  4.74s/entries]Calibration:  23%|██▎       | 15/64 [02:53<03:47,  4.63s/entries]Calibration:  25%|██▌       | 16/64 [02:57<03:39,  4.57s/entries]Calibration:  27%|██▋       | 17/64 [03:02<03:31,  4.50s/entries]Calibration:  28%|██▊       | 18/64 [03:06<03:24,  4.46s/entries]Calibration:  30%|██▉       | 19/64 [03:10<03:19,  4.44s/entries]Calibration:  31%|███▏      | 20/64 [03:15<03:15,  4.43s/entries]Calibration:  33%|███▎      | 21/64 [03:19<03:09,  4.42s/entries]Calibration:  34%|███▍      | 22/64 [03:24<03:05,  4.42s/entries]Calibration:  36%|███▌      | 23/64 [03:28<03:01,  4.44s/entries]Calibration:  38%|███▊      | 24/64 [03:32<02:56,  4.42s/entries]Calibration:  39%|███▉      | 25/64 [03:37<02:52,  4.43s/entries]Calibration:  41%|████      | 26/64 [03:41<02:49,  4.45s/entries]Calibration:  42%|████▏     | 27/64 [03:46<02:45,  4.46s/entries]Calibration:  44%|████▍     | 28/64 [03:50<02:40,  4.46s/entries]Calibration:  45%|████▌     | 29/64 [03:55<02:35,  4.45s/entries]Calibration:  47%|████▋     | 30/64 [03:59<02:31,  4.45s/entries]Calibration:  48%|████▊     | 31/64 [04:04<02:26,  4.43s/entries]Calibration:  50%|█████     | 32/64 [04:08<02:20,  4.40s/entries]Calibration:  52%|█████▏    | 33/64 [04:12<02:16,  4.41s/entries]Calibration:  53%|█████▎    | 34/64 [04:17<02:11,  4.39s/entries]Calibration:  55%|█████▍    | 35/64 [04:21<02:07,  4.38s/entries]Calibration:  56%|█████▋    | 36/64 [04:25<02:03,  4.39s/entries]Calibration:  58%|█████▊    | 37/64 [04:30<01:59,  4.41s/entries]Calibration:  59%|█████▉    | 38/64 [04:34<01:54,  4.42s/entries]Calibration:  61%|██████    | 39/64 [04:39<01:50,  4.41s/entries]Calibration:  62%|██████▎   | 40/64 [04:43<01:45,  4.41s/entries]Calibration:  64%|██████▍   | 41/64 [04:48<01:41,  4.41s/entries]Calibration:  66%|██████▌   | 42/64 [04:52<01:36,  4.41s/entries]Calibration:  67%|██████▋   | 43/64 [04:56<01:32,  4.42s/entries]Calibration:  69%|██████▉   | 44/64 [05:01<01:28,  4.41s/entries]Calibration:  70%|███████   | 45/64 [05:05<01:23,  4.41s/entries]Calibration:  72%|███████▏  | 46/64 [05:10<01:19,  4.41s/entries]Calibration:  73%|███████▎  | 47/64 [05:14<01:14,  4.40s/entries]Calibration:  75%|███████▌  | 48/64 [05:18<01:10,  4.39s/entries]Calibration:  77%|███████▋  | 49/64 [05:23<01:05,  4.39s/entries]Calibration:  78%|███████▊  | 50/64 [05:27<01:01,  4.39s/entries]Calibration:  80%|███████▉  | 51/64 [05:32<00:57,  4.39s/entries]Calibration:  81%|████████▏ | 52/64 [05:36<00:52,  4.39s/entries]Calibration:  83%|████████▎ | 53/64 [05:40<00:48,  4.39s/entries]Calibration:  84%|████████▍ | 54/64 [05:45<00:44,  4.41s/entries]Calibration:  86%|████████▌ | 55/64 [05:49<00:39,  4.41s/entries]Calibration:  88%|████████▊ | 56/64 [05:54<00:35,  4.40s/entries]Calibration:  89%|████████▉ | 57/64 [05:58<00:30,  4.40s/entries]Calibration:  91%|█████████ | 58/64 [06:02<00:26,  4.42s/entries]Calibration:  92%|█████████▏| 59/64 [06:07<00:22,  4.40s/entries]Calibration:  94%|█████████▍| 60/64 [06:11<00:17,  4.40s/entries]Calibration:  95%|█████████▌| 61/64 [06:16<00:13,  4.41s/entries]Calibration:  97%|█████████▋| 62/64 [06:21<00:09,  4.77s/entries]Calibration:  98%|█████████▊| 63/64 [06:26<00:04,  4.66s/entries]Calibration: 100%|██████████| 64/64 [06:30<00:00,  4.59s/entries]Calibration: 100%|██████████| 64/64 [06:30<00:00,  4.59s/entries]Calibration: 100%|██████████| 64/64 [06:30<00:00,  6.10s/entries]
+[info] Output layer owlv2_640_op17_full_uint8/conv57 with sigmoid activation was detected. Forcing its output range to be [0, 1] (original range was [0.0022070163395255804, 0.9999423027038574]).
+[info] Starting Fix zp_comp Encoding
+[info] Model Optimization Algorithm Fix zp_comp Encoding is done (completion time is 00:00:00.00)
+[info] Starting Matmul Equalization
+[info] Model Optimization Algorithm Matmul Equalization is done (completion time is 00:00:01.20)
+[info] Starting MatmulDecomposeFix
+[info] Model Optimization Algorithm MatmulDecomposeFix is done (completion time is 00:00:00.00)
+[info] Starting Translate Parameters
+Create HW Params:   0%|          | 0/342 [00:00<?, ?Components/s]Create HW Params:   1%|▏         | 5/342 [00:00<00:06, 48.88Components/s]Create HW Params:   3%|▎         | 10/342 [00:00<00:11, 27.76Components/s]Create HW Params:   4%|▍         | 14/342 [00:00<00:11, 27.55Components/s]Create HW Params:   5%|▌         | 18/342 [00:00<00:11, 27.89Components/s]Create HW Params:   6%|▌         | 21/342 [00:00<00:11, 27.90Components/s]Create HW Params:   7%|▋         | 24/342 [00:00<00:12, 25.48Components/s]Create HW Params:   8%|▊         | 27/342 [00:01<00:13, 23.27Components/s]Create HW Params:   9%|▉         | 30/342 [00:01<00:14, 21.73Components/s]Create HW Params:  10%|▉         | 33/342 [00:01<00:13, 23.39Components/s]Create HW Params:  11%|█         | 36/342 [00:01<00:12, 23.70Components/s]Create HW Params:  11%|█▏        | 39/342 [00:01<00:15, 20.11Components/s]Create HW Params:  12%|█▏        | 42/342 [00:01<00:13, 22.03Components/s]Create HW Params:  13%|█▎        | 45/342 [00:01<00:13, 22.67Components/s]Create HW Params:  14%|█▍        | 48/342 [00:01<00:12, 22.82Components/s]Create HW Params:  15%|█▍        | 51/342 [00:02<00:13, 21.29Components/s]Create HW Params:  16%|█▌        | 54/342 [00:02<00:12, 22.42Components/s]Create HW Params:  17%|█▋        | 57/342 [00:02<00:13, 21.89Components/s]Create HW Params:  18%|█▊        | 60/342 [00:02<00:12, 22.75Components/s]Create HW Params:  18%|█▊        | 63/342 [00:02<00:12, 22.05Components/s]Create HW Params:  19%|█▉        | 66/342 [00:02<00:13, 20.43Components/s]Create HW Params:  20%|██        | 69/342 [00:02<00:12, 21.45Components/s]Create HW Params:  21%|██        | 72/342 [00:03<00:12, 21.96Components/s]Create HW Params:  22%|██▏       | 75/342 [00:03<00:12, 21.44Components/s]Create HW Params:  23%|██▎       | 78/342 [00:03<00:25, 10.32Components/s]Create HW Params:  23%|██▎       | 80/342 [00:03<00:22, 11.42Components/s]Create HW Params:  24%|██▍       | 83/342 [00:04<00:18, 14.01Components/s]Create HW Params:  25%|██▌       | 86/342 [00:04<00:15, 16.03Components/s]Create HW Params:  26%|██▌       | 89/342 [00:04<00:16, 15.46Components/s]Create HW Params:  27%|██▋       | 92/342 [00:04<00:14, 17.72Components/s]Create HW Params:  28%|██▊       | 95/342 [00:04<00:12, 19.08Components/s]Create HW Params:  29%|██▊       | 98/342 [00:04<00:12, 19.85Components/s]Create HW Params:  30%|██▉       | 101/342 [00:04<00:12, 19.03Components/s]Create HW Params:  30%|███       | 104/342 [00:05<00:11, 20.26Components/s]Create HW Params:  30%|███       | 104/342 [00:05<00:13, 17.13Components/s]Create HW Params:  31%|███▏      | 107/342 [00:05<00:12, 19.52Components/s]Create HW Params:  32%|███▏      | 110/342 [00:05<00:11, 20.44Components/s]Create HW Params:  33%|███▎      | 113/342 [00:05<00:11, 20.06Components/s]Create HW Params:  34%|███▍      | 116/342 [00:05<00:11, 19.59Components/s]Create HW Params:  35%|███▍      | 119/342 [00:06<00:10, 20.52Components/s]Create HW Params:  36%|███▌      | 122/342 [00:06<00:10, 20.91Components/s]Create HW Params:  37%|███▋      | 125/342 [00:06<00:10, 20.32Components/s]Create HW Params:  37%|███▋      | 128/342 [00:06<00:11, 19.44Components/s]Create HW Params:  37%|███▋      | 127/342 [00:06<00:12, 17.49Components/s]Create HW Params:  38%|███▊      | 129/342 [00:06<00:12, 17.41Components/s]Create HW Params:  39%|███▊      | 132/342 [00:06<00:10, 20.03Components/s]Create HW Params:  39%|███▉      | 135/342 [00:07<00:09, 20.86Components/s]Create HW Params:  40%|████      | 138/342 [00:07<00:10, 20.30Components/s]Create HW Params:  41%|████      | 141/342 [00:07<00:10, 19.55Components/s]Create HW Params:  42%|████▏     | 144/342 [00:07<00:09, 20.43Components/s]Create HW Params:  43%|████▎     | 147/342 [00:07<00:09, 20.73Components/s]Create HW Params:  44%|████▍     | 150/342 [00:07<00:09, 20.08Components/s]Create HW Params:  45%|████▍     | 153/342 [00:07<00:09, 19.19Components/s]Create HW Params:  44%|████▍     | 152/342 [00:08<00:11, 17.22Components/s]Create HW Params:  45%|████▌     | 154/342 [00:08<00:10, 17.11Components/s]Create HW Params:  46%|████▌     | 157/342 [00:08<00:09, 19.60Components/s]Create HW Params:  47%|████▋     | 160/342 [00:08<00:08, 20.41Components/s]Create HW Params:  48%|████▊     | 163/342 [00:08<00:09, 19.79Components/s]Create HW Params:  49%|████▊     | 166/342 [00:08<00:09, 18.41Components/s]Create HW Params:  49%|████▉     | 169/342 [00:08<00:08, 19.38Components/s]Create HW Params:  50%|█████     | 172/342 [00:09<00:08, 19.83Components/s]Create HW Params:  51%|█████     | 175/342 [00:09<00:08, 19.17Components/s]Create HW Params:  52%|█████▏    | 177/342 [00:09<00:08, 18.62Components/s]Create HW Params:  52%|█████▏    | 178/342 [00:09<00:11, 14.80Components/s]Create HW Params:  52%|█████▏    | 179/342 [00:09<00:09, 17.12Components/s]Create HW Params:  53%|█████▎    | 182/342 [00:09<00:08, 19.30Components/s]Create HW Params:  54%|█████▍    | 185/342 [00:09<00:07, 19.91Components/s]Create HW Params:  55%|█████▍    | 188/342 [00:10<00:07, 19.34Components/s]Create HW Params:  56%|█████▌    | 191/342 [00:10<00:08, 18.01Components/s]Create HW Params:  57%|█████▋    | 194/342 [00:10<00:07, 18.89Components/s]Create HW Params:  58%|█████▊    | 197/342 [00:10<00:07, 19.21Components/s]Create HW Params:  58%|█████▊    | 199/342 [00:10<00:07, 18.75Components/s]Create HW Params:  59%|█████▉    | 201/342 [00:10<00:08, 17.51Components/s]Create HW Params:  59%|█████▉    | 203/342 [00:10<00:07, 17.82Components/s]Create HW Params:  59%|█████▉    | 202/342 [00:11<00:08, 15.82Components/s]Create HW Params:  60%|█████▉    | 204/342 [00:11<00:08, 15.82Components/s]Create HW Params:  61%|██████    | 207/342 [00:11<00:07, 18.32Components/s]Create HW Params:  61%|██████    | 209/342 [00:11<00:07, 18.72Components/s]Create HW Params:  62%|██████▏   | 212/342 [00:11<00:06, 19.77Components/s]Create HW Params:  63%|██████▎   | 214/342 [00:11<00:07, 16.02Components/s]Create HW Params:  63%|██████▎   | 217/342 [00:11<00:06, 17.92Components/s]Create HW Params:  64%|██████▍   | 220/342 [00:12<00:06, 18.61Components/s]Create HW Params:  65%|██████▌   | 223/342 [00:12<00:06, 18.83Components/s]Create HW Params:  66%|██████▌   | 225/342 [00:12<00:06, 18.33Components/s]Create HW Params:  66%|██████▋   | 227/342 [00:12<00:06, 17.75Components/s]Create HW Params:  67%|██████▋   | 228/342 [00:12<00:08, 13.96Components/s]Create HW Params:  67%|██████▋   | 229/342 [00:12<00:06, 16.40Components/s]Create HW Params:  68%|██████▊   | 232/342 [00:12<00:05, 18.47Components/s]Create HW Params:  68%|██████▊   | 234/342 [00:13<00:05, 18.72Components/s]Create HW Params:  69%|██████▉   | 236/342 [00:13<00:05, 18.97Components/s]Create HW Params:  70%|██████▉   | 238/342 [00:13<00:05, 18.38Components/s]Create HW Params:  69%|██████▉   | 237/342 [00:13<00:08, 12.93Components/s]Create HW Params:  70%|██████▉   | 239/342 [00:13<00:07, 13.90Components/s]Create HW Params:  71%|███████   | 242/342 [00:13<00:06, 16.16Components/s]Create HW Params:  72%|███████▏  | 245/342 [00:13<00:05, 17.26Components/s]Create HW Params:  73%|███████▎  | 248/342 [00:14<00:05, 17.80Components/s]Create HW Params:  73%|███████▎  | 250/342 [00:14<00:05, 17.41Components/s]Create HW Params:  74%|███████▎  | 252/342 [00:14<00:10,  8.36Components/s]Create HW Params:  74%|███████▍  | 254/342 [00:14<00:08,  9.90Components/s]Create HW Params:  74%|███████▍  | 253/342 [00:15<00:09,  9.61Components/s]Create HW Params:  75%|███████▍  | 256/342 [00:15<00:06, 12.53Components/s]Create HW Params:  76%|███████▌  | 259/342 [00:15<00:05, 14.45Components/s]Create HW Params:  76%|███████▋  | 261/342 [00:15<00:05, 15.47Components/s]Create HW Params:  77%|███████▋  | 263/342 [00:15<00:04, 15.82Components/s]Create HW Params:  77%|███████▋  | 262/342 [00:15<00:06, 12.05Components/s]Create HW Params:  77%|███████▋  | 264/342 [00:16<00:05, 13.08Components/s]Create HW Params:  78%|███████▊  | 267/342 [00:16<00:04, 15.36Components/s]Create HW Params:  79%|███████▉  | 270/342 [00:16<00:04, 16.49Components/s]Create HW Params:  80%|███████▉  | 272/342 [00:16<00:04, 17.18Components/s]Create HW Params:  80%|████████  | 274/342 [00:16<00:04, 17.00Components/s]Create HW Params:  81%|████████  | 276/342 [00:16<00:04, 15.90Components/s]Create HW Params:  81%|████████▏ | 278/342 [00:16<00:03, 16.38Components/s]Create HW Params:  81%|████████  | 277/342 [00:17<00:04, 14.64Components/s]Create HW Params:  82%|████████▏ | 279/342 [00:17<00:04, 14.80Components/s]Create HW Params:  82%|████████▏ | 282/342 [00:17<00:03, 17.17Components/s]Create HW Params:  83%|████████▎ | 284/342 [00:17<00:03, 17.50Components/s]Create HW Params:  84%|████████▎ | 286/342 [00:17<00:03, 17.84Components/s]Create HW Params:  84%|████████▍ | 288/342 [00:17<00:03, 17.41Components/s]Create HW Params:  85%|████████▍ | 290/342 [00:17<00:03, 15.72Components/s]Create HW Params:  85%|████████▌ | 292/342 [00:17<00:02, 16.74Components/s]Create HW Params:  86%|████████▌ | 294/342 [00:17<00:02, 17.54Components/s]Create HW Params:  87%|████████▋ | 297/342 [00:18<00:02, 17.95Components/s]Create HW Params:  87%|████████▋ | 299/342 [00:18<00:02, 17.45Components/s]Create HW Params:  88%|████████▊ | 301/342 [00:18<00:02, 16.77Components/s]Create HW Params:  89%|████████▊ | 303/342 [00:18<00:02, 16.87Components/s]Create HW Params:  88%|████████▊ | 302/342 [00:18<00:02, 14.87Components/s]Create HW Params:  89%|████████▉ | 304/342 [00:18<00:02, 14.88Components/s]Create HW Params:  90%|████████▉ | 307/342 [00:18<00:02, 17.16Components/s]Create HW Params:  90%|█████████ | 309/342 [00:19<00:01, 17.44Components/s]Create HW Params:  91%|█████████ | 311/342 [00:19<00:01, 17.73Components/s]Create HW Params:  92%|█████████▏| 313/342 [00:19<00:01, 17.26Components/s]Create HW Params:  91%|█████████ | 312/342 [00:19<00:02, 12.35Components/s]Create HW Params:  92%|█████████▏| 314/342 [00:19<00:02, 13.23Components/s]Create HW Params:  92%|█████████▏| 316/342 [00:19<00:01, 14.61Components/s]Create HW Params:  93%|█████████▎| 318/342 [00:19<00:01, 15.74Components/s]Create HW Params:  94%|█████████▎| 320/342 [00:19<00:01, 16.71Components/s]Create HW Params:  94%|█████████▍| 322/342 [00:20<00:01, 14.12Components/s]Create HW Params:  95%|█████████▌| 325/342 [00:20<00:01, 16.07Components/s]Create HW Params:  96%|█████████▌| 327/342 [00:20<00:00, 16.81Components/s]Create HW Params:  96%|█████████▌| 329/342 [00:20<00:00, 17.37Components/s]Create HW Params:  97%|█████████▋| 331/342 [00:20<00:00, 16.93Components/s]Create HW Params:  97%|█████████▋| 333/342 [00:20<00:00, 17.15Components/s]Create HW Params:  98%|█████████▊| 335/342 [00:20<00:00, 16.72Components/s]Create HW Params:  99%|█████████▊| 337/342 [00:21<00:00, 15.88Components/s]Create HW Params:  99%|█████████▉| 339/342 [00:21<00:00, 16.15Components/s][info] activation fitting started for owlv2_640_op17_full_uint8/reduce_sum1/act_op
+Create HW Params:  99%|█████████▉| 340/342 [00:33<00:00, 16.15Components/s]Create HW Params: 100%|█████████▉| 341/342 [00:47<00:03,  3.97s/Components][info] activation fitting started for owlv2_640_op17_full_uint8/mul_and_add62/act_op
+Create HW Params: 100%|██████████| 342/342 [02:28<00:00, 20.94s/Components]Create HW Params: 100%|██████████| 342/342 [02:28<00:00, 20.94s/Components]                                                                           [info] Model Optimization Algorithm Translate Parameters is done (completion time is 00:02:28.56)
+[info] Finetune encoding skipped
+[info] Bias Correction skipped
+[info] Adaround skipped
+[info] Quantization-Aware Fine-Tuning skipped
+[info] Layer Noise Analysis skipped
+[info] Model Optimization is done
+[info] To achieve optimal performance, set the compiler_optimization_level to "max" by adding performance_param(compiler_optimization_level=max) to the model script. Note that this may increase compilation time.
+[info] Loading network parameters
+[info] Starting Hailo allocation and compilation flow
+[info] owlv2_640_op17_full_uint8 Successful Pre Builder (duration: 1s)
+[?25l[F	[F	[F	[?25h
+[info] Running optimization flow for bucket_0
+[info] Building optimization options for network layers...
+	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[F	[info] Successfully built optimization options - 1m 7s 226ms
+[info] owlv2_640_op17_full_uint8 Successful Pre Partition (duration: 1m 7s)
+[info] Trying to compile the network in a single context
+[info] owlv2_640_op17_full_uint8 Single Context Partition Failed (duration: 0s)
+[info] Single context flow failed: Recoverable single context error - Resources presolve failed: lcus=(122/80)
+[info] Using Multi-context flow
+[info] Resources optimization params: max_control_utilization=60%, max_compute_utilization=60%, max_compute_16bit_utilization=60%, max_memory_utilization (weights)=60%, max_input_aligner_utilization=60%, max_apu_utilization=60%
+[info] Finding the best partition to contexts...
+[info] Found valid partition to 6 contexts
+
+[info] Iteration #138 - 6 contexts,
+[info] Searching for a better partition...
+[info] Found valid partition to 8 contexts, Performance improved by 19.8%
+
+[info] Iteration #142 - 8 contexts,
+[info] Searching for a better partition...
+[info] Found valid partition to 8 contexts, Performance improved by 11.4%
+
+[info] Iteration #146 - 8 contexts,
+[info] Searching for a better partition...
+[info] Found valid partition to 8 contexts, Performance improved by 2.3%
+
+[info] Iteration #149 - 8 contexts,
+[info] Searching for a better partition...
+[info] Found valid partition to 8 contexts, Performance improved by 14.5%
+
+[info] Iteration #157 - 8 contexts,
+[info] Searching for a better partition...
+[info] Found valid partition to 8 contexts, Performance improved by 15.5%
+
+[info] Iteration #158 - 8 contexts,
+[info] Searching for a better partition...
+[info] Found valid partition to 8 contexts, Performance improved by 6.9%
+
+[info] Iteration #159 - 8 contexts,
+[info] Searching for a better partition...
+[<==>....................................] 
+[info] Partition to contexts finished successfully
+[info] Partitioner finished after 259 iterations, Time it took: 39m 2s 630ms
+Top common errors:
+#1 (148/199) Status: 141, Most common message: Automri finished with too many resources on context_2
+#2 (45/199) Status: 43, Most common message: Validator failed on node: ew_mult_softmax3_d4 with Agent infeasible
+
+#3 (6/199) Status: 30, Most common message: Splitter failed to find a possible solution
+[info] Applying selected partition to 8 contexts...
+[info] owlv2_640_op17_full_uint8 Successful Multi Context Partition (duration: 39m 29s)
+[info] Validating layers feasibility
+[info] input_layer1: Pass
+[info] const_input1: Pass
+[info] const_input2_dc: Pass
+[info] conv1_s2d: Pass
+[info] owlv2_input_norm: Pass
+[info] reshape_from_conv1_to_auto_spatial_reshape_from_conv1_to_concat1: Pass
+[info] auto_spatial_reshape_from_conv1_to_concat1: Pass
+[info] concat1: Pass
+[info] ew_add1: Pass
+[info] square1_layer_normalization1_mult_reduce: Pass
+[info] reshape_from_auto_spatial_reshape_from_concat1_to_ew_add1_to_ew_add1: Pass
+[info] square1_layer_normalization1_shortcut: Pass
+[info] reduce_mean1_layer_normalization1: Pass
+[info] conv_var_inv_layer_normalization1: Pass
+[info] square1_layer_normalization1_reshape_post_ew: Pass
+[info] const_input2_d0: Pass
+[info] const_input2_d1: Pass
+[info] ew_sub1_layer_normalization1: Pass
+[info] ew_mult1_layer_normalization1_reshape_post_ew: Pass
+[info] normalization1: Pass
+[info] square1_layer_normalization2_shortcut: Pass
+[info] precision_change25: Pass
+[info] reduce_mean1_layer_normalization2: Pass
+[info] precision_change0: Pass
+[info] square1_layer_normalization2_mult_reduce: Pass
+[info] auto_spatial_reshape_from_concat1_to_ew_add1: Pass
+[info] ew_sub1_layer_normalization2: Pass
+[info] conv1: Pass
+[info] square1_layer_normalization2_reshape_post_ew: Pass
+[info] conv_var_inv_layer_normalization2: Pass
+[info] precision_change26: Pass
+[info] ew_mult1_layer_normalization1_mult_reduce: Pass
+[info] ew_mult1_layer_normalization2_mult_reduce: Pass
+[info] ew_mult1_layer_normalization2_reshape_post_ew: Pass
+[info] conv_feature_splitter1_2: Pass
+[info] matmul1_rs: Pass
+[info] rs_from_matmul1_rs_to_matmul1_d0-1_14: Pass
+[info] conv_feature_splitter1_1: Pass
+[info] matmul1_dc: Pass
+[info] ddr_portal_from_matmul1_d0_to_matmul1_dc: Pass
+[info] conv_feature_splitter1_3: Pass
+[info] reduce_max_softmax1: Pass
+[info] owlv2_640_op17_full_uint8_context_0_8354: Pass
+[info] ddr_portal_from_conv_feature_splitter1_1_to_matmul1_d0-2: Pass
+[info] owlv2_640_op17_full_uint8_context_0_8356: Pass
+[info] owlv2_640_op17_full_uint8_context_0_8352: Pass
+[info] ddr_portal_from_matmul1_d1_to_matmul1_dc: Pass
+[info] reduce_sum_softmax1: Pass
+[info] ew_mult_softmax1_d0: Pass
+[info] ew_mult_softmax1_dc: Pass
+[info] matmul1_d0: Pass
+[info] ew_mult_softmax1_d1: Pass
+[info] ew_sub_softmax1: Pass
+[info] matmul1_d1: Pass
+[info] matmul1_d2: Pass
+[info] matmul2_dc: Pass
+[info] concat_f_from_matmul2_d0_matmul2_d1_matmul2_d2_matmul2_d3_to_matmul2_dc: Pass
+[info] fs_from_matmul2_fs_1_to_matmul2_d0_matmul2_d1_matmul2_d2_matmul2_d3_95: Pass
+[info] matmul2_fs_1: Pass
+[info] square1_layer_normalization3_reshape_post_ew: Pass
+[info] ew_sub1_layer_normalization3: Pass
+[info] square1_layer_normalization3_shortcut: Pass
+[info] precision_change1: Pass
+[info] square1_layer_normalization3_mult_reduce: Pass
+[info] ew_mult1_layer_normalization3_reshape_post_ew: Pass
+[info] reduce_mean1_layer_normalization3: Pass
+[info] fs_from_matmul2_fs_0_to_matmul2_d0_matmul2_d1_matmul2_d2_matmul2_d3_98: Pass
+[info] matmul2_fs_0: Pass
+[info] matmul2_d4: Pass
+[info] ew_mult1_layer_normalization3_mult_reduce: Pass
+[info] conv_var_inv_layer_normalization3: Pass
+[info] matmul2_d2: Pass
+[info] matmul2_d3: Pass
+[info] conv4_dc: Pass
+[info] concat_f_from_conv5_d0-1_to_conv5_dc: Pass
+[info] conv3: Pass
+[info] precision_change27: Pass
+[info] conv4_d2: Pass
+[info] conv5_d1: Pass
+[info] ew_sub1_layer_normalization4: Pass
+[info] reduce_mean1_layer_normalization4: Pass
+[info] precision_change2: Pass
+[info] square1_layer_normalization4_shortcut: Pass
+[info] concat_f_from_conv4_d0-1_to_conv4_dc: Pass
+[info] square1_layer_normalization4_mult_reduce: Pass
+[info] conv4_d1: Pass
+[info] conv5_dc: Pass
+[info] conv4_d0: Pass
+[info] conv5_d2: Pass
+[info] square1_layer_normalization4_reshape_post_ew: Pass
+[info] conv_var_inv_layer_normalization4: Pass
+[info] precision_change28: Pass
+[info] conv5_d0: Pass
+[info] ew_mult1_layer_normalization4_mult_reduce: Pass
+[info] owlv2_640_op17_full_uint8_owlv2_640_op17_full_uint8_context_0_to_owlv2_640_op17_full_uint8_context_1_8355: Pass
+[info] owlv2_640_op17_full_uint8_context_1_8358: Pass
+[info] owlv2_640_op17_full_uint8_context_1_8360: Pass
+[info] ew_mult1_layer_normalization4_reshape_post_ew: Pass
+[info] owlv2_640_op17_full_uint8_context_1_8364: Pass
+[info] owlv2_640_op17_full_uint8_context_1_8366: Pass
+[info] owlv2_640_op17_full_uint8_owlv2_640_op17_full_uint8_context_0_to_owlv2_640_op17_full_uint8_context_1_8357: Pass
+[info] owlv2_640_op17_full_uint8_owlv2_640_op17_full_uint8_context_0_to_owlv2_640_op17_full_uint8_context_1_8353: Pass
+[info] fs_from_fs_from_matmul2_fs_1_to_matmul2_d0_matmul2_d1_matmul2_d2_matmul2_d3_95_to_fs_from_fs_fro_8402: Pass
+[info] conv_feature_splitter2_1: Pass
+[info] fs_from_fs_from_matmul2_fs_1_to_matmul2_d0_matmul2_d1_matmul2_d2_matmul2_d3_95_to_matmul2_d0_mat_8401: Pass
+[info] conv_feature_splitter2_3: Pass
+[info] conv_feature_splitter2_2: Pass
+[info] matmul2_d0: Fail
+[info] matmul2_d1: Fail
+[error] owlv2_640_op17_full_uint8 Partition and Allocation Failed (duration: 43m 26s)
+[error] Failed to optimize bucket_0 with error: Validator failed on node: matmul2_d0 with Agent infeasible
+Validator failed on node: matmul2_d1 with Agent infeasible
+
+[error] owlv2_640_op17_full_uint8_bucket_0 Compilation Failed (duration: 43m 26s)
+Validator failed on node: matmul2_d0 with Agent infeasible
+Validator failed on node: matmul2_d1 with Agent infeasible
+
+[?25h
+[error] Failed to produce compiled graph
+
+========================================================================
+OWLv2 -> hailo10h   DFC 5.4.0   640px / 1600 tokens
+========================================================================
+  640_op17_full_uint8  translate=ok  optimize=ok  compile=FAIL
+      compile: Compilation failed: Validator failed on node: matmul2_d0 with Agent infeasible
+
+VERDICT: no HEF. Furthest stage reached: ['optimize'].
+Read the per-stage headlines above before concluding anything about the part: a parser gap and a resource wall argue for different hardware.

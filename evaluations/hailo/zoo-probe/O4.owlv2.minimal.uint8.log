@@ -1,0 +1,9 @@
+[info] No GPU chosen, selecting least used GPU. To select GPU explicitly please use CUDA_VISIBLE_DEVICES environment variable.
+[info] Selected GPU: 0
+/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/io/image.py:14: UserWarning: Failed to load image Python extension: 'Could not load this library: /local/workspace/hailo_virtualenv/lib/python3.10/site-packages/torchvision/image.so'If you don't plan on using image functionality from `torchvision.io`, you can ignore this warning. Otherwise, there might be something wrong with your environment. Did you have `libjpeg` or `libpng` installed before building `torchvision` from source?
+  warn(
+
+=== 960_op17_minimal_uint8 ===
+[info] Translation started on ONNX model owlv2_960_op17_minimal_uint8
+[info] Restored ONNX model owlv2_960_op17_minimal_uint8 (completion time: 00:00:03.31)
+[info] Extracted ONNXRuntime meta-data for Hailo model (completion time: 00:00:11.83)

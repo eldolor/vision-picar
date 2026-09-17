@@ -1,0 +1,52 @@
+########## hailo10h ##########
+    return func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 1364, in translate_onnx_model
+    parser.translate_onnx_model(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/parser/parser.py", line 288, in translate_onnx_model
+    parsing_results = self._parse_onnx_model_to_hn(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/parser/parser.py", line 328, in _parse_onnx_model_to_hn
+    return self.parse_model_to_hn(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/parser/parser.py", line 427, in parse_model_to_hn
+    fuser = HailoNNFuser(converter.convert_model(), net_name, converter.end_node_names)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/translator.py", line 92, in convert_model
+    self._create_layers()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/edge_nn_translator.py", line 39, in _create_layers
+    self._add_direct_layers()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/edge_nn_translator.py", line 162, in _add_direct_layers
+    raise ParsingWithRecommendationException(
+hailo_sdk_client.model_translator.exceptions.ParsingWithRecommendationException: Parsing failed. The errors found in the graph are:
+ UnsupportedShuffleLayerError in op node_Reshape_581: Failed to determine type of layer to create in node node_Reshape_581
+ UnsupportedShuffleLayerError in op node_Reshape_654: Failed to determine type of layer to create in node node_Reshape_654
+Please try to parse the model again, using these end node names: node_transpose_54, node_upsample_bilinear2d_2, node_layer_norm_24, node_upsample_bilinear2d, node_Mul_583, node_Transpose_579, node_upsample_bilinear2d_1
+[segformer] translate: FAIL -- Parsing failed. The errors found in the graph are:
+ UnsupportedShuffleLayerError in op node_Reshape_581: Failed to determine type of layer to create in node node_Reshape_581
+ UnsupportedShuffleLayerError in op node_Reshape_654: Failed to determine type of layer to create in node node_Reshape_654
+Ple
+
+[segformer] VERDICT hailo10h: no HEF; reached []
+########## hailo15h ##########
+    return func(self, *args, **kwargs)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/runner/client_runner.py", line 1364, in translate_onnx_model
+    parser.translate_onnx_model(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/parser/parser.py", line 288, in translate_onnx_model
+    parsing_results = self._parse_onnx_model_to_hn(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/parser/parser.py", line 328, in _parse_onnx_model_to_hn
+    return self.parse_model_to_hn(
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/sdk_backend/parser/parser.py", line 427, in parse_model_to_hn
+    fuser = HailoNNFuser(converter.convert_model(), net_name, converter.end_node_names)
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/translator.py", line 92, in convert_model
+    self._create_layers()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/edge_nn_translator.py", line 39, in _create_layers
+    self._add_direct_layers()
+  File "/local/workspace/hailo_virtualenv/lib/python3.10/site-packages/hailo_sdk_client/model_translator/edge_nn_translator.py", line 162, in _add_direct_layers
+    raise ParsingWithRecommendationException(
+hailo_sdk_client.model_translator.exceptions.ParsingWithRecommendationException: Parsing failed. The errors found in the graph are:
+ UnsupportedShuffleLayerError in op node_Reshape_581: Failed to determine type of layer to create in node node_Reshape_581
+ UnsupportedShuffleLayerError in op node_Reshape_654: Failed to determine type of layer to create in node node_Reshape_654
+Please try to parse the model again, using these end node names: node_layer_norm_24, node_Transpose_579, node_Mul_583, node_transpose_54, node_upsample_bilinear2d_2, node_upsample_bilinear2d_1, node_upsample_bilinear2d
+[segformer] translate: FAIL -- Parsing failed. The errors found in the graph are:
+ UnsupportedShuffleLayerError in op node_Reshape_581: Failed to determine type of layer to create in node node_Reshape_581
+ UnsupportedShuffleLayerError in op node_Reshape_654: Failed to determine type of layer to create in node node_Reshape_654
+Ple
+
+[segformer] VERDICT hailo15h: no HEF; reached []

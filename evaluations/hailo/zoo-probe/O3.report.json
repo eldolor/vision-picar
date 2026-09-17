@@ -1,0 +1,46 @@
+{
+ "started_at": "2026-09-16T22:05:47Z",
+ "arch": "hailo10h",
+ "model_id": "google/owlv2-base-patch16-ensemble",
+ "image_size": 960,
+ "num_patches": 3600,
+ "factor_patch": false,
+ "dfc_version": "5.4.0",
+ "host": "12732fb18e67",
+ "calibration": {
+  "n": null
+ },
+ "attempts": [
+  {
+   "tag": "960_op17_full_uint8",
+   "onnx": "owlv2_image_tower_960_op17_full.onnx",
+   "opset": 17,
+   "head": "full",
+   "image_size": 960,
+   "layout": "uint8",
+   "arch": "hailo10h",
+   "stages": {
+    "translate": {
+     "ok": true,
+     "seconds": 52.3
+    },
+    "optimize": {
+     "ok": true,
+     "seconds": 3250.5
+    },
+    "compile": {
+     "ok": false,
+     "seconds": 4374.3,
+     "error_type": "BackendAllocatorException",
+     "error": "Compilation failed: No successful assignments: matmul1 errors:\n\tAgent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 218).\n\n\tAgent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 220).\n\n\tAgent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 221).\n\n\tAgent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 224).\n\n\tAgent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 226).\n\n\tAgent infeasible by resources sanity.: Memory units capacity exceeded (available: 128, required: 228).\n\nmatmul1 errors:\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\n\tmatmul1_d0 failed on kernel validation: Two apus per memory is not supported in matmul1_d0\nmatmul1 errors:\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\n\tmatmul1_d0 failed on kernel validation: Two apus per memory is not supported in matmul1_d0\n\tAgent infeasible\n\tmatmul1_d1 failed on kernel validation: Two apus per memory is not supported in matmul1_d1\n\tAgent infeasible\n\tmatmul1_d2 failed on kernel validation: Two apus per memory is not supported in matmul1_d2\n\tAgent infeasible\n\tmatmul1_d3 failed on kernel validation: Two apus per memory is not supported in matmul1_d3\n\tAgent infeasible\n\tmatmul1_d4 failed on kernel validation: Two apus per memory is not supported in matmul1_d4\n\tAgent infeasible\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\n\tmatmul1_d0 failed on kernel validation: Two apus per memory is not supported in matmul1_d0\n\tAgent infeasible\n\tmatmul1_d1 failed on kernel validation: Two apus per memory is not supported in matmul1_d1\n\tAgent infeasible\n\tmatmul1_d2 failed on kernel validation: Two apus per memory is not supported in matmul1_d2\n\tAgent infeasible\n\tmatmul1_d3 failed on kernel validation: Two apus per memory is not supported in matmul1_d3\n\tAgent infeasible\n\tmatmul1_d4 failed on kernel validation: Two apus per memory is not supported in matmul1_d4\n\tAgent infeasible\n\tmatmul1_d5 failed on kernel validation: Two apus per memory is not supported in matmul1_d5\n\tAgent infeasible\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\n\tmatmul1_d0 failed on kernel validation: Two apus per memory is not supported in matmul1_d0\n\tAgent infeasible\n\tmatmul1_d1 failed on kernel validation: Two apus per memory is not supported in matmul1_d1\n\tAgent infeasible\n\tmatmul1_d2 failed on kernel validation: Two apus per memory is not supported in matmul1_d2\n\tAgent infeasible\n\tmatmul1_d3 failed on kernel validation: Two apus per memory is not supported in matmul1_d3\n\tAgent infeasible\n\tmatmul1_d4 failed on kernel validation: Two apus per memory is not supported in matmul1_d4\n\tAgent infeasible\n\tmatmul1_d5 failed on kernel validation: Two apus per memory is not supported in matmul1_d5\n\tAgent infeasible\n\tmatmul1_d6 failed on kernel validation: Two apus per memory is not supported in matmul1_d6\n\tAgent infeasible\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\n\tAgent infeasible\nmatmul1 errors:\n\tAgent infeasible\n\tmatmul1_d0 failed on kernel validation: Two apus per memory is not supported in matmul1_d0\n\tAgent infeasible\n\tmatmul1_d1 failed on kernel validation: Two apus per memory is not supported in matmul1_d1\n\tAgent infeasible\n\tmatmul1_d2 failed on kernel validation: Two apus per memory is not support",
+     "log": "logs/960_op17_full_uint8.compile.log",
+     "headline": "Compilation failed: No successful assignments: matmul1 errors:"
+    }
+   },
+   "reached": "optimize",
+   "hef": null,
+   "har": "owlv2_960_op17_full_uint8.har",
+   "model_script": "owlv2_input_norm = normalization([122.7709, 116.746, 104.0937], [68.5005, 66.6322, 70.3232])"
+  }
+ ]
+}
