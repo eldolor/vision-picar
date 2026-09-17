@@ -48,7 +48,21 @@ def main(argv=None) -> int:
     from transformers import SegformerForSemanticSegmentation
 
     args.out.mkdir(parents=True, exist_ok=True)
-    model = SegformerForSemanticSegmentation.from_pretrained(args.model).eval()
+    # `eager` rather than the default SDPA attention. SDPA's export folds
+    # the batch dim into the heads and then restores it with a 3D->4D
+    # Reshape ([8,32,256] -> [1,8,32,256]) inside every late attention
+    # block, and the Hailo parser cannot decide what shuffle layer those
+    # are:
+    #
+    #     UnsupportedShuffleLayerError in op node_Reshape_581
+    #     UnsupportedShuffleLayerError in op node_Reshape_654
+    #
+    # Eager attention keeps the batch dim explicit throughout and the
+    # nodes never appear. Same weights and same arithmetic -- only the
+    # kernel the export traces through changes -- and the identity check
+    # below is what proves that rather than assuming it.
+    model = SegformerForSemanticSegmentation.from_pretrained(
+        args.model, attn_implementation="eager").eval()
 
     id2label = model.config.id2label
     floor_words = ("floor", "rug", "carpet", "earth", "ground")

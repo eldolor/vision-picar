@@ -227,10 +227,15 @@ floor mask OFF and it is 20% / 13% / 3% -- the detector ordering exactly.
 wrecked detector**, so the 45%-vs-72% gap is worth about one point of
 recall in the shipped configuration.
 
-**Two consequences.** The next question is not "8L or 10H" but **does
-SegFormer-B0 survive INT8** -- the mask has never been quantized, and it
-is a third model against the Pi's four cores (handoff open item 1, now
-first-order). And the tier has a real defect: at the shipped
+**Two consequences. The first is ANSWERED (P18, 2026-09-17): SegFormer
+compiles to BOTH parts** -- hailo10h 6.4 MB / 13 contexts, hailo8l 20.0 MB
+-- **and INT8 barely touches it**: floor-mask IoU 0.988 mean / 0.995
+median against fp32 over 120 frames, 0 frames below 0.5, at optimization
+level **0** (every accuracy pass skipped, so a LOWER bound). The mask that
+carries the tier is therefore real on hardware, and **the 10H is NOT
+mandatory** -- the 8L runs the whole tier. It remains a headroom purchase
+at +$60. Still open: the mask is a third model against the Pi's four
+cores (handoff open item 1, now first-order). And the tier has a real defect: at the shipped
 `max_crops` of 8 the SAME data gives the 8L 30% against fp32's 25%,
 because crops are ranked by AREA and more proposals crowd a small target
 out of a fixed cap -- **a better detector can make the tier worse.**
@@ -564,6 +569,15 @@ vision-picar/
 │                               arbitration, a health verdict and a rollback.
 │                               M1-M5 BUILT (2026-09-03, not deployed), M6-M12
 │                               proposed; seven need no hardware
+├── HARDWARE-BOM.md            the Jetson BOM as PRICED, 2026-09-17 -- exact
+│                               part numbers, vendor plan, bring-up order,
+│                               power budget, and the ESP32 driver board's
+│                               JSON protocol (which is RobotInterface's
+│                               shape on the hardware side). Researched by
+│                               Claude Cowork; filed verbatim under an
+│                               editor's note listing four corrections.
+│                               Read its note first -- it records the
+│                               Jetson as DECIDED and it is not
 ├── PLAN-onboard-perception.md  what runs on the car itself -- and the hardware
 │                               chain that question turned out to be hiding.
 │                               DESIGN SETTLED, NOTHING BUILT. Supersedes parts

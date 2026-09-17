@@ -1,0 +1,31 @@
+{
+  "model": "segformer-b0-ade",
+  "arch": "hailo10h",
+  "layout": "uint8",
+  "onnx": "segformer_b0_ade_512_op17.onnx",
+  "image_size": 512,
+  "floor_ids": [
+    3,
+    13,
+    28
+  ],
+  "stages": {
+    "translate": {
+      "ok": true,
+      "seconds": 4.0
+    },
+    "optimize": {
+      "ok": true,
+      "seconds": 414.3
+    },
+    "compile": {
+      "ok": true,
+      "seconds": 678.3
+    }
+  },
+  "hef": {
+    "path": "build/segformer/segformer_b0_ade-hailo10h.hef",
+    "bytes": 6381568
+  },
+  "end_node_names": null
+}

@@ -12,9 +12,10 @@
   "stages": {
     "translate": {
       "ok": false,
-      "seconds": 5.5,
-      "error": "Parsing failed. The errors found in the graph are:\n UnsupportedShuffleLayerError in op node_Reshape_581: Failed to determine type of layer to create in node node_Reshape_581\n UnsupportedShuffleLayerError in op node_Reshape_654: Failed to determine type of layer to create in node node_Reshape_654\nPlease try to parse the model again, using these end node names: node_transpose_54, node_upsample_bilinear2d_2, node_layer_norm_24, node_upsample_bilinear2d, node_Mul_583, node_Transpose_579, node_upsample_bilinear2d_1"
+      "seconds": 6.2,
+      "error": "Parsing failed. The errors found in the graph are:\n UnsupportedShuffleLayerError in op node_Reshape_581: Failed to determine type of layer to create in node node_Reshape_581\n UnsupportedShuffleLayerError in op node_Reshape_654: Failed to determine type of layer to create in node node_Reshape_654\nPlease try to parse the model again, using these end node names: node_Transpose_579, node_transpose_54, node_upsample_bilinear2d_2, node_layer_norm_24, node_upsample_bilinear2d, node_Mul_583, node_upsample_bilinear2d_1"
     }
   },
-  "hef": null
+  "hef": null,
+  "end_node_names": null
 }

@@ -1,0 +1,735 @@
+{
+  "summary": {
+    "arch": "hailo10h",
+    "optimization_level": 0,
+    "frames": 120,
+    "mean_iou": 0.9877228410933779,
+    "median_iou": 0.9952130396771628,
+    "frames_below_0.5": 0,
+    "frames_below_0.8": 1,
+    "mean_fp32_floor_px": 8358.441666666668,
+    "mean_int8_floor_px": 8356.466666666667
+  },
+  "frames": [
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0026.jpg",
+      "iou": 0.9972930616896993,
+      "fp32_floor_px": 7012,
+      "int8_floor_px": 7007
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0024.jpg",
+      "iou": 0.9970223916150548,
+      "fp32_floor_px": 8383,
+      "int8_floor_px": 8384
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0004.jpg",
+      "iou": 0.998421384971585,
+      "fp32_floor_px": 9489,
+      "int8_floor_px": 9500
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0031.jpg",
+      "iou": 0.9866190900981266,
+      "fp32_floor_px": 1121,
+      "int8_floor_px": 1106
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0013.jpg",
+      "iou": 0.9978818545540127,
+      "fp32_floor_px": 8486,
+      "int8_floor_px": 8492
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0030.jpg",
+      "iou": 0.9946305292763999,
+      "fp32_floor_px": 3910,
+      "int8_floor_px": 3891
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0025.jpg",
+      "iou": 0.9952255308455836,
+      "fp32_floor_px": 7955,
+      "int8_floor_px": 7925
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0018.jpg",
+      "iou": 0.9971229920882282,
+      "fp32_floor_px": 8319,
+      "int8_floor_px": 8341
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0020.jpg",
+      "iou": 0.9959641255605381,
+      "fp32_floor_px": 8885,
+      "int8_floor_px": 8919
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0032.jpg",
+      "iou": 0.9699367088607594,
+      "fp32_floor_px": 631,
+      "int8_floor_px": 614
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0029.jpg",
+      "iou": 0.9946299322904506,
+      "fp32_floor_px": 4283,
+      "int8_floor_px": 4260
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0021.jpg",
+      "iou": 0.9979473144030107,
+      "fp32_floor_px": 8751,
+      "int8_floor_px": 8769
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0022.jpg",
+      "iou": 0.9976447769465225,
+      "fp32_floor_px": 7203,
+      "int8_floor_px": 7216
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0023.jpg",
+      "iou": 0.9979324603721571,
+      "fp32_floor_px": 7247,
+      "int8_floor_px": 7248
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0019.jpg",
+      "iou": 0.9951248513674198,
+      "fp32_floor_px": 8371,
+      "int8_floor_px": 8408
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0012.jpg",
+      "iou": 0.998108076149935,
+      "fp32_floor_px": 8444,
+      "int8_floor_px": 8454
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0028.jpg",
+      "iou": 0.9963028452017361,
+      "fp32_floor_px": 6220,
+      "int8_floor_px": 6199
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0027.jpg",
+      "iou": 0.9730612244897959,
+      "fp32_floor_px": 6113,
+      "int8_floor_px": 5972
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0008.jpg",
+      "iou": 0.989345509893455,
+      "fp32_floor_px": 3905,
+      "int8_floor_px": 3937
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0000.jpg",
+      "iou": 0.9919813919324233,
+      "fp32_floor_px": 16320,
+      "int8_floor_px": 16223
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0015.jpg",
+      "iou": 0.9974814104101704,
+      "fp32_floor_px": 8321,
+      "int8_floor_px": 8334
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0003.jpg",
+      "iou": 0.9984119106699751,
+      "fp32_floor_px": 10070,
+      "int8_floor_px": 10064
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0011.jpg",
+      "iou": 0.9988164279796425,
+      "fp32_floor_px": 8441,
+      "int8_floor_px": 8447
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0006.jpg",
+      "iou": 0.9901043059641615,
+      "fp32_floor_px": 7404,
+      "int8_floor_px": 7478
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0007.jpg",
+      "iou": 0.9941561152080145,
+      "fp32_floor_px": 7155,
+      "int8_floor_px": 7177
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0016.jpg",
+      "iou": 0.9959825121115443,
+      "fp32_floor_px": 8429,
+      "int8_floor_px": 8463
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0001.jpg",
+      "iou": 0.9950018511662347,
+      "fp32_floor_px": 16150,
+      "int8_floor_px": 16181
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0005.jpg",
+      "iou": 0.9980282996984459,
+      "fp32_floor_px": 8610,
+      "int8_floor_px": 8617
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0002.jpg",
+      "iou": 0.8440045463155901,
+      "fp32_floor_px": 10499,
+      "int8_floor_px": 8970
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0010.jpg",
+      "iou": 0.997653133067355,
+      "fp32_floor_px": 8504,
+      "int8_floor_px": 8520
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0014.jpg",
+      "iou": 0.998431845597105,
+      "fp32_floor_px": 8281,
+      "int8_floor_px": 8286
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0009.jpg",
+      "iou": 0.9897523484201537,
+      "fp32_floor_px": 6957,
+      "int8_floor_px": 7023
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-142454/frame-0017.jpg",
+      "iou": 0.9965824484315879,
+      "fp32_floor_px": 8165,
+      "int8_floor_px": 8193
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0202.jpg",
+      "iou": 0.9893061125288614,
+      "fp32_floor_px": 8147,
+      "int8_floor_px": 8223
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0204.jpg",
+      "iou": 0.9962590299277606,
+      "fp32_floor_px": 7731,
+      "int8_floor_px": 7744
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0211.jpg",
+      "iou": 0.9902791278989029,
+      "fp32_floor_px": 7138,
+      "int8_floor_px": 7194
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0205.jpg",
+      "iou": 0.9978823173498714,
+      "fp32_floor_px": 6601,
+      "int8_floor_px": 6607
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0203.jpg",
+      "iou": 0.9966211650223004,
+      "fp32_floor_px": 7388,
+      "int8_floor_px": 7385
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0209.jpg",
+      "iou": 0.9941584519897773,
+      "fp32_floor_px": 8178,
+      "int8_floor_px": 8208
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0206.jpg",
+      "iou": 0.9931650160412889,
+      "fp32_floor_px": 7133,
+      "int8_floor_px": 7156
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0212.jpg",
+      "iou": 0.9883067236339105,
+      "fp32_floor_px": 4414,
+      "int8_floor_px": 4428
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0208.jpg",
+      "iou": 0.9921221073362876,
+      "fp32_floor_px": 8061,
+      "int8_floor_px": 8123
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0207.jpg",
+      "iou": 0.9862647844334224,
+      "fp32_floor_px": 7761,
+      "int8_floor_px": 7857
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0003.jpg",
+      "iou": 0.9974489795918368,
+      "fp32_floor_px": 9393,
+      "int8_floor_px": 9399
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0146.jpg",
+      "iou": 0.9956672443674177,
+      "fp32_floor_px": 5751,
+      "int8_floor_px": 5764
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0045.jpg",
+      "iou": 0.9203805708562844,
+      "fp32_floor_px": 5967,
+      "int8_floor_px": 5538
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0071.jpg",
+      "iou": 0.9929290182213761,
+      "fp32_floor_px": 7354,
+      "int8_floor_px": 7302
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0081.jpg",
+      "iou": 0.985246282527881,
+      "fp32_floor_px": 8481,
+      "int8_floor_px": 8608
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0053.jpg",
+      "iou": 0.9569392812887236,
+      "fp32_floor_px": 9272,
+      "int8_floor_px": 9679
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0154.jpg",
+      "iou": 0.9701591511936339,
+      "fp32_floor_px": 5871,
+      "int8_floor_px": 6013
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0194.jpg",
+      "iou": 0.9935050136736554,
+      "fp32_floor_px": 8744,
+      "int8_floor_px": 8751
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0042.jpg",
+      "iou": 0.9963707064160726,
+      "fp32_floor_px": 7711,
+      "int8_floor_px": 7691
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0051.jpg",
+      "iou": 0.9936213991769547,
+      "fp32_floor_px": 9659,
+      "int8_floor_px": 9719
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0061.jpg",
+      "iou": 0.9959354183131987,
+      "fp32_floor_px": 8848,
+      "int8_floor_px": 8830
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0130.jpg",
+      "iou": 0.9941276115189158,
+      "fp32_floor_px": 8805,
+      "int8_floor_px": 8853
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0059.jpg",
+      "iou": 0.9921444483526791,
+      "fp32_floor_px": 8464,
+      "int8_floor_px": 8527
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0074.jpg",
+      "iou": 0.9896907216494846,
+      "fp32_floor_px": 7440,
+      "int8_floor_px": 7421
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0115.jpg",
+      "iou": 0.9879702795140937,
+      "fp32_floor_px": 8384,
+      "int8_floor_px": 8472
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0164.jpg",
+      "iou": 0.9859754175858809,
+      "fp32_floor_px": 6342,
+      "int8_floor_px": 6261
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0119.jpg",
+      "iou": 0.9951184664841053,
+      "fp32_floor_px": 8368,
+      "int8_floor_px": 8389
+    },
+    {
+      "frame": "recordings/blue-bottle-20260907-185007/frame-0113.jpg",
+      "iou": 0.8706673564407656,
+      "fp32_floor_px": 8418,
+      "int8_floor_px": 9662
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0008.jpg",
+      "iou": 0.9948985375807732,
+      "fp32_floor_px": 8783,
+      "int8_floor_px": 8814
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0014.jpg",
+      "iou": 0.996787744007907,
+      "fp32_floor_px": 8076,
+      "int8_floor_px": 8086
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0012.jpg",
+      "iou": 0.9958932238193019,
+      "fp32_floor_px": 7764,
+      "int8_floor_px": 7788
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0010.jpg",
+      "iou": 0.9956135288006465,
+      "fp32_floor_px": 8626,
+      "int8_floor_px": 8662
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0007.jpg",
+      "iou": 0.9983677276436983,
+      "fp32_floor_px": 8570,
+      "int8_floor_px": 8570
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0013.jpg",
+      "iou": 0.9969279921356599,
+      "fp32_floor_px": 8115,
+      "int8_floor_px": 8136
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0018.jpg",
+      "iou": 0.9949757449757449,
+      "fp32_floor_px": 5747,
+      "int8_floor_px": 5768
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0004.jpg",
+      "iou": 0.996943231441048,
+      "fp32_floor_px": 9136,
+      "int8_floor_px": 9156
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0005.jpg",
+      "iou": 0.9971849285404937,
+      "fp32_floor_px": 9212,
+      "int8_floor_px": 9234
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0015.jpg",
+      "iou": 0.9986530172413793,
+      "fp32_floor_px": 7421,
+      "int8_floor_px": 7417
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0011.jpg",
+      "iou": 0.9978689397975493,
+      "fp32_floor_px": 7495,
+      "int8_floor_px": 7505
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0009.jpg",
+      "iou": 0.9952005485087418,
+      "fp32_floor_px": 8716,
+      "int8_floor_px": 8744
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0016.jpg",
+      "iou": 0.9945070422535212,
+      "fp32_floor_px": 7088,
+      "int8_floor_px": 7073
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0000.jpg",
+      "iou": 0.9960525107867437,
+      "fp32_floor_px": 10850,
+      "int8_floor_px": 10893
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0001.jpg",
+      "iou": 0.9975223937488088,
+      "fp32_floor_px": 10471,
+      "int8_floor_px": 10491
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0002.jpg",
+      "iou": 0.9980373928313191,
+      "fp32_floor_px": 9664,
+      "int8_floor_px": 9679
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0006.jpg",
+      "iou": 0.9978044834758493,
+      "fp32_floor_px": 8635,
+      "int8_floor_px": 8654
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0003.jpg",
+      "iou": 0.9982165337809484,
+      "fp32_floor_px": 9520,
+      "int8_floor_px": 9527
+    },
+    {
+      "frame": "recordings/blue-shoes-20260907-152528/frame-0017.jpg",
+      "iou": 0.9964146023468058,
+      "fp32_floor_px": 6125,
+      "int8_floor_px": 6125
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0023.jpg",
+      "iou": 0.9943610915315678,
+      "fp32_floor_px": 9879,
+      "int8_floor_px": 9927
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0038.jpg",
+      "iou": 0.9907724756129712,
+      "fp32_floor_px": 7524,
+      "int8_floor_px": 7578
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0029.jpg",
+      "iou": 0.9923747276688453,
+      "fp32_floor_px": 9113,
+      "int8_floor_px": 9177
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0025.jpg",
+      "iou": 0.9947511005756857,
+      "fp32_floor_px": 5883,
+      "int8_floor_px": 5898
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0040.jpg",
+      "iou": 0.989100817438692,
+      "fp32_floor_px": 7999,
+      "int8_floor_px": 8061
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0039.jpg",
+      "iou": 0.9957459292944111,
+      "fp32_floor_px": 6799,
+      "int8_floor_px": 6806
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0022.jpg",
+      "iou": 0.9956341177723352,
+      "fp32_floor_px": 9350,
+      "int8_floor_px": 9391
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0028.jpg",
+      "iou": 0.9891846039656452,
+      "fp32_floor_px": 9330,
+      "int8_floor_px": 9430
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0018.jpg",
+      "iou": 0.9342105263157895,
+      "fp32_floor_px": 3636,
+      "int8_floor_px": 3861
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0036.jpg",
+      "iou": 0.9957523627482213,
+      "fp32_floor_px": 9397,
+      "int8_floor_px": 9397
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0042.jpg",
+      "iou": 0.9953799392097264,
+      "fp32_floor_px": 8195,
+      "int8_floor_px": 8217
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0034.jpg",
+      "iou": 0.9933619281045751,
+      "fp32_floor_px": 9732,
+      "int8_floor_px": 9787
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0026.jpg",
+      "iou": 0.9962718669343275,
+      "fp32_floor_px": 10422,
+      "int8_floor_px": 10461
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0035.jpg",
+      "iou": 0.9889514066496163,
+      "fp32_floor_px": 9667,
+      "int8_floor_px": 9775
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0030.jpg",
+      "iou": 0.9915108737123235,
+      "fp32_floor_px": 10396,
+      "int8_floor_px": 10483
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0027.jpg",
+      "iou": 0.9956382669380633,
+      "fp32_floor_px": 10272,
+      "int8_floor_px": 10317
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0020.jpg",
+      "iou": 0.9958964646464646,
+      "fp32_floor_px": 9471,
+      "int8_floor_px": 9498
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0033.jpg",
+      "iou": 0.9926695174098962,
+      "fp32_floor_px": 9763,
+      "int8_floor_px": 9809
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0024.jpg",
+      "iou": 0.9903358681875792,
+      "fp32_floor_px": 6255,
+      "int8_floor_px": 6308
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0043.jpg",
+      "iou": 0.9962994290547684,
+      "fp32_floor_px": 9441,
+      "int8_floor_px": 9440
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0032.jpg",
+      "iou": 0.9927055702917772,
+      "fp32_floor_px": 8992,
+      "int8_floor_px": 9038
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0037.jpg",
+      "iou": 0.995380046199538,
+      "fp32_floor_px": 9063,
+      "int8_floor_px": 9077
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0001.jpg",
+      "iou": 0.9952539634454206,
+      "fp32_floor_px": 9895,
+      "int8_floor_px": 9864
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0016.jpg",
+      "iou": 0.9912650602409638,
+      "fp32_floor_px": 9950,
+      "int8_floor_px": 9883
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0008.jpg",
+      "iou": 0.9971235865899624,
+      "fp32_floor_px": 10056,
+      "int8_floor_px": 10079
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0011.jpg",
+      "iou": 0.977425144044583,
+      "fp32_floor_px": 10366,
+      "int8_floor_px": 10569
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0015.jpg",
+      "iou": 0.9950198190873056,
+      "fp32_floor_px": 9814,
+      "int8_floor_px": 9815
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0007.jpg",
+      "iou": 0.9973281739450893,
+      "fp32_floor_px": 10831,
+      "int8_floor_px": 10848
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0012.jpg",
+      "iou": 0.9687533212881284,
+      "fp32_floor_px": 9213,
+      "int8_floor_px": 9311
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0009.jpg",
+      "iou": 0.9945178974524347,
+      "fp32_floor_px": 9262,
+      "int8_floor_px": 9293
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0003.jpg",
+      "iou": 0.9954191033138402,
+      "fp32_floor_px": 10223,
+      "int8_floor_px": 10250
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0014.jpg",
+      "iou": 0.9659202621518296,
+      "fp32_floor_px": 9080,
+      "int8_floor_px": 8918
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0005.jpg",
+      "iou": 0.9966715976331361,
+      "fp32_floor_px": 10786,
+      "int8_floor_px": 10810
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0013.jpg",
+      "iou": 0.9691938178780284,
+      "fp32_floor_px": 9464,
+      "int8_floor_px": 9393
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0010.jpg",
+      "iou": 0.9979354558296207,
+      "fp32_floor_px": 9191,
+      "int8_floor_px": 9196
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0021.jpg",
+      "iou": 0.9924827102335372,
+      "fp32_floor_px": 9903,
+      "int8_floor_px": 9976
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0000.jpg",
+      "iou": 0.9959438068856351,
+      "fp32_floor_px": 10089,
+      "int8_floor_px": 10086
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0004.jpg",
+      "iou": 0.7727439471753484,
+      "fp32_floor_px": 10892,
+      "int8_floor_px": 8438
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0002.jpg",
+      "iou": 0.9969421976721247,
+      "fp32_floor_px": 10115,
+      "int8_floor_px": 10130
+    },
+    {
+      "frame": "recordings/blue-shoes-20260908-210511/frame-0017.jpg",
+      "iou": 0.9977766013763896,
+      "fp32_floor_px": 9432,
+      "int8_floor_px": 9437
+    }
+  ]
+}

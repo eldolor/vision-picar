@@ -2411,7 +2411,44 @@ Mainboards". Worth thirty seconds to ask.
   ordering the Jetson, and price a BMS or the Waveshare UPS Module 3S ($28.95,
   BMS + 12.6V charger + 5V/5A out, but needs loose 18650s).
 
-#### Revised totals
+#### Retailer-verified totals, 2026-09-17 -- see `HARDWARE-BOM.md`
+
+A second sourcing pass produced a full Jetson BOM with exact part numbers,
+vendor plan, bring-up order and a power budget. It is filed as
+**`HARDWARE-BOM.md`** with an editor's note; its arithmetic was re-checked
+here and is exact. **Quote that file, not this section, for any part number.**
+
+Three of the open questions above are answered:
+
+- **Wi-Fi is included** -- the devkit ships an **RTL8822CE** in the M.2 Key E
+  slot with two antennas in the base. The ~$20 contingency is deleted. (Avoid
+  the Intel AX210: it needs a kernel rebuild on JetPack 6.2.)
+- **The Arducam ships both cables**, 22-22 and 22-15. Use the supplied one --
+  a generic 22-22 cable is reported to need flipping and to short.
+- **A BMS does not solve the power problem.** Generic 3S BMS boards cut off at
+  **8.4-9.0V, at or below the Jetson's own 9V floor**, so a BMS protects the
+  cells and not the board. The answer is a software cutoff off the driver
+  board's **INA219** plus a buzzer backstop -- which is new work in
+  `robot/safety.py` and owes a twin readout under CLAUDE.md section 7.
+
+| Scenario | 3.6 said | 3.6a est. | **verified 2026-09-17** |
+|---|---|---|---|
+| Jetson, essential (A+B, no NVMe) | -- | -- | **~$857-877** |
+| Jetson, full (A+B+C+NVMe) | -- | ~1,047 | **~$1,019-1,039** |
+| Jetson, A+B+C without NVMe | -- | ~929 | **~$944-964** |
+| Pi path, same parts list | ~565 | ~827 | **~$835-855**, and **not buildable** in the specified form |
+
+**The premium holds at ~$100-110 across three independent passes** ($102, $87,
+now ~$109). It is stable, and it is well inside 4.7's ~$170 re-open threshold.
+
+The rise over 3.6a is not a price move -- it is **parts 3.6a did not know
+about**: a DisplayPort cable (the devkit has no HDMI), a 5.5x2.5mm barrel
+pigtail (USB-C is debug-only), a low-voltage buzzer, and a 10A inline fuse that
+is still unpriced. All are real and all were missing.
+
+#### Superseded totals
+
+
 
 | Scenario | 3.6 said | **verified 2026-09-16** |
 |---|---|---|
@@ -6515,6 +6552,102 @@ the 25%/23%/30% table above, which is the crop-cap confound. Each was
 caught by an fp32 control, which is the argument for always running one.
 
 Records in `evaluations/hailo/zoo-probe/`.
+
+#### P18: the floor mask runs on BOTH parts, and INT8 barely touches it -- **2026-09-17, ~$14**
+
+P16 left one question able to overturn it. The tier reads 49% with the
+floor mask and 3% without it on a quantized 8L detector, so the mask is
+what the tier rests on -- and the mask had never been compiled, let alone
+quantized. If it degraded the way YOLO-World does on an 8L, those 49%
+rows were fp32 numbers no part could reproduce.
+
+They are not.
+
+| | translate | optimize | compile | HEF |
+|---|---|---|---|---|
+| **hailo10h** (DFC 5.4.0) | ok 4.0s | ok 414s | **ok 678s** | **6.4 MB, 13 contexts** |
+| **hailo8l** (DFC 3.34.0) | ok 3.6s | ok 466s | **ok 545s** | **20.0 MB** |
+
+And INT8 preserves the mask, measured as floor-mask IoU against the same
+model in fp32 over 120 corpus frames:
+
+| | |
+|---|---|
+| mean IoU | **0.988** |
+| median IoU | **0.995** |
+| frames below 0.5 IoU | **0** |
+| frames below 0.8 IoU | 1 of 120 |
+| mean floor pixels | 8358 fp32 vs 8356 INT8 |
+
+**That is at optimization level 0** -- Bias Correction, AdaRound, QAT and
+Layer Noise Analysis all explicitly skipped, because the GPU box is capped
+at 8 vCPU on this account and that size OOM-killed the run. So it is a
+LOWER BOUND, and a lower bound is the one direction in which good news
+needs no further spending: the accuracy passes can only improve it. The
+GPU row was therefore not run, deliberately, rather than left undone.
+
+##### Why IoU against fp32, and not against labels
+
+The same argument `proposal_agreement.py` makes. The mask's job in the
+tier is to propose regions for CLIP; ADE20K's own floor classes are not
+this corpus's ground truth; and what quantization can break is agreement
+with the model P16 measured the 50% with. A per-frame IoU also degrades
+gracefully -- it says how MUCH was lost, where a recall number over a gate
+would only say whether a threshold moved.
+
+##### Two export fixes, both exact, and only the second was the real one
+
+The Hailo parser rejected the model outright:
+
+    UnsupportedShuffleLayerError in op node_Reshape_581
+    UnsupportedShuffleLayerError in op node_Reshape_654
+
+1. **Decode-head `Linear` -> 1x1 `Conv`.** `SegformerMLP.forward` is
+   `flatten(2).transpose(1,2)` -> `Linear`, and the head transposes and
+   reshapes back. A Linear applied at every spatial position IS a 1x1 Conv
+   over the feature map. Verified at max |diff| 7.6e-06. **This was not
+   the fix** -- the named nodes survived it, which a check of the exported
+   file showed and which I had asserted otherwise.
+2. **`attn_implementation="eager"`.** The offending reshapes were in the
+   ENCODER's attention: `[8, 32, 256] -> [1, 8, 32, 256]`, the batch
+   dimension folded into the heads by SDPA's export and then restored.
+   Eager keeps it explicit and the nodes never appear.
+
+Both are kept: (1) is a real simplification and costs nothing, (2) is what
+made it parse. The exporter raises rather than writing anything if the
+identity check fails, because a graph that compiles and computes
+something else is the worst outcome available here.
+
+##### What it does to the part decision
+
+**It does not make the 10H mandatory.** That was the live possibility --
+the mask carries the tier, the 8L rejected OWLv2 over LayerNorm and
+Softmax density, and SegFormer is a transformer carrying 30 and 8 of
+them. It compiles anyway, at 2.4x smaller counts than the model that
+failed.
+
+So the 8L runs the WHOLE tier: detector, floor mask, CLIP. The 10H stays
+a **headroom** purchase at +$60 -- worth it for keeping embedding-head
+models open (P16: 22% vs 5% on YOLO-World's cosine head), not for
+anything in today's pipeline. The 20.0 MB vs 6.4 MB HEF is the visible
+cost of the smaller part, and what that does to latency is unmeasured.
+
+##### Process notes, and three harness faults in one measurement
+
+* **32 GB is not enough.** Bias Correction holds activations for 64
+  calibration entries at 512x512 and was OOM-killed at 29.9 GB -- the
+  SAME mistake made with OWLv2 an hour earlier on the same box size.
+* **A poll that only looks for success is not a poll.** One slept three
+  hours against a process that died in 27 minutes: ~$3.60 for nothing.
+* **Then the liveness fix watched the wrong signal** -- a log piped
+  through `tail` inside the container, which buffers to EOF and cannot
+  grow -- and declared a healthy job stalled. Poll the CONTAINER, not its
+  output.
+* **This account's G-instance vCPU quota is 8**, so `g5.2xlarge` is the
+  largest GPU box available and it is the size that OOMs. Any future QAT
+  row needs a reduced calibration set or a quota increase.
+
+Records in `evaluations/hailo/zoo-probe/`; both HEFs are banked.
 
 #### The Hailo-10H option, costed -- the download BLOCKER is cleared (P15)
 
