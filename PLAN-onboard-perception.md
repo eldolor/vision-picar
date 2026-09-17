@@ -2123,6 +2123,83 @@ saving is real but the claim is second-hand.
 a protected lithium pack. Check its voltage against 1.3's two-rail plan before
 buying a second one.
 
+#### 3.6.1 Shopping prompts, for a voice assistant
+
+Written 2026-09-16, from the rows above as they stand after the servo and
+accelerator decisions. Paste in order; the first five only load context,
+and the sixth triggers the search. They are kept HERE, beside the table
+they were generated from, so that a part swap and the prompt that buys it
+cannot drift apart -- which is the same failure the `NavigateModelId`
+mistake was, one layer out.
+
+**Three parts are unlikely to be on a general retailer.** The **Hailo-10H
+M.2** and the **Slamtec RPLidar C1** come from distributors (Mouser,
+DigiKey, Seeed; Slamtec or Robotshop), and the **Pineboards HatDrive!
+Dual** is discontinued at some retailers -- 3.6's own note. Expect the
+final prompt to report those as not found; that is the prompt working,
+not failing.
+
+**1 -- context**
+
+> I'm building an indoor autonomous robot on a Raspberry Pi 5. I'm going
+> to give you a parts list in several messages. Don't search yet -- just
+> hold the list and wait until I say "find these". Confirm you're ready.
+
+**2 -- compute and AI accelerator**
+
+> Add to the list: Raspberry Pi 5 with 8GB RAM. Raspberry Pi 5 Active
+> Cooler. A 64GB A2-rated microSD card. A Raspberry Pi Camera Module 3
+> with autofocus. A Hailo-10H M.2 AI acceleration module, M.2 Key M, 2242
+> or 2280. A dual-slot M.2 PCIe base for Raspberry Pi 5 that supports both
+> an AI accelerator and an NVMe drive at the same time. And a short NVMe
+> SSD, 2230 or 2242 size, 256GB or larger.
+
+**3 -- chassis and motion**
+
+> Add to the list: a Yahboom 2WD differential drive robot chassis kit with
+> encoder motors. A Waveshare General Driver for Robots board. A 2-axis
+> pan and tilt camera bracket that fits a 28 by 28 millimetre camera. And
+> one Waveshare ST3215 serial bus servo with position feedback.
+
+**4 -- sensors**
+
+> Add to the list: a Slamtec RPLidar C1 360 degree laser scanner. Two
+> VL53L1X time-of-flight distance sensor breakout boards. And a set of
+> microswitches with levers for a robot bumper.
+
+**5 -- power and wiring**
+
+> Add to the list: two 3S 11.1 volt lithium-ion battery packs with a
+> balance charger. Two adjustable DC-DC buck converters rated 5 volts at 3
+> amps or more. A 470 microfarad or larger electrolytic capacitor and a
+> TVS diode for motor noise. XT60 connectors, a power switch, and hookup
+> wire. And an M2.5 and M3 brass standoff and screw assortment kit.
+
+**6 -- trigger the search**
+
+> Find these. For each item show me the best-rated option with price and
+> delivery date, and tell me clearly which ones you couldn't find so I can
+> source them elsewhere.
+
+##### Four things to check against the results, not against the prompt
+
+These are the places where a plausible-looking substitution is wrong, and
+each one is a row above rather than a preference:
+
+1. **The second buck may be unnecessary.** It exists in prompt 5 because
+   the table still carries it at 0-8. One ST3215 off the Waveshare board
+   (7-13V in) may retire it -- check the servo's voltage range against
+   that board's servo output before buying it.
+2. **The NVMe must be SHORT.** The dual-slot base takes 2230/2242 only.
+   A 2280 drive is the common default and will not fit.
+3. **Do not substitute the driver board.** The Waveshare General Driver is
+   chosen for its **ESP32** -- it runs the velocity PID off Linux's
+   scheduler, which a 20-50Hz loop in CPython cannot do reliably (1.14) --
+   and for the 9-axis IMU it carries, which is why there is no separate
+   IMU line to buy.
+4. **One servo, not two.** Pan only; the tilt joint is shimmed at a fixed
+   downward pitch (1.15.3, and P16's floor-mask finding).
+
 ### 3.7 Two ways to buy this, and the second was nearly missed
 
 The table above prices **parts, integrated by hand**. There is a second path,
