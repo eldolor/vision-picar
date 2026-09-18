@@ -162,3 +162,69 @@ build wins on parts we have already verified.
   That may mean a fast cheap detector for obstacle reaction alongside
   OWLv2 for deciding where to go. It is a design question for hardware
   day, not a purchase blocker — but it is not resolved.
+
+---
+
+## 8. The research brief, for a web-research assistant
+
+Kept here rather than in a chat log for the same reason the Alexa prompts
+live in `PLAN-onboard-perception.md` 3.6.1: **a part swap and the prompt
+that searches for it must not be able to drift apart.** If §3's
+constraints change, change this too.
+
+Self-contained on purpose — the assistant has no access to this repo.
+
+> I'm building an indoor autonomous robot around an **NVIDIA Jetson Orin
+> Nano Super Developer Kit**, which I'm buying separately. I want to find a
+> **ready-made robot kit** that supplies everything else, so that ideally I
+> only have to mount the Jetson and plug it in.
+>
+> **Please search for and compare candidate kits. Include bundled ROS 2
+> robot kits — Yahboom ROSMASTER, Hiwonder LanderPi, and similar — they are
+> explicitly in scope.**
+>
+> **The kit must satisfy all of these. Treat any one as disqualifying:**
+>
+> 1. **Battery is 3S (11.1V nominal) or higher.** The Jetson is powered
+>    straight from the pack through a 9–20V barrel jack with no regulator,
+>    so a 2S/7.4V pack is below the board's floor. This is the constraint
+>    most kits fail — please check it first and say what pack each kit
+>    ships.
+> 2. **Differential drive** — two driven wheels plus a caster, or 4WD skid
+>    steer. **No Ackermann or steering-servo platforms.**
+> 3. **Motors have quadrature encoders.** Kits without encoders are out.
+> 4. **The motor controller is reachable over USB or UART serial, with a
+>    documented or open protocol.** A Raspberry Pi HAT is not usable — the
+>    Jetson's header is different. Closed firmware with no serial API is
+>    out.
+> 5. **Deck space for the Jetson devkit** — roughly 100 × 90 mm, about
+>    35 mm tall with its cooler, plus clearance for a barrel plug.
+> 6. **A flat upper deck with an unobstructed 360° view** for a lidar, or a
+>    360° lidar already mounted that way.
+>
+> **Strongly preferred, not disqualifying:** a 360° USB lidar included
+> (worth up to ~$70); 3S packs and charger included, with the pack spec
+> actually published; bus-servo support for a camera pan axis; everything
+> from one vendor in one shipment.
+>
+> **Please assume the kit does NOT include, and tell me if it does:** a
+> camera (I need **IMX219** specifically — *not* the Raspberry Pi Camera
+> Module 3 / IMX708, whose Jetson driver support is poor, so assume any
+> bundled camera is the wrong one); VL53L1X time-of-flight sensors; a
+> bumper with microswitches; an NVMe SSD.
+>
+> **Budget.** Buying every part separately comes to about **$944 all-in**
+> (tax and shipping included), of which **$465 is the Jetson side I'm
+> buying anyway**. So a kit is worth it if *$465 + kit + the missing items
+> above* lands under ~$944; clearly worth it under ~$850.
+>
+> **For each candidate please give me:** exact product name and SKU, price,
+> vendor, **current stock and lead time**, what it includes against the
+> list above, what's missing, and an all-in total including the gaps. Tag
+> each figure `[V]` if you read it from a vendor page, `[I]` if inferred or
+> estimated, `[U]` if unverified. **Please flag anything on backorder** —
+> I was recently caught by a part that was four-plus weeks out.
+>
+> If nothing clears the constraints, say so plainly and tell me which
+> constraint each near-miss failed; buying the parts separately is a
+> perfectly good outcome.
