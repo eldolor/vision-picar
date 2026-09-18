@@ -1,6 +1,28 @@
-# Bill of materials -- the Jetson build
+# Bill of materials -- the Jetson build (SUPERSEDED)
 
-**Written 2026-09-12, after P6 and P7d.** This supersedes
+> **SUPERSEDED 2026-09-17. Do not price anything from this file.**
+>
+> Its argument was right and arrived early: OWLv2 solves search proposal,
+> does not compile to a Hailo, and does not survive INT8, so it needs a
+> GPU. P17 and P19 have since confirmed all three by measurement. But its
+> **prices are estimates** -- it says so itself below -- and estimates
+> mixed with verified figures produced a $220-300 error that stood for
+> several hours on 2026-09-17.
+>
+> Use instead:
+>
+> | for | read |
+> |---|---|
+> | what to buy, Jetson build | **`JETSON-BOM.md`** |
+> | verified prices, Pi vs Jetson | **`BOM-COMPARISON.md`** |
+> | part numbers, vendors, bring-up, wiring | **`HARDWARE-BOM.md`** |
+> | why the parts are what they are | `PLAN-onboard-perception.md` 1, 3.6, P17-P19 |
+>
+> Kept because its reasoning is the earliest correct statement of the
+> case, and because deleting the record of a call that turned out right
+> would lose the evidence that it was made before the measurements landed.
+
+**Written 2026-09-12, after P6 and P7d.** This superseded
 `PLAN-onboard-perception.md` 3.6 for the compute half; everything else in
 3.6 stands and its reasoning is not repeated here.
 

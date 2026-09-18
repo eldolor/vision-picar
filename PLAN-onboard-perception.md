@@ -2131,6 +2131,25 @@ saving is real but the claim is second-hand.
 a protected lithium pack. Check its voltage against 1.3's two-rail plan before
 buying a second one.
 
+> **3.6 IS THE PI BUILD, AND THE PI IS NO LONGER THE RECOMMENDED PATH
+> (2026-09-17).** P19 measured OWLv2 as a crop source inside the tier at
+> **83% against this build's 50%**, P17 showed OWLv2 compiles to no Hailo,
+> and `BOM-COMPARISON.md` priced the Jetson at **+$59-86** rather than the
+> premium assumed here. The table below is kept: it is the cheapest build
+> that works, its reasoning is sound, and it is the fallback if latency on
+> the Jetson proves unworkable.
+>
+> **Its PRICES are estimates and are known wrong in at least two places** --
+> the Pi 5 line reads $80 against a verified $175, and the Hailo-10H was
+> carried at ~$130 against a verified $200-212.50. Price from
+> `BOM-COMPARISON.md`, never from here.
+>
+> | for | read |
+> |---|---|
+> | what to buy now | `JETSON-BOM.md` |
+> | verified prices, both paths | `BOM-COMPARISON.md` |
+> | Jetson part numbers, wiring, bring-up | `HARDWARE-BOM.md` |
+
 #### 3.6.1 Shopping prompts, for a voice assistant
 
 Written 2026-09-16, from the rows above as they stand after the servo and

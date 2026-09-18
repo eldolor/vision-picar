@@ -7,16 +7,33 @@ correction instead, the way PLAN-onboard-perception.md does.
 
 # Editor's note -- read before acting on this file
 
-Filed 2026-09-17. **The body below is Cowork's, unedited.** Its arithmetic was
+Filed 2026-09-17, **updated the same day** once P17-P19 landed.
+
+**This file is now the reference for part numbers, vendors, wiring and
+bring-up on the Jetson build** -- which is the recommended build as of
+2026-09-17. For what to actually buy (including a kit-search brief) read
+**`JETSON-BOM.md`**; for verified prices read **`BOM-COMPARISON.md`**;
+`BOM.md` is superseded and `PLAN-onboard-perception.md` 3.6 is the Pi
+build's parts list and is no longer the recommended path.
+
+**The body below is Cowork's, unedited.** Its arithmetic was
 re-checked here and is correct: Part A+B sums to $751.34 and A+B+C+NVMe to
 $891.07 exactly as stated. Its tag discipline (`[V]`/`[I]`/`[U]`/`[D]`/`[R]`)
 is the right shape for this project and should be preserved.
 
 Four corrections and one caution, from the repo it is meant to serve:
 
-1. **Section 1 records "Compute is the Jetson... The Raspberry Pi 5 + Hailo-8L
+1. ~~**Section 1 records "Compute is the Jetson... The Raspberry Pi 5 + Hailo-8L
    option is dropped" as `[D]` -- decided by Anshu. That decision has not been
-   made.** What was asked for was a *priced Jetson BOM*, which is the input to
+   made.**~~ **RESOLVED 2026-09-17 -- the tag was premature when written and is
+   now correct.** P19 ran the test this correction asked for: OWLv2 as a crop
+   source *inside* the tier reads **83% against the Pi tier's 50%** on identical
+   frames, mask and gate, seven walks better and one tied. P17 had already shown
+   OWLv2 compiles to no Hailo, and `BOM-COMPARISON.md` priced the gap at $59-86
+   rather than the assumed premium. **The Jetson is the recommended build.** The
+   original objection stands as written -- a priced option is not a decision --
+   and is kept here because it was right at the time. What follows is the
+   correction's own record: What was asked for was a *priced Jetson BOM*, which is the input to
    the decision, not the decision. `PLAN-onboard-perception.md`'s standing
    recommendation is still to run **P10's YOLO-World INT8 test (~$1, one EC2
    hour)** first, because it is the only thing that can put the Pi path back at
