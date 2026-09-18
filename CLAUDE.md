@@ -151,8 +151,9 @@ along the way.
 ~$480 street against ~$70 for a Hailo-8L M.2 + ~$30 camera, on a
 ~$555-620 build). **The part is a Pi plus a Hailo -- WHICH Hailo is
 re-opened as of P15 (2026-09-15): the 8L at ~$70 and 45%, or the 10H at
-~$130 and possibly 72%, pending the compile+quantization test named
-below.** The Jetson stays out either way; that half of this decision is
+**$200-224 verified 2026-09-17, not the ~$130 assumed -- and DROPPED**:
+it cannot run OWLv2 (P17) so it scores like the 8L, while costing more
+than the Jetson. See "The Hailo-10H repriced" in the plan.** The Jetson stays out either way; that half of this decision is
 unaffected. Any text in
 `PLAN-onboard-perception.md` 4.7/4.8/P7c/P7d that assumes an Orin is
 recorded but not actionable; its "DECISION 2026-09-13" section is the
@@ -254,9 +255,15 @@ cores (handoff open item 1, now first-order). And the tier has a real defect: at
 because crops are ranked by AREA and more proposals crowd a small target
 out of a fixed cap -- **a better detector can make the tier worse.**
 
-**The Hailo-10H** (~$130, on-module memory, built for transformers) is
-the only Pi-compatible part that could run the attention models the
-8-series cannot. **DFC 3.34.0 cannot target it** ("Please use Dataflow
+**The Hailo-10H -- DROPPED 2026-09-17 on verified pricing.** It was
+carried here at ~$130; real listings are **$200 for the in-stock AI HAT+ 2
+(8GB)** and **$212.50 for the 2242 M.2 module (4GB, backordered to
+October + 4 weeks)**. That puts a Pi + 10H build at **~$992-1,018 all-in
+against the Jetson's ~$944** -- and P17 measured OWLv2 failing to compile
+on the 10H, so it delivers the same ~50% tier as the $858 8L build. It is
+on neither frontier: cheaper accuracy is the 8L, better accuracy is the
+Jetson. The live comparison is two rows, **$858 for 50% or $944 for
+83%**. Kept below for the reasoning, which stands. **DFC 3.34.0 cannot target it** ("Please use Dataflow
 Compiler v5.x") -- but v5.x is downloaded now, along with the AI Software
 Suite container and the 5.4.0 Model Zoo, all in
 `s3://vision-picar-deploy-.../hailo/`. The gate was a login, and it is

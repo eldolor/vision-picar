@@ -6558,6 +6558,66 @@ caught by an fp32 control, which is the argument for always running one.
 
 Records in `evaluations/hailo/zoo-probe/`.
 
+#### The Hailo-10H repriced from vendor listings, and it is now DOMINATED -- **2026-09-17**
+
+This document has carried the 10H at **~$130** since 2026-09-06 (4.8).
+Real listings, supplied 2026-09-17:
+
+| part | form | RAM | price | stock |
+|---|---|---|---|---|
+| Hailo **AI HAT+ 2** (PiShop) | HAT | **8GB** | **$200** | **in stock** |
+| Hailo `HM22HB2C2XBE` (Mouser) | M.2 **2242** | 4GB | **$212.50** | **0 on hand** -- 19 due 2 Oct, 41 due 7 Oct, +4 weeks factory lead |
+| Hailo `HM22HB2C2XAE` (Mouser) | M.2 2280 | 4GB | $212.50 | 2280 does not fit the M.2 HAT+ |
+| Hailo-10H 8GB (UP Shop) | M.2 2280 | 8GB | $229 | 2280 |
+
+**$130 was wrong by $70-95.** Recomputed against `BOM-COMPARISON.md`'s
+verified all-in figures, which already carry 8.75% tax and shipping:
+
+| build | accelerator line | all-in | tier recall |
+|---|---|---|---|
+| **Pi 5 + Hailo-8L** (AI HAT+, $76.95) | $76.95 | **~$858** | 50% |
+| **Jetson Orin Nano Super** | -- | **~$944** | **83%** (P19) |
+| Pi 5 + **10H as AI HAT+ 2** | $200 | **~$992** | 50% |
+| Pi 5 + **10H module + M.2 HAT+** | $212.50 + $12 | **~$1,018** | 50% |
+
+##### The 10H is now strictly dominated, on two counts at once
+
+**It costs more than the Jetson and performs like the 8L.** P17 measured
+OWLv2 failing to compile on the 10H in four configurations across two
+input sizes, so the 10H cannot run the model that produces P19's 83% --
+it delivers the same ~50% tier the $858 build does, for $134-160 more.
+P16 already measured its advantage over the 8L at about one point of tier
+recall.
+
+There is no operating point at which it is the right buy: cheaper
+accuracy is the 8L, better accuracy is the Jetson, and the 10H is on
+neither frontier. **Drop it from consideration.**
+
+##### Two details from the listings that matter beyond the price
+
+* **2242 is the length that fits the official M.2 HAT+ ($12).** That makes
+  `HM22HB2C2XBE` the first 10H that works with the standard Pi 5 carrier
+  at all -- but it is a **backorder into October with a further 4-week
+  factory lead**, against an AI HAT+ 2 that is in stock with twice the
+  RAM for less money. The module only wins if the card must be removable
+  or must sit on a dual-slot carrier beside an NVMe.
+* **The Pi's single PCIe lane makes the x4 module run at x1 on either
+  path**, so the module's wider interface buys nothing here. That is the
+  same one-lane constraint 2.9 flags for HEF weight-streaming and 4.2 for
+  the NVMe.
+
+##### What it does to the recommendation
+
+**Nothing, except to remove an option.** P19 already put the Jetson ahead
+on measurement: +33 points of whole-pipeline recall for +$86. This
+removes the argument that the 10H was a middle path -- it is the most
+expensive Pi build and the least justified.
+
+The live comparison is now exactly two rows: **$858 for 50%, or $944 for
+83%**, with the Jetson also being the only one of the two that can carry
+an NVMe (4.2). The open question remains **latency on the board**, not
+price and not accuracy.
+
 #### P19: OWLv2 inside the tier reads 83%, against the tier's 50% -- **2026-09-17, free**
 
 Every section above that compares OWLv2 to the tier says the same thing:
