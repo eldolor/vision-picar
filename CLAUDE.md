@@ -227,6 +227,20 @@ floor mask OFF and it is 20% / 13% / 3% -- the detector ordering exactly.
 wrecked detector**, so the 45%-vs-72% gap is worth about one point of
 recall in the shipped configuration.
 
+**REVERSED 2026-09-17 by P19 -- read this first.** Run as a CROP SOURCE
+inside the real tier (`crops:owlv2`, identical frames / floor mask /
+48-crop budget / `P>=0.8` gate), **OWLv2 reads 83% against the tier's
+50%** -- 162 true positives of 195 against 98, seven walks better and one
+tied. 83% at 3 FP also reproduces P7's standalone 82% at 3 FP, so it
+loses nothing by being placed in the pipeline where the YOLO-World tier
+gives most of its detector away. **P17 says OWLv2 compiles to no Hailo**,
+and `BOM-COMPARISON.md` prices the Jetson at **+$59-86**, not the
++$220-300 this file briefly carried. 4.7's re-opening threshold was $170.
+**So the Jetson is now the defensible buy**, and it restores the NVMe the
+purchasable Pi build cannot have. The open question is LATENCY, not
+accuracy: P7b's honest fp16 projection is ~205 ms/frame (4.9 Hz) against
+the 8L's 92 FPS, and 1.14's continuous motion assumed the fast one.
+
 **Two consequences. The first is ANSWERED (P18, 2026-09-17): SegFormer
 compiles to BOTH parts** -- hailo10h 6.4 MB / 13 contexts, hailo8l 20.0 MB
 -- **and INT8 barely touches it**: floor-mask IoU 0.988 mean / 0.995

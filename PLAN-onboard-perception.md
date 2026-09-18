@@ -6558,6 +6558,98 @@ caught by an fp32 control, which is the argument for always running one.
 
 Records in `evaluations/hailo/zoo-probe/`.
 
+#### P19: OWLv2 inside the tier reads 83%, against the tier's 50% -- **2026-09-17, free**
+
+Every section above that compares OWLv2 to the tier says the same thing:
+**82% is a DETECTOR score at 3 false positives, ~50% is the WHOLE
+PIPELINE at `P>=0.8`, and they cannot be subtracted.** That caveat was
+correct and it left the decision unanswerable, because "is OWLv2 worth a
+board" needs the two numbers on one scale. **It had never been run as a
+crop source inside the tier.** Now it has.
+
+`brain/perceive_lab.py` gains `OpenVocabCropSource` and a `crops:<backend>`
+detector spec: it keeps the open-vocabulary detector's BOXES and throws
+away its scores, so CLIP ranks the crops against the target and the
+distractors exactly as it does for every other detector, with the floor
+mask contributing its regions alongside. This is P9's shape -- *"YOLO-World
+as a CROP SOURCE (not a replacement)... the gain is the crop source, not
+the classifier"* -- applied to the model the hardware decision turns on.
+
+**Identical conditions on both rows: the same 365 frames, the same floor
+mask, the same 48-crop budget, the same `P>=0.8` gate.** The only variable
+is where the boxes came from.
+
+| crop source | TP / 195 | recall | precision |
+|---|---|---|---|
+| YOLO-World, fp32 (P16's best row) | 98 | **50%** | 99% |
+| **OWLv2, fp32** | **162** | **83%** | **98%** |
+
+Per walk, and it is not one walk carrying it:
+
+| walk | YOLO-World | OWLv2 | delta |
+|---|---|---|---|
+| blue-bottle ...142454 | 44% | **100%** | +56 |
+| blue-bottle ...185007 | 20% | 20% | +0 |
+| blue-shoes ...152528 | 46% | **92%** | +46 |
+| blue-shoes ...210511 | 50% | **91%** | +41 |
+| red-backpack ...144856 | 68% | **100%** | +32 |
+| woven-basket ...2152xx | 86% | **95%** | +9 |
+| woven-basket ...231358 | 73% | **86%** | +13 |
+| woven-basket ...1157xx | 82% | **100%** | +18 |
+
+**Seven wins, one tie, no losses.**
+
+##### The number that makes it believable
+
+83% at 3 false positives is, to within a point, **P7's standalone 82% at 3
+FP**. So OWLv2 loses essentially nothing by being placed inside the
+pipeline, where the YOLO-World tier gives up most of its detector's
+ability somewhere between the boxes and the gate. That agreement is the
+strongest evidence the measurement is real rather than a harness artifact:
+two independent paths to the same figure.
+
+##### What it does to the hardware decision -- which it REVERSES
+
+Every previous section here argued the tier does not need OWLv2, on the
+grounds that P16's floor mask rescued a wrecked detector to 49%. That
+argument is now bounded rather than wrong: **the mask rescues a bad
+detector to 50%, and a good detector reaches 83%.** The mask sets a floor,
+not a ceiling, and the difference between them is 64 more true positives
+on 195 visible frames.
+
+Against that:
+
+* **P17: OWLv2 compiles to no Hailo** -- four configurations, two input
+  sizes, two architectures. The Jetson is the only route to it.
+* **The delta is $59-86** (`BOM-COMPARISON.md`, verified retailer pages),
+  not the $220-300 this document carried for a few hours.
+* 4.7 set **~$170** as the re-opening threshold, and this is half of it.
+
+**So the recommendation changes: the Jetson is now the defensible buy.**
+$86 for +33 points of whole-pipeline recall on the robot's actual job is
+a better trade than anything else in this bill of materials, and it also
+restores the NVMe that the buyable Pi build cannot have (4.1, 4.2).
+
+##### What this does NOT settle, and the honest cost side
+
+* **Latency is not measured and is the real risk.** 3170 ms/frame here is
+  a laptop comparing models, not a robot budget. P7b projects **124
+  ms/frame on an Orin at INT8/VGA** -- but P7d measured INT8 destroying
+  OWLv2, so the honest projection is the **fp16 row, 205 ms (4.9 Hz)**,
+  and P7b's own finding is that the board is CPU-bound on preprocessing
+  at 229 ms/frame. Against the 8L's reactive tier at 92 FPS this is a
+  different machine with a different rhythm, and 1.14's continuous motion
+  assumed the fast one.
+* **The deliberation tier's economics change.** A 5 Hz local detector that
+  is right 83% of the time may call the cloud far less often than 6.1's
+  measured 4-6x -- or may not; untested.
+* **One walk did not move** (20% both ways). It is the second bottle walk
+  and worth reading before treating 83% as uniform.
+* This is **fp32 on a laptop**. It is the right comparison for choosing a
+  model and the wrong one for sizing a battery.
+
+Records: `evaluations/hailo/zoo-probe/tier48_owlv2crops.json`.
+
 #### The Jetson, priced against the Pi on market data -- **2026-09-17, CORRECTED**
 
 **This section first concluded "the Jetson is ~$220-300 more". That figure
@@ -6617,19 +6709,22 @@ budget; the tier's **~50%** is the *whole pipeline* at the shipped
 **36 ms detecting and 229 ms resizing**, so it is host-bound on exactly
 the work C6 costs below. More GPU does not fix a preprocessing cost.
 
-##### The recommendation, changed
+##### The recommendation, changed -- and then ANSWERED by P19
 
-**No longer "no Jetson, on cost" -- that argument is gone at $86.** The
-decision now rests on one unmeasured thing, and it is cheap to measure:
-**run OWLv2 as a crop source inside the tier** (`brain/perceive_lab.py`,
-off the robot, an afternoon, no hardware). If its pipeline recall beats
-49-50% by enough to matter, the Jetson is worth $86 and the NVMe it makes
-possible. If it does not, the Pi wins on power, on the 2.5W accelerator,
-and on a chassis whose software already runs.
+**No longer "no Jetson, on cost" -- that argument is gone at $86.** This
+section then said the decision rested on one unmeasured thing: run OWLv2
+as a crop source inside the tier, off the robot, no hardware.
 
-**Do not order either until that runs.** Spending $86 to reach a model
-whose in-pipeline value has never been measured is the same mistake as
-P14 -- acting on a number that was never actually taken.
+**That was run the same day (P19) and it answers it: 83% against the
+tier's 50%, on identical frames, mask and gate.** Seven walks better, one
+tied, none worse. So the $86 buys +33 points of whole-pipeline recall on
+the robot's actual job, and the Jetson is the defensible buy.
+
+What is still NOT measured is **latency on the board** -- P7b's honest
+projection for fp16 OWLv2 is ~205 ms/frame (4.9 Hz), against the 8L's
+reactive tier at 92 FPS, and 1.14's continuous motion assumed the fast
+one. That is now the open question, and it is a rhythm question rather
+than an accuracy one.
 
 ##### Three things the Jetson BOM settles for the Pi build regardless
 

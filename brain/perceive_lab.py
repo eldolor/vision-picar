@@ -138,6 +138,43 @@ class NullDetector:
         return ()
 
 
+class OpenVocabCropSource:
+    """An open-vocabulary detector used as a CROP SOURCE, not a classifier.
+
+    P9's finding about YOLO-World was that it wins as a crop SOURCE rather
+    than as a replacement -- the gain was the regions it proposed, not its
+    own scores, and three CLIP variants behind it landed within two points
+    of each other. This applies that shape to OWLv2, which is the one
+    thing the hardware decision turns on and has never been done.
+
+    Why it matters: OWLv2's headline **82% at 3 FP (P7) is a DETECTOR
+    score measured alone**. The tier's ~50% is the whole pipeline at the
+    shipped `P>=0.8` gate. Those are different measurements on different
+    objects and cannot be subtracted, so "is OWLv2 worth a Jetson" has
+    never actually been asked in the form that decides it: does it make
+    the PIPELINE better than the floor mask plus CLIP already is?
+
+    So this keeps OWLv2's boxes and throws away its scores. CLIP ranks the
+    crops against the target and the distractors exactly as it does for
+    every other detector, and the floor mask contributes its regions
+    alongside. The only variable against the recorded fp32 run is where
+    the boxes came from.
+    """
+
+    def __init__(self, backend, target: str):
+        self.backend = backend
+        self.target = target
+        self.weights = f"crops:{getattr(backend, 'weights', 'open-vocab')}"
+
+    def detect(self, image: bytes, confidence: float) -> Sequence[Detection]:
+        # The backend's own threshold already gates this; `confidence` is
+        # the pipeline's crop-path knob and is deliberately not applied a
+        # second time, or the two gates would compound invisibly.
+        dets = self.backend.detect_text(image, self.target)
+        return [Detection(box=d.box, label=d.label, confidence=d.confidence)
+                for d in dets]
+
+
 class ReplayDetector:
     """A `Detector` whose proposals were recorded by another run.
 
@@ -860,6 +897,32 @@ def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
     `yoloworld` -- optionally `name:model_id` -- which replace the whole
     pipeline rather than a stage of it.
     """
+    # `crops:<backend>` -- an open-vocabulary detector feeding the NORMAL
+    # pipeline (crops -> CLIP -> match, floor mask allowed) instead of
+    # replacing it. The bare `<backend>` spec below still replaces the
+    # whole pipeline; both are wanted, and conflating them is what made
+    # OWLv2's 82% look comparable to a tier number.
+    if detector.startswith("crops:"):
+        spec = detector.split(":", 1)[1]
+        backend = _open_vocab(spec, device=device, dtype=dtype,
+                              vlm_max_pixels=vlm_max_pixels,
+                              vlm_ground=vlm_ground)
+        region = (SegformerFloorProposer(segmenter, device=device)
+                  if proposer == "floor" else
+                  SamProposer(sam_model, device=device) if proposer == "sam"
+                  else None)
+        return PerceptionPipeline(
+            detector=OpenVocabCropSource(backend, target),
+            scorer=ClipScorer(clip_model, device=device),
+            target=target,
+            proposer=region,
+            crop_path=crop_path,
+            **({"max_crops": max_crops} if max_crops is not None else {}),
+            **({"affinity_k": affinity_k} if affinity_k is not None else {}),
+            **({"confidence": confidence} if confidence is not None else {}),
+            **kwargs,
+        )
+
     if detector.partition(":")[0] in OPEN_VOCAB:
         if proposer != "none":
             raise ValueError(
