@@ -614,6 +614,22 @@ vision-picar/
 │                               its section 5 says exactly what. Read it before
 │                               any hardware purchase -- the chassis is no
 │                               longer a PiCar-X
+│
+│   -- bill of materials. JETSON-BOM.md is the one to read --
+├── JETSON-BOM.md          **what to buy** (recommended build, 2026-09-17),
+│                           doubling as a brief for a ready-made-kit
+│                           search. Carries the constraints that
+│                           disqualify most kits -- 3S power above the
+│                           Jetson's 9V floor, differential drive,
+│                           quadrature encoders, and a serial motor
+│                           controller rather than a Pi HAT
+├── BOM-COMPARISON.md      verified retailer prices, Pi vs Jetson, like
+│                           for like. **Price from here, never from 3.6**
+│                           -- 3.6's Pi 5 line reads $80 against $175
+├── HARDWARE-BOM.md        part numbers, vendors, wiring and bring-up
+│                           order (Cowork's research + editor's note)
+├── BOM.md                 SUPERSEDED -- the 2026-09-12 Jetson build, on
+│                           estimates. Right argument, wrong prices
 └── PLAN-aws-cost-redesign.md  the ~$159/month of fixed AWS cost, where it
                                 comes from, and the rebuild that removes
                                 ~$110 of it. Stage 1 (walks off EFS, onto
