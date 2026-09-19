@@ -147,14 +147,60 @@ latency instrumentation and an observability dashboard at `/metrics`. Read
 its section 6 for what is still open and section 7 for what was wrong
 along the way.
 
-**HARDWARE DECISION, 2026-09-13: no Jetson, on cost** ($399 list /
-~$480 street against ~$70 for a Hailo-8L M.2 + ~$30 camera, on a
-~$555-620 build). **The part is a Pi plus a Hailo -- WHICH Hailo is
-re-opened as of P15 (2026-09-15): the 8L at ~$70 and 45%, or the 10H at
-**$200-224 verified 2026-09-17, not the ~$130 assumed -- and DROPPED**:
-it cannot run OWLv2 (P17) so it scores like the 8L, while costing more
-than the Jetson. See "The Hailo-10H repriced" in the plan.** The Jetson stays out either way; that half of this decision is
-unaffected. Any text in
+**HARDWARE DECISION -- REVERSED 2026-09-17 to the JETSON. Read this
+before anything below it.** This file carried "no Jetson, on cost" from
+2026-09-13, and every clause of that argument has since failed:
+
+* **The cost gap was wrong.** It mixed 3.6's ESTIMATED Pi prices with
+  VERIFIED Jetson ones -- 3.6 has a Pi 5 at $80 against a real $175.
+  Priced consistently (`BOM-COMPARISON.md`) the delta is **$59-86**, not
+  the ~$261 implied. 4.7 set ~$170 as the re-opening threshold.
+* **The Hailo-10H middle option is gone**: $200-224 verified, not the
+  ~$130 assumed, and it cannot run OWLv2 (P17), so it scores like the 8L
+  while costing more than the Jetson.
+* **P19 settled the question the whole thing turned on.** OWLv2 run as a
+  crop source INSIDE the tier reads **83% against the tier's 50%** on
+  identical frames, mask and gate -- seven walks better, one tied, none
+  worse. OWLv2 compiles to no Hailo (P17), so the Jetson is the only
+  route to it.
+
+**The part is a Jetson Orin Nano Super, ~$944 all-in** (`JETSON-BOM.md`).
+The open question is LATENCY on the board, not price or accuracy: ~5 Hz
+projected against the Hailo path's 92 FPS. **Nothing is ordered.**
+
+**P21 (2026-09-19, free) CONFOUNDS the row the reversal rests on, and
+found a better model than either candidate.** P19's 83%-vs-50% compared
+OWLv2 against a *replayed* YOLO-World detection file carrying ~45
+proposals per frame; the live model emits ~1-4 at any threshold, and the
+same tier config live reads **83%, not 50%** -- so the accuracy gap is ~7
+points, not 33, and `BOM-COMPARISON.md`'s $59-86 premium was argued on the
+33. Separately, **YOLOE-26l reads 91% / 97% at 3 / 16 FP against OWLv2's
+90% / 96%, at 398 ms against 2679** -- the best tier number measured here,
+never named in any plan doc, and YOLO-shaped, so it may run on the $70
+Hailo rather than only the $399 Jetson. **Do not order on P19.** Two free
+next steps: regenerate `det_fp32.json` live and re-run P19; then P10's
+compile loop on YOLOE with P13's INT8 trap in mind. Also note
+`--confidence` never reached an open-vocabulary backend, so every such
+threshold in these docs was measured at 0.02 (now `--detector-confidence`).
+
+**P20 (2026-09-18, free) sharpened both sides of that.** OWLv2's real
+operating point is **90% at 3 FP, not 83%** -- P19 read it at the `P>=0.8`
+gate inherited from a YOLO-World tier, and at a matched FP budget it lands
+on 0.594 and gains seven points. The tier is also **two models, not
+three** (the floor mask is droppable) with **`max_crops` 16 rather than
+8** (worth five points). And the latency is no longer confounded: measured
+by subtraction, **the detector is ~85% of the tier** (CLIP ~370 ms of
+~2800 on a laptop CPU), so P7b's ~205 ms fp16 Orin projection for OWLv2
+alone is within ~15% of the whole tier -- **~235 ms, ~4.3 Hz**. SAM is now
+validly measured and LOSES (85%, 4.5x slower); Grounding DINO loses as a
+detector (80%) and wins at zero false positives, which makes it 1.11a's
+corroborator rather than a crop source. See `PLAN-onboard-perception.md`
+P20 and `evaluations/tier-decomp/`.
+
+The 2026-09-13 reasoning is kept below because the Orin's power, camera
+stack and thermals are still real costs, and because the shape of the
+mistake matters -- an estimate compared against a verified figure. Any
+text in
 `PLAN-onboard-perception.md` 4.7/4.8/P7c/P7d that assumes an Orin is
 recorded but not actionable; its "DECISION 2026-09-13" section is the
 one that governs. The consequence to know before reading 4.11 or P7:
@@ -226,7 +272,12 @@ floor mask + CLIP reads 50% / 49% / 49% for fp32 / 10H / 8L. Turn the
 floor mask OFF and it is 20% / 13% / 3% -- the detector ordering exactly.
 **The floor mask is the load-bearing crop source and it fully rescues a
 wrecked detector**, so the 45%-vs-72% gap is worth about one point of
-recall in the shipped configuration.
+recall in the shipped configuration. **Bounded 2026-09-18 by P20: that is
+a FLOOR, not a contribution.** With OWLv2's boxes the tier reads 90% at 3
+FP with the mask and 90% without (96% vs 93% at 16 FP -- slightly *worse*
+with it), so the mask is worth one true positive and is DROPPED. It is
+insurance against a bad detector, and OWLv2 is the alternative to having
+one.
 
 **REVERSED 2026-09-17 by P19 -- read this first.** Run as a CROP SOURCE
 inside the real tier (`crops:owlv2`, identical frames / floor mask /
@@ -249,8 +300,12 @@ median against fp32 over 120 frames, 0 frames below 0.5, at optimization
 level **0** (every accuracy pass skipped, so a LOWER bound). The mask that
 carries the tier is therefore real on hardware, and **the 10H is NOT
 mandatory** -- the 8L runs the whole tier. It remains a headroom purchase
-at +$60. Still open: the mask is a third model against the Pi's four
-cores (handoff open item 1, now first-order). And the tier has a real defect: at the shipped
+at +$60. ~~Still open: the mask is a third model against the Pi's four
+cores (handoff open item 1, now first-order).~~ **CLOSED 2026-09-18 by
+P20 -- by deletion: the mask earns nothing beside OWLv2, so the on-board
+tier is two models (detector + CLIP), and no SegFormer HEF is needed. The
+IoU 0.988 result below stands as a measurement and is off the critical
+path.** And the tier has a real defect: at the shipped
 `max_crops` of 8 the SAME data gives the 8L 30% against fp32's 25%,
 because crops are ranked by AREA and more proposals crowd a small target
 out of a fixed cap -- **a better detector can make the tier worse.**

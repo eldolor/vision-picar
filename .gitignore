@@ -27,6 +27,11 @@ yolo*.pt
 # model name, so none belongs in the repo.
 weights/
 *.pt
+# YOLOE's text encoder, downloaded to the CWD on first use -- 572MB and
+# 242MB of TorchScript, which the *.pt rules above do not match. Named
+# rather than a blanket *.ts, which would be a surprising rule in a repo
+# that may one day hold TypeScript.
+mobileclip*.ts
 
 # tools/hailo build products -- ~1.4GB of ONNX and ~1.8GB of calibration
 # arrays, all reproducible from the corpus by two commands. The compile

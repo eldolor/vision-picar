@@ -541,7 +541,7 @@ def _add_score_args(ap) -> None:
     ap.add_argument("--detector", default=DEFAULT_DETECTOR,
                     help=f"detector: a YOLO weights file (default "
                          f"{DEFAULT_DETECTOR}), `none` for proposer-only, or "
-                         f"an open-vocabulary model -- gdino, owlv2, "
+                         f"an open-vocabulary model -- gdino, owlv2, yoloe, "
                          f"yoloworld, or vlm:<model id> (4.11). See "
                          f"brain/perceive_lab.py")
     ap.add_argument("--clip", default=DEFAULT_CLIP,
@@ -592,6 +592,13 @@ def _add_score_args(ap) -> None:
     ap.add_argument("--max-crops", type=int, default=None,
                     help="per-frame crop budget (default: the module's, which "
                          "scales with the number of crop sources)")
+    ap.add_argument("--detector-confidence", type=float, default=None,
+                    help="an OPEN-VOCABULARY backend's own box threshold, "
+                         "which --confidence does not reach (that one gates "
+                         "the YOLO crop path). Live YOLO-World at its 0.02 "
+                         "default emits ~4 boxes a frame where P19's replayed "
+                         "file carried ~45, so this is the axis that decides "
+                         "whether those rows are comparable at all")
     ap.add_argument("--save", default=None, metavar="FILE",
                     help="write the per-frame records for `compare`")
     ap.add_argument("--quiet", action="store_true", help="no per-frame lines")
@@ -615,6 +622,7 @@ def _build_pipeline(args, target: str):
         imgsz=args.imgsz,
         vlm_max_pixels=args.vlm_max_pixels,
         vlm_ground=not args.no_vlm_boxes,
+        detector_confidence=getattr(args, "detector_confidence", None),
     )
 
 

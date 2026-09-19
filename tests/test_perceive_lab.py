@@ -217,11 +217,18 @@ def test_the_open_vocabulary_names_are_the_ones_the_plan_argues_about():
     The original four stand: Grounding DINO, OWLv2 and SAM are 4.11's
     untried three, `vlm` is 2026-09-09's distilled-open-weights question,
     and `yoloworld` is now the subject of P9 and P10.
+
+    Updated 2026-09-19: `yoloe` earns its place the hard way -- P21 measured
+    it at **91% / 97% at 3 / 16 FP against OWLv2's 90% / 96%, at 398 ms
+    against 2679**, the best tier number this project has, and it was found
+    by reading the installed ultralytics' asset list rather than this
+    document's candidate table. Which is the third recurrence of P7's
+    finding #4, and the reason this test is worth keeping red-able.
     """
     from brain.perceive_lab import OPEN_VOCAB, OPEN_VOCAB_BACKENDS
 
     assert set(OPEN_VOCAB) == {"gdino", "owlv2", "yoloworld", "vlm",
-                               "omdet", "llmdet", "trtowlv2"}
+                               "omdet", "llmdet", "trtowlv2", "yoloe"}
     assert set(OPEN_VOCAB_BACKENDS) == set(OPEN_VOCAB)
 
 

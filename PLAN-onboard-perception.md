@@ -6534,6 +6534,15 @@ Without the mask the ordering reproduces the detector metrics exactly and
 the 8L collapses to 3%. With it, a wrecked detector and an intact one
 score the same.
 
+> **BOUNDED 2026-09-18 by P20: this is a statement about a FLOOR, and
+> the mask is droppable once the detector is good.** Given OWLv2's boxes
+> the tier reads 90% at 3 FP with the mask and 90% without it -- and 96%
+> against 93% at 16 FP, so the mask is slightly *worse* there. Its whole
+> contribution is one true positive. Everything below remains true of a
+> WRECKED detector, which is what it was measured on; it is not true of a
+> good one, and the on-board tier is therefore two models rather than
+> three.
+
 **So the floor mask is not an accessory to the detector. It is the load
 -bearing crop source, and it fully rescues a destroyed one.** Which means
 the 45%-vs-72% gap that drove the entire hardware decision is, in the
@@ -6653,6 +6662,16 @@ distractors exactly as it does for every other detector, with the floor
 mask contributing its regions alongside. This is P9's shape -- *"YOLO-World
 as a CROP SOURCE (not a replacement)... the gain is the crop source, not
 the classifier"* -- applied to the model the hardware decision turns on.
+
+> **CONFOUNDED 2026-09-19 by P21 -- do not quote the gap below.** The
+> conditions were NOT identical in the one way that matters: the
+> YOLO-World row is `replay:build/yoloworld/det_fp32.json`, a recorded
+> detection file carrying ~45 proposals per frame, where the live model at
+> any threshold emits ~1-4. Re-run live in this exact config, YOLO-World
+> v2s reads **83% at 3 FP against this row's 62%** -- so the gap is ~7
+> points, not 33. The OWLv2 number stands (P20 re-reads it as 90% at a
+> matched budget); the baseline does not. Regenerate `det_fp32.json` live
+> before citing any row below, including the per-walk table.
 
 **Identical conditions on both rows: the same 365 frames, the same floor
 mask, the same 48-crop budget, the same `P>=0.8` gate.** The only variable
@@ -6886,6 +6905,14 @@ accelerator and no network.
 
 #### P18: the floor mask runs on BOTH parts, and INT8 barely touches it -- **2026-09-17, ~$14**
 
+> **Still valid as a measurement, no longer on the critical path (P20,
+> 2026-09-18).** The premise below -- "the mask is what the tier rests
+> on" -- holds only for the quantized detector it was measured against.
+> With OWLv2 supplying the boxes the mask is worth one true positive and
+> is dropped, so nothing in the shipped tier needs a SegFormer HEF. The
+> IoU 0.988 result stands and is worth having banked if a cheap detector
+> ever returns.
+
 P16 left one question able to overturn it. The tier reads 49% with the
 floor mask and 3% without it on a quantized 8L detector, so the mask is
 what the tier rests on -- and the mask had never been compiled, let alone
@@ -6979,6 +7006,346 @@ cost of the smaller part, and what that does to latency is unmeasured.
   row needs a reduced calibration set or a quota increase.
 
 Records in `evaluations/hailo/zoo-probe/`; both HEFs are banked.
+
+#### P20: the tier around OWLv2 is two models, not three -- **2026-09-18, free**
+
+P19 put OWLv2 inside the tier and measured 83%. It changed one variable --
+where the boxes came from -- and left every other setting at the value it
+inherited from a YOLO-World tier: the floor mask on, `max_crops` 48, the
+`P>=0.8` gate. **None of those was ever chosen for this detector.** This
+asked what each one is worth now, on P19's own 365 frames, and three of
+the four answers are the opposite of what the sections above assume.
+
+Eight runs, all on the laptop, all free. `evaluations/tier-decomp/`, with
+the frame set pinned in `p19_frames.json`.
+
+##### The control, and why the frame set is a FILE now
+
+P19's "365 frames" is not the corpus. It is a ~40-per-walk subsample --
+`blue-bottle-...185007` has 209 frames on disk and 28 in the record --
+because P19 restricted OWLv2 to the frames its YOLO-World replay covered,
+which is what made those two rows comparable at all. That restriction is
+invisible in the saved `config`, and the first version of this phase ran
+the full corpus against P19's number before it was caught. So the frame
+keys are extracted to a file and passed with `--frames-from`, and the
+control is `blue-bottle-...142454` reproducing P19's 18/18 exactly.
+
+##### Recall at matched false-positive budgets
+
+| config | @0 FP | @3 FP | @16 FP | gate @3 FP | ms |
+|---|---|---|---|---|---|
+| OWLv2 crops + mask, 48 (**= P19**) | 3% | **90%** | 93% | 0.594 | 3170 |
+| **OWLv2 crops, NO mask, 16** | 3% | **90%** | **96%** | 0.594 | **2679** |
+| OWLv2 crops, NO mask, 48 | 3% | **90%** | **96%** | 0.594 | 2802 |
+| OWLv2 crops + mask, 16 | 3% | **90%** | 93% | 0.594 | 3483 |
+| OWLv2 crops + mask, **8** (shipped) | 3% | 85% | 90% | 0.594 | 3343 |
+| OWLv2 crops + **SAM**, 48 | 3% | 85% | 92% | 0.807 | **12718** |
+| **Grounding DINO** crops + mask, 48 | **8%** | 80% | 89% | 0.862 | 4731 |
+| floor mask alone, no detector | 4% | 62% | 70% | 0.391 | 650 |
+
+Read the ms column as one laptop, CPU, fp32, run sequentially. The spread
+between 3170 / 3343 / 3483 is machine noise -- fewer crops cannot be
+slower -- so +-15%, and no ranking inside that band.
+
+##### 1. The floor mask can be DROPPED, and that is a model off the board
+
+90% with it and 90% without it at 3 FP; **better without at 16 FP, 96%
+against 93%.** Its entire contribution at the shipped budget is **one true
+positive**, and at 16 FP it *costs* three.
+
+This does not contradict P16 so much as bound it. P16 measured the mask
+taking a quantized detector from 20% to 50% and called it *"the
+load-bearing crop source... it fully rescues a destroyed one"*, which is
+true and is a statement about a **floor**. Given boxes that are already
+good the mask adds nothing, and the two facts compose: the mask is
+insurance against a bad detector, and OWLv2 is the alternative to having
+one.
+
+**What it changes.** The on-board tier is **OWLv2 + CLIP, two models**, not
+three. That retires handoff open item 1 -- *"the mask is a third model
+against the Pi's four cores, now first-order"* -- by deletion rather than
+by scheduling. It also removes the reason P18 compiled SegFormer to both
+parts: that work stands as a measurement (IoU 0.988 at optimization level
+0) and is no longer on the critical path. And it withdraws ONE of the two
+arguments in 3.6's pan-only servo row, which cites the mask wanting
+consistent floor geometry; **that decision does not move**, because its
+other reasons (1.15.4's near-field blind box, the time-varying
+camera-lidar extrinsic, 1.16 #8) are untouched.
+
+##### 2. The shipped crop budget of 8 is costing five points
+
+85% at 8, 90% at 16, 90% at 48. This is P18's area-ranking defect measured
+on a good detector rather than inferred from a bad one: crops are ranked by
+AREA under a fixed cap, so a small target is crowded out by larger
+proposals.
+
+**And the mechanism is now visible, which the earlier framing missed.**
+With the mask OFF, 16 and 48 crops are *byte-identical* -- same TP, same
+FP, same gate at every budget. OWLv2 never proposes more than ~16 useful
+crops per frame. So the budget was never a threshold on the detector; it
+was a threshold on **the mask's output flooding it**. Fixing the budget and
+dropping the mask are the same repair seen from two sides.
+
+##### 3. SAM is validly measured at last, and it LOSES
+
+`a10g-sam-8walk.json` has sat in P7's invalid list since 2026-09-11 --
+every frame scored 0.0, run with `--metric confidence` where SAM + CLIP
+yields a probability. Run correctly, as a proposer beside OWLv2's boxes:
+**85% against 90%, at 4.5x the latency** (12.7 s/frame).
+
+That closes a thread this document has carried since 4.11: *"9 of the
+corpus's 11 errors are crop proposals and 0 are matching, so region
+proposals are what is actually short."* True of YOLO-World. **False of
+OWLv2** -- and for the reason in finding 2, since more class-agnostic
+proposals spend the same budget the mask was spending. `perceive_lab.py`'s
+docstring says SAM *"replaces only the part the corpus says is broken"*;
+the corpus no longer says that part is broken.
+
+##### 4. Grounding DINO is not the crop source -- it is the CORROBORATOR
+
+80% at 3 FP against 90%, at 1.5x the latency, so it loses as a detector.
+But at **0 FP it reads 8% against OWLv2's 3%**, reproducing inside the tier
+the ordering P7 found standalone (50% against 12% at zero false
+positives). This is the first in-tier evidence for P7's own corollary --
+*a model that is never wrong is a better corroborator than one that is
+more often right* -- and it says 1.11a's second opinion should be a
+DIFFERENT MODEL, not a lower threshold on the same one. Note this is
+`grounding-dino-tiny`; the base checkpoint has never been run.
+
+##### 5. The `P>=0.8` gate is worth seven points, and it is not this tier's gate
+
+Swept on P19's own saved records, no re-running: **83% at gate 0.80 and 90%
+at gate 0.594, both at 3 false positives**, 98% precision either way.
+P19's 83% is therefore not OWLv2's operating point -- it is OWLv2 read at a
+gate tuned for a different crop source. Every OWLv2 row above lands on
+0.594 independently, which is what a real operating point looks like.
+
+**The published comparison should be 90% against 50%, not 83% against
+50%** -- and both halves deserve re-reading at a matched budget rather than
+a fixed gate, which `perception_eval.py`'s `recall_at_fp_budget` already
+does and which P19 did not use.
+
+##### What the 33 remaining misses are, and the one thing the corpus cannot say
+
+At gate 0.8, median candidate count is **13 for hits and 13 for misses** --
+identical. Crops were proposed on every missed frame (4 to 32 of them), so
+no miss is crop starvation. The scores are bimodal: **10 of 33 sit in
+0.70-0.80** (the gate, finding 5) and **15 of 33 are below 0.40**.
+
+**`labels.json` carries per-frame `target_visible` booleans and NO boxes.**
+So proposal-failure and matching-failure cannot be separated from this
+corpus at all -- not here, and not by whatever produced the 9-of-11 split
+quoted in finding 3. Deciding whether a better CLIP (SigLIP2, EVA-CLIP)
+would pay needs either boxes on the ~15 hard misses or an IoU check
+against OWLv2's own boxes. **That is an afternoon of adjudication, and
+until it exists a matcher sweep is unfalsifiable rather than merely
+unmeasured.**
+
+Misses concentrate in two walks (18 of 33). `blue-bottle-...185007` reads
+**20% -- under OWLv2 and under YOLO-World alike**, P19's single tie. On
+disk it is 209 frames with 10 visible: it is the **search** walk, and this
+reproduces P3's split (100%/97% on approach walks, 20% on search) with a
+better detector in place. **The crop source is not the lever on the search
+half of the corpus**, and no row in this phase moves it.
+
+##### Latency: the detector is the tier
+
+Measured by subtraction on one machine, which is the only way these
+comparisons are legitimate:
+
+| term | ms | how |
+|---|---|---|
+| OWLv2 detector alone | **2433** | `--detector owlv2`, no CLIP, no mask |
+| \+ CLIP over 48 crops | 2802 | so **CLIP ~= 370 ms** |
+| floor mask + its own crops | **650** | `--detector none --proposer floor` |
+
+**The detector is ~85% of the tier.** This corrects a prediction made
+before the run -- that CLIP-over-crops would dominate, inferred from P7's
+1210 ms shipped row -- and it matters for the purchase: P7b's ~205 ms fp16
+Orin projection for OWLv2 *alone* is within ~15% of the whole tier once
+the mask is gone. So **~235 ms, ~4.3 Hz**, and the latency question is
+neither better nor worse than P7b left it, just no longer confounded.
+
+Do not read the 2.7 s figures as a robot number. They are laptop CPU
+fp32; the same model is 111 ms on an A10G at fp16 (P7), which is the
+13-25x that separates this instrument from the board.
+
+##### One run in `evaluations/tier-decomp/` is INVALID, for the same reason SAM's was
+
+`R5_owlv2_detector_only.json` reads 100% recall / 78 FP and is meaningless
+as accuracy: `--detector owlv2` is the whole-pipeline replacement, which
+thresholds on box confidence, and it was scored `--metric probability`.
+78 non-visible frames score >=0.99. **This is the third time that exact
+mismatch has produced a number in this document** (P7's SAM row, P7's
+OWL-ViT row, now this), which argues the metric should be a property of
+the pipeline rather than a flag the caller can get wrong. Kept for its
+2433 ms, which the mismatch does not affect.
+
+Also: **12 of P19's 365 frames score `unavailable`** and sit in the
+denominator as misses -- about half a point of recall attributed to the
+model that belongs to the harness.
+
+##### The configuration this settles on
+
+**OWLv2 crops, no floor mask, `max_crops: 16`, gate ~0.59 -- 90% at 3 FP,
+96% at 16 FP.** Two models, 2679 ms on this laptop against P19's 3170,
+against the shipped tier's 50%. **Nothing in `brain/` or `config/` has
+been changed by this phase**; these are measurements, and the three
+config values above are a recommendation that should land with a test
+pinning each one to its measured row.
+
+#### P21: P19's YOLO-World baseline is not YOLO-World -- and YOLOE beats OWLv2 -- **2026-09-19, free**
+
+P20 settled the tier's *settings* around OWLv2 and left its own closing
+recommendation: the crop source is the lever, so try the cheap ones. Two
+of the four families named there had never been run, and one of them was
+never named by anybody because nobody looked. Sixteen runs, all free.
+
+**The headline is a defect, not a model.** P19's comparison -- the
+measurement the Jetson reversal rests on -- has a confounded baseline, and
+its YOLO-World side cannot be reproduced by the live model at any
+threshold.
+
+##### 1. The control failed, which is why any of this was found
+
+P20's rows were all OWLv2-against-OWLv2, so they needed no baseline. A size
+sweep does, so P16/P19's YOLO-World row was re-run live in its exact
+config -- `yolov8s-worldv2`, floor mask, 48 crops, the same 365 frames, the
+same gate procedure.
+
+| YOLO-World v2s + mask + 48 | @3 FP | TP |
+|---|---|---|
+| P19's row (`replay:build/yoloworld/det_fp32.json`) | 62% | 120 |
+| **the same config, live** | **83%** | **161** |
+
+41 true positives apart. Both paths end in the same `PerceptionPipeline`
+with the same `crop_path`, so this is entirely what the DETECTOR emitted:
+
+| pipeline | median crops/frame | frames proposing nothing |
+|---|---|---|
+| P19's replayed YOLO-World | **45** | 6 / 365 |
+| live YOLO-World v2s, same config | **4** | 28 / 365 |
+| live YOLO-World v2s, no mask | 0 | 197 / 365 |
+| OWLv2, for scale | 13 | -- |
+
+**And no threshold recovers it.** `--detector-confidence` was plumbed for
+this test (see item 5) and swept to 0.001: live YOLO-World still emits a
+median of **1** box per frame, max 2. Ultralytics' NMS on a single-class
+text prompt does not produce 45 proposals, so `det_fp32.json` was generated
+by something other than the library default -- a different class set, a
+pre-NMS dump, or a different export -- and it is not on disk to inspect
+(it lived on a rented box).
+
+**What this does to P19.** Its *OWLv2* number is unaffected -- P20 already
+re-derived it and found 90% at a matched budget rather than 83%. What
+changes is the thing it was 33 points better than. Live, the same tier with
+a YOLO-World v2s crop source reads **83%**, so the gap is **7 points, not
+33** -- and `BOM-COMPARISON.md`'s $59-86 premium was argued on the 33.
+**P19's per-walk table, its "seven wins, one tie", and the DECISION
+paragraphs that cite it should not be quoted until that baseline is
+regenerated live.** This is the same class of error as P11 and P14: a
+property of one installation reported as a property of a part.
+
+##### 2. The size sweep: `yolov8s-worldv2` was the only variant ever run, and it is near the bottom
+
+`max_crops` 16, no mask (P20's settled config), matched FP budgets:
+
+| crop source | @0 FP | @3 FP | @16 FP | gate @3 FP | ms |
+|---|---|---|---|---|---|
+| **YOLOE-26l** | 4% | **91%** | **97%** | **0.391** | **398** |
+| OWLv2-base (P20's best) | 3% | 90% | 96% | 0.594 | 2679 |
+| YOLO-World v2-l | 14% | 89% | 89% | **0.026** | 368 |
+| YOLOE-11l | 9% | 88% | 94% | 0.389 | 517 |
+| YOLO-World v2-s + mask | 5% | 83% | 88% | 0.391 | 816 |
+| YOLO-World v2-s | 5% | 81% | 82% | 0.065 | 173 |
+| YOLO-World v2-x | 8% | 79% | 81% | 0.250 | 468 |
+| YOLO-World **v2-m** | **45%** | 78% | 81% | 0.493 | 243 |
+
+**The axis is not monotonic -- s 81, m 78, l 89, x 79.** This is four
+idiosyncratic checkpoints, not a scaling law, and the lesson is not "buy a
+bigger detector". It is that the one variant this project ever measured
+sat near the bottom of a spread nobody had looked at, and P9's 72% and
+P16's 45%-vs-72% framing both inherit that.
+
+##### 3. YOLOE-26l beats OWLv2 at every budget, 6.7x faster -- and nobody had named it
+
+**91% / 97% against OWLv2's 90% / 96%, at 398 ms against 2679, on a gate of
+0.391.** It is the best tier number this project has measured and it was
+found by reading the installed ultralytics' asset list rather than this
+document's candidate table. That is P7's finding #4 recurring exactly:
+*"we tested the alternatives"* has now three times meant *"we tested the
+alternatives we had named."* `brain/perceive_lab.py` gains a `YoloE`
+backend (`crops:yoloe`), which subclasses `YoloWorld` because only the
+prompt call differs -- YOLOE wants precomputed text embeddings.
+
+**Why it could matter more than the recall.** YOLOE is YOLO-shaped and
+ultralytics-native, and YOLO-World already compiles to a Hailo-8L (P10)
+and a 10H (P16). If YOLOE compiles, the best model measured runs on the
+**$70** part rather than only on the $399 one -- which is the inverse of
+P17's conclusion for OWLv2 and would re-reverse the hardware decision a
+second time. **Nothing here establishes that**, and the known risk is
+specific: P13 measured YOLO-World's embedding head collapsing at INT8 (5%
+against fp32's 34%) and YOLOE's head has the same cosine shape. So the
+decisive test is unchanged in kind from P10/P13 -- compile, then INT8 --
+and now has a better model to point at.
+
+##### 4. Two rows read as crop sources and are really DETECTORS
+
+Every live YOLO-World and YOLOE row proposes nothing on 144-197 of 365
+frames. The pipeline is identical to OWLv2's, so the end-to-end numbers
+above are legitimate tier numbers -- but the *mechanism* is not the one
+`OpenVocabCropSource` was written for. These models self-filter to boxes
+they already believe are the target, so CLIP confirms a decision rather
+than ranking candidates. Two visible consequences, both in the table: the
+no-mask YOLO rows cannot reach a 16-FP budget at all (gate `-inf`, they
+saturate at 7-15 false positives) where OWLv2 keeps climbing to 96%, and
+**v2-l's 89% sits on a gate of 0.026**, which is the non-separability
+hazard P7 disqualified Qwen3-VL for. YOLOE-26l's 0.391 is the reason to
+prefer it over v2-l despite a two-point difference.
+
+##### 5. `--confidence` never reached an open-vocabulary backend
+
+Found by the worst possible route: two rows an hour apart came back
+byte-identical at 0.005 and 0.001. `pipeline_for_spec` passed `confidence`
+to the `PerceptionPipeline` -- which gates the YOLO crop path downstream --
+and never to the backend, whose threshold stayed on its constructor default
+of 0.02. So every open-vocabulary threshold in this document was measured
+at 0.02 whether or not a sweep was requested. Now plumbed as a separate
+`--detector-confidence`, deliberately NOT merged with `--confidence`: they
+gate different stages and one name for both is how this went unnoticed.
+The two inert rows were deleted rather than kept, being byte-identical
+duplicates of rows that already exist.
+
+##### 6. Three claims made and withdrawn inside one session, recorded on purpose
+
+All three were arithmetic on numbers that were not comparable, and each
+survived until the next run:
+
+* *"dropping the mask is worth +20 to the cheap detector"* -- **wrong.** It
+  compared a gate-0.8 figure against P16's differently-configured 50%. At a
+  matched budget the mask **helps** v2s (81% -> 83%), exactly as P16 says.
+* *"the crop budget 48 -> 16 is worth +26 to YOLO-World"* -- **wrong.** 48
+  and 16 are byte-identical for v2s (161 TP, same gates). The only budget
+  effect that survives is OWLv2's 8 -> 16, which P20 records.
+* *"the YOLO rows are invalid because they aren't crop sources"* --
+  **over-corrected.** The pipeline is identical, so the end-to-end numbers
+  compare; what does not transfer is the crop-source *mechanism* (item 4).
+
+The pattern is one thing: **a recall number was read across a
+configuration change.** P3 exists to stop that and was not used until the
+`compare` subcommand was reached for. Read matched budgets, never two
+fixed gates.
+
+##### What to do next, in order
+
+1. **Regenerate `det_fp32.json` live and re-run P19's own comparison.** It
+   is free, and the Jetson order currently rests on the row it produces.
+2. **Compile YOLOE to a Hailo-8L, then INT8 it** -- P10's loop, ~$1, with
+   P13's two recorded traps. This is the cheapest decisive test left and it
+   now has a better model than the one P13 failed on.
+3. Leave `brain/` and `config/` alone until 1 and 2 land. Nothing in this
+   phase changed shipped behaviour except the new `--detector-confidence`
+   flag and the `YoloE` backend, neither of which any shipped path calls.
 
 #### The Hailo-10H option, costed -- the download BLOCKER is cleared (P15)
 

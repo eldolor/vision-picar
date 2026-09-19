@@ -34,6 +34,22 @@ SAM is the one that matters. The other two replace the whole pipeline; SAM
 replaces only the part the corpus says is broken, and feeds the CLIP
 matcher that the corpus says is not.
 
+**MEASURED 2026-09-18 (P20), and the SAM row above is now WRONG.** Run
+correctly as a proposer beside OWLv2's boxes -- the earlier A10G row was
+invalid, scored with `--metric confidence` where SAM + CLIP yields a
+probability -- SAM reads **85% against the 90% of OWLv2's boxes alone**, at
+4.5x the latency. The "9 of 11 errors are crop proposals" split is a
+YOLO-World result and does not survive a good detector: with OWLv2, hits
+and misses have the SAME median candidate count (13), so no miss is crop
+starvation, and extra class-agnostic proposals merely spend the crop budget
+that a small target needed. The same finding retires the floor mask from
+the shipped tier. What is genuinely open is the MATCHER, and it cannot be
+decided yet: `labels.json` carries per-frame booleans and no boxes, so
+proposal-failure and matching-failure are not separable from this corpus at
+all. Grounding DINO's value also moved -- it loses as a crop source (80%)
+and wins at zero false positives (8% against 3%), which is a corroborator
+(1.11a), not a detector.
+
 ## None of these can go on a Hailo, which is the point
 
 They are here to answer *"would a Jetson buy anything"*, so a result that
@@ -76,9 +92,10 @@ OWLV2 = "owlv2"
 YOLOWORLD = "yoloworld"
 OMDET = "omdet"
 LLMDET = "llmdet"
+YOLOE = "yoloe"
 TRTOWLV2 = "trtowlv2"
 VLM = "vlm"
-OPEN_VOCAB = (GDINO, OWLV2, YOLOWORLD, VLM, OMDET, LLMDET, TRTOWLV2)
+OPEN_VOCAB = (GDINO, OWLV2, YOLOWORLD, VLM, OMDET, LLMDET, TRTOWLV2, YOLOE)
 
 DEFAULT_GDINO = "IDEA-Research/grounding-dino-tiny"
 DEFAULT_OWLV2 = "google/owlv2-base-patch16-ensemble"
@@ -88,6 +105,9 @@ DEFAULT_LLMDET = "iSEE-Laboratory/llmdet_base"
 # precision, so it is never a default that could be silently reused.
 DEFAULT_TRTOWLV2 = ""
 DEFAULT_YOLOWORLD = "yolov8s-worldv2.pt"
+# YOLOE (2026-09-19). The -seg checkpoints are the only ones published;
+# only the boxes are read, so the mask head is paid for and discarded.
+DEFAULT_YOLOE = "yoloe-11l-seg.pt"
 
 # The VLM default. Qwen2.5-VL-3B for three reasons that are not "it scores
 # well": its grounding is trained rather than emergent, its vision encoder
@@ -623,9 +643,13 @@ class YoloWorld:
         self.model_name = weights
         self._classes = None
 
+    def _set_text(self, text: str):  # pragma: no cover
+        """The prompt call. Overridden by YoloE, whose signature differs."""
+        self.model.set_classes([text])
+
     def detect_text(self, image: bytes, text: str) -> Sequence[Detection]:  # pragma: no cover
         if self._classes != [text]:
-            self.model.set_classes([text])
+            self._set_text(text)
             self._classes = [text]
         results = self.model.predict(_pil(image), conf=self.confidence,
                                      verbose=False, device=self.device)
@@ -636,6 +660,44 @@ class YoloWorld:
                 out.append(Detection(box=Box(x1, y1, x2, y2), label=text,
                                      confidence=float(b.conf[0])))
         return out
+
+
+class YoloE(YoloWorld):
+    """Ultralytics YOLOE -- real-time open-vocabulary, never tried here.
+
+    Added 2026-09-19 for the reason P7's finding #4 gave: *"we tested the
+    alternatives"* has twice meant *"we tested the alternatives we had
+    named"*, and this family was in the installed ultralytics the whole
+    time. It matters now because P19 showed the tier wants good BOXES and
+    discards the detector's scores, so a fast box proposer is the cheap
+    lever on latency -- and YOLO-World already proved a YOLO-shaped
+    open-vocabulary model can compile to a Hailo (P10).
+
+    It subclasses YoloWorld because only the text-prompt call differs:
+    YOLOE wants precomputed text embeddings (`get_text_pe`) rather than a
+    list of strings, so `set_classes` takes two arguments. Everything after
+    that -- predict, boxes, confidences -- is identical, which is why this
+    overrides one method and inherits the rest.
+    """
+
+    def __init__(self, weights: str = DEFAULT_YOLOE,
+                 confidence: float = 0.02,
+                 device: Optional[str] = None):
+        try:
+            from ultralytics import YOLOE as _YE
+        except ImportError as exc:  # pragma: no cover
+            raise PerceptionUnavailable(
+                "YOLOE needs ultralytics. `pip install -r "
+                "requirements-perception.txt`.") from exc
+        self.model = _YE(weights)
+        self.confidence = confidence
+        self.device = device
+        self.weights = weights
+        self.model_name = weights
+        self._classes = None
+
+    def _set_text(self, text: str):  # pragma: no cover
+        self.model.set_classes([text], self.model.get_text_pe([text]))
 
 
 class VlmDetector:
@@ -840,6 +902,7 @@ OPEN_VOCAB_BACKENDS = {
     YOLOWORLD: (YoloWorld, DEFAULT_YOLOWORLD),
     OMDET: (OmDetTurbo, DEFAULT_OMDET),
     LLMDET: (LlmDet, DEFAULT_LLMDET),
+    YOLOE: (YoloE, DEFAULT_YOLOE),
     TRTOWLV2: (None, DEFAULT_TRTOWLV2),   # resolved lazily -- importing
                                           # TensorRT at module load would
                                           # break every machine without it
@@ -860,6 +923,15 @@ def _open_vocab(spec: str, device=None, dtype=None, **extra):
         return TrtOwlv2(override, device=device)
     cls, default = OPEN_VOCAB_BACKENDS[name]
     kwargs = {}
+    # The detector's OWN threshold, which is not the pipeline's `confidence`
+    # -- that one gates the YOLO crop path downstream and never reaches here.
+    # Plumbed 2026-09-19: without it these backends are stuck on their
+    # constructor default (0.02), a `--confidence` sweep silently does
+    # nothing, and two rows an hour apart come back byte-identical. Which is
+    # how it was found.
+    if extra.get("detector_confidence") is not None:
+        kwargs["confidence" if name != OWLV2 else "threshold"] = \
+            extra["detector_confidence"]
     if name == OWLV2 and dtype:
         # Only OWLv2 carries a dtype today; passing it to a backend that does
         # not would be a TypeError three minutes into a corpus run, which is
@@ -888,6 +960,7 @@ def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
                       imgsz: Optional[int] = None,
                       vlm_max_pixels: Optional[int] = None,
                       vlm_ground: bool = True,
+                      detector_confidence: Optional[float] = None,
                       **kwargs):
     """One string per stage -> something with `perceive(frame)`.
 
@@ -906,7 +979,8 @@ def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
         spec = detector.split(":", 1)[1]
         backend = _open_vocab(spec, device=device, dtype=dtype,
                               vlm_max_pixels=vlm_max_pixels,
-                              vlm_ground=vlm_ground)
+                              vlm_ground=vlm_ground,
+                              detector_confidence=detector_confidence)
         region = (SegformerFloorProposer(segmenter, device=device)
                   if proposer == "floor" else
                   SamProposer(sam_model, device=device) if proposer == "sam"
@@ -932,7 +1006,8 @@ def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
                 "detector with --proposer.")
         return OpenVocabPipeline(
             _open_vocab(detector, device=device, dtype=dtype,
-                        vlm_max_pixels=vlm_max_pixels, vlm_ground=vlm_ground),
+                        vlm_max_pixels=vlm_max_pixels, vlm_ground=vlm_ground,
+                        detector_confidence=detector_confidence),
             target, **kwargs)
 
     if proposer == "floor":
@@ -970,7 +1045,7 @@ def pipeline_for_spec(target: str, *, detector: str = DEFAULT_DETECTOR,
 
 
 __all__ = [
-    "GDINO", "OWLV2", "YOLOWORLD", "OPEN_VOCAB", "OPEN_VOCAB_BACKENDS",
+    "GDINO", "OWLV2", "YOLOWORLD", "YOLOE", "OPEN_VOCAB", "OPEN_VOCAB_BACKENDS",
     "DEFAULT_GDINO", "DEFAULT_OWLV2", "DEFAULT_YOLOWORLD", "DEFAULT_SAM",
     "DEFAULT_OPEN_VOCAB_CONFIDENCE",
     "GroundingDino", "Owlv2", "YoloWorld", "VlmDetector", "DEFAULT_VLM",
