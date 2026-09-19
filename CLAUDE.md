@@ -174,7 +174,17 @@ OWLv2 against a *replayed* YOLO-World detection file carrying ~45
 proposals per frame; the live model emits ~1-4 at any threshold, and the
 same tier config live reads **83%, not 50%** -- so the accuracy gap is ~7
 points, not 33, and `BOM-COMPARISON.md`'s $59-86 premium was argued on the
-33. Separately, **YOLOE-26l reads 91% / 97% at 3 / 16 FP against OWLv2's
+33. **Root cause found the same day: `tools/hailo/quantized_detect.py`
+applies NO NMS** -- it keeps every anchor above threshold out of 8400,
+because YOLO's NMS lives in ultralytics' post-process and not in the ONNX
+graph. The boxes are right and the post-processing is missing, and the
+tier reads worse for having 45 redundant crops because they flood the
+area-ranked budget. **So P16's phase-2 table is pre-NMS too** (50/49/49
+with the mask, 20/13/3 without): its part ORDERING stands, its absolute
+numbers understate all six rows, and its "mask rescues a wrecked
+detector" mechanism now has a rival -- the mask may simply be supplying
+clean regions where raw anchors supply none. Re-running those detections
+through NMS is free and settles it. Separately, **YOLOE-26l reads 91% / 97% at 3 / 16 FP against OWLv2's
 90% / 96%, at 398 ms against 2679** -- the best tier number measured here,
 never named in any plan doc, and YOLO-shaped, so it may run on the $70
 Hailo rather than only the $399 Jetson. **Do not order on P19.** Two free

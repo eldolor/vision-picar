@@ -7231,10 +7231,41 @@ with the same `crop_path`, so this is entirely what the DETECTOR emitted:
 **And no threshold recovers it.** `--detector-confidence` was plumbed for
 this test (see item 5) and swept to 0.001: live YOLO-World still emits a
 median of **1** box per frame, max 2. Ultralytics' NMS on a single-class
-text prompt does not produce 45 proposals, so `det_fp32.json` was generated
-by something other than the library default -- a different class set, a
-pre-NMS dump, or a different export -- and it is not on disk to inspect
-(it lived on a rented box).
+text prompt does not produce 45 proposals.
+
+##### 1a. The cause: those detections were never NMS'd
+
+`det_fp32.json` is not on disk (it lived on a rented box), but the program
+that wrote it is: `tools/hailo/quantized_detect.py`. Its `detections()` is
+six lines and they are the whole explanation --
+
+    keep = np.nonzero(best >= conf)[0]
+
+**every anchor above the threshold, out of 8400, with no NMS at all.**
+YOLO's NMS lives in ultralytics' post-process, not in the ONNX graph the
+body/head split was cut from, so the file is raw pre-NMS output: 45
+near-duplicate boxes of the same few objects rather than 45 findings.
+
+So the weights were never the variable, and "degraded export" is the wrong
+diagnosis. **The boxes are right and the post-processing is missing** --
+and the tier then reads *worse* for having more of them, because 45
+redundant crops flood the AREA-ranked `max_crops` budget and crowd the
+target out. That is P18's defect operating as the cause of P19's baseline
+rather than as a curiosity beside it, and it is the third place in this
+document where the crop budget turns out to be the hidden variable.
+
+**Which widens the consequence past P19.** Every row of P16's phase-2
+table came from this same program -- 50% / 49% / 49% with the floor mask
+and 20% / 13% / 3% without it, for fp32 / 10H / 8L. All six are pre-NMS.
+The part-to-part ORDERING survives, because all three rows share the
+pipeline and the omission, and that ordering is what P16 was for. **The
+absolute numbers understate every row**, and P16's central mechanism now
+has a rival explanation worth testing: the floor mask may be rescuing a
+wrecked detector, as P16 says, or it may be supplying a handful of clean
+regions where 45 raw anchors supply none -- which would also explain why
+the mask stops mattering the moment the detector's own boxes are NMS'd
+(P20 finding 1). Distinguishing those two is free: re-run the 10H and 8L
+detections through NMS before scoring.
 
 **What this does to P19.** Its *OWLv2* number is unaffected -- P20 already
 re-derived it and found 90% at a matched budget rather than 83%. What
