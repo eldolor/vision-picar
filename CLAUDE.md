@@ -131,6 +131,25 @@ the original build plan phases, reordered simulation-first):
 
 ---
 
+**THE NEXT PHASE, decided 2026-09-19: map the house while it searches it
+(`PLAN-mapping.md`, N1-N7, PROPOSED).** That is the stated trigger in
+`PLAN-onboard-perception.md` 3.3 -- (b+) was "CHOSEN as the target **if mapping
+proves to be the point**" -- so **ROS 2 enters the project**, as exactly one
+containerised service exposing `GET /pose`, `GET /map`, `POST /goto` and
+nothing else. Never (c)'s full adoption, and never anywhere near `brain/`,
+`control/` or `RobotInterface`; `robot/safety.py` still owns the veto, because
+nav2 plans on top of a safety layer rather than replacing one. Two of (b+)'s
+three costs evaporated by accident: JetPack is Ubuntu 22.04 (the OS dilemma)
+and the local VLM was dropped, leaving the 8GB to SLAM and nav2 (the memory
+objection). The learning cost -- TF, URDF, nav2 params, launch files -- stands.
+**N1-N4 need no hardware**, and N1 is the important one: define the wall
+against `MockRobot` *before* any ROS exists, or the wall gets drawn around
+whatever ROS emits and (b+) quietly becomes (c). Two prerequisites are
+promoted from optional: **C2's continuous pose** (a SLAM pose cannot be
+represented in `grid_world.py`'s integer cells and cardinal `Heading`, so the
+twin cannot show this working -- a section 7 blocker) and **C1's pose method**.
+`sweep` (1.7) is unblocked by N3 but its gating rule is unchanged.
+
 **Session handoff, 2026-09-15: `HANDOFF-2026-09-15.md`** -- P9-P15, the
 corpus now at 11 labelled walks, and the AWS near-miss where 18 of 22
 walks existed only on the laptop. Read its section 4 before running
@@ -685,6 +704,16 @@ vision-picar/
 ├── PLAN-teleop-robot.md       a live phone walk driving the real MissionRunner
 │                               mission, closed loop -- T1-T4 (BUILT); see the
 │                               T1-T4 status-table row above
+├── PLAN-mapping.md            **the next phase** -- map the house while
+│                               searching it. PROPOSED, nothing built,
+│                               N1-N7. Mapping being the point is the
+│                               stated trigger in PLAN-onboard-perception
+│                               3.3, so ROS 2 enters the project as ONE
+│                               service behind an HTTP wall ((b+)), never
+│                               near brain/ or RobotInterface. N1-N4 need
+│                               no hardware. Its section 2 lists what is
+│                               already decided (1.5, 1.6, 3.4) and must
+│                               be implemented rather than re-argued
 ├── PLAN-microduck-transplants.md
 │                               twelve designs borrowed from Pollen Robotics'
 │                               Microduck -- a depth sensor instead of asking

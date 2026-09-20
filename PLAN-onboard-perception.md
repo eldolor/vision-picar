@@ -352,7 +352,9 @@ fourth type had fallen out of the phasing entirely. Corrected here.
 - **`sweep` is deliberately left out.** Its stop condition ("have I covered the
   room?") is a mapping question, and under (a) there is no map. Add a fourth
   verb when the trigger log shows the planner reaching for it -- a measured
-  signal, not a guess.
+  signal, not a guess. *(2026-09-19: `PLAN-mapping.md`'s N3 computes that stop
+  condition, so the blocker is removed. **The gating rule above is unchanged** --
+  N3 ships the coverage answer, not the verb.)*
 - **`traverse` is in the contract but not implementable until the lidar is
   fitted** -- its completion test is geometric (1.8). `approach` and `explore`
   are the two that work first.
@@ -1918,6 +1920,13 @@ the vendor library `robot/hardware_robot.py` is meant to be built on.
 the point.** Run ROS 2 as *one isolated service* on the Pi exposing a tiny API
 -- `GET /pose`, `GET /map`, `POST /goto` -- and nothing else in the system knows
 ROS exists.
+
+> **The condition was met on 2026-09-19** -- mapping the house while it searches
+> is the next phase, so (b+) is no longer conditional. `PLAN-mapping.md` (`N1`-`N7`)
+> is the phasing. Two of the three costs below have since evaporated: the OS
+> dilemma (JetPack is Ubuntu 22.04, §4.7) and the memory objection (the local
+> VLM was dropped, so SLAM and nav2 have the 8GB -- `EDGE-PERCEPTION-BENCH.md`).
+> The learning cost stands.
 
 > This is exactly Microduck's `tofd` pattern: it owns one sensor, publishes,
 > reads nothing, and consumers reach it through its own socket without knowing
