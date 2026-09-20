@@ -147,8 +147,45 @@ latency instrumentation and an observability dashboard at `/metrics`. Read
 its section 6 for what is still open and section 7 for what was wrong
 along the way.
 
-**HARDWARE DECISION -- REVERSED 2026-09-17 to the JETSON. Read this
-before anything below it.** This file carried "no Jetson, on cost" from
+**HARDWARE DECISION -- CLOSED 2026-09-19: the board is a JETSON, and the
+Hailo path is not being pursued.** Stated by the user. Everything below
+about Pi-plus-Hailo, HEFs, DFC versions, allocation, INT8-on-Hailo and the
+10H is **history, not an open question** -- keep it for the reasoning and
+do not re-open it, and do not spend on a Hailo compile run. Two practical
+consequences for anything after this line:
+
+* **Compilability stops being a model-selection criterion.** P17's "OWLv2
+  compiles to no Hailo" and P10/P13/P16's YOLO-World results no longer
+  gate anything. On a Jetson every candidate runs, so the axes are recall
+  and latency only.
+* **Latency is the whole remaining question**, and it is the one the user
+  raised: the tier is ~4.3 Hz projected (P20), against 1.14's assumption
+  of a fast board. Model work should be judged on that. **ANSWERED the
+  same day by P22, and the answer moves the problem off the model:**
+  `yoloe-11s` reads **90% at 3 FP, equal to OWLv2, in 170 ms against
+  2679** (15.8x), and `yoloe-26l` beats it outright at **91% / 97%** in
+  398 ms. Ten YOLOE checkpoints land in an 85-91% band at 117-526 ms with
+  well-separated gates (0.32-0.62, against YOLO-World v2-l's knife-edge
+  0.026). **So the detector stops being the bottleneck and P7b's untouched
+  finding becomes it: the Orin spends 36 ms detecting and 229 ms resizing
+  a photograph.** The next latency work is P7b's preprocessing fixes and
+  P7c's odometry, not another model. Detector pick: `yoloe-26l` for
+  accuracy, `yoloe-11s` for latency -- decide after preprocessing, when
+  latency is measured rather than projected. **OWLv2 is no longer the
+  reason for the board**; it is one candidate and the slowest by 6-16x,
+  and the Jetson's justification is that it runs whatever wins plus a
+  depth model plus a local VLM. Note both sweeps came back NON-monotonic
+  in model size (P21, P22), which on 195 visible frames is noise -- quote
+  the band, not the ordering.
+
+P21's confound still matters, but for a different reason than it was
+recorded for -- not because it affects a purchase, which is now settled,
+but because it means **the cheap detectors were never fairly measured
+against OWLv2**, and one of them (YOLOE) beats it at a seventh of the
+latency. That is a Jetson question.
+
+**Superseded, kept for the reasoning -- REVERSED 2026-09-17 to the
+JETSON:** This file carried "no Jetson, on cost" from
 2026-09-13, and every clause of that argument has since failed:
 
 * **The cost gap was wrong.** It mixed 3.6's ESTIMATED Pi prices with

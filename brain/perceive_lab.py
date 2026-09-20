@@ -50,7 +50,16 @@ all. Grounding DINO's value also moved -- it loses as a crop source (80%)
 and wins at zero false positives (8% against 3%), which is a corroborator
 (1.11a), not a detector.
 
-## None of these can go on a Hailo, which is the point
+## None of these can go on a Hailo -- which STOPPED being the point
+
+**2026-09-19: the board is a Jetson and the Hailo path is closed.** So the
+premise of this section is retired rather than answered. These models are
+no longer "candidates that would need a different board" -- they are
+candidates on equal footing with the ones in `brain/perceive.py`, and the
+only axes left are **recall and latency**. `crops:yoloe` already beats
+OWLv2 on both (P21). Read the section below as the reason this module
+exists, not as a live constraint.
+
 
 They are here to answer *"would a Jetson buy anything"*, so a result that
 says "yes, and by this much" is a purchase argument and a result that says

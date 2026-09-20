@@ -7194,6 +7194,38 @@ been changed by this phase**; these are measurements, and the three
 config values above are a recommendation that should land with a test
 pinning each one to its measured row.
 
+#### The Hailo path is CLOSED -- **2026-09-19, decided by the user**
+
+The board is a Jetson Orin Nano Super. Every Hailo section in this
+document -- 4.9's part table, P6, P10, P13, P14, P15, P16, P17, P18, the
+10H costing, and 1.10 item 1's compile loop -- is **reasoning to keep and
+not a question to re-open.** No Hailo compile run should be funded.
+
+Two things this changes about how to read everything below.
+
+**Compilability is no longer a model-selection criterion.** It was the
+dominant one: 4.7's promotion rule, P6's OWLv2 verdict, P17's repeat of it
+for the 10H, and the entire "does it fit on a dataflow NPU" axis existed
+because the part could not run arbitrary models. A Jetson runs all of
+them. So `brain/perceive_lab.py`'s framing -- *"none of these can go on a
+Hailo, which is the point"* -- is inverted: the lab models are now
+candidates on equal footing with the shipped ones, and the only axes are
+**recall and latency**.
+
+**Latency becomes the whole question**, and it is the one that prompted
+this. P20 measured the detector at ~85% of the tier and put the board at
+**~235 ms, ~4.3 Hz**, where 1.14's continuous motion assumed something
+much faster. P7c's odometry resolution (a detection becomes a goal pose in
+the odom frame, re-detection corrects drift rather than supplying the
+bearing) is the design answer and is still unbuilt; a faster detector is
+the other half. Both are now first-order and neither needs hardware to
+start.
+
+**What this does NOT retire.** P7d's "INT8 destroys OWLv2" was measured on
+**TensorRT**, not on a Hailo, so it is a live Jetson result and one of the
+few things known about quantization on the target. P13's INT8 collapse is
+Hailo-specific and does not transfer.
+
 #### P21: P19's YOLO-World baseline is not YOLO-World -- and YOLOE beats OWLv2 -- **2026-09-19, free**
 
 P20 settled the tier's *settings* around OWLv2 and left its own closing
@@ -7377,6 +7409,116 @@ fixed gates.
 3. Leave `brain/` and `config/` alone until 1 and 2 land. Nothing in this
    phase changed shipped behaviour except the new `--detector-confidence`
    flag and the `YoloE` backend, neither of which any shipped path calls.
+
+#### P22: YOLOE matches OWLv2 at a sixteenth of the latency -- **2026-09-19, free**
+
+The board is a Jetson (above), so compilability stopped being a selection
+criterion and the axes are recall and latency. Latency was the open
+problem: P20 put the tier at ~235 ms / ~4.3 Hz where 1.14's continuous
+motion assumed something much faster. P21 found YOLOE beating OWLv2 on one
+checkpoint. This sweeps the family -- ten rows, all free, P19's 365 frames,
+P20's settled config (no mask, `max_crops` 16).
+
+| crop source | @0 FP | @3 FP | @16 FP | gate @3 FP | ms |
+|---|---|---|---|---|---|
+| **yoloe-26l** | 4% | **91%** | **97%** | 0.391 | 398 |
+| OWLv2-base | 3% | 90% | 96% | 0.594 | **2679** |
+| **yoloe-11s** | 9% | **90%** | 94% | 0.364 | **170** |
+| **yoloe-v8l** | **26%** | **90%** | 95% | 0.324 | 413 |
+| yoloe-11l | 9% | 88% | 94% | 0.389 | 517 |
+| yoloe-26s | 10% | 87% | 95% | 0.550 | 172 |
+| yoloe-26m | 2% | 87% | 95% | 0.422 | 281 |
+| yoloe-11m | 7% | 87% | 94% | 0.520 | 289 |
+| yoloe-26x | 4% | 85% | 95% | 0.543 | 526 |
+| yoloe-26n | 7% | 80% | 88% | 0.616 | 117 |
+
+##### 1. `yoloe-11s` equals OWLv2 at 3 FP and is 15.8x faster
+
+**90% against 90%, 170 ms against 2679.** That is the result this whole
+thread was looking for, and it arrives on the smallest checkpoint of the
+older of two generations -- not on anything that needed choosing carefully.
+`yoloe-26l` is the accuracy pick (**91% / 97%**, beating OWLv2 on both
+budgets at 6.7x the speed) and `yoloe-11s` is the latency pick; everything
+in between is within a few points of both.
+
+##### 2. Unlike YOLO-World, YOLOE has a real curve
+
+P21's caution about the YOLO rows was that they could not reach a 16-FP
+budget at all -- gate `-inf`, saturating at 7-15 false positives -- so
+their recall was truncated where OWLv2 kept climbing. **That does not apply
+here.** Every YOLOE row reaches 16 FP on a real gate (0.05-0.12) and lands
+at 94-97%, and every 3-FP gate sits between 0.32 and 0.62. Compare
+YOLO-World v2-l's 0.026, which is the non-separability P7 disqualified
+Qwen3-VL for. **Separability is the reason to prefer YOLOE over YOLO-World,
+and it matters more than the two points between them.**
+
+##### 3. Size is non-monotonic again, and by now that is the finding
+
+26n 80%, 26s 87%, 26m 87%, 26l 91%, 26x 85%. And 11s **90%** > 11l 88% >
+11m 87%. So the smallest of the 11-series beats both its larger siblings,
+and the largest of the 26-series is worse than the middle.
+
+This is the second family to do it (P21: YOLO-World s 81, m 78, l 89, x
+79). Two independent non-monotonic sweeps say something procedural rather
+than architectural: **on a 365-frame corpus with 195 visible frames, a few
+points of recall is a handful of frames, and checkpoint-to-checkpoint
+variation is inside that noise.** Do not read the ordering within a family
+as a ranking. What the sweeps establish is the BAND -- YOLOE sits at 85-91%
+at 3 FP for 117-526 ms -- and that band is what should be quoted.
+
+##### 4. The mechanism, stated plainly: these are detectors, and CLIP verifies
+
+Every YOLOE row proposes a median of **1** crop and nothing at all on
+127-152 of 365 frames (OWLv2, for scale, medians 4 in this config and is
+silent on 92). So `OpenVocabCropSource`'s name does not describe what is
+happening: the model self-filters to the box it already believes is the
+target, and CLIP confirms one candidate rather than ranking several.
+
+That is legitimate -- the pipeline and the gate procedure are identical, so
+the numbers compare -- but it should be said, because it means **recall is
+bounded by the detector's own recall** and the CLIP stage cannot recover a
+frame the detector skipped. It also explains the latency: CLIP's cost
+scales with crops, so one crop per frame is why `yoloe-11s` runs the whole
+tier in 170 ms where P20 measured CLIP alone at ~370 ms over OWLv2's crops.
+
+##### 5. What this does to the latency problem -- it moves it off the model
+
+P20's decomposition had the detector at ~85% of the tier. With a YOLOE
+detector that inverts, and the consequence is P7b's, waiting since
+2026-09-11: **the Orin spends 36 ms detecting and 229 ms resizing a
+photograph** -- OWLv2's anti-aliased resize, in Python, on the CPU. At
+OWLv2's latency that was a 15% tax. At YOLOE's it is the entire budget.
+
+So the next latency work is **not a model**. It is P7b's three fixes in its
+own order of preference -- resize on the GPU, capture nearer 960, or drop
+the anti-aliasing filter with its accuracy cost measured first -- plus
+P7c's odometry resolution, which is the larger win and still unbuilt. **A
+projection is deliberately not offered here**: these are laptop CPU
+numbers, the Orin's ratio for a conv-heavy detector is not OWLv2's, and
+this document has already been wrong twice by extrapolating a latency it
+had not measured (P7b's own 2.4x correction, and P20's).
+
+##### 6. The corroborator, updated
+
+`yoloe-v8l` reads **26% at ZERO false positives** against OWLv2's 3% and
+Grounding DINO's 8% -- but P21's `yolov8m-worldv2` still leads at **45%**.
+So 1.11a's second opinion is a YOLO-family model at 172-413 ms, not
+Grounding DINO at 4731, and the candidate is world-m with v8l behind it.
+Neither is the detector, which is the point P20 made and this reinforces:
+**the best corroborator and the best detector are different models**, and
+on a Jetson both fit.
+
+##### What to carry forward
+
+* **Detector: `yoloe-26l` for accuracy, `yoloe-11s` for latency.** Both
+  beat or match OWLv2 with better separability; pick after the
+  preprocessing fix, when latency is measurable rather than projected.
+* **OWLv2 is no longer the reason for the board.** It is one candidate among
+  several and the slowest by 6-16x. The Jetson's justification is now that
+  it runs *whatever wins* plus a depth model plus a local VLM -- capability,
+  not this one model.
+* **Nothing shipped changed.** `brain/perceive.py` still defaults to
+  YOLO11s + CLIP; every row here is `brain/perceive_lab.py`.
 
 #### The Hailo-10H option, costed -- the download BLOCKER is cleared (P15)
 
