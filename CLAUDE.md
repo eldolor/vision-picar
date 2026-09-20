@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (should show 928 passed, with a browser
+# Confirm everything still works (1071 passed as of 2026-09-19, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -78,6 +78,28 @@ that picks a backend, based on `config/robot.yaml`'s `mode` field. This
 is what makes the eventual hardware swap-in (Phase 11) a config change
 instead of a rewrite -- do not introduce a new code path that imports
 `sim.mock_robot` directly from `brain/`.
+
+**Since 2026-09-19 that rule has a second half, with the same force.**
+`RobotInterface` holds **body** state only; **world** state -- the map,
+and the robot's pose on it -- lives on `world/interface.py`'s
+`WorldInterface`, picked by `world/factory.py` from the `world:` block.
+The line is *whose frame is the answer in*: egocentric is body
+(`get_distance`, `get_depth_grid`, `get_odometry` -- "how far am I from
+that", "what is ahead of me", "how far have I driven"), allocentric is
+world (`get_pose`, `get_map`). The short form, and it is in the
+docstring: **odometry is what the body says about itself; pose is what
+the world says about the body** -- which is why they are separate methods
+on separate interfaces, because a mapper's pose JUMPS on loop closure and
+odometry by contract never does. Same prohibition as above: no code path
+in `brain/` may import a world backend directly.
+`tests/test_world_contract.py` pins both interfaces against each other,
+so a `get_pose()` that drifts back onto `RobotInterface` because "where
+am I" felt like body state fails a test rather than passing review.
+**And one more, guarding the ROS decision: nothing outside
+`service/slam/` may import `rclpy`** (`tests/test_ros_containment.py`,
+written before any ROS exists). That single rule is the whole difference
+between `PLAN-onboard-perception.md` 3.3's (b+) and its (c), which
+"swallows the project" -- see `PLAN-mapping.md` section 4.
 
 The second constraint follows from the first: **build it, prove it in the
 digital twin's UI, then put it on the car** -- section 7 has the rule
@@ -447,6 +469,24 @@ vision-picar/
 │                               require_secret() gate once deployed publicly,
 │                               serves web-twin/index.html at GET /
 │
+├── world/                  WORLD state -- what is true about the HOUSE, as
+│   │                        opposed to about the body. RobotInterface's
+│   │                        sibling and deliberately the same shape
+│   │                        (PLAN-mapping.md N1, 2026-09-19)
+│   ├── interface.py         WorldInterface -- get_pose() and get_map(),
+│   │                         both with honest all-unusable defaults, so
+│   │                         adding this broke no backend. Holds the
+│   │                         occupancy grid's TRI-STATE (free / occupied
+│   │                         / UNKNOWN), which is M3's argument one level
+│   │                         up: unmapped must not look like empty floor.
+│   │                         No TF, no quaternions, no ROS message types
+│   │                         -- the contract is ours and ROS converts on
+│   │                         its own side of the wall
+│   └── factory.py           picks the world backend from config/robot.yaml's
+│                             `world:` block. `none` today (NullWorld):
+│                             nothing here can build a map yet, and that is
+│                             a NAMED configuration rather than a fallback
+│
 ├── brain/                  reasoning, hardware-agnostic. (Labelled the "MacBook"
 │                            role by the original build plan -- that placement is
 │                            being revisited: see PLAN-brain-relocation.md)
@@ -599,7 +639,7 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    928 tests, 96% line coverage of brain/,
+├── tests/                    1071 tests, 96% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
 │                              75 tests over five backends,
@@ -607,6 +647,12 @@ vision-picar/
 │                              test_depth_veto.py [M3],
 │                              test_authority.py [M4],
 │                              test_health.py [M5],
+│                              test_world_contract.py + test_ros_containment.py
+│                              (N1 -- WorldInterface's shape, the body/world
+│                              split pinned against RobotInterface in BOTH
+│                              directions, and the rule that nothing outside
+│                              service/slam/ may import rclpy, written before
+│                              any ROS exists),
                               test_perceive.py + test_tiered.py
                               + test_perception_eval.py
                               (P1/P2/P3 -- the off-robot

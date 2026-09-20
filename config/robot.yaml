@@ -46,6 +46,22 @@ teleop:
   # that fires first with a less specific message.
   stall_timeout_s: 15.0
 
+# World state -- the map and the robot's pose on it (PLAN-mapping.md N1).
+# Read by world/factory.py, which is robot/factory.py's sibling.
+#
+# This is deliberately a SEPARATE block from `mode` above, because the two
+# answer different questions: `mode` picks a body, this picks a world
+# model, and a real robot with no mapper is a legitimate combination (it
+# is today's only one). See world/interface.py for the body/world line.
+#
+#   "none" -> NullWorld. No mapper; get_pose() and get_map() say so.
+#   "sim"  -> sim/mock_world.py, the grid world's walls as an occupancy
+#             grid (N1/N3 -- not built yet)
+#   "ros"  -> world/ros_world.py, an HTTP client of the SLAM container
+#             (N6 -- not built yet)
+world:
+  mode: none
+
 # Safety thresholds (used identically in sim and hardware phases --
 # see robot/safety.py)
 safety:

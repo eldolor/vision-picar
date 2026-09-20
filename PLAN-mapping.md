@@ -1,6 +1,9 @@
 # Plan: map the house while it searches
 
-Status: **PROPOSED, nothing built** · Date: 2026-09-19 · Phase IDs: `N1`-`N7`,
+Status: **N1 part one BUILT 2026-09-19** (`world/interface.py`, `world/factory.py`,
+`tests/test_world_contract.py`, `tests/test_ros_containment.py`); N1's sim backend,
+HTTP routes and twin view outstanding; N2-N7 PROPOSED · Date: 2026-09-19 ·
+Phase IDs: `N1`-`N7`,
 alongside `S*` (`PLAN-sim-hardening.md`), `B*` (`PLAN-brain-relocation.md`),
 `M*` (`PLAN-microduck-transplants.md`), `T*` (`PLAN-teleop-robot.md`),
 `C*`/`P*` (`PLAN-onboard-perception.md`).
@@ -151,7 +154,127 @@ structurally zero for all of them.
 
 ---
 
-## 4. The phases
+## 4. The body/world split, and the wall around ROS
+
+**Decided 2026-09-19, and BUILT -- this is N1's first commit.**
+`RobotInterface` holds body state only. World state gets its own
+abstraction, `world/interface.py`'s `WorldInterface`.
+
+### The line
+
+> **Is the answer expressed in the ROBOT's frame, or in the WORLD's?**
+
+Egocentric is body, allocentric is world.
+
+| Method | Frame | Lives on |
+|---|---|---|
+| `drive_forward` / `turn_left` / `look_center` | commands to this body | `RobotInterface` |
+| `get_camera_frame()` | this body's eye | `RobotInterface` |
+| `get_distance()` | distance *from me* | `RobotInterface` |
+| `get_depth_grid()` | zones fanned out *ahead of me* | `RobotInterface` |
+| `get_odometry()` | how far *I* have driven since *I* started | `RobotInterface` |
+| `get_pose()` | (x, y) in a **map** | **`WorldInterface`** |
+| `get_map()` | the house | **`WorldInterface`** |
+
+**The audit came back clean: nothing on `RobotInterface` moves.** Every
+method already there is egocentric, so this is purely additive and carries
+no migration risk. `get_pose()` changed owner before it was built rather
+than after.
+
+The shortest form of the distinction, and the one in the docstring:
+
+> **Odometry is what the body says about itself.
+> Pose is what the world says about the body.**
+
+They disagree permanently and on purpose. `get_odometry()`'s `distance_m`
+is monotonically non-decreasing by contract -- dead reckoning that drifts
+and never admits it. A mapper's pose **jumps**, by however much drift had
+accumulated, the moment SLAM recognises a room it has seen before. Separate
+methods on separate interfaces is what keeps that disagreement visible
+instead of averaged away.
+
+### The other axis, which is easy to conflate
+
+There is world state in `brain/` today -- `MissionMemory`'s
+`visited_rooms`, `searched_rooms` and `sightings`. **It does not move**,
+because §1.5 already decided it: "Only the map persists. `MissionMemory`
+stays in RAM in the brain, unchanged."
+
+- **`MissionMemory`** -- what happened on *this mission*. Dies with it.
+- **`WorldInterface`** -- what is true about *this house*. Outlives every
+  mission.
+
+N2's join is exactly the act of promoting a fact from the first to the
+second.
+
+### Package layout
+
+```
+world/
+├── interface.py    WorldInterface + unusable_pose() / unusable_map()
+├── factory.py      picks a backend from config/robot.yaml's `world:` block
+└── ros_world.py    (N6) HTTP client of the SLAM container
+
+sim/mock_world.py         (N1/N3) the grid world's walls as an occupancy grid
+control/remote_world.py   (N1) WorldInterface over HTTP -- RemoteRobot's sibling
+service/slam/             (N6) the ROS container. The ONLY place rclpy exists
+```
+
+`control/remote_world.py` lives in `control/` for the same reason
+`RemoteRobot` does: `control/` may import `robot/interface.py` and little
+else, and that rule now reads "...and `world/interface.py`".
+
+### Three design decisions worth keeping
+
+**The occupancy grid is TRI-STATE, not boolean** -- `CELL_FREE`,
+`CELL_OCCUPIED`, `CELL_UNKNOWN`. M3's argument, one abstraction up:
+*unmapped* must not look like *empty floor*. A planner that reads unknown
+as free routes confidently through a wall it has not seen; one that reads
+it as occupied never explores. The third state forces the consumer to
+decide explicitly. (That `-1` is also ROS's unknown is convergence on the
+same problem, not a borrowing.)
+
+**A pose names its map.** `map_id` is not bookkeeping -- coordinates from
+yesterday's map are byte-identical to today's, so a stale pose plots
+somewhere plausible and wrong. Same instinct as 1.5's `schema_version`.
+
+**`map_version` is what makes the map pollable.** A pose changes every
+tick; a house is ~10^5 cells and changes slowly. Poll the pose freely,
+re-read `cells` only when the version moves.
+
+### The containment rule
+
+> **Nothing outside `service/slam/` may import `rclpy`.**
+
+Tested by `tests/test_ros_containment.py`, **written before any ROS
+exists**. (b+) is not self-enforcing: it degrades into (c) one reasonable
+shortcut at a time -- a TF lookup here because the conversion was awkward,
+a message type there because it was already the right shape. Each step
+looks locally sensible and the wall is gone by the end.
+
+It is a **source scan** rather than the subprocess `sys.modules` check that
+has kept `control/` clean since B2, for a practical reason: `rclpy` is not
+installed on a laptop and never will be. The scan fails on the line someone
+writes rather than on the machine that happens to have ROS.
+
+Equally: **no TF frames, covariance matrices, quaternions or ROS message
+types in `world/interface.py`.** The contract is ours; ROS converts on its
+own side of the wall. A quaternion appearing there means the wall is
+decorative.
+
+### How the twin gets world state
+
+**Pass-throughs on `robot/server.py`** (`/world/pose`, `/world/map`), not a
+fourth service and a fourth Settings URL. Exactly how `/depth` already
+works -- the server computes nothing, it returns what the backend said. The
+usual argument for a separate service (the admin console's "no reason to go
+down when the mission server restarts") does not apply, because §1.5 already
+makes the map durable in DynamoDB with a working copy. **Durability is a
+storage decision, not a process-topology one.**
+
+---
+
+## 5. The phases
 
 Hardware-independent work first, per the simulation-first rule. §7's requirement
 is a column, not an afterthought: **a phase is not done when its tests pass, it
@@ -159,7 +282,7 @@ is done when someone holding a phone can watch the thing it built do its job.**
 
 | | What | Press this, in the twin | Hardware? |
 |---|---|---|---|
-| **N1** | **The map as a type, and the wall it lives behind.** An occupancy grid and a pose as validated data structures; `GET /map` and `GET /pose` on `robot/server.py`; `MockRobot` synthesising scans by raycasting `grid_world.py`'s walls (`sim/renderer.py:cast_ray` already does the geometry M2 reuses); `RemoteRobot` over both; conformance cases across all five backends. **The routing entries are part of this phase, not a follow-up** -- a CloudFront behaviour *and* an API Gateway route, two tables to keep in step, the failure that has shipped five times as a silently dead feature. Depends on `C1` and `C2` | A map view: the occupancy grid, the robot's pose on it, updating as the D-pad drives. Empty-map state reads "map is empty", never blank | no |
+| **N1** | **The world abstraction, and the wall it lives behind.** §4: `WorldInterface` with `get_pose()`/`get_map()` and honest unusable defaults, `world/factory.py`, the `world:` config block, the tri-state occupancy grid, a backend-agnostic conformance suite, and the `rclpy` containment rule. Then `sim/mock_world.py` raycasting `grid_world.py`'s walls (`sim/renderer.py:cast_ray` already does the geometry M2 reuses), `control/remote_world.py`, and `/world/pose` + `/world/map` as pass-throughs on `robot/server.py`. **The routing entries are part of this phase, not a follow-up** -- a CloudFront behaviour *and* an API Gateway route, two tables to keep in step, the failure that has shipped five times as a silently dead feature. Depends on `C1` and `C2`. **PART ONE BUILT 2026-09-19** -- the interface, the factory, the config block, the containment rule and 37 conformance/factory tests. Every backend answers "unusable", so nothing changed | A map view: the occupancy grid, the robot's pose on it, updating as the D-pad drives. Empty-map state reads "map is empty", never blank | no |
 | **N2** | **The semantic layer, anchored.** `Sighting.position` becomes a real pose; rooms become labelled regions of the grid rather than per-frame guesses from `brain/rooms.py`; `MissionMemory` gains the join and **stays in RAM** (§1.5). `brain/rooms.py` is not deleted -- it becomes the *labeller* of a region, asked once per region instead of once per frame | Sightings drawn on N1's map where they were seen, with what was seen and when. Searched regions shaded. The label came from a photograph; the position did not | no |
 | **N3** | **Coverage.** "Have I covered this room" as a computed number over N1's grid and N2's regions -- the question §1.7 says has no answer without a map. **Ships the answer, not the verb**: `sweep` lands only when the trigger log shows the planner reaching for it | A coverage percentage per region, and the unexplored frontier drawn. Drive into an unvisited corner and watch it fill | no |
 | **N4** | **Persistence -- §1.5's ten decisions, built.** DynamoDB behind `control/`'s existing storage-abstraction pattern (`control/walk_store.py` is the precedent: one abstraction, two backends, one suite), a VPC endpoint (`network.yaml` has no NAT), house id from config, `schema_version` from the first write, per-edge last-confirmed and success/failure counts. **Stored map text is data, never instruction** -- a test pins that | Run a mission, stop it, restart the brain, start another. The second one begins with the first one's map. The panel names the house, the map's age and its schema version | no |
@@ -191,7 +314,7 @@ is done when someone holding a phone can watch the thing it built do its job.**
 
 ---
 
-## 5. What this updates elsewhere
+## 6. What this updates elsewhere
 
 - **`PLAN-onboard-perception.md` §3.3** -- (b+)'s condition is met. Its "if
   mapping proves to be the point" should point here.
@@ -206,7 +329,7 @@ is done when someone holding a phone can watch the thing it built do its job.**
 
 ---
 
-## 6. Open questions
+## 7. Open questions
 
 1. **Does the planner get coordinates, or only regions?** §1.5 makes the planner
    a pure function over context; a metric map tempts one to hand it `(x, y)`.
@@ -228,7 +351,7 @@ is done when someone holding a phone can watch the thing it built do its job.**
 
 ---
 
-## 7. Definition of done
+## 8. Definition of done
 
 Start a mission from a phone. The robot drives a house it has never seen,
 searching for a named object, and the twin draws the map filling in as it goes

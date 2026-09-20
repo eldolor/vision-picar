@@ -97,3 +97,72 @@ def test_sensor_noise_is_wired_in_only_when_enabled(tmp_path):
     on = tmp_path / "on.yaml"
     on.write_text("mode: sim\nsim:\n  sensor_noise:\n    enabled: true\n")
     assert get_robot(str(on)).sensor is not None
+
+
+# ---------- world/factory.py (N1) ----------
+#
+# robot/factory.py's sibling, and the same three cases matter for the same
+# reasons: the default is honest, an unbuilt backend refuses by name, and
+# an unknown mode says what it did not understand.
+
+
+def test_world_defaults_to_no_mapper(tmp_path):
+    """Nothing in this project can build a map yet, so `none` is not a
+    fallback -- it is the accurate description of every deployment that
+    exists. A config with no `world:` block at all must land there."""
+    from world.factory import get_world
+    from world.interface import NullWorld
+
+    path = tmp_path / "robot.yaml"
+    path.write_text("mode: sim\n")
+    world = get_world(str(path))
+    assert isinstance(world, NullWorld)
+    assert world.get_pose()["usable"] is False
+    assert world.get_map()["usable"] is False
+
+
+def test_the_shipped_config_has_no_mapper(tmp_path):
+    """And the real config/robot.yaml agrees, so a reader is never told
+    one thing by the file and another by the default."""
+    from world.factory import get_world
+    from world.interface import NullWorld
+
+    assert isinstance(get_world(), NullWorld)
+
+
+@pytest.mark.parametrize("mode,expected", [("sim", "mock_world"), ("ros", "ros_world")])
+def test_an_unbuilt_world_backend_refuses_by_name(tmp_path, mode, expected):
+    """Same rule as `mode: hardware`. A silent downgrade to "no map" is
+    the worst possible failure here, because it looks exactly like a
+    mapper that has not converged yet -- which is the thing you would be
+    debugging on the day it happened."""
+    from world.factory import get_world
+
+    path = tmp_path / "robot.yaml"
+    path.write_text(f"world:\n  mode: {mode}\n")
+    with pytest.raises(NotImplementedError) as e:
+        get_world(str(path))
+    assert expected in str(e.value)
+
+
+def test_an_unknown_world_mode_names_itself(tmp_path):
+    from world.factory import get_world
+
+    path = tmp_path / "robot.yaml"
+    path.write_text("world:\n  mode: atlas\n")
+    with pytest.raises(ValueError) as e:
+        get_world(str(path))
+    assert "atlas" in str(e.value)
+
+
+def test_the_environment_overrides_the_world_block(tmp_path, monkeypatch):
+    """WORLD_MODE beside ROBOT_MODE, for the same deployment reason: one
+    generic image, per-environment mode from the task's env vars."""
+    from world.factory import get_world
+
+    path = tmp_path / "robot.yaml"
+    path.write_text("world:\n  mode: none\n")
+    monkeypatch.setenv("WORLD_MODE", "atlas")
+    with pytest.raises(ValueError) as e:
+        get_world(str(path))
+    assert "atlas" in str(e.value)
