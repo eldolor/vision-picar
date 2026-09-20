@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (1071 passed as of 2026-09-19, with a browser
+# Confirm everything still works (1096 passed as of 2026-09-20, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -154,7 +154,7 @@ the original build plan phases, reordered simulation-first):
 ---
 
 **THE NEXT PHASE, decided 2026-09-19: map the house while it searches it
-(`PLAN-mapping.md`, N1-N7, PROPOSED).** That is the stated trigger in
+(`PLAN-mapping.md`, **N1 BUILT 2026-09-20**, N2-N7 proposed).** That is the stated trigger in
 `PLAN-onboard-perception.md` 3.3 -- (b+) was "CHOSEN as the target **if mapping
 proves to be the point**" -- so **ROS 2 enters the project**, as exactly one
 containerised service exposing `GET /pose`, `GET /map`, `POST /goto` and
@@ -171,6 +171,23 @@ promoted from optional: **C2's continuous pose** (a SLAM pose cannot be
 represented in `grid_world.py`'s integer cells and cardinal `Heading`, so the
 twin cannot show this working -- a section 7 blocker) and **C1's pose method**.
 `sweep` (1.7) is unblocked by N3 but its gating rule is unchanged.
+
+**N1 is built and watchable** (2026-09-20, not deployed): `world/`,
+`sim/mock_world.py`, `control/remote_world.py`, `GET /world/pose` +
+`GET /world/map` with their routing entries, and the twin's map view under
+the depth strip. Two things to know before extending it. **The map is
+DISCOVERED, not copied** -- `MockWorld` casts a 360-degree ring from
+wherever the robot stands and leaves everything behind a wall unknown;
+handing over `GridWorld`'s layout would have been three lines, drawn a
+finished house at mission start, and left `CELL_UNKNOWN` untested in the
+only place it can be exercised without hardware. And **C2 turned out NOT
+to gate this**: a quantised pose (cell centres, multiples of 90 degrees)
+is a perfectly good pose, `x_m` is already a float, so the twin draws the
+robot today and C2 makes the motion smooth later with nothing changing on
+either side of the wall. `world.mode` must track `mode` -- the factory
+refuses `world: sim` for a robot that has no grid, rather than returning
+a plausible map of a house the robot is not in, which is why
+`teleop-robot.yaml` and `service/tunnel/run.sh` both set `WORLD_MODE`.
 
 **Session handoff, 2026-09-15: `HANDOFF-2026-09-15.md`** -- P9-P15, the
 corpus now at 11 labelled walks, and the AWS near-miss where 18 of 22
@@ -530,6 +547,15 @@ vision-picar/
 ├── sim/                     grid-world simulator (Phase 0.5)
 │   ├── grid_world.py
 │   ├── mock_robot.py          implements RobotInterface against grid_world
+│   ├── mock_world.py          the WORLD half of the simulator (N1) --
+│   │                           WorldInterface against the same GridWorld
+│   │                           mock_robot.py drives. The house is
+│   │                           DISCOVERED: a 360-degree ring from
+│   │                           wherever the robot stands, everything
+│   │                           behind a wall left unknown. Copying the
+│   │                           layout would have been three lines and
+│   │                           would have drawn a finished house at
+│   │                           mission start, which no mapper does
 │   ├── replay_robot.py        a body made of photographs -- plays a recorded
 │   │                           Robot-view walk back, one frame per move
 │   │                           (open loop -- see its own docstring)
@@ -551,6 +577,13 @@ vision-picar/
 │   │                        backend and no simulator -- the robot is only ever
 │   │                        an HTTP client target
 │   ├── remote_robot.py       RemoteRobot -- RobotInterface over HTTP (B0)
+│   ├── remote_world.py       RemoteWorld -- WorldInterface over HTTP (N1),
+│   │                          its sibling. The CONSUMER side of the ROS
+│   │                          wall: it reads JSON and contains no hint
+│   │                          that ROS exists. When N6 puts slam_toolbox
+│   │                          behind /world/map, nothing here changes --
+│   │                          which is the test of whether (b+) was built
+│   │                          or whether (c) arrived wearing its clothes
 │   ├── mission_runner.py     one mission's lifecycle: start/tick/stop/status,
 │   │                          plus failsafe B3.2 (vision timeout + budget)
 │   ├── brain_server.py       FastAPI on :8001; drives the runner as a
@@ -639,7 +672,7 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    1071 tests, 96% line coverage of brain/,
+├── tests/                    1096 tests, 93% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
 │                              75 tests over five backends,
@@ -1642,14 +1675,20 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   condition allows at most 5 path values, so a sixth route means a second
   rule, as `twin.yaml`, `teleop-brain.yaml` and `admin.yaml` all now do.
 
-- **Coverage is 96% of `brain/`, `control/`, `robot/` and `sim/`, and the
-  last 4% is deliberate.** (This line read 99% until 2026-09-07 and 98%
-  until 2026-09-08. Quote what the command prints, not this sentence.)
+- **Coverage is 93% of `brain/`, `control/`, `robot/`, `sim/` and
+  `world/`, and the shortfall is deliberate.** (This line read 99% until
+  2026-09-07, 98% until 2026-09-08 and 96% until 2026-09-20. Quote what the
+  command prints, not this sentence -- it drifts down as the `P*` modules
+  whose constructors load models grow, which is the trade recorded below.)
   Measure it with:
 
   ```bash
-  pytest tests/ --cov=brain --cov=control --cov=robot --cov=sim --cov-report=term-missing
+  pytest tests/ --cov=brain --cov=control --cov=robot --cov=sim --cov=world --cov-report=term-missing
   ```
+
+  `world/` is 100% and `sim/mock_world.py` 98% -- N1 is small and has no
+  model to load, which is the whole reason those numbers mean something
+  where `brain/perceive_lab.py`'s 60% does not.
 
   Two things are left uncovered on purpose. `robot/server.py`'s watchdog
   loop body is exercised by `tests/test_watchdog_integration.py` against a
@@ -1815,6 +1854,7 @@ endpoint, on purpose (real hardware has none either).
 | S5 | sensor realism | Set `sim.sensor_noise.enabled: true`, restart the robot server, then D-pad toward a wall | Distance telemetry stops being multiples of 30cm and jitters. The collar still fires only at the wall: `min_distance_cm` is 20 on both sides now, which is 3.3 sigma clear of one cell -- at the old brain-side 30 the jitter alone vetoed ~45% of legal one-cell moves |
 | -- | a lit sim camera | Sim tab, drive the D-pad and watch the FPV canvas (or `GET /frame`) | A room: light ceiling, mid-brown floor, blue-grey walls. It used to be a black void with two grey slabs, because the render borrowed the twin's dark `--wall`/`--floor` UI colours -- which is why the model called every sim frame "very dark and unclear" |
 | -- | a session's calls die with it | Guide tab -> Robot view, Start, Stop, Start again | The new session's HUD never shows the previous one's decision. A call still in flight at Stop is orphaned by run (`guidanceEpoch`), not by a boolean -- it used to flash its answer over the new camera view and then suppress the new run's first few real decisions. Everything else was already reset on Stop, so a straggler was the only route |
+| N1 | a map that fills in as you drive | Sim tab, look under the depth strip, then drive the D-pad into a room | The house appearing a room at a time -- seen floor, seen wall, and NEVER SEEN in three distinguishable tones, with the robot drawn on it and a readout naming cells-seen, cell size, map id and version. It starts mostly unknown because the map is **discovered**, not copied: a ring is cast from wherever the robot stands and everything behind a wall stays unknown. A server predating the route says "not reported by this server" rather than going blank, because blank and "no map" must not look alike. The pose is quantised to cell centres until C2 -- the contract already takes a float, so that changes nothing on either side of the wall |
 | M2 | a depth grid the robot reports | Sim tab, look under the FPV canvas, then drive the D-pad at a wall | Eight zones, red near and green far, hatched grey where unmeasurable, with the grid's own shape and the nearest zone named beneath. Tap look-left and the strip swings with the picture -- it is cast off the *view* heading, same as the render. A server predating the route says "not reported by this server" rather than going blank, because blank and "no obstacles" must not look alike |
 | M3 | the veto reading the grid | Set `sim.sensor_noise.enabled: true` with `dropout_rate: 0.2`, restart the robot server, then drive the D-pad at a wall | The path zones are outlined on the strip and the readout names the clearance the veto actually reads, plus where it came from. Dropped zones hatch grey and the robot keeps going -- seven others answered, where a single beam reading `0.0` would have stopped it. Against the wall the strip turns red and says FORWARD is vetoed |
 | M4 | a person outranks the brain | Sim tab -> Remote brain -> Start, then tap the D-pad | The mission ends `preempted` (not `failed`), the log line names `twin-dpad`, the car does what the pad said, and the Driving readout switches. Stop touching it for a second and it reads "twin-dpad (lapsed)" -- authority rides the same deadman the watchdog does, which is why there is no release button to forget |

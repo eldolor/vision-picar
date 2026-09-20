@@ -55,12 +55,17 @@ teleop:
 # is today's only one). See world/interface.py for the body/world line.
 #
 #   "none" -> NullWorld. No mapper; get_pose() and get_map() say so.
-#   "sim"  -> sim/mock_world.py, the grid world's walls as an occupancy
-#             grid (N1/N3 -- not built yet)
+#             The honest setting for `mode: teleop` and for `mode:
+#             hardware` until N6 -- a phone on a rig has no map.
+#   "sim"  -> sim/mock_world.py. The house as DISCOVERED: a 360-degree
+#             ring is cast from wherever the robot stands, so the map
+#             fills in as it drives rather than being handed over whole.
+#             Requires `mode: sim` -- the map and the body must be two
+#             views of ONE GridWorld, and the factory refuses otherwise.
 #   "ros"  -> world/ros_world.py, an HTTP client of the SLAM container
 #             (N6 -- not built yet)
 world:
-  mode: none
+  mode: sim
 
 # Safety thresholds (used identically in sim and hardware phases --
 # see robot/safety.py)

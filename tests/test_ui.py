@@ -2242,3 +2242,119 @@ def test_a_late_landed_verdict_says_it_arrived_from_an_earlier_call(
     assert "not enforced" in text, text
     assert not errors, errors
     page.close()
+
+
+# ---------- N1: the map (PLAN-mapping.md) ----------
+#
+# The map is this phase's whole UI proof, and section 7's rule is that a
+# phase is done when someone holding a phone can watch it work. These go
+# through the real server and the real MockWorld rather than a stubbed
+# payload: what is under test is that the two ends agree about a house.
+
+
+def _connect_for_map(browser, twin_server):
+    page, errors = open_twin(browser, twin_server)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    # Same lesson as the depth strip: the canvas lives on the Sim tab, and
+    # "the element exists" is not "someone can see it".
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => { const c = document.getElementById('world-map');"
+        " return c && c.width > 0; }", timeout=5000)
+    return page, errors
+
+
+def test_the_map_is_drawn_at_the_size_the_server_reports(browser, twin_server):
+    """The grid declares its own shape, exactly as the depth grid does, so
+    the canvas must come from the data and not from a hardcoded house."""
+    page, errors = _connect_for_map(browser, twin_server)
+    reported = page.evaluate(
+        "async () => (await (await fetch(document.getElementById('cfg-server-url').value"
+        " + '/world/map')).json())")
+    canvas = page.evaluate(
+        "() => { const c = document.getElementById('world-map');"
+        " return {w: c.width, h: c.height}; }")
+    assert canvas["w"] % reported["width"] == 0
+    assert canvas["h"] % reported["height"] == 0
+    assert canvas["w"] // reported["width"] == canvas["h"] // reported["height"]
+    assert not errors, errors
+    page.close()
+
+
+def test_the_map_is_visible_on_a_phone(browser, twin_server):
+    """Bug (2)'s shape again. A map collapsed to nothing is worse than no
+    map, because the readout beside it still says how much was seen."""
+    page, _ = _connect_for_map(browser, twin_server)
+    box = page.locator("#world-map").bounding_box()
+    assert box is not None and box["width"] >= 100 and box["height"] >= 60, box
+    assert page.locator("#world-map").is_visible()
+    page.close()
+
+
+def test_the_map_the_page_draws_is_the_map_the_server_reports(browser, twin_server):
+    """The single property worth pinning in a browser, and the one a
+    stubbed payload could not pin: the page draws what the SERVER said
+    about the house, not a floor plan it worked out for itself.
+
+    Note this suite shares one server across the module and MockRobot's
+    world persists -- there is no reset endpoint, on purpose, because real
+    hardware has none either. So this drives and then checks agreement,
+    rather than assuming a start pose or a particular amount of house.
+    """
+    page, errors = _connect_for_map(browser, twin_server)
+
+    for _ in range(3):
+        page.click("#btn-forward")
+        page.wait_for_timeout(200)
+
+    # The readout carries "<seen>/<total> cells seen", which is the page's
+    # own count off the payload it drew.
+    page.wait_for_function(
+        "async () => {"
+        " const u = document.getElementById('cfg-server-url').value;"
+        " const m = await (await fetch(u + '/world/map')).json();"
+        " const truth = m.cells.filter(c => c !== -1).length;"
+        " const el = document.getElementById('map-readout');"
+        " const shown = el && el.textContent.match(/(\\d+)\\/(\\d+) cells/);"
+        " return !!shown && Number(shown[1]) === truth"
+        "        && Number(shown[2]) === m.cells.length; }",
+        timeout=8000)
+    assert not errors, errors
+    page.close()
+
+
+def test_part_of_the_house_is_still_unknown(browser, twin_server):
+    """A map is not a copy of the floor plan. If every cell were known the
+    instant the page connected, the tri-state would be decorative and the
+    twin would be showing something no mapper produces -- so the drawn
+    map must contain cells in the never-seen colour."""
+    page, errors = _connect_for_map(browser, twin_server)
+    unknown = page.evaluate(
+        "async () => { const u = document.getElementById('cfg-server-url').value;"
+        " const m = await (await fetch(u + '/world/map')).json();"
+        " return m.cells.filter(c => c === -1).length; }")
+    assert unknown > 0, "the whole house was known at connect -- is it being copied?"
+    assert not errors, errors
+    page.close()
+
+
+def test_a_server_with_no_world_routes_says_so_instead_of_going_blank(browser, twin_server):
+    """A pre-N1 server is a real state while deployments are redeployed one
+    at a time. Blank and 'no map' must not look alike -- the same rule the
+    depth strip follows, and the reason it says 'not reported by this
+    server' rather than drawing nothing."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/world/pose", lambda route: route.fulfill(status=404, body="{}"))
+    page.route("**/world/map", lambda route: route.fulfill(status=404, body="{}"))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => (document.getElementById('map-readout') || {}).textContent"
+        "      === 'map: not reported by this server'", timeout=8000)
+    assert page.evaluate("() => document.getElementById('world-map').width") == 0
+    assert not errors, errors
+    page.close()

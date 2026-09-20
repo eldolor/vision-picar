@@ -51,7 +51,11 @@ DEFAULT_CELL_CM = 30.0
 # report an angle rather than a name. Clockwise from north, matching the
 # convention every other bearing in this project uses (1.15.3's pan, the
 # depth grid's columns): positive is to the robot's right.
-_HEADING_DEG = {Heading.N: 0, Heading.E: 90, Heading.S: 180, Heading.W: 270}
+#
+# Now delegated to `Heading.compass_deg()`, because sim/mock_world.py needs
+# the identical mapping for `get_pose()` and two copies is how a body and a
+# world backend start disagreeing about which way the same robot faces.
+_HEADING_DEG = {h: h.compass_deg() for h in Heading}
 # The robot occupies its cell, so clearance is measured from the front of
 # that cell rather than from its centre -- see get_depth_grid().
 ROBOT_HALF_CELL = 0.5

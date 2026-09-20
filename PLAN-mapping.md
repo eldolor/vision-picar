@@ -1,8 +1,8 @@
 # Plan: map the house while it searches
 
-Status: **N1 part one BUILT 2026-09-19** (`world/interface.py`, `world/factory.py`,
-`tests/test_world_contract.py`, `tests/test_ros_containment.py`); N1's sim backend,
-HTTP routes and twin view outstanding; N2-N7 PROPOSED · Date: 2026-09-19 ·
+Status: **N1 BUILT 2026-09-20**, not deployed -- the world abstraction, the
+`rclpy` wall, `MockWorld`, `RemoteWorld`, the two pass-through routes and the
+twin's map view. N2-N7 PROPOSED · Date: 2026-09-19 (N1 completed 2026-09-20) ·
 Phase IDs: `N1`-`N7`,
 alongside `S*` (`PLAN-sim-hardening.md`), `B*` (`PLAN-brain-relocation.md`),
 `M*` (`PLAN-microduck-transplants.md`), `T*` (`PLAN-teleop-robot.md`),
@@ -156,7 +156,7 @@ structurally zero for all of them.
 
 ## 4. The body/world split, and the wall around ROS
 
-**Decided 2026-09-19, and BUILT -- this is N1's first commit.**
+**Decided 2026-09-19, BUILT 2026-09-20.**
 `RobotInterface` holds body state only. World state gets its own
 abstraction, `world/interface.py`'s `WorldInterface`.
 
@@ -262,6 +262,30 @@ types in `world/interface.py`.** The contract is ours; ROS converts on its
 own side of the wall. A quaternion appearing there means the wall is
 decorative.
 
+### What N1 did NOT do, and why it is not a gap
+
+**Continuous pose is still C2's.** `GridWorld` remains integer cells and
+four cardinal headings, so a pose off `MockWorld` is a cell centre and a
+multiple of 90 degrees. This plan briefly claimed C2 *gated* the map
+view; it does not. A quantised pose is a perfectly good pose -- `x_m` is
+already a float, `heading_deg` already degrees -- so the twin draws the
+robot today and C2 makes the motion smooth later **without one line
+changing on either side of the wall**. That is the wall doing its job,
+and it is a better demonstration of the design than waiting would have
+been.
+
+**No drift, no loop closure.** `MockWorld`'s pose is exact. A real
+mapper's is not, and the whole reason `get_pose()` is separate from
+`get_odometry()` is to leave room for that difference. Simulating drift
+now would be inventing a number; N6 makes it real.
+
+**No version-gated FETCH.** `map_version` is published and the twin uses
+it to reason about staleness, but the map is re-fetched on a 1s timer
+rather than skipped on an unchanged version -- a true skip needs a cheap
+route returning the version alone. In the sim the payload is 130 cells.
+N4 adds the route when a real house makes it matter; the twin's comment
+says so rather than implying the field is already doing that work.
+
 ### How the twin gets world state
 
 **Pass-throughs on `robot/server.py`** (`/world/pose`, `/world/map`), not a
@@ -282,7 +306,7 @@ is done when someone holding a phone can watch the thing it built do its job.**
 
 | | What | Press this, in the twin | Hardware? |
 |---|---|---|---|
-| **N1** | **The world abstraction, and the wall it lives behind.** §4: `WorldInterface` with `get_pose()`/`get_map()` and honest unusable defaults, `world/factory.py`, the `world:` config block, the tri-state occupancy grid, a backend-agnostic conformance suite, and the `rclpy` containment rule. Then `sim/mock_world.py` raycasting `grid_world.py`'s walls (`sim/renderer.py:cast_ray` already does the geometry M2 reuses), `control/remote_world.py`, and `/world/pose` + `/world/map` as pass-throughs on `robot/server.py`. **The routing entries are part of this phase, not a follow-up** -- a CloudFront behaviour *and* an API Gateway route, two tables to keep in step, the failure that has shipped five times as a silently dead feature. Depends on `C1` and `C2`. **PART ONE BUILT 2026-09-19** -- the interface, the factory, the config block, the containment rule and 37 conformance/factory tests. Every backend answers "unusable", so nothing changed | A map view: the occupancy grid, the robot's pose on it, updating as the D-pad drives. Empty-map state reads "map is empty", never blank | no |
+| **N1** | **The world abstraction, and the wall it lives behind.** §4: `WorldInterface` with `get_pose()`/`get_map()` and honest unusable defaults, `world/factory.py`, the `world:` config block, the tri-state occupancy grid, a backend-agnostic conformance suite, and the `rclpy` containment rule. Then `sim/mock_world.py`, `control/remote_world.py`, and `/world/pose` + `/world/map` as pass-throughs on `robot/server.py` -- **with the routing entries**, which are part of this phase and not a follow-up. **BUILT 2026-09-20.** The one decision worth knowing: `MockWorld` **discovers** the house rather than copying `GridWorld`'s layout -- a 360-degree ring from wherever the robot stands, everything behind a wall left unknown. Copying would have been three lines, drawn a complete house the instant a mission started, and left `CELL_UNKNOWN` untested in the only place it can be exercised without hardware | **A map that fills in as you drive.** Sim tab, under the depth strip: seen floor, seen wall, and never-seen in three distinguishable tones, with the robot's pose drawn on it and a readout naming cells-seen, cell size, map id and version. `Drive the D-pad and watch a room appear.` A server predating the route says "not reported by this server" rather than going blank -- blank and "no map" must not look alike | no |
 | **N2** | **The semantic layer, anchored.** `Sighting.position` becomes a real pose; rooms become labelled regions of the grid rather than per-frame guesses from `brain/rooms.py`; `MissionMemory` gains the join and **stays in RAM** (§1.5). `brain/rooms.py` is not deleted -- it becomes the *labeller* of a region, asked once per region instead of once per frame | Sightings drawn on N1's map where they were seen, with what was seen and when. Searched regions shaded. The label came from a photograph; the position did not | no |
 | **N3** | **Coverage.** "Have I covered this room" as a computed number over N1's grid and N2's regions -- the question §1.7 says has no answer without a map. **Ships the answer, not the verb**: `sweep` lands only when the trigger log shows the planner reaching for it | A coverage percentage per region, and the unexplored frontier drawn. Drive into an unvisited corner and watch it fill | no |
 | **N4** | **Persistence -- §1.5's ten decisions, built.** DynamoDB behind `control/`'s existing storage-abstraction pattern (`control/walk_store.py` is the precedent: one abstraction, two backends, one suite), a VPC endpoint (`network.yaml` has no NAT), house id from config, `schema_version` from the first write, per-edge last-confirmed and success/failure counts. **Stored map text is data, never instruction** -- a test pins that | Run a mission, stop it, restart the brain, start another. The second one begins with the first one's map. The panel names the house, the map's age and its schema version | no |

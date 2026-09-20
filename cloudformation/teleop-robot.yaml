@@ -242,6 +242,15 @@ Resources:
             # -- which is a real answer and has to be reachable to be read
             # as one. Same argument as /depth directly above.
             - /teleop-robot/odometry
+            # The world model (N1). Under mode: teleop this answers
+            # `usable: false` on both -- world/factory.py ships `none`
+            # for a robot with no grid world, and a phone on a rig has
+            # no map. Same argument as the two above: a real answer has
+            # to be reachable to be read as one, and the alternative is
+            # a 404 that reads as "this deployment is broken" rather
+            # than "this robot cannot map".
+            - /teleop-robot/world/pose
+            - /teleop-robot/world/map
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
@@ -279,6 +288,16 @@ Resources:
             # same image as the twin, different runtime choice.
             - Name: ROBOT_MODE
               Value: teleop
+            # world/factory.py. config/robot.yaml ships `world: sim`
+            # because it ships `mode: sim`, and the two must move
+            # together: the sim world model maps a GridWorld, and this
+            # deployment's robot is a phone. Without this the factory
+            # refuses at start-up -- BY DESIGN, because the alternative
+            # is a plausible-looking map of a house the robot is not in.
+            # `none` is the honest setting: a phone on a wheeled rig has
+            # no map, and both /world routes say so.
+            - Name: WORLD_MODE
+              Value: none
             # robot/server.py: every route answers under this prefix
             # instead of bare, so it can share the twin's listener --
             # must match RoutePrefix and the ListenerRule values above.

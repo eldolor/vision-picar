@@ -62,6 +62,24 @@ def robot_over_asgi():
 
 
 @pytest.fixture
+def world_over_asgi():
+    """A RemoteWorld talking to an in-process robot/server.py app -- N1.
+
+    Its own fixture rather than a field on `robot_over_asgi`, because the
+    two are different abstractions over the same server: body state and
+    world state. A test that wants both asks for both, which is the seam
+    made visible in the test suite.
+    """
+    from control.remote_world import RemoteWorld
+    from robot.server import create_app
+
+    client = asgi_client(create_app())
+    world = RemoteWorld(ASGI_BASE_URL, client=client)
+    yield world
+    client.close()
+
+
+@pytest.fixture
 def live_robot_server():
     """A real `uvicorn robot.server:app` subprocess. Yields its base URL."""
     port = free_port()

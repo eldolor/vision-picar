@@ -57,7 +57,19 @@ export METRICS_URL="${METRICS_URL:-$VISION_URL}"
 export METRICS_SECRET="${WALKS_SECRET:-}"
 
 export ROBOT_MODE="${ROBOT_MODE:-sim}"
-echo "robot mode: $ROBOT_MODE   vision: $VISION_URL"
+# The world model must follow the body (N1). config/robot.yaml ships
+# `world: sim` alongside `mode: sim`, and the sim world model maps a
+# GridWorld -- so a teleop robot (a phone on a wheeled rig, no grid, no
+# map) needs `none`. world/factory.py REFUSES the mismatch at start-up
+# rather than returning a plausible map of a house the robot is not in,
+# so without this line a teleop run dies on a ValueError.
+if [ -z "${WORLD_MODE:-}" ]; then
+  case "$ROBOT_MODE" in
+    sim) export WORLD_MODE=sim ;;
+    *)   export WORLD_MODE=none ;;
+  esac
+fi
+echo "robot mode: $ROBOT_MODE   world: $WORLD_MODE   vision: $VISION_URL"
 
 # Kill only what THIS script started. `kill 0` would have been shorter and
 # signals the whole process group -- which on a normal setup includes the

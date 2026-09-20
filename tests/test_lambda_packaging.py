@@ -42,7 +42,10 @@ DISTRIBUTION = {
 # copy costs ~10MB for something usually older than AWS ships.
 IN_RUNTIME = {"boto3", "botocore"}
 
-LOCAL = {"control", "robot", "brain", "sim", "tests", "service",
+# First-party packages. Not "third party" and so never a requirements
+# line -- `world` joined the list when N1 split world state out of
+# RobotInterface and control/remote_world.py started importing it.
+LOCAL = {"control", "robot", "brain", "sim", "world", "tests", "service",
          "app", "vision_core", "rooms_core"}
 
 

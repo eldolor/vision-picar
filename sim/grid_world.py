@@ -33,6 +33,23 @@ class Heading(Enum):
         order = [Heading.N, Heading.E, Heading.S, Heading.W]
         return order[(order.index(self) + 1) % 4]
 
+    def compass_deg(self) -> int:
+        """This heading as a compass bearing -- clockwise from north,
+        positive to the robot's right.
+
+        The convention every angle in this project uses: `get_odometry()`'s
+        `heading_deg`, `get_pose()`'s, 1.15.3's pan and the depth grid's
+        columns. Lives on `Heading` rather than in a backend because both
+        `sim/mock_robot.py` (body) and `sim/mock_world.py` (world) need it
+        and two copies of a mapping is how they would start disagreeing.
+
+        NOT `sim/renderer.py`'s `HEADING_ANGLE`, which is a maths-convention
+        angle in radians (+x is 0, y grows downward). That one stays where
+        it is: it is the renderer's own internal geometry, and converting
+        at that boundary is exactly what a backend is for.
+        """
+        return {"N": 0, "E": 90, "S": 180, "W": 270}[self.name]
+
 
 CELL_WALL = "#"
 CELL_FLOOR = "."

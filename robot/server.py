@@ -101,6 +101,7 @@ from robot.factory import get_robot, load_config
 from robot.identity import log_identity
 from robot.interface import DRIVER_UNKNOWN, driver_priority
 from robot.safety import SafetyController, SafetyViolation, path_zone_indices
+from world.factory import get_world
 
 logger = logging.getLogger("server")
 
@@ -164,6 +165,16 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     mode = os.environ.get("ROBOT_MODE") or config.get("mode", "sim")
 
     robot = get_robot(config_path) if config_path else get_robot()
+    # The WORLD model -- the map and the robot's pose on it (N1). Its own
+    # abstraction, because a map is world state and RobotInterface holds
+    # body state only (CLAUDE.md section 2). `none` by default, in which
+    # case both routes below answer "unusable" and nothing changes.
+    #
+    # The robot is handed over opaquely: only world/factory.py looks
+    # inside it, and only in its sim branch, where the map and the body
+    # have to be two views of ONE GridWorld.
+    world_model = get_world(config_path, robot=robot) if config_path \
+        else get_world(robot=robot)
     safety = SafetyController(robot, min_distance_cm=min_distance,
                               sensor_to_bumper_cm=sensor_to_bumper)
     state = {
@@ -426,6 +437,41 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             "sensor_to_bumper_cm": sensor_to_bumper,
         }
         return grid
+
+    @app.get(prefix + "/world/pose", dependencies=[Depends(require_secret)])
+    def world_pose():
+        """Where the robot is on the map -- phase N1.
+
+        A PASS-THROUGH. This server computes nothing here; it returns what
+        the world backend said, exactly as `/distance` returns what the
+        body said. The decision not to give world state its own service
+        and its own Settings URL is in `PLAN-mapping.md` section 4: the
+        usual argument for splitting a service (the admin console's "no
+        reason to go down when the mission server restarts") does not
+        apply, because the map's durability is a storage decision (1.5's
+        DynamoDB plus a working copy) rather than a process-topology one.
+
+        **Not `/pose`**, and the prefix is not decoration: it is the seam.
+        Every other route here is a body route, and a reader who has to
+        ask which kind a route is has already lost the distinction this
+        phase exists to draw.
+
+        `RemoteRobot`'s rule applies to `RemoteWorld` too -- a 404 here is
+        "this server predates the route", never a transport failure.
+        """
+        return world_model.get_pose()
+
+    @app.get(prefix + "/world/map", dependencies=[Depends(require_secret)])
+    def world_map():
+        """The house, as discovered so far -- phase N1.
+
+        Also a pass-through. Note the payload is the big one on this
+        server: ~10^5 cells on a real house against a handful of numbers
+        everywhere else. `map_version` is what lets a client avoid asking
+        for it -- poll `/world/pose` freely, re-read this only when the
+        version moves.
+        """
+        return world_model.get_map()
 
     @app.get(prefix + "/frame", dependencies=[Depends(require_secret)])
     def frame():

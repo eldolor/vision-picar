@@ -121,17 +121,21 @@ def test_world_defaults_to_no_mapper(tmp_path):
     assert world.get_map()["usable"] is False
 
 
-def test_the_shipped_config_has_no_mapper(tmp_path):
-    """And the real config/robot.yaml agrees, so a reader is never told
-    one thing by the file and another by the default."""
+def test_the_shipped_config_maps_the_sim():
+    """config/robot.yaml ships `mode: sim` on both sides, so the map is
+    watchable in the twin out of the box -- which is what section 7 asks
+    of every phase. A default of `none` would have made N1 something you
+    could only see by editing a config first."""
+    from robot.factory import get_robot
+    from sim.mock_world import MockWorld
     from world.factory import get_world
-    from world.interface import NullWorld
 
-    assert isinstance(get_world(), NullWorld)
+    world = get_world(robot=get_robot())
+    assert isinstance(world, MockWorld)
+    assert world.get_pose()["usable"] is True
 
 
-@pytest.mark.parametrize("mode,expected", [("sim", "mock_world"), ("ros", "ros_world")])
-def test_an_unbuilt_world_backend_refuses_by_name(tmp_path, mode, expected):
+def test_an_unbuilt_world_backend_refuses_by_name(tmp_path):
     """Same rule as `mode: hardware`. A silent downgrade to "no map" is
     the worst possible failure here, because it looks exactly like a
     mapper that has not converged yet -- which is the thing you would be
@@ -139,10 +143,39 @@ def test_an_unbuilt_world_backend_refuses_by_name(tmp_path, mode, expected):
     from world.factory import get_world
 
     path = tmp_path / "robot.yaml"
-    path.write_text(f"world:\n  mode: {mode}\n")
+    path.write_text("world:\n  mode: ros\n")
     with pytest.raises(NotImplementedError) as e:
         get_world(str(path))
-    assert expected in str(e.value)
+    assert "ros_world" in str(e.value)
+
+
+def test_sim_world_refuses_a_robot_it_cannot_map(tmp_path):
+    """`mode: teleop` with `world.mode: sim` lands here, and should: a
+    phone on a wheeled rig has no grid world. Refusing by name beats
+    returning a correct map of a house the robot is not in."""
+    from world.factory import get_world
+
+    path = tmp_path / "robot.yaml"
+    path.write_text("world:\n  mode: sim\n")
+    with pytest.raises(ValueError) as e:
+        get_world(str(path), robot=None)
+    assert "GridWorld" in str(e.value)
+
+
+def test_sim_world_and_sim_body_share_one_grid(tmp_path):
+    """The one thing the sim branch exists to guarantee. Two GridWorlds
+    would give a plausible-looking map of the wrong house."""
+    from robot.factory import get_robot
+    from world.factory import get_world
+
+    path = tmp_path / "robot.yaml"
+    path.write_text("mode: sim\nworld:\n  mode: sim\n")
+    robot = get_robot(str(path))
+    world = get_world(str(path), robot=robot)
+
+    before = world.get_pose()["x_m"]
+    robot.world.robot_x += 1
+    assert world.get_pose()["x_m"] != before
 
 
 def test_an_unknown_world_mode_names_itself(tmp_path):

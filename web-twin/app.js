@@ -187,6 +187,12 @@
     // that predates /depth is asked once and then left alone, rather than
     // producing one failed request per step for the rest of the session.
     lastDepth: null, depthUnsupported: false,
+    // N1. The WORLD model, kept apart from every field above it because
+    // those are body state and these are not. `lastMap` is the big one --
+    // ~10^5 cells on a real house against a handful of numbers everywhere
+    // else -- which is why `map_version` exists and why the two are
+    // fetched on different clocks (see refreshWorld).
+    lastPose: null, lastMap: null, worldUnsupported: false, lastMapFetchAt: 0,
     visited: new Set(), searchedRooms: new Set(),
     sightings: [], found: false, foundSighting: null,
     log: [], step: 0,
@@ -542,6 +548,7 @@
     // of the page carries on.
     refreshDepth();
     refreshOdometry();
+    refreshWorld();
     return frame;
   }
 
@@ -625,6 +632,144 @@
     var color = t < 0.5 ? "var(--accent-alert)" : "var(--accent-safe)";
     return { cls: "depth-zone", css: "background: " + color + "; opacity: " +
              (0.35 + 0.65 * (1 - Math.abs(t - 0.5) * 2)).toFixed(2) + ";" };
+  }
+
+  // ---------- phase N1: the world model ----------
+  // The map and the pose on it. Separate from everything above because it
+  // is a different KIND of state: /distance, /depth and /odometry are all
+  // egocentric -- how far from ME, what is ahead of ME, how far have I
+  // driven -- and these two are allocentric. `world/interface.py` holds
+  // the line; this is the consumer end of it.
+  //
+  // **Two clocks, on purpose.** The pose is a handful of numbers and is
+  // fetched every frame; the map is the whole house and is fetched at most
+  // once a second. A truly version-gated FETCH needs a cheap route that
+  // returns `map_version` alone -- N4's job, when a real house makes the
+  // payload matter. In the sim it is 130 cells, so a timer is honest and
+  // enough, and saying so beats pretending the version field is already
+  // doing work it is not.
+  var MAP_FETCH_INTERVAL_MS = 1000;
+
+  async function refreshWorld() {
+    if (state.worldUnsupported) return;
+    try {
+      state.lastPose = await apiGet("/world/pose");
+      var now = Date.now();
+      if (now - state.lastMapFetchAt >= MAP_FETCH_INTERVAL_MS) {
+        state.lastMapFetchAt = now;
+        state.lastMap = await apiGet("/world/map");
+      }
+    } catch (e) {
+      if (e.status === 404) {
+        // A server older than N1. A real state, not an error.
+        state.worldUnsupported = true;
+        state.lastPose = null;
+        state.lastMap = null;
+      }
+      // Anything else leaves the previous map up rather than blanking the
+      // canvas on one dropped request -- same rule as the depth strip.
+    }
+    renderMap();
+  }
+
+  // Cell states, matching world/interface.py's CELL_* constants. Named
+  // here rather than inlined because -1/0/1 at a call site is exactly the
+  // sort of thing that reads as a boolean at a glance.
+  var CELL_UNKNOWN = -1, CELL_FREE = 0, CELL_OCCUPIED = 1;
+
+  function renderMap() {
+    var canvas = document.getElementById("world-map");
+    var readout = document.getElementById("map-readout");
+    if (!canvas || !readout) return;
+
+    var ctx = canvas.getContext("2d");
+    var grid = state.lastMap;
+
+    if (state.worldUnsupported) {
+      canvas.width = 0; canvas.height = 0;
+      readout.textContent = "map: not reported by this server";
+      return;
+    }
+    if (!grid || !grid.usable) {
+      canvas.width = 0; canvas.height = 0;
+      // Three different nothings, said as three different things. "No
+      // mapper" is a fact a planner works with (1.5's bootstrap rule);
+      // "not connected" is not, and neither is an empty canvas.
+      readout.textContent = !state.connected ? "map: not connected"
+        : (grid ? "map: no mapper on this backend" : "map: not reported yet");
+      return;
+    }
+
+    // One canvas pixel per cell, scaled up by CSS. `image-rendering:
+    // pixelated` keeps a cell a cell -- smoothing would interpolate
+    // between "seen floor" and "never seen" and draw a confidence the
+    // map does not have.
+    var SCALE = Math.max(4, Math.min(16, Math.floor(280 / grid.width)));
+    canvas.width = grid.width * SCALE;
+    canvas.height = grid.height * SCALE;
+
+    var css = getComputedStyle(document.documentElement);
+    var COLOR = {};
+    // The map's OWN palette, never --wall/--floor: those are UI chrome,
+    // and sim/renderer.py already paid for borrowing them once (every
+    // sim frame came back to the model as "very dark and unclear").
+    COLOR[CELL_UNKNOWN] = (css.getPropertyValue("--map-unknown") || "#171B22").trim();
+    COLOR[CELL_FREE] = (css.getPropertyValue("--map-free") || "#35505F").trim();
+    COLOR[CELL_OCCUPIED] = (css.getPropertyValue("--map-wall") || "#8FA0B8").trim();
+
+    for (var y = 0; y < grid.height; y++) {
+      for (var x = 0; x < grid.width; x++) {
+        var cell = grid.cells[y * grid.width + x];
+        ctx.fillStyle = COLOR[cell] || COLOR[CELL_UNKNOWN];
+        ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
+      }
+    }
+
+    drawPose(ctx, grid, SCALE);
+
+    var seen = 0;
+    for (var i = 0; i < grid.cells.length; i++) {
+      if (grid.cells[i] !== CELL_UNKNOWN) seen++;
+    }
+    var pct = Math.round((100 * seen) / grid.cells.length);
+    readout.innerHTML = "map: " + seen + "/" + grid.cells.length + " cells seen (" +
+      pct + "%) \u00b7 " + Math.round(grid.resolution_m * 100) + "cm cells \u00b7 " +
+      '<span class="src">' + grid.map_id + " v" + grid.map_version + "</span>";
+  }
+
+  function drawPose(ctx, grid, scale) {
+    var pose = state.lastPose;
+    // A pose that is not usable draws NOTHING. Not a dot at the origin:
+    // (0, 0) is a perfectly valid pose and a map showing the robot
+    // confidently in the corner of a house it cannot localise in is worse
+    // than a map showing no robot at all.
+    if (!pose || !pose.usable) return;
+    if (pose.map_id !== grid.map_id) return;  // coordinates from another map
+
+    // Metres -> cells -> canvas pixels, via the map's own origin and
+    // resolution. Never assume the grid starts at (0,0) in metres: a
+    // mapper extends its grid westward when it finds a room there.
+    var cx = ((pose.x_m - grid.origin_x_m) / grid.resolution_m) * scale;
+    var cy = ((pose.y_m - grid.origin_y_m) / grid.resolution_m) * scale;
+
+    // heading_deg is a COMPASS bearing -- clockwise, 0 = north = -y here.
+    // Converting it wrong looks right at 0 and 180, which is why this
+    // conversion is written once and commented rather than inlined twice.
+    var rad = (pose.heading_deg - 90) * Math.PI / 180;
+    var r = Math.max(3, scale * 0.6);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rad);
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.lineTo(-r * 0.7, r * 0.6);
+    ctx.lineTo(-r * 0.7, -r * 0.6);
+    ctx.closePath();
+    var css = getComputedStyle(document.documentElement);
+    ctx.fillStyle = (css.getPropertyValue("--accent") || "#4da3ff").trim();
+    ctx.fill();
+    ctx.restore();
   }
 
   function renderDepth() {
@@ -957,6 +1102,12 @@
     // every server connected to afterwards in the same session.
     state.depthUnsupported = false;
     state.lastDepth = null;
+    // Same latch, same reason (N1): one server with no /world routes must
+    // not silence the map for every server connected to afterwards.
+    state.worldUnsupported = false;
+    state.lastPose = null;
+    state.lastMap = null;
+    state.lastMapFetchAt = 0;
     state.serverSecret = document.getElementById("cfg-server-secret").value.trim();
     state.connecting = true;
     setButtonBusy(btn, true, "Connecting\u2026");

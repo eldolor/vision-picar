@@ -221,6 +221,14 @@ Resources:
         - Field: path-pattern
           Values:
             - /odometry
+            # The world model -- the map and the pose on it (N1). Two more
+            # routes on the same rule because a condition allows five path
+            # values and this one had four spare, not because they belong
+            # with odometry: /odometry is BODY state and these are WORLD
+            # state, which is the whole distinction PLAN-mapping.md
+            # section 4 draws. Grouped by room in the rule, not by meaning.
+            - /world/pose
+            - /world/map
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

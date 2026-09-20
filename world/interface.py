@@ -147,7 +147,7 @@ class WorldInterface(ABC):
              "map_id": str|None,       # WHICH map these coordinates mean
              "x_m": float|None,        # metres, map frame
              "y_m": float|None,
-             "heading_deg": float|None}  # 0 = +x, counter-clockwise positive
+             "heading_deg": float|None}  # compass, 0 = +y_m, 90 = +x_m
 
         **`map_id` is not bookkeeping.** A pose without a map is two
         numbers that mean nothing, and the failure is silent: coordinates
@@ -164,10 +164,22 @@ class WorldInterface(ABC):
         and a map is even more firmly on the metres side. Mixing them in
         one unit guarantees an off-by-100 somewhere.
 
-        **Degrees, to match `get_odometry()`'s `heading_deg`.** Radians
-        are what `sim/renderer.py` takes and what a mapper will produce
-        internally; the conversion belongs in the backend, so that two
-        headings on the same interface are never in two units.
+        **Degrees, to match `get_odometry()`'s `heading_deg`, and the
+        SAME CONVENTION as it** -- compass bearing, clockwise, positive to
+        the robot's right, which is what every other angle in this project
+        already uses (1.15.3's pan, the depth grid's columns). Radians and
+        a maths-convention angle are what `sim/renderer.py` takes and what
+        a mapper produces internally; both conversions belong in the
+        backend. Two headings on one interface must never be in two units
+        OR two rotational senses -- the second is the harder bug, because
+        it looks right at 0 and 180.
+
+        **The axes follow the map, and the map follows the grid world's
+        own convention**: `x_m` increases east, `y_m` increases *south*.
+        So heading 0 points toward -`y_m` (north) and 90 toward +`x_m`
+        (east). Stated explicitly because a reader who assumes y-up will
+        get a map that is correct and mirrored, which is the kind of
+        thing that survives a long way before anyone notices.
         """
         return unusable_pose()
 
