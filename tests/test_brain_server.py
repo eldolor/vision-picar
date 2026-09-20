@@ -1168,7 +1168,12 @@ def test_health_says_whether_the_tiered_policy_can_run_here(tmp_path):
         health = client.get("/health").json()
 
     assert isinstance(health["perception_available"], bool)
-    assert health["perception_detector"] == "yolo11s.pt"
+    # A LITERAL, not brain.perceive.DEFAULT_DETECTOR -- the point is that a
+    # change to the shipped detector has to be noticed here, and comparing a
+    # constant to itself notices nothing. It has earned that once already:
+    # this read "yolo11s.pt" until P22 promoted YOLOE (2026-09-19), and this
+    # assertion is what surfaced that the panel's name would change with it.
+    assert health["perception_detector"] == "yoloe-11s-seg.pt"
     assert health["perception_clip_model"] == "RN50"
     assert health["tier_consecutive_frames"] == 2
 

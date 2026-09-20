@@ -263,6 +263,44 @@ JETSON:** This file carried "no Jetson, on cost" from
 The open question is LATENCY on the board, not price or accuracy: ~5 Hz
 projected against the Hailo path's 92 FPS. **Nothing is ordered.**
 
+**P24 (2026-09-20, $2.90 on a rented A10G, torn down) -- the shipped tier
+is SETTLED.** `brain/perceive.py` now defaults to **`yoloe-11s-seg.pt`,
+`max_crops` 16, gate 0.8 unchanged, NO floor mask** -- two models, 139 ms on
+laptop CPU. Every YOLOE checkpoint was run with and without the mask on all
+1234 labelled frames. Three answers. **The mask loses on 9 of 11 variants**
+and helps only the two weakest (`26m` +2, `26x` +4), costing the shipped
+model 15 points and 836 ms against 139 -- so P16's "the mask rescues a
+destroyed detector" is a FLOOR, never a contribution, and SegFormer stays out
+of the tier. **"The 26 generation is worse" is FALSE** -- the generations
+interleave and `26l` is the single best row at 16 FP (91%); what is true is
+that `11s` leads at 3 FP by 7 points and is within 2 at 16 FP, and is the
+cheapest of the leaders. **`max_crops` 4 -> 16 is worth 7 frames for 12 ms**
+and is the first crop-budget number ever measured on the shipped detector.
+One methodological correction that affects older phases: **P7's licence that
+"a GPU changes nothing about what a detection is" does NOT generalise** --
+it was established on OWLv2, a ViT, and YOLOE reads 251 true positives on an
+A10G against 258 on the laptop. TF32 was tested and is NOT the cause; the
+stack is (torch 2.7/ultralytics .156 against 2.14/.142). **Never merge GPU
+and CPU rows** -- latency lineage stays on the laptop.
+
+**P23 (2026-09-19, free) -- READ THIS BEFORE ANY RECALL NUMBER BELOW.**
+Every row in P20, P21 and P22 was scored on **365 of the corpus's 1234
+labelled frames** -- P19 subsampled to the frames its YOLO-World replay
+covered and three phases inherited the set without re-examining it. S3
+holds nothing extra (S3 and `recordings/` are identical); the frames were
+always on disk. Re-run on all 1234, **the detector ranking INVERTS**:
+`yoloe-11s` reads 82% at 3 FP against `yoloe-26l`'s 72%, and at the shipped
+gate 80% against 76% with two false positives against five, at **139 ms
+against 296**. **Corrected the same day**: paired on identical frames the two agree on 242-285 of 323 and their median scores are both 0.986, so the 82/72 gap is where each model's FP curve sits, not frame-level dominance. What survives for `11s` is **latency (2.1x), two false positives against five, and +12 frames at the shipped gate** -- not that the `26` generation is worse. Pair the frames before believing a gap. **So
+`brain/perceive.py` now ships `yoloe-11s-seg.pt`** (`DEFAULT_YOLOE`), and
+promoting on the subsample would have shipped the third-best model at twice
+the latency. Two consequences: the gate needs NO change (`11s` reads 80% at
+the shipped 0.8 against its own best 82%, where `26l` needed ~0.4), so this
+is one constant and no extra paid cloud calls; and `26x` is dominated at
+every budget, with P22's "6 points worse" revealed as noise. **1512
+unlabelled frames remain** across 11 walks -- the cheapest corpus growth
+there is, and corpus size is visibly deciding conclusions.
+
 **P21 (2026-09-19, free) CONFOUNDS the row the reversal rests on, and
 found a better model than either candidate.** P19's 83%-vs-50% compared
 OWLv2 against a *replayed* YOLO-World detection file carrying ~45

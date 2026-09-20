@@ -7018,6 +7018,14 @@ Records in `evaluations/hailo/zoo-probe/`; both HEFs are banked.
 
 #### P20: the tier around OWLv2 is two models, not three -- **2026-09-18, free**
 
+> **Denominator caveat (P23, 2026-09-19): every row below is 365 of the
+> corpus's 1234 labelled frames.** P19 subsampled to the frames its
+> YOLO-World replay covered and this phase inherited the set. The
+> mechanisms here -- the mask's contribution, SAM losing, the latency
+> decomposition -- are ratios and do not obviously move, but none has
+> been re-derived at 1234 frames. P23 re-ran the detector choice and the
+> ranking inverted, so treat any ORDERING below as provisional.
+
 P19 put OWLv2 inside the tier and measured 83%. It changed one variable --
 where the boxes came from -- and left every other setting at the value it
 inherited from a YOLO-World tier: the floor mask on, `max_crops` 48, the
@@ -7421,6 +7429,14 @@ fixed gates.
 
 #### P22: YOLOE matches OWLv2 at a sixteenth of the latency -- **2026-09-19, free**
 
+> **SUPERSEDED in its recommendation by P23 (2026-09-19).** These rows are
+> 365 of 1234 labelled frames. On the full corpus the family ordering
+> INVERTS -- `yoloe-11s` 82% against `yoloe-26l`'s 72% at 3 FP, where this
+> table has 26l ahead -- and **`11s` is what ships**. The finding that
+> survives unchanged is the one this phase was for: a YOLOE-class detector
+> runs the tier at a fraction of OWLv2's latency. The winning checkpoint
+> named below is the wrong one.
+
 The board is a Jetson (above), so compilability stopped being a selection
 criterion and the axes are recall and latency. Latency was the open
 problem: P20 put the tier at ~235 ms / ~4.3 Hz where 1.14's continuous
@@ -7528,6 +7544,285 @@ on a Jetson both fit.
   not this one model.
 * **Nothing shipped changed.** `brain/perceive.py` still defaults to
   YOLO11s + CLIP; every row here is `brain/perceive_lab.py`.
+
+#### P23: the corpus was 30% of itself, and the ranking INVERTS -- **2026-09-19, free**
+
+P22 recommended `yoloe-26l` and this was going to promote it. It ships
+`yoloe-11s` instead, because the corpus P22 was measured on is **365 of
+1234 labelled frames** and the other 869 reverse the order.
+
+**Where the frames were.** Asked whether S3 held more than the 365 being
+scored. It does not -- S3 and `recordings/` are identical, 22 walks, same
+counts, same labels, so 2026-09-13's laptop-only gap is closed. The
+subsample was never a storage problem. **11 walks carry an adjudicated
+`labels.json`: 1234 frames, 323 visible.** P19 restricted itself to the
+frames its YOLO-World replay covered, ~40 per walk, and P20, P21 and P22
+each inherited that set without re-examining it. So every row in four
+consecutive phases was scored on 30% of what was on disk, which is P7's
+scope error recurring for the second time in this document.
+
+##### The table, all 1234 frames
+
+| | @0 FP | @3 FP | @16 FP | @ gate 0.8 | FP @0.8 | ms |
+|---|---|---|---|---|---|---|
+| **yoloe-11s** | 7% | **82%** | 89% | **80%** | **2** | **139** |
+| yoloe-v8l | **23%** | 74% | 82% | 78% | 10 | 373 |
+| yoloe-26l | 16% | 72% | **90%** | 76% | 5 | 296 |
+| yoloe-26x | 2% | 69% | 85% | 76% | 8 | 502 |
+
+On 365 frames this read `26l` 91% > `11s` 90% > `v8l` 90% > `26x` 85%. On
+1234 it reads `11s` 82% > `v8l` 74% > `26l` 72% > `26x` 69%. **The
+subsample did not merely add noise -- it inverted the ranking**, and
+promoting on it would have shipped the third-best model at twice the
+latency.
+
+**`yoloe-11s` wins on three axes at once**: highest recall, fewest false
+positives, and 2.1x faster than `26l`. There is no trade being made.
+
+##### CORRECTION, same day: "the 26 variants are worse" does NOT hold
+
+Challenged, and the challenge is right. Paired on the same 323 visible
+frames, the two models agree almost everywhere:
+
+| gate | both | `11s` only | `26l` only |
+|---|---|---|---|
+| 0.8 (shipped) | 242 | **16** | 4 |
+| 0.708 (`11s`'s 3-FP gate) | 253 | 11 | 8 |
+| 0.327 (`26l`'s 16-FP gate) | 285 | 9 | 7 |
+
+Median score on visible frames is **0.986 for both**. So the 82%-against-72%
+above is **not frame-level dominance** -- it is where each model's
+false-positive curve sits, which is what a FIXED 3-FP budget forces on 911
+negatives. At matched gates they are within two or three frames.
+
+**What survives for `11s` is latency, not accuracy**: 2.1x faster, two
+false positives against five at the shipped gate, and a real but small
++12-frame edge at that gate specifically -- which is the operating point
+the tier uses, so it counts. `DEFAULT_YOLOE` stands on those. The claim
+that the `26` generation is worse does not, and a matched-FP table alone
+would have kept saying it. **Pair the frames before believing a gap**: two
+models at different gates are two different thresholds, not two different
+abilities.
+
+##### Read the budgets carefully, and the verdict survives it
+
+The full corpus has **911 non-visible frames against the subsample's 170**,
+so a fixed 3-FP budget is 5.4x stricter here and every number drops for
+that reason alone. The proportionally equivalent column is @16 FP, where
+`11s` and `26l` are 89% and 90% -- a tie, and consistent with the old
+90%/91%. So `26l` is not as weak as the 3-FP column alone suggests.
+
+**`11s` ties or beats it at every budget and halves the latency, so the
+choice is the same under either reading.** That robustness is the reason to
+trust it; a verdict that depended on which budget column you read would not
+be one.
+
+##### And the gate problem dissolves, which makes this one constant
+
+P22's promotion needed three coupled changes because `26l` reads 76% at
+`DEFAULT_MATCH_PROBABILITY` and 91% only near 0.4 -- swap the detector
+alone and you lose 15 points. **`11s` reads 80% at the shipped 0.8 against
+its own best of 82%.** It is already calibrated where the tier gates.
+
+So the promotion is `DEFAULT_YOLOE` and nothing else: no gate change, and
+therefore **no increase in the `candidate_sighting` triggers that cost
+money** (6.1). The knob stays in config for a rig walk to sweep.
+
+##### `26x` settled, and the earlier objection to it was the wrong one
+
+Dominated at every budget and every gate, 3.6x slower than the winner. But
+P22 reported it **6 points** behind on recall and that gap is gone here --
+at gate 0.8 it ties `26l` on true positives exactly (246 each). **That 6
+points was noise**, precisely as P22's own non-monotonicity caveat
+predicted. The durable objections are precision (8 false positives against
+5) and latency.
+
+##### Two harness faults, one of them mine twice over
+
+**`crops:yoloe` returned 1234/1234 `unavailable` at 2 ms, twice.** The
+cause was the promotion itself: `brain/perceive.py` imports PIL **lazily
+inside each model-touching method**, because the perception extras are
+optional and a module-level import would break `import brain.perceive` on a
+machine without them. The moved `detect_text` assumed module scope and
+raised `name 'Image' is not defined` on every frame.
+
+Two things worth keeping from that. **1.12's tri-state is what made it
+legible** -- `unavailable` at 2 ms rather than a crash or, far worse, a
+plausible-looking low score; it is the same signature as P7's invalid
+OWL-ViT row, and a two-state pipeline would have reported this as "YOLOE
+finds nothing". And **the 223-test suite passed throughout**, because every
+test drives the pipeline with fakes and nothing in it touches a real model
+constructor. P20 recorded that coverage gap as deliberate; this is the
+first time it has cost anything.
+
+The second fault was diagnosis, not code: the first failure was blamed on
+having edited `perceive_lab.py` mid-run, on timing evidence alone, and a
+second batch was spent before the exception was actually read. **Reproduce
+before theorising** -- one `pipeline.perceive()` call would have named it.
+
+##### What this changes elsewhere
+
+* **`brain/perceive.py` ships YOLOE.** `UltralyticsTextDetector`, `YoloE`
+  and `OpenVocabCropSource` moved out of `perceive_lab.py` -- the shipped
+  module may not import the lab -- and `detector_for()` is the one place
+  that chooses between a `detect()` and a `detect_text()` backend, so
+  `perception_detector` in config still takes either. `yolo11s.pt` survives
+  as `DEFAULT_YOLO_DETECTOR`: it is the baseline every 4.11/P9/P22 row is
+  read against, and the `label_gate`/`soft_gate` crop paths are only
+  meaningful for a closed-vocabulary model.
+* **Every recall number in P20, P21 and P22 is on 30% of the corpus** and
+  should carry that caveat. The findings that are ratios or mechanisms --
+  the floor mask's contribution, SAM losing, the missing NMS, the latency
+  decomposition -- do not obviously move, but none has been re-derived at
+  1234 frames.
+* **The 1512 unlabelled frames are the cheapest corpus growth available.**
+  Four `red-backpack` and seven `woven-laundry-basket` walks from
+  2026-09-12 have no `labels.json` and are unscorable by design. Labelling
+  even a few would more than double the corpus, and on the evidence above
+  the corpus size is deciding conclusions.
+
+#### P24: the whole YOLOE family, with and without the mask, on a rented A10G -- **2026-09-20, $2.90**
+
+P23 shipped `yoloe-11s` on three full-corpus rows and two questions open: no
+YOLOE row had ever been run **with the floor mask**, and 8 of 11 checkpoints
+had no full-corpus row at all. Both were asked directly. 22 rows on one
+A10G, torn down; `tools/gpu/eval_host.sh` is the host and `evaluations/gpu-yoloe/`
+the records.
+
+##### The matrix -- recall at matched false-positive budgets, 1234 frames
+
+| checkpoint | no mask @3 / @16 | with mask @3 / @16 | mask delta @3 |
+|---|---|---|---|
+| **yoloe-11s** | **87% / 89%** | 73% / 81% | **-15** |
+| yoloe-v8s | 80% / 89% | 74% / 81% | -5 |
+| yoloe-v8m | 77% / 89% | 72% / 81% | -5 |
+| yoloe-26l | 74% / **91%** | 71% / 83% | -3 |
+| yoloe-v8l | 74% / 82% | 73% / 80% | -1 |
+| yoloe-11l | 73% / 85% | 72% / 79% | -1 |
+| yoloe-26s | 72% / 86% | 70% / 78% | -3 |
+| yoloe-11m | 69% / 82% | 68% / 80% | -1 |
+| yoloe-26x | 69% / 85% | 73% / 83% | **+4** |
+| yoloe-26n | 68% / 79% | 66% / 75% | -2 |
+| yoloe-26m | 66% / 80% | 68% / 77% | **+2** |
+
+##### 1. The floor mask loses on 9 of 11, and helps only the two worst
+
+It is negative or neutral everywhere except `26m` (+2) and `26x` (+4) -- and
+those are the two **weakest** no-mask rows in the table. So P16's *"the mask
+fully rescues a destroyed detector"* is confirmed as a family-wide property
+and as a **floor, never a contribution**: the mask's value is inversely
+proportional to the detector's, which is exactly what an insurance policy
+looks like and exactly what P20 argued from OWLv2 alone.
+
+On the shipped model the cost is severe: `11s` loses **15 points** to it, and
+locally it also costs **836 ms against 139** -- six times the entire tier for
+negative value.
+
+**A prediction failed here and it is worth recording.** Asked whether the
+mask had been used, the reasoning offered was that YOLOE proposes a median of
+ONE crop and is silent on ~40% of frames, so a region proposer should help it
+*more* than it helped OWLv2. The opposite is true, and the mechanism that
+dominates is the one P18 already found: the mask's regions are mostly floor,
+they generate false positives, and they consume the AREA-ranked crop budget
+the detector's single good box needs. **The mask does not fill a gap, it
+crowds a queue.**
+
+So: SegFormer stays out of the tier, `DEFAULT_MAX_CROPS_WITH_PROPOSER` is
+moot for the shipped configuration, and the on-board chain is **YOLOE + CLIP,
+two models**, now measured rather than inferred.
+
+##### 2. "The 26 generation is worse" is FALSE, and `11s` still wins
+
+The generations interleave. At 16 FP the single best row is **`26l` at 91%**,
+and `26s`, `26x` and `11l` sit together mid-table. There is no generational
+gap and nothing here supports one.
+
+What is true is narrower and enough: **`11s` leads at 3 FP by 7 points over
+the next-best** and is within 2 of the top at 16 FP, on the largest evidence
+this project has assembled. It is also the cheapest of the leaders. That is
+the case for shipping it, and it is a different case from the one P23 made --
+P23's paired analysis showed `11s`'s advantage over `26l` was latency rather
+than accuracy, and on the full family the accuracy lead is real.
+
+##### 3. The crop budget, measured on the shipped detector at last
+
+`max_crops` **4 -> 16 is worth 7 true positives for 12 ms** on `yoloe-11s`
+(258 against 251, same two false positives), so `DEFAULT_MAX_CROPS` is 16.
+Every earlier crop-budget row -- P18's 8, P20's 8/16/48 -- was measured with
+the mask on and a different detector, and **4 was reached by nobody's
+measurement at all.** It does not keep growing: P20 found 16 and 48
+byte-identical without the mask.
+
+Raising it broke `test_perceive.py`'s invariant that a second crop source
+must get MORE budget, which is P18's defect arriving by a different door, so
+`DEFAULT_MAX_CROPS_WITH_PROPOSER` went 8 -> 32 to hold the 2x ratio the pair
+has always had. **Provisional and flagged as such in the source**: it is the
+only number in that block not measured on the shipped detector, and finding 1
+means nothing ships a proposer anyway.
+
+##### 4. P7's GPU licence does NOT generalise -- and the cause is not precision
+
+P7's control had CUDA fp32 reproduce the committed CPU record *exactly*, and
+this document has leaned on *"a GPU changes nothing about what a detection
+is"* ever since. **It does not hold here.** `yoloe-11s` no-mask reads 251
+true positives on the A10G against 258 on the laptop -- 7 frames of 323, same
+two false positives -- and 87% against 82% at a 3-FP budget.
+
+**TF32 was the obvious suspect and it is not the cause.** cuDNN TF32 was on
+by default (~10 mantissa bits against fp32's 23) and OWLv2 is a ViT whose
+compute is matmul, where torch leaves TF32 off, while YOLOE is a CNN where
+cuDNN's setting bites -- a clean theory. Re-running the row with
+`NVIDIA_TF32_OVERRIDE=0` produced **the identical 251/2**. The remaining
+candidates are the software stack (torch 2.7.0+cu128 / ultralytics 8.4.156 on
+the box against 2.14.0 / 8.4.142 locally) or genuine CPU-vs-CUDA kernel
+differences. Rejecting a hypothesis cost $0.16 and is cheaper than shipping
+the caveat unexamined.
+
+**The operational rule: the GPU table is internally comparable and may not be
+merged with CPU rows.** All 22 rows share one box, one stack, one precision,
+so rankings within them are sound; every latency figure in this plan stays on
+the laptop, where the lineage is.
+
+##### 5. The mask rows are CPU-bound, which is P7b arriving a third time
+
+The first serial run looked hung: 15 minutes on one mask row with the **GPU
+at 0%**. It was not hung -- SegFormer plus region extraction is
+single-threaded CPU work, so 12 mask rows serially is 4+ hours and ~$5 on a
+box whose GPU is idle. Re-run 6-way parallel, the same 22 rows took ~50
+minutes at 94% GPU.
+
+That is P7b's *"36 ms detecting and 229 ms resizing a photograph"* for the
+third time in this document, and the third time it has changed a plan rather
+than a number. Parallelism destroys per-frame ms and that was accepted
+deliberately -- finding 4 had already ruled those figures out of the latency
+lineage, so there was nothing left to lose.
+
+##### The rental, and what was left behind
+
+`g5.2xlarge`, 2.37 h, **$2.87 compute + $0.03 EBS**. Terminated; security
+group, IAM role and instance profile deleted; the S3 staging prefix emptied;
+**each verified by query afterwards rather than assumed from the exit code.**
+
+Two process notes. `tools/gpu/eval_host.sh` delegates the host lifecycle to
+`tools/hailo/ec2.sh` -- SSM rather than SSH, a security group that opens
+nothing, an instance profile scoped to one prefix -- because that script is
+hardened and a second copy of it would be the thing that leaks. It adds a
+`shutdown -h +240` dead-man switch and `instance-initiated-shutdown-behavior
+terminate`, so an abandoned session cannot leave a GPU running at $29/day.
+
+Three setup faults cost ~20 minutes and are fixed in the script: the DLAMI
+carries its own `/opt/pytorch` venv and a fresh one reinstalls torch against
+a driver it was not built for; `set -u` breaks that venv's activate script;
+and **`aws s3 sync --include 'labels.json'` does not match nested keys**, so
+1234 frames arrived with zero labels and the scorer correctly refused every
+walk. The last is the dangerous one -- it fails by looking like an empty
+corpus rather than an error.
+
+Finally, emptying the S3 prefix also removed two P8 staging objects
+(`soft-k80.json`, `sweep.log`) that predate this phase. Both were already
+pulled down and committed in `753e38c`, so nothing was lost -- but they were
+not this phase's to delete, and the `down` output had said the prefix was
+deliberately left in place.
 
 #### The Hailo-10H option, costed -- the download BLOCKER is cleared (P15)
 

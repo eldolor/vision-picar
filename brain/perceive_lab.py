@@ -84,6 +84,8 @@ import logging
 from typing import Optional, Sequence
 
 from brain.perceive import (ABSENT, DETECTED, UNAVAILABLE, Box, Candidate,
+                            OpenVocabCropSource, UltralyticsTextDetector,
+                            YoloE, DEFAULT_YOLOE,
                             DEFAULT_CLIP, DEFAULT_DETECTOR, DEFAULT_CROP_PATH,
                             DEFAULT_SEGMENTER, Detection, Perception,
                             PerceptionPipeline, PerceptionUnavailable,
@@ -114,9 +116,6 @@ DEFAULT_LLMDET = "iSEE-Laboratory/llmdet_base"
 # precision, so it is never a default that could be silently reused.
 DEFAULT_TRTOWLV2 = ""
 DEFAULT_YOLOWORLD = "yolov8s-worldv2.pt"
-# YOLOE (2026-09-19). The -seg checkpoints are the only ones published;
-# only the boxes are read, so the mask head is paid for and discarded.
-DEFAULT_YOLOE = "yoloe-11l-seg.pt"
 
 # The VLM default. Qwen2.5-VL-3B for three reasons that are not "it scores
 # well": its grounding is trained rather than emergent, its vision encoder
@@ -165,43 +164,6 @@ class NullDetector:
 
     def detect(self, image: bytes, confidence: float) -> Sequence[Detection]:
         return ()
-
-
-class OpenVocabCropSource:
-    """An open-vocabulary detector used as a CROP SOURCE, not a classifier.
-
-    P9's finding about YOLO-World was that it wins as a crop SOURCE rather
-    than as a replacement -- the gain was the regions it proposed, not its
-    own scores, and three CLIP variants behind it landed within two points
-    of each other. This applies that shape to OWLv2, which is the one
-    thing the hardware decision turns on and has never been done.
-
-    Why it matters: OWLv2's headline **82% at 3 FP (P7) is a DETECTOR
-    score measured alone**. The tier's ~50% is the whole pipeline at the
-    shipped `P>=0.8` gate. Those are different measurements on different
-    objects and cannot be subtracted, so "is OWLv2 worth a Jetson" has
-    never actually been asked in the form that decides it: does it make
-    the PIPELINE better than the floor mask plus CLIP already is?
-
-    So this keeps OWLv2's boxes and throws away its scores. CLIP ranks the
-    crops against the target and the distractors exactly as it does for
-    every other detector, and the floor mask contributes its regions
-    alongside. The only variable against the recorded fp32 run is where
-    the boxes came from.
-    """
-
-    def __init__(self, backend, target: str):
-        self.backend = backend
-        self.target = target
-        self.weights = f"crops:{getattr(backend, 'weights', 'open-vocab')}"
-
-    def detect(self, image: bytes, confidence: float) -> Sequence[Detection]:
-        # The backend's own threshold already gates this; `confidence` is
-        # the pipeline's crop-path knob and is deliberately not applied a
-        # second time, or the two gates would compound invisibly.
-        dets = self.backend.detect_text(image, self.target)
-        return [Detection(box=d.box, label=d.label, confidence=d.confidence)
-                for d in dets]
 
 
 class ReplayDetector:
@@ -628,12 +590,18 @@ class LlmDet(GroundingDino):
         super().__init__(model, **kwargs)
 
 
-class YoloWorld:
+class YoloWorld(UltralyticsTextDetector):
     """Ultralytics YOLO-World, the model 4.11 already measured.
 
     Kept here so the table can be re-run rather than quoted: 4.11's numbers
     were produced by an ad-hoc script that no longer exists, which is
     precisely the problem P3 was written to stop.
+
+    Its `detect_text` moved into `brain/perceive.py` with YOLOE (P22), which
+    beat it and shipped. Only `__init__` is left here -- the two families
+    differ by which ultralytics class to construct and whether `set_classes`
+    takes strings or embeddings, and the base's default is the string form
+    this one wants.
     """
 
     def __init__(self, weights: str = DEFAULT_YOLOWORLD,
@@ -651,62 +619,6 @@ class YoloWorld:
         self.weights = weights
         self.model_name = weights
         self._classes = None
-
-    def _set_text(self, text: str):  # pragma: no cover
-        """The prompt call. Overridden by YoloE, whose signature differs."""
-        self.model.set_classes([text])
-
-    def detect_text(self, image: bytes, text: str) -> Sequence[Detection]:  # pragma: no cover
-        if self._classes != [text]:
-            self._set_text(text)
-            self._classes = [text]
-        results = self.model.predict(_pil(image), conf=self.confidence,
-                                     verbose=False, device=self.device)
-        out = []
-        for r in results:
-            for b in getattr(r, "boxes", []):
-                x1, y1, x2, y2 = (float(v) for v in b.xyxy[0].tolist())
-                out.append(Detection(box=Box(x1, y1, x2, y2), label=text,
-                                     confidence=float(b.conf[0])))
-        return out
-
-
-class YoloE(YoloWorld):
-    """Ultralytics YOLOE -- real-time open-vocabulary, never tried here.
-
-    Added 2026-09-19 for the reason P7's finding #4 gave: *"we tested the
-    alternatives"* has twice meant *"we tested the alternatives we had
-    named"*, and this family was in the installed ultralytics the whole
-    time. It matters now because P19 showed the tier wants good BOXES and
-    discards the detector's scores, so a fast box proposer is the cheap
-    lever on latency -- and YOLO-World already proved a YOLO-shaped
-    open-vocabulary model can compile to a Hailo (P10).
-
-    It subclasses YoloWorld because only the text-prompt call differs:
-    YOLOE wants precomputed text embeddings (`get_text_pe`) rather than a
-    list of strings, so `set_classes` takes two arguments. Everything after
-    that -- predict, boxes, confidences -- is identical, which is why this
-    overrides one method and inherits the rest.
-    """
-
-    def __init__(self, weights: str = DEFAULT_YOLOE,
-                 confidence: float = 0.02,
-                 device: Optional[str] = None):
-        try:
-            from ultralytics import YOLOE as _YE
-        except ImportError as exc:  # pragma: no cover
-            raise PerceptionUnavailable(
-                "YOLOE needs ultralytics. `pip install -r "
-                "requirements-perception.txt`.") from exc
-        self.model = _YE(weights)
-        self.confidence = confidence
-        self.device = device
-        self.weights = weights
-        self.model_name = weights
-        self._classes = None
-
-    def _set_text(self, text: str):  # pragma: no cover
-        self.model.set_classes([text], self.model.get_text_pe([text]))
 
 
 class VlmDetector:

@@ -165,7 +165,36 @@ DEFAULT_CROP_PATH = CROP_LOW_CONFIDENCE
 # Ship `s`, not `n` -- 4.3.1 measured +7.6 mAP on-chip for a third of the
 # frame rate, and 92 FPS is still 3x the camera. `n` is the day-one
 # baseline that needs no HEF (4.4), not the shipped detector.
-DEFAULT_DETECTOR = "yolo11s.pt"
+#
+# **Superseded as the DEFAULT on 2026-09-19 (P22), kept as a name.** The
+# reasoning above is a Hailo argument -- mAP per HEF context, 92 FPS
+# on-chip -- and the Hailo path is closed. YOLO11s is a closed-vocabulary
+# COCO detector, which 4.2's label gate exists to work around; YOLOE takes
+# the target string and needs no gate at all. Keep this constant: it is
+# the comparison baseline every 4.11/P9/P22 row is read against, and the
+# `label_gate`/`soft_gate` crop paths are only meaningful for it.
+DEFAULT_YOLO_DETECTOR = "yolo11s.pt"
+
+# YOLOE, promoted 2026-09-19 (P22) and PINNED to `11s` by P23 the same day.
+# `-seg` is the only published form; only the boxes are read, so the mask
+# head is paid for and discarded.
+#
+# **Why the small one.** P22 ranked `26l` first on 365 frames. P23 re-ran
+# the family on all 1234 labelled frames -- P22's set was a 30% subsample --
+# and the ordering INVERTED: at a 3-false-positive budget `11s` reads 82%
+# against `26l`'s 72%, and at the shipped gate 80% against 76% with two
+# false positives against five, at 139ms against 296. It wins on recall,
+# precision and latency simultaneously, so there is no trade being made
+# here. `26x` is dominated at every budget and 3.6x slower.
+#
+# **And it needs no gate change**, which `26l` did: `26l` reads 76% at
+# DEFAULT_MATCH_PROBABILITY and 91% only at a gate near 0.4, where `11s`
+# reads 80% against its own best of 82%. That is why this promotion is one
+# constant and not three -- and why it does not increase the
+# candidate_sighting triggers that cost money (6.1).
+DEFAULT_YOLOE = "yoloe-11s-seg.pt"
+
+DEFAULT_DETECTOR = DEFAULT_YOLOE
 
 # 4.9's choice between the two CLIP encoders Hailo ports, which 4.3 lists
 # without choosing: ResNet-50 is 7-10ms per crop against ViT-B/32's 25-50,
@@ -229,8 +258,27 @@ DEFAULT_MATCH_PROBABILITY = 0.8
 # How many crops per frame reach CLIP. One image encode each, so this is
 # 2.9's per-frame budget knob -- and it has to grow with the number of crop
 # sources. See PerceptionPipeline.max_crops for the measurement.
-DEFAULT_MAX_CROPS = 4
-DEFAULT_MAX_CROPS_WITH_PROPOSER = 8
+#
+# **4 -> 16 on 2026-09-19 (P23), measured on the shipped detector.** On all
+# 1234 labelled frames, `yoloe-11s` reads 258 true positives at 16 and 251 at
+# 4, same two false positives, for 139ms against 127 -- so seven frames for
+# 12ms. It is a small gain and it is the shipped model's own, which 4 never
+# was: every earlier crop-budget row (P18's 8, P20's 8/16/48) was measured
+# with the floor mask on and a different detector, and this default was
+# reached by nobody's measurement at all.
+#
+# It does NOT keep growing. P20 found 16 and 48 byte-identical without the
+# mask, because an open-vocabulary detector proposes about one box a frame and
+# the budget stops binding long before 48.
+DEFAULT_MAX_CROPS = 16
+# Held at 2x the single-source budget, which is the ratio this pair has always
+# had (4/8). **Provisional**: it is the only number in this block not measured
+# on the shipped detector, because no YOLOE row had been run with the floor
+# mask at all until 2026-09-19 and those rows are what should set it. The
+# invariant it must not break is the one test_perceive.py pins -- a second
+# crop source needs MORE budget, or it crowds out the first, which is P18's
+# area-ranking defect arriving by a different door.
+DEFAULT_MAX_CROPS_WITH_PROPOSER = 32
 
 # Scored alongside the target so a similarity has something to be
 # relative to. Deliberately bland and household-generic: they exist to
@@ -1142,6 +1190,122 @@ class SegformerFloorProposer:
         return [box for _, box in found[:self.max_regions]]
 
 
+class UltralyticsTextDetector:
+    """Shared `detect_text` for ultralytics' text-prompted detectors.
+
+    Extracted 2026-09-19, when YOLOE was promoted out of
+    `brain/perceive_lab.py`. YOLO-World and YOLOE differ in exactly two
+    lines -- which ultralytics class to construct, and whether
+    `set_classes` takes strings or precomputed text embeddings -- so the
+    box extraction lives here once and each subclass supplies its own
+    `__init__` and, if it needs to, its own `_set_text`.
+
+    Note this is a `detect_text(image, target)` backend, NOT the
+    `Detector` Protocol's `detect(image, confidence)`. Wrap it in
+    `OpenVocabCropSource` to put it in a pipeline; `pipeline_for` does
+    that for you.
+    """
+
+    def _set_text(self, text: str):  # pragma: no cover - needs the model
+        self.model.set_classes([text])
+
+    def detect_text(self, image: bytes, text: str):  # pragma: no cover
+        # PIL is imported here, not at module scope, because every other
+        # model-touching method in this file does the same: it is an optional
+        # perception dependency and a module-level import would make
+        # `import brain.perceive` fail on a machine without the extras.
+        # Getting this wrong cost two full-corpus runs -- the detector raised
+        # `name 'Image' is not defined`, the tri-state caught it, and 1234
+        # frames came back `unavailable` at 2ms rather than crashing.
+        from PIL import Image
+
+        if self._classes != [text]:
+            self._set_text(text)
+            self._classes = [text]
+        img = Image.open(io.BytesIO(image)).convert("RGB")
+        results = self.model.predict(img, conf=self.confidence,
+                                     verbose=False, device=self.device)
+        out = []
+        for r in results:
+            for b in getattr(r, "boxes", []):
+                x1, y1, x2, y2 = (float(v) for v in b.xyxy[0].tolist())
+                out.append(Detection(box=Box(x1, y1, x2, y2), label=text,
+                                     confidence=float(b.conf[0])))
+        return out
+
+
+class YoloE(UltralyticsTextDetector):
+    """Ultralytics YOLOE -- the detector P22 measured and this module ships.
+
+    Promoted out of `perceive_lab.py` on 2026-09-19. It earned the move on
+    two numbers against OWLv2, on identical frames, mask and gate: **91%
+    against 90% at a 3-false-positive budget and 97% against 96% at 16**,
+    at **398 ms against 2679**. It is also better SEPARATED -- its 3-FP gate
+    sits at 0.391 where YOLO-World's best checkpoint needed 0.026, which is
+    the non-separability P7 disqualified a VLM for.
+
+    Two things to know before changing anything around it.
+
+    **The gate travels with the detector.** YOLOE's scores sit lower than
+    OWLv2's, so at the old `P>=0.8` it reads 74% -- *worse* than OWLv2's
+    82% -- and only reaches 91% at a gate near 0.4. Swapping the detector
+    without the gate is a 17-point regression that looks like the model's
+    fault. See DEFAULT_MATCH_PROBABILITY.
+
+    **It proposes about one crop per frame**, where OWLv2 proposes four, so
+    CLIP verifies a single candidate rather than ranking several. That is
+    why the whole tier is fast, and it means recall is bounded by the
+    detector's own recall: a frame it skips, CLIP cannot recover.
+    """
+
+    def __init__(self, weights: str = None,
+                 confidence: float = LOW_CONFIDENCE,
+                 device: Optional[str] = None):
+        try:
+            from ultralytics import YOLOE as _YE
+        except ImportError as exc:  # pragma: no cover
+            raise PerceptionUnavailable(
+                "YOLOE needs ultralytics. `pip install -r "
+                "requirements-perception.txt`.") from exc
+        self.model = _YE(weights or DEFAULT_YOLOE)
+        self.confidence = confidence
+        self.device = device
+        self.weights = weights or DEFAULT_YOLOE
+        self.model_name = self.weights
+        self._classes = None
+
+    def _set_text(self, text: str):  # pragma: no cover - needs the model
+        # YOLOE wants precomputed text embeddings, where YOLO-World takes
+        # the strings themselves. The one line the two families differ by.
+        self.model.set_classes([text], self.model.get_text_pe([text]))
+
+
+class OpenVocabCropSource:
+    """A text-prompted detector used as a CROP SOURCE, not a classifier.
+
+    Moved here from `perceive_lab.py` on 2026-09-19 with YOLOE, because a
+    shipped pipeline now needs it and `perceive.py` may not import the lab.
+
+    It keeps the detector's BOXES and throws away its scores, so CLIP ranks
+    the crops against the target and the distractors exactly as it does for
+    a YOLO detector's. P9's finding is the reason: an open-vocabulary model
+    wins as a crop source rather than as a replacement -- the gain is the
+    regions, not its own confidence.
+    """
+
+    def __init__(self, backend, target: str):
+        self.backend = backend
+        self.target = target
+        self.weights = f"crops:{getattr(backend, 'weights', 'open-vocab')}"
+
+    def detect(self, image: bytes, confidence: float):
+        # The backend's own threshold already gated this; `confidence` is
+        # the pipeline's crop-path knob and is deliberately not applied a
+        # second time, or the two gates would compound invisibly.
+        return [Detection(box=d.box, label=d.label, confidence=d.confidence)
+                for d in self.backend.detect_text(image, self.target)]
+
+
 def pipeline_for(target: str, *, weights: str = DEFAULT_DETECTOR,
                  clip_model: str = DEFAULT_CLIP,
                  device: Optional[str] = None,
@@ -1159,12 +1323,36 @@ def pipeline_for(target: str, *, weights: str = DEFAULT_DETECTOR,
     off-robot costs only time; deciding its schedule is C6's job.
     """
     return PerceptionPipeline(
-        detector=YoloDetector(weights, device=device),
+        detector=detector_for(weights, target, device=device),
         scorer=ClipScorer(clip_model, device=device),
         target=target,
         proposer=SegformerFloorProposer(segmenter, device=device) if floor_mask else None,
         **kwargs,
     )
+
+
+def is_text_prompted(weights: str) -> bool:
+    """Does this checkpoint name take the target string into the detector?
+
+    A name test rather than a registry, because `perception_detector` in
+    config/robot.yaml is free text and the point is that an operator can
+    name a checkpoint this module has never heard of.
+    """
+    return str(weights).startswith("yoloe")
+
+
+def detector_for(weights: str, target: str, *, device: Optional[str] = None):
+    """The `Detector` for a checkpoint name -- the one place that chooses.
+
+    Two shapes exist and they are not interchangeable. A YOLO checkpoint is
+    closed-vocabulary and implements `detect(image, confidence)` directly.
+    YOLOE is text-prompted, implements `detect_text(image, target)`, and has
+    to be wrapped so the pipeline's crop stage sees the same Protocol. This
+    function is what keeps that difference out of every caller.
+    """
+    if is_text_prompted(weights):
+        return OpenVocabCropSource(YoloE(weights, device=device), target)
+    return YoloDetector(weights, device=device)
 
 
 __all__ = [
@@ -1178,6 +1366,9 @@ __all__ = [
     "Detector", "CropScorer", "RegionProposer", "PerceptionPipeline",
     "PerceptionUnavailable", "SegformerFloorProposer",
     "YoloDetector", "ClipScorer", "pipeline_for",
+    "YoloE", "UltralyticsTextDetector", "OpenVocabCropSource",
+    "detector_for", "is_text_prompted",
+    "DEFAULT_YOLOE", "DEFAULT_YOLO_DETECTOR",
     "DEFAULT_DETECTOR", "DEFAULT_CLIP", "DEFAULT_MATCH_MARGIN",
     "DEFAULT_MATCH_PROBABILITY", "CLIP_LOGIT_SCALE",
     "DEFAULT_SEGMENTER", "FLOOR_WORDS",
