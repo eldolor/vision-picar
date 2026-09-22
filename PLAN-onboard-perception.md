@@ -7974,8 +7974,46 @@ why this measurement does **not** earn the default flip: the synthetic arm
 cannot separate "stabilised" from "stopped exploring", and only a rig walk
 can.
 
+##### The A/B could NOT be run, and why that is a finding
+
+The comparison P25 asked for -- the feature on and off, scored on distance
+closed to the target -- was set up against the real `MockRobot` (genuine
+odometry, a geometrically correct bearing from the grid, withheld two frames
+in three). **Both arms closed exactly zero distance and neither ever went
+FORWARD.** The action spread is pure LEFT/RIGHT in both.
+
+The cause is not the feature. **The sim turns in 90-degree quanta and
+`CENTER_BAND_DEG` is 10.** A target at any bearing more than 10 degrees off
+a cardinal direction can never be brought inside the band: each turn
+overshoots and flips the sign of the error, so the policy alternates LEFT,
+RIGHT, LEFT forever. `grid_world.py`'s cardinal `Heading` is the last
+discrete thing in the stack -- `sim/renderer.py` already takes a float pose
+and radians, which is exactly what S6's un-retired continuous-pose half (C2)
+exists to fix.
+
+**Two consequences, and the second is bigger than the phase.**
+
+`tier_hold_bearing` **stays OFF**, now for a sharper reason than caution:
+the experiment that would earn the flip cannot be run on this test bed at
+all. It needs C2 (continuous pose in the sim) or hardware.
+
+And the flicker has a **second, simpler cause that dead-reckoning does not
+touch**: a discrete action space cannot track a continuous bearing when the
+turn quantum exceeds the centre band. That is a control-loop defect, it is
+independent of whether the bearing is fresh or remembered, and on the real
+robot it appears wherever one turn step is coarser than 10 degrees. P25
+opened by saying the command instability outranks the model work; this says
+the instability has at least two causes and only one of them has been built
+for. **1.14's continuous motion is not an optimisation here -- it is a
+precondition for the policy being able to aim at all.**
+
 ##### What to build, in order
 
+0. **C2 -- continuous pose in the sim**, which is now a blocker rather than
+   a tidy-up: without it the twin cannot demonstrate aiming, and P25's own
+   A/B has nowhere to run. CLAUDE.md already scopes it as small --
+   `grid_world.py`'s integer cells and cardinal `Heading` plus a two-line
+   conversion in `mock_robot.py`.
 1. **Odometry in the sim first.** `sim/teleop_robot.py` has no odometry by
    construction (a phone on a rig), but `MockRobot` does -- so the goal-pose
    loop can be written, driven and watched in the twin before any hardware,

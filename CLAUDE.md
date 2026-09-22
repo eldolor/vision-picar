@@ -263,6 +263,21 @@ JETSON:** This file carried "no Jetson, on cost" from
 The open question is LATENCY on the board, not price or accuracy: ~5 Hz
 projected against the Hailo path's 92 FPS. **Nothing is ordered.**
 
+**P25 -- BUILT 2026-09-22, default OFF, and the A/B could not be run.**
+`brain/goal_pose.py` + the tier's new rung (`steer or reckoned or held or
+SCAN`) are in. But the comparison that would earn the default flip **has
+nowhere to run**: the sim turns in **90-degree quanta against a 10-degree
+centre band**, so a target off a cardinal direction can never be centred --
+every turn overshoots and flips the error's sign, and both arms alternated
+LEFT/RIGHT and closed zero distance. **So the flicker has a SECOND cause
+that dead-reckoning does not touch: a discrete action space cannot track a
+continuous bearing.** That makes **C2 (continuous pose in the sim) a
+blocker**, not a tidy-up -- `grid_world.py`'s cardinal `Heading` is the last
+discrete thing in the stack and `sim/renderer.py` already takes a float pose
+in radians. Also note `TeleopRobot` has NO odometry, so this feature is
+inert on any phone walk; `MockRobot` is the only backend that can exercise
+it.
+
 **P25 (2026-09-21, free) -- THE COMMAND CHANGES EVERY FRAME, and this now
 outranks the model work.** Spotted by the operator watching a rig walk, and
 measured on six: the **median run of a single command is 1.0 frames** on
