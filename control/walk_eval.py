@@ -110,6 +110,35 @@ def compute_metrics(entries: list) -> dict:
     visible = [nav.get("target_visible") is True for nav in navs]
     flips = sum(1 for x, y in zip(visible, visible[1:]) if x != y)
 
+    # P25 -- how long a single command SURVIVES, and how often one is
+    # replaced and immediately restored.
+    #
+    # `oscillation_rate` above looks only at turns and only at adjacent
+    # pairs, so it reports 0.00 for a walk alternating FORWARD, LEFT,
+    # FORWARD, LEFT -- which is the exact pattern an operator watching the
+    # phone described as "confusing", and which measured a median run of
+    # ONE frame on three of six rig walks. A command that changes every
+    # frame is not a turn pattern; it is the absence of one.
+    #
+    # Reported rather than flagged. The repair is P7c item 2 -- a goal pose
+    # in the odom frame, with the bearing dead-reckoned between detections
+    # -- and until that exists every walk would carry the flag, which is how
+    # a flag stops being read.
+    decided = [a for a in actions if a]
+    runs, run = [], 1
+    for x, y in zip(decided, decided[1:]):
+        if x == y:
+            run += 1
+        else:
+            runs.append(run)
+            run = 1
+    runs.append(run) if decided else None
+    median_run = (sorted(runs)[len(runs) // 2] if runs else 0)
+    # A -> B -> A: the command that came back. Distinct from a run boundary,
+    # which is any change at all.
+    restored = sum(1 for i in range(2, len(decided))
+                   if decided[i] == decided[i - 2] and decided[i] != decided[i - 1])
+
     models = sorted({nav.get("model_id") for nav in navs if nav.get("model_id")})
 
     return {
@@ -121,6 +150,10 @@ def compute_metrics(entries: list) -> dict:
         "oscillation_rate": round(oscillation, 3),
         "target_visible_rate": round(sum(visible) / n, 3),
         "visibility_flips": flips,
+        "command_changes": max(len(runs) - 1, 0),
+        "median_command_run": median_run,
+        "longest_command_run": max(runs) if runs else 0,
+        "command_restored": restored,
         "target_reached": any(nav.get("target_reached") is True for nav in navs),
         "obstacle_rate": round(
             sum(1 for nav in navs if nav.get("obstacle_ahead") is True) / n, 3),

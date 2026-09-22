@@ -524,3 +524,53 @@ def test_a_frame_whose_image_is_missing_is_an_error_not_a_silent_skip():
                       model_id="m")
     assert out["errors"] == 2
     assert all(d["error"] == "no image bytes" for d in out["diff"])
+
+
+# ---------- P25: command stability ----------
+
+def test_a_command_that_changes_every_frame_reads_as_a_median_run_of_one():
+    """The measurement behind P25, and the reason it is separate from
+    `oscillation_rate`.
+
+    That metric looks only at TURNS and only at adjacent pairs, so the
+    sequence below -- FORWARD, LEFT, FORWARD, LEFT -- reports 0.00
+    oscillation while the command changes on every single frame. An
+    operator watching the phone described exactly this as confusing, and
+    three of six rig walks measured a median run of one. A walk whose
+    command never survives a frame is not turning; it is re-deciding.
+    """
+    entries = [{"navigate": {"action": a}}
+               for a in ["FORWARD", "LEFT", "FORWARD", "LEFT", "FORWARD"]]
+    m = compute_metrics(entries)
+
+    assert m["median_command_run"] == 1
+    assert m["command_changes"] == 4
+    # Every frame restores the command from two frames back.
+    assert m["command_restored"] == 3
+    # The point of the test: the OLD metric sees nothing wrong here.
+    assert m["oscillation_rate"] == 0.0
+
+
+def test_a_steady_walk_reads_a_long_run_and_no_restorations():
+    entries = [{"navigate": {"action": a}}
+               for a in ["FORWARD"] * 8 + ["LEFT"] * 4]
+    m = compute_metrics(entries)
+
+    assert m["median_command_run"] == 8
+    assert m["longest_command_run"] == 8
+    assert m["command_changes"] == 1
+    assert m["command_restored"] == 0
+
+
+def test_stability_metrics_ignore_frames_that_decided_nothing():
+    """A frame with no action is a frame the policy never answered for --
+    a vision failure or a dropped call. Counting it as a change would make
+    an unreliable LINK look like an unstable POLICY, which are different
+    faults with different repairs."""
+    entries = [{"navigate": {"action": "FORWARD"}},
+               {"navigate": {}},
+               {"navigate": {"action": "FORWARD"}}]
+    m = compute_metrics(entries)
+
+    assert m["median_command_run"] == 2
+    assert m["command_changes"] == 0
