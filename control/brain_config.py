@@ -96,6 +96,19 @@ DEFAULTS = {
     "tier_async_cloud": True,
     "tier_hold_goal": True,
     "tier_steer_on_sight": True,
+    # P25 / P7c item 2. Dead-reckon the bearing to an anchored sighting on
+    # frames the detector misses, instead of falling back to a cloud goal
+    # several seconds old. **OFF by default**: it changes what the robot
+    # does on every blind frame and no walk has yet shown it helps -- the
+    # measurement that the PROBLEM is real (median_command_run == 1 on three
+    # of six rig walks) is not evidence that this is the cure. Turn it on,
+    # walk it, and read walk_eval's median_command_run.
+    "tier_hold_bearing": False,
+    # Metres of travel after which an anchor is dropped. A monocular
+    # sighting carries no range, so what is held is a DIRECTION -- exact
+    # under rotation, wrong under translation -- which makes the bound a
+    # distance rather than a timeout.
+    "tier_hold_bearing_max_m": 1.0,
     # Where to ship one metrics row per mission. Empty disables the
     # shipper entirely, which is what keeps every test and every laptop
     # run from POSTing anywhere.

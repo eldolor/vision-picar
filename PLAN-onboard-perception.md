@@ -7942,6 +7942,38 @@ policy's frame-by-frame LOCAL decisions rather than of vision navigation as
 such. **One walk, 30 frames, and its labels are not adjudicated** -- it is a
 hypothesis to test with a matched pair, not a finding.
 
+##### BUILT 2026-09-22, default OFF -- and the metric has a confound
+
+`brain/goal_pose.py` anchors a sighting in the odom frame and recomputes the
+bearing from dead reckoning; `brain/tiered.py` consults it on frames the
+detector misses, as a rung BETWEEN a live sighting and a held cloud goal
+(`direction = steer or reckoned or held or SCAN`). A live sighting still
+wins, which is the precedence P7e cares about and which a test pins by
+reading the source. The anchor is dropped after a metre of travel rather
+than after a timeout: a monocular sighting has no range, so what is held is
+a DIRECTION -- exact under rotation, wrong under translation.
+
+**`tier_hold_bearing` defaults to FALSE.** The problem is measured; this
+cure is not. Flipping a default on an argument rather than a walk is the
+`NavigateModelId` mistake this document already records once.
+
+**And running it both ways found a flaw in the metric this phase
+introduced.** On an identical scripted detector stream:
+
+| | median run | changes | action spread |
+|---|---|---|---|
+| `hold_bearing=False` | **26** | 0 | `RIGHT: 26` |
+| `hold_bearing=True` | 2 | 11 | `FORWARD: 6, RIGHT: 20` |
+
+The arm that never steered scored the LONGEST run, because a degenerate
+spin is perfectly stable. **`median_command_run` must never be read alone**
+-- a policy that only ever says RIGHT maximises it and is the worst outcome
+in `walk_eval.py`. It is meaningful only beside `dominant_action_share` and
+`action_spread`, and both the docstring and a test now say so. That is also
+why this measurement does **not** earn the default flip: the synthetic arm
+cannot separate "stabilised" from "stopped exploring", and only a rig walk
+can.
+
 ##### What to build, in order
 
 1. **Odometry in the sim first.** `sim/teleop_robot.py` has no odometry by

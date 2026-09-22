@@ -71,11 +71,13 @@ from __future__ import annotations
 
 import logging
 import threading
+import math
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
+from brain.goal_pose import GoalPose, OdomTracker
 from brain.perceive import ABSENT, DETECTED, UNAVAILABLE, Perception
 
 logger = logging.getLogger("tiered")
@@ -213,6 +215,26 @@ TURN_ACTIONS = ("LEFT", "RIGHT")
 # walks, so it WILL sometimes steer at a handbag. That is recoverable.
 # Not steering at all is not.
 DEFAULT_STEER_ON_SIGHT = True
+
+# P25 / P7c item 2 -- dead-reckon the bearing to a sighting the detector is
+# no longer seeing, instead of falling back to a cloud goal several seconds
+# old.
+#
+# **Default OFF, and that is deliberate.** It changes what the robot does on
+# every frame the detector misses, and there is no live evidence yet that it
+# helps -- only the measurement that the thing it targets is real
+# (`walk_eval.median_command_run` is 1 on three of six rig walks). Flipping a
+# default on an argument rather than a number is the NavigateModelId mistake
+# this project has already made once. The way to earn the flip is to run it
+# both ways and show the run length rise.
+DEFAULT_HOLD_BEARING = False
+# How far the robot may travel after a sighting before the anchor is
+# dropped. A DIRECTION-only anchor (no range, which is every monocular
+# frame) is exact under rotation and wrong under translation, so the bound
+# is really about translation rather than time. One metre is roughly a
+# room-crossing third and well inside where a direction stays useful; it is
+# a starting value to be measured, not a derived one.
+DEFAULT_HOLD_BEARING_MAX_M = 1.0
 
 
 # -- 1.11a: corroborated identity, REPORTED ONLY -------------------------
@@ -444,6 +466,8 @@ class TieredVision:
         hold_goal: bool = DEFAULT_HOLD_GOAL,
         steer_on_sight: bool = DEFAULT_STEER_ON_SIGHT,
         spin_guard_after: int = DEFAULT_SPIN_GUARD_AFTER,
+        hold_bearing: bool = DEFAULT_HOLD_BEARING,
+        hold_bearing_max_m: float = DEFAULT_HOLD_BEARING_MAX_M,
     ):
         self.pipeline = pipeline
         self.cloud_vision_fn = cloud_vision_fn
@@ -520,6 +544,14 @@ class TieredVision:
         self.async_cloud = bool(async_cloud)
         self.hold_goal = bool(hold_goal)
         self.steer_on_sight = bool(steer_on_sight)
+        # P25. The tracker integrates every odometry reading whether or not
+        # the feature is on, so the readouts show what it WOULD have said --
+        # which is how the default gets earned rather than argued.
+        self.hold_bearing = bool(hold_bearing)
+        self.hold_bearing_max_m = max(0.0, float(hold_bearing_max_m))
+        self._odom = OdomTracker()
+        self._goal = GoalPose()
+        self._dead_reckoned = 0
         self.spin_guard_after = max(0, int(spin_guard_after))
         self._consecutive_turns = 0
         self._executor = None
@@ -820,6 +852,10 @@ class TieredVision:
         reading of "nobody told me how far this thing went."
         """
         odo = frame.get("odometry") or {}
+        # P25: integrate unconditionally. An unusable reading is counted by
+        # the tracker rather than treated as standing still, which is the
+        # case every real-pixels walk takes -- a phone has no encoders.
+        self._odom.update(odo)
         usable = bool(odo.get("usable")) and odo.get("distance_m") is not None
         self._odometry_usable = usable
         if not usable:
@@ -917,12 +953,20 @@ class TieredVision:
         # measured on THIS frame is better evidence about where to go than
         # a direction the cloud gave several seconds ago.
         steer = self._steer_to(perception)
+        # P25 sits BETWEEN the two: a bearing dead-reckoned from a sighting
+        # this mission actually made is worse evidence than one measured on
+        # this frame, and better than a direction the cloud gave several
+        # seconds and several turns ago.
+        reckoned = None if steer else self._dead_reckoned_direction()
         held = (self._held_direction()
                 if (self.hold_goal or self._inflight is not None) else None)
-        direction = steer or held or SCAN_ACTION
+        direction = steer or reckoned or held or SCAN_ACTION
         if steer:
             why = (f"{why} -- steering on local sighting "
                    f"({_direction_for(perception)})")
+        elif reckoned:
+            why = (f"{why} -- dead-reckoning to a sighting "
+                   f"{self._goal.sightings} detection(s) ago")
         elif held:
             why = f"{why} -- holding last cloud goal {held}"
         # The spin floor. Counted over what the robot was actually TOLD to
@@ -1016,6 +1060,12 @@ class TieredVision:
         """
         if not self.steer_on_sight or perception.status != DETECTED:
             return None
+        # A measured sighting anchors (or re-anchors) the goal pose, which
+        # is what lets the NEXT frame answer without a detection. Only a
+        # frame that actually measured a bearing may do this -- anchoring on
+        # `unknown` would store a direction nobody observed.
+        if perception.bearing_deg is not None and self._odom.samples:
+            self._goal.sight(self._odom.pose, float(perception.bearing_deg))
         where = _direction_for(perception)
         if where == "left":
             return "LEFT"
@@ -1029,6 +1079,45 @@ class TieredVision:
         # nobody measured is exactly the fabrication `unusable_grid()` and
         # NO_SENSOR_CM refuse elsewhere.
         return None
+
+    def _dead_reckoned_direction(self) -> Optional[str]:
+        """An action from an ANCHORED sighting the detector is not seeing.
+
+        P25's repair (P7c item 2). The target is static, so a sighting stays
+        true while the robot moves; what changes is the robot, and odometry
+        measures that far better than a detector recognises objects. So a
+        frame with no detection need not re-decide blind.
+
+        `None` on every path that is not a live anchor plus real odometry:
+        the feature off, no odometry (a phone has no encoders), nothing
+        anchored, or the robot has travelled past the bound. The caller then
+        falls back to the cloud goal exactly as before, so this ADDS a rung
+        to the precedence ladder and removes none.
+        """
+        if not self.hold_bearing or not self._goal.held:
+            return None
+        if not self._odometry_usable or not self._odom.samples:
+            return None
+        seen_at = self._goal._seen_at
+        if seen_at is not None and self.hold_bearing_max_m:
+            moved = math.hypot(self._odom.pose.x - seen_at.x,
+                               self._odom.pose.y - seen_at.y)
+            # A direction-only anchor is wrong under translation, so the
+            # bound is a distance and not a timeout. Dropping it is the
+            # honest outcome -- a stale anchor steered on confidently is
+            # worse than scanning.
+            if moved > self.hold_bearing_max_m:
+                self._goal.clear()
+                return None
+        bearing = self._goal.bearing_from(self._odom.pose)
+        if bearing is None:
+            return None
+        self._dead_reckoned += 1
+        if bearing < -CENTER_BAND_DEG:
+            return "LEFT"
+        if bearing > CENTER_BAND_DEG:
+            return "RIGHT"
+        return "FORWARD"
 
     def _note_action(self, direction) -> None:
         """Track consecutive turns, over cloud and local steps alike."""

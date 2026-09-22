@@ -124,6 +124,15 @@ def compute_metrics(entries: list) -> dict:
     # in the odom frame, with the bearing dead-reckoned between detections
     # -- and until that exists every walk would carry the flag, which is how
     # a flag stops being read.
+    #
+    # **NEVER read `median_command_run` alone: a DEGENERATE walk maximises
+    # it.** A policy that spins RIGHT for twenty-six straight frames scores
+    # a run of 26 and is the worst outcome in this file; one that steers to
+    # a target, arrives and stops scores far less and is the best. Found by
+    # running P25's own repair both ways and watching the metric move the
+    # wrong way while the behaviour improved. Read it beside
+    # `dominant_action_share` and `action_spread`, which is what separates
+    # "held a decision" from "only ever had one".
     decided = [a for a in actions if a]
     runs, run = [], 1
     for x, y in zip(decided, decided[1:]):

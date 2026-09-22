@@ -274,6 +274,8 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict):
         "hold_goal": bool(config["tier_hold_goal"]),
         "steer_on_sight": bool(config["tier_steer_on_sight"]),
         "spin_guard_after": config["tier_spin_guard_after"],
+        "hold_bearing": bool(config["tier_hold_bearing"]),
+        "hold_bearing_max_m": config["tier_hold_bearing_max_m"],
         "stale_after": config["tier_stale_after"],
         "max_calls": config["tier_max_calls"] or None,
         # 1.11a, reported and not enforced -- see brain/tiered.py's
@@ -418,6 +420,7 @@ def create_app(
             k: config.get(k) for k in (
                 "tier_cold_search_after", "tier_cold_search_after_cm",
                 "tier_async_cloud", "tier_hold_goal", "tier_steer_on_sight",
+                "tier_hold_bearing", "tier_hold_bearing_max_m",
                 "tier_spin_guard_after", "tier_consecutive_frames",
                 "perception_floor_mask", "perception_crop_path",
                 "navigate_model_id", "navigate_prompt_variant",

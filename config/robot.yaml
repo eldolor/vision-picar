@@ -227,6 +227,16 @@ brain:
   # threshold: with no local bearing there is nothing to steer on, so the
   # cloud is already driving.
   tier_steer_on_sight: true
+  # P25 / P7c item 2 -- dead-reckon the bearing to an anchored sighting on
+  # frames the detector misses, rather than falling back to a cloud goal
+  # several seconds and several turns old. OFF until a walk shows it helps:
+  # the problem is measured (median_command_run == 1 on three of six rig
+  # walks), the cure is not. Turn it on, walk it, read that metric.
+  tier_hold_bearing: false
+  # Metres of travel before an anchor is dropped. A monocular sighting has
+  # no range, so a DIRECTION is held -- exact under rotation, wrong under
+  # translation -- which makes the bound a distance, not a timeout.
+  tier_hold_bearing_max_m: 1.0
 
   # One metrics row per mission, to the walks service (which owns the
   # storage). Empty disables it. The shipper can never fail a mission --

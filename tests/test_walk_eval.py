@@ -574,3 +574,21 @@ def test_stability_metrics_ignore_frames_that_decided_nothing():
 
     assert m["median_command_run"] == 2
     assert m["command_changes"] == 0
+
+
+def test_a_degenerate_spin_maximises_the_run_length_which_is_why_it_is_not_a_flag():
+    """The confound, pinned. A policy that only ever says RIGHT scores the
+    LONGEST possible run and is the worst walk in the file -- so
+    `median_command_run` is only meaningful beside `dominant_action_share`.
+
+    Found by running P25's repair both ways: the arm that steered toward the
+    target scored a run of 2 against the spinning arm's 26."""
+    spin = compute_metrics([{"navigate": {"action": "RIGHT"}}] * 26)
+    steering = compute_metrics(
+        [{"navigate": {"action": a}} for a in
+         ["FORWARD", "FORWARD", "RIGHT", "FORWARD", "FORWARD", "RIGHT"]])
+
+    assert spin["median_command_run"] > steering["median_command_run"]
+    # And this is the field that tells them apart.
+    assert spin["dominant_action_share"] == 1.0
+    assert steering["dominant_action_share"] < 0.7

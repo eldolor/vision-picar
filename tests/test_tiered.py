@@ -1412,3 +1412,85 @@ def test_samples_are_bounded_so_a_long_mission_cannot_grow_them_forever():
     for i in range(TierStats.MAX_SAMPLES + 50):
         tier.stats.record("perception_ms", i)
     assert len(tier.stats.perception_ms) == TierStats.MAX_SAMPLES
+
+
+# ---------- P25: dead-reckoning to an anchored sighting ----------
+
+def _odo(distance_m, heading_deg, usable=True):
+    return {"usable": usable,
+            "distance_m": distance_m if usable else None,
+            "heading_deg": heading_deg if usable else None}
+
+
+def _tier_holding_bearing(**kw):
+    """A tier with the feature ON and the cloud stubbed out, so what is
+    under test is the fallback rung and not the trigger policy."""
+    return TieredVision(ScriptedPipeline([ABSENT]), FakeCloud(),
+                        hold_bearing=True, **kw)
+
+
+def test_a_missed_frame_dead_reckons_instead_of_re_deciding_blind():
+    """P25's repair. The target is static, so a sighting stays true while
+    the robot turns -- and the frame after a detection need not guess."""
+    tier = _tier_holding_bearing()
+    tier._read_odometry({"odometry": _odo(0.0, 0.0)})
+    tier._goal.sight(tier._odom.pose, bearing_deg=40.0)
+
+    # The robot pivots onto it. No detection on this frame at all.
+    tier._read_odometry({"odometry": _odo(0.0, 40.0)})
+
+    assert tier._dead_reckoned_direction() == "FORWARD"
+
+
+def test_the_anchor_is_dropped_once_the_robot_has_travelled_past_the_bound():
+    """A monocular sighting is a DIRECTION: exact under rotation, wrong
+    under translation. Steering confidently on a stale one is worse than
+    scanning, so the bound drops it rather than degrading quietly."""
+    tier = _tier_holding_bearing(hold_bearing_max_m=1.0)
+    tier._read_odometry({"odometry": _odo(0.0, 0.0)})
+    tier._goal.sight(tier._odom.pose, bearing_deg=0.0)
+
+    tier._read_odometry({"odometry": _odo(0.5, 0.0)})
+    assert tier._dead_reckoned_direction() == "FORWARD"
+
+    tier._read_odometry({"odometry": _odo(2.0, 0.0)})
+    assert tier._dead_reckoned_direction() is None
+    assert not tier._goal.held
+
+
+def test_without_odometry_it_declines_rather_than_holding_a_stale_bearing():
+    """Every real-pixels walk takes this path -- ReplayRobot and TeleopRobot
+    have no encoders. A phone walk must not believe a bearing it cannot
+    know is still true."""
+    tier = _tier_holding_bearing()
+    tier._read_odometry({"odometry": _odo(0.0, 0.0)})
+    tier._goal.sight(tier._odom.pose, bearing_deg=30.0)
+
+    tier._read_odometry({"odometry": _odo(None, None, usable=False)})
+
+    assert tier._dead_reckoned_direction() is None
+
+
+def test_it_is_off_by_default():
+    """The problem is measured; this cure is not. A default flipped on an
+    argument rather than a walk is the NavigateModelId mistake."""
+    tier = TieredVision(ScriptedPipeline([ABSENT]), FakeCloud())
+    tier._read_odometry({"odometry": _odo(0.0, 0.0)})
+    tier._goal.sight(tier._odom.pose, bearing_deg=40.0)
+    tier._read_odometry({"odometry": _odo(0.0, 40.0)})
+
+    assert tier.hold_bearing is False
+    assert tier._dead_reckoned_direction() is None
+
+
+def test_a_live_sighting_still_outranks_a_dead_reckoned_one():
+    """The precedence P7e cares about. A bearing measured on THIS frame is
+    better evidence than one carried from an older frame, so adding a rung
+    must not displace the top one -- `_dead_reckoned_direction` is only
+    consulted when `_steer_to` returns None."""
+    import inspect
+    src = inspect.getsource(TieredVision._local_scene)
+
+    assert "steer = self._steer_to(perception)" in src
+    assert "reckoned = None if steer else self._dead_reckoned_direction()" in src
+    assert "direction = steer or reckoned or held or SCAN_ACTION" in src
