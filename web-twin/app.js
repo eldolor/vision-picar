@@ -2937,7 +2937,7 @@
       .replace(/^(us|global)\./, "")
       .replace(/^anthropic\.claude-/, "")
       .replace(/-\d{8}-v\d+:\d+$/, "")
-      .replace(/^amazon\./, "")
+      .replace(/^(amazon|openai|qwen)\./, "")
       .replace(/-v\d+:\d+$/, "");
   }
 

@@ -679,8 +679,83 @@ def _stub_converse(monkeypatch, reply_json: str):
                     "usage": {"inputTokens": 1, "outputTokens": 2}}
 
     fake = FakeClient()
-    monkeypatch.setattr(vision_core, "_get_client", lambda: fake)
+    # Takes the model id _get_client() is now called with (the region pin --
+    # see vision_core.MODEL_REGIONS); the stub ignores it, since which client
+    # comes back is what test_a_pinned_model_is_called_in_its_own_region
+    # covers, not this.
+    monkeypatch.setattr(vision_core, "_get_client", lambda *a, **kw: fake)
     return fake
+
+
+def test_a_pinned_model_is_called_in_its_own_region(monkeypatch):
+    """Claude Fable 5.1 answers only from us-east-1 on this account -- it is
+    refused from us-east-2, where this service is deployed, and from
+    us-west-2. The pin is the whole reason it can be in the picker, so it is
+    pinned here rather than left to whatever region the task happens to run
+    in."""
+    import vision_core
+
+    monkeypatch.setattr(vision_core, "_clients", {})
+    built = []
+    monkeypatch.setattr(vision_core.boto3, "client",
+                        lambda svc, region_name=None: built.append(region_name) or object())
+
+    vision_core._get_client("us.anthropic.claude-fable-5-1")
+    vision_core._get_client("us.anthropic.claude-opus-4-5-20251101-v1:0")
+
+    # The pinned model names its region; everything else takes the ambient
+    # one, which is None here -- boto3 resolving it is the point.
+    assert built == ["us-east-1", None]
+
+
+def test_clients_are_cached_per_region_not_globally(monkeypatch):
+    """A single cached client was rebuilt every time the region changed, so
+    alternating traffic meant a fresh connection pool per request."""
+    import vision_core
+
+    monkeypatch.setattr(vision_core, "_clients", {})
+    monkeypatch.setattr(vision_core.boto3, "client",
+                        lambda svc, region_name=None: ("client", region_name))
+
+    pinned = vision_core._get_client("us.anthropic.claude-fable-5-1")
+    ambient = vision_core._get_client("amazon.nova-lite-v1:0")
+
+    assert pinned is vision_core._get_client("us.anthropic.claude-fable-5-1")
+    assert ambient is vision_core._get_client("amazon.nova-lite-v1:0")
+    assert pinned is not ambient
+
+
+def test_the_region_pins_can_be_emptied_by_env(monkeypatch):
+    """Expected to be emptied: once Fable 5.1 is enabled in us-east-2 the pin
+    buys a slower call and nothing else, and that must not need a redeploy of
+    code to undo."""
+    import vision_core
+
+    monkeypatch.setenv("BEDROCK_MODEL_REGIONS", "")
+    assert vision_core._load_model_regions() == {}
+
+    monkeypatch.setenv("BEDROCK_MODEL_REGIONS", "some.model=eu-west-1")
+    assert vision_core._load_model_regions() == {"some.model": "eu-west-1"}
+
+    monkeypatch.delenv("BEDROCK_MODEL_REGIONS")
+    assert vision_core._load_model_regions() == vision_core._DEFAULT_MODEL_REGIONS
+
+
+def test_the_new_models_are_offered_by_the_picker(monkeypatch):
+    """The three added on 2026-09-21, each confirmed with a real Converse
+    call before being listed. The picker is populated from this set alone, so
+    this is the whole contract between the allow-list and the UI."""
+    import vision_core
+
+    for model_id in ("us.anthropic.claude-fable-5-1",
+                     "us.anthropic.claude-opus-5",
+                     "us.openai.gpt-6-astra"):
+        assert model_id in vision_core.NAVIGATE_MODEL_CHOICES
+
+    # The default is deliberately NOT one of them -- nothing has replayed a
+    # walk through them, and promoting on a guess is the NavigateModelId
+    # mistake this repo already paid for once.
+    assert vision_core.NAVIGATE_MODEL_ID == "us.anthropic.claude-opus-4-5-20251101-v1:0"
 
 
 def test_bearing_only_omits_obstacle_ahead_from_the_reply(monkeypatch):

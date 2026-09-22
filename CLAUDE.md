@@ -1822,6 +1822,35 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   frequent/throttled calls the AR feature will need, that's a reasonable
   thing to reconsider -- see the cost discussion referenced in section 5.3.
 
+- **The /navigate picker gained three models on 2026-09-21, and one of them
+  is invoked in a different REGION than this service runs in.** Claude
+  Fable 5.1, Claude Opus 5 and GPT-6 Astra joined
+  `vision_core._DEFAULT_NAVIGATE_MODEL_CHOICES`, each confirmed the way
+  every entry there is -- a real Converse call carrying a real walk frame,
+  not a catalog listing. The default is deliberately unchanged (Opus 4.5)
+  and the three are labelled "unmeasured": no walk has been replayed
+  through them, and `control/walk_replay.py` is the instrument for that.
+  The comment above them naming the 5-series as AccessDenied is dated and
+  now wrong -- Sonnet 5 and Opus 4.8 are invokable too, just not listed.
+
+  **Fable 5.1 answers only from us-east-1 on this account.** From us-east-2
+  (where the service is deployed) and from us-west-2 it is refused with
+  Bedrock's `data retention mode 'default' is not available for this
+  model`, on the `us.` and `global.` profiles alike. Both regions'
+  inference-profile fan-out and the account's
+  `get-use-case-for-model-access` form are identical, so this is AWS-side
+  per-region enablement with nothing in the account to toggle. So
+  `vision_core.MODEL_REGIONS` pins that one model's `bedrock-runtime`
+  client to us-east-1 and leaves every other model on the ambient region;
+  `_get_client()` now takes the model id and caches one client per region.
+  Two things follow. The pin is **expected to be deleted** -- set
+  `BEDROCK_MODEL_REGIONS=""` (or a `model=region` list) the day Fable 5.1
+  is enabled in us-east-2, or it just buys a slower call. And a model that
+  400s only in production is exactly what this list is supposed to prevent,
+  so **re-confirm a pinned model from the deployed region, not a laptop**:
+  the laptop's ambient region is whatever `aws configure` says, which is
+  how this was nearly missed.
+
 
 ---
 

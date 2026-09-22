@@ -107,11 +107,36 @@ GUIDANCE_MODEL_ID = os.environ.get("BEDROCK_GUIDANCE_MODEL_ID", "amazon.nova-lit
 # judgement), llama4-scout (as obstacle-blind as nova, no upside),
 # pixtral-large (15 of 22 calls errored, ~42s median latency).
 #
+# Three more were added on 2026-09-21, when access to them landed on this
+# account: Claude Fable 5.1, Claude Opus 5 and GPT-6 Astra. The paragraph
+# above still names the Opus 4.6/4.7/4.8-and-5 profiles and GPT-5.6 as
+# catalog-visible but AccessDenied -- that was true when it was written and
+# is no longer true of the 5-series. Each of the three was confirmed the
+# same way every other entry here was, with a real Converse call carrying a
+# real walk frame through describe_image_bytes_navigate() (frame 0010 of
+# blue-bottle-20260907-142454): all three returned parseable navigate JSON
+# inside the 300-token cap, at 2.7s / 4.9s / 5.9s.
+#
+# They are NOT ranked here, and the default below is deliberately unchanged.
+# Nothing has replayed a walk through them yet, so any ordering claim would
+# be the NavigateModelId mistake again -- promoted on a guess, then
+# believed. control/walk_replay.py is the instrument; run it before moving
+# the default.
+#
+# Fable 5.1 is reachable from this service's own region only because it is
+# PINNED to another one -- see MODEL_REGIONS below, which carries the
+# measurement. Nothing about that is visible from here, and nothing here
+# should have to know it; the pin is the reason this entry can sit in the
+# list beside the others rather than carrying a caveat.
+#
 # Overridable as a whole via env var for the same reason the per-route
 # defaults above are: this list will go stale as Bedrock's catalog changes,
 # without a code change to fix it.
 _DEFAULT_NAVIGATE_MODEL_CHOICES = {
     "us.anthropic.claude-opus-4-5-20251101-v1:0": "Claude Opus 4.5 (best judgement)",
+    "us.anthropic.claude-fable-5-1": "Claude Fable 5.1 (newest, unmeasured)",
+    "us.anthropic.claude-opus-5": "Claude Opus 5 (newest Opus, unmeasured)",
+    "us.openai.gpt-6-astra": "GPT-6 Astra (OpenAI, unmeasured)",
     "us.anthropic.claude-sonnet-4-5-20250929-v1:0": "Claude Sonnet 4.5 (cautious)",
     "qwen.qwen3-vl-235b-a22b": "Qwen3-VL (non-Anthropic)",
     "amazon.nova-lite-v1:0": "Nova Lite (cheap baseline)",
@@ -152,14 +177,63 @@ _EMPTY_SCHEMA = {
     "safest_direction": "STOP",
 }
 
-_client = None
+# A model that can only be invoked from a region other than the one this
+# service runs in. Measured, not assumed: on 2026-09-21 Claude Fable 5.1
+# answered a real navigate call from us-east-1 and was refused from BOTH
+# us-east-2 (where this service is deployed) and us-west-2 with
+# "data retention mode 'default' is not available for this model" -- a
+# Bedrock ValidationException, on the us. and global. profiles alike. The
+# two regions' inference-profile fan-out is identical and so is the
+# account's get-use-case-for-model-access form, so this is AWS-side
+# per-region enablement and there is nothing in this account to toggle.
+#
+# The fix is just an endpoint: bedrock-runtime is a regional API, and the
+# execution role's Bedrock policy is Resource "*" in BOTH deployments of
+# this service (serverless.yaml's VisionRole, which is what is live, and
+# service.yaml's ECS task role), so a caller in us-east-2 may invoke
+# us-east-1 directly with no IAM change. The cost is one cross-region hop
+# on the models listed here and nothing at all on the rest -- which is why
+# this is a per-model pin and not a service-wide region change. Everything
+# unlisted keeps using the ambient region.
+#
+# Overridable, and EXPECTED to be emptied: the day Fable 5.1 is enabled in
+# us-east-2 this pin buys a slower call and nothing else. Set
+# BEDROCK_MODEL_REGIONS to "" to drop every pin, or to a comma-separated
+# list of model_id=region pairs to replace them.
+_DEFAULT_MODEL_REGIONS = {
+    "us.anthropic.claude-fable-5-1": "us-east-1",
+    "global.anthropic.claude-fable-5-1": "us-east-1",
+}
 
 
-def _get_client():
-    global _client
-    if _client is None:
-        _client = boto3.client("bedrock-runtime")
-    return _client
+def _load_model_regions() -> dict:
+    configured = os.environ.get("BEDROCK_MODEL_REGIONS")
+    if configured is None:
+        return dict(_DEFAULT_MODEL_REGIONS)
+    pins = {}
+    for pair in configured.split(","):
+        if not pair.strip():
+            continue
+        model_id, _, region = pair.partition("=")
+        if region.strip():
+            pins[model_id.strip()] = region.strip()
+    return pins
+
+
+MODEL_REGIONS = _load_model_regions()
+
+# Keyed by region so a pinned model does not evict the ambient client on
+# every other call -- the previous single global was rebuilt each time the
+# region changed, which under alternating traffic meant a new boto3 client
+# (and a new connection pool) per request.
+_clients = {}
+
+
+def _get_client(model_id: str | None = None):
+    region = MODEL_REGIONS.get(model_id) if model_id else None
+    if region not in _clients:
+        _clients[region] = boto3.client("bedrock-runtime", region_name=region)
+    return _clients[region]
 
 
 _BEDROCK_FORMAT_ALIASES = {"jpg": "jpeg"}
@@ -184,7 +258,7 @@ def _convert_to_jpeg(image_bytes: bytes) -> bytes:
 
 
 def describe_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
-    client = _get_client()
+    client = _get_client(ANALYZE_MODEL_ID)
 
     fmt = _bedrock_image_format(media_type)
     if fmt not in ("gif", "jpeg", "png", "webp"):
@@ -702,8 +776,8 @@ def describe_image_bytes_navigate(
     model_id: str | None = None,
     prompt_variant: str | None = None,
 ) -> dict:
-    client = _get_client()
     model_id = model_id or NAVIGATE_MODEL_ID
+    client = _get_client(model_id)
 
     fmt = _bedrock_image_format(media_type)
     if fmt not in ("gif", "jpeg", "png", "webp"):
@@ -868,7 +942,7 @@ _GUIDANCE_PROXIMITIES = ("near", "medium", "far", "unknown")
 
 
 def describe_image_bytes_guidance(image_bytes: bytes, target_object: str, media_type: str = "image/jpeg") -> dict:
-    client = _get_client()
+    client = _get_client(GUIDANCE_MODEL_ID)
 
     fmt = _bedrock_image_format(media_type)
     if fmt not in ("gif", "jpeg", "png", "webp"):
@@ -947,7 +1021,7 @@ def describe_image_bytes_person(image_bytes: bytes, media_type: str = "image/jpe
     describe_image_bytes_navigate()/_guidance() were added -- the robot's
     schema is consumed elsewhere and must not shift underneath it.
     """
-    client = _get_client()
+    client = _get_client(MODEL_ID)
 
     fmt = _bedrock_image_format(media_type)
     if fmt not in ("gif", "jpeg", "png", "webp"):
