@@ -593,6 +593,19 @@ vision-picar/
 │   │                           Since 2026-09-08 it also computes
 │   │                           1.11a's corroboration verdict --
 │   │                           REPORTED, never enforced
+│   ├── goal_pose.py          P7c item 2 / P25 -- a sighting anchored in
+│   │                           the odom frame, so a bearing survives the
+│   │                           robot turning. The repair for a command
+│   │                           that changes every frame: anchor once,
+│   │                           recompute from odometry, let re-detection
+│   │                           correct DRIFT rather than supply the
+│   │                           answer. Degrades honestly -- with a range
+│   │                           it holds a POINT, without one a DIRECTION
+│   │                           (exact under rotation, useless under
+│   │                           translation), and `is_point` says which.
+│   │                           BUILT and unit-tested; nothing consumes it
+│   │                           yet -- wiring it into brain/tiered.py is
+│   │                           the next step
 │   ├── perceive_lab.py       candidate perception backends that are NOT
 │   │                           parts: Grounding DINO, OWLv2, YOLO-World and
 │   │                           SAM, behind the same Detector /
