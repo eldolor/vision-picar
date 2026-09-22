@@ -152,7 +152,15 @@ brain:
   # It recovers the close-ups the detector cannot propose on at all.
   # Off by default: a third model per frame, and 2.9's budget says
   # segmentation must not run at the detector's rate on the real part.
-  perception_floor_mask: true   # ON since 2026-09-07 -- 86% -> 94% recall
+  # **OFF since 2026-09-20 (P24).** The 86% -> 94% above was measured with
+  # YOLO11s on the three-walk corpus. On all 1234 labelled frames and the
+  # shipped YOLOE detector the mask LOSES on 9 of 11 checkpoints, costs
+  # `yoloe-11s` 15 points at a 3-FP budget, and costs 836ms against 139 --
+  # six times the whole tier for negative value. It helps only the two
+  # weakest detectors in the family, which is what P16 meant by "it rescues
+  # a destroyed one": a floor, never a contribution. Turn it back on only
+  # beside a detector measured to need it.
+  perception_floor_mask: false
   # Section 6.1's hysteresis: how many consecutive frames must agree before
   # an edge is believed. 1 reproduces the naive trigger count (2.8x saving),
   # 2 is the measured 4.1x. This is not a tuning knob -- it is what makes
