@@ -263,6 +263,27 @@ JETSON:** This file carried "no Jetson, on cost" from
 The open question is LATENCY on the board, not price or accuracy: ~5 Hz
 projected against the Hailo path's 92 FPS. **Nothing is ordered.**
 
+**P25 (2026-09-21, free) -- THE COMMAND CHANGES EVERY FRAME, and this now
+outranks the model work.** Spotted by the operator watching a rig walk, and
+measured on six: the **median run of a single command is 1.0 frames** on
+three of them -- 24 changes across 65 frames with **11 immediate
+reversals** (FORWARD, LEFT, FORWARD) on one. `control/walk_eval.py` already
+raises `unstable-identity` on three of five; nobody had read it as a
+headline. The guards do not cover it: `tier_consecutive_frames` gates cloud
+TRIGGERS not the action, Phase G's hold is what P7e watched drive into a
+basket, and the safety collar has no opinion about a FORWARD that merely
+reverses the last one. **The fix is P7c item 2 and is still unbuilt** -- a
+detection becomes a goal pose in the ODOM frame and the bearing is
+recomputed from encoders and IMU at 30 Hz, so re-detection corrects drift
+rather than supplying the answer. P7c derived it from latency; P25 arrives
+at the same repair from stability, which is why it should now be built.
+**P20-P24 moved recall ~50% -> ~90% and latency 2679ms -> 139ms and touched
+none of this**; a better detector answering afresh every frame just
+flickers better-founded, and 1.14's continuous motion turns that into
+weaving. Build order: odometry in the SIM first (MockRobot has it,
+`teleop_robot` cannot), a median-run/reversal metric in `walk_eval.py`, then
+a rig walk showing the run length rise.
+
 **P24 (2026-09-20, $2.90 on a rented A10G, torn down) -- the shipped tier
 is SETTLED.** `brain/perceive.py` now defaults to **`yoloe-11s-seg.pt`,
 `max_crops` 16, gate 0.8 unchanged, NO floor mask** -- two models, 139 ms on
@@ -643,6 +664,24 @@ vision-picar/
 │   │                           prompt. The ONLY controlled comparison this
 │   │                           project has: two live walks vary the
 │   │                           operator's path as well as the model
+│   ├── target_probe.py       pre-flight on a candidate target STRING,
+│   │                           before anyone walks a rig. The string is a
+│   │                           first-class variable (7x on the shoes walk)
+│   │                           and this rejects a bad one in 30 seconds.
+│   │                           Read TWO numbers: a high firing rate means
+│   │                           it cannot discriminate ("a black dumbbell",
+│   │                           22% of random frames at P 0.998), and a
+│   │                           ZERO rate with a 0.000 peak means the prompt
+│   │                           is INERT -- the detector never grounds it,
+│   │                           which looks like specificity and is worth
+│   │                           nothing to a falsifier
+│   ├── label_assist.py       proposes labels.candidate.json so a recorded
+│   │                           walk becomes scorable -- NEVER labels.json,
+│   │                           and `adjudicated` stays empty because that
+│   │                           field means a human looked. The proposer is
+│   │                           deliberately NOT the shipped detector: a
+│   │                           labeller sharing the model under test marks
+│   │                           its own homework
 │   ├── perception_eval.py    P3 -- scores the ON-BOARD tier over the whole
 │   │                           corpus against each walk's adjudicated
 │   │                           labels.json (never walk.jsonl), sweeps the

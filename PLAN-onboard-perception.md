@@ -5919,13 +5919,41 @@ makes about search behaviour currently rests on **one walk**.
 
 | | target | why this one |
 |---|---|---|
-| moderate | **"a woven laundry basket"** | no COCO word, but large and distinctively textured, so the floor mask has a real chance at it. If this corroborates, 1.11a survives its intended case |
-| hard | **"a white phone charger cable"** | no COCO word, thin, small, low-contrast on most floors. The local tier almost certainly cannot see it -- which is the falsifier, stated as an object |
+| moderate | ~~**"a woven laundry basket"**~~ **-> "a red toolbox"** | **REPLACED 2026-09-21.** The basket is now **6 of 11 labelled walks and 224 of 323 visible frames** -- recording another deepens the corpus's worst imbalance instead of testing anything. `a red toolbox` is verified live-and-specific by `control/target_probe.py` (peak 0.93, fires on 2% of unrelated frames), floor-standing, colour+noun |
+| hard | **"a white phone charger cable"** | no COCO word, thin, small, low-contrast on most floors. The local tier almost certainly cannot see it -- which is the falsifier, stated as an object. **Verified 2026-09-21**: peak 0.97 at a 2% spurious rate, so the prompt grounds and discriminates |
+
+**Check a candidate string before walking it (`control/target_probe.py`,
+2026-09-21).** Two failure modes it catches, and neither is visible by
+reading the noun:
+
+* **Cannot discriminate.** `"a black dumbbell"` fires on **22%** of random
+  home frames at P 0.998 -- dark compact objects are everywhere.
+* **Inert.** `"a green watering can"` and `"a blue recycling bin"` score a
+  peak of **0.000** across the sample: the detector proposes nothing for
+  those words at all. Zero spurious fires reads like specificity and is the
+  opposite -- a walk against an inert prompt fails trivially and tests the
+  prompt rather than the architecture, which is worth nothing to a
+  falsifier. **Want live but specific**: non-zero peak, low rate.
 
 **Two nouns to avoid, checked rather than assumed.** `coco_class_for()` maps
 *"a grey TV remote"* to COCO's `remote` and *"a bicycle helmet"* to
 `bicycle`. Either would quietly reproduce the case the corpus already has,
 and the walk would look out-of-vocabulary while not being one.
+
+**A third trap, found 2026-09-21 and not of that shape: the COLOUR word can
+be the COCO noun.** `"an orange extension cord"` gates to `orange` -- the
+fruit. So can a modifier noun: `"a purple dog leash"` -> `dog`, `"a beige
+cat litter tray"` -> `cat`. `target_probe.py` prints the gate for exactly
+this reason; reading the noun is not enough.
+
+**And the axis itself has moved (P22/P24).** This section was written
+against YOLO11s, a closed-vocabulary detector whose label gate is why
+`bottle` and `backpack` weakened three of four walks. The shipped detector
+is now **YOLOE**, which takes the target string into the model and has no
+fixed vocabulary, so "out of COCO vocabulary" barely applies. The hardness
+that matters now is **whether the text embedding grounds the noun** --
+which is what the probe measures. The cable still qualifies, on physics
+rather than on vocabulary.
 
 **Shape.** Second room, through a doorway, 150-250 frames, target visible on
 well under 10% of them -- the 209-frame walk's shape, which is the only one
@@ -7823,6 +7851,108 @@ Finally, emptying the S3 prefix also removed two P8 staging objects
 pulled down and committed in `753e38c`, so nothing was lost -- but they were
 not this phase's to delete, and the `down` output had said the prefix was
 deliberately left in place.
+
+#### P25: the command changes EVERY FRAME, and that is the next thing to fix -- **2026-09-21, free**
+
+Noticed by the operator watching a rig walk, not by a test: *"you see a
+forward message and then it quickly disappears followed by either a left or
+a right and this keeps happening all the time. I wonder how the robot car
+would operate with such confusing instructions."*
+
+It is real, it is measured, and it outranks everything this document has
+spent the last week on.
+
+##### The measurement, on six walks recorded 2026-09-21
+
+| walk | changes | **median run** | longest | A->B->A |
+|---|---|---|---|---|
+| charger-cable ...203250 | 9 | 3.5 | 31 | 2 |
+| charger-cable ...203355 | 26 | 2.0 | 35 | 4 |
+| grey-backpack ...203627 | 23 | **1.0** | 27 | 8 |
+| grey-backpack ...203748 | 30 | 2.0 | 10 | 9 |
+| red-backpack ...203152 | 24 | **1.0** | 5 | **11** |
+| grey-backpack-opus-4-5 ...210743 | 14 | **1.0** | 6 | **1** |
+
+*median run* is how many consecutive frames keep the same command; *A->B->A*
+counts a command replaced and then immediately restored.
+
+**A median run of 1.0 means the command changes on every single frame.** On
+the red-backpack walk that is 24 changes across 65 frames with **11
+immediate reversals** -- FORWARD, LEFT, FORWARD again. `control/walk_eval.py`
+independently raises **`unstable-identity` on three of the five tiered
+walks**, with 12-21 visibility flips. The instrument built for this is
+already firing; nobody had read it as a headline.
+
+##### What is display and what is not
+
+Robot view dispatches a capture every **500 ms with up to 2 calls in
+flight** (`GUIDANCE_THROTTLE_MS`, `GUIDANCE_MAX_IN_FLIGHT`), and each answer
+replaces the last. That sets the *rate* of the flicker on screen. It does
+not cause it: the decisions genuinely differ frame to frame, so slowing the
+panel would hide the problem rather than fix it, and the robot does not read
+the panel anyway.
+
+##### Why the existing guards do not cover it
+
+Three mechanisms look like they should and do not:
+
+* **`tier_consecutive_frames: 2`** (6.1's hysteresis) gates **cloud
+  triggers** -- whether an edge is believed enough to spend money. It does
+  not smooth the ACTION.
+* **Phase G's held direction** -- *"whoever can see the target, steers"* --
+  is the closest thing to a fix and **P7e is live evidence it mishandles
+  exactly this case**: a walk reached its target, the cloud said `STOP`, the
+  hold was overridden by a steer, and it drove into the basket until
+  `max_steps`.
+* **The safety collar** refuses an unsafe FORWARD. It has no opinion about a
+  FORWARD that is merely the opposite of the last one.
+
+##### The fix already exists on paper: P7c item 2, still unbuilt
+
+*A detection becomes a goal pose in the odom frame, not a per-frame
+bearing.* The target is static; the only thing changing the bearing is the
+robot's own motion, which wheel encoders and the IMU measure far more
+reliably than a detector recognises objects. So the reactive tier recomputes
+the bearing to a **stored point** at 30 Hz from odometry, and re-detection
+**corrects drift** rather than supplying the answer.
+
+That is precisely the cure for a median run of one: stop asking *"which way
+now?"* every frame, ask once and then dead-reckon. P7c derived it from
+latency (at 8 Hz the gap is 125 ms, 2.5 cm at 0.2 m/s). **This is the same
+repair arriving from a second, independent direction -- stability rather
+than latency -- which is the strongest kind of agreement, and the reason it
+should now be built rather than filed.**
+
+##### Why this outranks the model work
+
+P20-P24 moved the tier from ~50% to ~90% recall and from 2679 ms to 139 ms.
+**None of it touches command stability.** A better detector answering
+independently every frame produces the same flicker with better-founded
+flickering -- and 1.14 makes motion **continuous**, so a car executing this
+stream weaves rather than steps. The perception question is now in far
+better shape than the control question, which is the reverse of where this
+document has been spending.
+
+##### One observation worth a second walk, not a conclusion
+
+The single **vision-policy** walk (Opus 4.5, not tiered) has the same median
+run of 1.0 but only **1** reversal, against 8-11 on the tiered walks. If
+that holds up it would say the churn is partly a property of the tiered
+policy's frame-by-frame LOCAL decisions rather than of vision navigation as
+such. **One walk, 30 frames, and its labels are not adjudicated** -- it is a
+hypothesis to test with a matched pair, not a finding.
+
+##### What to build, in order
+
+1. **Odometry in the sim first.** `sim/teleop_robot.py` has no odometry by
+   construction (a phone on a rig), but `MockRobot` does -- so the goal-pose
+   loop can be written, driven and watched in the twin before any hardware,
+   which is section 7's rule and not a nicety.
+2. **A stability metric in `walk_eval.py`** beside `unstable-identity`:
+   median run and reversal count, both already computed ad hoc for this
+   phase. A number nobody prints is a number nobody defends.
+3. **Then re-run a rig walk** and show the median run rise. That is the
+   readout, and it is watchable on the phone.
 
 #### The Hailo-10H option, costed -- the download BLOCKER is cleared (P15)
 
