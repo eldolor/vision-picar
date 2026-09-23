@@ -229,6 +229,50 @@ def propose_cloud(walk_dir: Path, model_id: str, region: str | None = None,
     }
 
 
+def assert_absent(walk_dir: Path, reviewed: list, corroboration: str | None = None) -> dict:
+    """Record a walk-level "the target is never in view" finding.
+
+    For a walk where the target genuinely never appears, per-frame labelling
+    is the wrong instrument. It spends one model call per frame to establish
+    a single fact, and it dresses a walk-level claim up as 1,512 independent
+    per-frame judgements it is not. A contact sheet settles it in seconds and
+    a person can actually check the result.
+
+    This DOES write labels.json, unlike every other path in this file, and
+    the reason is the asymmetry: `target_visible_labels` all-false is not a
+    proposal to be adjudicated, it is the finding. What keeps it honest is
+    `adjudicated`, which lists the frames a human really looked at -- a
+    sample spanning the walk, not all of them -- so perception_eval's
+    adjudicated count still reports the truth, and the note says plainly
+    that the unlisted frames rest on a walk-level assertion.
+
+    The residual risk is stated rather than hidden: a target visible for
+    fewer consecutive frames than the sampling interval could be missed.
+    Corroborate with a full-frame pass where one exists.
+    """
+    meta = json.loads((walk_dir / "meta.json").read_text())
+    target = (meta.get("target_object") or "").strip()
+    frames = sorted(p.name for p in walk_dir.iterdir() if p.suffix.lower() == ".jpg")
+    note = (
+        f"WALK-LEVEL NEGATIVE: '{target}' is never in view in this walk. "
+        f"Established by reviewing {len(reviewed)} frames sampled evenly across "
+        f"all {len(frames)}, not by per-frame adjudication -- `adjudicated` "
+        f"lists exactly the frames looked at. A target visible for fewer "
+        f"consecutive frames than the sampling interval could be missed."
+    )
+    if corroboration:
+        note += " Corroboration: " + corroboration
+    return {
+        "walk": walk_dir.name,
+        "description": target,
+        "target_visible_labels": {f: False for f in frames},
+        "adjudicated": sorted(reviewed),
+        "proposed_by": {"method": "walk-level negative assertion",
+                        "reviewed_frames": len(reviewed), "total_frames": len(frames)},
+        "note": note,
+    }
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("walks", nargs="+", help="walk directories")
