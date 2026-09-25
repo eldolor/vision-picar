@@ -405,7 +405,7 @@ thing worth recording:
   rule is documented on both `RobotInterface.get_camera_frame()` and
   `MockRobot`'s override rather than enforced by shape.
 - **Parity is checked as wall silhouette, not as pixels**
-  (`tests/test_renderer_parity.py`). Canvas antialiases a fractional wall
+  (`tests/test_renderer_parity.py`, since retired -- see below). Canvas antialiases a fractional wall
   column and PIL does not, so identical bytes were never achievable;
   comparing where each renderer puts the wall is what "the same view"
   means. It drives the real page in Chromium and *strips* `image_base64`
@@ -417,10 +417,22 @@ thing worth recording:
   server that was in fact sending pixels. That is exactly the class of
   thing the readout exists to make visible, and it was invisible to every
   Python test.
-- **`renderFPV`/`fpvCastRay` are still in `app.js` and still reachable.**
-  Parity is proven, so deleting them is now safe -- but they are the
-  fallback for a server that predates S2, and nothing has been redeployed
-  yet. Delete them once the deployed twin reports "server".
+- **`renderFPV`/`fpvCastRay` are GONE, deleted 2026-09-25**, along with
+  `tests/test_renderer_parity.py` -- once there is one renderer there is
+  nothing to be in parity with. The condition written here was "delete them
+  once the deployed twin reports server"; what actually forced it was
+  `PLAN-ros-alignment.md` R0, which turned the deletion from safe into
+  *necessary*. `renderFPV` read a CELL and a CARDINAL heading off the
+  frame, which is all a pre-R0 pose could offer; against a continuous pose
+  it could only draw one of four directions, and one call site handed that
+  picture to the vision model as though it were the camera.
+
+  Two things survive the retirement and are worth knowing where they went.
+  `tests/test_frame_source.py` keeps the frame-source readout tests, with
+  the "local raycaster" state replaced by **"none"** -- a better question
+  (did this frame come from a camera at all?) than the migration question
+  it used to answer. And `sim/renderer.py` is still pinned against drift by
+  the golden image in `tests/test_renderer.py`, which needs no browser.
 
 ### Phase S2b -- A Python vision agent, with memory -- **PARTLY BUILT**
 

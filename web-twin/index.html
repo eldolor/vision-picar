@@ -155,7 +155,6 @@
     box-shadow: var(--shadow-1);
   }
 
-  #canvas-wrap { display: flex; justify-content: center; padding: 8px; }
   canvas { border-radius: 6px; display: block; max-width: 100%; }
 
   .telemetry {
@@ -219,36 +218,6 @@
        control clips its own text, and the hint underneath is where the
        full sentence lives. */
     min-width: 0;
-  }
-
-  #photo-preview {
-    width: 100%; border-radius: 8px; margin-top: 8px; display: none;
-    max-height: 220px; object-fit: cover;
-  }
-  #photo-result { margin-top: 10px; font-family: var(--mono); font-size: var(--fs-body); display: none; }
-  #photo-result .banner {
-    padding: 8px 10px; border-radius: 8px; margin-bottom: 8px; font-weight: 600;
-  }
-  #photo-result .banner.found { background: rgba(62,207,142,0.15); color: var(--accent-safe); }
-  #photo-result .banner.not-found { background: rgba(255,107,53,0.1); color: var(--accent-alert); }
-  /* /analyze describes a scene; it is not told what to look for. So "your
-     object isn't in the list" is an absence of evidence, not a negative
-     result, and rendering it in alert orange overstates it. */
-  #photo-result .banner.neutral {
-    background: var(--surface-raised); color: var(--text-dim);
-    border: 1px solid var(--border-strong);
-  }
-  /* The room label is context; the sentence is the answer. So the room
-     reads as a small eyebrow above it rather than as the headline, which
-     is the other way round from how the robot-facing response was laid
-     out (there, "living room" was the whole point). */
-  .photo-room {
-    font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px;
-  }
-  .photo-summary {
-    font-family: var(--sans); font-size: var(--fs-md); color: var(--text);
-    line-height: var(--lh-body);
   }
 
   /* Every text field on this page -- previously four near-identical
@@ -354,10 +323,9 @@
     white-space: nowrap; border: 0;
   }
 
-  /* Empty states. Four surfaces on this page (both logs, the photo result,
-     the mission summary) previously rendered as blank dark rectangles
-     before anything had happened, which reads as broken rather than
-     "nothing yet." */
+  /* Empty states. Several surfaces on this page (the logs, the mission
+     summary) previously rendered as blank dark rectangles before anything
+     had happened, which reads as broken rather than "nothing yet." */
   .empty-state {
     display: flex; flex-direction: column; align-items: center; gap: 7px;
     padding: 20px 16px; text-align: center;
@@ -379,8 +347,8 @@
     background: rgba(62,207,142,0.16); border-color: rgba(62,207,142,0.4); color: var(--accent-safe);
   }
 
-  /* Pending states. Connect and Take photo are the two slowest actions on
-     this page and both used to communicate only by swapping their label. */
+  /* Pending states. Connect is among the slowest actions on this page and
+     used to communicate only by swapping its label. */
   .spinner {
     width: 15px; height: 15px; border-radius: 50%; flex-shrink: 0;
     border: 2px solid currentColor; border-top-color: transparent;
@@ -492,10 +460,6 @@
 
   .fpv-wrap { display: flex; justify-content: center; margin-top: 8px; }
   #fpv-canvas { border-radius: 8px; display: block; }
-  .fpv-hud {
-    font-family: var(--mono); font-size: var(--fs-small); color: var(--text-dim);
-    margin-top: 8px; line-height: 1.6;
-  }
   /* Phase M2. Sized to the canvas above it rather than to the card, so the
      zones line up with the columns of the view they measure -- a strip that
      drifted out of alignment with the picture would be worse than no strip,
@@ -530,10 +494,9 @@
     font-family: var(--mono); font-size: var(--fs-small); color: var(--text-dim);
     margin-top: 4px; opacity: 0.75; text-align: center;
   }
-  .fpv-hud .action { color: var(--text); font-weight: 600; }
-  /* Phase S2's visible proof: the picture above should not change when the
-     raycaster moves into Python, but where it came from should. This is
-     how you tell at a glance whether the JS one is still being used. */
+  /* Phase S2's proof, and it still earns its place after the JS raycaster
+     was deleted with the ROS alignment: it now distinguishes real pixels
+     from NO pixels, which is a state a real camera can be in too. */
   /* N1. Sized like the FPV canvas above it so the two read as one
      instrument: what the robot sees, and where it has been. */
   .map-wrap { display: flex; flex-direction: column; align-items: center; margin-top: 6px; }
@@ -574,16 +537,6 @@
   .endpoint-note b { color: var(--text); font-weight: 600; }
   .fpv-source .server { color: var(--accent-safe); }
   .fpv-source .local { color: var(--accent-alert); }
-  .fpv-hud .visible { color: var(--accent-safe); }
-  .fpv-hud .not-visible { color: var(--text-dim); }
-  .call-counter { font-family: var(--mono); font-size: 11px; color: var(--text-dim); align-self: center; }
-  #autopilot-log {
-    font-family: var(--mono); font-size: var(--fs-small); color: var(--text-dim);
-    max-height: 130px; overflow-y: auto; line-height: 1.6;
-    background: var(--field-bg); border-radius: 8px; padding: 8px 10px; margin-top: 8px;
-  }
-  #autopilot-log .entry.action-forward { color: var(--accent-safe); }
-  #autopilot-log .entry.action-stop { color: var(--accent-alert); }
 
   /* ---------- Guide tab: idle state (before Start) ---------- */
   /* Ambient preview of the real interaction -- a small mock "viewfinder"
@@ -1379,41 +1332,17 @@
     </div>
   </div>
 
-  <div class="tab-page" role="tabpanel" data-tab="camera">
-    <div class="panel">
-      <div class="subsection-label">Analyze a photo</div>
-      <div class="lede">Take a picture of a room and see what Claude finds in it.</div>
-      <div class="btn-row" style="margin-top:10px;">
-        <input type="text" id="photo-target" class="text-input" list="target-history-list"
-               placeholder="Check for something? (optional)" aria-label="Object to check for (optional)">
-      </div>
-      <div class="btn-row">
-        <button id="btn-take-photo" class="primary"><span data-icon="camera"></span>Take photo</button>
-      </div>
-      <img id="photo-preview" alt="Photo you captured">
-      <div id="photo-empty" class="empty-state">
-        <span class="empty-state-icon" data-icon="camera"></span>
-        <span class="empty-state-text">No photo yet &mdash; take one to see the analysis.</span>
-      </div>
-      <div id="photo-result" role="status" aria-live="polite"></div>
-      <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
-      <div class="hint">Uses the vision service configured in Settings.</div>
-    </div>
-  </div>
-
   <div class="tab-page" role="tabpanel" data-tab="sim">
-    <div class="panel">
-      <div id="canvas-wrap"><canvas id="grid-canvas"></canvas></div>
-      <div class="telemetry">
-        <div>Room: <span class="val" id="tel-room">-</span></div>
-        <div>Facing: <span class="val" id="tel-facing">-</span></div>
-        <div>Free space: <span class="val" id="tel-free">-</span></div>
-        <div>Doorway: <span class="val" id="tel-door">-</span></div>
-        <div class="full">Objects: <span class="val" id="tel-objects">none visible</span></div>
-        <div class="full" id="tel-safety">Safety: <span class="safe">OK</span></div>
-      </div>
-    </div>
-
+    <!-- This tab used to lead with a top-down view of the house drawn from
+         a hardcoded copy of the starter map, plus five readouts of
+         `frame_description()`'s grid facts (room, cardinal heading, free
+         cells, doorway, objects). All of it is gone with the ROS alignment
+         (`PLAN-ros-alignment.md`): the map is `GET /world/map`, discovered
+         and tri-state, further down -- the same route `slam_toolbox` serves
+         at R5 -- and the grid facts were cells and cardinals, which
+         `robot/interface.py` forbids any hardware-path policy from reading.
+         A readout is a consumer too. What is left is what survives a real
+         robot. -->
     <div class="panel">
       <div class="section-label">Manual control</div>
       <div class="dpad">
@@ -1426,6 +1355,12 @@
         <button id="btn-look-center" disabled aria-label="Look center"><span data-icon="eye"></span></button>
         <button id="btn-look-right" disabled aria-label="Look right"><span data-icon="eye"></span><span data-icon="chevronRight"></span></button>
       </div>
+      <div class="full" id="tel-safety">Safety: <span class="safe">OK</span></div>
+      <!-- Moved here from the deleted map panel: this log is written by the
+           D-pad (and by any refused command), so it belongs beside the
+           buttons that cause it rather than under a brain that no longer
+           runs in this tab. -->
+      <div id="log" role="log" aria-live="polite"></div>
       <div class="hint" id="drive-connect-hint">Not connected &mdash; open Settings from the header to connect to the robot server.</div>
     </div>
 
@@ -1531,44 +1466,17 @@
         </div>
       </details>
       <div class="hint" id="brain-connect-hint">
-        No brain service configured &mdash; open Settings to point this at
-        one, or use the local brain below.
+        No brain service configured &mdash; open Settings to point this at one.
       </div>
     </div>
 
     <div class="panel">
-      <div class="section-label">Local brain &middot; runs in this tab</div>
+      <div class="section-label">What the robot senses</div>
       <div class="lede">
-        The same policy, re-implemented in JavaScript. Works with no brain
-        service running, and stops when this tab is closed.
-      </div>
-      <div class="subsection-label">Rule-based &middot; free, no API calls</div>
-      <div class="btn-row">
-        <button id="btn-explore" disabled>Explore</button>
-        <button id="btn-find" disabled>Find backpack</button>
-        <button id="btn-reset" class="ghost">Reset mission</button>
-      </div>
-      <div id="log" role="log" aria-live="polite"></div>
-
-      <div class="subsection-label">Vision autopilot &middot; live Claude Vision loop</div>
-      <div class="lede">
-        Claude looks at what the robot sees and picks each move &mdash; real
-        vision-in-the-loop driving, not the rule-based search above.
-      </div>
-      <details class="disclosure">
-        <summary><span class="disclosure-caret" data-icon="chevronRight"></span>How it works &amp; cost</summary>
-        <div class="hint">
-          The sim has no camera, so the first-person view below is rendered
-          locally and sent to Claude Vision every couple of seconds to decide
-          the next action. Each tick is a paid API call against the vision
-          service configured in Settings &mdash; watch the call counter.
-          Movement still passes through the robot server&rsquo;s safety veto,
-          same as every other mode.
-        </div>
-      </details>
-      <div class="btn-row" style="margin-top:8px;">
-        <input type="text" id="autopilot-target" class="text-input" value="red backpack" list="target-history-list" style="flex:2;">
-        <button id="btn-autopilot" style="flex:1;" disabled>Start</button>
+        Every readout below comes off a route the robot serves, not from
+        anything this page knows about the house &mdash; which is what lets
+        the same panel show a simulated room today and a SLAM map of your
+        hallway at R5.
       </div>
       <div class="fpv-wrap"><canvas id="fpv-canvas"></canvas></div>
       <!-- Phase M2's UI proof: the depth grid the robot reports, drawn as one
@@ -1605,11 +1513,6 @@
         <div class="depth-readout" id="map-readout">map: not connected</div>
       </div>
       <div class="fpv-source" id="fpv-source">frame source: <span class="local">not connected</span></div>
-      <div class="fpv-hud" id="fpv-hud">Not running.</div>
-      <div class="btn-row" style="margin-top:8px; justify-content: flex-end;">
-        <span class="call-counter" id="autopilot-call-count">0 calls</span>
-      </div>
-      <div id="autopilot-log"></div>
     </div>
   </div>
 
@@ -1800,7 +1703,7 @@
 
     <div class="panel">
       <div class="section-label">Cloud endpoint settings</div>
-      <div class="lede">Powers Guide, Vision Autopilot, and photo analysis.</div>
+      <div class="lede">Powers Guide and the vision policies.</div>
       <div class="btn-row" style="margin-top:8px;">
         <input type="text" id="cfg-url" class="text-input" placeholder="Vision service base URL (https://...)" style="flex:2;">
         <button id="btn-vision-connect" class="primary" style="flex:1;">Connect</button>
@@ -1898,7 +1801,6 @@
 <nav class="tab-bar">
   <div class="tab-bar-inner" role="tablist" aria-label="Sections">
     <button class="tab-btn active" role="tab" aria-selected="true" data-tab="guide"><span class="tab-icon" data-icon="mapPin"></span>Guide</button>
-    <button class="tab-btn" role="tab" aria-selected="false" data-tab="camera"><span class="tab-icon" data-icon="camera"></span>Camera</button>
     <button class="tab-btn" role="tab" aria-selected="false" data-tab="sim"><span class="tab-icon" data-icon="bot"></span>Sim</button>
   </div>
 </nav>

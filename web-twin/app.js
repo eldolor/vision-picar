@@ -106,49 +106,6 @@
   // it fills already exist.
   applyStaticIcons();
 
-  // ---------- static map data, for rendering only ----------
-  // The robot's actual state (position, heading, safety, sensing) now
-  // lives entirely server-side in robot/server.py -- this file no longer
-  // simulates physics. LAYOUT/OBJECTS below are just what the twin draws
-  // as background; they intentionally have no bearing on any decision
-  // logic. (Once real hardware exists, this whole map-rendering section
-  // is what changes -- there's no grid to draw for a real room.)
-
-  const LAYOUT = [
-    "#############",
-    "#...#.......#",
-    "#...D.......#",
-    "#...#.......#",
-    "#####.......#",
-    "#.......#####",
-    "#.......#...#",
-    "#.......D...#",
-    "#.......#...#",
-    "#############",
-  ];
-  const COLS = LAYOUT[0].length;
-  const ROWS = LAYOUT.length;
-
-  const OBJECTS = { "2,2": "sofa", "10,6": "refrigerator", "10,7": "red backpack" };
-
-  const HEADING_VEC = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
-  const RIGHT_OF = { N: "E", E: "S", S: "W", W: "N" };
-  const LEFT_OF = { N: "W", W: "S", S: "E", E: "N" };
-
-  // ---------- first-person raycaster (Vision Autopilot's synthetic "camera") ----------
-  // Casts against the same LAYOUT/OBJECTS constants the top-down map draws
-  // from -- there's no separate 3D scene to keep in sync.
-  const HEADING_ANGLE = { N: -Math.PI / 2, E: 0, S: Math.PI / 2, W: Math.PI };
-  const FPV_FOV = Math.PI / 3; // 60 degrees
-  const FPV_MAX_DIST = 14; // cells
-  const FPV_STEP = 0.05; // ray march step, in cells
-  const FPV_WALL_RGB = { r: 118, g: 129, b: 150 };
-  // The room the walls stand in. Byte-identical to sim/renderer.py's
-  // COLOR_CEILING / COLOR_FLOOR -- see renderFPV() for why these are
-  // constants here and not the twin's --wall / --floor CSS variables.
-  const FPV_CEILING_CSS = "rgb(198,203,211)";
-  const FPV_FLOOR_CSS = "rgb(128,120,110)";
-
   // Fallback only, used until the connected server's /health reply has
   // actually been read into state.minDistanceCm (renderWatchdog(), below)
   // -- e.g. before a connection exists at all, or against an older
@@ -159,26 +116,6 @@
   // it's talking to (PLAN-sim-hardening.md definition of done, item 10 --
   // this used to be a second hardcoded copy that could silently drift).
   const MIN_DISTANCE_CM_FALLBACK = 20;
-  const CELL_CM = 30; // for display purposes only (cells -> cm in telemetry)
-
-  function inRange(x, y, x0, x1, y0, y1) {
-    return x >= x0 && x <= x1 && y >= y0 && y <= y1;
-  }
-  function roomAt(x, y) {
-    // Only used to color the static map background by room -- the
-    // robot's *actual* current room comes from the server's /frame.
-    if (inRange(x, y, 1, 3, 1, 3)) return "living room";
-    if (inRange(x, y, 9, 11, 6, 8)) return "kitchen";
-    if (inRange(x, y, 5, 11, 1, 7)) return "hallway";
-    if (inRange(x, y, 1, 4, 4, 4)) return "hallway";
-    if ((x === 4 && y === 2) || (x === 8 && y === 7)) return "hallway";
-    return "unknown";
-  }
-  function cellAt(x, y) {
-    if (y < 0 || y >= ROWS || x < 0 || x >= COLS) return "#";
-    return LAYOUT[y][x];
-  }
-
   // ---------- twin state (mission bookkeeping only -- no physics) ----------
 
   const state = {
@@ -193,13 +130,10 @@
     // else -- which is why `map_version` exists and why the two are
     // fetched on different clocks (see refreshWorld).
     lastPose: null, lastMap: null, worldUnsupported: false, lastMapFetchAt: 0,
-    visited: new Set(), searchedRooms: new Set(),
+    searchedRooms: new Set(),
     sightings: [], found: false, foundSighting: null,
     log: [], step: 0,
-    autoRunning: false, autoTimerId: null, autoTarget: null, autoMaxSteps: 150,
     safetyFlashUntil: 0,
-    autopilotRunning: false, autopilotTimerId: null, autopilotTarget: null,
-    autopilotInFlight: false, autopilotCallCount: 0, autopilotMaxCalls: 80,
     guidanceMode: "guide", // "guide" -> /guidance (steer a person); "robot" -> /navigate (what would the robot do)
     guidanceRunning: false, guidanceStarting: false, guidanceTimerId: null, guidanceTarget: null,
     guidanceInFlight: 0, guidanceSeq: 0, guidanceLastRenderedSeq: 0,
@@ -215,6 +149,10 @@
     // Remote brain (phase B4): this page observes a mission it does not run.
     brainUrl: "", brainSecret: "", brainConnected: false, brainConnecting: false,
     brainMissionRunning: false, brainPollTimerId: null, brainLogSignature: "",
+    // What the running mission is hunting. Read by recordObservation() so a
+    // sighting the twin notices can be matched against the mission's target
+    // -- which used to come from this page's own local loops, now deleted.
+    brainTarget: null,
     watchdogTimerId: null,
     // Recording a Robot-view walk to the brain, for replay (S2b).
     // The robot's own id for the most recently pushed teleop frame, so a
@@ -329,7 +267,6 @@
   }
 
   const LOG_EMPTY = ["clock", "No moves yet — start a mission to see the robot's steps."];
-  const AUTOPILOT_EMPTY = ["bot", "No decisions yet — tap Start to hand driving to Claude."];
 
   // Transient confirmations for actions whose outcome would otherwise only
   // appear as rewritten text in a panel the user may not be looking at.
@@ -530,10 +467,14 @@
   }
   async function fetchFrame() {
     const raw = await apiGet("/frame");
+    // No facing / free-cells / doorway / position any more: the server
+    // stopped sending them with the cell layer (PLAN-ros-alignment.md). The
+    // pose is GET /world/pose and clearance is GET /depth, both drawn below
+    // from the routes a real robot will serve. `objectsVisible` is the sim's
+    // stand-in for a detector, and defaults to empty for a backend with none.
     const frame = {
-      room: raw.room, facing: raw.facing,
-      freeSpaceCells: raw.free_space_cells, doorwayAhead: raw.doorway_ahead,
-      objectsVisible: raw.objects_visible, position: raw.position,
+      room: raw.room,
+      objectsVisible: raw.objects_visible || [],
       // Phase S2: the sim renders its own camera now, so a frame arrives
       // with pixels. Carried through rather than dropped here -- this
       // remapping is the only place the server's reply becomes the page's
@@ -864,12 +805,15 @@
     if (frame.room !== "unknown") {
       state.searchedRooms.add(frame.room);
     }
-    const activeTarget = state.autoTarget || state.autopilotTarget;
+    // The target a local loop was hunting used to be read from this page's
+    // own state. The only mission now is the brain service's, so the twin
+    // records what it SAW and lets the mission decide what "found" means.
+    const activeTarget = state.brainTarget;
     frame.objectsVisible.forEach(function (obj) {
       state.sightings.push({ step: state.step, object: obj, room: frame.room });
       if (activeTarget && !state.found && obj.toLowerCase().indexOf(activeTarget) !== -1) {
         state.found = true;
-        state.foundSighting = { object: obj, room: frame.room, step: state.step, position: frame.position };
+        state.foundSighting = { object: obj, room: frame.room, step: state.step };
       }
     });
   }
@@ -911,128 +855,12 @@
     await commitAction(action, DRIVER_DPAD);
   }
 
-  // ---------- frontier-preference autonomous exploration ----------
-  // Peeks right/left/forward via the server's look_*/distance endpoints
-  // (same as brain/agent.py's MissionAgent.decide()), prefers whichever
-  // clear direction leads to an unvisited cell, commits one action, then
-  // schedules the next step. This decision logic is the twin's "brain"
-  // role -- it's supposed to be separate from robot/server.py's "robot
-  // runtime" role, same as the MacBook/Pi split in the real architecture.
-
-  function missionComplete() {
-    return state.autoTarget ? state.found : false;
-  }
-
-  // The local brain and the remote one must never drive at once -- they
-  // would interleave decisions on the same robot, and each would see the
-  // other's moves as the world changing under it. Refusing here is the
-  // browser-side half of the brain server's own 409 on a second mission.
-  function remoteMissionBlocks() {
-    if (!state.brainMissionRunning) return false;
-    showToast("A brain-service mission is running \u2014 stop it first.", "err");
-    return true;
-  }
-
-  async function autoStep() {
-    if (!state.autoRunning) return;
-    if (missionComplete() || state.step >= state.autoMaxSteps) {
-      stopAuto();
-      return;
-    }
-
-    const frame = await fetchFrame();
-    recordObservation(frame);
-    if (missionComplete()) { stopAuto(); render(frame); return; }
-
-    const last = state.log[state.log.length - 1];
-    if (last && (last.action === "LEFT" || last.action === "RIGHT") && last.executed) {
-      await commitAction("FORWARD", DRIVER_LOCAL_BRAIN);
-      scheduleNext();
-      return;
-    }
-
-    const facing = frame.facing;
-    const position = frame.position;
-    state.visited.add(position[0] + "," + position[1]);
-
-    await sendAction("LOOK_RIGHT");
-    const rightDist = await fetchDistance();
-    await sendAction("LOOK_LEFT");
-    const leftDist = await fetchDistance();
-    await sendAction("LOOK_CENTER");
-    const forwardDist = await fetchDistance();
-
-    const rightHeading = RIGHT_OF[facing], leftHeading = LEFT_OF[facing];
-    const options = [];
-    if (forwardDist >= state.minDistanceCm) options.push(["FORWARD", facing]);
-    if (rightDist >= state.minDistanceCm) options.push(["RIGHT", rightHeading]);
-    if (leftDist >= state.minDistanceCm) options.push(["LEFT", leftHeading]);
-
-    const frontier = options.filter(function (opt) {
-      const h = opt[1];
-      const dx = HEADING_VEC[h][0], dy = HEADING_VEC[h][1];
-      const next = (position[0] + dx) + "," + (position[1] + dy);
-      return !state.visited.has(next);
-    });
-
-    const choice = frontier[0] || options[0];
-    await commitAction(choice ? choice[0] : "STOP", DRIVER_LOCAL_BRAIN);
-    scheduleNext();
-  }
-
-  function scheduleNext() {
-    if (state.autoRunning) state.autoTimerId = setTimeout(autoStep, 200);
-  }
-  function startAuto(target) {
-    if (remoteMissionBlocks()) return;
-    stopAuto();
-    stopVisionAutopilot();
-    state.autoTarget = target || null;
-    state.autoRunning = true;
-    updateAutoButtons();
-    autoStep();
-  }
-  function stopAuto() {
-    state.autoRunning = false;
-    if (state.autoTimerId) clearTimeout(state.autoTimerId);
-    state.autoTimerId = null;
-    updateAutoButtons();
-  }
-  function updateAutoButtons() {
-    document.getElementById("btn-explore").classList.toggle("active-mode", state.autoRunning && !state.autoTarget);
-    document.getElementById("btn-find").classList.toggle("active-mode", state.autoRunning && !!state.autoTarget);
-  }
-
-  // "Reset" only clears the twin's own mission bookkeeping (visited
-  // cells, search memory, log) -- it does NOT teleport the robot back to
-  // a start position. robot/server.py has no such endpoint on purpose:
-  // real hardware can't be reset to a start pose either, so the twin
-  // doesn't pretend otherwise.
-  async function resetMission() {
-    stopAuto();
-    stopVisionAutopilot();
-    state.visited.clear(); state.searchedRooms.clear();
-    state.sightings = []; state.found = false; state.foundSighting = null;
-    state.log = []; state.step = 0; state.autoTarget = null;
-    state.autopilotTarget = null; state.autopilotCallCount = 0;
-    const logEl = document.getElementById("log");
-    delete logEl.dataset.foundLogged;
-    setEmptyState(logEl, LOG_EMPTY[0], LOG_EMPTY[1]);
-    setEmptyState(document.getElementById("autopilot-log"), AUTOPILOT_EMPTY[0], AUTOPILOT_EMPTY[1]);
-    document.getElementById("autopilot-call-count").textContent = "0 calls";
-    document.getElementById("fpv-hud").textContent = "Not running.";
-    if (state.connected) {
-      const frame = await fetchFrame();
-      render(frame);
-    }
-  }
-
   // ---------- connection ----------
 
   function setControlsEnabled(enabled) {
     ["btn-forward", "btn-reverse", "btn-left", "btn-right", "btn-stop",
      "btn-look-left", "btn-look-right", "btn-look-center",
-     "btn-explore", "btn-find", "btn-autopilot"].forEach(function (id) {
+    ].forEach(function (id) {
       document.getElementById(id).disabled = !enabled;
     });
   }
@@ -1171,13 +999,9 @@
   // clientWidth is 0; the observer fires with a real width the moment the
   // tab is first shown, and again on rotate.
 
-  const canvas = document.getElementById("grid-canvas");
-  const ctx = canvas.getContext("2d");
   const fpvCanvas = document.getElementById("fpv-canvas");
   const fpvCtx = fpvCanvas.getContext("2d");
 
-  const CELL_MIN = 14, CELL_MAX = 30;
-  let CELL = 26;
   let FPV_W = 320, FPV_H = 200;
   const FPV_ASPECT = 200 / 320;
 
@@ -1190,22 +1014,6 @@
   // Returns true when the size actually changed, so callers know whether a
   // redraw is needed (the observer fires on every layout pass, not just
   // real resizes).
-  function sizeGridCanvas() {
-    const avail = availableWidth(document.getElementById("canvas-wrap"), 8);
-    if (avail <= 0) return false; // tab still hidden -- observer re-fires when shown
-    const next = Math.max(CELL_MIN, Math.min(CELL_MAX, Math.floor(avail / COLS)));
-    if (next === CELL && canvas.width) return false;
-    CELL = next;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = COLS * CELL * dpr;
-    canvas.height = ROWS * CELL * dpr;
-    canvas.style.width = (COLS * CELL) + "px";
-    canvas.style.height = (ROWS * CELL) + "px";
-    // setTransform, not scale: this runs repeatedly, and scale() compounds.
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    return true;
-  }
-
   function sizeFpvCanvas() {
     const avail = availableWidth(document.querySelector(".fpv-wrap"), 0);
     if (avail <= 0) return false;
@@ -1231,105 +1039,22 @@
     return a;
   }
 
-  // March a ray from (px,py) at `angle` until it hits a wall cell, or
-  // FPV_MAX_DIST -- doors ('D') are passable, same as real movement, so a
-  // ray keeps going through a doorway into whatever room is beyond it.
-  function fpvCastRay(px, py, angle) {
-    const dx = Math.cos(angle), dy = Math.sin(angle);
-    let dist = 0;
-    while (dist < FPV_MAX_DIST) {
-      dist += FPV_STEP;
-      const cx = Math.floor(px + dx * dist), cy = Math.floor(py + dy * dist);
-      if (cellAt(cx, cy) === "#") return dist;
-    }
-    return FPV_MAX_DIST;
-  }
-
-  // Renders the robot's synthetic first-person "camera photo" -- this is
-  // what actually gets captured and sent to Claude Vision by the autopilot
-  // loop below, not just a cosmetic view. Casts against the same
-  // LAYOUT/OBJECTS constants the top-down map uses.
-  function renderFPV(frame) {
-    frame = frame || state.lastFrame;
-    if (!frame) return;
-
-    const [gx, gy] = frame.position;
-    const px = gx + 0.5, py = gy + 0.5;
-    const baseAngle = HEADING_ANGLE[frame.facing] || 0;
-
-    // NOT getCss("--wall") / getCss("--floor") any more, and that is the
-    // point. Those are the dark UI chrome colours (#05070A / #232A33), and
-    // borrowing them painted the ceiling and floor almost black. This canvas
-    // is what the vision policy sees when the server has no pixels of its
-    // own, so it is lit like a room instead of themed like a panel -- and it
-    // is now immune to a restyle of the app. Kept byte-identical to
-    // sim/renderer.py's COLOR_CEILING / COLOR_FLOOR; changing one without
-    // the other is what tests/test_renderer_parity.py exists to catch.
-    fpvCtx.fillStyle = FPV_CEILING_CSS;
-    fpvCtx.fillRect(0, 0, FPV_W, FPV_H / 2);
-    fpvCtx.fillStyle = FPV_FLOOR_CSS;
-    fpvCtx.fillRect(0, FPV_H / 2, FPV_W, FPV_H / 2);
-
-    for (let x = 0; x < FPV_W; x++) {
-      const t = x / (FPV_W - 1);
-      const rayAngle = baseAngle - FPV_FOV / 2 + FPV_FOV * t;
-      const dist = fpvCastRay(px, py, rayAngle);
-      const perp = Math.max(0.15, dist * Math.cos(rayAngle - baseAngle));
-      const wallHeight = Math.min(FPV_H, (FPV_H * 1.1) / perp);
-      const shade = Math.max(0.15, Math.min(1, 1.4 - perp / FPV_MAX_DIST));
-      fpvCtx.fillStyle = "rgb(" +
-        Math.round(FPV_WALL_RGB.r * shade) + "," +
-        Math.round(FPV_WALL_RGB.g * shade) + "," +
-        Math.round(FPV_WALL_RGB.b * shade) + ")";
-      fpvCtx.fillRect(x, (FPV_H - wallHeight) / 2, 1, wallHeight);
-    }
-
-    // object billboards, farthest first so nearer ones draw on top
-    const visible = [];
-    Object.keys(OBJECTS).forEach(function (key) {
-      const parts = key.split(",");
-      const ox = Number(parts[0]) + 0.5, oy = Number(parts[1]) + 0.5;
-      const ddx = ox - px, ddy = oy - py;
-      const distToObj = Math.sqrt(ddx * ddx + ddy * ddy);
-      const angleToObj = Math.atan2(ddy, ddx);
-      const relAngle = normalizeAngle(angleToObj - baseAngle);
-      if (Math.abs(relAngle) > FPV_FOV / 2 + 0.1) return;
-      const occluderDist = fpvCastRay(px, py, angleToObj);
-      if (occluderDist < distToObj - 0.3) return; // a wall is closer than the object
-      visible.push({ name: OBJECTS[key], relAngle: relAngle, dist: distToObj });
-    });
-    visible.sort(function (a, b) { return b.dist - a.dist; });
-    visible.forEach(function (obj) {
-      const t = (obj.relAngle + FPV_FOV / 2) / FPV_FOV;
-      const screenX = t * FPV_W;
-      const perp = Math.max(0.3, obj.dist * Math.cos(obj.relAngle));
-      const h = Math.min(FPV_H * 0.55, (FPV_H * 0.65) / perp);
-      const w = h * 0.7;
-      const cy = FPV_H / 2 + h * 0.08;
-      fpvCtx.fillStyle = obj.name.toLowerCase().indexOf("backpack") !== -1 ? getCss("--accent-alert") : "#546074";
-      fpvCtx.fillRect(screenX - w / 2, cy - h / 2, w, h);
-      fpvCtx.fillStyle = "#fff";
-      fpvCtx.font = Math.max(9, Math.min(14, h * 0.22)) + "px " + getCss("--mono");
-      fpvCtx.textAlign = "center";
-      fpvCtx.fillText(obj.name, screenX, cy + h / 2 + 12);
-    });
-  }
-
   // ---------- phase S2: the camera moved into Python ----------
-  // sim/renderer.py now renders the grid world, so a frame from a
-  // connected server arrives with its own pixels and this page has nothing
-  // left to simulate. renderFPV() above is kept only as the fallback for a
-  // server that predates S2 -- the readout says which one you are looking
-  // at, which is how you tell whether the JS raycaster is still in use.
-  // When it reads "server" everywhere, renderFPV/fpvCastRay can be deleted
-  // (tests/test_renderer_parity.py is what proves the pictures match).
+  // sim/renderer.py renders the grid world, so a frame from a connected
+  // server arrives with its own pixels and this page has nothing left to
+  // simulate. S2 said the JS raycaster could be deleted "when it reads
+  // server everywhere"; the ROS alignment did that, and R0 made keeping it
+  // unsafe rather than merely redundant -- it could only ever draw a
+  // cardinal heading from a cell centre. The readout is still here, and
+  // still earns its place: it now distinguishes real pixels from NO pixels,
+  // which is a state a real camera can also be in.
 
   function setFrameSource(kind) {
     const el = document.getElementById("fpv-source");
     if (!el) return;
     const label = kind === "server"
       ? '<span class="server">server (sim/renderer.py)</span>'
-      : '<span class="local">local raycaster</span>';
+      : '<span class="local">none</span>';
     el.innerHTML = "frame source: " + label;
   }
 
@@ -1337,8 +1062,13 @@
     frame = frame || state.lastFrame;
     if (!frame) return;
     if (!frame.imageBase64) {
-      renderFPV(frame);
-      setFrameSource("local");
+      // There used to be a JS raycaster here for a server predating S2.
+      // It read a CELL and a CARDINAL heading off the frame, so after R0's
+      // continuous pose it drew a view the robot was not facing -- and at
+      // one call site it fed that picture to the model as if it were the
+      // camera. Say "no pixels" instead: a wrong picture is worse than none.
+      renderFpvPlaceholder("This server sends no camera frames");
+      setFrameSource("none");
       return;
     }
     const img = new Image();
@@ -1354,7 +1084,10 @@
     };
     // Decode failure would otherwise leave the last frame on screen and
     // silently look like nothing had gone wrong.
-    img.onerror = function () { renderFPV(frame); setFrameSource("local"); };
+    img.onerror = function () {
+      renderFpvPlaceholder("Camera frame would not decode");
+      setFrameSource("none");
+    };
     img.src = "data:" + (frame.mediaType || "image/jpeg") + ";base64," + frame.imageBase64;
     setFrameSource("server");
   }
@@ -1389,219 +1122,39 @@
     }
   }
 
-  function captureFPVFrame() {
-    return fpvCanvas.toDataURL("image/jpeg", 0.82).split(",")[1];
-  }
-
-  // getCss() hits getComputedStyle on every call, which used to happen
-  // once per cell inside the draw loop (130 calls a frame, on a canvas
-  // that re-renders every animation frame while a safety veto flashes).
-  // Resolved once per draw instead.
-  function mapPalette() {
-    return {
-      wall: getCss("--wall"),
-      door: getCss("--door"),
-      floor: getCss("--floor"),
-      floorLiving: getCss("--floor-living"),
-      floorKitchen: getCss("--floor-kitchen"),
-      text: getCss("--text"),
-      alert: getCss("--accent-alert"),
-      mono: getCss("--mono"),
-      sans: getCss("--sans"),
-    };
-  }
-
-  // roundRect() is only in Safari 16.4+, and this page targets older
-  // iPhones too -- arcTo is universal.
-  function roundRectPath(c, x, y, w, h, r) {
-    const rr = Math.min(r, w / 2, h / 2);
-    c.beginPath();
-    c.moveTo(x + rr, y);
-    c.arcTo(x + w, y, x + w, y + h, rr);
-    c.arcTo(x + w, y + h, x, y + h, rr);
-    c.arcTo(x, y + h, x, y, rr);
-    c.arcTo(x, y, x + w, y, rr);
-    c.closePath();
-  }
-
-  // Floor is drawn as inset, slightly-rounded tiles over a solid wall-
-  // coloured ground rather than as edge-to-edge squares. The gap between
-  // tiles becomes a subtle grid for free, and rooms read as rooms instead
-  // of as one flat field of near-identical greys.
-  function drawFloorAndWalls(pal) {
-    const w = COLS * CELL, h = ROWS * CELL;
-    ctx.fillStyle = pal.wall;
-    ctx.fillRect(0, 0, w, h);
-
-    const inset = 0.75, radius = Math.max(1.5, CELL * 0.1);
-    for (let y = 0; y < ROWS; y++) {
-      for (let x = 0; x < COLS; x++) {
-        const c = cellAt(x, y);
-        if (c === "#") continue;
-        const room = roomAt(x, y);
-        ctx.fillStyle = c === "D" ? pal.door
-          : room === "living room" ? pal.floorLiving
-          : room === "kitchen" ? pal.floorKitchen
-          : pal.floor;
-        roundRectPath(ctx, x * CELL + inset, y * CELL + inset,
-                      CELL - inset * 2, CELL - inset * 2, radius);
-        ctx.fill();
-      }
-    }
-  }
-
-  // The visited set is insertion-ordered, so the trail can fade from the
-  // oldest cell to the newest -- which reads as a path walked rather than
-  // as a flat wash of "been here".
-  function drawVisitedTrail() {
-    const cells = Array.from(state.visited);
-    const n = cells.length;
-    if (!n) return;
-    const inset = 0.75, radius = Math.max(1.5, CELL * 0.1);
-    cells.forEach(function (key, idx) {
-      const parts = key.split(",");
-      // Range chosen so the oldest cell is still visible against the floor
-      // tiles rather than merely theoretically non-zero.
-      const alpha = 0.09 + 0.19 * ((idx + 1) / n);
-      ctx.fillStyle = "rgba(62,207,142," + alpha.toFixed(3) + ")";
-      roundRectPath(ctx, Number(parts[0]) * CELL + inset, Number(parts[1]) * CELL + inset,
-                    CELL - inset * 2, CELL - inset * 2, radius);
-      ctx.fill();
-    });
-  }
-
-  // Objects were a filled dot with a single capital letter crammed inside
-  // at 8px -- which made "refrigerator" and "red backpack" both render as
-  // "R". A dot with a ring and a real label underneath is legible.
-  function drawObjects(pal) {
-    const labelSize = Math.max(7, Math.min(9, CELL * 0.34));
-    Object.keys(OBJECTS).forEach(function (key) {
-      const parts = key.split(",");
-      const name = OBJECTS[key];
-      const cx = Number(parts[0]) * CELL + CELL / 2;
-      const cy = Number(parts[1]) * CELL + CELL / 2;
-      const isTarget = name.indexOf("backpack") !== -1;
-      const color = isTarget ? pal.alert : "#7A8798";
-      const r = Math.max(3.5, CELL * 0.17);
-
-      ctx.beginPath();
-      ctx.arc(cx, cy - CELL * 0.12, r + 3, 0, Math.PI * 2);
-      ctx.strokeStyle = isTarget ? "rgba(255,107,53,0.4)" : "rgba(122,135,152,0.3)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(cx, cy - CELL * 0.12, r, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-
-      // Labels are wider than a cell ("refrigerator" spans about three of
-      // them), and two objects can sit in adjacent cells -- a backing pill
-      // keeps each one readable where they crowd instead of letting the
-      // text blend into the floor tiles behind it.
-      const label = name.split(" ").pop();
-      const labelY = cy + CELL * 0.44;
-      ctx.font = "600 " + labelSize + "px " + pal.sans;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      const padX = 3, padY = 1.5;
-      const tw = ctx.measureText(label).width;
-      ctx.fillStyle = "rgba(8,10,14,0.72)";
-      roundRectPath(ctx, cx - tw / 2 - padX, labelY - labelSize / 2 - padY,
-                    tw + padX * 2, labelSize + padY * 2, 3);
-      ctx.fill();
-      ctx.fillStyle = isTarget ? color : "rgba(232,236,239,0.78)";
-      ctx.fillText(label, cx, labelY);
-      ctx.textBaseline = "alphabetic";
-    });
-  }
-
-  function drawRobot(frame, pal, flashing) {
-    const [px, py] = frame.position;
-    const cx = px * CELL + CELL / 2, cy = py * CELL + CELL / 2;
-    const collar = (state.minDistanceCm / CELL_CM) * CELL;
-
-    // Safety collar: a filled falloff plus its ring, so the veto radius
-    // reads as a zone rather than a hairline circle.
-    const grad = ctx.createRadialGradient(cx, cy, collar * 0.25, cx, cy, collar);
-    if (flashing) {
-      grad.addColorStop(0, "rgba(255,107,53,0.30)");
-      grad.addColorStop(1, "rgba(255,107,53,0)");
-    } else {
-      grad.addColorStop(0, "rgba(62,207,142,0.16)");
-      grad.addColorStop(1, "rgba(62,207,142,0)");
-    }
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(cx, cy, collar, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = flashing ? pal.alert : "rgba(62,207,142,0.45)";
-    ctx.lineWidth = flashing ? 2.5 : 1.25;
-    ctx.beginPath();
-    ctx.arc(cx, cy, collar, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Note: frame.facing is the *view* heading (chassis heading adjusted
-    // by camera pan), same ambiguity as sim/grid_world.py's
-    // frame_description(). During a manual LOOK_LEFT/RIGHT tap the
-    // triangle will reflect the camera's pan, not just chassis
-    // orientation -- cosmetic only, doesn't affect movement/safety.
-    const angle = HEADING_ANGLE[frame.facing] || 0;
-    const size = Math.max(5, CELL * 0.35);
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(angle);
-    ctx.shadowColor = "rgba(0,0,0,0.55)";
-    ctx.shadowBlur = 5;
-    ctx.fillStyle = pal.text;
-    ctx.beginPath();
-    ctx.moveTo(size, 0);
-    ctx.lineTo(-size * 0.68, -size * 0.68);
-    ctx.lineTo(-size * 0.34, 0);
-    ctx.lineTo(-size * 0.68, size * 0.68);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-
+  // The twin used to paint its own top-down view of the house here, from a
+  // hardcoded copy of `sim/maps/starter_house.py`'s layout. **Deleted with
+  // the ROS alignment** (`PLAN-ros-alignment.md`), for the reason N1 gave
+  // when it built the other map: a page that draws a finished floor plan is
+  // showing you the answer, not the robot's belief. `renderMap()` above
+  // draws `GET /world/map` instead -- discovered, tri-state, and the same
+  // route `slam_toolbox` will serve at R5. There is no layout to copy for a
+  // real room, which is why this could never have survived the swap anyway.
   function render(frame) {
     frame = frame || state.lastFrame;
     if (!frame) return; // not connected yet -- nothing to draw
     drawFPV(frame);
-
-    const pal = mapPalette();
-    const flashing = Date.now() < state.safetyFlashUntil;
-    ctx.clearRect(0, 0, COLS * CELL, ROWS * CELL);
-    drawFloorAndWalls(pal);
-    drawVisitedTrail();
-    drawObjects(pal);
-    drawRobot(frame, pal, flashing);
-
-    if (flashing) requestAnimationFrame(function () { render(); });
-
     renderTelemetry(frame);
   }
 
+  // Room / facing / free-cells / doorway used to be reported here. They were
+  // `frame_description()`'s grid facts -- cells and cardinals -- and
+  // `robot/interface.py` is explicit that no policy on the hardware path may
+  // read them. A readout is a consumer too, so they went with the rest of
+  // the cell layer. What is left is what survives a real robot: whether the
+  // collar vetoed, and what the mission has searched.
   function renderTelemetry(frame) {
-    document.getElementById("tel-room").textContent = frame.room;
-    document.getElementById("tel-facing").textContent = frame.facing;
-    document.getElementById("tel-free").textContent = frame.freeSpaceCells + " cells (" + (frame.freeSpaceCells * CELL_CM) + "cm)";
-    document.getElementById("tel-door").textContent = frame.doorwayAhead ? "yes" : "no";
-    document.getElementById("tel-objects").textContent = frame.objectsVisible.length ? frame.objectsVisible.join(", ") : "none visible";
-
     const safetyEl = document.getElementById("tel-safety");
     const vetoedRecently = Date.now() < state.safetyFlashUntil;
     safetyEl.innerHTML = vetoedRecently
       ? 'Safety: <span class="alert">VETOED</span>'
       : 'Safety: <span class="safe">OK</span>';
+    if (vetoedRecently) {
+      requestAnimationFrame(function () { renderTelemetry(state.lastFrame); });
+    }
 
     const rooms = Array.from(state.searchedRooms).sort();
     let summary = rooms.length ? rooms.join(", ") + " searched." : "No rooms searched yet.";
-    const activeTarget = state.autoTarget || state.autopilotTarget;
-    if (activeTarget) {
-      summary += state.found ? " Found." : (" No " + activeTarget + " found.");
-    }
     document.getElementById("mission-summary").textContent = summary;
   }
 
@@ -1647,151 +1200,6 @@
   document.getElementById("btn-look-left").onclick = function () { manualAction("LOOK_LEFT"); };
   document.getElementById("btn-look-right").onclick = function () { manualAction("LOOK_RIGHT"); };
   document.getElementById("btn-look-center").onclick = function () { manualAction("LOOK_CENTER"); };
-
-  document.getElementById("btn-explore").onclick = function () {
-    if (!state.connected) return;
-    if (state.autoRunning && !state.autoTarget) { stopAuto(); return; }
-    startAuto(null);
-  };
-  document.getElementById("btn-find").onclick = function () {
-    if (!state.connected) return;
-    if (state.autoRunning && state.autoTarget) { stopAuto(); return; }
-    startAuto("red backpack");
-  };
-  document.getElementById("btn-reset").onclick = function () { resetMission(); };
-
-  // ---------- vision autopilot: real Claude Vision calls drive the sim ----------
-  // Renders the FPV raycaster frame, sends it to the vision service's
-  // /navigate route (sibling of /analyze, reusing the same "Cloud endpoint
-  // settings" URL/secret below), and executes whatever action comes back
-  // through the same commitAction() every other mode uses -- so safety
-  // vetoes and mission-complete detection (state.found, via
-  // recordObservation()) behave identically to the rule-based Explore/Find
-  // modes above. This is the "brain" role calling a real vision model
-  // instead of running the frontier-preference algorithm.
-
-  function callNavigateEndpoint(base64, targetObject) {
-    const url = document.getElementById("cfg-url").value.trim();
-    const secret = document.getElementById("cfg-secret").value.trim();
-    if (!url) throw new Error('Set the vision service URL in "Cloud endpoint settings" above first.');
-    const headers = { "Content-Type": "application/json" };
-    if (secret) headers["x-app-secret"] = secret;
-    return fetch(deriveServiceUrl(url, "/navigate"), {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify({ image_base64: base64, media_type: "image/jpeg", target_object: targetObject }),
-    }).then(function (resp) {
-      return resp.json().then(function (data) {
-        if (!resp.ok) throw new Error(data.detail || ("HTTP " + resp.status));
-        return data;
-      });
-    });
-  }
-
-  function updateAutopilotButton() {
-    const btn = document.getElementById("btn-autopilot");
-    btn.textContent = state.autopilotRunning ? "Stop" : "Start";
-    btn.classList.toggle("active-mode", state.autopilotRunning);
-  }
-
-  function renderAutopilotHud(decision, executed) {
-    const hud = document.getElementById("fpv-hud");
-    const visibleClass = decision.target_visible ? "visible" : "not-visible";
-    hud.innerHTML =
-      'Action: <span class="action">' + decision.action + '</span>' +
-      (executed === false ? ' <span style="color:var(--accent-alert)">[VETOED]</span>' : '') +
-      ' &middot; Target: <span class="' + visibleClass + '">' +
-      (decision.target_visible ? ("visible, " + decision.target_direction) : "not visible") +
-      '</span><br>' + (decision.reasoning || "");
-  }
-
-  function logAutopilotEntry(action, reasoning, executed) {
-    const el = document.getElementById("autopilot-log");
-    clearEmptyState(el);
-    const div = document.createElement("div");
-    div.className = "entry" + (executed === false ? " action-stop" : action === "FORWARD" ? " action-forward" : "");
-    div.textContent = "#" + state.autopilotCallCount + " " + action +
-      (executed === false ? " [VETOED]" : "") + " -- " + (reasoning || "");
-    el.appendChild(div);
-    el.scrollTop = el.scrollHeight;
-  }
-
-  async function visionAutopilotStep() {
-    if (!state.autopilotRunning) return;
-    if (state.found) { stopVisionAutopilot(); return; }
-    if (state.autopilotCallCount >= state.autopilotMaxCalls) {
-      logAutopilotEntry("STOP", "Reached the call cap for this run.", true);
-      stopVisionAutopilot();
-      return;
-    }
-    if (state.autopilotInFlight) { scheduleAutopilotNext(); return; }
-
-    state.autopilotInFlight = true;
-    try {
-      // Prefer the server's own pixels over a re-capture of the canvas:
-      // it avoids a second lossy JPEG encode, and it removes a race, since
-      // drawFPV() paints a server frame asynchronously once the image
-      // decodes. Falls back to the local render for a pre-S2 server.
-      let frameB64 = state.lastFrame && state.lastFrame.imageBase64;
-      if (!frameB64) {
-        renderFPV(state.lastFrame);
-        frameB64 = captureFPVFrame();
-      }
-      const decision = await callNavigateEndpoint(frameB64, state.autopilotTarget);
-      state.autopilotCallCount += 1;
-      document.getElementById("autopilot-call-count").textContent = state.autopilotCallCount + " calls";
-
-      const { executed } = await commitAction(decision.action, DRIVER_LOCAL_BRAIN); // also re-renders the FPV view via render()
-      renderAutopilotHud(decision, executed);
-      logAutopilotEntry(decision.action, decision.reasoning, executed);
-
-      if (state.found) stopVisionAutopilot();
-    } catch (e) {
-      logAutopilotEntry("ERROR", e.message, true);
-    } finally {
-      state.autopilotInFlight = false;
-      scheduleAutopilotNext();
-    }
-  }
-
-  function scheduleAutopilotNext() {
-    if (state.autopilotRunning) state.autopilotTimerId = setTimeout(visionAutopilotStep, 2500);
-  }
-
-  function startVisionAutopilot() {
-    if (!state.connected) return;
-    if (remoteMissionBlocks()) return;
-    stopAuto(); // rule-based and vision-driven autonomy shouldn't both drive at once
-    state.autopilotTarget = document.getElementById("autopilot-target").value.trim() || "red backpack";
-    saveTargetToHistory(state.autopilotTarget);
-    state.autopilotRunning = true;
-    state.autopilotCallCount = 0;
-    document.getElementById("autopilot-call-count").textContent = "0 calls";
-    updateAutopilotButton();
-    visionAutopilotStep();
-  }
-
-  function stopVisionAutopilot() {
-    state.autopilotRunning = false;
-    if (state.autopilotTimerId) clearTimeout(state.autopilotTimerId);
-    state.autopilotTimerId = null;
-    updateAutopilotButton();
-  }
-
-  // Don't keep burning paid API calls once the tab is backgrounded --
-  // same rule PLAN-ar-guidance.md specifies for the phone-camera feature.
-  document.addEventListener("visibilitychange", function () {
-    if (document.hidden) {
-      if (state.autopilotTimerId) { clearTimeout(state.autopilotTimerId); state.autopilotTimerId = null; }
-    } else if (state.autopilotRunning && !state.autopilotTimerId && !state.autopilotInFlight) {
-      scheduleAutopilotNext();
-    }
-  });
-
-  document.getElementById("btn-autopilot").onclick = function () {
-    if (state.autopilotRunning) stopVisionAutopilot();
-    else startVisionAutopilot();
-  };
 
   // ---------- remote brain: this page as an observer (phase B4) ----------
   //
@@ -2376,9 +1784,12 @@
     // One brain at a time. Two loops driving one robot is the exact
     // failure the brain service exists to prevent, and the twin should not
     // be the thing that creates it.
-    stopAuto();
-    stopVisionAutopilot();
-
+    // There used to be two local loops to stop here -- a JS frontier
+    // explorer and a JS vision autopilot, both driving the robot from this
+    // tab. Both are gone (`PLAN-ros-alignment.md`): R4 puts `twist_mux`
+    // between any driver and the wheels and allows exactly one writer, and
+    // a brain that dies with a browser tab was never going to be it. The
+    // server's own 409 and M4's authority order are what enforce it now.
     const target = document.getElementById("brain-target").value.trim() || "red backpack";
     const fault = document.getElementById("brain-fault").value;
     saveTargetToHistory(target);
@@ -2396,6 +1807,7 @@
     try {
       await brainApi("POST", "/mission/start", body);
       state.brainMissionRunning = true;
+      state.brainTarget = target.toLowerCase();
       state.brainLogSignature = "";
       showToast(fault === "none" ? "Mission started on the robot."
         : "Failsafe drill started: " + fault, fault === "none" ? "ok" : "info");
@@ -3082,14 +2494,6 @@
   // else is running in the account -- including production.
   const GUIDANCE_MAX_IN_FLIGHT = 2;
   // Anthropic downscales images server-side above ~1568px on the long
-  // edge anyway (see Claude's vision docs), so sending a full phone-camera
-  // photo (often 3000px+, several MB) past that point burns upload time
-  // and Bedrock's per-image cost -- which scales with pixel count -- for
-  // zero quality gain. Unlike Guide/Autopilot this is a one-off, deliberate
-  // "analyze this photo" action rather than a several-times-a-second loop,
-  // so it gets a higher ceiling and quality than their real-time captures.
-  const PHOTO_MAX_CAPTURE_DIM = 1568;
-
   // ONE size for every consumer -- the cloud call, the perception tier and
   // the recorded walk all get the same pixels.
   //
@@ -4014,9 +3418,9 @@
     guidanceStep();
   }
 
-  // Safety ceiling on paid API calls for a single Guide session -- mirrors
-  // autopilotMaxCalls, sized to cover a similar few-minutes-of-active-
-  // searching window rather than running unattended all day. Originally
+  // Safety ceiling on paid API calls for a single Guide session, sized to
+  // cover a few minutes of active searching rather than running unattended
+  // all day. Originally
   // 200, picked for a ~1s throttle-as-cycle-time approximation (200s ~=
   // 3.3min). The real cycle time is throttle + the /guidance call itself;
   // at Nova Lite's measured ~1.0-1.6s/call plus the 500ms throttle above
@@ -4796,205 +4200,12 @@
   };
   document.getElementById("btn-guidance-resume").onclick = function () { resumeGuidanceSearch(); };
 
-  // ---------- photo analysis (calls the ECS Fargate vision service) ----------
-
-  const photoInput = document.getElementById("photo-input");
-  const photoPreview = document.getElementById("photo-preview");
-  const photoResult = document.getElementById("photo-result");
-
-  // Real-device feedback: cancelling the OS camera sheet (declining to
-  // confirm "Use Photo") gives zero on-page feedback -- the page just
-  // sits at "No photo yet" with no explanation, which read as "it thinks
-  // I did not take one" / user error. Two cases to catch: `change` fires
-  // with an empty file list (most browsers), and `change` never fires at
-  // all (some mobile browsers on cancel) -- caught by noticing the tab
-  // regained focus after a capture was started but no file ever arrived.
-  let photoCaptureStartedAt = 0;
-  function notifyNoPhotoSelected() {
-    showToast("No photo was selected — try again, then confirm “Use Photo” when the camera opens.", "info");
-  }
-
-  document.getElementById("btn-take-photo").onclick = function () {
-    photoCaptureStartedAt = Date.now();
-    photoInput.click();
-  };
-
-  window.addEventListener("focus", function () {
-    if (!photoCaptureStartedAt) return;
-    const startedRecently = Date.now() - photoCaptureStartedAt < 60000;
-    photoCaptureStartedAt = 0;
-    if (!startedRecently) return;
-    // Give `change` a beat to fire first if it's going to -- it normally
-    // lands at or before focus returns, but ordering isn't guaranteed
-    // across browsers.
-    setTimeout(function () {
-      if (!photoInput.files || !photoInput.files[0]) notifyNoPhotoSelected();
-    }, 500);
-  });
-
-  photoInput.onchange = function () {
-    const file = photoInput.files[0];
-    photoCaptureStartedAt = 0; // capture resolved one way or another
-    if (!file) { notifyNoPhotoSelected(); return; }
-
-    const url = document.getElementById("cfg-url").value.trim();
-    const secret = document.getElementById("cfg-secret").value.trim();
-    // Read now rather than in renderPhotoResult: the field is editable
-    // while the request is in flight, and the verdict has to describe the
-    // question that was actually asked.
-    const photoTarget = document.getElementById("photo-target").value.trim();
-    if (photoTarget) saveTargetToHistory(photoTarget);
-
-    const photoBtn = document.getElementById("btn-take-photo");
-
-    document.getElementById("photo-empty").style.display = "none";
-    photoPreview.src = URL.createObjectURL(file);
-    photoPreview.style.display = "block";
-    photoResult.style.display = "block";
-    photoResult.innerHTML = PHOTO_SKELETON;
-
-    if (!url) {
-      photoResult.innerHTML = '<div class="hint">Add the vision service URL in Settings first.</div>';
-      showToast("No vision service URL set \u2014 add one in Settings.", "err");
-      return;
-    }
-
-    setButtonBusy(photoBtn, true, "Analyzing\u2026");
-
-    resizeImageFile(file).then(function (base64) {
-      const headers = { "Content-Type": "application/json" };
-      if (secret) headers["x-app-secret"] = secret;
-
-      // Always image/jpeg -- resizeImageFile re-encodes to JPEG regardless
-      // of the source format (also normalizes HEIC/PNG/etc. from a gallery
-      // pick to something every browser's <img> and the server's Pillow
-      // decode agree on).
-      const payload = JSON.stringify({ image_base64: base64, media_type: "image/jpeg" });
-      const post = function (route) {
-        return fetch(deriveServiceUrl(url, route), {
-          method: "POST", headers: headers, body: payload,
-        });
-      };
-
-      // /describe is the person-facing route; /analyze is the original
-      // robot-facing one. A vision service deployed before /describe
-      // existed answers 404/405, so fall back rather than breaking the
-      // Camera tab on every deployment that hasn't been updated yet.
-      // renderPhotoResult handles either schema.
-      return post("/describe").then(function (resp) {
-        if (resp.status === 404 || resp.status === 405) return post("/analyze");
-        return resp;
-      }).then(function (resp) {
-        return resp.json().then(function (data) {
-          if (!resp.ok) {
-            photoResult.innerHTML = '<div class="hint">Error ' + resp.status + ': ' + escapeHtml(data.error || data.detail || "unknown") + '</div>';
-            showToast("The vision service returned an error.", "err");
-            return;
-          }
-          renderPhotoResult(data, photoTarget);
-        });
-      });
-    }).catch(function (e) {
-      photoResult.innerHTML = '<div class="hint">Request failed: ' + escapeHtml(e.message) +
-        '. If this is running as a local file in Safari, CORS or mixed-content rules may block it -- try hosting the twin over HTTPS.</div>';
-      showToast("Couldn't reach the vision service.", "err");
-    }).finally(function () {
-      setButtonBusy(photoBtn, false);
-    });
-  };
-
-  // Shaped like the result card that replaces it, so the panel doesn't
-  // jump when the response lands.
-  const PHOTO_SKELETON =
-    '<div class="skeleton skeleton-line" style="height:34px;margin-top:0;"></div>' +
-    '<div class="skeleton skeleton-line tall"></div>' +
-    '<div class="skeleton skeleton-line"></div>' +
-    '<div class="skeleton skeleton-line short"></div>';
-
-  // Downscales to PHOTO_MAX_CAPTURE_DIM on the long edge before encoding,
-  // same rationale as captureGuidanceFrame above -- see PHOTO_MAX_CAPTURE_DIM.
-  function resizeImageFile(file) {
-    return new Promise(function (resolve, reject) {
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(file);
-      img.onload = function () {
-        const scale = Math.min(1, PHOTO_MAX_CAPTURE_DIM / Math.max(img.naturalWidth, img.naturalHeight));
-        const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-        URL.revokeObjectURL(objectUrl);
-        resolve(canvas.toDataURL("image/jpeg", 0.85).split(",")[1]);
-      };
-      img.onerror = function () {
-        URL.revokeObjectURL(objectUrl);
-        reject(new Error("Could not decode the selected image."));
-      };
-      img.src = objectUrl;
-    });
-  }
-
-  // Renders either schema the vision service can answer with:
-  //   /describe -> { summary, room_type, objects }        (person-facing)
-  //   /analyze  -> { room_guess, important_objects, ... } (robot-facing)
-  // The robot-facing navigation fields -- free space, doorway visible,
-  // safest direction -- are deliberately NOT shown here even when present.
-  // This tab is used by a person photographing their own room, and
-  // "Safest direction: FORWARD" is an answer to a question they did not
-  // ask. They remain in the API for the callers that do need them.
-  //
-  // The verdict banner used to be hardcoded to "backpack", left over from
-  // when this tab was labelled "Find the bag in a photo". It now reflects
-  // whatever object was asked about, and says nothing when nothing was.
-  // Note what it can claim: neither route is told what to look for, so a
-  // match is real evidence while a miss only means the model didn't list
-  // it among the notable objects.
-  function renderPhotoResult(data, target) {
-    const objs = data.objects || data.important_objects || [];
-    const room = data.room_type || data.room_guess || "";
-    const summary = data.summary || "";
-
-    const needle = (target || "").toLowerCase();
-    const isMatch = function (o) {
-      return !!needle && String(o).toLowerCase().indexOf(needle) !== -1;
-    };
-    const matched = needle && objs.some(isMatch);
-
-    let banner = "";
-    if (needle) {
-      banner = matched
-        ? '<div class="banner found">Found ' + escapeHtml(target) + ' in this photo.</div>'
-        : '<div class="banner neutral">No ' + escapeHtml(target) + ' among the things Claude picked out.</div>' +
-          '<div class="hint" style="margin-top:-2px;margin-bottom:10px;">' +
-          'This describes the whole scene rather than searching for one thing, so that isn\u2019t conclusive. ' +
-          'Guide hunts for a specific object.</div>';
-    }
-
-    const summaryHtml = summary
-      ? '<div class="photo-summary">' + escapeHtml(summary) + '</div>'
-      : "";
-
-    const roomHtml = room && room.toLowerCase() !== "unclear" && room.toLowerCase() !== "unknown"
-      ? '<div class="photo-room">' + escapeHtml(room) + '</div>'
-      : "";
-
-    const chips = objs.length
-      ? '<div class="section-label" style="margin:14px 0 0;">In this photo</div>' +
-        '<div class="chip-row">' + objs.map(function (o) {
-          return '<span class="chip' + (isMatch(o) ? " match" : "") + '">' + escapeHtml(o) + '</span>';
-        }).join("") + '</div>'
-      : '<div class="hint">Claude didn\u2019t pick out anything specific here.</div>';
-
-    photoResult.innerHTML = banner + roomHtml + summaryHtml + chips;
-  }
-
   // ---------- tabs ----------
   // Purely presentational -- toggles which .tab-page is visible and which
   // .tab-btn is marked active. No element ids changed when the panels were
   // grouped into tabs, so nothing else in this file needed to change.
 
-  const TAB_NAMES = ["guide", "camera", "sim", "settings"];
+  const TAB_NAMES = ["guide", "sim", "settings"];
   // "drive" and "autonomous" were separate tabs before they merged into
   // "sim"; a device that stored either one still has it in localStorage.
   const LEGACY_TAB_ALIASES = { drive: "sim", autonomous: "sim" };
@@ -5050,52 +4261,36 @@
   };
 
   // ---------- init ----------
-  // No server connection yet at page load -- draw the static map only.
-  // render() itself no-ops the robot/telemetry parts until state.lastFrame
-  // exists (set once the user taps Connect).
+  // No server connection yet at page load. render() no-ops until
+  // state.lastFrame exists (set once the user taps Connect), and the map
+  // comes from GET /world/map rather than from anything this page knows.
 
-  function renderStaticMapOnly() {
-    const pal = mapPalette();
-    ctx.clearRect(0, 0, COLS * CELL, ROWS * CELL);
-    drawFloorAndWalls(pal);
-    drawObjects(pal);
-  }
-  function renderFpvPlaceholder() {
+  function renderFpvPlaceholder(message) {
     fpvCtx.fillStyle = getCss("--surface");
     fpvCtx.fillRect(0, 0, FPV_W, FPV_H);
     fpvCtx.fillStyle = getCss("--text-dim");
     fpvCtx.font = "12px " + getCss("--mono");
     fpvCtx.textAlign = "center";
-    fpvCtx.fillText("Connect to see the camera view", FPV_W / 2, FPV_H / 2);
+    fpvCtx.fillText(message || "Connect to see the camera view", FPV_W / 2, FPV_H / 2);
   }
 
-  // Re-measures both canvases and redraws whichever actually changed size.
+  // Re-measures the camera canvas and redraws it if it changed size.
   // Resizing a canvas clears its bitmap, so a redraw here isn't optional.
+  // The world map sizes itself in renderMap(), off the map's own dimensions.
   function relayoutCanvases() {
-    if (sizeGridCanvas()) {
-      if (state.lastFrame) render();
-      else renderStaticMapOnly();
-    }
     if (sizeFpvCanvas()) {
-      // drawFPV, not renderFPV: a resize must repaint from the same source
-      // the last render used, or a server frame silently becomes a local
-      // one while the readout still says "server".
       if (state.lastFrame) drawFPV();
       else renderFpvPlaceholder();
     }
   }
 
-  sizeGridCanvas();
   sizeFpvCanvas();
-  renderStaticMapOnly();
   renderFpvPlaceholder();
   setEmptyState(document.getElementById("brain-log"), BRAIN_EMPTY[0], BRAIN_EMPTY[1]);
   setEmptyState(document.getElementById("log"), LOG_EMPTY[0], LOG_EMPTY[1]);
-  setEmptyState(document.getElementById("autopilot-log"), AUTOPILOT_EMPTY[0], AUTOPILOT_EMPTY[1]);
 
   if (window.ResizeObserver) {
     const canvasObserver = new ResizeObserver(relayoutCanvases);
-    canvasObserver.observe(document.getElementById("canvas-wrap"));
     canvasObserver.observe(document.querySelector(".fpv-wrap"));
   } else {
     window.addEventListener("resize", relayoutCanvases);

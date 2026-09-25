@@ -8,7 +8,16 @@ built and `CLAUDE.md` tracks *status*, this file explains *how each
 button actually works* -- which process it talks to, which route, and
 what comes back.
 
-The app has four tabs: **Guide**, **Camera**, **Sim**, **Settings**. This
+> **Correction, 2026-09-25 -- parts of this document are now wrong.** The
+> ROS alignment (`PLAN-ros-alignment.md`) removed the **Camera tab**
+> (section 2), the Sim tab's **Local brain** panel and its **Vision
+> Autopilot** (section 3), and the Sim tab's top-down grid canvas and its
+> room / facing / free-cells / doorway readouts. The Guide tab, the D-pad,
+> the Remote brain panel, the depth strip, the odometry readout and the
+> world map are unchanged. Sections 2 and 3 have NOT been rewritten yet;
+> read them as history until they are.
+
+The app has three tabs: **Guide**, **Sim**, **Settings**. This
 doc covers all four, then the AWS deployment they run against, in the
 most detail for Guide's two modes since that's where a phone actually
 exercises the brain/control loop against real pixels.
