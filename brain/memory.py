@@ -31,7 +31,13 @@ class Sighting:
     step: int
     object_name: str
     room: str
-    position: tuple
+    # Where the robot was when it saw this, as the WORLD reported it --
+    # `{x_m, y_m, heading_deg, map_id}` -- or None when nothing could
+    # localise. It used to be a grid cell read off the camera frame; a
+    # sighting is a statement about the house, so it carries a map-frame
+    # pose, and `map_id` says which map. The ROS-native form of this is a
+    # `geometry_msgs/PoseStamped` in `map`, which is what R3 makes it.
+    position: Optional[dict]
 
 
 @dataclass
@@ -77,7 +83,7 @@ class MissionMemory:
 
         for obj in scene.get("important_objects", []):
             sighting = Sighting(
-                step=step, object_name=obj, room=room, position=frame.get("position")
+                step=step, object_name=obj, room=room, position=frame.get("pose")
             )
             self.sightings.append(sighting)
             if self.target_object and not self.found and self.target_object in obj.lower():

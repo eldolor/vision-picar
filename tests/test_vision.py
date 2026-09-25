@@ -1,7 +1,9 @@
 """
 Run with: pytest tests/test_vision.py -v
 
-describe_grid_frame is pure logic and needs no API key.
+The rule-based policy's scene (`ConstrainedAgent.sensed_scene()`) is pure
+logic over a depth grid and needs no API key; it replaced the retired
+grid-fact converter `describe_grid_frame` (PLAN-ros-alignment.md).
 describe_image is tested against a mocked Anthropic client so the whole
 suite runs offline/free -- see tests/manual_describe_image.py for an
 actual API call against a real photo.
@@ -9,51 +11,76 @@ actual API call against a real photo.
 
 from unittest.mock import MagicMock, patch
 import brain.vision as vision
+from brain.agent import ConstrainedAgent
+from robot.interface import ZONE_NO_TARGET, ZONE_RANGE
 
 
-def test_describe_grid_frame_clear_path():
-    frame = {
-        "room": "hallway",
-        "facing": "E",
-        "free_space_cells": 5,
-        "doorway_ahead": False,
-        "objects_visible": [],
-        "position": (5, 5),
-    }
-    result = vision.describe_grid_frame(frame)
-    assert result["free_space"] == "clear"
-    assert result["safest_direction"] == "FORWARD"
-    assert result["obstacles_ahead"] == []
+class _DepthRobot:
+    """Publishes exactly the depth grid it is given, and nothing else --
+    so a scene test states one clearance and cannot pass for some other
+    reason. Duck-typed, like tests/test_depth_veto.py's GridRobot."""
+
+    def __init__(self, clearance_cm):
+        zone = ({"status": ZONE_NO_TARGET, "distance_cm": None}
+                if clearance_cm is None else
+                {"status": ZONE_RANGE, "distance_cm": clearance_cm})
+        self.grid = {"rows": 1, "cols": 8, "fov_deg": 60.0, "zones": [zone] * 8}
+
+    def get_depth_grid(self):
+        return self.grid
+
+    def get_distance(self):
+        return 999.0
 
 
-def test_describe_grid_frame_blocked():
-    frame = {
-        "room": "kitchen",
-        "facing": "N",
-        "free_space_cells": 0,
-        "doorway_ahead": False,
-        "objects_visible": [],
-        "position": (10, 6),
-    }
-    result = vision.describe_grid_frame(frame)
-    assert result["free_space"] == "none"
-    assert result["safest_direction"] == "STOP"
-    assert "wall" in result["obstacles_ahead"]
+def _scene(clearance_cm, frame=None):
+    agent = ConstrainedAgent(_DepthRobot(clearance_cm), min_distance_cm=20.0)
+    return agent.sensed_scene(frame or {"room": "hallway"})
 
 
-def test_describe_grid_frame_surfaces_objects_and_doorway():
-    frame = {
-        "room": "kitchen",
-        "facing": "S",
-        "free_space_cells": 2,
-        "doorway_ahead": True,
-        "objects_visible": ["red backpack"],
-        "position": (10, 7),
-    }
-    result = vision.describe_grid_frame(frame)
-    assert result["doorway_visible"] is True
-    assert result["important_objects"] == ["red backpack"]
-    assert result["free_space"] == "some"
+def test_a_long_clear_path_reads_clear_and_forward():
+    scene = _scene(150.0)
+    assert scene["free_space"] == "clear"
+    assert scene["safest_direction"] == "FORWARD"
+    assert scene["obstacles_ahead"] == []
+
+
+def test_the_scene_says_stop_exactly_where_the_collar_would_veto():
+    """The one boundary in the scene that changes a decision, and it is the
+    safety layer's own `min_distance_cm` rather than a second threshold --
+    so the free policy never argues with the collar about the same wall."""
+    blocked = _scene(19.0)
+    assert blocked["free_space"] == "none"
+    assert blocked["safest_direction"] == "STOP"
+    assert blocked["obstacles_ahead"]
+
+    allowed = _scene(21.0)
+    assert allowed["free_space"] == "some"
+    assert allowed["safest_direction"] == "FORWARD"
+
+
+def test_nothing_within_range_is_clear_never_a_veto():
+    """M3's second outcome. An empty path is a fact about the room."""
+    assert _scene(None)["free_space"] == "clear"
+
+
+def test_objects_come_from_perception_and_doorways_are_not_invented():
+    scene = _scene(150.0, {"room": "kitchen", "objects_visible": ["red backpack"]})
+    assert scene["important_objects"] == ["red backpack"]
+    assert scene["doorway_visible"] is False, "nothing measures doorways"
+
+
+def test_a_backend_with_no_perception_reports_no_objects():
+    assert _scene(150.0, {"room": "unknown"})["important_objects"] == []
+
+
+def test_a_frame_with_no_image_describes_to_the_empty_schema():
+    """`describe_frame()` used to fall back to the grid-fact converter, which
+    is gone. "Nothing seen" is the truth about a picture that does not
+    exist -- and its `safest_direction` is STOP, failing safe."""
+    scene = vision.describe_frame({"room": "hallway"})
+    assert scene["important_objects"] == []
+    assert scene["safest_direction"] == "STOP"
 
 
 def test_parse_scene_json_handles_markdown_fence():

@@ -24,6 +24,19 @@ DEFAULTS = {
     # Cloud vision service. Unused until Phase S2b ports the vision policy
     # into Python; carried here so the brain has one place to look for it.
     "vision_url": "",
+    # Where WORLD state comes from -- `GET /world/pose` and `/world/map`
+    # (`PLAN-mapping.md` N1). Empty means "the same place the robot is",
+    # which is true today: `robot/server.py` serves both halves, so a brain
+    # pointed at a robot needs no second URL.
+    #
+    # **It is a separate key because it is going to diverge.** The world's
+    # routes are the ones `PLAN-ros-alignment.md` R5 moves behind the SLAM
+    # bridge: at that point `slam_toolbox` answers the pose and the map from
+    # its own container while the body still answers from the robot runtime,
+    # and the only change on this side is this string. That is the test of
+    # whether the ROS wall was drawn in the right place -- see
+    # `control/remote_world.py`, which contains no hint that ROS exists.
+    "world_url": "",
     # Which model answers /navigate for a mission that doesn't name one.
     # Empty means "no preference": the request omits model_id entirely and
     # the vision service applies its own default. This exists for the

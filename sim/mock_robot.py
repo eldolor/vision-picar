@@ -7,9 +7,23 @@ build plan: the brain layer should never need to know whether it's talking
 to this or to real hardware.
 
 Speed/duration/angle are simulation-time-only concepts here -- they're
-converted into discrete grid moves. That conversion is the only thing that
-will differ from the real hardware backend; the function signatures and
-return shapes stay identical.
+converted into wheel velocities and integrated. That conversion is the only
+thing that will differ from the real hardware backend; the function
+signatures and return shapes stay identical.
+
+**Phase R0 (`PLAN-ros-alignment.md`) put real kinematics underneath them.**
+`set_wheel_velocity()` / `step()` / `get_wheel_state()` are the primitive:
+left and right wheel angular velocities in, an integrated continuous pose
+and encoder positions out, with collision checked against the same
+raycaster that draws the picture. The four discrete verbs are now thin
+wrappers over that one path.
+
+Wheel velocities rather than a `Twist`, and that choice is the phase: on the
+real robot `diff_drive_controller` owns the twist-to-wheels conversion, and
+a simulator that accepted a twist would leave that conversion -- and the two
+chassis constants it is parameterised by -- unexercised until the day the
+wheels are real. R4 plugs `hardware_interface::SystemInterface` into exactly
+these three methods.
 
 Two optional, opt-in behaviors, both Phase S4/S5 of
 PLAN-sim-hardening.md and both off by default so the unit suite and every
@@ -30,7 +44,12 @@ import time
 from typing import Optional
 
 from robot import interface
-from sim.grid_world import GridWorld, Heading
+from sim.grid_world import (
+    MAX_SUBSTEP_CELLS,
+    MAX_SUBSTEP_RAD,
+    ROBOT_HALF_CELL,
+    GridWorld,
+)
 from sim.sensors import DistanceSensorModel
 from sim import renderer
 from robot.interface import RobotInterface
@@ -39,26 +58,58 @@ logger = logging.getLogger("mock_robot")
 
 # Simulation conversion constants (tune freely; only affects sim realism)
 CELLS_PER_SECOND_AT_FULL_SPEED = 2.0  # at speed=100
-DEGREES_PER_TURN = 90  # grid-world only supports 90-degree turns
+# `DEGREES_PER_TURN` is gone with R0: the verbs no longer round an angle
+# up to a whole quarter-turn, they turn the angle they were given.
 # What get_distance() has always multiplied a cell count by, and what
 # sim/sensors.py defaults its own `cell_cm` to. Named here because
 # get_depth_grid() needs the same number and two copies of a constant
 # is how the grid and the scalar would start disagreeing about the same
 # wall.
 DEFAULT_CELL_CM = 30.0
+DEFAULT_CELL_M = DEFAULT_CELL_CM / 100.0
 
-# Compass degrees for the four cardinal headings, so `get_odometry()` can
-# report an angle rather than a name. Clockwise from north, matching the
-# convention every other bearing in this project uses (1.15.3's pan, the
-# depth grid's columns): positive is to the robot's right.
+# ---------- the chassis, phase R0 (PLAN-ros-alignment.md) ----------
 #
-# Now delegated to `Heading.compass_deg()`, because sim/mock_world.py needs
-# the identical mapping for `get_pose()` and two copies is how a body and a
-# world backend start disagreeing about which way the same robot faces.
-_HEADING_DEG = {h: h.compass_deg() for h in Heading}
-# The robot occupies its cell, so clearance is measured from the front of
-# that cell rather than from its centre -- see get_depth_grid().
-ROBOT_HALF_CELL = 0.5
+# These are the numbers that will SHIP, read off `HARDWARE-BOM.md` 4.3
+# (Yahboom L-type 520 motors on the differential chassis chosen in
+# `PLAN-onboard-perception.md` 1.1), and that is the whole point of taking
+# wheel velocities rather than a twist: `diff_drive_controller` will be
+# configured with exactly these, so R4 puts its kinematics under test
+# against parameters that have already been exercised here.
+#
+# Two are verified and one is not, and the difference is flagged rather
+# than averaged away:
+WHEEL_RADIUS_M = 0.0325  # 65mm rubber wheels [V]
+ENCODER_COUNTS_PER_REV = 1760  # 11 lines x 40:1 gearbox, 4x quadrature [I]
+# **PLACEHOLDER.** `HARDWARE-BOM.md` 4.3: "Track width, deck dimensions and
+# payload are unpublished: measure on the chassis", and its bring-up item 4
+# says to set it then. 0.172m is Waveshare's own firmware default -- the
+# right shape and the wrong robot. It scales pivot rate only (a straight
+# line does not depend on it), so a wrong value here makes the sim turn at
+# the wrong speed and never in the wrong direction.
+TRACK_WIDTH_M = 0.172
+
+# What speed=100 means at the wheel. Derived from the cell rate the verbs
+# have always used rather than from the motor's datasheet rpm, so that
+# `drive_forward(100, 1.0)` still covers the same ground it did before R0 --
+# a change in how far a command travels would have silently re-tuned every
+# recorded demo and every step budget in the suite. The implied 176 rpm sits
+# between the motor's rated 150 and no-load 300 (4.3), so it is also a
+# number the real part can actually produce.
+WHEEL_MAX_RAD_S = (
+    CELLS_PER_SECOND_AT_FULL_SPEED * DEFAULT_CELL_M / WHEEL_RADIUS_M
+)
+
+# There used to be a `_HEADING_DEG` table here, so `get_odometry()` could
+# report an angle rather than a name. **Gone as of R0**: the heading is a
+# float on the world now, `GridWorld.heading_deg` is the one place the
+# theta-to-compass conversion happens, and a lookup table keyed by cardinal
+# could not have expressed 45 degrees anyway.
+# `ROBOT_HALF_CELL` is imported from sim/grid_world.py as of R0 -- the
+# footprint is a fact about the thing in the world, and the mover
+# (`GridWorld.translate()`) and this reported clearance must agree about it.
+# Re-exported here because `get_depth_grid()` below reads it and a reader
+# looking for the constant will look in this file.
 
 
 class MockRobot(RobotInterface):
@@ -75,11 +126,22 @@ class MockRobot(RobotInterface):
     ):
         self.world = world
         self.realtime = realtime
-        # Path length, in cells, actually covered -- see get_odometry().
+        # Path length, in METRES, actually covered -- see get_odometry().
         # Counted here rather than read off the world because the world
         # knows only where the robot IS, and odometry is about where it
-        # has BEEN.
-        self._cells_travelled = 0
+        # has BEEN. Metres rather than the cells this used to hold because
+        # R0 integrates a wheel velocity and a wheel radius is in metres;
+        # a cell count would have to be un-rounded to get back here.
+        self._path_m = 0.0
+        # Phase R0: the standing wheel command, and the integrated wheel
+        # positions the encoders are read off. Two separate things on
+        # purpose -- `ros2_control` writes the first and reads the second,
+        # once per control cycle, and conflating them is how a controller
+        # ends up reading back its own setpoint instead of the robot.
+        self._cmd_left_rad_s = 0.0
+        self._cmd_right_rad_s = 0.0
+        self._left_rad = 0.0
+        self._right_rad = 0.0
         # Phase S2. On by default because the pixels are now part of the
         # RobotInterface contract -- the conformance suite asserts every
         # backend returns a decodable image. `render=False` is the
@@ -96,37 +158,193 @@ class MockRobot(RobotInterface):
         # not just a simplification, and why closing it is opt-in.
         self.sensor = sensor
 
+    # ---------- wheels: the primitive everything else is built on (R0) ----------
+    #
+    # `PLAN-ros-alignment.md` R0. Left/right wheel angular velocities rather
+    # than a `Twist`, deliberately: `diff_drive_controller` owns the
+    # twist-to-wheels conversion on the real robot, so a simulator that took
+    # a twist would leave exactly that conversion -- and the two chassis
+    # constants it is parameterised by -- untested until hardware day. The
+    # seam R4 plugs into is `hardware_interface::SystemInterface`, whose
+    # `write()` sets wheel velocity commands and whose `read()` returns wheel
+    # positions, which is the shape of the three methods below.
+    #
+    # These are NOT on `RobotInterface`, and not yet. R2 is where `/wheels`
+    # becomes a route and where promoting them to the interface (with an
+    # honest "this backend has no wheels to report" default, as
+    # `get_depth_grid()` and `get_odometry()` both carry) belongs. Until a
+    # consumer exists, adding an abstraction is adding a second thing to
+    # keep in step.
+
+    def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
+        """Command both wheels, in rad/s. Positive is forward on both.
+
+        Standing command: it persists until changed, exactly as a motor
+        driver does, and `step()` is what makes time pass. That is why
+        `stop()` has to zero it -- a stop that only halted the current move
+        would leave the robot rolling on the next tick.
+        """
+        self._cmd_left_rad_s = float(left_rad_s)
+        self._cmd_right_rad_s = float(right_rad_s)
+        return self.get_wheel_state()
+
+    def step(self, dt: float) -> dict:
+        """Integrate the standing wheel command for `dt` seconds.
+
+        The whole of the continuous stack is this function. Exact
+        differential-drive kinematics, sub-stepped so that a curved path is
+        checked against the raycaster more than once:
+
+            v     = (v_right + v_left) / 2          metres/second
+            omega = (v_right - v_left) / track      radians/second, CCW+
+
+        **The sign of `omega` is the one thing here worth reading twice.**
+        `omega` above is REP-103's body yaw rate -- counter-clockwise
+        positive, which is a turn to the robot's LEFT -- because that is what
+        `diff_drive_controller` and every ROS message mean by it. The grid's
+        `theta` increases CLOCKWISE (see `sim/grid_world.py`'s module
+        docstring: y grows downward). So the conversion carries a minus sign,
+        and it happens here and nowhere else.
+
+        Encoder positions are advanced from what the body ACHIEVED, not from
+        what was commanded, which is the same choice `get_odometry()` has
+        always made about a blocked move: an encoder measures the wheel, and
+        a wheel that is against a wall is not turning. **Slip is therefore
+        not modelled at all** -- a real wheel spinning against a blocked
+        chassis counts up and this one does not. That is `PLAN-ros-alignment`
+        section 4's listed residue ("wheel slip magnitude ... the coefficient
+        is not known"), left for R8 calibration rather than guessed at here.
+        """
+        if dt <= 0:
+            return self.get_wheel_state()
+
+        v_left = self._cmd_left_rad_s * WHEEL_RADIUS_M
+        v_right = self._cmd_right_rad_s * WHEEL_RADIUS_M
+        v = (v_right + v_left) / 2.0
+        omega = (v_right - v_left) / TRACK_WIDTH_M
+
+        # One sub-step per MAX_SUBSTEP_CELLS of travel and per
+        # MAX_SUBSTEP_RAD of rotation, whichever is stricter.
+        travel_cells = abs(v) * dt / DEFAULT_CELL_M
+        substeps = max(
+            1,
+            math.ceil(travel_cells / MAX_SUBSTEP_CELLS) if travel_cells else 1,
+            math.ceil(abs(omega) * dt / MAX_SUBSTEP_RAD) if omega else 1,
+        )
+        dt_i = dt / substeps
+
+        moved_m = 0.0
+        turned_rad = 0.0
+        blocked = False
+        for _ in range(substeps):
+            # Rotate first, then translate along the new heading -- the
+            # standard explicit integration of a unicycle, and at these
+            # sub-step sizes the difference from an exact arc is far below
+            # the raycaster's own FPV_STEP resolution.
+            d_theta_body = omega * dt_i
+            self.world.rotate(-d_theta_body)  # CCW body -> theta decreasing
+            turned_rad += d_theta_body
+
+            want_cells = v * dt_i / DEFAULT_CELL_M
+            got_cells = self.world.translate(want_cells)
+            if abs(got_cells) < abs(want_cells) - 1e-12:
+                blocked = True
+            got_m = got_cells * DEFAULT_CELL_M
+            moved_m += got_m
+            self._path_m += abs(got_m)
+
+            # Inverse kinematics, so the encoders describe the motion that
+            # actually happened. This is the exact inverse of the forward
+            # pair above, which is what makes a round trip through
+            # `get_odometry()` consistent with `get_wheel_state()`.
+            half = d_theta_body * TRACK_WIDTH_M / 2.0
+            self._left_rad += (got_m - half) / WHEEL_RADIUS_M
+            self._right_rad += (got_m + half) / WHEEL_RADIUS_M
+
+        return {
+            "moved_m": moved_m,
+            "moved_cells": moved_m / DEFAULT_CELL_M,
+            "turned_deg": math.degrees(turned_rad),
+            "blocked": blocked,
+            **self.get_wheel_state(),
+        }
+
+    def get_wheel_state(self) -> dict:
+        """Per-wheel position, velocity and encoder count.
+
+        Positions in radians and velocities in rad/s because that is what
+        `hardware_interface` exchanges; the counts are the same positions in
+        the units the ESP32 will actually report (`HARDWARE-BOM.md` 4.3's
+        1760 per revolution at 4x quadrature), so R7's fake board has
+        something to serialise and R2 has something to publish.
+        """
+        per_rad = ENCODER_COUNTS_PER_REV / (2 * math.pi)
+        return {
+            "left": {"position_rad": self._left_rad,
+                     "velocity_rad_s": self._cmd_left_rad_s,
+                     "counts": int(round(self._left_rad * per_rad))},
+            "right": {"position_rad": self._right_rad,
+                      "velocity_rad_s": self._cmd_right_rad_s,
+                      "counts": int(round(self._right_rad * per_rad))},
+            "wheel_radius_m": WHEEL_RADIUS_M,
+            "track_width_m": TRACK_WIDTH_M,
+            "counts_per_rev": ENCODER_COUNTS_PER_REV,
+        }
+
+    def drive_wheels(self, left_rad_s: float, right_rad_s: float,
+                     duration: float) -> dict:
+        """Command both wheels and let `duration` elapse. Convenience, and
+        the one the discrete verbs below are written in terms of -- so there
+        is exactly one path from a command to a change in the pose."""
+        self.set_wheel_velocity(left_rad_s, right_rad_s)
+        result = self.step(duration)
+        self._cmd_left_rad_s = self._cmd_right_rad_s = 0.0
+        return result
+
     # ---------- driving ----------
+    #
+    # The discrete verb layer, unchanged in signature and in what it
+    # commands, but now REALISED through the wheels above rather than by
+    # teleporting a cell at a time. A verb still means what it meant: a
+    # default `drive_forward()` covers one cell, and `turn_left()` a quarter
+    # turn, because `/action` is a verb API and every step budget, demo and
+    # recorded walk in this repo was measured against that. What changed is
+    # that `turn_left(45)` now turns 45 degrees instead of rounding up to 90
+    # -- which is the point of R0, and what makes P25's A/B runnable.
 
     def drive_forward(self, speed: int = 50, duration: float = 0.5) -> dict:
         cells = self._speed_duration_to_cells(speed, duration)
-        result = self.world.move(cells)
-        self._cells_travelled += abs(result["moved"])
+        result = self._drive_cells(cells, speed)
         self._settle(duration)
-        return {"action": "drive_forward", "speed": speed, "duration": duration, **result}
+        return {"action": "drive_forward", "speed": speed, "duration": duration,
+                **result}
 
     def reverse(self, speed: int = 50, duration: float = 0.5) -> dict:
         cells = self._speed_duration_to_cells(speed, duration)
-        result = self.world.move(-cells)
-        self._cells_travelled += abs(result["moved"])
+        result = self._drive_cells(-cells, speed)
         self._settle(duration)
-        return {"action": "reverse", "speed": speed, "duration": duration, **result}
+        return {"action": "reverse", "speed": speed, "duration": duration,
+                **result}
 
     def turn_left(self, angle: int = 90) -> dict:
-        steps = max(1, round(angle / DEGREES_PER_TURN))
-        result = {}
-        for _ in range(steps):
-            result = self.world.turn_left()
-        return {"action": "turn_left", "angle": angle, **result}
+        return {"action": "turn_left", "angle": angle,
+                **self._pivot(-float(angle))}
 
     def turn_right(self, angle: int = 90) -> dict:
-        steps = max(1, round(angle / DEGREES_PER_TURN))
-        result = {}
-        for _ in range(steps):
-            result = self.world.turn_right()
-        return {"action": "turn_right", "angle": angle, **result}
+        return {"action": "turn_right", "angle": angle,
+                **self._pivot(float(angle))}
 
     def stop(self) -> dict:
+        """Zero the standing wheel command, then say so.
+
+        Before R0 this was a log line and nothing else, because there was no
+        velocity to cancel -- a move was instantaneous. Now there is, and
+        every failsafe in `control/` (B3.1-B3.3) depends on `stop()` really
+        stopping: a robot with a standing command and a hung brain would
+        keep integrating forward on the next tick.
+        """
+        self._cmd_left_rad_s = 0.0
+        self._cmd_right_rad_s = 0.0
         self.world._record("STOP")
         return {"action": "stop"}
 
@@ -154,18 +372,17 @@ class MockRobot(RobotInterface):
         same shape `ReplayRobot` and `TeleopRobot` already return, so all
         four backends answer this call the same way.
 
-        **The grid facts are sim-only debug data and no vision policy may
-        read them.** They stay at the top level rather than moving under
-        `metadata` for one reason: `brain/agent.py`'s frontier preference
-        reads `position`/`facing` from here, and
-        `PLAN-sim-hardening.md` 2.2 is explicit that the rule-based agent
-        keeps its coordinates ("do not spend effort giving it
-        coordinates; do not delete it either"). A camera cannot produce
-        them, so anything on the hardware path that touches them is
-        cheating and will fail the moment it meets a real robot.
+        **There are no grid facts here any more** (`PLAN-ros-alignment.md`).
+        `position`, `facing`, `free_space_cells` and `doorway_ahead` were
+        removed with the cell layer: the frontier policy reads its pose from
+        `WorldInterface` and its clearance from `get_depth_grid()`, the two
+        places a real robot gets them. What remains beside the pixels is
+        `room` and `objects_visible` -- simulated PERCEPTION, standing in
+        for the detector that 1.12 forbids running on a render. See
+        `GridWorld.frame_description()`.
 
-        `frame_description()` remains the free/offline path: no render, no
-        Pillow, and the same dict minus the three keys added here.
+        `frame_description()` remains the free/offline path: no render and
+        no JPEG encode, the same dict minus the three keys added here.
         """
         frame = self.world.frame_description()
         if not self.render:
@@ -240,9 +457,8 @@ class MockRobot(RobotInterface):
         """
         cols = interface.DEPTH_COLS_DEFAULT
         cell_cm = self.sensor.cell_cm if self.sensor else DEFAULT_CELL_CM
-        view = self.world._view_heading()
-        base_angle = renderer.HEADING_ANGLE[view.name]
-        px, py = self.world.robot_x + 0.5, self.world.robot_y + 0.5
+        base_angle = self.world.view_angle()
+        px, py = self.world.x, self.world.y
 
         zones = []
         for i in range(cols):
@@ -281,7 +497,9 @@ class MockRobot(RobotInterface):
             else:
                 zones.append({"status": interface.ZONE_RANGE, "distance_cm": reading})
 
-        self.world._record(f"DEPTH view_heading={view.name} cols={cols}")
+        self.world._record(
+            f"DEPTH view_deg={math.degrees(base_angle + math.pi / 2) % 360:.1f} "
+            f"cols={cols}")
         # `fov_deg` is the render's own field of view, and it must be: the
         # zones above are cast on `renderer.FPV_FOV`, so publishing anything
         # else would point `robot/safety.py`'s path cone somewhere the rays
@@ -293,22 +511,30 @@ class MockRobot(RobotInterface):
         """Real odometry, because the grid world knows where it put us.
 
         Path length rather than displacement, per the interface: every
-        cell actually moved adds `cell_cm`, including a reverse, and a
-        move that was BLOCKED adds nothing because the robot did not go
-        anywhere. `world.move()` already returns how many cells it really
+        metre actually covered adds to it, including a reverse, and a move
+        that was BLOCKED adds nothing because the robot did not go
+        anywhere. `step()` accumulates what `GridWorld.translate()` really
         managed, so this is a sum of truths rather than of intentions --
         which is what an encoder measures and a commanded distance is not.
 
+        **As of R0 it is integrated from the wheels rather than counted in
+        cells**, and that is the point rather than a refactor: a cell count
+        could only ever report multiples of 30cm, so a policy pacing itself
+        on distance travelled (`brain/tiered.py`'s cold-search interval)
+        could not see a 4cm nudge at all. `get_wheel_state()` publishes the
+        same motion per wheel, and the two agree by construction -- one is
+        the forward kinematics of the other.
+
         Heading is the body heading, never the view heading: a pan changes
         what the camera sees and moves no wheels. `get_depth_grid()` casts
-        off the VIEW heading and this reports the BODY one, and the two
-        differing is correct rather than an inconsistency.
+        off the VIEW angle and this reports the BODY one, and the two
+        differing is correct rather than an inconsistency. Continuous now,
+        so a 45-degree turn reports 45 degrees.
         """
-        cell_cm = self.sensor.cell_cm if self.sensor else DEFAULT_CELL_CM
         return {
             "usable": True,
-            "distance_m": round(self._cells_travelled * cell_cm / 100.0, 4),
-            "heading_deg": float(_HEADING_DEG[self.world.heading]),
+            "distance_m": round(self._path_m, 4),
+            "heading_deg": round(self.world.heading_deg, 4),
         }
 
     def get_distance(self) -> float:
@@ -333,6 +559,70 @@ class MockRobot(RobotInterface):
         speed = max(0, min(100, speed))
         cells = (speed / 100.0) * CELLS_PER_SECOND_AT_FULL_SPEED * duration
         return max(1, round(cells)) if speed > 0 and duration > 0 else 0
+
+    def _drive_cells(self, cells: float, speed: int) -> dict:
+        """Realise a straight-line move of `cells` cells through the wheels.
+
+        Both wheels at the same velocity, for as long as that velocity needs
+        to cover the distance. The integration time is therefore NOT the
+        caller's `duration` -- a verb's `duration` is quantised into a whole
+        number of cells first (`_speed_duration_to_cells()`, unchanged since
+        Phase 0), so the two were already only loosely related. `_settle()`
+        still sleeps the declared `duration`, because that is what S4's
+        watchdog readout is measured against.
+        """
+        if cells == 0:
+            return {"requested": 0, "moved": 0.0}
+        w = max(1, min(100, speed)) / 100.0 * WHEEL_MAX_RAD_S
+        sign = 1.0 if cells > 0 else -1.0
+        dt = abs(cells) * DEFAULT_CELL_M / (w * WHEEL_RADIUS_M)
+        moved_cells = self.drive_wheels(sign * w, sign * w, dt)["moved_cells"]
+        self.world._record(
+            f"MOVE requested={cells} moved={moved_cells:.3f} "
+            f"pos=({self.world.x:.2f},{self.world.y:.2f}) "
+            f"cell=({self.world.robot_x},{self.world.robot_y}) "
+            f"heading_deg={self.world.heading_deg:.1f}"
+        )
+        # No `position` in the ack any more. It was a grid cell, and a
+        # motor driver cannot report one -- the body's own account of how
+        # far it went is `get_odometry()`, and where it ended up is the
+        # world's to say (`get_pose()`).
+        return {"requested": cells, "moved": moved_cells}
+
+    def _pivot(self, degrees: float) -> dict:
+        """Turn in place by `degrees` -- positive to the robot's right --
+        through counter-rotating wheels.
+
+        A pivot rather than an arc, which is correct for the differential
+        chassis chosen in `PLAN-onboard-perception.md` 1.1 and is the whole
+        reason S6's Ackermann half could be retired. Zero net travel, so
+        `get_odometry()`'s `distance_m` does not move -- a property
+        `tests/test_robot_contract.py` pins directly.
+        """
+        if degrees == 0:
+            return {"heading": self.world.heading.name,
+                    "heading_deg": self.world.heading_deg}
+        w = WHEEL_MAX_RAD_S
+        # omega_body = (v_right - v_left) / track, with v_left = -v_right.
+        # At full wheel speed on the placeholder track width that is ~400
+        # deg/s, so a quarter-turn verb occupies ~0.23s. Faster than the real
+        # chassis will pivot, and deliberately not tuned here: the verb layer
+        # is instantaneous as far as every existing caller is concerned
+        # (`_settle()` sleeps the declared `duration`, not this), and picking
+        # a turn rate is a calibration question for a measured track width
+        # rather than a guess to bake in now.
+        omega = 2 * w * WHEEL_RADIUS_M / TRACK_WIDTH_M
+        dt = math.radians(abs(degrees)) / omega
+        # theta increases to the RIGHT; the body turns left (omega positive,
+        # right wheel forward) when theta should decrease.
+        sign = -1.0 if degrees > 0 else 1.0
+        self.drive_wheels(-sign * w, sign * w, dt)
+        self.world._record(
+            f"TURN {degrees:+.1f}deg heading={self.world.heading.name} "
+            f"heading_deg={self.world.heading_deg:.1f}"
+        )
+        return {"heading": self.world.heading.name,
+                "heading_deg": self.world.heading_deg}
 
     def _settle(self, duration: float):
         """No-op unless self.realtime is set (config/robot.yaml's

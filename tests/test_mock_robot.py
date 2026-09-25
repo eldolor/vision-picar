@@ -97,7 +97,6 @@ def test_get_camera_frame_returns_structured_scene(open_world):
     robot = MockRobot(open_world)
     frame = robot.get_camera_frame()
     assert "room" in frame
-    assert "free_space_cells" in frame
     assert "objects_visible" in frame
 
 

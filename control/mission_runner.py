@@ -49,9 +49,9 @@ from typing import Callable, Optional
 
 from brain.agent import ObjectSearchAgent
 from brain.memory import MissionMemory
-from brain.vision import describe_grid_frame
 from brain.vision_agent import VisionAgent
 from robot.interface import Preempted, RobotInterface
+from world.interface import NullWorld, WorldInterface
 
 logger = logging.getLogger("mission_runner")
 
@@ -244,11 +244,12 @@ class MissionRunner:
         vision_fn: Optional[Callable[[dict], dict]] = None,
         vision_timeout_s: float = DEFAULT_VISION_TIMEOUT_S,
         max_vision_failures: int = DEFAULT_MAX_VISION_FAILURES,
+        world: Optional[WorldInterface] = None,
     ):
         if policy not in POLICIES:
             raise ValueError(f"Unknown policy: {policy!r}. Known: {', '.join(POLICIES)}")
         if policy in VISION_POLICIES and vision_fn is None:
-            # The default vision_fn is the offline grid converter. Running
+            # The default vision_fn is the free sensor-built scene. Running
             # the vision policy on top of it would produce a mission that
             # looks like it used the model and did not.
             raise ValueError(
@@ -264,6 +265,18 @@ class MissionRunner:
             )
 
         self.robot = robot
+        # WORLD state, and the first consumer `control/` has ever had for it
+        # (`PLAN-mapping.md` N1 built the routes; nothing here read them).
+        # Optional and defaulting to `NullWorld()` rather than None, so every
+        # consumer gets the same honest `usable: False` shape instead of
+        # having to branch on a missing object -- the same choice
+        # `unusable_odometry()` makes one interface over.
+        #
+        # The body/world line is why this is a separate argument rather than
+        # something read off `robot`: odometry is what the body says about
+        # itself, pose is what the world says about the body, and at R5 the
+        # two answers come from two different processes.
+        self.world = world if world is not None else NullWorld()
         # Metrics shipping. Off unless a URL is configured, which is what
         # keeps tests and laptop runs from POSTing anywhere.
         self.metrics_url = ""
@@ -272,7 +285,10 @@ class MissionRunner:
         self.git_revision = ""
         self.policy = policy
         self.max_steps = max_steps
-        self.vision_fn = vision_fn or describe_grid_frame
+        # None means "the agent's own sensor-built scene" -- resolved after
+        # the agent exists, below, because that scene reads the agent's
+        # SafetyController (`ConstrainedAgent.sensed_scene()`).
+        self.vision_fn = vision_fn
         self.vision_timeout_s = vision_timeout_s
         self.max_vision_failures = max_vision_failures
 
@@ -295,7 +311,12 @@ class MissionRunner:
             # veto would return immediately anyway. Passing it either way
             # would just be a flag that cannot fire.
             vision_proximity_veto=vision_proximity_veto and policy in VISION_POLICIES,
+            world=self.world,
         )
+        if self.vision_fn is None:
+            # The UNGATED agent method is fine here: a scene only reads
+            # sensors, and `_HaltGate` exists to stop moves, not reads.
+            self.vision_fn = self.agent.sensed_scene
 
         self._lock = threading.RLock()
         self._running = False
@@ -628,7 +649,9 @@ class MissionRunner:
             "step": s.step,
             "object_name": s.object_name,
             "room": s.room,
-            "position": list(s.position) if s.position else None,
+            # A map-frame pose dict, or None -- see brain/memory.py's
+            # Sighting. It was a grid cell until the ROS alignment.
+            "position": s.position,
         }
 
     @staticmethod

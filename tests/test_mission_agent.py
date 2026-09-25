@@ -6,13 +6,15 @@ from sim.mock_robot import MockRobot
 from sim.maps.starter_house import build_starter_world
 from brain.agent import MissionAgent
 from brain.memory import MissionMemory
+from tests.conftest import mock_world_for
 
 
 def test_mission_agent_finds_backpack_in_starter_house():
     world = build_starter_world()  # red backpack lives in the kitchen
     robot = MockRobot(world)
     memory = MissionMemory(mission="Find the red backpack.", target_object="red backpack")
-    agent = MissionAgent(robot, memory, min_distance_cm=30)
+    agent = MissionAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     report = agent.run_mission(max_steps=100)
 
@@ -27,7 +29,8 @@ def test_mission_agent_stops_once_found_even_if_more_steps_allowed():
     world = build_starter_world()
     robot = MockRobot(world)
     memory = MissionMemory(mission="Find the red backpack.", target_object="red backpack")
-    agent = MissionAgent(robot, memory, min_distance_cm=30)
+    agent = MissionAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     report = agent.run_mission(max_steps=100)
     steps_when_found = report["steps_taken"]
@@ -41,7 +44,8 @@ def test_mission_agent_reports_failure_when_target_absent():
     world = build_starter_world()
     robot = MockRobot(world)
     memory = MissionMemory(mission="Find the blue umbrella.", target_object="blue umbrella")
-    agent = MissionAgent(robot, memory, min_distance_cm=30)
+    agent = MissionAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     report = agent.run_mission(max_steps=15)  # too few steps / wrong target
 
@@ -53,7 +57,8 @@ def test_mission_agent_records_rooms_visited_and_searched():
     world = build_starter_world()
     robot = MockRobot(world)
     memory = MissionMemory(mission="Find the red backpack.", target_object="red backpack")
-    agent = MissionAgent(robot, memory, min_distance_cm=30)
+    agent = MissionAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     agent.run_mission(max_steps=100)
 

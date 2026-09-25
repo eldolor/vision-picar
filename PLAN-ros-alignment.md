@@ -1,11 +1,13 @@
 # Plan: ROS 2, with the twin still doing the proving
 
-Status: **PROPOSED, nothing built** · Date: 2026-09-25 · Phase IDs: `R0`-`R9`,
+Status: **R0 BUILT 2026-09-25, R1-R9 proposed** · Date: 2026-09-25 · Phase IDs: `R0`-`R9`,
 alongside `S*` (`PLAN-sim-hardening.md`), `B*` (`PLAN-brain-relocation.md`),
 `M*` (`PLAN-microduck-transplants.md`), `T*` (`PLAN-teleop-robot.md`),
 `N*` (`PLAN-mapping.md`), `C*`/`P*` (`PLAN-onboard-perception.md`).
 
-Written against `dev` at `672a9bb`.
+Written against `dev` at `672a9bb`. **R0 landed the same day** -- see its
+row in section 3 and section 3.1 below for what it measured and what it
+still owes.
 
 ---
 
@@ -94,7 +96,7 @@ honest all-unusable defaults.
 
 | ID | What | Proof |
 |---|---|---|
-| **R0** | **Continuous pose + diff-drive kinematics.** C2 and 1.14 merged. `grid_world.py` holds `robot_x: int`, `robot_y: int`, `heading: Heading` today (lines 71-73) -- nav2 cannot drive that. `GridWorld` gains float `x`/`y`/`theta`; `MockRobot` takes **left/right wheel angular velocities** and integrates over `dt` using `sim.realtime` (S4, built); encoder counts fall out of that integration; continuous collision via `renderer.cast_ray()`. Wheel velocities rather than a twist **on purpose**: it puts `diff_drive_controller`'s kinematics under test with the parameters that will ship | D-pad rotates through non-cardinal angles, FPV and depth strip track smoothly |
+| **R0** | **DONE 2026-09-25 (not deployed).** **Continuous pose + diff-drive kinematics.** C2 and 1.14 merged. `GridWorld` holds float `x`/`y`/`theta`; `MockRobot.set_wheel_velocity()` / `step()` / `get_wheel_state()` take **left/right wheel angular velocities** and integrate over `dt`; encoder counts fall out of that integration; continuous collision via `renderer.cast_ray()`. Wheel velocities rather than a twist **on purpose**: it puts `diff_drive_controller`'s kinematics under test with the parameters that will ship | Map view draws a robot between cells at a non-cardinal bearing; FPV and depth strip track smoothly. **The D-pad half is still owed** -- see 3.1 |
 | **R1** | **P25's A/B, finally runnable.** `brain/goal_pose.py` is built and default OFF because the sim turned in 90° quanta against a 10° centre band. Wire into `brain/tiered.py`; add median-run-length and reversal metrics to `control/walk_eval.py`; run it. **Before ROS**, so R6 has a baseline | Run-length rises above 1.0; no more LEFT/RIGHT alternation on a stationary target |
 | **R2** | **Three routes.** `GET`/`POST /wheels` (per-wheel position + velocity); `GET /world/scan` (`MockWorld` already casts 360 rays, one per degree -- publish the ranges, not only the cells they marked); `GET /world/truth` | A ground-truth ghost on the twin's map. Identical today, which is the point |
 | **R3** | **URDF + TF.** `base_link`, two wheel joints, `laser`, `camera_link` as child of a **revolute pan joint** (ST3215). §900's 11-14cm sensor-to-bumper offset becomes a transform, not a constant. Bearings compose through the pan joint -- the general form of what `goal_pose.py` does by hand | Frames drawn on the map view, swinging as the servo pans |
@@ -106,6 +108,177 @@ honest all-unusable defaults.
 | **R9** | **Swap the plugin.** `picar_sim_hardware` -> `picar_hardware`, `sim_scan_node` -> `sllidar_ros2`. **Nothing above the seam changes.** Then N5's real work: scans sanity-checked in the actual house against glass, mirrors, dark matte, mounting vibration. Re-read P7e here | Same map view, same goal-tap, same recovery -- in a real room. Drive at glass and watch the ring |
 
 ---
+
+### 3.1 R0 as built (2026-09-25)
+
+Three files carry it, and the shape is the one the row specified.
+
+* **`sim/grid_world.py`** is no longer a dataclass, because `robot_x`,
+  `robot_y` and `heading` are now *views* of the continuous pose rather than
+  the state itself, and a field and a property cannot share a name. The
+  constructor signature is unchanged, so every caller and every test that
+  builds a world by cell and cardinal heading still does -- the getters
+  floor, the setters snap to the cell centre. `translate()` and `rotate()`
+  are the new primitives; `move()` / `turn_left()` / `turn_right()` are thin
+  wrappers kept for the verb layer, and the turns now take degrees.
+* **`sim/mock_robot.py`** holds the kinematics and the three chassis
+  constants, read off `HARDWARE-BOM.md` 4.3: wheel radius 0.0325m `[V]`,
+  1760 counts/rev `[I]`, **track width 0.172m as a flagged PLACEHOLDER**
+  (4.3: "unpublished: measure on the chassis"). A test pins the blast radius
+  of that one being wrong: a straight line does not depend on it, so a wrong
+  value can make the sim pivot at the wrong rate and can never make it
+  travel the wrong distance.
+* **`sim/mock_world.py` and `sim/renderer.py`** read `world.x` /
+  `world.view_angle()` where they read `world.robot_x + 0.5` /
+  `HEADING_ANGLE[view.name]`. That is the whole of the change outside the
+  two files the phase named.
+
+**Four things worth knowing before extending it.**
+
+1. **The verb layer still means what it meant.** A default `drive_forward()`
+   covers one cell and `turn_left()` a quarter turn, because `/action` is a
+   verb API and every step budget, recorded demo and safety threshold in
+   this repo was measured against that. `WHEEL_MAX_RAD_S` is therefore
+   *derived* from `CELLS_PER_SECOND_AT_FULL_SPEED` rather than from the
+   motor's datasheet rpm -- the implied 176 rpm happens to sit between the
+   part's rated 150 and no-load 300, so it is also a speed the real wheel
+   can produce. What changed is that `turn_left(45)` turns 45 degrees
+   instead of rounding up to 90.
+2. **`stop()` now has something to cancel.** The wheel command is a standing
+   command, as a motor driver's is, so a `stop()` that only halted the
+   current move would leave the robot integrating forward on the next tick.
+   Every failsafe in `control/` (B3.1-B3.3) rests on that.
+3. **Collision is deliberately NOT `get_depth_grid()`'s reduction.**
+   `cast_ray()` overshoots by up to one `FPV_STEP`, and the depth grid
+   subtracts it because it feeds a safety veto and must never overstate
+   clearance. Subtracting it in the mover too would leave every ordinary
+   one-cell step 1.5cm short of the cell it aimed for and log a wall it
+   never touched. The invariant that matters -- the robot's cell is never a
+   wall -- holds either way, and is now swept over seven headings by a test
+   rather than guaranteed by construction.
+4. **N1's prediction held exactly, and that is the phase's real result.**
+   `sim/mock_world.py` predicted in writing that a quantised pose was "a
+   limitation of the *simulator*, not of the contract" and that C2 would
+   make it smooth "without changing one line on either side of the wall".
+   Three lines changed in that file and nothing at all in
+   `world/interface.py`, `control/remote_world.py` or the twin. That is the
+   evidence the wall was drawn in the right place before anything stood
+   behind it -- which is the entire bet of (b+) over (c).
+
+**What R0 still owes, stated rather than quietly dropped (section 7's rule).**
+The continuous pose is watchable from a phone today: `GET /world/pose`
+reports a fractional position and a non-multiple-of-90 bearing, the map view
+draws the robot from it, and the FPV and depth strip are both cast from
+`view_angle()`. Verified end to end over HTTP -- `POST /action {"action":
+"LEFT", "angle": 30}` moves the published bearing from 90 to 60 degrees, and
+a `FORWARD` then lands the robot off both grid lines. **But no twin control
+sends an angle other than 90**, so the phone cannot yet *command* a
+non-cardinal turn, and the row's "D-pad rotates through non-cardinal angles"
+is unmet. Two candidates, both small: an angle stepper beside the D-pad, or a
+press-and-hold that sends a velocity (which is the one R4 will want anyway).
+Settle it with R1, whose A/B is the first consumer that cares.
+
+**Also untouched and worth flagging:** `renderFPV` in `web-twin/app.js` is
+still cardinal, so the pre-S2 local-render fallback would draw the wrong view
+at a non-cardinal pose. The "frame source: server / local" readout is what
+tells you which one drew the picture, and S2's note that `renderFPV` is now
+safe to delete has one more reason behind it.
+
+### 3.2 The twin, stripped of its second copies (2026-09-25)
+
+Done alongside R0, prompted by the user telling me two things: that "digital
+twin" means the **Guide** tab, and that the **Sim** tab had never been used.
+
+The second is the more useful fact, and it is worth recording rather than
+smoothing over. Eleven phases' §7 proofs live in the Sim tab -- M2's depth
+strip, M3's path zones, M4's Driving and Last-refusal lines, N1's map, B3's
+drills, B4's Remote brain panel, M1/P2/P3's policy picker and tier readouts,
+and R0's continuous pose. All were built and signed off; none had been
+watched. §7's rule was satisfied by *building* a readout. That is not an
+argument against the rule -- it is an argument that the surface has to be one
+someone opens, which is why what follows is a reduction rather than an
+addition.
+
+**Removed:**
+
+* the **Camera tab** entirely (one panel, one JS block, its CSS). It called
+  `/describe` with `/analyze` as a fallback; both routes stay, deployed and
+  tested, with no twin client.
+* the twin's **hardcoded copy of the house** -- `LAYOUT`, `OBJECTS`, the
+  room-boundary rectangles in `roomAt()`, `HEADING_VEC`/`RIGHT_OF`/`LEFT_OF`
+  and `CELL_CM` -- and the top-down canvas it fed. N1's map view replaces it,
+  drawn from `GET /world/map`: discovered, tri-state, and the same route
+  `slam_toolbox` serves at R5. There is no layout to copy for a real room.
+* the **cell-shaped telemetry** (room, cardinal facing, free cells, doorway,
+  objects). These are `frame_description()`'s grid facts, which
+  `robot/interface.py` forbids any hardware-path policy from reading -- and a
+  readout is a consumer too.
+* the **JS local brain** (`autoStep`, a third copy of the frontier
+  algorithm) and the **JS Vision Autopilot**. R4 allows exactly one writer to
+  the wheels; a brain that dies with a browser tab was never going to be it,
+  and the server's 409 plus M4's authority order already enforce what the
+  two-panel arrangement used to.
+* **`renderFPV`/`fpvCastRay`** and `tests/test_renderer_parity.py` -- see
+  `PLAN-sim-hardening.md` S2, which had licensed this deletion three weeks
+  earlier and which R0 turned from safe into necessary.
+
+**Kept, and this is now the whole Sim tab:** the D-pad and its action log,
+the Remote brain panel with its policy picker, drills and tier readouts, the
+camera canvas, the depth strip, the odometry readout, the world map, and the
+frame-source line. Every one of them reads a route the robot serves. That is
+what lets the same panel show a simulated room today and a SLAM map of a real
+hallway at R5, with no third copy of anything to keep in step.
+
+Net: ~970 lines of JavaScript, and the twin no longer contains a house, a
+compass, a renderer or a brain. `tests/test_ui.py` + `test_ui_pipeline.py`
+(100 tests) green throughout; full suite 1147 passed.
+
+**The Python cell layer followed the same day, in three stages.**
+
+*A -- `control/` gets the world.* N1 built `/world/pose`, `/world/map` and
+`RemoteWorld`, and nothing consumed them. `MissionRunner` now takes a
+`world`; `brain_server` builds a `RemoteWorld`, reading its URL off the robot
+it actually built (deriving it from `config["robot_url"]` silently pointed any
+caller with its own `robot_factory` at a different machine); and
+`brain.world_url` exists so R5 can move the pose and map behind the SLAM
+bridge with one string. The containment test now covers `world`:
+`world.interface` allowed, `world.factory` not, because its `sim` branch
+lazily imports the simulator and would pass the existing check.
+
+*B -- the frontier is allocentric.* It asks `get_pose()` for metres and
+degrees, predicts where a pivot lands, and buckets visited-ness at the map's
+own `resolution_m` -- nav2's frontier search's arithmetic, so it works against
+a 5cm SLAM map as well as the sim's 30cm. The three cardinal lookup tables are
+gone. **The world is advisory**: a mapper that raises, or cannot even be
+constructed, degrades the policy to the right-hand rule with one warning and
+never ends or blocks a mission -- the map only chooses between directions the
+distance sensor already called clear.
+
+*C -- the grid facts are gone.* `describe_grid_frame()` is deleted and the
+free policy's scene is built from sensors by `ConstrainedAgent.sensed_scene()`:
+clearance from `SafetyController.path_clearance()` -- so the scene says STOP
+exactly where the collar would veto, and nowhere else -- and objects from
+perception. The frame lost `position`, `facing`, `free_space_cells` and
+`doorway_ahead`; what remains beside the pixels is `room` and
+`objects_visible`, the simulator standing in for a detector (1.12), now
+computed with the renderer's own visibility test so an object at 45 degrees is
+seen and one behind a wall is not. Action acks no longer carry a cell, and
+`RemoteRobot._tupleize` went with it. **Sightings carry a map-frame pose**
+(`x_m, y_m, heading_deg, map_id`) -- a statement about the house, and the
+shape R3's `PoseStamped` will have.
+
+**Kept on purpose:** `GridWorld(robot_x=2, robot_y=2, heading=Heading.E)` as a
+constructor, with `robot_x`/`robot_y`/`heading` as convenience properties.
+"Put the robot in cell (2,2)" is how a simulated house is authored, by the
+starter map and ~30 fixtures; what mattered was that nothing DECIDES in cells,
+and nothing now does. **Two test-infrastructure findings:**
+`world_over_asgi` built its own app, so pairing it with `robot_over_asgi` gave
+a correct map of a different house -- `robot_and_world_over_asgi` fixes that,
+and **B0's parity proof now matches action sequences with both halves over a
+real socket**, a strictly stronger test than before.
+
+`FEATURES.md` sections 2-3 carry a correction banner and have not been
+rewritten.
 
 ## 4. Honest residue -- what the twin cannot tell you
 

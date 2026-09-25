@@ -171,11 +171,13 @@ def test_render_false_is_the_free_offline_path(world):
     assert frame == world.frame_description()
 
 
-def test_grid_facts_survive_alongside_the_pixels(world):
-    """PLAN-sim-hardening.md 2.2: the rule-based agent keeps its
-    coordinates. If these move under `metadata`, frontier preference
-    silently degrades to the wall-follower its own docstring calls
-    broken."""
+def test_perception_rides_alongside_the_pixels_and_grid_facts_do_not(world):
+    """The frame carries the picture plus what the simulator's stand-in
+    detector saw (`room`, `objects_visible`) -- and, since the ROS
+    alignment, NONE of the grid facts. Those were answers a real robot cannot
+    give in that form; pinning their absence is what stops a consumer
+    growing back onto them because they happened to be there."""
     frame = MockRobot(world).get_camera_frame()
+    assert "room" in frame and "objects_visible" in frame
     for key in ("position", "facing", "free_space_cells", "doorway_ahead"):
-        assert key in frame
+        assert key not in frame, f"grid fact {key!r} is back on the frame"

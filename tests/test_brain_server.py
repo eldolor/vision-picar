@@ -19,12 +19,11 @@ from fastapi.testclient import TestClient
 
 from brain.agent import ObjectSearchAgent
 from brain.memory import MissionMemory
-from brain.vision import describe_grid_frame
 from control.brain_config import load_brain_config
 from control.brain_server import MissionStartRequest, create_app
 from control.mission_runner import MissionRunner
 from control.remote_robot import RemoteRobot
-from tests.conftest import RecordingRobot, fresh_mock_robot
+from tests.conftest import mock_world_for, RecordingRobot, fresh_mock_robot
 
 BUDGET = 150
 POLL_TIMEOUT_S = 120.0
@@ -33,7 +32,12 @@ POLL_TIMEOUT_S = 120.0
 def demo_report():
     """The reference result: ObjectSearchAgent driving MockRobot directly."""
     memory = MissionMemory(mission="Find the red backpack.", target_object="red backpack")
-    agent = ObjectSearchAgent(fresh_mock_robot(), memory, min_distance_cm=30)
+    robot = fresh_mock_robot()
+    # Both halves, because the frontier policy is allocentric as of
+    # PLAN-ros-alignment.md -- a reference run without a world explores by
+    # the right-hand rule and is a different mission from the one under test.
+    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30,
+                              world=mock_world_for(robot))
     return agent.run_mission(max_steps=BUDGET)
 
 
@@ -42,17 +46,24 @@ def slow_runner_factory(robot_holder=None, delay=0.05):
     mission stays reliably in-flight while the test pokes at it."""
 
     def factory(robot, req: MissionStartRequest) -> MissionRunner:
-        def slow_vision(frame):
-            time.sleep(delay)
-            return describe_grid_frame(frame)
-
-        return MissionRunner(
+        runner = MissionRunner(
             robot,
             target_object=req.target_object,
             target_room=req.target_room,
             max_steps=req.max_steps or BUDGET,
-            vision_fn=slow_vision,
         )
+        # Slow down the runner's OWN default scene rather than substituting
+        # a hand-rolled one: the mission under test should be the real
+        # mission, only slower. `_guarded_vision` reads `vision_fn` at call
+        # time, so wrapping it after construction is enough.
+        inner = runner.vision_fn
+
+        def slow_vision(frame):
+            time.sleep(delay)
+            return inner(frame)
+
+        runner.vision_fn = slow_vision
+        return runner
 
     return factory
 
@@ -234,7 +245,8 @@ def test_the_brain_process_never_loads_the_simulator():
 
     probe = (
         "import control.brain_server, sys; "
-        "print(sorted(m for m in sys.modules if m.split('.')[0] in ('sim', 'robot')))"
+        "print(sorted(m for m in sys.modules "
+        "if m.split('.')[0] in ('sim', 'robot', 'world')))"
     )
     result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
@@ -248,8 +260,17 @@ def test_the_brain_process_never_loads_the_simulator():
     # backend. A backend or the robot server itself would not be allowed
     # here, which is the whole point of listing these by name rather than
     # allowing the `robot` package wholesale.
+    # `world` joined the list when control/ gained its first consumer of
+    # world state (PLAN-ros-alignment.md). The rule is the mirror of the
+    # robot one and has the same teeth: `world.interface` is the CONTRACT
+    # and is allowed; `world.factory` is not, because its `sim` branch
+    # imports sim/mock_world.py -- a lazy import that would sail past the
+    # simulator check above while still making "run the brain on the Pi"
+    # stop being a config change. `control/remote_world.py` is how the brain
+    # reaches a world, over HTTP, like everything else.
     assert set(loaded) <= {
         "robot", "robot.interface", "robot.safety", "robot.identity",
+        "world", "world.interface",
     }, loaded
 
 

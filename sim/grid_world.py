@@ -10,11 +10,55 @@ Grid convention:
     - (0, 0) is top-left.
     - x increases to the right (East), y increases downward (South).
     - Headings: N, E, S, W (compass-style, matches turn_left/turn_right).
+
+**The pose is CONTINUOUS as of phase R0** (`PLAN-ros-alignment.md`, which
+merges C2 of `PLAN-onboard-perception.md` with 1.14's continuous motion).
+The state of record is `x`, `y` (cell units, fractional) and `theta`
+(radians), and the integer cell / cardinal `Heading` view of it is a
+derived convenience that still works everywhere it always did.
+
+Three reasons this had to happen before any ROS package is installed:
+
+  * **nav2 cannot drive integer cells.** Its local controller emits
+    `cmd_vel` continuously at ~20Hz; a pose that can only ever be a cell
+    centre and a multiple of 90 degrees has nothing to receive that.
+  * **A SLAM pose is not quantisable.** `PLAN-mapping.md` N1 shipped
+    `MockWorld.get_pose()` against a quantised pose deliberately, noting
+    that `x_m` was already a float and C2 would make the motion smooth
+    "with nothing changing on either side of the wall". This is that, and
+    that prediction held: `sim/mock_world.py` gained no new concept.
+  * **P25 could not run.** `brain/goal_pose.py` ships default OFF because
+    the sim turned in 90-degree quanta against a 10-degree centre band, so
+    a target off a cardinal direction could never be centred and both arms
+    of the A/B just alternated LEFT/RIGHT. A discrete action space cannot
+    track a continuous bearing; this removes the last discrete thing in
+    the stack.
+
+**Angle convention, and it is the one bug worth being explicit about.**
+`theta` is the RAY angle the renderer casts on: 0 is +x (East) and it
+increases toward +y (South). Because y grows downward, that is CLOCKWISE
+on screen, which on a north-up map is a turn to the robot's RIGHT. So
+`theta` increases when the robot turns right, while REP-103's body yaw
+rate (`omega`, used by `sim/mock_robot.py`'s wheel kinematics) is
+counter-clockwise-positive and therefore carries the opposite sign. The
+conversion happens in exactly one place -- `MockRobot.step()` -- and
+`tests/test_world_contract.py` already warns why: "two headings in two
+rotational senses is the harder bug, because it looks right at 0 and 180".
+
+`compass_deg`/`heading_deg` remain what every other angle in this project
+uses: clockwise from north, positive to the robot's right. That is
+`theta` plus 90 degrees, and `Heading.angle_rad()` is the inverse.
 """
 
-from dataclasses import dataclass, field
 from enum import Enum
 import logging
+import math
+
+# The raycaster the twin draws with, reused here so that the geometry a
+# move is checked against is the SAME geometry the picture is drawn from.
+# Two collision models -- one for the mover, one for the renderer -- is
+# how a robot starts driving through a wall it can see.
+from sim import renderer
 
 logger = logging.getLogger("grid_world")
 
@@ -25,13 +69,12 @@ class Heading(Enum):
     S = (0, 1)
     W = (-1, 0)
 
-    def turn_left(self) -> "Heading":
-        order = [Heading.N, Heading.W, Heading.S, Heading.E]
-        return order[(order.index(self) + 1) % 4]
-
-    def turn_right(self) -> "Heading":
-        order = [Heading.N, Heading.E, Heading.S, Heading.W]
-        return order[(order.index(self) + 1) % 4]
+    # `turn_left()` / `turn_right()` used to live here, rotating one cardinal
+    # to the next. **Deleted at R0**, because turning is an operation on an
+    # angle now (`GridWorld.rotate()`) and `_nearest_cardinal()` is the only
+    # place an angle becomes a cardinal. Keeping them would have left a second
+    # way to turn that quietly re-quantised whatever it was given -- which is
+    # exactly the bug R0 exists to remove.
 
     def compass_deg(self) -> int:
         """This heading as a compass bearing -- clockwise from north,
@@ -50,34 +93,191 @@ class Heading(Enum):
         """
         return {"N": 0, "E": 90, "S": 180, "W": 270}[self.name]
 
+    def angle_rad(self) -> float:
+        """This heading as a `theta` -- the ray angle the renderer casts on.
+
+        The inverse of `compass_deg()`, and deliberately derived from it
+        rather than written out as a second table: `sim/renderer.py`'s
+        `HEADING_ANGLE` is the third statement of this mapping already, and
+        it is kept only because it is a line-for-line port of the
+        JavaScript. `tests/test_continuous_pose.py` pins this against it, so
+        a fourth copy cannot quietly disagree with the picture.
+        """
+        return math.radians(self.compass_deg() - 90)
+
 
 CELL_WALL = "#"
 CELL_FLOOR = "."
 CELL_DOOR = "D"
 
+# How far the robot's own body reaches ahead of its centre, in cells. The
+# grid world's robot occupies its cell, so a move is capped where the
+# FRONT of the robot meets the wall rather than where its centre does --
+# the same correction `MockRobot.get_depth_grid()` applies to a reported
+# clearance, which is why the constant lives here (the footprint is a fact
+# about the thing in the world) and is imported there rather than restated.
+ROBOT_HALF_CELL = 0.5
 
-@dataclass
+# What `look_left()` / `look_right()` swing the camera by. Ninety degrees
+# because that is what the pan has always been worth here -- `pan` was a
+# tri-state that used to turn the whole cardinal heading. R3
+# replaces this with a revolute joint in the URDF and a real ST3215 range;
+# until then it is one constant with one meaning rather than a `turn_left()`
+# call that pretends the body moved.
+PAN_ANGLE_RAD = math.pi / 2
+
+# Sub-step limits for continuous integration. A translation is checked
+# against the raycaster once per sub-step, so these bound how far the robot
+# may advance, and how far it may turn, between two collision checks. Both
+# are far below one cell / one FOV slice, which is what keeps an arc from
+# cutting a corner it should have hit.
+MAX_SUBSTEP_CELLS = 0.1
+MAX_SUBSTEP_RAD = math.radians(5)
+
+# A move short of what was asked by less than this is not "blocked", it is
+# floating point. `renderer.cast_ray()` marches in `FPV_STEP` increments
+# and returns the first step already inside the wall, so the clearance it
+# reports is up to one step LONG; the slack here is what stops an ordinary
+# one-cell step into the last free cell from being logged as a collision.
+TRAVEL_EPS = renderer.FPV_STEP
+
+# How far simulated perception reaches, in cells. Three because that is what
+# the cell walk this replaced looked along, so a mission's step count stays
+# comparable across the change -- and because a detector has a range: the
+# corpus walks find the target from roughly a metre, not from across the
+# house. It bounds WHAT is reported; the field of view and occlusion come
+# from the renderer, so it can never report something the picture hides.
+SIM_PERCEPTION_RANGE_CELLS = 3.0
+
+
+def _nearest_cardinal(angle_rad: float) -> Heading:
+    """The cardinal `Heading` closest to a `theta`.
+
+    Only the `heading` convenience property reads it now -- nothing that
+    DECIDES anything rounds an angle to a compass point any more.
+    """
+    compass = math.degrees(angle_rad + math.pi / 2) % 360.0
+    return [Heading.N, Heading.E, Heading.S, Heading.W][int(round(compass / 90.0)) % 4]
+
+
 class GridWorld:
     """
     A small labeled house. `layout` is a list of strings, one per row.
     `rooms` maps a room name to the set of (x, y) floor cells that belong
     to it. `objects` maps (x, y) -> object label (e.g. "red backpack").
+
+    **No longer a dataclass, as of R0**, because `robot_x`, `robot_y` and
+    `heading` are now *views* of the continuous pose rather than the state
+    itself -- and a field and a property cannot share a name. The
+    constructor signature is unchanged, so every caller and every test
+    that builds a world by cell and cardinal heading still does.
     """
 
-    layout: list
-    rooms: dict
-    objects: dict = field(default_factory=dict)
-
-    robot_x: int = 1
-    robot_y: int = 1
-    heading: Heading = Heading.N
-    pan: int = 0  # -1 = looking left, 0 = center, 1 = looking right
-
-    log: list = field(default_factory=list)
-
-    def __post_init__(self):
+    def __init__(
+        self,
+        layout: list,
+        rooms: dict,
+        objects: dict = None,
+        robot_x: int = 1,
+        robot_y: int = 1,
+        heading: Heading = Heading.N,
+        pan: int = 0,  # -1 = looking left, 0 = center, 1 = looking right
+        log: list = None,
+        x: float = None,
+        y: float = None,
+        theta: float = None,
+    ):
+        self.layout = layout
+        self.rooms = rooms
+        self.objects = {} if objects is None else objects
+        self.log = [] if log is None else log
+        self.pan = pan
         self.height = len(self.layout)
         self.width = len(self.layout[0])
+
+        # The state of record. Cell units and radians, both continuous.
+        # `robot_x`/`robot_y`/`heading` seed them through the compatibility
+        # properties below, so "cell 2" means "the centre of cell 2" and a
+        # cardinal heading means its exact angle -- which is what keeps a
+        # world built the old way bit-identical to the one this replaces.
+        self.robot_x = robot_x
+        self.robot_y = robot_y
+        self.heading = heading
+
+        # ...and the continuous overrides win, for a caller that has a real
+        # pose and should not have to round it to say so.
+        if x is not None:
+            self.x = x
+        if y is not None:
+            self.y = y
+        if theta is not None:
+            self.theta = renderer.normalize_angle(theta)
+
+    def __repr__(self):  # pragma: no cover - debugging convenience
+        return (f"GridWorld({self.width}x{self.height}, x={self.x:.3f}, "
+                f"y={self.y:.3f}, heading_deg={self.heading_deg:.1f}, "
+                f"pan={self.pan})")
+
+    # ---------- the pose, both ways of reading it ----------
+    #
+    # `x`/`y`/`theta` are the truth. The three properties below are the
+    # cell-and-cardinal view of it, kept because a great deal of this
+    # project legitimately thinks in cells: `sim/maps/starter_house.py`
+    # places the robot in one, `brain/agent.py`'s frontier preference reads
+    # `position`/`facing` off the frame (and `PLAN-sim-hardening.md` 2.2
+    # says to leave that alone), `room_at()` is keyed by cell, and
+    # `MockWorld`'s occupancy grid has cells for its whole reason to exist.
+    #
+    # The getters FLOOR and the setters snap to the centre of the named
+    # cell, which is lossy on purpose: `world.robot_x += 1` is a statement
+    # about cells and has no opinion about where in the cell to land, so
+    # the only non-arbitrary answer is the middle of it.
+
+    @property
+    def robot_x(self) -> int:
+        return int(math.floor(self.x))
+
+    @robot_x.setter
+    def robot_x(self, cell: int):
+        self.x = cell + 0.5
+
+    @property
+    def robot_y(self) -> int:
+        return int(math.floor(self.y))
+
+    @robot_y.setter
+    def robot_y(self, cell: int):
+        self.y = cell + 0.5
+
+    @property
+    def heading(self) -> Heading:
+        """The nearest cardinal heading to `theta`.
+
+        Lossy, and every consumer of it is a consumer that was already
+        cardinal-only. Anything that wants the real answer reads
+        `heading_deg` or `theta` -- `MockWorld.get_pose()` and
+        `MockRobot.get_odometry()` both now do.
+        """
+        return _nearest_cardinal(self.theta)
+
+    @heading.setter
+    def heading(self, heading: Heading):
+        self.theta = heading.angle_rad()
+
+    @property
+    def heading_deg(self) -> float:
+        """The body heading as a compass bearing in [0, 360) -- the
+        convention every other angle in this project uses."""
+        return math.degrees(self.theta + math.pi / 2) % 360.0
+
+    def view_angle(self) -> float:
+        """The angle the CAMERA points along, in `theta`'s convention.
+
+        Body heading plus the pan. The render, the depth grid, the distance
+        reading and simulated perception are all cast from this one angle,
+        so none of them can disagree about which way the camera points.
+        """
+        return renderer.normalize_angle(self.theta + self.pan * PAN_ANGLE_RAD)
 
     # ---------- internal helpers ----------
 
@@ -88,14 +288,6 @@ class GridWorld:
 
     def _is_passable(self, x: int, y: int) -> bool:
         return self._cell(x, y) in (CELL_FLOOR, CELL_DOOR)
-
-    def _view_heading(self) -> Heading:
-        """Effective heading accounting for camera pan (look_left/right)."""
-        if self.pan < 0:
-            return self.heading.turn_left()
-        if self.pan > 0:
-            return self.heading.turn_right()
-        return self.heading
 
     def room_at(self, x: int, y: int) -> str:
         for room, cells in self.rooms.items():
@@ -109,35 +301,86 @@ class GridWorld:
 
     # ---------- movement ----------
 
-    def move(self, cells: int) -> dict:
-        """Move forward (positive) or backward (negative) up to `cells`
-        steps in the current heading, stopping early if blocked."""
-        dx, dy = self.heading.value
-        moved = 0
-        step = 1 if cells >= 0 else -1
-        for _ in range(abs(cells)):
-            nx, ny = self.robot_x + dx * step, self.robot_y + dy * step
-            if not self._is_passable(nx, ny):
-                self._record(
-                    f"BLOCKED at ({nx},{ny}) while moving {'forward' if step > 0 else 'backward'}"
-                )
-                break
-            self.robot_x, self.robot_y = nx, ny
-            moved += step
-        self._record(
-            f"MOVE requested={cells} moved={moved} pos=({self.robot_x},{self.robot_y}) heading={self.heading.name}"
-        )
-        return {"requested": cells, "moved": moved, "position": (self.robot_x, self.robot_y)}
+    def translate(self, cells: float) -> float:
+        """Drive `cells` along the body heading -- negative is backwards --
+        and return how far it actually got, signed, in cells.
 
-    def turn_left(self) -> dict:
-        self.heading = self.heading.turn_left()
-        self._record(f"TURN_LEFT heading={self.heading.name}")
-        return {"heading": self.heading.name}
+        **The primitive the whole continuous stack stands on.** `move()`
+        below is a thin wrapper for the discrete verb layer, and
+        `MockRobot.step()` calls this once per integration sub-step.
 
-    def turn_right(self) -> dict:
-        self.heading = self.heading.turn_right()
-        self._record(f"TURN_RIGHT heading={self.heading.name}")
-        return {"heading": self.heading.name}
+        Collision is a single ray in the direction of travel, capped where
+        the robot's own front meets the wall:
+
+            allowed = cast_ray(direction) - ROBOT_HALF_CELL
+
+        which is exact enough to be worth stating precisely, because the
+        discrete version it replaces had a different failure mode. The old
+        one asked "is the next CELL passable", so it could not represent
+        being 4cm from a wall at all -- the robot was either in a cell or
+        not in it. This one is continuous, and it is deliberately NOT
+        `get_depth_grid()`'s conservative reduction (which subtracts a
+        further `FPV_STEP` because it is feeding a safety veto and must
+        never overstate clearance). Here the same subtraction would leave
+        every ordinary one-cell step 1.5cm short of the cell it was aiming
+        for and log a collision that did not happen, so instead the
+        `TRAVEL_EPS` slack absorbs the ray's overshoot. The robot's CENTRE
+        still stops half a cell from the wall face either way, which is the
+        invariant that matters: `floor(x), floor(y)` is never a wall.
+        """
+        if cells == 0:
+            return 0.0
+        sign = 1.0 if cells > 0 else -1.0
+        angle = self.theta if sign > 0 else renderer.normalize_angle(self.theta + math.pi)
+        want = abs(cells)
+        room = renderer.cast_ray(self.layout, self.x, self.y, angle) - ROBOT_HALF_CELL
+        allowed = max(0.0, min(want, room))
+        self.x += math.cos(angle) * allowed
+        self.y += math.sin(angle) * allowed
+        if allowed < want - TRAVEL_EPS:
+            self._record(
+                f"BLOCKED at ({self.x:.2f},{self.y:.2f}) after {allowed:.2f} of "
+                f"{want:.2f} cells while moving "
+                f"{'forward' if sign > 0 else 'backward'}"
+            )
+        return sign * allowed
+
+    def rotate(self, delta_rad: float) -> float:
+        """Pivot in place by `delta_rad`, and return it.
+
+        Positive is a turn to the robot's RIGHT -- see the module docstring
+        on why that is `theta` increasing on a y-down grid. Never blocked:
+        the robot pivots within its own footprint on a differential chassis
+        (`PLAN-onboard-perception.md` 1.1), which is the assumption S6 was
+        retired for making correct.
+        """
+        if delta_rad == 0:
+            return 0.0
+        self.theta = renderer.normalize_angle(self.theta + delta_rad)
+        return delta_rad
+
+    # `move(cells)` used to live here and is **deleted at R0** for the same
+    # reason as `Heading.turn_left()` above: `MockRobot` reaches the pose
+    # through `translate()` one integration sub-step at a time, so a
+    # whole-cells wrapper was a second path from a command to a position with
+    # nobody calling it. The MOVE log line it wrote is now written by
+    # `MockRobot._drive_cells()`, which is where the request it reports
+    # originates.
+
+    def turn_left(self, degrees: float = 90.0) -> dict:
+        """Pivot left. Defaults to the cardinal 90 every caller used before
+        R0, so a world driven a quarter-turn at a time still lands exactly
+        on a cardinal heading and `heading` stays lossless there."""
+        self.rotate(-math.radians(degrees))
+        self._record(f"TURN_LEFT degrees={degrees} heading={self.heading.name} "
+                     f"heading_deg={self.heading_deg:.1f}")
+        return {"heading": self.heading.name, "heading_deg": self.heading_deg}
+
+    def turn_right(self, degrees: float = 90.0) -> dict:
+        self.rotate(math.radians(degrees))
+        self._record(f"TURN_RIGHT degrees={degrees} heading={self.heading.name} "
+                     f"heading_deg={self.heading_deg:.1f}")
+        return {"heading": self.heading.name, "heading_deg": self.heading_deg}
 
     # ---------- camera pan ----------
 
@@ -160,47 +403,72 @@ class GridWorld:
 
     def distance_ahead(self, max_range: int = 10) -> int:
         """Cells of free space in the direction the camera/sensor is
-        currently facing (heading + pan), capped at max_range."""
-        dx, dy = self._view_heading().value
-        x, y = self.robot_x, self.robot_y
-        dist = 0
-        while dist < max_range:
-            x, y = x + dx, y + dy
-            if not self._is_passable(x, y):
-                break
-            dist += 1
-        self._record(f"DISTANCE view_heading={self._view_heading().name} dist={dist}")
+        currently facing (`view_angle()`), capped at max_range.
+
+        A ray now, not a cell walk -- otherwise a robot standing at 47
+        degrees would be answered about a cardinal direction it is not
+        facing, which is exactly the mismatch that made `brain/goal_pose.py`
+        untestable (P25). The answer is still an integer number of cells,
+        because `get_distance()` has always spoken in cells x 30cm and the
+        safety collar's thresholds were measured against that.
+
+        The reduction is `get_depth_grid()`'s, for the reason that matters
+        most about these two numbers: they are the two candidates
+        `robot/safety.py`'s veto chooses between (M3), so they must not
+        drift apart. On an axis-aligned wall from a cell centre this
+        returns exactly the free-cell count the old walk did.
+        """
+        raw = renderer.cast_ray(self.layout, self.x, self.y, self.view_angle())
+        free = raw - renderer.FPV_STEP - ROBOT_HALF_CELL
+        dist = max(0, min(int(max_range), int(round(free))))
+        view_deg = math.degrees(self.view_angle() + math.pi / 2) % 360.0
+        self._record(f"DISTANCE view_deg={view_deg:.1f} dist={dist}")
         return dist
 
     def frame_description(self) -> dict:
-        """Stand-in for get_camera_frame(). In grid-world this is a
-        structured text description rather than pixels; brain/vision.py
-        treats this the same way it would treat a VLM caption of a real
-        or stock photo."""
-        view = self._view_heading()
-        dx, dy = view.value
-        ahead_x, ahead_y = self.robot_x + dx, self.robot_y + dy
+        """What the simulated camera PERCEIVES, as opposed to what it shows.
 
-        current_room = self.room_at(self.robot_x, self.robot_y)
-        ahead_cell = self._cell(ahead_x, ahead_y)
-        is_doorway = ahead_cell == CELL_DOOR
-        free_cells = self.distance_ahead()
+        Two fields, and both are the simulator standing in for perception
+        that a real robot gets from a model:
 
-        visible_objects = []
-        # Objects in the 3 cells directly ahead in the view direction.
-        vx, vy = self.robot_x, self.robot_y
-        for _ in range(3):
-            vx, vy = vx + dx, vy + dy
-            if (vx, vy) in self.objects:
-                visible_objects.append(self.objects[(vx, vy)])
+        * `room` -- the room the robot is standing in. `MissionMemory` keys
+          its room bookkeeping off this and the contract requires it
+          (`tests/test_robot_contract.py`). A camera-only backend answers
+          "unknown" and a vision policy backfills a guess; the sim knows.
+        * `objects_visible` -- what a detector would report in this frame.
+          `PLAN-onboard-perception.md` 1.12 forbids running the real
+          detector on a raycaster render, so the sim reports ground truth
+          instead -- the same move `MockWorld` makes for the lidar.
 
+        **What used to be here and is gone** (`PLAN-ros-alignment.md`):
+        `position` (a grid cell), `facing` (a cardinal letter),
+        `free_space_cells` and `doorway_ahead` (a cell walk along that
+        cardinal). All four were answers a real robot cannot give in that
+        form. The pose now comes from `WorldInterface.get_pose()` in metres
+        and degrees, and clearance from `get_depth_grid()` in centimetres --
+        the two places a real robot will get them from.
+
+        **Visibility is continuous and range-limited.** The old version
+        looked exactly three cells straight down a cardinal direction, so an
+        object at 45 degrees was invisible from every pose. This asks the
+        renderer which objects are inside the field of view and not behind
+        a wall -- the same test that decides whether they are DRAWN -- and
+        keeps those within `SIM_PERCEPTION_RANGE_CELLS`. A picture that
+        shows the backpack and a perception field that denies it would be
+        exactly the disagreement the renderer was ported to Python to end.
+        """
+        visible = [
+            obj["name"]
+            for obj in reversed(renderer._visible_objects(
+                self.layout, self.objects, self.x, self.y, self.view_angle()))
+            # Beyond the robot's own footprint: an object sharing its cell
+            # is underneath it, and the renderer's own test (angle to a point
+            # at distance zero) would call it dead ahead.
+            if ROBOT_HALF_CELL < obj["dist"] <= SIM_PERCEPTION_RANGE_CELLS
+        ]
         frame = {
-            "room": current_room,
-            "facing": view.name,
-            "free_space_cells": free_cells,
-            "doorway_ahead": is_doorway,
-            "objects_visible": visible_objects,
-            "position": (self.robot_x, self.robot_y),
+            "room": self.room_at(self.robot_x, self.robot_y),
+            "objects_visible": visible,
         }
         self._record(f"FRAME {frame}")
         return frame

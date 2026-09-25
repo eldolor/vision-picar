@@ -18,25 +18,52 @@ robot/safety.py before it reaches the robot, so even a bad decision here
 """
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Callable, Optional
 
 from robot.interface import RobotInterface
 from robot.interface import NO_SENSOR_CM
 from robot.safety import FORWARD_ACTIONS, SafetyController, SafetyViolation
-from brain.vision import describe_grid_frame
 from brain.memory import MissionMemory
+from world.interface import NullWorld, WorldInterface, unusable_pose
 
 logger = logging.getLogger("agent")
 
 ALLOWED_ACTIONS = {"FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP", "LOOK_LEFT", "LOOK_RIGHT"}
 
-# Used only by MissionAgent's frontier-preference navigation, and only
-# when a frame happens to expose grid-style position/facing (sim only --
-# see MissionAgent docstring for how this degrades gracefully without it).
-_HEADING_VECTORS = {"N": (0, -1), "E": (1, 0), "S": (0, 1), "W": (-1, 0)}
-_RIGHT_OF = {"N": "E", "E": "S", "S": "W", "W": "N"}
-_LEFT_OF = {"N": "W", "W": "S", "S": "E", "E": "N"}
+# The three cardinal lookup tables that used to live here -- heading
+# vectors, and which compass point is to the right and left of which --
+# are GONE (`PLAN-ros-alignment.md`). The frontier preference below works
+# on a continuous pose: a bearing in degrees, and the metre offsets that
+# bearing implies. A robot at 47 degrees had no entry in any of them.
+
+# How far ahead the frontier check looks, in metres. One nominal move:
+# `MockRobot`'s default `drive_forward()` covers one 30cm cell, and on
+# hardware `C2`'s continuous motion makes a "step" a time slice rather than
+# a cell -- so this is a distance, not a count, and it is deliberately the
+# same order as the map resolution it gets bucketed at.
+FRONTIER_LOOKAHEAD_M = 0.30
+
+# How coarsely a pose is remembered as "been there". Visited-ness has to be
+# quantised or a continuous pose never repeats and the frontier preference
+# degenerates into "always go forward"; the map's own `resolution_m` is the
+# non-arbitrary choice, and it is what nav2's frontier search buckets at too.
+# Falls back to this when the map does not say.
+DEFAULT_VISIT_BUCKET_M = 0.30
+
+# What a pivot is worth, in degrees, when predicting where LEFT or RIGHT
+# would point. Ninety because that is what `turn_left()`/`turn_right()`
+# command by default -- the *prediction* has to match the action actually
+# issued, not the finest turn the robot is now capable of (R0).
+_PIVOT_DEG = 90.0
+
+# Where `sensed_scene()` stops calling the path "some" and starts calling it
+# "clear". Descriptive only -- both answers mean FORWARD, and the boundary
+# that changes a decision is `min_distance_cm`. Three of the sim's 30cm
+# cells, which is where the grid-fact converter this replaced drew the same
+# line, so a logged scene reads the same across the change.
+SCENE_CLEAR_CM = 90.0
 
 
 @dataclass
@@ -53,29 +80,71 @@ class ConstrainedAgent:
     """
     Runs the capture -> vision -> decide -> safety-check -> execute loop.
 
-    `vision_fn` defaults to the free/offline grid-world converter so this
-    runs entirely in simulation with no API calls and no cost. Swap in a
-    wrapper around brain.vision.describe_image once real/stock photos
-    replace grid-world frames -- decide() and everything downstream is
-    unaffected, since both vision functions return the same schema.
+    `vision_fn` defaults to `sensed_scene()`: free, offline, no API call,
+    and built from the robot's SENSORS rather than from anything the
+    simulator knows. It used to default to a converter that read a grid-cell
+    count off the sim's frame; that could only ever run against the grid
+    world. This runs against any backend with a depth grid -- the sim today,
+    the lidar on hardware day -- which is the property the rest of this
+    project is organised around. Swap in a vision policy (`brain/navigate.py`)
+    and decide() and everything downstream is unaffected: every vision_fn
+    returns the same scene schema.
     """
 
     def __init__(
         self,
         robot: RobotInterface,
         min_distance_cm: float = 20.0,
-        vision_fn: Callable[[dict], dict] = describe_grid_frame,
+        vision_fn: Optional[Callable[[dict], dict]] = None,
         max_consecutive_stops: int = 3,
         vision_proximity_veto: bool = False,
     ):
         self.robot = robot
         self.safety = SafetyController(robot, min_distance_cm=min_distance_cm)
-        self.vision_fn = vision_fn
+        self.vision_fn = vision_fn or self.sensed_scene
         self.max_consecutive_stops = max_consecutive_stops
         # Off by default, and see _vision_proximity_veto() for the three
         # conditions that still have to hold before it can fire.
         self.vision_proximity_veto = vision_proximity_veto
         self.history: list[StepResult] = []
+
+    def sensed_scene(self, frame: dict) -> dict:
+        """A scene built from the robot's own sensors -- the free policy's eyes.
+
+        Two sources, and neither is the simulator's map:
+
+        * **Clearance from the depth grid**, reduced by `robot/safety.py`'s
+          `path_clearance()` -- the ONE place the project decides which zones
+          are "the path" (M3). Reusing it rather than re-reducing the grid
+          here is what guarantees this scene says STOP exactly when the
+          collar would veto a FORWARD, and at no other time. That is the one
+          boundary in this scene that changes a decision; "clear" versus
+          "some" is descriptive and both map to FORWARD.
+        * **Objects from perception** -- `frame["objects_visible"]`. On the
+          sim that is the simulator standing in for a detector
+          (`GridWorld.frame_description()`); a backend with no perception
+          omits it and this reports nothing, which is the truth.
+
+        `doorway_visible` is always False: nothing measures doorways, and
+        both vision policies already report it that way.
+        """
+        clearance_cm, _source = self.safety.path_clearance()
+        if clearance_cm is None:
+            # "Nothing within range" -- M3's second outcome, never a veto.
+            free_space = "clear"
+        elif clearance_cm < self.safety.min_distance_cm:
+            free_space = "none"
+        elif clearance_cm < SCENE_CLEAR_CM:
+            free_space = "some"
+        else:
+            free_space = "clear"
+        return {
+            "obstacles_ahead": ["obstacle"] if free_space == "none" else [],
+            "free_space": free_space,
+            "doorway_visible": False,
+            "important_objects": list(frame.get("objects_visible") or []),
+            "safest_direction": "STOP" if free_space == "none" else "FORWARD",
+        }
 
     def decide(self, scene: dict, frame: Optional[dict] = None) -> str:
         """
@@ -202,18 +271,19 @@ class MissionAgent(ConstrainedAgent):
 
     Navigation uses frontier-preference exploration: at each decision
     point it peeks forward/right/left via camera pan, and among the
-    clear directions prefers whichever leads to a cell it hasn't visited
-    yet. Plain "trust vision's safest_direction" (Phase 2) just loops the
+    clear directions prefers whichever leads somewhere it hasn't been
+    yet -- judged from the WORLD's pose in metres, bucketed at the map's
+    own resolution (`PLAN-ros-alignment.md`; it used to be a grid cell read
+    off the camera frame). Plain "trust vision's safest_direction" (Phase 2) just loops the
     outer boundary of the starting room forever; plain right-hand wall
     following spins in tight circles inside small rooms since a turn is
     almost always "clear" there. Preferring unvisited cells fixes both.
 
     This still isn't Phase 5's semantic navigation ("go to the kitchen")
     -- it's blind full-coverage exploration, not goal-directed movement.
-    It only uses frame position/facing when available (sim grid-world);
-    without them it degrades to Phase 2's simpler policy, so it stays
-    compatible with a real/stock-photo vision pipeline that has no notion
-    of grid coordinates.
+    It needs a world that can localise; given `NullWorld` (or a mapper that
+    is down) it degrades to the right-hand rule, so it stays usable on a
+    backend that cannot say where it is.
 
     Room-level "searching" is also simplified -- a visited room's frame
     already reveals any objects present, so no deliberate look-around
@@ -225,12 +295,26 @@ class MissionAgent(ConstrainedAgent):
         robot: RobotInterface,
         memory: MissionMemory,
         side_clearance_cm: float = 30.0,
+        world: Optional[WorldInterface] = None,
         **kwargs,
     ):
         super().__init__(robot, **kwargs)
         self.memory = memory
         self.side_clearance_cm = side_clearance_cm
-        self.visited_positions: set = set()
+        # WORLD state (`PLAN-mapping.md` N1), and what makes the frontier
+        # preference below metric rather than cell-shaped -- see `decide()`.
+        # `NullWorld` rather than None so there is one shape to read: a
+        # backend that cannot localise answers `usable: False` and the
+        # frontier degrades to the right-hand rule, which is exactly what it
+        # already did for a camera-only frame.
+        self.world = world if world is not None else NullWorld()
+        # Places the robot has already been, as (col, row) buckets of the
+        # map's own resolution. NOT grid cells: a bucket is a quantisation
+        # of a continuous pose, computed here, and the same arithmetic works
+        # against a SLAM map at 5cm as against the sim's 30cm.
+        self.visited_buckets: set = set()
+        # Log an unreachable world once per mission, not once per step.
+        self._world_warned = False
 
     def decide(self, scene: dict, frame: Optional[dict] = None) -> str:
         if self.memory.is_complete():
@@ -246,10 +330,10 @@ class MissionAgent(ConstrainedAgent):
         ):
             return "FORWARD"
 
-        position = frame.get("position") if frame else None
-        facing = frame.get("facing") if frame else None
-        if position:
-            self.visited_positions.add(position)
+        pose = self._pose()
+        bucket_m = self._visit_bucket_m()
+        if pose.get("usable"):
+            self.visited_buckets.add(self._bucket(pose["x_m"], pose["y_m"], bucket_m))
 
         self.robot.look_right()
         right_clear = self.robot.get_distance() >= self.side_clearance_cm
@@ -258,27 +342,30 @@ class MissionAgent(ConstrainedAgent):
         self.robot.look_center()
         forward_clear = self.robot.get_distance() >= self.side_clearance_cm
 
-        if position and facing in _HEADING_VECTORS:
+        if pose.get("usable"):
+            heading_deg = pose["heading_deg"]
             options = []
             if forward_clear:
-                options.append(("FORWARD", facing))
+                options.append(("FORWARD", heading_deg))
             if right_clear:
-                options.append(("RIGHT", _RIGHT_OF[facing]))
+                options.append(("RIGHT", heading_deg + _PIVOT_DEG))
             if left_clear:
-                options.append(("LEFT", _LEFT_OF[facing]))
+                options.append(("LEFT", heading_deg - _PIVOT_DEG))
 
             frontier = [
-                (action, heading)
-                for action, heading in options
-                if self._next_cell(position, heading) not in self.visited_positions
+                (action, bearing)
+                for action, bearing in options
+                if self._ahead_bucket(pose, bearing, bucket_m) not in self.visited_buckets
             ]
             if frontier:
                 return frontier[0][0]
             if options:
                 return options[0][0]  # everything nearby already visited -- backtrack
         else:
-            # No grid position/facing exposed (e.g. a real-camera frame)
-            # -- fall back to plain right-hand-rule.
+            # The world cannot localise -- a photograph-driven backend, a
+            # teleop phone, or any robot with no mapper. Fall back to the
+            # plain right-hand rule, exactly as this did for a frame with no
+            # grid coordinates before the pose replaced them.
             if right_clear:
                 return "RIGHT"
             if forward_clear:
@@ -289,10 +376,70 @@ class MissionAgent(ConstrainedAgent):
         # Boxed in on all three sides -- reuse Phase 2's stuck-breaker.
         return super().decide(scene, frame)
 
+    def _pose(self) -> dict:
+        """Where the world says we are, or an honest "it cannot say".
+
+        **A world that is down must not end a mission**, and that is worth
+        being explicit about rather than leaving to a stack trace. The map
+        is ADVISORY to this policy: it chooses between three directions the
+        distance sensor has already called clear, so losing it costs
+        exploration efficiency and nothing else -- the robot falls back to
+        the right-hand rule and keeps going. The body is what is
+        load-bearing, and `MissionRunner`'s failure budget is about the
+        VISION call for the same reason.
+
+        The contract (`world/interface.py`) says a backend that cannot
+        localise answers `usable: False`. One that raises instead -- an
+        unreachable SLAM bridge, a 401, a socket timeout -- is breaking that
+        contract, and the agent's job when a contract is broken is to
+        degrade the way the contract would have. `Exception` broadly and on
+        purpose: `brain/` may not import a backend, so it cannot name that
+        backend's transport error, and guessing at the list would let a new
+        one through.
+        """
+        for source in (self.world.get_pose,):
+            try:
+                return source()
+            except Exception as exc:  # noqa: BLE001 -- see docstring
+                if not self._world_warned:
+                    logger.warning(
+                        "world model unreachable (%s) -- exploring by the "
+                        "right-hand rule instead of the map", exc)
+                    self._world_warned = True
+                return unusable_pose()
+
+    def _visit_bucket_m(self) -> float:
+        """The map's own resolution, or a sane default if it has none.
+
+        Asked of the map rather than fixed, because the whole point of
+        bucketing at the resolution is that it follows the map: the sim's
+        30cm cells and a `slam_toolbox` map's 5cm ones want different
+        coarseness, and hardcoding either would make the explorer either
+        forgetful or blind depending on which it met.
+        """
+        try:
+            resolution = self.world.get_map().get("resolution_m")
+        except Exception:  # noqa: BLE001 -- same reasoning as _pose()
+            resolution = None
+        return float(resolution) if resolution else DEFAULT_VISIT_BUCKET_M
+
     @staticmethod
-    def _next_cell(position: tuple, heading: str) -> tuple:
-        dx, dy = _HEADING_VECTORS[heading]
-        return (position[0] + dx, position[1] + dy)
+    def _bucket(x_m: float, y_m: float, bucket_m: float) -> tuple:
+        return (math.floor(x_m / bucket_m), math.floor(y_m / bucket_m))
+
+    @classmethod
+    def _ahead_bucket(cls, pose: dict, bearing_deg: float, bucket_m: float) -> tuple:
+        """Which bucket one nominal move along `bearing_deg` lands in.
+
+        The compass convention every angle in this project uses -- clockwise
+        from north, positive to the robot's right -- so north is -y and east
+        is +x, matching `world/interface.py`'s map origin. This is the one
+        place that conversion happens on this side of the wall.
+        """
+        radians = math.radians(bearing_deg)
+        x = pose["x_m"] + math.sin(radians) * FRONTIER_LOOKAHEAD_M
+        y = pose["y_m"] - math.cos(radians) * FRONTIER_LOOKAHEAD_M
+        return cls._bucket(x, y, bucket_m)
 
     def step(self) -> StepResult:
         result = super().step()
@@ -309,6 +456,14 @@ class MissionAgent(ConstrainedAgent):
             if guessed and guessed != "unclear":
                 room = guessed
                 result.frame["room"] = room
+        # A sighting is a statement about the HOUSE, so it is anchored to
+        # where the world says the robot was -- not to anything the camera
+        # frame carries. Attached here because this is the one place that
+        # holds the world, the frame and the memory at once.
+        pose = self._pose()
+        if pose.get("usable"):
+            result.frame["pose"] = {
+                k: pose[k] for k in ("x_m", "y_m", "heading_deg", "map_id")}
         self.memory.record_observation(result.step, result.frame, result.scene)
         self.memory.mark_room_searched(room)
         self.memory.record_action(result.step, room, result.action, result.executed)

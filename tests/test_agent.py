@@ -39,7 +39,7 @@ def test_agent_never_lets_robot_hit_a_wall(open_world):
     agent = ConstrainedAgent(robot, min_distance_cm=30)
     agent.run(max_steps=40)
     # The safety layer should have intercepted every risky FORWARD before
-    # grid_world.move() ever had a chance to report a collision.
+    # grid_world.translate() ever had a chance to report a collision.
     assert not any("BLOCKED" in entry for entry in open_world.log)
 
 

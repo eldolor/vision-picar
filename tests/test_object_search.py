@@ -6,13 +6,15 @@ from sim.mock_robot import MockRobot
 from sim.maps.starter_house import build_starter_world
 from brain.agent import ObjectSearchAgent
 from brain.memory import MissionMemory
+from tests.conftest import mock_world_for
 
 
 def test_scans_on_first_entry_to_a_room():
     world = build_starter_world()
     robot = MockRobot(world)
     memory = MissionMemory(mission="Find the red backpack.", target_object="red backpack")
-    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30)
+    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     # Step 0 is the very first observation in the starting room (living
     # room) -- it should trigger the scan sequence immediately.
@@ -28,7 +30,8 @@ def test_does_not_scan_same_room_twice():
     world = build_starter_world()
     robot = MockRobot(world)
     memory = MissionMemory(mission="Find the red backpack.", target_object="red backpack")
-    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30)
+    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     agent.run(max_steps=3)  # burns through the exact first scan sequence
     assert memory.searched_rooms == {"living room"}
@@ -50,7 +53,8 @@ def test_does_not_scan_when_no_target_object():
     world = build_starter_world()
     robot = MockRobot(world)
     memory = MissionMemory(mission="Go to the hallway.", target_room="hallway")
-    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30)
+    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     agent.step()
     # No target_object set -- should fall straight through to normal
@@ -62,7 +66,8 @@ def test_finds_backpack_and_stops_scan_queue():
     world = build_starter_world()
     robot = MockRobot(world)
     memory = MissionMemory(mission="Find the red backpack.", target_object="red backpack")
-    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30)
+    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     report = agent.run_mission(max_steps=150)
 
@@ -78,7 +83,8 @@ def test_scanning_still_respects_safety():
     world = build_starter_world()
     robot = MockRobot(world)
     memory = MissionMemory(mission="Find the red backpack.", target_object="red backpack")
-    agent = ObjectSearchAgent(robot, memory, min_distance_cm=200)  # deliberately strict
+    agent = ObjectSearchAgent(robot, memory, min_distance_cm=200,  # deliberately strict
+                              world=mock_world_for(robot))
 
     agent.step()
     assert agent.history[0].executed is True

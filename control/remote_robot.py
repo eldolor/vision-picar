@@ -59,13 +59,10 @@ class RobotTransportError(RuntimeError):
     heard the command and refused it, this means nobody heard it."""
 
 
-def _tupleize(payload: dict) -> dict:
-    """JSON round-trips tuples into lists. `position` is the one field
-    whose tuple-ness is depended on downstream (MissionAgent keys a set
-    with it), so restore it."""
-    if isinstance(payload, dict) and isinstance(payload.get("position"), list):
-        return {**payload, "position": tuple(payload["position"])}
-    return payload
+# A `_tupleize` helper used to live here, turning a JSON list back into the
+# tuple `MissionAgent` keyed its visited set with. Gone with the grid cell it
+# existed for (`PLAN-ros-alignment.md`): the agent buckets a world pose now,
+# and no frame or action ack carries a `position` to restore.
 
 
 class RemoteRobot(RobotInterface):
@@ -110,7 +107,7 @@ class RemoteRobot(RobotInterface):
         /action {"action": "STOP"} -- /stop is the one the robot server
         guarantees is always available."""
         body = self._request("POST", "/stop")
-        return _tupleize(body.get("result", {}))
+        return body.get("result", {})
 
     # ---------- camera pan ----------
 
@@ -126,7 +123,7 @@ class RemoteRobot(RobotInterface):
     # ---------- sensing ----------
 
     def get_camera_frame(self) -> dict:
-        return _tupleize(self._request("GET", "/frame"))
+        return self._request("GET", "/frame")
 
     def get_distance(self) -> float:
         return float(self._request("GET", "/distance")["distance_cm"])
@@ -190,7 +187,7 @@ class RemoteRobot(RobotInterface):
             if body.get("reason") == "preempted":
                 raise Preempted(detail)
             raise SafetyViolation(detail)
-        return _tupleize(body.get("result", {}))
+        return body.get("result", {})
 
     def _request(self, method: str, path: str, json: Optional[dict] = None) -> dict:
         try:

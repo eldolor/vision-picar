@@ -80,6 +80,29 @@ def world_over_asgi():
 
 
 @pytest.fixture
+def robot_and_world_over_asgi():
+    """BOTH halves over HTTP, against ONE in-process `robot/server.py`.
+
+    `robot_over_asgi` and `world_over_asgi` each build their own app, which
+    is right when a test exercises one abstraction and wrong the moment it
+    needs both: two apps are two `GridWorld`s, so the world would be a
+    correct map of a different house and the robot's pose would be reported
+    against a layout it is not standing in. `world/factory.py` refuses that
+    configuration in production for exactly this reason -- "and it would
+    look right, because both houses have the same walls".
+
+    Yields `(robot, world)`.
+    """
+    from control.remote_robot import RemoteRobot
+    from control.remote_world import RemoteWorld
+    from robot.server import create_app
+
+    client = asgi_client(create_app())
+    yield RemoteRobot(ASGI_BASE_URL, client=client), RemoteWorld(ASGI_BASE_URL, client=client)
+    client.close()
+
+
+@pytest.fixture
 def live_robot_server():
     """A real `uvicorn robot.server:app` subprocess. Yields its base URL."""
     port = free_port()
@@ -176,3 +199,56 @@ def fresh_mock_robot():
     from sim.mock_robot import MockRobot
 
     return MockRobot(build_starter_world())
+
+
+def fresh_mock_runner(**kwargs):
+    """A `MissionRunner` on a brand-new starter house, with BOTH halves wired.
+
+    A test that builds a runner directly is standing in for
+    `control/brain_server.py`, which builds a body client and a world client
+    and hands over both. Before the frontier policy became allocentric
+    (`PLAN-ros-alignment.md`) there was only one half to wire, so every such
+    test passed a robot and nothing else; this keeps that one line long while
+    making the pairing automatic, which is the same trap the brain server's
+    own `default_world_factory` was changed to close.
+
+    Pass `world=` explicitly to override -- `world=NullWorld()` is how a test
+    says "no mapper", which is a real configuration and not an oversight.
+    """
+    from control.mission_runner import MissionRunner
+
+    robot = fresh_mock_robot()
+    kwargs.setdefault("world", mock_world_for(robot))
+    return MissionRunner(robot, **kwargs)
+
+
+def mock_world_for(robot):
+    """The WORLD half of the simulator, sharing the body's own `GridWorld`.
+
+    Needed by any test that drives the frontier-preference policy, which is
+    allocentric as of `PLAN-ros-alignment.md`: it asks `get_pose()` where it
+    is and buckets that at the map's resolution, where it used to read a
+    grid cell off the camera frame. A test that constructs a `MissionRunner`
+    directly is standing in for `robot/server.py`, which builds both halves
+    through their factories -- so it supplies both, exactly as it already
+    supplies the robot.
+
+    **The SAME GridWorld, never a second one.** `world/factory.py` refuses
+    `world: sim` for a robot with no grid for this reason: a world model that
+    built its own would report the robot's pose against a layout it is not
+    standing in, and both houses have the same walls, so it would look right.
+    """
+    from sim.mock_world import MockWorld
+
+    # Follow a wrapper chain. `RecordingRobot` and `MissionRunner`'s own
+    # `_HaltGate` both delegate method by method, so the GridWorld can be
+    # one or two objects down -- and a test that wrapped its robot should
+    # not have to know that to get the matching world.
+    grid = robot
+    while grid is not None and not hasattr(grid, "world"):
+        grid = getattr(grid, "delegate", None)
+    if grid is None:
+        raise AttributeError(
+            f"{robot!r} has no GridWorld to build a world model on. "
+            "Only the grid-world backend can -- see world/factory.py.")
+    return MockWorld(grid.world)

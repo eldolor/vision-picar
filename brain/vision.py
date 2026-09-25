@@ -17,12 +17,12 @@ never needs to know which one produced a given description:
     is when the simulator gained pixels of its own; before that a file
     path was the only way in and the sim had no file to offer.
 
-- describe_grid_frame(frame)
-    Converts grid_world.frame_description() output into the same schema
-    WITHOUT calling the LLM -- the grid-world frame is already ground
-    truth, so there's nothing for a VLM to infer. Keeps agent-loop tests
-    (Phase 2+) fast and free while still exercising the exact same
-    downstream interface describe_image() would produce.
+`describe_grid_frame(frame)` used to live here too -- the free, offline
+converter the rule-based policy ran on, reading a cell count and a doorway
+flag off the simulator's frame. It was retired with the cell layer
+(`PLAN-ros-alignment.md`); the rule-based policy now builds its scene from
+the robot's DEPTH GRID (`brain/agent.py`'s `ConstrainedAgent.sensed_scene()`),
+which is what a real robot has and works on any backend with a range sensor.
 """
 
 import base64
@@ -103,13 +103,14 @@ def describe_frame(frame: dict) -> dict:
     path, which is why the sim could not use it at all: the grid world had
     no file and no pixels to write to one.
 
-    Falls back to `describe_grid_frame()` when the frame has no image, so
-    a caller holding a `render=False` MockRobot frame still gets the same
-    schema back rather than a KeyError.
+    A frame with no image gets the empty schema back -- "nothing seen",
+    which is the truth about a picture that does not exist -- rather than a
+    KeyError. It used to fall back to the grid-fact converter, which no
+    longer exists.
     """
     data = frame.get("image_base64")
     if not data:
-        return describe_grid_frame(frame)
+        return dict(_EMPTY_SCHEMA)
     return describe_base64(data, frame.get("media_type", "image/jpeg"))
 
 
@@ -141,26 +142,6 @@ def describe_base64(data: str, media_type: str = "image/jpeg") -> dict:
 
     text = "".join(block.text for block in response.content if block.type == "text")
     return _parse_scene_json(text)
-
-
-def describe_grid_frame(frame: dict) -> dict:
-    """Convert grid_world.frame_description() output into the same
-    schema describe_image() returns -- no LLM call needed."""
-    cells = frame["free_space_cells"]
-    if cells >= 3:
-        free_space = "clear"
-    elif cells >= 1:
-        free_space = "some"
-    else:
-        free_space = "none"
-
-    return {
-        "obstacles_ahead": [] if free_space != "none" else ["wall"],
-        "free_space": free_space,
-        "doorway_visible": frame["doorway_ahead"],
-        "important_objects": frame["objects_visible"],
-        "safest_direction": "FORWARD" if free_space != "none" else "STOP",
-    }
 
 
 def _parse_scene_json(text: str) -> dict:

@@ -15,26 +15,41 @@ import pytest
 from brain.agent import ObjectSearchAgent
 from brain.memory import MissionMemory
 from control.remote_robot import RemoteRobot, RobotTransportError
+from control.remote_world import RemoteWorld
 from robot.safety import SafetyViolation
-from tests.conftest import fresh_mock_robot
+from tests.conftest import fresh_mock_robot, mock_world_for
 
 MAX_STEPS = 150
 
 
-def run_backpack_hunt(robot):
-    """tests/demo_active_search.py's mission, driven programmatically."""
+def run_backpack_hunt(robot, world):
+    """tests/demo_active_search.py's mission, driven programmatically.
+
+    **Takes a world as well as a robot since `PLAN-ros-alignment.md`**, and
+    that widens what this test proves rather than complicating it. The
+    frontier policy is allocentric now -- it asks `get_pose()` where it is --
+    so the comparison below is no longer "the same body over a socket", it is
+    "the same BODY and the same WORLD over a socket". Both halves of N1's
+    wall are in the sequence being matched.
+    """
     memory = MissionMemory(mission="Find the red backpack.", target_object="red backpack")
-    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30)
+    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30, world=world)
     report = agent.run_mission(max_steps=MAX_STEPS)
     return [r.action for r in agent.history], report
 
 
+def local_hunt():
+    robot = fresh_mock_robot()
+    return run_backpack_hunt(robot, mock_world_for(robot))
+
+
 def test_identical_action_sequence_over_a_real_socket(live_robot_server):
     """The single most valuable test in PLAN-sim-hardening.md's S3."""
-    local_actions, local_report = run_backpack_hunt(fresh_mock_robot())
+    local_actions, local_report = local_hunt()
 
     with RemoteRobot(live_robot_server) as remote:
-        remote_actions, remote_report = run_backpack_hunt(remote)
+        remote_world = RemoteWorld(live_robot_server)
+        remote_actions, remote_report = run_backpack_hunt(remote, remote_world)
 
     assert local_actions == remote_actions
     assert local_report["steps_taken"] == remote_report["steps_taken"]
@@ -43,11 +58,11 @@ def test_identical_action_sequence_over_a_real_socket(live_robot_server):
     assert local_report["rooms_searched"] == remote_report["rooms_searched"]
 
 
-def test_identical_action_sequence_in_process_vs_asgi(robot_over_asgi):
+def test_identical_action_sequence_in_process_vs_asgi(robot_and_world_over_asgi):
     """Same assertion without the subprocess, so the cheap suite still
     catches a regression in the HTTP layer."""
-    local_actions, local_report = run_backpack_hunt(fresh_mock_robot())
-    remote_actions, remote_report = run_backpack_hunt(robot_over_asgi)
+    local_actions, local_report = local_hunt()
+    remote_actions, remote_report = run_backpack_hunt(*robot_and_world_over_asgi)
 
     assert local_actions == remote_actions
     assert local_report["steps_taken"] == remote_report["steps_taken"]
@@ -68,17 +83,6 @@ def test_return_shapes_match_the_in_process_backend(robot_over_asgi):
 
     assert robot_over_asgi.turn_right(90) == local.turn_right(90)
     assert robot_over_asgi.drive_forward(50, 0.5) == local.drive_forward(50, 0.5)
-
-
-def test_position_survives_json_as_a_tuple(robot_over_asgi):
-    """JSON has no tuples, and MissionAgent keys a set with `position` --
-    a list here is an unhashable-type crash several steps later."""
-    frame = robot_over_asgi.get_camera_frame()
-    assert isinstance(frame["position"], tuple)
-    assert {frame["position"]}  # hashable, which is the actual requirement
-
-    moved = robot_over_asgi.drive_forward(50, 0.5)
-    assert isinstance(moved["position"], tuple)
 
 
 def test_safety_veto_raises_the_same_exception_it_does_in_process(robot_over_asgi):

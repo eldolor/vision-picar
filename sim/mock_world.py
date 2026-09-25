@@ -32,12 +32,17 @@ difference -- see `world/interface.py`. When `world/ros_world.py` lands
 in N6, the jump on loop closure becomes real without any consumer
 changing, which is the entire point of doing this in the sim first.
 
-**The pose is quantised to cell centres until C2.** `GridWorld` is still
-integer cells and four cardinal headings, so a pose off this backend can
-only ever be a cell centre and a multiple of 90 degrees. That is a
-limitation of the *simulator*, not of the contract: `x_m` is already a
-float and `heading_deg` is already degrees, so C2 makes the pose smooth
-without changing one line on either side of the wall.
+**The pose was quantised to cell centres until R0, and no longer is.** N1
+shipped against a `GridWorld` of integer cells and four cardinal headings,
+noting that this was "a limitation of the *simulator*, not of the
+contract: `x_m` is already a float and `heading_deg` is already degrees, so
+C2 makes the pose smooth without changing one line on either side of the
+wall". `PLAN-ros-alignment.md` R0 made it continuous and that prediction
+held exactly: the three lines below read `world.x` where they read
+`world.robot_x + 0.5`, and nothing else here -- and nothing at all in
+`world/interface.py`, `control/remote_world.py` or the twin -- changed.
+Worth recording, because it is the evidence that the wall was drawn in the
+right place before there was anything behind it.
 """
 
 import math
@@ -106,8 +111,8 @@ class MockWorld(WorldInterface):
         wants to drive it directly -- and because a consumer that wants an
         explicitly-timed scan should not have to fake a read to get one.
         """
-        px = self.world.robot_x + 0.5
-        py = self.world.robot_y + 0.5
+        px = self.world.x
+        py = self.world.y
         changed = 0
 
         for i in range(self.rays):
@@ -161,9 +166,9 @@ class MockWorld(WorldInterface):
         return {
             "usable": True,
             "map_id": self.map_id,
-            "x_m": (self.world.robot_x + 0.5) * CELL_M,
-            "y_m": (self.world.robot_y + 0.5) * CELL_M,
-            "heading_deg": float(self.world.heading.compass_deg()),
+            "x_m": self.world.x * CELL_M,
+            "y_m": self.world.y * CELL_M,
+            "heading_deg": round(self.world.heading_deg, 4),
         }
 
     def get_map(self) -> dict:

@@ -265,18 +265,25 @@ def render_jpeg(layout, objects, px: float, py: float, base_angle: float,
 def render_world_image(world, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT) -> Image.Image:
     """A `GridWorld`'s current pose, as a PIL image.
 
-    Uses the world's *view* heading, not its body heading, so
-    `look_left()` / `look_right()` actually change the picture -- the same
-    thing `frame_description()` reports in its `facing` field, and the
-    reason a peek is worth anything to a vision policy.
+    Uses the world's *view* angle, not its body heading, so `look_left()` /
+    `look_right()` actually change the picture -- the same thing
+    `frame_description()` reports in its `facing` field, and the reason a
+    peek is worth anything to a vision policy.
+
+    **Continuous as of R0.** This read `HEADING_ANGLE[view.name]` and a cell
+    centre, which was the whole reason the twin could not show a
+    non-cardinal pose; it now takes the world's real `x`/`y`/`view_angle()`.
+    `HEADING_ANGLE` stays where it is -- it is the line-for-line port of the
+    JavaScript's own table, and `tests/test_renderer_parity.py` compares
+    against it directly. On a cardinal pose the two agree exactly, so no
+    rendered frame changed.
     """
-    view = world._view_heading()
     return render(
         world.layout,
         world.objects,
-        world.robot_x + 0.5,
-        world.robot_y + 0.5,
-        HEADING_ANGLE[view.name],
+        world.x,
+        world.y,
+        world.view_angle(),
         width,
         height,
     )

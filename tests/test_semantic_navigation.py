@@ -6,13 +6,15 @@ from sim.mock_robot import MockRobot
 from sim.maps.starter_house import build_starter_world
 from brain.agent import MissionAgent
 from brain.memory import MissionMemory
+from tests.conftest import mock_world_for
 
 
 def test_reaches_target_room_with_no_object_target():
     world = build_starter_world()
     robot = MockRobot(world)
     memory = MissionMemory(mission="Go to the hallway.", target_room="hallway")
-    agent = MissionAgent(robot, memory, min_distance_cm=30)
+    agent = MissionAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     report = agent.run_mission(max_steps=50)
 
@@ -26,7 +28,8 @@ def test_stops_immediately_if_already_in_target_room():
     world = build_starter_world()  # robot starts in the living room
     robot = MockRobot(world)
     memory = MissionMemory(mission="Go to the living room.", target_room="living room")
-    agent = MissionAgent(robot, memory, min_distance_cm=30)
+    agent = MissionAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     report = agent.run_mission(max_steps=50)
 
@@ -42,7 +45,8 @@ def test_can_combine_object_and_room_goals():
         target_object="red backpack",
         target_room="kitchen",
     )
-    agent = MissionAgent(robot, memory, min_distance_cm=30)
+    agent = MissionAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     report = agent.run_mission(max_steps=100)
 
@@ -57,7 +61,8 @@ def test_object_only_mission_unaffected_by_room_goal_logic():
     world = build_starter_world()
     robot = MockRobot(world)
     memory = MissionMemory(mission="Find the red backpack.", target_object="red backpack")
-    agent = MissionAgent(robot, memory, min_distance_cm=30)
+    agent = MissionAgent(robot, memory, min_distance_cm=30,
+                         world=mock_world_for(robot))
 
     report = agent.run_mission(max_steps=100)
 

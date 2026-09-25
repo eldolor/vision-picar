@@ -31,7 +31,7 @@ def main():
             continue
 
         frame = robot.get_camera_frame()
-        print(f"Now in: {frame['room']}, free space: {frame['free_space_cells']} cells")
+        print(f"Now in: {frame['room']}, clear ahead: {robot.get_distance():.0f}cm")
         if frame["objects_visible"]:
             print(f"Objects visible: {frame['objects_visible']}")
 

@@ -25,9 +25,10 @@ pytest tests/ -v
 # service/vision_analyze/ has its own suite -- see section 5, item 1
 pytest service/vision_analyze/tests/ -v
 
-# tests/test_ui.py and tests/test_renderer_parity.py drive the real twin in
-# a real browser. They SKIP rather than fail without one, so the rest of
-# the suite still runs -- install it once to actually get that coverage:
+# tests/test_ui.py, tests/test_ui_admin.py, tests/test_ui_pipeline.py and
+# tests/test_frame_source.py drive the real twin in a real browser. They
+# SKIP rather than fail without one, so the rest of the suite still runs --
+# install it once to actually get that coverage:
 python -m playwright install chromium
 ```
 
@@ -129,14 +130,14 @@ the original build plan phases, reordered simulation-first):
 | 9 (partial) | Wi-Fi control API + safety-over-HTTP + watchdog | Done (`robot/server.py`), CORS added |
 | 9 (partial) | Manual WASD control client (`control/manual_control.py`) | NOT BUILT, and now skipped -- the twin's D-pad supersedes it, and `RemoteRobot` (B0, below) makes it nearly free if ever wanted. |
 | B0-B3 | Brain on the wire: `RemoteRobot`, `MissionRunner`, `control/brain_server.py`, the three failsafes | Done, tested (`control/`, `tests/test_remote_robot.py`, `test_mission_runner.py`, `test_brain_server.py`, `test_failsafes.py`). The autonomy loop is a service now: startable, stoppable, and inspectable over HTTP, with the robot reachable only as an HTTP client. |
-| S2 | Real image bytes -- the twin's raycaster ported into Python (`sim/renderer.py`) | Done (2026-08-31). `MockRobot.get_camera_frame()` returns a rendered JPEG like every other backend, so the vision policy drives the simulator and `RobotInterface` no longer has to change when hardware lands (`PLAN-sim-hardening.md` 2.1, now closed). Parity with the JS is proven column by column (`tests/test_renderer_parity.py`), which is what makes `renderFPV` safe to delete -- **not yet deleted**: it is still the fallback for a server predating S2, and nothing has been redeployed. The twin's new "frame source: server / local" readout is how you tell which one drew the picture. Read `sim/renderer.py`'s fidelity note before treating a sim result as a statement about real rooms. |
+| S2 | Real image bytes -- the twin's raycaster ported into Python (`sim/renderer.py`) | Done (2026-08-31). `MockRobot.get_camera_frame()` returns a rendered JPEG like every other backend, so the vision policy drives the simulator and `RobotInterface` no longer has to change when hardware lands (`PLAN-sim-hardening.md` 2.1, now closed). Parity with the JS was proven column by column, which is what licensed deleting `renderFPV` -- **deleted 2026-09-25 with the ROS alignment**, along with the parity suite that had nothing left to compare against (`tests/test_frame_source.py` keeps the half that still means something; the golden image in `tests/test_renderer.py` is what pins `sim/renderer.py` now). R0 turned that deletion from tidy-up into a fix: `renderFPV` read a CELL and a CARDINAL heading, so against a continuous pose it drew a direction the robot was not facing, and one call site fed that picture to the model. The "frame source" readout survives with a better meaning -- real pixels vs. NO pixels, which is a state a real camera can be in. Read `sim/renderer.py`'s fidelity note before treating a sim result as a statement about real rooms. |
 | S2b (partial) | The Python vision agent | Done for recorded walks (`brain/navigate.py`, `brain/vision_agent.py`, `sim/replay_robot.py`, `policy: "vision"`, and the twin's "Record this walk" switch) and, since T1-T4, for a live phone walk too (`sim/teleop_robot.py`, "Drive via brain"). The model decides every move; the harness supplies the timeout, the failure budget and the step/cost cap. Room-level step memory is done -- `/navigate` exchanges `searched_rooms`/`room_guess` with the client, and `brain/agent.py:MissionAgent.step()` backfills `frame["room"]` from it (`AGENT-HARNESS.md` section 10). Since S2 it drives the grid-world sim too, and since M1 it is startable from the twin: the Remote brain panel has a policy picker, and a vision mission carries a `model_id` and a `prompt_variant` that are validated at start and shown before you spend anything. |
 | B4 | The twin becomes an observer | Done (`web-twin/index.html`'s "Remote brain" panel + `control/drills.py`). Missions start from the phone and survive the tab; the failsafe drills and watchdog readout make B3's guards watchable. Only B5 (systemd on the Pi) is left in that plan. |
 | T1-T4 | Teleop robot: a live phone walk drives the real `MissionRunner` mission, closed loop (`PLAN-teleop-robot.md`) | Done and deployed (2026-08-28) -- `sim/teleop_robot.py`'s `TeleopRobot` (a fourth `RobotInterface` backend: `mode: teleop`, no motor, a live pushed camera frame, no distance sensor), `POST /teleop/frame` on `robot/server.py`, the twin's Robot view "Drive via brain" switch, and sibling `teleop-robot.yaml`/`teleop-brain.yaml` CloudFormation stacks sharing the existing NLB/ALB (see section 6's AWS-topology bullet). Verified end to end: a real phone walk found its target (`OUT: FOUND`), and both B3.2 (vision-failure budget) and T1's stall detection were triggered live, no drill, against the deployed services. One rough edge, since fixed: `/frame` now catches a stall and returns 503 with the real message instead of a generic 500. |
 | extra | Interim: brain on ECS Fargate | Done and deployed (`service/brain/`, `cloudformation/brain.yaml`) -- `control/brain_server.py` alongside the twin and vision-analyze on the same shared NLB/ALB, so the remote-brain panel works from a phone off the home LAN with no HTTPS tunnel. Not a build-plan phase and not B5: the brain's real home is still the Pi: see `PLAN-brain-relocation.md`'s "Interim: brain on ECS Fargate" for why this doesn't conflict with that, and for the one real gap it surfaced (separate outbound secrets for the robot vs. the vision service). |
 | extra | Recorded-walk evaluation harness | Done and deployed (2026-08-30) -- `control/walk_eval.py` scores a walk (metrics + an LLM judge + a collision check, advisory and kept out of the operator's own label), `control/walk_replay.py` re-asks its frames under another model or prompt, `/navigate` takes `model_id` and `prompt_variant` from server-side allow-lists, and the console shows a per-model summary. **This is the instrument the Stage 0 gate needed:** it turns "did that walk go well" from an afternoon of reading JSON into a button, and replay is the only controlled model comparison available -- two live walks vary the operator's path as well as the model. What it has already established is in the Stage 0 notes below. |
 | extra | Recorded-walk storage + admin viewer | Done and deployed (`cloudformation/recordings.yaml`, `service/admin/`, `control/admin_server.py`) -- an EFS volume (survives redeploys, unlike Fargate's own filesystem) holding Robot-view "Record this walk" data, plus a separate `/admin` service to list/view/delete it. Deliberately its own service, not more routes on `brain_server.py`: reviewing recordings has no reason to move to the Pi when B5 lands or to go down when the mission server restarts. See `PLAN-brain-relocation.md`'s Interim section and `control/admin_server.py`'s docstring. Since T1-T4, `teleop-brain.yaml`'s brain has no EFS mount of its own and instead proxies `POST /recording/frame` to the main brain (`control/brain_server.py`'s `recording_proxy_url`) -- see `PLAN-teleop-robot.md`'s "Recording proxy" section for why only that one route, never `/mission/*`, may be proxied between brains. |
-| -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Designed but never written to disk -- a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt. **This is now the main hardware-path gap:** `PLAN-sim-hardening.md` Q1 settled that the robot is vision-driven, and the vision loop's *port* is done (`brain/navigate.py` calls `/navigate`; the JS Vision Autopilot is now the optional one). Phase S2b of that plan specifies the port, including the step-memory problem the browser version does not solve. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. Stage 2's `MissionRunner` is where it plugs in -- `AGENT-HARNESS.md` section 10 is the instruction sheet: it takes a `vision_fn` and already enforces the timeout and failure budget such a policy needs, and `control/brain_server.py` serves `policy: "vision"` with `brain/vision_agent.py` today -- what is still missing is room-level *planning* over `MissionMemory`, not the vision loop. |
+| -- | LLM-driven planner (`brain/planner.py`) replacing rule-based `decide()` | NOT BUILT. Designed but never written to disk -- a `PlannerAgent` calling Claude with `MissionMemory.as_context()` as the prompt. **This is now the main hardware-path gap:** `PLAN-sim-hardening.md` Q1 settled that the robot is vision-driven, and the vision loop's *port* is done (`brain/navigate.py` calls `/navigate`; the JS Vision Autopilot that used to be the alternative was deleted 2026-09-25). Phase S2b of that plan specifies the port, including the step-memory problem the browser version does not solve. Real gap if you want the actual "high-level planner" from the architecture diagram rather than the current rule-based frontier-exploration policy. Stage 2's `MissionRunner` is where it plugs in -- `AGENT-HARNESS.md` section 10 is the instruction sheet: it takes a `vision_fn` and already enforces the timeout and failure budget such a policy needs, and `control/brain_server.py` serves `policy: "vision"` with `brain/vision_agent.py` today -- what is still missing is room-level *planning* over `MissionMemory`, not the vision loop. |
 | M2 | A depth grid on `RobotInterface`, and in the sim | Done (2026-09-03), not deployed -- `get_depth_grid()` with an honest all-unusable default, `MockRobot` synthesising it from `renderer.cast_ray()`, `GET /depth`, `RemoteRobot` over it, a depth strip under the twin's FPV canvas, and `_HaltGate` added to the conformance suite as a fifth backend. Nothing in `brain/` reads it yet: M3 is the consumer. See `PLAN-microduck-transplants.md`. |
 | M3 | The tri-state zone, and a centre-zone veto | Done (2026-09-03), not deployed -- `SafetyController.path_clearance()` reduces the middle half of the grid's columns to one number and compares it to `min_distance_cm`, exactly as it compared `get_distance()` before. A failed zone never enters the comparison in either direction; a wholly blind path falls back to the scalar and keeps its `0.0`-on-dropout stop. `GET /depth` publishes the reduction so the twin never recomputes it. |
 | M4 | Refusals are state, manual preempts autonomous | Done (2026-09-03), not deployed -- `robot/server.py` arbitrates `/action` by a decided order (`stop > twin-dpad > brain > twin-local-brain`, `AGENT-HARNESS.md` 4.1) instead of letting the last writer win, every refusal carries a machine-readable `reason`, `RemoteRobot` raises `Preempted` rather than `SafetyViolation`, and a preempted mission ends `preempted` with the robot stopped. |
@@ -147,6 +148,7 @@ the original build plan phases, reordered simulation-first):
 | P3 | Corpus-wide perception scoring (`control/perception_eval.py`), and 1.11a **reported** | Done (2026-09-08), not deployed. **P3** is the instrument every finding in `PLAN-onboard-perception.md` 4.10/4.11 rests on and it had been written ad hoc three times and lost each time: it reads each walk's adjudicated `labels.json` (**never** `walk.jsonl`), refuses a walk that has none, scores once and sweeps the gate afterwards, and matches two configs on a false-positive budget before reporting either one's recall. It reproduced 4.11's shipped row exactly on first run -- 62/74 at `P>=0.8`, 3 false positives -- which is the only validation a scorer can have. Its new per-walk split is the finding: **100%/97% recall on the two approach walks and 20% on the search walk**, so the corpus-wide 84% is an average over two different problems. **1.11a** (corroborated identity) is now computed, counted and shown on the Remote brain panel and carried in walk data -- and **enforces nothing**, which a test pins: an `unclear` frame passes `target_visible` and `target_reached` through untouched. It stays that way until the two out-of-vocabulary searches 1.11a asks for exist. |
 | P6 | The Hailo compile loop (`tools/hailo/`), run against OWLv2 | **RUN 2026-09-09. OWLv2 does NOT compile to a Hailo-8L HEF, and the part decision resolves against the Hailo.** `PLAN-onboard-perception.md` 1.10 item 1 had asked for this loop since 2026-09-04 and it was the one pre-hardware item never started; it answered a $400 question for **$3.20 in 3.1 hours** on an r6i.4xlarge, now terminated. **What it found is not what Hailo's own table predicts.** OWLv2's ViT-B/16 image tower *translates* (44-107s) and *quantizes* (no OOM at 3600 tokens or 1600) -- DFC 3.34 carries a LayerNorm Decomposition pass, Matmul Equalization and MatmulDecompose and uses all three. It fails at **allocation**. Three attempts died on `conv1`, the single Conv in a 575-node graph (the 16x16-stride-16 patch embedding), unmoved by `--image-size 640` or `allocator_param(automatic_reshapes=enabled)`. `--factor-patch` rewrites that conv as two 4x4 convs -- an exact identity, verified against the unmodified model at max |d score| 1.4e-05 with the top-50 patch set unchanged -- and removes it from the error. **What appears instead is the whole transformer body: 73 layernorm and 38 softmax layers, every per-token reduction.** That is an architectural limit of the dataflow design, not a size limit, which is why no smaller input and no flag moved it. Records in `evaluations/hailo/`. **Untouched by this:** YOLO11 n/s/m still compile for the 8L off the shelf (4.3.1) and OWLv2's accuracy still stands (68/68 visible frames, zero false positives) -- those are PyTorch numbers and are why the model is worth a board at all. The loop is one `ec2.sh up` from re-running against a newer DFC, which is the only thing that could reverse this |
 | P7 | The whole corpus, on a rented GPU (`evaluations/gpu/`) | **Run 2026-09-11/12. Two A10G instances, 3.7 h, $3.70, torn down.** It exists because of a **scope error**: every row in `PLAN-onboard-perception.md` 4.11 and P5 was scored on FOUR of the corpus's eight labelled walks, and nothing had ever been scored against all 610 frames. **11 configs now are.** Four findings. **fp16 costs no accuracy** -- identical true positives at every budget, gates matching to three decimals, 1.8x faster; that assumption sat under P5, P6 and 4.9 and had never been measured (INT8 still hasn't, and every latency projection assumes it). **OWLv2 reads 82% at 3 FP, not 96% -- but its margin WIDENS**, because the shipped pipeline falls further (85% -> 58%), so the gap goes from 11 points to 24 at 11x the speed. **4.11's central claim is false**: Grounding DINO gets 50% at ZERO false positives where the shipped pipeline gets 8%, so the three-model pipeline does not dominate at every operating point -- with a useful corollary for 1.11a, since a model that is never wrong is a better corroborator than one that is more often right. And **the field was not as covered as this plan assumed** -- HuggingFace's zero-shot list had three untried families; OmDet-Turbo (7%) and LLMDet (18%) both lose, which is a real result for forty cents. Qwen3-VL was deliberately not run: a known upstream perf bug (5262 ms/token vs 77), a `--vlm-max-pixels` flag it silently ignores (**which corrects P5's "at native tiling"**), and a non-separable score. P7b revises the Orin projection from 51 ms to **124 ms** on measured rather than assumed inputs, and finds the bottleneck is **CPU preprocessing, not the model** (36 ms detecting, 229 ms resizing). P7c withdraws the "YOLO is redundant" claim that 51 ms implied, resolves the out-of-vocabulary tracking gap as an **odometry** problem rather than a perception one, and argues `target_reached` off the cloud |
+| R0 | Continuous pose + differential-drive kinematics in the sim | Done (2026-09-25), not deployed -- `PLAN-ros-alignment.md` R0, which merges C2 with 1.14's continuous motion. `GridWorld` is no longer a dataclass: float `x`/`y`/`theta` are the state of record and `robot_x`/`robot_y`/`heading` are *views* of it (the getters floor, the setters snap to the cell centre), so every caller that thinks in cells still works and nothing outside `sim/` had to change. `MockRobot` gains `set_wheel_velocity()` / `step()` / `get_wheel_state()` -- **left/right wheel angular velocities, not a twist, on purpose**: `diff_drive_controller` owns that conversion on the real robot, so a sim taking a twist would leave it and its two chassis constants unexercised until hardware day. The verbs are now thin wrappers over that one path and still mean what they meant (one cell, one quarter turn), which is what keeps every step budget and safety threshold in the repo meaningful; what changed is that `turn_left(45)` turns 45 degrees. Constants are `HARDWARE-BOM.md` 4.3's: wheel radius 0.0325m, 1760 counts/rev, and **track width 0.172m as a flagged PLACEHOLDER** -- a test pins that a straight line does not depend on it, so a wrong value can make the sim pivot at the wrong rate and never travel the wrong distance. Collision is `renderer.cast_ray()` and deliberately **not** `get_depth_grid()`'s conservative reduction; see 3.1. **N1's written prediction held exactly** -- three lines changed in `sim/mock_world.py` and nothing in `world/interface.py`, `control/remote_world.py` or the twin, which is the evidence the ROS wall was drawn in the right place before anything stood behind it. `tests/test_continuous_pose.py` (30 tests). **Owed:** no twin control sends an angle other than 90, so the phone can watch a non-cardinal pose but cannot command one -- settle with R1 |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. **The chassis is no longer a PiCar-X** -- see the row above. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -276,6 +278,19 @@ blocker**, not a tidy-up -- `grid_world.py`'s cardinal `Heading` is the last
 discrete thing in the stack and `sim/renderer.py` already takes a float pose
 in radians. Also note `TeleopRobot` has NO odometry, so this feature is
 inert on any phone walk; `MockRobot` is the only backend that can exercise
+it.
+
+**C2 IS NO LONGER A BLOCKER -- it was built as R0 on 2026-09-25**
+(`PLAN-ros-alignment.md`, section 3.1, not deployed). `sim/grid_world.py`
+holds float `x`/`y`/`theta`, `sim/mock_robot.py` integrates left/right wheel
+angular velocities with the chassis constants from `HARDWARE-BOM.md` 4.3,
+collision is a ray, and `turn_left(45)` now turns 45 degrees instead of
+rounding up to 90. **So P25's A/B has somewhere to run**, and running it is
+R1 -- which also owes `control/walk_eval.py` the median-run-length and
+reversal metrics that P25 measured by hand. The paragraph above stands as
+written; this is the correction to its last two sentences, not to its
+finding. `TeleopRobot` still has no odometry, so the feature is still inert
+on a phone walk and `MockRobot` is still the only backend that can exercise
 it.
 
 **P25 (2026-09-21, free) -- THE COMMAND CHANGES EVERY FRAME, and this now
@@ -583,6 +598,8 @@ vision-picar/
 │                            being revisited: see PLAN-brain-relocation.md)
 │   ├── vision.py             Vision LLM scene understanding (Claude API)
 │   ├── agent.py               ConstrainedAgent / MissionAgent / ObjectSearchAgent
+│   │                           -- the free rule-based policy. Pose from the
+│   │                           world, scene from the depth grid; no cells
 │   ├── memory.py              MissionMemory -- mission, rooms, sightings, actions
 │   ├── rooms.py                identify_room() -- landmark-feature room matching
 │   ├── navigate.py            the vision policy's perception step: a frame ->
@@ -862,7 +879,7 @@ vision-picar/
 ├── .gitignore
 ├── README.md                  full build-plan-referenced documentation
 ├── CLAUDE.md                  this file -- session orientation
-├── FEATURES.md                 every UI feature (all four tabs), how each
+├── FEATURES.md                 every UI feature (all tabs), how each
 │                               one works end-to-end, and the AWS topology
 │                               it runs against -- start here for "how does
 │                               X work" questions about the app itself
@@ -976,7 +993,7 @@ a phone can watch the thing it built do its job.
 
 **Primary tool: the Guide tab's "Robot view" mode.** Point your phone at
 a real room and it shows the move the robot would make from where you are
-standing -- same `/navigate` route Vision Autopilot uses, real pixels
+standing -- the same `/navigate` route the vision policy uses, real pixels
 instead of the raycaster render. Nothing executes. Walk toward the target
 and see whether following the actions would actually get you there; that
 tests the *loop*, which curated stills cannot.
@@ -1393,11 +1410,11 @@ money -- see **Done when** below.
   decodable image and name its media type.
 - **S2 -- real image bytes -- BUILT (2026-08-31).** `sim/renderer.py` is
   the twin's raycaster ported into Python, so `get_camera_frame()` returns
-  JPEG bytes on every backend and the one structural blocker between
-  Vision Autopilot and hardware is gone. The JS raycaster is still present
-  as the pre-S2 fallback and is now safe to delete -- see the status table
-  in section 3, and `sim/renderer.py`'s fidelity note, which is the reason
-  this does not retire the real-photo gate in Stage 0.
+  JPEG bytes on every backend and the one structural blocker between the
+  vision policy and hardware is gone. The JS raycaster it replaced was
+  **deleted 2026-09-25** -- see the status table in section 3, and
+  `sim/renderer.py`'s fidelity note, which is the reason this does not
+  retire the real-photo gate in Stage 0.
 - **S2b -- the Python vision agent** -- **BUILT** for recorded walks
   (`python -m tests.demo_replay_mission <walk> "red backpack"`, which
   takes `--policy tiered` since 2026-09-07 to run the P2 chain over the
@@ -1502,8 +1519,11 @@ file.
 
 - **B4 -- the twin becomes an observer.** Built as two labelled panels in
   the Sim tab -- "Remote brain" (drives `control/brain_server.py`) and
-  "Local brain" (the JS loop, kept for LAN dev and for running with no Pi
-  present). Only one may drive at a time, enforced from both ends. The
+  "Local brain" (the JS loop). **The local one was deleted 2026-09-25**
+  with the ROS alignment: R4 puts `twist_mux` between any driver and the
+  wheels and allows exactly one writer, and a brain that dies with a
+  browser tab was never going to be it. The server's own 409 and M4's
+  authority order enforce what the two-panel arrangement used to. The
   manual D-pad still talks straight to the robot server and works with
   the brain service stopped.
 - **Built alongside it, because B3 was otherwise unverifiable by hand:**
@@ -1555,13 +1575,25 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   much cheaper than S6 costed it -- `sim/renderer.py` already takes a float pose
   and radians, so only `grid_world.py`'s integer cells and cardinal `Heading`,
   plus a two-line conversion in `mock_robot.py`, are actually discrete. The
-  Ackermann half stays retired.
+  Ackermann half stays retired. **The continuous-pose half was BUILT
+  2026-09-25 as R0** (`PLAN-ros-alignment.md`) -- and the estimate above was
+  about right on the sim's side and wrong about `mock_robot.py`, where the
+  two-line conversion turned out to be a wheel-velocity integrator, because
+  R0 took the chance to put `diff_drive_controller`'s own kinematics under
+  test rather than only un-quantising the pose.
 - **`control/manual_control.py`** -- skip. The twin's D-pad covers it
   better, and B0's `RemoteRobot` (built) makes it nearly free if ever
   wanted.
 - **The rule-based agent** -- keep, do not extend. It is the fastest,
   free, deterministic way to test the safety layer and mission memory.
-  It is not on the hardware path (`PLAN-sim-hardening.md` 2.2).
+  It is not on the hardware path (`PLAN-sim-hardening.md` 2.2). **Since
+  2026-09-25 it no longer thinks in cells** (`PLAN-ros-alignment.md` 3.2):
+  its pose comes from `WorldInterface` and its scene from the depth grid
+  (`ConstrainedAgent.sensed_scene()`), so it needs a world to explore
+  well -- a test that builds a `MissionRunner` directly passes one
+  (`tests/conftest.py`'s `fresh_mock_runner()` / `mock_world_for()`), and
+  without one it degrades to the right-hand rule rather than failing. nav2's
+  frontier exploration replaces it at R6.
 
 ---
 
@@ -1595,7 +1627,10 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
   the same against the deployed NLB endpoint, both with a real Bedrock
   call and a correct response.
 
-- **The web twin's exploration algorithm duplication is intentional,
+- **SUPERSEDED 2026-09-25 -- the JS local brain this bullet describes was
+  deleted** (`PLAN-ros-alignment.md` 3.2), along with the twin's copy of
+  the house and its raycaster. Kept below as the reasoning it was built on.
+  **The web twin's exploration algorithm duplication is intentional,
   not a bug -- and the browser is now the *optional* brain, not the
   primary one.** `web-twin/index.html`'s JS re-implements the
   frontier-preference decision logic from `brain/agent.py`. That was
@@ -1988,7 +2023,8 @@ endpoint, on purpose (real hardware has none either).
 | S5 | sensor realism | Set `sim.sensor_noise.enabled: true`, restart the robot server, then D-pad toward a wall | Distance telemetry stops being multiples of 30cm and jitters. The collar still fires only at the wall: `min_distance_cm` is 20 on both sides now, which is 3.3 sigma clear of one cell -- at the old brain-side 30 the jitter alone vetoed ~45% of legal one-cell moves |
 | -- | a lit sim camera | Sim tab, drive the D-pad and watch the FPV canvas (or `GET /frame`) | A room: light ceiling, mid-brown floor, blue-grey walls. It used to be a black void with two grey slabs, because the render borrowed the twin's dark `--wall`/`--floor` UI colours -- which is why the model called every sim frame "very dark and unclear" |
 | -- | a session's calls die with it | Guide tab -> Robot view, Start, Stop, Start again | The new session's HUD never shows the previous one's decision. A call still in flight at Stop is orphaned by run (`guidanceEpoch`), not by a boolean -- it used to flash its answer over the new camera view and then suppress the new run's first few real decisions. Everything else was already reset on Stop, so a straggler was the only route |
-| N1 | a map that fills in as you drive | Sim tab, look under the depth strip, then drive the D-pad into a room | The house appearing a room at a time -- seen floor, seen wall, and NEVER SEEN in three distinguishable tones, with the robot drawn on it and a readout naming cells-seen, cell size, map id and version. It starts mostly unknown because the map is **discovered**, not copied: a ring is cast from wherever the robot stands and everything behind a wall stays unknown. A server predating the route says "not reported by this server" rather than going blank, because blank and "no map" must not look alike. The pose is quantised to cell centres until C2 -- the contract already takes a float, so that changes nothing on either side of the wall |
+| N1 | a map that fills in as you drive | Sim tab, look under the depth strip, then drive the D-pad into a room | The house appearing a room at a time -- seen floor, seen wall, and NEVER SEEN in three distinguishable tones, with the robot drawn on it and a readout naming cells-seen, cell size, map id and version. It starts mostly unknown because the map is **discovered**, not copied: a ring is cast from wherever the robot stands and everything behind a wall stays unknown. A server predating the route says "not reported by this server" rather than going blank, because blank and "no map" must not look alike. The pose is continuous as of R0 (2026-09-25): drive a diagonal and the robot is drawn between cells at a non-multiple-of-90 bearing. It was quantised to cell centres before that, and the contract already took a float -- which is why making it smooth changed three lines in `sim/mock_world.py` and nothing on the consumer side |
+| R0 | a pose that is not on a grid line | Sim tab, then `curl -X POST .../action -d '{"action":"LEFT","angle":30}'` and drive the D-pad forward | The robot on the map view at 60 degrees and off both grid lines, with the FPV and the depth strip both swung 30 degrees -- all three are cast from one continuous `view_angle()` now. **curl rather than a tap, and that is the gap:** the D-pad sends 90 and nothing in the twin sends anything else yet, so R0's own "D-pad rotates through non-cardinal angles" is unmet and is called out in `PLAN-ros-alignment.md` 3.1 rather than quietly dropped |
 | M2 | a depth grid the robot reports | Sim tab, look under the FPV canvas, then drive the D-pad at a wall | Eight zones, red near and green far, hatched grey where unmeasurable, with the grid's own shape and the nearest zone named beneath. Tap look-left and the strip swings with the picture -- it is cast off the *view* heading, same as the render. A server predating the route says "not reported by this server" rather than going blank, because blank and "no obstacles" must not look alike |
 | M3 | the veto reading the grid | Set `sim.sensor_noise.enabled: true` with `dropout_rate: 0.2`, restart the robot server, then drive the D-pad at a wall | The path zones are outlined on the strip and the readout names the clearance the veto actually reads, plus where it came from. Dropped zones hatch grey and the robot keeps going -- seven others answered, where a single beam reading `0.0` would have stopped it. Against the wall the strip turns red and says FORWARD is vetoed |
 | M4 | a person outranks the brain | Sim tab -> Remote brain -> Start, then tap the D-pad | The mission ends `preempted` (not `failed`), the log line names `twin-dpad`, the car does what the pad said, and the Driving readout switches. Stop touching it for a second and it reads "twin-dpad (lapsed)" -- authority rides the same deadman the watchdog does, which is why there is no release button to forget |

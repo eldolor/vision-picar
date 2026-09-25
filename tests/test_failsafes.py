@@ -30,7 +30,7 @@ from fastapi.testclient import TestClient
 
 from control.brain_server import create_app
 from control.mission_runner import FAILED, FOUND, MissionRunner
-from tests.conftest import RecordingRobot, fresh_mock_robot
+from tests.conftest import mock_world_for, RecordingRobot, fresh_mock_robot
 
 BUDGET = 150
 
@@ -63,6 +63,7 @@ def test_consecutive_vision_failures_end_the_mission_with_the_robot_stopped():
         max_steps=BUDGET,
         vision_fn=failing_vision,
         max_vision_failures=3,
+        world=mock_world_for(robot),
     )
     runner.start()
     status = drive_to_completion(runner)
@@ -77,20 +78,24 @@ def test_consecutive_vision_failures_end_the_mission_with_the_robot_stopped():
 def test_a_single_vision_failure_is_survivable():
     """One dropped call is not a reason to end a mission -- but the car
     stops for it, and the counter resets on the next success."""
-    from brain.vision import describe_grid_frame
-
     calls = {"n": 0}
+
+    robot = RecordingRobot(fresh_mock_robot())
+    runner = MissionRunner(
+        robot, target_object="red backpack", max_steps=BUDGET,
+        world=mock_world_for(robot),
+    )
+    # The runner's own default scene, with exactly one call made to fail --
+    # a drill in miniature: break one thing, leave everything else real.
+    inner = runner.vision_fn
 
     def flaky_vision(frame):
         calls["n"] += 1
         if calls["n"] == 2:
             raise RuntimeError("navigate: 502")
-        return describe_grid_frame(frame)
+        return inner(frame)
 
-    robot = RecordingRobot(fresh_mock_robot())
-    runner = MissionRunner(
-        robot, target_object="red backpack", max_steps=BUDGET, vision_fn=flaky_vision
-    )
+    runner.vision_fn = flaky_vision
     runner.start()
     status = drive_to_completion(runner)
 
@@ -118,6 +123,7 @@ def test_a_hanging_vision_call_trips_the_same_budget():
         vision_fn=hanging_vision,
         vision_timeout_s=0.15,
         max_vision_failures=3,
+        world=mock_world_for(robot),
     )
     try:
         runner.start()
@@ -137,7 +143,8 @@ def test_a_hanging_vision_call_trips_the_same_budget():
 
 def test_a_healthy_mission_is_untouched_by_either_guard():
     robot = RecordingRobot(fresh_mock_robot())
-    runner = MissionRunner(robot, target_object="red backpack", max_steps=BUDGET)
+    runner = MissionRunner(robot, target_object="red backpack", max_steps=BUDGET,
+                           world=mock_world_for(robot))
     runner.start()
     status = drive_to_completion(runner)
 
@@ -151,7 +158,8 @@ def test_no_movement_command_reaches_the_robot_after_a_stop():
     """The gate behind POST /mission/stop's promise: a tick that was
     already deciding when the stop landed must not get its move out."""
     robot = RecordingRobot(fresh_mock_robot())
-    runner = MissionRunner(robot, target_object="red backpack", max_steps=BUDGET)
+    runner = MissionRunner(robot, target_object="red backpack", max_steps=BUDGET,
+                           world=mock_world_for(robot))
     runner.start()
     for _ in range(5):
         runner.tick()
@@ -226,7 +234,8 @@ def test_a_healthy_mission_is_not_killed_by_the_deadman(fast_deadman_config):
         config_path=fast_deadman_config,
         robot_factory=lambda: robot,
         runner_factory=lambda r, req: MissionRunner(
-            r, target_object=req.target_object, max_steps=BUDGET
+            r, target_object=req.target_object, max_steps=BUDGET,
+            world=mock_world_for(r),
         ),
     )
     with TestClient(app) as client:
@@ -253,6 +262,12 @@ def test_a_healthy_mission_is_not_killed_by_the_deadman(fast_deadman_config):
 
 
 def drill_app(fault_config, robot, **overrides):
+    # Both halves, the way create_app() builds them in production: a
+    # MockRobot-backed brain has no world SERVER to reach, so the test hands
+    # over the sim's world model directly -- and a drill that explored by the
+    # right-hand rule instead of the map would be a different mission from
+    # the one it claims to be proving a guard against.
+    overrides.setdefault("world_factory", mock_world_for)
     return create_app(config_path=fault_config, robot_factory=lambda: robot, **overrides)
 
 

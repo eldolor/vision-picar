@@ -98,9 +98,11 @@ from control.recording_routes import (  # noqa: F401 -- re-exported, see above
     mount_recording_routes,
 )
 from control.remote_robot import RemoteRobot
+from control.remote_world import RemoteWorld
 from control.walk_store import walk_store_from_config
 from robot.identity import git_revision, log_identity
 from robot.interface import RobotInterface
+from world.interface import NullWorld, WorldInterface
 
 logger = logging.getLogger("brain_server")
 
@@ -316,6 +318,7 @@ def create_app(
     config_path: Optional[str] = None,
     robot_factory: Optional[Callable[[], RobotInterface]] = None,
     runner_factory: Optional[Callable[..., MissionRunner]] = None,
+    world_factory: Optional[Callable[[RobotInterface], WorldInterface]] = None,
     store=None,
 ) -> FastAPI:
     """Builds a brain app. Tests call this directly to inject a robot
@@ -344,6 +347,36 @@ def create_app(
     def default_robot_factory() -> RobotInterface:
         return RemoteRobot(
             config["robot_url"], secret=robot_secret, timeout=config["request_timeout_s"]
+        )
+
+    def default_world_factory(robot: RobotInterface) -> WorldInterface:
+        """The WORLD half, and `control/`'s first consumer of it.
+
+        **It takes the robot, and that is the whole point of this
+        signature.** `robot/server.py` serves both halves today, so the
+        world lives wherever the body does -- and reading the URL off the
+        robot that was actually built is what stops the two pointing at
+        different machines. Deriving it from `config["robot_url"]` instead
+        looked identical and was wrong: any caller supplying its own
+        `robot_factory` (which every integration test does, and which is how
+        a second robot would ever be addressed) silently got a world on the
+        default URL, answering 401s about a robot it was not watching.
+
+        `brain.world_url` still wins when set, because R5 moves the pose and
+        the map behind the SLAM bridge while the body stays on the robot
+        runtime -- at which point these two genuinely are different hosts and
+        one string says so. `RemoteWorld` reads JSON and contains no hint
+        that ROS exists, which is the test of whether that wall was drawn in
+        the right place.
+
+        `robot_secret` rather than a third one: the world routes are gated by
+        whichever server hosts them, and today that is the robot's.
+        """
+        return RemoteWorld(
+            config.get("world_url") or getattr(robot, "base_url", None)
+            or config["robot_url"],
+            secret=robot_secret,
+            timeout=config["request_timeout_s"],
         )
 
     def default_runner_factory(robot: RobotInterface, req: MissionStartRequest) -> MissionRunner:
@@ -404,7 +437,7 @@ def create_app(
         # The dead-man deadline is per mission, not per process, so a drill
         # can shorten its own without touching anything else.
         state["tick_timeout_s"] = tick_timeout_s
-        runner = runner_class(robot, **kwargs)
+        runner = runner_class(robot, world=world(), **kwargs)
         # Metrics shipping, configured on the runner rather than passed
         # through its constructor: MissionRunner's signature is the
         # harness contract (AGENT-HARNESS.md) and a dashboard is not part
@@ -429,13 +462,14 @@ def create_app(
         return runner
 
     make_robot = robot_factory or default_robot_factory
+    make_world = world_factory or default_world_factory
     make_runner = runner_factory or default_runner_factory
 
     # One robot client for the process. It is built up front (construction
     # does no I/O) so that POST /mission/stop can stop the car even when no
     # mission has ever run.
     state: dict = {
-        "robot": None, "runner": None, "task": None,
+        "robot": None, "world": None, "runner": None, "task": None,
         "fault": drills.NONE, "tick_timeout_s": config["tick_timeout_s"],
     }
 
@@ -443,6 +477,29 @@ def create_app(
         if state["robot"] is None:
             state["robot"] = make_robot()
         return state["robot"]
+
+    def world() -> WorldInterface:
+        """The world client, built once, and never able to stop a mission.
+
+        Falls back to `NullWorld()` if construction fails at all. The world
+        is ADVISORY to every policy that reads it -- the frontier explorer
+        uses the pose to choose between directions the distance sensor has
+        already called clear, so losing it costs exploration efficiency and
+        nothing else. A misconfigured or unreachable mapper must therefore
+        degrade, exactly as `MissionAgent._pose()` degrades when a read
+        fails; letting it raise here would turn a soft problem into a
+        refusal to start, which is the same trade this file already refuses
+        to make for an unreachable /navigate/models endpoint.
+        """
+        if state["world"] is None:
+            try:
+                state["world"] = make_world(robot())
+            except Exception as exc:  # noqa: BLE001 -- see docstring
+                logger.warning(
+                    "could not build a world client (%s) -- missions will "
+                    "explore by the right-hand rule instead of the map", exc)
+                state["world"] = NullWorld()
+        return state["world"]
 
     app = FastAPI(title="vision-picar brain server")
 
