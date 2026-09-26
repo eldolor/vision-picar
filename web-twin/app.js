@@ -156,6 +156,10 @@
     // How far a D-pad LEFT/RIGHT turns, in degrees (R0). 90 is what every
     // tap sent before the pose went continuous, so it stays the default.
     turnStepDeg: 90,
+    // The robot server's /health `mode` ("sim", "teleop", "hardware") --
+    // read by the tiered hint, which must not name models a sim mission
+    // will never load.
+    robotMode: null,
     watchdogTimerId: null,
     // Recording a Robot-view walk to the brain, for replay (S2b).
     // The robot's own id for the most recently pushed teleop frame, so a
@@ -1556,6 +1560,15 @@
       if (typeof health.min_distance_cm === "number") {
         state.minDistanceCm = health.min_distance_cm;
       }
+      // Which body is on the other end. The tiered hint has to know: since
+      // R1 a simulated robot gets synthetic detections and NO model runs,
+      // so naming the brain's detector there would describe a different
+      // mission from the one Start is about to launch.
+      const mode = health.mode || null;
+      if (mode !== state.robotMode) {
+        state.robotMode = mode;
+        renderBrainPolicyHint();
+      }
       setBrainText("brain-tel-watchdog",
         "quiet " + age.toFixed(1) + "s / " + timeout + "s " + (fired ? "\u2014 motors stopped" : "\u2014 armed"),
         fired ? "alert" : "safe");
@@ -1678,8 +1691,10 @@
     const refusal = health.last_refusal;
     if (!refusal) { setBrainText("brain-tel-refusal", "none"); return; }
     const label = REFUSAL_LABEL[refusal.reason] || refusal.reason;
+    // A watchdog stop can happen before anyone has driven, so there may be
+    // no driver to name -- it used to print the word "null".
     setBrainText("brain-tel-refusal",
-      label + " \u00b7 " + refusal.driver + " \u00b7 " +
+      label + " \u00b7 " + (refusal.driver || "no driver") + " \u00b7 " +
       refusal.seconds_ago.toFixed(1) + "s ago",
       "alert");
   }
@@ -1782,6 +1797,18 @@
   }
 
   function tieredCostSentence() {
+    const tail = " A paid <code>/navigate</code> call goes out only on a "
+      + "trigger: mission start, a candidate sighting, or a cold search.";
+    // R1 / 1.12: against the simulator nothing runs a detector on a
+    // raycaster render -- the simulator reports what its own geometry shows,
+    // and the mission's Models line will read "sim ground truth". Saying
+    // "yoloe + RN50" here would describe a mission this button does not
+    // start.
+    if (state.robotMode === "sim") {
+      return "Against the simulator no model runs: the simulator reports what "
+        + "its own geometry shows (<b>sim ground truth</b>), because a detector "
+        + "on a rendered wall measures nothing." + tail;
+    }
     const p = state.brainPerception;
     // Not connected yet: the brain is the only thing that knows which
     // models it would load, and guessing them here would be the
@@ -1791,8 +1818,7 @@
       ? "<b>" + escapeHtml(p.detector) + "</b> + <b>" + escapeHtml(p.clip) + "</b>"
       : "its detector and CLIP encoder (connect the brain to see which)";
     return "Perception runs in the brain process on every frame, free \u2014 "
-      + models + ". A paid <code>/navigate</code> call goes out only on a "
-      + "trigger: mission start, a candidate sighting, or a cold search.";
+      + models + "." + tail;
   }
 
   // `ultralytics` and `torch` are a deliberately optional install, so a

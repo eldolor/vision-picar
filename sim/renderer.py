@@ -182,6 +182,9 @@ def wall_profile(layout, px: float, py: float, base_angle: float, width=DEFAULT_
     return out
 
 
+_ROBOT_FOOTPRINT_CELLS = 0.5
+
+
 def _visible_objects(layout, objects, px: float, py: float, base_angle: float):
     """Objects inside the field of view and not hidden behind a wall.
 
@@ -193,6 +196,16 @@ def _visible_objects(layout, objects, px: float, py: float, base_angle: float):
         ox, oy = ox_cell + 0.5, oy_cell + 0.5
         ddx, ddy = ox - px, oy - py
         dist_to_obj = math.hypot(ddx, ddy)
+        # Inside the robot's own footprint: underneath it, not in front of
+        # it. The angle to a point at distance zero is atan2(0, 0) = 0, which
+        # this test then read as DEAD AHEAD -- so a robot standing on the
+        # starter house's sofa cell saw a sofa filling the whole picture,
+        # the cloud was shown that on every mission's first call, and the
+        # golden image had been blessed with it. Half a cell because that is
+        # the footprint `sim/grid_world.py`'s mover uses (ROBOT_HALF_CELL;
+        # not imported -- grid_world imports this module).
+        if dist_to_obj <= _ROBOT_FOOTPRINT_CELLS:
+            continue
         angle_to_obj = math.atan2(ddy, ddx)
         rel_angle = normalize_angle(angle_to_obj - base_angle)
         if abs(rel_angle) > FPV_FOV / 2 + 0.1:

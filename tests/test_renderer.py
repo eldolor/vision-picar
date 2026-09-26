@@ -22,10 +22,19 @@ To re-bless the golden after a deliberate change:
 
     python -c "from sim.maps.starter_house import build_starter_world as b; \\
                from sim import renderer as r; w=b(); \\
-               r.render(w.layout, w.objects, 2.5, 2.5, \\
-                        r.HEADING_ANGLE['E']).save('tests/golden/fpv_living_room_east.png')"
+               r.render(w.layout, w.objects, 5.5, 7.5, \\
+                        r.HEADING_ANGLE['E']).save('tests/golden/fpv_hallway_east.png')"
 
 and look at the result before committing it.
+
+**Re-blessed 2026-09-25 at a new pose, because the old golden encoded a
+bug.** It was rendered standing on the starter house's sofa cell, and the
+renderer drew an object at distance zero as dead ahead -- so the golden's
+"object billboard" was a sofa pasted over the robot's own face. The
+renderer now skips anything inside the robot's footprint, and the golden
+moved to the hallway looking east through the kitchen door, where the
+backpack is a real, distant object. The old file was deleted rather than
+overwritten so the change is visible in history.
 """
 
 import base64
@@ -41,13 +50,14 @@ from sim.grid_world import Heading
 from sim.maps.starter_house import build_starter_world
 from sim.mock_robot import MockRobot
 
-GOLDEN = Path(__file__).parent / "golden" / "fpv_living_room_east.png"
+GOLDEN = Path(__file__).parent / "golden" / "fpv_hallway_east.png"
 
-# The pose the golden was rendered from: standing in the living room
-# looking east at the doorway. Chosen because one frame then contains all
-# three things the renderer can draw -- near side walls, a gap where a
-# door lets the ray through, and an object billboard.
-POSE = (2.5, 2.5, "E")
+# The pose the golden was rendered from: in the hallway looking east through
+# the kitchen doorway. Chosen because one frame then contains all three
+# things the renderer can draw -- near side walls, a gap where a door lets
+# the ray through, and an object billboard (the backpack, in the target
+# colour, beyond the door).
+POSE = (5.5, 7.5, "E")
 
 
 @pytest.fixture
@@ -55,7 +65,7 @@ def world():
     return build_starter_world()
 
 
-def _render_pose(world, heading="E", px=2.5, py=2.5):
+def _render_pose(world, heading=POSE[2], px=POSE[0], py=POSE[1]):
     return renderer.render(
         world.layout, world.objects, px, py, renderer.HEADING_ANGLE[heading]
     )
@@ -148,6 +158,17 @@ def test_objects_behind_a_wall_are_not_drawn(world):
         world.layout, world.objects, 2.5, 2.5, renderer.HEADING_ANGLE["E"]
     )
     assert "refrigerator" not in {o["name"] for o in visible}
+
+
+def test_an_object_under_the_robot_is_not_drawn(world):
+    """The starter house starts the robot on the sofa's cell. The angle to a
+    point at distance zero is atan2(0, 0) = 0, which the visibility test read
+    as dead ahead, so the sofa filled the picture -- and the old golden had
+    been blessed with it. An object inside the footprint is underneath the
+    robot, not in front of it."""
+    visible = renderer._visible_objects(
+        world.layout, world.objects, 2.5, 2.5, renderer.HEADING_ANGLE["E"])
+    assert "sofa" not in {o["name"] for o in visible}
 
 
 # ---------- the MockRobot seam ----------

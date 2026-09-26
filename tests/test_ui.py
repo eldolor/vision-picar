@@ -1277,6 +1277,34 @@ def test_the_refusal_readout_names_the_reason_and_who_was_refused(browser, twin_
     page.close()
 
 
+def test_a_refusal_with_no_driver_does_not_print_null(browser, twin_server):
+    """The watchdog can stop the motors before anyone has driven, so its
+    refusal has no driver. The readout printed the word "null" -- seen on a
+    phone the day R1 shipped."""
+    page, errors = open_twin(browser, twin_server)
+
+    def health(route):
+        route.fulfill(status=200, content_type="application/json", body=_json({
+            "status": "ok", "seconds_since_last_command": 190.0,
+            "watchdog_timeout_s": 1.0, "min_distance_cm": 20, "mode": "sim",
+            "env_label": "", "driver": None, "authority_holder": None,
+            "last_refusal": {"reason": "watchdog", "detail": "silence",
+                             "driver": None, "at": 1.0, "seconds_ago": 194.4},
+        }))
+
+    page.route("**/health", health)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    readout = page.locator("#brain-tel-refusal")
+    sync_api.expect(readout).to_contain_text("WATCHDOG", timeout=5000)
+    sync_api.expect(readout).to_contain_text("no driver")
+    assert "null" not in readout.inner_text()
+    assert not errors, errors
+    page.close()
+
+
 def test_a_server_older_than_m4_leaves_both_readouts_blank(browser, twin_server):
     """Same choice the depth strip makes about a server with no /depth: say
     nothing rather than invent a driver. The stacks are redeployed one at a
@@ -1534,11 +1562,43 @@ def test_the_tiered_hint_says_the_models_are_local_and_the_cloud_is_on_a_trigger
     that way before anything is spent: perception every frame for free, the
     paid call only on an event."""
     page, _ = open_with_brain(browser, twin_server)
+    # A robot with a REAL camera: this wording is about the models a
+    # real-pixel mission loads. The shared server is the simulator, whose
+    # own wording is the test below.
+    _robot_mode(page, twin_server, "teleop")
     page.locator("#brain-policy").select_option("tiered")
     hint = page.locator("#brain-policy-hint")
     sync_api.expect(hint).to_be_visible()
-    sync_api.expect(hint).to_contain_text("yolo11s.pt")
+    sync_api.expect(hint).to_contain_text("yolo11s.pt", timeout=5000)
     sync_api.expect(hint).to_contain_text("RN50")
+    sync_api.expect(hint).to_contain_text("trigger")
+    page.close()
+
+
+def _robot_mode(page, twin_server, mode):
+    """Make the robot server report `mode` on /health, everything else real."""
+    def health(route):
+        body = route.fetch().json()
+        body["mode"] = mode
+        route.fulfill(status=200, content_type="application/json", body=_json(body))
+
+    page.route(twin_server + "/health", health)
+
+
+def test_against_the_simulator_the_tiered_hint_names_no_model(browser, twin_server):
+    """R1 / 1.12: a tiered mission against the simulator loads no detector --
+    the simulator reports what its geometry shows. The hint used to name the
+    brain's YOLO and CLIP here anyway, describing a mission Start would not
+    launch. Seen on a phone the day R1 shipped."""
+    page, _ = open_with_brain(browser, twin_server)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.locator("#brain-policy").select_option("tiered")
+    hint = page.locator("#brain-policy-hint")
+    sync_api.expect(hint).to_contain_text("sim ground truth", timeout=5000)
+    assert "yolo" not in hint.inner_text().lower()
     sync_api.expect(hint).to_contain_text("trigger")
     page.close()
 
