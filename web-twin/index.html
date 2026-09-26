@@ -1396,7 +1396,11 @@
       </div>
       <div class="btn-row" style="margin-top:8px;">
         <input type="text" id="brain-target" class="text-input" value="red backpack" list="target-history-list" style="flex:2;">
-        <button id="btn-brain-mission" style="flex:1;" disabled>Start</button>
+        <!-- `primary`, not the default grey: this is the panel's one
+             action, and in the default style it read as a label beside a
+             bordered text box -- a user looked straight at it and reported
+             "there is no start button". -->
+        <button id="btn-brain-mission" class="primary" style="flex:1;" disabled>Start</button>
       </div>
       <div class="btn-row">
         <select id="brain-policy" class="select-input" style="flex:1;">

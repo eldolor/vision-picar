@@ -1484,6 +1484,16 @@ def tiered_status(*, frames=12, cloud_calls=3, status="detected", margin=0.21,
     }
 
 
+def frontier_status_idle():
+    """A brain with no mission yet -- what /mission/status answers at rest."""
+    return {
+        "running": False, "outcome": None, "policy": "frontier", "step": 0,
+        "max_steps": 120, "last_action": None, "last_reasoning": None,
+        "vision_failures": 0, "rooms_searched": [], "log_tail": [],
+        "tier": None, "perception": None,
+    }
+
+
 def frontier_status():
     """The same panel under a policy with no perception tier -- both keys
     null, which is what the runner really sends."""
@@ -1528,7 +1538,82 @@ def test_a_bearing_sized_turn_names_its_size_and_the_reversals_are_counted(brows
     page, errors = open_with_brain(browser, twin_server, status=status)
     sync_api.expect(page.locator("#brain-tel-action")).to_have_text("LEFT 23\u00B0")
     sync_api.expect(page.locator("#brain-tel-turns")).to_have_text(
-        "4 made, 1 reversed the one before")
+        "4 of 12 steps, 1 reversed the one before")
+    assert not errors, errors
+    page.close()
+
+
+def test_a_spin_is_called_a_spin(browser, twin_server):
+    """The first watched R1 run: 98 turns in 120 steps, all one way, target
+    never seen -- and the panel said "0 reversed", which reads as success.
+    The runner's spin verdict is shown, in the alert colour."""
+    status = tiered_status(frames=120)
+    status["last_action"] = "RIGHT"
+    status["turns"] = {"count": 98, "reversals": 0, "last_turn_deg": None,
+                       "share": 0.817, "spinning": True}
+    page, errors = open_with_brain(browser, twin_server, status=status)
+    readout = page.locator("#brain-tel-turns")
+    sync_api.expect(readout).to_contain_text("98 of 120 steps")
+    sync_api.expect(readout).to_contain_text("SPINNING IN PLACE")
+    sync_api.expect(readout).to_have_class("val alert")
+    assert not errors, errors
+    page.close()
+
+
+def test_the_simulators_perception_names_no_phantom_scorer(browser, twin_server):
+    """Synthetic detections have no scorer model. The readout printed
+    "sim ground truth + ?" -- a missing name rendered as an unknown one."""
+    status = tiered_status()
+    status["tier"]["models"] = {"detector": "sim ground truth", "scorer": None,
+                                "target": "red backpack",
+                                "crop_source": "frame_reported"}
+    page, errors = open_with_brain(browser, twin_server, status=status)
+    sync_api.expect(page.locator("#brain-tel-detector")).to_contain_text("sim ground truth")
+    assert "?" not in page.locator("#brain-tel-detector").inner_text()
+    assert not errors, errors
+    page.close()
+
+
+def test_start_is_styled_as_the_panels_primary_action(browser, twin_server):
+    """In the default grey style Start read as a label beside a bordered text
+    box, and a user looked straight at it and said there was no start
+    button. It is the panel's one action."""
+    page, errors = open_with_brain(browser, twin_server, status=frontier_status_idle())
+    btn = page.locator("#btn-brain-mission")
+    sync_api.expect(btn).to_have_text("Start")
+    sync_api.expect(btn).to_have_class(re.compile(r"\bprimary\b"))
+    assert not errors, errors
+    page.close()
+
+
+def test_the_brain_reconnects_on_its_own_after_an_outage(browser, twin_server):
+    """A restarted brain used to leave the page disconnected until someone
+    pressed Connect in Settings, with Start greyed and no reason given. Now
+    the page retries, says so while it waits, and Start comes back alone."""
+    page, errors = open_twin(browser, twin_server)
+    up = {"ok": False}
+
+    def health(route):
+        if not up["ok"]:
+            route.fulfill(status=503, content_type="application/json",
+                          body=_json({"detail": "restarting"}))
+        else:
+            route.fulfill(status=200, content_type="application/json",
+                          body=_json(TIERED_BRAIN_HEALTH))
+
+    page.route("**/brain-stub/health", health)
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(frontier_status_idle())))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    btn = page.locator("#btn-brain-mission")
+    sync_api.expect(btn).to_be_disabled()
+    sync_api.expect(page.locator("#brain-connect-hint")).to_contain_text("retrying")
+
+    up["ok"] = True  # the brain comes back -- nobody presses anything
+    sync_api.expect(btn).to_be_enabled(timeout=12000)
     assert not errors, errors
     page.close()
 

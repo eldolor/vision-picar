@@ -228,6 +228,16 @@ def call_with_timeout(fn: Callable, *args, timeout_s: Optional[float] = None):
     return box["value"]
 
 
+# When the Turns readout calls a mission a spin: at least this many steps in,
+# at least this share of them turns, and almost none reversing the one before
+# -- i.e. rotating in one direction rather than correcting. Descriptive; it
+# changes no decision. The first watched R1 run was 98 turns in 120 steps
+# with 0 reversals.
+SPIN_MIN_STEPS = 10
+SPIN_TURN_SHARE = 0.75
+SPIN_MAX_REVERSAL_SHARE = 0.1
+
+
 class MissionRunner:
     """One mission's lifecycle, driven a tick at a time from outside."""
 
@@ -501,8 +511,7 @@ class MissionRunner:
                 "room_reached": self.memory.room_reached,
                 "complete": self.memory.is_complete(),
                 "last_action": self._last_action,
-                "turns": {"count": self._turns, "reversals": self._reversals,
-                          "last_turn_deg": self._last_turn_deg},
+                "turns": self._turns_readout(),
                 "last_reasoning": self._last_reasoning,
                 "rooms_visited": sorted(self.memory.visited_rooms),
                 "rooms_searched": sorted(self.memory.searched_rooms),
@@ -534,6 +543,30 @@ class MissionRunner:
             }
 
     # ---------- internal ----------
+
+    def _turns_readout(self) -> dict:
+        """R1's readout, with the reading that makes it honest.
+
+        **Reversals alone reward a spin.** A robot turning RIGHT for ever
+        never reverses, so "0 reversed" read as success on the first run
+        anyone watched -- 98 turns in 120 steps, all one way, target never
+        seen. That is `median_command_run`'s failure in new clothes, which
+        this readout was introduced to avoid. So it also reports what SHARE
+        of the mission's steps were turns, and names a spin when most steps
+        were turns in one direction: the pair a person needs to tell "aimed
+        and drove" from "stood still and rotated".
+
+        The rule lives here, not in the page, so there is one definition and
+        a test for it (M5's rule: the twin renders a verdict, never invents
+        one).
+        """
+        steps = len(self.agent.history)
+        share = (self._turns / steps) if steps else 0.0
+        spinning = (steps >= SPIN_MIN_STEPS and share >= SPIN_TURN_SHARE
+                    and self._reversals <= SPIN_MAX_REVERSAL_SHARE * self._turns)
+        return {"count": self._turns, "reversals": self._reversals,
+                "last_turn_deg": self._last_turn_deg,
+                "share": round(share, 3), "spinning": spinning}
 
     def _guarded_vision(self, frame: dict) -> dict:
         """The agent's vision_fn, wrapped in B3.2's timeout. Raises

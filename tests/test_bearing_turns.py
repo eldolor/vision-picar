@@ -206,3 +206,49 @@ def test_the_mission_reports_its_turns_and_reversals():
     reported = runner.status()["turns"]
     assert reported["count"] == len(turns)
     assert reported["reversals"] == sum(1 for a, b in zip(turns, turns[1:]) if a != b)
+
+
+def test_a_spin_is_named_a_spin_not_scored_as_zero_reversals():
+    """The first watched run: 98 turns in 120 steps, all RIGHT, target never
+    seen -- and the panel said "0 reversed", which reads as success. The
+    readout now reports the share of steps spent turning and calls a
+    one-way rotation what it is."""
+    from control.mission_runner import SPIN_TURN_SHARE
+
+    grid = build_starter_world()  # living room start: the backpack is out of sight
+    robot = MockRobot(grid, render=False)
+
+    def spin(frame):
+        return {"obstacles_ahead": [], "free_space": "unknown",
+                "doorway_visible": False, "important_objects": [],
+                "safest_direction": "RIGHT"}
+
+    runner = MissionRunner(robot, target_object=TARGET, max_steps=20,
+                           policy="tiered", vision_fn=spin,
+                           world=mock_world_for(robot))
+    runner.start()
+    while runner.tick():
+        pass
+    turns = runner.status()["turns"]
+    assert turns["reversals"] == 0
+    assert turns["share"] >= SPIN_TURN_SHARE
+    assert turns["spinning"] is True
+
+
+def test_an_aimed_approach_is_not_called_a_spin():
+    """The other side of the rule: a mission that corrects a few times and
+    then drives is mostly FORWARD, and must not be flagged."""
+    x, y, off = CLEAR_STARTS[0]
+    grid = build_starter_world()
+    grid.x, grid.y = x, y
+    grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
+    robot = MockRobot(grid, render=False)
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        steer_on_sight=True, hold_goal=True)
+    runner = MissionRunner(robot, target_object=TARGET, max_steps=20,
+                           policy="tiered", vision_fn=tier,
+                           world=mock_world_for(robot))
+    runner.start()
+    while runner.tick():
+        pass
+    assert runner.status()["turns"]["spinning"] is False

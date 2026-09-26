@@ -153,6 +153,10 @@
     // sighting the twin notices can be matched against the mission's target
     // -- which used to come from this page's own local loops, now deleted.
     brainTarget: null,
+    // Brain liveness (see startBrainLiveness): the retry timer, and whether
+    // a connection was LOST (as opposed to never made), so its return can
+    // be announced.
+    brainLivenessTimerId: null, brainLost: false,
     // How far a D-pad LEFT/RIGHT turns, in degrees (R0). 90 is what every
     // tap sent before the pose went continuous, so it stays the default.
     turnStepDeg: 90,
@@ -1279,8 +1283,24 @@
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(function () { return {}; });
-    if (!res.ok) throw new Error(data.detail || ("HTTP " + res.status));
+    if (!res.ok) {
+      const err = new Error(data.detail || ("HTTP " + res.status));
+      // Kept so a caller can tell "the brain answered with an error" from
+      // "nothing answered" -- see brainGone().
+      err.status = res.status;
+      throw err;
+    }
     return data;
+  }
+
+  // Did this failure mean the brain is GONE, rather than that it answered
+  // badly? A fetch that never got a response has no status; a 502/503/504 is
+  // the tunnel's proxy saying nothing is behind it. A 404, 401 or 500 means
+  // a brain answered -- reachable, and disconnecting from it would hide the
+  // real error behind "retrying". The first cut treated every failure as
+  // lost, and a test whose stub brain 404s on /mission/status caught it.
+  function brainGone(e) {
+    return !e.status || e.status === 502 || e.status === 503 || e.status === 504;
   }
 
   function setBrainText(id, value, cls) {
@@ -1308,9 +1328,13 @@
     const sized = t && t.last_turn_deg && (status.last_action === "LEFT" || status.last_action === "RIGHT");
     setBrainText("brain-tel-action", sized
       ? status.last_action + " " + t.last_turn_deg + "\u00B0" : status.last_action);
+    // Reversals alone reward a spin (the first watched run: 98 turns in 120
+    // steps, all one way, "0 reversed"), so the share of steps spent
+    // turning rides beside it and the runner's own spin verdict is shown.
     setBrainText("brain-tel-turns", t
-      ? t.count + " made, " + t.reversals + " reversed the one before"
-      : null);
+      ? t.count + " of " + status.step + " steps, " + t.reversals
+        + " reversed the one before" + (t.spinning ? " \u2014 SPINNING IN PLACE" : "")
+      : null, t && t.spinning ? "alert" : null);
     setBrainText("brain-tel-vision", status.vision_failures || 0,
       status.vision_failures ? "alert" : null);
     setBrainText("brain-tel-rooms",
@@ -1405,7 +1429,9 @@
     const models = (tier && tier.models) || {};
     setBrainText("brain-tel-detector",
       models.detector
-        ? models.detector + " + " + (models.scorer || "?")
+        // No scorer is a real configuration -- the simulator's synthetic
+        // detections have none -- so say nothing rather than print "?".
+        ? models.detector + (models.scorer ? " + " + models.scorer : "")
           // Named only when it is actually running. Which crop sources were
           // on is the first thing you need to know reading a walk back --
           // the detector alone measured 86% recall on the corpus and the
@@ -1699,14 +1725,51 @@
       "alert");
   }
 
+  // ---------- brain liveness: reconnect on its own ----------
+  // A restarted brain used to leave this page disconnected for good: the
+  // connection was attempted once at load and after that only by pressing
+  // Connect in Settings, so Start simply sat greyed with no reason given.
+  // Found the day R1 shipped, when the brain was restarted twice in a few
+  // minutes under a phone that had it open.
+  const BRAIN_LIVENESS_MS = 5000;
+
+  function markBrainLost(e) {
+    if (!state.brainConnected) return;
+    state.brainConnected = false;
+    state.brainLost = true;
+    stopBrainPolling();
+    setBrainText("brain-tel-outcome", "brain unreachable \u2014 retrying", "alert");
+    setConnStatus(document.getElementById("brain-connection-status"), "err",
+      "Not connected", state.brainUrl + " stopped answering (" + e.message
+        + ") \u2014 retrying every few seconds.");
+    updateBrainControls();
+    showToast("Lost the brain service \u2014 retrying.", "err");
+  }
+
+  function startBrainLiveness() {
+    if (state.brainLivenessTimerId) return;
+    state.brainLivenessTimerId = setInterval(async function () {
+      if (document.hidden || !state.brainUrl || state.brainConnecting) return;
+      if (!state.brainConnected) {
+        await connectBrain({ silent: true });
+        return;
+      }
+      // Connected and idle: a mission's own status poll covers the running
+      // case, so only ping when nothing else is asking.
+      if (state.brainPollTimerId) return;
+      try { await brainApi("GET", "/health"); } catch (e) { if (brainGone(e)) markBrainLost(e); }
+    }, BRAIN_LIVENESS_MS);
+  }
+
   async function pollBrainOnce() {
     let status;
     try {
       status = await brainApi("GET", "/mission/status");
     } catch (e) {
-      setBrainText("brain-tel-outcome", "brain unreachable", "alert");
+      if (brainGone(e)) { markBrainLost(e); return; }
+      setBrainText("brain-tel-outcome", "brain error: " + e.message, "alert");
       stopBrainPolling();
-      showToast("Lost the brain service: " + e.message, "err");
+      showToast("The brain service answered with an error: " + e.message, "err");
       return;
     }
 
@@ -1752,11 +1815,23 @@
     const hint = document.getElementById("brain-connect-hint");
     btn.disabled = !state.brainConnected;
     btn.textContent = state.brainMissionRunning ? "Stop" : "Start";
-    btn.classList.toggle("active-mode", state.brainMissionRunning);
+    // Start is the panel's primary action; Stop is a stop. The default grey
+    // style made Start read as a label -- see index.html.
+    btn.classList.toggle("primary", !state.brainMissionRunning);
+    btn.classList.toggle("danger", state.brainMissionRunning);
     document.getElementById("brain-fault").disabled = state.brainMissionRunning;
     document.getElementById("brain-target").disabled = state.brainMissionRunning;
     document.getElementById("brain-policy").disabled = state.brainMissionRunning;
-    if (hint) hint.style.display = state.brainConnected ? "none" : "";
+    if (hint) {
+      hint.style.display = state.brainConnected ? "none" : "";
+      // Say WHY Start is greyed. A configured brain that stopped answering
+      // is a different state from no brain at all, and the page now retries
+      // the first on its own -- see startBrainLiveness().
+      hint.textContent = state.brainUrl
+        ? "Brain unreachable at " + fieldHost("cfg-brain-url")
+          + " \u2014 retrying every few seconds. Start comes back on its own."
+        : "No brain service configured \u2014 open Settings to point this at one.";
+    }
     renderBrainPolicyHint();
     updateBrainPickersRow();
   }
@@ -1956,6 +2031,11 @@
       setConnStatus(statusEl, "ok", "Connected" + (health.drills_allowed ? "" : " (drills disabled)"),
         url + " \u2014 driving the robot at " + health.robot_url);
       if (!silent) showToast("Connected to the brain service.", "ok");
+      if (state.brainLost) {
+        state.brainLost = false;
+        showToast("The brain service is back.", "ok");
+      }
+      updateBrainControls();
       renderRecordStatus();
       renderDriveViaBrainStatus();
       // A mission may already be running -- started from another device, or
@@ -5163,6 +5243,7 @@
   if (prefGet(PREF.brainUrl)) {
     connectBrain({ silent: true });
   }
+  startBrainLiveness();
   renderEnvBanner();
   renderEndpointNote();
 })();
