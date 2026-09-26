@@ -29,14 +29,16 @@ ways**, both settled 2026-09-25 by the user:
    at ~20Hz**, and a three-route wall has no velocity route. The wall moves
    DOWN to `hardware_interface`, and UP to guard `brain/`.
 
-**What does NOT change, and is the binding constraint on everything below:**
-
-> §7's rule. A phase is not done when its tests pass. It is done when someone
-> holding a phone can watch the thing it built do its job.
-
-Stated non-negotiable by the user, 2026-09-25, when the first draft of this
-plan conceded that Track D could only be watched on hardware. That concession
-is withdrawn -- see §2.
+**The definition of done -- CHANGED 2026-09-25.** This plan was written
+under §7's old rule ("done when someone holding a phone can watch it"),
+stated non-negotiable that morning. Later the same day the user replaced it:
+*"remove that rule, use logs and data to make a data-driven decision."* So
+each phase below is done when its **acceptance data** meets thresholds
+written down before the run, measured through the real mission path and
+pinned in a test (CLAUDE.md §7). **Read the table's "Proof" column as that
+acceptance data**; where it describes something to watch, the numbers behind
+it are what decide. §2's argument gets stronger, not weaker, under the new
+rule: the sim's ground truth is exactly the data hardware cannot produce.
 
 ---
 
@@ -345,6 +347,26 @@ sighting becomes a map-frame goal nav2 pursues, which is P7c item 2's design.
 build reported 4.7 cells for the 1-in-3 case. It sized EVERY turn from ground
 truth -- search turns included -- and so leaked the answer into turns that
 have no bearing. The full-path figure above is the honest one.
+
+### 3.4 Stuck detection (2026-09-25) -- the first phase closed on data
+
+Motivated by the first live R1 run: aimed dead-centre at the backpack from a
+row whose straight line clips the door jamb, it said FORWARD into the jamb for
+19 steps, paying for cloud calls, until the budget ran out. A mission now ends
+`blocked` after `brain.stuck_after` (5) consecutive FORWARDs refused by the
+safety layer; any executed move resets the count.
+
+**Acceptance criteria, written before measuring:**
+
+1. Every jamb start ends `blocked`, not `max_steps`, and within 15 steps of
+   its first refused FORWARD.
+2. Every clear-line start still arrives (within 1.05 cells) -- the detector
+   must never fire on the approach.
+3. One live mission through the brain's HTTP API ends `blocked` from a jamb
+   start, with no cloud call dispatched after the block.
+
+**Measured:** see below this list once run -- the numbers, not a reading of
+them, decide.
 
 ## 4. Honest residue -- what the twin cannot tell you
 

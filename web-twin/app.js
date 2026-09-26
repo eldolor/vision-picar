@@ -1312,6 +1312,7 @@
 
   const BRAIN_OUTCOME_CLASS = {
     found: "safe", room_reached: "safe", failed: "alert", stopped: "alert",
+    blocked: "alert",
   };
 
   function renderBrainStatus(status) {

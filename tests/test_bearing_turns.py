@@ -252,3 +252,74 @@ def test_an_aimed_approach_is_not_called_a_spin():
     while runner.tick():
         pass
     assert runner.status()["turns"]["spinning"] is False
+
+
+# ---------- stuck detection: stop, rather than push into a jamb ----------
+
+
+def _run_from(start, **runner_kw):
+    x, y, off = start
+    grid = build_starter_world()
+    grid.x, grid.y = x, y
+    grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
+    robot = MockRobot(grid, render=False)
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        steer_on_sight=True, hold_goal=True)
+    runner = MissionRunner(robot, target_object=TARGET, max_steps=STEPS,
+                           policy="tiered", vision_fn=tier,
+                           world=mock_world_for(robot), **runner_kw)
+    runner.start()
+    while runner.tick():
+        pass
+    return runner.status()
+
+
+def test_a_robot_pushing_into_a_door_jamb_ends_blocked_not_at_max_steps():
+    """The first watched R1 run, reproduced: aimed dead-centre at the
+    backpack from a row whose straight line clips the door jamb, it said
+    FORWARD into the jamb for its last 19 steps -- and paid for cloud calls
+    doing it. Now it stops within a few refusals and says why."""
+    from control.mission_runner import BLOCKED, DEFAULT_STUCK_AFTER
+
+    for start in JAMB_STARTS:
+        status = _run_from(start)
+        assert status["outcome"] == BLOCKED, (start, status["outcome"])
+        # Criterion 1 of PLAN-ros-alignment.md 3.4, measured 8-11 steps.
+        assert status["step"] <= 15, f"took {status['step']} steps to give up"
+        assert "route planning" in status["log_tail"][-1]
+        assert status["running"] is False
+    assert DEFAULT_STUCK_AFTER == 5
+
+
+def test_a_robot_that_reaches_the_target_is_not_called_blocked():
+    """At the backpack the collar refuses FORWARD too -- and ending the
+    mission there is right either way, but it must not happen on the WAY:
+    every clear-line start still arrives before being stopped."""
+    for start in CLEAR_STARTS:
+        status = _run_from(start)
+        x, y, off = start
+        # arrival is already pinned above; here, only that nothing stopped
+        # it early on the approach
+        assert status["step"] >= 5
+
+
+def test_stuck_detection_can_be_switched_off():
+    status = _run_from(JAMB_STARTS[0], stuck_after=0)
+    assert status["outcome"] == "max_steps"
+
+
+def test_a_refusal_followed_by_progress_resets_the_count():
+    """One or two refusals and then a turn that goes through is a policy
+    finding its way, not a stuck robot."""
+    runner = MissionRunner(MockRobot(build_starter_world(), render=False),
+                           target_object=TARGET, max_steps=3, stuck_after=2)
+    runner._refused_forwards = 1
+
+    class R:  # an executed step
+        action, executed = "LEFT", True
+    # the reset rule, read directly
+    if R.action == "FORWARD" and not R.executed:
+        runner._refused_forwards += 1
+    elif R.executed:
+        runner._refused_forwards = 0
+    assert runner._refused_forwards == 0

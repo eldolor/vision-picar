@@ -148,6 +148,11 @@ DEFAULTS = {
     # DEFAULT_MATCH_PROBABILITY got.
     "tier_corroboration_bar": 0.5,
     "max_steps": 120,
+    # End a mission `blocked` after this many FORWARDs in a row refused by
+    # the safety layer (control/mission_runner.py's BLOCKED). 0 disables.
+    # Five because a policy that is merely unlucky gets one or two refusals
+    # and then turns; the first watched R1 run spent nineteen on one jamb.
+    "stuck_after": 5,
     "min_distance_cm": 30.0,
     "request_timeout_s": 10.0,
     # B3.2 -- the AWS link failsafe.

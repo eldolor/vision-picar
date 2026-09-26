@@ -102,12 +102,14 @@ written before any ROS exists). That single rule is the whole difference
 between `PLAN-onboard-perception.md` 3.3's (b+) and its (c), which
 "swallows the project" -- see `PLAN-mapping.md` section 4.
 
-The second constraint follows from the first: **build it, prove it in the
-digital twin's UI, then put it on the car** -- section 7 has the rule
-and what each phase owes because of it. The abstraction above is what
-makes that possible at all (the twin drives the same API the hardware
-will, so the tap that works in the sim is the tap that works on the
-robot); the ordering rule is what makes it actually happen.
+The second constraint follows from the first: **build it, prove it with
+data in the sim, then put it on the car** -- section 7 has the rule. The
+abstraction above is what makes the sim's data mean anything about the
+robot (the sim drives the same API the hardware will, so a mission that
+succeeds through it exercises the path the car will use). **Changed
+2026-09-25:** this used to say "prove it in the digital twin's UI", with a
+phase done only when someone had watched it on a phone; the user replaced
+that with a data-driven definition of done.
 
 ---
 
@@ -985,10 +987,11 @@ IDs are `S*` = `PLAN-sim-hardening.md`, `B*` = `PLAN-brain-relocation.md`.
 useful, so stopping at the end of any of them leaves the project in a
 coherent state.
 
-**Every stage also has to be verifiable from the twin** -- see section 7,
-which is a standing requirement on each phase below, not a nice-to-have.
-A phase is not done when its tests pass; it is done when someone holding
-a phone can watch the thing it built do its job.
+**Every stage is done on data** -- see section 7: acceptance metrics and
+thresholds written down before the run, measured through the real mission
+path, recorded, and pinned in a test. (Until 2026-09-25 this said a phase
+was done only when someone holding a phone had watched it; retired by the
+user.)
 
 ### Stage 0 -- Validate the premise
 
@@ -1957,51 +1960,61 @@ items in `PLAN-sim-hardening.md` section 7 that can only be measured.
 
 ---
 
-## 7. Twin first, then the car
+## 7. Data first, then the car
 
-The project's ordering rule, stated by the user 2026-08-27 and binding on
-everything below (the quote predates the chassis change; "the PiCar" means
-the real robot, whatever it is built from):
+**The definition of done, as of 2026-09-25.** Stated by the user: *"remove
+that rule, use logs and data to make a data-driven decision."* It replaces
+the 2026-08-27 rule, which is kept below for the record.
+
+### A phase is done when its acceptance data says so
+
+1. **Write the metric and the threshold down BEFORE measuring**, in the
+   phase's plan entry -- so the data decides, not the reading of it
+   afterwards. A threshold chosen after seeing the numbers is a
+   description, not a test.
+2. **Measure through the real path.** Missions run end to end --
+   `MissionRunner` -> agent -> `robot/safety.py` -> backend -- never a
+   harness that moves the robot itself (R1's first probe did, leaked ground
+   truth into its search turns, and reported 4.7 cells where the honest
+   number was 0.8). Sweep many starts in process for the numbers, and run at
+   least one mission against the live local stack through the brain's HTTP
+   API, so the deployed path is covered too.
+3. **Record the numbers in the plan entry and pin them in a test**, the way
+   `tests/test_bearing_turns.py` pins R1's A/B, so a regression fails the
+   suite rather than waiting to be noticed.
+4. **Pair every stability metric with a progress metric.** Reversals alone
+   reward a spin (the first watched R1 run: 98 turns in 120 steps, "0
+   reversed"); `median_command_run` alone rewards the same. Distance closed,
+   arrival rate and outcome are the progress half.
+5. **Claude runs the missions and reads the logs.** The user is not asked to
+   run a simulation or fetch logs; results come back with the numbers.
+
+### What stays, and why
+
+* **The twin**, as the surface a person drives from and the API the hardware
+  will answer. It is no longer the gate.
+* **UI tests** (`tests/test_ui*.py`, Playwright at a phone viewport) as a
+  regression guard, and **a phone-size screenshot as part of the evidence for
+  any change to the page**. The last day of the old rule is why: one session
+  of watching caught five defects over 1100 tests had not -- a Start button
+  that read as a label, a spin that scored as "0 reversed", the robot seeing
+  the sofa it stood on, a hint naming models that were not running, and a
+  driver printed as "null". Screenshots keep that coverage without making a
+  person the gate.
+* **Drills** (`control/drills.py`), for failures nothing can provoke on
+  purpose -- now judged by what their logs show.
+
+### Retired 2026-09-25 -- the rule this replaced
 
 > **Build it, prove it in the digital twin's UI, and only then put it on
 > the PiCar.** A phase is not done when its tests pass. It is done when
 > someone holding a phone can watch the thing it built do its job.
 
-Nothing gets built for the car that cannot first be watched working in the
-twin. This is not a preference about documentation -- it decides what
-"finished" means, and therefore what each phase has to ship.
+It was stated 2026-08-27, reaffirmed as non-negotiable on 2026-09-25, and
+retired later the same day. The sections below still list what each phase
+put on the page; read them as a reference to the UI, not as gates.
 
-Three reasons this is a rule and not a preference:
-
-1. **The twin is the only surface that survives the hardware swap.** It
-   speaks to `robot/server.py`'s real control API, not a mock of it, so
-   the tap that starts a mission in the sim is the same tap that will
-   start one on the Pi -- only `mode: hardware` and a base URL differ. A
-   pytest run proves something about `MockRobot`; that tap proves it about
-   the robot. Every phase that lands with a UI affordance lands with its
-   own bring-up checklist for the day the hardware arrives.
-2. **Tests are written by whoever wrote the code.** They encode what the
-   author expected. Watching a mission cross a real room is the only
-   check that survives being wrong about that -- Stage 0 exists for
-   exactly this reason.
-3. **The failures that matter cannot be provoked by pressing anything.**
-   That is not a reason to leave them unverifiable; it is the reason
-   `control/drills.py` exists.
-
-### The rules
-
-- **Every phase ships with something to press.** Name it in the phase's
-  plan entry, next to its test.
-- **Where the behavior is a failure nobody can trigger on purpose, ship a
-  drill.** Fault injection that breaks exactly one thing and leaves every
-  other guard standing, so what gets watched is the real guard firing.
-  Drills must be fail-safe by construction -- a drill may only ever end
-  with the robot stopped -- and switchable off (`brain.allow_drills`).
-- **Where a phase genuinely changes nothing observable, say so, and name
-  the readout that would show it if it broke.** "No UI change" is an
-  acceptable answer exactly once per phase, in writing.
-
-### What you can verify today
+### UI affordances by phase (reference, not a gate)
 
 Setup for all of it: `uvicorn robot.server:app --port 8000` and
 `uvicorn control.brain_server:app --port 8001`, then open
@@ -2039,7 +2052,7 @@ endpoint, on purpose (real hardware has none either).
 | P3 | 1.11a being measured, and visibly not applied | Sim tab -> Remote brain -> "Tiered policy" -> Start, and watch the Corroboration row | This step's verdict with the local P and the bar it was read against, the running corroborated-of-claimed tally, and the words **"not enforced"** on every line. That phrase is the feature: the amendment is undecided, and a panel that let a measurement read as a decision would corrupt the walks meant to decide it. A step that cost nothing says "no claim this step" rather than holding the last verdict |
 | P2 | the three tiers, in the sim | Sim tab -> Remote brain -> policy "Tiered policy", then Start | The hint names the two local models and says the paid call fires only on a trigger. Then, per step: the tri-state, the CLIP margin, the detector by name, and **the deliberation counter -- calls *and* frames.** The counter is the proof: it must visibly NOT climb every step, and 6.1 measured 4-6x. The log marks the paid steps `[cloud: <trigger>]` and the free ones say "no cloud call" in the model's own place. Without `requirements-perception.txt` installed, the panel says so *before* Start and the mission refuses with the pip command rather than dying three ticks in |
 
-### What the remaining phases owe
+### UI planned for later phases (reference, not a gate)
 
 Each of these is a line in that phase's plan entry, to be built with the
 phase rather than bolted on after:

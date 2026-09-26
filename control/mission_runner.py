@@ -110,6 +110,17 @@ FAILED = "failed"
 # link. It is terminal all the same; a preempted brain does not get to
 # argue.
 PREEMPTED = "preempted"
+# The way ahead is obstructed and the policy keeps asking to drive into it:
+# `stuck_after` FORWARDs in a row refused by the safety layer. Found on the
+# first watched R1 run, which aimed dead-centre at the backpack from a row
+# whose straight line clips the kitchen door jamb, then spent its last 19
+# steps -- and several paid cloud calls -- saying FORWARD into the jamb until
+# the step budget ran out. Not `failed` (nothing broke; the collar did its
+# job) and not `max_steps` (it was not still trying). Going AROUND is route
+# planning, which is nav2's job at R6 -- and nav2 reports an unreachable goal
+# the same way, which is why this is an outcome rather than a recovery.
+BLOCKED = "blocked"
+DEFAULT_STUCK_AFTER = 5
 
 
 class VisionUnavailable(RuntimeError):
@@ -255,6 +266,7 @@ class MissionRunner:
         vision_timeout_s: float = DEFAULT_VISION_TIMEOUT_S,
         max_vision_failures: int = DEFAULT_MAX_VISION_FAILURES,
         world: Optional[WorldInterface] = None,
+        stuck_after: Optional[int] = DEFAULT_STUCK_AFTER,
     ):
         if policy not in POLICIES:
             raise ValueError(f"Unknown policy: {policy!r}. Known: {', '.join(POLICIES)}")
@@ -287,6 +299,9 @@ class MissionRunner:
         # itself, pose is what the world says about the body, and at R5 the
         # two answers come from two different processes.
         self.world = world if world is not None else NullWorld()
+        # See BLOCKED. 0 or None switches it off.
+        self.stuck_after = stuck_after or 0
+        self._refused_forwards = 0
         # Metrics shipping. Off unless a URL is configured, which is what
         # keeps tests and laptop runs from POSTing anywhere.
         self.metrics_url = ""
@@ -468,12 +483,25 @@ class MissionRunner:
                 f"step {result.step}: {result.action} "
                 f"({'ok' if result.executed else 'blocked'}) -- {self._last_reasoning}"
             )
+            # Consecutive FORWARDs the safety layer refused. Any move that
+            # went through resets it, so a robot that turns away and makes
+            # progress is never called stuck.
+            if result.action == "FORWARD" and not result.executed:
+                self._refused_forwards += 1
+            elif result.executed:
+                self._refused_forwards = 0
 
         # _finish() stops the car, which is an HTTP call when the robot is
         # remote -- so decide outside the lock rather than holding it across
         # the network.
         if self.memory.is_complete():
             self._finish(FOUND if self.memory.found else ROOM_REACHED, self.memory.summary())
+            return False
+        if self.stuck_after and self._refused_forwards >= self.stuck_after:
+            self._finish(BLOCKED, (
+                f"FORWARD refused {self._refused_forwards} times in a row by the "
+                "safety layer -- the way ahead is obstructed. Going around it is "
+                "route planning (nav2, PLAN-ros-alignment.md R6)"))
             return False
         if len(self.agent.history) >= self.max_steps:
             self._finish(MAX_STEPS, f"step budget of {self.max_steps} exhausted")

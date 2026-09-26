@@ -462,6 +462,7 @@ def create_app(
             target_room=req.target_room,
             mission=req.mission,
             max_steps=req.max_steps or config["max_steps"],
+            stuck_after=config["stuck_after"],
             min_distance_cm=config["min_distance_cm"],
             policy=req.policy,
             vision_fn=vision_fn,
