@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (1218 passed as of 2026-09-26, with a browser
+# Confirm everything still works (1230 passed as of 2026-09-26, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -157,6 +157,7 @@ the original build plan phases, reordered simulation-first):
 | Solid objects | Objects are obstacles to everything that senses or moves | Done on data (2026-09-26) -- `PLAN-ros-alignment.md` 3.9, decided by the user ("objects must be treated as solid to emulate the real world"). Collision, `get_distance()`, the depth grid, the lidar scan and `MockWorld`'s map all treat an object's cell as an obstacle (`renderer.cast_ray(..., solid=)`); the camera still draws objects as billboards, so the golden image is unchanged. The starter house's sofa moved from the robot's start cell to (1, 1). The robot now stops in front of the backpack, never on it; no measurable cost to arrival |
 | R2 (read-only) | `GET /wheels`, `GET /scan`, `GET /world/truth` | Done on data (2026-09-25) -- `PLAN-ros-alignment.md` 3.6. `RobotInterface.get_wheel_state()` / `get_scan()` and `WorldInterface.get_truth()`, each with an honest `usable: false` default, implemented by `MockRobot` / `MockWorld`, served by `robot/server.py`, read by `RemoteRobot` / `RemoteWorld`. **The scan is at `/scan`, not the plan's `/world/scan`**: it is the robot's own reading, so BODY state by section 2's rule. Every beam equals `renderer.cast_ray()`; truth equals the pose in the sim until R5 parts them. `tests/test_r2_routes.py` |
 | R2b | `POST /wheels` -- a standing wheel-velocity command, the first way to move without a verb | Done on data (2026-09-26), not deployed -- `PLAN-ros-alignment.md` 3.10, six criteria written first, all met and each confirmed red against a mutation. `robot/server.py` runs a 20 Hz control loop that re-vets the standing command through `SafetyController.vet_wheel_velocity()` every period: it zeroes forward speed below `min_distance_cm` (stops at 19.5 cm; 0.0 cm without the clamp) and **never clamps rotation**, so a robot facing a wall can pivot away. **Reverse is now checked against the scan's rear beams on every path, D-pad REVERSE included** (user decision). A new driver `ros` ranks with the brain, below the D-pad, and **the autonomous rank is now exclusive while held** -- before this the server let equal ranks interleave. A backend without wheels refuses with `unsupported`. `tests/test_wheels_command.py` |
+| P7e (first half) | Arrival recognised: a mission that reaches its target ends `found` | Done on data (2026-09-26), not deployed -- `PLAN-ros-alignment.md` 3.11, decided by the user as the rule the CAR runs, not a sim-only stand-in. `brain/arrival.py`, applied in `MissionAgent._review_scene()` between perception and decision: the target detected, within the 3-degree steering band, and **the lidar** (`get_scan()`, median of five beams at the bearing -- never the detector's distance) within 0.40 m, two frames running; then `STOP`, `target_reached`, `found`. Refuses to judge with no scan (teleop, replay), a panned camera, or no local perception (rule-based, cloud-only vision). 69/69 arrivals end `found` at perfect detection and 676/678 at 90% and 80%, none beyond 0.386 m; **0/69 without it** -- every one used to end `blocked` or `max_steps`. The first version read the NEAREST beam and declared `found` 95 cm out against a door jamb; criterion 2 caught it. `status.arrival` carries the range and streak. The other half of P7e (the steer-over-hold precedence on a held cloud `STOP`) no longer matters on this path and is left alone. `tests/test_arrival.py` |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. **The chassis is no longer a PiCar-X** -- see the row above. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -551,7 +552,11 @@ settled on hardware day. **Consequence until then -- every tiered walk
 ends `max_steps` even when it physically arrives, and
 `control/walk_eval.py`'s completion score (0.25 of the total) is
 structurally zero for all of them. Do not read a tiered walk's outcome as
-a navigation result.**
+a navigation result.** **Corrected 2026-09-26 for the sim only**
+(`PLAN-ros-alignment.md` 3.11): a tiered mission on `MockRobot` now ends
+`found` when it arrives, because the arrival rule reads the lidar scan. On
+a phone walk there is no scan, the rule refuses to judge, and this
+paragraph still holds until the car has a lidar.
 
 Two defects found alongside it WERE fixed, because both are about being
 able to read the record later. `_tier.cloud_called` was False on every
@@ -802,7 +807,7 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    1218 tests, 93% line coverage of brain/,
+├── tests/                    1230 tests, 93% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
 │                              75 tests over five backends,

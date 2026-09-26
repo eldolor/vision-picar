@@ -25,6 +25,7 @@ from typing import Callable, Optional
 from robot.interface import RobotInterface
 from robot.interface import NO_SENSOR_CM
 from robot.safety import FORWARD_ACTIONS, SafetyController, SafetyViolation
+from brain.arrival import ARRIVED, NOT_JUDGED, ArrivalCheck, arrived_scene
 from brain.memory import MissionMemory
 from world.interface import NullWorld, WorldInterface, unusable_pose
 
@@ -218,7 +219,7 @@ class ConstrainedAgent:
 
     def step(self) -> StepResult:
         frame = self.robot.get_camera_frame()
-        scene = self.vision_fn(frame)
+        scene = self._review_scene(self.vision_fn(frame), frame)
         action = self.decide(scene, frame)
 
         try:
@@ -255,6 +256,11 @@ class ConstrainedAgent:
             f"action={action} executed={executed}"
         )
         return step_result
+
+    def _review_scene(self, scene: dict, frame: dict) -> dict:
+        """A seam between perception and decision. Nothing here: this
+        agent has no mission, so there is nothing to arrive at."""
+        return scene
 
     def run(self, max_steps: int = 20) -> list[StepResult]:
         for _ in range(max_steps):
@@ -324,6 +330,24 @@ class MissionAgent(ConstrainedAgent):
         self.visited_buckets: set = set()
         # Log an unreachable world once per mission, not once per step.
         self._world_warned = False
+        # P7e's first half (PLAN-ros-alignment.md 3.11): the target detected,
+        # centred and within reach ON THE RANGE SENSOR, two frames running,
+        # ends the mission found. Judged only for scenes carrying local
+        # perception -- see brain/arrival.py for what it refuses to judge.
+        self.arrival = ArrivalCheck()
+
+    def _review_scene(self, scene: dict, frame: dict) -> dict:
+        if not self.memory.target_object or self.memory.is_complete():
+            return scene
+        readout = self.arrival.observe(scene, self.robot)
+        if readout["state"] == NOT_JUDGED and not scene.get("_perception"):
+            return scene  # a policy with no local perception: nothing to say
+        if readout["state"] == ARRIVED:
+            scene = arrived_scene(scene, self.memory.target_object, readout)
+        else:
+            scene = dict(scene)
+        scene["_arrival"] = readout
+        return scene
 
     def decide(self, scene: dict, frame: Optional[dict] = None) -> str:
         if self.memory.is_complete():

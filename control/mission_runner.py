@@ -389,6 +389,9 @@ class MissionRunner:
         # "this policy has no perception tier" rather than "it failed".
         self._tier: Optional[dict] = None
         self._perception: Optional[dict] = None
+        # 3.11's arrival readout -- the range at the target's bearing and the
+        # streak -- copied from the scene like the two above.
+        self._arrival: Optional[dict] = None
         self._last_frame_seq: Optional[int] = None
         self._log: list = []
 
@@ -474,6 +477,7 @@ class MissionRunner:
             # exactly when something unusual happened.
             self._tier = scene.get("_tier") or self._tier
             self._perception = scene.get("_perception") or self._perception
+            self._arrival = scene.get("_arrival") or self._arrival
             # WHICH frame this decision was made on.
             #
             # Under teleop the twin pushes frames on its own timer and polls
@@ -570,6 +574,7 @@ class MissionRunner:
                 # has no perception tier, which is all of them but one.
                 "tier": self._tier,
                 "perception": self._perception,
+                "arrival": self._arrival,
                 # The teleop frame id the last decision was made on, so a
                 # recorded walk can align decisions to pixels exactly instead
                 # of by wall-clock coincidence. None for a backend that does

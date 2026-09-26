@@ -733,6 +733,86 @@ criterion 1 passed with the clamp removed -- one 0.9 s command covers 9 cm and
 never reached the collar -- which is exactly the test this check exists to
 catch; it now re-sends the command at 3 Hz, as a controller would.
 
+### 3.11 Arrival recognised (2026-09-26) -- P7e's first half, decided by the user
+
+3.8 proposed a *sim-only* rule. The user asked for a recommendation and took
+this one instead: **the rule the car will run, tested first in the sim.** A
+sim-only rule would read the simulator's own detection distances -- a fact
+only the simulator has -- and would pass here while saying nothing about the
+robot. The deferral's premise (the repair "resolves differently once a lidar
+exists") stopped holding at R2, when the sim gained a scan.
+
+**The rule** (`brain/arrival.py`, applied in `MissionAgent` between perception
+and decision, so it sees the scene and holds the robot):
+
+1. local perception reports the target `detected`;
+2. its bearing is within `STEER_BAND_DEG` (3 degrees) of dead ahead;
+3. **the range sensor** -- `get_scan()`, the lidar -- reads at most
+   `ARRIVAL_RADIUS_M` (0.40 m) within +/- 2 degrees of that bearing. Never
+   the detector's own distance;
+4. all three on `ARRIVAL_FRAMES` (2) consecutive frames.
+
+Then the scene becomes `target_reached`, the action `STOP`, and the mission
+ends `found`. Nothing overrides it -- the steer-over-hold precedence that P7e
+watched drive into a basket never sees the frame. It refuses to judge rather
+than guess when it cannot: no usable scan (teleop, replay), or a panned
+camera (the bearing is then not body-relative, `brain/perceive.py`'s note).
+Policies with no local perception (rule-based, cloud-only vision) are
+untouched.
+
+**Radius, from data rather than taste.** Over the 69 starts of 3.5/3.6b the
+scan at the target's bearing reads 0.465 m one move out and 0.165 m where the
+collar stops the robot (a 0.30 m move). 0.40 m therefore fires only at the
+pose missions already stop at, so the ground-truth arrival metric
+(<= 1.05 cells) cannot move; on continuous motion it fires 40 cm out.
+
+**Acceptance criteria, written before building:**
+
+1. **Recognition:** of the missions that physically arrive (ground truth
+   <= 1.05 cells), >= 95% end `found` -- at perfect detection over the 69
+   starts, and at 90% and 80% per-frame detection over the 10-seed sweeps.
+2. **No false arrival:** zero missions end `found` more than 0.60 m (2 cells)
+   from the backpack's centre, across every sweep including the jamb starts.
+   Ground truth is read by the test only, never by the rule.
+3. **No regression:** R1/R1b/R1c's arrival tests pass unchanged.
+4. **Honest degradation:** no usable scan, or a panned camera, never
+   produces `found` locally.
+5. **Live:** at least one mission through the brain's HTTP API ends `found`.
+
+**Measured 2026-09-26** (`tests/test_arrival.py`, 12 tests):
+
+| detection | missions | arrived (truth <= 1.05 cells) | of those, `found` | farthest `found` |
+|---|---|---|---|---|
+| 100% | 69 | 69 | **69 (100%)** | 0.30 m |
+| 90% | 690 | 678 | **676 (99.7%)** | 0.386 m |
+| 80% | 690 | 678 | **676 (99.7%)** | 0.386 m |
+
+Criterion 1 met; criterion 2 met (no `found` beyond 0.386 m, bar 0.60 m; the
+four jamb starts end `blocked` at 3.1 cells, as they should); criterion 3 met
+(every R1/R1b/R1c test green unchanged, 1230 in the suite); criterion 4
+pinned (no scan, a panned camera, a policy without local perception). With
+the rule switched off the same sweep reads **0 of 69**.
+
+**Criterion 2 caught a real defect in the first version.** The range at the
+bearing was the NEAREST return within +/- 2 degrees, and one 90% mission
+declared `found` 95 cm out: stuck on the kitchen door jamb, target dead
+centre, the jamb's edge two degrees left at 0.195 m against 0.81 m at the
+bearing itself. The range is now the MEDIAN of the window, pinned by its own
+test. That is the "facing something else" case the criterion was written for.
+
+**Residual, recorded rather than tuned away:** the 2 arrivals in 678 that do
+not end `found` are a detector alternating hit/miss at the target, so the
+two-frame streak resets every other frame and stuck detection (5 refused
+FORWARDs) ends the mission `blocked` first. "2 of the last 3" would recover
+them; it is a different rule from the one measured, and 99.7% does not ask
+for it. (80% and 90% read identically because the failing seed's draws
+almost never fall between 0.8 and 0.9 -- checked, not a harness fault.)
+
+**What this does not settle:** whether the real detector still recognises a
+target at 40 cm. That is a rig walk's question, and the rule needs no change
+to ask it -- on a phone walk it refuses to judge (no scan) until the car has
+a lidar.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
