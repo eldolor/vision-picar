@@ -342,6 +342,30 @@ CENTER_BAND_DEG = 10.0
 MIN_TURN_DEG = 5
 MAX_TURN_DEG = 90
 
+# How far off centre a MEASURED bearing may be before the tier corrects it
+# (R1b). Deliberately separate from CENTER_BAND_DEG, which is /navigate's
+# reporting vocabulary and stays at 10. The 10-degree band made sense while
+# every turn was a quarter turn -- correcting 7 degrees with 90 was worse than
+# not correcting. With sized turns it is just drift: every one of 28 search
+# runs that ended blocked had driven FORWARD with the target 5-6 degrees off,
+# drifted 0.2-0.26 cells off the doorway's centre line over three cells, and
+# put a jamb in its own path. A 3-degree band with MIN_TURN_DEG's 5-degree
+# floor corrects anything that matters and settles in one step.
+STEER_BAND_DEG = 3.0
+
+
+# The size of a SEARCH turn -- any tier turn with no measured bearing behind
+# it: a scan, a held cloud goal, a cloud turn the local tier could not size
+# (R1b, PLAN-ros-alignment.md 3.5). Those used to go out with no size, so the
+# executor's default 90 degrees applied -- and against a 60-degree simulated
+# field of view (66 for the Camera Module 3, brain/perceive.py's hfov_deg) a
+# 90-degree step leaves a blind gap between consecutive views. A target
+# sitting in the gap is never seen by turning: live, a robot starting 45
+# degrees off the backpack turned eight times without once facing it.
+# Forty-five is under both fields of view with 15-21 degrees of overlap, so
+# one rotation covers the whole circle.
+SCAN_TURN_DEG = 45
+
 
 def turn_for(bearing_deg: float) -> int:
     """The size of a turn that centres a target at `bearing_deg`.
@@ -1019,6 +1043,11 @@ class TieredVision:
                 turn_deg = self._steer_turn_deg
             elif reckoned == direction:
                 turn_deg = self._reckoned_turn_deg
+            # R1b: a turn with no bearing behind it is a SEARCH, and a search
+            # step must be smaller than the field of view or it skips part of
+            # the circle -- see SCAN_TURN_DEG.
+            if turn_deg is None:
+                turn_deg = SCAN_TURN_DEG
         return {
             "obstacles_ahead": [],
             "turn_deg": turn_deg,
@@ -1105,13 +1134,13 @@ class TieredVision:
         if perception.bearing_deg is not None and self._odom.samples:
             self._goal.sight(self._odom.pose, float(perception.bearing_deg))
         where = _direction_for(perception)
-        if where in ("left", "right"):
-            self._steer_turn_deg = turn_for(perception.bearing_deg)
-        if where == "left":
-            return "LEFT"
-        if where == "right":
-            return "RIGHT"
-        if where == "center":
+        bearing = perception.bearing_deg
+        # Steer on the finer band (STEER_BAND_DEG); `where` stays the
+        # reporting vocabulary for everything else.
+        if bearing is not None and abs(bearing) > STEER_BAND_DEG:
+            self._steer_turn_deg = turn_for(bearing)
+            return "LEFT" if bearing < 0 else "RIGHT"
+        if where in ("left", "right", "center"):
             # Centred: close the distance. The collar re-checks clearance
             # before any FORWARD, so this proposes and never commits.
             return "FORWARD"
@@ -1153,11 +1182,11 @@ class TieredVision:
         if bearing is None:
             return None
         self._dead_reckoned += 1
-        if abs(bearing) > CENTER_BAND_DEG:
+        if abs(bearing) > STEER_BAND_DEG:
             self._reckoned_turn_deg = turn_for(bearing)
-        if bearing < -CENTER_BAND_DEG:
+        if bearing < -STEER_BAND_DEG:
             return "LEFT"
-        if bearing > CENTER_BAND_DEG:
+        if bearing > STEER_BAND_DEG:
             return "RIGHT"
         return "FORWARD"
 
@@ -1199,9 +1228,13 @@ class TieredVision:
         direction = scene.get("safest_direction")
         bearing = perception.bearing_deg if perception.status == DETECTED else None
         if (direction in TURN_ACTIONS and bearing is not None
-                and abs(bearing) > CENTER_BAND_DEG
+                and abs(bearing) > STEER_BAND_DEG
                 and (direction == "LEFT") == (bearing < 0)):
             out["turn_deg"] = turn_for(bearing)
+        elif direction in TURN_ACTIONS and not out.get("turn_deg"):
+            # The cloud said turn and nothing local can size it: a search
+            # step, for the reason SCAN_TURN_DEG gives.
+            out["turn_deg"] = SCAN_TURN_DEG
         out["_perception"] = perception.as_dict()
         out["_tier"] = {"cloud_called": True, "trigger": trigger,
                         # Synchronous: asked and answered on one frame.
@@ -1256,7 +1289,7 @@ def tiered_vision_fn_for(target: str, cloud_vision_fn: Callable[[dict], dict],
 
 __all__ = [
     "TieredVision", "TierStats", "tiered_vision_fn_for", "CENTER_BAND_DEG",
-    "MAX_TURN_DEG", "MIN_TURN_DEG", "turn_for",
+    "MAX_TURN_DEG", "MIN_TURN_DEG", "SCAN_TURN_DEG", "STEER_BAND_DEG", "turn_for",
     "TRIGGER_START", "TRIGGER_CANDIDATE", "TRIGGER_COLD_SEARCH",
     "TRIGGER_STALE", "DEFAULT_STALE_AFTER",
     "UNAVAILABLE_TRIGGERS", "SCAN_ACTION",

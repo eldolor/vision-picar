@@ -365,8 +365,84 @@ safety layer; any executed move resets the count.
 3. One live mission through the brain's HTTP API ends `blocked` from a jamb
    start, with no cloud call dispatched after the block.
 
-**Measured:** see below this list once run -- the numbers, not a reading of
-them, decide.
+**Measured 2026-09-25 -- all three met, phase closed:**
+
+1. Jamb starts: 4/4 end `blocked`, after 8, 8, 9 and 11 steps in total
+   (criterion: within 15 of the first refusal). The run that motivated it
+   used 120. Pinned in `tests/test_bearing_turns.py`.
+2. Clear-line starts: 12/12 still arrive within 1.05 cells.
+3. Live, through the brain's HTTP API on `2f5031a`: from (5.5, 6.5) the
+   mission aimed with an 11-degree sized turn, ended `blocked` at step 8, and
+   made **one** cloud call in total -- none after the block.
+
+**Found on the way, and it is R1b's first target.** A second live mission,
+from the clear start but facing 45 degrees with the backpack out of view,
+never found it by turning: SEARCH turns go out at the executor's default 90
+degrees against a 60-degree field of view, so from 45 the robot faces 45,
+135, 225, 315, 45... and east -- where the backpack is -- is never in the
+picture. **A 90-degree search step leaves a 30-degree blind gap between
+views.** The spin guard then forced a FORWARD that took it off the door's
+row, and it ended `blocked` at a jamb about a metre short -- which is very
+likely what the user's own run did.
+
+### 3.5 R1b -- search that cannot miss (2026-09-25, overnight)
+
+**Hypothesis:** an unsized search turn (the executor's default 90 degrees)
+against a 60-66 degree field of view leaves blind gaps, so a target that is
+in line of sight but not initially in view is found only if the starting
+heading happens to line up. Sizing every unsized tier turn to a SEARCH STEP
+smaller than the field of view makes consecutive views overlap, so one
+rotation sees the whole circle.
+
+**Acceptance criteria, written before measuring** -- on SEARCH starts: the
+row-7 positions of 3.3's clear starts, facing away from the backpack so it is
+in line of sight but not in view. *Sampling corrected after the first
+baseline, thresholds unchanged:* the first set (every 30 degrees from 60)
+could not show the hypothesis -- with 90-degree steps the gap only exists for
+offsets 36-54 degrees from a multiple of 90, and that set had none -- and
+duly measured 100%. The corrected set is **every 5 degrees, all offsets of
+40 degrees or more, both sides** (3 positions x 57 headings = 171 starts):
+
+1. **Found:** at least 95% of search starts detect the target within 12 steps
+   (a full rotation at the new step, plus slack). Baseline measured first.
+2. **Arrived:** at least 90% end within 1.05 cells of the backpack within 60
+   steps, with stuck detection on.
+3. **No regression:** 3.3's clear starts still 12/12 arrive, 3.4's jamb
+   starts still 4/4 `blocked`.
+
+**Measured -- all three met, phase closed:**
+
+| | before R1b | search step only | + 3-degree steer band | criterion |
+|---|---|---|---|---|
+| found within 12 steps | 86% | **100%** | 100% (171/171) | >= 95% |
+| arrived | 75% | 84% (28 blocked) | **100%** (171/171) | >= 90% |
+| clear arrive / jamb blocked | 12/12, 4/4 | 12/12, 4/4 | **12/12, 4/4** | unchanged |
+
+Two changes, each justified by the measurement before it:
+
+* **`SCAN_TURN_DEG = 45`** for every tier turn with no bearing to size it by --
+  scans, held cloud goals, cloud turns the local tier cannot size. This
+  REVERSES R1's "no size nobody measured" for search turns, on data: that
+  choice left a 90-degree step against a 60-degree view.
+* **`STEER_BAND_DEG = 3`** for correcting a MEASURED bearing, split from
+  `CENTER_BAND_DEG = 10`, which stays as `/navigate`'s reporting vocabulary.
+  All 28 blocked runs had driven FORWARD 5-6 degrees off the doorway's line
+  -- inside the old 10-degree dead band, harmless while every turn was 90,
+  pure drift once turns are sized -- and put a jamb in their own path.
+
+Pinned in `tests/test_bearing_turns.py` on the middle position's 57 offsets,
+confirmed red against the pre-R1b tier.
+
+**Still open -- P25's actual premise.** With a detector landing one frame in
+three, sized turns now close 1.61 cells on average (0.83 before R1b), far
+from arriving. The repair named in 3.3 stands: pass perception's range so
+`goal_pose.py` anchors a POINT, not a direction. (The every-frame row of
+`demo_hold_bearing_ab` fell 4.06 -> 3.69 for a known, intended reason: stuck
+detection now ends the four jamb starts within ~10 steps instead of letting
+them creep closer for 60.) **Also still open: arrival is not recognised**
+(P7e) -- every search run ends `max_steps` beside the backpack.
+
+## 4. Honest residue -- what the twin cannot tell you
 
 ## 4. Honest residue -- what the twin cannot tell you
 

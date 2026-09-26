@@ -170,13 +170,18 @@ def test_quarter_turns_are_the_defect_bearing_sized_turns_remove():
     assert mean([r for _, r in sized]) < mean([r for _, r in quarter]) / 2
 
 
-def test_a_turn_with_no_bearing_behind_it_carries_no_size():
-    """A scan is a search, not a correction: it keeps the executor's default,
-    so R1 changes nothing about how the robot looks for something it has not
-    seen."""
+def test_a_turn_with_no_bearing_behind_it_is_a_search_step():
+    """R1b reversed R1's choice here, on data. R1 left a search turn at the
+    executor's default 90 degrees ("no size nobody measured"); against a
+    60-degree field of view that leaves a 30-degree blind gap between views,
+    and a target sitting in it was never found by turning -- 14% of search
+    starts. A search step smaller than the field of view makes one rotation
+    cover the whole circle."""
+    from brain.tiered import SCAN_TURN_DEG
     scene = _tier()({"detections": []})
     assert scene["safest_direction"] in ("LEFT", "RIGHT")
-    assert scene["turn_deg"] is None
+    assert scene["turn_deg"] == SCAN_TURN_DEG
+    assert SCAN_TURN_DEG < 60, "must stay under the sim's 60-degree field of view"
 
 
 def test_a_sighted_turn_carries_the_size_of_its_bearing():
@@ -323,3 +328,48 @@ def test_a_refusal_followed_by_progress_resets_the_count():
     elif R.executed:
         runner._refused_forwards = 0
     assert runner._refused_forwards == 0
+
+
+# ---------- R1b: search that cannot miss (PLAN-ros-alignment.md 3.5) ----------
+
+# Every 5 degrees from 40 off the target round to the other side -- the set
+# that CAN show the gap. A first sample every 30 degrees from 60 could not
+# (with 90-degree steps the gap only exists 36-54 degrees from a multiple of
+# 90) and measured a misleading 100% before the fix.
+SEARCH_OFFSETS = [o for o in range(-180, 180, 5) if abs(o) >= 40]
+
+
+def _search(offset, x=5.5, y=7.5, steps=60):
+    grid = build_starter_world()
+    grid.x, grid.y = x, y
+    grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(offset)
+    robot = MockRobot(grid, render=False)
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        steer_on_sight=True, hold_goal=True)
+    runner = MissionRunner(robot, target_object=TARGET, max_steps=steps,
+                           policy="tiered", vision_fn=tier,
+                           world=mock_world_for(robot))
+    runner.start()
+    first_seen = None
+    while runner.tick():
+        h = runner.agent.history[-1]
+        if first_seen is None and (h.scene.get("_perception") or {}).get("status") == "detected":
+            first_seen = h.step
+    return first_seen, math.dist((grid.x, grid.y), GOAL), runner.status()["outcome"]
+
+
+def test_a_target_in_line_of_sight_is_always_found_by_turning():
+    """Criterion 1: measured 86% before R1b, 100% after, over 171 starts
+    (three positions); pinned here on the middle position."""
+    missed = [o for o in SEARCH_OFFSETS
+              if (lambda f: f is None or f > 12)(_search(o)[0])]
+    assert not missed, f"never saw the backpack within 12 steps from offsets {missed}"
+
+
+def test_every_search_start_arrives_rather_than_drifting_into_a_jamb():
+    """Criterion 2: measured 75% before, 84% with the search step alone,
+    100% once measured bearings steered on a 3-degree band -- every blocked
+    run had driven FORWARD 5-6 degrees off the doorway's line."""
+    failed = [(o, round(left, 2), outcome) for o in SEARCH_OFFSETS
+              for _, left, outcome in [_search(o)] if left > 1.05]
+    assert not failed, f"did not arrive: {failed}"
