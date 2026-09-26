@@ -552,6 +552,13 @@ Pinned in `tests/test_bearing_turns.py` (arrival >= 95% at 90% detection;
 the guard allowing two full rotations of 45-degree search), both confirmed
 red against the count-based guard.
 
+**Live, on `57b46c2`,** from the verified clear start: the robot reached the
+backpack -- 1.00 cell from it by ground truth, read off the new
+`/world/truth` -- then lost it, held the real cloud's last FORWARD into a
+wall, and stuck detection ended the mission `blocked` after five refusals
+and two cloud calls. **It succeeded, and the outcome says otherwise** --
+see 3.8.
+
 **One lesson for the next phase that changes a step size:** a threshold
 counted in STEPS silently changes meaning when the step does. R1b's search
 step halved the spin guard and nothing failed until a detector was allowed
@@ -587,6 +594,33 @@ proposal for each question it raises:
    stops within one loop period of clearance falling under the threshold;
    a pivot against a wall still turns; silence zeroes the command within the
    timeout; the D-pad preempts it.
+
+### 3.8 The case for deciding P7e now -- for the user, NOT built
+
+P7e (arrival is not recognised) was deliberately left for hardware day,
+because its repair resolves differently once a lidar exists. **Tonight's data
+says it is now distorting every measurement**, which is a different reason
+from the one the deferral weighed:
+
+* **No simulated mission can end `found`.** Every run tonight ended
+  `max_steps` or `blocked`, arrived or not -- including the live one above,
+  which arrived and was labelled `blocked`. Arrival had to be measured from
+  ground truth in every phase (3.3-3.6b), which is exactly what a real room
+  cannot provide.
+* **It inflates other metrics.** With `hold_bearing` on, reversals read 15.6
+  at *perfect* detection -- dithering around a target the robot had already
+  reached (3.6b).
+* **It compounds a sim fidelity gap:** objects are not solid, so the robot
+  drives onto the backpack's cell, loses it under its footprint, and
+  searches for something it is standing on (3.5). Making objects solid is a
+  sim change with its own cost -- the starter house starts the robot ON the
+  sofa's cell, and the rule-based agent's tests are tuned to today's house.
+
+**Proposal, for decision:** a sim-only arrival rule now -- the tier reports
+`target_reached` when the detection's range is under an arrival radius and
+the target is centred, and the mission ends `found` -- with the lidar version
+replacing it on hardware day. Held back only because P7e's deferral was a
+deliberate call and this reverses it.
 
 ## 4. Honest residue -- what the twin cannot tell you
 
