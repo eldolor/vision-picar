@@ -153,6 +153,9 @@
     // sighting the twin notices can be matched against the mission's target
     // -- which used to come from this page's own local loops, now deleted.
     brainTarget: null,
+    // How far a D-pad LEFT/RIGHT turns, in degrees (R0). 90 is what every
+    // tap sent before the pose went continuous, so it stays the default.
+    turnStepDeg: 90,
     watchdogTimerId: null,
     // Recording a Robot-view walk to the brain, for replay (S2b).
     // The robot's own id for the most recently pushed teleop frame, so a
@@ -229,6 +232,7 @@
     recordWalk: "vp_record_walk",
     driveViaBrain: "vp_drive_via_brain",
     drivePolicy: "vp_drive_policy",
+    turnStepDeg: "vp_turn_step_deg",
     navigateModelId: "vp_navigate_model_id",
     navigatePromptVariant: "vp_navigate_prompt_variant",
     brainPolicy: "vp_brain_policy",
@@ -456,10 +460,14 @@
   const DRIVER_DPAD = "twin-dpad";
   const DRIVER_LOCAL_BRAIN = "twin-local-brain";
 
-  async function sendAction(action, driver) {
+  // `extra` carries the per-action parameters /action accepts beyond the
+  // verb -- today only `angle`, for the D-pad's turn step (R0). Omitted
+  // keys take the server's defaults, so a caller that passes nothing sends
+  // exactly what this function always sent.
+  async function sendAction(action, driver, extra) {
     const headers = { "x-driver": driver || DRIVER_DPAD };
     if (action === "STOP") return apiPost("/stop", {}, headers);
-    return apiPost("/action", { action: action }, headers);
+    return apiPost("/action", Object.assign({ action: action }, extra || {}), headers);
   }
   async function fetchDistance() {
     const data = await apiGet("/distance");
@@ -822,15 +830,18 @@
   // action to the server, logs the (server-authoritative) executed/veto
   // result, then refreshes the frame for rendering. Mirrors
   // brain/agent.py's ConstrainedAgent.step(): execute, then observe.
-  async function commitAction(action, driver) {
-    const resp = await sendAction(action, driver);
+  async function commitAction(action, driver, extra) {
+    const resp = await sendAction(action, driver, extra);
     const executed = resp.executed !== false;
     if (!executed) state.safetyFlashUntil = Date.now() + 350;
     // Phase M4: the reason is what a person can act on. "SAFETY VETO" was
     // the only thing this ever said, so a move refused because someone
     // else had taken the robot looked identical to one refused for being
     // about to hit a wall -- two situations with opposite responses.
-    logEntry(action, executed, executed ? "" : refusalText(resp), resp.reason);
+    // A turn names its angle in the log: once a turn can be 15 degrees, a
+    // bare "LEFT" no longer says what happened.
+    const label = extra && extra.angle ? action + " " + extra.angle + "\u00B0" : action;
+    logEntry(label, executed, executed ? "" : refusalText(resp), resp.reason);
 
     const frame = await fetchFrame();
     recordObservation(frame);
@@ -852,7 +863,27 @@
 
   async function manualAction(action) {
     if (!state.connected) return;
-    await commitAction(action, DRIVER_DPAD);
+    const extra = (action === "LEFT" || action === "RIGHT")
+      ? { angle: state.turnStepDeg } : undefined;
+    await commitAction(action, DRIVER_DPAD, extra);
+  }
+
+  // ---------- R0: the D-pad's turn step ----------
+  // The pose has been continuous since R0 (PLAN-ros-alignment.md), and the
+  // server has always taken an `angle` -- it just rounded it to a quarter
+  // turn until then. This is the control that lets a phone reach a heading
+  // that is not a compass point, which is R0's own "done when".
+  const TURN_STEPS_DEG = [15, 45, 90];
+
+  function setTurnStep(deg) {
+    if (TURN_STEPS_DEG.indexOf(deg) === -1) deg = 90;
+    state.turnStepDeg = deg;
+    document.querySelectorAll(".turn-step-btn").forEach(function (btn) {
+      const on = Number(btn.dataset.turnDeg) === deg;
+      btn.classList.toggle("active-mode", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    prefSet(PREF.turnStepDeg, String(deg));
   }
 
   // ---------- connection ----------
@@ -1200,6 +1231,10 @@
   document.getElementById("btn-look-left").onclick = function () { manualAction("LOOK_LEFT"); };
   document.getElementById("btn-look-right").onclick = function () { manualAction("LOOK_RIGHT"); };
   document.getElementById("btn-look-center").onclick = function () { manualAction("LOOK_CENTER"); };
+  document.querySelectorAll(".turn-step-btn").forEach(function (btn) {
+    btn.onclick = function () { setTurnStep(Number(btn.dataset.turnDeg)); };
+  });
+  setTurnStep(Number(prefGet(PREF.turnStepDeg)) || 90);
 
   // ---------- remote brain: this page as an observer (phase B4) ----------
   //

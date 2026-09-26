@@ -96,7 +96,7 @@ honest all-unusable defaults.
 
 | ID | What | Proof |
 |---|---|---|
-| **R0** | **DONE 2026-09-25 (not deployed).** **Continuous pose + diff-drive kinematics.** C2 and 1.14 merged. `GridWorld` holds float `x`/`y`/`theta`; `MockRobot.set_wheel_velocity()` / `step()` / `get_wheel_state()` take **left/right wheel angular velocities** and integrate over `dt`; encoder counts fall out of that integration; continuous collision via `renderer.cast_ray()`. Wheel velocities rather than a twist **on purpose**: it puts `diff_drive_controller`'s kinematics under test with the parameters that will ship | Map view draws a robot between cells at a non-cardinal bearing; FPV and depth strip track smoothly. **The D-pad half is still owed** -- see 3.1 |
+| **R0** | **DONE 2026-09-25 (not deployed).** **Continuous pose + diff-drive kinematics.** C2 and 1.14 merged. `GridWorld` holds float `x`/`y`/`theta`; `MockRobot.set_wheel_velocity()` / `step()` / `get_wheel_state()` take **left/right wheel angular velocities** and integrate over `dt`; encoder counts fall out of that integration; continuous collision via `renderer.cast_ray()`. Wheel velocities rather than a twist **on purpose**: it puts `diff_drive_controller`'s kinematics under test with the parameters that will ship | D-pad (with a 15° / 45° / 90° turn step) rotates through non-cardinal angles; map view, FPV and depth strip track smoothly -- see 3.1 |
 | **R1** | **P25's A/B, finally runnable.** `brain/goal_pose.py` is built and default OFF because the sim turned in 90° quanta against a 10° centre band. Wire into `brain/tiered.py`; add median-run-length and reversal metrics to `control/walk_eval.py`; run it. **Before ROS**, so R6 has a baseline | Run-length rises above 1.0; no more LEFT/RIGHT alternation on a stationary target |
 | **R2** | **Three routes.** `GET`/`POST /wheels` (per-wheel position + velocity); `GET /world/scan` (`MockWorld` already casts 360 rays, one per degree -- publish the ranges, not only the cells they marked); `GET /world/truth` | A ground-truth ghost on the twin's map. Identical today, which is the point |
 | **R3** | **URDF + TF.** `base_link`, two wheel joints, `laser`, `camera_link` as child of a **revolute pan joint** (ST3215). §900's 11-14cm sensor-to-bumper offset becomes a transform, not a constant. Bearings compose through the pan joint -- the general form of what `goal_pose.py` does by hand | Frames drawn on the map view, swinging as the servo pans |
@@ -171,12 +171,13 @@ reports a fractional position and a non-multiple-of-90 bearing, the map view
 draws the robot from it, and the FPV and depth strip are both cast from
 `view_angle()`. Verified end to end over HTTP -- `POST /action {"action":
 "LEFT", "angle": 30}` moves the published bearing from 90 to 60 degrees, and
-a `FORWARD` then lands the robot off both grid lines. **But no twin control
-sends an angle other than 90**, so the phone cannot yet *command* a
-non-cardinal turn, and the row's "D-pad rotates through non-cardinal angles"
-is unmet. Two candidates, both small: an angle stepper beside the D-pad, or a
-press-and-hold that sends a velocity (which is the one R4 will want anyway).
-Settle it with R1, whose A/B is the first consumer that cares.
+a `FORWARD` then lands the robot off both grid lines. ~~But no twin control
+sends an angle other than 90~~ -- **closed the same day**: the user chose the
+angle stepper, and a **15° / 45° / 90° turn step** now sits under the Sim
+tab's D-pad, remembered across reloads and defaulting to 90. So R0's "D-pad
+rotates through non-cardinal angles" holds from a phone. Press-and-hold
+wheel velocity is deferred to R4, where the D-pad goes through `twist_mux`
+and a velocity is the natural command.
 
 **Also untouched and worth flagging:** `renderFPV` in `web-twin/app.js` is
 still cardinal, so the pre-S2 local-render fallback would draw the wrong view

@@ -44,6 +44,7 @@ import sys
 import time
 from pathlib import Path
 
+import contextlib
 import httpx
 import pytest
 
@@ -72,11 +73,9 @@ MODELS_REPLY = {
 }
 
 
-@pytest.fixture(scope="module")
-def twin_server():
-    """A live `uvicorn robot.server:app`, same subprocess pattern as
-    tests/test_watchdog_integration.py -- a real server serving the real
-    index.html and app.js, not a fixture copy of either."""
+@contextlib.contextmanager
+def _live_twin_server():
+    """A live `uvicorn robot.server:app` -- see `twin_server`."""
     port = free_port()
     url = f"http://127.0.0.1:{port}"
     proc = subprocess.Popen(
@@ -103,6 +102,33 @@ def twin_server():
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+@pytest.fixture(scope="module")
+def twin_server():
+    """A live `uvicorn robot.server:app`, same subprocess pattern as
+    tests/test_watchdog_integration.py -- a real server serving the real
+    index.html and app.js, not a fixture copy of either.
+
+    **Shared by the whole module, so a test that MOVES the robot or claims
+    authority on it changes what every later test sees** -- the driver
+    readout's "nobody yet" is the one that noticed. A test that needs to
+    drive for real uses `private_twin_server` instead."""
+    with _live_twin_server() as url:
+        yield url
+
+
+@pytest.fixture
+def private_twin_server():
+    """A live robot server of this test's own, for a test that drives it.
+
+    Costs a second or so of start-up, which is the price of not leaking a
+    driver, a pose or a refusal into the shared server's later tests. The
+    alternative -- ordering tests so the drivers run last -- is the kind of
+    fix that passes today and breaks the day someone adds a test at the end.
+    """
+    with _live_twin_server() as url:
+        yield url
 
 
 @pytest.fixture(scope="module")
@@ -273,7 +299,9 @@ def test_the_choice_survives_a_reload(browser, twin_server):
     picker is showing, not silently the default."""
     page, _ = open_twin(browser, twin_server)
     model_select(page).select_option("amazon.nova-lite-v1:0")
-    page.reload(wait_until="networkidle")
+    # "load", not "networkidle": a connected page polls /health twice a
+    # second and is never idle.
+    page.reload(wait_until="load")
     sync_api.expect(model_select(page)).to_have_value("amazon.nova-lite-v1:0")
     page.close()
 
@@ -695,7 +723,9 @@ def _open_with_health(browser, twin_server, env_label):
         route.fulfill(status=200, content_type="application/json", body=_json(body))
 
     page.route("**/health", handler)
-    page.reload(wait_until="networkidle")
+    # "load", not "networkidle": a connected page polls /health twice a
+    # second and is never idle.
+    page.reload(wait_until="load")
     page.wait_for_timeout(600)
     return page, errors
 
@@ -1117,6 +1147,72 @@ def _open_sim_tab(browser, twin_server):
     page.click("#btn-connect")
     page.click('.tab-btn[data-tab="sim"]')
     return page, errors
+
+
+# ---------- R0: the D-pad's turn step ----------
+#
+# The pose has been continuous since R0, but every tap sent 90 degrees, so a
+# non-cardinal heading was reachable only with curl -- R0's own "done when"
+# was unmet from a phone. These pin the control that closes it.
+
+
+def test_a_turn_sends_the_selected_step_not_a_quarter_turn(browser, twin_server):
+    """What the twin puts on the wire. Checked at the request rather than
+    the pose, so a server that happened to round would not hide a twin that
+    had stopped sending the angle."""
+    page, errors = _open_sim_tab(browser, twin_server)
+    sent = []
+
+    def capture(route):
+        # Fulfilled here, never forwarded: this test is about what the twin
+        # SENDS, and forwarding would claim the shared server for twin-dpad.
+        sent.append(route.request.post_data_json)
+        route.fulfill(status=200, content_type="application/json",
+                      body=_json({"executed": True, "driver": "twin-dpad",
+                                  "result": {}}))
+
+    page.route("**/action", capture)
+    page.click('.turn-step-btn[data-turn-deg="45"]')
+    page.click("#btn-right")
+    sync_api.expect(page.locator("#log")).to_contain_text("RIGHT 45", timeout=5000)
+    assert {"action": "RIGHT", "angle": 45} in sent, sent
+    assert not errors, errors
+    page.close()
+
+
+def test_the_step_really_turns_the_robot_that_far(browser, private_twin_server):
+    """End to end, against a real server: the published pose moves by the
+    step and lands on a bearing that is not a compass point -- which no tap
+    could produce before. Its own server, because it drives: on the shared
+    one it claimed authority and broke the driver readout's "nobody yet"."""
+    page, errors = _open_sim_tab(browser, private_twin_server)
+    before = httpx.get(f"{private_twin_server}/world/pose", timeout=5).json()["heading_deg"]
+    page.click('.turn-step-btn[data-turn-deg="15"]')
+    page.click("#btn-left")
+    sync_api.expect(page.locator("#log")).to_contain_text("LEFT 15", timeout=5000)
+    after = httpx.get(f"{private_twin_server}/world/pose", timeout=5).json()["heading_deg"]
+    assert (before - after) % 360 == pytest.approx(15.0, abs=0.01)
+    assert after % 90 != pytest.approx(0.0, abs=0.01)
+    assert not errors, errors
+    page.close()
+
+
+def test_the_step_is_remembered_and_defaults_to_a_quarter_turn(browser, twin_server):
+    """90 is what every tap sent before, so a first visit must behave
+    exactly as it always did; a chosen step survives a reload, because
+    "turn 45, drive, turn 45" is a sequence someone repeats."""
+    page, errors = _open_sim_tab(browser, twin_server)
+    active = page.locator(".turn-step-btn.active-mode")
+    sync_api.expect(active).to_have_attribute("data-turn-deg", "90")
+    page.click('.turn-step-btn[data-turn-deg="45"]')
+    # "load", not "networkidle": a connected page polls /health twice a
+    # second and is never idle.
+    page.reload(wait_until="load")
+    page.click('.tab-btn[data-tab="sim"]')
+    sync_api.expect(page.locator(".turn-step-btn.active-mode")).to_have_attribute(
+        "data-turn-deg", "45")
+    assert not errors, errors
+    page.close()
 
 
 def test_the_driver_readout_starts_at_nobody_and_names_the_pad(browser, twin_server):

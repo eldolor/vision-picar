@@ -906,6 +906,16 @@
   .robot-mode-row { display: flex; gap: 6px; margin-top: 10px; }
   .robot-mode-btn { flex: 1; }
   .robot-mode-btn.active-mode { border-color: var(--accent-primary); color: var(--accent-primary); }
+  /* R0: the D-pad's turn step. Styled as the Guide tab's mode switch, the
+     one segmented control this page already has, so it reads as a setting
+     rather than a fourth row of movement buttons. */
+  .turn-step-row { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+  .turn-step-label {
+    font-family: var(--mono); font-size: var(--fs-small); color: var(--text-dim);
+    min-width: 3em;
+  }
+  .turn-step-btn { flex: 1; }
+  .turn-step-btn.active-mode { background: transparent; border-color: var(--accent-primary); color: var(--accent-primary); }
 
   .guide-caption {
     display: flex; align-items: center; gap: 6px;
@@ -1354,6 +1364,19 @@
         <button id="btn-look-left" disabled aria-label="Look left"><span data-icon="eye"></span><span data-icon="chevronLeft"></span></button>
         <button id="btn-look-center" disabled aria-label="Look center"><span data-icon="eye"></span></button>
         <button id="btn-look-right" disabled aria-label="Look right"><span data-icon="eye"></span><span data-icon="chevronRight"></span></button>
+      </div>
+      <!-- R0's UI proof (PLAN-ros-alignment.md): how far LEFT and RIGHT turn.
+           The pose has been continuous since R0, but every tap still sent
+           90 degrees, so the only way to reach a non-cardinal heading was
+           curl. Three fixed steps rather than a slider on purpose: a tap you
+           can repeat exactly is what makes "turn 45, drive, turn 45 again"
+           reproducible from a phone. Press-and-hold wheel velocity arrives
+           with R4, when the D-pad goes through twist_mux. -->
+      <div class="turn-step-row" role="group" aria-label="How far left and right turn">
+        <span class="turn-step-label">Turn</span>
+        <button class="ghost turn-step-btn" data-turn-deg="15" aria-pressed="false">15&deg;</button>
+        <button class="ghost turn-step-btn" data-turn-deg="45" aria-pressed="false">45&deg;</button>
+        <button class="ghost turn-step-btn active-mode" data-turn-deg="90" aria-pressed="true">90&deg;</button>
       </div>
       <div class="full" id="tel-safety">Safety: <span class="safe">OK</span></div>
       <!-- Moved here from the deleted map panel: this log is written by the
