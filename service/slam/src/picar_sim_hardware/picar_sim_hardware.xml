@@ -1,0 +1,7 @@
+<library path="picar_sim_hardware">
+  <class name="picar_sim_hardware/PicarSimHardware"
+         type="picar_sim_hardware::PicarSimHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>The simulated robot, reached over robot/server.py's /wheels routes.</description>
+  </class>
+</library>

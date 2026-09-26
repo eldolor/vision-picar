@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>picar_bringup</name>
+  <version>0.1.0</version>
+  <description>Launch and controller configuration for the ROS side of PLAN-ros-alignment.md R4.</description>
+  <maintainer email="anshu.gaind@gmail.com">vision-picar</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>picar_description</exec_depend>
+  <exec_depend>picar_sim_hardware</exec_depend>
+  <exec_depend>picar_bridge</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>diff_drive_controller</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>twist_mux</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

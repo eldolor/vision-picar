@@ -1,0 +1,19 @@
+# twist_mux -- AGENT-HARNESS.md 4.1's order, now inside ROS
+# (stop > twin-dpad > brain > ...). A person outranks every autonomous
+# source; two autonomous sources share a rank, and robot/server.py's M4
+# arbitration already refuses a second one at /action.
+twist_mux:
+  ros__parameters:
+    topics:
+      teleop:
+        topic: cmd_vel/teleop
+        timeout: 0.5
+        priority: 100
+      brain:
+        topic: cmd_vel/brain
+        timeout: 0.5
+        priority: 50
+      nav:
+        topic: cmd_vel/nav
+        timeout: 0.5
+        priority: 50

@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>picar_sim_hardware</name>
+  <version>0.1.0</version>
+  <description>ros2_control SystemInterface over robot/server.py's HTTP API -- the sim side of PLAN-ros-alignment.md section 1's seam.</description>
+  <maintainer email="anshu.gaind@gmail.com">vision-picar</maintainer>
+  <license>Proprietary</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>hardware_interface</depend>
+  <depend>pluginlib</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

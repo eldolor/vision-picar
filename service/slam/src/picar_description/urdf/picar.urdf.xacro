@@ -1,0 +1,126 @@
+<?xml version="1.0"?>
+<!--
+  The robot, as ROS sees it: PLAN-ros-alignment.md R3.
+
+  REP-103 (x forward, y left, z up, angles counter-clockwise) and REP-105
+  (base_footprint on the floor, base_link at the rotation centre). Note the
+  project's own bearings are CLOCKWISE-positive ("positive to the robot's
+  right"); the conversion happens once, at the wall, never in here.
+
+  Every dimension is in the block below and nowhere else. `[BOM]` values
+  come from HARDWARE-BOM.md / JETSON-BOM.md; `[PLACEHOLDER]` values have no
+  source yet and are hardware-day measurements. The two chassis constants
+  are pinned to sim/mock_robot.py by tests/test_urdf.py, so the sim and the
+  controller can never disagree about a wheel.
+-->
+<robot name="picar" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===================== every dimension ===================== -->
+  <xacro:property name="wheel_radius"      value="0.0325"/> <!-- [BOM] 65 mm wheels; = sim/mock_robot.py WHEEL_RADIUS_M -->
+  <xacro:property name="wheel_separation"  value="0.172"/>  <!-- [PLACEHOLDER] = sim/mock_robot.py TRACK_WIDTH_M, itself flagged -->
+  <xacro:property name="wheel_width"       value="0.026"/>  <!-- [PLACEHOLDER] -->
+  <xacro:property name="deck_length"       value="0.228"/>  <!-- [BOM] ~228 x 148 mm deck -->
+  <xacro:property name="deck_width"        value="0.148"/>  <!-- [BOM] -->
+  <xacro:property name="deck_height"       value="0.040"/>  <!-- [PLACEHOLDER] chassis plate ~40 mm (CLAUDE.md Stage 0) -->
+  <xacro:property name="axle_x"            value="0.0"/>    <!-- [PLACEHOLDER] drive axle under the deck centre -->
+  <xacro:property name="laser_z"           value="0.100"/>  <!-- [PLACEHOLDER] lidar above base_link, deck centre -->
+  <xacro:property name="pan_x"             value="0.080"/>  <!-- [PLACEHOLDER] pan axis ahead of base_link -->
+  <xacro:property name="pan_z"             value="0.070"/>  <!-- [PLACEHOLDER] -->
+  <xacro:property name="camera_up"         value="0.0175"/> <!-- [PLACEHOLDER] lens above the pan joint: camera 0.12 m off the floor -->
+  <xacro:property name="camera_pitch"      value="0.2618"/> <!-- [PLACEHOLDER] 15 deg down; the wedge is 10-20 deg, unmodelled -->
+  <xacro:property name="pan_limit"         value="1.5708"/> <!-- [PLACEHOLDER] +/-90 deg; ST3215 can do more, the cable cannot -->
+
+  <xacro:arg name="robot_url" default="http://host.docker.internal:8000"/>
+  <xacro:arg name="use_ros2_control" default="true"/>
+
+  <link name="base_footprint"/>
+  <link name="base_link">
+    <visual>
+      <origin xyz="${-axle_x} 0 ${deck_height/2}"/>
+      <geometry><box size="${deck_length} ${deck_width} ${deck_height}"/></geometry>
+    </visual>
+    <collision>
+      <origin xyz="${-axle_x} 0 ${deck_height/2}"/>
+      <geometry><box size="${deck_length} ${deck_width} ${deck_height}"/></geometry>
+    </collision>
+  </link>
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/><child link="base_link"/>
+    <origin xyz="0 0 ${wheel_radius}"/>
+  </joint>
+
+  <!-- The bumpers, as frames: the sensor-to-bumper offset robot/safety.py
+       carries as a constant is this transform. -->
+  <link name="front_bumper"/>
+  <joint name="front_bumper_joint" type="fixed">
+    <parent link="base_link"/><child link="front_bumper"/>
+    <origin xyz="${deck_length/2 - axle_x} 0 0"/>
+  </joint>
+  <link name="rear_bumper"/>
+  <joint name="rear_bumper_joint" type="fixed">
+    <parent link="base_link"/><child link="rear_bumper"/>
+    <origin xyz="${-deck_length/2 - axle_x} 0 0"/>
+  </joint>
+
+  <xacro:macro name="wheel" params="side y">
+    <link name="${side}_wheel">
+      <visual>
+        <origin rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      </visual>
+    </link>
+    <joint name="${side}_wheel_joint" type="continuous">
+      <parent link="base_link"/><child link="${side}_wheel"/>
+      <origin xyz="0 ${y} 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+  <xacro:wheel side="left"  y="${wheel_separation/2}"/>
+  <xacro:wheel side="right" y="${-wheel_separation/2}"/>
+
+  <link name="laser"/>
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/><child link="laser"/>
+    <origin xyz="${-axle_x} 0 ${laser_z}"/>
+  </joint>
+
+  <!-- The camera pans; bearings compose through this joint. -->
+  <link name="pan_link"/>
+  <joint name="pan_joint" type="revolute">
+    <parent link="base_link"/><child link="pan_link"/>
+    <origin xyz="${pan_x} 0 ${pan_z}"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${-pan_limit}" upper="${pan_limit}" effort="2.9" velocity="4.0"/>
+  </joint>
+  <link name="camera_link"/>
+  <joint name="camera_joint" type="fixed">
+    <parent link="pan_link"/><child link="camera_link"/>
+    <origin xyz="0 0 ${camera_up}" rpy="0 ${camera_pitch} 0"/>
+  </joint>
+  <!-- REP-103's optical convention (z forward, x right, y down), for an
+       image pipeline that wants it. -->
+  <link name="camera_optical_frame"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/><child link="camera_optical_frame"/>
+    <origin rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+
+  <xacro:if value="$(arg use_ros2_control)">
+    <ros2_control name="picar" type="system">
+      <hardware>
+        <plugin>picar_sim_hardware/PicarSimHardware</plugin>
+        <param name="robot_url">$(arg robot_url)</param>
+      </hardware>
+      <joint name="left_wheel_joint">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="right_wheel_joint">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+    </ros2_control>
+  </xacro:if>
+</robot>

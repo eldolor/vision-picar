@@ -1,0 +1,38 @@
+# ros2_control -- PLAN-ros-alignment.md R4.
+#
+# 20 Hz because that is the robot server's wheel loop (WHEEL_LOOP_INTERVAL_S)
+# and the rate nav2's controller runs at; a faster loop would only resend
+# the same command over HTTP.
+controller_manager:
+  ros__parameters:
+    update_rate: 20
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    diff_drive_controller:
+      type: diff_drive_controller/DiffDriveController
+
+diff_drive_controller:
+  ros__parameters:
+    left_wheel_names: ["left_wheel_joint"]
+    right_wheel_names: ["right_wheel_joint"]
+    # MUST equal the URDF and sim/mock_robot.py -- tests/test_urdf.py pins
+    # all three together.
+    wheel_separation: 0.172
+    wheel_radius: 0.0325
+    publish_rate: 20.0
+    odom_frame_id: odom
+    base_frame_id: base_footprint
+    enable_odom_tf: true
+    # The ROS half of "silence stops it twice" (R4 criterion 6). The robot
+    # server's watchdog is the other half: this one cannot see a dead bridge.
+    cmd_vel_timeout: 0.5
+    use_stamped_vel: false
+    # 2 cells/s, the sim's own ceiling (sim/mock_robot.py WHEEL_MAX_RAD_S).
+    linear.x.has_velocity_limits: true
+    linear.x.max_velocity: 0.6
+    linear.x.min_velocity: -0.6
+    angular.z.has_velocity_limits: true
+    angular.z.max_velocity: 6.0
+    angular.z.min_velocity: -6.0
+    pose_covariance_diagonal: [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.01]
+    twist_covariance_diagonal: [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.01]

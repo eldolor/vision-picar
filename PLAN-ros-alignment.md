@@ -822,6 +822,144 @@ target at 40 cm. That is a rig walk's question, and the rule needs no change
 to ask it -- on a phone walk it refuses to judge (no scan) until the car has
 a lidar.
 
+### 3.12 R3 -- URDF + TF (2026-09-26): criteria, written before building
+
+**What it is.** `service/slam/picar_description/urdf/picar.urdf.xacro`:
+`base_link` at the midpoint of the drive axle (the diff-drive rotation
+centre, REP-105), two `continuous` wheel joints, `laser` fixed at the deck
+centre, `pan_link` on a `revolute` joint (the ST3215), `camera_link` fixed to
+it at the pan head's pitch. `base_footprint` below `base_link` for nav2.
+
+**Constants.** From `HARDWARE-BOM.md` / `JETSON-BOM.md` where they exist:
+wheel radius 0.0325 m, track 0.172 m (**placeholder**, as in `sim/mock_robot.py`),
+deck 0.228 x 0.148 m. Where no document gives one, a flagged placeholder in
+ONE block at the top of the xacro, never scattered: lidar height, camera
+height (0.12 m, Stage 0's 10-13 cm), the pan joint's forward offset, and the
+camera's downward pitch (the wedge "still has to be modelled", 10-20 degrees).
+
+**Acceptance criteria:**
+
+1. **Valid.** `xacro` expands and `check_urdf` passes inside the container;
+   `robot_state_publisher` starts and publishes the full tree.
+2. **Single-sourced chassis.** The URDF's wheel radius and wheel separation
+   equal `sim/mock_robot.py`'s `WHEEL_RADIUS_M` and `TRACK_WIDTH_M` exactly --
+   a test fails if either side drifts. (R4's controller config reads the same
+   two numbers.)
+3. **TF is what the URDF says.** `base_link -> laser` and
+   `base_link -> camera_link` as published by `robot_state_publisher` (looked
+   up with tf2 inside the container) match a pure-Python evaluation of the
+   same file within 1 mm and 0.1 degree, at pan angles -90, -45, 0, 45 and 90
+   degrees. The Python side reads XML only -- no ROS on the laptop.
+4. **How wrong is the hand shortcut?** `goal_pose.py` and the tier compose
+   a panned bearing as pan + in-frame azimuth, which ignores the pan axis
+   sitting ahead of `base_link`. Through TF, over pan -90..90 and targets at
+   0.4-3 m, measure the shortcut's error against the exact composition.
+   **Pass if it is under the 3-degree steering band for every target at
+   >= 1 m** -- then the shortcut is safe where the tier steers, and the
+   measured table says where it is not. (Amended before any measurement: as
+   first written, "within 0.5 degree at 3 m", it was impossible by geometry
+   -- an 8 cm offset is ~1.5 degrees of parallax at 3 m and 90 degrees of
+   pan, which is the very error the criterion should be quantifying.)
+5. **Containment holds.** `tests/test_ros_containment.py` green: every
+   `rclpy` import lives under `service/slam/`.
+
+The "frames drawn on the map view" proof is not built -- under the
+data-driven rule it is a UI nicety, and criterion 3 is the measurement it
+stood for.
+
+**Measured 2026-09-26 -- four of five met, criterion 4 FAILED**
+(`tests/test_urdf.py`; the live half skips without a container):
+
+1. Met. `xacro` + `check_urdf` pass in the container; the tree is
+   `base_footprint -> base_link -> {front_bumper, rear_bumper, laser,
+   left_wheel, right_wheel, pan_link -> camera_link -> camera_optical_frame}`,
+   and `robot_state_publisher` publishes all of it.
+2. Met. Wheel radius and separation are one number across the xacro,
+   `controllers.yaml` and `sim/mock_robot.py`, pinned always-run.
+3. Met. 15 tf2 lookups (`laser`, `camera_link`, `front_bumper` x pan -90,
+   -45, 0, 45, 90) match numpy forward kinematics of the expanded URDF within
+   1 mm and 0.1 degree.
+4. **Failed.** The shortcut pan + in-frame azimuth, against the exact
+   composition through TF, worst case over target bearings within the view:
+
+   | range | pan 0, target within 30 deg | pan 0, target within 3 deg (centred) | pan +/-90 |
+   |---|---|---|---|
+   | 0.4 m | 6.90 | **0.75** | 11.53 |
+   | 0.7 m | 3.63 | 0.39 | 6.56 |
+   | 1.0 m | 2.46 | 0.26 | **4.59** |
+   | 1.5 m | 1.60 | 0.17 | 3.06 |
+   | 3.0 m | 0.78 | 0.08 | 1.53 |
+
+   The pan axis sits 8 cm ahead of `base_link` (placeholder), and a bearing
+   taken from there is not a bearing from the rotation centre. **What the
+   failure does and does not reach:** with the camera centred and the target
+   inside the steering band the shortcut is within 0.75 degree even at
+   0.4 m, so the tier's final approach and `brain/arrival.py` (which refuses
+   panned frames) are sound. A turn sized from an off-centre target up close
+   is off by up to ~7 degrees and re-measured next frame. **A panned bearing
+   is not usable without the geometry** -- and the geometry needs a range,
+   because a bearing alone from an offset camera is ambiguous. Two options,
+   neither taken here: compose panned sightings through TF with the lidar's
+   range (the ROS side, R6), or mount the pan axis over the rotation centre
+   (a chassis decision for hardware day). Until one is taken, nothing may
+   consume a panned bearing as body-relative.
+   **And the sim cannot show any of this:** it renders from the robot's
+   centre, so its camera has no offset. Moving the sim camera to the URDF's
+   pan axis is the follow-up that would make the sim exhibit the error.
+5. Met. `tests/test_ros_containment.py` green, now load-bearing: the bridge
+   imports `rclpy`, inside `service/slam/` only.
+
+### 3.13 R4 -- `picar_sim_hardware` and one writer (2026-09-26): criteria, written before building
+
+**The design call the table leaves open: how a verb reaches `twist_mux`.**
+`robot/server.py` may not import `rclpy`, and the D-pad and the brain speak
+verbs (`/action FORWARD`, `LEFT 45`), not velocities. So:
+
+* A **bridge node** in the container (`picar_bridge`, rclpy, HTTP on :8090)
+  takes `POST /cmd_vel {driver, linear_m_s, angular_rad_s}` and publishes a
+  `Twist` on that driver's `twist_mux` input -- `cmd_vel/teleop` for
+  `twin-dpad` (priority 100), `cmd_vel/brain` for `brain` (50), `cmd_vel/nav`
+  reserved for nav2 (50, R6). `twist_mux` -> `diff_drive_controller` ->
+  **`picar_sim_hardware`** (C++, `hardware_interface::SystemInterface`), whose
+  `write()` is `POST /wheels` with `x-driver: ros` and whose `read()` is
+  `GET /wheels`. `sim_scan_node` republishes `GET /scan` as `LaserScan`.
+* **Verbs become velocity profiles, closed on the encoders**, in
+  `robot/ros_drive.py`: a `RobotInterface` wrapper that streams twists to the
+  bridge until the wheels' own encoder counts say one move (0.30 m) or the
+  commanded angle has been covered, then zeroes. Picked by
+  `robot/factory.py` from `drive: ros` -- the only place a backend is chosen.
+  The inner `MockRobot` still answers every read.
+* **Authority stays where M4 put it, and moves inside ROS for the wheels.**
+  `/action` is arbitrated exactly as today (so a D-pad tap still preempts a
+  mission and names `twin-dpad`). Under `drive: ros`, `POST /wheels` is the
+  actuator's route: only driver `ros` may use it, and it is not arbitrated
+  against `/action`'s drivers -- they reach the wheels THROUGH it. The safety
+  vet and the wheel loop's re-vet stay on it unchanged.
+
+**Acceptance criteria:**
+
+1. **The chain moves the robot.** A 0.1 m/s twist on `cmd_vel/brain` for 3 s
+   moves `MockRobot` 0.30 m +/- 5% (ground truth), and
+   `diff_drive_controller`'s `/odom` agrees with `/world/truth` within 2 cm.
+2. **One writer.** Under `drive: ros`, every wheel command the sim receives
+   arrives through `POST /wheels` from `ros`; the count of verbs executed
+   directly on `MockRobot` is 0.
+3. **Verbs through the chain.** `/action FORWARD` moves 0.30 m +/- 2 cm,
+   `LEFT 45` turns 45 +/- 2 degrees, `RIGHT 90` 90 +/- 2.
+4. **Authority preserved.** A running brain mission, then a D-pad tap: the
+   mission ends `preempted`, the log names `twin-dpad`, and authority lapses
+   on silence -- M4's existing acceptance, re-run under `drive: ros`. Inside
+   ROS, a twist on `cmd_vel/teleop` outranks one on `cmd_vel/brain`.
+5. **Safety preserved.** A standing forward twist into a wall stops at
+   >= 19.4 cm clearance (R2b's number, now through ROS).
+6. **Silence stops it twice.** Twists stop: `diff_drive_controller`'s
+   `cmd_vel_timeout` zeroes the wheels within 0.5 s; kill the container:
+   the robot server's watchdog zeroes them within `watchdog_timeout_s`.
+7. **The scan crosses.** `/scan` equals `GET /scan` beam for beam within
+   1 mm, at >= 5 Hz.
+8. **A mission still finds the target**, live through the brain API with
+   `drive: ros`, from 3.11's hallway start.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
