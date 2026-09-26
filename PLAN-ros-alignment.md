@@ -793,6 +793,15 @@ four jamb starts end `blocked` at 3.1 cells, as they should); criterion 3 met
 pinned (no scan, a panned camera, a policy without local perception). With
 the rule switched off the same sweep reads **0 of 69**.
 
+**Criterion 5, live on `21433f8`** through the tunnel and the brain's HTTP
+API: the robot driven by D-pad to the hallway start (5.5, 7.5) at +30 degrees
+off the target, then `policy: "tiered"` -> **`found` in 7 steps, 1 cloud
+call**, one 30-degree sized turn, stopped at (2.85, 2.25) m with the scan at
+0.165 m on a 0.0-degree bearing, streak 2. A first live attempt from the
+house's default start in the living room ended `blocked` without ever seeing
+the backpack -- no line of sight to the kitchen, and a held cloud FORWARD into
+a wall: that is search and routing (R6), not arrival.
+
 **Criterion 2 caught a real defect in the first version.** The range at the
 bearing was the NEAREST return within +/- 2 degrees, and one 90% mission
 declared `found` 95 cm out: stuck on the kitchen door jamb, target dead
