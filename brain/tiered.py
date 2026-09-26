@@ -329,6 +329,28 @@ def corroboration_for(scene: dict, perception: Perception,
 # which is the field that actually means it.
 CENTER_BAND_DEG = 10.0
 
+# How far a bearing-steered turn may go, in degrees (R1). A turn used to be
+# a verb with no size -- every LEFT/RIGHT was the server's default 90 -- and
+# against a 10-degree centre band that overshoots every target less than 80
+# degrees off-axis, so the tier flipped LEFT/RIGHT on 52 of 60 steps and
+# closed ZERO distance (measured 2026-09-25, PLAN-ros-alignment.md R1). Now a
+# turn chosen from a measured bearing turns BY that bearing: one correction,
+# then FORWARD. The floor exists because a bearing just past the band is
+# still a real error and a 0-degree turn would spin in place for ever; the
+# ceiling because a target behind the robot is better approached as two
+# quarter turns re-measured in between than one blind half turn.
+MIN_TURN_DEG = 5
+MAX_TURN_DEG = 90
+
+
+def turn_for(bearing_deg: float) -> int:
+    """The size of a turn that centres a target at `bearing_deg`.
+
+    An int because `POST /action`'s `angle` is one. Sign is the caller's
+    business -- LEFT or RIGHT already says which way.
+    """
+    return int(round(min(MAX_TURN_DEG, max(MIN_TURN_DEG, abs(bearing_deg)))))
+
 
 def percentiles(samples) -> Optional[dict]:
     """n / p50 / p90 / p99 / max over a list of millisecond samples.
@@ -552,6 +574,8 @@ class TieredVision:
         self._odom = OdomTracker()
         self._goal = GoalPose()
         self._dead_reckoned = 0
+        self._steer_turn_deg = None
+        self._reckoned_turn_deg = None
         self.spin_guard_after = max(0, int(spin_guard_after))
         self._consecutive_turns = 0
         self._executor = None
@@ -949,6 +973,9 @@ class TieredVision:
         # scan stays, because holding a goal with nothing confirming it is
         # a different design and an unmeasured one.
         landed, self._landed_corroboration = self._landed_corroboration, None
+        # Set by the two rungs that have a real bearing in hand (R1), read
+        # below once the final direction is known.
+        self._steer_turn_deg = self._reckoned_turn_deg = None
         # Phase G, and it takes precedence over the held goal: a bearing
         # measured on THIS frame is better evidence about where to go than
         # a direction the cloud gave several seconds ago.
@@ -982,8 +1009,19 @@ class TieredVision:
             why = (f"{why} -- spin guard: {self.spin_guard_after} turns "
                    "without a detection, forcing FORWARD")
         self._note_action(direction)
+        # R1: how FAR to turn, when a measured or dead-reckoned bearing chose
+        # the turn. Absent otherwise -- a scan, a held cloud goal or a
+        # spin-guard override has no bearing behind it, and the executor's
+        # default quarter turn is the honest answer for those.
+        turn_deg = None
+        if direction in TURN_ACTIONS:
+            if steer == direction:
+                turn_deg = self._steer_turn_deg
+            elif reckoned == direction:
+                turn_deg = self._reckoned_turn_deg
         return {
             "obstacles_ahead": [],
+            "turn_deg": turn_deg,
             # Nothing local measures depth. M1's argument exactly: the
             # collar's get_distance() re-check is the only obstacle logic
             # on this path, and "unknown" is what stops a consumer acting
@@ -1067,6 +1105,8 @@ class TieredVision:
         if perception.bearing_deg is not None and self._odom.samples:
             self._goal.sight(self._odom.pose, float(perception.bearing_deg))
         where = _direction_for(perception)
+        if where in ("left", "right"):
+            self._steer_turn_deg = turn_for(perception.bearing_deg)
         if where == "left":
             return "LEFT"
         if where == "right":
@@ -1113,6 +1153,8 @@ class TieredVision:
         if bearing is None:
             return None
         self._dead_reckoned += 1
+        if abs(bearing) > CENTER_BAND_DEG:
+            self._reckoned_turn_deg = turn_for(bearing)
         if bearing < -CENTER_BAND_DEG:
             return "LEFT"
         if bearing > CENTER_BAND_DEG:
@@ -1146,6 +1188,20 @@ class TieredVision:
 
         self._note_action(scene.get("safest_direction"))
         out = dict(scene)
+        # R1: SIZE the cloud's turn from the local bearing, when the two
+        # agree on which way. The cloud still owns the direction -- this
+        # never overrides it, in keeping with 1.11's split -- but /navigate
+        # answers LEFT/RIGHT with no magnitude, so on every trigger frame a
+        # correct "it's to the left" went out as a blind quarter turn and
+        # swung the robot straight past the target the tier had just
+        # measured. When they disagree, or nothing local was measured, the
+        # turn keeps the executor's default: no size nobody measured.
+        direction = scene.get("safest_direction")
+        bearing = perception.bearing_deg if perception.status == DETECTED else None
+        if (direction in TURN_ACTIONS and bearing is not None
+                and abs(bearing) > CENTER_BAND_DEG
+                and (direction == "LEFT") == (bearing < 0)):
+            out["turn_deg"] = turn_for(bearing)
         out["_perception"] = perception.as_dict()
         out["_tier"] = {"cloud_called": True, "trigger": trigger,
                         # Synchronous: asked and answered on one frame.
@@ -1200,6 +1256,7 @@ def tiered_vision_fn_for(target: str, cloud_vision_fn: Callable[[dict], dict],
 
 __all__ = [
     "TieredVision", "TierStats", "tiered_vision_fn_for", "CENTER_BAND_DEG",
+    "MAX_TURN_DEG", "MIN_TURN_DEG", "turn_for",
     "TRIGGER_START", "TRIGGER_CANDIDATE", "TRIGGER_COLD_SEARCH",
     "TRIGGER_STALE", "DEFAULT_STALE_AFTER",
     "UNAVAILABLE_TRIGGERS", "SCAN_ACTION",

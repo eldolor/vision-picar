@@ -1490,6 +1490,34 @@ def open_with_brain(browser, twin_server, *, status=None, health=None,
     return page, errors
 
 
+def test_a_bearing_sized_turn_names_its_size_and_the_reversals_are_counted(browser, twin_server):
+    """R1's readout. The flicker P25 measured by hand is a number on the
+    panel now, and a turn says how far it was sized: "LEFT 23°" is a
+    correction onto a target, a bare "LEFT" is a default quarter turn."""
+    status = tiered_status()
+    status["last_action"] = "LEFT"
+    status["turns"] = {"count": 4, "reversals": 1, "last_turn_deg": 23}
+    page, errors = open_with_brain(browser, twin_server, status=status)
+    sync_api.expect(page.locator("#brain-tel-action")).to_have_text("LEFT 23\u00B0")
+    sync_api.expect(page.locator("#brain-tel-turns")).to_have_text(
+        "4 made, 1 reversed the one before")
+    assert not errors, errors
+    page.close()
+
+
+def test_an_unsized_turn_reads_bare_and_an_old_brain_shows_no_count(browser, twin_server):
+    """No size means the executor's default -- say nothing rather than
+    invent "90°". And a brain predating R1 sends no `turns` at all, which
+    must read as unknown, never as zero reversals."""
+    status = frontier_status()
+    status["last_action"] = "RIGHT"
+    page, errors = open_with_brain(browser, twin_server, status=status)
+    sync_api.expect(page.locator("#brain-tel-action")).to_have_text("RIGHT")
+    sync_api.expect(page.locator("#brain-tel-turns")).to_have_text("\u2013")
+    assert not errors, errors
+    page.close()
+
+
 def test_the_remote_brain_can_be_set_to_the_tiered_policy(browser, twin_server):
     """P1 and P2 have existed since 2026-09-06 with no way to ask for them
     from a phone -- the same state `policy: "vision"` was in before M1, and

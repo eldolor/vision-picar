@@ -96,8 +96,8 @@ honest all-unusable defaults.
 
 | ID | What | Proof |
 |---|---|---|
-| **R0** | **DONE 2026-09-25 (not deployed).** **Continuous pose + diff-drive kinematics.** C2 and 1.14 merged. `GridWorld` holds float `x`/`y`/`theta`; `MockRobot.set_wheel_velocity()` / `step()` / `get_wheel_state()` take **left/right wheel angular velocities** and integrate over `dt`; encoder counts fall out of that integration; continuous collision via `renderer.cast_ray()`. Wheel velocities rather than a twist **on purpose**: it puts `diff_drive_controller`'s kinematics under test with the parameters that will ship | D-pad (with a 15° / 45° / 90° turn step) rotates through non-cardinal angles; map view, FPV and depth strip track smoothly -- see 3.1 |
-| **R1** | **P25's A/B, finally runnable.** `brain/goal_pose.py` is built and default OFF because the sim turned in 90° quanta against a 10° centre band. Wire into `brain/tiered.py`; add median-run-length and reversal metrics to `control/walk_eval.py`; run it. **Before ROS**, so R6 has a baseline | Run-length rises above 1.0; no more LEFT/RIGHT alternation on a stationary target |
+| **R0** | **DONE 2026-09-25, and WATCHED -- the user confirmed the turn step on a phone the same day.** **Continuous pose + diff-drive kinematics.** C2 and 1.14 merged. `GridWorld` holds float `x`/`y`/`theta`; `MockRobot.set_wheel_velocity()` / `step()` / `get_wheel_state()` take **left/right wheel angular velocities** and integrate over `dt`; encoder counts fall out of that integration; continuous collision via `renderer.cast_ray()`. Wheel velocities rather than a twist **on purpose**: it puts `diff_drive_controller`'s kinematics under test with the parameters that will ship | D-pad (with a 15° / 45° / 90° turn step) rotates through non-cardinal angles; map view, FPV and depth strip track smoothly -- see 3.1 |
+| **R1** | **BUILT 2026-09-25 (not yet watched) -- and the answer was turn SIZE, see 3.3.** **P25's A/B, finally runnable.** `brain/goal_pose.py` is built and default OFF because the sim turned in 90° quanta against a 10° centre band. Wire into `brain/tiered.py`; add median-run-length and reversal metrics to `control/walk_eval.py`; run it. **Before ROS**, so R6 has a baseline | Run-length rises above 1.0; no more LEFT/RIGHT alternation on a stationary target |
 | **R2** | **Three routes.** `GET`/`POST /wheels` (per-wheel position + velocity); `GET /world/scan` (`MockWorld` already casts 360 rays, one per degree -- publish the ranges, not only the cells they marked); `GET /world/truth` | A ground-truth ghost on the twin's map. Identical today, which is the point |
 | **R3** | **URDF + TF.** `base_link`, two wheel joints, `laser`, `camera_link` as child of a **revolute pan joint** (ST3215). §900's 11-14cm sensor-to-bumper offset becomes a transform, not a constant. Bearings compose through the pan joint -- the general form of what `goal_pose.py` does by hand | Frames drawn on the map view, swinging as the servo pans |
 | **R4** | **`picar_sim_hardware`.** Plus `diff_drive_controller`, `joint_state_broadcaster`, `twist_mux` with `AGENT-HARNESS.md` §4.1's order as priorities, and `sim_scan_node` republishing `/world/scan` as `sensor_msgs/LaserScan`. **Exactly one writer to the wheels** from here | D-pad drives through the whole ROS chain; grabbing it mid-mission still ends `preempted`, still names `twin-dpad`, still lapses on silence |
@@ -280,6 +280,71 @@ real socket**, a strictly stronger test than before.
 
 `FEATURES.md` sections 2-3 carry a correction banner and have not been
 rewritten.
+
+### 3.3 R1 as built (2026-09-25): the answer was the turn's SIZE
+
+**The premise was incomplete.** R1 was framed as "R0 unblocks P25's A/B of
+dead-reckoning". Run for real, the first measurement showed something R0 did
+not touch: **every LEFT/RIGHT the brain sent was still the executor's default
+90 degrees** -- `safety.check_and_execute(action)` passed no angle -- and
+against the tier's 10-degree centre band a 90-degree turn overshoots any
+target inside an 80-degree cone. Over sixteen off-axis starts 4-6 cells from
+the backpack, with a detector landing every frame, quarter turns closed ZERO
+distance and flipped LEFT/RIGHT on 52 of 60 steps. So memory was never the
+first problem; the action had no size.
+
+**Built** (user's choice: bearing-sized, over a fixed 15-degree step):
+
+* **A turn chosen from a bearing turns BY that bearing** -- `turn_deg` on the
+  tier's scene, `turn_for()` clamping to 5-90 degrees, and `ConstrainedAgent`
+  passing it as `angle`. Set by the local steer rung, the dead-reckoning rung,
+  and **the cloud's own turns when a local bearing agrees on the side** --
+  the cloud keeps the direction (1.11), but `/navigate` answers with no
+  magnitude, so a correct "it's to the left" had been going out as a blind
+  quarter turn. A scan, a held goal or a disagreeing cloud keeps the default:
+  no size nobody measured.
+* **1.12's synthetic detections, built at last.** A tiered mission on the Sim
+  tab had been loading YOLO and CLIP and running them on raycaster renders --
+  forbidden, and blind, so the tier could never steer in the sim. Frames now
+  carry `detections` (bearing and range, from the geometry the picture is
+  drawn from, out to the renderer's horizon), `FrameReportedPipeline` reads
+  them, and `brain_server` picks it by the frame's `metadata.source` -- no
+  model loads. The panel's Models line reads "sim ground truth" and every tier
+  frame carries `synthesised: true` (a flag that existed, hardcoded False, for
+  exactly this).
+* **Readouts**: `status.turns` (count, reversals, last size), shown on the
+  Remote brain panel as "LEFT 23°" and "N made, M reversed the one before".
+
+**Measured through the whole mission path** (`tests/test_bearing_turns.py`,
+`python -m tests.demo_hold_bearing_ab`), collar included:
+
+| turns | detector | closed (cells) | reversals |
+|---|---|---|---|
+| bearing-sized | every frame | **4.06** | **0.6** |
+| quarter (pre-R1) | every frame | -1.23 (ends further away) | 4.8 |
+
+All twelve starts whose straight line clears the kitchen doorway **arrive**.
+The four whose line clips the door jamb stop at it, correctly -- going around
+is path planning, which is nav2's job; a test pins that as **R6's acceptance
+case** and says to promote it when it starts failing.
+
+**What R1 did NOT fix, and it is P25's actual premise.** With a detector that
+lands one frame in three, *everything* fails (~0.8 cells, sized or not). Two
+causes, both measured: on a blind frame the tier SEARCHES with a quarter turn,
+which spins the target out of view before the next sighting; and
+dead-reckoning (`tier_hold_bearing`) cannot bridge it, because perception
+passes no range, so `goal_pose.py` anchors a DIRECTION -- exact under
+rotation (verified: turn 60 away and it answers "RIGHT 60"), useless once the
+robot drives. **`tier_hold_bearing` stays OFF**: with sized turns and a good
+detector it makes things worse (0.6 -> 12.8 reversals). The repair is to pass
+range so the anchor is a POINT (`goal_pose.py` already supports it), and not
+to scan on the frames right after a sighting -- or to let R6 own it, where a
+sighting becomes a map-frame goal nav2 pursues, which is P7c item 2's design.
+
+**A correction to an earlier number.** A standalone probe run before this
+build reported 4.7 cells for the 1-in-3 case. It sized EVERY turn from ground
+truth -- search turns included -- and so leaked the answer into turns that
+have no bearing. The full-path figure above is the honest one.
 
 ## 4. Honest residue -- what the twin cannot tell you
 

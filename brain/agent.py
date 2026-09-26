@@ -226,7 +226,16 @@ class ConstrainedAgent:
             # with a sensor this returns immediately and robot/safety.py
             # remains the only thing that can veto a move.
             self._vision_proximity_veto(action, scene)
-            result = self.safety.check_and_execute(action)
+            # R1: a turn chosen from a measured bearing carries its SIZE.
+            # Without it every LEFT/RIGHT was the executor's default 90
+            # degrees, which overshoots any target inside an 80-degree cone
+            # and is what made the tier flip on 52 of 60 steps. A scene with
+            # no `turn_deg` (a scan, a cloud answer, the rule-based policy)
+            # gets exactly the call it always did.
+            kwargs = {}
+            if action in ("LEFT", "RIGHT") and scene.get("turn_deg"):
+                kwargs["angle"] = int(scene["turn_deg"])
+            result = self.safety.check_and_execute(action, **kwargs)
             executed = True
         except SafetyViolation as e:
             result = str(e)

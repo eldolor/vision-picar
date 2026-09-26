@@ -1,94 +1,95 @@
-"""Does dead-reckoning a bearing help when the detector is intermittent?
+"""P25's A/B, answered -- and the answer was about turn SIZE, not memory.
 
-**IT CANNOT ANSWER THAT YET, and the reason is the finding.** Both arms come
-back having closed ZERO distance and having never gone FORWARD: the sim
-turns in 90-degree quanta against `CENTER_BAND_DEG` of 10, so a target off a
-cardinal direction can never be centred -- each turn overshoots and flips
-the sign of the error. Kept, rather than deleted, because it is the harness
-that will answer the question the moment C2 (continuous pose) lands, and
-because a demo that reproduces a blocker is worth more than a note saying
-one exists. Run it after C2 and the FORWARD column should stop being empty.
+    python -m tests.demo_hold_bearing_ab
 
-Both arms drive the REAL MockRobot, so the odometry is genuine -- that is the
-whole reason P25 says build this in the sim: `TeleopRobot` has no encoders
-and the feature is inert on a phone walk.
+P25 asked whether dead-reckoning a bearing between detections stops the
+tier's command changing every frame. This harness could not answer while
+the sim turned in 90-degree quanta; R0 made the pose continuous, and the
+first honest run showed the premise was incomplete: every LEFT/RIGHT the
+brain sent was STILL the executor's default 90 degrees, which against a
+10-degree centre band overshoots any target inside an 80-degree cone. So
+R1 (`PLAN-ros-alignment.md`) made a turn chosen from a bearing turn BY that
+bearing, and this now prints the comparison that justified it.
 
-Perception is synthesised rather than run, and deliberately so. 1.12 forbids
-reading a detector's output on raycaster frames, so a real YOLOE run here
-would be a number that means nothing. Instead the bearing is computed from
-the grid's own geometry -- which makes it CORRECT -- and then withheld on a
-fixed schedule, which is the thing under test: a detector that sees the
-target only sometimes.
+Everything runs through the WHOLE mission path -- `MissionRunner` ->
+`VisionAgent` -> `robot/safety.py`'s collar -> `MockRobot` -- because the
+defect lived in the seam between the tier and the executor. Perception is
+`FrameReportedPipeline`, 1.12's synthetic detections, optionally withheld on
+a schedule to model a detector that lands only some frames. Scored on
+distance closed and turn reversals, never `median_command_run` alone.
 
-Scored on DISTANCE TO TARGET, not on command stability. P25's own
-median_command_run is confounded -- a degenerate spin maximises it -- so the
-objective has to be whether the robot actually got closer.
+Measured 2026-09-25, twelve clear-line starts plus four whose line clips
+the door jamb (see `tests/test_bearing_turns.py`):
+
+    sized turns     closed ~4.1 cells, ~1 reversal, all clear starts arrive
+    quarter turns   ends FURTHER away than it started, ~5 reversals
+
+Dead-reckoning (`tier_hold_bearing`) is worth little once turns are sized:
+each sighting fully corrects the heading, so there is less for memory to
+bridge. It stays OFF.
 """
+
+import logging
 import math
-import sys
+import statistics
 
-sys.path.insert(0, "/Users/anshugaind/vision-picar")
-
-from brain.perceive import ABSENT, DETECTED, Box, Candidate, Detection, Perception
+from brain.perceive import ABSENT, FrameReportedPipeline, Perception
 from brain.tiered import TieredVision
-from control.walk_eval import compute_metrics
-from robot.factory import get_robot
+from control.mission_runner import MissionRunner
+from sim.maps.starter_house import build_starter_world
+from sim.mock_robot import MockRobot
+from tests.conftest import mock_world_for
+from tests.test_bearing_turns import (
+    GOAL, STARTS, STEPS, TARGET, _DropTurnSize, _quiet_cloud)
 
-TARGET = "red backpack"
-STEPS = 40
-SEE_EVERY = 3          # the detector lands one frame in three
 
+class _Intermittent(FrameReportedPipeline):
+    """A detector that lands one frame in `every` -- P25's actual premise."""
 
-class GeometricStream:
-    """A correct bearing from the grid, withheld on a schedule."""
-
-    def __init__(self, world, goal):
-        self.world, self.goal, self.i = world, goal, -1
-        self.seen = 0
+    def __init__(self, target, every):
+        super().__init__(target)
+        self.every, self.i = every, -1
 
     def perceive(self, frame):
         self.i += 1
-        if self.i % SEE_EVERY:
-            return Perception(status=ABSENT, candidates=[], best=None)
-        gx, gy = self.goal
-        dx, dy = gx - self.world.robot_x, gy - self.world.robot_y
-        world_deg = math.degrees(math.atan2(dy, dx))
-        heading = {"E": 0, "S": 90, "W": 180, "N": 270}[self.world.heading.name]
-        bearing = (world_deg - heading + 180) % 360 - 180
-        self.seen += 1
-        det = Detection(box=Box(0, 0, 10, 10), label=TARGET, confidence=0.9)
-        c = Candidate(detection=det, similarity=0.9, bearing_deg=bearing)
-        return Perception(status=DETECTED, candidates=[c], best=c)
+        if self.i % self.every:
+            return Perception(status=ABSENT, synthesised=True)
+        return super().perceive(frame)
 
 
-def run(hold_bearing):
-    robot = get_robot()
-    world = robot.world
-    goal = next(p for p, name in world.objects.items() if name == TARGET)
-    start = math.dist((world.robot_x, world.robot_y), goal)
-    tier = TieredVision(GeometricStream(world, goal), lambda f: {},
-                        hold_bearing=hold_bearing, hold_goal=True,
-                        steer_on_sight=True, hold_bearing_max_m=1.0)
-    entries = []
-    for _ in range(STEPS):
-        scene = tier({"odometry": robot.get_odometry()})
-        action = scene.get("safest_direction")
-        entries.append({"navigate": {"action": action}})
-        if action == "FORWARD":
-            robot.drive_forward(50)
-        elif action == "LEFT":
-            robot.turn_left(50)
-        elif action == "RIGHT":
-            robot.turn_right(50)
-    end = math.dist((world.robot_x, world.robot_y), goal)
-    return compute_metrics(entries), start, end, tier._dead_reckoned
+def run(start, *, sized, every, hold):
+    x, y, off = start
+    grid = build_starter_world()
+    grid.x, grid.y = x, y
+    grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
+    robot = MockRobot(grid, render=False)
+    tier = TieredVision(_Intermittent(TARGET, every), _quiet_cloud,
+                        steer_on_sight=True, hold_goal=True,
+                        hold_bearing=hold, hold_bearing_max_m=1.0)
+    runner = MissionRunner(robot, target_object=TARGET, max_steps=STEPS,
+                           policy="tiered",
+                           vision_fn=tier if sized else _DropTurnSize(tier),
+                           world=mock_world_for(robot))
+    before = math.dist((grid.x, grid.y), GOAL)
+    runner.start()
+    while runner.tick():
+        pass
+    return before - math.dist((grid.x, grid.y), GOAL), runner.status()["turns"]["reversals"]
 
 
-print(f"target {TARGET!r}, {STEPS} steps, detector lands 1 frame in {SEE_EVERY}\n")
-print(f"{'hold_bearing':13s} {'start':>6s} {'end':>6s} {'closed':>7s} "
-      f"{'med run':>8s} {'dominant':>9s} {'reckoned':>9s}  spread")
-for hold in (False, True):
-    m, start, end, dr = run(hold)
-    print(f"{str(hold):13s} {start:6.1f} {end:6.1f} {start - end:+7.1f} "
-          f"{m['median_command_run']:>8} {m['dominant_action_share']:>9.2f} "
-          f"{dr:>9}  {m['action_spread']}")
+def main():
+    logging.disable(logging.WARNING)  # the collar's vetoes are expected here
+    print(f"{len(STARTS)} starts, {STEPS} steps, target {TARGET!r}\n")
+    print(f"{'turns':>8} {'detector':>9} {'hold':>5} {'closed':>7} {'reversals':>10}")
+    for every in (1, 3):
+        for sized in (True, False):
+            for hold in (False, True):
+                rs = [run(s, sized=sized, every=every, hold=hold) for s in STARTS]
+                print(f"{'sized' if sized else 'quarter':>8} "
+                      f"{'1 in ' + str(every):>9} {str(hold):>5} "
+                      f"{statistics.mean(r[0] for r in rs):>7.2f} "
+                      f"{statistics.mean(r[1] for r in rs):>10.1f}")
+
+
+if __name__ == "__main__":
+    main()

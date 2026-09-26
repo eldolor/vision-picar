@@ -1297,7 +1297,16 @@
       BRAIN_OUTCOME_CLASS[outcome]);
     setBrainText("brain-tel-step",
       status.step == null ? null : status.step + (status.max_steps ? " / " + status.max_steps : ""));
-    setBrainText("brain-tel-action", status.last_action);
+    // R1: a turn names its size. "LEFT 23°" is a bearing-sized correction;
+    // a bare "LEFT" is the executor's default quarter turn (a scan, or a
+    // cloud answer with nothing local to size it by).
+    const t = status.turns || null;
+    const sized = t && t.last_turn_deg && (status.last_action === "LEFT" || status.last_action === "RIGHT");
+    setBrainText("brain-tel-action", sized
+      ? status.last_action + " " + t.last_turn_deg + "\u00B0" : status.last_action);
+    setBrainText("brain-tel-turns", t
+      ? t.count + " made, " + t.reversals + " reversed the one before"
+      : null);
     setBrainText("brain-tel-vision", status.vision_failures || 0,
       status.vision_failures ? "alert" : null);
     setBrainText("brain-tel-rooms",

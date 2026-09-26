@@ -1039,10 +1039,11 @@ def capture_tiered(monkeypatch, wrapped=None):
 
     seen = {}
 
-    def fake_tiered(target, cloud_vision_fn, config):
+    def fake_tiered(target, cloud_vision_fn, config, simulated=False):
         seen["target"] = target
         seen["cloud_vision_fn"] = cloud_vision_fn
         seen["config"] = config
+        seen["simulated"] = simulated
         return wrapped or (lambda frame: {})
 
     monkeypatch.setattr(bs, "_tiered_vision_fn", fake_tiered)
@@ -1054,6 +1055,10 @@ def test_the_tiered_policy_wraps_the_cloud_call_rather_than_replacing_it(tmp_pat
     in FRONT of it. If the tier replaced it, deliberation would be gone
     rather than rationed."""
     import control.brain_server as bs
+    # A REAL camera: the model-loading path is what is under test, and a
+    # MockRobot is now recognised as a simulator and given synthetic
+    # perception instead (1.12, R1).
+    monkeypatch.setattr(bs, "_frames_are_simulated", lambda robot: False)
 
     seen_model = capture_model_id(monkeypatch)
     seen_tier = capture_tiered(monkeypatch)
@@ -1084,6 +1089,10 @@ def test_the_tiered_policy_passes_the_configured_trigger_discipline(tmp_path, mo
     """6.1's hysteresis is the finding most likely to be skipped, so it has
     to be reachable without editing code."""
     import control.brain_server as bs
+    # A REAL camera: the model-loading path is what is under test, and a
+    # MockRobot is now recognised as a simulator and given synthetic
+    # perception instead (1.12, R1).
+    monkeypatch.setattr(bs, "_frames_are_simulated", lambda robot: False)
 
     capture_model_id(monkeypatch)
     seen = capture_tiered(monkeypatch)
@@ -1107,6 +1116,10 @@ def test_a_brain_without_the_perception_models_refuses_at_start_not_mid_tick(tmp
     so this is a normal state for a fresh checkout -- and the answer to it
     has to be a 400 naming the pip command, before any motor turns."""
     import control.brain_server as bs
+    # A REAL camera: the model-loading path is what is under test, and a
+    # MockRobot is now recognised as a simulator and given synthetic
+    # perception instead (1.12, R1).
+    monkeypatch.setattr(bs, "_frames_are_simulated", lambda robot: False)
     from brain.perceive import PerceptionUnavailable
 
     monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
@@ -1136,6 +1149,10 @@ def test_a_broken_weights_file_is_also_a_start_time_refusal(tmp_path, monkeypatc
     """Not only the ImportError path: a named detector that will not load is
     the same class of problem and must not become three vision failures."""
     import control.brain_server as bs
+    # A REAL camera: the model-loading path is what is under test, and a
+    # MockRobot is now recognised as a simulator and given synthetic
+    # perception instead (1.12, R1).
+    monkeypatch.setattr(bs, "_frames_are_simulated", lambda robot: False)
 
     monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -1379,3 +1396,59 @@ def test_health_reports_the_gate_a_mission_would_use(tmp_path):
         h = client.get("/health").json()
         assert h["perception_match_probability"] == 0.9
         assert h["perception_match_margin"] == 0.02
+
+
+# ---------- R1: the simulator gets synthetic perception, never a model ----------
+
+
+def test_a_simulated_robot_gets_synthetic_perception_and_loads_no_model(tmp_path, monkeypatch):
+    """1.12: no detector runs on a raycaster render. Before R1 a tiered
+    mission against the sim loaded YOLO and CLIP and ran them on renders --
+    forbidden, and blind, so the tier never steered there. Now the model
+    loader is never reached and the readout names what is actually seeing."""
+    import control.brain_server as bs
+    from brain.perceive import FrameReportedPipeline
+
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
+
+    def refuse(*a, **k):
+        raise AssertionError("a model was loaded for a simulated robot")
+
+    monkeypatch.setattr("brain.perceive.pipeline_for", refuse)
+    built = {}
+    real = bs.tiered_vision_fn_for
+
+    def spy(target, cloud, *, pipeline=None, **kw):
+        built["pipeline"] = pipeline
+        return real(target, cloud, pipeline=pipeline, **kw)
+
+    monkeypatch.setattr(bs, "tiered_vision_fn_for", spy)
+    app = bs.create_app(config_path=tiered_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()),
+                        world_factory=mock_world_for)
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={
+            "target_object": "red backpack", "policy": "tiered"})
+        client.post("/mission/stop")
+
+    assert resp.status_code == 200, resp.text
+    assert isinstance(built["pipeline"], FrameReportedPipeline)
+
+
+def test_a_real_camera_is_never_mistaken_for_the_simulator():
+    """The failure that matters in this direction is steering a real robot
+    on detections nobody measured, so anything that is not a stamped sim
+    frame -- including a camera that raises -- reads as real."""
+    import control.brain_server as bs
+
+    class Raises:
+        def get_camera_frame(self):
+            raise RuntimeError("stalled")
+
+    class Real:
+        def get_camera_frame(self):
+            return {"room": "unknown", "metadata": {"source": "teleop"}}
+
+    assert bs._frames_are_simulated(RecordingRobot(fresh_mock_robot())) is True
+    assert bs._frames_are_simulated(Real()) is False
+    assert bs._frames_are_simulated(Raises()) is False

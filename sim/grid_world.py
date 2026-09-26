@@ -141,12 +141,14 @@ MAX_SUBSTEP_RAD = math.radians(5)
 # one-cell step into the last free cell from being logged as a collision.
 TRAVEL_EPS = renderer.FPV_STEP
 
-# How far simulated perception reaches, in cells. Three because that is what
-# the cell walk this replaced looked along, so a mission's step count stays
-# comparable across the change -- and because a detector has a range: the
-# corpus walks find the target from roughly a metre, not from across the
-# house. It bounds WHAT is reported; the field of view and occlusion come
-# from the renderer, so it can never report something the picture hides.
+# How close an object must be to count as FOUND by the rule-based policy
+# (`objects_visible`), in cells. Three because that is what the cell walk
+# this replaced looked along, so that policy's step counts stay comparable.
+# It is an arrival radius, NOT a detection range: `detections` reports
+# everything the picture shows, out to the renderer's horizon, because that
+# is what a detector does (R1 learned this the hard way -- see below). Field
+# of view and occlusion come from the renderer either way, so neither can
+# report something the picture hides.
 SIM_PERCEPTION_RANGE_CELLS = 3.0
 
 
@@ -457,18 +459,40 @@ class GridWorld:
         shows the backpack and a perception field that denies it would be
         exactly the disagreement the renderer was ported to Python to end.
         """
-        visible = [
-            obj["name"]
+        # Everything in the picture, beyond the robot's own footprint (an
+        # object sharing its cell is underneath it, and the renderer's own
+        # test -- angle to a point at distance zero -- calls it dead ahead).
+        in_view = [
+            obj
             for obj in reversed(renderer._visible_objects(
                 self.layout, self.objects, self.x, self.y, self.view_angle()))
-            # Beyond the robot's own footprint: an object sharing its cell
-            # is underneath it, and the renderer's own test (angle to a point
-            # at distance zero) would call it dead ahead.
-            if ROBOT_HALF_CELL < obj["dist"] <= SIM_PERCEPTION_RANGE_CELLS
+            if ROBOT_HALF_CELL < obj["dist"] <= renderer.FPV_MAX_DIST
         ]
         frame = {
             "room": self.room_at(self.robot_x, self.robot_y),
-            "objects_visible": visible,
+            # Close enough to count as FOUND -- the rule-based policy's
+            # arrival test, see SIM_PERCEPTION_RANGE_CELLS.
+            "objects_visible": [obj["name"] for obj in in_view
+                                if obj["dist"] <= SIM_PERCEPTION_RANGE_CELLS],
+            # Every object IN THE PICTURE with where it is (R1): bearing off
+            # the camera axis, positive to the right, and range in metres.
+            # Out to the renderer's own horizon rather than the 3-cell
+            # "found" radius above -- a detector reports what the frame
+            # shows, and the corpus walks detect targets from across a room,
+            # not from 90cm. The first cut used the 3-cell cap and the tier
+            # never saw a target it had to approach. This
+            # is 1.12's "the sim synthesises detections from grid truth",
+            # built at last -- what a detector's box would give the tier on
+            # a real frame, read off the geometry the picture was drawn from
+            # so the two cannot disagree. `brain/perceive.py`'s
+            # `FrameReportedPipeline` is the only consumer; nothing on the
+            # hardware path reads it, because nothing there has it.
+            "detections": [
+                {"label": obj["name"],
+                 "bearing_deg": round(math.degrees(obj["rel_angle"]), 2),
+                 "distance_m": round(obj["dist"] * 0.30, 3)}
+                for obj in in_view
+            ],
         }
         self._record(f"FRAME {frame}")
         return frame

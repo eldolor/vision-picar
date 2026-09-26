@@ -327,6 +327,15 @@ class MissionRunner:
         self._error: Optional[str] = None
         self._vision_failures = 0
         self._last_action: Optional[str] = None
+        # R1's readout (PLAN-ros-alignment.md). How many turns the mission
+        # has made, how many REVERSED the one before (LEFT straight after
+        # RIGHT or the reverse -- the flicker P25 measured by hand), and how
+        # far the last one was sized to. Reversals and distance closed are
+        # the honest pair; `median_command_run` alone rewards a spin.
+        self._turns = 0
+        self._reversals = 0
+        self._last_turn: Optional[str] = None
+        self._last_turn_deg: Optional[int] = None
         self._last_reasoning: Optional[str] = None
         # Phase P2's readouts, and the only thing in this file that knows
         # a tier exists at all. Both are whatever the last scene carried
@@ -406,6 +415,16 @@ class MissionRunner:
             self._last_action = result.action
             self._last_reasoning = self._describe(result)
             scene = result.scene or {}
+            if result.action in ("LEFT", "RIGHT"):
+                self._turns += 1
+                if self._last_turn and self._last_turn != result.action:
+                    self._reversals += 1
+                self._last_turn = result.action
+                # What was actually asked for: a bearing-sized turn, or None
+                # for the executor's default quarter turn (a scan, a cloud
+                # answer with nothing local to size it by).
+                size = scene.get("turn_deg")
+                self._last_turn_deg = int(size) if size else None
             # Held rather than overwritten with None: a tiered mission's
             # counters must survive a frame whose scene arrived from
             # somewhere else, or 6.3's "single number" would blink out
@@ -482,6 +501,8 @@ class MissionRunner:
                 "room_reached": self.memory.room_reached,
                 "complete": self.memory.is_complete(),
                 "last_action": self._last_action,
+                "turns": {"count": self._turns, "reversals": self._reversals,
+                          "last_turn_deg": self._last_turn_deg},
                 "last_reasoning": self._last_reasoning,
                 "rooms_visited": sorted(self.memory.visited_rooms),
                 "rooms_searched": sorted(self.memory.searched_rooms),

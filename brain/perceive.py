@@ -565,6 +565,11 @@ class Perception:
     reason: str = ""
     pan_deg: float = 0.0
     tilt_deg: float = 0.0
+    # True when no model produced this -- the simulator reported what its
+    # geometry says is visible (`FrameReportedPipeline`, 1.12). Carried on
+    # every tier frame so a recorded walk can never be scored as though the
+    # detector had run.
+    synthesised: bool = False
 
     @property
     def matched(self) -> bool:
@@ -576,14 +581,13 @@ class Perception:
 
     def as_dict(self) -> dict:
         """The shape that crosses the wire in phase C5, and that the twin
-        draws in 6.3. Marked `synthesised: False` for the same reason
-        `MockRobot` marks its own the other way -- no run may look as
-        though it exercised perception it never had."""
+        draws in 6.3. `synthesised` says whether a model produced it -- no
+        run may look as though it exercised perception it never had."""
         return {
             "status": self.status,
             "crop_source": self.crop_source,
             "reason": self.reason,
-            "synthesised": False,
+            "synthesised": self.synthesised,
             "pan_deg": self.pan_deg,
             "tilt_deg": self.tilt_deg,
             "bearing_deg": self.bearing_deg,
@@ -627,6 +631,81 @@ class RegionProposer(Protocol):
     """
 
     def propose(self, image: bytes) -> Sequence[Box]: ...
+
+
+class _Named:
+    """A name for 6.3's "Models" readout, and nothing else -- see
+    `FrameReportedPipeline`. The readout asks a backend for its `weights`
+    or `model_name`; this is a backend that has only a name."""
+
+    def __init__(self, name: str):
+        self.weights = self.model_name = name
+
+
+class FrameReportedPipeline:
+    """Perception for the SIMULATOR: the detections the frame reports, read
+    rather than computed. `PLAN-ros-alignment.md` R1.
+
+    1.12 settled what the sim is allowed to do with perception: "the sim
+    synthesises detections from grid truth and the sim leg tests the
+    detector's consumers, never the detector." This is that, and it had
+    never been built -- so a tiered mission on the twin's Sim tab loaded
+    YOLO and CLIP and ran them on raycaster renders, which is exactly what
+    1.12 forbids and which could never detect anything. The tier therefore
+    never steered in the sim, and R1's measurement had nowhere to run.
+
+    It reads `frame["detections"]` (`sim/grid_world.py`), whose bearings come
+    from the same geometry the picture is drawn from. Same `perceive(frame)
+    -> Perception` shape as `PerceptionPipeline`, so the tier cannot tell the
+    difference -- which is the point: what is under test is the CONSUMER.
+
+    **A frame that carries no `detections` key is UNAVAILABLE, never
+    ABSENT.** "This frame came from something that reports no detections" is
+    the absence of information; reading it as "the target is not here" would
+    let a real-camera frame masquerade as an empty sim room. The readout
+    names this backend "sim ground truth" so a person watching the panel can
+    never mistake it for a model.
+    """
+
+    NAME = "sim ground truth"
+
+    def __init__(self, target: str):
+        self.target = target.strip()
+        self.detector = _Named(self.NAME)
+        self.scorer = None
+        self.proposer = None
+        self.crop_source = "frame_reported"
+        self.vocabulary = None
+
+    def perceive(self, frame: dict) -> Perception:
+        detections = frame.get("detections")
+        if detections is None:
+            return Perception(status=UNAVAILABLE, synthesised=True,
+                              reason="frame reports no detections")
+        needle = self.target.lower()
+        matches = [d for d in detections
+                   if needle and needle in str(d.get("label", "")).lower()]
+        if not matches:
+            return Perception(status=ABSENT, crop_source=self.crop_source,
+                              synthesised=True)
+        # Nearest first: the one a robot would approach, and the one whose
+        # box would be largest.
+        matches.sort(key=lambda d: d.get("distance_m") or float("inf"))
+        candidates = [
+            Candidate(
+                detection=Detection(box=Box(0, 0, 1, 1), label=str(d["label"]),
+                                    confidence=1.0),
+                similarity=1.0,
+                bearing_deg=d.get("bearing_deg"),
+            )
+            for d in matches
+        ]
+        return Perception(status=DETECTED, candidates=candidates,
+                          best=candidates[0], crop_source=self.crop_source,
+                          synthesised=True)
+
+    def close(self) -> None:
+        return None
 
 
 class PerceptionUnavailable(Exception):

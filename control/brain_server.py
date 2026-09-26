@@ -246,7 +246,30 @@ def _perception_available() -> bool:
         return False
 
 
-def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict):
+def _frames_are_simulated(robot: RobotInterface) -> bool:
+    """Does this robot's camera show a raycaster render?
+
+    Asked once, at mission start, because it decides which perception the
+    tiered policy may use -- and 1.12 makes that a rule rather than a
+    preference: no detector runs on a render. Read off the frame's own
+    `metadata.source`, which is PROVENANCE: `MockRobot` stamps "sim" and
+    nothing with a real camera does. Using provenance to pick a perception
+    source is what the field is for; a policy deciding where to drive on it
+    would not be.
+
+    Any failure answers False -- "assume a real camera" -- because the cost
+    of that mistake is loading models that then see nothing, and the cost of
+    the opposite is steering a real robot on detections nobody measured.
+    """
+    try:
+        frame = robot.get_camera_frame()
+    except Exception:  # noqa: BLE001 -- see docstring
+        return False
+    return (frame.get("metadata") or {}).get("source") == "sim"
+
+
+def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
+                      simulated: bool = False):
     """Wrap the cloud vision_fn in brain/tiered.py's trigger discipline.
 
     **This is where the optional heavy dependencies are actually loaded**,
@@ -285,6 +308,17 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict):
         # the panel and in the walk so the next walks measure it.
         "corroboration_bar": config["tier_corroboration_bar"],
     }
+    if simulated:
+        # 1.12, built at last (PLAN-ros-alignment.md R1): the simulator
+        # reports what its geometry says is visible, and nothing loads YOLO
+        # or CLIP to look at a raycaster wall. Before this a tiered mission
+        # on the Sim tab ran both models on renders -- forbidden, and blind,
+        # so the tier could never steer there. The panel's Models line reads
+        # "sim ground truth", and every tier frame carries `synthesised`.
+        from brain.perceive import FrameReportedPipeline
+
+        return tiered_vision_fn_for(target, cloud_vision_fn,
+                                    pipeline=FrameReportedPipeline(target), **kwargs)
     pipeline_kwargs = {}
     if config["perception_detector"]:
         pipeline_kwargs["weights"] = config["perception_detector"]
@@ -420,7 +454,8 @@ def create_app(
                 prompt_variant=prompt_variant,
             )
             if req.policy == "tiered":
-                vision_fn = _tiered_vision_fn(req.target_object, vision_fn, config)
+                vision_fn = _tiered_vision_fn(req.target_object, vision_fn, config,
+                                              simulated=_frames_are_simulated(robot))
 
         kwargs = dict(
             target_object=req.target_object,
