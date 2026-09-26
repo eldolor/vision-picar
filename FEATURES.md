@@ -8,17 +8,15 @@ built and `CLAUDE.md` tracks *status*, this file explains *how each
 button actually works* -- which process it talks to, which route, and
 what comes back.
 
-> **Correction, 2026-09-25 -- parts of this document are now wrong.** The
-> ROS alignment (`PLAN-ros-alignment.md`) removed the **Camera tab**
-> (section 2), the Sim tab's **Local brain** panel and its **Vision
-> Autopilot** (section 3), and the Sim tab's top-down grid canvas and its
-> room / facing / free-cells / doorway readouts. The Guide tab, the D-pad,
-> the Remote brain panel, the depth strip, the odometry readout and the
-> world map are unchanged. Sections 2 and 3 have NOT been rewritten yet;
-> read them as history until they are.
+> **Sections 2 and 3 rewritten 2026-09-25** for the ROS alignment
+> (`PLAN-ros-alignment.md`): the Camera tab is gone, and the Sim tab lost its
+> hardcoded map, its cell-shaped readouts, the JS local brain and the JS
+> Vision Autopilot, and gained R0-R2's turn step, sized turns, spin and
+> blocked readouts, and a self-reconnecting brain link. The rest of the
+> document predates that and is unchanged.
 
 The app has three tabs: **Guide**, **Sim**, **Settings**. This
-doc covers all four, then the AWS deployment they run against, in the
+doc covers all three, then the AWS deployment they run against, in the
 most detail for Guide's two modes since that's where a phone actually
 exercises the brain/control loop against real pixels.
 
@@ -586,141 +584,122 @@ physically moves under this mode anyway.
 
 ---
 
-## 2. Camera tab -- Analyze a photo
+## 2. Camera tab -- removed 2026-09-25
 
-The original, one-shot vision feature, unaffected by anything above.
-
-- `<input type="file" accept="image/*" capture="environment">` -- the
-  native camera picker, which (unlike Guide's live `getUserMedia`) works
-  fine over plain `http://`, no secure-context requirement.
-- Optional target-object text field.
-- **Backend:** `POST /analyze` on the vision-analyze service
-  (`describe_image_bytes()` if no target given, model
-  `us.anthropic.claude-sonnet-4-5-20250929-v1:0` by default -- the one
-  route still on a Claude model rather than Nova Lite, since it's a
-  one-off analysis rather than a several-times-a-second loop and
-  benefits from the stronger model). Response includes `room_guess`
-  (`identify_room()` against the detected objects).
-- Downscaled to 1568px long edge before upload (`PHOTO_MAX_CAPTURE_DIM`)
-  -- Anthropic's own server-side downscaling threshold, so anything
-  larger just burns upload time and per-pixel Bedrock cost for zero
-  quality gain.
-- A single request/response; no loop, no camera left open, nothing to
-  Stop.
+Kept as a numbered section so the rest of this document's numbers stay put.
+It was one panel -- take a photo, get a description -- calling `/describe`
+with `/analyze` as a fallback, and the user asked for it to go: Guide's
+"Guide me" does the same job live. **Both routes are still deployed and
+tested** in `service/vision_analyze/`; nothing in the twin calls them.
 
 ---
 
-## 3. Sim tab -- the grid-world twin
+## 3. Sim tab -- the simulated robot, and the brain that drives it
 
-Everything here talks to `robot/server.py` (not the vision-analyze
-service directly, except Vision Autopilot's per-tick calls) and, for the
-grid rendering, a JS port of `sim/grid_world.py`'s starter-house layout.
+Everything here talks to `robot/server.py` or `control/brain_server.py` over
+HTTP. **The page knows nothing about the house**: no copy of the layout, no
+room boundaries, no compass tables, no renderer -- every panel reads a route
+the robot serves, which is what lets the same tab show the grid-world sim
+today and a real robot with a SLAM map later. (Until 2026-09-25 it carried a
+hardcoded copy of the starter house for a top-down view, which drew a
+finished map at mission start; N1's discovered map replaced it.)
 
-- **Top-down canvas + telemetry** -- room, facing, free space, doorway,
-  visible objects, live safety status. Rendered from the same `/frame`,
-  `/distance`, `/action` calls every other panel here uses.
-- **Manual control (D-pad)** -- direct `POST /action` / `POST /stop`
-  calls. Every move passes through `robot/safety.py`'s
-  `SafetyController` on the server, the same veto path an AI decision
-  gets -- a human driving over Wi-Fi has the same collision protection.
-  Disabled until Settings' robot connection succeeds.
-- **Remote brain** (`control/brain_server.py`'s real `MissionRunner`) --
-  `POST {brainUrl}/mission/start` with a target, a **policy** and an
-  optional fault drill, then this panel becomes a pure *observer*, polling
-  `GET /mission/status` for step count, last action, rooms searched, a
-  log tail, and following the robot on the map. Closing the tab or
-  reopening it later shows the mission further along or finished -- the
-  proof that the mission is a service call, not page state (B4). A
-  **failsafe drill picker** (`control/drills.py`, gated off by
-  `brain.allow_drills: false`) injects exactly one fault --
-  vision-service errors, vision-service hangs, or a hung brain loop --
-  so the two guards that can't be provoked by pressing anything
-  (B3.2, B3.3) can still be watched firing, always ending with the robot
-  stopped. A **watchdog readout** shows `robot/server.py`'s own B3.1
-  silence counter.
+### Manual control
 
-  A **policy picker** chooses between the free rule-based explorer, the
-  **vision policy** (`brain/vision_agent.py`), which spends one `/navigate`
-  call per step, and the **tiered policy** (below). Picking either paid one
-  sends the Guide tab's `model_id` and `prompt_variant` along with the start,
-  and reveals those two pickers -- the Remote brain panel is their second
-  consumer -- with a one-tap jump to them. Before you spend anything the panel
-  states, in words, which model and which wording the mission would ask with,
-  resolved the same way the server resolves them (your pick, then whatever the
-  brain pins, then the vision service's own default). Both are validated
-  against the service's published allow-lists in a single round trip at start,
-  so a typo is a refusal rather than three burnt vision failures.
+- **D-pad** -- `POST /action` / `POST /stop`, each through `robot/safety.py`'s
+  collar on the server, so a person driving over Wi-Fi gets the same
+  collision protection an AI decision does. Every command names its driver
+  (`x-driver: twin-dpad`), and M4's authority order means a tap preempts a
+  running mission.
+- **Turn step (15° / 45° / 90°)** -- how far LEFT and RIGHT turn, sent as
+  `/action`'s `angle`. Since R0 the pose is continuous, so this is how a phone
+  reaches a heading that is not a compass point. Remembered across reloads;
+  defaults to 90, what every tap sent before.
+- **Action log and Safety line** -- each move, its angle for turns
+  (`RIGHT 45°`), and why a refused one was refused (SAFETY VETO, PREEMPTED,
+  WATCHDOG).
 
-  The **tiered policy** (`brain/tiered.py` over `brain/perceive.py`, phase P2
-  of `PLAN-onboard-perception.md` 4.10) is the vision policy with a local
-  perception tier in front of it: a YOLO detector and a CLIP scorer run **in
-  the brain process** on every frame, for free, and the paid `/navigate` call
-  goes out only on `mission_start`, `candidate_sighting` or `cold_search`,
-  with two frames of hysteresis before an edge is believed. Five readouts
-  appear with it (§6.3 of that plan, plus §1.11a's), and vanish under any
-  policy with no perception tier rather than drawing zeroes:
+### Remote brain
 
-  - **Perception** -- the tri-state `detected` / `absent` / `unavailable`,
-    with the matched label and its bearing. `unavailable` is styled as a
-    fault and `absent` is not: "the frame was good and the thing is not in
-    it" and "I could not look" mean opposite things, and a wedged capture
-    must never read as a missing target.
-  - **CLIP margin** -- how much better the target string fits the crop than
-    the best distractor does. The *margin*, not the similarity: CLIP returns
-    a similarity rather than a probability, so a bare threshold will always
-    pick something.
-  - **Models** -- the detector and encoder by name, read off the loaded
-    backends. Change `brain.perception_detector` and this line changes, which
-    is what makes swapping one watchable.
-  - **Deliberation** -- cloud calls *and* frames, plus the live ratio. This
-    is the number the whole architecture is judged on ("a deliberation-call
-    counter that visibly does not climb every step"), and it is directly
-    comparable to the 4-6x measured over recorded walks. The mission log
-    marks each paid step `[cloud: <trigger>]`.
-  - **Corroboration** -- whether the local tier sees anything consistent with
-    a sighting the cloud has just claimed, at a **lower** bar (0.5) than the
-    0.8 needed to claim one alone, plus the running corroborated-of-claimed
-    tally. It exists because on the 209-frame search walk the cloud claimed
-    the target on 44 frames of which 34 were a storage bin in the wrong room,
-    and the local tier rejected all 34. **It is reported and enforces
-    nothing** -- the row says "not enforced" on every line, and the mission
-    believes the cloud exactly as it did before. §1.11a is an undecided
-    amendment, and this is how the next walks measure it without the panel
-    letting a measurement read as a decision. A free step (no cloud call, so
-    no claim) says so rather than holding the previous verdict.
+`POST {brainUrl}/mission/start`, then this panel only *observes*: it polls
+`GET /mission/status`, and the mission survives the tab closing (B4).
 
-  `ultralytics`/`torch` are an **optional** install
-  (`requirements-perception.txt`). A brain without them reports
-  `perception_available: false` on `/health`, the panel says so before you
-  press Start, and a tiered mission refuses at start with the pip command --
-  never mid-tick, where it would be counted as a vision failure and end the
-  mission reporting the wrong cause. The detector's *boxes* are deliberately
-  not drawn on the FPV canvas: those frames are raycaster renders, and a
-  detector run against them would produce a false positive signal rather than
-  a weak one.
-- **Local brain, rule-based** (`Explore` / `Find backpack` / `Reset
-  mission`) -- the frontier-preference exploration algorithm from
-  `brain/agent.py`, re-implemented in this page's JavaScript, driving
-  the same `/action` calls a human would via the D-pad. Free (no API
-  calls), deterministic, kept specifically because it needs no brain
-  service and is the fastest way to exercise the safety layer and
-  mission memory -- not on the hardware path, and not meant to be
-  extended further.
-- **Local brain, Vision Autopilot** -- the browser's own vision-in-the-
-  loop driver: since the grid-world sim has no real camera, a small
-  canvas raycaster (`renderFPV`, against the same map data the top-down
-  view uses) renders a synthetic first-person frame, POSTs it to
-  `/navigate` every ~2.5s with a target object, and executes whatever
-  action comes back through the same `commitAction()`/safety-veto path
-  every other mode uses. Never auto-starts; a visible call counter and a
-  step cap bound the cost. This is the mode Robot view's
-  `renderRobotOverlay` machinery was originally built for, reused
-  verbatim for real pixels.
+- **Start** is the panel's primary (blue) button and becomes a red **Stop**
+  while a mission runs. It is greyed only when the brain is unreachable, and
+  the page then says so and **retries every 5 seconds on its own** -- a
+  restarted brain used to leave Start dead until Connect was pressed in
+  Settings. Only a brain that does not answer (or a 502/503/504 from the
+  tunnel's proxy) counts as lost; one that answers with an error stays
+  connected so the error is shown.
+- **Policy picker** -- the free rule-based explorer (`brain/agent.py`, which
+  since the ROS alignment explores by the WORLD's pose in metres and builds
+  its scene from the depth grid -- no grid cells), the **vision policy** (one
+  paid `/navigate` call per step), or the **tiered policy** (below). The two
+  paid ones state the model and wording they will ask with before anything
+  is spent, and validate both at start.
+- **Drill picker** -- `control/drills.py`, off unless `brain.allow_drills`:
+  vision errors, vision hangs, or a hung brain loop, each ending with the
+  robot stopped.
+- **Telemetry** -- outcome, step, last action, vision failures, rooms, the
+  model's (or tier's) reason, the robot watchdog, who is driving, the last
+  refusal. Three R-phase additions:
+  - **Last action names a sized turn** -- `LEFT 23°` is a correction onto a
+    measured bearing (R1); a bare `LEFT` is a turn nothing sized.
+  - **Turns** -- `98 of 120 steps, 0 reversed the one before`, and **SPINNING
+    IN PLACE** in red when most steps were turns in one direction. Reversals
+    alone read a spin as success; the share is the other half (the runner
+    owns the rule).
+  - **Outcome `blocked`** -- the mission stopped itself after five FORWARDs in
+    a row were refused (`brain.stuck_after`), rather than pushing into a wall
+    until the step budget ran out. Going around is route planning -- nav2, R6.
 
-**Remote and Local brains are mutually exclusive**, enforced both
-directions: the twin refuses to start a local loop during a remote
-mission, and the brain server answers a second `/mission/start` with
-`409` if one is already running.
+**The tiered policy** (`brain/tiered.py` over `brain/perceive.py`) puts a local
+perception tier in front of the vision policy; the paid `/navigate` call goes
+out only on `mission_start`, `candidate_sighting` or `cold_search`. Against
+the **simulator no model runs**: the brain sees the frame is a render and
+reads `frame["detections"]` -- the simulator's own report of what its
+geometry shows (1.12: no detector on a rendered wall) -- through
+`FrameReportedPipeline`, and the hint and the Models line say **sim ground
+truth**. Against a real camera (Guide -> Robot view -> Drive via brain) the
+YOLOE detector and CLIP scorer run in the brain process. Its readouts,
+present only under this policy:
+
+- **Perception** -- `detected` / `absent` / `unavailable`, with label and
+  bearing; every frame carries `synthesised`, true in the sim.
+- **CLIP margin** -- the margin over the best distractor (real cameras only).
+- **Models** -- what is actually perceiving: `sim ground truth`, or the
+  detector and encoder by name.
+- **Deliberation** -- cloud calls *and* frames, the number the architecture
+  is judged on; paid steps are marked `[cloud: <trigger>]` in the log.
+- **Corroboration** -- §1.11a's verdict, **reported and not enforced**.
+- **Cloud pacing / in flight** -- which rule is pacing the cloud, and what
+  the robot does while a call is outstanding.
+
+A turn the tier chooses from a measured bearing turns **by** that bearing
+(R1); a search turn goes out at 45° so consecutive views overlap under the
+camera's 60-66° field (R1b).
+
+### What the robot senses
+
+Every readout here is a route the robot serves:
+
+- **Camera** -- `GET /frame`'s pixels, rendered server-side by
+  `sim/renderer.py` (the JS raycaster was deleted 2026-09-25). The
+  **frame source** line says `server`, or `none` if a backend sends no
+  pixels -- never a picture the page invented.
+- **Depth strip** (M2/M3) -- eight zones, the path zones the collar reads
+  outlined, and the clearance it compares.
+- **Odometry** -- path length and heading, continuous since R0.
+- **World map** (N1) -- `GET /world/map`, discovered as the robot drives:
+  free, wall and never-seen in three tones, with the robot drawn at
+  `GET /world/pose`.
+
+R2's `/wheels`, `/scan` and `/world/truth` are served but not drawn yet;
+they exist for the ROS nodes (R4) and SLAM's error readout (R5).
+
+**One brain drives at a time**: the brain server answers a second
+`/mission/start` with 409, and M4's authority order ranks the D-pad above
+any mission.
 
 ---
 
@@ -736,9 +715,10 @@ mission, and the brain server answers a second `/mission/start` with
   deployed ECS services once out of local dev). Optional; needed for
   Remote brain, recording, and Drive via brain.
 - **Cloud endpoint settings** -- the vision-analyze base URL + secret,
-  shared by Guide, Robot view's default sub-mode, Vision Autopilot, and
-  Camera-tab analysis. Enter the base URL only; each feature appends its
-  own route (`/analyze`, `/navigate`, `/guidance`) via `deriveServiceUrl()`.
+  shared by Guide's two modes (the Camera tab and the JS Vision Autopilot
+  that also used it were removed 2026-09-25). Enter the base URL only; each
+  feature appends its own route (`/navigate`, `/guidance`) via
+  `deriveServiceUrl()`.
 - **Share setup** -- a QR code encoding all of the above (URLs + secrets)
   so a second phone can be configured with no typing. Explicitly flagged
   in the UI: anyone who scans or photographs it gets the same access.
