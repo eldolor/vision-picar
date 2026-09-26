@@ -376,11 +376,12 @@ safety layer; any executed move resets the count.
    made **one** cloud call in total -- none after the block.
 
 **Found on the way, and it is R1b's first target.** A second live mission,
-from the clear start but facing 45 degrees with the backpack out of view,
-never found it by turning: SEARCH turns go out at the executor's default 90
-degrees against a 60-degree field of view, so from 45 the robot faces 45,
-135, 225, 315, 45... and east -- where the backpack is -- is never in the
-picture. **A 90-degree search step leaves a 30-degree blind gap between
+from the clear start but facing 135 degrees (south-east) with the backpack
+out of view, never found it by turning: SEARCH turns go out at the
+executor's default 90 degrees against a 60-degree field of view, so from 135
+the robot faces 135, 225, 315, 45, 135... and east -- where the backpack is
+-- is never in the picture. (First written up as "facing 45"; the pose
+readout says 135. The gap arithmetic is the same either way.) **A 90-degree search step leaves a 30-degree blind gap between
 views.** The spin guard then forced a FORWARD that took it off the door's
 row, and it ended `blocked` at a jamb about a metre short -- which is very
 likely what the user's own run did.
@@ -432,6 +433,14 @@ Two changes, each justified by the measurement before it:
 
 Pinned in `tests/test_bearing_turns.py` on the middle position's 57 offsets,
 confirmed red against the pre-R1b tier.
+
+**Live, on `536b13f`:** the exact mission that ended `blocked` a metre short
+before R1b -- (5.5, 7.5) facing 135 -- now reaches the backpack (0.00 cells
+from its centre) on 3 cloud calls. **It then spins**, and the Turns readout
+says so: in the sim **objects are not solid**, so the robot drives onto the
+backpack's cell, the target vanishes under its footprint, and the tier
+searches for it until the budget runs out. A real backpack would stop the
+collar; this is a sim fidelity gap that composes with P7e below.
 
 **Still open -- P25's actual premise.** With a detector landing one frame in
 three, sized turns now close 1.61 cells on average (0.83 before R1b), far
