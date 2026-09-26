@@ -52,6 +52,17 @@ logger = logging.getLogger("safety")
 # {"FORWARD", "LEFT", "RIGHT"} as part of writing hardware_robot.py, not
 # after the first collision.
 FORWARD_ACTIONS = {"FORWARD"}
+# R2b: checked against the lidar's REAR beams, by the user's decision
+# (PLAN-ros-alignment.md 3.10). Every way of backing up -- /action REVERSE
+# and a negative /wheels velocity alike.
+REVERSE_ACTIONS = {"REVERSE"}
+
+# How far the lidar (at the robot's centre) sits from the REAR bumper. The
+# scan measures from the centre, so this is subtracted before a rear range is
+# compared with `min_distance_cm`. 15cm is half the sim's 30cm robot; the real
+# deck-centre lidar is 11-14cm from either bumper -- measure it on the chassis
+# (R8), and at R3 it becomes a transform rather than a constant.
+LIDAR_TO_REAR_BUMPER_CM = 15.0
 
 # What counts as "the path the next move crosses" -- phase M3, reworked by
 # PLAN-onboard-perception.md section 5.1. The reason is geometry rather
@@ -292,6 +303,68 @@ class SafetyController:
 
         return self._to_bumper(self.robot.get_distance()), "distance_sensor"
 
+    def rear_clearance(self) -> Tuple[Optional[float], str]:
+        """How much room is behind the robot, from the lidar's rear beams --
+        phase R2b, by the user's decision.
+
+        The beams within the same half-angle as the forward path cone
+        (`PATH_HALF_ANGLE_DEG`) either side of dead astern, nearest return,
+        minus `LIDAR_TO_REAR_BUMPER_CM`. A beam with no return is clear. A
+        backend with no usable scan answers `(None, "no_rear_sensor")` and
+        the reverse proceeds -- today's behaviour, because refusing every
+        reverse on a lidar-less backend would make it undrivable rather than
+        safe. With a lidar fitted, this is what stands between a reverse
+        and whatever is behind.
+        """
+        get_scan = getattr(self.robot, "get_scan", None)
+        scan = get_scan() if get_scan is not None else None
+        if not scan or not scan.get("usable"):
+            return None, "no_rear_sensor"
+        a0, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
+        rear = []
+        for i, r in enumerate(scan["ranges_m"]):
+            if r is None:
+                continue
+            angle = (a0 + i * inc + 180.0) % 360.0 - 180.0   # -180..180, 0 ahead
+            if 180.0 - abs(angle) <= PATH_HALF_ANGLE_DEG:
+                rear.append(r)
+        if not rear:
+            return None, "scan_rear_no_target"
+        return max(0.0, round(min(rear) * 100.0 - LIDAR_TO_REAR_BUMPER_CM, 1)), "scan_rear"
+
+    def vet_wheel_velocity(self, left_rad_s: float, right_rad_s: float):
+        """Clamp a wheel-velocity command the way `check_and_execute()` vets
+        a verb -- phase R2b.
+
+        Decomposes the command into body velocity `v` and yaw rate `omega`
+        with the chassis constants the robot publishes, zeroes `v` if it
+        points into less than `min_distance_cm` of clearance (ahead from
+        `path_clearance()`, behind from `rear_clearance()`), and recomposes.
+        **Rotation is never clamped**: a differential chassis pivots within
+        its own footprint, which is the property that lets a robot facing a
+        wall turn away from it. Returns `(left, right, reason)`; `reason` is
+        None when nothing was clamped.
+        """
+        wheels = self.robot.get_wheel_state()
+        if not wheels.get("usable"):
+            return left_rad_s, right_rad_s, None
+        radius, track = wheels["wheel_radius_m"], wheels["track_width_m"]
+        v = (left_rad_s + right_rad_s) / 2.0 * radius
+        omega = (right_rad_s - left_rad_s) * radius / track
+        reason = None
+        if v > 0:
+            clearance, source = self.path_clearance()
+            if clearance is not None and clearance < self.min_distance_cm:
+                v, reason = 0.0, f"forward clamped: {clearance}cm < {self.min_distance_cm}cm ({source})"
+        elif v < 0:
+            clearance, source = self.rear_clearance()
+            if clearance is not None and clearance < self.min_distance_cm:
+                v, reason = 0.0, f"reverse clamped: {clearance}cm < {self.min_distance_cm}cm ({source})"
+        if reason is None:
+            return left_rad_s, right_rad_s, None
+        half = omega * track / 2.0
+        return (v - half) / radius, (v + half) / radius, reason
+
     def check_and_execute(self, action: str, **kwargs) -> dict:
         """
         Validates `action` against current sensor readings before
@@ -307,6 +380,15 @@ class SafetyController:
                     f"Blocked {action}: distance={distance}cm < "
                     f"min={self.min_distance_cm}cm ({source})"
                 )
+                logger.warning(msg)
+                raise SafetyViolation(msg)
+
+        if action in REVERSE_ACTIONS:
+            distance, source = self.rear_clearance()
+            if distance is not None and distance < self.min_distance_cm:
+                self.robot.stop()
+                msg = (f"Blocked {action}: rear clearance={distance}cm < "
+                       f"min={self.min_distance_cm}cm ({source})")
                 logger.warning(msg)
                 raise SafetyViolation(msg)
 

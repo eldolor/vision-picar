@@ -269,6 +269,12 @@ class MockRobot(RobotInterface):
             **self.get_wheel_state(),
         }
 
+    def advance(self, dt: float) -> None:
+        """The robot server's control loop lets time pass here (R2b): the
+        simulator has no clock of its own, so a standing wheel command only
+        moves the robot when someone integrates it."""
+        self.step(dt)
+
     def get_wheel_state(self) -> dict:
         """Per-wheel position, velocity and encoder count.
 

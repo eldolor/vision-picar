@@ -200,6 +200,13 @@ class RecordingRobot(RobotInterface):
     def get_scan(self) -> dict:
         return self._record("get_scan", self.delegate.get_scan())
 
+    def set_wheel_velocity(self, left_rad_s, right_rad_s):
+        return self._record("set_wheel_velocity",
+                            self.delegate.set_wheel_velocity(left_rad_s, right_rad_s))
+
+    def advance(self, dt):
+        return self.delegate.advance(dt)
+
 
 def fresh_mock_robot():
     """A MockRobot on a brand-new starter house."""

@@ -47,6 +47,13 @@ DRIVER_PRIORITY = {
     "teleop-operator": DRIVER_MANUAL,
     "brain": DRIVER_AUTONOMOUS,
     "teleop": DRIVER_AUTONOMOUS,
+    # R2b / R4: the ROS stack, through picar_sim_hardware or picar_hardware.
+    # EQUAL to the brain -- they are two layers (mission picks goals, nav2
+    # moves), not rivals -- and, like the brain, below a person. At the
+    # autonomous rank the holder is EXCLUSIVE until it lapses, so the two
+    # never interleave (robot/server.py's arbitrate()); industry practice as
+    # twist_mux encodes it: e-stop > human > autonomy, one writer at a time.
+    "ros": DRIVER_AUTONOMOUS,
     "twin-local-brain": DRIVER_LOCAL,
 }
 
@@ -353,6 +360,32 @@ class RobotInterface(ABC):
         encoders, the same pattern as `get_odometry()`.
         """
         return unusable_wheels()
+
+    def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
+        """Set a STANDING wheel-velocity command -- phase R2b.
+
+        What `hardware_interface::SystemInterface.write()` does at R4. It
+        persists until changed, `stop()` zeroes it, and the robot server's
+        watchdog stops it on silence. **Never call this without the safety
+        layer** -- `robot/server.py`'s `POST /wheels` vets every command with
+        `SafetyController.vet_wheel_velocity()` first.
+
+        **Raises NotImplementedError by default**: a backend with no motors
+        (a recorded walk, a phone) must refuse a velocity, not silently
+        ignore one -- a controller that believes it is driving is worse off
+        than one told it cannot.
+        """
+        raise NotImplementedError(f"{type(self).__name__} cannot take wheel velocities")
+
+    def advance(self, dt: float) -> None:
+        """Let `dt` seconds of a standing command elapse -- phase R2b.
+
+        A no-op by default, because a real robot's wheels turn on their own
+        clock. A SIMULATOR has no clock of its own, so `MockRobot` integrates
+        here; the robot server calls this from its control loop, which is
+        how a `POST /wheels` command becomes motion in the sim.
+        """
+        return None
 
     def get_scan(self) -> dict:
         """A 360-degree range scan -- phase R2, what the lidar gives.

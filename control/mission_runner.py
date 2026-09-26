@@ -144,7 +144,7 @@ class _HaltGate(RobotInterface):
 
     MOVEMENT = (
         "drive_forward", "reverse", "turn_left", "turn_right",
-        "look_left", "look_right", "look_center",
+        "look_left", "look_right", "look_center", "set_wheel_velocity",
     )
 
     def __init__(self, robot: RobotInterface, is_running: Callable[[], bool]):
@@ -216,6 +216,15 @@ class _HaltGate(RobotInterface):
 
     def get_scan(self) -> dict:
         return self._robot.get_scan()
+
+    def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
+        # A MOVE, so gated like every other one: a mission that has ended
+        # must not be able to start the wheels.
+        self._guard("set_wheel_velocity")
+        return self._robot.set_wheel_velocity(left_rad_s, right_rad_s)
+
+    def advance(self, dt: float) -> None:
+        return self._robot.advance(dt)
 
 
 def call_with_timeout(fn: Callable, *args, timeout_s: Optional[float] = None):

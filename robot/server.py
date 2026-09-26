@@ -85,6 +85,7 @@ README), not in the automated unit suite.
 """
 
 import os
+import threading
 import time
 import asyncio
 import logging
@@ -99,7 +100,7 @@ from pydantic import BaseModel
 
 from robot.factory import get_robot, load_config
 from robot.identity import log_identity
-from robot.interface import DRIVER_UNKNOWN, driver_priority
+from robot.interface import DRIVER_AUTONOMOUS, DRIVER_UNKNOWN, driver_priority
 from robot.safety import SafetyController, SafetyViolation, path_zone_indices
 from world.factory import get_world
 
@@ -129,6 +130,12 @@ class ActionRequest(BaseModel):
     angle: int = 90
 
 
+class WheelsRequest(BaseModel):
+    """R2b: left/right wheel angular velocities, rad/s, positive forward."""
+    left_rad_s: float
+    right_rad_s: float
+
+
 class TeleopFrameRequest(BaseModel):
     image_base64: str
     media_type: str = "image/jpeg"
@@ -139,6 +146,10 @@ class TeleopFrameRequest(BaseModel):
 # server's own poll, and hardcoding a second copy of 0.1 in control/health.py
 # is how the two would drift apart.
 WATCHDOG_POLL_INTERVAL_S = 0.1
+# R2b: how often a standing wheel-velocity command is vetted and, in the sim,
+# integrated. 20Hz is the rate nav2's local controller emits cmd_vel at, so
+# the loop never runs slower than the thing feeding it.
+WHEEL_LOOP_INTERVAL_S = 0.05
 
 
 def watchdog_should_stop(last_command_at: float, now: float, timeout_s: float) -> bool:
@@ -259,13 +270,85 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                         "at": now,
                     }
 
+    def arbitrate(driver: str, now: float):
+        """Refusal dict if `driver` may not drive right now, else None.
+
+        Phase M4's order, shared by `/action` and `/wheels`: a strictly
+        lower-ranked driver is refused while a higher one is driving. **R2b
+        adds one rule:** at the AUTONOMOUS rank the holder is exclusive until
+        it lapses -- the brain and the ROS stack are equal rank, and letting
+        equal ranks through (right for two taps of one person's D-pad) would
+        let two autonomous writers interleave commands on one robot. One
+        writer at a time is the industry convention `twist_mux` encodes.
+        """
+        holder = authority_holder(now)
+        if not holder or holder == driver:
+            return None
+        mine, theirs = driver_priority(driver), driver_priority(holder)
+        if mine < theirs:
+            return refuse(
+                "preempted",
+                f"{holder} is driving -- {driver} is lower priority and was refused",
+                driver,
+            )
+        if mine == theirs == DRIVER_AUTONOMOUS:
+            return refuse(
+                "preempted",
+                f"{holder} is driving -- one autonomous driver at a time, "
+                f"so {driver} was refused until it lapses",
+                driver,
+            )
+        return None
+
+    # Serialises everything that moves the robot: /action and /wheels run on
+    # the threadpool, the wheel loop on the event loop, and MockRobot is not
+    # thread-safe. Held for microseconds -- nothing inside it waits.
+    motion_lock = threading.Lock()
+
+    async def wheel_loop():
+        """Vet and (in the sim) integrate a standing wheel command -- R2b.
+
+        Every period: if the wheels are commanded to turn, re-vet the command
+        against CURRENT clearance -- a forward command that was safe when it
+        was sent stops being safe as the wall approaches -- and let `dt`
+        elapse. A clamp is recorded as a refusal once per command, so /health
+        says why the robot stopped. The watchdog still owns silence: it calls
+        `stop()`, which zeroes the standing command.
+        """
+        last = time.monotonic()
+        while True:
+            await asyncio.sleep(WHEEL_LOOP_INTERVAL_S)
+            now = time.monotonic()
+            dt, last = now - last, now
+            try:
+                with motion_lock:
+                    w = robot.get_wheel_state()
+                    if not w.get("usable"):
+                        continue
+                    left = w["left"]["velocity_rad_s"]
+                    right = w["right"]["velocity_rad_s"]
+                    if left == 0 and right == 0:
+                        continue
+                    new_left, new_right, reason = safety.vet_wheel_velocity(left, right)
+                    if reason:
+                        robot.set_wheel_velocity(new_left, new_right)
+                        last_ref = state["last_refusal"]
+                        if not (last_ref and last_ref["reason"] == "safety_distance"
+                                and last_ref["at"] >= state["last_command_at"]):
+                            refuse("safety_distance", reason, state["driver"] or DRIVER_UNKNOWN)
+                    robot.advance(dt)
+            except Exception:  # noqa: BLE001 -- the loop must outlive one bad tick
+                logger.exception("wheel loop tick failed")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         task = asyncio.create_task(watchdog_loop())
+        wheels_task = asyncio.create_task(wheel_loop())
         try:
             yield
         finally:
             task.cancel()
+            wheels_task.cancel()
 
     app = FastAPI(title="vision-picar robot server", lifespan=lifespan)
 
@@ -340,26 +423,55 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         # AGENT-HARNESS.md. Equal rank is allowed through, so two D-pad taps
         # never fight each other; only a strictly lower-ranked driver is
         # refused, and only while a higher one is actually driving.
-        holder = authority_holder(now)
-        if holder and holder != driver and driver_priority(driver) < driver_priority(holder):
-            return refuse(
-                "preempted",
-                f"{holder} is driving -- {driver} is lower priority and was refused",
-                driver,
-            )
+        refused = arbitrate(driver, now)
+        if refused:
+            return refused
 
         state["last_command_at"] = now
         state["driver"] = driver
         state["driver_at"] = now
         try:
-            result = safety.check_and_execute(
-                req.action, speed=req.speed, duration=req.duration, angle=req.angle
-            )
+            with motion_lock:
+                result = safety.check_and_execute(
+                    req.action, speed=req.speed, duration=req.duration, angle=req.angle
+                )
             return {"executed": True, "result": result, "driver": driver}
         except SafetyViolation as e:
             return refuse("safety_distance", str(e), driver)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post(prefix + "/wheels", dependencies=[Depends(require_secret)])
+    def set_wheels(req: WheelsRequest, x_driver: str = Header(default="")):
+        """A STANDING wheel-velocity command -- phase R2b, what
+        `picar_sim_hardware.write()` sends at R4.
+
+        Arbitrated exactly like `/action` (M4, plus one autonomous writer at a
+        time), vetted by `SafetyController.vet_wheel_velocity()` -- forward
+        against the path clearance, reverse against the lidar's rear beams,
+        rotation never -- and then held: `wheel_loop()` re-vets it every
+        period as the room changes, and the watchdog zeroes it on silence.
+        A backend with no motors answers `unsupported`, never a silent no-op.
+        """
+        now = time.monotonic()
+        driver = (x_driver or "").strip() or DRIVER_UNKNOWN
+        refused = arbitrate(driver, now)
+        if refused:
+            return refused
+        state["last_command_at"] = now
+        state["driver"] = driver
+        state["driver_at"] = now
+        with motion_lock:
+            left, right, reason = safety.vet_wheel_velocity(req.left_rad_s, req.right_rad_s)
+            try:
+                robot.set_wheel_velocity(left, right)
+            except NotImplementedError as e:
+                return refuse("unsupported", str(e), driver)
+        if reason:
+            refuse("safety_distance", reason, driver)
+        return {"executed": True, "driver": driver,
+                "applied": {"left_rad_s": left, "right_rad_s": right},
+                "clamped": reason}
 
     @app.post(prefix + "/stop", dependencies=[Depends(require_secret)])
     def stop(x_driver: str = Header(default="")):
