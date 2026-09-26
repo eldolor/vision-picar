@@ -2,6 +2,7 @@
 
     twist_mux -> diff_drive_controller -> picar_sim_hardware -> HTTP -> robot/server.py
     robot_state_publisher (URDF, R3) . joint_state_broadcaster . picar_bridge
+    slam_toolbox (R5): /scan + odom -> /map and map -> odom
 """
 import os
 
@@ -22,6 +23,8 @@ def generate_launch_description():
         [FindPackageShare("picar_bringup"), "config", "controllers.yaml"])
     mux = PathJoinSubstitution(
         [FindPackageShare("picar_bringup"), "config", "twist_mux.yaml"])
+    slam = PathJoinSubstitution(
+        [FindPackageShare("picar_bringup"), "config", "slam.yaml"])
 
     return LaunchDescription([
         Node(package="robot_state_publisher", executable="robot_state_publisher",
@@ -36,4 +39,7 @@ def generate_launch_description():
         Node(package="twist_mux", executable="twist_mux", parameters=[mux],
              remappings=[("cmd_vel_out", "/diff_drive_controller/cmd_vel_unstamped")]),
         Node(package="picar_bridge", executable="bridge", output="both"),
+        # R5: the map, and the robot's place on it.
+        Node(package="slam_toolbox", executable="async_slam_toolbox_node",
+             name="slam_toolbox", parameters=[slam], output="both"),
     ])

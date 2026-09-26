@@ -135,18 +135,22 @@ def test_the_shipped_config_maps_the_sim():
     assert world.get_pose()["usable"] is True
 
 
-def test_an_unbuilt_world_backend_refuses_by_name(tmp_path):
-    """Same rule as `mode: hardware`. A silent downgrade to "no map" is
-    the worst possible failure here, because it looks exactly like a
-    mapper that has not converged yet -- which is the thing you would be
-    debugging on the day it happened."""
+def test_a_ros_world_with_no_bridge_says_so_rather_than_downgrading(tmp_path, monkeypatch):
+    """R5 built world/ros_world.py; the rule this test pinned while it was
+    missing still holds. A silent downgrade to "no map" looks exactly like a
+    mapper that has not converged -- so with no bridge answering, every
+    route says `usable: false`, and never shows a map of anything."""
     from world.factory import get_world
+    from world.ros_world import RosWorld
 
+    monkeypatch.setenv("ROS_BRIDGE_URL", "http://127.0.0.1:9")   # nothing listens
     path = tmp_path / "robot.yaml"
     path.write_text("world:\n  mode: ros\n")
-    with pytest.raises(NotImplementedError) as e:
-        get_world(str(path))
-    assert "ros_world" in str(e.value)
+    world = get_world(str(path))
+    assert isinstance(world, RosWorld)
+    assert world.get_pose()["usable"] is False
+    assert world.get_map()["usable"] is False
+    assert world.get_truth()["usable"] is False, "no sim robot, so no truth"
 
 
 def test_sim_world_refuses_a_robot_it_cannot_map(tmp_path):

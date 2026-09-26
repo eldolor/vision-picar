@@ -1,6 +1,6 @@
 # Plan: ROS 2, with the twin still doing the proving
 
-Status: **R0-R4 BUILT (R0-R1c 2026-09-25, R2-R4 and arrival 2026-09-26), R5-R9 proposed** · Date: 2026-09-25 · Phase IDs: `R0`-`R9`,
+Status: **R0-R5 BUILT (R0-R1c 2026-09-25, R2-R5 and arrival 2026-09-26), R6-R9 proposed** · Date: 2026-09-25 · Phase IDs: `R0`-`R9`,
 alongside `S*` (`PLAN-sim-hardening.md`), `B*` (`PLAN-brain-relocation.md`),
 `M*` (`PLAN-microduck-transplants.md`), `T*` (`PLAN-teleop-robot.md`),
 `N*` (`PLAN-mapping.md`), `C*`/`P*` (`PLAN-onboard-perception.md`).
@@ -103,7 +103,7 @@ honest all-unusable defaults.
 | **R2** | **Three routes.** `GET`/`POST /wheels` (per-wheel position + velocity); `GET /world/scan` (`MockWorld` already casts 360 rays, one per degree -- publish the ranges, not only the cells they marked); `GET /world/truth` | A ground-truth ghost on the twin's map. Identical today, which is the point |
 | **R3** | **DONE on data 2026-09-26, criterion 4 FAILED and recorded -- see 3.12.** **URDF + TF.** `base_link`, two wheel joints, `laser`, `camera_link` as child of a **revolute pan joint** (ST3215). §900's 11-14cm sensor-to-bumper offset becomes a transform, not a constant. Bearings compose through the pan joint -- the general form of what `goal_pose.py` does by hand | Frames drawn on the map view, swinging as the servo pans |
 | **R4** | **DONE on data 2026-09-26, off by default (`drive: ros`) -- see 3.13.** **`picar_sim_hardware`.** Plus `diff_drive_controller`, `joint_state_broadcaster`, `twist_mux` with `AGENT-HARNESS.md` §4.1's order as priorities, and `sim_scan_node` republishing `/world/scan` as `sensor_msgs/LaserScan`. **Exactly one writer to the wheels** from here | D-pad drives through the whole ROS chain; grabbing it mid-mission still ends `preempted`, still names `twin-dpad`, still lapses on silence |
-| **R5** | **`slam_toolbox` + the error readout.** Bridge serves `/world/pose` and `/world/map` from SLAM instead of `MockWorld` -- the routes the twin already consumes. Then opt-in odometry drift (`sim.odom_drift`, following `sim/sensors.py`'s pattern, default off): without drift there is nothing for loop closure to correct | "map source: sim / slam" toggle, ground-truth ghost, live error number. Drive a lap: error grows, **pose jumps, error collapses**. Hardware cannot show this |
+| **R5** | **DONE on data 2026-09-26, off by default (`WORLD_MODE=ros`); criteria 2 and 3 failed on their tight bars -- see 3.14.** **`slam_toolbox` + the error readout.** Bridge serves `/world/pose` and `/world/map` from SLAM instead of `MockWorld` -- the routes the twin already consumes. Then opt-in odometry drift (`sim.odom_drift`, following `sim/sensors.py`'s pattern, default off): without drift there is nothing for loop closure to correct | "map source: sim / slam" toggle, ground-truth ghost, live error number. Drive a lap: error grows, **pose jumps, error collapses**. Hardware cannot show this |
 | **R6** | **nav2 + `collision_monitor`.** Costmaps, planner, controller, recovery. `collision_monitor` between the mux and the base, with the footprint term the hand-written collar never had. **`robot/safety.py` is NOT deleted** -- it keeps the teleop and vision-policy paths. Then re-run R1's metric: a DWB/MPPI controller scores continuity in its cost function and should not flicker | Tap a goal on the map, path draws, robot follows. Block it, watch recovery. Read run-length against R1 |
 | **R7** | **Fake ESP32 on a pty** speaking `HARDWARE-BOM.md` §4.2's real protocol (`T=1/11/13/126/130/131/136`, `1001`/`1002` frames), and `picar_hardware` written against it. Closes C3's stated blocker: *"nothing in this repo simulates a serial peer"*. Also falsifies §4.2's unverified belief that the heartbeat stops the motors | A drill that severs the link mid-mission; the board's heartbeat expires and reports motors stopped, watchdog quiet |
 | **R8** | **Order + bring up.** `JETSON-BOM.md` as priced, plus the **latching e-stop in the motor rail** (1.16 #19, in no bill) and a pack-capacity decision (see `HARDWARE-BOM.md` §6 and the amendment noted in §5 below). `HARDWARE-BOM.md` §5 order unchanged | D-pad moves real wheels; e-stop kills them mid-move with the software none the wiser |
@@ -1015,6 +1015,107 @@ reports no wheels at all is still an ERROR.
 picar_bringup picar.launch.py`, and restart the robot server with
 `ROBOT_DRIVE=ros`. The default stays `drive: direct`, so the twin does not
 depend on Docker being up.
+
+### 3.14 R5 -- `slam_toolbox` and the error readout (2026-09-26): criteria, written before building
+
+**What it is.** `slam_toolbox` (online async) in the container, fed by
+`/scan` and `diff_drive_controller`'s `odom -> base_footprint`. The bridge
+serves its pose and map; **`world/ros_world.py`** -- the file `PLAN-mapping.md`
+named for N6 -- is the `WorldInterface` backend over them, chosen by
+`world: mode: ros`. It converts on ITS side of the wall: ROS's x-forward /
+y-left / CCW yaw becomes the project's x-east / y-south / clockwise compass.
+Default stays `world: sim`.
+
+**The one design decision: aligning SLAM's frame to the house.** SLAM's map
+frame starts wherever the robot happened to be. On hardware that is the map,
+full stop -- `map_id` says which one. In the sim, to subtract the estimate
+from the truth, `RosWorld` anchors the SLAM frame to the house ONCE, at first
+contact, from ground truth (a rotation and a translation) -- the standard
+"align the first pose" of trajectory evaluation. After that the truth is
+never read by the estimate. Stated because it is the one place truth touches
+the pose, and it is a frame choice, not a measurement.
+
+**Opt-in odometry drift** (`sim.odom_drift`, default off, following
+`sim/sensors.py`'s pattern): the ENCODERS misreport -- each wheel's reported
+position is scaled by its own factor -- while the robot moves truly. So
+`diff_drive_controller`'s odometry drifts exactly as a mis-calibrated wheel
+radius makes it drift on hardware, and so do R4's verbs, which close on the
+encoders.
+
+**The lap.** A fixed route of D-pad verbs through ROS: start room -> hallway
+-> kitchen door -> back to the start, about 7 m and six 90-degree turns,
+ending where it began (a loop-closure opportunity).
+
+**Acceptance criteria:**
+
+1. **The contract holds.** `RosWorld` passes `tests/test_world_contract.py`
+   against a fake bridge; a container restart yields a new `map_id`.
+2. **SLAM tracks.** Drift off, the lap: SLAM's pose within 5 cm and 2
+   degrees of ground truth at every 1 Hz sample.
+3. **SLAM corrects what odometry cannot.** Drift on (the right encoder
+   reads 3% long), the same lap: odometry's error at the end >= 20 cm (the
+   drift is real), SLAM's error <= 10 cm and 3 degrees at every sample and
+   at the end. Whether a loop-closure JUMP appears is recorded, not
+   required -- scan matching may keep the error too small to need one.
+4. **The map is the house.** >= 90% of SLAM's occupied cells lie within
+   10 cm of a true obstacle surface; <= 1% of its free cells lie inside a
+   true wall or object.
+5. **The error is readable.** `GET /world/error` gives position and heading
+   error, sim-only and named so (`usable: false` without truth); the twin's
+   map view shows it and the truth as a ghost when the world source is
+   `ros`. UI test plus a phone-size screenshot.
+
+**Measured 2026-09-26 over eighteen laps -- 1, 4 and 5 met; 2 and 3 FAILED
+on their tight bars, and what does hold is pinned**
+(`tests/demo_slam_lap.py` is the instrument; `tests/test_slam_live.py`
+asserts only what held on every lap).
+
+**First, the instrument was wrong once and is recorded so it is not wrong
+again.** Criterion 2 said "at every 1 Hz sample". Samples taken WHILE MOVING
+compare a SLAM pose ~150 ms old with the live truth: at 1.2 rad/s that alone
+is ~11 degrees, and odometry -- exact by construction with drift off -- read
+up to 7.9 cm "wrong" in motion and 0.0 at rest. So the numbers below are
+**at rest**, 0.4 s after each verb. In motion the maxima were 10-26 cm and
+7-25 degrees; that is the pose's latency, a real property R6's nav2 handles
+by timestamping, not SLAM's accuracy.
+
+1. **Met.** `RosWorld` is in the contract suite with a fake bridge; a
+   restarted container is a new `map_id`.
+2. **FAILED.** Drift off, 9 laps, worst at-rest error per lap:
+   position 5.2, 4.7, 6.8, 6.7, 8.2, 6.8, 6.1, 4.0, 5.9 cm (bar 5 cm: 2 of 9);
+   heading 2.5, 0.8, 1.2, 1.0, 0.8, 1.2, 1.0, 2.0, 1.6 deg (bar 2 deg: 7 of
+   9); every lap ENDS within 0.1-1.4 cm and 0.6 deg. The mid-lap error builds
+   across the long rooms and falls back as the lap closes. **Its cause is not
+   established.** A narrow-corridor explanation was offered and withdrawn --
+   the map shows the "hallway" is a room several cells wide. It is about one
+   map cell (5 cm), which is where a first suspicion belongs.
+3. **FAILED on heading, met on position and on the headline.** Right encoder
+   3% long, 9 laps: SLAM's position stays within 10 cm at rest on all 9
+   (worst 2.0-8.3 cm) and ends within 1.0-4.5 cm on all 9, while
+   **odometry ends up to 99 cm and 54 degrees off**. Heading at rest stays
+   under 3 degrees on only 4 of 9 (worst 2.1-7.3; a 1.0 s settle helps, 2.7-3.5,
+   so part of it is SLAM correcting after a turn). Odometry's end error was
+   >= 20 cm on 6 of 9 -- the other three laps drove into walls early, because
+   **drift bends R4's verbs too**: they close on the lying encoders, and one
+   lap had 15 of 28 moves blocked. Closing on the MAP pose is nav2's job (R6).
+4. **Met on every lap.** 95.9-100% of SLAM's occupied cells lie within 10 cm
+   of a true wall or object; 0-0.73% of its free cells lie inside one.
+5. **Met.** `GET /world/error` (sim-only; `usable: false` without truth) and
+   the twin's map: the truth as an outlined ghost and "SLAM error 5.5 cm /
+   1.1 deg · odometry alone 30 cm / 19 deg" -- only when the map is SLAM's.
+   Two UI tests, the first confirmed red on the old twin.
+
+**A defect the phone-size screenshot found, fixed:** the twin read "SLAM
+error 0.0 cm" after eight moves. `RosWorld` anchored SLAM's frame to the
+house at FIRST CONTACT, and the page first asked after the moves, so the
+anchor swallowed the error. The anchor is now the truth at the session's
+START -- the bridge records it at odometry zero, sim-only and never published
+into ROS -- pinned by a regression test. The lap numbers above are unaffected:
+their sampler asked before the first move.
+
+**Tried and made no difference, kept because it is right:** stamping each
+scan when it was TAKEN (the robot server's `stamp_unix`) rather than when it
+reached the bridge.
 
 ## 4. Honest residue -- what the twin cannot tell you
 

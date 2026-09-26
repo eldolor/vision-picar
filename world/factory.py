@@ -90,14 +90,21 @@ def get_world(
         return MockWorld(grid)
 
     if mode == "ros":
-        # N6. Raises rather than falling back for the same reason
-        # robot/factory.py's hardware branch does: a silent downgrade to
-        # "no map" would look exactly like a mapper that had not converged,
-        # which is the hardest possible thing to debug on hardware day.
-        raise NotImplementedError(
-            "world/ros_world.py doesn't exist yet -- build it in PLAN-mapping.md "
-            "phase N6. It is an HTTP CLIENT of service/slam/; it must not "
-            "import rclpy."
-        )
+        # R5 (PLAN-ros-alignment.md 3.14; PLAN-mapping.md's N6): the map and
+        # the pose from slam_toolbox, through the ROS container's bridge.
+        # In the sim, MockWorld over the same grid supplies the TRUTH, so the
+        # estimate can be measured against it; on hardware there is none,
+        # and get_truth() says so.
+        from world.ros_world import RosWorld
+
+        grid = getattr(robot, "world", None)
+        truth = None
+        if grid is not None:
+            from sim.mock_world import MockWorld
+            truth = MockWorld(grid)
+        url = (os.environ.get("ROS_BRIDGE_URL")
+               or (config.get("world") or {}).get("bridge_url")
+               or "http://127.0.0.1:8090")
+        return RosWorld(url, secret=os.environ.get("APP_SHARED_SECRET", ""), truth=truth)
 
     raise ValueError(f"Unknown world mode in config: {mode!r}")

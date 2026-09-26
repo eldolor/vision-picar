@@ -237,7 +237,7 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
 
-  # R2's ground truth, on its own rule because rule 12 is full (five path
+  # R2's ground truth and R5's error readout, on their own rule because rule 12 is full (five path
   # values per condition). Sim-only by construction: a non-sim world answers
   # `usable: false` here, and the route still has to be reachable for that
   # answer to be read rather than mistaken for a broken deployment.
@@ -251,6 +251,7 @@ Resources:
         - Field: path-pattern
           Values:
             - /world/truth
+            - /world/error
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

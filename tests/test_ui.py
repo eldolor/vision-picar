@@ -37,6 +37,7 @@ by Playwright request interception, so these tests exercise the client's
 own logic without a second live service or a paid call.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -2625,5 +2626,76 @@ def test_a_server_with_no_world_routes_says_so_instead_of_going_blank(browser, t
         "() => (document.getElementById('map-readout') || {}).textContent"
         "      === 'map: not reported by this server'", timeout=8000)
     assert page.evaluate("() => document.getElementById('world-map').width") == 0
+    assert not errors, errors
+    page.close()
+
+
+# ---------- R5: the SLAM error readout and the truth ghost ----------
+
+_SLAM_MAP = {"usable": True, "map_id": "slam-t1", "map_version": 3, "resolution_m": 0.05,
+             "width": 20, "height": 10, "origin_x_m": 0.0, "origin_y_m": 0.0,
+             "cells": [0] * 200}
+_SLAM_POSE = {"usable": True, "map_id": "slam-t1", "x_m": 0.60, "y_m": 0.25, "heading_deg": 90.0}
+_SLAM_ERROR = {"usable": True, "source": "slam-t1", "position_error_m": 0.042,
+               "heading_error_deg": -1.14, "odom_position_error_m": 0.45,
+               "odom_heading_error_deg": -39.2,
+               "truth": {"usable": True, "source": "sim", "x_m": 0.30, "y_m": 0.25,
+                         "heading_deg": 90.0}}
+
+
+def _stub_world(page, grid, pose, err):
+    page.route("**/world/pose", lambda r: r.fulfill(status=200, content_type="application/json",
+                                                    body=json.dumps(pose)))
+    page.route("**/world/map", lambda r: r.fulfill(status=200, content_type="application/json",
+                                                   body=json.dumps(grid)))
+    page.route("**/world/error", lambda r: r.fulfill(status=200, content_type="application/json",
+                                                     body=json.dumps(err)))
+
+
+def _truth_coloured_pixels(page):
+    return page.evaluate(
+        "() => { const c = document.getElementById('world-map');"
+        " const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;"
+        " let n = 0; for (let i = 0; i < d.length; i += 4)"
+        "   if (d[i] > 230 && d[i+1] > 230 && d[i+2] > 230) n++;"
+        " return n; }")
+
+
+def test_a_slam_map_shows_its_error_and_the_truth_as_a_ghost(browser, twin_server):
+    """R5's readout (PLAN-ros-alignment.md 3.14 criterion 5): the one
+    measurement the twin can make and a real room cannot."""
+    page, errors = open_twin(browser, twin_server)
+    _stub_world(page, _SLAM_MAP, _SLAM_POSE, _SLAM_ERROR)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => (document.getElementById('map-readout') || {}).textContent.includes('SLAM error')",
+        timeout=8000)
+    text = page.locator("#map-readout").text_content()
+    assert "SLAM error 4.2 cm / 1.1\u00b0" in text, text
+    assert "odometry alone 45 cm / 39\u00b0" in text, text
+    assert _truth_coloured_pixels(page) > 0, "the truth ghost was not drawn"
+    assert not errors, errors
+    page.close()
+
+
+def test_a_sim_map_shows_no_error_line_and_no_ghost(browser, twin_server):
+    """On the sim's own map the pose IS the truth: nothing to compare, so
+    nothing drawn -- a readout of '0.0 cm' would be a claim about SLAM."""
+    page, errors = open_twin(browser, twin_server)
+    sim_map = dict(_SLAM_MAP, map_id="sim-grid")
+    _stub_world(page, sim_map, dict(_SLAM_POSE, map_id="sim-grid"),
+                dict(_SLAM_ERROR, source="sim-grid", position_error_m=0.0))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => (document.getElementById('map-readout') || {}).textContent.includes('cells seen')",
+        timeout=8000)
+    assert "SLAM error" not in page.locator("#map-readout").text_content()
+    assert _truth_coloured_pixels(page) == 0
     assert not errors, errors
     page.close()

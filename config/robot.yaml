@@ -49,6 +49,14 @@ sim:
     min_range_cm: 2.0 # HC-SR04's real minimum
     max_range_cm: 400.0 # HC-SR04's real maximum
     read_latency_s: 0.0 # only actually slept when sim.realtime is also true
+  # R5 (PLAN-ros-alignment.md 3.14) -- encoders that misreport. The robot
+  # moves truly; each wheel's REPORTED position is scaled, so odometry (and
+  # R4's verbs, which close on the encoders) drift the way a mis-measured
+  # wheel radius makes them drift on hardware. Off by default: exact.
+  odom_drift:
+    enabled: false
+    left_scale: 1.0
+    right_scale: 1.03
 
 # Read only when mode is "teleop" (PLAN-teleop-robot.md).
 teleop:

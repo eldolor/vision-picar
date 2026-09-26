@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-ros2-control \
         ros-humble-ros2-controllers \
         ros-humble-twist-mux \
+        ros-humble-slam-toolbox \
         ros-humble-tf2-ros \
         ros-humble-tf2-tools \
         liburdfdom-tools \

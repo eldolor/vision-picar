@@ -123,9 +123,17 @@ class MockRobot(RobotInterface):
         render: bool = True,
         render_width: int = renderer.DEFAULT_WIDTH,
         render_height: int = renderer.DEFAULT_HEIGHT,
+        encoder_scale: tuple = (1.0, 1.0),
     ):
         self.world = world
         self.realtime = realtime
+        # R5's opt-in odometry drift (`sim.odom_drift`): what each ENCODER
+        # reports, as a multiple of what its wheel actually turned. The robot
+        # moves truly; only the report is wrong -- exactly what a wheel whose
+        # radius was measured 3% short does on hardware, and what makes
+        # diff_drive_controller's odometry drift for SLAM to correct.
+        # (1.0, 1.0) is exact, and the default.
+        self.encoder_scale = (float(encoder_scale[0]), float(encoder_scale[1]))
         # Path length, in METRES, actually covered -- see get_odometry().
         # Counted here rather than read off the world because the world
         # knows only where the robot IS, and odometry is about where it
@@ -285,14 +293,17 @@ class MockRobot(RobotInterface):
         something to serialise and R2 has something to publish.
         """
         per_rad = ENCODER_COUNTS_PER_REV / (2 * math.pi)
+        # What the encoders REPORT -- see `encoder_scale` (R5's drift).
+        left = self._left_rad * self.encoder_scale[0]
+        right = self._right_rad * self.encoder_scale[1]
         return {
             "usable": True,
-            "left": {"position_rad": self._left_rad,
+            "left": {"position_rad": left,
                      "velocity_rad_s": self._cmd_left_rad_s,
-                     "counts": int(round(self._left_rad * per_rad))},
-            "right": {"position_rad": self._right_rad,
+                     "counts": int(round(left * per_rad))},
+            "right": {"position_rad": right,
                       "velocity_rad_s": self._cmd_right_rad_s,
-                      "counts": int(round(self._right_rad * per_rad))},
+                      "counts": int(round(right * per_rad))},
             "wheel_radius_m": WHEEL_RADIUS_M,
             "track_width_m": TRACK_WIDTH_M,
             "counts_per_rev": ENCODER_COUNTS_PER_REV,

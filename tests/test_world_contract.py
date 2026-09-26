@@ -42,6 +42,10 @@ from world.interface import (
 WORLD_BACKENDS = [
     pytest.param(NullWorld, id="NullWorld"),
     pytest.param(lambda: MockWorld(build_starter_world()), id="MockWorld"),
+    # R5: slam_toolbox's world, through a fake bridge that answers as the
+    # real one does (tests/test_ros_world.py).
+    pytest.param(lambda: __import__("tests.test_ros_world", fromlist=["ros_world"])
+                 .ros_world()[0], id="RosWorld"),
 ]
 
 

@@ -611,6 +611,16 @@
     if (state.worldUnsupported) return;
     try {
       state.lastPose = await apiGet("/world/pose");
+      // R5: estimate against truth. Sim-only, and a server older than R5
+      // has no such route -- that is not an error, just nothing to draw.
+      if (!state.worldErrorUnsupported) {
+        try {
+          state.lastWorldError = await apiGet("/world/error");
+        } catch (err) {
+          if (err.status === 404) state.worldErrorUnsupported = true;
+          state.lastWorldError = null;
+        }
+      }
       var now = Date.now();
       if (now - state.lastMapFetchAt >= MAP_FETCH_INTERVAL_MS) {
         state.lastMapFetchAt = now;
@@ -682,7 +692,15 @@
       }
     }
 
-    drawPose(ctx, grid, SCALE);
+    // R5: when the map is SLAM's, draw the TRUTH as an outlined ghost
+    // under the estimate. The gap between the two is the error; on a sim
+    // map the two are the same number and nothing extra is drawn.
+    var werr = state.lastWorldError;
+    var slam = typeof grid.map_id === "string" && grid.map_id.indexOf("slam-") === 0;
+    if (slam && werr && werr.usable && werr.truth) {
+      drawPose(ctx, grid, SCALE, werr.truth, "ghost");
+    }
+    drawPose(ctx, grid, SCALE, state.lastPose, "estimate");
 
     var seen = 0;
     for (var i = 0; i < grid.cells.length; i++) {
@@ -691,17 +709,34 @@
     var pct = Math.round((100 * seen) / grid.cells.length);
     readout.innerHTML = "map: " + seen + "/" + grid.cells.length + " cells seen (" +
       pct + "%) \u00b7 " + Math.round(grid.resolution_m * 100) + "cm cells \u00b7 " +
-      '<span class="src">' + grid.map_id + " v" + grid.map_version + "</span>";
+      '<span class="src">' + grid.map_id + " v" + grid.map_version + "</span>" +
+      slamErrorText(slam ? werr : null);
   }
 
-  function drawPose(ctx, grid, scale) {
-    var pose = state.lastPose;
+  // "SLAM error 4.2 cm / 1.1° · odometry alone 45 cm / 39°" -- the one
+  // number PLAN-ros-alignment.md section 2 says the twin can show and a real
+  // room cannot. Nothing at all when there is no truth to compare against.
+  function slamErrorText(werr) {
+    if (!werr || !werr.usable || werr.position_error_m == null) return "";
+    var line = '<br><span class="slam-error">SLAM error ' +
+      (werr.position_error_m * 100).toFixed(1) + " cm / " +
+      Math.abs(werr.heading_error_deg).toFixed(1) + "\u00b0";
+    if (werr.odom_position_error_m != null) {
+      line += " \u00b7 odometry alone " + (werr.odom_position_error_m * 100).toFixed(0) +
+        " cm / " + Math.abs(werr.odom_heading_error_deg).toFixed(0) + "\u00b0";
+    }
+    return line + " \u00b7 outline = truth</span>";
+  }
+
+  function drawPose(ctx, grid, scale, pose, style) {
     // A pose that is not usable draws NOTHING. Not a dot at the origin:
     // (0, 0) is a perfectly valid pose and a map showing the robot
     // confidently in the corner of a house it cannot localise in is worse
     // than a map showing no robot at all.
     if (!pose || !pose.usable) return;
-    if (pose.map_id !== grid.map_id) return;  // coordinates from another map
+    // Coordinates from another map. The ghost is the TRUTH, which is in the
+    // house frame every sim map shares and carries no map_id of its own.
+    if (style !== "ghost" && pose.map_id !== grid.map_id) return;
 
     // Metres -> cells -> canvas pixels, via the map's own origin and
     // resolution. Never assume the grid starts at (0,0) in metres: a
@@ -724,8 +759,14 @@
     ctx.lineTo(-r * 0.7, -r * 0.6);
     ctx.closePath();
     var css = getComputedStyle(document.documentElement);
-    ctx.fillStyle = (css.getPropertyValue("--accent") || "#4da3ff").trim();
-    ctx.fill();
+    if (style === "ghost") {
+      ctx.lineWidth = Math.max(1.5, scale * 0.15);
+      ctx.strokeStyle = (css.getPropertyValue("--map-truth") || "#f5f7fa").trim();
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = (css.getPropertyValue("--accent") || "#4da3ff").trim();
+      ctx.fill();
+    }
     ctx.restore();
   }
 

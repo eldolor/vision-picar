@@ -111,7 +111,11 @@ def test_wheels_scan_and_truth_survive_the_socket(robot_and_world_over_asgi):
         bot.drive_forward(50, 0.5)
         bot.turn_left(30)
     assert remote.get_wheel_state() == local.get_wheel_state()
-    assert remote.get_scan() == local.get_scan()
+    # The server stamps a scan when it TAKES it (R5, `stamp_unix`) -- when,
+    # not what, so it is set aside here and checked for separately.
+    over_the_wire = remote.get_scan()
+    assert isinstance(over_the_wire.pop("stamp_unix"), float)
+    assert over_the_wire == local.get_scan()
     assert remote_world.get_truth() == local_world.get_truth()
 
 

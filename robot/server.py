@@ -86,6 +86,7 @@ README), not in the automated unit suite.
 
 import os
 import threading
+import math
 import time
 
 import httpx
@@ -567,8 +568,14 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         republish as `sensor_msgs/LaserScan` at R4. BODY state (the robot's
         own reading), so it lives beside `/depth`, not under `/world/`: see
         `RobotInterface.get_scan()`. A backend with no lidar answers
-        `usable: False`."""
-        return robot.get_scan()
+        `usable: False`.
+
+        `stamp_unix` is when the scan was TAKEN (R5), as a real lidar driver
+        stamps it. The bridge used to stamp on arrival, and while turning at
+        1.2 rad/s every 30 ms of that skew is 2 degrees of heading that
+        slam_toolbox registered in the wrong place."""
+        stamp = time.time()
+        return {**robot.get_scan(), "stamp_unix": stamp}
 
     @app.get(prefix + "/depth", dependencies=[Depends(require_secret)])
     def depth():
@@ -623,6 +630,38 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         no decision may read it.
         """
         return world_model.get_truth()
+
+    @app.get(prefix + "/world/error", dependencies=[Depends(require_secret)])
+    def world_error():
+        """The estimate against the truth -- R5's readout, sim-only.
+
+        `position_error_m` / `heading_error_deg` compare `get_pose()` (SLAM's
+        estimate under `world: ros`) with the simulator's truth; `odom_*` do
+        the same for dead reckoning alone, where the world can say, so the
+        readout shows what SLAM corrects. `usable: false` wherever there is
+        no truth -- on hardware, always. Never an input to a decision.
+        """
+        truth = world_model.get_truth()
+        pose = world_model.get_pose()
+        if not truth.get("usable") or not pose.get("usable"):
+            return {"usable": False, "source": None, "position_error_m": None,
+                    "heading_error_deg": None, "odom_position_error_m": None,
+                    "odom_heading_error_deg": None}
+
+        def err(p):
+            if not p.get("usable"):
+                return None, None
+            d = math.hypot(p["x_m"] - truth["x_m"], p["y_m"] - truth["y_m"])
+            h = (p["heading_deg"] - truth["heading_deg"] + 180.0) % 360.0 - 180.0
+            return round(d, 4), round(h, 3)
+
+        pos, head = err(pose)
+        odom = getattr(world_model, "get_odom_pose", None)
+        opos, ohead = err(odom()) if odom else (None, None)
+        return {"usable": True, "source": pose.get("map_id"),
+                "position_error_m": pos, "heading_error_deg": head,
+                "odom_position_error_m": opos, "odom_heading_error_deg": ohead,
+                "truth": truth}
 
     @app.get(prefix + "/world/pose", dependencies=[Depends(require_secret)])
     def world_pose():

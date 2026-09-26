@@ -272,6 +272,7 @@ Resources:
           Values:
             - /teleop-robot/scan
             - /teleop-robot/world/truth
+            - /teleop-robot/world/error
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

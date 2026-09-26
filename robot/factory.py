@@ -75,7 +75,16 @@ def _backend(config: dict) -> RobotInterface:
                 read_latency_s=noise_config.get("read_latency_s", 0.0),
             )
 
-        return MockRobot(world, realtime=realtime, sensor=sensor)
+        # R5 (PLAN-ros-alignment.md 3.14): encoders that misreport, so
+        # odometry drifts for SLAM to correct. Off by default.
+        drift = sim_config.get("odom_drift", {}) or {}
+        scale = ((float(drift.get("left_scale", 1.0)), float(drift.get("right_scale", 1.0)))
+                 if drift.get("enabled", False) else (1.0, 1.0))
+        # SIM_ODOM_DRIFT="left,right" overrides the yaml, as ROBOT_DRIVE does.
+        if os.environ.get("SIM_ODOM_DRIFT"):
+            left, right = os.environ["SIM_ODOM_DRIFT"].split(",")
+            scale = (float(left), float(right))
+        return MockRobot(world, realtime=realtime, sensor=sensor, encoder_scale=scale)
 
     if mode == "teleop":
         from sim.teleop_robot import TeleopRobot, DEFAULT_STALL_TIMEOUT_S
