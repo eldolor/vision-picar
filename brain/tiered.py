@@ -175,8 +175,15 @@ SCAN_ACTION = "RIGHT"
 # nothing had measured it. These walks are that measurement.
 DEFAULT_HOLD_GOAL = True
 
-# And a floor under it: after this many consecutive turns with the target
-# not detected, emit one FORWARD instead. A held goal of RIGHT repeated
+# And a floor under it: after this many QUARTER TURNS' WORTH of consecutive
+# turning (8 = 720 degrees, two rotations) with the target not detected,
+# emit one FORWARD instead. Counted in DEGREES since R1c: it counted TURNS,
+# and when R1b halved the search step to 45 degrees the same 8 silently
+# became ONE rotation -- so a single missed frame as the sweep passed the
+# target forced a FORWARD off the doorway's line, and a detector that sees
+# the target 90% of the time lost one mission in six (84.5% arrived; 95.2%
+# with two rotations restored). Degrees keep the meaning fixed whatever the
+# step size. A held goal of RIGHT repeated
 # forever is the same spin by another route, and every one of the five
 # walks would have tripped this. 0 disables.
 #
@@ -601,7 +608,7 @@ class TieredVision:
         self._steer_turn_deg = None
         self._reckoned_turn_deg = None
         self.spin_guard_after = max(0, int(spin_guard_after))
-        self._consecutive_turns = 0
+        self._consecutive_turn_deg = 0.0
         self._executor = None
         self._inflight = None
         self._inflight_trigger: Optional[str] = None
@@ -1027,12 +1034,11 @@ class TieredVision:
                 and direction in TURN_ACTIONS
                 and steer is None
                 and perception.status != DETECTED
-                and self._consecutive_turns >= self.spin_guard_after):
+                and self._consecutive_turn_deg >= self.spin_guard_after * 90):
             direction = "FORWARD"
-            self._consecutive_turns = 0
-            why = (f"{why} -- spin guard: {self.spin_guard_after} turns "
-                   "without a detection, forcing FORWARD")
-        self._note_action(direction)
+            self._consecutive_turn_deg = 0.0
+            why = (f"{why} -- spin guard: {self.spin_guard_after * 90} degrees "
+                   "of turning without a detection, forcing FORWARD")
         # R1: how FAR to turn, when a measured or dead-reckoned bearing chose
         # the turn. Absent otherwise -- a scan, a held cloud goal or a
         # spin-guard override has no bearing behind it, and the executor's
@@ -1048,6 +1054,8 @@ class TieredVision:
             # the circle -- see SCAN_TURN_DEG.
             if turn_deg is None:
                 turn_deg = SCAN_TURN_DEG
+        # Counted AFTER the size is known -- the guard is in degrees (R1c).
+        self._note_action(direction, turn_deg)
         return {
             "obstacles_ahead": [],
             "turn_deg": turn_deg,
@@ -1190,12 +1198,14 @@ class TieredVision:
             return "RIGHT"
         return "FORWARD"
 
-    def _note_action(self, direction) -> None:
-        """Track consecutive turns, over cloud and local steps alike."""
+    def _note_action(self, direction, turn_deg=None) -> None:
+        """Track consecutive TURNING, in degrees, over cloud and local steps
+        alike. A turn with no size is counted at the executor's default
+        quarter turn, which is what it will actually do."""
         if direction in TURN_ACTIONS:
-            self._consecutive_turns += 1
+            self._consecutive_turn_deg += float(turn_deg or 90)
         else:
-            self._consecutive_turns = 0
+            self._consecutive_turn_deg = 0.0
 
     def _annotate(self, scene: dict, perception: Perception, trigger: str) -> dict:
         """A real cloud scene, with the local evidence attached beside it.
@@ -1215,7 +1225,6 @@ class TieredVision:
             if verdict == CORROBORATED:
                 self.stats.corroborated += 1
 
-        self._note_action(scene.get("safest_direction"))
         out = dict(scene)
         # R1: SIZE the cloud's turn from the local bearing, when the two
         # agree on which way. The cloud still owns the direction -- this
@@ -1235,6 +1244,7 @@ class TieredVision:
             # The cloud said turn and nothing local can size it: a search
             # step, for the reason SCAN_TURN_DEG gives.
             out["turn_deg"] = SCAN_TURN_DEG
+        self._note_action(direction, out.get("turn_deg"))
         out["_perception"] = perception.as_dict()
         out["_tier"] = {"cloud_called": True, "trigger": trigger,
                         # Synchronous: asked and answered on one frame.

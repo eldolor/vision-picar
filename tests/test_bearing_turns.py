@@ -373,3 +373,62 @@ def test_every_search_start_arrives_rather_than_drifting_into_a_jamb():
     failed = [(o, round(left, 2), outcome) for o in SEARCH_OFFSETS
               for _, left, outcome in [_search(o)] if left > 1.05]
     assert not failed, f"did not arrive: {failed}"
+
+
+# ---------- R1c: an unreliable detector (PLAN-ros-alignment.md 3.6b) ----------
+
+
+class _Flaky(FrameReportedPipeline):
+    """A detector that misses an in-view target with probability 1 - p,
+    seeded so the test is deterministic."""
+
+    def __init__(self, target, p, seed):
+        import random
+        super().__init__(target)
+        self.p, self.rng = p, random.Random(seed)
+
+    def perceive(self, frame):
+        from brain.perceive import ABSENT, Perception
+        out = super().perceive(frame)
+        if out.status == "detected" and self.rng.random() > self.p:
+            return Perception(status=ABSENT, synthesised=True)
+        return out
+
+
+def test_a_detector_that_misses_one_frame_in_ten_still_arrives():
+    """Criterion 1 of 3.6b: at 90% per-frame detection at least 95% of
+    missions arrive. Measured 84.5% before R1c -- R1b's 45-degree search step
+    had silently turned the 8-TURN spin guard into one rotation, so a single
+    missed frame as the sweep passed the target forced a FORWARD off the
+    doorway's line -- and 95.2% with the guard counted in degrees."""
+    starts = CLEAR_STARTS + [(5.5, 7.5, o) for o in SEARCH_OFFSETS]
+    arrived = total = 0
+    for start in starts:
+        for seed in (1, 2, 3):
+            x, y, off = start
+            grid = build_starter_world()
+            grid.x, grid.y = x, y
+            grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
+            robot = MockRobot(grid, render=False)
+            tier = TieredVision(_Flaky(TARGET, 0.9, seed), _quiet_cloud,
+                                steer_on_sight=True, hold_goal=True)
+            runner = MissionRunner(robot, target_object=TARGET, max_steps=60,
+                                   policy="tiered", vision_fn=tier,
+                                   world=mock_world_for(robot))
+            runner.start()
+            while runner.tick():
+                pass
+            total += 1
+            arrived += math.dist((grid.x, grid.y), GOAL) <= 1.05
+    assert arrived / total >= 0.95, f"{arrived}/{total} arrived"
+
+
+def test_the_spin_guard_counts_degrees_not_turns():
+    """With 45-degree search steps, the default guard (8 quarter turns'
+    worth) must allow two full rotations -- sixteen turns -- not one."""
+    tier = _tier()  # its first frame already spent one 45-degree turn
+    acts = [tier({"detections": []})["safest_direction"] for _ in range(20)]
+    first = acts.index("FORWARD")
+    # Two rotations = 16 turns, one of them the helper's. The count-based
+    # guard fired after ONE rotation (index ~7).
+    assert first >= 14, f"forced FORWARD after only {first + 1} search turns: {acts}"

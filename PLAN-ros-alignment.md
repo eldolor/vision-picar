@@ -501,6 +501,62 @@ twin's map.** R2's row names it as the proof; under the data rule the proof
 is the equality test above. It becomes worth drawing at R5, when the two
 numbers differ.
 
+### 3.6b R1c -- an unreliable detector, and a regression R1b introduced
+
+**Baseline (current code, 69 starts x 3 seeds, detection withheld at random
+on in-view frames):** arrival 100% / 84.5% / 73.4% / 53.6% / 47.3% at 100 /
+90 / 80 / 50 / 33% per-frame detection. A realistic detector (80-90%) loses
+one mission in six. `hold_bearing` (dead-reckoning) does not fix it: 83% at
+90%, and its reversal count is polluted by post-arrival dithering (the robot
+drives onto the non-solid backpack and orbits it).
+
+**Diagnosis, from traces:** the search sweep passes the target on a missed
+frame, and the SPIN GUARD fires -- 8 consecutive turns without a detection
+force a FORWARD -- which pushes the robot off the doorway's line so that the
+eventual straight approach clips a jamb and ends `blocked`. **That is a
+regression R1b introduced**: the guard counts TURNS and was set at 8 when
+every turn was 90 degrees (two rotations); R1b's 45-degree search step made
+8 turns ONE rotation, so a single missed frame now triggers it. A diagnostic
+run with the guard at 16 turns (two rotations again) measured 95.2% at both
+90% and 80% detection. *That diagnostic preceded the criteria below; they
+are set from the purpose, not from its numbers.*
+
+**Fix:** count DEGREES turned, not turns -- `spin_guard_after` keeps its
+meaning of "quarter turns' worth" (8 = 720 degrees = two rotations), so the
+guard cannot silently change again when the step size does.
+
+**Acceptance criteria, written before measuring the fix:**
+
+1. At 90% and at 80% per-frame detection, **at least 95%** of missions arrive
+   (a realistic detector loses at most one mission in twenty).
+2. **No regression:** 100% arrival at 100% detection; every existing test
+   (clear, jamb, search) passes.
+3. Mean reversals stay **at or below 1**.
+
+**Measured -- all three met, phase closed (narrowly on 1):**
+
+| per-frame detection | arrived before R1c | arrived after | criterion |
+|---|---|---|---|
+| 100% | 100% | **100%** | no regression |
+| 90% | 84.5% | **95.2%** (197/207) | >= 95% |
+| 80% | 73.4% | **95.2%** (197/207) | >= 95% |
+| 50% | 53.6% | 81.2% | -- |
+| 33% | 47.3% | 56.5% | -- |
+
+Mean reversals 0.2-0.4 throughout. **The margin on criterion 1 is thin** --
+ten missions in 207 still fail at 90% and 80%, and the traces point at the
+same residue as 3.4: an approach from off the doorway's line clips a jamb,
+which is route planning (R6). Below ~50% detection the remaining loss is a
+detector too unreliable to steer on at all, and is not this phase's problem.
+Pinned in `tests/test_bearing_turns.py` (arrival >= 95% at 90% detection;
+the guard allowing two full rotations of 45-degree search), both confirmed
+red against the count-based guard.
+
+**One lesson for the next phase that changes a step size:** a threshold
+counted in STEPS silently changes meaning when the step does. R1b's search
+step halved the spin guard and nothing failed until a detector was allowed
+to miss.
+
 ### 3.7 `POST /wheels` -- a design for the user to decide, NOT built
 
 The first way to move the robot without a verb, so its safety semantics are
