@@ -400,11 +400,17 @@ def test_a_detector_that_misses_one_frame_in_ten_still_arrives():
     missions arrive. Measured 84.5% before R1c -- R1b's 45-degree search step
     had silently turned the 8-TURN spin guard into one rotation, so a single
     missed frame as the sweep passed the target forced a FORWARD off the
-    doorway's line -- and 95.2% with the guard counted in degrees."""
+    doorway's line -- and 98.3-98.6% (+/- 1%) with the guard in degrees.
+
+    TEN seeds, not three. A random detector makes the trajectory -- and so
+    which frames get missed -- depend on everything before it, so at 207
+    missions the noise was +/- 3 missions and three seeds read 95.2%, then
+    94.2% after an unrelated change, straddling the bar by chance. At 690 the
+    estimate is tight enough for a threshold to mean something."""
     starts = CLEAR_STARTS + [(5.5, 7.5, o) for o in SEARCH_OFFSETS]
     arrived = total = 0
     for start in starts:
-        for seed in (1, 2, 3):
+        for seed in range(10):
             x, y, off = start
             grid = build_starter_world()
             grid.x, grid.y = x, y

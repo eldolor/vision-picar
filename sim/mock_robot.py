@@ -465,7 +465,8 @@ class MockRobot(RobotInterface):
         for i in range(cols):
             t = (i + 0.5) / cols
             angle = base_angle - renderer.FPV_FOV / 2 + renderer.FPV_FOV * t
-            dist_cells = renderer.cast_ray(self.world.layout, px, py, angle)
+            dist_cells = renderer.cast_ray(self.world.layout, px, py, angle,
+                                           solid=self.world.solid_cells)
             beyond_range = dist_cells >= renderer.FPV_MAX_DIST
             # cast_ray() overshoots: it marches in FPV_STEP increments and
             # returns the first step already inside the wall, so the true
@@ -533,7 +534,8 @@ class MockRobot(RobotInterface):
         for i in range(rays):
             rel = math.radians(-180 + i)
             dist = renderer.cast_ray(self.world.layout, self.world.x, self.world.y,
-                                     self.world.theta + rel)
+                                     self.world.theta + rel,
+                                     solid=self.world.solid_cells)
             ranges.append(None if dist >= renderer.FPV_MAX_DIST
                           else round(dist * DEFAULT_CELL_M, 4))
         return {"usable": True, "angle_min_deg": -180.0, "angle_increment_deg": 1.0,

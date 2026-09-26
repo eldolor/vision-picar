@@ -143,12 +143,19 @@ def normalize_angle(a: float) -> float:
     return a
 
 
-def cast_ray(layout, px: float, py: float, angle: float) -> float:
+def cast_ray(layout, px: float, py: float, angle: float, solid=None) -> float:
     """March until a wall cell, or `FPV_MAX_DIST`.
 
     Doors ('D') are passable, same as real movement, so a ray keeps going
     through a doorway into whatever room is beyond it -- that is what
     makes a door read as a bright gap rather than a wall.
+
+    `solid` is a set of `(x, y)` cells that also stop the ray -- the
+    objects, since 2026-09-26 (`PLAN-ros-alignment.md` 3.9). Passed by
+    everything that SENSES or MOVES (collision, distance, depth, lidar, the
+    map) and deliberately NOT by the camera's wall profile, which draws
+    objects as billboards rather than as grey wall blocks. None keeps the
+    wall-only behaviour, so the picture is unchanged.
     """
     dx, dy = math.cos(angle), math.sin(angle)
     dist = 0.0
@@ -157,6 +164,8 @@ def cast_ray(layout, px: float, py: float, angle: float) -> float:
         cx = math.floor(px + dx * dist)
         cy = math.floor(py + dy * dist)
         if _cell_at(layout, cx, cy) == CELL_WALL:
+            return dist
+        if solid and (cx, cy) in solid and (cx, cy) != (math.floor(px), math.floor(py)):
             return dist
     return FPV_MAX_DIST
 

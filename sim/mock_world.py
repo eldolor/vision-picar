@@ -128,7 +128,10 @@ class MockWorld(WorldInterface):
                 # `GridWorld._cell()` is the world's own truth about a
                 # cell and returns CELL_WALL out of bounds, so the ring
                 # cannot mark anything beyond the layout as floor.
-                wall = self.world._cell(cx, cy) == CELL_WALL
+                # Objects are solid (3.9): a lidar beam returns off a
+                # backpack, and a SLAM map shows it as an obstacle.
+                wall = (self.world._cell(cx, cy) == CELL_WALL
+                        or (cx, cy) in self.world.objects)
                 changed += self._mark(cx, cy, CELL_OCCUPIED if wall else CELL_FREE)
                 if wall:
                     # A ray stops at the first wall. Everything behind it

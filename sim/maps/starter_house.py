@@ -48,7 +48,11 @@ ROOMS = {
 
 OBJECTS = {
     (10, 7): "red backpack",
-    (2, 2): "sofa",
+    # In the living room's corner since 2026-09-26. It was at (2, 2) -- the
+    # robot's start cell -- which was harmless while objects were labels on
+    # the floor and impossible once they became solid (PLAN-ros-alignment.md
+    # 3.9): the robot would have started inside it.
+    (1, 1): "sofa",
     (10, 6): "refrigerator",
 }
 

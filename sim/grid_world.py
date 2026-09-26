@@ -272,6 +272,15 @@ class GridWorld:
         convention every other angle in this project uses."""
         return math.degrees(self.theta + math.pi / 2) % 360.0
 
+    @property
+    def solid_cells(self) -> frozenset:
+        """Cells an object stands in -- obstacles to anything that senses or
+        moves, since 2026-09-26 (`PLAN-ros-alignment.md` 3.9: "objects must
+        be treated as solid to emulate the real world"). A real backpack
+        stops a robot and returns a lidar beam; until then the robot drove
+        onto it and lost it under its own footprint."""
+        return frozenset(self.objects)
+
     def view_angle(self) -> float:
         """The angle the CAMERA points along, in `theta`'s convention.
 
@@ -335,7 +344,8 @@ class GridWorld:
         sign = 1.0 if cells > 0 else -1.0
         angle = self.theta if sign > 0 else renderer.normalize_angle(self.theta + math.pi)
         want = abs(cells)
-        room = renderer.cast_ray(self.layout, self.x, self.y, angle) - ROBOT_HALF_CELL
+        room = renderer.cast_ray(self.layout, self.x, self.y, angle,
+                                 solid=self.solid_cells) - ROBOT_HALF_CELL
         allowed = max(0.0, min(want, room))
         self.x += math.cos(angle) * allowed
         self.y += math.sin(angle) * allowed
@@ -420,7 +430,8 @@ class GridWorld:
         drift apart. On an axis-aligned wall from a cell centre this
         returns exactly the free-cell count the old walk did.
         """
-        raw = renderer.cast_ray(self.layout, self.x, self.y, self.view_angle())
+        raw = renderer.cast_ray(self.layout, self.x, self.y, self.view_angle(),
+                                solid=self.solid_cells)
         free = raw - renderer.FPV_STEP - ROBOT_HALF_CELL
         dist = max(0, min(int(max_range), int(round(free))))
         view_deg = math.degrees(self.view_angle() + math.pi / 2) % 360.0

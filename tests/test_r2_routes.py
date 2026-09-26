@@ -40,24 +40,29 @@ def test_every_beam_is_the_renderers_own_ray():
     scan = robot.get_scan()
     for i, r in enumerate(scan["ranges_m"]):
         angle = robot.world.theta + math.radians(scan["angle_min_deg"] + i * scan["angle_increment_deg"])
-        cells = renderer.cast_ray(robot.world.layout, robot.world.x, robot.world.y, angle)
+        # Objects are solid to sensing (3.9), so the lidar's ray is the one
+        # that stops at them too.
+        cells = renderer.cast_ray(robot.world.layout, robot.world.x, robot.world.y,
+                                  angle, solid=robot.world.solid_cells)
         if cells >= renderer.FPV_MAX_DIST:
             assert r is None
         else:
             assert r == pytest.approx(cells * DEFAULT_CELL_M, abs=renderer.FPV_STEP * DEFAULT_CELL_M)
 
 
-def test_a_beam_through_the_kitchen_door_reaches_past_it():
+def test_a_beam_through_the_kitchen_door_reaches_past_it_to_the_backpack():
     """From the hallway row facing the door, the beam dead ahead goes
-    through the doorway to the kitchen's far wall -- not stopping at the
-    doorway, which would draw the door as a wall on every map."""
+    through the doorway -- not stopping at it, which would draw the door as
+    a wall on every map -- and returns off the backpack's face, since
+    objects are solid (3.9). Before that it passed through the backpack to
+    the kitchen wall behind it (1.95 m)."""
     robot = _robot_at(5.5, 7.5, Heading.E)
     scan = robot.get_scan()
     ahead = scan["ranges_m"][180]  # angle_min -180, 1 degree per beam
     door_m = (8 - 5.5) * DEFAULT_CELL_M
-    far_wall_m = (12 - 5.5) * DEFAULT_CELL_M
+    backpack_face_m = (10 - 5.5) * DEFAULT_CELL_M
     assert ahead > door_m + DEFAULT_CELL_M
-    assert ahead == pytest.approx(far_wall_m, abs=0.05)
+    assert ahead == pytest.approx(backpack_face_m, abs=0.05)
 
 
 def test_the_scan_is_in_the_body_frame_and_ignores_the_camera_pan():

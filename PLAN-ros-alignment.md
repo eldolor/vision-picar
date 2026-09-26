@@ -538,13 +538,14 @@ guard cannot silently change again when the step size does.
 | per-frame detection | arrived before R1c | arrived after | criterion |
 |---|---|---|---|
 | 100% | 100% | **100%** | no regression |
-| 90% | 84.5% | **95.2%** (197/207) | >= 95% |
-| 80% | 73.4% | **95.2%** (197/207) | >= 95% |
+| 90% | 84.5% | **95.2%** (197/207; 98.6% +/- 0.9 at ten seeds, see 3.9) | >= 95% |
+| 80% | 73.4% | **95.2%** (197/207; 98.4% +/- 0.9 at ten seeds, see 3.9) | >= 95% |
 | 50% | 53.6% | 81.2% | -- |
 | 33% | 47.3% | 56.5% | -- |
 
-Mean reversals 0.2-0.4 throughout. **The margin on criterion 1 is thin** --
-ten missions in 207 still fail at 90% and 80%, and the traces point at the
+Mean reversals 0.2-0.4 throughout. *(First recorded as "the margin on
+criterion 1 is thin"; a ten-seed re-measure in 3.9 put both rates near 98.5%
+-- the three-seed figure was noise.)* The missions that do fail trace to the
 same residue as 3.4: an approach from off the doorway's line clips a jamb,
 which is route planning (R6). Below ~50% detection the remaining loss is a
 detector too unreliable to steer on at all, and is not this phase's problem.
@@ -621,6 +622,60 @@ from the one the deferral weighed:
 the target is centred, and the mission ends `found` -- with the lidar version
 replacing it on hardware day. Held back only because P7e's deferral was a
 deliberate call and this reverses it.
+
+### 3.9 Solid objects (2026-09-26) -- decided by the user
+
+*"Objects must be treated as solid to emulate the real world."* Until now an
+object was a label on a floor cell: the robot drove through it, sensors saw
+past it, and the map never showed it. A real backpack stops a robot, returns
+a lidar beam and appears on a SLAM map.
+
+**Design:** objects are solid to everything that SENSES or MOVES -- collision
+(`GridWorld.translate()`), `get_distance()`, the depth grid, the lidar scan,
+and `MockWorld`'s map (an object cell is OCCUPIED once seen). They stay
+billboards to the CAMERA: the render still draws them as objects rather than
+grey wall blocks, and perception's occlusion test still asks only whether a
+WALL is in the way (an object behind another is not modelled). The starter
+house starts the robot on the sofa's cell, so the sofa moves to the living
+room's corner at (1, 1).
+
+**Acceptance criteria, written before building:**
+
+1. **Collision:** driven at the backpack from every clear start, the robot's
+   cell is never an object's cell.
+2. **Sensing:** facing the backpack from (8.5, 7.5), the scan's forward beam
+   reads the backpack's face (0.45 m), not the kitchen wall behind it; the
+   scalar distance and the depth grid's path zones see it too.
+3. **Map:** once seen, the backpack's cell is OCCUPIED on `/world/map`.
+4. **Picture unchanged:** the golden image is byte-identical -- the camera
+   draws objects as it always did.
+5. **No regression in the tasks that matter:** all 12 clear starts still end
+   within 1.05 cells of the backpack (now stopped in front of it rather than
+   on it), and every existing test passes or is changed for a stated reason.
+
+**Measured -- all five met, phase closed.** With perfect detection every one
+of 69 starts now ends at exactly (9.5, 7.5): stopped by the collar in front
+of the backpack, never on it. The forward beam from (8.5, 7.5) reads the
+backpack's face at 0.45 m; the map marks it OCCUPIED; the golden image is
+byte-identical. Two tests changed, for the reason stated in each: the scan
+equals the renderer's ray *with* the solid set, and the kitchen-door beam
+now returns off the backpack (1.35 m) rather than the wall behind it. Tests
+in `tests/test_solid_objects.py`, confirmed red against the non-solid sim.
+
+**No measurable cost to R1c** -- and a correction to R1c's own record. The
+first run read 94.2% at 90% detection, under R1c's 95%, against 95.2% the
+night before. Both were three-seed numbers, and with a random detector the
+trajectory -- and so which frames get missed -- depends on everything
+before it: at 207 missions the noise is about +/- 3 missions. Re-measured
+at ten seeds (690 missions per rate), before and after this change:
+
+| | before solid objects | after |
+|---|---|---|
+| 90% detection | 98.6% +/- 0.9 | **98.3% +/- 1.0** |
+| 80% detection | 98.4% +/- 0.9 | **98.3% +/- 1.0** |
+
+So R1c clears its bar comfortably; "95.2%, thin margin" was an unlucky
+three-seed estimate. Its test now uses ten seeds.
 
 ## 4. Honest residue -- what the twin cannot tell you
 
