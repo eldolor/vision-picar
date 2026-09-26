@@ -1,6 +1,6 @@
 # Plan: ROS 2, with the twin still doing the proving
 
-Status: **R0 BUILT 2026-09-25, R1-R9 proposed** · Date: 2026-09-25 · Phase IDs: `R0`-`R9`,
+Status: **R0-R4 BUILT (R0-R1c 2026-09-25, R2-R4 and arrival 2026-09-26), R5-R9 proposed** · Date: 2026-09-25 · Phase IDs: `R0`-`R9`,
 alongside `S*` (`PLAN-sim-hardening.md`), `B*` (`PLAN-brain-relocation.md`),
 `M*` (`PLAN-microduck-transplants.md`), `T*` (`PLAN-teleop-robot.md`),
 `N*` (`PLAN-mapping.md`), `C*`/`P*` (`PLAN-onboard-perception.md`).
@@ -101,8 +101,8 @@ honest all-unusable defaults.
 | **R0** | **DONE 2026-09-25, and WATCHED -- the user confirmed the turn step on a phone the same day.** **Continuous pose + diff-drive kinematics.** C2 and 1.14 merged. `GridWorld` holds float `x`/`y`/`theta`; `MockRobot.set_wheel_velocity()` / `step()` / `get_wheel_state()` take **left/right wheel angular velocities** and integrate over `dt`; encoder counts fall out of that integration; continuous collision via `renderer.cast_ray()`. Wheel velocities rather than a twist **on purpose**: it puts `diff_drive_controller`'s kinematics under test with the parameters that will ship | D-pad (with a 15° / 45° / 90° turn step) rotates through non-cardinal angles; map view, FPV and depth strip track smoothly -- see 3.1 |
 | **R1** | **BUILT 2026-09-25 (not yet watched) -- and the answer was turn SIZE, see 3.3.** **P25's A/B, finally runnable.** `brain/goal_pose.py` is built and default OFF because the sim turned in 90° quanta against a 10° centre band. Wire into `brain/tiered.py`; add median-run-length and reversal metrics to `control/walk_eval.py`; run it. **Before ROS**, so R6 has a baseline | Run-length rises above 1.0; no more LEFT/RIGHT alternation on a stationary target |
 | **R2** | **Three routes.** `GET`/`POST /wheels` (per-wheel position + velocity); `GET /world/scan` (`MockWorld` already casts 360 rays, one per degree -- publish the ranges, not only the cells they marked); `GET /world/truth` | A ground-truth ghost on the twin's map. Identical today, which is the point |
-| **R3** | **URDF + TF.** `base_link`, two wheel joints, `laser`, `camera_link` as child of a **revolute pan joint** (ST3215). §900's 11-14cm sensor-to-bumper offset becomes a transform, not a constant. Bearings compose through the pan joint -- the general form of what `goal_pose.py` does by hand | Frames drawn on the map view, swinging as the servo pans |
-| **R4** | **`picar_sim_hardware`.** Plus `diff_drive_controller`, `joint_state_broadcaster`, `twist_mux` with `AGENT-HARNESS.md` §4.1's order as priorities, and `sim_scan_node` republishing `/world/scan` as `sensor_msgs/LaserScan`. **Exactly one writer to the wheels** from here | D-pad drives through the whole ROS chain; grabbing it mid-mission still ends `preempted`, still names `twin-dpad`, still lapses on silence |
+| **R3** | **DONE on data 2026-09-26, criterion 4 FAILED and recorded -- see 3.12.** **URDF + TF.** `base_link`, two wheel joints, `laser`, `camera_link` as child of a **revolute pan joint** (ST3215). §900's 11-14cm sensor-to-bumper offset becomes a transform, not a constant. Bearings compose through the pan joint -- the general form of what `goal_pose.py` does by hand | Frames drawn on the map view, swinging as the servo pans |
+| **R4** | **DONE on data 2026-09-26, off by default (`drive: ros`) -- see 3.13.** **`picar_sim_hardware`.** Plus `diff_drive_controller`, `joint_state_broadcaster`, `twist_mux` with `AGENT-HARNESS.md` §4.1's order as priorities, and `sim_scan_node` republishing `/world/scan` as `sensor_msgs/LaserScan`. **Exactly one writer to the wheels** from here | D-pad drives through the whole ROS chain; grabbing it mid-mission still ends `preempted`, still names `twin-dpad`, still lapses on silence |
 | **R5** | **`slam_toolbox` + the error readout.** Bridge serves `/world/pose` and `/world/map` from SLAM instead of `MockWorld` -- the routes the twin already consumes. Then opt-in odometry drift (`sim.odom_drift`, following `sim/sensors.py`'s pattern, default off): without drift there is nothing for loop closure to correct | "map source: sim / slam" toggle, ground-truth ghost, live error number. Drive a lap: error grows, **pose jumps, error collapses**. Hardware cannot show this |
 | **R6** | **nav2 + `collision_monitor`.** Costmaps, planner, controller, recovery. `collision_monitor` between the mux and the base, with the footprint term the hand-written collar never had. **`robot/safety.py` is NOT deleted** -- it keeps the teleop and vision-policy paths. Then re-run R1's metric: a DWB/MPPI controller scores continuity in its cost function and should not flicker | Tap a goal on the map, path draws, robot follows. Block it, watch recovery. Read run-length against R1 |
 | **R7** | **Fake ESP32 on a pty** speaking `HARDWARE-BOM.md` §4.2's real protocol (`T=1/11/13/126/130/131/136`, `1001`/`1002` frames), and `picar_hardware` written against it. Closes C3's stated blocker: *"nothing in this repo simulates a serial peer"*. Also falsifies §4.2's unverified belief that the heartbeat stops the motors | A drill that severs the link mid-mission; the board's heartbeat expires and reports motors stopped, watchdog quiet |
@@ -959,6 +959,62 @@ verbs (`/action FORWARD`, `LEFT 45`), not velocities. So:
    1 mm, at >= 5 Hz.
 8. **A mission still finds the target**, live through the brain API with
    `drive: ros`, from 3.11's hallway start.
+
+**Measured 2026-09-26 -- all eight met**, live
+(`tests/test_ros_chain_live.py`, 13 tests, skips without the stack) and
+always-run (`tests/test_ros_drive.py`, 9 tests, the same verb executor
+against a fake chain with the measured latency and jitter):
+
+1. Met, with its measurement amended. Every wheel command during a 0.1 m/s
+   twist arrives as exactly 0.1 / r = 3.077 rad/s, and `/odom` equals
+   `/world/truth` (0.3582 m against 0.3582 m). **"0.30 m +/- 5% in 3 s" was
+   the wrong instrument:** an open-loop timed stream measures the HTTP
+   client's clock, and seven runs read 0.267-0.316 m with the wheels
+   receiving the exact velocity throughout. Distance accuracy is criterion
+   3's, where it is closed on the encoders.
+2. Met. Under `drive: ros` every verb goes out through the chain (the
+   health readout counts them) and `POST /wheels` refuses any driver but
+   `ros` (`not_the_actuator`); the always-run test forbids the robot's own
+   verbs outright and they are never called.
+3. Met: 14 live verbs, moves within 4.4 mm of 0.30 m and turns within 0.64
+   degree. **It took three tunings, and the first is worth recording:** at
+   2 rad/s with a ramp gain of 3/s, LEFT 45 came out at 59-74 degrees. The
+   chain carries 40-150 ms of jittery delay (measured with a step), and a
+   proportional ramp over a delay settles only when gain x delay is well
+   under 1. Now 1.2 rad/s, gain 1.5, a 0.1 rad/s floor, and a SIGNED settle
+   pass that drives back after a latency spike. The fake chain in the
+   always-run test carries that jitter; with a fixed delay it passed the
+   overshooting tuning, so it was made jittery until it failed it.
+4. Met. A D-pad tap mid-mission ends it `preempted`, the log names
+   `twin-dpad`, and authority lapses on silence -- M4, unchanged, through
+   ROS. Inside ROS a teleop twist beats a brain twist sent in the same
+   period (heading moved, position did not).
+5. Met. A standing forward twist into a wall stops at >= 19.4 cm.
+6. Met, after a config change made before measuring: silence inside ROS
+   stops the wheels within 0.5 s once `twist_mux`'s timeouts and
+   `cmd_vel_timeout` are 0.25 s each -- the two ADD, so at 0.5 each it would
+   have been a full second. Killing the container freezes the last command
+   as a standing one, and the robot server's own watchdog stops it within
+   its timeout.
+7. Met. `/scan` equals `GET /scan` beam for beam within 1 mm, at ~10 Hz.
+8. Met. Live, `drive: ros`, hallway start: **`found` in 7 steps and 12 s**, 1
+   cloud call, all 5 of the mission's moves through ROS (243 wheel posts),
+   stopped 0.36 m from the backpack.
+
+**A defect found on the way, fixed:** `picar_sim_hardware` returned ERROR
+after 20 failed HTTP cycles, and ros2_control then deactivates the component
+for good -- which happened across a routine restart of the robot server. The
+controllers still read `active` and commanded nothing. An unreachable robot
+server is not a hardware fault here (the robot server's watchdog is what
+keeps it safe), so the plugin now keeps trying and says so; a robot that
+reports no wheels at all is still an ERROR.
+
+**How to run it:** `docker build -t vision-picar-ros service/slam`, then
+`docker run -d --name picar-ros -p 8090:8090 -e APP_SHARED_SECRET
+-e ROBOT_URL=http://host.docker.internal:8000 vision-picar-ros ros2 launch
+picar_bringup picar.launch.py`, and restart the robot server with
+`ROBOT_DRIVE=ros`. The default stays `drive: direct`, so the twin does not
+depend on Docker being up.
 
 ## 4. Honest residue -- what the twin cannot tell you
 

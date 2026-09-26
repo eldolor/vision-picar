@@ -87,6 +87,8 @@ README), not in the automated unit suite.
 import os
 import threading
 import time
+
+import httpx
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -101,6 +103,9 @@ from pydantic import BaseModel
 from robot.factory import get_robot, load_config
 from robot.identity import log_identity
 from robot.interface import DRIVER_AUTONOMOUS, DRIVER_UNKNOWN, driver_priority
+
+# The ROS container's driver name on POST /wheels (R2b, R4).
+DRIVER_ROS = "ros"
 from robot.safety import SafetyController, SafetyViolation, path_zone_indices
 from world.factory import get_world
 
@@ -188,8 +193,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         else get_world(robot=robot)
     safety = SafetyController(robot, min_distance_cm=min_distance,
                               sensor_to_bumper_cm=sensor_to_bumper)
+    # R4: under `drive: ros` every verb is velocities through the ROS
+    # container (robot/ros_drive.py), which is then the one wheel writer.
+    by_velocity = bool(getattr(robot, "drives_by_velocity", False))
     state = {
         "last_command_at": time.monotonic(),
+        "wheel_posts": 0,
         # Phase M4. Who last drove, when, and what was last refused. The
         # server has never had a notion of a driver at all: the D-pad and a
         # remote mission both posted to /action and the later one simply
@@ -431,10 +440,29 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         state["driver"] = driver
         state["driver_at"] = now
         try:
-            with motion_lock:
-                result = safety.check_and_execute(
-                    req.action, speed=req.speed, duration=req.duration, angle=req.angle
-                )
+            if by_velocity:
+                # R4, `drive: ros`: the verb is a stream of twists that the ROS
+                # chain turns back into POST /wheels -- which needs
+                # motion_lock, as does the wheel loop that moves the robot.
+                # Holding it here would deadlock the verb against its own
+                # motion, so it is not held; MockRobot's reads are safe
+                # alongside the wheel loop, and M4 above already decided who
+                # may drive.
+                try:
+                    with robot.driving_as(driver):
+                        result = safety.check_and_execute(
+                            req.action, speed=req.speed, duration=req.duration, angle=req.angle
+                        )
+                except (httpx.HTTPError, RuntimeError) as e:
+                    # The ROS side is unreachable. Stop directly -- the stop
+                    # does not go through ROS -- and say why, by name.
+                    robot.stop()
+                    return refuse("ros_unavailable", f"drive: ros, and the bridge failed: {e}", driver)
+            else:
+                with motion_lock:
+                    result = safety.check_and_execute(
+                        req.action, speed=req.speed, duration=req.duration, angle=req.angle
+                    )
             return {"executed": True, "result": result, "driver": driver}
         except SafetyViolation as e:
             return refuse("safety_distance", str(e), driver)
@@ -455,12 +483,26 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         """
         now = time.monotonic()
         driver = (x_driver or "").strip() or DRIVER_UNKNOWN
-        refused = arbitrate(driver, now)
-        if refused:
-            return refused
-        state["last_command_at"] = now
-        state["driver"] = driver
-        state["driver_at"] = now
+        if by_velocity:
+            # R4, `drive: ros`: this is the ACTUATOR's route, and the ROS
+            # container is its only writer. The people and programs that
+            # drive reach the wheels THROUGH it -- /action is where M4 decides
+            # between them -- so it is not arbitrated against them, and it does
+            # not take authority from them. It still feeds the watchdog: if
+            # the container dies, these posts stop and the wheels stop.
+            if driver != DRIVER_ROS:
+                return refuse("not_the_actuator",
+                              f"drive: ros -- only '{DRIVER_ROS}' writes the wheels; "
+                              f"{driver} drives through /action", driver)
+            state["last_command_at"] = now
+            state["wheel_posts"] += 1
+        else:
+            refused = arbitrate(driver, now)
+            if refused:
+                return refused
+            state["last_command_at"] = now
+            state["driver"] = driver
+            state["driver_at"] = now
         with motion_lock:
             left, right, reason = safety.vet_wheel_velocity(req.left_rad_s, req.right_rad_s)
             try:
@@ -656,6 +698,13 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         return {
             "status": "ok",
             "seconds_since_last_command": round(age, 2),
+            # R4: how verbs reach the wheels, and the evidence for "one
+            # writer" -- under `ros`, verbs sent through the chain and the
+            # actuator's posts; a verb executed on the robot directly would
+            # not appear in either.
+            "drive": {"mode": "ros" if by_velocity else "direct",
+                      "verbs_through_ros": getattr(robot, "verbs_through_ros", None),
+                      "wheel_posts_from_ros": state["wheel_posts"] if by_velocity else None},
             "watchdog_timeout_s": watchdog_timeout,
             # The single source of truth for the safety threshold this
             # server actually enforces -- see web-twin/index.html's

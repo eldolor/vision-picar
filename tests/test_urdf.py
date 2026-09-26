@@ -25,6 +25,7 @@ import os
 import re
 import shutil
 import subprocess
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -67,7 +68,7 @@ def test_wheel_separation_is_one_number():
 # ---------- the live half ----------
 
 def _bridge(path, body=None):
-    secret = os.environ.get("APP_SHARED_SECRET", "")
+    secret = os.environ.get("APP_SHARED_SECRET") or os.environ.get("LOCAL_SECRET", "")
     req = urllib.request.Request(BRIDGE + path, data=None if body is None else json.dumps(body).encode(),
                                  method="GET" if body is None else "POST")
     req.add_header("content-type", "application/json")
@@ -83,6 +84,14 @@ def live():
         _bridge("/health")
     except Exception:  # noqa: BLE001
         pytest.skip(f"no ROS bridge at {BRIDGE} -- start service/slam's container to run R3's TF checks")
+    try:
+        # /health is open; the routes below are not. A bridge that answers
+        # but will not let us in is a bridge this run cannot measure.
+        _bridge("/tf?target=base_link&source=laser")
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            pytest.skip("the ROS bridge wants a secret -- set APP_SHARED_SECRET (or LOCAL_SECRET)")
+        raise
     if not shutil.which("docker"):
         pytest.skip("docker is needed to expand the xacro")
     urdf = subprocess.run(

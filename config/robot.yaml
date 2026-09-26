@@ -6,6 +6,18 @@
 # "hardware" -> robot/hardware_robot.py (added in Phase 11, real PiCar-X)
 mode: sim
 
+# How verbs reach the wheels -- PLAN-ros-alignment.md R4 (3.13).
+# "direct" -> the backend executes /action's verbs itself (everything before R4)
+# "ros"    -> robot/ros_drive.py turns each verb into velocities, closed on the
+#             wheel encoders, and sends them through the ROS container
+#             (service/slam/, bridge on :8090): twist_mux ->
+#             diff_drive_controller -> picar_sim_hardware -> POST /wheels.
+#             The container is then the ONE writer to the wheels.
+# ROBOT_DRIVE / ROS_BRIDGE_URL override these, as ROBOT_MODE overrides mode.
+drive:
+  mode: direct
+  bridge_url: http://127.0.0.1:8090
+
 # Grid-world map to load when mode is "sim"
 sim_map: sim/maps/starter_house.py
 

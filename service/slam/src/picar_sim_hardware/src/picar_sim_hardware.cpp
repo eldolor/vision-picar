@@ -23,10 +23,12 @@ size_t collect(char * data, size_t size, size_t n, void * out)
 // A controller cycle is 50 ms; an HTTP round trip that takes longer than
 // this is a failure, not a slow success -- the command would be stale.
 constexpr long kTimeoutMs = 40;
-// Consecutive failed cycles before the plugin reports an ERROR and the
-// controller manager deactivates it. The robot server's watchdog stops the
-// wheels on its own either way (R4 criterion 6): this is only about saying so.
-constexpr int kMaxFailures = 20;
+// An unreachable robot server is NOT a hardware error here. Returning ERROR
+// makes ros2_control deactivate the component for good -- which R4's first
+// live run did, silently, across a routine restart of the robot server: the
+// controllers still read "active" and commanded nothing. The robot server's
+// watchdog is what keeps an unreachable robot safe (criterion 6), so this
+// keeps trying, reports the outage, and reads zero velocity meanwhile.
 }  // namespace
 
 CallbackReturn PicarSimHardware::on_init(const hardware_interface::HardwareInfo & info)
@@ -126,6 +128,16 @@ bool PicarSimHardware::request(const std::string & method, const std::string & p
   return rc == CURLE_OK && status == 200;
 }
 
+void PicarSimHardware::note_failure(const char * what)
+{
+  vel_[0] = vel_[1] = 0.0;
+  if (consecutive_failures_++ % 100 == 0) {
+    RCLCPP_WARN(logger_, "%s to %s failed (%d in a row) -- still trying; the robot "
+                "server's watchdog stops the wheels meanwhile", what, robot_url_.c_str(),
+                consecutive_failures_);
+  }
+}
+
 bool PicarSimHardware::post_wheels(double left, double right)
 {
   std::string out;
@@ -137,7 +149,8 @@ return_type PicarSimHardware::read(const rclcpp::Time &, const rclcpp::Duration 
 {
   std::string out;
   if (!request("GET", "/wheels", "", out)) {
-    return ++consecutive_failures_ > kMaxFailures ? return_type::ERROR : return_type::OK;
+    note_failure("GET /wheels");
+    return return_type::OK;
   }
   try {
     const json w = json::parse(out);
@@ -154,7 +167,11 @@ return_type PicarSimHardware::read(const rclcpp::Time &, const rclcpp::Duration 
     }
   } catch (const std::exception & e) {
     RCLCPP_WARN(logger_, "bad /wheels reply: %s", e.what());
-    return ++consecutive_failures_ > kMaxFailures ? return_type::ERROR : return_type::OK;
+    note_failure("GET /wheels (parse)");
+    return return_type::OK;
+  }
+  if (consecutive_failures_ > 0) {
+    RCLCPP_INFO(logger_, "robot server reachable again after %d failed cycles", consecutive_failures_);
   }
   consecutive_failures_ = 0;
   return return_type::OK;
@@ -169,7 +186,7 @@ return_type PicarSimHardware::write(const rclcpp::Time &, const rclcpp::Duration
   const double left = left_first ? cmd_[0] : cmd_[1];
   const double right = left_first ? cmd_[1] : cmd_[0];
   if (!post_wheels(left, right)) {
-    return ++consecutive_failures_ > kMaxFailures ? return_type::ERROR : return_type::OK;
+    note_failure("POST /wheels");
   }
   return return_type::OK;
 }

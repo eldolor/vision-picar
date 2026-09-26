@@ -2,18 +2,23 @@
 # (stop > twin-dpad > brain > ...). A person outranks every autonomous
 # source; two autonomous sources share a rank, and robot/server.py's M4
 # arbitration already refuses a second one at /action.
+#
+# Timeouts are 0.25 s, five periods of robot/ros_drive.py's 20 Hz stream.
+# A silent input is held for its timeout and THEN diff_drive_controller
+# waits its own cmd_vel_timeout, so the two add: at 0.5 each, silence took a
+# full second to stop the wheels (R4 criterion 6 allows 0.5).
 twist_mux:
   ros__parameters:
     topics:
       teleop:
         topic: cmd_vel/teleop
-        timeout: 0.5
+        timeout: 0.25
         priority: 100
       brain:
         topic: cmd_vel/brain
-        timeout: 0.5
+        timeout: 0.25
         priority: 50
       nav:
         topic: cmd_vel/nav
-        timeout: 0.5
+        timeout: 0.25
         priority: 50

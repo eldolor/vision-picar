@@ -39,6 +39,7 @@ private:
   bool request(const std::string & method, const std::string & path,
                const std::string & body, std::string & out);
   bool post_wheels(double left, double right);
+  void note_failure(const char * what);
 
   std::string robot_url_;
   std::string secret_;

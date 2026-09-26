@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (1230 passed as of 2026-09-26, with a browser
+# Confirm everything still works (1240 passed as of 2026-09-26, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -158,6 +158,8 @@ the original build plan phases, reordered simulation-first):
 | R2 (read-only) | `GET /wheels`, `GET /scan`, `GET /world/truth` | Done on data (2026-09-25) -- `PLAN-ros-alignment.md` 3.6. `RobotInterface.get_wheel_state()` / `get_scan()` and `WorldInterface.get_truth()`, each with an honest `usable: false` default, implemented by `MockRobot` / `MockWorld`, served by `robot/server.py`, read by `RemoteRobot` / `RemoteWorld`. **The scan is at `/scan`, not the plan's `/world/scan`**: it is the robot's own reading, so BODY state by section 2's rule. Every beam equals `renderer.cast_ray()`; truth equals the pose in the sim until R5 parts them. `tests/test_r2_routes.py` |
 | R2b | `POST /wheels` -- a standing wheel-velocity command, the first way to move without a verb | Done on data (2026-09-26), not deployed -- `PLAN-ros-alignment.md` 3.10, six criteria written first, all met and each confirmed red against a mutation. `robot/server.py` runs a 20 Hz control loop that re-vets the standing command through `SafetyController.vet_wheel_velocity()` every period: it zeroes forward speed below `min_distance_cm` (stops at 19.5 cm; 0.0 cm without the clamp) and **never clamps rotation**, so a robot facing a wall can pivot away. **Reverse is now checked against the scan's rear beams on every path, D-pad REVERSE included** (user decision). A new driver `ros` ranks with the brain, below the D-pad, and **the autonomous rank is now exclusive while held** -- before this the server let equal ranks interleave. A backend without wheels refuses with `unsupported`. `tests/test_wheels_command.py` |
 | P7e (first half) | Arrival recognised: a mission that reaches its target ends `found` | Done on data (2026-09-26), not deployed -- `PLAN-ros-alignment.md` 3.11, decided by the user as the rule the CAR runs, not a sim-only stand-in. `brain/arrival.py`, applied in `MissionAgent._review_scene()` between perception and decision: the target detected, within the 3-degree steering band, and **the lidar** (`get_scan()`, median of five beams at the bearing -- never the detector's distance) within 0.40 m, two frames running; then `STOP`, `target_reached`, `found`. Refuses to judge with no scan (teleop, replay), a panned camera, or no local perception (rule-based, cloud-only vision). 69/69 arrivals end `found` at perfect detection and 676/678 at 90% and 80%, none beyond 0.386 m; **0/69 without it** -- every one used to end `blocked` or `max_steps`. The first version read the NEAREST beam and declared `found` 95 cm out against a door jamb; criterion 2 caught it. `status.arrival` carries the range and streak. The other half of P7e (the steer-over-hold precedence on a held cloud `STOP`) no longer matters on this path and is left alone. `tests/test_arrival.py` |
+| R3 | The URDF and TF tree, in the first ROS container | Done on data, one criterion FAILED and recorded (2026-09-26), not deployed -- `PLAN-ros-alignment.md` 3.12. `service/slam/` now holds ROS 2 **Humble** (JetPack 6 is Ubuntu 22.04) in one container; `picar_description`'s xacro puts every dimension in one block, `[BOM]` or flagged `[PLACEHOLDER]`. `check_urdf` passes; wheel radius and separation are one number across the xacro, `controllers.yaml` and `sim/mock_robot.py` (always-run test); 15 tf2 lookups match numpy FK within 1 mm / 0.1 deg. **Criterion 4 failed:** "pan + in-frame bearing" is 4.6 deg out at 1 m with the pan axis 8 cm ahead of `base_link` -- but within 0.75 deg when the camera is centred and the target inside the steering band, which is all the tier and `brain/arrival.py` use. Pinned as a strict xfail. **Nothing may treat a panned bearing as body-relative** until it is composed through TF with a range, or the pan axis moves over the rotation centre. The sim renders from the robot's centre, so it cannot show this error. `tests/test_urdf.py` (live half skips without a container) |
+| R4 | `picar_sim_hardware`, `twist_mux`, and ONE writer to the wheels | Done on data (2026-09-26), not deployed, **off by default** -- `PLAN-ros-alignment.md` 3.13, all eight criteria met. Under `drive: ros` (`ROBOT_DRIVE=ros`), `robot/ros_drive.py` turns each `/action` verb into twists closed on the wheel encoders and sends them to the container's bridge (`picar_bridge`, HTTP :8090) -> `twist_mux` (teleop 100 > brain 50) -> `diff_drive_controller` -> `picar_sim_hardware` (C++, `hardware_interface::SystemInterface`) -> `POST /wheels`, which then accepts only driver `ros`. M4's `/action` arbitration is unchanged, so a D-pad tap still ends a mission `preempted`. Verbs land within 4.4 mm / 0.64 deg live; a tiered mission ended `found` in 7 steps with every move through ROS. **Two things learned:** a proportional verb ramp over the chain's 40-150 ms of jitter overshot a 45-degree turn to 59-74 degrees until retuned with a signed settle pass; and the plugin returning ERROR on a robot-server restart silently deactivated it for good -- it now keeps trying. The default stays `direct`, so the twin never depends on Docker. `tests/test_ros_drive.py` (always), `tests/test_ros_chain_live.py` (skips without the stack) |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. **The chassis is no longer a PiCar-X** -- see the row above. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -807,7 +809,7 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    1230 tests, 93% line coverage of brain/,
+├── tests/                    1240 tests, 93% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
 │                              75 tests over five backends,
@@ -861,6 +863,14 @@ vision-picar/
 │   │                           (see section 6 for why it's not swept into
 │   │                           the top-level `tests/` package)
 │   └── requirements.txt, Dockerfile
+│
+├── service/slam/              the ROS 2 container (Humble) -- the ONLY place
+│   │                          rclpy/ROS exists (tests/test_ros_containment.py).
+│   │                          R3/R4: picar_description (URDF), picar_sim_hardware
+│   │                          (C++ ros2_control plugin over /wheels), picar_bridge
+│   │                          (HTTP :8090 -> twist_mux, /scan, tf lookups) and
+│   │                          picar_bringup. Used only under drive: ros;
+│   │                          PLAN-ros-alignment.md 3.13 has the run command
 │
 ├── service/tunnel/            reaching the LOCAL robot + brain from the
 │   ├── proxy.py               DEPLOYED twin. One ngrok free-tier domain

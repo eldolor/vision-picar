@@ -22,6 +22,27 @@ def load_config(config_path: str | Path = _DEFAULT_CONFIG) -> dict:
 
 def get_robot(config_path: str | Path = _DEFAULT_CONFIG) -> RobotInterface:
     config = load_config(config_path)
+    return _with_drive(_backend(config), config)
+
+
+def _with_drive(robot: RobotInterface, config: dict) -> RobotInterface:
+    """R4 (PLAN-ros-alignment.md 3.13): under `drive: ros` every verb is
+    executed as velocities through the ROS container, which becomes the one
+    writer to the wheels. `direct` (the default) leaves the backend as it is.
+    ROBOT_DRIVE overrides the yaml, as ROBOT_MODE does."""
+    drive = config.get("drive") or {}
+    mode = os.environ.get("ROBOT_DRIVE") or drive.get("mode", "direct")
+    if mode == "direct":
+        return robot
+    if mode == "ros":
+        from robot.ros_drive import RosDriveRobot
+
+        url = os.environ.get("ROS_BRIDGE_URL") or drive.get("bridge_url", "http://127.0.0.1:8090")
+        return RosDriveRobot(robot, url, secret=os.environ.get("APP_SHARED_SECRET", ""))
+    raise ValueError(f"Unknown drive mode in config: {mode!r} (direct | ros)")
+
+
+def _backend(config: dict) -> RobotInterface:
     # ROBOT_MODE overrides the yaml, the same pattern control/brain_config.py
     # already uses for ROBOT_URL/VISION_URL: a deployed image stays generic
     # (one ECR image, per-environment mode from the ECS task's env vars)
