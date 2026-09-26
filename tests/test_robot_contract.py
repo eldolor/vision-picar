@@ -428,3 +428,59 @@ def test_a_wrapper_reports_the_odometry_of_what_it_WRAPS(tmp_path):
 
         outer.drive_forward(50, 0.5)
         assert outer.get_odometry()["distance_m"] == inner.get_odometry()["distance_m"], name
+
+
+# ---------------------------------------------------------------------------
+# Wheel state and the scan -- phase R2
+# ---------------------------------------------------------------------------
+#
+# Two more honest-default methods, pinned the way odometry is: one shape on
+# every backend, no numbers without `usable`, and the wrappers must pass the
+# reading of what they WRAP (a gate that inherited the no-op would report
+# "no lidar" while wrapping one).
+
+
+def test_get_wheel_state_answers_the_same_shape_everywhere(robot):
+    w = robot.get_wheel_state()
+    assert isinstance(w.get("usable"), bool)
+    assert set(w) >= {"usable", "left", "right", "wheel_radius_m",
+                      "track_width_m", "counts_per_rev"}
+    if w["usable"]:
+        for side in ("left", "right"):
+            assert set(w[side]) >= {"position_rad", "velocity_rad_s", "counts"}
+            assert isinstance(w[side]["counts"], int)
+        assert w["wheel_radius_m"] > 0 and w["track_width_m"] > 0
+    else:
+        assert w["left"] is None and w["right"] is None, (
+            "no encoders must read as no numbers -- zeros are a robot that "
+            "has not moved, which is a claim")
+
+
+def test_get_scan_answers_the_same_shape_everywhere(robot):
+    sc = robot.get_scan()
+    assert isinstance(sc.get("usable"), bool)
+    assert set(sc) >= {"usable", "angle_min_deg", "angle_increment_deg",
+                       "range_min_m", "range_max_m", "ranges_m"}
+    if not sc["usable"]:
+        assert sc["ranges_m"] is None, (
+            "'no lidar' is None; a list of Nones means 'a lidar that saw "
+            "nothing in range', which is a different fact")
+        return
+    assert sc["angle_increment_deg"] > 0
+    assert len(sc["ranges_m"]) == round(360 / sc["angle_increment_deg"])
+    for r in sc["ranges_m"]:
+        assert r is None or sc["range_min_m"] <= r <= sc["range_max_m"]
+
+
+def test_a_wrapper_reports_the_wheels_and_scan_of_what_it_WRAPS():
+    """The odometry wrapper test, for R2's two readings."""
+    from control.mission_runner import _HaltGate
+    from tests.conftest import RecordingRobot
+
+    for name, wrap in (("_HaltGate", lambda r: _HaltGate(r, lambda: True)),
+                       ("RecordingRobot", RecordingRobot)):
+        inner = MockRobot(build_starter_world())
+        outer = wrap(inner)
+        outer.drive_forward(50, 0.5)
+        assert outer.get_wheel_state() == inner.get_wheel_state(), name
+        assert outer.get_scan() == inner.get_scan(), name

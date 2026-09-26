@@ -229,6 +229,28 @@ Resources:
             # section 4 draws. Grouped by room in the rule, not by meaning.
             - /world/pose
             - /world/map
+            # R2's read-only body routes: wheel state and the lidar scan.
+            # BODY state beside /odometry; that fills this rule's five.
+            - /wheels
+            - /scan
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  # R2's ground truth, on its own rule because rule 12 is full (five path
+  # values per condition). Sim-only by construction: a non-sim world answers
+  # `usable: false` here, and the route still has to be reachable for that
+  # answer to be read rather than mistaken for a broken deployment.
+  AlbListenerRuleTruth:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 13
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /world/truth
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

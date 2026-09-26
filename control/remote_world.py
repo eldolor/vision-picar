@@ -31,7 +31,7 @@ from typing import Optional
 
 import httpx
 
-from world.interface import WorldInterface, unusable_map, unusable_pose
+from world.interface import WorldInterface, unusable_map, unusable_pose, unusable_truth
 
 logger = logging.getLogger("remote_world")
 
@@ -87,6 +87,18 @@ class RemoteWorld(WorldInterface):
             if "HTTP 404" in str(e):
                 logger.info("server has no /world/pose route -- reporting no pose")
                 return unusable_pose()
+            raise
+
+    def get_truth(self) -> dict:
+        """Phase R2, sim-only. A 404 is an older server and reads as
+        unusable -- which is also what every non-sim server answers, since
+        nothing but a simulator can know the truth."""
+        try:
+            return self._request("/world/truth")
+        except WorldTransportError as e:
+            if "HTTP 404" in str(e):
+                logger.info("server has no /world/truth route -- reporting no truth")
+                return unusable_truth()
             raise
 
     def get_map(self) -> dict:

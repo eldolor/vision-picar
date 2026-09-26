@@ -251,6 +251,27 @@ Resources:
             # than "this robot cannot map".
             - /teleop-robot/world/pose
             - /teleop-robot/world/map
+            # R2. A phone has no encoders; `usable: false`, reachable.
+            - /teleop-robot/wheels
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  # R2's other two, on their own rule because rule 42 is full. Under
+  # mode: teleop both answer `usable: false` -- a phone has no lidar and
+  # nothing but a simulator knows the truth -- which is a real answer and
+  # has to be reachable to be read as one.
+  AlbListenerRuleTeleopR2:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 43
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /teleop-robot/scan
+            - /teleop-robot/world/truth
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

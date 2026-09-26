@@ -100,6 +100,18 @@ def unusable_pose() -> dict:
     }
 
 
+def unusable_truth() -> dict:
+    """The honest answer from anything that is not a simulator -- phase R2.
+
+    Ground truth is the one thing hardware can NEVER have: nothing in a real
+    room knows where the robot actually is. So every non-sim world answers
+    this, always, and a consumer that compares an estimate against it gets
+    `usable: False` rather than a plausible number to be proud of.
+    """
+    return {"usable": False, "source": None, "x_m": None, "y_m": None,
+            "heading_deg": None}
+
+
 def unusable_map() -> dict:
     """The honest answer from a backend that has no map.
 
@@ -212,6 +224,31 @@ class WorldInterface(ABC):
         poses meaning the same place afterwards.
         """
         return unusable_map()
+
+    def get_truth(self) -> dict:
+        """Where the robot ACTUALLY is -- sim-only, and named so. Phase R2.
+
+            {"usable": bool, "source": "sim" | None,
+             "x_m": float | None, "y_m": float | None,
+             "heading_deg": float | None}
+
+        Same frame and units as `get_pose()`, so an estimate and the truth
+        can be subtracted -- which is the only thing this is for: R5 draws
+        the SLAM pose against it and plots the error, the one measurement
+        `PLAN-ros-alignment.md` section 2 says the twin can make and a real
+        room cannot. It is never an input to a decision; a policy that read
+        it would be navigating by an oracle.
+
+        In the sim TODAY truth and pose are the same number -- `MockWorld`'s
+        pose is exact. They part at R5, when the pose comes from
+        `slam_toolbox` and the truth still comes from the simulator; that is
+        the moment this route starts carrying information.
+
+        **Allocentric, so WORLD state**, and on this interface rather than
+        the body's for the reason section 2 of CLAUDE.md gives. The default
+        is `unusable_truth()`, and on hardware it stays that way for ever.
+        """
+        return unusable_truth()
 
 
 class NullWorld(WorldInterface):

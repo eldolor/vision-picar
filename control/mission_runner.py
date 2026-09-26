@@ -208,6 +208,15 @@ class _HaltGate(RobotInterface):
         # then simply never fire, on every mission, silently.
         return self._robot.get_odometry()
 
+    def get_wheel_state(self) -> dict:
+        # Phase R2 -- sensing passes through, for the reason every other
+        # read above does: a gate that inherited the honest no-op would
+        # report "no encoders" while wrapping a robot that has them.
+        return self._robot.get_wheel_state()
+
+    def get_scan(self) -> dict:
+        return self._robot.get_scan()
+
 
 def call_with_timeout(fn: Callable, *args, timeout_s: Optional[float] = None):
     """Run `fn(*args)`, raising TimeoutError if it outlasts `timeout_s`.

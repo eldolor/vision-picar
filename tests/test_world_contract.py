@@ -168,7 +168,7 @@ def test_the_unusable_helpers_match_the_interface_default():
 # The reason this interface exists at all. These two tests are the only
 # thing standing between the split and a plausible-looking shortcut.
 
-WORLD_STATE_METHODS = ("get_pose", "get_map")
+WORLD_STATE_METHODS = ("get_pose", "get_map", "get_truth")
 
 BODY_STATE_METHODS = (
     "drive_forward",
@@ -183,6 +183,11 @@ BODY_STATE_METHODS = (
     "get_distance",
     "get_depth_grid",
     "get_odometry",
+    # R2. A scan is the robot's own reading -- how far everything is from
+    # it -- so it is body state even though a map is built from it; that is
+    # why it is NOT at /world/scan (PLAN-ros-alignment.md 3.6).
+    "get_wheel_state",
+    "get_scan",
 )
 
 

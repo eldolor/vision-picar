@@ -280,6 +280,7 @@ class MockRobot(RobotInterface):
         """
         per_rad = ENCODER_COUNTS_PER_REV / (2 * math.pi)
         return {
+            "usable": True,
             "left": {"position_rad": self._left_rad,
                      "velocity_rad_s": self._cmd_left_rad_s,
                      "counts": int(round(self._left_rad * per_rad))},
@@ -506,6 +507,38 @@ class MockRobot(RobotInterface):
         # never went.
         return {"rows": 1, "cols": cols,
                 "fov_deg": math.degrees(renderer.FPV_FOV), "zones": zones}
+
+    def get_scan(self) -> dict:
+        """A 360-degree scan cast from the robot's own position -- R2.
+
+        One beam per degree off the BODY heading, clockwise-positive with 0
+        dead ahead: the lidar is on the deck and does not pan, so this uses
+        `theta`, never `view_angle()` -- the opposite choice from
+        `get_depth_grid()`, which is the camera's field. Ranges come from
+        `renderer.cast_ray()`, the geometry the picture is drawn from and
+        the ring `MockWorld` builds its map out of, measured from the
+        robot's centre (the sim's robot is a point; a real lidar sits
+        11-14cm behind the bumper, which R3 makes a transform).
+
+        **`range_max_m` is the renderer's horizon (4.2m), not the RPLidar
+        C1's 12m** -- a fidelity gap, recorded in `sim/renderer.py`'s note
+        with the others. A beam that reaches it has no return and reads
+        None, which is information about empty space. The first-step
+        overshoot is reported at its upper bound here, unlike the depth
+        grid: a scan feeds a MAP, which wants the wall where it is, not the
+        safety veto, which wants it where it might be.
+        """
+        rays = 360
+        ranges = []
+        for i in range(rays):
+            rel = math.radians(-180 + i)
+            dist = renderer.cast_ray(self.world.layout, self.world.x, self.world.y,
+                                     self.world.theta + rel)
+            ranges.append(None if dist >= renderer.FPV_MAX_DIST
+                          else round(dist * DEFAULT_CELL_M, 4))
+        return {"usable": True, "angle_min_deg": -180.0, "angle_increment_deg": 1.0,
+                "range_min_m": 0.0, "range_max_m": renderer.FPV_MAX_DIST * DEFAULT_CELL_M,
+                "ranges_m": ranges}
 
     def get_odometry(self) -> dict:
         """Real odometry, because the grid world knows where it put us.

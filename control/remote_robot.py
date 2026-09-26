@@ -39,6 +39,7 @@ from typing import Optional
 import httpx
 
 from robot.interface import (Preempted, RobotInterface, unusable_grid,
+                             unusable_scan, unusable_wheels,
                              unusable_odometry)
 from robot.safety import SafetyViolation
 
@@ -143,6 +144,28 @@ class RemoteRobot(RobotInterface):
                 logger.info(
                     "robot server has no /odometry route -- reporting no odometry")
                 return unusable_odometry()
+            raise
+
+    def get_wheel_state(self) -> dict:
+        """Phase R2. Same 404 rule as `get_odometry()`: a server that predates
+        the route has no wheel state to give and says so; any other failure
+        raises, so a broken encoder never reads as an absent one."""
+        try:
+            return self._request("GET", "/wheels")
+        except RobotTransportError as e:
+            if "HTTP 404" in str(e):
+                logger.info("robot server has no /wheels route -- reporting no wheel state")
+                return unusable_wheels()
+            raise
+
+    def get_scan(self) -> dict:
+        """Phase R2. Same 404 rule: an older server is honestly lidar-less."""
+        try:
+            return self._request("GET", "/scan")
+        except RobotTransportError as e:
+            if "HTTP 404" in str(e):
+                logger.info("robot server has no /scan route -- reporting no scan")
+                return unusable_scan()
             raise
 
     def get_depth_grid(self) -> dict:

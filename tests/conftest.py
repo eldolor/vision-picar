@@ -192,6 +192,14 @@ class RecordingRobot(RobotInterface):
         # helpers rather than in shipped code.
         return self._record("get_odometry", self.delegate.get_odometry())
 
+    def get_wheel_state(self) -> dict:
+        # R2: pass through, or this helper falls behind the interface the
+        # way it once did for odometry.
+        return self._record("get_wheel_state", self.delegate.get_wheel_state())
+
+    def get_scan(self) -> dict:
+        return self._record("get_scan", self.delegate.get_scan())
+
 
 def fresh_mock_robot():
     """A MockRobot on a brand-new starter house."""

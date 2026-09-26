@@ -451,6 +451,87 @@ detection now ends the four jamb starts within ~10 steps instead of letting
 them creep closer for 60.) **Also still open: arrival is not recognised**
 (P7e) -- every search run ends `max_steps` beside the backpack.
 
+### 3.6 R2, read-only half (2026-09-25, overnight)
+
+**Scope, decided without the user and stated here so it can be undone.**
+R2 names three routes. The read-only ones -- wheel state, the scan, ground
+truth -- are built. **`POST /wheels` is NOT**: continuous velocity command is
+the first path that moves the robot without a verb, which means deciding how
+`robot/safety.py` vets a velocity, how M4's authority order applies, and what
+the watchdog does to a standing command. Those are safety decisions; its
+design is written up in 3.7 for the user.
+
+**One deviation from the row above: `GET /scan`, not `/world/scan`.** A lidar
+scan is the robot's own reading -- "how far is everything from me" -- which
+CLAUDE.md section 2 classifies as BODY state (egocentric), beside
+`get_depth_grid()`. It goes on `RobotInterface` as `get_scan()`, with the same
+honest all-unusable default. The world side keeps what the scan is turned
+INTO (the map), and `GET /world/truth`, which is allocentric and stays there.
+
+**Acceptance criteria, written before building:**
+
+1. **Contract:** every `RobotInterface` backend answers `get_wheel_state()` and
+   `get_scan()` in one shape; a backend with no encoders or no lidar says
+   `usable: false` with no numbers -- never zeros.
+2. **Scan geometry:** `MockRobot`'s scan equals `renderer.cast_ray()` at every
+   beam to within one `FPV_STEP`, and a beam through the kitchen door reaches
+   past the doorway.
+3. **Truth:** `MockWorld`'s truth equals its pose exactly in the sim today;
+   `NullWorld` answers unusable.
+4. **Over the wire:** `RemoteRobot` / `RemoteWorld` return exactly what the
+   in-process backends do, for all three.
+5. **Containment and routing guards stay green** (`control/` imports nothing
+   it may not; every public route is accounted for).
+
+**Measured -- criteria 1-5 met, read-only half closed.** Contract: all five
+backends answer both new body methods in one shape; the sensorless ones
+(`ReplayRobot`, `TeleopRobot`) say `usable: false` with no numbers, and both
+wrappers pass through what they wrap. Geometry: every one of 360 beams equals
+`renderer.cast_ray()`, the beam through the kitchen door reaches the far
+wall (1.95m, not the doorway's 0.75m), and a camera pan leaves the scan
+unchanged. Truth equals the pose in the sim; `NullWorld` has none. Over the
+wire all three survive the socket unchanged, an older server reads as
+`usable: false`, and a 500 still raises. The over-the-wire test was
+confirmed to fail against a real bug caught on the way (the route called
+`world` where the server's variable is `world_model`). `tests/test_r2_routes.py`
+and the contract suites.
+
+**Not built, and not needed by the data rule: the ground-truth "ghost" on the
+twin's map.** R2's row names it as the proof; under the data rule the proof
+is the equality test above. It becomes worth drawing at R5, when the two
+numbers differ.
+
+### 3.7 `POST /wheels` -- a design for the user to decide, NOT built
+
+The first way to move the robot without a verb, so its safety semantics are
+decided before it exists. What R4's `picar_sim_hardware.write()` needs, and a
+proposal for each question it raises:
+
+1. **Semantics.** `POST /wheels {"left_rad_s", "right_rad_s"}` sets a STANDING
+   command; the server integrates it with `MockRobot.step(dt)` on a fixed
+   ~20Hz loop (the rate nav2's controller runs at). On hardware the same
+   route forwards the command to the ESP32 (`T=1`) and the board integrates.
+2. **Safety -- the decision that matters.** Before each step, the forward
+   component of the commanded body velocity is clamped to zero if
+   `path_clearance()` is under `min_distance_cm`; rotation is always allowed
+   (a differential chassis pivots in place). The clamp is reported, not
+   silent: a `refused` field and M4's `last_refusal`. **Open question A:**
+   vet REVERSE with the scan's rear beams now that R2 has a 360-degree
+   reading, or keep today's rule (no rear check, as for `/action`)?
+3. **Authority (M4).** `POST /wheels` carries `x-driver` and is arbitrated
+   exactly like `/action`. R4 adds one ROS driver -- `twist_mux` already
+   ranks nav2 and teleop INSIDE ROS. **Open question B:** where does that
+   driver rank against the brain? Proposal: equal to `brain` (autonomous),
+   below the D-pad, so a person still outranks everything.
+4. **Watchdog.** A standing command not refreshed within `watchdog_timeout_s`
+   is zeroed -- the same silence rule as today, and the same thing
+   `diff_drive_controller`'s `cmd_vel_timeout` does inside ROS. Two layers,
+   on purpose: the ROS one cannot see a wedged bridge.
+5. **Tests before it ships**, as data: a standing forward command into a wall
+   stops within one loop period of clearance falling under the threshold;
+   a pivot against a wall still turns; silence zeroes the command within the
+   timeout; the D-pad preempts it.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 ## 4. Honest residue -- what the twin cannot tell you

@@ -160,6 +160,29 @@ def unusable_odometry() -> dict:
     return {"usable": False, "distance_m": None, "heading_deg": None}
 
 
+def unusable_wheels() -> dict:
+    """The honest answer from a backend with no wheel encoders -- phase R2.
+
+    Same choice as `unusable_odometry()`: `usable: False` and no numbers, so
+    a photograph-driven or phone-driven backend cannot look as though it had
+    measured wheel motion it never had. `ros2_control` reads this at R4;
+    zeros here would be a robot that had not moved, which is a claim.
+    """
+    return {"usable": False, "left": None, "right": None,
+            "wheel_radius_m": None, "track_width_m": None, "counts_per_rev": None}
+
+
+def unusable_scan() -> dict:
+    """The honest answer from a backend with no lidar -- phase R2.
+
+    `ranges_m: None` rather than an empty list or a list of Nones: "no
+    sensor" and "a sensor that saw nothing within range" are different
+    facts, and the second is a list of Nones (see `get_scan()`).
+    """
+    return {"usable": False, "angle_min_deg": None, "angle_increment_deg": None,
+            "range_min_m": None, "range_max_m": None, "ranges_m": None}
+
+
 class RobotInterface(ABC):
     @abstractmethod
     def drive_forward(self, speed: int, duration: float) -> dict: ...
@@ -306,3 +329,54 @@ class RobotInterface(ABC):
         somewhere.
         """
         return unusable_odometry()
+
+    def get_wheel_state(self) -> dict:
+        """Per-wheel position, velocity and encoder count -- phase R2.
+
+            {"usable": bool,
+             "left":  {"position_rad": float, "velocity_rad_s": float,
+                       "counts": int} | None,
+             "right": {...} | None,
+             "wheel_radius_m": float | None,
+             "track_width_m": float | None,
+             "counts_per_rev": int | None}
+
+        What `hardware_interface::SystemInterface.read()` returns at R4, which
+        is why it is per WHEEL rather than a pose: `diff_drive_controller`
+        owns the conversion to odometry, and a backend that did it itself
+        would leave that conversion untested until hardware day (R0's
+        argument). Positions accumulate from start; velocities are the
+        standing command. The chassis constants travel with the reading so a
+        consumer never pairs a count with the wrong wheel size.
+
+        **Not abstract** -- `unusable_wheels()` for a backend with no
+        encoders, the same pattern as `get_odometry()`.
+        """
+        return unusable_wheels()
+
+    def get_scan(self) -> dict:
+        """A 360-degree range scan -- phase R2, what the lidar gives.
+
+            {"usable": bool,
+             "angle_min_deg": float,        # first beam, degrees
+             "angle_increment_deg": float,  # between beams
+             "range_min_m": float, "range_max_m": float,
+             "ranges_m": [float | None, ...]}  # one per beam
+
+        **BODY state, which is why it is here and not on `WorldInterface`.**
+        A scan is the robot's own reading -- how far everything is from ME --
+        exactly as `get_depth_grid()` is; what it gets turned INTO (the map)
+        is world state. `PLAN-ros-alignment.md` R2 first placed it at
+        `/world/scan`; 3.6 records moving it for this reason.
+
+        **Angles are relative to the robot's BODY heading**, clockwise and
+        positive to the robot's right -- the convention every other angle in
+        this project uses -- with 0 straight ahead. Body, not camera: the
+        lidar sits on the deck and does not pan. A beam's entry is metres to
+        the first return, or **None for "no return within range_max_m"** --
+        information about empty space, and deliberately not the same thing
+        as the whole scan being `usable: False`.
+
+        **Not abstract** -- `unusable_scan()` for a backend with no lidar.
+        """
+        return unusable_scan()

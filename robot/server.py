@@ -395,6 +395,27 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         """
         return robot.get_odometry()
 
+    @app.get(prefix + "/wheels", dependencies=[Depends(require_secret)])
+    def wheels():
+        """Per-wheel position, velocity and encoder count -- phase R2.
+
+        What `picar_sim_hardware`'s `read()` will poll at R4. Read-only on
+        purpose: `POST /wheels` -- a standing velocity command, the first way
+        to move the robot without a verb -- needs its safety semantics
+        decided before it exists (`PLAN-ros-alignment.md` 3.7). A backend
+        with no encoders answers `usable: False`.
+        """
+        return robot.get_wheel_state()
+
+    @app.get(prefix + "/scan", dependencies=[Depends(require_secret)])
+    def scan():
+        """A 360-degree range scan -- phase R2, what `sim_scan_node` will
+        republish as `sensor_msgs/LaserScan` at R4. BODY state (the robot's
+        own reading), so it lives beside `/depth`, not under `/world/`: see
+        `RobotInterface.get_scan()`. A backend with no lidar answers
+        `usable: False`."""
+        return robot.get_scan()
+
     @app.get(prefix + "/depth", dependencies=[Depends(require_secret)])
     def depth():
         """The depth grid, phase M2 -- its own route rather than a field on
@@ -437,6 +458,17 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             "sensor_to_bumper_cm": sensor_to_bumper,
         }
         return grid
+
+    @app.get(prefix + "/world/truth", dependencies=[Depends(require_secret)])
+    def world_truth():
+        """Where the robot ACTUALLY is -- sim-only, phase R2.
+
+        A pass-through like `/world/pose`. Every non-sim world answers
+        `usable: False`, for ever: nothing in a real room knows the truth.
+        Its only job is R5's error readout -- estimate against truth -- and
+        no decision may read it.
+        """
+        return world_model.get_truth()
 
     @app.get(prefix + "/world/pose", dependencies=[Depends(require_secret)])
     def world_pose():

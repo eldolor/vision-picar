@@ -171,6 +171,22 @@ class MockWorld(WorldInterface):
             "heading_deg": round(self.world.heading_deg, 4),
         }
 
+    def get_truth(self) -> dict:
+        """Ground truth, straight off the grid -- R2.
+
+        Identical to `get_pose()` today, because this backend's pose IS the
+        truth. That identity is the point, not a redundancy: R5 replaces the
+        pose with `slam_toolbox`'s estimate and leaves this where it is, and
+        the difference between the two becomes the error readout.
+        """
+        return {
+            "usable": True,
+            "source": "sim",
+            "x_m": self.world.x * CELL_M,
+            "y_m": self.world.y * CELL_M,
+            "heading_deg": round(self.world.heading_deg, 4),
+        }
+
     def get_map(self) -> dict:
         """The house as discovered so far.
 
