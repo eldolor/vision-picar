@@ -1416,6 +1416,31 @@ job, on a phone.
    server reads it and the bridge republishes it as today. The second keeps
    `safety.py` independent of the ROS container being up, which is the same
    argument 3.16 made for the motor board.
+6. **The robot's map: a search that uses it, and keeping it.** (Raised
+   2026-09-27 by the user's first brain mission in their own furnished house:
+   the tiered search held a cloud FORWARD into the dining room and ended
+   `blocked` after 14 steps, never having seen the kitchen.) Proposed, not
+   built:
+   * **A frontier-exploration mission policy in the brain** -- pick a
+     frontier on SLAM's map (seen floor next to unknown), send it to nav2,
+     let the lidar sweep, repeat; run perception throughout, and on a
+     sighting send nav2 to the target and let 3.11's arrival rule end the
+     mission `found`; "searched everything reachable" when no reachable
+     frontier is left. In the brain (reading `GET /world/map`, sending
+     `POST /world/goal`), not ROS's `explore_lite`, so the mission's
+     decisions stay in one place. This revisits 3.15's "the tier keeps
+     steering by verbs for now".
+   * **Saving the map**: `slam_toolbox`'s serialised pose graph (resume and
+     localise) and nav2's `map_saver` files (navigate-only), on a disk that
+     survives restarts -- a Docker volume in the sim, the NVMe on the car.
+   * **Backing it up to AWS S3 -- decided by the user**: a private,
+     encrypted, versioned prefix `maps/<robot>/<map_id>/` (the four files
+     plus `meta.json`: saved-at, house label, resolution, known-cell count,
+     `slam_toolbox` version), uploaded after every save, restored on
+     start-up when the car has no local map, a lifecycle rule keeping the
+     last few, write access limited to the robot's own prefix. It is a floor
+     plan of the user's home; privacy, not cost (under 1 MB), drives the
+     design.
 4. **`use_sim_time`, or real time?** R0 uses `sim.realtime` and wall-clock,
    which is simplest. A `/clock` publisher would buy determinism for
    regression runs; not needed until it is.
