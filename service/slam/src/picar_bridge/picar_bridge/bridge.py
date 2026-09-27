@@ -14,6 +14,12 @@ and the other direction:
     GET /tf?target=&source=   a tf2 lookup, for R3's measurements
     GET /slam/pose       map -> base_footprint (SLAM) and odom -> base_footprint
     GET /slam/map        slam_toolbox's OccupancyGrid, as ROS publishes it
+    POST /goal {x_m, y_m, yaw_rad}   R6: a nav2 NavigateToPose goal, map frame
+    GET /goal            its state and the planned path (map frame)
+    DELETE /goal         cancel it
+    GET /nav/stats, POST /nav/stats/reset   R6's criteria 5 and 6: angular
+                         reversals in what REACHED the wheels, and how often
+                         collision_monitor stopped or slowed what it was given
 
 (R5) Both /slam routes answer in ROS's OWN frame and convention, tagged with
 this bridge's `session` -- a restarted container is a new map, and the
@@ -45,8 +51,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import rclpy
-from geometry_msgs.msg import Twist
-from nav_msgs.msg import OccupancyGrid, Odometry
+from rclpy.action import ActionClient
+from action_msgs.msg import GoalStatus
+from geometry_msgs.msg import PoseStamped, Twist
+from nav2_msgs.action import NavigateToPose
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -107,6 +116,16 @@ class Bridge(Node):
             OccupancyGrid, "/map", self._on_map,
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                        reliability=ReliabilityPolicy.RELIABLE))
+        # ---- R6 ----
+        self.nav = ActionClient(self, NavigateToPose, "navigate_to_pose")
+        self.goal_handle = None
+        self.goal = None               # {"x_m","y_m","yaw_rad","state","since"}
+        self.plan = []
+        self.create_subscription(Path, "/plan", self._on_plan, 10)
+        self.create_subscription(Twist, "/cmd_vel_mux", self._on_mux, 10)
+        self.create_subscription(Twist, "/diff_drive_controller/cmd_vel_unstamped",
+                                 self._on_applied, 10)
+        self._reset_stats()
         self.create_timer(1.0 / SCAN_HZ, self._poll_scan)
         self.create_timer(1.0 / PAN_HZ, self._publish_pan)
 
@@ -115,6 +134,10 @@ class Bridge(Node):
     def _on_odom(self, msg):
         yaw, _, _ = _yaw_pitch_roll(msg.pose.pose.orientation)
         with self.lock:
+            xy = (msg.pose.pose.position.x, msg.pose.pose.position.y)
+            if self._last_odom_xy is not None:
+                self.stats["metres"] += math.dist(xy, self._last_odom_xy)
+            self._last_odom_xy = xy
             self.last_odom = {
                 "x_m": msg.pose.pose.position.x, "y_m": msg.pose.pose.position.y,
                 "yaw_rad": yaw, "linear_m_s": msg.twist.twist.linear.x,
@@ -130,6 +153,106 @@ class Bridge(Node):
                 "resolution_m": info.resolution, "width": info.width, "height": info.height,
                 "origin_x_m": info.origin.position.x, "origin_y_m": info.origin.position.y,
                 "origin_yaw_rad": yaw, "data": list(msg.data), "at": time.time()}
+
+    # ---------- R6: goals ----------
+
+    def _on_plan(self, msg):
+        with self.lock:
+            self.plan = [(p.pose.position.x, p.pose.position.y) for p in msg.poses]
+
+    def send_goal(self, body):
+        if not self.nav.wait_for_server(timeout_sec=2.0):
+            return 503, {"error": "nav2 is not up (navigate_to_pose has no server)"}
+        self.cancel_goal()
+        ps = PoseStamped()
+        ps.header.frame_id = "map"
+        ps.header.stamp = self.get_clock().now().to_msg()
+        ps.pose.position.x = float(body["x_m"])
+        ps.pose.position.y = float(body["y_m"])
+        yaw = float(body.get("yaw_rad", 0.0))
+        ps.pose.orientation.z = math.sin(yaw / 2)
+        ps.pose.orientation.w = math.cos(yaw / 2)
+        goal = NavigateToPose.Goal()
+        goal.pose = ps
+        with self.lock:
+            self.plan = []
+            self.goal = {"x_m": ps.pose.position.x, "y_m": ps.pose.position.y, "yaw_rad": yaw,
+                         "state": "pending", "since": time.time()}
+            record = self.goal
+        future = self.nav.send_goal_async(goal)
+        future.add_done_callback(lambda f: self._on_goal_response(f, record))
+        return 200, {"state": "pending"}
+
+    def _on_goal_response(self, future, record):
+        handle = future.result()
+        with self.lock:
+            if not handle.accepted:
+                record["state"] = "rejected"
+                return
+            if record is not self.goal:          # superseded while pending
+                handle.cancel_goal_async()
+                return
+            self.goal_handle = handle
+            record["state"] = "active"
+        handle.get_result_async().add_done_callback(lambda f: self._on_result(f, record))
+
+    def _on_result(self, future, record):
+        status = future.result().status
+        name = {GoalStatus.STATUS_SUCCEEDED: "succeeded",
+                GoalStatus.STATUS_ABORTED: "aborted",
+                GoalStatus.STATUS_CANCELED: "canceled"}.get(status, f"status_{status}")
+        with self.lock:
+            record["state"] = name
+            record["ended"] = time.time()
+            if self.goal is record:
+                self.goal_handle = None
+
+    def cancel_goal(self, why="cancelled"):
+        with self.lock:
+            handle, self.goal_handle = self.goal_handle, None
+            if self.goal and self.goal["state"] in ("pending", "active"):
+                self.goal["cancel_reason"] = why
+        if handle is not None:
+            handle.cancel_goal_async()
+            return True
+        return False
+
+    def goal_state(self):
+        with self.lock:
+            return 200, {"session": self.session, "goal": dict(self.goal) if self.goal else None,
+                         "plan": list(self.plan)}
+
+    # ---------- R6: what reached the wheels ----------
+
+    def _reset_stats(self):
+        self.stats = {"applied": 0, "reversals": 0, "metres": 0.0,
+                      "monitor_stops": 0, "monitor_slows": 0, "since": time.time()}
+        self._last_w_sign = 0
+        self._last_mux = None
+        self._last_odom_xy = None
+
+    def _on_mux(self, msg):
+        with self.lock:
+            self._last_mux = (msg.linear.x, msg.angular.z, time.time())
+
+    def _on_applied(self, msg):
+        v, w = msg.linear.x, msg.angular.z
+        with self.lock:
+            st = self.stats
+            st["applied"] += 1
+            if abs(w) > 0.1:
+                sign = 1 if w > 0 else -1
+                if self._last_w_sign and sign != self._last_w_sign:
+                    st["reversals"] += 1
+                self._last_w_sign = sign
+            mux = self._last_mux
+            if mux and time.time() - mux[2] < 0.2:
+                asked = math.hypot(mux[0], mux[1])
+                given = math.hypot(v, w)
+                if asked > 1e-3 and given < 1e-3:
+                    st["monitor_stops"] += 1
+                elif asked > 1e-3 and given < 0.9 * asked:
+                    st["monitor_slows"] += 1
 
     def _pose_in(self, frame):
         try:
@@ -182,14 +305,25 @@ class Bridge(Node):
         # i.e. ours[(-j) mod n] when ours starts at -180 in 1-degree steps.
         start = s["angle_min_deg"]
         msg = LaserScan()
-        # When the scan was TAKEN, not when it arrived (R5): the robot server
-        # stamps it at capture. Host and container share Unix time.
-        if s.get("stamp_unix"):
-            sec = float(s["stamp_unix"])
-            msg.header.stamp.sec = int(sec)
-            msg.header.stamp.nanosec = int((sec - int(sec)) * 1e9)
-        else:
-            msg.header.stamp = self.get_clock().now().to_msg()
+        # Stamped with the NEWEST time the transform tree already covers
+        # (odom -> base_footprint), so a scan can never arrive ahead of TF.
+        # History, both measured in R6 (PLAN-ros-alignment.md 3.15):
+        #   * capture stamps (R5, the robot server's `stamp_unix`) are often a
+        #     few ms AHEAD of the newest odometry transform, so each costmap's
+        #     tf2 MessageFilter held the scan waiting -- and on Humble that
+        #     wait path deadlocked the costmaps' TF listeners within seconds.
+        #     Their robot pose froze at the start, the planner planned from
+        #     there, and the controller declared every goal "reached";
+        #   * arrival stamps made it rarer, not impossible: one scaled-house
+        #     run in two still froze.
+        # The newest odom stamp is at most one 20 Hz period old -- the age a
+        # real lidar driver's scans usually carry -- and it is transformable
+        # by construction.
+        try:
+            tr = self.tf_buffer.lookup_transform("odom", "base_footprint", Time())
+        except Exception:  # noqa: BLE001 -- no odometry yet: nothing to stamp against
+            return
+        msg.header.stamp = tr.header.stamp
         msg.header.frame_id = "laser"
         msg.angle_min = math.radians(start)
         msg.angle_increment = math.radians(inc_deg)
@@ -233,6 +367,9 @@ class Bridge(Node):
         self.pubs[driver].publish(t)
         with self.lock:
             self.twists[driver] += 1
+        # A person outranks the plan (3.15): M4's preemption, inside ROS.
+        if driver == "twin-dpad" and (t.linear.x or t.angular.z):
+            self.cancel_goal("preempted by twin-dpad")
         return 200, {"published": DRIVER_TOPICS[driver]}
 
     def tf(self, target, source):
@@ -289,6 +426,11 @@ def _handler(bridge):
                 with bridge.lock:
                     return self._send(200, bridge.last_map or {"session": bridge.session,
                                                                "version": 0, "usable": False})
+            if url.path == "/goal":
+                return self._send(*bridge.goal_state())
+            if url.path == "/nav/stats":
+                with bridge.lock:
+                    return self._send(200, dict(bridge.stats))
             if url.path == "/tf":
                 q = parse_qs(url.query)
                 return self._send(*bridge.tf(q.get("target", ["base_link"])[0],
@@ -303,10 +445,23 @@ def _handler(bridge):
             path = urlparse(self.path).path
             if path == "/cmd_vel":
                 return self._send(*bridge.cmd_vel(body))
+            if path == "/goal":
+                return self._send(*bridge.send_goal(body))
+            if path == "/nav/stats/reset":
+                with bridge.lock:
+                    bridge._reset_stats()
+                return self._send(200, {"reset": True})
             if path == "/pan":
                 with bridge.lock:
                     bridge.pan_rad = float(body.get("angle_rad", 0.0))
                 return self._send(200, {"pan_rad": bridge.pan_rad})
+            return self._send(404, {"error": "no such route"})
+
+        def do_DELETE(self):  # noqa: N802
+            if not self._authorised():
+                return None
+            if urlparse(self.path).path == "/goal":
+                return self._send(200, {"cancelled": bridge.cancel_goal()})
             return self._send(404, {"error": "no such route"})
 
         def log_message(self, *args):  # the twist stream is 20 Hz; do not log it

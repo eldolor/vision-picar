@@ -82,7 +82,7 @@ PAN_METHODS = ("look_left", "look_right", "look_center")
 # that had a working sensor. Nothing else in the suite would have noticed,
 # because a gate that forgets a *sensing* method still passes every test
 # about the methods it does guard.
-BACKENDS = ["mock", "replay", "teleop", "remote", "halt_gate"]
+BACKENDS = ["mock", "replay", "teleop", "remote", "halt_gate", "hardware"]
 
 
 def _write_walk(tmp_path, count=3):
@@ -122,6 +122,25 @@ def robot(request, tmp_path):
         from control.mission_runner import _HaltGate
 
         yield _HaltGate(MockRobot(build_starter_world()), lambda: True)
+
+    elif kind == "hardware":
+        # R7: the real robot's motor backend, over a SERIAL LINE to a fake
+        # ESP32 board (sim/fake_esp32.py) that turns a sim body's wheels.
+        # The body also stands in for the camera and lidar drivers, which
+        # are not the board's job.
+        from robot.hardware_robot import HardwareRobot
+        from sim.fake_esp32 import FakeEsp32
+
+        body = MockRobot(build_starter_world())
+        board = FakeEsp32(body)
+        bot = HardwareRobot(board.path, sensors=body)
+        import time as _time
+        deadline = _time.monotonic() + 2
+        while bot.frames == 0 and _time.monotonic() < deadline:
+            _time.sleep(0.01)
+        yield bot
+        bot.close()
+        board.close()
 
     else:  # pragma: no cover -- guards a typo in BACKENDS above
         raise ValueError(f"unknown backend: {kind!r}")

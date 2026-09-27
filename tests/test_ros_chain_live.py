@@ -228,7 +228,18 @@ def test_killing_the_container_stops_the_wheels_on_the_robots_own_watchdog(stack
         waited = _time_to_stop(robot, kill)
     finally:
         subprocess.run(["docker", "start", CONTAINER], capture_output=True)
-        time.sleep(10)                  # controllers back up for any test after this one
+        # Wait for the chain to be BACK, not a fixed time: the next test
+        # measures the scan rate, and a fixed 10 s once read 2 Hz of warm-up.
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            try:
+                h = bridge.get("/health").json()
+                if h.get("scan_age_s") is not None and h["scan_age_s"] < 0.5:
+                    break
+            except Exception:  # noqa: BLE001 -- still starting
+                pass
+            time.sleep(0.5)
+        time.sleep(2)
     # Killing freezes the LAST command as a standing one; only the robot
     # server's watchdog can end it. One watchdog period of slack.
     assert waited <= timeout + 0.35, (waited, timeout)

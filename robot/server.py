@@ -200,6 +200,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     state = {
         "last_command_at": time.monotonic(),
         "wheel_posts": 0,
+        "refusal_counts": {},
         # Phase M4. Who last drove, when, and what was last refused. The
         # server has never had a notion of a driver at all: the D-pad and a
         # remote mission both posted to /action and the later one simply
@@ -254,6 +255,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             "driver": driver,
             "at": time.monotonic(),
         }
+        # R6's criterion 6: how often each collar acted, not only the last time.
+        state["refusal_counts"][reason] = state["refusal_counts"].get(reason, 0) + 1
         logger.warning(f"refused ({reason}) for {driver}: {detail}")
         return {"executed": False, "reason": reason, "detail": detail}
 
@@ -570,10 +573,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         `RobotInterface.get_scan()`. A backend with no lidar answers
         `usable: False`.
 
-        `stamp_unix` is when the scan was TAKEN (R5), as a real lidar driver
-        stamps it. The bridge used to stamp on arrival, and while turning at
-        1.2 rad/s every 30 ms of that skew is 2 degrees of heading that
-        slam_toolbox registered in the wrong place."""
+        `stamp_unix` is when the scan was TAKEN (R5). The bridge does NOT use
+        it for the ROS stamp any more -- see picar_bridge's _poll_scan() for
+        how a capture stamp froze nav2's costmaps in R6 -- but it is the
+        honest capture time and costs nothing to serve."""
         stamp = time.time()
         return {**robot.get_scan(), "stamp_unix": stamp}
 
@@ -630,6 +633,33 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         no decision may read it.
         """
         return world_model.get_truth()
+
+    class GoalRequest(BaseModel):
+        x_m: float
+        y_m: float
+
+    def _goals():
+        """R6: only a world that can plan takes goals (world/ros_world.py);
+        every other answers `unsupported`, never a silent no-op."""
+        if not hasattr(world_model, "set_goal"):
+            raise HTTPException(status_code=501, detail=(
+                "this world cannot take goals -- goals need nav2 (WORLD_MODE=ros, "
+                "PLAN-ros-alignment.md R6)"))
+        return world_model
+
+    @app.post(prefix + "/world/goal", dependencies=[Depends(require_secret)])
+    def world_goal_set(req: GoalRequest):
+        """A place to go, in the house frame. nav2 plans and drives; its
+        commands still pass collision_monitor and robot/safety.py (3.15)."""
+        return _goals().set_goal(req.x_m, req.y_m)
+
+    @app.get(prefix + "/world/goal", dependencies=[Depends(require_secret)])
+    def world_goal_get():
+        return _goals().get_goal()
+
+    @app.delete(prefix + "/world/goal", dependencies=[Depends(require_secret)])
+    def world_goal_cancel():
+        return _goals().cancel_goal()
 
     @app.get(prefix + "/world/error", dependencies=[Depends(require_secret)])
     def world_error():
@@ -771,6 +801,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # driven". The twin shows both beside the watchdog readout.
             "driver": state["driver"],
             "authority_holder": authority_holder(time.monotonic()),
+            "refusal_counts": dict(state["refusal_counts"]),
             "last_refusal": (
                 {**state["last_refusal"],
                  "seconds_ago": round(time.monotonic() - state["last_refusal"]["at"], 2)}

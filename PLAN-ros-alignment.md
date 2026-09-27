@@ -1,6 +1,6 @@
 # Plan: ROS 2, with the twin still doing the proving
 
-Status: **R0-R5 BUILT (R0-R1c 2026-09-25, R2-R5 and arrival 2026-09-26), R6-R9 proposed** · Date: 2026-09-25 · Phase IDs: `R0`-`R9`,
+Status: **R0-R7 BUILT (R0-R1c 2026-09-25, R2-R7 and arrival 2026-09-26); R8-R9 need the hardware** · Date: 2026-09-25 · Phase IDs: `R0`-`R9`,
 alongside `S*` (`PLAN-sim-hardening.md`), `B*` (`PLAN-brain-relocation.md`),
 `M*` (`PLAN-microduck-transplants.md`), `T*` (`PLAN-teleop-robot.md`),
 `N*` (`PLAN-mapping.md`), `C*`/`P*` (`PLAN-onboard-perception.md`).
@@ -60,6 +60,16 @@ hardware to be real**. So there are two implementations:
 
 Everything above the seam is written once. Hardware day is a plugin swap.
 
+**Revised at R7 (2026-09-26, 3.16): hardware day is a BACKEND swap, not a
+plugin swap.** A `picar_hardware` plugin owning the serial port would take
+`robot/safety.py` out of the nav path -- 3.15 put the collars in series with
+it as the last word -- and would give the board two masters. So
+`picar_sim_hardware` stays on the car too, still talking HTTP to
+`robot/server.py`, and the seam below the robot server is the one this
+project has always had: `RobotInterface`, with `robot/hardware_robot.py`
+(the ESP32 over serial) beside `MockRobot`. The diagram above is kept as
+first drawn; read its right-hand column as `robot/hardware_robot.py`.
+
 **No Gazebo.** The simulator already exists; a second one is a second thing to
 disagree with the first.
 
@@ -104,10 +114,10 @@ honest all-unusable defaults.
 | **R3** | **DONE on data 2026-09-26, criterion 4 FAILED and recorded -- see 3.12.** **URDF + TF.** `base_link`, two wheel joints, `laser`, `camera_link` as child of a **revolute pan joint** (ST3215). §900's 11-14cm sensor-to-bumper offset becomes a transform, not a constant. Bearings compose through the pan joint -- the general form of what `goal_pose.py` does by hand | Frames drawn on the map view, swinging as the servo pans |
 | **R4** | **DONE on data 2026-09-26, off by default (`drive: ros`) -- see 3.13.** **`picar_sim_hardware`.** Plus `diff_drive_controller`, `joint_state_broadcaster`, `twist_mux` with `AGENT-HARNESS.md` §4.1's order as priorities, and `sim_scan_node` republishing `/world/scan` as `sensor_msgs/LaserScan`. **Exactly one writer to the wheels** from here | D-pad drives through the whole ROS chain; grabbing it mid-mission still ends `preempted`, still names `twin-dpad`, still lapses on silence |
 | **R5** | **DONE on data 2026-09-26, off by default (`WORLD_MODE=ros`); criteria 2 and 3 failed on their tight bars -- see 3.14.** **`slam_toolbox` + the error readout.** Bridge serves `/world/pose` and `/world/map` from SLAM instead of `MockWorld` -- the routes the twin already consumes. Then opt-in odometry drift (`sim.odom_drift`, following `sim/sensors.py`'s pattern, default off): without drift there is nothing for loop closure to correct | "map source: sim / slam" toggle, ground-truth ghost, live error number. Drive a lap: error grows, **pose jumps, error collapses**. Hardware cannot show this |
-| **R6** | **nav2 + `collision_monitor`.** Costmaps, planner, controller, recovery. `collision_monitor` between the mux and the base, with the footprint term the hand-written collar never had. **`robot/safety.py` is NOT deleted** -- it keeps the teleop and vision-policy paths. Then re-run R1's metric: a DWB/MPPI controller scores continuity in its cost function and should not flicker | Tap a goal on the map, path draws, robot follows. Block it, watch recovery. Read run-length against R1 |
-| **R7** | **Fake ESP32 on a pty** speaking `HARDWARE-BOM.md` §4.2's real protocol (`T=1/11/13/126/130/131/136`, `1001`/`1002` frames), and `picar_hardware` written against it. Closes C3's stated blocker: *"nothing in this repo simulates a serial peer"*. Also falsifies §4.2's unverified belief that the heartbeat stops the motors | A drill that severs the link mid-mission; the board's heartbeat expires and reports motors stopped, watchdog quiet |
+| **R6** | **DONE on data 2026-09-26, on the SCALED house -- see 3.15.** **nav2 + `collision_monitor`.** Costmaps, planner, controller, recovery. `collision_monitor` between the mux and the base, with the footprint term the hand-written collar never had. **`robot/safety.py` is NOT deleted** -- it keeps the teleop and vision-policy paths. Then re-run R1's metric: a DWB/MPPI controller scores continuity in its cost function and should not flicker | Tap a goal on the map, path draws, robot follows. Block it, watch recovery. Read run-length against R1 |
+| **R7** | **DONE on data 2026-09-26 -- see 3.16, which also moves the seam: the serial port belongs to `robot/hardware_robot.py`, and `picar_hardware` is not written.** **Fake ESP32 on a pty** speaking `HARDWARE-BOM.md` §4.2's real protocol (`T=1/11/13/126/130/131/136`, `1001`/`1002` frames), and `picar_hardware` written against it. Closes C3's stated blocker: *"nothing in this repo simulates a serial peer"*. Also falsifies §4.2's unverified belief that the heartbeat stops the motors | A drill that severs the link mid-mission; the board's heartbeat expires and reports motors stopped, watchdog quiet |
 | **R8** | **Order + bring up.** `JETSON-BOM.md` as priced, plus the **latching e-stop in the motor rail** (1.16 #19, in no bill) and a pack-capacity decision (see `HARDWARE-BOM.md` §6 and the amendment noted in §5 below). `HARDWARE-BOM.md` §5 order unchanged | D-pad moves real wheels; e-stop kills them mid-move with the software none the wiser |
-| **R9** | **Swap the plugin.** `picar_sim_hardware` -> `picar_hardware`, `sim_scan_node` -> `sllidar_ros2`. **Nothing above the seam changes.** Then N5's real work: scans sanity-checked in the actual house against glass, mirrors, dark matte, mounting vibration. Re-read P7e here | Same map view, same goal-tap, same recovery -- in a real room. Drive at glass and watch the ring |
+| **R9** | **Swap the BACKEND (3.16): `mode: sim` -> `mode: hardware` + `ROBOT_SERIAL`, and the camera and lidar drivers in place of the sim body's.** `sim_scan_node` -> `sllidar_ros2`. **Nothing above the seam changes.** Then N5's real work: scans sanity-checked in the actual house against glass, mirrors, dark matte, mounting vibration. Re-read P7e here | Same map view, same goal-tap, same recovery -- in a real room. Drive at glass and watch the ring |
 
 ---
 
@@ -1115,7 +1125,217 @@ their sampler asked before the first move.
 
 **Tried and made no difference, kept because it is right:** stamping each
 scan when it was TAKEN (the robot server's `stamp_unix`) rather than when it
-reached the bridge.
+reached the bridge. **Corrected at R6 (3.15): it was not right.** A capture
+stamp is often ahead of the newest odometry transform, which deadlocked
+nav2's costmaps; scans are now stamped with the newest time the transform
+tree covers. `stamp_unix` is still served, and not used for the ROS stamp.
+
+### 3.15 R6 -- nav2 and `collision_monitor` (2026-09-26): criteria, written before building
+
+**What it is.** nav2 on SLAM's map: global and local costmaps with the
+chassis' real footprint (0.228 x 0.198 m), a planner, the Regulated Pure
+Pursuit controller, behaviours (spin, back up, wait), and `collision_monitor`
+between `twist_mux` and `diff_drive_controller`. Goals enter through the
+bridge (`POST /goal` in the house frame, converted by `world/ros_world.py`
+the way poses are), and the robot server exposes them as `POST /world/goal`,
+`GET /world/goal` and `DELETE /world/goal`. Under `WORLD_MODE=ros` only.
+
+**Open question 3, decided: the two collars run in SERIES.** nav2 -> `twist_mux`
+-> `collision_monitor` -> `diff_drive_controller` -> `picar_sim_hardware` ->
+`POST /wheels` -> `robot/safety.py`'s vet. Each can only slow or stop, never
+speed up, so they cannot disagree about what is allowed -- the more
+conservative wins -- and `robot/safety.py` stays the last word on every path,
+nav included. What series costs is that the tighter one decides, and the
+stop/slow readouts must name which collar acted.
+
+**Open question 2, decided for now: the tier keeps steering by verbs.** R6
+adds nav2 as a way to reach a GOAL; it does not re-plumb `brain/tiered.py`.
+Turning the tier's sightings into nav2 goals is a mission-policy change with
+its own A/B against R1's baseline, and belongs in its own phase once nav2 is
+measured -- not folded into the phase that measures it.
+
+**A person still outranks everything.** A D-pad verb goes on
+`cmd_vel/teleop` (priority 100, over nav's 50), and the bridge CANCELS an
+active nav2 goal when a teleop twist arrives: M4's preemption, inside ROS.
+
+**Acceptance criteria:**
+
+1. **Goals are reached.** Six goals across the house, from the start, each
+   in a different place (start room, the big room, the lower room, near the
+   kitchen door, back): >= 5 of 6 end SUCCEEDED, and each success ends within
+   0.20 m of the goal by ground truth.
+2. **No contact.** Over every goal run, the robot's true centre never comes
+   within 0.10 m (the chassis' half-width) of a wall or object surface --
+   measured from ground truth at >= 5 Hz, because the sim's own collision
+   check is one ray ahead and cannot see a side-swipe.
+3. **An unreachable goal ends, stopped.** A goal inside a wall: nav2 answers
+   ABORTED (or REJECTED) within 60 s and the wheels are at zero.
+4. **A person outranks the plan.** A D-pad tap during a goal: the goal is
+   CANCELED within 1 s and the robot does what the tap said.
+5. **It does not flicker.** Angular-velocity sign reversals (|omega| >
+   0.1 rad/s) in the commands actually applied to the wheels: <= 1 per metre
+   travelled, pooled over the goal runs. R1's reversals-per-mission cannot be
+   compared directly -- verbs against a continuous command -- so this is the
+   continuous form of the same question.
+6. **The collars in series, observed.** Record how often each acted:
+   `collision_monitor` stops/slows and `robot/safety.py` clamps. No
+   threshold; the numbers decide whether either is redundant.
+
+**Measured 2026-09-26 -- all six met, on the SCALED house; the starter house
+cannot host nav2 with this chassis.** Instrument `tests/demo_nav_goals.py`
+(a mapping lap, then the goals, judged by ground truth at 5 Hz); pinned in
+`tests/test_nav_live.py`.
+
+| run (final image) | goals | end error (m) | closest to a surface | reversals / m | unreachable | tap -> canceled | `safety.py` clamps | monitor stops / slows |
+|---|---|---|---|---|---|---|---|---|
+| 1 | **6/6** | 0.090-0.122 | 0.169 m | 16 / 19.9 = **0.81** | aborted 19.0 s, stopped | **0.043 s** | 0 | 0 / 4 |
+| 2 | **6/6** | 0.096-0.133 | 0.165 m | 15 / 19.8 = **0.76** | aborted 23.7 s, stopped | **0.048 s** | 0 | 1 / 11 |
+
+Bars: >= 5/6 within 0.20 m; >= 0.10 m; <= 1 per metre; aborted within 60 s,
+stopped; within 1 s. Criterion 6's answer: over ~40 m of goals
+`robot/safety.py` never had to clamp a nav command and `collision_monitor`
+stopped one once -- nav2 plans clear of things by itself, and the two collars
+are insurance in series, not load-bearing. Both stay.
+
+**It took five failures to get here, and each was a real finding:**
+
+1. **The starter house's doors are too narrow for the chassis.** 30 cm doors
+   (one grid cell, sized for the retired PiCar-X) leave ~5 cm a side; with
+   the footprint's inscribed radius nav2's costmap seals a door whenever SLAM
+   draws a jamb one 5 cm cell thick. Starter-house runs went 5/6, 1/6 and
+   0/6. So `sim/maps/scaled_house.py` (`SIM_MAP=scaled_house`): the same
+   0.30 m cell, 90 cm doors, 3 m rooms. Real doors are 70-90 cm; the starter
+   house stays for every test written against it.
+2. **nav2 cannot plan into a room SLAM has not seen** ("goal off the global
+   costmap"), so the instrument maps first -- the ordinary order.
+3. **`collision_monitor`'s STOP polygon froze the robot.** Footprint + 2 cm
+   reached a door jamb 15.7 cm from the centre; Humble's stop action then
+   refuses turning AWAY too and, after 2 s, publishes nothing, so nav2's own
+   recoveries failed 16 times. Now `approach`: the exact footprint projected
+   along the commanded velocity, which lets it rotate clear.
+4. **`slam_toolbox` stamps `map -> odom` with its last PROCESSED scan**, and
+   processes one only after the robot moves -- so at rest the transform ages
+   until nav2 refuses it. The fix is upstream's `restamp_tf`, which the apt
+   release (2.6.10) lacks although the branch at the same version has it;
+   `slam_toolbox` is now built from a pinned commit in the image.
+5. **Scan timestamps deadlocked nav2's costmaps.** The hardest one: the
+   planner planned from the START position and the controller declared every
+   goal "reached" in 0.08 s. Both costmaps' TF buffers had stopped taking ANY
+   transform seconds after start, while `bt_navigator`, the bridge and fresh
+   listeners stayed current; Cyclone DDS (now the image's RMW, per Nav2's own
+   Humble advice) did not change it, and neither did clock skew (0.03 s) or
+   shared memory (12% used). The cause was R5's decision to stamp scans at
+   CAPTURE: a capture stamp is often a few ms ahead of the newest odometry
+   transform, each costmap's tf2 `MessageFilter` holds the scan waiting, and
+   on Humble that path deadlocked their listeners. Arrival stamps made it
+   rarer (one freeze in three runs); stamping each scan with the newest time
+   the transform tree already covers makes it impossible, and both runs above
+   use it. And the controller hid it: `isGoalReached()` ignores a failed
+   transform and compares the robot with a default pose at odometry's origin,
+   so a robot near its start "reached" goals metres away.
+
+**The lesson that generalises:** R5 recorded scan stamping as "tried, no
+difference, kept because it is right". It was a latent fault that only a
+consumer with a `MessageFilter` could trip. A change measured against one
+consumer is not measured against the next one.
+
+### 3.16 R7 -- the motor board, faked on a serial line (2026-09-26): criteria, written before building
+
+**First, what the firmware says** -- read from its source
+(`waveshareteam/ugv_base_general`, `General_Driver`, GPL-3.0), because a fake
+board can only encode what we believe, and three of the beliefs in
+`HARDWARE-BOM.md` 4.2 were unverified:
+
+* **The heartbeat DOES stop the motors -- now verified, not believed.**
+  `heartBeatCtrl()` calls `setGoalSpeed(0, 0)` once `HEART_BEAT_DELAY`
+  (3000 ms default, set by `T=136`) passes with no `T=1`/`11`/`13`. In
+  `mainType` 3 that re-enables the PID loop with zero targets; in `mainType`
+  1 and 2 it writes zero PWM directly. Either way the wheels stop.
+* **`T=1` is NOT metres per second in the mode 4.2's example selects.** In
+  `mainType` 1 and 2 (`{"T":900,"main":2}`) `setGoalSpeed()` is OPEN LOOP:
+  `PWM = L x 512 x spd_rate`, a fraction of full power. Closed-loop speed
+  control exists only in `mainType` 3, whose wheel constants are hard-coded
+  for another robot (0.0523 m wheels, 1092 pulses/rev, 0.141 m track).
+  Velocity control on this chassis therefore needs a firmware change (mode 3
+  with our constants) or a host-side PID; this plan assumes the FIRMWARE
+  change, because the board is where a 1 kHz encoder loop belongs.
+* **The `1001` frame carries wheel SPEEDS, not positions**:
+  `{"T":1001,"L","R","r","p","y","temp","v"[,"pan","tilt"]}`, `L`/`R` in m/s
+  computed with the configured mode's wheel constants. No encoder counts.
+  So odometry must integrate speeds on the host -- lossier than counting
+  ticks -- unless the firmware change also reports counts. Recorded as a
+  hardware-day item; R7's fake reports exactly what the real board reports.
+
+**The design decision: the serial port belongs to `robot/hardware_robot.py`,
+and ROS keeps the HTTP plugin.** The table says R9 swaps `picar_sim_hardware`
+for a `picar_hardware` that talks to the board directly. That would take
+`robot/safety.py` out of the nav path, and 3.15 decided the collars run in
+SERIES with `safety.py` as the last word on every path. It would also give
+the board two masters, since one serial port cannot be shared. So the seam
+stays where CLAUDE.md section 2 put it: **`RobotInterface`**.
+`robot/hardware_robot.py` is a backend like `MockRobot` -- `set_wheel_velocity`
+becomes `T=1`, `get_wheel_state` integrates `1001` -- picked by `mode: hardware`
+in `robot/factory.py`, and the ROS container talks HTTP to the robot server
+exactly as in the sim. Hardware day becomes the config change the project
+has always promised, and `picar_hardware` is not written.
+
+**What R7 builds:** `sim/fake_esp32.py` -- a pseudo-terminal speaking the
+real board's newline-delimited JSON as the firmware source defines it, with
+the heartbeat, open-loop and PID modes, and `1001` frames, driving a
+`MockRobot` body; and `robot/hardware_robot.py` against it.
+
+**Acceptance criteria:**
+
+1. **The fake is the firmware.** For each implemented command (`T=1`, `11`,
+   `13`, `130`, `131`, `136`) the fake's behaviour matches the firmware source
+   line for line, pinned by tests that cite the source lines.
+2. **`HardwareRobot` is a `RobotInterface` backend** and passes
+   `tests/test_robot_contract.py` against the fake, as the other backends do.
+3. **Wheels over the wire.** `set_wheel_velocity()` for 1 s moves the fake's
+   body within 5% of the commanded distance, and `get_wheel_state()`'s
+   integrated positions agree with the body's true wheel angles within 2%.
+4. **The heartbeat drill.** Sever the host link mid-motion (stop writing):
+   the fake's motors stop within `HEART_BEAT_DELAY` + one loop period, and
+   the robot server's watchdog is not what stopped them.
+5. **Through the whole stack.** `mode: hardware` with the fake on a pty,
+   `drive: ros`: the R4 verbs land within R4's tolerances.
+
+**Measured 2026-09-26 -- all five met** (`tests/test_fake_esp32.py`, 12 tests;
+`tests/test_robot_contract.py`, 22 more for the new backend; and R4's live
+suite re-run on the hardware code path):
+
+1. Met. Nine tests, each citing the firmware function it mirrors: T=1 as m/s
+   in mode 3 with the +/-2.0 guard; T=1 as PWM (`x 512`, clamped) in mode 2;
+   T=13's `X -/+ Z x TRACK_WIDTH / 2`; T=11 turning the PID off; T=130's one
+   frame and its exact keys; T=131's frame on every loop; the heartbeat in
+   BOTH modes; the motor's no-load ceiling.
+2. Met. `HardwareRobot` over the pty passes all 22 contract tests. The first
+   run caught a real defect in it: path length summed each WHEEL's travel,
+   so a pivot counted as ground covered -- it is the body's travel now.
+3. Met. A 3 rad/s command moves the body within 5% of 3 rad/s x the
+   commanded interval, and the positions integrated from `1001` speeds agree
+   with the body's true wheel angle within 2%.
+4. Met. The host set the board's heartbeat to 1.5 s (`T=136`, above the robot
+   server's 1 s watchdog so the server normally acts first) and went silent
+   mid-motion; the BOARD stopped the wheels 1.5 s later, within one loop.
+5. Met. The robot server in `mode: hardware` (`ROBOT_MODE=hardware
+   SIM_MOTOR_BOARD=fake`), `drive: ros`: R4's live suite -- verbs within
+   tolerance, a D-pad tap preempting a mission, the wall at >= 19.4 cm, both
+   silence tests, the scan -- passes over the serial line. (The scan test
+   first read 2 Hz because it followed the kill-the-container test with a
+   fixed 10 s wait; that test now waits for scans to flow again.)
+
+**Two host-side defects the pty found that a mock would not:** on macOS,
+closing a pty while another thread is blocked reading it hangs the close, so
+both readers poll with `select()` and `close()` joins them; and the board
+reports ~100 frames a second, which the reader must keep up with or the
+kernel buffer fills and the board's writes block.
+
+**What this settles for hardware day:** `picar_hardware` is NOT written --
+R9's swap is `mode: sim` -> `mode: hardware` plus `ROBOT_SERIAL`. What it
+leaves open, and cannot settle without the board: flashing the firmware with
+`mainType` 3 and THIS chassis' constants (or a host-side PID), and whether to
+add encoder counts to the `1001` frame.
 
 ## 4. Honest residue -- what the twin cannot tell you
 

@@ -214,3 +214,42 @@ class RosWorld(WorldInterface):
         return {"usable": True, "map_id": self.map_id, "map_version": m["version"],
                 "resolution_m": res, "width": out_w, "height": out_h,
                 "origin_x_m": min_x, "origin_y_m": min_y, "cells": cells}
+
+
+    # ---------- R6: goals (not part of WorldInterface) ----------
+    #
+    # A goal is a request to nav2, so it lives on this backend alone and the
+    # robot server reaches it by duck typing. Positions cross the wall in
+    # the house frame and are converted here, exactly as poses are.
+
+    def _unapply(self, x: float, y: float):
+        """House frame -> ours-in-SLAM's-frame: the anchor, inverted."""
+        c, s = math.cos(math.radians(self._alpha)), math.sin(math.radians(self._alpha))
+        dx, dy = x - self._t[0], y - self._t[1]
+        return c * dx + s * dy, -s * dx + c * dy
+
+    def set_goal(self, x_m: float, y_m: float) -> dict:
+        if self._session is None:
+            self.get_pose()                  # anchor first
+        if self._session is None:
+            return {"accepted": False, "reason": "no SLAM session yet"}
+        rx, ry = _ours_to_ros(*self._unapply(x_m, y_m))
+        r = self._http.post("/goal", json={"x_m": rx, "y_m": ry, "yaw_rad": 0.0})
+        return {"accepted": r.status_code == 200, **r.json()}
+
+    def cancel_goal(self) -> dict:
+        return self._http.delete("/goal").json()
+
+    def get_goal(self) -> dict:
+        reply = self._http.get("/goal").json()
+        if reply.get("session") != self._session or not reply.get("goal"):
+            return {"goal": None, "plan": []}
+        g = dict(reply["goal"])
+        gx, gy, _ = self._apply(*_ros_to_ours(g["x_m"], g["y_m"], 0.0))
+        g["x_m"], g["y_m"] = gx, gy
+        g.pop("yaw_rad", None)
+        plan = []
+        for px, py in reply.get("plan") or []:
+            hx, hy, _ = self._apply(*_ros_to_ours(px, py, 0.0))
+            plan.append([round(hx, 4), round(hy, 4)])
+        return {"goal": g, "plan": plan}

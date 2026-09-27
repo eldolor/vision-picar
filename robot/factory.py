@@ -53,10 +53,12 @@ def _backend(config: dict) -> RobotInterface:
 
     if mode == "sim":
         from sim.mock_robot import MockRobot
-        from sim.maps.starter_house import build_starter_world
+        from sim.maps import build_world
         from sim.sensors import DistanceSensorModel
 
-        world = build_starter_world()
+        # SIM_MAP picks the house (sim/maps/__init__.py); the starter house
+        # is the default and what every existing test was measured on.
+        world = build_world(os.environ.get("SIM_MAP") or "starter_house")
         sim_config = config.get("sim", {})
         realtime = bool(sim_config.get("realtime", False))
 
@@ -95,11 +97,31 @@ def _backend(config: dict) -> RobotInterface:
         return TeleopRobot(stall_timeout_s=stall_timeout_s)
 
     if mode == "hardware":
-        # Added in Phase 11. Until then this raises on purpose --
-        # don't silently fall back to sim if hardware mode is requested.
-        raise NotImplementedError(
-            "robot.hardware_robot doesn't exist yet -- build it in Phase 11 "
-            "and import it here, matching RobotInterface exactly."
-        )
+        # R7 (PLAN-ros-alignment.md 3.16): the real motors, over the ESP32
+        # driver board's serial line. ROBOT_SERIAL names the port (a udev
+        # symlink on the car -- HARDWARE-BOM.md 4.2: never /dev/ttyUSB0 by
+        # order). SIM_MOTOR_BOARD=fake runs the SAME backend against
+        # sim/fake_esp32.py on a pseudo-terminal, turning a sim body's wheels
+        # -- so the whole stack exercises the hardware code path without a
+        # board. The camera and lidar are not the board's: until their
+        # drivers exist, the sim body stands in for them in the fake variant,
+        # and on the car they answer "unusable".
+        from robot.hardware_robot import HardwareRobot
+
+        if os.environ.get("SIM_MOTOR_BOARD") == "fake":
+            from sim.fake_esp32 import FakeEsp32
+            from sim.maps import build_world
+            from sim.mock_robot import MockRobot
+
+            body = MockRobot(build_world(os.environ.get("SIM_MAP") or "starter_house"))
+            board = FakeEsp32(body)
+            robot = HardwareRobot(board.path, sensors=body)
+            robot.fake_board = board          # kept alive with the robot
+            return robot
+        port = os.environ.get("ROBOT_SERIAL") or (config.get("hardware") or {}).get("serial_port")
+        if not port:
+            raise ValueError("mode: hardware needs ROBOT_SERIAL (or hardware.serial_port) "
+                             "-- the ESP32 driver board's serial device")
+        return HardwareRobot(port)
 
     raise ValueError(f"Unknown robot mode in config: {mode!r}")

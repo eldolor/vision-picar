@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (1240 passed as of 2026-09-26, with a browser
+# Confirm everything still works (1299 passed as of 2026-09-26, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -161,6 +161,8 @@ the original build plan phases, reordered simulation-first):
 | R3 | The URDF and TF tree, in the first ROS container | Done on data, one criterion FAILED and recorded (2026-09-26), not deployed -- `PLAN-ros-alignment.md` 3.12. `service/slam/` now holds ROS 2 **Humble** (JetPack 6 is Ubuntu 22.04) in one container; `picar_description`'s xacro puts every dimension in one block, `[BOM]` or flagged `[PLACEHOLDER]`. `check_urdf` passes; wheel radius and separation are one number across the xacro, `controllers.yaml` and `sim/mock_robot.py` (always-run test); 15 tf2 lookups match numpy FK within 1 mm / 0.1 deg. **Criterion 4 failed:** "pan + in-frame bearing" is 4.6 deg out at 1 m with the pan axis 8 cm ahead of `base_link` -- but within 0.75 deg when the camera is centred and the target inside the steering band, which is all the tier and `brain/arrival.py` use. Pinned as a strict xfail. **Nothing may treat a panned bearing as body-relative** until it is composed through TF with a range, or the pan axis moves over the rotation centre. The sim renders from the robot's centre, so it cannot show this error. `tests/test_urdf.py` (live half skips without a container) |
 | R4 | `picar_sim_hardware`, `twist_mux`, and ONE writer to the wheels | Done on data (2026-09-26), not deployed, **off by default** -- `PLAN-ros-alignment.md` 3.13, all eight criteria met. Under `drive: ros` (`ROBOT_DRIVE=ros`), `robot/ros_drive.py` turns each `/action` verb into twists closed on the wheel encoders and sends them to the container's bridge (`picar_bridge`, HTTP :8090) -> `twist_mux` (teleop 100 > brain 50) -> `diff_drive_controller` -> `picar_sim_hardware` (C++, `hardware_interface::SystemInterface`) -> `POST /wheels`, which then accepts only driver `ros`. M4's `/action` arbitration is unchanged, so a D-pad tap still ends a mission `preempted`. Verbs land within 4.4 mm / 0.64 deg live; a tiered mission ended `found` in 7 steps with every move through ROS. **Two things learned:** a proportional verb ramp over the chain's 40-150 ms of jitter overshot a 45-degree turn to 59-74 degrees until retuned with a signed settle pass; and the plugin returning ERROR on a robot-server restart silently deactivated it for good -- it now keeps trying. The default stays `direct`, so the twin never depends on Docker. `tests/test_ros_drive.py` (always), `tests/test_ros_chain_live.py` (skips without the stack) |
 | R5 | `slam_toolbox`, and the error only a sim can measure | Done on data (2026-09-26), not deployed, **off by default**, criteria 2 and 3 FAILED on their tight bars and recorded -- `PLAN-ros-alignment.md` 3.14, eighteen laps. `world/ros_world.py` (`WORLD_MODE=ros`) is the `WorldInterface` over SLAM, converting ROS's frame on its own side of the wall and anchoring SLAM's frame to the house with the truth at the session's START (sim-only). `GET /world/error` and the twin's map (truth ghost + "SLAM error ... · odometry alone ...") show it. With the right encoder 3% long, **odometry ends up to 99 cm / 54 deg off while SLAM ends within 1-4.5 cm**, and SLAM's map is the house on every lap (96-100% of occupied cells within 10 cm of a true surface). Failed: at-rest position within 5 cm without drift on 2 of 9 laps (4.0-8.2 cm; cause not established), heading within 3 deg with drift on 4 of 9. Two things learned: errors sampled WHILE MOVING measure the pose's ~150 ms latency, not SLAM; and anchoring at first contact read "0.0 cm" on the twin after the robot had driven. `sim.odom_drift` / `SIM_ODOM_DRIFT` make encoders misreport. `tests/test_ros_world.py`, `tests/test_slam_live.py`, `tests/demo_slam_lap.py` |
+| R6 | nav2 + `collision_monitor`, goals on the SLAM map | Done on data (2026-09-26), not deployed, **off by default**, on the SCALED house -- `PLAN-ros-alignment.md` 3.15. `POST /world/goal` (house frame, converted by `world/ros_world.py`) -> nav2 (NavFn, Regulated Pure Pursuit) -> `twist_mux` -> `collision_monitor` (APPROACH, not stop) -> the wheels; a D-pad twist cancels the goal. Two runs on the final image: **6/6 and 6/6**, ending 9-13 cm from goal, never nearer than 16.5 cm to a surface, 0.76-0.81 command reversals per metre, an unreachable goal aborting in 19-24 s stopped, a tap cancelling in 0.04-0.05 s, and `robot/safety.py` never clamping. Decided on the way: the collars run in SERIES with `safety.py` last; the tier keeps steering by verbs for now. **Five real findings**, all in 3.15: the starter house's 30 cm doors cannot host this chassis (0/6-5/6), so `sim/maps/scaled_house.py` (`SIM_MAP=scaled_house`, 90 cm doors); map before navigating; `collision_monitor`'s stop polygon froze the robot against a jamb; `slam_toolbox`'s apt release lacks `restamp_tf` (built from a pinned commit); and **R5's capture-time scan stamps deadlocked nav2's costmap TF listeners** -- the controller then "reached" every goal instantly. The image now runs Cyclone DDS. `tests/demo_nav_goals.py`, `tests/test_nav_live.py` |
+| R7 | The ESP32 motor board faked on a serial line; the real robot's motor backend | Done on data (2026-09-26) -- `PLAN-ros-alignment.md` 3.16. Read from the firmware SOURCE first: the heartbeat does stop the motors (was believed, now verified); **`T=1` is open-loop PWM in the mode the BOM's example selects** (closed-loop speed needs `mainType` 3 with this chassis' constants -- a firmware change); the `1001` frame has wheel SPEEDS, not counts. `sim/fake_esp32.py` is that firmware on a pty; `robot/hardware_robot.py` is a `RobotInterface` backend over it (`mode: hardware`, `ROBOT_SERIAL`; `SIM_MOTOR_BOARD=fake` for the sim), passing all 22 contract tests, and R4's live suite passes over the serial line. **The seam moved:** the serial port belongs to this backend and ROS keeps its HTTP plugin, so `safety.py` stays in every path and **hardware day is a config change -- `picar_hardware` is not written**. `tests/test_fake_esp32.py` |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. **The chassis is no longer a PiCar-X** -- see the row above. |
 | extra | Web-based digital twin | Done and deployed (`web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed (`service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -586,6 +588,10 @@ vision-picar/
 │   │                           executable path, config path (M5). In robot/
 │   │                           because BOTH servers log it and robot/ may
 │   │                           never import control/
+│   ├── ros_drive.py           R4: under `drive: ros`, verbs become twists sent
+│   │                           through the ROS container, closed on the encoders
+│   ├── hardware_robot.py      R7: the real robot's motors -- the ESP32 driver
+│   │                           board over serial, as a RobotInterface backend
 │   ├── safety.py              local safety layer; can veto any action, sim or real
 │   └── server.py              FastAPI Wi-Fi control API (Phase 9), CORS-enabled,
 │                               require_secret() gate once deployed publicly,
@@ -604,6 +610,8 @@ vision-picar/
 │   │                         No TF, no quaternions, no ROS message types
 │   │                         -- the contract is ours and ROS converts on
 │   │                         its own side of the wall
+│   ├── ros_world.py         R5/R6: the world from slam_toolbox + nav2 goals,
+│   │                         through the ROS container's bridge
 │   └── factory.py           picks the world backend from config/robot.yaml's
 │                             `world:` block. `none` today (NullWorld):
 │                             nothing here can build a map yet, and that is
@@ -691,7 +699,11 @@ vision-picar/
 │   │                           real-range clamping for MockRobot.get_distance(),
 │   │                           opt-in via config/robot.yaml's sim.sensor_noise
 │   │                           (Phase S5)
-│   └── maps/starter_house.py  living room / hallway / kitchen + red backpack
+│   ├── fake_esp32.py          R7: the ESP32 driver board's firmware, on a pty,
+│   │                           turning a sim body's wheels (SIM_MOTOR_BOARD=fake)
+│   └── maps/                  SIM_MAP picks one (sim/maps/__init__.py):
+│       ├── starter_house.py   the original, 30 cm doors -- too narrow for nav2
+│       └── scaled_house.py    R6: real proportions, 90 cm doors
 │
 ├── control/                 the brain as a service (phases B0-B3). Imports no
 │   │                        backend and no simulator -- the robot is only ever
@@ -810,7 +822,7 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    1240 tests, 93% line coverage of brain/,
+├── tests/                    1299 tests, 93% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
 │                              75 tests over five backends,

@@ -62,17 +62,36 @@ def test_allow_recording_reads_as_a_flag_not_a_string(tmp_path, monkeypatch, raw
 # ---------- robot/factory.py ----------
 
 
-def test_hardware_mode_refuses_clearly_instead_of_failing_obscurely(tmp_path):
-    """Phase 11's whole promise is that the swap is a config change. Until
-    robot/hardware_robot.py exists, `mode: hardware` has to say so plainly --
-    an ImportError on hardware day would be a bad first impression."""
+def test_hardware_mode_without_a_port_refuses_clearly(tmp_path, monkeypatch):
+    """R7 built robot/hardware_robot.py; the rule this test pinned while it
+    was missing still holds. `mode: hardware` with no serial port named must
+    say so plainly -- guessing /dev/ttyUSB0 would pick the lidar on a robot
+    with two CP210x devices (HARDWARE-BOM.md 4.2)."""
     from robot.factory import get_robot
 
+    monkeypatch.delenv("ROBOT_SERIAL", raising=False)
+    monkeypatch.delenv("SIM_MOTOR_BOARD", raising=False)
     path = tmp_path / "robot.yaml"
     path.write_text("mode: hardware\n")
-    with pytest.raises(NotImplementedError) as e:
+    with pytest.raises(ValueError) as e:
         get_robot(str(path))
-    assert "hardware" in str(e.value).lower()
+    assert "ROBOT_SERIAL" in str(e.value)
+
+
+def test_hardware_mode_runs_against_the_fake_board(tmp_path, monkeypatch):
+    from robot.factory import get_robot
+    from robot.hardware_robot import HardwareRobot
+
+    monkeypatch.setenv("SIM_MOTOR_BOARD", "fake")
+    path = tmp_path / "robot.yaml"
+    path.write_text("mode: hardware\n")
+    robot = get_robot(str(path))
+    try:
+        assert isinstance(robot, HardwareRobot)
+        assert robot.world is not None, "the sim body's world, for the truth"
+    finally:
+        robot.close()
+        robot.fake_board.close()
 
 
 def test_an_unknown_mode_names_itself(tmp_path):

@@ -252,6 +252,7 @@ Resources:
           Values:
             - /world/truth
             - /world/error
+            - /world/goal
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

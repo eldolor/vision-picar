@@ -1,0 +1,199 @@
+# nav2 -- PLAN-ros-alignment.md R6 (3.15).
+#
+# Every size here is the CHASSIS (picar_description's xacro: 0.228 x 0.198 m
+# across the wheels), not the sim's point robot. The starter house's doors
+# are one grid cell, 0.30 m: about 5 cm of margin on each side, so inflation
+# is kept small on purpose -- a costmap tuned for real 80 cm doors would seal
+# every door in this house.
+
+bt_navigator:
+  ros__parameters:
+    global_frame: map
+    robot_base_frame: base_footprint
+    odom_topic: /diff_drive_controller/odom
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    # plugin_lib_names left to Humble's default: a hand-written list missed
+    # ComputePathThroughPoses and bt_navigator refused to come up.
+
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0
+    min_x_velocity_threshold: 0.001
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    odom_topic: /diff_drive_controller/odom
+    progress_checker_plugin: progress_checker
+    goal_checker_plugins: [general_goal_checker]
+    controller_plugins: [FollowPath]
+    progress_checker:
+      plugin: nav2_controller::SimpleProgressChecker
+      required_movement_radius: 0.10
+      movement_time_allowance: 15.0
+    general_goal_checker:
+      plugin: nav2_controller::SimpleGoalChecker
+      stateful: true
+      xy_goal_tolerance: 0.10
+      yaw_goal_tolerance: 6.28     # position goals; heading is not asked for
+    FollowPath:
+      plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
+      desired_linear_vel: 0.20
+      lookahead_dist: 0.30
+      min_lookahead_dist: 0.15
+      max_lookahead_dist: 0.60
+      lookahead_time: 1.5
+      use_velocity_scaled_lookahead_dist: false
+      rotate_to_heading_angular_vel: 1.0
+      transform_tolerance: 0.3
+      min_approach_linear_velocity: 0.05
+      approach_velocity_scaling_dist: 0.4
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.0
+      use_regulated_linear_velocity_scaling: true
+      use_cost_regulated_linear_velocity_scaling: false
+      regulated_linear_scaling_min_radius: 0.5
+      regulated_linear_scaling_min_speed: 0.08
+      use_rotate_to_heading: true
+      rotate_to_heading_min_angle: 0.6
+      max_angular_accel: 3.0
+      allow_reversing: false
+      max_robot_pose_search_dist: 2.0
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_footprint
+      rolling_window: true
+      width: 2
+      height: 2
+      resolution: 0.05
+      footprint: "[[0.114, 0.099], [0.114, -0.099], [-0.114, -0.099], [-0.114, 0.099]]"
+      footprint_padding: 0.0
+      plugins: [obstacle_layer, inflation_layer]
+      obstacle_layer:
+        plugin: nav2_costmap_2d::ObstacleLayer
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: LaserScan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          raytrace_max_range: 4.0
+          obstacle_max_range: 3.5
+          inf_is_valid: true
+      inflation_layer:
+        plugin: nav2_costmap_2d::InflationLayer
+        inflation_radius: 0.12
+        cost_scaling_factor: 8.0
+      always_send_full_costmap: true
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 2.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_footprint
+      resolution: 0.05
+      track_unknown_space: true
+      footprint: "[[0.114, 0.099], [0.114, -0.099], [-0.114, -0.099], [-0.114, 0.099]]"
+      plugins: [static_layer, obstacle_layer, inflation_layer]
+      static_layer:
+        plugin: nav2_costmap_2d::StaticLayer
+        map_subscribe_transient_local: true
+      obstacle_layer:
+        plugin: nav2_costmap_2d::ObstacleLayer
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: LaserScan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          raytrace_max_range: 4.0
+          obstacle_max_range: 3.5
+          inf_is_valid: true
+      inflation_layer:
+        plugin: nav2_costmap_2d::InflationLayer
+        inflation_radius: 0.12
+        cost_scaling_factor: 8.0
+      always_send_full_costmap: true
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 5.0
+    planner_plugins: [GridBased]
+    GridBased:
+      plugin: nav2_navfn_planner/NavfnPlanner
+      tolerance: 0.10
+      use_astar: true
+      allow_unknown: true
+
+behavior_server:
+  ros__parameters:
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: [spin, backup, wait]
+    spin:
+      plugin: nav2_behaviors/Spin
+    backup:
+      plugin: nav2_behaviors/BackUp
+    wait:
+      plugin: nav2_behaviors/Wait
+    global_frame: odom
+    robot_base_frame: base_footprint
+    transform_tolerance: 0.3
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.3
+    rotational_acc_lim: 3.0
+
+# Between twist_mux and diff_drive_controller (3.15's "collars in series").
+# It can only slow or stop.
+#
+# APPROACH, not stop. The first version had a stop polygon of footprint +
+# 2 cm, and in this house's 30 cm doors a door jamb sat inside it 15.7 cm from
+# the centre: Humble's stop action then refuses EVERY command -- turning away
+# and backing out included -- and after stop_pub_timeout publishes nothing at
+# all, so nav2's own spin and back-up recoveries failed 16 times in a row.
+# `approach` projects the exact footprint along the COMMANDED velocity and
+# limits only motion that would reach an obstacle within
+# time_before_collision; the footprint's corner radius (15.1 cm) clears that
+# jamb, so rotating away is allowed. The slowdown polygon covers the next
+# ~20 cm ahead.
+collision_monitor:
+  ros__parameters:
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    cmd_vel_in_topic: /cmd_vel_mux
+    cmd_vel_out_topic: /diff_drive_controller/cmd_vel_unstamped
+    transform_tolerance: 0.5
+    source_timeout: 2.0
+    stop_pub_timeout: 2.0
+    polygons: [FootprintApproach, PolygonSlow]
+    FootprintApproach:
+      type: polygon
+      points: [0.114, 0.099, 0.114, -0.099, -0.114, -0.099, -0.114, 0.099]
+      action_type: approach
+      time_before_collision: 1.0
+      simulation_time_step: 0.05
+      max_points: 3
+      visualize: false
+    PolygonSlow:
+      type: polygon
+      points: [0.33, 0.12, 0.33, -0.12, 0.134, -0.12, 0.134, 0.12]
+      action_type: slowdown
+      max_points: 3
+      slowdown_ratio: 0.5
+      visualize: false
+    observation_sources: [scan]
+    scan:
+      type: scan
+      topic: /scan
