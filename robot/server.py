@@ -501,6 +501,21 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             state["last_command_at"] = now
             state["wheel_posts"] += 1
         else:
+            if req.left_rad_s == 0 and req.right_rad_s == 0:
+                # A ZERO command is not driving, so it never takes or refreshes
+                # authority. Found live 2026-09-26: the ROS container, left
+                # running beside a `drive: direct` server, posts zeros every
+                # cycle as its heartbeat; each post claimed the autonomous slot
+                # and a brain mission ended `preempted` on its first step. It
+                # stops the wheels only for the driver that holds them; from
+                # anyone else it is a no-op, so it cannot cut off their move.
+                if authority_holder(now) != driver:
+                    return {"executed": True, "driver": driver, "ignored": True,
+                            "detail": "zero command from a driver not holding the robot"}
+                with motion_lock:
+                    robot.set_wheel_velocity(0.0, 0.0)
+                return {"executed": True, "driver": driver,
+                        "applied": {"left_rad_s": 0.0, "right_rad_s": 0.0}, "clamped": None}
             refused = arbitrate(driver, now)
             if refused:
                 return refused

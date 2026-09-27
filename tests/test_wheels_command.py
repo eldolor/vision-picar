@@ -133,3 +133,28 @@ def test_criterion_6_a_backend_with_no_motors_refuses(monkeypatch):
     with TestClient(create_app()) as c:
         reply = _wheels(c, 1.0, 1.0)
     assert reply["executed"] is False and reply["reason"] == "unsupported"
+
+
+def test_a_zero_heartbeat_never_takes_the_robot_from_the_brain(client):
+    """Found live on 2026-09-26: the ROS container left running beside a
+    robot server in drive: direct. Its plugin posts a ZERO wheel command
+    every cycle as a heartbeat, each post claimed the autonomous slot, and a
+    brain mission ended `preempted` -- "ros is driving" -- on its first
+    step. A zero command is not driving: it must not take authority."""
+    end = time.time() + 1.0
+    while time.time() < end:
+        assert _wheels(client, 0.0, 0.0)["executed"] is True
+        time.sleep(0.05)
+    assert client.get("/health").json()["authority_holder"] is None
+    reply = _act(client, "LEFT", driver="brain", angle=15)
+    assert reply["executed"] is True, reply
+
+
+def test_a_zero_from_a_non_holder_does_not_stop_the_holder(client):
+    """While the brain holds the robot, a stray zero from `ros` is a no-op --
+    it must not cut off the brain's standing command either."""
+    _wheels(client, FWD, FWD, driver="brain")
+    reply = _wheels(client, 0.0, 0.0)             # from ros, not the holder
+    assert reply.get("ignored") is True, reply
+    state = client.get("/wheels").json()
+    assert state["left"]["velocity_rad_s"] == pytest.approx(FWD)
