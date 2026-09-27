@@ -251,7 +251,16 @@ def render(layout, objects, px: float, py: float, base_angle: float,
         # pixels tall as the JS paints.
         draw.rectangle([x, round(top), x, round(top + wall_height) - 1], fill=color)
 
-    for obj in _visible_objects(layout, objects, px, py, base_angle):
+    visible = _visible_objects(layout, objects, px, py, base_angle)
+    # One label per piece, on its NEAREST visible cell. A piece of furniture
+    # spans many cells (the home's staircase is 33), and labelling each one
+    # smeared a word across the frame -- bad for the person watching and for
+    # a vision model reading the picture.
+    nearest = {}
+    for obj in visible:
+        if obj["name"] not in nearest or obj["dist"] < nearest[obj["name"]]["dist"]:
+            nearest[obj["name"]] = obj
+    for obj in visible:
         t = (obj["rel_angle"] + FPV_FOV / 2) / FPV_FOV
         screen_x = t * width
         perp = max(0.3, obj["dist"] * math.cos(obj["rel_angle"]))
@@ -266,6 +275,8 @@ def render(layout, objects, px: float, py: float, base_angle: float,
              round(screen_x + w / 2), round(cy + h / 2)],
             fill=fill,
         )
+        if nearest[obj["name"]] is not obj:
+            continue
         label = obj["name"]
         try:
             tw = draw.textlength(label)

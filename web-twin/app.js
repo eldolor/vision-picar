@@ -689,7 +689,14 @@
     var words = {pending: "planning", active: "on its way", succeeded: "arrived",
                  aborted: "could not get there", canceled: "cancelled", rejected: "refused"};
     var what = g ? ("goal: " + (words[g.state] || g.state) + " \u00b7 ") : "";
-    return '<br><span class="goal-line">' + what + "tap the map to send the robot there</span>";
+    // SLAM draws only what the lidar has swept, and adds to it as the robot
+    // MOVES -- a map that is mostly unknown is not broken, it is unexplored.
+    var seen = 0;
+    for (var i = 0; i < grid.cells.length; i++) if (grid.cells[i] !== CELL_UNKNOWN) seen++;
+    var hint = seen < 0.25 * grid.cells.length
+      ? "drive with the D-pad to map more, then tap the map to send the robot there"
+      : "tap the map to send the robot there";
+    return '<br><span class="goal-line">' + what + hint + "</span>";
   }
 
   // Tap the SLAM map: send the robot there (nav2, through the robot server).
