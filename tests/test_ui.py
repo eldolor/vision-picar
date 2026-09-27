@@ -2699,3 +2699,59 @@ def test_a_sim_map_shows_no_error_line_and_no_ghost(browser, twin_server):
     assert _truth_coloured_pixels(page) == 0
     assert not errors, errors
     page.close()
+
+
+
+def test_tapping_a_slam_map_sends_the_robot_there(browser, twin_server):
+    """R6 on the phone: tap a spot on the SLAM map and the page posts that
+    spot, in the house frame, to POST /world/goal -- nav2 does the rest."""
+    page, errors = open_twin(browser, twin_server)
+    _stub_world(page, _SLAM_MAP, _SLAM_POSE, _SLAM_ERROR)
+    goal_state = {"goal": None, "plan": []}
+    page.route("**/world/goal", lambda r: (
+        goal_state.__setitem__("posted", json.loads(r.request.post_data)) or
+        r.fulfill(status=200, content_type="application/json",
+                  body=json.dumps({"accepted": True, "state": "pending"})))
+        if r.request.method == "POST" else
+        r.fulfill(status=200, content_type="application/json", body=json.dumps(goal_state)))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => (document.getElementById('map-readout') || {}).textContent.includes('tap the map')",
+        timeout=8000)
+    box = page.locator("#world-map").bounding_box()
+    assert box["width"] <= 390, "the map must fit the phone"
+    # A quarter of the way across and half way down: the stub map is
+    # 20 x 10 cells of 5 cm from (0, 0), i.e. 1.0 x 0.5 m. An element click
+    # scrolls the map into view first, as a person would.
+    page.locator("#world-map").click(position={"x": box["width"] * 0.25, "y": box["height"] * 0.5})
+    page.wait_for_timeout(300)
+    posted = goal_state.get("posted")
+    assert posted is not None, "no goal was posted"
+    assert abs(posted["x_m"] - 0.25) < 0.03 and abs(posted["y_m"] - 0.25) < 0.03, posted
+    assert not errors, errors
+    page.close()
+
+
+def test_a_sim_map_is_not_tappable(browser, twin_server):
+    """Goals need nav2; on the sim's own map a tap must do nothing."""
+    page, errors = open_twin(browser, twin_server)
+    sim_map = dict(_SLAM_MAP, map_id="sim-grid")
+    _stub_world(page, sim_map, dict(_SLAM_POSE, map_id="sim-grid"), dict(_SLAM_ERROR, source="sim-grid"))
+    posted = []
+    page.route("**/world/goal", lambda r: (posted.append(r.request.method), r.fulfill(status=501, body="{}")))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => (document.getElementById('map-readout') || {}).textContent.includes('cells seen')",
+        timeout=8000)
+    page.locator("#world-map").click(position={"x": 10, "y": 10})
+    page.wait_for_timeout(300)
+    assert "POST" not in posted
+    assert "tap the map" not in page.locator("#map-readout").text_content()
+    assert not errors, errors
+    page.close()

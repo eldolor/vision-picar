@@ -621,6 +621,17 @@
           state.lastWorldError = null;
         }
       }
+      // R6: a nav2 goal and its planned route, only where a world can plan
+      // (a SLAM map). Anything else answers 501, which just means "no goals
+      // here" -- the map is then not tappable.
+      if (isSlamMap(state.lastMap) && !state.goalsUnsupported) {
+        try {
+          state.lastGoal = await apiGet("/world/goal");
+        } catch (err) {
+          if (err.status === 404 || err.status === 501) state.goalsUnsupported = true;
+          state.lastGoal = null;
+        }
+      }
       var now = Date.now();
       if (now - state.lastMapFetchAt >= MAP_FETCH_INTERVAL_MS) {
         state.lastMapFetchAt = now;
@@ -637,6 +648,70 @@
       // canvas on one dropped request -- same rule as the depth strip.
     }
     renderMap();
+  }
+
+  function isSlamMap(grid) {
+    return !!(grid && grid.usable && typeof grid.map_id === "string" &&
+              grid.map_id.indexOf("slam-") === 0);
+  }
+
+  // R6: nav2's goal and planned route, in the house frame the map is drawn in.
+  function drawGoal(ctx, grid, scale) {
+    var g = state.lastGoal;
+    if (!g || !g.goal) return;
+    var css = getComputedStyle(document.documentElement);
+    var colour = (css.getPropertyValue("--map-goal") || "#39d98a").trim();
+    var toPx = function (x, y) {
+      return [((x - grid.origin_x_m) / grid.resolution_m) * scale,
+              ((y - grid.origin_y_m) / grid.resolution_m) * scale];
+    };
+    if (g.plan && g.plan.length > 1 && (g.goal.state === "active" || g.goal.state === "pending")) {
+      ctx.beginPath();
+      g.plan.forEach(function (p, k) {
+        var q = toPx(p[0], p[1]);
+        if (k === 0) ctx.moveTo(q[0], q[1]); else ctx.lineTo(q[0], q[1]);
+      });
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = Math.max(2, scale * 0.5);
+      ctx.stroke();
+    }
+    var c = toPx(g.goal.x_m, g.goal.y_m);
+    ctx.beginPath();
+    ctx.arc(c[0], c[1], Math.max(6, scale * 2), 0, 2 * Math.PI);
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = Math.max(2, scale * 0.6);
+    ctx.stroke();
+  }
+
+  function goalText(grid) {
+    if (!isSlamMap(grid) || state.goalsUnsupported) return "";
+    var g = state.lastGoal && state.lastGoal.goal;
+    var words = {pending: "planning", active: "on its way", succeeded: "arrived",
+                 aborted: "could not get there", canceled: "cancelled", rejected: "refused"};
+    var what = g ? ("goal: " + (words[g.state] || g.state) + " \u00b7 ") : "";
+    return '<br><span class="goal-line">' + what + "tap the map to send the robot there</span>";
+  }
+
+  // Tap the SLAM map: send the robot there (nav2, through the robot server).
+  function onMapTap(ev) {
+    var grid = state.lastMap;
+    if (!isSlamMap(grid) || state.goalsUnsupported || !state.connected) return;
+    var canvas = ev.currentTarget;
+    var rect = canvas.getBoundingClientRect();
+    var px = (ev.clientX - rect.left) * (canvas.width / rect.width);
+    var py = (ev.clientY - rect.top) * (canvas.height / rect.height);
+    var scale = canvas.width / grid.width;
+    var x = grid.origin_x_m + (px / scale) * grid.resolution_m;
+    var y = grid.origin_y_m + (py / scale) * grid.resolution_m;
+    apiPost("/world/goal", {x_m: x, y_m: y}).then(function (r) {
+      if (r && r.accepted === false) {
+        showToast("Could not send the goal: " + (r.reason || r.error || "refused"), "error");
+      } else {
+        showToast("Sending the robot there", "info");
+      }
+    }).catch(function (e) {
+      showToast("Could not send the goal (" + (e.message || e) + ")", "error");
+    });
   }
 
   // Cell states, matching world/interface.py's CELL_* constants. Named
@@ -700,7 +775,9 @@
     if (slam && werr && werr.usable && werr.truth) {
       drawPose(ctx, grid, SCALE, werr.truth, "ghost");
     }
+    drawGoal(ctx, grid, SCALE);
     drawPose(ctx, grid, SCALE, state.lastPose, "estimate");
+    canvas.classList.toggle("tappable", isSlamMap(grid) && !state.goalsUnsupported);
 
     var seen = 0;
     for (var i = 0; i < grid.cells.length; i++) {
@@ -710,7 +787,7 @@
     readout.innerHTML = "map: " + seen + "/" + grid.cells.length + " cells seen (" +
       pct + "%) \u00b7 " + Math.round(grid.resolution_m * 100) + "cm cells \u00b7 " +
       '<span class="src">' + grid.map_id + " v" + grid.map_version + "</span>" +
-      slamErrorText(slam ? werr : null);
+      slamErrorText(slam ? werr : null) + goalText(grid);
   }
 
   // "SLAM error 4.2 cm / 1.1° · odometry alone 45 cm / 39°" -- the one
@@ -1273,6 +1350,11 @@
   document.getElementById("btn-health-check").onclick = function () { runHealthCheck(); };
 
   document.getElementById("btn-forward").onclick = function () { manualAction("FORWARD"); };
+  // R6: tap the SLAM map to send the robot there.
+  (function () {
+    var mapCanvas = document.getElementById("world-map");
+    if (mapCanvas) mapCanvas.addEventListener("click", onMapTap);
+  })();
   document.getElementById("btn-reverse").onclick = function () { manualAction("REVERSE"); };
   document.getElementById("btn-left").onclick = function () { manualAction("LEFT"); };
   document.getElementById("btn-right").onclick = function () { manualAction("RIGHT"); };

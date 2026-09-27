@@ -36,6 +36,8 @@
     --map-wall: #8FA0B8;
     /* R5: the ground-truth ghost outlined under a SLAM estimate. */
     --map-truth: #F5F7FA;
+    /* R6: a nav2 goal and its planned route. */
+    --map-goal: #39D98A;
     --door: #3A4250;
     /* Brand/primary (interactive default, active states) is distinct
        from the semantic accents below -- a single green doing double
@@ -502,6 +504,7 @@
   /* N1. Sized like the FPV canvas above it so the two read as one
      instrument: what the robot sees, and where it has been. */
   .map-wrap { display: flex; flex-direction: column; align-items: center; margin-top: 6px; }
+  #world-map.tappable { cursor: crosshair; touch-action: manipulation; }
   #world-map {
     border-radius: 8px;
     display: block;
@@ -510,6 +513,10 @@
        confidence the map does not have. */
     image-rendering: pixelated;
     background: var(--field-bg);
+    /* A SLAM map of a real house is hundreds of 5 cm cells across: scale it
+       to the column rather than scroll the page sideways on a phone. */
+    max-width: 100%;
+    height: auto;
   }
   .fpv-source {
     font-family: var(--mono); font-size: var(--fs-small); color: var(--text-dim);
