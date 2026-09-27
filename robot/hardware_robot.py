@@ -239,8 +239,8 @@ class HardwareRobot(RobotInterface):
     def get_depth_grid(self) -> dict:
         return self.sensors.get_depth_grid() if self.sensors else unusable_grid()
 
-    def get_scan(self) -> dict:
-        return self.sensors.get_scan() if self.sensors else unusable_scan()
+    def get_scan(self, max_range_m=None) -> dict:
+        return self.sensors.get_scan(max_range_m=max_range_m) if self.sensors else unusable_scan()
 
     def close(self) -> None:
         try:

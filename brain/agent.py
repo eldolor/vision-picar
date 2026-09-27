@@ -114,11 +114,12 @@ class ConstrainedAgent:
 
         Two sources, and neither is the simulator's map:
 
-        * **Clearance from the depth grid**, reduced by `robot/safety.py`'s
-          `path_clearance()` -- the ONE place the project decides which zones
-          are "the path" (M3). Reusing it rather than re-reducing the grid
-          here is what guarantees this scene says STOP exactly when the
-          collar would veto a FORWARD, and at no other time. That is the one
+        * **Clearance from `robot/safety.py`'s `forward_clearance()`** -- the
+          depth grid's path cone (M3) and the chassis' swept corridor off the
+          scan (3.18), in series: exactly what the collar vets a FORWARD
+          against. Reusing it rather than re-reducing anything here is what
+          guarantees this scene says STOP exactly when the collar would veto
+          a FORWARD, and at no other time. That is the one
           boundary in this scene that changes a decision; "clear" versus
           "some" is descriptive and both map to FORWARD.
         * **Objects from perception** -- `frame["objects_visible"]`. On the
@@ -129,7 +130,7 @@ class ConstrainedAgent:
         `doorway_visible` is always False: nothing measures doorways, and
         both vision policies already report it that way.
         """
-        clearance_cm, _source = self.safety.path_clearance()
+        clearance_cm, _source = self.safety.forward_clearance()
         if clearance_cm is None:
             # "Nothing within range" -- M3's second outcome, never a veto.
             free_space = "clear"

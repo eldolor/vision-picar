@@ -214,8 +214,8 @@ class _HaltGate(RobotInterface):
         # report "no encoders" while wrapping a robot that has them.
         return self._robot.get_wheel_state()
 
-    def get_scan(self) -> dict:
-        return self._robot.get_scan()
+    def get_scan(self, max_range_m=None) -> dict:
+        return self._robot.get_scan(max_range_m=max_range_m)
 
     def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
         # A MOVE, so gated like every other one: a mission that has ended

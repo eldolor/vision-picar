@@ -181,13 +181,31 @@ def test_a_dpad_tap_still_preempts_a_mission_under_drive_ros(stack):
 
 # ---------- 5: the safety vet still stands in the path ----------
 
-@pytest.mark.xfail(strict=False, reason=(
-    "PRE-EXISTING, found 2026-09-27 (PLAN-ros-alignment.md 3.17): on the starter "
-    "house the stop reads 18.0 cm in 3 of 5 fresh runs, on today's image AND the "
-    "previous commit's. Suspected: the server's wheel loop vets once, then "
-    "integrates the ACTUAL elapsed dt, so a stalled period moves unvetted. "
-    "Not fixed -- a safety-layer design decision"))
+def _veto(robot):
+    """What the forward veto itself reads -- the path cone AND the chassis'
+    swept corridor, in the body frame (3.18). The cone's own
+    `clearance_cm` is cast along the CAMERA, and a camera left panned by
+    the mission test above is how this test used to read 18.0 cm off a side
+    wall while the robot was 25 cm from the one it drove at."""
+    return robot.get("/depth").json()["path"]["veto_cm"]
+
+
+def _travel_to_contact_cm(robot):
+    """Ground truth: how far the chassis can still go before touching
+    anything, from /world/truth and the house's own layout."""
+    from sim.maps import build_world
+    from tests import footprint_sweep as fs
+    t = _truth(robot)
+    world = build_world("starter_house")
+    world.x, world.y = t["x_m"] / fs.CELL_CM * 100, t["y_m"] / fs.CELL_CM * 100
+    world.theta = math.radians(t["heading_deg"]) - math.pi / 2
+    return fs.truth(world)[0]
+
+
 def test_a_standing_twist_into_a_wall_stops_short(stack):
+    """3.18 part 2. Run in the suite's own order, so whatever the tests
+    before it leave behind -- a panned camera, a robot off its start -- is
+    part of what it tests. That is where 3.17's 18.0 cm came from."""
     robot, bridge = stack
     # "North is the start room's wall" is a fact about the STARTER house. In
     # the furnished home (SIM_MAP=home_first_floor) north of the start is the
@@ -198,16 +216,18 @@ def test_a_standing_twist_into_a_wall_stops_short(stack):
     if house not in (None, "starter_house"):
         pytest.skip(f"the wall-stop geometry is the starter house's; the server is in {house!r}")
     _face(robot, 0)                     # north: the start room's wall
-    start = _clearance(robot)
+    start = _veto(robot)
     end = time.time() + 6.0
-    while time.time() < end and (_clearance(robot) or 999) > 5:
+    while time.time() < end and (_veto(robot) or 999) > 5:
         bridge.post("/cmd_vel", json={"driver": "brain", "linear_m_s": 0.1, "angular_rad_s": 0})
         time.sleep(0.05)
     bridge.post("/cmd_vel", json={"driver": "brain", "linear_m_s": 0, "angular_rad_s": 0})
     time.sleep(0.4)
-    final = _clearance(robot)
+    final = _veto(robot)
+    contact = _travel_to_contact_cm(robot)
     assert final < start, "it must actually have driven"
-    assert final >= 19.4, f"drove to {final} cm through ROS"
+    assert final >= 19.4, f"the veto reads {final} cm through ROS"
+    assert contact >= 18.0, f"truth: {contact:.1f} cm of travel left"
     _act(robot, "REVERSE")              # leave room for the next test
 
 

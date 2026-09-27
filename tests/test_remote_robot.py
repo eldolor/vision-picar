@@ -147,7 +147,10 @@ def test_depth_grid_comes_from_the_robot_not_from_the_interface_default(robot_ov
         "the interface default was inherited instead of the route being called"
     )
     local = fresh_mock_robot().get_depth_grid()
-    assert {k: grid[k] for k in ("rows", "cols", "fov_deg", "zones")} == local, (
+    # `pan_deg` too (3.18): brain-side safety picks the path zones by BODY
+    # bearing, so a grid that lost its pan on the wire would read a side
+    # wall as the way ahead whenever the camera had peeked.
+    assert {k: grid[k] for k in ("rows", "cols", "fov_deg", "pan_deg", "zones")} == local, (
         "the wire must not change the grid: same robot, same start pose"
     )
     assert grid["fov_deg"] == local["fov_deg"], (

@@ -9,6 +9,7 @@ via robot/factory.py.
 """
 
 from abc import ABC, abstractmethod
+from typing import Optional
 
 # What `get_distance()` returns on a backend that has no distance sensor at
 # all -- a photograph has no depth in it, so ReplayRobot and TeleopRobot
@@ -387,7 +388,7 @@ class RobotInterface(ABC):
         """
         return None
 
-    def get_scan(self) -> dict:
+    def get_scan(self, max_range_m: Optional[float] = None) -> dict:
         """A 360-degree range scan -- phase R2, what the lidar gives.
 
             {"usable": bool,
@@ -409,6 +410,13 @@ class RobotInterface(ABC):
         the first return, or **None for "no return within range_max_m"** --
         information about empty space, and deliberately not the same thing
         as the whole scan being `usable: False`.
+
+        **`max_range_m` is a HINT, never a filter a caller may rely on**
+        (`PLAN-ros-alignment.md` 3.18). The safety layer passes it because it
+        only needs the metre around the chassis; a backend MAY then report
+        returns beyond it as None, and one that measures everything at once
+        (a real lidar) simply ignores it. The sim honours it, because casting
+        360 rays to 12m costs ~13ms of the wheel loop's 50ms period.
 
         **Not abstract** -- `unusable_scan()` for a backend with no lidar.
         """

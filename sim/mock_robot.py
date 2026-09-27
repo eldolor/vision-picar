@@ -526,10 +526,14 @@ class MockRobot(RobotInterface):
         # zones above are cast on `renderer.FPV_FOV`, so publishing anything
         # else would point `robot/safety.py`'s path cone somewhere the rays
         # never went.
-        return {"rows": 1, "cols": cols,
+        # `pan_deg`: where the grid points relative to the body (3.18 part
+        # 2). It is cast along the camera, so a peek swings it -- and the
+        # safety layer must know, or it reads a side wall as the way ahead.
+        pan_deg = math.degrees(renderer.normalize_angle(base_angle - self.world.theta))
+        return {"rows": 1, "cols": cols, "pan_deg": round(pan_deg, 4),
                 "fov_deg": math.degrees(renderer.FPV_FOV), "zones": zones}
 
-    def get_scan(self) -> dict:
+    def get_scan(self, max_range_m: Optional[float] = None) -> dict:
         """A 360-degree scan cast from the robot's own position -- R2.
 
         One beam per degree off the BODY heading, clockwise-positive with 0
@@ -546,19 +550,30 @@ class MockRobot(RobotInterface):
         exposed the gap: from the user's own foyer SLAM mapped almost nothing
         and nav2 refused every goal as "off the global costmap". A beam that
         reaches the range has no return and reads None, which is information
-        about empty space. The first-step
+        about empty space. **`max_range_m` is honoured** (3.18): beams stop
+        there and read None beyond it, while `range_max_m` still states the
+        sensor's own 12 m -- the hint trims this call, not the sensor. The
+        safety layer asks for ~0.6 m; SLAM asks for everything. A hinted
+        beam is also cast exactly rather than by the march (never further,
+        see `renderer.cast_ray_exact()`). The first-step
         overshoot is reported at its upper bound here, unlike the depth
         grid: a scan feeds a MAP, which wants the wall where it is, not the
         safety veto, which wants it where it might be.
         """
         rays = 360
-        max_cells = LIDAR_RANGE_M / DEFAULT_CELL_M
+        reach_m = LIDAR_RANGE_M if max_range_m is None else min(LIDAR_RANGE_M, max_range_m)
+        max_cells = reach_m / DEFAULT_CELL_M
+        # A range-hinted scan is the safety layer's, and is cast EXACTLY
+        # (`renderer.cast_ray_exact()`): never further than the march, and
+        # ~5x cheaper, which matters at one scan per control period. The full
+        # scan -- SLAM's -- keeps the march its map is pinned to.
+        cast = renderer.cast_ray if max_range_m is None else renderer.cast_ray_exact
+        solid = self.world.solid_cells
         ranges = []
         for i in range(rays):
             rel = math.radians(-180 + i)
-            dist = renderer.cast_ray(self.world.layout, self.world.x, self.world.y,
-                                     self.world.theta + rel,
-                                     solid=self.world.solid_cells, max_dist=max_cells)
+            dist = cast(self.world.layout, self.world.x, self.world.y,
+                        self.world.theta + rel, solid=solid, max_dist=max_cells)
             ranges.append(None if dist >= max_cells
                           else round(dist * DEFAULT_CELL_M, 4))
         return {"usable": True, "angle_min_deg": -180.0, "angle_increment_deg": 1.0,

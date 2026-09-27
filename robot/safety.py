@@ -64,6 +64,44 @@ REVERSE_ACTIONS = {"REVERSE"}
 # (R8), and at R3 it becomes a transform rather than a constant.
 LIDAR_TO_REAR_BUMPER_CM = 15.0
 
+# ---- the chassis FOOTPRINT, and the corridor it sweeps (PLAN-ros-alignment 3.18) ----
+#
+# The URDF's body (picar_description's xacro): deck length by the wheels'
+# outer width (wheel separation + one wheel width), centred on the rotation
+# centre -- the same rectangle nav2 plans with and collision_monitor checks.
+# `tests/test_wall_linters.py` keeps these in step with the xacro.
+#
+# Why this exists: the path cone below (`PATH_HALF_ANGLE_DEG`) is sized for
+# one 30cm move, so inside ~30cm it is NARROWER than the chassis. An
+# obstacle off a front corner is outside it -- 3.17 watched a standing twist
+# in the furnished home drive the chassis into the dining furniture while
+# the cone read 40-80cm the whole way. The corridor check reads the
+# 360-degree scan instead and asks the question the cone only approximates:
+# is anything in the strip the chassis will sweep, within `min_distance_cm`
+# of its leading edge? It runs in SERIES with the cone (whichever reads
+# less decides), so nothing the cone caught before is released by it.
+FOOTPRINT_LENGTH_M = 0.228
+FOOTPRINT_WIDTH_M = 0.198
+# Lateral room the corridor keeps beyond each side of the chassis. Returns
+# BESIDE the body (not ahead of the leading edge) never stop a straight
+# move -- a straight move cannot close on them, and treating them as
+# blockers is R6's stop-polygon failure, frozen against a jamb. The margin
+# is small because the starter house's corridors are 30cm against a 19.8cm
+# chassis (5.1cm a side); 3cm less the sim's 1.5cm ray-march over-read
+# leaves 1.5cm that a converging wall can never close. The car's lidar is
+# rated +/-3cm (RPLidar C1), so this is a hardware-day calibration item
+# alongside `CHASSIS_WIDTH_CM` -- R8, with the chassis in hand.
+FOOTPRINT_SIDE_MARGIN_CM = 3.0
+# How far the safety layer asks the scan to look (a HINT: a real lidar
+# ignores it, the sim stops casting there). The corridor only needs the
+# leading edge plus `min_distance_cm` (~34cm to the corridor's far corner),
+# the rear cone ~35cm; 60cm is headroom over both, and grows with
+# `min_distance_cm` (see `_scan()`).
+# Without the hint a sim scan casts 360 rays to 12m -- ~13ms in the
+# furnished home, every control period, holding the GIL the wheel loop
+# shares (3.17's second finding is about exactly that loop).
+SAFETY_SCAN_RANGE_M = 0.6
+
 # What counts as "the path the next move crosses" -- phase M3, reworked by
 # PLAN-onboard-perception.md section 5.1. The reason is geometry rather
 # than taste, and the geometry is an ANGLE.
@@ -100,11 +138,13 @@ LIDAR_TO_REAR_BUMPER_CM = 15.0
 # comment claimed it did. It was arithmetic that happened to land close
 # enough on the one sensor it was checked against.
 #
-# CHASSIS_WIDTH_CM is the PiCar-X's, kept deliberately: the differential
-# chassis chosen in PLAN-onboard-perception.md section 1.1 is 148mm wide,
-# so this over-states the width and the cone errs wide, which is the safe
-# direction. **Re-measure it on the real chassis** -- that is a hardware-day
-# pre-flight item, not a guess to leave standing.
+# CHASSIS_WIDTH_CM is the PiCar-X's 16.5cm. It was kept on the belief that
+# it over-states the differential chassis (148mm) and so errs wide -- but
+# 148mm is the DECK. Across the wheels the chassis is 19.8cm
+# (`FOOTPRINT_WIDTH_M` above, the xacro, nav2's footprint), so this cone
+# errs NARROW by ~3cm. The corridor check above is what covers the gap
+# (3.18); this cone alone does not. **Re-measure it on the real chassis**
+# -- a hardware-day pre-flight item, not a guess to leave standing.
 CHASSIS_WIDTH_CM = 16.5
 
 # How far the range sensor sits BEHIND the leading edge of the chassis.
@@ -171,7 +211,7 @@ def _zone_bearings_deg(cols: int, fov_deg: float) -> list:
     return [-fov_deg / 2 + fov_deg * (i + 0.5) / cols for i in range(cols)]
 
 
-def path_zone_indices(rows: int, cols: int, fov_deg=None) -> list:
+def path_zone_indices(rows: int, cols: int, fov_deg=None, pan_deg=None) -> list:
     """Which zones of a `rows` x `cols` grid the next move crosses.
 
     `fov_deg` is the grid's own horizontal field of view, straight out of
@@ -185,6 +225,14 @@ def path_zone_indices(rows: int, cols: int, fov_deg=None) -> list:
     whole forward hemisphere and vetoes everything. That is a silent
     fallback of exactly the kind M7 exists to remove, so it warns.
 
+    **`pan_deg` is where the grid points, relative to the BODY** (3.18 part
+    2), published by a backend whose depth sensor pans with the camera --
+    the sim's does. Zones are chosen by their bearing relative to the body,
+    because the path is where the chassis goes, not where the camera looks.
+    A grid panned off the path returns NO zones, and `path_clearance()` says
+    so rather than reading a side wall as the way ahead: 3.17's "flaky"
+    18.0 cm was exactly that, a camera left panned by a preempted mission.
+
     Rows are not narrowed here: the sim publishes `rows: 1` (`cast_ray()`
     has no elevation), and on a real sensor the rows that matter are
     decided by M8's floor rejection, which is geometry this layer does not
@@ -195,17 +243,25 @@ def path_zone_indices(rows: int, cols: int, fov_deg=None) -> list:
     if cols <= 0:
         return []
 
+    pan = float(pan_deg or 0.0)
     if fov_deg and fov_deg > 0:
-        bearings = _zone_bearings_deg(cols, float(fov_deg))
+        bearings = [(b + pan + 180.0) % 360.0 - 180.0
+                    for b in _zone_bearings_deg(cols, float(fov_deg))]
         chosen = [c for c, b in enumerate(bearings) if abs(b) <= PATH_HALF_ANGLE_DEG]
         if not chosen:
             # Slices wider than the cone itself -- a coarse 360-degree grid.
             # Keep the column(s) pointing most nearly ahead rather than
             # returning nothing and falling through to the scalar, which is
-            # the same `max(1, ...)` promise the fraction branch makes.
+            # the same `max(1, ...)` promise the fraction branch makes --
+            # but only a slice that actually COVERS ahead. A grid panned
+            # off the path has none, and says so by returning nothing.
             nearest = min(abs(b) for b in bearings)
-            chosen = [c for c, b in enumerate(bearings)
-                      if abs(abs(b) - nearest) < 1e-9]
+            if nearest <= float(fov_deg) / cols / 2 + 1e-9:
+                chosen = [c for c, b in enumerate(bearings)
+                          if abs(abs(b) - nearest) < 1e-9]
+    elif abs(pan) > PATH_HALF_ANGLE_DEG:
+        # No geometry, and pointed away: nothing in it is the path.
+        chosen = []
     else:
         if cols > _WIDE_GRID_COLS and not _warned_missing_fov:
             _warned_missing_fov = True
@@ -268,6 +324,10 @@ class SafetyController:
         2. **`depth_grid_no_target`** -- every path zone answered, and
            none of them found anything within range. Clearance is `None`
            and the move proceeds.
+        2b. **`depth_grid_facing_away`** -- the grid is panned off the path
+           (3.18 part 2), so it has no opinion about the way ahead.
+           Clearance is `None` here, and `forward_clearance()` refuses a
+           FORWARD when nothing else -- the scan -- can see the path either.
         3. **`distance_sensor`** -- there is no grid, or every path zone
            was unusable. Falls back to `get_distance()`, which is exactly
            the pre-M3 veto: the scalar keeps its `0.0`-on-dropout collapse
@@ -290,7 +350,11 @@ class SafetyController:
             zones = grid.get("zones") or []
             indices = path_zone_indices(int(grid.get("rows", 1)),
                                         int(grid.get("cols", 0)),
-                                        grid.get("fov_deg"))
+                                        grid.get("fov_deg"), grid.get("pan_deg"))
+            if not indices and zones and grid.get("pan_deg"):
+                # Pointed off the path (3.18 part 2). NOT the scalar: on
+                # every backend here it looks where the camera looks too.
+                return None, "depth_grid_facing_away"
             path = [zones[i] for i in indices if i < len(zones)]
             measured = [
                 z["distance_cm"] for z in path
@@ -303,7 +367,7 @@ class SafetyController:
 
         return self._to_bumper(self.robot.get_distance()), "distance_sensor"
 
-    def rear_clearance(self) -> Tuple[Optional[float], str]:
+    def rear_clearance(self, scan: Optional[dict] = None) -> Tuple[Optional[float], str]:
         """How much room is behind the robot, from the lidar's rear beams --
         phase R2b, by the user's decision.
 
@@ -316,8 +380,7 @@ class SafetyController:
         safe. With a lidar fitted, this is what stands between a reverse
         and whatever is behind.
         """
-        get_scan = getattr(self.robot, "get_scan", None)
-        scan = get_scan() if get_scan is not None else None
+        scan = self._scan() if scan is None else scan
         if not scan or not scan.get("usable"):
             return None, "no_rear_sensor"
         a0, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
@@ -331,6 +394,84 @@ class SafetyController:
         if not rear:
             return None, "scan_rear_no_target"
         return max(0.0, round(min(rear) * 100.0 - LIDAR_TO_REAR_BUMPER_CM, 1)), "scan_rear"
+
+    def _scan(self) -> Optional[dict]:
+        """One scan for one decision, looking only as far as safety needs.
+        None for a robot with no scan at all (a test double, a wrapper)."""
+        get_scan = getattr(self.robot, "get_scan", None)
+        if get_scan is None:
+            return None
+        return get_scan(max_range_m=max(SAFETY_SCAN_RANGE_M,
+                                        FOOTPRINT_LENGTH_M / 2 + 1.5 * self.min_distance_cm / 100.0))
+
+    def footprint_clearance(self, direction: int = 1, scan: Optional[dict] = None
+                            ) -> Tuple[Optional[float], str]:
+        """Room in the corridor the chassis sweeps -- 3.18.
+
+        `direction` +1 is forward, -1 is astern. Every scan return is put in
+        the body frame (the lidar at the rotation centre, as in the sim and
+        as `base_link` is in the URDF); a return counts if it lies within
+        half the chassis width plus `FOOTPRINT_SIDE_MARGIN_CM` of the
+        centre-line AND beyond the leading edge in the direction of travel.
+        The clearance is its distance past that edge -- how far the chassis
+        can move before the leading edge reaches it, the same meaning the
+        cone's number has. A return INSIDE the outline's width and within
+        its length (the body is already on it) reads 0.0.
+
+        `(None, "no_scan")` for a backend with no usable scan: the cone and
+        the scalar still answer, exactly as before 3.18. `(None,
+        "scan_footprint_no_target")` when the corridor is empty.
+        """
+        scan = self._scan() if scan is None else scan
+        if not scan or not scan.get("usable"):
+            return None, "no_scan"
+        half_len = FOOTPRINT_LENGTH_M * 50.0
+        half_wid = FOOTPRINT_WIDTH_M * 50.0
+        a0, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
+        best = None
+        for i, r in enumerate(scan["ranges_m"]):
+            if r is None:
+                continue
+            a = math.radians(a0 + i * inc)
+            along = direction * r * 100.0 * math.cos(a)
+            lateral = abs(r * 100.0 * math.sin(a))
+            if along > half_len and lateral <= half_wid + FOOTPRINT_SIDE_MARGIN_CM:
+                room = along - half_len
+            elif 0.0 < along <= half_len and lateral <= half_wid:
+                room = 0.0
+            else:
+                continue
+            best = room if best is None else min(best, room)
+        if best is None:
+            return None, "scan_footprint_no_target"
+        return round(best, 1), "scan_footprint"
+
+    @staticmethod
+    def _nearer(*readings) -> Tuple[Optional[float], str]:
+        """The reading that binds: the least centimetres among those that
+        found something. All clear -> the first one's (clear) answer."""
+        found = [r for r in readings if r[0] is not None]
+        return min(found, key=lambda r: r[0]) if found else readings[0]
+
+    def forward_clearance(self) -> Tuple[Optional[float], str]:
+        """What a FORWARD is vetted against: the cone (`path_clearance()`)
+        and the swept corridor (`footprint_clearance()`), in series.
+
+        **If neither can see the path, the answer is 0.0** (3.18 part 2): a
+        camera panned away and no scan means nothing observes the ground the
+        move crosses, and unobserved must not read as clear -- M3's rule, one
+        level up."""
+        cone, corridor = self.path_clearance(), self.footprint_clearance(+1)
+        if cone[1] == "depth_grid_facing_away" and corridor[1] == "no_scan":
+            return 0.0, "path_not_observed"
+        return self._nearer(cone, corridor)
+
+    def reverse_clearance(self) -> Tuple[Optional[float], str]:
+        """What a reverse is vetted against: the rear cone and the swept
+        corridor astern, in series, off one scan."""
+        scan = self._scan()
+        return self._nearer(self.rear_clearance(scan), self.footprint_clearance(-1, scan))
+
 
     def vet_wheel_velocity(self, left_rad_s: float, right_rad_s: float):
         """Clamp a wheel-velocity command the way `check_and_execute()` vets
@@ -353,11 +494,11 @@ class SafetyController:
         omega = (right_rad_s - left_rad_s) * radius / track
         reason = None
         if v > 0:
-            clearance, source = self.path_clearance()
+            clearance, source = self.forward_clearance()
             if clearance is not None and clearance < self.min_distance_cm:
                 v, reason = 0.0, f"forward clamped: {clearance}cm < {self.min_distance_cm}cm ({source})"
         elif v < 0:
-            clearance, source = self.rear_clearance()
+            clearance, source = self.reverse_clearance()
             if clearance is not None and clearance < self.min_distance_cm:
                 v, reason = 0.0, f"reverse clamped: {clearance}cm < {self.min_distance_cm}cm ({source})"
         if reason is None:
@@ -373,7 +514,7 @@ class SafetyController:
         loop) should catch this and treat it as an implicit STOP.
         """
         if action in FORWARD_ACTIONS:
-            distance, source = self.path_clearance()
+            distance, source = self.forward_clearance()
             if distance is not None and distance < self.min_distance_cm:
                 self.robot.stop()
                 msg = (
@@ -384,7 +525,7 @@ class SafetyController:
                 raise SafetyViolation(msg)
 
         if action in REVERSE_ACTIONS:
-            distance, source = self.rear_clearance()
+            distance, source = self.reverse_clearance()
             if distance is not None and distance < self.min_distance_cm:
                 self.robot.stop()
                 msg = (f"Blocked {action}: rear clearance={distance}cm < "

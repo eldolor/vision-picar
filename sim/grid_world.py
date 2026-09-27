@@ -59,6 +59,7 @@ import math
 # Two collision models -- one for the mover, one for the renderer -- is
 # how a robot starts driving through a wall it can see.
 from sim import renderer
+from robot.safety import FOOTPRINT_LENGTH_M, FOOTPRINT_WIDTH_M
 
 logger = logging.getLogger("grid_world")
 
@@ -117,6 +118,30 @@ CELL_DOOR = "D"
 # clearance, which is why the constant lives here (the footprint is a fact
 # about the thing in the world) and is imported there rather than restated.
 ROBOT_HALF_CELL = 0.5
+
+# The chassis as the thing that COLLIDES, since 3.18 (PLAN-ros-alignment):
+# the URDF rectangle `robot/safety.py` vets with, in cells. Before this a
+# translation was checked by one ray from the centre, so a corner could pass
+# into furniture the centre-line missed -- the sim said nothing about the
+# very escape 3.17 found, and a clamp-less standing twist drove the chassis
+# up to 2.7cm deep into the dining chairs. The ray above still caps travel
+# head-on (its half cell, 15cm, is further forward than the deck's 11.4cm,
+# so every existing head-on stop is unchanged); the rectangle adds the
+# corners and sides.
+#
+# Less a 0.2cm skin, because the rectangle's corner radius is 15.1cm and a
+# pivot at a cell centre in a 30cm corridor would otherwise graze both walls
+# by 0.1cm -- and a pose already in contact is exempt below, which would
+# quietly switch the check off in every corridor of the starter house.
+FOOTPRINT_CELL_M = 0.30
+FOOTPRINT_SKIN_CM = 0.2
+FOOTPRINT_HALF_LENGTH = (FOOTPRINT_LENGTH_M * 50.0 - FOOTPRINT_SKIN_CM) / (FOOTPRINT_CELL_M * 100)
+FOOTPRINT_HALF_WIDTH = (FOOTPRINT_WIDTH_M * 50.0 - FOOTPRINT_SKIN_CM) / (FOOTPRINT_CELL_M * 100)
+# Longest stretch checked at its end only. A rectangle translating along its
+# own axis sweeps exactly the union of where it starts and ends, so the end
+# pose is the whole test -- as long as the stretch is shorter than the
+# rectangle. Half a cell is well inside its ~0.75.
+FOOTPRINT_CHECK_CELLS = 0.5
 
 # What `look_left()` / `look_right()` swing the camera by. Ninety degrees
 # because that is what the pan has always been worth here -- `pan` was a
@@ -338,6 +363,10 @@ class GridWorld:
         `TRAVEL_EPS` slack absorbs the ray's overshoot. The robot's CENTRE
         still stops half a cell from the wall face either way, which is the
         invariant that matters: `floor(x), floor(y)` is never a wall.
+
+        **Since 3.18 the chassis rectangle is checked too**
+        (`_footprint_limit()`): the ray caps travel head-on, the rectangle
+        catches a corner or a side the centre-line misses.
         """
         if cells == 0:
             return 0.0
@@ -347,6 +376,7 @@ class GridWorld:
         room = renderer.cast_ray(self.layout, self.x, self.y, angle,
                                  solid=self.solid_cells) - ROBOT_HALF_CELL
         allowed = max(0.0, min(want, room))
+        allowed = self._footprint_limit(angle, allowed)
         self.x += math.cos(angle) * allowed
         self.y += math.sin(angle) * allowed
         if allowed < want - TRAVEL_EPS:
@@ -356,6 +386,62 @@ class GridWorld:
                 f"{'forward' if sign > 0 else 'backward'}"
             )
         return sign * allowed
+
+    def footprint_overlaps(self, x: float, y: float) -> bool:
+        """Whether the chassis rectangle, at (x, y) and the current heading,
+        overlaps a wall or a solid object -- separating axes, touching
+        allowed."""
+        ux, uy = math.cos(self.theta), math.sin(self.theta)
+        nx, ny = -uy, ux
+        hl, hw = FOOTPRINT_HALF_LENGTH, FOOTPRINT_HALF_WIDTH
+        corners = [(x + ux * a + nx * b, y + uy * a + ny * b)
+                   for a, b in ((hl, hw), (hl, -hw), (-hl, -hw), (-hl, hw))]
+        xs = [c[0] for c in corners]
+        ys = [c[1] for c in corners]
+        c_u, c_n = x * ux + y * uy, x * nx + y * ny
+        solid = self.solid_cells
+        for cy in range(math.floor(min(ys)), math.floor(max(ys)) + 1):
+            for cx in range(math.floor(min(xs)), math.floor(max(xs)) + 1):
+                if renderer._cell_at(self.layout, cx, cy) != CELL_WALL and (cx, cy) not in solid:
+                    continue
+                if max(xs) <= cx or min(xs) >= cx + 1 or max(ys) <= cy or min(ys) >= cy + 1:
+                    continue
+                square = ((cx, cy), (cx + 1, cy), (cx + 1, cy + 1), (cx, cy + 1))
+                pu = [px * ux + py * uy for px, py in square]
+                pn = [px * nx + py * ny for px, py in square]
+                if max(pu) <= c_u - hl or min(pu) >= c_u + hl:
+                    continue
+                if max(pn) <= c_n - hw or min(pn) >= c_n + hw:
+                    continue
+                return True
+        return False
+
+    def _footprint_limit(self, angle: float, allowed: float) -> float:
+        """Cap a translation of `allowed` cells along `angle` where the
+        chassis rectangle would first touch something.
+
+        **A pose already overlapping is exempt** -- a map that starts the
+        robot inside furniture, or a pivot into a corner (rotation is never
+        blocked), must not freeze it for good. It can always move; the
+        rectangle only refuses motion from a clean pose into contact.
+        """
+        if allowed <= 0 or self.footprint_overlaps(self.x, self.y):
+            return allowed
+        dx, dy = math.cos(angle), math.sin(angle)
+        done = 0.0
+        while done < allowed:
+            step_to = min(allowed, done + FOOTPRINT_CHECK_CELLS)
+            if self.footprint_overlaps(self.x + dx * step_to, self.y + dy * step_to):
+                lo, hi = done, step_to
+                for _ in range(16):
+                    mid = (lo + hi) / 2
+                    if self.footprint_overlaps(self.x + dx * mid, self.y + dy * mid):
+                        hi = mid
+                    else:
+                        lo = mid
+                return lo
+            done = step_to
+        return allowed
 
     def rotate(self, delta_rad: float) -> float:
         """Pivot in place by `delta_rad`, and return it.

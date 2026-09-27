@@ -197,8 +197,8 @@ class RecordingRobot(RobotInterface):
         # way it once did for odometry.
         return self._record("get_wheel_state", self.delegate.get_wheel_state())
 
-    def get_scan(self) -> dict:
-        return self._record("get_scan", self.delegate.get_scan())
+    def get_scan(self, max_range_m=None) -> dict:
+        return self._record("get_scan", self.delegate.get_scan(max_range_m=max_range_m))
 
     def set_wheel_velocity(self, left_rad_s, right_rad_s):
         return self._record("set_wheel_velocity",

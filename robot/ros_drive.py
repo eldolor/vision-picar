@@ -271,8 +271,8 @@ class RosDriveRobot(RobotInterface):
     def get_wheel_state(self) -> dict:
         return self.inner.get_wheel_state()
 
-    def get_scan(self) -> dict:
-        return self.inner.get_scan()
+    def get_scan(self, max_range_m=None) -> dict:
+        return self.inner.get_scan(max_range_m=max_range_m)
 
     def __getattr__(self, name):
         # Backend extras (MockRobot.world, the sim's truth) stay reachable

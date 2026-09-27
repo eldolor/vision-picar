@@ -158,10 +158,13 @@ class RemoteRobot(RobotInterface):
                 return unusable_wheels()
             raise
 
-    def get_scan(self) -> dict:
-        """Phase R2. Same 404 rule: an older server is honestly lidar-less."""
+    def get_scan(self, max_range_m: Optional[float] = None) -> dict:
+        """Phase R2. Same 404 rule: an older server is honestly lidar-less.
+        The range hint (3.18) travels as a query parameter, so the robot
+        server's own sim casts only as far as the safety check needs."""
+        path = "/scan" if max_range_m is None else f"/scan?max_range_m={max_range_m:g}"
         try:
-            return self._request("GET", "/scan")
+            return self._request("GET", path)
         except RobotTransportError as e:
             if "HTTP 404" in str(e):
                 logger.info("robot server has no /scan route -- reporting no scan")

@@ -212,6 +212,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         "driver": None,
         "driver_at": 0.0,
         "last_refusal": None,
+        # 3.18 part 2: the wheel loop's own timing, while the wheels turn.
+        # A vet covers the travel until the NEXT vet, so a late period is a
+        # period the robot moved unvetted -- this is how a live run says
+        # whether that happened, rather than leaving it to be inferred.
+        "wheel_loop": {"moving_ticks": 0, "late_ticks": 0, "max_dt_s": 0.0},
         # Phase M5. When the watchdog's own loop last ran, which is a
         # different fact from `last_command_at` -- that measures the
         # CLIENT's silence, this measures whether the guard measuring it is
@@ -342,6 +347,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     right = w["right"]["velocity_rad_s"]
                     if left == 0 and right == 0:
                         continue
+                    wl = state["wheel_loop"]
+                    wl["moving_ticks"] += 1
+                    wl["late_ticks"] += dt > 2 * WHEEL_LOOP_INTERVAL_S
+                    wl["max_dt_s"] = round(max(wl["max_dt_s"], dt), 4)
                     new_left, new_right, reason = safety.vet_wheel_velocity(left, right)
                     if reason:
                         robot.set_wheel_velocity(new_left, new_right)
@@ -581,7 +590,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         return robot.get_wheel_state()
 
     @app.get(prefix + "/scan", dependencies=[Depends(require_secret)])
-    def scan():
+    def scan(max_range_m: Optional[float] = None):
         """A 360-degree range scan -- phase R2, what `sim_scan_node` will
         republish as `sensor_msgs/LaserScan` at R4. BODY state (the robot's
         own reading), so it lives beside `/depth`, not under `/world/`: see
@@ -593,7 +602,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         how a capture stamp froze nav2's costmaps in R6 -- but it is the
         honest capture time and costs nothing to serve."""
         stamp = time.time()
-        return {**robot.get_scan(), "stamp_unix": stamp}
+        return {**robot.get_scan(max_range_m=max_range_m), "stamp_unix": stamp}
 
     @app.get(prefix + "/depth", dependencies=[Depends(require_secret)])
     def depth():
@@ -618,16 +627,21 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         returned."""
         grid = robot.get_depth_grid()
         clearance, source = safety.path_clearance()
+        veto_cm, veto_source = safety.forward_clearance()
         grid["path"] = {
             "indices": path_zone_indices(
                 int(grid.get("rows", 1)), int(grid.get("cols", 0)),
-                grid.get("fov_deg"),
+                grid.get("fov_deg"), grid.get("pan_deg"),
             ),
             "clearance_cm": clearance,
             "source": source,
-            # What the veto would say about a FORWARD issued right now.
-            # A clearance of None is "nothing within range", never a block.
-            "blocked": clearance is not None and clearance < min_distance,
+            # What the veto would say about a FORWARD issued right now --
+            # the cone above AND the chassis' swept corridor (3.18), so this
+            # can read blocked while the cone's own clearance reads clear:
+            # something off a front corner. None is "nothing within range".
+            "blocked": veto_cm is not None and veto_cm < min_distance,
+            "veto_cm": veto_cm,
+            "veto_source": veto_source,
             "min_distance_cm": min_distance,
             # Published for the same reason `clearance_cm` is: the strip
             # must draw what the veto reads. `clearance_cm` above is
@@ -790,6 +804,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                       "verbs_through_ros": getattr(robot, "verbs_through_ros", None),
                       "wheel_posts_from_ros": state["wheel_posts"] if by_velocity else None},
             "watchdog_timeout_s": watchdog_timeout,
+            "wheel_loop": {**state["wheel_loop"], "period_s": WHEEL_LOOP_INTERVAL_S},
             # The single source of truth for the safety threshold this
             # server actually enforces -- see web-twin/index.html's
             # renderWatchdog(), which reads this into state.minDistanceCm

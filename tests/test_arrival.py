@@ -116,7 +116,7 @@ class _NoScan:
     def __getattr__(self, name):
         return getattr(self._robot, name)
 
-    def get_scan(self):
+    def get_scan(self, max_range_m=None):
         return unusable_scan()
 
 
@@ -131,7 +131,7 @@ class _FakeRobot:
     def __init__(self, ranges):
         self.ranges = ranges
 
-    def get_scan(self):
+    def get_scan(self, max_range_m=None):
         return {"usable": True, "angle_min_deg": -180.0, "angle_increment_deg": 1.0,
                 "range_min_m": 0.0, "range_max_m": 4.2, "ranges_m": self.ranges}
 

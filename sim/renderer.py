@@ -171,6 +171,43 @@ def cast_ray(layout, px: float, py: float, angle: float, solid=None,
     return max_dist
 
 
+def cast_ray_exact(layout, px: float, py: float, angle: float, solid=None,
+                   max_dist: float = FPV_MAX_DIST) -> float:
+    """The exact distance, in cells, to the first wall (or `solid`) cell
+    along the ray -- a grid traversal (Amanatides & Woo) rather than
+    `cast_ray()`'s fixed-step march. PLAN-ros-alignment.md 3.18.
+
+    Two differences from `cast_ray()`, both in the safe direction. It is
+    exact where the march over-reads by up to one `FPV_STEP` (1.5cm), and a
+    ray through the shared corner of two diagonal cells counts as a hit,
+    where the march can step between them. Used where a range must never
+    be overstated (the safety layer's short scan); the map and the picture
+    keep `cast_ray()`, whose numbers everything else is pinned to. It also
+    visits a handful of cells where the march takes ~40 steps a metre, which
+    is the other reason it exists: the safety scan runs every control period.
+    """
+    dx, dy = math.cos(angle), math.sin(angle)
+    cx, cy = math.floor(px), math.floor(py)
+    own = (cx, cy)
+    step_x = 1 if dx > 0 else -1
+    step_y = 1 if dy > 0 else -1
+    t_max_x = ((cx + 1 - px) / dx if dx > 0 else (px - cx) / -dx) if dx != 0 else math.inf
+    t_max_y = ((cy + 1 - py) / dy if dy > 0 else (py - cy) / -dy) if dy != 0 else math.inf
+    t_dx = abs(1 / dx) if dx != 0 else math.inf
+    t_dy = abs(1 / dy) if dy != 0 else math.inf
+    while True:
+        if t_max_x < t_max_y:
+            t, cx, t_max_x = t_max_x, cx + step_x, t_max_x + t_dx
+        else:
+            t, cy, t_max_y = t_max_y, cy + step_y, t_max_y + t_dy
+        if t >= max_dist:
+            return max_dist
+        if _cell_at(layout, cx, cy) == CELL_WALL:
+            return t
+        if solid and (cx, cy) in solid and (cx, cy) != own:
+            return t
+
+
 def wall_profile(layout, px: float, py: float, base_angle: float, width=DEFAULT_WIDTH,
                  height=DEFAULT_HEIGHT):
     """The per-column geometry, before anything is painted.
