@@ -1393,6 +1393,14 @@ job, on a phone.
 3. **Two collars, one robot.** `safety.py` on the teleop/vision path,
    `collision_monitor` on the nav path. They can disagree. Decide the
    arbitration before R6, not after.
+5. **Who owns the lidar on the car?** (Raised 2026-09-26, after R7.) In the
+   sim the robot server supplies the scan to both `robot/safety.py` (rear
+   clearance, the depth path) and ROS (through the bridge). On the car the
+   RPLidar plugs into the Jetson: either `sllidar_ros2` publishes `/scan` and
+   the bridge hands it to the robot server, or a Python driver in the robot
+   server reads it and the bridge republishes it as today. The second keeps
+   `safety.py` independent of the ROS container being up, which is the same
+   argument 3.16 made for the motor board.
 4. **`use_sim_time`, or real time?** R0 uses `sim.realtime` and wall-clock,
    which is simplest. A `/clock` publisher would buy determinism for
    regression runs; not needed until it is.
