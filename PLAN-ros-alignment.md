@@ -1229,10 +1229,25 @@ are insurance in series, not load-bearing. Both stay.
    transform, each costmap's tf2 `MessageFilter` holds the scan waiting, and
    on Humble that path deadlocked their listeners. Arrival stamps made it
    rarer (one freeze in three runs); stamping each scan with the newest time
-   the transform tree already covers makes it impossible, and both runs above
-   use it. And the controller hid it: `isGoalReached()` ignores a failed
+   the transform tree already covers was believed to make it impossible --
+   **wrong, see the correction below: it was a tf2 deadlock all along**. And the controller hid it: `isGoalReached()` ignores a failed
    transform and compares the robot with a default pose at odometry's origin,
    so a robot near its start "reached" goals metres away.
+
+**CORRECTED 2026-09-26, later the same day: finding 5's cause was wrong.**
+The freeze came back on the first run in the user's own house, 55 s after
+start, with TF-bounded stamps in place -- so "makes it impossible" above is
+false, and three clean scaled-house runs were luck. A debugger on the frozen
+`controller_server` settled it: thread 13, a costmap's scan callback, held
+`tf2_ros::Buffer`'s lock inside `waitForTransform` and was waiting for
+`BufferCore`'s; thread 12, the TF listener, held `BufferCore`'s inside
+`testTransformableRequests` and was waiting for the Buffer's. **An ABBA
+deadlock inside ROS 2 Humble's tf2** -- fixed upstream in tf2/tf2_ros
+0.25.24 (2026-09-15, ros2/geometry2 #982, backported #990) and not yet in
+apt, which still ships 0.25.23. The image now builds both from the 0.25.24
+tag, and nav2's prebuilt binaries load the fixed library. Scan stamps were
+never the cause, only a change in how often a scan waited: every stamping
+scheme left the race open. The TF-bounded stamp stays, as harmless.
 
 **The lesson that generalises:** R5 recorded scan stamping as "tried, no
 difference, kept because it is right". It was a latent fault that only a

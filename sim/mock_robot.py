@@ -96,6 +96,9 @@ TRACK_WIDTH_M = 0.172
 # recorded demo and every step budget in the suite. The implied 176 rpm sits
 # between the motor's rated 150 and no-load 300 (4.3), so it is also a
 # number the real part can actually produce.
+# The RPLidar C1's rated range (HARDWARE-BOM.md); the sim's scan casts this far.
+LIDAR_RANGE_M = 12.0
+
 WHEEL_MAX_RAD_S = (
     CELLS_PER_SECOND_AT_FULL_SPEED * DEFAULT_CELL_M / WHEEL_RADIUS_M
 )
@@ -538,25 +541,28 @@ class MockRobot(RobotInterface):
         robot's centre (the sim's robot is a point; a real lidar sits
         11-14cm behind the bumper, which R3 makes a transform).
 
-        **`range_max_m` is the renderer's horizon (4.2m), not the RPLidar
-        C1's 12m** -- a fidelity gap, recorded in `sim/renderer.py`'s note
-        with the others. A beam that reaches it has no return and reads
-        None, which is information about empty space. The first-step
+        **`range_max_m` is the RPLidar C1's 12 m** (`LIDAR_RANGE_M`). It
+        was the camera renderer's 4.2 m horizon until a house at real size
+        exposed the gap: from the user's own foyer SLAM mapped almost nothing
+        and nav2 refused every goal as "off the global costmap". A beam that
+        reaches the range has no return and reads None, which is information
+        about empty space. The first-step
         overshoot is reported at its upper bound here, unlike the depth
         grid: a scan feeds a MAP, which wants the wall where it is, not the
         safety veto, which wants it where it might be.
         """
         rays = 360
+        max_cells = LIDAR_RANGE_M / DEFAULT_CELL_M
         ranges = []
         for i in range(rays):
             rel = math.radians(-180 + i)
             dist = renderer.cast_ray(self.world.layout, self.world.x, self.world.y,
                                      self.world.theta + rel,
-                                     solid=self.world.solid_cells)
-            ranges.append(None if dist >= renderer.FPV_MAX_DIST
+                                     solid=self.world.solid_cells, max_dist=max_cells)
+            ranges.append(None if dist >= max_cells
                           else round(dist * DEFAULT_CELL_M, 4))
         return {"usable": True, "angle_min_deg": -180.0, "angle_increment_deg": 1.0,
-                "range_min_m": 0.0, "range_max_m": renderer.FPV_MAX_DIST * DEFAULT_CELL_M,
+                "range_min_m": 0.0, "range_max_m": LIDAR_RANGE_M,
                 "ranges_m": ranges}
 
     def get_odometry(self) -> dict:

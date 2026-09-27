@@ -30,6 +30,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-requests \
     && rm -rf /var/lib/apt/lists/*
 
+# tf2 + tf2_ros 0.25.24 from source, pinned: the release that fixes an ABBA
+# deadlock between Buffer::waitForTransform and testTransformableRequests
+# (ros2/geometry2 #982, backported #990). Apt still ships 0.25.23, and the
+# deadlock is what froze nav2's costmaps in R6 and again in the home tour:
+# gdb showed a costmap's scan callback holding the Buffer lock waiting for
+# BufferCore's, and the TF listener holding BufferCore's waiting for the
+# Buffer's. A Humble patch release keeps the ABI, so nav2's prebuilt
+# packages load the fixed library from this underlay.
+ARG GEOMETRY2_SHA=404b7224d623d614f18fa9738dbf1716403d857e
 # slam_toolbox from source, pinned. The apt release (2.6.10) predates the
 # branch's `restamp_tf` although both say 2.6.10, and without it a robot AT
 # REST publishes an ever-older map -> odom: nav2's controller refuses it, the
@@ -44,9 +53,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /underlay/src && cd /underlay/src \
     && git clone https://github.com/SteveMacenski/slam_toolbox.git \
-    && cd slam_toolbox && git checkout ${SLAM_TOOLBOX_SHA} \
+    && cd slam_toolbox && git checkout ${SLAM_TOOLBOX_SHA} && cd .. \
+    && git clone https://github.com/ros2/geometry2.git \
+    && cd geometry2 && git checkout ${GEOMETRY2_SHA} && cd .. \
     && cd /underlay && . /opt/ros/humble/setup.sh \
-    && colcon build --packages-select slam_toolbox --cmake-args -DCMAKE_BUILD_TYPE=Release \
+    && colcon build --packages-select tf2 tf2_ros slam_toolbox --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
     && rm -rf /underlay/build /underlay/log
 
 WORKDIR /ws

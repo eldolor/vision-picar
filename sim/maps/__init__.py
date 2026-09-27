@@ -10,4 +10,7 @@ def build_world(name: str = "starter_house"):
     if name == "scaled_house":
         from sim.maps.scaled_house import build_scaled_world
         return build_scaled_world()
-    raise ValueError(f"unknown SIM_MAP {name!r} (starter_house | scaled_house)")
+    if name == "home_first_floor":
+        from sim.maps.home_first_floor import build_home_world
+        return build_home_world()
+    raise ValueError(f"unknown SIM_MAP {name!r} (starter_house | scaled_house | home_first_floor)")

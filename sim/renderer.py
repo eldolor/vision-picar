@@ -143,8 +143,9 @@ def normalize_angle(a: float) -> float:
     return a
 
 
-def cast_ray(layout, px: float, py: float, angle: float, solid=None) -> float:
-    """March until a wall cell, or `FPV_MAX_DIST`.
+def cast_ray(layout, px: float, py: float, angle: float, solid=None,
+             max_dist: float = FPV_MAX_DIST) -> float:
+    """March until a wall cell, or `max_dist` (the camera's horizon by default).
 
     Doors ('D') are passable, same as real movement, so a ray keeps going
     through a doorway into whatever room is beyond it -- that is what
@@ -159,7 +160,7 @@ def cast_ray(layout, px: float, py: float, angle: float, solid=None) -> float:
     """
     dx, dy = math.cos(angle), math.sin(angle)
     dist = 0.0
-    while dist < FPV_MAX_DIST:
+    while dist < max_dist:
         dist += FPV_STEP
         cx = math.floor(px + dx * dist)
         cy = math.floor(py + dy * dist)
@@ -167,7 +168,7 @@ def cast_ray(layout, px: float, py: float, angle: float, solid=None) -> float:
             return dist
         if solid and (cx, cy) in solid and (cx, cy) != (math.floor(px), math.floor(py)):
             return dist
-    return FPV_MAX_DIST
+    return max_dist
 
 
 def wall_profile(layout, px: float, py: float, base_angle: float, width=DEFAULT_WIDTH,

@@ -46,10 +46,31 @@ SCALED_GOALS = [
     ("study, across the hallway",         6.45, 3.15),
     ("back to the start",                 1.95, 1.35),
 ]
+
+def _home_m(x_ft, y_ft):
+    """A spot in the user's own house (sim/maps/home_first_floor.py), from
+    feet on the appraisal sketch to metres in the house frame."""
+    from sim.maps.home_first_floor import _cells
+    return round(_cells(x_ft) * 0.30, 3), round(_cells(y_ft) * 0.30, 3)
+
+
+# A tour of the user's house from the foyer, ordered so each goal lies in
+# space SLAM has already seen on the way -- no scripted mapping lap.
+HOME_GOALS = [(name, *_home_m(x, y)) for name, x, y in [
+    ("family room",            20.0, 10.0),
+    ("kitchen",                42.0, 14.5),
+    ("laundry",                42.0, 22.5),
+    ("garage, via the laundry", 42.0, 36.0),
+    ("dining room",            27.0, 34.0),
+    ("living room",             6.0, 31.0),
+    ("den",                     6.0, 11.0),
+    ("back to the foyer",      17.0, 34.0),
+]]
+
 HOUSE = os.environ.get("SIM_MAP") or "starter_house"
-GOALS = SCALED_GOALS if HOUSE == "scaled_house" else STARTER_GOALS
+GOALS = {"scaled_house": SCALED_GOALS, "home_first_floor": HOME_GOALS}.get(HOUSE, STARTER_GOALS)
 # A goal inside a wall, per house (criterion 3).
-UNREACHABLE = (0.15, 0.15) if HOUSE == "scaled_house" else (0.75, 0.15)
+UNREACHABLE = (0.15, 0.15) if HOUSE in ("scaled_house", "home_first_floor") else (0.75, 0.15)
 # The mapping lap, per house: D-pad verbs through ROS so SLAM has seen every
 # room before nav2 is asked to plan into it.
 F, L90, R90 = ("FORWARD", {}), ("LEFT", {"angle": 90}), ("RIGHT", {"angle": 90})
@@ -130,6 +151,8 @@ def run_goal(robot, x, y, timeout_s=120.0):
 
 def map_first(robot):
     from tests.demo_slam_lap import LAP
+    if HOUSE == "home_first_floor":
+        return                       # the tour maps as it goes
     for action, kw in (SCALED_LAP if HOUSE == "scaled_house" else LAP):
         robot.post("/action", json={"action": action, **kw}, headers={"x-driver": "twin-dpad"})
     time.sleep(1.5)                      # the D-pad's authority lapses
