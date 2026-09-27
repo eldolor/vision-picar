@@ -7,12 +7,21 @@ dimension printed on that sketch, taken by physical measurement. It closes
 to ~1,513 ft^2 of living area against the appraisal's 1,483 ft^2 (2%), and
 the built-in garage to 20.2 x 21.2 ft exactly.
 
-**What is NOT measured -- and must be corrected by the person who lives
-there.** The sketch draws only the outside walls and prints room NAMES where
-the rooms are. Every interior wall, doorway and opening below is INFERRED
-from where those names sit, and is marked `PROVISIONAL`. So is the target
-object. There is no furniture yet: it is the next thing to add, as solid
-objects, because furniture is most of what a floor robot actually meets.
+**What is NOT measured.** The sketch draws only the outside walls and prints
+room NAMES where the rooms are. The interior was inferred from those names,
+and the user CONFIRMED the layout on 2026-09-26 ("You are accurate, except
+the kitchen leads straight to the garage with a pantry to the left and the
+laundry room to the right" -- now built). What stays PROVISIONAL is exact:
+where each interior wall and doorway sits to the foot, and the staircase,
+whose position the user has not given.
+
+**The furniture is typical, not surveyed** -- the user asked for "typical
+furniture", placed by room at common sizes. How each piece meets a 20 cm
+robot is the modelling choice that matters: anything that reaches the floor
+(sofas, cabinets, counters, the island, appliances, a car) is SOLID; a table
+is its four LEGS, because a floor robot can drive under a dining table and
+the lidar sees only the legs; chairs are solid, as they are pushed in round
+the table.
 
 Coordinates are FEET, x to the right and y DOWN the sketch (front of the
 house at the bottom, y = 39.6 ft), so every number can be checked against
@@ -57,8 +66,9 @@ GARAGE_FT = (32.0, 25.5, 52.2, 46.7)       # x0, y0, x1, y1
 # between two segments; every doorway here is 3 ft (0.9 m) unless noted.
 WALLS_FT = [
     # the house / garage walls (measured positions, but a wall of the
-    # garage, so they stay walls): the laundry-to-garage door is the gap
-    (32.0, 25.5, 43.5, 25.5), (46.5, 25.5, 48.7, 25.5),   # PROVISIONAL door 43.5-46.5
+    # garage, so they stay walls): the only door is at the end of the hall
+    # from the kitchen, below
+    (32.0, 25.5, 40.2, 25.5), (43.2, 25.5, 48.7, 25.5),   # CONFIRMED by the user: kitchen -> garage
     (32.0, 25.5, 32.0, 39.6),
     # den: closed to the family room, door to the hall below
     (12.0, 6.0, 12.0, 16.0),                              # PROVISIONAL
@@ -71,9 +81,14 @@ WALLS_FT = [
     # dining: opening to the foyer, and one towards the kitchen side
     (22.0, 28.0, 22.0, 30.0), (22.0, 37.0, 22.0, 39.6),   # PROVISIONAL opening 30-37
     (22.0, 28.0, 24.0, 28.0), (28.0, 28.0, 32.0, 28.0),   # PROVISIONAL opening 24-28
-    # laundry, between the kitchen and the garage
-    (36.0, 19.0, 38.0, 19.0), (41.0, 19.0, 48.7, 19.0),   # PROVISIONAL door 38-41
-    (36.0, 19.0, 36.0, 25.5),                             # PROVISIONAL
+    # CONFIRMED by the user 2026-09-26: "the kitchen leads straight to the
+    # garage with a pantry to the left and the laundry room to the right".
+    # A short hall (x 40-43.5) runs from the kitchen to the garage door;
+    # positions and door widths are still PROVISIONAL.
+    (36.0, 19.0, 40.0, 19.0), (43.5, 19.0, 48.7, 19.0),   # kitchen side: the hall is open to it
+    (36.0, 19.0, 36.0, 25.5),                             # pantry's west wall
+    (40.0, 19.0, 40.0, 20.5), (40.0, 23.5, 40.0, 25.5),   # pantry door 20.5-23.5, off the hall
+    (43.5, 19.0, 43.5, 20.5), (43.5, 23.5, 43.5, 25.5),   # laundry door 20.5-23.5, off the hall
     # family, breakfast and kitchen: left open to one another -- PROVISIONAL
 ]
 
@@ -88,17 +103,72 @@ ROOMS_FT = [
     ("family room", (12.0, 0.0, 28.2, 22.0)),
     ("breakfast", (28.2, 6.0, 38.0, 19.0)),
     ("kitchen", (38.0, 6.0, 48.7, 19.0)),
-    ("laundry", (36.0, 19.0, 48.7, 25.5)),
+    ("pantry", (36.0, 19.0, 40.0, 25.5)),
+    ("garage hall", (40.0, 19.0, 43.5, 25.5)),
+    ("laundry", (43.5, 19.0, 48.7, 25.5)),
     ("garage", (32.0, 25.5, 52.2, 46.7)),
 ]
 DEFAULT_ROOM = "hall"
 
-# The robot starts in the foyer, facing into the house. PROVISIONAL, and so
-# is the only object: a mission target, not a piece of furniture.
-START_FT = (17.0, 34.0)
+# The robot starts in the foyer, facing into the house (PROVISIONAL).
+START_FT = (16.0, 36.0)
 START_HEADING = Heading.N
-OBJECTS_FT = {(44.0, 10.0): "red backpack"}     # PROVISIONAL: in the kitchen
 
+# ---------------- TYPICAL FURNITURE (placed, not surveyed) ----------------
+# (name, x0, y0, x1, y1, kind) in feet. kind "solid" fills the rectangle;
+# "legs" puts one leg at each corner and leaves the middle drivable.
+FURNITURE_FT = [
+    # stairs up to the second floor -- a wall to this robot. PROVISIONAL:
+    # the user has not said where they are; a foyer staircase is typical.
+    ("staircase", 18.5, 22.0, 22.0, 32.5, "solid"),
+    # den: a desk and its chair, a bookcase on the wall it shares with the family room
+    ("desk", 1.0, 7.0, 6.0, 9.5, "solid"),
+    ("desk chair", 3.0, 10.0, 4.5, 11.5, "solid"),
+    ("bookcase", 10.5, 7.5, 12.0, 14.0, "solid"),
+    # half bath
+    ("toilet", 1.0, 17.0, 2.5, 19.5, "solid"),
+    ("vanity", 0.0, 20.5, 2.0, 22.5, "solid"),
+    # living room
+    ("sofa", 0.0, 27.0, 3.0, 34.5, "solid"),
+    ("coffee table", 4.5, 28.5, 7.0, 33.0, "solid"),
+    ("armchair", 8.0, 25.0, 10.5, 27.5, "solid"),
+    ("armchair", 8.0, 35.0, 10.5, 37.5, "solid"),
+    ("side table", 0.5, 35.5, 2.0, 37.0, "solid"),
+    # family room: an L sectional, coffee table, TV console, an armchair
+    ("sectional sofa", 13.0, 3.0, 16.0, 13.0, "solid"),
+    ("sectional sofa", 13.0, 13.0, 20.0, 16.0, "solid"),
+    ("coffee table", 17.5, 7.0, 21.5, 10.0, "solid"),
+    ("tv console", 17.0, 0.0, 25.0, 1.5, "solid"),
+    ("armchair", 23.0, 12.0, 25.5, 14.5, "solid"),
+    # breakfast nook: a table on four legs, four chairs
+    ("breakfast table", 31.25, 10.75, 34.75, 14.25, "legs"),
+    ("chair", 32.25, 9.0, 33.75, 10.5, "solid"),
+    ("chair", 32.25, 14.5, 33.75, 16.0, "solid"),
+    ("chair", 29.5, 11.75, 31.0, 13.25, "solid"),
+    ("chair", 35.0, 11.75, 36.5, 13.25, "solid"),
+    # kitchen: counters on the back and right walls, the fridge in the run, an island
+    ("kitchen counter", 38.0, 6.0, 48.7, 8.0, "solid"),
+    ("refrigerator", 45.7, 8.0, 48.7, 10.5, "solid"),
+    ("kitchen counter", 46.7, 10.5, 48.7, 17.0, "solid"),
+    ("kitchen island", 40.0, 11.0, 43.0, 16.0, "solid"),
+    # dining room: a table for six on four legs, six chairs
+    ("dining table", 25.25, 30.8, 28.75, 36.8, "legs"),
+    ("chair", 23.5, 31.3, 25.0, 32.8, "solid"),
+    ("chair", 23.5, 34.8, 25.0, 36.3, "solid"),
+    ("chair", 29.0, 31.3, 30.5, 32.8, "solid"),
+    ("chair", 29.0, 34.8, 30.5, 36.3, "solid"),
+    ("chair", 26.25, 29.0, 27.75, 30.5, "solid"),
+    ("chair", 26.25, 37.1, 27.75, 38.6, "solid"),
+    # pantry shelving; washer and dryer
+    ("pantry shelves", 36.0, 19.0, 37.5, 25.5, "solid"),
+    ("washer", 46.0, 19.5, 48.7, 22.0, "solid"),
+    ("dryer", 46.0, 22.3, 48.7, 24.8, "solid"),
+    # garage: one car in the left bay, shelving on the right wall
+    ("car", 33.5, 29.0, 40.0, 45.0, "solid"),
+    ("garage shelves", 50.5, 27.0, 52.2, 40.0, "solid"),
+]
+# The mission target -- a thing to find, on the floor. PROVISIONAL.
+TARGET_FT = ((44.5, 17.8), "red backpack")     # kitchen floor, by the hall to the garage
 
 # ---------------- rasterising ----------------
 
@@ -160,9 +230,35 @@ def _rooms(layout):
     return rooms
 
 
+def _objects(layout):
+    """Furniture and the target, as the solid cells GridWorld wants.
+
+    A cell belongs to a piece when its centre falls inside the piece's
+    rectangle ("solid"), or when it holds one of the four corners ("legs").
+    A piece never claims a wall cell.
+    """
+    objects = {}
+    for name, x0, y0, x1, y1, kind in FURNITURE_FT:
+        cx0, cy0, cx1, cy1 = (_cells(v) for v in (x0, y0, x1, y1))
+        if kind == "legs":
+            eps = 0.3
+            cells = {(int(cx0 + eps), int(cy0 + eps)), (int(cx1 - eps), int(cy0 + eps)),
+                     (int(cx0 + eps), int(cy1 - eps)), (int(cx1 - eps), int(cy1 - eps))}
+        else:
+            cells = {(i, j) for j in range(int(cy0), int(math.ceil(cy1)))
+                     for i in range(int(cx0), int(math.ceil(cx1)))
+                     if cx0 <= i + 0.5 < cx1 and cy0 <= j + 0.5 < cy1}
+        for i, j in cells:
+            if layout[j][i] == ".":
+                objects[(i, j)] = name
+    (tx, ty), target = TARGET_FT
+    objects[(int(_cells(tx)), int(_cells(ty)))] = target
+    return objects
+
+
 LAYOUT = _layout()
 ROOMS = _rooms(LAYOUT)
-OBJECTS = {(int(_cells(x)), int(_cells(y))): name for (x, y), name in OBJECTS_FT.items()}
+OBJECTS = _objects(LAYOUT)
 
 
 def build_home_world() -> GridWorld:

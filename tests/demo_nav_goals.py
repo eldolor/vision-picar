@@ -57,14 +57,15 @@ def _home_m(x_ft, y_ft):
 # A tour of the user's house from the foyer, ordered so each goal lies in
 # space SLAM has already seen on the way -- no scripted mapping lap.
 HOME_GOALS = [(name, *_home_m(x, y)) for name, x, y in [
-    ("family room",            20.0, 10.0),
-    ("kitchen",                42.0, 14.5),
-    ("laundry",                42.0, 22.5),
-    ("garage, via the laundry", 42.0, 36.0),
-    ("dining room",            27.0, 34.0),
-    ("living room",             6.0, 31.0),
-    ("den",                     6.0, 11.0),
-    ("back to the foyer",      17.0, 34.0),
+    ("family room",             20.0, 18.5),
+    ("kitchen, by the island",  45.0, 13.5),
+    ("garage hall",             41.7, 22.5),
+    ("laundry",                 44.8, 22.0),
+    ("garage, beside the car",  45.0, 36.0),
+    ("dining room",             31.0, 30.0),
+    ("living room",              6.0, 36.5),
+    ("den",                      7.5, 12.5),
+    ("back to the foyer",       16.0, 36.0),
 ]]
 
 HOUSE = os.environ.get("SIM_MAP") or "starter_house"

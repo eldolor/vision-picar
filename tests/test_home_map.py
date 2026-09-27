@@ -53,3 +53,29 @@ def test_the_outside_is_closed():
 
 def test_objects_sit_on_floor():
     assert all(LAYOUT[j][i] == "." for (i, j) in OBJECTS)
+
+
+def test_every_room_is_reachable_around_the_furniture():
+    """Furniture is solid. Every room must still have floor the robot can
+    reach from the start -- a piece placed across a doorway would fail this."""
+    world = build_home_world()
+    free = {(i, j) for j, row in enumerate(LAYOUT) for i, c in enumerate(row)
+            if c == "." and (i, j) not in OBJECTS}
+    start = (world.robot_x, world.robot_y)
+    assert start in free
+    seen, queue = {start}, deque([start])
+    while queue:
+        i, j = queue.popleft()
+        for n in ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1)):
+            if n in free and n not in seen:
+                seen.add(n)
+                queue.append(n)
+    unreached = {name for name, cells in ROOMS.items() if not (cells & seen)}
+    assert not unreached, unreached
+
+
+def test_tables_stand_on_legs():
+    """A floor robot can drive under a table: only its four legs are solid."""
+    from collections import Counter
+    counts = Counter(OBJECTS.values())
+    assert counts["dining table"] == 4 and counts["breakfast table"] == 4
