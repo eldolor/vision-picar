@@ -6,6 +6,9 @@
     nav2 (R6): planner, controller, behaviours, bt_navigator -> cmd_vel/nav
     collision_monitor (R6): twist_mux -> /cmd_vel_mux -> collision_monitor
                             -> diff_drive_controller  (the collars in series)
+    foxglove_bridge (2026-09-27): a READ-ONLY window for Foxglove on :8765 --
+        every topic, including the brain's (/brain/status, /diagnostics,
+        /brain/markers), and no way to publish, call services or set params
 """
 import os
 
@@ -69,4 +72,12 @@ def generate_launch_description():
         Node(package="nav2_lifecycle_manager", executable="lifecycle_manager",
              name="lifecycle_manager_collision",
              parameters=[{"autostart": True, "node_names": ["collision_monitor"]}]),
+        # Read-only on purpose: foxglove_bridge's default capabilities let a
+        # client PUBLISH, call services and set parameters -- a second door
+        # into the wheels that skips robot/server.py's arbitration. Only the
+        # connection graph is offered, so it can look and never touch.
+        Node(package="foxglove_bridge", executable="foxglove_bridge",
+             parameters=[{"port": 8765, "address": "0.0.0.0",
+                          "capabilities": ["connectionGraph"]}],
+             output="log"),
     ])

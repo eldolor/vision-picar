@@ -1352,6 +1352,136 @@ leaves open, and cannot settle without the board: flashing the firmware with
 `mainType` 3 and THIS chassis' constants (or a host-side PID), and whether to
 add encoder counts to the `1001` frame.
 
+### 3.17 The wall's costs, measured (2026-09-27)
+
+The wall around ROS (`tests/test_ros_containment.py`) has three costs, named
+on 2026-09-27: things that must exist on BOTH sides of it, a bridge that can
+grow into a second ROS, and ROS tools that cannot see the brain. The user
+asked for each to be made visible. Plus one question: does HTTP really hold
+the 20 Hz control loop?
+
+**1. Linters -- `tests/test_wall_linters.py` (static, no ROS).**
+
+* *Things that exist twice.* A registry of the ten concepts defined on both
+  sides (wheel radius, wheel separation, the driver priority order, the
+  20 Hz control rate, the silence timeouts, lidar range, the linear speed
+  ceiling, the chassis footprint, the collision veto, the occupancy
+  thresholds), each with a check that its copies AGREE -- drift between two
+  copies is what a duplicate actually costs. An UNLISTED duplicate is caught
+  where it can be: a non-round number that is a literal in ROS config AND a
+  Python constant is almost always a hand-copied physical constant. Budget
+  `MAX_DUPLICATES = 10`, raised only in a commit that says why.
+* *A thin copy of ROS.* `MAX_BRIDGE_ROUTES = 13` (today's count); NO
+  generic routes (a route taking a topic/service/node/param NAME from the
+  caller re-exports ROS, which is the definition of a thin copy); every
+  route has a consumer outside the container; every route is in the
+  bridge's docstring.
+* Each rule was confirmed red against a mutation before being trusted:
+  radius drift, nav outranking a person, timeouts summing past 0.5 s, rate
+  drift, lidar drift, footprint drift, an unlisted copied constant, a
+  generic `/topic` route (four tests red at once), and a second copy of the
+  occupancy thresholds.
+
+**2. ROS tools can see the brain -- `picar_bridge/brain_view.py`.** The
+bridge POLLS the brain's own `GET /mission/status` at 2 Hz and publishes
+`/brain/status` (std_msgs/String, the JSON verbatim -- so a bag holds the
+brain's record on the same clock as /scan and /tf), `/diagnostics` (one
+"brain: mission" entry: OK / WARN for blocked, preempted, max_steps / ERROR
+for failed / STALE when unreachable) and `/brain/markers` (a caption over
+the robot and an arrow at the target's bearing, in base_footprint). The
+brain is unchanged and still imports nothing of ROS: a window in the wall,
+not a hole. `BRAIN_URL=""` turns it off. And **`foxglove_bridge` is in the
+image, READ-ONLY** (only the `connectionGraph` capability, published on
+127.0.0.1:8765): its defaults let a client publish, call services and set
+parameters, which would be a second door to the wheels past
+`robot/server.py`'s arbitration. `tests/test_brain_view.py` (19, offline)
+and `tests/test_brain_view_live.py` (5, live -- the topics inside the container
+must say what the brain's own status says, and the capability list is
+checked). A RUNNING mission was read off the topics once, by hand; the test
+itself starts none, because its first version did and the mission left the
+robot where `tests/test_ros_chain_live.py` did not expect it.
+
+**3. HTTP at 20 Hz -- measured.** Criteria written before the pinned run:
+the plugin really runs at 19-21 Hz; zero failed requests; no control cycle
+longer than 125 ms (half of `cmd_vel_timeout`, the silence that would stop
+the wheels). From inside the container, one kept-alive connection (as
+libcurl uses), a GET + POST-sized request per cycle, 30 s per rate:
+
+| target | robot server, idle: p50 / p99 / max per request | cycles over budget | bare FastAPI, same hop: p50 / p99 / max |
+|---|---|---|---|
+| 20 Hz | 1.6 / 20.3 / 31.8 ms | 0.0% | 1.4 / 4.3 / 7.4 ms |
+| 50 Hz | 1.7 / 17.7 / 39.8 ms | 1.9% | 1.2 / 3.3 / 6.6 ms |
+| 100 Hz | 1.3 / 24.6 / 39.3 ms | 8.7% | 1.0 / 2.7 / 25.7 ms |
+| 200 Hz | 1.0 / 21.4 / 39.8 ms | 5.4% | 0.8 / 1.6 / 4.5 ms |
+
+With a mission running, 20 Hz: p99 33.8 ms, max 63.8 ms, 1.5% of cycles
+late, none near 125 ms. The plugin posts exactly 200 per 10 s. **So HTTP is
+not the limit** -- a bare app over the same Docker hop holds 200 Hz with a
+p99 of 1.6-4 ms. The robot server's tail is the SIMULATOR sharing its
+Python process: a 360-beam scan is ~13 ms of ray casting, a camera frame
+~35 ms, both holding the GIL. The car replaces both with drivers, so its
+profile will differ and **must be re-measured on the Jetson** (the test is
+the instrument). Pinned: `tests/test_http_rate_live.py`.
+
+When the loop would need more than 20 Hz: faster driving (at 0.6 m/s a
+50 ms period is 3 cm of travel between commands), tighter trajectory
+tracking in nav2's controller, or fusing an IMU (typically 50-200 Hz,
+usually done INSIDE ROS by robot_localization, so it would not cross the
+wall). Wheel PID never crosses it: the ESP32 runs it at ~100 Hz (3.16).
+
+**Found on the way -- test gaps, now closed.** An audit of the ROS tests
+found: tap-to-goal's house-to-ROS conversion and the `/world/goal` and
+`/world/error` routes had NO offline tests (only the demo and live suite) --
+`tests/test_ros_goals.py`, 26 tests, confirmed red against a dropped y-flip
+(12 fail) and a dropped session check; the bridge's scan reorder and
+quaternion maths were live-only -- now `picar_bridge/convert.py`, pure
+Python, `tests/test_bridge_convert.py` (16, red against a dropped negation);
+and **`tests/test_slam_live.py` drove its starter-house lap inside whatever
+house the server was in**, because live tests read `SIM_MAP` from their OWN
+environment -- the robot server now reports `sim_map` on `/health` and the
+SLAM and nav live suites ask it. Still without unit tests of its own:
+`picar_sim_hardware` (C++), exercised only through the live chain suite.
+
+**A SAFETY ESCAPE, found by the audit and NOT fixed (2026-09-27).** In the
+furnished home (`SIM_MAP=home_first_floor`), a standing forward twist at
+compass 330 from about (8.3, 9.8) m, among the dining furniture, started at
+42 cm of path clearance and ended at **3.0 cm** -- `robot/safety.py`'s
+forward clamp (bar 20 cm) did not stop it, and neither did
+`collision_monitor`. Replayed offline at that pose: the path zones read 4.5 /
+7.5 / 10.5 cm on the left-front and the nearest scan beams sit at -74 to -79
+degrees (left), 18 cm from the centre. Two mechanisms are plausible and NEITHER
+IS ESTABLISHED: (a) the path cone is +/-15.4 degrees (sized for one 30 cm
+move), so inside ~30 cm it is NARROWER than the 19.8 cm-wide chassis and an
+obstacle at the front corner is outside it -- M3 named exactly this
+"off-centre approach" and deferred it to M10, and the axis-aligned starter
+house could never show it; (b) the depth grid's one ray per 7.5-degree zone,
+marching in 1.5 cm steps, can pass a diagonal corner between two solid
+cells. The sim's own collision is also a single centre ray, so the chassis
+can overlap furniture without being stopped -- the sim is not honest about
+this either. Of twelve headings tried, one escaped. **The repair is a design
+decision** (a footprint-rectangle check against the 360-degree scan, as
+`collision_monitor` does, in `safety.py`; and a footprint-aware sim
+collision), so it is written up here for the user rather than built.
+
+**A SECOND safety finding, pre-existing: R4's wall stop is flaky.** R4 and
+R7 recorded "a standing forward twist into a wall stops at >= 19.4 cm" as
+met. Re-run five times from a fresh start on the starter house, it reads
+**18.0 cm in 3 of 5** -- and **the same 3 of 5 on an image built from the
+previous commit**, so it predates this work. 18.0 is one 1.5 cm ray-march
+quantum below 19.5. Suspected, NOT established: `robot/server.py`'s wheel
+loop vets the command against current clearance, then integrates the ACTUAL
+elapsed `dt`; a period stretched by the event loop stalling (the simulator's
+ray casting holds the GIL -- and the lidar's reach went from 4.2 m to 12 m
+on 2026-09-26, making each scan more expensive) moves the robot further than
+was vetted. The general lesson carries to the car: a vet must cover the
+travel until the NEXT vet, `v x (period + latency)`, not the travel of an
+ideal period. Pinned as a non-strict xfail with this reason rather than left
+flaky-red. And `tests/test_ros_chain_live.py` FAILED (twelve KeyErrors on 401
+bodies) instead of skipping when run without the secret -- `/health` is open,
+so its fixture never noticed; it now probes an authenticated route. Found alongside: **a clean checkout could not build the ROS
+image** -- `picar_description`'s CMakeLists installed an empty, untracked
+`config/` directory; fixed.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.

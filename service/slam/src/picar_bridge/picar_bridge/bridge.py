@@ -29,6 +29,12 @@ its side of the wall.
     POST /pan {angle_rad}     R3's test hook: hold the pan joint at an angle
     GET /health
 
+And it shows ROS tools the BRAIN (2026-09-27, brain_view.py): it polls the
+brain's GET /mission/status at BRAIN_HZ and publishes /brain/status,
+/diagnostics and /brain/markers, so a bag, rviz or Foxglove sees the
+mission beside the scans. Outbound only -- no route, and the brain still
+knows nothing of ROS. BRAIN_URL="" turns it off.
+
 It also REPUBLISHES the robot's scan (GET <robot>/scan) as
 sensor_msgs/LaserScan on /scan -- the R4 table's `sim_scan_node`, folded in
 here because it is the same HTTP client -- and publishes the pan joint so
@@ -53,7 +59,8 @@ from urllib.parse import parse_qs, urlparse
 import rclpy
 from rclpy.action import ActionClient
 from action_msgs.msg import GoalStatus
-from geometry_msgs.msg import PoseStamped, Twist
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from geometry_msgs.msg import Point, PoseStamped, Twist
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.executors import MultiThreadedExecutor
@@ -61,7 +68,11 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from sensor_msgs.msg import JointState, LaserScan
+from std_msgs.msg import String
 from tf2_ros import Buffer, TransformListener
+from visualization_msgs.msg import Marker, MarkerArray
+
+from picar_bridge import brain_view, convert
 
 # Driver (robot/interface.py DRIVER_PRIORITY names) -> twist_mux input.
 # Priorities live in picar_bringup/config/twist_mux.yaml.
@@ -72,14 +83,13 @@ DRIVER_TOPICS = {
 }
 SCAN_HZ = 10.0
 PAN_HZ = 20.0
+# The brain ticks at ~4 Hz; a status twice a second is enough to follow it
+# and cheap enough to leave on.
+BRAIN_HZ = 2.0
 
 
 def _yaw_pitch_roll(q):
-    x, y, z, w = q.x, q.y, q.z, q.w
-    yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
-    pitch = math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))
-    roll = math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
-    return yaw, pitch, roll
+    return convert.yaw_pitch_roll(q.x, q.y, q.z, q.w)
 
 
 class Bridge(Node):
@@ -128,6 +138,86 @@ class Bridge(Node):
         self._reset_stats()
         self.create_timer(1.0 / SCAN_HZ, self._poll_scan)
         self.create_timer(1.0 / PAN_HZ, self._publish_pan)
+        # ---- the brain, for ROS tools ----
+        self.brain_url = os.environ.get("BRAIN_URL", "http://host.docker.internal:8001/brain").rstrip("/")
+        self.brain_status_pub = self.create_publisher(String, "brain/status", 10)
+        self.diag_pub = self.create_publisher(DiagnosticArray, "/diagnostics", 10)
+        self.brain_marker_pub = self.create_publisher(MarkerArray, "brain/markers", 10)
+        self.brain_at = None
+        self.brain_error = None
+        self.brain_polls = 0
+        if self.brain_url:
+            # A thread, not a ROS timer: an HTTP call that times out must not
+            # hold an executor thread the nav2 action client needs.
+            threading.Thread(target=self._brain_loop, daemon=True).start()
+
+    # ---------- the brain, shown to ROS tools ----------
+
+    def _brain_loop(self):
+        while rclpy.ok():
+            started = time.time()
+            self._poll_brain()
+            time.sleep(max(0.0, 1.0 / BRAIN_HZ - (time.time() - started)))
+
+    def _poll_brain(self):
+        status, error = None, None
+        try:
+            req = urllib.request.Request(self.brain_url + "/mission/status")
+            if self.secret:
+                req.add_header("x-app-secret", self.secret)
+            with urllib.request.urlopen(req, timeout=1.0) as r:
+                status = json.loads(r.read())
+        except Exception as e:  # unreachable is a STATE here, not a crash
+            error = str(e)[:200]
+        with self.lock:
+            self.brain_polls += 1
+            self.brain_error = error
+            if status is not None:
+                self.brain_at = time.time()
+            pan = self.pan_rad
+        stamp = self.get_clock().now().to_msg()
+        if status is not None:
+            self.brain_status_pub.publish(String(data=json.dumps(status)))
+        d = brain_view.diagnostic(status, error)
+        arr = DiagnosticArray()
+        arr.header.stamp = stamp
+        arr.status = [DiagnosticStatus(
+            level=bytes([d["level"]]), name=d["name"], message=d["message"],
+            hardware_id=d["hardware_id"],
+            values=[KeyValue(key=k, value=v) for k, v in d["values"]])]
+        self.diag_pub.publish(arr)
+        self.brain_marker_pub.publish(self._markers(brain_view.markers(status, pan), stamp))
+
+    @staticmethod
+    def _markers(specs, stamp):
+        out = MarkerArray()
+        for spec in specs:
+            m = Marker()
+            m.header.frame_id = "base_footprint"
+            m.header.stamp = stamp
+            m.ns = "brain"
+            m.id = spec["id"]
+            if spec["type"] == "delete":
+                m.action = Marker.DELETE
+                out.markers.append(m)
+                continue
+            m.action = Marker.ADD
+            m.color.r, m.color.g, m.color.b, m.color.a = spec["colour"]
+            if spec["type"] == "text":
+                m.type = Marker.TEXT_VIEW_FACING
+                m.text = spec["text"]
+                m.pose.position.x, m.pose.position.y, m.pose.position.z = spec["position"]
+                m.pose.orientation.w = 1.0
+                m.scale.z = 0.08
+            else:
+                m.type = Marker.ARROW
+                yaw, length = spec["yaw_rad"], spec["length_m"]
+                m.points = [Point(x=0.0, y=0.0, z=0.05),
+                            Point(x=length * math.cos(yaw), y=length * math.sin(yaw), z=0.05)]
+                m.pose.orientation.w = 1.0
+                m.scale.x, m.scale.y, m.scale.z = 0.02, 0.05, 0.06
+            out.markers.append(m)
+        return out
 
     # ---------- ROS side ----------
 
@@ -331,13 +421,7 @@ class Bridge(Node):
         msg.range_min = float(s["range_min_m"])
         msg.range_max = float(s["range_max_m"])
         msg.scan_time = 1.0 / SCAN_HZ
-        ranges = []
-        for j in range(n):
-            ros_deg = start + j * inc_deg          # CCW-positive angle of beam j
-            ours_deg = -ros_deg                    # the same direction, our way
-            i = int(round((ours_deg - start) / inc_deg)) % n
-            r = ours[i]
-            ranges.append(math.inf if r is None else float(r))
+        ranges = convert.ros_ranges(ours, start, inc_deg)
         msg.ranges = ranges
         self.scan_pub.publish(msg)
         with self.lock:
@@ -389,7 +473,11 @@ class Bridge(Node):
                          "scan_age_s": None if not self.last_scan else time.time() - self.last_scan["at"],
                          "scans_published": self.scan_count, "twists": dict(self.twists),
                          "pan_rad": self.pan_rad, "session": self.session,
-                         "map_version": self.map_version}
+                         "map_version": self.map_version,
+                         "brain_url": self.brain_url,
+                         "brain_polls": self.brain_polls,
+                         "brain_age_s": None if not self.brain_at else time.time() - self.brain_at,
+                         "brain_error": self.brain_error}
 
 
 def _handler(bridge):

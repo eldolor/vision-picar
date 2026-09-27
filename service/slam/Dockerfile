@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-nav2-regulated-pure-pursuit-controller \
         ros-humble-tf2-ros \
         ros-humble-tf2-tools \
+        ros-humble-foxglove-bridge \
         liburdfdom-tools \
         libcurl4-openssl-dev \
         nlohmann-json3-dev \

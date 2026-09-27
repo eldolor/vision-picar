@@ -29,6 +29,12 @@ def lap():
         pytest.skip("no robot server")
     if not str(pose.get("map_id") or "").startswith("slam-"):
         pytest.skip("the robot server's world is not SLAM (WORLD_MODE=ros)")
+    # The lap is a fixed route through the STARTER house: in any other
+    # house it drives into furniture and the failures mean nothing. Asked of
+    # the server, not this process's environment (they differed once).
+    house = robot.get("/health").json().get("sim_map")
+    if house != "starter_house":
+        pytest.skip(f"the SLAM lap is a starter-house route; the server is in {house!r}")
     samples, blocked = run_lap(robot)
     return robot, samples, run_lap.rest, blocked
 

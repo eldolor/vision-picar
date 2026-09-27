@@ -31,7 +31,7 @@ def run():
         pytest.skip("no robot server")
     if not str(pose.get("map_id") or "").startswith("slam-") or goal.status_code != 200:
         pytest.skip("no SLAM world with nav2 (WORLD_MODE=ros, ROBOT_DRIVE=ros)")
-    if nav.HOUSE != "scaled_house":
+    if robot.get("/health").json().get("sim_map") != "scaled_house" or nav.HOUSE != "scaled_house":
         pytest.skip("R6 is judged on SIM_MAP=scaled_house (see the module docstring)")
     nav.map_first(robot)
     bridge.post("/nav/stats/reset", json={})

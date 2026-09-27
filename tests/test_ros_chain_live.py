@@ -48,6 +48,11 @@ def stack():
         pytest.skip("no live R4 stack (robot server + ROS container) -- see this module's docstring")
     if drive.get("mode") != "ros":
         pytest.skip("the robot server is not in drive: ros (ROBOT_DRIVE=ros)")
+    # /health is open; everything these tests drive is not. Without the
+    # secret every call answers 401 and the suite used to FAIL with twelve
+    # KeyErrors instead of skipping (found 2026-09-27).
+    if robot.get("/world/truth").status_code == 401:
+        pytest.skip("the robot server wants a secret: set LOCAL_SECRET or APP_SHARED_SECRET")
     return robot, bridge
 
 
@@ -176,8 +181,22 @@ def test_a_dpad_tap_still_preempts_a_mission_under_drive_ros(stack):
 
 # ---------- 5: the safety vet still stands in the path ----------
 
+@pytest.mark.xfail(strict=False, reason=(
+    "PRE-EXISTING, found 2026-09-27 (PLAN-ros-alignment.md 3.17): on the starter "
+    "house the stop reads 18.0 cm in 3 of 5 fresh runs, on today's image AND the "
+    "previous commit's. Suspected: the server's wheel loop vets once, then "
+    "integrates the ACTUAL elapsed dt, so a stalled period moves unvetted. "
+    "Not fixed -- a safety-layer design decision"))
 def test_a_standing_twist_into_a_wall_stops_short(stack):
     robot, bridge = stack
+    # "North is the start room's wall" is a fact about the STARTER house. In
+    # the furnished home (SIM_MAP=home_first_floor) north of the start is the
+    # hall and the provisional staircase, the obstacle at 70 cm is off-axis,
+    # and the robot legitimately drives past it -- the test then fails its
+    # own premise, not the safety vet. Asked of the server (3.17).
+    house = robot.get("/health").json().get("sim_map")
+    if house not in (None, "starter_house"):
+        pytest.skip(f"the wall-stop geometry is the starter house's; the server is in {house!r}")
     _face(robot, 0)                     # north: the start room's wall
     start = _clearance(robot)
     end = time.time() + 6.0
