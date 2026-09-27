@@ -1638,7 +1638,7 @@ pan ignored -> part 2's 2 and 3 red; footprint drift -> the linter red.
 
 **Residue, recorded not fixed.** (1) The side margin (3 cm) and the chassis
 numbers are the URDF's placeholders -- re-measure at R8, where the lidar's
-+/-3 cm rating also belongs. (2) A PIVOT is still never clamped; a rectangle
++/-3 cm rating also belongs. (2) **Fixed in 3.19.** A PIVOT is still never clamped; a rectangle
 sweeps 5.2 cm beyond its sides when it turns (corner radius 15.1 cm against a
 9.9 cm half-width), so a robot parked beside furniture can swing a corner into
 it -- the sim lets a pivot overlap rather than freezing it. (3) A mission
@@ -1647,6 +1647,91 @@ longer matters to the veto, but the next policy starts looking sideways.
 (4) The cone's own over-read (it measures from a 15 cm half-cell "bumper",
 the chassis front is 11.4 cm) means a centred head-on stop leaves 24 cm true;
 the corridor stops a panned robot at ~20. Both are >= the bar; they differ.
+
+### 3.19 Pivots (2026-09-27): criteria, written before building
+
+3.18's residue (2): rotation is never clamped, on the argument that a
+differential chassis "pivots within its own footprint". A rectangle does not:
+its corners sit 15.1 cm from the rotation centre, its sides 9.9 cm, so a pivot
+sweeps a 5.2 cm ring beyond the sides. 3.18's sweep could not see this -- it
+only started robots with the whole turning circle clear. **Decided (the
+standard practice, the user's "go ahead"):** a turn is refused only if the
+rotated chassis would come within a margin of something AND that direction
+closes the gap; turning away is never refused, which is what keeps R2b's
+"a robot facing a wall can pivot away".
+
+**Metric, ground truth as in 3.18:** true gap `G` between the chassis
+rectangle and every occupied cell, and -- per start and direction -- the
+**free angle**: how far the chassis can turn that way before `G` would fall
+below criterion 1's bar, `min(G at start, 1.0 cm)` (1-degree steps, capped
+at 180).
+
+*Corrected after the first measurement, and recorded as such:* the free angle
+was first defined to CONTACT. That made criteria 1 and 2 contradict each
+other: a corner grazing past furniture at 0.5 cm never touches it, so it
+counted as free room while criterion 1 forbade entering it. The worst case
+read 152 degrees "short" for exactly that reason. The definition now uses
+criterion 1's own bar; no threshold moved.
+
+**The sweep.** Three houses; seeded starts where the chassis is clear at its
+start heading (`G >= 1 cm`) but something lies INSIDE the 15.1 cm turning
+circle -- the only starts where a pivot can hit anything -- each at a
+random heading (a heading is part of what makes such a start clear), x both
+directions; a standing pivot at 1 rad/s for 3 s (~170 degrees) through
+the wheel loop's two calls.
+
+**Criteria:**
+
+1. **No contact from turning.** In every run, `G` never falls below
+   `min(G at start, 1.0 cm)`.
+2. **Turning is not frozen.** Of the runs whose free angle is >= 30 degrees,
+   >= 95% turn at least (free angle - 10 degrees), capped at the ~170 the
+   run can reach.
+3. **A robot facing a wall still pivots away** -- R2b's criterion 2
+   (`tests/test_wheels_command.py`) passes unchanged; and from every start in
+   the sweep with `G < 3 cm`, at least one direction turns >= 30 degrees
+   when the truth says one can.
+4. **The sim tells the truth about pivots.** With the clamp off, no pivot
+   leaves the chassis more than 0.5 cm inside anything.
+5. **Nothing else moves.** Every pinned mission test (R1, R1b, R1c, arrival)
+   and 3.18's criteria still pass.
+
+**Measured 2026-09-27 -- all five criteria met** (full suite 1409 passed; the live chain 3 of 3 from fresh restarts)
+(`tests/test_pivot_safety.py`, 20 starts/house pinned; the figures here are
+60 starts/house, 360 pivots):
+
+| | before | after |
+|---|---|---|
+| pivots that came within 1.0 cm (or touched) | **120 / 120** (20 starts/house) | **0 / 360**, closest 1.02 cm |
+| pivots with room that turned into it (bar 95%) | -- | **83 / 83**; shortfall median 0.9, worst 2.7 degrees |
+| clamp off: pivots > 0.5 cm into something | **98 / 120**, deepest 3.4 cm | **0 / 360**, deepest 0.28 cm |
+
+Built: `SafetyController.pivot_blocked()` / `pivot_scale()` -- every scan
+return in the body frame, its distance to the rectangle now and after one
+period's turn; a turn that closes to within `PIVOT_MARGIN_CM` (1.2) is SCALED
+to the largest fraction that keeps the margin, never reversed and never
+applied to a turn that opens the gap. `GridWorld.rotate()` stops where the
+rectangle would first touch (a pose already in contact is exempt, as for
+translation), and `MockRobot.step()` counts on the encoders only the turn
+that happened. Mutation-checked: clamp off -> criterion 1 red; sim pivot
+collision off -> criterion 4 red.
+
+**The live chain found a real case the offline suite could not.**
+`test_a_verb_through_ros_means_what_it_meant` turned 45 and 90 degrees right
+after its FORWARD, which parks the chassis inside the starter house's 30 cm
+doorway; there a pivot brings a corner to **0.47 cm** of the jamb (ground
+truth), with 27 degrees free to the 1 cm bar. The veto stopped it at ~20
+degrees -- correct, and R6's "30 cm doors cannot host this chassis" seen by
+the safety layer for the first time. The test is about what a verb MEANS
+through ROS, so its turns now come before the FORWARD, where there is room;
+the reason is in the test.
+
+Two things the data corrected on the way. The free-angle definition (above).
+And **zeroing a turn is the wrong clamp**: it stopped robots a whole control
+period (2.9 degrees at 1 rad/s) short of where they could safely turn, and
+failed criterion 3 on three starts that had 31-32 degrees of room; scaling
+the rate into the margin fixed it and took the median shortfall from 2.0 to
+0.9 degrees.
 
 ## 4. Honest residue -- what the twin cannot tell you
 

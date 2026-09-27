@@ -101,11 +101,17 @@ def test_a_twist_reaches_the_wheels_intact_and_odom_agrees_with_truth(stack):
 
 # ---------- 2 + 3: verbs through the chain, and only through it ----------
 
+# The turns come FIRST, from where the twist test above leaves the robot in
+# the start room. They used to follow the FORWARD, which parks the chassis
+# inside the starter house's 30 cm doorway -- where a 45- or 90-degree pivot
+# sweeps a corner to 0.47 cm of the jamb (ground truth), and 3.19's pivot
+# veto rightly stops it at ~20 of the 27 degrees available. This test is
+# about what a verb MEANS through ROS, so it turns where there is room.
 @pytest.mark.parametrize("action,kw,metres,degrees", [
-    ("FORWARD", {}, 0.30, 0.0),
     ("LEFT", {"angle": 45}, 0.0, -45.0),
     ("RIGHT", {"angle": 90}, 0.0, 90.0),
     ("LEFT", {"angle": 45}, 0.0, -45.0),
+    ("FORWARD", {}, 0.30, 0.0),
     ("REVERSE", {}, 0.30, 0.0),
 ])
 def test_a_verb_through_ros_means_what_it_meant(stack, action, kw, metres, degrees):

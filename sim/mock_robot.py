@@ -253,7 +253,13 @@ class MockRobot(RobotInterface):
             # sub-step sizes the difference from an exact arc is far below
             # the raycaster's own FPV_STEP resolution.
             d_theta_body = omega * dt_i
-            self.world.rotate(-d_theta_body)  # CCW body -> theta decreasing
+            # CCW body -> theta decreasing. What the world ALLOWED (3.19: a
+            # pivot can now be stopped by a corner), so the encoders count
+            # the turn that happened, as they do a blocked translation.
+            got = -self.world.rotate(-d_theta_body)
+            if abs(got) < abs(d_theta_body) - 1e-12:
+                blocked = True
+            d_theta_body = got
             turned_rad += d_theta_body
 
             want_cells = v * dt_i / DEFAULT_CELL_M

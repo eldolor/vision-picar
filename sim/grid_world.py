@@ -447,13 +447,33 @@ class GridWorld:
         """Pivot in place by `delta_rad`, and return it.
 
         Positive is a turn to the robot's RIGHT -- see the module docstring
-        on why that is `theta` increasing on a y-down grid. Never blocked:
-        the robot pivots within its own footprint on a differential chassis
-        (`PLAN-onboard-perception.md` 1.1), which is the assumption S6 was
-        retired for making correct.
+        on why that is `theta` increasing on a y-down grid. Returns what
+        was actually turned: since 3.19 a pivot stops where the chassis
+        rectangle would first touch something (its corners sweep beyond its
+        sides -- "pivots within its own footprint" was true of a circle).
         """
         if delta_rad == 0:
             return 0.0
+        # 3.19: the rectangle's corners reach past its sides, so a pivot
+        # CAN hit something. From a clean pose, stop where it would first
+        # touch; a pose already in contact is exempt, as in translate().
+        if not self.footprint_overlaps(self.x, self.y):
+            start = self.theta
+            self.theta = renderer.normalize_angle(start + delta_rad)
+            if self.footprint_overlaps(self.x, self.y):
+                lo, hi = 0.0, 1.0
+                for _ in range(16):
+                    mid = (lo + hi) / 2
+                    self.theta = renderer.normalize_angle(start + delta_rad * mid)
+                    if self.footprint_overlaps(self.x, self.y):
+                        hi = mid
+                    else:
+                        lo = mid
+                self.theta = renderer.normalize_angle(start + delta_rad * lo)
+                self._record(f"BLOCKED turning at ({self.x:.2f},{self.y:.2f}) after "
+                             f"{math.degrees(delta_rad * lo):.1f} of {math.degrees(delta_rad):.1f} deg")
+                return delta_rad * lo
+            return delta_rad
         self.theta = renderer.normalize_angle(self.theta + delta_rad)
         return delta_rad
 

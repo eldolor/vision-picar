@@ -102,6 +102,19 @@ FOOTPRINT_SIDE_MARGIN_CM = 3.0
 # shares (3.17's second finding is about exactly that loop).
 SAFETY_SCAN_RANGE_M = 0.6
 
+# ---- pivots (PLAN-ros-alignment.md 3.19) ----
+#
+# A rectangle does not pivot within its own footprint: its corners sit
+# 15.1cm from the rotation centre, its sides 9.9cm, so a turn sweeps a ring
+# beyond the sides. A turn is refused when the chassis, rotated by what it
+# would turn before the next vet, would come within
+# `PIVOT_MARGIN_CM` of a scan return AND that direction closes on it --
+# turning AWAY is never refused, which is what lets a robot pinned against
+# furniture free itself (R2b's "pivot away from a wall").
+PIVOT_MARGIN_CM = 1.2
+PIVOT_LOOKAHEAD_S = 0.05         # one wheel-loop period; scales with the turn rate
+PIVOT_MIN_LOOKAHEAD_DEG = 1.0
+
 # What counts as "the path the next move crosses" -- phase M3, reworked by
 # PLAN-onboard-perception.md section 5.1. The reason is geometry rather
 # than taste, and the geometry is an ANGLE.
@@ -446,6 +459,72 @@ class SafetyController:
             return None, "scan_footprint_no_target"
         return round(best, 1), "scan_footprint"
 
+    def pivot_scale(self, omega_rad_s: float, scan: Optional[dict] = None
+                    ) -> Tuple[float, Optional[str]]:
+        """How much of a turn at `omega_rad_s` may go ahead -- 3.19.
+
+        `(1.0, None)` when all of it may. Otherwise the largest fraction
+        (to 1/64) whose look-ahead keeps every closing return outside
+        `PIVOT_MARGIN_CM`, and the reason; `0.0` stops the turn. Scaling
+        rather than zeroing lets a turn slow into the margin: zeroing it
+        stopped robots a whole control period (~3 degrees at 1 rad/s)
+        short of where they could safely have turned.
+        """
+        scan = self._scan() if scan is None else scan
+        if self.pivot_blocked(omega_rad_s, scan) is None:
+            return 1.0, None
+        lo, hi = 0.0, 1.0
+        for _ in range(6):
+            mid = (lo + hi) / 2
+            if self.pivot_blocked(omega_rad_s * mid, scan, exact=True) is None:
+                lo = mid
+            else:
+                hi = mid
+        return lo, self.pivot_blocked(omega_rad_s, scan)
+
+    def pivot_blocked(self, omega_rad_s: float, scan: Optional[dict] = None,
+                      exact: bool = False) -> Optional[str]:
+        """Why a turn at `omega_rad_s` (CCW positive, REP-103) must be
+        refused, or None -- 3.19. `exact` drops the minimum look-ahead,
+        for `pivot_scale()`'s search over slower turns.
+
+        Every scan return is put in the body frame (x ahead, y left) and its
+        distance to the chassis rectangle compared now and after the turn
+        the next vet could not see. Refused only if that distance ends under
+        `PIVOT_MARGIN_CM` AND shrinks. No usable scan: never refused -- the
+        pre-3.19 behaviour, and a rotation on a scan-less backend is still
+        a rotation within the circle the forward checks already cleared.
+        """
+        if omega_rad_s == 0:
+            return None
+        scan = self._scan() if scan is None else scan
+        if not scan or not scan.get("usable"):
+            return None
+        hl, hw = FOOTPRINT_LENGTH_M * 50.0, FOOTPRINT_WIDTH_M * 50.0
+        d = omega_rad_s * PIVOT_LOOKAHEAD_S
+        if not exact and abs(d) < math.radians(PIVOT_MIN_LOOKAHEAD_DEG):
+            d = math.copysign(math.radians(PIVOT_MIN_LOOKAHEAD_DEG), d)
+        c, s = math.cos(-d), math.sin(-d)     # the world turns the other way
+
+        def dist(x, y):
+            return math.hypot(max(abs(x) - hl, 0.0), max(abs(y) - hw, 0.0))
+
+        a0, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
+        for i, r in enumerate(scan["ranges_m"]):
+            if r is None:
+                continue
+            a = math.radians(a0 + i * inc)
+            x, y = r * 100.0 * math.cos(a), -r * 100.0 * math.sin(a)   # scan is clockwise-positive
+            now = dist(x, y)
+            if now > PIVOT_MARGIN_CM + 20.0:
+                continue
+            after = dist(c * x - s * y, s * x + c * y)
+            if after < PIVOT_MARGIN_CM and after < now - 1e-6:
+                side = "left" if omega_rad_s > 0 else "right"
+                return (f"turn {side} clamped: a corner would come within "
+                        f"{after:.1f}cm < {PIVOT_MARGIN_CM}cm (scan_footprint)")
+        return None
+
     @staticmethod
     def _nearer(*readings) -> Tuple[Optional[float], str]:
         """The reading that binds: the least centimetres among those that
@@ -480,10 +559,10 @@ class SafetyController:
         Decomposes the command into body velocity `v` and yaw rate `omega`
         with the chassis constants the robot publishes, zeroes `v` if it
         points into less than `min_distance_cm` of clearance (ahead from
-        `path_clearance()`, behind from `rear_clearance()`), and recomposes.
-        **Rotation is never clamped**: a differential chassis pivots within
-        its own footprint, which is the property that lets a robot facing a
-        wall turn away from it. Returns `(left, right, reason)`; `reason` is
+        `forward_clearance()`, behind from `reverse_clearance()`), and
+        recomposes. **Rotation is clamped only when it closes on something**
+        (`pivot_blocked()`, 3.19): turning away is always allowed, which is
+        the property that lets a robot facing a wall turn away from it. Returns `(left, right, reason)`; `reason` is
         None when nothing was clamped.
         """
         wheels = self.robot.get_wheel_state()
@@ -501,6 +580,10 @@ class SafetyController:
             clearance, source = self.reverse_clearance()
             if clearance is not None and clearance < self.min_distance_cm:
                 v, reason = 0.0, f"reverse clamped: {clearance}cm < {self.min_distance_cm}cm ({source})"
+        scale, pivot = self.pivot_scale(omega)
+        if pivot:
+            omega *= scale
+            reason = pivot if reason is None else f"{reason}; {pivot}"
         if reason is None:
             return left_rad_s, right_rad_s, None
         half = omega * track / 2.0

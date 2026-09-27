@@ -238,3 +238,89 @@ def verdicts(results):
         "3 progress": (share >= PROGRESS_SHARE,
                        f"{len(moved)}/{len(eligible)} = {share:.1%} eligible runs covered {PROGRESS_MIN_CM}cm"),
     }
+
+
+# ---------------- pivots (PLAN-ros-alignment.md 3.19) ----------------
+
+PIVOT_RAD_S = 1.0         # body yaw rate: ~170 degrees in RUN_S
+FREE_ANGLE_CAP_DEG = 180
+FREE_ANGLE_MIN_DEG = 30   # criterion 2: runs with this much room ...
+FREE_ANGLE_SLACK_DEG = 10  # ... must turn to within this of it
+PIVOT_REACH_DEG = math.degrees(PIVOT_RAD_S * RUN_S) - 2  # what one run can reach
+
+
+def pivot_starts(house, n, seed=0):
+    """`n` seeded (x, y, theta) where the chassis is clear at its heading
+    (gap >= 1 cm) but something lies inside its 15.1 cm turning circle --
+    the only starts where a pivot can touch anything."""
+    rng = random.Random(f"pivot-{house}-{seed}")
+    world = build_world(house)
+    free = [(x, y) for y, row in enumerate(world.layout) for x, c in enumerate(row)
+            if c != "#" and (x, y) not in world.solid_cells]
+    radius = math.hypot(HALF_LENGTH, HALF_WIDTH)
+    out = []
+    while len(out) < n:
+        cx, cy = rng.choice(free)
+        x, y, th = cx + rng.random(), cy + rng.random(), rng.uniform(-math.pi, math.pi)
+        cells = occupied_near(world, x, y, 1.0)
+        if min((_point_square(x, y, B) for B in cells), default=math.inf) >= radius:
+            continue
+        A = chassis(x, y, th)
+        if min((gap(A, B) for B in cells), default=math.inf) * CELL_CM < G_BAR_CM:
+            continue
+        out.append((x, y, th))
+    return out
+
+
+def free_angle(world, direction):
+    """Degrees the chassis can turn (+1 left / CCW, -1 right) before its gap
+    would fall below criterion 1's bar -- `min(gap now, G_BAR_CM)` -- in
+    1-degree steps, capped.
+
+    To the BAR, not to contact (corrected 3.19, before the fix was
+    accepted): a corner grazing past something at 0.5cm never touches it,
+    so "room to contact" counted as free a turn criterion 1 forbids, and
+    the two criteria contradicted each other on every grazing pass."""
+    cells = occupied_near(world, world.x, world.y, 1.0)
+    A0 = chassis(world.x, world.y, world.theta)
+    bar = min(min((gap(A0, B) for B in cells), default=math.inf), G_BAR_CM / CELL_CM)
+    for deg in range(1, FREE_ANGLE_CAP_DEG + 1):
+        th = world.theta - direction * math.radians(deg)   # CCW body = theta decreasing
+        A = chassis(world.x, world.y, th)
+        if any(gap(A, B) < bar - 1e-9 for B in cells):
+            return deg - 1
+    return FREE_ANGLE_CAP_DEG
+
+
+def pivot_run(house, x, y, theta, direction, clamp=True):
+    """A standing pivot through the wheel loop's two calls."""
+    world = build_world(house)
+    world.x, world.y, world.theta = x, y, theta
+    robot = MockRobot(world, render=False)
+    safety = SafetyController(robot, 20.0)
+    wheels = robot.get_wheel_state()
+    w = direction * PIVOT_RAD_S * wheels["track_width_m"] / 2 / WHEEL_RADIUS_M
+    G0 = truth(world)[1]
+    room = free_angle(world, direction)
+    min_G, max_P, turned = G0, 0.0, 0.0
+    for _ in range(int(RUN_S / PERIOD_S)):
+        left, right = -w, w
+        if clamp:
+            left, right, _reason = safety.vet_wheel_velocity(-w, w)
+        robot.set_wheel_velocity(left, right)
+        th0 = world.theta
+        robot.advance(PERIOD_S)
+        d = abs((world.theta - th0 + math.pi) % (2 * math.pi) - math.pi)
+        if d < 1e-9:
+            break      # stopped; static world, identical command: stays stopped
+        turned += math.degrees(d)
+        _T, G, P = truth(world)
+        min_G, max_P = min(min_G, G), max(max_P, P)
+    return {"house": house, "x": x, "y": y, "theta": theta, "dir": direction,
+            "G0": G0, "min_G": min_G, "max_P": max_P, "turned": turned, "room": room}
+
+
+def pivot_sweep(houses, starts_per_house, seed=0, clamp=True):
+    return [pivot_run(h, x, y, th, d, clamp)
+            for h in houses for x, y, th in pivot_starts(h, starts_per_house, seed)
+            for d in (+1, -1)]
