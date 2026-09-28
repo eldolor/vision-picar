@@ -1733,6 +1733,120 @@ failed criterion 3 on three starts that had 31-32 degrees of room; scaling
 the rate into the margin fixed it and took the median shortfall from 2.0 to
 0.9 degrees.
 
+### 3.20 The chassis becomes the Waveshare UGV Rover (2026-09-27): criteria, written before measuring
+
+**Decided by the user** ("let's assume that I am buying the car you
+recommended"; not yet ordered -- Waveshare has been asked whether the kit's
+3S UPS can carry an Orin Nano Super at 25 W). The kit is the **UGV Rover PT
+Jetson Orin ROS2 Kit Acce**: 6 wheels, 4 driven, skid steer, the same ESP32
+General Driver R7 already fakes, a D500 (LDROBOT STL-19P) lidar, an OAK-D
+Lite and an ICM20948 IMU. Its numbers, and where each comes from:
+
+| | was (2WD Yahboom build) | UGV Rover | source |
+|---|---|---|---|
+| wheel radius | 0.0325 m | **0.040 m** | 80 mm tyres, Waveshare product page `[V]`; firmware `WHEEL_D 0.0800` |
+| encoder pulses / rev | 1760 | **1650** | firmware `mm_settings()` mainType 2 = "UGV Rover" `[V]` |
+| track width | 0.172 m, PLACEHOLDER | **0.172 m** | the same line `[V]` -- the placeholder was this robot's number all along. Skid steer's *effective* track is larger; that is `wheel_separation_multiplier`, measured on the car |
+| outer footprint | 0.228 x 0.198 m | **0.253 x 0.231 m** | product page, 253 x 231 mm `[V]`; rotation centre assumed at its middle `[I]` |
+| lidar | RPLidar C1, 12 m | D500, 12 m, 10 Hz | Waveshare wiki `[V]`; the sim's scan is unchanged |
+
+Read from the firmware source on the way, and not built here: **the stock
+firmware runs mainType 2 OPEN LOOP** (`usePIDCompute = false`, and
+`speedGetA = pwm` -- the reported "speed" is the PWM, not the encoder). R7's
+fake board already models the closed-loop firmware change 3.16 called for;
+it now carries mainType 2's constants.
+
+**The question this answers before anything is ordered: does this body fit
+the house, and does the safety work of 3.18-3.19 hold for it?** The corner
+radius goes from 15.1 cm to 17.1 cm, so a pivot in a 30 cm corridor --
+every corridor of the starter house -- is now physically impossible. That is
+expected, and is the starter house being too small, not the chassis
+failing; it is recorded, not engineered around.
+
+**Criteria:**
+
+1. **One chassis.** Every copy of wheel radius, pulses, track and footprint
+   (sim, `robot/hardware_robot.py`, `sim/fake_esp32.py`, xacro,
+   `controllers.yaml`, `nav2.yaml`, `robot/safety.py`, the truth copies in
+   the sweeps) carries the new number: `tests/test_wall_linters.py` and
+   `tests/test_urdf.py` pass.
+2. **Fit -- the purchase question.** A configuration-space check on ground
+   truth (the rectangle against the layout's occupied cells, every 5 degrees
+   of heading, at 2.5 cm; a path-connected free C-space is reachable by a
+   differential drive): in the furnished home, **every room the old
+   footprint reaches, the new one reaches**, both physically (no margin)
+   and with the safety layer's 3 cm. Any room lost is named, with the
+   passage that loses it.
+3. **Safety holds on the new body, bars unchanged.** 3.18 part 1 criteria
+   1, 2 and 4, part 2 criteria 1 and 2, and 3.19 criteria 1, 2 and 4, at the
+   pinned sample sizes, in every house where the chassis has somewhere to be.
+4. **Progress, bars unchanged** (section 7 rule 4): 3.18's >= 95% of
+   eligible runs cover 25 cm; 3.19's >= 95% turn into their room.
+5. **Missions.** Every pinned mission test (R1, R1b, R1c, arrival, R2b)
+   passes unchanged, OR fails because the house it runs in cannot hold this
+   body -- shown by criterion 2's check on that house, never by loosening a
+   threshold.
+6. **nav2 in the furnished home, live:** the room tour reaches at least as
+   many rooms as the old footprint did (8 of 9).
+
+**Measured 2026-09-27 -- criteria 1, 2, 3, 4 and 6 met; criterion 5 FAILED,
+and why is the finding.**
+
+| | old chassis (228 x 198) | UGV Rover (253 x 231) |
+|---|---|---|
+| 2. rooms reached, furnished home, 0 cm / 3 cm margin | 13 / 13 of 13 | **13 / 13 of 13** |
+| 2. ... scaled house; starter house | 5 of 5; 3 of 3 | **5 of 5; 3 of 3** |
+| 2. floor where the body can turn right round, family room / dining / pantry, m^2 | 21.1 / 4.9 / 0.59 | 20.3 / 4.2 / 0.50 |
+| 3-4. pinned safety sweeps (3.18 parts 1-2, 3.19) | pass | **pass**, bars unchanged |
+| 6. nav2 home tour, same code and image build, one run each | 8 of 9 (dining: still active at 120 s) | **8 of 9** (dining: aborted at 62 s) |
+| 6. ... closest approach, centre-to-surface less the half-width | 5.3 cm | 4.4 cm |
+| 6. ... `robot/safety.py` refusals during the tour | 17 | **141** |
+| 5. the 17 mission tests below | pass | **fail** |
+
+The fit check (`python -m tests.chassis_fit`) was shown to find a misfit
+before its "fits" was trusted: the furnished home first loses rooms (den,
+half bath, pantry, laundry) at an 80 x 80 cm body, and the starter house
+loses two of its three rooms at the Rover plus 3.5 cm a side -- its 30 cm
+doors.
+
+**Criterion 5: 17 failures** (the rest of the offline suite, 1265 tests,
+passes; the same 17 pass on the old chassis). Every one is a rule-based or
+semantic mission on the starter house or a small test layout. The
+mechanism, read from the log: a FORWARD verb is vetted once, at its start
+(clearance >= 20 cm), then moves a whole cell, and in the sim only the
+half-cell head-on cap stops it -- the robot's CENTRE ends 15 cm from the
+wall. The old chassis' 15.1 cm corner radius could still pivot there (14.9
+after the 0.2 cm skin); the Rover's 17.1 cm cannot, so 3.19's pivot guard
+refuses every turn and the agent retries "BLOCKED turning ... 0.0 of 5.0
+deg" until it runs out of steps. The house is not too small (criterion 2
+says so): the verb parks the car where it cannot turn. Not fixed, and no
+threshold loosened -- it is finding 1.
+
+**Two findings for the user, NOT built:**
+
+1. **A direct-mode FORWARD verb is vetted once and then drives blind.**
+   `SafetyController.check_and_execute()` checks for >= 20 cm, the verb
+   then covers 30 cm, and `HardwareRobot._run()` never re-checks while
+   moving. On the real car under the default `drive: direct` that is up to
+   **10 cm of travel past a wall**, on either chassis. The sim hides it
+   behind its half-cell cap, which has no counterpart on hardware. `drive:
+   ros` does not have the gap: its verbs are twists vetted every 50 ms. The
+   repair that matches the rest of the design is for direct-mode verbs to go
+   through the same per-period `vet_wheel_velocity()` as the wheel loop. It
+   changes what a verb does near a wall (it stops short of a whole cell),
+   which is why it is a decision -- and it would also clear criterion 5.
+2. **The Rover makes the safety layer refuse far more often** -- 141
+   against 17 on the same tour. The outcome is identical, so it is not a
+   failure, but the side margin (3 cm) and the path cone
+   (`CHASSIS_WIDTH_CM`, still the PiCar-X's 16.5 cm and now 6.6 cm narrower
+   than the body) are hardware-day calibrations that now matter more.
+
+Not modelled, and still true: skid steer slips on every turn and the sim has
+no slip; the Rover's wheelbase and which pair of motors carries the wired
+encoders are unpublished (both are in the email to Waveshare). And from the
+firmware source: stock mainType 2 is open loop, so closed-loop speed control
+needs 3.16's firmware change.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.

@@ -44,11 +44,12 @@ from typing import Optional
 from robot.interface import (
     RobotInterface, unusable_grid, unusable_odometry, unusable_scan)
 
-# HARDWARE-BOM.md 4.3; the track is the same flagged placeholder the sim and
-# the URDF carry (tests/test_urdf.py pins them together).
-WHEEL_RADIUS_M = 0.0325
+# The Waveshare UGV Rover (PLAN-ros-alignment.md 3.20): the stock firmware's
+# mainType 2 values, which the sim and the URDF carry too (tests/test_urdf.py
+# and tests/test_wall_linters.py pin them together).
+WHEEL_RADIUS_M = 0.040
 TRACK_WIDTH_M = 0.172
-COUNTS_PER_REV = 1760
+COUNTS_PER_REV = 1650
 # The board stops its own motors after this much silence. Longer than the
 # robot server's 1 s watchdog on purpose: the server should always act
 # first, and this is what acts if the server itself dies.

@@ -66,9 +66,11 @@ LIDAR_TO_REAR_BUMPER_CM = 15.0
 
 # ---- the chassis FOOTPRINT, and the corridor it sweeps (PLAN-ros-alignment 3.18) ----
 #
-# The URDF's body (picar_description's xacro): deck length by the wheels'
-# outer width (wheel separation + one wheel width), centred on the rotation
-# centre -- the same rectangle nav2 plans with and collision_monitor checks.
+# The URDF's body (picar_description's xacro): the chassis' OUTER length by
+# its outer width, centred on the rotation centre. Since 3.20 that is the
+# Waveshare UGV Rover's 253 x 231 mm (product page [V]; it was the 2WD
+# build's 228 x 198) -- the shell, not the wheels, sets the width. The same
+# rectangle nav2 plans with and collision_monitor checks.
 # `tests/test_wall_linters.py` keeps these in step with the xacro.
 #
 # Why this exists: the path cone below (`PATH_HALF_ANGLE_DEG`) is sized for
@@ -80,15 +82,17 @@ LIDAR_TO_REAR_BUMPER_CM = 15.0
 # is anything in the strip the chassis will sweep, within `min_distance_cm`
 # of its leading edge? It runs in SERIES with the cone (whichever reads
 # less decides), so nothing the cone caught before is released by it.
-FOOTPRINT_LENGTH_M = 0.228
-FOOTPRINT_WIDTH_M = 0.198
+FOOTPRINT_LENGTH_M = 0.253
+FOOTPRINT_WIDTH_M = 0.231
 # Lateral room the corridor keeps beyond each side of the chassis. Returns
 # BESIDE the body (not ahead of the leading edge) never stop a straight
 # move -- a straight move cannot close on them, and treating them as
 # blockers is R6's stop-polygon failure, frozen against a jamb. The margin
-# is small because the starter house's corridors are 30cm against a 19.8cm
-# chassis (5.1cm a side); 3cm less the sim's 1.5cm ray-march over-read
-# leaves 1.5cm that a converging wall can never close. The car's lidar is
+# is small because the starter house's doors are 30cm against a 23.1cm
+# chassis (3.45cm a side; 5.1 on the old 19.8cm one); 3cm less the sim's
+# 1.5cm ray-march over-read leaves 1.5cm that a converging wall can never
+# close. Any larger and the corridor would refuse every starter-house door
+# (`tests/chassis_fit.py` measures that edge at +3.5cm). The car's lidar is
 # rated +/-3cm (RPLidar C1), so this is a hardware-day calibration item
 # alongside `CHASSIS_WIDTH_CM` -- R8, with the chassis in hand.
 FOOTPRINT_SIDE_MARGIN_CM = 3.0
@@ -105,8 +109,9 @@ SAFETY_SCAN_RANGE_M = 0.6
 # ---- pivots (PLAN-ros-alignment.md 3.19) ----
 #
 # A rectangle does not pivot within its own footprint: its corners sit
-# 15.1cm from the rotation centre, its sides 9.9cm, so a turn sweeps a ring
-# beyond the sides. A turn is refused when the chassis, rotated by what it
+# 17.1cm from the rotation centre, its sides 11.55cm, so a turn sweeps a
+# ring beyond the sides (15.1 and 9.9 on the old 2WD chassis). A turn is
+# refused when the chassis, rotated by what it
 # would turn before the next vet, would come within
 # `PIVOT_MARGIN_CM` of a scan return AND that direction closes on it --
 # turning AWAY is never refused, which is what lets a robot pinned against
@@ -153,9 +158,10 @@ PIVOT_MIN_LOOKAHEAD_DEG = 1.0
 #
 # CHASSIS_WIDTH_CM is the PiCar-X's 16.5cm. It was kept on the belief that
 # it over-states the differential chassis (148mm) and so errs wide -- but
-# 148mm is the DECK. Across the wheels the chassis is 19.8cm
-# (`FOOTPRINT_WIDTH_M` above, the xacro, nav2's footprint), so this cone
-# errs NARROW by ~3cm. The corridor check above is what covers the gap
+# 148mm is the DECK. Across the wheels the old chassis was 19.8cm, and the
+# UGV Rover is 23.1cm (`FOOTPRINT_WIDTH_M` above, the xacro, nav2's
+# footprint), so this cone errs NARROW by ~6.6cm. The corridor check above
+# is what covers the gap
 # (3.18); this cone alone does not. **Re-measure it on the real chassis**
 # -- a hardware-day pre-flight item, not a guess to leave standing.
 CHASSIS_WIDTH_CM = 16.5

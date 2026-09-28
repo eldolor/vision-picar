@@ -70,23 +70,25 @@ DEFAULT_CELL_M = DEFAULT_CELL_CM / 100.0
 
 # ---------- the chassis, phase R0 (PLAN-ros-alignment.md) ----------
 #
-# These are the numbers that will SHIP, read off `HARDWARE-BOM.md` 4.3
-# (Yahboom L-type 520 motors on the differential chassis chosen in
-# `PLAN-onboard-perception.md` 1.1), and that is the whole point of taking
-# wheel velocities rather than a twist: `diff_drive_controller` will be
-# configured with exactly these, so R4 puts its kinematics under test
+# These are the numbers that will SHIP, and that is the whole point of
+# taking wheel velocities rather than a twist: `diff_drive_controller` will
+# be configured with exactly these, so R4 puts its kinematics under test
 # against parameters that have already been exercised here.
 #
-# Two are verified and one is not, and the difference is flagged rather
-# than averaged away:
-WHEEL_RADIUS_M = 0.0325  # 65mm rubber wheels [V]
-ENCODER_COUNTS_PER_REV = 1760  # 11 lines x 40:1 gearbox, 4x quadrature [I]
-# **PLACEHOLDER.** `HARDWARE-BOM.md` 4.3: "Track width, deck dimensions and
-# payload are unpublished: measure on the chassis", and its bring-up item 4
-# says to set it then. 0.172m is Waveshare's own firmware default -- the
-# right shape and the wrong robot. It scales pivot rate only (a straight
-# line does not depend on it), so a wrong value here makes the sim turn at
-# the wrong speed and never in the wrong direction.
+# **The chassis is the Waveshare UGV Rover since 2026-09-27**
+# (`PLAN-ros-alignment.md` 3.20; it replaced the 2WD Yahboom build these
+# were first read from). All three are the stock firmware's own values for
+# this robot -- `General_Driver/movtion_module.h`, `mm_settings()`,
+# mainType 2, "UGV Rover" -- and the tyre agrees with the product page:
+WHEEL_RADIUS_M = 0.040  # 80mm tyres [V]
+ENCODER_COUNTS_PER_REV = 1650  # ONE_CIRCLE_PLUSES for mainType 2 [V]
+# The firmware's TRACK_WIDTH for mainType 2 [V]. This was a flagged
+# PLACEHOLDER while the chassis was the Yahboom's -- Waveshare's number,
+# "the right shape and the wrong robot". It is the right robot now. What is
+# still unmeasured is skid steer's EFFECTIVE track, which is wider than the
+# geometric one because the wheels scrub on every turn: that is
+# `wheel_separation_multiplier` in controllers.yaml, set on the car (R8).
+# It scales pivot rate only (a straight line does not depend on it).
 TRACK_WIDTH_M = 0.172
 
 # What speed=100 means at the wheel. Derived from the cell rate the verbs
@@ -96,7 +98,8 @@ TRACK_WIDTH_M = 0.172
 # recorded demo and every step budget in the suite. The implied 176 rpm sits
 # between the motor's rated 150 and no-load 300 (4.3), so it is also a
 # number the real part can actually produce.
-# The RPLidar C1's rated range (HARDWARE-BOM.md); the sim's scan casts this far.
+# The lidar's rated range -- the RPLidar C1's and the UGV Rover kit's D500
+# (LDROBOT STL-19P) alike, 12 m; the sim's scan casts this far.
 LIDAR_RANGE_M = 12.0
 
 WHEEL_MAX_RAD_S = (
@@ -297,8 +300,8 @@ class MockRobot(RobotInterface):
 
         Positions in radians and velocities in rad/s because that is what
         `hardware_interface` exchanges; the counts are the same positions in
-        the units the ESP32 will actually report (`HARDWARE-BOM.md` 4.3's
-        1760 per revolution at 4x quadrature), so R7's fake board has
+        the units the ESP32 will actually report (1650 per revolution,
+        the firmware's figure for the UGV Rover), so R7's fake board has
         something to serialise and R2 has something to publish.
         """
         per_rad = ENCODER_COUNTS_PER_REV / (2 * math.pi)

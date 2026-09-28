@@ -294,7 +294,7 @@ def test_the_encoders_are_the_inverse_of_the_motion_that_happened():
 
 
 def test_encoder_counts_are_the_position_in_the_units_the_board_reports():
-    """1760 counts per revolution at 4x quadrature (`HARDWARE-BOM.md` 4.3),
+    """1650 counts per revolution (the UGV Rover firmware's own figure),
     so R7's fake ESP32 has something to serialise and R2 has something to
     publish. A count is not a new measurement, it is a unit change."""
     robot = open_robot(heading=Heading.E)

@@ -1,8 +1,9 @@
 # nav2 -- PLAN-ros-alignment.md R6 (3.15).
 #
-# Every size here is the CHASSIS (picar_description's xacro: 0.228 x 0.198 m
-# across the wheels), not the sim's point robot. The starter house's doors
-# are one grid cell, 0.30 m: about 5 cm of margin on each side, so inflation
+# Every size here is the CHASSIS (picar_description's xacro: the UGV Rover's
+# outer 0.253 x 0.231 m since 3.20; 0.228 x 0.198 before), not the sim's
+# point robot. The starter house's doors are one grid cell, 0.30 m: about
+# 3.5 cm of margin on each side, so inflation
 # is kept small on purpose -- a costmap tuned for real 80 cm doors would seal
 # every door in this house.
 
@@ -70,7 +71,7 @@ local_costmap:
       width: 2
       height: 2
       resolution: 0.05
-      footprint: "[[0.114, 0.099], [0.114, -0.099], [-0.114, -0.099], [-0.114, 0.099]]"
+      footprint: "[[0.1265, 0.1155], [0.1265, -0.1155], [-0.1265, -0.1155], [-0.1265, 0.1155]]"
       footprint_padding: 0.0
       plugins: [obstacle_layer, inflation_layer]
       obstacle_layer:
@@ -101,7 +102,7 @@ global_costmap:
       robot_base_frame: base_footprint
       resolution: 0.05
       track_unknown_space: true
-      footprint: "[[0.114, 0.099], [0.114, -0.099], [-0.114, -0.099], [-0.114, 0.099]]"
+      footprint: "[[0.1265, 0.1155], [0.1265, -0.1155], [-0.1265, -0.1155], [-0.1265, 0.1155]]"
       plugins: [static_layer, obstacle_layer, inflation_layer]
       static_layer:
         plugin: nav2_costmap_2d::StaticLayer
@@ -165,8 +166,8 @@ behavior_server:
 # all, so nav2's own spin and back-up recoveries failed 16 times in a row.
 # `approach` projects the exact footprint along the COMMANDED velocity and
 # limits only motion that would reach an obstacle within
-# time_before_collision; the footprint's corner radius (15.1 cm) clears that
-# jamb, so rotating away is allowed. The slowdown polygon covers the next
+# time_before_collision; the footprint's corner radius (15.1 cm on the 2WD
+# chassis, 17.1 cm on the UGV Rover) clears that jamb, so rotating away is allowed. The slowdown polygon covers the next
 # ~20 cm ahead.
 collision_monitor:
   ros__parameters:
@@ -180,7 +181,7 @@ collision_monitor:
     polygons: [FootprintApproach, PolygonSlow]
     FootprintApproach:
       type: polygon
-      points: [0.114, 0.099, 0.114, -0.099, -0.114, -0.099, -0.114, 0.099]
+      points: [0.1265, 0.1155, 0.1265, -0.1155, -0.1265, -0.1155, -0.1265, 0.1155]
       action_type: approach
       time_before_collision: 1.0
       simulation_time_step: 0.05
