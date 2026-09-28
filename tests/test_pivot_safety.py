@@ -1,8 +1,9 @@
 """
 tests/test_pivot_safety.py
 
-`PLAN-ros-alignment.md` 3.19 -- pivots. A rectangle's corners sit 15.1 cm
-from the rotation centre and its sides 9.9 cm, so a pivot sweeps a ring
+`PLAN-ros-alignment.md` 3.19 -- pivots. A rectangle's corners sit 17.1 cm
+from the rotation centre and its sides 11.55 cm (UGV Rover, 3.21; 15.1 and
+9.9 on the 2WD chassis 3.19 was built on), so a pivot sweeps a ring
 beyond the sides; rotation used to be exempt from the veto. One test per
 criterion, written before the fix, confirmed red against the code before it.
 Judged on ground truth (`tests/footprint_sweep.py`).

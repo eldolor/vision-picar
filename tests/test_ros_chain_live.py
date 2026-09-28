@@ -92,7 +92,8 @@ def test_a_twist_reaches_the_wheels_intact_and_odom_agrees_with_truth(stack):
     time.sleep(0.5)
     t1, o1 = _truth(robot), bridge.get("/odom").json()
     moving = [v for v in seen if v]
-    assert moving and all(abs(v - 0.1 / 0.0325) < 0.01 * 0.1 / 0.0325 for v in moving), moving
+    from sim.mock_robot import WHEEL_RADIUS_M
+    assert moving and all(abs(v - 0.1 / WHEEL_RADIUS_M) < 0.01 * 0.1 / WHEEL_RADIUS_M for v in moving), moving
     truth_m = math.dist((t0["x_m"], t0["y_m"]), (t1["x_m"], t1["y_m"]))
     odom_m = math.dist((o0["x_m"], o0["y_m"]), (o1["x_m"], o1["y_m"]))
     assert truth_m > 0.05

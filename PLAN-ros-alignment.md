@@ -1785,6 +1785,242 @@ with the camera left at -90 by the chain suite's preempted mission.
 | before (stash of this change) | -90, +90 -- the first decision read at -90 |
 | after, 3 runs | -90, **0**, -90, +90 -- centred, then the policy's own peek |
 
+### 3.21 The chassis becomes the Waveshare UGV Rover (2026-09-27): criteria, written before measuring
+
+**Decided by the user** ("let's assume that I am buying the car you
+recommended"; not yet ordered -- Waveshare has been asked whether the kit's
+3S UPS can carry an Orin Nano Super at 25 W). The kit is the **UGV Rover PT
+Jetson Orin ROS2 Kit Acce**: 6 wheels, 4 driven, skid steer, the same ESP32
+General Driver R7 already fakes, a D500 (LDROBOT STL-19P) lidar, an OAK-D
+Lite and an ICM20948 IMU. Its numbers, and where each comes from:
+
+| | was (2WD Yahboom build) | UGV Rover | source |
+|---|---|---|---|
+| wheel radius | 0.0325 m | **0.040 m** | 80 mm tyres, Waveshare product page `[V]`; firmware `WHEEL_D 0.0800` |
+| encoder pulses / rev | 1760 | **1650** | firmware `mm_settings()` mainType 2 = "UGV Rover" `[V]` |
+| track width | 0.172 m, PLACEHOLDER | **0.172 m** | the same line `[V]` -- the placeholder was this robot's number all along. Skid steer's *effective* track is larger; that is `wheel_separation_multiplier`, measured on the car |
+| outer footprint | 0.228 x 0.198 m | **0.253 x 0.231 m** | product page, 253 x 231 mm `[V]`; rotation centre assumed at its middle `[I]` |
+| lidar | RPLidar C1, 12 m | D500, 12 m, 10 Hz | Waveshare wiki `[V]`; the sim's scan is unchanged |
+
+Read from the firmware source on the way, and not built here: **the stock
+firmware runs mainType 2 OPEN LOOP** (`usePIDCompute = false`, and
+`speedGetA = pwm` -- the reported "speed" is the PWM, not the encoder). R7's
+fake board already models the closed-loop firmware change 3.16 called for;
+it now carries mainType 2's constants.
+
+**The question this answers before anything is ordered: does this body fit
+the house, and does the safety work of 3.18-3.19 hold for it?** The corner
+radius goes from 15.1 cm to 17.1 cm, so a pivot in a 30 cm corridor --
+every corridor of the starter house -- is now physically impossible. That is
+expected, and is the starter house being too small, not the chassis
+failing; it is recorded, not engineered around.
+
+**Criteria:**
+
+1. **One chassis.** Every copy of wheel radius, pulses, track and footprint
+   (sim, `robot/hardware_robot.py`, `sim/fake_esp32.py`, xacro,
+   `controllers.yaml`, `nav2.yaml`, `robot/safety.py`, the truth copies in
+   the sweeps) carries the new number: `tests/test_wall_linters.py` and
+   `tests/test_urdf.py` pass.
+2. **Fit -- the purchase question.** A configuration-space check on ground
+   truth (the rectangle against the layout's occupied cells, every 5 degrees
+   of heading, at 2.5 cm; a path-connected free C-space is reachable by a
+   differential drive): in the furnished home, **every room the old
+   footprint reaches, the new one reaches**, both physically (no margin)
+   and with the safety layer's 3 cm. Any room lost is named, with the
+   passage that loses it.
+3. **Safety holds on the new body, bars unchanged.** 3.18 part 1 criteria
+   1, 2 and 4, part 2 criteria 1 and 2, and 3.19 criteria 1, 2 and 4, at the
+   pinned sample sizes, in every house where the chassis has somewhere to be.
+4. **Progress, bars unchanged** (section 7 rule 4): 3.18's >= 95% of
+   eligible runs cover 25 cm; 3.19's >= 95% turn into their room.
+5. **Missions.** Every pinned mission test (R1, R1b, R1c, arrival, R2b)
+   passes unchanged, OR fails because the house it runs in cannot hold this
+   body -- shown by criterion 2's check on that house, never by loosening a
+   threshold.
+6. **nav2 in the furnished home, live:** the room tour reaches at least as
+   many rooms as the old footprint did (8 of 9).
+
+**Measured 2026-09-27 -- criteria 1, 2, 3, 4 and 6 met; criterion 5 FAILED,
+and why is the finding.** *(Cleared 2026-09-28 by 3.22, guarded verbs: the 17 now pass, with no
+threshold moved.)*
+
+| | old chassis (228 x 198) | UGV Rover (253 x 231) |
+|---|---|---|
+| 2. rooms reached, furnished home, 0 cm / 3 cm margin | 13 / 13 of 13 | **13 / 13 of 13** |
+| 2. ... scaled house; starter house | 5 of 5; 3 of 3 | **5 of 5; 3 of 3** |
+| 2. floor where the body can turn right round, family room / dining / pantry, m^2 | 21.1 / 4.9 / 0.59 | 20.3 / 4.2 / 0.50 |
+| 3-4. pinned safety sweeps (3.18 parts 1-2, 3.19) | pass | **pass**, bars unchanged |
+| 6. nav2 home tour, same code and image build, one run each | 8 of 9 (dining: still active at 120 s) | **8 of 9** (dining: aborted at 62 s) |
+| 6. ... closest approach, centre-to-surface less the half-width | 5.3 cm | 4.4 cm |
+| 6. ... `robot/safety.py` refusals during the tour | 17 | **141** |
+| 5. the 17 mission tests below | pass | **fail** |
+
+The fit check (`python -m tests.chassis_fit`) was shown to find a misfit
+before its "fits" was trusted: the furnished home first loses rooms (den,
+half bath, pantry, laundry) at an 80 x 80 cm body, and the starter house
+loses two of its three rooms at the Rover plus 3.5 cm a side -- its 30 cm
+doors.
+
+**Criterion 5: 17 failures** (the rest of the offline suite, 1265 tests,
+passes; the same 17 pass on the old chassis). Every one is a rule-based or
+semantic mission on the starter house or a small test layout. The
+mechanism, read from the log: a FORWARD verb is vetted once, at its start
+(clearance >= 20 cm), then moves a whole cell, and in the sim only the
+half-cell head-on cap stops it -- the robot's CENTRE ends 15 cm from the
+wall. The old chassis' 15.1 cm corner radius could still pivot there (14.9
+after the 0.2 cm skin); the Rover's 17.1 cm cannot, so 3.19's pivot guard
+refuses every turn and the agent retries "BLOCKED turning ... 0.0 of 5.0
+deg" until it runs out of steps. The house is not too small (criterion 2
+says so): the verb parks the car where it cannot turn. Not fixed, and no
+threshold loosened -- it is finding 1.
+
+**Two findings for the user, NOT built:**
+
+1. **A direct-mode FORWARD verb is vetted once and then drives blind.**
+   `SafetyController.check_and_execute()` checks for >= 20 cm, the verb
+   then covers 30 cm, and `HardwareRobot._run()` never re-checks while
+   moving. On the real car under the default `drive: direct` that is up to
+   **10 cm of travel past a wall**, on either chassis. The sim hides it
+   behind its half-cell cap, which has no counterpart on hardware. `drive:
+   ros` does not have the gap: its verbs are twists vetted every 50 ms. The
+   repair that matches the rest of the design is for direct-mode verbs to go
+   through the same per-period `vet_wheel_velocity()` as the wheel loop. It
+   changes what a verb does near a wall (it stops short of a whole cell),
+   which is why it is a decision -- and it would also clear criterion 5.
+2. **The Rover makes the safety layer refuse far more often** -- 141
+   against 17 on the same tour. The outcome is identical, so it is not a
+   failure, but the side margin (3 cm) and the path cone
+   (`CHASSIS_WIDTH_CM`, still the PiCar-X's 16.5 cm and now 6.6 cm narrower
+   than the body) are hardware-day calibrations that now matter more.
+
+Not modelled, and still true: skid steer slips on every turn and the sim has
+no slip; the Rover's wheelbase and which pair of motors carries the wired
+encoders are unpublished (both are in the email to Waveshare). And from the
+firmware source: stock mainType 2 is open loop, so closed-loop speed control
+needs 3.16's firmware change.
+
+### 3.22 Guarded verbs (2026-09-28): criteria, written before building
+
+3.21's finding 1, decided by the user ("go with the recommendations" on
+`PLAN-guarded-verbs.md` section 6, which holds the full plan). Under `drive:
+direct` a verb is vetted once and then drives blind; under `drive: ros` it is
+re-vetted every 50 ms. **Decided:** (1) a move cut short is EXECUTED and says
+so (`moved` against `requested`); one that covers under 1 cm is REFUSED, so
+R1b's stuck detector still ends a pinned robot `blocked`; (2) turn verbs are
+guarded too; (3) the runner lives in `SafetyController`, so in-process agents
+and the server behave alike.
+
+**The rule to build** (a design, recorded so the criteria can be read
+against it): every direct-mode FORWARD, REVERSE, LEFT and RIGHT runs as a
+standing wheel command in 50 ms periods, closed on the encoders. Each period
+reads the same clearances `vet_wheel_velocity()` reads -- `forward_clearance()`
+/ `reverse_clearance()` for a translation, `pivot_scale()` for a turn -- and
+**looks ahead**: a translation may cover at most (clearance -
+`min_distance_cm`) this period, so it stops AT the line rather than one
+period past it (at a verb's 0.6 m/s one period is 3 cm, which would break
+3.18's 18 cm bar). A `stop()` from anyone -- `/stop`, the watchdog -- ends the
+verb within one period and is never overwritten. `drive: ros` is untouched:
+its wrapper is already guarded. The backend supplies what a verb MEANS (its
+wheel speeds and its distance or angle), so a verb still covers exactly what
+it covered before whenever the way is clear.
+
+**Criteria** (bars reused from 3.18 and 3.19; 1-3 confirmed RED first):
+
+1. **Moves stop safely.** From 3.18's seeded starts in all three houses, x 24
+   headings, FORWARD (and REVERSE) verbs at speed 50 and 100, repeated until
+   one is refused or six have run, judged on ground truth sampled every
+   period: after every verb, travel-to-contact `T >= 18.0 cm`; gap `G` never
+   below `min(G at start, 1.0 cm)`.
+2. **Turns stop safely.** From 3.19's pivot starts, LEFT and RIGHT verbs of
+   45 and 90 degrees, same sampling: `G` never below `min(G at start,
+   1.0 cm)`.
+3. **A stop ends a verb.** A FORWARD on the hardware backend over the fake
+   ESP32 (`sim/fake_esp32.py`), with `stop()` called mid-verb: the board's
+   commanded wheel speeds are zero within 100 ms and stay zero until the
+   verb returns. And a verb that outlasts the watchdog timeout is still
+   carried out -- the watchdog is for a silent brain, not a busy one.
+4. **Verbs still mean what they meant.** Of the FORWARD verbs whose `T` at
+   start is >= 60 cm, >= 95% cover the full 30 cm (within 1 mm); of the
+   turns with >= 10 degrees more room than asked for, >= 95% turn the full
+   angle (within 0.5 degrees).
+5. **Missions.** The pinned R1, R1b, R1c, arrival and R2b tests pass
+   unchanged, and 3.21's 17 failures pass -- no threshold loosened.
+6. **Live.** One mission through the brain's HTTP API on `drive: direct`,
+   and one FORWARD verb through the robot server over the fake ESP32 serial
+   line ending >= 18.0 cm from the wall by `/world/truth`.
+7. **`drive: ros` unchanged:** `tests/test_ros_drive.py` passes, and the
+   live chain suite against a fresh container.
+
+**Measured 2026-09-28 -- all seven criteria met**, 1-3 red first. The full
+sweep is `python -m tests.demo_verb_sweep` (6 starts/house x 24 headings);
+`tests/test_guarded_verbs.py` pins a seeded sample.
+
+| | unguarded (`1d0b7fc`) | guarded |
+|---|---|---|
+| 1. straight runs ending a verb under 18.0 cm of travel-to-contact | **1024 / 1728**, worst 0.0 cm | **0 / 1728** (4204 verbs), closest 19.7 cm |
+| 1. ... runs that touched something | **312** | **0** |
+| 1b. cut-short verbs whose veto reads under 19.4 cm at the stop | -- (nothing is cut short) | **0 / 1226** |
+| 2. turns coming within 1.0 cm | **135 / 288**, worst 0.00 cm | **0 / 288**, closest 1.03 cm |
+| 3. board driven again > 100 ms after `stop()` mid-verb | yes (re-sent every 50 ms) | **no** |
+| 3. a `/stop` over HTTP during a 2 s hardware verb | not received until the verb ended (0.606 m moved) | **ends it** |
+| 3. a verb outlasting the 1 s watchdog | completes | **completes** (0.60 m) |
+| 4a. clear moves (T >= 60 cm) covering the whole cell | 100% | **98.8%** (bar 95%) |
+| 4b. clear turns turning the whole angle | 100% | **100%** |
+| 5. offline suite | 17 fail (3.21) | **1291 pass**; UI suites 126 pass |
+| 6. live: frontier mission through the brain's HTTP API, `drive: direct` | -- | **found**, 61 steps, 0 refusals |
+| 6. live: FORWARD at a wall over the fake ESP32 serial line | -- | stopped at **22.6 cm** by truth (from 32.2), then refused |
+| 7. live ROS chain suite, fresh container | -- | **13 / 13** |
+
+Mutation-checked: look-ahead off -> 1b red (veto reads down to 17.2 cm; 1
+stays green, see below); the 5-degree turn step off -> 2 red (12 of 96);
+watchdog exemption off -> 3's watchdog test red (the verb is cut at
+0.305 m); the wheel loop blocking on the lock -> 3's HTTP stop red.
+
+**What was built.** `robot.interface.carry_out_verb()` is the mechanics --
+periods, closed on the encoders, ended by any `stop()` (a `stop_count` on
+each backend) -- and a backend's own unguarded verbs run through it too, so a
+guarded verb and a raw one are the same motion to the last bit when nothing
+is in the way. `RobotInterface.verb_plan()` / `verb_done()` let a backend say
+what a verb means; the default is None ("run my own verb"), which is what
+`drive: ros`, `RemoteRobot`, replay and teleop keep. `SafetyController.
+run_verb()` supplies the limit: a translation looks ahead to (clearance -
+`min_distance_cm`), a turn is checked in steps of at most 5 degrees at a
+look-ahead of exactly that step. A move under 1 cm, or a turn under 0.5
+degrees, is a refusal (decision 1).
+
+**Four things found on the way, all fixed:**
+
+1. **The robot server could not receive a `/stop` during a hardware verb.**
+   `/action` held `motion_lock` for the whole verb and the 20 Hz wheel loop
+   waited for that lock ON THE EVENT LOOP, freezing every route -- the
+   watchdog included -- until the verb ended. The wheel loop now skips a
+   tick instead of waiting. Only visible on the wall clock; the sim's verbs
+   were instantaneous.
+2. **A fast turn could pass a corner through furniture unchecked.** The
+   sim's verbs turn at ~400 deg/s -- 20 degrees a period -- and a check that
+   compares a chassis before and after a step cannot see what the corner
+   crossed in between. Hence the 5-degree step.
+3. **Criterion 1 cannot see the look-ahead.** The path cone measures from a
+   half-cell "bumper" 2.35 cm ahead of the Rover's real front edge, so truth
+   keeps ~2 cm in hand either way. 1b was added AFTER the mutation run, at
+   3.18 part 2's existing veto bar (19.4 cm); 19.9 was tried first and the
+   real code read 19.5 -- the readings' march quantum.
+4. **A robot parked exactly on the line had no forward but was told it
+   did.** The rule-based policy called a direction clear at `>=` its
+   threshold, and a guarded verb now stops exactly there -- so it chose
+   FORWARD 140 times running. Both `sensed_scene()` and the frontier
+   policy's three-way look now require the threshold plus 1 cm (decision
+   1's own number). This is what cleared 3.21's 17 failures.
+
+Also: the watchdog now leaves a direct-mode verb in progress alone (it is
+bounded, re-vetted every period, and `/stop` still ends it), and times its
+silence from the verb's END; and two tests changed for reasons stated in
+them -- the like-for-like comparand in `test_remote_robot.py` now goes
+through a `SafetyController` as the server does, and R2b's reverse test
+accepts the wheel loop's clamp a period later, because the first REVERSE
+now stops at the line rather than a cell past it.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.

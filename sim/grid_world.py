@@ -125,14 +125,17 @@ ROBOT_HALF_CELL = 0.5
 # into furniture the centre-line missed -- the sim said nothing about the
 # very escape 3.17 found, and a clamp-less standing twist drove the chassis
 # up to 2.7cm deep into the dining chairs. The ray above still caps travel
-# head-on (its half cell, 15cm, is further forward than the deck's 11.4cm,
-# so every existing head-on stop is unchanged); the rectangle adds the
-# corners and sides.
+# head-on (its half cell, 15cm, is further forward than the chassis' front
+# edge -- 11.4cm on the 2WD build, 12.65cm on the UGV Rover since 3.21 -- so
+# every existing head-on stop is unchanged); the rectangle adds the corners
+# and sides.
 #
-# Less a 0.2cm skin, because the rectangle's corner radius is 15.1cm and a
-# pivot at a cell centre in a 30cm corridor would otherwise graze both walls
-# by 0.1cm -- and a pose already in contact is exempt below, which would
-# quietly switch the check off in every corridor of the starter house.
+# Less a 0.2cm skin. It was sized for the 2WD chassis, whose corner radius
+# (15.1cm) grazed both walls of a 30cm gap by 0.1cm when pivoting at a cell
+# centre -- and a pose already in contact is exempt below, which would have
+# switched the check off there. The UGV Rover's corner radius is 17.1cm, so
+# in a 30cm gap it cannot pivot at all and no skin pretends otherwise: the
+# pivot stops where the corner touches, which is the truth.
 FOOTPRINT_CELL_M = 0.30
 FOOTPRINT_SKIN_CM = 0.2
 FOOTPRINT_HALF_LENGTH = (FOOTPRINT_LENGTH_M * 50.0 - FOOTPRINT_SKIN_CM) / (FOOTPRINT_CELL_M * 100)
@@ -482,7 +485,7 @@ class GridWorld:
     # through `translate()` one integration sub-step at a time, so a
     # whole-cells wrapper was a second path from a command to a position with
     # nobody calling it. The MOVE log line it wrote is now written by
-    # `MockRobot._drive_cells()`, which is where the request it reports
+    # `MockRobot.verb_done()`, which is where the request it reports
     # originates.
 
     def turn_left(self, degrees: float = 90.0) -> dict:

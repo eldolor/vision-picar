@@ -65,6 +65,14 @@ def test_wheel_separation_is_one_number():
     assert _yaml_number("wheel_separation") == TRACK_WIDTH_M
 
 
+def test_the_xacro_is_well_formed_xml():
+    """A `--` inside an XML comment is not well-formed, and nothing offline
+    noticed: the file is read by regex above, so the first thing to parse it
+    was xacro inside the container, which then refused to launch at all
+    (3.21, a comment reading "skid steer -- modelled as ...")."""
+    ET.fromstring(XACRO.read_text())
+
+
 # ---------- the live half ----------
 
 def _bridge(path, body=None):

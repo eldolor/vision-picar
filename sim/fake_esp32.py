@@ -28,7 +28,6 @@ The wheels it turns are a `MockRobot`'s: the body the rest of the sim sees.
 """
 
 import json
-import math
 import os
 import select
 import threading
@@ -37,8 +36,10 @@ import tty
 from typing import Optional
 
 BOARD_LOOP_S = 0.01            # the firmware's loop() runs at ~100 Hz and above
-# Motor model (HARDWARE-BOM.md 4.3): 300 rpm no-load at 12 V on 65 mm wheels.
-NO_LOAD_WHEEL_M_S = 300 / 60 * math.pi * 0.065
+# Motor model: the UGV Rover's rated top speed, 1.3 m/s (Waveshare product
+# page [V]), taken as the surface speed at full PWM [I] -- the motor's own
+# rpm is not published. (It was 300 rpm on the Yahboom's 65 mm wheels.)
+NO_LOAD_WHEEL_M_S = 1.3
 
 
 class FakeEsp32:
@@ -48,11 +49,14 @@ class FakeEsp32:
     `pulses_per_rev` and `track_width_m` are the constants the firmware
     holds per mainType (movtion_module.h mm_settings()); mainType 3 here
     carries THIS chassis' values, modelling the firmware change 3.16 calls
-    for -- the stock mode 3 is sized for another robot.
+    for. Since 3.21 the chassis is the UGV Rover, whose stock mode is 2 --
+    open loop (`usePIDCompute = false`, and the reported "speed" is the PWM,
+    not the encoder) -- so the change is still needed: mode 3's PID with
+    mode 2's constants, which are these defaults.
     """
 
-    def __init__(self, body, main_type: int = 3, wheel_diameter_m: float = 0.065,
-                 pulses_per_rev: int = 1760, track_width_m: float = 0.172):
+    def __init__(self, body, main_type: int = 3, wheel_diameter_m: float = 0.080,
+                 pulses_per_rev: int = 1650, track_width_m: float = 0.172):
         self.body = body
         self.main_type = main_type
         self.wheel_d = wheel_diameter_m

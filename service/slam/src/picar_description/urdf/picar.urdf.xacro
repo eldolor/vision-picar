@@ -16,11 +16,15 @@
 <robot name="picar" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <!-- ===================== every dimension ===================== -->
-  <xacro:property name="wheel_radius"      value="0.0325"/> <!-- [BOM] 65 mm wheels; = sim/mock_robot.py WHEEL_RADIUS_M -->
-  <xacro:property name="wheel_separation"  value="0.172"/>  <!-- [PLACEHOLDER] = sim/mock_robot.py TRACK_WIDTH_M, itself flagged -->
-  <xacro:property name="wheel_width"       value="0.026"/>  <!-- [PLACEHOLDER] -->
-  <xacro:property name="deck_length"       value="0.228"/>  <!-- [BOM] ~228 x 148 mm deck -->
-  <xacro:property name="deck_width"        value="0.148"/>  <!-- [BOM] -->
+  <!-- The Waveshare UGV Rover (PLAN-ros-alignment.md 3.21). Six wheels, four
+       driven, skid steer; modelled as one wheel a side, as a skid-steer
+       base usually is for diff_drive_controller; its larger EFFECTIVE track
+       is wheel_separation_multiplier, measured on the car. -->
+  <xacro:property name="wheel_radius"      value="0.040"/>  <!-- [BOM] 80 mm tyres, firmware mainType 2 WHEEL_D; = sim/mock_robot.py WHEEL_RADIUS_M -->
+  <xacro:property name="wheel_separation"  value="0.172"/>  <!-- [BOM] firmware mainType 2 TRACK_WIDTH; = sim/mock_robot.py TRACK_WIDTH_M -->
+  <xacro:property name="wheel_width"       value="0.0425"/> <!-- [BOM] 42.5 mm tyres -->
+  <xacro:property name="body_length"       value="0.253"/>  <!-- [BOM] outer, 253 x 231 mm: the FOOTPRINT nav2 and robot/safety.py use -->
+  <xacro:property name="body_width"        value="0.231"/>  <!-- [BOM] outer; the shell, not the wheels, sets the width -->
   <xacro:property name="deck_height"       value="0.040"/>  <!-- [PLACEHOLDER] chassis plate ~40 mm (CLAUDE.md Stage 0) -->
   <xacro:property name="axle_x"            value="0.0"/>    <!-- [PLACEHOLDER] drive axle under the deck centre -->
   <xacro:property name="laser_z"           value="0.100"/>  <!-- [PLACEHOLDER] lidar above base_link, deck centre -->
@@ -37,11 +41,11 @@
   <link name="base_link">
     <visual>
       <origin xyz="${-axle_x} 0 ${deck_height/2}"/>
-      <geometry><box size="${deck_length} ${deck_width} ${deck_height}"/></geometry>
+      <geometry><box size="${body_length} ${body_width} ${deck_height}"/></geometry>
     </visual>
     <collision>
       <origin xyz="${-axle_x} 0 ${deck_height/2}"/>
-      <geometry><box size="${deck_length} ${deck_width} ${deck_height}"/></geometry>
+      <geometry><box size="${body_length} ${body_width} ${deck_height}"/></geometry>
     </collision>
   </link>
   <joint name="base_footprint_joint" type="fixed">
@@ -54,12 +58,12 @@
   <link name="front_bumper"/>
   <joint name="front_bumper_joint" type="fixed">
     <parent link="base_link"/><child link="front_bumper"/>
-    <origin xyz="${deck_length/2 - axle_x} 0 0"/>
+    <origin xyz="${body_length/2 - axle_x} 0 0"/>
   </joint>
   <link name="rear_bumper"/>
   <joint name="rear_bumper_joint" type="fixed">
     <parent link="base_link"/><child link="rear_bumper"/>
-    <origin xyz="${-deck_length/2 - axle_x} 0 0"/>
+    <origin xyz="${-body_length/2 - axle_x} 0 0"/>
   </joint>
 
   <xacro:macro name="wheel" params="side y">

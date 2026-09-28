@@ -92,7 +92,7 @@ import time
 import httpx
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -158,6 +158,15 @@ WATCHDOG_POLL_INTERVAL_S = 0.1
 WHEEL_LOOP_INTERVAL_S = 0.05
 
 
+@contextmanager
+def _held(lock):
+    """Release a lock already acquired with `acquire(blocking=False)`."""
+    try:
+        yield
+    finally:
+        lock.release()
+
+
 def watchdog_should_stop(last_command_at: float, now: float, timeout_s: float) -> bool:
     """Pure decision logic -- see module docstring for why this is
     tested separately from the async polling loop that calls it."""
@@ -198,6 +207,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # container (robot/ros_drive.py), which is then the one wheel writer.
     by_velocity = bool(getattr(robot, "drives_by_velocity", False))
     state = {
+        # True while a direct-mode verb is being carried out (3.22).
+        "verb_active": False,
         "last_command_at": time.monotonic(),
         "wheel_posts": 0,
         "refusal_counts": {},
@@ -270,6 +281,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             await asyncio.sleep(WATCHDOG_POLL_INTERVAL_S)
             now = time.monotonic()
             state["watchdog_polled_at"] = now
+            # A verb in progress is a busy brain, not a silent one: it is
+            # bounded, re-vetted every period, and /stop still ends it (3.22).
+            if state["verb_active"]:
+                continue
             if watchdog_should_stop(state["last_command_at"], now, watchdog_timeout):
                 robot.stop()
                 # Phase M4: the watchdog is a stop, not a refusal of any
@@ -338,8 +353,15 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             await asyncio.sleep(WHEEL_LOOP_INTERVAL_S)
             now = time.monotonic()
             dt, last = now - last, now
+            # Never WAIT for the lock here: this runs on the event loop, and
+            # a direct-mode verb holds the lock for as long as it drives --
+            # a second or two on real motors. Waiting froze every route with
+            # it, /stop included (3.22). A verb re-vets itself every period
+            # (`SafetyController.run_verb()`), so a skipped tick loses nothing.
+            if not motion_lock.acquire(blocking=False):
+                continue
             try:
-                with motion_lock:
+                with _held(motion_lock):
                     w = robot.get_wheel_state()
                     if not w.get("usable"):
                         continue
@@ -473,9 +495,15 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     return refuse("ros_unavailable", f"drive: ros, and the bridge failed: {e}", driver)
             else:
                 with motion_lock:
-                    result = safety.check_and_execute(
-                        req.action, speed=req.speed, duration=req.duration, angle=req.angle
-                    )
+                    state["verb_active"] = True
+                    try:
+                        result = safety.check_and_execute(
+                            req.action, speed=req.speed, duration=req.duration, angle=req.angle
+                        )
+                    finally:
+                        state["verb_active"] = False
+                        # The verb's end is the brain's last word, not its start.
+                        state["last_command_at"] = time.monotonic()
             return {"executed": True, "result": result, "driver": driver}
         except SafetyViolation as e:
             return refuse("safety_distance", str(e), driver)

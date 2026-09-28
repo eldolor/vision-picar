@@ -170,7 +170,7 @@ def _max_speed():
 
 def _footprint():
     """nav2 plans with, and collision_monitor checks, a rectangle that must be
-    the URDF's body: deck length by the wheels' outer width. Since 3.18
+    the URDF's body: its outer length by its outer width. Since 3.18
     robot/safety.py vets with the same rectangle (and sim/grid_world.py
     collides with it), so its copy is checked here too."""
     from robot.safety import FOOTPRINT_LENGTH_M, FOOTPRINT_WIDTH_M
@@ -181,8 +181,7 @@ def _footprint():
         "collision_monitor": _footprint_xy(nav["collision_monitor"]["ros__parameters"]["FootprintApproach"]["points"]),
         "robot/safety.py": (round(FOOTPRINT_LENGTH_M / 2, 6), round(FOOTPRINT_WIDTH_M / 2, 6)),
     }
-    urdf = (round(_xacro("deck_length") / 2, 6),
-            round((_xacro("wheel_separation") + _xacro("wheel_width")) / 2, 6))
+    urdf = (round(_xacro("body_length") / 2, 6), round(_xacro("body_width") / 2, 6))
     ok = all(abs(s[0] - urdf[0]) < 1e-6 and abs(s[1] - urdf[1]) < 1e-6 for s in shapes.values())
     return ok, {**shapes, "urdf (half length, half width)": urdf}
 
@@ -228,7 +227,7 @@ DUPLICATES = {
 
 # The value each registered physical constant carries, so the unlisted-
 # duplicate detector knows these are accounted for.
-REGISTERED_VALUES = {0.0325, 0.172, 0.228, 0.198}
+REGISTERED_VALUES = {0.172, 0.253, 0.231, 0.1265, 0.1155, 0.0425}
 
 
 def test_duplicates_are_within_budget():

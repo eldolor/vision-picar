@@ -52,7 +52,7 @@ from sim.grid_world import (
 )
 from sim.sensors import DistanceSensorModel
 from sim import renderer
-from robot.interface import RobotInterface
+from robot.interface import RobotInterface, carry_out_verb
 
 logger = logging.getLogger("mock_robot")
 
@@ -70,23 +70,25 @@ DEFAULT_CELL_M = DEFAULT_CELL_CM / 100.0
 
 # ---------- the chassis, phase R0 (PLAN-ros-alignment.md) ----------
 #
-# These are the numbers that will SHIP, read off `HARDWARE-BOM.md` 4.3
-# (Yahboom L-type 520 motors on the differential chassis chosen in
-# `PLAN-onboard-perception.md` 1.1), and that is the whole point of taking
-# wheel velocities rather than a twist: `diff_drive_controller` will be
-# configured with exactly these, so R4 puts its kinematics under test
+# These are the numbers that will SHIP, and that is the whole point of
+# taking wheel velocities rather than a twist: `diff_drive_controller` will
+# be configured with exactly these, so R4 puts its kinematics under test
 # against parameters that have already been exercised here.
 #
-# Two are verified and one is not, and the difference is flagged rather
-# than averaged away:
-WHEEL_RADIUS_M = 0.0325  # 65mm rubber wheels [V]
-ENCODER_COUNTS_PER_REV = 1760  # 11 lines x 40:1 gearbox, 4x quadrature [I]
-# **PLACEHOLDER.** `HARDWARE-BOM.md` 4.3: "Track width, deck dimensions and
-# payload are unpublished: measure on the chassis", and its bring-up item 4
-# says to set it then. 0.172m is Waveshare's own firmware default -- the
-# right shape and the wrong robot. It scales pivot rate only (a straight
-# line does not depend on it), so a wrong value here makes the sim turn at
-# the wrong speed and never in the wrong direction.
+# **The chassis is the Waveshare UGV Rover since 2026-09-27**
+# (`PLAN-ros-alignment.md` 3.21; it replaced the 2WD Yahboom build these
+# were first read from). All three are the stock firmware's own values for
+# this robot -- `General_Driver/movtion_module.h`, `mm_settings()`,
+# mainType 2, "UGV Rover" -- and the tyre agrees with the product page:
+WHEEL_RADIUS_M = 0.040  # 80mm tyres [V]
+ENCODER_COUNTS_PER_REV = 1650  # ONE_CIRCLE_PLUSES for mainType 2 [V]
+# The firmware's TRACK_WIDTH for mainType 2 [V]. This was a flagged
+# PLACEHOLDER while the chassis was the Yahboom's -- Waveshare's number,
+# "the right shape and the wrong robot". It is the right robot now. What is
+# still unmeasured is skid steer's EFFECTIVE track, which is wider than the
+# geometric one because the wheels scrub on every turn: that is
+# `wheel_separation_multiplier` in controllers.yaml, set on the car (R8).
+# It scales pivot rate only (a straight line does not depend on it).
 TRACK_WIDTH_M = 0.172
 
 # What speed=100 means at the wheel. Derived from the cell rate the verbs
@@ -96,7 +98,8 @@ TRACK_WIDTH_M = 0.172
 # recorded demo and every step budget in the suite. The implied 176 rpm sits
 # between the motor's rated 150 and no-load 300 (4.3), so it is also a
 # number the real part can actually produce.
-# The RPLidar C1's rated range (HARDWARE-BOM.md); the sim's scan casts this far.
+# The lidar's rated range -- the RPLidar C1's and the UGV Rover kit's D500
+# (LDROBOT STL-19P) alike, 12 m; the sim's scan casts this far.
 LIDAR_RANGE_M = 12.0
 
 WHEEL_MAX_RAD_S = (
@@ -297,8 +300,8 @@ class MockRobot(RobotInterface):
 
         Positions in radians and velocities in rad/s because that is what
         `hardware_interface` exchanges; the counts are the same positions in
-        the units the ESP32 will actually report (`HARDWARE-BOM.md` 4.3's
-        1760 per revolution at 4x quadrature), so R7's fake board has
+        the units the ESP32 will actually report (1650 per revolution,
+        the firmware's figure for the UGV Rover), so R7's fake board has
         something to serialise and R2 has something to publish.
         """
         per_rad = ENCODER_COUNTS_PER_REV / (2 * math.pi)
@@ -339,27 +342,93 @@ class MockRobot(RobotInterface):
     # that `turn_left(45)` now turns 45 degrees instead of rounding up to 90
     # -- which is the point of R0, and what makes P25's A/B runnable.
 
+    # Since 3.22 these go through `carry_out_verb()` -- the same loop the
+    # safety layer runs a guarded verb through, with no limit -- so a verb
+    # called here and the same verb through `robot/safety.py` are the same
+    # motion to the last bit whenever nothing is in the way.
+
+    def _verb(self, action: str, **kwargs) -> Optional[dict]:
+        plan = self.verb_plan(action, **kwargs)
+        if plan is None:
+            return None
+        return self.verb_done(action, plan, carry_out_verb(self, plan), **kwargs)
+
     def drive_forward(self, speed: int = 50, duration: float = 0.5) -> dict:
-        cells = self._speed_duration_to_cells(speed, duration)
-        result = self._drive_cells(cells, speed)
-        self._settle(duration)
-        return {"action": "drive_forward", "speed": speed, "duration": duration,
-                **result}
+        return (self._verb("FORWARD", speed=speed, duration=duration)
+                or {"action": "drive_forward", "speed": speed, "duration": duration,
+                    "requested": 0, "moved": 0.0})
 
     def reverse(self, speed: int = 50, duration: float = 0.5) -> dict:
-        cells = self._speed_duration_to_cells(speed, duration)
-        result = self._drive_cells(-cells, speed)
-        self._settle(duration)
-        return {"action": "reverse", "speed": speed, "duration": duration,
-                **result}
+        return (self._verb("REVERSE", speed=speed, duration=duration)
+                or {"action": "reverse", "speed": speed, "duration": duration,
+                    "requested": 0, "moved": 0.0})
 
     def turn_left(self, angle: int = 90) -> dict:
-        return {"action": "turn_left", "angle": angle,
-                **self._pivot(-float(angle))}
+        return (self._verb("LEFT", angle=angle)
+                or {"action": "turn_left", "angle": angle, **self._pivot(0.0)})
 
     def turn_right(self, angle: int = 90) -> dict:
-        return {"action": "turn_right", "angle": angle,
-                **self._pivot(float(angle))}
+        return (self._verb("RIGHT", angle=angle)
+                or {"action": "turn_right", "angle": angle, **self._pivot(0.0)})
+
+    # ---------- the same verbs, for the safety layer to carry out (3.22) ----------
+    #
+    # Exactly the wheel speeds and extents the verbs have always used,
+    # so a verb the safety layer runs covers what the verb above covers
+    # whenever the way is clear -- what changes is that it is re-vetted every
+    # period and stops at the line instead of at the sim's half-cell cap.
+
+    def verb_plan(self, action: str, speed: int = 50, duration: float = 0.5,
+                  angle: int = 90) -> Optional[dict]:
+        if action in ("FORWARD", "REVERSE"):
+            cells = self._speed_duration_to_cells(speed, duration)
+            if cells == 0:
+                return None
+            w = max(1, min(100, speed)) / 100.0 * WHEEL_MAX_RAD_S
+            sign = 1.0 if action == "FORWARD" else -1.0
+            return {"kind": "straight", "left_rad_s": sign * w, "right_rad_s": sign * w,
+                    "target": cells * DEFAULT_CELL_M, "wall_clock": False,
+                    "cells": sign * cells, "path_m0": self._path_m}
+        if action in ("LEFT", "RIGHT"):
+            if not angle:
+                return None
+            w = WHEEL_MAX_RAD_S
+            # RIGHT: left wheel forward (theta increases to the right).
+            left, right = (w, -w) if action == "RIGHT" else (-w, w)
+            return {"kind": "turn", "left_rad_s": left, "right_rad_s": right,
+                    "target": float(abs(angle)), "wall_clock": False}
+        return None
+
+    def verb_done(self, action: str, plan: dict, outcome: dict, **kwargs) -> dict:
+        short = ({"stopped_short": outcome["ended"], "reason": outcome["reason"]}
+                 if outcome["ended"] != "complete" else {})
+        if plan["kind"] == "straight":
+            sign = 1.0 if plan["cells"] > 0 else -1.0
+            moved_cells = sign * (self._path_m - plan["path_m0"]) / DEFAULT_CELL_M
+            self.world._record(
+                f"MOVE requested={plan['cells']:g} moved={moved_cells:.3f} "
+                f"pos=({self.world.x:.2f},{self.world.y:.2f}) "
+                f"cell=({self.world.robot_x},{self.world.robot_y}) "
+                f"heading_deg={self.world.heading_deg:.1f}"
+                + (f" SHORT ({outcome['ended']})" if short else ""))
+            duration = kwargs.get("duration", 0.5)
+            self._settle(duration)
+            return {"action": "drive_forward" if action == "FORWARD" else "reverse",
+                    "speed": kwargs.get("speed", 50), "duration": duration,
+                    "requested": plan["cells"], "moved": moved_cells, **short}
+        angle = kwargs.get("angle", 90)
+        degrees = float(angle) if action == "RIGHT" else -float(angle)
+        self.world._record(
+            f"TURN {degrees:+.1f}deg heading={self.world.heading.name} "
+            f"heading_deg={self.world.heading_deg:.1f}"
+            + (f" SHORT ({outcome['ended']})" if short else ""))
+        return {"action": "turn_right" if action == "RIGHT" else "turn_left", "angle": angle,
+                "heading": self.world.heading.name, "heading_deg": self.world.heading_deg,
+                **short}
+
+    # How many times `stop()` has been called -- the safety layer's verb loop
+    # ends a verb the moment this changes (3.22), whoever called it.
+    stop_count = 0
 
     def stop(self) -> dict:
         """Zero the standing wheel command, then say so.
@@ -372,6 +441,7 @@ class MockRobot(RobotInterface):
         """
         self._cmd_left_rad_s = 0.0
         self._cmd_right_rad_s = 0.0
+        self.stop_count += 1
         self.world._record("STOP")
         return {"action": "stop"}
 
@@ -638,35 +708,6 @@ class MockRobot(RobotInterface):
         speed = max(0, min(100, speed))
         cells = (speed / 100.0) * CELLS_PER_SECOND_AT_FULL_SPEED * duration
         return max(1, round(cells)) if speed > 0 and duration > 0 else 0
-
-    def _drive_cells(self, cells: float, speed: int) -> dict:
-        """Realise a straight-line move of `cells` cells through the wheels.
-
-        Both wheels at the same velocity, for as long as that velocity needs
-        to cover the distance. The integration time is therefore NOT the
-        caller's `duration` -- a verb's `duration` is quantised into a whole
-        number of cells first (`_speed_duration_to_cells()`, unchanged since
-        Phase 0), so the two were already only loosely related. `_settle()`
-        still sleeps the declared `duration`, because that is what S4's
-        watchdog readout is measured against.
-        """
-        if cells == 0:
-            return {"requested": 0, "moved": 0.0}
-        w = max(1, min(100, speed)) / 100.0 * WHEEL_MAX_RAD_S
-        sign = 1.0 if cells > 0 else -1.0
-        dt = abs(cells) * DEFAULT_CELL_M / (w * WHEEL_RADIUS_M)
-        moved_cells = self.drive_wheels(sign * w, sign * w, dt)["moved_cells"]
-        self.world._record(
-            f"MOVE requested={cells} moved={moved_cells:.3f} "
-            f"pos=({self.world.x:.2f},{self.world.y:.2f}) "
-            f"cell=({self.world.robot_x},{self.world.robot_y}) "
-            f"heading_deg={self.world.heading_deg:.1f}"
-        )
-        # No `position` in the ack any more. It was a grid cell, and a
-        # motor driver cannot report one -- the body's own account of how
-        # far it went is `get_odometry()`, and where it ended up is the
-        # world's to say (`get_pose()`).
-        return {"requested": cells, "moved": moved_cells}
 
     def _pivot(self, degrees: float) -> dict:
         """Turn in place by `degrees` -- positive to the robot's right --

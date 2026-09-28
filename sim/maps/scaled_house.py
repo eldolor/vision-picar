@@ -2,8 +2,9 @@
 scaled_house.py -- a house at real-world proportions (PLAN-ros-alignment.md R6).
 
 The starter house's doors are ONE grid cell: 0.30 m. That was sized for the
-retired PiCar-X's one-move step, and the chassis actually chosen is 0.228 x
-0.198 m across its wheels -- about 5 cm of margin per side. nav2, planning
+retired PiCar-X's one-move step, and the chassis chosen was 0.228 x 0.198 m
+across its wheels -- about 5 cm of margin per side (the UGV Rover, since
+PLAN-ros-alignment 3.21, is 0.253 x 0.231: 3.5 cm). nav2, planning
 with that footprint on a 5 cm SLAM map, sealed a starter-house door whenever
 SLAM drew a jamb one cell thick: 5 of 6 goals on one run, 1 of 6 on the next.
 Real interior doors are 70-90 cm. So this house keeps the same 0.30 m cell

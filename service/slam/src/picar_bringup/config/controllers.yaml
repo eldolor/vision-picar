@@ -18,7 +18,7 @@ diff_drive_controller:
     # MUST equal the URDF and sim/mock_robot.py -- tests/test_urdf.py pins
     # all three together.
     wheel_separation: 0.172
-    wheel_radius: 0.0325
+    wheel_radius: 0.040
     publish_rate: 20.0
     odom_frame_id: odom
     base_frame_id: base_footprint

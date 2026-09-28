@@ -24,12 +24,12 @@ from sim.maps import build_world
 from sim.mock_robot import MockRobot, WHEEL_RADIUS_M
 
 CELL_CM = 30.0
-# The URDF body (picar_description's xacro): deck length by the wheels'
-# outer width. Written out here rather than imported, so the metric does not
+# The URDF body (picar_description's xacro): the UGV Rover's outer 253 x
+# 231 mm since 3.21 (the 2WD build's 228 x 198 before). Written out here rather than imported, so the metric does not
 # move if the constant under test does -- tests/test_wall_linters.py is what
 # keeps the copies in step.
-HALF_LENGTH = 11.4 / CELL_CM   # cells
-HALF_WIDTH = 9.9 / CELL_CM
+HALF_LENGTH = 12.65 / CELL_CM  # cells
+HALF_WIDTH = 11.55 / CELL_CM
 
 PERIOD_S = 0.05          # robot/server.py's WHEEL_LOOP_INTERVAL_S
 SPEED_M_S = 0.1          # R2b's test speed: 0.5 cm per period
@@ -251,7 +251,7 @@ PIVOT_REACH_DEG = math.degrees(PIVOT_RAD_S * RUN_S) - 2  # what one run can reac
 
 def pivot_starts(house, n, seed=0):
     """`n` seeded (x, y, theta) where the chassis is clear at its heading
-    (gap >= 1 cm) but something lies inside its 15.1 cm turning circle --
+    (gap >= 1 cm) but something lies inside its 17.1 cm turning circle --
     the only starts where a pivot can touch anything."""
     rng = random.Random(f"pivot-{house}-{seed}")
     world = build_world(house)

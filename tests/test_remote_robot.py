@@ -16,7 +16,7 @@ from brain.agent import ObjectSearchAgent
 from brain.memory import MissionMemory
 from control.remote_robot import RemoteRobot, RobotTransportError
 from control.remote_world import RemoteWorld
-from robot.safety import SafetyViolation
+from robot.safety import SafetyController, SafetyViolation
 from tests.conftest import fresh_mock_robot, mock_world_for
 
 MAX_STEPS = 150
@@ -81,8 +81,14 @@ def test_return_shapes_match_the_in_process_backend(robot_over_asgi):
     for call in ("look_left", "look_right", "look_center", "stop"):
         assert getattr(robot_over_asgi, call)() == getattr(local, call)()
 
-    assert robot_over_asgi.turn_right(90) == local.turn_right(90)
-    assert robot_over_asgi.drive_forward(50, 0.5) == local.drive_forward(50, 0.5)
+    # The server carries a verb out through its safety layer, which since
+    # 3.22 re-vets it every period and stops it at the line -- so the like-
+    # for-like comparand is the local backend through a SafetyController
+    # too, not a bare verb that nothing guards.
+    local_safety = SafetyController(local, 20.0)
+    assert robot_over_asgi.turn_right(90) == local_safety.check_and_execute("RIGHT", angle=90)
+    assert robot_over_asgi.drive_forward(50, 0.5) == local_safety.check_and_execute(
+        "FORWARD", speed=50, duration=0.5)
 
 
 def test_safety_veto_raises_the_same_exception_it_does_in_process(robot_over_asgi):

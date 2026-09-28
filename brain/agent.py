@@ -24,7 +24,7 @@ from typing import Callable, Optional
 
 from robot.interface import RobotInterface
 from robot.interface import NO_SENSOR_CM
-from robot.safety import FORWARD_ACTIONS, SafetyController, SafetyViolation
+from robot.safety import FORWARD_ACTIONS, VERB_MIN_MOVE_M, SafetyController, SafetyViolation
 from brain.arrival import ARRIVED, NOT_JUDGED, ArrivalCheck, arrived_scene
 from brain.memory import MissionMemory
 from world.interface import NullWorld, WorldInterface, unusable_pose
@@ -134,7 +134,10 @@ class ConstrainedAgent:
         if clearance_cm is None:
             # "Nothing within range" -- M3's second outcome, never a veto.
             free_space = "clear"
-        elif clearance_cm < self.safety.min_distance_cm:
+        elif clearance_cm < self.safety.min_distance_cm + VERB_MIN_MOVE_M * 100:
+            # Since 3.22 a guarded FORWARD stops AT the line and a move that
+            # would cover under VERB_MIN_MOVE_M is refused -- so a robot
+            # parked on the line has no forward, though clearance == min.
             free_space = "none"
         elif clearance_cm < SCENE_CLEAR_CM:
             free_space = "some"
@@ -369,12 +372,17 @@ class MissionAgent(ConstrainedAgent):
         if pose.get("usable"):
             self.visited_buckets.add(self._bucket(pose["x_m"], pose["y_m"], bucket_m))
 
+        # "Clear" means a move that way would get somewhere: since 3.22 a
+        # guarded FORWARD stops AT the collar's line, so a reading of exactly
+        # the threshold is where the last move ended, not room for the next
+        # -- the same rule `sensed_scene()` applies.
+        room_cm = self.side_clearance_cm + VERB_MIN_MOVE_M * 100
         self.robot.look_right()
-        right_clear = self.robot.get_distance() >= self.side_clearance_cm
+        right_clear = self.robot.get_distance() >= room_cm
         self.robot.look_left()
-        left_clear = self.robot.get_distance() >= self.side_clearance_cm
+        left_clear = self.robot.get_distance() >= room_cm
         self.robot.look_center()
-        forward_clear = self.robot.get_distance() >= self.side_clearance_cm
+        forward_clear = self.robot.get_distance() >= room_cm
 
         if pose.get("usable"):
             heading_deg = pose["heading_deg"]

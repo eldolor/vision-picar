@@ -8,8 +8,10 @@ methods. brain/ never imports a backend directly -- only this interface,
 via robot/factory.py.
 """
 
+import math
+import time
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Callable, Optional, Tuple
 
 # What `get_distance()` returns on a backend that has no distance sensor at
 # all -- a photograph has no depth in it, so ReplayRobot and TeleopRobot
@@ -178,6 +180,96 @@ def unusable_wheels() -> dict:
     """
     return {"usable": False, "left": None, "right": None,
             "wheel_radius_m": None, "track_width_m": None, "counts_per_rev": None}
+
+
+# ---- carrying out a verb (PLAN-ros-alignment.md 3.22) ----
+#
+# The MECHANICS of a verb, shared by the safety layer (which passes a
+# `limit` that re-vets every period) and a backend's own unguarded verbs (no
+# limit) -- one loop, so a guarded verb and a raw one are the same motion to
+# the last bit whenever the way is clear. The decisions are not here: what
+# the verb means is the backend's (`verb_plan()`), and what is safe is
+# `robot/safety.py`'s.
+VERB_PERIOD_S = 0.05          # one wheel-loop period (robot/server.py)
+# The most a turn rotates between two checks: a check compares the chassis
+# before and after a step, so a step so large a corner can pass THROUGH
+# something and out the far side is not checked at all. The sim's verbs
+# turn at ~400 deg/s, 20 degrees a period; five is the sim's own collision
+# sub-step (`sim/grid_world.py` MAX_SUBSTEP_RAD).
+VERB_TURN_STEP_DEG = 5.0
+_VERB_DONE_M = 1e-7
+_VERB_DONE_DEG = 1e-5
+
+Limit = Callable[[float], Tuple[float, Optional[str]]]
+
+
+def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] = None) -> dict:
+    """Carry out `plan` (a backend's `verb_plan()`) as a standing wheel
+    command, in periods, closed on the ENCODERS rather than the clock.
+
+    Each period, in order: (1) if anyone has called `stop()` since the verb
+    began (`/stop`, the watchdog), the verb is over and its command is never
+    sent again; (2) how much is left, from the wheel positions; (3) how much
+    of this period's share `limit(amount)` allows -- metres for a
+    translation, degrees for a turn -- where 0 ends the verb "clamped";
+    (4) command it, and let the time pass: the wall clock for a real board,
+    `advance()` for the sim.
+
+    Returns {"done": metres or degrees achieved, "ended": "complete" |
+    "clamped" | "stopped" | "stalled" | "timeout", "reason"}.
+    """
+    straight = plan["kind"] == "straight"
+    left, right, target = plan["left_rad_s"], plan["right_rad_s"], plan["target"]
+    w0 = robot.get_wheel_state()
+    radius, track = w0["wheel_radius_m"], w0["track_width_m"]
+    v = (left + right) / 2.0 * radius
+    rate = abs(v) if straight else math.degrees(abs((right - left) * radius / track))
+    stops0 = getattr(robot, "stop_count", 0)
+
+    def achieved() -> float:
+        w = robot.get_wheel_state()
+        dl = w["left"]["position_rad"] - w0["left"]["position_rad"]
+        dr = w["right"]["position_rad"] - w0["right"]["position_rad"]
+        if straight:
+            return abs((dl + dr) / 2.0 * radius)
+        return abs(math.degrees((dr - dl) * radius / track))
+
+    ended, reason = "timeout", None
+    periods = int(math.ceil(target / rate / VERB_PERIOD_S)) * 3 + 20 if rate else 0
+    try:
+        for _ in range(periods):
+            if getattr(robot, "stop_count", 0) != stops0:
+                ended, reason = "stopped", "stop() was called"
+                break
+            done = achieved()
+            remaining = target - done
+            if remaining <= (_VERB_DONE_M if straight else _VERB_DONE_DEG):
+                ended = "complete"
+                break
+            amount = min(remaining, rate * VERB_PERIOD_S)
+            if not straight:
+                amount = min(amount, VERB_TURN_STEP_DEG)
+            if limit is not None:
+                allowed, why = limit(amount)
+                if allowed <= (_VERB_DONE_M if straight else _VERB_DONE_DEG):
+                    ended, reason = "clamped", why
+                    break
+                amount = min(amount, allowed)
+            # Full speed for a shorter time, never a slower wheel: the same
+            # motion, at the rate the motors are asked for.
+            step = amount / rate
+            robot.set_wheel_velocity(left, right)
+            if plan.get("wall_clock"):
+                time.sleep(step)
+            else:
+                robot.advance(step)
+                if abs(achieved() - done) <= 1e-12:
+                    ended, reason = "stalled", "the body did not move"
+                    break
+    finally:
+        if ended != "stopped":
+            robot.set_wheel_velocity(0.0, 0.0)
+    return {"done": achieved(), "ended": ended, "reason": reason}
 
 
 def unusable_scan() -> dict:
@@ -377,6 +469,30 @@ class RobotInterface(ABC):
         than one told it cannot.
         """
         raise NotImplementedError(f"{type(self).__name__} cannot take wheel velocities")
+
+    def verb_plan(self, action: str, speed: int = 50, duration: float = 0.5,
+                  angle: int = 90) -> Optional[dict]:
+        """What a motion verb MEANS on this body, so the safety layer can
+        carry it out itself, re-vetting every period -- 3.22.
+
+        A dict: `kind` ("straight" or "turn"), the `left_rad_s` /
+        `right_rad_s` the verb drives at, its `target` (metres, or degrees),
+        and `wall_clock` (True if time passes on its own, False if the
+        caller must `advance()` it, as in the sim).
+
+        **None by default**, and None means "run my own verb, as before":
+        right for a backend whose verbs are already guarded (`drive: ros`'s
+        wrapper), are somebody else's (`RemoteRobot` -- the robot server
+        guards them), or move nothing (a replay, a phone).
+        """
+        return None
+
+    def verb_done(self, action: str, plan: dict, outcome: dict, **kwargs) -> dict:
+        """The result of a verb the safety layer carried out from
+        `verb_plan()`, in the same shape this backend's own verb returns.
+        Only called on a backend that returned a plan."""
+        raise NotImplementedError(f"{type(self).__name__} returned a verb plan but "
+                                  "cannot report on it")
 
     def advance(self, dt: float) -> None:
         """Let `dt` seconds of a standing command elapse -- phase R2b.

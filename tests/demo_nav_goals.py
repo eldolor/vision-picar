@@ -25,7 +25,7 @@ import httpx
 from sim.maps import build_world
 
 CELL = 0.30
-HALF_WIDTH_M = 0.10          # the chassis, picar_description: 0.198 m across the wheels
+HALF_WIDTH_M = 0.1155        # the chassis, picar_description: the UGV Rover's 0.231 m
 TERMINAL = {"succeeded", "aborted", "canceled", "rejected"}
 
 # Six places per house, in order, each reached from wherever the last one
