@@ -77,6 +77,10 @@ _SKIP_DIRS = {
     ".pytest_cache",
     "recordings",
     "evaluations",
+    # Claude Code's settings and its git WORKTREES -- full second checkouts
+    # of this repo, service/slam/ included, so walking into one reports the
+    # real bridge's rclpy import as a leak (found merging docs-review).
+    ".claude",
 }
 
 
