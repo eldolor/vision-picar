@@ -188,7 +188,10 @@ still load-bearing:
   The Hailo path is history: do not re-open it and do not spend on a Hailo
   compile run. Camera IMX219, motor board Waveshare ESP32 General Driver,
   one ST3215 pan servo, RPLidar C1. The software assumes JetPack 6.x /
-  Ubuntu 22.04 / ROS 2 Humble. **Nothing is ordered.**
+  Ubuntu 22.04 / ROS 2 Humble. **The dev kit was ORDERED 2026-09-27**
+  (Amazon, $399, arriving Oct 14-26) -- it is `JETSON-BOM.md` section 1's
+  "buy regardless" line. **The chassis is not ordered**: the Waveshare UGV
+  Rover kit waits on Waveshare's answer about 25 W from its 3S UPS.
 * **Perception, shipped:** `brain/perceive.py` defaults to
   `yoloe-11s-seg.pt` -> CLIP, `low_confidence` crops, 16 crops/frame, gate
   P >= 0.8, no floor mask -- 82% at 3 FP, 139 ms on laptop CPU, on the
