@@ -14,6 +14,13 @@ what comes back.
 > Vision Autopilot, and gained R0-R2's turn step, sized turns, spin and
 > blocked readouts, and a self-reconnecting brain link. The rest of the
 > document predates that and is unchanged.
+>
+> **Updated 2026-09-28** against the working tree on `dev`: section 0 (the
+> process table, who serves the page, the local brain removed), 1's shared
+> mechanics and 1.2.a (capture size, models), 1.2.b (storage), 3 (tap-to-goal
+> and the routes behind each readout), 4 (robot URL, brain secret), 5 (the
+> safety table) and 6 (the current AWS topology; the ECS layout is now
+> history). Section 1's other detail is still as of `01054a0`.
 
 The app has three tabs: **Guide**, **Sim**, **Settings**. This
 doc covers all three, then the AWS deployment they run against, in the
@@ -66,25 +73,24 @@ behind `x-app-secret`:
 |---|---|---|---|
 | **robot server** | `:8000` | Safety layer + watchdog + one `RobotInterface` backend (sim / teleop / eventually hardware) | `robot/server.py` |
 | **brain server** | `:8001` | The autonomy loop (`MissionRunner`) as a service -- start/stop/observe a mission over HTTP | `control/brain_server.py` |
-| **vision-analyze service** | (cloud only) | Calls Amazon Bedrock for every vision question -- scene description, navigation, AR guidance | `service/vision_analyze/app.py` |
-| **admin service** | (cloud only) | Lists/views/deletes recorded walks on the shared EFS volume | `service/admin/`, not reachable from the twin UI |
+| **vision-analyze service** | (cloud only) | Calls Amazon Bedrock for every vision question -- scene description, navigation, AR guidance | `service/vision_analyze/app.py`, run in AWS Lambda by `service/lambda/vision_handler.py` |
+| **walks service** | (cloud only) | Lists/views/scores/deletes recorded walks in the S3 bucket; serves the `/admin` console's API | `control/admin_server.py` + `control/walk_store.py`, run in Lambda by `service/lambda/walks_handler.py`; not reachable from the twin UI |
 
-The twin (`web-twin/index.html`) is a browser client of the first three.
-It never talks to a simulator or a robot backend directly -- everything
-it does goes over HTTP to `robot/server.py` and/or `control/brain_server.py`,
-the same way a Pi's own client eventually will. `robot/server.py` is also
-what *serves* `index.html` in the deployed app (`GET /`), so "load the
-app" and "have a robot connection" can be the same request.
+The twin (`web-twin/index.html` + `app.js`) is a browser client of the
+first three. It never talks to a simulator or a robot backend directly --
+everything it does goes over HTTP to `robot/server.py` and/or
+`control/brain_server.py`, the same way a Pi's own client eventually will.
+Locally `robot/server.py` also *serves* the page (`GET /`), so "load the
+app" and "have a robot connection" can be the same request; deployed, the
+page comes from CloudFront's static bucket and the robot is a separate
+URL (section 6).
 
-Two independent "brains" exist and only one may drive at a time:
-
-- **Rule-based / vision-in-JS** -- logic re-implemented in the page's own
-  JavaScript, no `control/` service needed. This is the Sim tab's Local
-  brain panel.
-- **Real `MissionRunner`** -- `control/brain_server.py` running the actual
-  Python mission loop (`brain/agent.py` policies, or `brain/vision_agent.py`
-  for the vision policy). This is the Sim tab's Remote brain panel, and
-  (new) Robot view's "Drive via brain" switch.
+**One brain:** `control/brain_server.py` running the Python mission loop
+(`brain/agent.py` policies, `brain/vision_agent.py` for the vision policy,
+`brain/tiered.py` for the tiered one). It is the Sim tab's Remote brain
+panel and Robot view's "Drive via brain" switch. *(Until 2026-09-25 there
+was a second, JS "Local brain" in the page; it was deleted with the ROS
+alignment.)*
 
 ---
 
@@ -110,13 +116,15 @@ and redesign history for this tab; this section is what it does today.
   (`#guide-fullscreen`, CSS `position:fixed`, not the real Fullscreen
   API -- iOS Safari's `requestFullscreen()` support for arbitrary
   elements is unreliable).
-- Every capture downscales to a 960px long edge before upload
-  (`GUIDANCE_MAX_CAPTURE_DIM`) -- smaller payload, faster Bedrock
-  inference, no visible quality loss for a coarse position/action
-  question.
-- Loop cadence: `GUIDANCE_THROTTLE_MS` / `ROBOT_THROTTLE_MS` = **500ms**
-  (both routes moved to Amazon Nova Lite on 2026-08-28; before that Robot
-  view paced itself slower to match Sonnet's round trip). On a
+- Every capture downscales to a 1280px long edge before upload
+  (`CAPTURE_MAX_DIM` in `app.js`; it was 960, which never engaged on a
+  640px camera stream -- the comment above the constant has why 1280).
+  The walk recorder saves the same bytes the cloud was sent, so a replay
+  asks the model exactly what the live call did.
+- Loop cadence: `GUIDANCE_THROTTLE_MS` / `ROBOT_THROTTLE_MS` = **500ms**.
+  `/guidance` runs on Amazon Nova Lite; `/navigate` defaults to Claude
+  Opus 4.5 (with a model picker), so Robot view's round trip is longer and
+  the overlapping calls below are what keep it near 500ms. On a
   consecutive error the delay backs off exponentially, capped at 30s, and
   resets to the base rate the moment a call succeeds. The backoff
   *replaces* the tick already scheduled at the base rate rather than
@@ -274,7 +282,8 @@ unchecks the other, enforced both directions in the checkbox handlers.
 #### 1.2.a Default: one-off `/navigate` preview
 
 **Backend:** `POST /navigate` on the vision-analyze service
-(`describe_image_bytes_navigate()`, also Nova Lite by default). Exactly
+(`describe_image_bytes_navigate()`, Claude Opus 4.5 by default, and any
+model on the service's allow-list via the model picker). Exactly
 the same request/response plumbing as Guide me (`callGuidanceEndpoint()`
 picks the route: `state.guidanceMode === "robot" ? "/navigate" : "/guidance"`),
 different prompt and schema.
@@ -367,9 +376,10 @@ never look like arrival).
   ticks, both to avoid pausing on one noisy read and because (unlike
   Guide) the run is meant to be a continuous decision readout, not a
   one-shot "you found it."
-- Hold the phone low, ~10cm -- roughly the car's camera height. A
-  chest-height view isn't the robot's view, and the whole point of this
-  mode is testing the vision policy on the actual geometry it will see.
+- Put the phone on a wheeled rig at ~10-13cm, not held in the hand
+  (`CLAUDE.md` Stage 0 has why). A chest-height view isn't the robot's
+  view, and the whole point of this mode is testing the vision policy on
+  the actual geometry it will see.
 
 This sub-mode never writes anything and never touches `robot/server.py`
 or `control/` -- it's the cheapest, fastest go/no-go signal for "does the
@@ -387,7 +397,7 @@ connected in Settings; `brain.allow_recording` gates it server-side too.
 1. Start -> `beginWalkRecording()` generates a walk name from the target
    + timestamp (`newWalkName()`).
 2. Each tick's frame+reply -> `POST {brainUrl}/recording/frame`
-   (`control/brain_server.py:300`), fire-and-forget (`recordWalkFrame()`)
+   (`control/recording_routes.py`, mounted by the brain), fire-and-forget (`recordWalkFrame()`)
    -- a failed save must never interrupt the walk or delay the next
    `/navigate` call. A running saved/failed counter renders under the
    switch. **The frame's `seq` is allocated when the vision call is
@@ -399,9 +409,13 @@ connected in Settings; `brain.allow_recording` gates it server-side too.
    a row for each. Measured against the defect, every other frame was
    lost. Dispatch order is also capture order, which is the order
    `sim/replay_robot.py` replays a walk in.
-3. `control/brain_server.py` writes frames to the shared EFS volume
-   (`cloudformation/recordings.yaml`) -- the same storage the separate
-   `/admin` service (`service/admin/`) lists/views/deletes from later.
+3. The frames go to a `control/walk_store.py` backend: a local
+   `recordings/` directory by default (`brain.recording_backend: local`),
+   or the S3 bucket from `cloudformation/recordings-s3.yaml`
+   (`RECORDING_BACKEND=s3`) -- the same storage the `/admin` console's walks
+   Lambda lists/views/deletes from later. *(This was an EFS volume until
+   `PLAN-aws-cost-redesign.md` Stage 1 moved the walks to S3; the volume
+   was destroyed with the VPC on 2026-09-05.)*
 4. Stop -> the walk name and save count show in a toast, with the exact
    replay command:
    `python -m tests.demo_replay_mission recordings/<walk> "<target>"`.
@@ -687,15 +701,31 @@ Every readout here is a route the robot serves:
   `sim/renderer.py` (the JS raycaster was deleted 2026-09-25). The
   **frame source** line says `server`, or `none` if a backend sends no
   pixels -- never a picture the page invented.
-- **Depth strip** (M2/M3) -- eight zones, the path zones the collar reads
-  outlined, and the clearance it compares.
-- **Odometry** -- path length and heading, continuous since R0.
+- **Depth strip** (M2/M3) -- `GET /depth`: eight zones, the path zones the
+  collar reads outlined, and the clearance it compares.
+- **Odometry** -- `GET /odometry`: path length and heading, continuous
+  since R0.
 - **World map** (N1) -- `GET /world/map`, discovered as the robot drives:
   free, wall and never-seen in three tones, with the robot drawn at
   `GET /world/pose`.
+- **SLAM error** (R5) -- under `WORLD_MODE=ros`, `GET /world/error` gives
+  how far SLAM's pose and odometry alone are from the simulator's truth;
+  the truth is drawn as an outlined ghost and both errors are printed
+  under the map.
 
-R2's `/wheels`, `/scan` and `/world/truth` are served but not drawn yet;
-they exist for the ROS nodes (R4) and SLAM's error readout (R5).
+**Tap-to-goal** (R6). When the map is a SLAM map (`WORLD_MODE=ros`), tapping
+it sends `POST /world/goal` with the tapped point in the house frame
+(`x_m`, `y_m`); nav2 plans and drives, and its commands still pass
+`collision_monitor` and `robot/safety.py`. `GET /world/goal` is polled to
+draw the goal and its state; a D-pad twist cancels it. **Since
+`PLAN-ros-alignment.md` 3.21 a goal is an autonomous driver**
+(`ros`), arbitrated like the brain: while a mission holds the robot the
+goal is refused with `accepted: false` and reason `preempted`, and the twin
+shows that reason in an error toast rather than "Sending the robot there".
+A world with no nav2 answers 501, and the map is simply not tappable.
+
+R2's `/wheels`, `/scan` and `/world/truth` are served but not drawn; they
+exist for the ROS nodes (R4) and for `/world/error` (R5).
 
 **One brain drives at a time**: the brain server answers a second
 `/mission/start` with 409, and M4's authority order ranks the D-pad above
@@ -706,14 +736,15 @@ any mission.
 ## 4. Settings tab
 
 - **Robot server connection** -- `serverUrl` + optional secret. Auto-fills
-  to the page's own origin when served by `robot/server.py` itself
-  (the deployed case); manual entry still works for pointing at a
-  different server (e.g. a teleop deployment, per section 1.2.c).
+  to the page's own origin, which is right when `robot/server.py` served
+  the page (local dev) and wrong for the deployed page, which CloudFront
+  serves: there, enter the tunnel URL from `service/tunnel/run.sh`
+  (`https://<domain>`).
 - **Brain service connection** -- `brainUrl` + its own, independently
   entered secret (`brainSecret`/`brainAuthHeaders()` -- deliberately not
-  assumed to match the robot's secret, since the two are independently
-  deployed ECS services once out of local dev). Optional; needed for
-  Remote brain, recording, and Drive via brain.
+  assumed to match the robot's secret; through the tunnel they happen to
+  share `LOCAL_SECRET`, and the brain URL is `https://<domain>/brain`).
+  Optional; needed for Remote brain, recording, and Drive via brain.
 - **Cloud endpoint settings** -- the vision-analyze base URL + secret,
   shared by Guide's two modes (the Camera tab and the JS Vision Autopilot
   that also used it were removed 2026-09-25). Enter the base URL only; each
@@ -781,20 +812,23 @@ confusion happens. The value is a label, not a credential.
 
 ## 5. Safety and failsafes (cross-cutting, not a tab)
 
-Applies to every mode above that moves anything (D-pad, both local
-brains, Remote brain, Drive via brain) -- Guide me and Robot view's
+Applies to every mode above that moves anything (D-pad, Remote brain,
+Drive via brain, a tapped nav2 goal) -- Guide me and Robot view's
 default/recording sub-modes move nothing, so none of this applies to
 them.
 
 | Guard | Where | Catches |
 |---|---|---|
 | **Safety veto** (`robot/safety.py`) | Every `/action` call, on the server | A move that would collide, regardless of who/what requested it |
-| **B3.1 watchdog** | `robot/server.py`, async polling loop | Motors left running because the client (any client) went quiet past `watchdog_timeout_s` |
+| **Wheel-velocity vetting** (`SafetyController.vet_wheel_velocity()`) | `POST /wheels`, re-vetted every period of `robot/server.py`'s 20 Hz wheel loop | Forward or reverse speed toward something inside `min_distance_cm` (zeroed; ahead is the path cone plus the swept corridor, astern the rear cone plus the corridor); rotation is scaled down only when a pivot would swing the chassis into something (`pivot_scale()`, 3.19), so turning away from a wall is always allowed |
+| **nav2 `collision_monitor`** | The ROS container, between `twist_mux` and the wheels (`WORLD_MODE=ros` / `drive: ros` only) | A nav2 command approaching an obstacle -- slowed on approach, then still vetted by `robot/safety.py`, which runs last (`PLAN-ros-alignment.md` 3.15) |
+| **B3.1 watchdog** | `robot/server.py`, async polling loop | Motors left running because the client (any client) went quiet past `watchdog_timeout_s` (1.0 s in `config/robot.yaml`) |
 | **B3.2 vision guard** | `control/mission_runner.py`'s `_guarded_vision` | A vision call that times out or fails repeatedly (timeout + `max_vision_failures` budget) |
 | **B3.3 dead-man** | `control/brain_server.py`'s `mission_loop` | A tick that starts and never returns -- the watchdog can't see this; a brain that's alive but stuck |
 | **T1 stall** (teleop only) | `TeleopRobot.get_camera_frame()` | No fresh frame pushed within `stall_timeout_s` -- surfaces through B3.3's catch-all, no new handling needed |
 
-All five end the same way: the robot is told to stop. B3.2/B3.3 are the
+The last four end the same way: the robot is told to stop. (The first
+three refuse or reduce one command and leave the rest alone.) B3.2/B3.3 are the
 two that can't be triggered by pressing anything on real hardware, which
 is why `control/drills.py`'s fault picker exists in the Sim tab -- and
 why the live phone walk in section 1.2.c is the closest thing to
@@ -833,121 +867,102 @@ of the time and another ~0%.
 
 ---
 
-## 6. AWS deployment -- how the pieces above actually run in the cloud
+## 6. Deployment -- what runs in AWS, and what runs on a laptop
 
-Everything in this project shares **one NLB, one internal ALB, and one
-CloudFront distribution** -- new features get a new path prefix and a
-new `ListenerRule` on the existing shared listener, not a new load
-balancer or port (see `CLAUDE.md` section 6 for why: a second pair would
-have cost roughly as much as everything else in this project combined).
+*Rewritten 2026-09-28. This section described an ECS / NLB / ALB layout
+until then; those stacks were deleted on 2026-09-05 -- see 6.1.*
+
+Two CloudFormation stacks are live: **`serverless`**
+(`cloudformation/serverless.yaml`) and **`recordings-s3`**
+(`cloudformation/recordings-s3.yaml`, the walks bucket). There is no VPC,
+no load balancer and no container in AWS. **The robot server and the brain
+are not deployed at all**: they run on a laptop (the brain's real home is
+the Pi, B5) and the deployed page reaches them through a tunnel.
 
 ```
-                         Internet
-                            |
-                  CloudFront distribution        <- cloudformation/cdn.yaml
-             (public HTTPS -- satisfies getUserMedia's
-              secure-context requirement; origin is
-              plain http:// to the NLB, TLS terminates here)
-                            |
-                    Network Load Balancer          <- cloudformation/service.yaml
-                            |
-                    Internal ALB, one shared
-                    listener on port 80
-                            |
-      +----------+----------+----------+----------+-----------+
-      |          |          |          |          |           |
-  vision-      twin       brain     teleop-    teleop-       admin
-  analyze    (Priority   (Priority   robot     brain       (Priority
-  (default,   10 / 11)     20)     (Priority  (Priority       30)
-  no prefix,             /mission/*  40 / 41)    50)        /admin/*
-  path-                  ...          /teleop-   /teleop-
-  fallthrough)                        robot/*    brain/*
+   phone browser
+     |                          \
+     | https://<dist>.cloudfront.net     \  https://<ngrok domain>
+     v                                     v
+  CloudFront distribution            ngrok (one static domain)
+   |-- default: S3 static bucket          |
+   |     index.html, app.js, manifest,    v
+   |     icons, /admin, /metrics     service/tunnel/proxy.py (laptop)
+   |                                   |-- /brain/* -> control/brain_server.py :8001
+   '-- /analyze /describe /navigate    '-- else    -> robot/server.py :8000
+       /navigate/* /guidance /health
+       /stats /metrics/* /recording/*
+             |
+       API Gateway HTTP API (credentials-role integrations)
+             |-- vision Lambda  (service/vision_analyze/app.py) -> Amazon Bedrock
+             '-- walks Lambda   (control/admin_server.py + recording routes)
+                                  -> S3 walks bucket (recordings-s3)
 ```
 
-| Stack | Service it runs | Path claimed | Priority | Notes |
-|---|---|---|---|---|
-| `service.yaml` | vision-analyze (`/analyze`, `/navigate`, `/guidance`, `/describe`) | everything the others don't claim -- the ALB's fallthrough | -- | Owns the NLB, ALB, listener, VPC endpoints; every other stack imports these via `Fn::ImportValue` |
-| `twin.yaml` | `robot/server.py`, `mode: sim` | `/`, `/action`, `/stop`, `/distance`, `/frame`, `/teleop/frame` (unprefixed) | 10, 11 (PWA assets) | The deployed "main" twin -- what a phone hits by default |
-| `brain.yaml` | `control/brain_server.py` | `/mission/*` (unprefixed) | 20 | Sits alongside `twin.yaml`, not inside it -- see `PLAN-brain-relocation.md`'s "interim" reasoning |
-| `admin.yaml` | `service/admin/` | `/admin/*` | 30 | Recorded-walk viewer against the shared EFS volume; its own service so reviewing recordings doesn't depend on the brain being up |
-| `teleop-robot.yaml` | `robot/server.py`, `mode: teleop` | `/teleop-robot/*` | 40, 41 | A **second, independent instance** of the same image as `twin.yaml`, via `ROUTE_PREFIX` -- lets sim-mode and teleop-mode be live at the same time (`robot/factory.py` picks one backend per process) |
-| `teleop-brain.yaml` | `control/brain_server.py`, pointed at the teleop robot | `/teleop-brain/*` | 50 | Same `ROUTE_PREFIX` trick, own secret, own `robot_url` |
-| `recordings.yaml` | EFS volume | -- | -- | No routes of its own; mounted by the brain (writes) and admin (reads) services, survives redeploys unlike Fargate's own ephemeral disk |
+| Piece | Code | Deployed by |
+|---|---|---|
+| The twin's files and the `/admin` / `/metrics` consoles | `web-twin/`, `control/admin.html`, `control/metrics.html` | `bash service/static/sync.sh <static-bucket> <distribution-id>`, uploading exactly `service/static/assets.json`; both values are outputs of the `vision-picar-serverless` stack |
+| Vision (`/analyze`, `/describe`, `/navigate`, `/navigate/models`, `/guidance`, `/health`) | `service/vision_analyze/`, wrapped by `service/lambda/vision_handler.py` | `service/lambda/build.sh`, then the `serverless` stack |
+| Walks (`/recording/*`, `/stats`, `/metrics/*`) | `control/admin_server.py`, `control/recording_routes.py`, `control/walk_store.py`, wrapped by `service/lambda/walks_handler.py` | same |
+| Robot server and brain | `robot/server.py`, `control/brain_server.py` | not deployed: `bash service/tunnel/run.sh`, then `ngrok start picar` |
 
-**`EnvLabel`.** `twin.yaml`, `teleop-robot.yaml` and `admin.yaml` each
-take an `EnvLabel` parameter, defaulting to `""`, which becomes the
-`ENV_LABEL` environment variable behind the banner described in section
-4. An empty value must add **no variable at all** rather than an empty
-one: an empty one still rewrites the task definition, which a change set
-against the live production stack showed would churn `TaskDefinition` and
-`EcsService` for a deployment meant to change nothing. `AWS::NoValue`
-under a `HasEnvLabel` condition is what drops the list element entirely.
+**Why the functions sit behind API Gateway rather than a Function URL:**
+on this account Lambda resource-based policies do not grant invocation, so
+the gateway invokes with an assumed credentials role. `serverless.yaml`'s
+header and `PLAN-aws-cost-redesign.md` section 6 have the measurement --
+read them before "simplifying" it.
 
-Production passes nothing and is therefore unaffected. A second
-environment passes its own name.
+**Why CloudFront:** `getUserMedia` (Guide me and every live-camera Robot
+view sub-mode) requires a secure context, and the default
+`*.cloudfront.net` domain gives HTTPS with no certificate to manage. The
+tunnel is HTTPS for the same reason: an HTTPS page may not call an
+`http://` robot.
 
-**The consequence, measured 2026-09-02: the three production stacks do
-not list `EnvLabel`, and that drift cannot be closed.** They were last
-updated before the parameter existed. Deploying the template does
-nothing -- `aws cloudformation deploy` answers "No changes to deploy,"
-and a change set created by hand comes back `Status: FAILED`,
-`ExecutionStatus: UNAVAILABLE`, `Changes: []`, reason "The submitted
-information didn't contain changes." The change set *sees* the new
-parameter; it just yields no resource delta, because that is exactly what
-`AWS::NoValue` above is for. CloudFormation will not execute a
-zero-change change set, so the stack's stored template and parameter list
-stay where they are.
+**The tunnel** (`service/tunnel/`, `CLAUDE.md` section 6 has the traps):
+one ngrok domain serves both local processes, split by path, because the
+free plan allows one endpoint per domain. Settings then wants
+`https://<domain>` for the robot and `https://<domain>/brain` for the brain.
+`run.sh` sets `APP_SHARED_SECRET` from `~/.vision-picar-local-secrets`,
+which matters: the tunnel puts both servers on the public internet. The
+twin sends `ngrok-skip-browser-warning` to ngrok hostnames only, or ngrok's
+free tier answers `fetch()` with an HTML interstitial.
 
-This is cosmetic and self-correcting -- every deploy passes
-`--template-file`, so git is the source of truth and the stale stored
-template is visible only through `describe-stacks`. The first deploy
-carrying a real change registers the parameter normally, including the
-one that matters: `--parameter-overrides EnvLabel=<name>` produces a
-genuine delta and works. **Do not try to force it.** The only mechanism
-that would is a two-step churn -- deploy with a non-empty label, then
-again with it empty -- which rewrites `TaskDefinition` and restarts
-`EcsService` twice in production to arrive back where it started, the
-precise churn the condition was written to avoid. Note that a failed
-attempt leaves a `FAILED` change set attached to the stack;
-`list-change-sets` then `delete-change-set` clears it.
+**Parity check.** A `web-twin/` change is not shipped until it is synced.
+Wait for `sync.sh`'s invalidation to complete, then
+`curl -s https://<dist>/app.js | diff - <(git show HEAD:web-twin/app.js)`.
 
-**Why CloudFront exists at all**, specifically: `getUserMedia` (Guide
-me and both live-camera Robot view sub-modes) requires a secure context.
-A bare NLB/ALB only serves plain HTTP; CloudFront's default
-`*.cloudfront.net` domain gives free automatic HTTPS in front of it with
-no certificate management, which is what makes any live-camera feature
-usable from a phone off the deploying machine's own LAN at all.
-
-**Why teleop got its own sibling stacks** rather than reusing
-`twin.yaml`/`brain.yaml` directly: `robot/factory.py` picks exactly one
-backend per process at boot, and `control/brain_server.py` picks exactly
-one `robot_url` at start -- so running sim-mode and teleop-mode
-*simultaneously* needs two robot processes and two brain processes, not
-a flag flip on the existing ones (which would take the Sim tab away
-while flipped). `ROUTE_PREFIX` (env var, empty by default so the
-existing deployments are unaffected) is what lets a second instance of
-the same Docker image share the one ALB listener instead of needing its
-own. Deliberately new files rather than parameterizing the existing
-templates, specifically so a mistake in the new stack can't touch the
-already-running one.
-
-**Secrets:** each service gets its own generated `x-app-secret` in
-Secrets Manager (`vision-picar-<service>-shared-secret`), entered
-manually into the twin's Settings fields -- `serverSecret` for whichever
-robot server is connected, `brainSecret` for whichever brain, `visionSecret`
-for the shared vision-analyze endpoint. They are never assumed to match
-each other once each service is independently deployed (a bug fixed live
-during teleop testing: the twin was silently sending the robot's secret
-as the brain's too, which 401s the instant they differ).
+**Secrets:** three, never assumed to match. `VisionSharedSecret` and
+`WalksSharedSecret` are `serverless` stack parameters (deliberately
+different: deleting walks is a different privilege from asking the model a
+question); the local robot and brain share `LOCAL_SECRET`. In the twin's
+Settings they are `visionSecret`, `brainSecret` and `serverSecret`. (Keeping
+the robot's and brain's secrets separate in the page was a bug fixed live
+during teleop testing: the twin had been sending the robot's secret as the
+brain's too, which 401s the instant they differ.) `EnvLabel` is a
+`serverless` stack parameter too, becoming `ENV_LABEL` on both functions.
 
 **Models called, per route** (`service/vision_analyze/vision_core.py`):
-`/analyze` -> `us.anthropic.claude-sonnet-4-5-20250929-v1:0` (default,
-overridable via `BEDROCK_ANALYZE_MODEL_ID`); `/navigate` and `/guidance`
--> `amazon.nova-lite-v1:0` (default, overridable via
-`BEDROCK_NAVIGATE_MODEL_ID` / `BEDROCK_GUIDANCE_MODEL_ID`) -- chosen for
-the several-times-a-second loops where latency dominates the experience,
-against Sonnet's stronger reasoning for the one-shot "analyze this photo"
-case where accuracy matters more than round-trip time.
+`/analyze` -> Claude Sonnet 4.5 (`BEDROCK_ANALYZE_MODEL_ID`); `/navigate`
+-> **Claude Opus 4.5** by default (`BEDROCK_NAVIGATE_MODEL_ID`, and the
+stack's `NavigateModelId` parameter, which must be kept in step with the
+code default), with any model on the allow-list selectable per request from
+the picker; `/guidance` -> Amazon Nova Lite (`BEDROCK_GUIDANCE_MODEL_ID`),
+chosen for a loop where latency dominates. Opus 4.5 was chosen for
+`/navigate` by replaying one walk through every invokable model (`CLAUDE.md`
+section 5).
+
+### 6.1 History: the ECS layout (deleted 2026-09-05)
+
+Until 2026-09-05 everything ran on ECS Fargate behind one NLB, one internal
+ALB and one CloudFront distribution, with path-based `ListenerRule`s
+(`service.yaml`, `twin.yaml`, `brain.yaml`, `admin.yaml`,
+`teleop-robot.yaml`, `teleop-brain.yaml`, walks on EFS via
+`recordings.yaml`). `PLAN-aws-cost-redesign.md` has why it went (~$159/month
+of fixed cost, most of it the VPC) and what replaced it. The templates are
+still in `cloudformation/` and describe nothing that is running; this
+section's previous text, including the `EnvLabel` stack-drift note, is in
+`git log -p -- FEATURES.md`.
+
 
 ---
 

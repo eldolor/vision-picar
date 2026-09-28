@@ -83,6 +83,54 @@ explicit emergency-stop command exists** (stop is zero-speed plus a heartbeat,
 tagged `[U]`) lands directly on failsafe B3.1 and M4's arbitration. Verify it
 on arrival before trusting `stop()`.
 
+**Correction 5, 2026-09-27 -- section 4.2's motor protocol, as the firmware
+source actually defines it.** Read from `waveshareteam/ugv_base_general`
+(`General_Driver`) for R7; the full record is `PLAN-ros-alignment.md` 3.16,
+and `sim/fake_esp32.py` encodes it. Four lines of 4.2 are wrong or
+unverified, and the first one can hurt the car:
+
+* **`T=1` is NOT a speed in the mode 4.2 selects.** In `mainType` 1 and 2
+  (4.2's own example is `{"T":900,"main":2}`) `T=1` is OPEN-LOOP PWM:
+  `PWM = L x 512`, clamped to +/-255. **4.2's example `{"T":1,"L":0.5,"R":0.5}`
+  is therefore PWM 256 -> 255: FULL POWER** (~1 m/s no-load, 4.3), not
+  0.5 m/s. Do not send it to a board on the stand with the wheels on the
+  floor. Closed-loop speed in m/s exists only in `mainType` 3.
+* **`mainType` 3 needs a firmware change, not a command.** Its wheel
+  constants are hard-coded for another robot (0.0523 m wheels, 1092
+  pulses/rev, 0.141 m track). 5.2 step 4 ("Set wheel diameter, counts per
+  revolution and track width") means *rebuild and flash the firmware with
+  4.3's values*. `robot/hardware_robot.py` assumes that has been done; it
+  never sends `T=900` itself.
+* **The `1001` frame layout is known:**
+  `{"T":1001,"L","R","r","p","y","temp","v"[,"pan","tilt"]}`. `L`/`R` are
+  wheel SPEEDS in m/s -- **there are no encoder counts**, so odometry
+  integrates speed x time on the host (`hardware_robot.py`). Open item 9 is
+  answered; a firmware change that also reports counts is the upgrade.
+* **The heartbeat stop is VERIFIED, no longer `[U]`.** `heartBeatCtrl()`
+  zeroes the motors once `T=136`'s interval passes with no `T=1`/`11`/`13`
+  (firmware default 3000 ms). The host sets **1500 ms**
+  (`hardware_robot.py` `HEARTBEAT_MS`), deliberately longer than the robot
+  server's 1.0 s watchdog, so the server acts first and the board acts if
+  the server itself dies.
+
+**How the repo addresses this board:** `mode: hardware` in
+`config/robot.yaml` (or `ROBOT_MODE=hardware`), with the serial device in
+`ROBOT_SERIAL` or `hardware.serial_port` (`robot/factory.py`). The process
+needs read/write on that device -- on Ubuntu, a udev rule binding the
+CP210x by serial number (section 7) and the user in the `dialout` group,
+or `os.open()` fails with EACCES. `SIM_MOTOR_BOARD=fake` runs the same
+backend against `sim/fake_esp32.py` on a pty.
+
+**Correction 6, 2026-09-27 -- JetPack (4.1, open item 2, correction 4).**
+The repo already builds for **JetPack 6.x / Ubuntu 22.04 / ROS 2 Humble**:
+`service/slam/Dockerfile` is `FROM ros:humble-ros-base` (R3,
+`PLAN-ros-alignment.md` 3.12). JetPack 7.x would mean moving that container
+to Jazzy. So treat **JetPack 6.2.1 (the SD-card image)** as the working
+choice, subject only to correction 4's torch-wheel check -- and B8's USB
+installer, which is for 7.2.1, is then probably unnecessary. Correction 4's
+premise has also moved: the shipped detector is `yoloe-11s-seg`, not OWLv2
+(`PLAN-onboard-perception.md` P22-P24), though it still needs torch.
+
 ---
 
 # Indoor autonomous robot — Jetson BOM and hardware reference

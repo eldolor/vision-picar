@@ -1,5 +1,30 @@
 # Hardware transition: what the real robot changes
 
+> **Status 2026-09-28 -- the parts named below are partly wrong; read this
+> first.** The hardware changed again after the 2026-09-04 revision, and the
+> code has moved on. What is now true:
+>
+> - **Board: Jetson Orin Nano Super**, not a Raspberry Pi 5 (decided
+>   2026-09-19; the Hailo-8L path is closed and is not being pursued).
+> - **Camera: IMX219** CSI module (Arducam B0191), not Camera Module 3.
+> - **Motor driver: Waveshare General Driver for Robots (ESP32)**, not the
+>   Yahboom kit's STM32 board.
+> - **Pan: one ST3215 serial-bus servo, no tilt**, not two SG90s on a
+>   pan/tilt bracket.
+> - **`robot/hardware_robot.py` exists** (R7, 2026-09-26, `mode: hardware`,
+>   port from `ROBOT_SERIAL`). It drives **open-loop timed verbs** over the
+>   ESP32's serial protocol; a verb is closed on the encoders only under
+>   `drive: ros` (`robot/ros_drive.py`). Where this doc says "the one file
+>   still unwritten", read "written".
+> - **The JS Vision Autopilot and local brain were deleted 2026-09-25.** The
+>   brain is `control/brain_server.py`; section 2's "Autopilot" column and
+>   section 7's references to the browser's loops are history.
+>
+> **For parts, part numbers, wiring and bring-up, use `HARDWARE-BOM.md`**
+> (and `JETSON-BOM.md` for the shopping list), not `PLAN-onboard-perception.md`
+> 3.6. The architecture arguments below (sections 2, 4's shape, 6 and 7) still
+> stand; substitute "the Jetson" wherever it says "the Pi".
+
 > **Revised 2026-09-04 for the hardware actually chosen.** This document was
 > written on 2026-08-27 for the SunFounder PiCar-X kit, and
 > `PLAN-onboard-perception.md` replaced that kit before purchase: a
@@ -25,14 +50,17 @@ for each is in its section 1. What matters here is how the parts map onto
 `robot/interface.py`'s `RobotInterface`, because that mapping is the whole
 of `robot/hardware_robot.py`, the one file still unwritten:
 
+*Table corrected 2026-09-28 to the parts in `HARDWARE-BOM.md`; the 2026-09-04
+rows it replaced (STM32 board, two SG90s, Camera Module 3, Hailo-8L, Pi 5) are
+in git history.*
+
 | Part | What this repo needs it for |
 |---|---|
-| Yahboom 2WD chassis, two encoder motors, STM32 driver board | `drive_forward()`, `reverse()`, and -- because it pivots in place -- `turn_left()` / `turn_right()` as literal turns |
-| 2-axis pan/tilt bracket, two SG90s | `look_left()` / `look_right()` / `look_center()` |
-| RPLidar C1, USB | `get_depth_grid()` -- the 360-degree ring -- and `get_distance()` as the path reduction of it (`robot/safety.py`'s `path_clearance()`) |
-| Camera Module 3 | `get_camera_frame()` |
-| Hailo-8L, M.2 module form (4.9) | the on-board detector: a bearing to the target at camera rate. Reaches the brain over HTTP, never around `RobotInterface` (`PLAN-onboard-perception.md` 2.6) |
-| Raspberry Pi 5 | `robot/server.py` and `control/brain_server.py`, both -- section 7 |
+| Yahboom 2WD chassis, two encoder motors, **Waveshare General Driver (ESP32)** over serial (`T=1` wheel command, `1001` feedback) | `drive_forward()`, `reverse()`, and -- because it pivots in place -- `turn_left()` / `turn_right()` as literal turns. `HardwareRobot` in `robot/hardware_robot.py` |
+| **One ST3215 pan servo** (no tilt) | `look_left()` / `look_right()` / `look_center()` |
+| RPLidar C1, USB | `get_depth_grid()` -- the 360-degree ring -- and `get_distance()` as the path reduction of it (`robot/safety.py`'s `path_clearance()`); `get_scan()` for SLAM |
+| **IMX219** CSI camera | `get_camera_frame()` |
+| **Jetson Orin Nano Super** | `robot/server.py`, `control/brain_server.py` (including the on-board detector, `brain/perceive.py`), and the ROS 2 container in `service/slam/` -- section 7 |
 
 **Use the vendor's protocol, not the vendor's stack.** Yahboom ships a
 Python library and ROS packages for its driver board. What
@@ -78,7 +106,7 @@ near-copies:
 |---|---|
 | ECS container (`service/vision_analyze/`) | same one |
 | ALB routing | same -- the twin's `ListenerRule` only claims `/`, `/action`, `/stop`, `/distance`, `/frame`; both of these fall through to vision-analyze |
-| Auth + upload | same `_decode_image()` -> same `_check_secret()`, same 5MB cap, same base64 decode (`app.py:138`) |
+| Auth + upload | same `_decode_image()` -> same `_check_secret()`, same 5MB cap, same base64 decode (`service/vision_analyze/app.py` `_decode_image()`) |
 | Bedrock client | same `_get_client()`, same `MODEL_ID` |
 | Model call | same `converse()`, same `maxTokens: 300`, same image-format conversion |
 | Browser config | same "Cloud endpoint settings" URL + secret, same `deriveServiceUrl()` |
@@ -113,7 +141,8 @@ its loop at all -- the person is the actuator.
 
 Guide is **the only part of this project ever tested against real
 photographs.** Everything proven on the robot side was proven against a
-flat-shaded raycaster render of a maze (`web-twin/index.html:1853`).
+flat-shaded raycaster render of a maze (then the twin's JS `renderFPV`,
+deleted 2026-09-25; now `sim/renderer.py`).
 Guide has been run on an actual iPhone pointed at actual rooms, over
 cellular, and it works.
 
@@ -155,14 +184,16 @@ anything real -- see section 3 and `PLAN-sim-hardening.md` section 7.
 - **The Hailo compile loop** (`PLAN-onboard-perception.md` 1.10 item 1):
   one model from Hugging Face to a HEF on an EC2 box, scored over the
   recorded walks. Nothing on the car depends on it, but without it the
-  accelerator arrives as a fixed-function part.
+  accelerator arrives as a fixed-function part. **Moot 2026-09-19:** the
+  board is a Jetson and the Hailo path is not being pursued.
 
 **Then buy.** Past that point the work shifts to modelling things that
 could simply be measured: how far the car rolls in one 0.5s move, how far
 it coasts after `stop()`, what the lidar returns from glass, mirrors and a
 dark sofa, and how many encoder ticks make a 90-degree pivot on carpet.
 About $555-620 of parts (`PLAN-onboard-perception.md` 3.6) measures those
-better than a week of simulator work does.
+better than a week of simulator work does. (**Superseded 2026-09-28:** the
+Jetson build is ~$944 all-in -- `JETSON-BOM.md`, `BOM-COMPARISON.md`.)
 
 The genuinely unbuyable-around items -- coasting distance against
 `min_distance_cm`, and lidar behaviour on real surfaces -- are in
@@ -176,7 +207,9 @@ ordering-time checks; none blocks anything else.
 
 **Today, AWS is pretending to be the robot.** `robot/server.py` is
 deployed to ECS Fargate with `mode: sim`, so the "robot" currently lives
-in us-east-1.
+in us-east-1. (**Superseded:** the ECS robot and twin were torn down
+2026-09-05 -- `PLAN-aws-cost-redesign.md`. The robot and brain now run
+locally and the deployed twin reaches them through `service/tunnel/`.)
 
 **When the car arrives, `robot/server.py` moves out of AWS and onto the
 Pi.** It has to, for two reasons.
@@ -222,7 +255,9 @@ wherever it runs.)
 **The car never talks to AWS. The brain does.** The car only ever talks
 to the brain, over home Wi-Fi. What crosses the internet is one JPEG up
 and one small JSON action down every ~2.5s -- which is exactly why the
-Autopilot loop is throttled to 2.5s, and why safety must be local.
+Autopilot loop is throttled to 2.5s, and why safety must be local. (The
+browser Autopilot was deleted 2026-09-25; the brain in the diagram is now
+`control/brain_server.py`, a separate process on the car.)
 
 ### What happens when a command arrives
 
@@ -240,9 +275,12 @@ One `FORWARD`, all the way down:
    reading, locally, in milliseconds.
 5. If clear: `HardwareRobot.drive_forward(50, 0.5)` -- set both wheel
    velocities on the driver board, wait 0.5s, set them to zero.
-6. A turn is a pivot: opposite wheel velocities until the encoders (or the
-   IMU) report 90 degrees. The sim pivots in place too -- since the chassis
-   decision this step is no longer where reality bites.
+6. A turn is a pivot: opposite wheel velocities. **Corrected 2026-09-28:**
+   as built, `HardwareRobot._pivot()` is **open-loop and timed** -- a 1.2
+   rad/s body rate for `angle / 1.2` seconds -- and does not read the
+   encoders. A turn closes on the encoders only under `drive: ros`, where
+   `robot/ros_drive.py` sends twists and stops on the wheel encoders. The sim
+   pivots in place too.
 
 Steps 1-4 are already written and already tested. Steps 5-6's guts, and
 the lidar feed behind step 3, are the only genuinely new code.
@@ -250,35 +288,36 @@ the lidar feed behind step 3, are the only genuinely new code.
 ### From a verb to the motors
 
 `/navigate` returns a bare verb. Everything that turns that verb into
-motor power happens in three files, and only the last one is unwritten:
+motor power happens in three files (all three now written -- R7 added the
+last):
 
 ```
 /navigate returns  {"action": "FORWARD"}
    │
-   ▼  web-twin/index.html:1495 -- sendAction()
+   ▼  web-twin/app.js sendAction() (the D-pad), or control/remote_robot.py (the brain)
 POST /action  {"action": "FORWARD"}          ← the verb, and nothing else
    │
-   ▼  robot/server.py:83 -- ActionRequest fills in the blanks
+   ▼  robot/server.py ActionRequest fills in the blanks
 {"action":"FORWARD", "speed":50, "duration":0.5, "angle":90}
    │
-   ▼  robot/safety.py:46 -- re-read the real sensor, veto if too close
+   ▼  robot/safety.py SafetyController.check_and_execute() -- re-read the real sensor, veto if too close
    │
-   ▼  robot/safety.py:60 -- dispatch_table  ← THE translation point
+   ▼  robot/safety.py check_and_execute()'s dispatch_table  ← THE translation point
 "FORWARD" → robot.drive_forward(50, 0.5)
 "LEFT"    → robot.turn_left(90)
 "STOP"    → robot.stop()
    │
-   ▼  RobotInterface -- MockRobot today, HardwareRobot later
+   ▼  RobotInterface -- MockRobot in the sim, HardwareRobot on the car
 ```
 
-The dispatch table at `robot/safety.py:60` is a plain dict of lambdas
-mapping verb -> `RobotInterface` method. It is entirely
+The dispatch table in `SafetyController.check_and_execute()` is a plain
+dict of lambdas mapping verb -> `RobotInterface` method. It is entirely
 backend-agnostic, which is why it doesn't change on hardware day. **All
-the reality lands in `robot/hardware_robot.py`**, the one file still
-unwritten.
+the reality lands in `robot/hardware_robot.py`** -- written 2026-09-26
+(R7) against `sim/fake_esp32.py`, the firmware faked on a pty.
 
-What that file has to do, roughly (verify the driver board's protocol
-before writing against it):
+What that file had to do, as planned on 2026-09-04 (see the correction
+under the table for what it actually does):
 
 | Verb | Interface call | Real hardware |
 |---|---|---|
@@ -289,6 +328,14 @@ before writing against it):
 | `LOOK_LEFT` | `look_left()` | pan servo to -30 degrees |
 | -- | `get_depth_grid()` | one lidar revolution reduced to zones, published with `fov_deg: 360` so `path_zone_indices()` selects by angle (`PLAN-onboard-perception.md` 5.1) |
 | -- | `get_distance()` | `path_clearance()` over that grid; the scalar exists for the contract, not as a second sensor |
+
+**As built (2026-09-28):** `FORWARD`/`REVERSE` run both wheels at a
+velocity for a computed time and `LEFT`/`RIGHT` pivot open-loop for
+`angle / 1.2` seconds (`HardwareRobot._move()` / `_pivot()`); nothing reads
+the encoders to end a verb. Wheel positions are integrated from the `1001`
+frame's speeds, because that frame carries no counts. Closing a verb on the
+encoders is `drive: ros`'s job (`robot/ros_drive.py`). The paragraph below
+is the goal, not the current code.
 
 **A 90-degree turn is real on this chassis, and it is a calibration, not a
 timer.** Encoder counts per degree of pivot depend on the wheel base and
@@ -306,8 +353,9 @@ passing test suite.
 
 ### 5.1 Every vision-driven move is hardcoded to speed 50 for 0.5s
 
-The model returns only a verb. `web-twin/index.html:1495` posts only a
-verb. `robot/server.py:83`'s Pydantic defaults (`speed=50`,
+The model returns only a verb. The caller (`web-twin/app.js` `sendAction()`,
+or the brain's `RemoteRobot`) posts only a verb. `robot/server.py`
+`ActionRequest`'s Pydantic defaults (`speed=50`,
 `duration=0.5`, `angle=90`) supply everything else. So the entire
 autonomy stack moves in one fixed quantum.
 
@@ -326,13 +374,14 @@ whatever the driver board allows.
 
 ### 5.2 `LEFT` and `RIGHT` skip the distance check -- resolved by the chassis
 
-`robot/safety.py:27` reads `FORWARD_ACTIONS = {"FORWARD"}`, so only
+`robot/safety.py` defines `FORWARD_ACTIONS = {"FORWARD"}`, so only
 `FORWARD` triggers the sensor re-read before dispatch. On the PiCar-X that
 was a real gap -- an Ackermann turn is a forward arc. On a differential
 chassis a turn is a pivot, and a pivot does not consume forward space, so
-the line is **correct as written**. Leave it. (`REVERSE` also skips the
-check; the 360-degree ring could cover it, and whether it should is a
-hardware-day question.)
+the line is **correct as written**. Leave it. (This said `REVERSE` also
+skips the check. **Corrected 2026-09-27:** since R2b, `REVERSE_ACTIONS` are
+checked against the scan's rear beams on every path, D-pad included --
+`robot/safety.py`, `PLAN-ros-alignment.md` 3.10.)
 
 One residue: a rectangular chassis sweeps a circle wider than itself when
 it pivots (`PLAN-onboard-perception.md` 3.7), so a pivot hard against a
@@ -385,11 +434,58 @@ Nothing needs doing on hardware day except *not* copying it into
 
 ### 5.5 Re-measure the chassis width
 
-`robot/safety.py`'s `CHASSIS_WIDTH_CM` is still the PiCar-X's 16.5cm, kept
-deliberately because it over-states the Yahboom chassis (148mm) and so errs
-wide. It sets the path cone's half-angle. Measure the real chassis with its
+`robot/safety.py`'s `CHASSIS_WIDTH_CM` is still the PiCar-X's 16.5cm. This
+section used to say that over-states the chassis (148mm) and so errs wide.
+**Corrected 2026-09-27: it errs NARROW.** 148mm is the deck; across the
+wheels the chassis is 19.8cm (the xacro, nav2's footprint,
+`FOOTPRINT_WIDTH_M`), so the cone is ~3cm too narrow. Since 3.18
+(`PLAN-ros-alignment.md`) a footprint corridor check on the scan runs in
+series with the cone and covers the gap. The constant sets the path cone's
+half-angle. Measure the real chassis with its
 wheels on, set the constant, and re-run `tests/test_depth_veto.py`. M10 in
 `PLAN-microduck-transplants.md` owns the rest of that cone.
+
+### 5.6 Items the code added (2026-09-28)
+
+R4-R7 made several hardware-day steps necessary that this checklist did not
+have. Detail is in `HARDWARE-BOM.md` (section 4.2 and correction 5 for the
+board, section 6 for power) and `PLAN-ros-alignment.md` 3.16.
+
+- **Flash the ESP32 firmware to `mainType` 3 with this chassis' constants.**
+  `HardwareRobot` sends `T=1` as wheel speeds in m/s, which is what
+  closed-loop `mainType` 3 means. In the stock `mainType` 2, `T=1` is
+  open-loop PWM (`L x 512`), so a command of 0.5 is full power. The wheel
+  diameter, counts per revolution and track width are compiled into the
+  firmware, not sent at run time (`HARDWARE-BOM.md` correction 5). And
+  `HardwareRobot` never sends `T=900` itself, so the board must already be
+  in `mainType` 3 when the robot server starts.
+- **Give the robot server the serial port.** `mode: hardware` refuses to
+  start without `ROBOT_SERIAL` (or `hardware.serial_port` in
+  `config/robot.yaml`) -- `robot/factory.py`. Pin the device with a udev
+  rule (the ESP32 board and the lidar both enumerate as `/dev/ttyUSB*`, in
+  no fixed order), and put the user that runs `robot/server.py` in the
+  `dialout` group, or opening the port fails with a permission error.
+- **Verify the board's heartbeat stops the motors** (read from the firmware
+  source in 3.16; not yet seen on a real board). `HardwareRobot` sets it
+  to 1500 ms (`HEARTBEAT_MS`, `T=136`), above the robot server's 1.0 s
+  watchdog so that the watchdog normally acts first. Pull the serial cable
+  with the wheels spinning (wheels off the ground) and time the stop.
+- **Measure `safety.sensor_to_bumper_cm`** (`config/robot.yaml`, shipped as
+  0.0). It is the lidar-to-bumper offset subtracted from every reading, and
+  0.0 is wrong the day a deck-centre lidar is fitted (`robot/safety.py`).
+- **Measure the xacro's `[PLACEHOLDER]` block** in
+  `service/slam/src/picar_description/urdf/picar.urdf.xacro`:
+  `wheel_separation` (track width, 0.172 m, also in `sim/mock_robot.py`,
+  `controllers.yaml` and `robot/hardware_robot.py`), `wheel_width`,
+  `deck_height`, `axle_x`, `laser_z`, `pan_x`, `pan_z`, `camera_up`,
+  `camera_pitch`, `pan_limit`. `tests/test_urdf.py` pins that the xacro,
+  `controllers.yaml` and `sim/mock_robot.py` agree; change all copies
+  together.
+- **Battery voltage cutoff -- specified, not implemented.** `HARDWARE-BOM.md`
+  section 6 asks for a filtered warning near 10.5 V and a motor stop plus
+  clean shutdown near 10.0 V under load. Nothing in `robot/` reads the pack
+  voltage today (`HardwareRobot` ignores the `1001` frame's `v` field).
+  Build it before running on battery unattended.
 
 ---
 
@@ -444,6 +540,11 @@ That is coordination, not computation. The whole of `requirements.txt` is
 `pyyaml pytest anthropic fastapi uvicorn pydantic httpx` -- no torch, no
 opencv, not even numpy. `brain/`'s imports are stdlib plus `anthropic`,
 which is an HTTP client. A Pi Zero would run this without noticing.
+(**No longer true, 2026-09-28:** `requirements.txt` has grown, and
+`policy: "tiered"` loads a YOLOE detector and CLIP into the brain process
+from `requirements-perception.txt`, so the brain does real compute again --
+which is part of why the board is a Jetson. The argument for putting the
+brain on the car, below, is unchanged.)
 
 **The reason for the MacBook was "the Pi is too weak to think," and the
 Pi no longer has to think -- Bedrock does.**
@@ -503,13 +604,16 @@ This is a strong argument for the separate-process design -- see
 
 Independently of brain location, the watchdog keeps one job that matters
 on hardware and has no equivalent in sim: **if a movement call sets the
-motors and then crashes before `px.stop()`, the motors keep running.**
+motors and then crashes before `stop()`, the motors keep running.**
+(On the ESP32 board the firmware heartbeat is a second backstop for this --
+section 5.6.)
 Nothing else in the system catches that.
 
 The genuinely new gap is that **nothing guards the AWS link.** The
 browser's Vision Autopilot currently catches a `/navigate` failure,
 logs it, and schedules the next tick (`web-twin/index.html`, in
-`visionAutopilotStep`'s `catch`) -- it does not issue a STOP. That is
+`visionAutopilotStep`'s `catch`; deleted 2026-09-25 with the rest of the
+browser brain) -- it does not issue a STOP. That is
 survivable today only because motion is discrete and brief: each command
 moves for 0.5s and stops on its own, so a hung brain leaves a stationary
 car. It is worth making explicit rather than leaving as an accident of
@@ -574,6 +678,9 @@ else exists to make that true.
 | **B4** | Twin becomes an observer: Explore/Find POST to the brain and render polled status, instead of running JS timers. Manual D-pad still talks straight to the robot. | Start a mission from the phone, background the tab, robot keeps going |
 | **B5** | Two `systemd` units on the Pi, brain ordered after robot. | Reboot the Pi; a mission runs with no laptop on the network |
 
+*Status 2026-09-28: B0-B4 are built (`control/`); only B5 is left, now on the
+Jetson rather than a Pi.*
+
 **Why two processes and not one.** Running the loop as an asyncio task
 inside `robot/server.py` is less code and wrong here: a synchronous block
 in the agent loop would block the event loop the watchdog polls on
@@ -591,4 +698,6 @@ work remaining.
 **The single clearest test** is B4's: start a mission from your phone,
 then background the tab. If the robot keeps going, the brain has moved.
 Today it stops -- there is an explicit `visibilitychange` handler that
-kills the autopilot timer.
+kills the autopilot timer. (Written before B4. Since B4 the mission runs in
+`control/brain_server.py` and survives the tab; the browser loops were
+deleted 2026-09-25.)

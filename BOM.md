@@ -9,6 +9,19 @@
 > mixed with verified figures produced a $220-300 error that stood for
 > several hours on 2026-09-17.
 >
+> **Its design choices are superseded too, not only its prices** (widened
+> 2026-09-28). Do not follow any of these; `HARDWARE-BOM.md` section 1 has the
+> decided versions:
+>
+> - **Power:** the 12V buck-boost in front of the Jetson and the 5V servo buck
+>   are gone. The Jetson is fed straight from the 3S pack (a 3S **LiPo**, not
+>   Li-ion), with no regulator, and the driver board powers the servo.
+> - **Servo:** not two SG90s on a 2-axis pan/tilt bracket. One ST3215 bus
+>   servo, pan only, with a fixed downward wedge for the camera.
+> - **Storage:** not "NVMe, not a microSD". A microSD is **required** even
+>   with an NVMe (it is the Jetson's firmware-update medium), and the NVMe is
+>   optional.
+>
 > Use instead:
 >
 > | for | read |

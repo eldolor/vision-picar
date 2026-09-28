@@ -1,5 +1,16 @@
 # Plan: move the autonomy loop onto the Pi
 
+> **Status note, 2026-09-28.** The robot's board is a **Jetson Orin Nano
+> Super** (decided 2026-09-19, `JETSON-BOM.md`), not a Raspberry Pi; read
+> "the Pi" below as "the robot's board" -- the argument for putting the brain
+> on the robot is unchanged. B0-B4 stand as built, except that the twin's
+> in-browser local brain and Vision Autopilot, which B4 kept, were deleted
+> 2026-09-25. The "Interim: brain on ECS Fargate" section is history: that
+> deployment was deleted 2026-09-05, and the brain now runs on a laptop,
+> reached from the deployed twin through `service/tunnel/run.sh` + ngrok.
+> B5 is still a proposal, and its scope has grown -- see "What B5 must now
+> also cover" under B5.
+
 Status: **B0-B4 built 2026-08-27** (`control/`, the twin's remote-brain
 panel, and the five test files named below). B5 remains a proposal -- it
 needs the Pi. Written 2026-08-27.
@@ -174,7 +185,9 @@ exists.
 **B3.1 Motors left running (keep as-is).** `robot/server.py`'s watchdog.
 Its meaning narrows once the brain is on localhost, but it keeps the job
 that actually matters on hardware: if a movement call energises the
-motors and then crashes before `px.stop()`, nothing else catches it.
+motors and then crashes before `px.stop()` (the PiCar-X API this was
+written against; today the backend's `stop()` -- `robot/hardware_robot.py`
+on the car), nothing else catches it.
 Update the module docstring to say this, since "detects a dead MacBook"
 stops being the primary description.
 
@@ -220,7 +233,12 @@ up.
 
 Keep the existing in-browser JS loop behind a "local brain" toggle. It is
 already validated, it is the only thing that works with no Pi present,
-and it stays useful for LAN development.
+and it stays useful for LAN development. *(Superseded 2026-09-25: the
+local brain, Explore/Find and the Vision Autopilot were deleted with the
+ROS alignment -- R4 allows one writer to the wheels, and a brain that dies
+with a tab was never going to be it. The Remote brain panel is the only
+autonomy in the twin; the brain's 409 and the robot server's M4
+arbitration enforce one driver.)*
 
 **Built, with one change of shape.** The two brains are *two labelled
 panels*, not one set of buttons behind a toggle: "Remote brain -- runs on
@@ -237,7 +255,8 @@ and a **watchdog readout**. B3.2 and B3.3 cannot be provoked by pressing
 anything -- you would have to unplug the internet at the right moment --
 so the twin can now ask the brain to break exactly one thing and watch
 the real guard fire. See `CLAUDE.md` section 7 for the standing rule this
-established.
+established (retired 2026-09-25 for a data-driven definition of done; the
+drills stayed).
 
 **One config change fell out of it.** `brain.tick_interval_s` is 0.25 in
 `config/robot.yaml` rather than 0. With no pacing the sim runs a whole
@@ -256,7 +275,7 @@ explicit `visibilitychange` handler that stops the autopilot timer).
 **As built:** the remote-brain poll is deliberately excluded from that
 `visibilitychange` handler, which still governs the local brain and
 Vision Autopilot (both of which spend money per tick, and both of which
-die with the tab anyway). Backgrounding now pauses the *observer* and
+die with the tab anyway -- and both deleted 2026-09-25). Backgrounding now pauses the *observer* and
 nothing else. Verified with two local uvicorns; still to run against a
 Pi, which is B5.
 
@@ -283,9 +302,40 @@ be started from a phone with no laptop involved anywhere. This is
 definition-of-done item 1, and it is a UI test by construction -- there
 is nothing else it could be.
 
+**What B5 must now also cover (added 2026-09-28).** The two-unit design
+above predates R4-R7. A list of what it has to account for, not a design:
+
+- **A third unit: the ROS container** (`service/slam/`, run as
+  `service/slam/README.md` describes), ordered **before** the robot
+  server. Under `drive: ros` the robot server sends every verb through the
+  container's bridge (:8090) and refuses with `ros_unavailable` when it is
+  not there; under `WORLD_MODE=ros` the world comes from it too.
+- **An `EnvironmentFile`** for the secrets and modes the processes read
+  from the environment today: `APP_SHARED_SECRET`, `ROBOT_MODE`,
+  `ROBOT_DRIVE`, `WORLD_MODE`, `ROBOT_SERIAL` -- rather than values
+  baked into a unit file or the repo.
+- **Serial device access.** `mode: hardware` opens the ESP32 driver board
+  on `ROBOT_SERIAL`: the service user needs the `dialout` group, and a
+  udev rule should give the board a stable device name.
+- **What a mid-mission restart does.** The mission is lost (mission state
+  does not survive a brain restart, `AGENT-HARNESS.md` §12). If the robot
+  process dies, the ESP32's own heartbeat stops the wheels 1.5 s after the
+  last command (`robot/hardware_robot.py` `HEARTBEAT_MS`), independently of
+  any process on the board; while the robot server is alive, its watchdog
+  stops them after `watchdog_timeout_s` (1.0 s) of command silence.
+  `Restart=on-failure` must not bring anything back up that moves on its
+  own (M6 in `PLAN-microduck-transplants.md`).
+
 ---
 
 ## Interim: brain on ECS Fargate
+
+> **DELETED 2026-09-05.** This deployment, its EFS volume and the shared
+> ALB/NLB were torn down in `PLAN-aws-cost-redesign.md` Stage 2; recorded
+> walks moved to S3. `cloudformation/brain.yaml` is still in the tree but
+> deploys nothing that runs. The brain now runs locally and the deployed
+> twin reaches it through `service/tunnel/` (one ngrok domain, `/brain/*`
+> to the brain) -- `CLAUDE.md` section 6. Kept below as the record.
 
 Status: **built 2026-08-28**, pre-hardware. Not a phase of the plan above
 -- it doesn't move the target topology, and B5 (brain-on-Pi) is still the
@@ -483,9 +533,10 @@ else is met, in simulation or with two local uvicorns.
 7. **Met, unchanged.** Manual D-pad control still works with the brain
    service stopped: the twin talks to `robot/server.py` directly and
    nothing on that path was touched.
-8. **Met.** `CLAUDE.md`'s "duplication is intentional" bullet now
+8. ~~**Met.** `CLAUDE.md`'s "duplication is intentional" bullet now
    describes the two-panel arrangement and calls the browser the optional
-   brain.
+   brain.~~ **Moot 2026-09-25:** the browser brain was deleted, and that
+   `CLAUDE.md` bullet is marked superseded.
 
 ---
 

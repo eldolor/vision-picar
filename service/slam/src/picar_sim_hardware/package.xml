@@ -10,6 +10,10 @@
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
+  <!-- CMakeLists.txt's find_package(CURL) and find_package(nlohmann_json):
+       declared so rosdep can resolve the build outside this repo's image. -->
+  <depend>libcurl-dev</depend>
+  <build_depend>nlohmann-json-dev</build_depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>

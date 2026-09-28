@@ -1,12 +1,18 @@
 # PLAN: the AWS redesign, and the cost that provoked it
 
-Status as of 2026-09-04:
+Status as of 2026-09-05 (header re-checked 2026-09-28):
 
 | Stage | What | Status |
 |---|---|---|
 | 1 | Recorded walks off EFS, onto S3 | **DONE** (commit `b42bee6`), data migrated and verified |
 | 2 | Tear down the VPC and everything that needs one | **DONE 2026-09-05.** Nine stacks deleted; only `recordings-s3` and `serverless` remain |
-| 3 | Rebuild without a VPC | **DEPLOYED AND VERIFIED 2026-09-04**, running alongside the ECS stack. See section 5's deployment note |
+| 3 | Rebuild without a VPC | **DEPLOYED AND VERIFIED 2026-09-04** -- and since Stage 2, **the only deployment**: there is no ECS stack left for it to run alongside. See section 5's deployment note |
+
+The robot and the brain are not in AWS at all; they run locally and the
+deployed twin reaches them through `service/tunnel/`. Passages below that
+say Stage 3 runs "alongside" the ECS stack describe 2026-09-04, the day
+between the two stages. The CloudFormation templates for the deleted
+stacks are still in `cloudformation/` but back nothing.
 
 Written to hand stages 2 and 3 to a session that was not present for the
 measuring. Most of the value here is in section 1 and section 7: the
@@ -17,7 +23,9 @@ were wrong in ways that look completely reasonable.
 
 ## 1. What it actually costs, and the trap in measuring it
 
-**Steady state is ~$159/month of fixed cost**, before a single Bedrock
+**Steady state was ~$159/month of fixed cost** -- the **pre-teardown**
+figure, measured before Stage 2 removed the VPC, load balancers and
+Fargate tasks that make up almost all of it -- before a single Bedrock
 token. Measured from Cost Explorer, us-east-2, on 2026-09-03 -- a day
 with no deployment on it:
 
@@ -462,7 +470,13 @@ draws. **Empty means no auth**, so always pass both.
     aws cloudformation deploy --template-file cloudformation/serverless.yaml \
       --stack-name vision-picar-serverless --capabilities CAPABILITY_NAMED_IAM \
       --region us-east-2 --parameter-overrides \
-        LambdaCodeBucket=... VisionCodeKey=... WalksCodeKey=...
+        LambdaCodeBucket=... VisionCodeKey=... WalksCodeKey=... \
+        VisionSharedSecret="$VISION_SHARED_SECRET" \
+        WalksSharedSecret="$WALKS_SHARED_SECRET"
+    #    Both secrets, always, on a FIRST deploy: empty means no auth (above).
+    #    On an update of an existing stack, `deploy` keeps a parameter's
+    #    previous value when it is omitted -- but passing them is still the
+    #    safe habit. (Added 2026-09-27: this command used to omit them.)
 
     # 3. the SPA and the console
     aws cloudformation describe-stacks --stack-name vision-picar-serverless \

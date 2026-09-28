@@ -1,7 +1,25 @@
 # Plan: hardening the SIM so hardware day is short
 
-Status: proposal, nothing built yet. Written against the repo as of
-`183b99f`, with `pytest tests/ -q` at 61 passed.
+**Status, 2026-09-28.** Written as a proposal against `183b99f` (61 tests
+then); most of it has since been built. Current state of each phase:
+
+| Phase | Status |
+|---|---|
+| S1 -- pin the contract | **Built** 2026-08-28. `tests/test_robot_contract.py` now runs over **six** backends (`mock`, `replay`, `teleop`, `remote`, `halt_gate`, `hardware`) and pins pixels too. The Settings "Check robot contract" button is still not built |
+| S2 -- real image bytes | **Built** 2026-08-31 (`sim/renderer.py`). The JS `renderFPV` it was ported from was deleted 2026-09-25 |
+| S2b -- Python vision agent | **Built** (`brain/navigate.py`, `brain/vision_agent.py`, `policy: "vision"` / `"tiered"`). What is left is the paid closed-loop sim run against the lit renderer (`CLAUDE.md` Stage 1) |
+| S3 -- brain on the wire | **Built** as B0 (`control/remote_robot.py`, `PLAN-brain-relocation.md`) |
+| S4 -- time in the loop | **Built** 2026-08-28 |
+| S5 -- sensor realism | **Built** 2026-08-28, cone geometry deferred. Its parameters model an HC-SR04, which is **legacy**: the obstacle sensor is an RPLidar C1, read through `get_scan()` (R2) |
+| S6 -- motion realism | **Retired** 2026-09-03 (differential chassis). Its continuous-pose half was **built as R0** on 2026-09-25 (`PLAN-ros-alignment.md` 3.1), with encoder drift following in R5 (`sim.odom_drift`) and a to-scale map in R6 (`sim/maps/scaled_house.py`) |
+| S7 -- chaos and soak | **Proposed**, nothing built |
+
+**Definition of done:** this document's phases were written to the
+"watched on a phone" rule, which was retired 2026-09-25. A phase is now done
+on data -- see `CLAUDE.md` section 7. For the current test count run
+`pytest tests/ --collect-only -q`. Everything below is the original plan
+with dated as-built notes; sections 0-3 describe the repo as it was at
+`183b99f` and are marked where they have since been closed.
 
 Goal: exercise the robot <-> brain loop hard enough in simulation that
 buying the hardware and flipping `config/robot.yaml`'s `mode` is genuinely
@@ -21,12 +39,15 @@ honest accounting:
 - Every movement path -- Python agent, browser D-pad, browser autonomous
   mode, vision autopilot -- routes through `robot/safety.py`. There is no
   second implementation of the robot.
-- `web-twin/index.html` is a genuine HTTP client of that server (fixed in
+- `web-twin/index.html` (its script is `web-twin/app.js` today) is a genuine HTTP client of that server (fixed in
   a prior session; the JS no longer simulates anything).
 - **A real image pipeline already exists, in JavaScript**: the twin's
   Vision Autopilot renders a first-person raycaster view to a canvas
-  (`renderFPV`, `web-twin/index.html:1853`), JPEGs it
-  (`captureFPVFrame`, :1911), and POSTs it to the cloud service's
+  (`renderFPV`, then in `web-twin/index.html`), JPEGs it
+  (`captureFPVFrame`), and POSTs it to the cloud service's
+  *(2026-09-28: the Vision Autopilot, `renderFPV` and `captureFPVFrame`
+  were all deleted 2026-09-25; the Python port, `sim/renderer.py`, is the
+  only renderer.)*
   `/navigate` route, executing the returned action through the same
   `commitAction()` safety path as every other mode. That is a working
   synthetic-camera emulation. It just isn't reachable from Python.
@@ -38,6 +59,12 @@ hardware day."
 ---
 
 ## 1. How the loop actually works today
+
+*(2026-09-28: "today" here is `183b99f`. The pull model below still holds,
+but the tables are out of date: `/frame` returns a rendered JPEG since S2,
+`mode: hardware` exists (R7), and `robot/server.py` also serves `/wheels`,
+`/scan`, `/depth`, `/odometry`, `/world/*` and `/teleop/frame`. For the
+current route list read `robot/server.py`.)*
 
 **The prompt's mental model is inverted, and the correction matters for
 everything below.**
@@ -105,7 +132,10 @@ Two consequences that shape the rest of this plan:
    `RobotInterface` and calls it **in-process**. The only HTTP client of
    `robot/server.py` in this repo is the browser. So the Python agents
    that all 61 tests validate are exercising a code path that will not
-   exist on hardware.
+   exist on hardware. *(Superseded 2026-08-27: `brain/` still calls a
+   `RobotInterface` in-process, but the brain service hands it
+   `control/remote_robot.py`'s `RemoteRobot`, so a mission reaches the
+   robot over HTTP -- S3 / B0.)*
 
 ---
 
@@ -128,8 +158,9 @@ docstring promises won't happen.
 `MockRobot.get_camera_frame()` now answers with `image_base64` /
 `media_type` like every other backend -- so a Pi camera is a fourth
 implementation of a shape that already exists, not a fifth shape. The
-contract is pinned in `robot/interface.py` and asserted for all four
-backends by `tests/test_robot_contract.py`.
+contract is pinned in `robot/interface.py` and asserted for every
+backend by `tests/test_robot_contract.py` (four when this was written;
+six as of 2026-09-28).
 
 ### 2.2 The rule-based policy cannot run on hardware -- NOT A BLOCKER (see Q1)
 
@@ -143,6 +174,10 @@ almost always 'clear' there," which is *why* frontier preference was
 built. **The fallback hardware would run is documented as broken by the
 file that implements it.** The same coordinate dependency exists in the
 twin's JS (`web-twin/index.html:1592`, indexing `position[0]`).
+*(2026-09-28: both halves are gone. The JS local brain was deleted
+2026-09-25, and since the same day the agent takes its pose from
+`WorldInterface.get_pose()` in metres rather than `frame["position"]`
+(`PLAN-ros-alignment.md` 3.2).)*
 
 **Per Q1 this is no longer a problem to solve.** The rule-based agent is
 a simulation tool and stays one -- useful for fast, free, deterministic
@@ -154,13 +189,21 @@ The real consequence is a bookkeeping one: **all 61 tests and both demo
 scripts exercise the sim-only path.** The hardware path (S2b) currently
 has no automated coverage at all.
 
-### 2.3 No Python HTTP client, and `mode:` doesn't cover the brain side
+### 2.3 No Python HTTP client, and `mode:` doesn't cover the brain side -- **CLOSED (2026-08-27, B0)**
+
+*Closed by S3 / B0: `control/` now holds `remote_robot.py`,
+`mission_runner.py`, `brain_server.py` and more, and the brain side is
+selected by `config/robot.yaml`'s `brain:` block (`robot_url`). The
+original text follows.*
 
 `control/` is empty. `config/robot.yaml`'s `mode` selects which backend
 *the server drives* -- it says nothing about whether the *brain* talks
 in-process or over the wire. Both need to be selectable.
 
-### 2.4 No shared conformance suite
+### 2.4 No shared conformance suite -- **CLOSED (2026-08-28, S1)**
+
+*`tests/test_robot_contract.py`; `robot/hardware_robot.py` exists since R7
+and runs in it. The original text follows.*
 
 `RobotInterface` is an ABC with signatures but no documented return-shape
 contract, no units, no ranges, no error semantics. `robot/hardware_robot.py`
@@ -174,6 +217,10 @@ against but "does it look right."
 Fidelity gaps. All are known-risk decisions, not blockers.
 
 ### 3.1 There is no time in the sim
+
+*(Addressed by S4, 2026-08-28: `sim.realtime: true` makes `_settle()`
+sleep, and `tests/test_watchdog_integration.py` runs the watchdog loop
+against a live server. Off by default.)*
 
 `MockRobot._settle()` is `pass` -- an explicit hook, never filled in.
 `drive_forward(speed=50, duration=0.5)` returns instantly. Downstream:
@@ -198,7 +245,9 @@ Fidelity gaps. All are known-risk decisions, not blockers.
 crossed at exactly 0.0 cm** -- i.e. the robot's nose already inside the
 wall. Any value from 1 to 30 would make every existing test pass
 identically. The same constant is duplicated in the twin
-(`web-twin/index.html:1318`, `MIN_DISTANCE_CM = 20`). The safety layer is
+(then `web-twin/index.html:1318`, `MIN_DISTANCE_CM = 20`; since DoD item
+10 it is `MIN_DISTANCE_CM_FALLBACK` in `web-twin/app.js`, overwritten from
+`/health`). The safety layer is
 structurally sound and completely uncalibrated.
 
 Also: the sim caps at `max_range=10` cells = 300cm; an HC-SR04 reads
@@ -209,6 +258,14 @@ of beams per revolution, with a few cm of noise, unreliable returns from
 glass, mirrors and dark matte surfaces, and one scan plane only.
 
 ### 3.3 Motion is discrete, instantaneous, and always succeeds
+
+*(2026-09-28: mostly closed by R0, 2026-09-25 -- `GridWorld` holds a float
+pose, `MockRobot` integrates left/right wheel velocities with the BOM's
+chassis constants, and `turn_left(45)` turns 45 degrees. Encoder drift is
+available since R5 (`sim.odom_drift` / `SIM_ODOM_DRIFT`), off by default.
+The verbs still mean one cell forward and a quarter turn by default, and
+the scalar `get_distance()` is still a multiple of 30 cm. See
+`PLAN-ros-alignment.md` 3.1 and 3.14.)*
 
 - `_speed_duration_to_cells` is `max(1, round(...))` -- `speed=1,
   duration=0.01` still moves a full 30cm cell. Speed and duration are
@@ -225,6 +282,12 @@ glass, mirrors and dark matte surfaces, and one scan plane only.
   drifts within a few meters.
 
 ### 3.4 The starter map is not to scale -- verified
+
+*(2026-09-28: still true of the starter house. R6 added
+`sim/maps/scaled_house.py` -- real proportions, 90 cm doors -- and
+`sim/maps/home_first_floor.py`, chosen with `SIM_MAP`. The chassis figure
+below is the deck; the footprint across the wheels is 228 x 198 mm
+(`robot/safety.py` `FOOTPRINT_*`, nav2's footprint).)*
 
 `sim/maps/starter_house.py` is 13x10 cells. At the code's own 30cm/cell:
 
@@ -288,9 +351,11 @@ disconnect, or Wi-Fi roaming.
 ## 4. Phased plan
 
 Each phase: what gets built, files touched, the test that proves it, and
-**the UI proof it ships with** -- see `CLAUDE.md` section 7. A phase is
-not done when its tests pass; it is done when someone holding a phone can
-watch the thing it built do its job.
+**the UI proof it ships with**. *(Superseded 2026-09-25: this paragraph
+used to say a phase is done when someone holding a phone can watch it do
+its job. That rule was retired; a phase is now done when its pre-stated
+acceptance data says so -- `CLAUDE.md` section 7. The "UI proof" lines
+below are kept as a record of what each phase put on the page.)*
 Phases S1-S3 close architecture gaps; S4-S5 close fidelity gaps (S6 was
 retired); S7 is chaos.
 
@@ -339,7 +404,9 @@ didn't anticipate (`RemoteRobot`, `ReplayRobot`, `TeleopRobot`), so
 `robot` fixture -- `remote` reuses `tests/conftest.py`'s existing
 `robot_over_asgi` fixture (an in-process `RemoteRobot` over a real ASGI-
 mounted `robot/server.py`) rather than re-implementing that wiring. 36
-tests (9 assertions x 4 backends) cover: every backend is actually a
+tests (9 assertions x 4 backends) cover *(as of 2026-08-28; on 2026-09-28
+`BACKENDS` is six -- `_HaltGate` joined at M2 and `HardwareRobot` over
+`sim/fake_esp32.py` at R7 -- and the file collects 134 tests)*: every backend is actually a
 `RobotInterface`; every movement/turn/pan method returns a dict
 self-identifying via an `"action"` key matching the method name;
 `drive_forward`/`reverse`/`turn_left`/`turn_right` accept their declared
@@ -347,6 +414,11 @@ self-identifying via an `"action"` key matching the method name;
 without raising -- the property every failsafe in `AGENT-HARNESS.md`
 section 6 depends on); `get_distance()` returns a non-negative number;
 `get_camera_frame()` returns a dict with a non-empty string `room` key.
+
+*(Superseded 2026-08-31: pixels have been pinned since S2 -- every
+backend must return a decodable image and name its media type -- and
+`robot/hardware_robot.py` exists since R7 and runs in this suite. The
+paragraph below is the 2026-08-28 record.)*
 
 **Deliberately not pinned yet: pixels in `get_camera_frame()`.**
 `MockRobot` still returns grid facts, not `image_base64`, until phase S2
@@ -440,7 +512,7 @@ thing worth recording:
 exists only in JavaScript** -- no Python file in this repo calls
 `/navigate` (verified). `brain/agent.py` is entirely rule-based. On the
 Pi the loop needs to be Python, and there is nothing to port from except
-`web-twin/index.html`'s `visionAutopilotStep()`. This is the gap
+`web-twin/index.html`'s `visionAutopilotStep()` (deleted 2026-09-25). This is the gap
 `brain/planner.py` was always meant to fill.
 
 **Build.** A `VisionAgent` that captures a frame, POSTs it to
@@ -454,7 +526,8 @@ changes.
 The model gets **no history** -- it cannot know the kitchen was already
 searched, or that this doorway has been crossed three times. Today the
 only thing preventing an infinite loop is the step cap
-(`state.autopilotMaxCalls`). This is what `visited_positions` was solving
+(`state.autopilotMaxCalls` -- gone with the Vision Autopilot, deleted
+2026-09-25). This is what `visited_positions` was solving
 in the rule-based agent, and it does not transfer, because it needs
 coordinates.
 
@@ -490,6 +563,12 @@ real pixels from a recorded walk, and the twin's Robot view gained a
 answers -- to the brain. `python -m tests.demo_replay_mission` is the
 end-to-end. `POST /mission/start` no longer answers 501.
 
+*(2026-09-28: both items in the next paragraph are closed. Room-level step
+memory is built -- `/navigate` exchanges `searched_rooms` and `room_guess`,
+`AGENT-HARNESS.md` section 10 -- and `service/vision_analyze/tests/` is
+that service's suite. What remains open in S2b is the paid closed-loop sim
+run, `CLAUDE.md` Stage 1.)*
+
 **Still open: the memory half**, which is the part of this phase the
 description above is really about. A photograph carries no room label, so
 `MissionMemory.visited_rooms` stays empty under this policy and only the
@@ -507,7 +586,9 @@ rule-based "free space clear". The call counter and cap belong in that
 panel too, next to the drill picker.
 
 **Cost constraint.** Every step is a paid call. A 76-step hunt is 76
-calls and, at the current 2.5s throttle, over three minutes. Both the
+calls and, at the current 2.5s throttle, over three minutes. *(The 2.5s
+throttle was the JS Autopilot's, deleted 2026-09-25. The Python agent paces
+by `brain.tick_interval_s` and the call's own latency.)* Both the
 call cap and the throttle are product decisions now, not demo details --
 carry them into the Python agent rather than leaving them in the browser.
 
@@ -532,7 +613,9 @@ Add to the contract suite so `RemoteRobot` must pass it too.
 exact test (`tests/test_remote_robot.py`, 83 steps and an identical
 action sequence either way). The one thing to add when S1 lands is the
 contract-suite parameterization; `RemoteRobot` does not run it yet
-because it does not exist yet.
+because it does not exist yet. *(Corrected 2026-09-28: the sentence
+meant the contract suite did not exist yet. S1 landed the next day and
+`remote` has been one of its backends since.)*
 
 **UI proof.** The twin's Sim tab drives the robot through the same server
 the brain does -- D-pad and remote mission produce the same map, and the
@@ -585,6 +668,14 @@ makes that fast enough to run in the normal suite (well under a second
 per test at a 0.3s timeout, not the production 1.0s default).
 
 ### Phase S5 -- Sensor realism -- **BUILT (2026-08-28), cone geometry deferred**
+
+*(2026-09-28: the sensor this models is legacy. S5's noise, dropout and
+2-400 cm clamp are an HC-SR04's, as are the comments on
+`config/robot.yaml`'s `sim.sensor_noise` block and `sim/sensors.py`'s
+docstring. Since 2026-09-03 the obstacle sensor is an RPLidar C1, and the
+sim publishes it as a ring through `get_scan()` (R2); `robot/safety.py`'s
+footprint corridor reads that scan. `DistanceSensorModel` still shapes the
+scalar `get_distance()`, which remains the veto's last fallback.)*
 
 **Build.** A `DistanceSensorModel` wrapping `GridWorld.distance_ahead()`:
 sub-cell resolution, Gaussian noise, a cone rather than a ray, a dropout
@@ -675,6 +766,12 @@ tuning a synthetic distribution to look reasonable.
 > (`render_world_image()` at `sim/renderer.py:273-279`, `get_depth_grid()`'s
 > conversion at `sim/mock_robot.py:227-228`, and `grid_world`'s
 > `distance_ahead()` and `frame_description()`). Corrected there 2026-09-06.
+>
+> **Built 2026-09-25 as R0** (`PLAN-ros-alignment.md` 3.1): float
+> `x`/`y`/`theta` in `GridWorld`, wheel-velocity kinematics in `MockRobot`,
+> collision by ray. The line references above are as of 2026-09-06 and no
+> longer point at those sites. The to-scale map followed in R6
+> (`sim/maps/scaled_house.py`).
 
 ### Phase S7 -- Chaos and soak
 
@@ -778,8 +875,9 @@ Before trusting a hardware swap-in, all of these:
 1. **Met, and then some.** The Phase S1 contract suite passes against
    `MockRobot` and `RemoteRobot`, with no grid-specific assertions in it --
    and against `ReplayRobot`/`TeleopRobot` too, which didn't exist when
-   this item was written.
-2. `demo_active_search.py` produces an **identical action sequence**
+   this item was written. (Six backends as of 2026-09-28, `_HaltGate` and
+   `HardwareRobot` included.)
+2. **Met (2026-08-27).** `demo_active_search.py` produces an **identical action sequence**
    in-process and over HTTP (Phase S3).
 3. **Met.** The watchdog's real async loop is proven by an integration
    test (`tests/test_watchdog_integration.py`, against a live `uvicorn`
@@ -799,12 +897,16 @@ Before trusting a hardware swap-in, all of these:
    phase now owns (S6 retired), not a fail-safe policy decision. On the
    360-degree lidar the off-axis case is the ring's to catch, which the
    grid cannot represent (`PLAN-microduck-transplants.md` M10).
-6. `get_camera_frame()` returns real image bytes on every backend, and no
+6. **Met (2026-08-31, S2; the rule-based agent stopped reading grid
+   coordinates on 2026-09-25).** `get_camera_frame()` returns real image bytes on every backend, and no
    policy reads grid coordinates on the path intended for hardware
    (Phase S2 + Q1).
 6a. A **Python** vision agent completes a backpack hunt in the sim, with
    cost and wall-clock recorded (Phase S2b). Until this exists the
-   hardware path is browser-only.
+   hardware path is browser-only. *(2026-09-28: the agent exists and has
+   run in the sim twice, 2026-09-02, without reaching the target; the
+   re-run against the lit renderer is the open part -- `CLAUDE.md` Stage 1.
+   The browser path it names was deleted 2026-09-25.)*
 6b. **The wiring is met; the behavioral claim is not yet independently
    verified.** The `/navigate` prompt carries `searched_rooms`
    (`AGENT-HARNESS.md` section 10, `tests/test_vision_policy.py`) and the
@@ -819,13 +921,14 @@ Before trusting a hardware swap-in, all of these:
    packet loss (Phase S7).
 8. **Retired with S6 (2026-09-03).** Arc-based turning is not the
    hardware's behaviour any more. A to-scale map may return if a lidar map
-   has to be represented in the sim, under a different phase.
+   has to be represented in the sim, under a different phase. (It did:
+   `sim/maps/scaled_house.py`, R6.)
 9. `robot/server.py`, `robot/safety.py`, and `brain/` are unchanged by
    the hardware swap. If any of them needs a change, the abstraction
    leaked and the swap is not a config change.
 10. **Met.** `min_distance_cm` is configured in exactly one place
     (`config/robot.yaml`'s `safety.min_distance_cm`) and reported from
-    there by `robot/server.py`'s `/health` -- `web-twin/index.html` reads
+    there by `robot/server.py`'s `/health` -- `web-twin/app.js` reads
     it into `state.minDistanceCm` instead of carrying its own hardcoded
     copy, which used to drift silently if the two were ever edited
     separately. A `MIN_DISTANCE_CM_FALLBACK` constant remains, used only

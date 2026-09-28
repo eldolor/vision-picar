@@ -76,4 +76,7 @@ echo "    --stack-name vision-picar-serverless --capabilities CAPABILITY_NAMED_I
 echo "    --region $REGION --parameter-overrides \\"
 echo "      LambdaCodeBucket=$BUCKET \\"
 echo "      VisionCodeKey=lambda/vision-$STAMP.zip \\"
-echo "      WalksCodeKey=lambda/walks-$STAMP.zip"
+echo "      WalksCodeKey=lambda/walks-$STAMP.zip \\"
+echo "      VisionSharedSecret=\"\$VISION_SHARED_SECRET\" \\"
+echo "      WalksSharedSecret=\"\$WALKS_SHARED_SECRET\""
+echo "  (Pass both secrets: empty means the functions run with NO auth.)"

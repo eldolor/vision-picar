@@ -16,7 +16,17 @@
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>xacro</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
-  <exec_depend>nav2_bringup</exec_depend>
+  <!-- Exactly the nodes launch/picar.launch.py starts (it does not use
+       nav2_bringup's launch files). -->
+  <exec_depend>nav2_controller</exec_depend>
+  <exec_depend>nav2_planner</exec_depend>
+  <exec_depend>nav2_behaviors</exec_depend>
+  <exec_depend>nav2_bt_navigator</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_navfn_planner</exec_depend>
+  <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
   <exec_depend>nav2_collision_monitor</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
+  <exec_depend>rmw_cyclonedds_cpp</exec_depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

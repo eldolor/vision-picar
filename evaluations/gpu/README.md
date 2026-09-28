@@ -22,6 +22,13 @@ nothing about what a detection is, so these numbers are comparable to the
 older ones. Without that check every row would carry an unfalsifiable
 "different hardware" caveat.
 
+> **Does not generalise -- 2026-09-20 (P24).** This control holds for
+> OWLv2, a ViT. It does NOT hold for YOLOE, a CNN: `yoloe-11s-seg` reads 251
+> true positives on an A10G (`evaluations/gpu-yoloe/yoloe-11s-seg_none.json`)
+> against 258 on the laptop CPU (`evaluations/tier-decomp/F_yoloe-11s.json`),
+> same 1234 frames. TF32 was ruled out; the software stack differs. Never
+> merge GPU and CPU rows for a CNN detector.
+
 ## Results, all 8 walks, at matched false-positive budgets
 
 | config | @0 FP | @3 FP | @16 FP | ms |
@@ -30,7 +37,7 @@ older ones. Without that check every row would carry an unfalsifiable
 | **OWLv2-base fp16** | 12% | **82%** | 92% | **111** |
 | Qwen2.5-VL-3B | 42% | 79% | 79% | 725 |
 | InternVL3-2B | 3% | 75% | 89% | 625 |
-| YOLO11s + floor + CLIP (shipped) | 8% | 58% | 70% | 1210 |
+| YOLO11s + floor + CLIP (shipped *as of 2026-09-12; since P23/P24 the tier ships `yoloe-11s-seg` + CLIP, no floor mask*) | 8% | 58% | 70% | 1210 |
 | **Grounding DINO** | **50%** | 55% | 71% | 226 |
 | YOLO-World | 47% | 53% | 74% | **16** |
 | LLMDet | 11% | 18% | 72% | 276 |

@@ -2,6 +2,21 @@
 
 Status: M1 built and measured (see its entry -- the replays settled more than the sim run did), M2-M5 built 2026-09-03, M6-M12 proposed (M7b added 2026-09-03) · Date: 2026-09-02 · Phase IDs: `M1`-`M12`
 
+**Status check, 2026-09-28.** M1-M5 stand as built, with later changes
+recorded inline: M4's authority order grew three drivers and an exclusive
+autonomous rank (R2b), and its refusal reasons grew from three to six --
+`robot/interface.py`'s `DRIVER_PRIORITY` and `AGENT-HARNESS.md` 4.1/4.2 are
+canonical for both; M3's path zones are chosen by angle, with
+`PATH_FRACTION` only a fallback; the contract suite runs over six backends.
+M6, M7, M7b and M12 are still proposed. **M8-M11 and section 7's Hailo
+bullet target a board that is no longer the plan**: the board is a Jetson
+Orin Nano Super (decided 2026-09-19, `JETSON-BOM.md`), and
+`robot/hardware_robot.py` exists as a motors-only backend over the ESP32
+driver board (R7, `PLAN-ros-alignment.md` 3.16). Read those phases for the
+Microduck reasoning, not for the parts or OS they name. The chassis
+footprint is 228 x 198 mm across the wheels (`robot/safety.py`
+`FOOTPRINT_*`, nav2's footprint); the xacro's 228 x 148 mm box is the deck.
+
 [Microduck](https://github.com/pollen-robotics/microduck) (Apache-2.0, read
 2026-09-02) is Pollen Robotics' open-source brain for a 25cm bipedal robot:
 seven Rust daemons on a Rockchip RK3566, a 50Hz control loop driving fifteen
@@ -340,7 +355,8 @@ that predates the route says "depth: not reported by this server" rather
 than going blank -- blank and "no obstacles" must not look alike.
 
 **Done.** The strip tracks the FPV view and the contract suite passes on
-all five backends (75 tests, up from 44).
+all five backends (75 tests, up from 44). *(2026-09-28: six backends since
+R7 added `HardwareRobot`; the file now collects 134 tests.)*
 
 **Not deployed.** `cloudformation/twin.yaml` and `teleop-robot.yaml` carry
 the new path patterns -- `/depth` took the twin's PWA rule to its
@@ -400,7 +416,8 @@ Built:
   collapse stays exactly as it was and is still right -- a lone float has
   no way to say "I could not tell", so it fails toward stop.
 - **`MockRobot` draws dropout and noise per zone**, because the zones of a
-  real VL53L5CX fail independently: one status byte says nothing about its
+  real VL53L5CX (the ToF sensor this was written for; the car's range
+  sensor is an RPLidar C1 since 2026-09-03, see M8/M10) fail independently: one status byte says nothing about its
   neighbour's. With no sensor model configured the grid stays exact, the
   same promise `get_distance()` makes.
 - **`SafetyController.path_clearance()`** -- three outcomes, in order.
@@ -412,10 +429,21 @@ Built:
   in either direction** -- read as a distance it would stop the robot
   constantly, read as clear it would drive through what the sensor could
   not see.
-- **`PATH_FRACTION = 0.5`, and the number is geometry.** The middle half
+- **`PATH_FRACTION = 0.5`, and the number is geometry.** *(Superseded
+  2026-09-03 the same day, `PLAN-onboard-perception.md` 5.1: path zones are
+  now chosen by ANGLE -- `robot/safety.py`'s `path_zone_indices()` takes
+  every column within `PATH_HALF_ANGLE_DEG` of ahead, using the grid's
+  `fov_deg`. `PATH_FRACTION` survives only as the fallback, with a warning,
+  for a grid that publishes no `fov_deg`. On the sim's 60-degree grid both
+  rules pick the same four zones. The reasoning below is the original.)*
+  The middle half
   of the sim's 60-degree render is +/-15 degrees, spanning 16cm at one
   grid cell -- the PiCar-X was about 16.5cm wide; the chassis since chosen
-  is 14.8cm, and M10 re-measures `CHASSIS_WIDTH_CM`. Both neighbours of that
+  is 14.8cm, and M10 re-measures `CHASSIS_WIDTH_CM`. *(Corrected
+  2026-09-28: 148 mm is the chassis DECK. Across the wheels the footprint
+  is 198 mm -- `robot/safety.py` `FOOTPRINT_WIDTH_M`, nav2's footprint --
+  so the cone errs narrow, and 3.18's swept corridor covers the gap.
+  `CHASSIS_WIDTH_CM` is still 16.5.)* Both neighbours of that
   choice are real failures, and both are observable in the starter house:
   the whole grid vetoes every corridor (the outer rays read the side walls
   at ~18cm, under the 20cm threshold, on every legal step), and a single
@@ -516,6 +544,16 @@ wall: two situations whose correct responses are opposites.
 
     stop  >  manual D-pad  >  remote mission  >  local brain
 
+*(Updated 2026-09-28. The order as it stands is `stop > a person > one
+autonomous driver at a time`; the drivers are `twin-dpad` and
+`teleop-operator` (manual), `brain`, `teleop` and `ros` (autonomous), and
+the local brain's rank is dead -- its loop was deleted 2026-09-25. Rule
+three below changed in R2b (2026-09-26): equal rank still passes at the
+MANUAL rank, but at the AUTONOMOUS rank the holder is exclusive until its
+claim lapses, so the brain and the ROS stack never interleave. Canonical:
+`robot/interface.py` `DRIVER_PRIORITY`, `robot/server.py` `arbitrate()`,
+`AGENT-HARNESS.md` 4.1.)*
+
 Rank is by role, not by client. Five rules follow, each because its
 opposite is a real failure: `stop` is never arbitrated (a stop that can be
 refused is not a stop); `stop` claims nothing (or the loser of an
@@ -536,7 +574,10 @@ Built:
   `driver` (who last had it) -- two different statements, and the second is
   what you read a second after a mission ends.
 - **Every refusal carries a `reason`**: `safety_distance`, `preempted`,
-  `watchdog`. `mission_ended` stays brain-side, because `robot/server.py`
+  `watchdog`. *(2026-09-28: six now -- R2b/R4 added `ros_unavailable`,
+  `not_the_actuator` and `unsupported`. `AGENT-HARNESS.md` 4.2 has the
+  table, and records that `mission_ended` was never produced: the halt
+  gate raises `MissionHalted` inside the brain instead.)* `mission_ended` stays brain-side, because `robot/server.py`
   has no notion of a mission and must not grow one.
 - **`RemoteRobot` raises `Preempted`, never `SafetyViolation`**, and
   branches on the reason rather than the prose -- so a server older than M4,
@@ -549,7 +590,7 @@ Built:
   vision budget either -- a person is not a flaky link, and spending a retry
   would give the brain two more chances to fight a human for the car.
 - **The twin names its drivers** (`twin-dpad` for the pad, `twin-local-brain`
-  for the JS loop) and shows who is driving and what was last refused,
+  for the JS loop -- deleted 2026-09-25) and shows who is driving and what was last refused,
   beside the watchdog readout -- all three answer the same question, which
   is "the robot is not moving, what stopped it?".
 
@@ -749,11 +790,17 @@ The residue is two narrower things:
 - `vision_core.py:561` -- `DEFAULT_PROMPT_VARIANT =
   os.environ.get("NAVIGATE_PROMPT_VARIANT", "default")` is never validated, and
   `vision_core.py:624` falls back to the default template silently.
+  *(Line numbers as of 2026-09-02; on 2026-09-28 they are `:730` and
+  `:726`/`:793` in `service/vision_analyze/vision_core.py`, and both
+  statements still hold.)*
 - Unknown request-body fields are ignored throughout (`body.get(...)`).
 
 **The first is latent rather than live, and M1 arms it.**
 `cloudformation/service.yaml:31,269` currently templates `NavigateModelId` and
-nothing else, so no stack passes the variant today. The moment one does --
+nothing else, so no stack passes the variant today. *(2026-09-28: that stack
+was deleted 2026-09-05. The live template is `cloudformation/serverless.yaml`
+-- `NavigateModelId` at `:53`, passed as `BEDROCK_NAVIGATE_MODEL_ID` at
+`:186` -- and it still passes no variant, so the argument stands.)* The moment one does --
 which is what shipping `bearing-only` or promoting `center-third-path` needs --
 a typo deploys a service that serves `default` while every recorded walk claims
 the variant that was asked for.
@@ -881,6 +928,16 @@ five, and two back-to-back walks are cleanly separated.
 
 ## 5. Hardware-day phases
 
+> **Superseded in part, 2026-09-28.** M8-M11 were written for a Raspberry
+> Pi 5 running Raspberry Pi OS with a Hailo-8L and `picamera2`. The board is
+> a **Jetson Orin Nano Super** (decided 2026-09-19; JetPack 6 / Ubuntu 22.04,
+> `JETSON-BOM.md`), the camera an IMX219, the motor board a Waveshare
+> General Driver (ESP32). `robot/hardware_robot.py` already exists as R7 --
+> a motors-only `RobotInterface` backend over the ESP32's serial line,
+> whose `get_camera_frame()` still raises -- so M9's "Files" line describes
+> a file that is now half-written. The Microduck reasoning in each phase
+> stands; the parts, OS and camera stack they name do not.
+
 ### M8 -- The too-close band and range projection
 
 **Why.** `kinematics/src/tof.rs` is pure geometry turning a raw grid into
@@ -977,6 +1034,9 @@ camera points.
   range shortens, which needs a sensor whose geometry is known -- i.e. this
   phase. `CHASSIS_WIDTH_CM` is still the PiCar-X's 16.5 and wants
   re-measuring on the 148mm Yahboom chassis (`HARDWARE-READINESS.md` 5.5).
+  *(Corrected 2026-09-28: 148 mm is the deck; the footprint across the
+  wheels is 198 mm -- `robot/safety.py` `FOOTPRINT_WIDTH_M`, nav2's
+  footprint. Re-measuring on the real chassis is still a hardware-day item.)*
 - Validate scans in the actual house before the collar reads them
   (`HARDWARE-READINESS.md` 5.3): glass, mirrors, dark fabric, vibration.
 
@@ -1066,7 +1126,10 @@ already tried from this spot; the twin map shades visited cells.
 - **BLE presence, the chorale, the shared beat, the theremin.** Multi-robot
   social behaviour, with one robot.
 - **A local target detector on an NPU.** Was deferred; **decided 2026-09-04**
-  -- a Hailo-8L AI HAT+ (`PLAN-onboard-perception.md` 1.10 and §4). The
+  -- a Hailo-8L AI HAT+ (`PLAN-onboard-perception.md` 1.10 and §4).
+  *(Superseded 2026-09-19: the board is a Jetson Orin Nano Super and the
+  Hailo path is closed; the detector runs on the Jetson's GPU. The walks
+  also moved from EFS to S3 on 2026-09-04.)* The
   recorded walks on EFS are already robot-height footage with operator
   labels -- the dataset Microduck says is the real project ("Data is the
   project, not the model"), and the one a compiled HEF is scored against

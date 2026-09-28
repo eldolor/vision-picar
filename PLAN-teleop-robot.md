@@ -1,5 +1,17 @@
 # Plan: a teleop robot -- close the loop on Robot view
 
+> **Status note, 2026-09-28.** T1-T3 stand and are how a phone walk drives
+> the brain today. **The AWS deployment T4 describes was deleted
+> 2026-09-05** (`PLAN-aws-cost-redesign.md` Stage 2), with the shared ALB
+> and the main brain the recording proxy forwards to, so **T4 and "Recording
+> proxy" below are history**. Run teleop locally instead:
+> `ROBOT_MODE=teleop bash service/tunnel/run.sh`, then `ngrok start picar`,
+> and point the deployed twin's Settings at `https://<domain>` and
+> `https://<domain>/brain` (`service/tunnel/run.sh`'s header, `CLAUDE.md`
+> section 6). The `/frame` 503 follow-up in the definition of done is
+> fixed. The "watched on a phone" rule quoted in the goal was retired
+> 2026-09-25 (`CLAUDE.md` section 7).
+
 Status: **Done, 2026-08-28.** T1-T4 built (`sim/teleop_robot.py`, the
 `POST /teleop/frame` route on `robot/server.py`, Robot view's "Drive via
 brain" switch in `web-twin/index.html`, and a live AWS deployment -- see
@@ -262,8 +274,15 @@ room:
 
 ## Phase T4 -- deploy alongside the sim-mode twin on AWS -- BUILT
 
+> **History: deleted 2026-09-05** with the rest of the ECS stacks. The
+> templates (`cloudformation/teleop-robot.yaml`, `teleop-brain.yaml`) are
+> still in the tree but back nothing. See the status note at the top for
+> how teleop runs now.
+
 **Problem.** Robot view's camera needs a secure context (`https://` or
-`localhost` -- confirmed in `web-twin/index.html:1055`); a LAN IP does
+`localhost` -- confirmed in `web-twin/index.html:1055`, which is now
+`startGuidanceInner()`'s `window.isSecureContext` check in
+`web-twin/app.js`); a LAN IP does
 not qualify, so a phone off the same machine as `uvicorn` needs a real
 HTTPS deployment to test any of T1-T3 at all. The existing ECS
 deployment already solves this (`cloudformation/cdn.yaml`'s CloudFront
@@ -431,6 +450,11 @@ briefly loses focus switching apps).
 
 ## Recording proxy: teleop-brain forwards to the main brain -- built 2026-08-28
 
+> **History.** Both brains and the internal ALB this proxies across were
+> deleted 2026-09-05. Locally one brain serves both missions and
+> recordings, so no proxy is involved; `recording_proxy_url` remains a
+> config option.
+
 **Bug found the same day, via real use, not a drill.** Robot view's
 "Record this walk" was enabled with the twin's Settings pointed at
 `teleop-brain` (left over from testing "Drive via brain" earlier in the
@@ -581,3 +605,6 @@ doesn't catch `TeleopStall` and turn it into a specific response, so the
 mission log gets a generic "Internal Server Error" instead of the actual
 "no frame has ever been pushed" message. Small fix, not yet done: catch
 `TeleopStall` in that route and return e.g. 503 with its real message.
+**Done since** (checked 2026-09-28): `/frame` catches any backend
+exception -- deliberately not `TeleopStall` by name, so the route imports
+no backend -- and returns 503 with the real message.

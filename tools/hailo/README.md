@@ -1,5 +1,15 @@
 # The Hailo compile loop
 
+> **Status 2026-09-28: kept for re-running only.** It was run 2026-09-09 and
+> **OWLv2 did not compile** to a Hailo-8L -- it died at allocation on the
+> transformer's layernorm and softmax layers (`evaluations/hailo/README.md`).
+> Later phases (P10-P18, `PLAN-onboard-perception.md`) pointed the same loop
+> at YOLO-World and SegFormer. **The Hailo path was closed on 2026-09-19**
+> and the board is a Jetson Orin Nano Super, so nothing below decides a
+> purchase any more; "the question" and "reading the report" describe the
+> 2026-09-09 framing. Do not spend on a compile run unless that decision is
+> re-opened.
+
 `PLAN-onboard-perception.md` 1.10 item 1 asks for this before hardware day,
 in almost these words:
 
@@ -38,14 +48,34 @@ three different decisions — see "Reading the report" below.
 | `calibration_set.py` | laptop | 128 frames out of `recordings/`, stratified by walk and balanced on `labels.json` |
 | `compile_owlv2.py` | EC2 | walks the export matrix through translate → optimize → compile and writes a report |
 | `ec2.sh` | laptop | launch, drive, **tear down** the compile host |
-| `setup_host.sh` | EC2 | installs the DFC and its dependencies |
+| `setup_host.sh` | EC2 | installs the DFC and its dependencies -- **by hand; see the warning below** |
 
-The host is **Ubuntu 22.04 / Python 3.10**, and that is a hard requirement
-rather than a preference: Hailo documents the DFC as supporting Ubuntu
-20.04/22.04 and Python 3.8/3.9/3.10 only. The wheel is tagged `py3-none`, so
-pip will happily install it under 3.11 or 3.12 and fail later, further in,
-for reasons that look like a model problem. `ec2.sh` launches Jammy for this
-reason; Noble ships 3.12.
+Added by later phases and not described further here (each file's own
+header says what it is for; `PLAN-onboard-perception.md` has the results):
+YOLO-World and SegFormer exporters/compilers (`export_yoloworld_onnx.py`,
+`compile_yoloworld.py`, `export_segformer_onnx.py`, `compile_segformer.py`;
+P10, P18), INT8 evaluation (`quantized_detect.py`, `quantized_segment.py`,
+`score_detections.py`, `proposal_agreement.py`; P12-P13, P16),
+`host_budget.py` (2.9's CPU budget), and the vendor-container matrices
+(`zoo_probe.sh`, `zoo_matrix.sh`, `zoo_rawparse.py`, `zoo_compile_matrix.sh`,
+`phase2_matrix.sh`, `owlv2_10h_matrix.sh`; P15-P17).
+
+**Prefer `zoo_probe.sh`'s vendor container over `setup_host.sh`.**
+`setup_host.sh` assembles the DFC environment by hand, and that hand-built
+environment is what produced P14's wrong conclusion ("DFC 5.x cannot parse
+real models"): P15 ran the same DFC 5.4.0 inside Hailo's own AI Software
+Suite container and it parsed everything, including P14's exact graph.
+The root cause inside the hand-built host was never established.
+
+The host is **Ubuntu 22.04 / Python 3.10**. Hailo's docs say Python
+3.8/3.9/3.10, but that is stale for DFC 3.34.0: read out of the wheel itself
+(`setup_host.sh`'s header), its `jax` and `networkx` pins need Python >= 3.10
+and its `tensorflow`/`numpy`/`onnxruntime` pins top out around 3.12, so the
+real window is **3.10-3.12**. The wheel declares no `Requires-Python`, so pip
+will not stop a wrong interpreter and the failure arrives later, looking like
+a model problem. `ec2.sh` launches Jammy (3.10, the middle of the window)
+rather than Noble (3.12, its edge). DFC 5.4.0, the 10H line, is narrower:
+**3.10 only**, because it requires `torch==2.9.1`.
 
 `tests/test_hailo_compile_loop.py` covers the head arithmetic and the
 sweep's bookkeeping against fakes. Nothing in the test suite imports torch,
@@ -132,6 +162,11 @@ python -m tools.hailo.export_owlv2_onnx --out build/owlv2 \
     --text "a woven laundry basket"
 
 # 2. laptop -- calibration set out of the corpus
+#    WARNING (P11): the DFC wants >= 1024 calibration frames and a GPU for its
+#    higher optimization levels. With fewer frames or no GPU it SILENTLY drops
+#    to optimization level 0 (no bias correction, AdaRound or QAT) -- which
+#    measures the crudest quantization, not INT8. 128 is enough to test
+#    whether a model compiles; it is not enough for any accuracy claim.
 python -m tools.hailo.calibration_set --out build/owlv2 --n 128
 
 # 3. put the Dataflow Compiler wheel where the host can reach it.
@@ -188,4 +223,5 @@ Re-scoring a compiled OWLv2 needs real silicon, so it is a hardware-day item.
 answers whether one can be built. `setup_host.sh` installs the compiler only.
 
 **No accuracy re-run.** Nine configurations over seven walks are already
-scored and committed under `evaluations/`. Nothing here re-measures them.
+scored and committed under `evaluations/` (by 2026-09-12, eleven on the
+same 610 frames -- `evaluations/gpu/README.md`). Nothing here re-measures them.

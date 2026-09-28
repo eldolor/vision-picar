@@ -6,7 +6,7 @@ A small robot car you can send to find something. Not by giving it a map or a
 route — by letting it look at the room, the way you would, and work out where to
 go next.
 
-- A small robot car on a Raspberry Pi 5 (parts chosen, not yet bought)
+- A small robot car on an NVIDIA Jetson Orin Nano Super (parts chosen, not yet bought)
 - Claude vision models on AWS Bedrock
 - Simulation built first, hardware next
 
@@ -103,7 +103,7 @@ it's the thing worth understanding before you try the app.
 | **Status** | Working today | Working today | **Next phase** |
 | **Eyes** | A drawn first-person view of a make-believe house | Your phone's actual camera | The camera bolted to the car |
 | **Brain** | The vision model, called for real | The vision model, called for real | The vision model, called for real |
-| **Body** | A car that exists only as software | Your legs | Two motors and a steering servo |
+| **Body** | A car that exists only as software | Your legs | Two wheel motors -- it steers by turning them at different speeds, so it can spin on the spot |
 
 ---
 
@@ -197,34 +197,33 @@ unaided.
 
 ---
 
-## The rule: prove it in the twin, then put it in the car
+## The rule: decide it with numbers, then put it in the car
 
 Everything above was built in a particular order, and it is worth stating as a
 rule rather than a habit:
 
-> **A capability is not finished when its tests pass. It is finished when
-> someone holding a phone can watch it work in the twin. Only then does it go
-> anywhere near the car.**
+> **A capability is finished when the numbers say so.** Before trying it, write
+> down what "working" means and the score it has to reach. Then run it the way
+> the car will run it -- many times, in the simulated house -- record what
+> happened, and keep a test that fails if it ever gets worse. Only then does it
+> go anywhere near the car.
 
 Three reasons this is a rule.
 
-**A test proves something to whoever wrote it.** It encodes what that person
-expected. Watching a search cross a room is the check that survives being wrong
-about that.
+**Deciding the bar first keeps everyone honest.** A target chosen after seeing
+the results is a description, not a test.
 
-**The same button becomes the bring-up test.** The twin talks to the car's own
-control interface — the real one, not a pretend one. So the tap that starts a
-search in the simulation is the tap that will start one on the hardware. Every
-capability that ships with something to press ships with its own
-first-day-with-the-robot checklist, for free.
+**One good run proves very little.** Watching a single search cross a room can
+hide the one start in ten that drives into a door frame. Hundreds of runs, each
+logged, do not.
 
 **Some failures cannot be provoked by hand.** That is not an excuse to leave
 them unverified; it is why the drills exist.
 
-The practical consequence: no capability gets built for the car that cannot be
-watched from the phone first. Where a thing genuinely has nothing to see, that
-gets said out loud, and the readout that *would* show it breaking gets named
-instead.
+Until 25 September 2026 the rule was different: a capability counted as
+finished when someone holding a phone had watched it work in the twin. That
+caught real bugs, and the twin is still how a person drives and watches the
+robot -- but watching is now a check on the page, not the finish line.
 
 ---
 
@@ -233,8 +232,9 @@ instead.
 The car was the last thing started, not the first. Everything above it — the
 contract the hardware will implement, the safety layer, the vision service, the
 decision loop, the app — was built and proven against a simulated house first.
-Swapping in real hardware is designed to be a configuration change plus one new
-file.
+Swapping in real hardware is designed to be a configuration change -- the one
+new file it needed, the code that talks to the motor board, has now been
+written and tested against a software copy of that board.
 
 | Phase | Milestone | What it did |
 |---|---|---|
@@ -245,6 +245,12 @@ file.
 | **09** | Splitting brain from body | Thinking happens on one machine, moving on another, with an HTTP link between them — exactly the split the real car needs. |
 | **10** | The digital twin, and Guide | A phone app that drives the simulation for real, plus the vision service in the cloud — and the first-person mode you can walk around with. |
 | **B** | The car stops needing a laptop | The search itself became a small program that runs on the car. The phone starts it and then only watches — close the app and the car carries on. Three separate ways for it to stop itself, and a way to test each one from the phone. |
+| **R0** | Moving like a real car | The simulated car stopped hopping between squares. It now drives and turns smoothly by spinning its two wheels, using the real chassis' measurements. |
+| **R1** | Aiming instead of dithering | Turns are sized to where the target actually is, a search sweeps the room without blind spots, and a mission that is stuck against a wall gives up instead of pushing. It also recognises when it has arrived. |
+| **R3–R4** | The standard robot toolkit | ROS 2, the toolkit most real robots use, now runs in one sealed-off box beside the project. The car's shape is described to it, and every wheel command can go through it -- with only one thing ever allowed to drive the wheels at a time. |
+| **R5** | Drawing the map as it drives | The car builds its own floor plan from the lidar while it moves. In tests with deliberately faulty wheel sensors, the wheels alone ended up to a metre off; the map kept the car within a few centimetres. |
+| **R6** | Driving to a spot on the map | Point at a place on the map and the car plans a route and drives there, keeping clear of walls. In a furnished copy of the owner's own house it reached eight of the nine rooms. |
+| **R7** | A pretend motor board | The code that will talk to the real motor board was written from that board's own source code and tested against a software copy of it -- so hardware day is a settings change. |
 | **11** | **Put it in the car — next** | Same brain, same safety rules, real motors and a real lidar. Say the object out loud; let it go and find it. |
 
 ---
@@ -252,9 +258,9 @@ file.
 ## Next phase: what actually gets hard
 
 On paper the hardware swap is small: point the configuration at real hardware
-instead of the simulator, and write the one file that turns "drive forward" into
-motor commands. Nothing in the thinking layer has to change — that was the point
-of building it this way.
+instead of the simulator. The one file that turns "drive forward" into motor
+commands is already written. Nothing in the thinking layer has to change — that
+was the point of building it this way.
 
 The honest difficulties are elsewhere, and they're all things a simulation is too
 kind about.
@@ -262,8 +268,9 @@ kind about.
 ### A real room is not a grid
 
 The simulated house has tidy square cells and walls in known places. A real floor
-has chair legs, a rug edge, a cable, a cat. The distance sensor sees one narrow
-cone straight ahead and knows nothing about the table leg to the left.
+has chair legs, a rug edge, a cable, a cat. The lidar sees one flat slice of the
+room at its own height: it catches the chair legs and misses a cable on the
+floor or a table top above it.
 
 ### Looking costs money and time
 
@@ -285,13 +292,14 @@ theoretical.
 
 | Term | What it means |
 |---|---|
-| **The car** | A small two-wheeled robot built around a Raspberry Pi 5: a camera on a small pan-tilt mount, a spinning lidar that measures distance in every direction, and a small AI chip that spots the target on board. The first plan used an off-the-shelf PiCar-X kit; it was swapped before purchase because that kit steers like a car and cannot turn on the spot. |
+| **The car** | A small two-wheeled robot built around an NVIDIA Jetson Orin Nano Super, a small computer with a graphics chip that can run the target-spotting model on board: a camera that can pan left and right, and a spinning lidar that measures distance in every direction. The first plan used an off-the-shelf PiCar-X kit; it was swapped before purchase because that kit steers like a car and cannot turn on the spot. A later plan used a Raspberry Pi 5 with a separate AI chip; the Jetson replaced it in September 2026. |
 | **Vision model** | An AI model that accepts an image and a question about it, and answers in words. Here it's asked things like "is a red backpack visible, and roughly where in this frame?" |
 | **Digital twin** | A working stand-in for the real machine that you can drive and watch. Not a mock-up — it runs the same movement, sensing and safety code the car will. |
 | **Lidar** | A spinning laser rangefinder. It measures the distance to the nearest thing at every angle around the car, many times a second — a floor plan's worth of distances from one small puck. It sees one flat slice of the room: chair legs, not chair seats. |
 | **Safety veto** | The rule that lets the body overrule the brain. Every proposed move is checked against the distance reading before any wheel turns. |
 | **Watchdog** | A timer on the body's side. If no command arrives for about a second, it stops the motors without asking anyone. |
 | **Failsafe drill** | Deliberately breaking one thing to check the guard that should catch it. Available from the app, and only ever able to end with the car stopped. |
+| **ROS 2** | The Robot Operating System: a widely used toolkit for robot mapping and route-planning. Here it is kept in one sealed-off box, so the rest of the project never depends on it directly. |
 | **Grid-world** | The simulated house: rooms laid out on a coarse grid of squares, with doorways between them and objects placed in specific cells. |
 
 ---
@@ -303,8 +311,9 @@ Everything built so far is the same loop wearing different bodies — a simulate
 car to prove the idea, a phone in your hand to feel it, and next, the car itself.
 
 The loop now runs where the car will be, stops itself three different ways, and
-every part of it can be watched from a phone before any of it touches a motor.
-That last clause is the whole method.
+draws its own map as it goes. Every part of it has been measured, run after run,
+in the simulated house before any of it touches a motor. That last clause is the
+whole method.
 
 ---
 

@@ -35,6 +35,21 @@ what keeps the other ten sections from rotting with them.
 Updated 2026-08-31, when phase S2 gave the simulator pixels and the
 vision policy stopped being limited to recorded and live walks.
 
+**Checked against the code 2026-09-28.** The expiry checklist below was not
+run for M4's later extension, R0-R7 or P7e, and several architecture
+sections drifted. What changed since 2026-08-31, each now corrected where it
+sits: `HardwareRobot` exists (R7, motors only, over the ESP32's serial line);
+the world is its own seam (`WorldInterface`, `RemoteWorld` over HTTP), and the
+frontier policy reads its pose from it rather than from grid cells; a tick
+checks the step budget last and can end a mission `blocked` (§3, §4); a
+tiered mission can end `found` on arrival (`brain/arrival.py`, sim only --
+it needs a lidar scan); the robot-side check is `robot/safety.py`'s path
+cone and swept footprint, not a single distance read; under `drive: ros`
+(R4) the verbs reach the wheels through the ROS container; and the twin's
+in-browser local brain and Vision Autopilot were deleted 2026-09-25. §4.1,
+§4.2 and the watchdog lines in §6 were rewritten against the code on
+2026-09-27.
+
 The word "agent" covers two things. Both now exist in Python; what
 separates them is which backends they can run against.
 
@@ -47,7 +62,7 @@ separates them is which backends they can run against.
 
 | `policy=` | Decides with | Runs against | Costs |
 |---|---|---|---|
-| `"frontier"` (default) | rule-based exploration: frontier-preference where the frame carries grid coordinates, a plain wall-follower where it does not (§3 step 5) | anything | nothing |
+| `"frontier"` (default) | rule-based exploration: frontier-preference where a `WorldInterface` answers `get_pose()`, a plain right-hand wall-follower where it does not (§3 step 5). Since 2026-09-25 it reads pose from the world and its scene from the depth grid (`ConstrainedAgent.sensed_scene()`), not grid cells off the frame | anything | nothing |
 | `"vision"` | `/navigate` -- one model call per step, one action back | **every backend**, since phase S2 gave the grid world a camera of its own (`sim/renderer.py`): `MockRobot`, `ReplayRobot`, `TeleopRobot`, and hardware later | one paid call per step |
 | `"tiered"` | the same `/navigate` call, behind `brain/tiered.py`'s trigger discipline: a local YOLO + CLIP pipeline looks at every frame for free and the model is asked only on `mission_start`, `candidate_sighting` or `cold_search` | the same backends, but the *result* is only meaningful on real pixels -- a COCO detector finds nothing in a raycaster render (`PLAN-onboard-perception.md` 1.12), so a sim run exercises the loop and not the detector | one paid call per **event**; 4-6x fewer than `"vision"` on the recorded corpus |
 
@@ -84,8 +99,9 @@ in this document should need to move.
 | Phase | What becomes untrue | Update |
 |---|---|---|
 | ~~**S2** -- real image bytes~~ | *Landed 2026-08-31.* §1's policy table and §3 step 3 were updated with it. | done |
-| **Phase 11** -- hardware | `HardwareRobot` does not exist | §5's body-seam row |
-| **B5** -- systemd on the Pi | The brain runs wherever you start it | §2's diagram caption |
+| ~~**Phase 11** -- hardware~~ | *`HardwareRobot` landed as R7 (2026-09-26), motors only: the ESP32 driver board over serial; `get_camera_frame()` still raises.* | §5's body-seam row -- done 2026-09-28 |
+| ~~R2b / R4 / R6 / R7 / P7e~~ | *Not run through this checklist when they landed; caught up 2026-09-28* -- see the dated note at the top of this section | done |
+| **B5** -- systemd on the robot's board (a Jetson since 2026-09-19; "the Pi" in this document is that board) | The brain runs wherever you start it | §2's diagram caption |
 | any | A gap in §12 gets closed | §12 -- it is the only other section that dates |
 
 Two facts elsewhere are also perishable and deliberately kept out of the
@@ -131,7 +147,12 @@ drift, correct them, but nothing depends on them.
 | `control/drills.py` | fault injection, so the failsafes can be shown and not only tested | 57 |
 | `control/brain_config.py` | the `brain:` block of `config/robot.yaml` | 26 |
 
-548 lines total. `control/` imports **no backend, no simulator, and not
+548 lines total -- **as of 2026-08-27**; `wc -l` on 2026-09-28 gives
+813 / 777 / 243 / 130 / 265 including comments, and the table leaves out
+`control/remote_world.py` (135), the brain's client for the world half
+(`WorldInterface` over `GET /world/pose` and `/world/map`, N1), which the
+brain server builds beside `RemoteRobot` and hands the runner as `world=`.
+`control/` imports **no backend, no simulator, and not
 `robot/server.py`** -- only `robot/interface.py` and the
 `SafetyViolation` type that is part of that contract.
 `tests/test_brain_server.py` asserts this in a subprocess.
@@ -145,8 +166,13 @@ returns `True` while the mission is still running, so a caller can write
 `while runner.tick(): pass`. What happens inside:
 
 1. **Refuse if not running.** A stopped runner never steps again.
-2. **Check the step budget.** At `max_steps`, finish with outcome
-   `max_steps`.
+2. ~~**Check the step budget.**~~ **Moved, 2026-09-28 correction:** the
+   start-of-tick budget check was removed from `control/mission_runner.py`
+   as unreachable (the end-of-tick check already finishes the mission);
+   the budget is now checked **last**, in step 11. On the first tick only,
+   the runner centres the camera through the gate (`look_center()`, not
+   counted as a step), so a mission never starts looking 90 degrees off
+   its heading (`PLAN-ros-alignment.md` 3.20).
 3. **Perceive.** `agent.step()` calls `get_camera_frame()` -- an HTTP
    `GET /frame` when the robot is remote. Since phase S2 that reply
    carries a real image on every backend, the simulator included
@@ -158,6 +184,16 @@ returns `True` while the mission is still running, so a caller can write
    the vision policy this is the paid `/navigate` call
    (`brain/navigate.py`); under the rule-based one it is an offline
    converter that makes no call at all.
+
+   *Then, for a mission with a target:* `MissionAgent._review_scene()`
+   runs `brain/arrival.py` between perception and decision (P7e, first
+   half, 2026-09-26). The target detected within the 3-degree steering
+   band and the lidar (`get_scan()`, median of five beams at the bearing)
+   within 0.40 m, two frames running, turns the scene into `STOP` with
+   `target_reached`, and the mission ends `found`. It refuses to judge
+   with no scan (teleop, replay), a panned camera, or no local perception
+   (rule-based, cloud-only vision), so today it fires only for a tiered
+   mission on `MockRobot`. Its readout is `status.arrival`.
 5. **Decide.** The policy runs. *Which* policy is a §1 question; the
    harness calls whatever agent class the `policy` selected.
 
@@ -182,10 +218,12 @@ returns `True` while the mission is still running, so a caller can write
      three distance reads), then choose.
 
    That last choice has **two branches, and which one runs depends on
-   what the frame carries.** With grid `position` and `facing` -- sim
-   only -- it prefers a clear direction leading to an unvisited cell, and
-   backtracks when everything nearby is visited. Without them, which is
-   what a real camera frame will look like, it degrades to a plain
+   whether the world answers.** With a pose from `WorldInterface.get_pose()`
+   (since 2026-09-25; it used to read grid `position` and `facing` off the
+   frame) it prefers a clear direction leading somewhere unvisited --
+   judged in metres, bucketed at the map's own resolution -- and
+   backtracks when everything nearby is visited. Without a world
+   (`NullWorld`, or a pose read that fails), it degrades to a plain
    right-hand rule: right if clear, else forward, else left. Boxed in on
    all three sides, it falls back to trusting the scene's
    `safest_direction`, with a forced `RIGHT` after three consecutive
@@ -193,24 +231,42 @@ returns `True` while the mission is still running, so a caller can write
 
    **The degradation matters for the hardware path.** The
    frontier-preference behaviour that the demos and tests exercise is the
-   grid branch. On real frames this policy is a wall-follower.
+   world branch. With no world this policy is a wall-follower.
    `PLAN-sim-hardening.md` 2.2 is why that is acceptable: the rule-based
    policy is not on the hardware path, it is the free deterministic way
    to test the safety layer and the mission memory.
 6. **Check safety, brain-side.** The agent's own `SafetyController`
-   re-reads the distance sensor before a `FORWARD`. This is an early out,
-   not the authority.
+   vets the move before sending it: `check_and_execute()` compares
+   `forward_clearance()` -- the path cone (`path_clearance()`: depth grid
+   first, the scalar `get_distance()` only as fallback) and the swept
+   footprint corridor off the lidar scan (`footprint_clearance()`), in
+   series -- against `min_distance_cm`; a reverse is vetted the same way
+   astern. (This step used to say "re-reads the distance sensor", which
+   was true before M3.) An early out, not the authority.
 7. **Act, through the gate.** The action goes to `_HaltGate`, which
    refuses movement if the mission has already ended (section 6), then to
    the robot -- `POST /action` when remote.
 8. **Check safety, robot-side.** `robot/server.py` runs the same check
    again against its own sensor read, and can veto. Over HTTP a veto
    comes back as `200 {"executed": false}`; `RemoteRobot` re-raises it as
-   `SafetyViolation` so the agent cannot tell local from remote.
+   `SafetyViolation` so the agent cannot tell local from remote. Under
+   `drive: ros` (R4, off by default) a verb that passes is not executed
+   by the backend directly: `robot/ros_drive.py` turns it into twists
+   closed on the wheel encoders and sends them through the ROS container
+   (`twist_mux` -> `diff_drive_controller` -> `POST /wheels`, which then
+   accepts only driver `ros`). Nothing in this tick changes.
 9. **Record.** The step goes into `MissionMemory` -- rooms visited, rooms
-   searched, sightings, action history -- and into the log tail.
+   searched, sightings, action history -- and into the log tail. A
+   `FORWARD` the safety layer refused increments a consecutive-refusal
+   counter; any executed move resets it.
 10. **Check for completion.** `MissionMemory.is_complete()` is true once
-    the target object is sighted or the target room reached.
+    the target object is sighted (or arrival has fired) or the target room
+    reached -- outcome `found` or `room_reached`.
+11. **Check for stuck, then the budget.** `stuck_after` (default 5)
+    refused `FORWARD`s in a row ends the mission `blocked` (R1b, 2026-09-25:
+    going around is route planning, nav2's job). Then, at `max_steps`, the
+    mission ends `max_steps`. Both are decided outside the runner's lock,
+    because `_finish()` makes a network call.
 
 Steps 6 and 8 are the same check run twice on purpose. The brain's copy
 saves a round trip; **the robot's copy is the one that counts**, because
@@ -224,6 +280,8 @@ it is the only one a compromised or buggy brain cannot skip.
    idle ──start()──> running ──┬── found          target sighted
                                ├── room_reached   target room entered
                                ├── max_steps      budget exhausted
+                               ├── blocked        stuck_after FORWARDs in a
+                               │                  row refused (R1b)
                                ├── stopped        stop() -- an operator
                                ├── preempted      a higher-priority driver
                                                   took the robot (§4.1)
@@ -235,6 +293,11 @@ it is the only one a compromised or buggy brain cannot skip.
 mission was outranked. Filing a normal human intervention alongside a dead
 AWS link would make both harder to read, and would invite a retry where
 retrying is exactly wrong.
+
+**`blocked` is not `failed` or `max_steps` either** (added 2026-09-25):
+nothing broke -- the collar did its job -- and the mission was no longer
+making progress. nav2 reports an unreachable goal the same way, which is
+why it is an outcome rather than a recovery.
 
 Every terminal transition goes through `_finish()`, which does three
 things in order: mark the runner not-running (so the halt gate closes),
@@ -257,12 +320,25 @@ emerge (`architecture` §6). Here is the decision, and it is enforced in
 `robot/server.py` rather than merely written down:
 
 ```
-    stop  >  manual D-pad  >  remote mission  >  local brain
+    stop  >  a person  >  one autonomous driver at a time
 ```
 
 Rank is by **role, not by client**. A person issuing one command at a time
-outranks any loop; a loop on the robot's own network outranks a loop in a
-browser tab. `robot/interface.py` holds the table.
+outranks any loop. `robot/interface.py`'s `DRIVER_PRIORITY` is the table and
+the authority; as of 2026-09-27 it reads:
+
+| `x-driver` | Rank | Who |
+|---|---|---|
+| `twin-dpad`, `teleop-operator`, *(none -- unnamed)* | manual (30) | a person: the twin's D-pad, the phone-walk operator, curl |
+| `brain` | autonomous (20) | a remote mission (`RemoteRobot`) |
+| `teleop` | autonomous (20) | the teleop brain on a phone walk |
+| `ros` | autonomous (20) | the ROS stack (`picar_sim_hardware`; R2b/R4) |
+| `twin-local-brain` | local (10) | the deleted in-browser brain -- a dead rank, kept only in the table |
+
+*(Updated 2026-09-27. This section used to show
+`stop > manual D-pad > remote mission > local brain` and rule 3 below said
+"equal rank passes" for everyone; R2b made the autonomous rank exclusive,
+and the JS local brain was deleted 2026-09-25.)*
 
 Five rules follow, and each exists because its opposite is a real failure:
 
@@ -272,8 +348,15 @@ Five rules follow, and each exists because its opposite is a real failure:
 2. **`stop` claims nothing.** Stopping is not a bid to drive, so the
    holder keeps its claim. Otherwise the loser of an arbitration takes the
    robot back by giving up.
-3. **Equal rank passes.** Two D-pad taps, or a mission's own successive
-   ticks, must not fight each other.
+3. **Equal MANUAL rank passes; the AUTONOMOUS rank is exclusive.** Two
+   D-pad taps, or a mission's own successive ticks, must not fight each
+   other -- so the driver already holding the robot always passes, and two
+   people share it. But two autonomous drivers (say the brain and `ros`)
+   must not interleave commands on one robot, so at the autonomous rank the
+   holder keeps it until its claim lapses (rule 4) and any other
+   autonomous driver is refused `preempted` (R2b, `robot/server.py`
+   `arbitrate()` -- the convention `twist_mux` encodes: one writer at a
+   time).
 4. **Authority lapses on silence**, on the deadman the server already
    keeps: `watchdog_timeout_s` after the last command the motors stop and
    the claim goes with them. This is why there is no release call to
@@ -282,6 +365,22 @@ Five rules follow, and each exists because its opposite is a real failure:
    themselves are a person with curl, a script run by hand, or a test.
    Ranking them low would mean a running mission ignores a human's direct
    command, which is what the order above forbids.
+
+**Who can move the robot, route by route** (added 2026-09-27; it was the
+question this section could not answer once R2b-R6 landed):
+
+| Route | Arbitrated? | Feeds the watchdog? | Notes |
+|---|---|---|---|
+| `POST /action` (verbs) | yes, `arbitrate()` | yes | Every client's normal path. Under `drive: ros` the verb becomes twists on the named driver's `twist_mux` input; the bridge knows only `twin-dpad`, `brain` and `ros`, so an unnamed or teleop driver is refused as `ros_unavailable` (a known gap -- `service/slam/README.md`). |
+| `POST /stop` | never (rule 1) | yes | Claims nothing (rule 2). |
+| `POST /wheels`, `drive: direct` | yes, same `arbitrate()` | yes | A STANDING command, re-vetted every 50 ms by `wheel_loop()` until silence zeroes it. A zero from a driver not holding the robot is ignored rather than taking authority. |
+| `POST /wheels`, `drive: ros` | no -- only driver `ros` may write, anyone else gets `not_the_actuator` | yes | The actuator's route: `picar_sim_hardware` is the one writer, and people and programs reach it THROUGH `/action`, where arbitration already happened. If the container dies these posts stop and the watchdog stops the wheels. |
+| `POST /world/goal` (nav2, `WORLD_MODE=ros`) | yes, as driver `ros` (`PLAN-ros-alignment.md` 3.21) | no | A goal is an autonomous driver: refused `preempted` while the brain (or a person) holds the robot, and while a goal is pending or active every OTHER autonomous `/action` is refused `preempted` too. A person is never refused because of a goal, and a D-pad twist cancels it (priority 100 in twist_mux, and the bridge cancels). Before 3.21 this route was not arbitrated at all. |
+
+Inside ROS the same order is `twist_mux.yaml`: `cmd_vel/teleop` 100 >
+`cmd_vel/brain` 50 = `cmd_vel/nav` 50 (equal, but since 3.21 the robot
+server admits only one of them at a time), then `collision_monitor`, then
+`robot/safety.py` again at `/wheels`.
 
 Before M4 none of this existed: the D-pad and a remote mission both posted
 to `/action` and the later one won. The only guards were the twin refusing
@@ -302,10 +401,19 @@ correct responses.
 | `safety_distance` | robot server | this move was unsafe; the next may be fine |
 | `preempted` | robot server | you are not driving; stop, do not retry |
 | `watchdog` | robot server (`/health`) | nobody commanded for too long; motors stopped |
-| `mission_ended` | brain (`_HaltGate`) | the mission is over; the gate refused a late tick |
+| `ros_unavailable` | robot server, `drive: ros` | the bridge did not accept the twist -- container down, or a driver the bridge does not map; the robot was stopped directly |
+| `not_the_actuator` | robot server, `/wheels` under `drive: ros` | only `ros` writes the wheels; drive through `/action` |
+| `unsupported` | robot server | this backend has no motors (or this world takes no goals); not a transient |
 
-`mission_ended` is brain-side on purpose: `robot/server.py` has no notion
-of a mission and must not grow one. `RemoteRobot` maps `preempted` to
+*(Corrected 2026-09-27: `ros_unavailable`, `not_the_actuator` and
+`unsupported` were added by R2b/R4 and were missing here. This table also
+listed `mission_ended` from the brain's `_HaltGate`; no such reason is
+produced. The gate raises `MissionHalted`, which `tick()` swallows -- the
+late action is refused, but as an exception inside the brain, never as a
+refusal dict, so invariant 8 below does not cover it.)*
+
+The halt gate is brain-side on purpose: `robot/server.py` has no notion of
+a mission and must not grow one. `RemoteRobot` maps `preempted` to
 `Preempted` and everything else to `SafetyViolation` -- including a refusal
 with no `reason` at all, which is a server older than M4, where the
 distance check was the only thing that ever refused.
@@ -314,12 +422,14 @@ distance check was the only thing that ever refused.
 
 ## 5. The seams
 
-Four places designed to have something else plugged into them:
+Five places designed to have something else plugged into them (the
+world seam was added by N1, 2026-09-20):
 
 | Seam | Type | What it is for |
 |---|---|---|
 | `vision_fn(frame) -> scene` | callable | **The policy seam.** Swap in the LLM. Section 10. |
-| `RobotInterface` | ABC | **The body seam.** `MockRobot` and `RemoteRobot` today; `HardwareRobot` *(does not exist -- Phase 11)*. The runner never touches a backend. |
+| `RobotInterface` | ABC | **The body seam.** `MockRobot`, `ReplayRobot`, `TeleopRobot`, `RemoteRobot` and, since R7 (2026-09-26), `HardwareRobot` (`robot/hardware_robot.py`: the ESP32 driver board over serial, motors only -- no camera yet). The runner never touches a backend. |
+| `WorldInterface` | ABC | **The world seam.** Pose and map -- allocentric state, as opposed to the body's egocentric readings (`world/interface.py`; `CLAUDE.md` section 2). `MissionRunner(world=...)`; the brain server builds a `RemoteWorld` (`control/remote_world.py`) over `GET /world/pose` and `/world/map`. Behind it the robot server has `MockWorld` or, under `WORLD_MODE=ros`, `world/ros_world.py` over SLAM. `NullWorld` when none is given, and the frontier policy then degrades to its right-hand rule. |
 | `policy=` | string | **The decision seam.** `"frontier"`, `"vision"` or `"tiered"`; which backends each can run against is a §1 question. Note that `"tiered"` is not a fourth kind of decision -- it is `"vision"` with a different `vision_fn` bound in, which is the point: nothing in `control/` learned that perception grew a tier. |
 | `robot_factory` / `runner_factory` on `create_app()` | callables | **The test seam.** How the drills, the recording stub, and the two-hop tests inject what they need without the production path knowing. |
 
@@ -349,14 +459,15 @@ robot is told to stop.
 
 | | Failure | Guard | Lives in |
 |---|---|---|---|
-| **B3.1** | A move energises the motors, then the process dies before stopping them | Watchdog -- no `/action` or `/stop` for `watchdog_timeout_s`, motors stop | `robot/server.py` |
+| **B3.1** | A move energises the motors, then the process dies before stopping them | Watchdog -- no `/action`, `/stop` or `/wheels` for `watchdog_timeout_s` (1.0 s), motors stop | `robot/server.py` |
 | **B3.2** | The car goes blind -- vision errors, or never answers | Per-call timeout plus a consecutive-failure budget (default 3). Every blind step stops the car; a run of them ends the mission | `mission_runner.py` |
 | **B3.3** | The loop is alive but stuck | Per-tick dead-man. A tick that overruns `tick_timeout_s` triggers `abort()` | `brain_server.py` |
 
 They do not substitute for each other. The watchdog cannot see a loop
 that is stuck but alive. The brain-side guards cannot see motors left
 running by a crash. And **sensing reads do not feed the watchdog** --
-only `/action` and `/stop` do -- so the twin polling `/frame` while it
+only `/action`, `/stop` and `/wheels` do (`/wheels` since R2b: a standing
+command, or the ROS container's stream under `drive: ros`) -- so the twin polling `/frame` while it
 observes a mission cannot hold B3.1 off.
 
 **The halt gate.** A `tick()` already in flight when `stop()` lands
@@ -385,7 +496,7 @@ code's shape:
 
 | Thread | Runs | Why |
 |---|---|---|
-| The asyncio event loop | `brain_server`'s drive loop, all HTTP handling | `POST /mission/status` must answer while a mission runs |
+| The asyncio event loop | `brain_server`'s drive loop, all HTTP handling | `GET /mission/status` must answer while a mission runs |
 | A worker thread | `runner.tick()`, via `asyncio.to_thread` | The tick is blocking (HTTP calls to the robot). Running it on the loop would freeze `/mission/status` -- and the dead-man that is timing it |
 | A daemon thread | one `vision_fn` call, via `call_with_timeout` | A hung call must be abandonable. Daemon, so it cannot block interpreter exit; a fresh thread per call, so it cannot sit in a pool ahead of the next one |
 
@@ -411,7 +522,7 @@ Consequences worth knowing:
 | Field | Meaning |
 |---|---|
 | `running` | is a mission in flight |
-| `outcome` | `idle` / `running` / `found` / `room_reached` / `stopped` / `max_steps` / `failed` |
+| `outcome` | `idle` / `running` / `found` / `room_reached` / `stopped` / `max_steps` / `blocked` / `preempted` / `failed` |
 | `error` | why, when `outcome` is `failed`; `null` otherwise |
 | `policy`, `mission`, `target_object`, `target_room` | what was asked for |
 | `step`, `max_steps` | progress against the budget |
@@ -424,6 +535,13 @@ Consequences worth knowing:
 | `fault` | which drill, or `none` (added by the server, not the runner) |
 | `tier` | `policy: "tiered"` only -- whether the last step called out and on which trigger, the loaded models by name, and the counters (`frames`, `cloud_calls`, `frames_per_call`). Copied straight off the scene's `_tier`, never computed here |
 | `perception` | `policy: "tiered"` only -- the last frame's tri-state, CLIP margin, matched label and bearing, off the scene's `_perception` |
+| `turns` | R1's readout: `count`, `reversals`, `last_turn_deg` (`null` for a default quarter turn), `share` (turns as a fraction of steps) and `spinning` |
+| `arrival` | P7e: the last arrival judgement off the scene's `_arrival` -- state, lidar range and streak. `null` until a scene carries one |
+| `last_frame_seq` | the teleop frame id the last decision was made on, so a recorded walk aligns decisions to pixels; `null` for a backend that does not stamp frames |
+| `ticks`, `seconds_since_last_tick`, `tick_rate_hz` | M5: completed ticks, time since the last one finished, and the recent rate. Description only; `control/health.py` builds the tick-liveness verdict from them |
+
+*Rows from `turns` down were added 2026-09-28, checked against
+`MissionRunner.status()`.*
 
 Both perception fields are `null` under any policy with no perception
 tier, and that has to stay distinguishable from zeroes: "this policy does
@@ -449,11 +567,12 @@ the twin already renders that field.
    change. There is a test.
 3. **Stopping the mission stops the car.** Every terminal path calls
    `robot.stop()`, and the halt gate keeps a late tick from undoing it.
-4. **One brain drives at a time, and a person outranks both.** The brain
-   server 409s a second `/mission/start` and the twin refuses to start its
-   local loop during a remote mission -- but since M4 the *robot* enforces
-   the order in §4.1 as well, which is the only guard that can see the
-   D-pad. Do not add a movement route that skips it.
+4. **One brain drives at a time, and a person outranks it.** The brain
+   server 409s a second `/mission/start` -- and since M4 the *robot*
+   enforces the order in §4.1 as well, which is the only guard that can see
+   the D-pad. (This used to add that the twin refused to start its local
+   loop during a remote mission; the local loop was deleted 2026-09-25.)
+   Do not add a movement route that skips it.
 5. **`RemoteRobot` stays transparent.** A safety veto must raise
    `SafetyViolation` exactly as in-process, a preemption must raise
    `Preempted` and never be collapsed into it, and `position` must survive
@@ -462,7 +581,12 @@ the twin already renders that field.
    test starts failing, the HTTP boundary has stopped being invisible.
 6. **Drills are fail-safe.** A new fault may only ever end a mission with
    the robot stopped. Never add one that makes the robot move.
-7. **A capability ships with something to press.** `CLAUDE.md` section 7.
+7. ~~**A capability ships with something to press.**~~ **Retired
+   2026-09-25** with the rule it cited. `CLAUDE.md` section 7 now defines
+   done by data: the metric and threshold written down before measuring,
+   measured through the real mission path, recorded and pinned in a test.
+   UI tests and a phone-size screenshot remain the evidence for a change
+   to the page.
 8. **Every refusal names a machine-readable reason.** §4.2. A caller must
    never have to read prose to tell "retry later" from "you are not
    driving".
@@ -527,7 +651,8 @@ removes the obstacle question entirely, so its reply carries no
 and `_navigate["obstacle_ahead"]: None` rather than to "clear" -- a model
 that was never asked has not said the way is open. Under that variant the
 only obstacle logic left on the path is `robot/safety.py`'s
-`get_distance()` re-check before every `FORWARD`, which is the point: the
+re-check before every `FORWARD` (`get_distance()` when this was written;
+the path cone and footprint corridor since M3/3.18, §3 step 6), which is the point: the
 camera answers *what* and *which way*, a distance sensor answers *how far*.
 
 ### The proximity veto seam -- off by default
@@ -603,12 +728,11 @@ to the policy itself:
   tells the model to prefer unexplored space over a room it's already
   named.
 
-Still open: this only reaches the Python vision policy
-(`control/brain_server.py`'s `policy: "vision"`, i.e. recorded walks and
-teleop missions today). The twin's browser-side Vision Autopilot
-(`web-twin/index.html`) calls `/navigate` directly and does not send
-`searched_rooms` -- a reasonable fast-follow, not done here, since that
-mode is local/optional-brain territory (§1), not the hardware path.
+~~Still open: the twin's browser-side Vision Autopilot did not send
+`searched_rooms`.~~ **Moot 2026-09-25:** the Vision Autopilot was deleted,
+so every `/navigate` call a mission makes now goes through the Python
+policy (`control/brain_server.py`'s `"vision"` and `"tiered"`), which
+sends it.
 
 ---
 
