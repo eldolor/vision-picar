@@ -1,5 +1,9 @@
 # BOM comparison: Raspberry Pi 5 + Hailo-8L vs Jetson Orin Nano Super
 
+> **Decided 2026-09-19: the Jetson.** The Hailo path is closed and not being
+> pursued (`CLAUDE.md` section 3); this file is the price record behind that
+> decision, and its "open before ordering" items that concern the Pi are moot.
+
 Prices read from retailer pages **2026-09-17**. Ship to / pick up near
 St. Charles, IL 60174. Sales tax **8.75%**. **Nothing has been purchased.**
 
@@ -26,7 +30,8 @@ board is in-store pickup at Micro Center Westmont, the Pi ships).
 
 **The Jetson costs about $86 more** for the build that can actually be bought
 today, or **$59** more if the out-of-stock Pi parts are counted (4.6). Call the
-honest range **$59-110**. A "$220-300" figure appears elsewhere in the repo and
+honest range **$59-86** (corrected 2026-09-28: this said $59-110, but no
+row in 4.6 or anywhere else produces $110; 4.6's arithmetic gives $59 and $86). A "$220-300" figure appears elsewhere in the repo and
 is an artifact of mixing estimated and verified prices -- see 4.6. `PLAN-onboard-perception.md` 4.7 set
 **~$170** as the delta at which the Jetson is worth re-opening; this is well
 inside it.
@@ -135,7 +140,7 @@ What can honestly be said:
 | | Pi 5 + Hailo-8L | Jetson Orin Nano Super |
 |---|---|---|
 | Can it run OWLv2? | **No, at any price** | Yes, PyTorch fp16 |
-| Tier as measured today | **49-50%** whole-pipeline (P16/P18) | not measured in tier form |
+| Tier as measured today | **49-50%** whole-pipeline (P16/P18) | not measured in tier form (*measured 2026-09-17 by P19: 83% with OWLv2 as the crop source*) |
 | OWLv2 as a detector | -- | 82% @3 FP (P7) |
 | Reactive tier | 92 FPS on the 8L | GPU |
 
@@ -150,6 +155,11 @@ to both Hailos and survives INT8 at IoU 0.988. **OWLv2 has never been run as a
 crop source inside the tier**, only as a standalone detector -- so its advantage
 *in the pipeline* is unmeasured. `brain/perceive_lab.py` can settle that off the
 robot in an afternoon, and it should, before the money is spent.
+**Done 2026-09-17 (P19, `PLAN-onboard-perception.md`):** run as a crop source
+inside the tier, OWLv2 read 83% against the tier's 50% on identical frames and
+gate. P21 later found that comparison confounded (the gap is nearer 7 points),
+and P22-P24 shipped `yoloe-11s-seg` instead of OWLv2 -- see `CLAUDE.md`
+section 3.
 
 ### 4.4 Availability
 
@@ -167,6 +177,11 @@ that is cheaper on paper and out of stock.**
 - **JetPack 6 vs 7 is unresolved**, and the board's entire value rests on
   `torch` + `transformers` wheels existing for the installed L4T. Confirm
   before committing an SD card.
+  *(2026-09-27: the software already assumes **JetPack 6.x / Ubuntu 22.04 /
+  ROS 2 Humble** -- `service/slam/Dockerfile` is `ros:humble-ros-base` (R3).
+  JetPack 7 would mean moving that container to Jazzy. Treat 6.2.1 as the
+  working choice unless the torch-wheel check fails on it. The detector is
+  now `yoloe-11s-seg`, not OWLv2, but it still needs torch.)*
 - **Firmware risk.** Some devkits ship with pre-36.0 firmware; one Micro Center
   reviewer reports a unit bricked during the required update. Do the firmware
   step on the stock 19V adapter, inside the 30-day return window.
@@ -209,7 +224,7 @@ correct, and this file has been corrected accordingly.
 
 | # | Item |
 |---|---|
-| 1 | **Run P10's YOLO-World INT8 compile (~$1, one EC2 hour).** It is the only thing that can put the Pi path at 72% rather than 45%, and therefore the only thing that makes $86 a real debate |
+| 1 | ~~**Run P10's YOLO-World INT8 compile (~$1, one EC2 hour).**~~ **Moot:** P10 ran 2026-09-13 (it compiles) and P13 2026-09-14 (INT8 does not preserve it), and the decision closed for the Jetson 2026-09-19. It is the only thing that can put the Pi path at 72% rather than 45%, and therefore the only thing that makes $86 a real debate |
 | 2 | Micro Center Westmont stock and return window for SKU 812057 -- the 15-day list names *motherboards* and this SKU's component type is "Development Board / Mainboards" |
 | 3 | Yahboom ASIN B0F3CYDQ21's bundled battery voltage (spec is image-only; probably 12.6V 3S) |
 | 4 | Inline 10A fuse + holder -- **not priced on either path** |
@@ -228,3 +243,8 @@ correct, and this file has been corrected accordingly.
 
 Estimates marked `[I]` (A5, A9, A11, the cables and pigtails) are the weakest
 lines and total under $60 across both columns -- they cannot move the $86.
+*(Tagging corrected 2026-09-28: A9 and A11 are tagged `[V]` in section 2 and in
+`HARDWARE-BOM.md`, not `[I]`. A9 earns it -- its itemised vendor prices, 4 x
+$1.99 + $1.75 + $12.29, sum to exactly $22.00. A11 ("about $2") has no
+itemised price in either file, so read it as an estimate whatever its tag.
+The inline 10A fuse is in neither column -- item 4 above.)*

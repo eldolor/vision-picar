@@ -4,6 +4,15 @@ Raw output of `tools/hailo/compile_owlv2.py` against **Dataflow Compiler
 3.34.0**, `hw_arch=hailo8l`, on an `r6i.4xlarge`. The instance is gone; these
 are the records. See `PLAN-onboard-perception.md` P6 for what they decided.
 
+> **Hailo path closed 2026-09-19.** The board is a Jetson Orin Nano Super
+> (`PLAN-onboard-perception.md`, "The Hailo path is CLOSED"); these records
+> are history and decide nothing now. **`zoo-probe/`** holds the later runs
+> in Hailo's own AI Software Suite container (P15-P18): the DFC 5.4.0 parse
+> matrix, YOLO-World and OWLv2 on the Hailo-10H, SegFormer allocation on
+> both parts (the two `segformer_b0_ade-*.hef` files and the INT8 mask-IoU
+> records), and the 365-frame tier rows scored from quantized detections --
+> see P15-P18 for what each file measured.
+
 **Verdict: OWLv2 does not compile to a Hailo-8L HEF.** Not for the reason
 Hailo's own compatibility table gives.
 

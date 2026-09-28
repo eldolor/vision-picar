@@ -1,5 +1,23 @@
 # Edge Perception Bench
 
+> **Superseded 2026-09-19/20 -- kept as the 2026-09-12 record.** The board
+> conclusion stands (a Jetson Orin Nano Super, decided 2026-09-19), for a
+> different reason than the one argued below. What changed since:
+>
+> - **The search tier is not OWLv2.** It is `yoloe-11s-seg.pt` + CLIP RN50
+>   (`brain/perceive.py`), per `PLAN-onboard-perception.md` P22-P24: YOLOE
+>   matches or beats OWLv2 at a small fraction of the latency, and on the
+>   full 1234-frame corpus OWLv2 inside the tier reads 62% at 3 FP
+>   (`evaluations/tier-decomp/F_owlv2.json`). The board is now justified by
+>   running whatever wins plus a depth model and a local VLM, not by a 150M ViT.
+> - **INT8 on OWLv2 was measured the same day and fails**: 82% at 3 FP
+>   becomes 7%, so fp16 is the deployment precision and the Orin figure is
+>   ~205 ms, not 124 ms (`evaluations/trt/README.md`).
+> - **The cost delta is about $86, $59 counting out-of-stock Pi parts**
+>   (`BOM-COMPARISON.md`, 2026-09-17), not the $320-430 in section 7.
+> - **"Proven on a phone before it is put on a car" was retired 2026-09-25**
+>   for a data-driven definition of done (CLAUDE.md section 7).
+
 **Phases P1-P7, 2026-09-07 -> 2026-09-12.** Eleven configurations scored on all
 eight adjudicated rig walks, one toolchain experiment that overturned the
 hardware plan, and the corpus error that moved every headline.
@@ -132,7 +150,10 @@ Every number is scored against **hand-adjudicated per-frame labels**
 (`labels.json`), never the robot's own recorded claims. A walk without labels
 is refused by the scorer rather than scored on weaker evidence.
 
-Eleven walks, 968 frames, phone on a wheeled rig at floor height (10-13cm),
+Eight labelled walks, 610 frames -- the set every number below is scored on
+*(corrected 2026-09-28: this read "Eleven walks, 968 frames", which
+contradicts the 610 used everywhere else here; the 968 figure could not be
+reproduced from the recordings)* -- phone on a wheeled rig at floor height (10-13cm),
 target on the floor, landscape locked. Four targets -- red backpack, blue
 bottle, blue shoes, woven laundry basket -- two COCO nouns and two deliberately
 not.
@@ -419,6 +440,8 @@ matching to three decimals, 1.8x faster. Every latency figure and every
 hardware argument in this document assumed a quantised ViT keeps its
 accuracy; none had measured it. **INT8 still has not been measured**, and
 the projections below assume INT8 -- that is now the load-bearing gap.
+*(Measured the same day in `evaluations/trt/`: INT8 takes OWLv2 from 82% to
+7% at 3 FP, and the Orin figure below becomes ~205 ms.)*
 
 **The Orin projection moved 2.4x when assumptions became measurements** --
 from 51 ms to **124 ms** (8 Hz). Measuring GPU and CPU separately rather
@@ -451,7 +474,8 @@ is upscaled to 960 and loses the detail the distant targets need.
 ## 7. Decision
 
 **A Jetson Orin Nano, sized for a 150M ViT rather than a 2-4B VLM.** The board
-costs roughly $320-430 more than the Pi 5 plan it replaces, on a build
+costs roughly $320-430 more *(superseded: about $86, or $59 --
+`BOM-COMPARISON.md`, 2026-09-17)* than the Pi 5 plan it replaces, on a build
 previously budgeted around $555-620.
 
 **The case is materially cheaper than it was.** Every previous costing assumed
@@ -487,7 +511,8 @@ paying for it.
 - **Nothing here was measured on silicon.** No executable was produced, so INT8
   quantization effects on accuracy are unmeasured. Hardware-day item.
 - **Calibration data is at the limit.** The compiler wants 1024 frames for its
-  higher optimization levels; the entire corpus is 968. More calibration means
+  higher optimization levels; the entire labelled corpus was 610 frames at the
+time (1234 by 2026-09-14, P11). More calibration means
   more walks, not a bigger machine -- and a statistics pass over the full
   corpus runs ~5.4h per configuration on CPU, so a deployable build wants a GPU
   host.
@@ -501,9 +526,17 @@ paying for it.
 
 ```bash
 # score a config over the corpus, then compare at a matched FP budget
-python -m control.perception_eval score --detector owlv2 --save owlv2.json
-python -m control.perception_eval compare evaluations/owlv2.json \
-    evaluations/shipped-floor.json --fp-budget 0,3
+# (score now covers every labelled walk -- 21 as of 2026-09-28 -- so pin the
+#  eight walks this document scored with --walk to reproduce its numbers)
+python -m control.perception_eval score --detector owlv2 --save owlv2.json \
+    --walk blue-bottle-20260907-142454 --walk blue-bottle-20260907-185007 \
+    --walk blue-shoes-20260907-152528 --walk red-backpack-20260907-144856 \
+    --walk blue-shoes-20260908-210511 --walk woven-laundry-basket-20260908-215140 \
+    --walk woven-laundry-basket-20260908-215252 --walk woven-laundry-basket-20260908-215351
+# the 610-frame records behind the tables (evaluations/owlv2.json and
+# shipped-floor.json are the older 299-frame, four-walk scope)
+python -m control.perception_eval compare evaluations/gpu/a10g-fp16.json \
+    evaluations/gpu/a10g-shipped-8walk.json --fp-budget 0,3
 
 # the compile loop
 python -m tools.hailo.export_owlv2_onnx --out build/owlv2 --image <frame> --text "<target>"

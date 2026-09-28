@@ -1,5 +1,40 @@
 # Plan: map the house while it searches
 
+> **Superseded in part by `PLAN-ros-alignment.md` (2026-09-25).** Read that
+> plan for how the robot maps and navigates now. Checked 2026-09-28, what
+> in this document no longer holds:
+>
+> - **"Never (c)'s full adoption" is reversed.** ROS 2 is adopted properly
+>   -- nav2, `slam_toolbox`, `ros2_control`, `tf2`, `twist_mux` -- and owns
+>   the metric layer down to the hardware interface
+>   (`PLAN-ros-alignment.md` §0). The containment rule stands: nothing
+>   outside `service/slam/` imports `rclpy`.
+> - **N6 became R5 + R6** (`slam_toolbox` behind `world/ros_world.py`, then
+>   nav2 goals); N5 stays as written and is R9.
+> - **`POST /goto` is withdrawn** (§0's quote, N6's "three routes", §7 q2).
+>   Goals are `POST /world/goal` on the robot server, in the house frame,
+>   converted by `world/ros_world.py` and handed to nav2; since
+>   `PLAN-ros-alignment.md` 3.23 a goal is arbitrated as an autonomous
+>   driver.
+> - **C2's continuous pose is built** -- R0, 2026-09-25: `GridWorld` holds a
+>   float pose (§3's table and §4's "What N1 did NOT do").
+> - **Drift is built** -- `sim.odom_drift` / `SIM_ODOM_DRIFT`, measured
+>   against SLAM in R5 (§4's "No drift, no loop closure").
+> - **Map storage has a different answer.** This document (§2, §4, N4) says
+>   DynamoDB; the user decided **S3** for backing up the saved map --
+>   `slam_toolbox`'s pose graph and `map_saver` files under
+>   `maps/<robot>/<map_id>/` (`PLAN-ros-alignment.md` §6, open question 3).
+>   N4 (DynamoDB, for §1.5's semantic graph) is not built, and the two
+>   answers have not been reconciled -- settle that before building N4.
+> - **The definition of done is retired** (§5's opening rule, the "Press
+>   this" column, §8). Phases close on pre-stated data -- `CLAUDE.md`
+>   section 7.
+> - **The board is a Jetson**, not the Pi §0's quote names.
+>
+> Still current: §1 (the two maps and the join between them) and §4 (the
+> body/world split and the wall) are the canonical statement of that split;
+> N2, N3 and N7 are still open and still actionable.
+
 Status: **N1 BUILT 2026-09-20**, not deployed -- the world abstraction, the
 `rclpy` wall, `MockWorld`, `RemoteWorld`, the two pass-through routes and the
 twin's map view. N2-N7 PROPOSED · Date: 2026-09-19 (N1 completed 2026-09-20) ·
@@ -101,7 +136,8 @@ sole writer. House id from **config**. Map keyed **by house**. Every edge carrie
 last-confirmed plus success/failure counts, both visible to the planner; eviction
 deferred. An empty graph is **not a special mode**, but the planner's context says
 "map is empty" explicitly. Store is **DynamoDB, AWS durable with a Pi working
-copy**, `schema_version` from the first write, and **stored map text is data,
+copy** *(superseded for the saved map: S3, decided by the user --
+`PLAN-ros-alignment.md` §6)*, `schema_version` from the first write, and **stored map text is data,
 never instruction**.
 
 **§1.6 -- the visual-edge memory stays cancelled, and this plan is why.** Q1
@@ -131,7 +167,7 @@ as a mapping problem.**
 
 | Thing | Was | Is now |
 |---|---|---|
-| **Continuous pose** (`C2`) | un-retired by 1.14, sized as cheap | **a hard prerequisite.** `sim/grid_world.py` is integer cells and a cardinal `Heading`; a SLAM pose cannot be represented in it, so the twin cannot show this phase working -- which §7 makes a blocker, not a nicety. `sim/renderer.py` already takes a float pose in radians |
+| **Continuous pose** (`C2`) | un-retired by 1.14, sized as cheap | **a hard prerequisite.** `sim/grid_world.py` is integer cells and a cardinal `Heading`; a SLAM pose cannot be represented in it, so the twin cannot show this phase working -- which §7 makes a blocker, not a nicety. `sim/renderer.py` already takes a float pose in radians. **Built as R0, 2026-09-25** |
 | **A pose/odometry method** (`C1`) | one of three add-ons to the interface pass | the thing every phase here reads |
 | **Encoders + IMU** | required by 1.14 item 6 under (a) too | **required and now doubly so** -- §3.3's table: nav2's local planner wants wheel odometry fused with scan matching, and scan matching alone is meaningfully worse |
 | **`brain/planner.py`** (`C8`) | "the main hardware-path gap" (CLAUDE.md), designed, never written | the map is what finally gives it something to plan **over**. N7 extends C8's context; it does not build a second planner |
@@ -300,7 +336,8 @@ storage decision, not a process-topology one.**
 
 ## 5. The phases
 
-Hardware-independent work first, per the simulation-first rule. §7's requirement
+Hardware-independent work first, per the simulation-first rule. *(The rule
+quoted next was retired 2026-09-25 -- see the banner at the top.)* §7's requirement
 is a column, not an afterthought: **a phase is not done when its tests pass, it
 is done when someone holding a phone can watch the thing it built do its job.**
 
@@ -360,7 +397,9 @@ is done when someone holding a phone can watch the thing it built do its job.**
    Region-level keeps the cloud tier semantic and the reactive tier geometric,
    which is 2.7's split. Provisional answer: **regions and frontiers, not
    coordinates** -- decide at N7 against a real trigger log.
-2. **Where does `POST /goto` live?** §3.3 lists it as one of (b+)'s three routes,
+2. **Where does `POST /goto` live?** *(Answered 2026-09-25 by
+   `PLAN-ros-alignment.md` §0: withdrawn; goals go through
+   `POST /world/goal` to nav2.)* §3.3 lists it as one of (b+)'s three routes,
    but a goal verb is `C4`'s vocabulary and `robot/safety.py` keeps the veto
    under (b+) -- nav2 plans *on top of* a safety layer, it does not replace one.
    Likely `traverse` gains a nav2 implementation rather than `goto` becoming a
@@ -376,6 +415,9 @@ is done when someone holding a phone can watch the thing it built do its job.**
 ---
 
 ## 8. Definition of done
+
+*(Written to the retired phone-watch rule; the goal it describes still
+stands, but the acceptance test is now data -- `CLAUDE.md` section 7.)*
 
 Start a mission from a phone. The robot drives a house it has never seen,
 searching for a named object, and the twin draws the map filling in as it goes

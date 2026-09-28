@@ -34,13 +34,13 @@ NO_SENSOR_CM = 999.0
 # emerge (`architecture` section 6). The decision, written out in
 # `AGENT-HARNESS.md` and enforced by `robot/server.py`:
 #
-#     stop  >  manual D-pad  >  remote mission  >  local brain
+#     stop  >  a person  >  one autonomous driver at a time
 #
 # `stop` is not a driver -- it is everyone's right, always, and never
 # claims or loses authority. The rest rank by ROLE, not by client: a
-# person issuing one command at a time outranks any loop, and a loop
-# running on the robot's own network outranks one running in a browser
-# tab.
+# person issuing one command at a time outranks any loop. (The in-browser
+# "local brain" this order once ended with was deleted 2026-09-25; its
+# rank below is dead.)
 DRIVER_MANUAL = 30
 DRIVER_AUTONOMOUS = 20
 DRIVER_LOCAL = 10

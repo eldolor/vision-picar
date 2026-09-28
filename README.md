@@ -1,14 +1,33 @@
 # vision-picar
 
-Simulation-first build of a vision-driven robot car: all decision-making
-is built and validated against a grid-world simulator before any hardware
-is bought. (It began as a PiCar-X build; the chassis was changed before
-purchase on 2026-09-03 -- see `PLAN-onboard-perception.md`.)
+An indoor robot car you can send to find something, built simulation-first:
+the decision-making is built and proven against a simulator before any
+hardware is bought. For a non-technical introduction read `INTRODUCTION.md`;
+for orientation in the code read `CLAUDE.md`.
 
-**Where things stand.** Phases 0-6 and the simulation checkpoint are
-done; Phase 9's Wi-Fi control API is done and sim-testable; the web twin
-and the cloud vision service are deployed. Phases 7, 8, 10 and 11 (Pi
-setup, assembly, real camera, hardware swap-in) are unstarted, by design.
+**Where things stand (2026-09-28).** Nothing has been bought yet.
+
+- **Hardware (decided, not purchased):** an NVIDIA **Jetson Orin Nano
+  Super** on a **differential-drive** chassis (it pivots in place), a
+  **Slamtec RPLidar C1**, an IMX219 camera on a single pan servo, and a
+  Waveshare ESP32 motor board. Chosen 2026-09-19; the Raspberry Pi 5 +
+  Hailo-8L plan it replaced is history. Shopping list in `JETSON-BOM.md`,
+  part numbers and wiring in `HARDWARE-BOM.md`.
+- **ROS 2 Humble, in one container** (`service/slam/`): the URDF,
+  `ros2_control`, `slam_toolbox` and nav2 run there and nowhere else. The
+  rest of the project talks to it over HTTP; a test fails if anything
+  outside `service/slam/` imports `rclpy`. Off by default (`drive: ros`,
+  `WORLD_MODE=ros` turn it on).
+- **The brain is a separate service** (`control/brain_server.py`, :8001)
+  from the robot runtime (`robot/server.py`, :8000), and only ever reaches
+  the robot through `RobotInterface` over HTTP. Both run locally today; the
+  deployed twin reaches them through a tunnel (`service/tunnel/`).
+- **The simulator** now has continuous pose and wheel kinematics, solid
+  objects, a lidar, and several houses (`SIM_MAP`), including a model of
+  the owner's own first floor. The motor board is faked on a serial line
+  (`sim/fake_esp32.py`), so `robot/hardware_robot.py` -- the real motor
+  backend -- already runs against it.
+
 `CLAUDE.md` section 3 has the authoritative built-vs-planned table.
 
 **Where to read next**
@@ -17,25 +36,34 @@ setup, assembly, real camera, hardware swap-in) are unstarted, by design.
 |---|---|
 | `CLAUDE.md` | orientation: status table, repo map, gotchas. Start here. |
 | `INTRODUCTION.md` | what the project is, for a non-technical reader |
-| `PLAN-onboard-perception.md` | the hardware decided on: chassis, lidar, detector, bill of materials, and the tiered architecture they imply |
-| `HARDWARE-READINESS.md` | before hardware day: verb-to-motor path, pre-flight checklist, where the brain lives |
+| `PLAN-ros-alignment.md` | the current plan: phases R0-R7 onwards (continuous pose, ROS 2, SLAM, nav2, the motor board), each closed on pre-stated data |
+| `service/slam/README.md` | the ROS 2 container: how to build and run it |
+| `AGENT-HARNESS.md` | how `control/` works: the mission tick, seams, failsafes, invariants |
+| `FEATURES.md` | every feature of the twin, how it works end to end, and the AWS topology it runs against |
+| `JETSON-BOM.md` / `HARDWARE-BOM.md` | what to buy / part numbers, wiring, bring-up order |
+| `HARDWARE-READINESS.md` | before hardware day: verb-to-motor path and pre-flight checklist |
+| `PLAN-onboard-perception.md` | the perception tier and the reasoning behind the hardware |
+| `PLAN-mapping.md` | the mapping phase and the wall around ROS |
 | `PLAN-sim-hardening.md` | where the sim diverges from hardware, and the phased fix |
 | `PLAN-microduck-transplants.md` | designs borrowed from Microduck: depth grid, refusal reasons, arbitration, health verdict |
-| `PLAN-brain-relocation.md` | moving the autonomy loop onto the Pi |
+| `PLAN-brain-relocation.md` | the brain as its own service, and moving it onto the car |
 | `PLAN-ar-guidance.md` | the Guide tab, as built |
 | `PLAN-teleop-robot.md` | a live phone walk driving the real brain, closed loop |
 
 The Guide tab has two modes: **Guide me** steers a person to an object
 (`/guidance`), and **Robot view** shows the move the robot would make from
-where you are standing (`/navigate`) -- the same decision Vision Autopilot
-makes, but on real pixels rather than the simulator's raycaster render.
+where you are standing (`/navigate`) -- the same decision the brain's
+`policy: "vision"` makes, but on real pixels rather than the simulator's
+render.
 
 The phase numbering below comes from the original `picar-x-build-plan.md`,
 which lives in the Claude Project this work started in and is **not in
 this repo** -- the tables in `CLAUDE.md` are the in-repo source of truth.
 
-The rest of this file is an append-only build journal, oldest first. For
-current state, read `CLAUDE.md` rather than the first section here.
+The rest of this file is an append-only build journal, oldest first,
+last extended 2026-09-07. Entries describe things as they were built; some
+of them (the browser's Explore/Find and Vision Autopilot, the ECS
+deployment) have since been removed and are marked where they appear.
 
 ---
 
@@ -53,16 +81,30 @@ current state, read `CLAUDE.md` rather than the first section here.
 
 ## Setup
 
+Same as `CLAUDE.md` section 1:
+
 ```bash
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+
+# once, so the browser UI tests run instead of skipping
+python -m playwright install chromium
+
+# only for policy: "tiered" (YOLOE + CLIP in the brain process)
+pip install -r requirements-perception.txt
 ```
 
 ## Run tests
 
 ```bash
-pytest tests/ -q        # 471 tests, no API key needed
-pytest service/vision_analyze/tests/ -q  # that service's own 47 tests, run separately
+pytest tests/ -q                           # no API key needed
+pytest service/vision_analyze/tests/ -q    # that service's own suite, run separately
 ```
+
+Counts drift quickly; `pytest tests/ --collect-only -q` prints the current
+one. The UI tests (`tests/test_ui*.py`) skip without the Playwright browser,
+and the live ROS tests skip without the container running.
 
 ## Run the demo loop
 
@@ -312,6 +354,9 @@ phase S2.
 
 ### Watching it from the twin (phase B4)
 
+*(The **Local brain** described below was removed 2026-09-25; the Sim tab
+now has only the Remote brain.)*
+
 The Sim tab has two brains side by side. **Remote brain** starts a mission
 on `control/brain_server.py` and then only observes it -- polling
 `/mission/status` for the step count, last action, rooms searched and log
@@ -344,7 +389,8 @@ entirely. See `CLAUDE.md` section 7 for the standing rule this comes from
 
 - `web-twin/index.html` — mobile-first web page: canvas view of the
   starter house, manual D-pad control, autonomous "Explore"/"Find
-  backpack" modes (a JS port of the frontier-preference algorithm in
+  backpack" modes (**removed 2026-09-25** -- missions now start from the
+  Remote brain panel) (a JS port of the frontier-preference algorithm in
   `brain/agent.py` -- verified to match the Python sim's behavior
   step-for-step), and the "take a photo, find the bag" feature calling
   the cloud vision service below. It's a real HTTP client of
@@ -352,6 +398,8 @@ entirely. See `CLAUDE.md` section 7 for the standing rule this comes from
   through the actual server, not a duplicated simulation (see "Is this
   deviating from the hardware plan?" below for how that was verified).
 - **Deployed to ECS Fargate** (`service/twin/`, `cloudformation/twin.yaml`)
+  *(torn down 2026-09-05 -- `PLAN-aws-cost-redesign.md`. The page is now
+  served from S3 through CloudFront, and the robot runs locally)*
   so it's reachable from a phone on any network, not just a Mac's LAN --
   same cluster as the vision service, sharing its NLB and internal ALB
   on the *same port 80* instead of provisioning a second port or a
@@ -379,7 +427,8 @@ entirely. See `CLAUDE.md` section 7 for the standing rule this comes from
   `uvicorn robot.server:app --host 0.0.0.0` on a Mac, LAN IP in the
   connection field, no secret needed (unset `APP_SHARED_SECRET` makes
   `require_secret()` a no-op) -- see `web-twin/README.md`.
-- **Vision autopilot panel**: a third driving mode, alongside manual and
+- **Vision autopilot panel** (**removed 2026-09-25**, with the browser's
+  raycaster; the brain's `policy: "vision"` replaces it): a third driving mode, alongside manual and
   rule-based Explore/Find, where the twin actually drives itself with real
   Claude Vision calls instead of the JS frontier algorithm. Since the
   grid-world sim has no real camera, `web-twin/index.html` renders a
@@ -465,7 +514,9 @@ entirely. See `CLAUDE.md` section 7 for the standing rule this comes from
   `/analyze`; built as its own route instead once `/navigate` already
   existed, for the same target-object-field reason above.
 - Runs as an **ECS Fargate** service (not Lambda -- see history note
-  below) behind an internet-facing **NLB → internal ALB → ECS Fargate**
+  below) *(superseded 2026-09-05: the ECS stacks were deleted and
+  `/navigate`, `/guidance` and friends now run as Lambda behind API
+  Gateway in the `serverless` stack -- `PLAN-aws-cost-redesign.md`)* behind an internet-facing **NLB → internal ALB → ECS Fargate**
   chain, provisioned by the CloudFormation templates in `cloudformation/`
   (`network.yaml`: VPC across 2 AZs, no NAT Gateway; `service.yaml`:
   ECR repo, ECS cluster/service/task, both load balancers, IAM roles,
@@ -553,7 +604,8 @@ with the function carrying no resource policy at all.
 **No.** `RobotInterface` + `robot/factory.py` are untouched -- Phase
 11's hardware swap-in (change `config/robot.yaml`'s `mode` from `sim`
 to `hardware`, add `robot/hardware_robot.py`) is exactly as valid today
-as before any of this session's work.
+as before any of this session's work. *(2026-09-28: `robot/hardware_robot.py`
+now exists -- see the last section.)*
 
 **The one real gap from earlier -- the web twin duplicating simulation
 logic instead of calling it -- is now fixed.** `web-twin/index.html`
@@ -566,6 +618,9 @@ real server and produce the same result as the Python simulation (76
 steps to find the backpack, matching `demo_active_search.py`'s ~77-83).
 CORS support was added to `robot/server.py` for this
 (`config/robot.yaml`'s new `server.allowed_origins`).
+
+*(2026-09-28: the paragraph below is history. The JS decision logic was
+deleted 2026-09-25; the only brain is `control/brain_server.py`.)*
 
 The twin's autonomous exploration *decision* logic intentionally still
 lives in JavaScript, not on the server -- that's correct, not leftover
@@ -589,6 +644,11 @@ implementations of the robot's behavior.
 
 ## Hardware decided, not bought (2026-09-03 and 2026-09-04)
 
+*Superseded 2026-09-19: the board is a **Jetson Orin Nano Super** with an
+IMX219 camera, not a Hailo-8L AI HAT+ with a Camera Module 3, and the build is
+~$944 all-in, not ~$500. The chassis and lidar below still stand. See
+`JETSON-BOM.md` and `HARDWARE-BOM.md`.*
+
 Reading Microduck (`PLAN-microduck-transplants.md`) turned into a rewrite
 of the hardware plan (`PLAN-onboard-perception.md`). The PiCar-X is out:
 it cannot pivot in place, which the grid world always assumed and which
@@ -602,7 +662,15 @@ event-triggered deliberation tier.
 
 ## Swapping to real hardware (Phase 11, later)
 
-Change `mode: sim` to `mode: hardware` in `config/robot.yaml`, and add
-`robot/hardware_robot.py` implementing `RobotInterface` for the chosen
-chassis, lidar and camera (`HARDWARE-READINESS.md` section 4 has the
-verb-to-motor table). Nothing in `brain/` should need to change.
+*Updated 2026-09-28.* `robot/hardware_robot.py` exists (R7, 2026-09-26): a
+`RobotInterface` backend that drives the Waveshare ESP32 motor board over
+serial. To use it, set `mode: hardware` in `config/robot.yaml` and give the
+robot server the board's port in `ROBOT_SERIAL` (or `hardware.serial_port`);
+`robot/factory.py` refuses to start without one. `SIM_MOTOR_BOARD=fake` runs
+the same backend against `sim/fake_esp32.py` instead of a board. The camera
+and lidar drivers are not written yet; until they are, on the car those
+readings answer "unusable" (under the fake board, the simulated body stands
+in for them). Before first power-on, read
+`HARDWARE-READINESS.md` section 5 (pre-flight, including flashing the board
+to closed-loop `mainType` 3) and `HARDWARE-BOM.md` section 5 (bring-up).
+Nothing in `brain/` should need to change.

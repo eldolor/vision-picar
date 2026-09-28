@@ -1,6 +1,44 @@
 # Plan: perception on the car itself
 
-Status: **design settled, nothing built** · Date: 2026-09-03, detector revised 2026-09-04, models and phasing revised 2026-09-06 · Phase IDs: **C1-C9 assigned** (1.14); the rest still unassigned
+> **State as of 2026-09-28.** This file is a log: everything below this
+> block is dated history and is kept as written. What is current:
+>
+> - **Board: Jetson Orin Nano Super**, decided 2026-09-19 -- see "The Hailo
+>   path is CLOSED" (under P20). Every Pi-plus-Hailo section below (1.10,
+>   3.6, 4.3, 4.7-4.9, P4, P6, P10-P18, "DECISION 2026-09-13") is history,
+>   not an open question.
+> - **Shipped on-board tier** (`brain/perceive.py`): `yoloe-11s-seg.pt` ->
+>   CLIP RN50, `low_confidence` crop path, 16 crops per frame, gate
+>   `P >= 0.8` (`DEFAULT_MATCH_PROBABILITY`; the raw CLIP margin is no
+>   longer the gate and `config/robot.yaml` sets `perception_match_margin:
+>   0.0`), no floor mask. On the 11-walk / 1234-frame corpus it reads 80%
+>   recall with 2 false positives at the gate and 82% at 3 FP, mean 139 ms
+>   on laptop CPU (P23, `evaluations/tier-decomp/F_yoloe-11s.json`).
+> - **Corpus:** 21 walks now carry a `labels.json` (2261 frames). The 1234
+>   set is the 11 walks whose labels have no `proposed_by` field; the six
+>   2026-09-21 walks are machine-proposed (OWLv2) and four 2026-09-12
+>   red-backpack walks were labelled by walk-level assertion on 2026-09-22.
+>   `control/perception_eval.py score` scores every labelled walk, so pin
+>   the set with `--walk` before comparing against P23/P24.
+> - **Built:** P1-P3 (`brain/perceive.py`, `brain/tiered.py`,
+>   `control/perception_eval.py`), `brain/goal_pose.py` (off by default),
+>   and arrival on the lidar (`brain/arrival.py`, sim path only --
+>   `PLAN-ros-alignment.md` 3.11). C2's continuous pose was built as R0
+>   (`PLAN-ros-alignment.md` 3.1).
+> - **Open:** `brain/planner.py`, 1.11a enforcement (reported, not
+>   enforced), P7b's preprocessing latency on the Orin.
+>
+> **Conventions.** `bearing_deg` is body-relative in degrees, **positive =
+> right (clockwise)**, 0 = straight ahead. `PerceptionPipeline._bearing()`
+> computes it as `(box centre_x / image width - 0.5) * hfov_deg + pan_deg`
+> -- linear in pixel column, not `atan`, over `hfov_deg` (constructor
+> default 66.0). With the camera panned, adding `pan_deg` is only
+> approximate (`PLAN-ros-alignment.md` 3.12, R3's failed criterion 4). This
+> is the opposite sign of ROS's REP 103 (counter-clockwise positive); the
+> flip happens only in `service/slam/`'s bridge (`picar_bridge/convert.py`,
+> `brain_view.py`) and in `world/ros_world.py`.
+
+Status (2026-09-06, historical): **design settled, nothing built** · Date: 2026-09-03, detector revised 2026-09-04, models and phasing revised 2026-09-06 · Phase IDs: **C1-C9 assigned** (1.14); the rest still unassigned
 
 Started as a holding pen after reading Microduck -- *what could run on the car
 itself?* -- and became the place where a chain of hardware and architecture
@@ -53,7 +91,7 @@ needs hardware.
 **Reviewed 2026-09-06:** 4.8 re-examines the three-way against what the
 delivery-robot companies actually run and against two price moves -- the Jetson
 line was repriced upward in July 2026 and the AI HAT+ 2 is now shipping at $130.
-The Pi-plus-Hailo decision stands. **4.9 then prices the option space inside
+The Pi-plus-Hailo decision stands. *(Superseded 2026-09-19: the board is a Jetson Orin Nano Super -- see "The Hailo path is CLOSED", under P20.)* **4.9 then prices the option space inside
 that family** and settles the part: a **Hailo-8L in M.2 module form**, because
 the module is what survives a Jetson pivot and shares the PCIe lane with the
 NVMe, and because the 10H's measured tokens/s make its generative half a
@@ -437,6 +475,8 @@ workarounds is needed. The CPU-only detector survives as the day-one baseline
 (4.4), not as the design.
 
 ### 1.10 The reactive tier: **two layers**, and a Hailo
+
+> **Superseded 2026-09-19:** the Hailo path is closed and the board is a Jetson Orin Nano Super -- see "The Hailo path is CLOSED" (under P20).
 
 **Decided 2026-09-04: a Hailo-8L AI HAT+ and a Camera Module 3.**
 **Amended 2026-09-06: a Hailo-8L in M.2 module form** -- briefly the AI HAT+ 2
@@ -3006,6 +3046,8 @@ is the compromise that keeps the Pi plan intact.
 
 ### 4.7 The Jetson path, kept for later
 
+> **Superseded 2026-09-19:** the Hailo path is closed and the board is a Jetson Orin Nano Super -- see "The Hailo path is CLOSED" (under P20).
+
 **Ruled out for now, 2026-09-04** -- not on capability, where it is plainly the
 strongest, but on what it costs the rest of the plan. Recorded so the
 re-evaluation does not start from zero.
@@ -3407,6 +3449,8 @@ the tokens are.
 
 #### Recommendation, amending 4.8
 
+> **Superseded 2026-09-19:** the Hailo path is closed and the board is a Jetson Orin Nano Super -- see "The Hailo path is CLOSED" (under P20).
+
 **Configuration C or D with a Hailo-8L, not F.** 4.8 said take the 10H on
 1.10 item 6's pre-registered test, and that test did pass on its own terms --
 in stock at $130, real named models. But item 6's *purpose* was "turn a
@@ -3496,7 +3540,7 @@ real pixels, closed loop, with no robot in existence.
 | **P1** | **The pipeline.** `brain/perceive.py` -- detector -> crops -> CLIP -> match, with 4.2's two crop paths chosen by whether the target has a COCO word, 1.12's three-way output, and bearing from the box plus the frame's own pan angle (1.15.3). `Detector` and `CropScorer` are Protocols, so a HEF substitutes later with nothing in between changing | **BUILT 2026-09-06.** `tests/test_perceive.py`, 22 tests, all against fakes |
 | **P2** | **The trigger discipline.** `brain/tiered.py` -- a `vision_fn` that runs perception locally and calls the cloud only on `mission_start`, `candidate_sighting` or `cold_search`, with 6.1's two-frame hysteresis and a call counter. Plugs into `MissionRunner`'s existing seam, so nothing in `control/` learns perception grew a tier (2.6) | **BUILT 2026-09-06; twin surface 2026-09-07.** `tests/test_tiered.py`, 26 tests, plus `policy: "tiered"` end to end -- see below |
 | **P3** | **Score it on the corpus.** Run P1 over the whole corpus against each walk's adjudicated `labels.json`, sweep the gate, and report recall and precision per walk and in total. `tests/manual_perceive_walk.py` is the single-walk version | **BUILT 2026-09-08** -- `control/perception_eval.py`, beside `control/walk_eval.py` as the phase always said, with `tests/test_perception_eval.py` (31 tests, all against fakes). It reproduces 4.11's shipped row exactly on first run, which is the only validation a scorer can have. See "P3 is a tool now" below |
-| **P4** | **The compile step.** ONNX -> Hailo DFC -> HEF on a rented x86-64 host, with floor segmentation as its first subject rather than YOLO (4.3). This is 1.10 item 1, and it is the remaining fifth | **NOT BUILT, but its subject now exists.** `SegformerFloorProposer` (2026-09-07) is the model 4.3 says to compile first, in this repo behind a `RegionProposer` Protocol and measured at +8 points of recall. Still needs an EC2 hour and a Hailo developer account. No robot |
+| **P4** | **The compile step.** ONNX -> Hailo DFC -> HEF on a rented x86-64 host, with floor segmentation as its first subject rather than YOLO (4.3). This is 1.10 item 1, and it is the remaining fifth | **Compiled in P18 (2026-09-17), to both parts; moot since 2026-09-19** (the Hailo path is closed, and P24 took the floor mask out of the tier). Originally: **NOT BUILT, but its subject now exists.** `SegformerFloorProposer` (2026-09-07) is the model 4.3 says to compile first, in this repo behind a `RegionProposer` Protocol and measured at +8 points of recall. Still needs an EC2 hour and a Hailo developer account. No robot |
 
 **P1-P4 is where 1.10 item 1's compile loop lives, and its absence from C1-C9
 was a real gap** -- the consistency review found that the one thing this plan
@@ -3835,6 +3879,11 @@ per-target, or the distractor set has to carry the near-neighbours
 open question, and it is now a sharp one rather than a guess.
 `brain.perception_match_margin` exists so it can be varied on a walk;
 `config/robot.yaml` sets 0.02 with this measurement written beside it.
+*(Corrected 2026-09-28: later the same day the gate became
+`perception_match_probability` -- P >= 0.8, `DEFAULT_MATCH_PROBABILITY` in
+`brain/perceive.py` -- and `config/robot.yaml` now sets
+`perception_match_margin: 0.0`, i.e. the margin is an override for sweeps,
+not the gate.)*
 
 **2. The bigger finding: 4.2's label gate is losing most of the true
 positives, and losing them at the worst possible moment.**
@@ -3870,7 +3919,9 @@ inherits that failure whole.
 **Not resolved by fiat.** 4.2's rule is about who *proposes*, and is still
 right in the general case: an out-of-vocabulary target has no label to gate
 on at all. What has changed is that the rule is now measurable --
-`brain.perception_crop_path` takes `auto` (4.2's rule, still the default),
+`brain.perception_crop_path` takes `auto` (4.2's rule, still the default
+*[corrected 2026-09-28: until later on 2026-09-07; the default is now
+`low_confidence`, `DEFAULT_CROP_PATH` in `brain/perceive.py`]*),
 `label_gate` or `low_confidence`. The next two rig walks, on different
 targets, decide whether the default moves. **Do not move it on one walk**;
 that is the mistake this document has recorded twice already.
@@ -6134,7 +6185,7 @@ traceback, no OOM, 115GB free. Deterministic frame count means a timer,
 almost certainly SSM reaping the process group ~8 minutes in. `nohup` is
 not enough; `setsid` or a systemd unit is. The runs produced data at all
 only because the tool writes incrementally -- the same habit
-`tools/hailo/label_prepass.py`'s sibling learned the same week.
+`tools/label_prepass.py`'s sibling learned the same week.
 
 #### P12: INT8 degrades YOLO-World's embedding path, and the rig is now PROVEN -- **2026-09-14**
 
@@ -7583,7 +7634,11 @@ P22 recommended `yoloe-26l` and this was going to promote it. It ships
 scored. It does not -- S3 and `recordings/` are identical, 22 walks, same
 counts, same labels, so 2026-09-13's laptop-only gap is closed. The
 subsample was never a storage problem. **11 walks carry an adjudicated
-`labels.json`: 1234 frames, 323 visible.** P19 restricted itself to the
+`labels.json`: 1234 frames, 323 visible.** *(Note 2026-09-28: the labelled
+corpus has since grown to 21 walks / 2261 frames, ten of them with
+machine-proposed or walk-level labels. `perception_eval score` scores every
+labelled walk, so a re-run will not reproduce P23/P24 unless the set is
+pinned -- pass the 11 walks in `F_yoloe-11s.json`'s records with `--walk`.)* P19 restricted itself to the
 frames its YOLO-World replay covered, ~40 per walk, and P20, P21 and P22
 each inherited that set without re-examining it. So every row in four
 consecutive phases was scored on 30% of what was on disk, which is P7's
@@ -8009,7 +8064,8 @@ precondition for the policy being able to aim at all.**
 
 ##### What to build, in order
 
-0. **C2 -- continuous pose in the sim**, which is now a blocker rather than
+0. **C2 -- continuous pose in the sim** *(built on the sim path 2026-09-25 as
+   R0 -- `PLAN-ros-alignment.md` 3.1)*, which is now a blocker rather than
    a tidy-up: without it the twin cannot demonstrate aiming, and P25's own
    A/B has nowhere to run. CLAUDE.md already scopes it as small --
    `grid_world.py`'s integer cells and cardinal `Heading` plus a two-line
@@ -8075,6 +8131,8 @@ without the mask, at 9x the latency**, so it is an option to have rather
 than one to exercise. OWLv2 is the model worth 10H budget.
 
 #### DECISION 2026-09-13: no Jetson. The part is Pi + Hailo-8L, and P9 becomes the critical path
+
+> **Superseded 2026-09-19:** the Hailo path is closed and the board is a Jetson Orin Nano Super -- see "The Hailo path is CLOSED" (under P20).
 
 **The owner has ruled out the Jetson on cost.** At $399 list / ~$480
 street after July 2026's repricing (4.8), against ~$70 for a Hailo-8L M.2
@@ -8400,6 +8458,11 @@ the verdict, show it beside the corroboration row, enforce nothing, and let
 the next rig walks say where it separates.
 
 ##### Status: NOT BUILT, and deliberately deferred
+
+> **Update 2026-09-26:** the first half (arrival recognised, on the lidar)
+> is built on the sim path -- `brain/arrival.py`, `PLAN-ros-alignment.md`
+> 3.11; R0's continuous pose is 3.1. On a phone walk there is no scan, so the
+> paragraph below still holds there.
 
 None of the three is built, and none should be built now. The arrival
 question resolves differently once a lidar exists -- (2) becomes available

@@ -1,7 +1,44 @@
 # Plan: AR-style "find the object" camera guidance
 
+> **Current behaviour, 2026-09-28.** The Guide tab lives in
+> `web-twin/app.js` (markup and CSS in `web-twin/index.html`), and
+> `FEATURES.md` section 1 describes it as it works today -- read that
+> first. Everything below is the original 2026-08-26 spec and its
+> changelog, corrected inline where a fact has moved. What changed since:
+>
+> - **Two modes.** The toggle picks **Guide me** (this document: steer a
+>   person to an object, `POST /guidance`) or **Robot view** (the move the
+>   robot would make from here, `POST /navigate`, with "Record this walk"
+>   and **Drive via brain**, which runs a real mission closed loop through
+>   the brain -- `PLAN-teleop-robot.md`).
+> - **The Camera tab and its one-shot photo upload were removed
+>   2026-09-25.** The tabs are Guide and Sim, with Settings behind the gear.
+> - **Constants in `web-twin/app.js`:** `GUIDANCE_THROTTLE_MS = 500`,
+>   `GUIDANCE_MAX_IN_FLIGHT = 2`, `CAPTURE_MAX_DIM = 1280`, and
+>   `GUIDANCE_FOUND_STREAK_TO_PAUSE = 1` -- one found tick pauses, not the
+>   two this document argues for below.
+> - **Models:** `/guidance` runs Amazon Nova Lite
+>   (`GUIDANCE_MODEL_ID` in `service/vision_analyze/vision_core.py`);
+>   `/navigate` defaults to Claude Opus 4.5.
+> - **Tests:** `service/vision_analyze/tests/` covers `app.py`, `/guidance`
+>   included (run `pytest service/vision_analyze/tests/ --collect-only -q`
+>   for the count).
+> - **Section 4.3 was never built:** there is no `describe_image_guidance()`
+>   in `brain/vision.py` and no guidance tests in `tests/test_vision.py`
+>   (checked 2026-09-28). The only implementation is the Bedrock one in the
+>   vision service.
+> - **Hosting:** the page is served from S3 through CloudFront
+>   (`service/static/sync.sh`), and the vision service runs as a Lambda
+>   behind API Gateway; the ECS/ALB/NLB/VPC stack was torn down 2026-09-05
+>   (`PLAN-aws-cost-redesign.md`).
+> - **`localStorage` is used** now, wrapped in try/catch (service URLs and
+>   secrets, the active tab, the onboarding flag, Guide preferences, a debug
+>   log -- `PREF` in `app.js`), so the "no localStorage" convention cited
+>   below no longer holds.
+
 **Status:** Built (2026-08-26), then redesigned (2026-08-26) into its own
-full-screen tab. Implemented as the "Guide" tab in `web-twin/index.html`,
+full-screen tab. Implemented as the "Guide" tab in `web-twin/index.html`
+(its script has since moved to `web-twin/app.js`),
 backed by `POST /guidance` in `service/vision_analyze/app.py` and
 `describe_image_bytes_guidance()` in `service/vision_analyze/vision_core.py`.
 The design below (AR overlay, timer-throttled analysis, 5-zone position +
@@ -15,7 +52,8 @@ route added for a separate feature in the interim -- see `README.md`'s
 **Redesign (2026-08-26):** the user asked for the feature to feel like a
 real app rather than an embedded panel:
 - Its own top-level tab (`Guide`, between `Camera` and `Settings` in the
-  bottom nav), not nested inside Camera next to photo upload
+  bottom nav), not nested inside Camera next to photo upload *(the Camera
+  tab was removed 2026-09-25)*
 - **Full-screen takeover** while active -- a CSS-simulated fullscreen
   overlay (`#guide-fullscreen`, `position:fixed; inset:0`), deliberately
   *not* the real Fullscreen API (`element.requestFullscreen()`), which has
@@ -77,7 +115,7 @@ understand what to do.
   frame. Whenever the camera's native aspect ratio differs from the
   screen's (true almost always in portrait), `cover`'s crop silently
   shifted everything. Fixed with a proper scale+crop-offset mapping
-  (`mapNormalizedBoxToScreen()` in `web-twin/index.html`) that reproduces
+  (`mapNormalizedBoxToScreen()`, now in `web-twin/app.js`) that reproduces
   exactly what `cover` does to the video, so the box lands where the
   object actually is. Fixing this surfaced a second, previously-latent
   bug: `videoWidth`/`videoHeight` are `0` until the camera stream's
@@ -89,7 +127,8 @@ understand what to do.
   tick, rather than assuming `srcObject` being set means the video is
   ready. The old buggy positioning code never touched `videoWidth`/
   `videoHeight` at all, which is why this race was never triggered before.
-- **Speed**: `GUIDANCE_THROTTLE_MS` lowered from `2000` to `1000` (~2x API
+- **Speed**: `GUIDANCE_THROTTLE_MS` lowered from `2000` to `1000` (500
+  since; see section 6) (~2x API
   cost, confirmed acceptable tradeoff), plus a free win --
   `captureGuidanceFrame()` now downscales to a 960px max dimension before
   encoding (smaller upload, typically faster inference too; Bedrock
@@ -176,12 +215,14 @@ polling forever at the full throttle rate even after finding the object,
 burning real money for no benefit. Fixed: once `isGuidanceFound()` holds
 for `GUIDANCE_FOUND_STREAK_TO_PAUSE` (2) consecutive ticks -- not just
 one, to avoid pausing on a single noisy detection that flips back to
-searching a moment later -- polling stops entirely (`scheduleGuidanceNext()`
+searching a moment later *(2026-09-28: the constant in `web-twin/app.js`
+is **1**, so one found tick pauses today; this note records the
+reasoning for 2, and the code was not changed with this doc)* -- polling stops entirely (`scheduleGuidanceNext()`
 now checks `state.guidancePaused`). The camera feed and the last-rendered
 outline stay on screen (frozen at that position, since nothing is
 updating it anymore -- a known, accepted tradeoff of not paying for
 continuous polling), with a "Resume searching" button
-(`pauseGuidanceSearch()`/`resumeGuidanceSearch()` in `web-twin/index.html`)
+(`pauseGuidanceSearch()`/`resumeGuidanceSearch()`, now in `web-twin/app.js`)
 to explicitly restart the loop. `stopGuidance()`/`startGuidance()` both
 reset the pause state and streak counter for a clean next session.
 
@@ -205,6 +246,10 @@ for a UX review; two items from that review were picked to build:
   elsewhere in this file (the Cloud endpoint settings hint says "Not
   saved between sessions (no localStorage in this preview)"); reloading
   the page shows it again, same as those fields losing their value.
+  *(2026-09-28: that convention has gone -- `app.js` now persists
+  settings, the active tab and this flag in `localStorage` (the `PREF`
+  keys, `vp_guide_onboarded` for this one), guarded by try/catch, so the
+  onboarding card shows once per browser rather than once per load.)*
 
 Other items surfaced in the review but not yet built: an in-session
 target-object editor (currently locked once Start is tapped), unifying
@@ -270,7 +315,10 @@ This is the same fix needed for reliable phone access to the twin in
 general (LAN-based `http://<lan-ip>` testing is fragile -- router client
 isolation, firewall state, and network changes all break it, on top of
 failing the secure-context check for this feature specifically).
-Reasonable options, roughly cheapest/fastest first:
+Reasonable options, roughly cheapest/fastest first *(resolved otherwise:
+the twin is served over HTTPS from an S3 bucket through CloudFront,
+`service/static/sync.sh`, and the local robot and brain are reached through
+`service/tunnel/run.sh` + ngrok -- `CLAUDE.md` section 6)*:
 - **GitHub Pages**, since the repo is already on GitHub (`eldolor/vision-picar`)
   -- push `web-twin/index.html` to a `gh-pages` branch or enable Pages
   from a `/docs` or `/web-twin` folder, free, automatic HTTPS, works
@@ -415,6 +463,11 @@ part that changes.)
 
 ### 4.3 `brain/vision.py`
 
+*(Not built -- checked 2026-09-28: `brain/vision.py` has no
+`describe_image_guidance()`. The Guide tab calls the cloud service only,
+so nothing needs the local copy; treat this item as dropped unless a
+Python caller of guidance appears.)*
+
 Mirror the same `describe_image_bytes_guidance` logic here too (as
 `describe_image_guidance(image_path, target_object)` following the
 existing file-path-based pattern in this module), for parity with how
@@ -426,6 +479,10 @@ affected the cloud-deployed copy) -- don't switch this one to Bedrock
 without a separate, deliberate decision to do so.
 
 ### 4.4 Tests
+
+*(2026-09-28: the suite now exists -- `service/vision_analyze/tests/`,
+including a `/guidance` block -- so the prerequisite below is met. The
+`tests/test_vision.py` half was not done, with 4.3.)*
 
 `service/vision_analyze/` currently has **no automated test suite at
 all** (a gap left by the Lambda->ECS migration -- see `CLAUDE.md`
@@ -448,7 +505,7 @@ Add equivalent tests to `tests/test_vision.py` for
 
 ---
 
-## 5. Frontend changes (`web-twin/index.html`)
+## 5. Frontend changes (`web-twin/index.html`; the script is `web-twin/app.js` today)
 
 New section, e.g. "Guide me to..." -- additive, doesn't replace the
 existing "Find the bag in a photo" panel (that one-shot upload flow
@@ -555,7 +612,9 @@ project's cost breakdown was originally based on (see `README.md`),
 though Bedrock's exact per-token pricing for the model in use
 (`us.anthropic.claude-sonnet-4-5-20250929-v1:0` -- see
 `service/vision_analyze/vision_core.py`'s docstring for why this model,
-not `claude-sonnet-5`) should be double-checked against current AWS
+not `claude-sonnet-5`) *(corrected 2026-09-28: `/guidance` runs Amazon
+Nova Lite, `GUIDANCE_MODEL_ID = amazon.nova-lite-v1:0`, so the per-call
+cost below is an over-estimate for this route)* should be double-checked against current AWS
 Bedrock pricing before treating the number below as exact. Roughly
 1-2s round trip under normal conditions. At a 1.5s throttle interval, a
 5-minute active session is roughly 150-200 calls, i.e. **on the order of
@@ -565,7 +624,9 @@ running call/cost counter in the UI so it's not a surprise, and
 definitely don't auto-start the loop on page load (see 5.1).
 
 This is separate from, and additive to, the **fixed monthly cost of the
-underlying ECS Fargate/ALB/NLB/VPC-endpoint infrastructure**, which now
+underlying ECS Fargate/ALB/NLB/VPC-endpoint infrastructure** *(torn down
+2026-09-05; the service is a Lambda now, pay-per-invocation again --
+`PLAN-aws-cost-redesign.md`)*, which now
 runs regardless of whether this feature is ever used (unlike the old
 Lambda's pay-per-invocation model). This feature doesn't change that
 fixed cost -- it only adds marginal per-call cost on top of it.
@@ -626,13 +687,15 @@ or ask -- these weren't settled in the original design discussion:
 
 - Not building true 3D/spatial AR (WebXR, ARKit) -- see section 2.
 - Not replacing the existing one-shot "find the bag in a photo" upload
-  feature -- this is additive.
+  feature -- this is additive. *(That feature and its Camera tab were
+  removed 2026-09-25.)*
 - Not adding authentication/user accounts -- reuses the same
   `x-app-secret` shared-secret pattern already in
   `service/vision_analyze/app.py`.
 - Not deploying new AWS infrastructure -- this plan assumes
   `service/vision_analyze/` is already deployed (it is -- see the live
-  NLB endpoint in `README.md`), and only adds a route/field to it.
+  NLB endpoint in `README.md`; since 2026-09-05 it is a Lambda behind API
+  Gateway and CloudFront, the NLB gone), and only adds a route/field to it.
 - Not solving the robot-server LAN-connection problem for D-pad/autonomous
   control -- section 2's hosting fix is specifically about the camera
   feature's secure-context requirement, not about `robot/server.py`

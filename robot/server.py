@@ -313,7 +313,22 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         equal ranks through (right for two taps of one person's D-pad) would
         let two autonomous writers interleave commands on one robot. One
         writer at a time is the industry convention `twist_mux` encodes.
+
+        **3.23 adds a second:** a nav2 goal in progress is the ROS stack
+        driving, so every OTHER autonomous driver is refused while one is
+        pending or active. The goal is not a claim on the watchdog's clock --
+        nav2 may pause for seconds while it plans -- so it is asked of the
+        world itself, the same state the twin draws.
         """
+        if driver != DRIVER_ROS and driver_priority(driver) == DRIVER_AUTONOMOUS:
+            goal = goal_in_progress()
+            if goal:
+                return refuse(
+                    "preempted",
+                    f"a nav2 goal is {goal.get('state')} -- one autonomous driver "
+                    f"at a time, so {driver} was refused until it ends or is cancelled",
+                    driver,
+                )
         holder = authority_holder(now)
         if not holder or holder == driver:
             return None
@@ -331,6 +346,24 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 f"so {driver} was refused until it lapses",
                 driver,
             )
+        return None
+
+    def goal_in_progress():
+        """The world's nav2 goal while it is pending or active, else None.
+
+        Only a world that can plan has goals (world/ros_world.py). If its
+        bridge cannot be read, answer None: with the bridge down no goal can
+        be sent or followed through it, and refusing every autonomous
+        command on a read error would turn an outage into a lockout.
+        """
+        if not hasattr(world_model, "get_goal"):
+            return None
+        try:
+            goal = (world_model.get_goal() or {}).get("goal")
+        except Exception:  # noqa: BLE001 -- an unreadable bridge, see above
+            return None
+        if goal and goal.get("state") in ("pending", "active"):
+            return goal
         return None
 
     # Serialises everything that moves the robot: /action and /wheels run on
@@ -464,9 +497,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
         # Phase M4 -- arbitration, before anything moves. A decided order,
         # not last-writer-wins: see robot/interface.py's DRIVER_PRIORITY and
-        # AGENT-HARNESS.md. Equal rank is allowed through, so two D-pad taps
-        # never fight each other; only a strictly lower-ranked driver is
-        # refused, and only while a higher one is actually driving.
+        # AGENT-HARNESS.md 4.1. A strictly lower-ranked driver is refused
+        # while a higher one is driving; equal MANUAL rank passes, so two
+        # D-pad taps never fight; the AUTONOMOUS rank is exclusive (R2b).
         refused = arbitrate(driver, now)
         if refused:
             return refused
@@ -707,8 +740,16 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     @app.post(prefix + "/world/goal", dependencies=[Depends(require_secret)])
     def world_goal_set(req: GoalRequest):
         """A place to go, in the house frame. nav2 plans and drives; its
-        commands still pass collision_monitor and robot/safety.py (3.15)."""
-        return _goals().set_goal(req.x_m, req.y_m)
+        commands still pass collision_monitor and robot/safety.py (3.15).
+
+        3.23: a goal is an AUTONOMOUS driver (`ros`), arbitrated like one --
+        refused while the brain (or anyone who outranks it) holds the robot,
+        so it never reaches nav2 to interleave with a mission."""
+        world = _goals()
+        refused = arbitrate(DRIVER_ROS, time.monotonic())
+        if refused:
+            return {"accepted": False, **refused}
+        return world.set_goal(req.x_m, req.y_m)
 
     @app.get(prefix + "/world/goal", dependencies=[Depends(require_secret)])
     def world_goal_get():

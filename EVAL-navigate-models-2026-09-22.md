@@ -7,6 +7,7 @@ robot-camera frames.**
 |---|---|
 | **Date** | 2026-09-22 |
 | **Models** | Claude Opus 4.5, Claude Opus 5, Claude Fable 5.1, OpenAI GPT-6 Astra |
+| **Model ids** | `us.anthropic.claude-opus-4-5-20251101-v1:0`, `us.anthropic.claude-opus-5`, `us.anthropic.claude-fable-5-1`, `us.openai.gpt-6-astra` (Bedrock, `service/vision_analyze/vision_core.py`'s `/navigate` allow-list) |
 | **Data** | 452 frames across 6 recorded walks, floor-level camera, one hotel room |
 | **Method** | Frame-by-frame replay through the deployed service — pixels fixed, model varied |
 | **Calls** | 1,808 (452 × 4), zero errors |
@@ -346,6 +347,10 @@ Read every number above against these.
   the ambiguous colour term.
 - **Latency was measured through a deployed service**, so it includes network
   and service overhead, not just model time.
+  **Fable 5.1's latency may also include a cross-region hop:** it is the one
+  model `vision_core.MODEL_REGIONS` pins to `us-east-1` (it is refused from
+  the service's own region), so its calls leave the region the service runs
+  in. Its median should not be compared to the others' as pure model time.
 
 ---
 
@@ -378,3 +383,11 @@ list price**, confirmed independently on three models.
 *Raw per-frame results: 24 JSON files (6 walks × 4 models), one record per
 frame carrying the action, visibility claim, reasoning, token usage and
 latency.*
+
+*Where they are (checked 2026-09-28): **not in the repo.** No file under
+`recordings/` or `evaluations/` carries these model ids, and the six walks'
+directories hold only frames plus their label, meta and `walk.jsonl` files.
+This document does not name the replay tool; `control/walk_replay.py` is the
+repo's instrument for re-asking a walk under another model, but whether it
+produced these results is not recorded. Until the 24 files are found, the
+tables above cannot be recomputed.*

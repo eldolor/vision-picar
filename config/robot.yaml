@@ -125,7 +125,7 @@ brain:
   # install (requirements-perception.txt) and the mission refuses to start
   # without them, naming the pip command.
   #
-  # Blank means brain/perceive.py's own defaults (yolo11s.pt and RN50),
+  # Blank means brain/perceive.py's own defaults (yoloe-11s-seg.pt and RN50),
   # where the reasoning for each is written down. Name a different file
   # here to try another detector without touching code -- the twin shows
   # whichever name is loaded, which is what makes the swap watchable.
