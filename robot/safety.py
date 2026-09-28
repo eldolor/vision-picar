@@ -34,6 +34,7 @@ from typing import Optional, Tuple
 from robot.interface import (
     DEPTH_COLS_DEFAULT,
     RobotInterface,
+    carry_out_verb,
     ZONE_RANGE,
     ZONE_UNUSABLE,
 )
@@ -56,6 +57,8 @@ FORWARD_ACTIONS = {"FORWARD"}
 # (PLAN-ros-alignment.md 3.10). Every way of backing up -- /action REVERSE
 # and a negative /wheels velocity alike.
 REVERSE_ACTIONS = {"REVERSE"}
+# The verbs `run_verb()` carries out (3.21).
+_VERBS = {"FORWARD", "REVERSE", "LEFT", "RIGHT"}
 
 # How far the lidar (at the robot's centre) sits from the REAR bumper. The
 # scan measures from the centre, so this is subtracted before a rear range is
@@ -119,6 +122,23 @@ SAFETY_SCAN_RANGE_M = 0.6
 PIVOT_MARGIN_CM = 1.2
 PIVOT_LOOKAHEAD_S = 0.05         # one wheel-loop period; scales with the turn rate
 PIVOT_MIN_LOOKAHEAD_DEG = 1.0
+
+# ---- guarded verbs (PLAN-ros-alignment.md 3.21, PLAN-guarded-verbs.md) ----
+#
+# Under `drive: direct` a verb used to be vetted once, at its start, and then
+# left to drive blind: a FORWARD allowed at 20cm covered 30cm, which on the
+# car is up to 10cm past a wall (the sim hid it behind its half-cell cap).
+# Now a verb whose backend can say what it means (`verb_plan()`) is carried
+# out by `run_verb()` below, in periods of one wheel-loop tick
+# (`robot.interface.carry_out_verb()`, whose VERB_PERIOD_S equals
+# PIVOT_LOOKAHEAD_S above), each one re-reading the clearances
+# `vet_wheel_velocity()` reads. `drive: ros` never reaches this: its wrapper
+# has no plan, because the ROS chain already vets every period.
+# Decision 1 (3.21): a move cut short is EXECUTED and says so; one that
+# managed less than this was refused in all but name, and is reported as a
+# refusal -- so R1b's stuck detector still ends a pinned robot `blocked`.
+VERB_MIN_MOVE_M = 0.01
+VERB_MIN_TURN_DEG = 0.5
 
 # What counts as "the path the next move crosses" -- phase M3, reworked by
 # PLAN-onboard-perception.md section 5.1. The reason is geometry rather
@@ -622,7 +642,62 @@ class SafetyController:
                 logger.warning(msg)
                 raise SafetyViolation(msg)
 
+        # Duck-typed test robots have no `verb_plan` at all; that means no
+        # plan, exactly as the interface's default does.
+        plan_for = getattr(self.robot, "verb_plan", None) if action in _VERBS else None
+        if plan_for is not None:
+            plan = plan_for(action, speed=kwargs.get("speed", 50),
+                            duration=kwargs.get("duration", 0.5), angle=kwargs.get("angle", 90))
+            if plan is not None:
+                return self._guarded(action, plan, **kwargs)
         return self._dispatch(action, **kwargs)
+
+    def _guarded(self, action: str, plan: dict, **kwargs) -> dict:
+        """Carry out a verb as a standing wheel command, re-vetted every
+        period -- 3.21. Returns the backend's result; raises SafetyViolation
+        if the verb achieved (almost) nothing because the way was shut."""
+        outcome = self.run_verb(plan)
+        straight = plan["kind"] == "straight"
+        done, least = outcome["done"], (VERB_MIN_MOVE_M if straight else VERB_MIN_TURN_DEG)
+        if outcome["ended"] == "clamped" and done < least:
+            self.robot.stop()
+            unit = "cm" if straight else "deg"
+            got = done * 100 if straight else done
+            msg = f"Blocked {action}: stopped after {got:.1f}{unit} -- {outcome['reason']}"
+            logger.warning(msg)
+            raise SafetyViolation(msg)
+        return self.robot.verb_done(action, plan, outcome, **kwargs)
+
+    def run_verb(self, plan: dict) -> dict:
+        """Carry out a backend's `verb_plan()`, re-vetting every period with
+        the clearances `vet_wheel_velocity()` reads -- the loop itself is
+        `robot.interface.carry_out_verb()`; this supplies its limit.
+
+        **A translation looks ahead:** it may cover at most (clearance -
+        `min_distance_cm`) this period, so it stops AT the line rather than
+        one period past it (3 cm at a verb's 0.6 m/s). **A turn is checked
+        step by step** with `pivot_scale()`, at a look-ahead equal to exactly
+        the step it is about to make.
+        """
+        straight = plan["kind"] == "straight"
+        forward = (plan["left_rad_s"] + plan["right_rad_s"]) > 0
+        ccw = plan["right_rad_s"] > plan["left_rad_s"]
+
+        def limit(amount: float):
+            if straight:
+                clearance, source = (self.forward_clearance() if forward
+                                     else self.reverse_clearance())
+                if clearance is None:
+                    return amount, None
+                room_m = (clearance - self.min_distance_cm) / 100.0
+                return max(0.0, room_m), (
+                    f"{'forward' if forward else 'rear'} clearance {clearance}cm "
+                    f"reached min={float(self.min_distance_cm)}cm ({source})")
+            omega = math.copysign(math.radians(amount) / PIVOT_LOOKAHEAD_S, 1.0 if ccw else -1.0)
+            scale, why = self.pivot_scale(omega)
+            return amount * scale, why
+
+        return carry_out_verb(self.robot, plan, limit)
 
     def _dispatch(self, action: str, **kwargs) -> dict:
         dispatch_table = {

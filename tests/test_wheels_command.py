@@ -94,7 +94,15 @@ def test_criterion_3_reverse_is_checked_against_the_rear_beams(client):
     assert "rear" in second["detail"]
     time.sleep(1.2)
     reply = _wheels(client, -FWD, -FWD)
-    assert reply["clamped"] and "reverse" in reply["clamped"]
+    if reply["clamped"]:
+        assert "reverse" in reply["clamped"]
+    else:
+        # Since 3.21 the first REVERSE stops AT the line (a guarded verb),
+        # not a whole cell past it, so a standing reverse may start legal --
+        # and must then be clamped by the wheel loop within a period or two.
+        time.sleep(0.3)
+        last = client.get("/health").json()["last_refusal"]
+        assert last and "reverse clamped" in last["detail"], last
 
 
 def test_criterion_4_silence_zeroes_a_standing_command(client):

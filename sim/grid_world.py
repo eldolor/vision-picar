@@ -485,7 +485,7 @@ class GridWorld:
     # through `translate()` one integration sub-step at a time, so a
     # whole-cells wrapper was a second path from a command to a position with
     # nobody calling it. The MOVE log line it wrote is now written by
-    # `MockRobot._drive_cells()`, which is where the request it reports
+    # `MockRobot.verb_done()`, which is where the request it reports
     # originates.
 
     def turn_left(self, degrees: float = 90.0) -> dict:

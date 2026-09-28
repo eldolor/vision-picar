@@ -1,9 +1,10 @@
 # Guarded verbs -- re-check direct-mode moves while they drive
 
-**Status: PLAN, nothing built.** Written 2026-09-28, from the finding in
-`PLAN-ros-alignment.md` 3.20 (the UGV Rover chassis). The user asked for the
-plan to be saved before any code changes. Three decisions are still open
-(section 6); nothing here should be built until they are answered.
+**Status: BUILT and measured 2026-09-28 -- all seven criteria met.** Written 2026-09-28, from the
+finding in `PLAN-ros-alignment.md` 3.20 (the UGV Rover chassis). The user
+took all three recommendations in section 6. The acceptance criteria, as
+written before building (with one refinement -- a look-ahead, below), are
+`PLAN-ros-alignment.md` 3.21; results are recorded there.
 
 ---
 
@@ -86,6 +87,12 @@ the runner must dispatch to it as today rather than add a second loop.
 The sim's half-cell cap and rectangle collision stay, as the simulator's
 truth about contact -- but they should no longer be what ends a verb.
 
+**Refinement, found while writing the criteria: look ahead.** Vetting once
+per period still lets a move coast up to one period's travel past the line
+-- 3 cm at a verb's 0.6 m/s, which would break 3.18's 18 cm bar. So each
+period a translation may cover at most (clearance - `min_distance_cm`), and
+stops AT the line; `pivot_scale()` already does the same for turns.
+
 **Rejected alternative:** check once and shorten the move to (clearance -
 20 cm). Simpler, but it does not re-check while driving, so it misses a
 person or pet stepping in.
@@ -146,7 +153,7 @@ Work in a git worktree. Build on the `ugv-rover-chassis` branch
 
 ---
 
-## 6. Decisions still open -- for the user
+## 6. Decisions -- all three taken as recommended (2026-09-28)
 
 1. **What does a move cut short mean?** Recommended: **executed**, with
    `moved` against `requested` in the result. A move refused before it

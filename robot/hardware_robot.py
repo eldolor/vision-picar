@@ -178,12 +178,55 @@ class HardwareRobot(RobotInterface):
     # ---------- verbs, as timed wheel commands ----------
 
     def _run(self, left: float, right: float, seconds: float) -> None:
+        # Only reached when a verb is called WITHOUT the safety layer (which
+        # carries verbs out itself since 3.21, from `verb_plan()` below). It
+        # still must not outlive a stop: it used to re-send its speed every
+        # 50 ms regardless, so a /stop mid-verb was overwritten at once.
+        stops = self.stop_count
         self.set_wheel_velocity(left, right)
         end = time.monotonic() + seconds
         while time.monotonic() < end:
             time.sleep(min(0.05, max(0.0, end - time.monotonic())))
+            if self.stop_count != stops:
+                return
             self.set_wheel_velocity(left, right)     # feeds the heartbeat
         self.set_wheel_velocity(0.0, 0.0)
+
+    def verb_plan(self, action: str, speed: int = 50, duration: float = 0.5,
+                  angle: int = 90) -> Optional[dict]:
+        """The verbs above, for the safety layer to carry out and re-vet
+        every period (3.21) -- the same speeds and extents, on the wall
+        clock."""
+        if action in ("FORWARD", "REVERSE"):
+            speed = max(0, min(100, speed))
+            moves = (speed / 100.0) * MOVES_PER_SECOND_AT_FULL_SPEED * duration
+            moves = max(1, round(moves)) if speed > 0 and duration > 0 else 0
+            if not moves:
+                return None
+            sign = 1.0 if action == "FORWARD" else -1.0
+            w = sign * speed / 100.0 * MOVES_PER_SECOND_AT_FULL_SPEED * MOVE_M / WHEEL_RADIUS_M
+            return {"kind": "straight", "left_rad_s": w, "right_rad_s": w,
+                    "target": moves * MOVE_M, "wall_clock": True, "moves": sign * moves}
+        if action in ("LEFT", "RIGHT"):
+            if not angle:
+                return None
+            w = 1.2 * TRACK_WIDTH_M / 2 / WHEEL_RADIUS_M          # 1.2 rad/s body
+            left, right = (w, -w) if action == "RIGHT" else (-w, w)
+            return {"kind": "turn", "left_rad_s": left, "right_rad_s": right,
+                    "target": float(abs(angle)), "wall_clock": True}
+        return None
+
+    def verb_done(self, action: str, plan: dict, outcome: dict, **kwargs) -> dict:
+        short = ({"stopped_short": outcome["ended"], "reason": outcome["reason"]}
+                 if outcome["ended"] != "complete" else {})
+        if plan["kind"] == "straight":
+            sign = 1.0 if plan["moves"] > 0 else -1.0
+            return {"action": "drive_forward" if action == "FORWARD" else "reverse",
+                    "requested": plan["moves"],
+                    "moved": sign * outcome["done"] / MOVE_M, **short}
+        turned = outcome["done"] if action == "RIGHT" else -outcome["done"]
+        return {"action": "turn_right" if action == "RIGHT" else "turn_left",
+                "turned_deg": turned, **short}
 
     def _move(self, sign: float, speed: int, duration: float) -> dict:
         speed = max(0, min(100, speed))
@@ -214,7 +257,12 @@ class HardwareRobot(RobotInterface):
     def turn_right(self, angle: int = 90) -> dict:
         return {"action": "turn_right", **self._pivot(float(angle))}
 
+    # How many times `stop()` has been called: a verb in progress -- the
+    # safety layer's loop, or `_run()` -- ends the moment it changes (3.21).
+    stop_count = 0
+
     def stop(self) -> dict:
+        self.stop_count += 1
         self.set_wheel_velocity(0.0, 0.0)
         return {"action": "stop"}
 
