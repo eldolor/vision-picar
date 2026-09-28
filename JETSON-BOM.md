@@ -106,6 +106,19 @@ majority of hobby robot kits on the market.**
 6. **A flat upper deck for a 360° lidar** with unobstructed 360° view at
    its scan plane, or a lidar already mounted that way.
 
+**Four-wheel skid steer (the user's choice, 2026-09-27) adds items 7-11 of
+the brief below**: an encoder per side at least, a controller that drives
+all four motors, an IMU, a footprint no larger than ~25 × 22 cm, and the
+track width and wheelbase. Why, in terms of the code: the simulator models
+no wheel slip (`PLAN-ros-alignment.md` section 4), so skid steer's slip on
+every turn will throw off turns that run until the encoders say they are
+done; the ROS controller then needs `wheel_separation_multiplier` for the
+larger "effective" track, and an IMU fixes heading at the source.
+`robot/hardware_robot.py` speaks only the ESP32 board's protocol; and every
+safety measurement of 3.18-3.19 was made for a 22.8 × 19.8 cm chassis.
+The table above still says "Chassis, 2WD" -- it is the build this file
+priced, not a requirement.
+
 ---
 
 ## 4. Strongly preferred, not disqualifying
@@ -201,6 +214,24 @@ Self-contained on purpose — the assistant has no access to this repo.
 >    35 mm tall with its cooler, plus clearance for a barrel plug.
 > 6. **A flat upper deck with an unobstructed 360° view** for a lidar, or a
 >    360° lidar already mounted that way.
+>
+> **I want a FOUR-WHEEL skid-steer chassis. For those, also:**
+>
+> 7. **One encoder per side at minimum, all four preferred.** Say how many
+>    of the motors have encoders.
+> 8. **The motor controller must drive all four motors** -- four channels,
+>    or left and right pairs wired together. Say how many motor channels
+>    the controller has, and whether the Waveshare General Driver for
+>    Robots (ESP32) can drive this chassis.
+> 9. **An IMU on the board or the controller, strongly preferred.** Skid
+>    steer slips sideways on every turn, so heading from the wheel
+>    encoders alone is poor. Say whether one is included.
+> 10. **Footprint no larger than about 25 × 22 cm, wheels included.** It
+>     must turn in place between furniture, and the outer wheel corners
+>     set the turning circle. Give the outer dimensions.
+> 11. **Give the track width and the wheelbase** (left-right and
+>     front-rear wheel spacing). Skid-steer handling depends on their
+>     ratio.
 >
 > **Strongly preferred, not disqualifying:** a 360° USB lidar included
 > (worth up to ~$70); 3S packs and charger included, with the pack spec
