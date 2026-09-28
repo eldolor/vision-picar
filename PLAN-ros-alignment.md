@@ -1641,7 +1641,7 @@ numbers are the URDF's placeholders -- re-measure at R8, where the lidar's
 +/-3 cm rating also belongs. (2) **Fixed in 3.19.** A PIVOT is still never clamped; a rectangle
 sweeps 5.2 cm beyond its sides when it turns (corner radius 15.1 cm against a
 9.9 cm half-width), so a robot parked beside furniture can swing a corner into
-it -- the sim lets a pivot overlap rather than freezing it. (3) A mission
+it -- the sim lets a pivot overlap rather than freezing it. (3) **Fixed in 3.20.** A mission
 that ends mid-peek leaves the camera panned; nothing re-centres it. That no
 longer matters to the veto, but the next policy starts looking sideways.
 (4) The cone's own over-read (it measures from a 15 cm half-cell "bumper",
@@ -1732,6 +1732,58 @@ period (2.9 degrees at 1 rad/s) short of where they could safely turn, and
 failed criterion 3 on three starts that had 31-32 degrees of room; scaling
 the rate into the margin fixed it and took the median shortfall from 2.0 to
 0.9 degrees.
+
+### 3.20 A mission starts with the camera centred (2026-09-27): criteria, written before building
+
+3.18's residue (3). A mission that ends mid-peek -- preempted, stopped,
+failed -- leaves the camera panned, and nothing re-centres it. 3.18 made the
+VETO immune to that; the next POLICY is not. Its first frame, depth grid and
+scene are cast along the camera, so it starts deciding about a room 90
+degrees off its heading. Chosen: centre the camera **at the start of a
+mission**, on its first tick, before its first decision -- not at the end,
+where a preempted mission no longer holds authority and its request would
+be refused.
+
+**Criteria:**
+
+1. **The first decision sees a centred camera.** For each of pan -1, -0.5,
+   +0.5, +1 left behind before start, and each sim policy that needs no paid
+   call (frontier, and the vision loop over a stub `vision_fn`), the camera's
+   pan at the policy's FIRST sensor read is 0. Measured through the real path
+   (`MissionRunner` -> gated robot -> `MockRobot`).
+2. **It costs nothing a mission counts.** The first tick still counts as one
+   step, and a vision policy's `vision_fn` is called exactly as often as
+   before.
+3. **A centred start is unchanged.** From a centred camera the mission's
+   action trace is identical, step for step, to the code before this change
+   (starter house, frontier, the pinned 83-step run of
+   `tests/demo_brain_over_http.py`), and every pinned mission test passes.
+4. **A refused centring ends the mission the way any refused move does**
+   (preempted -> `preempted`, halted -> no step), never a crash.
+5. **Live.** With the camera left at -90 by the chain suite's preempted
+   mission, a new mission through the brain's HTTP API: `/depth` reports
+   `pan_deg` 0 after its first step.
+
+**Measured 2026-09-27 -- all five met** (`tests/test_camera_centred_start.py`;
+full suite 1429 passed). Red first: criterion 1 failed for every pan and
+both policies (the first read saw the pan left behind), criterion 4 failed
+(nothing tried to centre, so nothing could be refused). Criterion 3 is pinned
+against the pre-change trace itself (`tests/data/frontier_trace_centred.json`,
+83 steps, `found`), not against a re-derivation of it. Built: `MissionRunner`
+calls `look_center()` through its own gate on the first tick, before the
+policy's first decision, uncounted.
+
+**Criterion 5 was mis-specified, and the live run showed it.** "`pan_deg` 0
+after the first step" cannot tell the fix from its absence: the frontier
+policy's first action is itself a peek (`LOOK_LEFT`), so the camera is at
+-90 after step 1 either way. Measured instead: `/depth` sampled
+continuously from mission start through the first step, three fresh runs
+with the camera left at -90 by the chain suite's preempted mission.
+
+| | pan sequence during the first step |
+|---|---|
+| before (stash of this change) | -90, +90 -- the first decision read at -90 |
+| after, 3 runs | -90, **0**, -90, +90 -- centred, then the policy's own peek |
 
 ## 4. Honest residue -- what the twin cannot tell you
 

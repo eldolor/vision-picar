@@ -344,8 +344,9 @@ class MissionRunner:
         # stop() is never gated. The policy decides which agent class runs;
         # everything else about the mission is identical either way.
         agent_class = VisionAgent if policy in VISION_POLICIES else ObjectSearchAgent
+        self._gated = _HaltGate(robot, self.is_running)
         self.agent = agent_class(
-            _HaltGate(robot, self.is_running),
+            self._gated,
             self.memory,
             min_distance_cm=min_distance_cm,
             vision_fn=self._guarded_vision,
@@ -394,6 +395,7 @@ class MissionRunner:
         self._arrival: Optional[dict] = None
         self._last_frame_seq: Optional[int] = None
         self._log: list = []
+        self._camera_centred = False
 
     # ---------- lifecycle ----------
 
@@ -421,6 +423,15 @@ class MissionRunner:
         # drift from the real one. Removed after coverage showed it
         # unreachable rather than untested.
         try:
+            if self._ticks == 0 and not self._camera_centred:
+                # 3.20. A mission that ended mid-peek leaves the camera
+                # panned, and this policy's first frame, depth grid and scene
+                # would be cast 90 degrees off its heading. Centred here, on
+                # the first tick and through the gate -- not at the end of the
+                # last mission, which by then may no longer hold authority --
+                # and not counted as a step: it is not a decision.
+                self._camera_centred = True
+                self._gated.look_center()
             result = self.agent.step()
         except MissionHalted:
             # stop()/abort() landed while this tick was in flight. The
