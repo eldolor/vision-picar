@@ -2137,8 +2137,10 @@ blocks the rest.**
 * **G3 -- the fallback is real.** With a mission running under `drive: ros`,
   kill the container: the wheels stop within the watchdog (as today);
   **the mission ends** -- it does not resume autonomously on the fallback
-  path (recommended: only a PERSON may drive on the fallback; to be confirmed
-  by the user before G3 is built); and within **2 s** a D-pad FORWARD
+  path -- **decided by the user 2026-09-29 ("your recommendation"): only a
+  PERSON may drive on the fallback**, so autonomy never continues on a path
+  without nav2 and SLAM that nobody chose; a new mission starts only once
+  ROS is back; and within **2 s** a D-pad FORWARD
   executes through `direct`, vetted by `robot/safety.py`. When the container
   returns, `drive` goes back to `ros` without a server restart.
 * **G4 -- on the car's own computer.** On the Jetson (ordered, arriving Oct
