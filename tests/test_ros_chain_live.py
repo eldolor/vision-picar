@@ -7,7 +7,8 @@ Phase R4 (`PLAN-ros-alignment.md` 3.13) -- the ROS chain, measured live.
             -> picar_sim_hardware -> POST /wheels -> the sim
 
 One test per acceptance criterion, against a real stack: the robot server in
-`drive: ros` (`ROBOT_DRIVE=ros bash service/tunnel/restart.sh`), the brain
+`drive: ros` IN THE SCALED HOUSE (`SIM_MAP=scaled_house ROBOT_DRIVE=ros
+bash service/tunnel/restart.sh`; any other house skips -- 3.24), the brain
 beside it, and `service/slam/`'s container (`ros2 launch picar_bringup
 picar.launch.py`, bridge on :8090). Everything SKIPS when that stack is not
 up, the way the Playwright tests skip without a browser -- and the always-run
@@ -53,6 +54,15 @@ def stack():
     # KeyErrors instead of skipping (found 2026-09-27).
     if robot.get("/world/truth").status_code == 401:
         pytest.skip("the robot server wants a secret: set LOCAL_SECRET or APP_SHARED_SECRET")
+    # The SCALED house (90 cm doors), since 3.24: the starter house's start
+    # room has 45-55 cm clear in every direction but east, where its 30 cm
+    # door fits the 23.1 cm UGV chassis with 4.5 mm to spare -- a 30 cm verb
+    # there was refused on ~0.5 deg of heading error, one run in a few. The
+    # scaled house's start room has 105-300 cm every way.
+    house = robot.get("/health").json().get("sim_map")
+    if house != "scaled_house":
+        pytest.skip(f"the chain suite runs in the scaled house (SIM_MAP=scaled_house); "
+                    f"the server is in {house!r}")
     return robot, bridge
 
 
@@ -103,11 +113,11 @@ def test_a_twist_reaches_the_wheels_intact_and_odom_agrees_with_truth(stack):
 # ---------- 2 + 3: verbs through the chain, and only through it ----------
 
 # The turns come FIRST, from where the twist test above leaves the robot in
-# the start room. They used to follow the FORWARD, which parks the chassis
-# inside the starter house's 30 cm doorway -- where a 45- or 90-degree pivot
-# sweeps a corner to 0.47 cm of the jamb (ground truth), and 3.19's pivot
-# veto rightly stops it at ~20 of the 27 degrees available. This test is
-# about what a verb MEANS through ROS, so it turns where there is room.
+# the start room. (History: in the STARTER house the FORWARD parked the
+# chassis in its 30 cm doorway, where a pivot swept a corner to 0.47 cm of
+# the jamb (3.19) -- and since 3.21's wider chassis the FORWARD itself was
+# refused there on ~0.5 deg of heading error (3.24). The suite now runs in
+# the scaled house; the order is kept.)
 @pytest.mark.parametrize("action,kw,metres,degrees", [
     ("LEFT", {"angle": 45}, 0.0, -45.0),
     ("RIGHT", {"angle": 90}, 0.0, 90.0),
@@ -203,7 +213,7 @@ def _travel_to_contact_cm(robot):
     from sim.maps import build_world
     from tests import footprint_sweep as fs
     t = _truth(robot)
-    world = build_world("starter_house")
+    world = build_world(robot.get("/health").json().get("sim_map") or "starter_house")
     world.x, world.y = t["x_m"] / fs.CELL_CM * 100, t["y_m"] / fs.CELL_CM * 100
     world.theta = math.radians(t["heading_deg"]) - math.pi / 2
     return fs.truth(world)[0]
@@ -214,25 +224,29 @@ def test_a_standing_twist_into_a_wall_stops_short(stack):
     before it leave behind -- a panned camera, a robot off its start -- is
     part of what it tests. That is where 3.17's 18.0 cm came from."""
     robot, bridge = stack
-    # "North is the start room's wall" is a fact about the STARTER house. In
-    # the furnished home (SIM_MAP=home_first_floor) north of the start is the
-    # hall and the provisional staircase, the obstacle at 70 cm is off-axis,
-    # and the robot legitimately drives past it -- the test then fails its
-    # own premise, not the safety vet. Asked of the server (3.17).
-    house = robot.get("/health").json().get("sim_map")
-    if house not in (None, "starter_house"):
-        pytest.skip(f"the wall-stop geometry is the starter house's; the server is in {house!r}")
     _face(robot, 0)                     # north: the start room's wall
-    start = _veto(robot)
-    end = time.time() + 6.0
-    while time.time() < end and (_veto(robot) or 999) > 5:
+    # Truth, not the veto's reading: with the wall ~1 m off, beyond the
+    # safety scan's 0.6 m look-ahead (and the cone silent if an earlier test
+    # left the camera panned), the veto reads None at the start.
+    start = _travel_to_contact_cm(robot)
+    # Drive until the VETO stops it, not until a timer does: the scaled
+    # house's north wall is ~1 m away, beyond 6 s at 0.1 m/s, and a test that
+    # ran out of time before the wall would pass without testing anything.
+    began = time.time()
+    clamped = False
+    while time.time() - began < 15.0 and not clamped:
         bridge.post("/cmd_vel", json={"driver": "brain", "linear_m_s": 0.1, "angular_rad_s": 0})
         time.sleep(0.05)
+        refusal = robot.get("/health").json().get("last_refusal") or {}
+        clamped = (refusal.get("reason") == "safety_distance"
+                   and "forward clamped" in (refusal.get("detail") or "")
+                   and refusal.get("seconds_ago", 99) < time.time() - began)
     bridge.post("/cmd_vel", json={"driver": "brain", "linear_m_s": 0, "angular_rad_s": 0})
     time.sleep(0.4)
     final = _veto(robot)
     contact = _travel_to_contact_cm(robot)
-    assert final < start, "it must actually have driven"
+    assert contact < start - 5.0, f"it must actually have driven ({start:.1f} -> {contact:.1f} cm)"
+    assert clamped, "the veto never stopped it -- the wall was never reached"
     assert final >= 19.4, f"the veto reads {final} cm through ROS"
     assert contact >= 18.0, f"truth: {contact:.1f} cm of travel left"
     _act(robot, "REVERSE")              # leave room for the next test

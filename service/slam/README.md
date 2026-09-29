@@ -250,7 +250,7 @@ it and fail by the dozen.
 
 ```bash
 export LOCAL_SECRET=...            # from ~/.vision-picar-local-secrets
-pytest tests/test_urdf.py tests/test_ros_chain_live.py tests/test_brain_view_live.py -v
+pytest tests/test_urdf.py tests/test_ros_chain_live.py tests/test_brain_view_live.py -v   # server on scaled_house (3.24)
 pytest tests/test_slam_live.py -v                        # server on starter_house, WORLD_MODE=ros
 SIM_MAP=scaled_house pytest tests/test_nav_live.py -v    # server on scaled_house too
 python -m tests.demo_slam_lap      # R5's lap: SLAM error vs odometry alone

@@ -2113,8 +2113,8 @@ every 50 ms" by the wheel loop). They differ in HOW they stop:
 blocks the rest.**
 
 * **G1 -- the chain is reliable.** The live chain suite
-  (`tests/test_urdf.py` + `tests/test_ros_chain_live.py`, SLAM on, starter
-  house, suite order, a fresh robot-server restart per run) passes **20
+  (`tests/test_urdf.py` + `tests/test_ros_chain_live.py`, SLAM on, suite
+  order -- the SCALED house since G1's first step, see below -- a fresh robot-server restart per run) passes **20
   consecutive runs** on this laptop. Today (2026-09-28, image rebuilt from
   `56949d5`): runs with a failure were 0/4 at `be2df51`, 3/8 at `88b510a`,
   and 3/7, 0/4, 5/8 at `56949d5` -- verbs closing at 3-23 cm of 30,
@@ -2192,6 +2192,20 @@ house, with the wall-stop test made house-aware (its ground truth read from
 the house the server reports); the SLAM lap stays in the starter house.
 (b) the bridge polls the robot server over one kept-open connection. Then
 G1's 20-run bar is attempted.
+
+**G1 MET (2026-09-29): 20 of 20 consecutive live runs**, both fixes in:
+(b) the bridge polls over kept-open connections (`39b340b`; 600 scans in
+60 s = 10.0 Hz, the scan test 20/20 in isolation where it failed 4/10, 0
+poll failures), and (a) the chain suite runs in the scaled house -- its
+fixture skips any other house -- with the wall test's ground truth read from
+the house the server reports and its pass REQUIRING a recorded forward
+clamp, since the scaled house's wall is ~1 m off and a timer could otherwise
+end the drive first. One container for all 20 runs (the harder condition),
+a fresh robot-server restart per run, container CPU 44-51%. Each run: 32
+passed, 1 xfailed (R3's pan-bearing limit). The wall test also stopped
+comparing the veto's START reading, which is None with the wall beyond the
+0.6 m safety look-ahead; it compares truth. The SLAM lap stays in the
+starter house (`tests/test_slam_live.py`).
 
 **Then** `mode: hardware` defaults to `drive: ros`, and this section records
 the numbers. Until every gate holds, `direct` stays the default everywhere.
