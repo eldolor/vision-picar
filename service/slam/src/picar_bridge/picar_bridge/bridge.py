@@ -51,7 +51,6 @@ import math
 import os
 import threading
 import time
-import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -73,6 +72,7 @@ from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
 from picar_bridge import brain_view, convert
+from picar_bridge.keepalive import KeepAliveClient
 
 # Driver (robot/interface.py DRIVER_PRIORITY names) -> twist_mux input.
 # Priorities live in picar_bringup/config/twist_mux.yaml.
@@ -97,6 +97,12 @@ class Bridge(Node):
         super().__init__("picar_bridge")
         self.robot_url = os.environ.get("ROBOT_URL", "http://host.docker.internal:8000")
         self.secret = os.environ.get("APP_SHARED_SECRET", "")
+        # Kept-open connections (keepalive.py, PLAN-ros-alignment.md 3.24 G1):
+        # a new connection per poll through Docker Desktop's port-forwarding
+        # stalled past the timeout ~1 time in 10, and each stall was a scan
+        # never published.
+        auth = {"x-app-secret": self.secret} if self.secret else {}
+        self.robot_http = KeepAliveClient(self.robot_url, auth, timeout=0.5)
         self.lock = threading.Lock()
         self.pubs = {d: self.create_publisher(Twist, t, 10) for d, t in DRIVER_TOPICS.items()}
         self.scan_pub = self.create_publisher(LaserScan, "scan", 10)
@@ -140,6 +146,7 @@ class Bridge(Node):
         self.create_timer(1.0 / PAN_HZ, self._publish_pan)
         # ---- the brain, for ROS tools ----
         self.brain_url = os.environ.get("BRAIN_URL", "http://host.docker.internal:8001/brain").rstrip("/")
+        self.brain_http = KeepAliveClient(self.brain_url, auth, timeout=1.0) if self.brain_url else None
         self.brain_status_pub = self.create_publisher(String, "brain/status", 10)
         self.diag_pub = self.create_publisher(DiagnosticArray, "/diagnostics", 10)
         self.brain_marker_pub = self.create_publisher(MarkerArray, "brain/markers", 10)
@@ -162,11 +169,7 @@ class Bridge(Node):
     def _poll_brain(self):
         status, error = None, None
         try:
-            req = urllib.request.Request(self.brain_url + "/mission/status")
-            if self.secret:
-                req.add_header("x-app-secret", self.secret)
-            with urllib.request.urlopen(req, timeout=1.0) as r:
-                status = json.loads(r.read())
+            status = self.brain_http.get_json("/mission/status")
         except Exception as e:  # unreachable is a STATE here, not a crash
             error = str(e)[:200]
         with self.lock:
@@ -359,11 +362,7 @@ class Bridge(Node):
                      "odom": self._pose_in("odom"), "at": time.time()}
 
     def _robot_get(self, path):
-        req = urllib.request.Request(self.robot_url + path)
-        if self.secret:
-            req.add_header("x-app-secret", self.secret)
-        with urllib.request.urlopen(req, timeout=0.5) as r:
-            return json.loads(r.read())
+        return self.robot_http.get_json(path)
 
     def _record_start_truth(self):
         """First time the robot answers: the robot has not moved yet (the
