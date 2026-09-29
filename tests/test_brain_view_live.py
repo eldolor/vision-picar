@@ -81,9 +81,25 @@ def test_brain_status_on_ros_is_the_brains_own_status(brain):
         assert theirs.get(key) == ours.get(key), (key, theirs.get(key), ours.get(key))
 
 
+def _brain_diagnostics(tries=10):
+    """The first `/diagnostics` message that carries the bridge's entry.
+
+    Not simply the first message: the controller manager publishes on
+    `/diagnostics` too ("loop time"), and `echo --once` returns whichever
+    publisher speaks first -- which failed this test intermittently in the
+    combined live run (3.24, G1). Bounded, so a bridge that never publishes
+    still fails."""
+    out = ""
+    for _ in range(tries):
+        out = _in_ros("timeout 8 ros2 topic echo --once /diagnostics")
+        if "brain: mission" in out:
+            return out
+    return out
+
+
 def test_diagnostics_names_the_brains_state(brain):
     ours = brain.get("/mission/status").json()
-    out = _in_ros("timeout 8 ros2 topic echo --once /diagnostics")
+    out = _brain_diagnostics()
     assert "brain: mission" in out
     expect = "running, step" if ours.get("running") else (ours.get("outcome") or "idle")
     assert expect in out, (expect, out[:400])
