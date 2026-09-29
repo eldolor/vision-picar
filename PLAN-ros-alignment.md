@@ -2148,6 +2148,51 @@ blocks the rest.**
   **5 consecutive runs** against `SIM_MOTOR_BOARD=fake` (the real motor
   board's code over a pty, R7). Against the real chassis: when it exists.
 
+**G1, first step done (2026-09-29): the flakiness is TWO problems, and both
+causes are established.** 12 runs each of `be2df51` and the head, alternated,
+a fresh container per run: 1/12 failed at `be2df51` (scan rate), 2/12 at the
+head (verbs short); container CPU 44-56% on both -- a fair comparison. Then
+each failure mode was traced to its cause, not guessed:
+
+1. **Verbs closing short -- a test in a door the chassis cannot fit.** With
+   the ROS executor's stall log raised (throwaway worktree), every short verb
+   is "verb stalled at 0.19-0.26 of 0.300 -- ended" and no passing run has
+   one. The verb test drives FORWARD into the starter house's 30 cm door; the
+   UGV chassis (3.21) is 23.1 cm, so 3.45 cm a side, and 3.18's corridor
+   margin is 3 cm a side (sized for the 19.8 cm 2WD build) -- 4.5 mm for
+   heading and position error. Offline, deterministic: 0.5 deg of heading
+   error stops the move at 21 cm, 0.7 deg at 6 cm, a 3 mm offset at 3 cm --
+   with the true gap 13 cm, so the veto is conservative, not wrong. ROS
+   turns land within ~0.6 deg (3.13), hence one run in a few. It started at
+   the UGV merge because the wider chassis made the door tight. **Not a
+   safety or ROS fault; the margin stays.** No direction in the starter
+   house's start room has room for a 30 cm move (45-55 cm clear against the
+   62.7 cm a move needs); the scaled house's has 105-300 cm.
+2. **Scan rate under 5 Hz -- new connections through Docker Desktop.** The
+   bridge's `/scan` polls (a new `urllib` connection each) fail with
+   "Network is unreachable": a MASKED timeout (the IPv4 connect times out,
+   Python falls back to an unroutable IPv6 address and reports that). From
+   inside the container, 41 of 433 polls (9.5%) exceed 0.5 s; from the Mac,
+   0 of 575, max 50 ms; from inside the container over ONE kept-open
+   connection, 0 of 595, max 38 ms. The robot server is not slow; opening a
+   connection through Docker Desktop's port-forwarding on macOS stalls about
+   one time in ten. The C++ wheel plugin keeps its connection open, which is
+   why the wheels never showed it. On the Jetson (native Linux) the proxy is
+   not in the path -- but it makes the 20-run bar unmeetable here.
+3. **Brain-view test** read the first `/diagnostics` message from any
+   publisher; fixed (`a60619f`) to read until the bridge's own entry.
+
+Ruled out on the way: dropped wheel-loop ticks (a counter read 0 in 8 runs)
+and a slower simulator (scan, grid and vet cost the same before and after).
+Container age raises the failure rate (one container kept across runs: up to
+5 of 8) -- consistent with (2), not separately measured.
+
+**Proposed fixes, awaiting the user:** (a) run the chain suite in the scaled
+house, with the wall-stop test made house-aware (its ground truth read from
+the house the server reports); the SLAM lap stays in the starter house.
+(b) the bridge polls the robot server over one kept-open connection. Then
+G1's 20-run bar is attempted.
+
 **Then** `mode: hardware` defaults to `drive: ros`, and this section records
 the numbers. Until every gate holds, `direct` stays the default everywhere.
 
