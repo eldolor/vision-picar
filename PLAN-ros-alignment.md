@@ -2081,6 +2081,74 @@ tap-to-goal already shows as a toast. An unreadable bridge counts as no goal
 and `cmd_vel/brain` are still equal at 50 -- but the robot server now
 admits only one of them at a time. `tests/test_goal_arbitration.py`.
 
+### 3.24 `drive: ros` as the car's default (2026-09-28): criteria, written before building
+
+Asked by the user: "Should we make drive: ROS the standard? Why have
+drive:direct when ROS is the standard way to implement robotics?" **Proposed
+and accepted ("go ahead"):** ROS becomes the default ON THE CAR (`mode:
+hardware`) once the gates below are met; `direct` is kept, but narrowed to
+two jobs -- (a) the simulator/test default (the ~1400-test offline suite and
+the deployed twin run without Docker) and (b) the car's FALLBACK if the ROS
+stack dies, since production robots keep safety and low-level motor control
+outside ROS so a crashed ROS process cannot leave the wheels running (this
+project's wall, `robot/safety.py` in every path, already embodies that). It
+stops being a second, equal way to drive with its own semantics.
+
+**Where the two paths differ today** (read from the code, not assumed --
+an earlier answer to the user overstated it and was corrected): both re-vet
+a verb every 50 ms (3.22's wording: under `drive: ros` a verb "is re-vetted
+every 50 ms" by the wheel loop). They differ in HOW they stop:
+
+* **Where.** Direct mode LOOKS AHEAD -- a period may cover at most
+  (clearance - `min_distance_cm`) -- so it stops at the line. The ROS path
+  clamps only once the reading is already under the line, so it can end up
+  to one period past it. A ROS verb runs at up to 0.6 m/s
+  (`robot/ros_drive.py`: 2 moves/s x 0.30 m at speed 100), 3 cm a period:
+  plausibly under 3.18's 18 cm bar at full speed. **Unmeasured.**
+* **What a blocked move reports.** Direct: under 1 cm moved is a REFUSAL,
+  which R1b's stuck detector counts. ROS: the executor ends a stalled verb
+  after `STALL_S` and reports it executed with what it covered.
+
+**Gates -- all must hold before the car's default flips. G1 first: it
+blocks the rest.**
+
+* **G1 -- the chain is reliable.** The live chain suite
+  (`tests/test_urdf.py` + `tests/test_ros_chain_live.py`, SLAM on, starter
+  house, suite order, a fresh robot-server restart per run) passes **20
+  consecutive runs** on this laptop. Today (2026-09-28, image rebuilt from
+  `56949d5`): runs with a failure were 0/4 at `be2df51`, 3/8 at `88b510a`,
+  and 3/7, 0/4, 5/8 at `56949d5` -- verbs closing at 3-23 cm of 30,
+  `/odom` lagging truth, the scan republished at 1.5-4.5 Hz against 5. Two
+  causes are already ruled out: dropped wheel-loop ticks (a skip counter read
+  0 over 8 runs) and a slower simulator (scan, grid and vet cost the same
+  before and after). **First step:** attribute it with 12 runs each of
+  `be2df51` and the head, alternated run by run so machine drift cancels,
+  plus the Docker VM's CPU per run. The fix, whatever it is, is judged by the
+  20-run bar.
+* **G2 -- the same safety, whichever path.** 3.18's and 3.19's ground-truth
+  sweeps (`tests/footprint_sweep.py`), run through the ROS verb executor
+  (in-process, against the fake chain `tests/test_ros_drive.py` already
+  uses) at verb speeds 50 and 100: travel-to-contact >= 18.0 cm after every
+  move, no contact, pivots within the 1.2 cm margin -- the SAME bars, not
+  new ones. And a ROS verb that covers under 1 cm is reported as the same
+  refusal direct mode reports, so a pinned robot ends `blocked` on both
+  paths. **Progress half:** with the way clear, >= 95% of ROS verbs cover
+  their full move / turn (within 3.13's 4.4 mm / 0.64 deg).
+* **G3 -- the fallback is real.** With a mission running under `drive: ros`,
+  kill the container: the wheels stop within the watchdog (as today);
+  **the mission ends** -- it does not resume autonomously on the fallback
+  path (recommended: only a PERSON may drive on the fallback; to be confirmed
+  by the user before G3 is built); and within **2 s** a D-pad FORWARD
+  executes through `direct`, vetted by `robot/safety.py`. When the container
+  returns, `drive` goes back to `ros` without a server restart.
+* **G4 -- on the car's own computer.** On the Jetson (ordered, arriving Oct
+  14-26): the image builds natively, and the live chain and nav suites pass
+  **5 consecutive runs** against `SIM_MOTOR_BOARD=fake` (the real motor
+  board's code over a pty, R7). Against the real chassis: when it exists.
+
+**Then** `mode: hardware` defaults to `drive: ros`, and this section records
+the numbers. Until every gate holds, `direct` stays the default everywhere.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
