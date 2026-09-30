@@ -2215,6 +2215,36 @@ comparing the veto's START reading, which is None with the wall beyond the
 0.6 m safety look-ahead; it compares truth. The SLAM lap stays in the
 starter house (`tests/test_slam_live.py`).
 
+**G2, baseline (2026-09-30), before any fix.** Instrument:
+`tests/ros_verb_sweep.py` -- the real `RosDriveRobot` executor entered
+through `SafetyController.check_and_execute()` as `/action` enters it,
+driving a fake chain that lands twists with R4's measured timing (40-150 ms,
+one in ten at 300 ms) and applies the robot server's vet where the server
+does (as each twist lands, and every 50 ms wheel-loop tick), on a virtual
+clock. Ground truth as in 3.18/3.19. 1440 straight verbs (3 houses x 10
+starts x 12 headings x FORWARD/REVERSE x speed 50/100) and 120 pivots:
+
+| criterion | baseline |
+|---|---|
+| 1 travel-to-contact >= 18.0 cm after every move | **FAIL** 1/1440 (speed 100, just under 18.0) |
+| 2 no contact | pass, 0/1560 |
+| 3 a verb achieving < 1 cm / 0.5 deg is a refusal | **FAIL** 8 pivots reported executed (all 236 tiny straight moves were refused, by the pre-check) |
+| 4 progress | pass, **95.2%** (790/830) -- every miss an OVERSHOOT of 0.4-1.5 cm: the executor accepts a verb within 2x its 4 mm tolerance |
+
+**"The way clear" (criterion 4) was defined after the first run, and is
+recorded as such.** The plan did not define it. First operationalized as
+truth's travel-to-contact >= 53 cm, that counted as "clear" 24 moves the
+safety layer DELIBERATELY stops short -- its 3 cm side margin and the cone's
+15 cm body are more cautious than truth -- so it scored the vet's caution as
+a ROS shortfall (93.2%). Defined instead as **direct mode, from the same
+pose, completes the full move**: which is the parity the gate is about. No
+threshold moved.
+
+The fixes follow from 1 and 3: the wheel vet LOOKS AHEAD as direct mode's
+verbs do (a period may cover at most the room left before the line), and a
+verb the vet stopped before it achieved the minimum is refused on the ROS
+path as on the direct one. The executor's overshoot passes and is left alone.
+
 **Then** `mode: hardware` defaults to `drive: ros`, and this section records
 the numbers. Until every gate holds, `direct` stays the default everywhere.
 
