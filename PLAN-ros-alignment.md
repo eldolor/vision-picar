@@ -2311,6 +2311,39 @@ the mission. Back up the moment the posts resume -- no restart.
 Offline first (a real app, ROS "alive" while a test posts `/wheels` as
 `ros`, "dead" when it stops), then live against the container.
 
+**G3 MET (2026-09-30), offline and live.** Built: the robot server reads
+ROS's pulse from the actuator plugin's 20 Hz `/wheels` posts (0.5 s silent =
+down); while down a person's `/action` runs `drive: direct`'s guarded verb on
+the robot under the ROS wrapper, every autonomous `/action` is refused
+`ros_unavailable`, and `RemoteRobot` now ends the mission on that refusal
+(`failed`, naming ROS) instead of treating it as a veto. `/health`
+`drive.ros_up`. Offline (`tests/test_ros_fallback.py`, a real app, the
+plugin's pulse played by a thread): 6 tests, all red first, each part
+mutation-checked. The harness was corrected twice, both recorded in the
+test: a dead container's queued twists must not land, and the pulse must
+carry the plugin's actual command (posting zeros fought the chain and a
+turn sometimes went nowhere -- it also showed the ROS-path refusal claiming
+"the safety vet held it", which it cannot know; reworded). Live, against
+the real container:
+
+| criterion | bar | live |
+|---|---|---|
+| G3.1 the mission ends | <= 3 s, `failed`, naming ROS, no motion after | **2.04 s**, `failed` (ros_unavailable), unmoved over 2 s |
+| G3.2 a person drives | a D-pad FORWARD within 2 s, vetted | executed through the fallback **0.36 s** after the kill |
+| G3.3 autonomy cannot | refused; a mission started then ends at once | brain FORWARD refused `ros_unavailable`; mission `failed` at step 0, unmoved |
+| G3.4 back without a restart | ROS up <= 5 s after the first post | up at the first post; a D-pad turn and a new mission ran through ROS |
+
+In the first ~0.4 s after a kill -- before 0.5 s of silence -- a person's
+verb is refused `ros_unavailable`: that is the detection window, inside the
+2 s bar. (The first live script measured G3.3 while the D-pad still held the
+robot, so the brain was refused `preempted` -- correct, and not the test;
+re-run with the authority lapsed.)
+
+**G4 is next and needs the Jetson** (arriving Oct 14-26) -- and a bought
+robot base: `HANDOFF-2026-09-30.md` records the recommended Rover's ROS
+Driver board (660 pulses/rev), which G4's `SIM_MOTOR_BOARD=fake` run will
+need to model before it means anything for that chassis.
+
 **Then** `mode: hardware` defaults to `drive: ros`, and this section records
 the numbers. Until every gate holds, `direct` stays the default everywhere.
 
