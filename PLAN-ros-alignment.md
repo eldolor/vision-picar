@@ -1789,6 +1789,14 @@ with the camera left at -90 by the chain suite's preempted mission.
 
 ### 3.21 The chassis becomes the Waveshare UGV Rover (2026-09-27): criteria, written before measuring
 
+> **Status 2026-09-30:** the Rover is still an **assumption, not a purchase**,
+> but it is again the recommendation -- a Hiwonder ROSOrin was ordered 09-29
+> and is being returned (`JETSON-BOM.md` section 9). Waveshare has since
+> confirmed the kit's **ROS Driver** board (closed loop, encoder odometry to
+> the host) and **660 pulses per revolution**: the **1650** below was the
+> open-loop firmware's stale constant and must be corrected when the Rover
+> is bought.
+
 **Decided by the user** ("let's assume that I am buying the car you
 recommended"; not yet ordered -- Waveshare has been asked whether the kit's
 3S UPS can carry an Orin Nano Super at 25 W). The kit is the **UGV Rover PT
