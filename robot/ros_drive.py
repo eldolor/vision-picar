@@ -59,11 +59,16 @@ TURN_RATE_RAD_S = 1.2
 ANGULAR_GAIN_PER_S = 1.5
 LINEAR_GAIN_PER_S = 2.0
 MIN_LINEAR_M_S = 0.02
-MIN_ANGULAR_RAD_S = 0.10
+# The floor rate and the turn tolerance were halved and cut from 0.8 deg in
+# 3.24 G2: at 0.10 rad/s, the chain's 40-300 ms of delay carried each final
+# correction 0.2-1.7 deg on, and only 80% of clear 45-degree turns landed
+# within 3.13's 0.64 deg (p95 1.01). At 0.05 rad/s and 0.5 deg: 100%, worst
+# 0.49 deg (tests/ros_verb_sweep.py, 240 turns on a virtual clock).
+MIN_ANGULAR_RAD_S = 0.05
 
 CONTROL_HZ = 20.0
 LINEAR_TOLERANCE_M = 0.004
-ANGULAR_TOLERANCE_RAD = math.radians(0.8)
+ANGULAR_TOLERANCE_RAD = math.radians(0.5)
 # No encoder progress for this long while commanding motion: the safety
 # vet (or a wall) has stopped the wheels. End the verb rather than push.
 STALL_S = 0.6
@@ -173,7 +178,7 @@ class RosDriveRobot(RobotInterface):
             # Let the zero land and the wheels settle, then look again.
             time.sleep(3.0 / CONTROL_HZ)
             done = progress()
-            if abs(target - done) <= 2 * tolerance or time.monotonic() >= deadline:
+            if abs(target - done) <= tolerance or time.monotonic() >= deadline:
                 break
         logger.info("verb target=%.4f final=%.4f in %.2fs%s", target, done,
                     time.monotonic() - started, " (superseded)" if self._superseded(gen) else "")

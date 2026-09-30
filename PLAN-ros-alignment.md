@@ -2245,6 +2245,41 @@ verbs do (a period may cover at most the room left before the line), and a
 verb the vet stopped before it achieved the minimum is refused on the ROS
 path as on the direct one. The executor's overshoot passes and is left alone.
 
+**G2 MET (2026-09-30), offline; the live check follows.** Three fixes,
+each mutation-checked against its own criterion (removed -> only that
+criterion red):
+
+| criterion | baseline | met |
+|---|---|---|
+| 1 travel-to-contact >= 18.0 cm after every move | 1/1440 at 17.93 | **0/1440**, closest 19.73 |
+| 2 no contact | 0 | 0 |
+| 3 a verb achieving < 1 cm / 0.5 deg is a refusal | 8 unrefused | **0/252** |
+| 4 progress, straight | 95.2% | **97.2%** (807/830) |
+| 4 progress, turns (measured separately, 240 clear turns) | **80.0%** within 0.64 deg (p95 1.01) | **100%**, worst 0.49 |
+
+1. **The wheel vet LOOKS AHEAD** (`SafetyController.vet_wheel_velocity`): a
+   translation may cover at most the room left before the line in one
+   period, so it is slowed as the line nears and stops AT it. At the line,
+   no room left is a CLAMP with a reason, not a silent slow -- R2b's reverse
+   test caught the first version recording no refusal. `robot/server.py`'s
+   wheel loop now applies the vetted speeds whenever they differ, and
+   records a refusal only with a reason.
+2. **A verb the vet held is a refusal on the ROS path too**
+   (`_refuse_if_nothing_achieved`, only for a robot that drives by
+   velocity): under 1 cm or 0.5 deg raises the same `SafetyViolation` direct
+   mode's `_guarded()` raises, so a pinned robot ends `blocked` either way.
+3. **The executor settles to its tolerance**, not twice it, and turns
+   finish at a 0.05 rad/s floor with a 0.5 deg tolerance (was 0.10 and 0.8).
+   At the old floor the chain's 40-300 ms of delay carried each final
+   correction 0.2-1.7 deg on.
+
+Two metric corrections on the way, both recorded: a verb that covered
+EXACTLY the 1 cm minimum (the look-ahead stops it at the line) read
+0.99999 cm in truth's floating point, so the "under the minimum" test takes
+a 1e-6 tolerance; and the turn half of criterion 4, which the plan names and
+the first verdicts omitted, is now measured. `tests/test_ros_verb_safety.py`
+pins all of it, including the one start that broke criterion 1.
+
 **Then** `mode: hardware` defaults to `drive: ros`, and this section records
 the numbers. Until every gate holds, `direct` stays the default everywhere.
 

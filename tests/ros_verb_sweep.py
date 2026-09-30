@@ -99,8 +99,8 @@ class SafeChain:
         w = self.inner.get_wheel_state()
         left, right = w["left"]["velocity_rad_s"], w["right"]["velocity_rad_s"]
         if left or right:
-            nl, nr, reason = self.safety.vet_wheel_velocity(left, right)
-            if reason:
+            nl, nr, _ = self.safety.vet_wheel_velocity(left, right)
+            if (nl, nr) != (left, right):       # robot/server.py's wheel_loop()
                 self.inner.set_wheel_velocity(nl, nr)
             before = (self.inner.world.x, self.inner.world.y, self.inner.world.theta)
             self.inner.advance(LOOP_S)
@@ -208,13 +208,30 @@ def pivot_sweep(houses, starts_per_house):
     return out
 
 
+def clear_turns(seeds=40):
+    """Criterion 4's TURN half: 45-degree turns where nothing is near, both
+    ways, three headings, many chain timings."""
+    return [run("scaled_house", 6.5, 4.5, th, a, seed=seed)
+            for seed in range(seeds) for a in ("LEFT", "RIGHT") for th in (0.0, 1.0, 2.0)]
+
+
+def turn_verdict(turns, bar_deg=0.64):
+    within = [r for r in turns if abs(r["turned_deg"] - TURN_DEG) <= bar_deg]
+    share = len(within) / len(turns)
+    worst = max(abs(r["turned_deg"] - TURN_DEG) for r in turns)
+    return share >= 0.95, f"{len(within)}/{len(turns)} = {share:.1%} clear turns within {bar_deg} deg (worst {worst:.2f})"
+
+
 def verdicts(straight, pivots):
     """G2's criteria: {name: (ok, detail)}."""
     c1 = [r for r in straight if r["worst_T_after_move"] < fs.T_BAR_CM]
     c2 = [r for r in straight + pivots if r["min_G"] < min(r["G0"], fs.G_BAR_CM) - 1e-6]
     # Parity: a verb that achieved under the minimum must be a REFUSAL, as in direct mode.
-    tiny = [r for r in straight if r["travel_cm"] < VERB_MIN_MOVE_M * 100] + \
-           [r for r in pivots if r["turned_deg"] < VERB_MIN_TURN_DEG]
+    # A verb that covered exactly the minimum (the look-ahead stops it AT the
+    # line) is not "under" it; truth's floating point reads 0.99999 cm.
+    eps = 1e-6
+    tiny = [r for r in straight if r["travel_cm"] < VERB_MIN_MOVE_M * 100 - eps] + \
+           [r for r in pivots if r["turned_deg"] < VERB_MIN_TURN_DEG - eps]
     unrefused = [r for r in tiny if not r["refused"]]
     # "Clear" = direct mode completes the full move from the same pose. (First
     # defined as truth's travel-to-contact >= 53 cm, which counted as clear

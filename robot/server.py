@@ -407,8 +407,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     wl["late_ticks"] += dt > 2 * WHEEL_LOOP_INTERVAL_S
                     wl["max_dt_s"] = round(max(wl["max_dt_s"], dt), 4)
                     new_left, new_right, reason = safety.vet_wheel_velocity(left, right)
-                    if reason:
+                    if (new_left, new_right) != (left, right):
+                        # Clamped, or only SLOWED near the line (3.24 G2's look-
+                        # ahead): either way the vetted speeds are what drive.
                         robot.set_wheel_velocity(new_left, new_right)
+                    if reason:
                         last_ref = state["last_refusal"]
                         if not (last_ref and last_ref["reason"] == "safety_distance"
                                 and last_ref["at"] >= state["last_command_at"]):
