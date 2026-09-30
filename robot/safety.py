@@ -688,7 +688,8 @@ class SafetyController:
             return
         self.robot.stop()
         shown = got * 100 if unit == "cm" else got
-        msg = f"Blocked {action}: stopped after {shown:.1f}{unit} through ROS -- the safety vet held it"
+        msg = (f"Blocked {action}: stopped after {shown:.1f}{unit} through ROS -- the wheels did "
+               "not carry it out (the safety vet, or the chain, held them)")
         logger.warning(msg)
         raise SafetyViolation(msg)
 

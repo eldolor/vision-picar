@@ -212,6 +212,12 @@ class RemoteRobot(RobotInterface):
             # preserves.
             if body.get("reason") == "preempted":
                 raise Preempted(detail)
+            if body.get("reason") == "ros_unavailable":
+                # 3.24 G3: the drive chain itself is gone. Not a veto to
+                # steer around -- the end of the mission (only a person
+                # drives on the fallback), which MissionRunner makes of any
+                # transport failure: `failed`, with this reason.
+                raise RobotTransportError(f"ros_unavailable: {detail}")
             raise SafetyViolation(detail)
         return body.get("result", {})
 

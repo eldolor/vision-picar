@@ -156,6 +156,10 @@ WATCHDOG_POLL_INTERVAL_S = 0.1
 # integrated. 20Hz is the rate nav2's local controller emits cmd_vel at, so
 # the loop never runs slower than the thing feeding it.
 WHEEL_LOOP_INTERVAL_S = 0.05
+# 3.24 G3: how long the actuator plugin may be silent before the ROS stack
+# counts as DOWN. It posts /wheels at 20 Hz, so 0.5 s is ten missed posts --
+# long past jitter, well inside the watchdog.
+ROS_SILENCE_S = 0.5
 
 
 @contextmanager
@@ -206,11 +210,20 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # R4: under `drive: ros` every verb is velocities through the ROS
     # container (robot/ros_drive.py), which is then the one wheel writer.
     by_velocity = bool(getattr(robot, "drives_by_velocity", False))
+    # 3.24 G3, the FALLBACK (decided by the user: only a person drives on it).
+    # When the ROS stack is down, a person's verbs run on the robot UNDER the
+    # ROS wrapper through drive: direct's guarded path -- the same
+    # SafetyController, re-vetted every period -- and autonomy is refused.
+    fallback_safety = (SafetyController(robot.inner, min_distance_cm=min_distance,
+                                        sensor_to_bumper_cm=sensor_to_bumper)
+                       if by_velocity else None)
     state = {
         # True while a direct-mode verb is being carried out (3.22).
         "verb_active": False,
         "last_command_at": time.monotonic(),
         "wheel_posts": 0,
+        # 3.24 G3: when the actuator plugin last posted /wheels -- ROS's pulse.
+        "last_ros_post_at": None,
         "refusal_counts": {},
         # Phase M4. Who last drove, when, and what was last refused. The
         # server has never had a notion of a driver at all: the D-pad and a
@@ -302,6 +315,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                         "driver": state["driver"],
                         "at": now,
                     }
+
+    def ros_up(now: float) -> bool:
+        """Is the ROS stack alive? Its actuator plugin posts /wheels at
+        20 Hz; ROS_SILENCE_S without one is a dead container (3.24 G3)."""
+        last = state["last_ros_post_at"]
+        return last is not None and now - last < ROS_SILENCE_S
 
     def arbitrate(driver: str, now: float):
         """Refusal dict if `driver` may not drive right now, else None.
@@ -511,7 +530,27 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         state["driver"] = driver
         state["driver_at"] = now
         try:
-            if by_velocity:
+            if by_velocity and not ros_up(now):
+                # 3.24 G3: the ROS stack is down. A PERSON drives on through
+                # drive: direct's guarded verb on the robot underneath; the
+                # autonomy is refused, and the brain ends its mission on it.
+                if driver_priority(driver) == DRIVER_AUTONOMOUS:
+                    robot.stop()
+                    return refuse("ros_unavailable",
+                                  "the ROS stack is down (no /wheels from the actuator for "
+                                  f"over {ROS_SILENCE_S} s) -- only a person may drive on the "
+                                  "fallback", driver)
+                with motion_lock:
+                    state["verb_active"] = True
+                    try:
+                        result = fallback_safety.check_and_execute(
+                            req.action, speed=req.speed, duration=req.duration, angle=req.angle
+                        )
+                    finally:
+                        state["verb_active"] = False
+                        state["last_command_at"] = time.monotonic()
+                result = {**result, "via": "direct-fallback"} if isinstance(result, dict) else result
+            elif by_velocity:
                 # R4, `drive: ros`: the verb is a stream of twists that the ROS
                 # chain turns back into POST /wheels -- which needs
                 # motion_lock, as does the wheel loop that moves the robot.
@@ -573,6 +612,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                               f"{driver} drives through /action", driver)
             state["last_command_at"] = now
             state["wheel_posts"] += 1
+            state["last_ros_post_at"] = now
         else:
             if req.left_rad_s == 0 and req.right_rad_s == 0:
                 # A ZERO command is not driving, so it never takes or refreshes
@@ -874,7 +914,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # not appear in either.
             "drive": {"mode": "ros" if by_velocity else "direct",
                       "verbs_through_ros": getattr(robot, "verbs_through_ros", None),
-                      "wheel_posts_from_ros": state["wheel_posts"] if by_velocity else None},
+                      "wheel_posts_from_ros": state["wheel_posts"] if by_velocity else None,
+                      # 3.24 G3: whether ROS is alive, and so whether a person's
+                      # verbs are running on the direct fallback.
+                      "ros_up": ros_up(time.monotonic()) if by_velocity else None},
             "watchdog_timeout_s": watchdog_timeout,
             "wheel_loop": {**state["wheel_loop"], "period_s": WHEEL_LOOP_INTERVAL_S},
             # The single source of truth for the safety threshold this
