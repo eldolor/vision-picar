@@ -182,6 +182,11 @@ Hailo/Jetson reversals, the handoffs -- is in
 `docs/archive/CLAUDE-history-2026-09.md`, verbatim. What is still true and
 still load-bearing:
 
+* **Latest session handoff: `HANDOFF-2026-09-30.md`** -- the robot base.
+  The ROSOrin is being returned; the UGV Rover plus a separate Jetson
+  battery is recommended, not bought. Its section 5 is the open work, in
+  order.
+
 * **Hardware: CLOSED 2026-09-19 -- the board is a Jetson Orin Nano Super,
   ~$944 all-in (`JETSON-BOM.md`; parts, wiring and protocol in
   `HARDWARE-BOM.md`, read its editor's note first).** Stated by the user.
