@@ -110,8 +110,8 @@ The Hailo path was closed on 2026-09-19, so this test runs only on an explicit
 decision to re-open it.
 
 **Timing:** the Jetson arrived 2026-09-30 and is still unopened, so it can be
-returned until about Oct 30. The Rover decision is due around Oct 7. Run the
-test before the Jetson box is opened.
+returned until about Oct 30. The Rover (Jetson kit) was ordered the evening
+of 2026-09-30. Run the test before the Jetson box is opened.
 
 ## Jetson power modes
 
@@ -173,6 +173,11 @@ Step up to 25 W or MAXN SUPER only when a measurement shows perception is the
 bottleneck. Fix the image resizing first (P7b); it is the biggest cost at every
 power level. Treat 7 W as a battery-saver, not an operating mode for
 autonomy.
+
+**Before buying the separate Jetson battery** (`JETSON-BOM.md` 9.5, still to
+buy): when the Rover and Jetson arrive, run the Jetson at 15 W off the Rover's
+own supply under a mission load, logging input voltage. If it holds, the
+battery may not be needed. If it sags, buy the battery as planned.
 
 ## Sources
 
