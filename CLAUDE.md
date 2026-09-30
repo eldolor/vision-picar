@@ -707,6 +707,10 @@ vision-picar/
 ├── BOM-COMPARISON.md      verified retailer prices, Pi vs Jetson, like
 │                           for like. **Price from here, never from 3.6**
 │                           -- 3.6's Pi 5 line reads $80 against $175
+├── PI-VS-JETSON.md        the "what if the Pi instead" walkthrough
+│                           (2026-09-30): price, gains, losses, and the
+│                           one test (YOLOE on a Hailo-8L at INT8) that
+│                           could change the answer
 ├── HARDWARE-BOM.md        part numbers, vendors, wiring and bring-up
 │                           order (Cowork's research + editor's note)
 ├── BOM.md                 SUPERSEDED -- the 2026-09-12 Jetson build, on
