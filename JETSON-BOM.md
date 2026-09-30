@@ -9,10 +9,12 @@ showed OWLv2 compiles to **no** Hailo. The price gap is **~$86**
 `HARDWARE-BOM.md`.
 
 > **Chassis status 2026-09-30:** the robot base is **not yet bought**.
-> The Hiwonder ROSOrin ordered 09-29 is being cancelled or returned (it sends
-> no encoder data to the Jetson and cannot power it at 25 W); the
+> The Hiwonder ROSOrin ordered 09-29 was **cancelled** 09-30 (it sends no
+> encoder data to the Jetson and cannot power it at 25 W). The
 > recommendation is the **Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce
-> plus a separate Jetson battery**. Section 9 has the record;
+> plus a separate Jetson battery**; the Cobra Flex is the runner-up (9.6).
+> **Open: the buying route** -- Waveshare direct vs Amazon, waiting on
+> Waveshare sales after Oct 7 (9.7). Section 9 has the record;
 > `GUIDE-robot-base.md` explains the concepts.
 
 > **Status 2026-09-28.** The board decision **closed 2026-09-19 for the
@@ -320,7 +322,11 @@ in `GUIDE-robot-base.md`**; this section is the record.
 | 09-29 | Reading Hiwonder's driver source: its board **reports no encoder data** to the host. |
 | 09-30 | Hiwonder confirmed it, and more (9.3). **Under the rule set before asking, the ROSOrin is to be cancelled or returned.** |
 | 09-30 | Waveshare answered every open question about the UGV Rover (9.3). |
-| -- | **Recommended, not yet bought: Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce + a separate Jetson battery.** Route (Amazon or Waveshare direct) is the user's call. |
+| 09-30 | **ROSOrin order cancelled** by the user. |
+| 09-30 | Cobra Flex firmware source read (9.6): no IMU, odometry from the hub motors. Stays runner-up. |
+| 09-30 | Yahboom ROSMASTER A1 (Amazon, two trims) rejected: Ackermann steering (9.2). |
+| 09-30 | Buying-route questions sent to **sales@waveshare.com** (9.7); Waveshare is on holiday until Oct 7. |
+| -- | **Recommended, not yet bought: Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce + a separate Jetson battery.** Route (Amazon or Waveshare direct) is the user's call, and waits on 9.7. |
 
 ### 9.2 Everything evaluated
 
@@ -329,12 +335,12 @@ Prices without a computer, verified on the vendor's page unless tagged.
 | candidate | price | verdict |
 |---|---|---|
 | **Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce** | $539.99 direct; $675.99 Amazon (third-party, no Prime) | **Recommended.** Closed loop, measured odometry to the host, open firmware, our code speaks its protocol. Power tight: add a Jetson pack. 253 x 231 mm. |
-| **Waveshare Cobra Flex** (bare chassis) | $319.99 direct | **Runner-up.** 235 x 173 mm (inside the size target); battery DC output meant for a Jetson; reports 4 wheel speeds + odometry; open firmware; 12 kg payload. No IMU listed; sensors and brackets are DIY; not on Amazon. ~$510-555 as a lean build. |
+| **Waveshare Cobra Flex** (bare chassis) | $319.99 direct | **Runner-up.** 235 x 173 mm (inside the size target); battery DC output meant for a Jetson; reports 4 wheel speeds + odometry; open firmware; 12 kg payload. **No IMU** -- the firmware's IMU code is stubbed out (9.6); sensors and brackets are DIY; not on Amazon. ~$565 lean, ~$780 matched to the Rover's sensors. |
 | Hiwonder ROSOrin Advanced | $529.99 direct, $579.99 Amazon | **Rejected 09-30** (9.3): no encoder data to the host, proprietary firmware, Jetson port can't sustain 25 W. |
 | Waveshare UGV02 (the Rover's bare chassis) | $149.99 | Same power board; 2 encoders; needs every sensor added. |
 | Waveshare UGV Beast (tracked) | $369.99+ | Closed loop out of the box, but tracks slip on every turn. |
 | Waveshare WAVE ROVER | $89.99 | No encoders. |
-| Yahboom ROSMASTER M1/M3/X3/X3 Plus/A1/R2 | -- | Mecanum or Ackermann. |
+| Yahboom ROSMASTER M1/M3/X3/X3 Plus/A1/R2 | -- | Mecanum or Ackermann. The **A1** on Amazon (ASINs B0FT423L7D Superior $469.90, B0FT3W8Z73 Ultimate $489.90, no computer; sold and shipped by Yahboom, delivery Oct 16-30, 90-day warranty) is Ackermann -- it cannot pivot, which the sim, the pivot guard (3.19), search turns and the nav2 fit all assume. |
 | Yahboom Transbot SE | $279.99 | Tracked; Jetson Nano / Pi only; no lidar. |
 | Hiwonder JetRover (tank), JetAuto, JetAcker, ROSOrin Pro | $769.99+ | Too big, bundled arm, or wrong drive type. |
 | ROBOTIS TurtleBot3 Burger | $681-784 (includes a Pi) | ~1,800 mAh battery: too small for a 25 W Jetson. |
@@ -396,3 +402,50 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
 * In code: the encoder constant becomes **660** (the sim and backends still
   carry 1650 from 3.21), and `robot/hardware_robot.py` should read the ROS
   Driver's `odl`/`odr` odometry rather than integrating wheel speeds.
+
+### 9.6 The Cobra Flex, from its firmware source
+
+Read 2026-09-30 from Waveshare's `Cobra_Flex0519.zip` (`Cobra_Driver/`),
+all `[V]` unless tagged:
+
+* **No IMU.** `IMU_ctrl.h`'s `imu_init()` and `updateIMUData()` are empty
+  and the ICM-20948 code is commented out; the `T:1001` builder in
+  `ugv_advance.h` has every IMU field commented out. **Trap:** with the arm
+  module fitted (`moduleType` 1) the same message carries `ax`/`ay`/`az`,
+  which are the **arm's coordinates**, not acceleration. An IMU would have
+  to be added (e.g. a BNO085 on the Jetson) and fused in ROS.
+* **Odometry is measured**, from the DDSM hub motors' absolute position
+  (32,767 steps per wheel turn), motors 1 and 2 only, polled one motor at a
+  time; per-sample deltas of 10 steps or less are dropped (`movtion_module.h`).
+  `odl`/`odr` go out as **whole centimetres** (`ugv_advance.h`), so the
+  guarded verbs' 50 ms periods would read from the per-wheel speeds
+  `M1`-`M4`, not from `odl`/`odr`.
+* **Constants:** `WHEEL_D` 0.0739 m, `TRACK_WIDTH` 0.159 m (`ugv_config.h`,
+  `mainType` 2 = Cobra Flex); the sim and 3.21 carry the Rover's.
+* **Heartbeat:** motors stop after `HEART_BEAT_DELAY` 3000 ms without a
+  command, settable with `T:136`. Battery voltage is `v` in hundredths of a
+  volt (INA219).
+* **Speed command:** `T:1` L/R in 0.1 rpm units per the wiki `[U]` against
+  source -- differs from the Rover's, so `robot/hardware_robot.py` would
+  need a Cobra variant.
+* **Power in its favour:** a 3S2P 18650 bay (≤145 x 102 x 53 mm), 9-28 V
+  input, and a battery-direct DC5525 lead for the Jetson -- one larger pack
+  may run everything `[I]`, where the Rover needs a second pack.
+
+**Verdict: runner-up.** Better drivetrain and power, but the IMU, lidar and
+camera mounts are the buyer's work (about a day of backend change plus
+brackets), and it is only sold direct from China.
+
+### 9.7 The buying route: Waveshare direct or Amazon
+
+Direct is $539.99 plus shipping and possibly duties; Amazon is $675.99
+(third party, no Prime) with a US 30-day return. Asked
+**sales@waveshare.com** on 09-30 (support redirects shipping questions
+there): ship-from location and carrier, shipping to Illinois, whether US
+duties are prepaid (DDP) or collected on delivery, the return window,
+opened-item returns, restocking fee, who pays return shipping and to where,
+warranty and replacement parts, whether the 18650s ship to the US, whether
+the Amazon listing is the same SKU 29227, and any discount. **The rule, set
+before the answer:** buy direct only if duties are prepaid (or it ships from
+a US warehouse) **and** returns go to a US address; otherwise the ~$136
+saving buys the risk the ROSOrin episode showed.

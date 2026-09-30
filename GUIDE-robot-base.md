@@ -339,6 +339,13 @@ Power the Jetson from **its own pack**, bypassing the robot's power board:
 | **Mecanum** | angled rollers; can move sideways | yes | **no** -- the stack assumes differential kinematics |
 | **Ackermann** | car-style steering | **no** | **no** |
 
+**Filter on drive type first.** It is the cheapest check on any listing and
+it rules out most kits before anything else matters: keep differential,
+skid steer and tracked; drop mecanum and Ackermann. The simulator, the pivot
+guard, the 45-degree search turns and nav2's fit checks all assume a robot
+that turns on the spot. (Example: the Yahboom ROSMASTER A1 on Amazon looks
+like a match on price, lidar and depth camera, and is Ackermann.)
+
 ### The numbers that describe a chassis
 
 * **Track width** -- left-right distance between wheel centres. Sets how fast
@@ -423,10 +430,16 @@ support email**, and three product-page or summary claims were wrong:
 | ROSOrin: "4 encoder motors" → usable odometry | the firmware never reports them to the host |
 | ROSOrin: sold with an Orin Nano Super fitted → 25 W is fine | Hiwonder: the port can't sustain 25 W |
 | UGV Rover: "12.6 V / 2 A" → output limit | Waveshare: that's the charger |
+| Cobra Flex: an `IMU_ctrl.h` in the firmware → an IMU | its functions are empty stubs, and the feedback message's IMU fields are commented out |
 
 Also: check the **manufacturer part number**, not the title. A Micro Center
 "Hiwonder ROSOrin" at $299.99 was part **21031708** -- the **Starter** tier
 (mecanum only), not the Advanced kit (**21031738**).
+
+A file named for a feature is not the feature. Look for the call that
+**sends** the value to the host (the feedback message), not the driver
+that could read it -- and watch for reused field names: with the Cobra's
+arm module fitted, `ax`/`ay`/`az` are the arm's coordinates.
 
 ### Buying terms that change the real price
 

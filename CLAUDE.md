@@ -183,8 +183,9 @@ Hailo/Jetson reversals, the handoffs -- is in
 still load-bearing:
 
 * **Latest session handoff: `HANDOFF-2026-09-30.md`** -- the robot base.
-  The ROSOrin is being returned; the UGV Rover plus a separate Jetson
-  battery is recommended, not bought. Its section 5 is the open work, in
+  The ROSOrin order was cancelled; the UGV Rover plus a separate Jetson
+  battery is recommended, not bought, and the buying route waits on
+  Waveshare sales (`JETSON-BOM.md` 9.7). Its section 5 is the open work, in
   order.
 
 * **Hardware: CLOSED 2026-09-19 -- the board is a Jetson Orin Nano Super,
@@ -196,13 +197,14 @@ still load-bearing:
   Ubuntu 22.04 / ROS 2 Humble. **The dev kit was ORDERED 2026-09-27**
   (Amazon, $399, arriving Oct 14-26) -- it is `JETSON-BOM.md` section 1's
   "buy regardless" line. **The chassis is not bought (2026-09-30).** A
-  Hiwonder ROSOrin ordered 09-29 is being cancelled or returned: Hiwonder
+  Hiwonder ROSOrin ordered 09-29 was cancelled 09-30: Hiwonder
   confirmed its board sends **no encoder data** to the host, its firmware
   is proprietary, and its Jetson port cannot sustain 25 W. The
   recommendation is the **Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce
   plus a separate Jetson battery** -- Waveshare confirmed the ROS Driver
   board (closed loop, encoder odometry to the host), 660 pulses/rev and
-  ~5 A continuous. Record: `JETSON-BOM.md` section 9. **Concepts
+  ~5 A continuous. Runner-up: the Cobra Flex (no IMU, 9.6). Record:
+  `JETSON-BOM.md` section 9. **Concepts
   (encoders, firmware, vendor protocols vs ROS 2/DDS, power budgets):
   `GUIDE-robot-base.md`.**
 * **Perception, shipped:** `brain/perceive.py` defaults to
