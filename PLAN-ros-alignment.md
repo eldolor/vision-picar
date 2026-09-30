@@ -2245,7 +2245,7 @@ verbs do (a period may cover at most the room left before the line), and a
 verb the vet stopped before it achieved the minimum is refused on the ROS
 path as on the direct one. The executor's overshoot passes and is left alone.
 
-**G2 MET (2026-09-30), offline; the live check follows.** Three fixes,
+**G2 MET (2026-09-30), offline and live.** Live on the G2 commit: the chain + brain-view suites 10 of 10 consecutive runs (37 passed each, 1 xfail -- R3's pan bearing), the nav2 suite 5 of 5. Three fixes,
 each mutation-checked against its own criterion (removed -> only that
 criterion red):
 
@@ -2279,6 +2279,37 @@ EXACTLY the 1 cm minimum (the look-ahead stops it at the line) read
 a 1e-6 tolerance; and the turn half of criterion 4, which the plan names and
 the first verdicts omitted, is now measured. `tests/test_ros_verb_safety.py`
 pins all of it, including the one start that broke criterion 1.
+
+**G3, made measurable (2026-09-30), before building.** The gate above says
+what; these say how it is judged. Today, with the bridge down, every
+`/action` -- a person's included -- is refused `ros_unavailable`, and on the
+brain side that refusal is an ordinary `SafetyViolation`, so a mission does
+NOT end: it keeps issuing refused moves until the stuck detector calls it
+`blocked`. The design: the robot server knows ROS is alive from the
+actuator's own heartbeat (`picar_sim_hardware` posts `/wheels` at 20 Hz), so
+ROS is DOWN after 0.5 s without a post; while down, a PERSON's `/action`
+runs through `drive: direct`'s guarded verb on the robot underneath (the
+same `SafetyController` path, re-vetted every period), and every autonomous
+`/action` is refused `ros_unavailable`, which the brain treats as the end of
+the mission. Back up the moment the posts resume -- no restart.
+
+* **G3.1 -- the mission ends.** Kill the container mid-mission: the wheels
+  stop within `watchdog_timeout_s` + 0.35 s (today's bar), and the mission
+  is no longer running within **3 s**, outcome `failed`, its reason naming
+  ROS; the robot does not move after it ends (truth unchanged over 2 s).
+* **G3.2 -- a person can drive.** Within **2 s** of the kill, a D-pad
+  FORWARD executes (`executed: true`, through the fallback), and it is
+  vetted: toward a wall it stops at the line or is refused
+  `safety_distance`, exactly as `drive: direct` does.
+* **G3.3 -- autonomy cannot.** During the outage every `/action` from an
+  autonomous driver is refused `ros_unavailable`, and a mission started
+  then ends `failed` at its first step without moving.
+* **G3.4 -- back without a restart.** Restart the container: within **5 s**
+  of its first `/wheels` post, `/health` reports ROS up, verbs go through
+  ROS again, and a new mission runs.
+
+Offline first (a real app, ROS "alive" while a test posts `/wheels` as
+`ros`, "dead" when it stops), then live against the container.
 
 **Then** `mode: hardware` defaults to `drive: ros`, and this section records
 the numbers. Until every gate holds, `direct` stays the default everywhere.
