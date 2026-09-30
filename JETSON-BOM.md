@@ -449,3 +449,19 @@ the Amazon listing is the same SKU 29227, and any discount. **The rule, set
 before the answer:** buy direct only if duties are prepaid (or it ships from
 a US warehouse) **and** returns go to a US address; otherwise the ~$136
 saving buys the risk the ROSOrin episode showed.
+
+**Delivered prices, found by a Claude Dispatch search on 2026-09-30** `[U]`
+(from the user's desktop, not re-checked here):
+
+| route | delivered | returns | arrives |
+|---|---|---|---|
+| Amazon | ~$730 (appears to include IL sales tax) | 30 days, to a US address | Oct 19 - Nov 11 |
+| Waveshare direct | $656.45, labelled DDP; no sales tax collected | **15 days, to China** | ~Oct 19-21 |
+
+The $74 gap is mostly tax: Illinois use tax (~10.25% in Chicago, ~$67) is
+owed on the direct order even though Waveshare does not collect it, so the
+honest gap is under $10 -- and negative if DDP turns out not to cover
+duties. **Direct fails the rule on returns alone** (to China, 15 days,
+shorter than the on-arrival checks need beside a Jetson arriving Oct
+14-26). **Recommendation: Amazon.** The sales email's answers can only
+change this if Waveshare offers a US return address.
