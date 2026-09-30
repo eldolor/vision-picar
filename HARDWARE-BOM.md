@@ -331,7 +331,7 @@ B6, B7, A5 and A9 are estimates. B3b and B8 are excluded (B8 adds about $10.88 w
 | 1001 / 1002 | Feedback **from** board: base info / IMU data | field layout not read: capture live |
 
 - No explicit emergency-stop command exists. Use zero speed plus the heartbeat: the firmware is believed to stop the motors when no command arrives within the heartbeat interval `[U]`.
-- **Firmware defaults are for Waveshare's own UGV** `[V]`: wheel diameter 0.080 m, track width 0.172 m, and 1650 encoder pulses per revolution in the open-loop General Driver firmware. They are wrong for the Yahboom chassis this BOM was written for (replace them with 4.3's values), and right for the UGV Rover recommended since 2026-09-30 (`JETSON-BOM.md` section 9), except the pulse count: the Rover's ROS Driver firmware, and Waveshare support, give **660**.
+- **Firmware defaults are for Waveshare's own UGV** `[V]`: wheel diameter 0.080 m, track width 0.172 m, and 1650 encoder pulses per revolution in the open-loop General Driver firmware. They are wrong for the Yahboom chassis this BOM was written for (replace them with 4.3's values), and right for the UGV Rover ordered 2026-09-30 (`JETSON-BOM.md` section 9), except the pulse count: the Rover's ROS Driver firmware, and Waveshare support, give **660**.
 - The gimbal commands assume a 2-servo pan-tilt. This build has one pan servo (default ID 1), so either drive it via T=133 and ignore Y, or address the servo directly `[I]`.
 
 ### 4.3 Motors, encoders, wheels (Yahboom L-type 520)

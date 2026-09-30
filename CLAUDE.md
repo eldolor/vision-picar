@@ -184,9 +184,9 @@ Hailo/Jetson reversals, the handoffs -- is in
 still load-bearing:
 
 * **Latest session handoff: `HANDOFF-2026-09-30.md`** -- the robot base.
-  The ROSOrin order was cancelled; the UGV Rover plus a separate Jetson
-  battery is recommended, not bought, and the buying route waits on
-  Waveshare sales (`JETSON-BOM.md` 9.7). Its section 5 is the open work, in
+  The ROSOrin order was cancelled; the **UGV Rover was ORDERED 2026-09-30**
+  (Amazon, ~$730 delivered); the separate Jetson battery is still to buy
+  (`JETSON-BOM.md` 9.5). Its section 5 is the open work, in
   order.
 
 * **Hardware: CLOSED 2026-09-19 -- the board is a Jetson Orin Nano Super,
@@ -194,19 +194,20 @@ still load-bearing:
   `HARDWARE-BOM.md`, read its editor's note first).** Stated by the user.
   The Hailo path is history: do not re-open it and do not spend on a Hailo
   compile run. The parts below the Jetson now come from the robot base
-  (not bought; see below): on the recommended UGV Rover kit, the **ROS
+  (ordered; see below): on the UGV Rover kit, the **ROS
   Driver** board (closed loop from the factory, encoder odometry `odl`/`odr`
   to the host, 660 pulses/rev), a D500 lidar, an OAK-D Lite and a pan-tilt
   -- not the General Driver + RPLidar C1 + IMX219 of the 2026-09-19 build,
   which `HARDWARE-BOM.md` still describes. The software assumes JetPack 6.x /
   Ubuntu 22.04 / ROS 2 Humble. **The dev kit was ORDERED 2026-09-27**
   (Amazon, $399, arriving Oct 14-26) -- it is `JETSON-BOM.md` section 1's
-  "buy regardless" line. **The chassis is not bought (2026-09-30).** A
+  "buy regardless" line. **The chassis was ORDERED 2026-09-30** -- the
+  Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce, Amazon, ~$730
+  delivered, expected Oct 19 - Nov 11, 30-day return. A
   Hiwonder ROSOrin ordered 09-29 was cancelled 09-30: Hiwonder
   confirmed its board sends **no encoder data** to the host, its firmware
-  is proprietary, and its Jetson port cannot sustain 25 W. The
-  recommendation is the **Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce
-  plus a separate Jetson battery** -- Waveshare confirmed the ROS Driver
+  is proprietary, and its Jetson port cannot sustain 25 W. The Rover
+  needs **a separate Jetson battery** (not yet bought) -- Waveshare confirmed the ROS Driver
   board (closed loop, encoder odometry to the host), 660 pulses/rev and
   ~5 A continuous. Runner-up: the Cobra Flex (no IMU, 9.6). Record:
   `JETSON-BOM.md` section 9. **Concepts
@@ -1001,9 +1002,10 @@ which is B5.
 
 ### Then buy
 
-**The Jetson is ordered (2026-09-27). What is left to buy is the robot
-base: `JETSON-BOM.md` section 9** -- the Waveshare UGV Rover PT Jetson Orin
-ROS2 Kit Acce plus a separate Jetson battery (2026-09-30). Its ROS Driver
+**The Jetson is ordered (2026-09-27) and so is the robot base (2026-09-30,
+the Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce, Amazon). What is
+left to buy is the separate Jetson battery and its fused cable:
+`JETSON-BOM.md` 9.5.** The Rover's ROS Driver
 board ships closed-loop firmware, so **no firmware change** is needed;
 `HARDWARE-BOM.md` correction 5 (raw PWM, reflash for closed loop) applies to
 the General Driver board of the 2026-09-19 build, not to the Rover.

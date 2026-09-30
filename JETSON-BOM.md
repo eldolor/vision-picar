@@ -8,13 +8,13 @@ showed OWLv2 compiles to **no** Hailo. The price gap is **~$86**
 `PLAN-onboard-perception.md` P17–P19; part numbers and vendors live in
 `HARDWARE-BOM.md`.
 
-> **Chassis status 2026-09-30:** the robot base is **not yet bought**.
-> The Hiwonder ROSOrin ordered 09-29 was **cancelled** 09-30 (it sends no
-> encoder data to the Jetson and cannot power it at 25 W). The
-> recommendation is the **Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce
-> plus a separate Jetson battery**; the Cobra Flex is the runner-up (9.6).
-> **Open: the buying route** -- Waveshare direct vs Amazon, waiting on
-> Waveshare sales after Oct 7 (9.7). Section 9 has the record;
+> **Chassis status 2026-09-30: ORDERED.** The **Waveshare UGV Rover PT
+> Jetson Orin ROS2 Kit Acce** (SKU 29227) was bought on **Amazon, ~$730
+> delivered**, on 2026-09-30 -- expected Oct 19 - Nov 11 (the listing's
+> window at search time), 30-day return to a US address. The Hiwonder
+> ROSOrin ordered 09-29 was cancelled (it sends no encoder data to the
+> Jetson and cannot power it at 25 W). **Still to buy: the separate Jetson
+> battery and its fused cable (9.5).** Section 9 has the record;
 > `GUIDE-robot-base.md` explains the concepts.
 
 > **Status 2026-09-28.** The board decision **closed 2026-09-19 for the
@@ -326,7 +326,7 @@ in `GUIDE-robot-base.md`**; this section is the record.
 | 09-30 | Cobra Flex firmware source read (9.6): no IMU, odometry from the hub motors. Stays runner-up. |
 | 09-30 | Yahboom ROSMASTER A1 (Amazon, two trims) rejected: Ackermann steering (9.2). |
 | 09-30 | Buying-route questions sent to **sales@waveshare.com** (9.7); Waveshare is on holiday until Oct 7. |
-| -- | **Recommended, not yet bought: Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce + a separate Jetson battery.** Route (Amazon or Waveshare direct) is the user's call, and waits on 9.7. |
+| 09-30 | **ORDERED: Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce on Amazon, ~$730 delivered** (9.7). Still to buy: the separate Jetson battery and fused cable (9.5). |
 
 ### 9.2 Everything evaluated
 
@@ -392,13 +392,20 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
 * **"Sold with an Orin Nano Super fitted" did not mean "powers it at 25 W".**
   Hiwonder says it doesn't. Get power claims in writing.
 
-### 9.5 If the Rover is bought
+### 9.5 Now that the Rover is ordered (2026-09-30)
 
-* Add a **separate Jetson battery** (e.g. Wheeltec E351S, 3S 5100 mAh with a
-  protection board and charger, ~EUR 85), an inline ~5 A fuse and a 5.5 x 2.1
-  to 5.5 x 2.5 mm barrel adapter; mount it on a Picatinny rail clamp or a
-  printed tray. ~$100-110 extra.
-* Use **4C-rated 18650s** in the Rover's own holder.
+* Buy a **separate Jetson battery** (e.g. Wheeltec E351S, 3S 5100 mAh with a
+  protection board and charger, ~EUR 85) and a **fused male 5.5 x 2.1 to male
+  5.5 x 2.5 mm cable** (~5 A fuse) -- a cable, not an "adapter", because the
+  E351S output is a female socket. **Unplug the kit's own DC5525 Jetson
+  lead** so the two supplies are never joined. Mount the pack on a
+  Picatinny rail clamp or a printed tray. ~$100-110 extra. **Not yet
+  ordered.**
+* Use **4C-rated 18650s** in the Rover's own holder, if the kit arrives
+  without cells.
+* **Within the 30-day return window, on arrival:** a 25 W stress test with
+  the motors running, confirm `T:1001` carries `odl`/`odr`, an odometry check
+  over a measured metre, and the safety sweep against the real lidar.
 * In code: the encoder constant becomes **660** (the sim and backends still
   carry 1650 from 3.21), and `robot/hardware_robot.py` should read the ROS
   Driver's `odl`/`odr` odometry rather than integrating wheel speeds.
@@ -437,6 +444,10 @@ camera mounts are the buyer's work (about a day of backend change plus
 brackets), and it is only sold direct from China.
 
 ### 9.7 The buying route: Waveshare direct or Amazon
+
+**Decided 2026-09-30: Amazon, ~$730 delivered -- ordered.** The reasoning
+below is kept as the record. The sales email to Waveshare no longer needs
+an answer.
 
 Direct is $539.99 plus shipping and possibly duties; Amazon is $675.99
 (third party, no Prime) with a US 30-day return. Asked
