@@ -2215,6 +2215,135 @@ comparing the veto's START reading, which is None with the wall beyond the
 0.6 m safety look-ahead; it compares truth. The SLAM lap stays in the
 starter house (`tests/test_slam_live.py`).
 
+**G2, baseline (2026-09-30), before any fix.** Instrument:
+`tests/ros_verb_sweep.py` -- the real `RosDriveRobot` executor entered
+through `SafetyController.check_and_execute()` as `/action` enters it,
+driving a fake chain that lands twists with R4's measured timing (40-150 ms,
+one in ten at 300 ms) and applies the robot server's vet where the server
+does (as each twist lands, and every 50 ms wheel-loop tick), on a virtual
+clock. Ground truth as in 3.18/3.19. 1440 straight verbs (3 houses x 10
+starts x 12 headings x FORWARD/REVERSE x speed 50/100) and 120 pivots:
+
+| criterion | baseline |
+|---|---|
+| 1 travel-to-contact >= 18.0 cm after every move | **FAIL** 1/1440 (speed 100, just under 18.0) |
+| 2 no contact | pass, 0/1560 |
+| 3 a verb achieving < 1 cm / 0.5 deg is a refusal | **FAIL** 8 pivots reported executed (all 236 tiny straight moves were refused, by the pre-check) |
+| 4 progress | pass, **95.2%** (790/830) -- every miss an OVERSHOOT of 0.4-1.5 cm: the executor accepts a verb within 2x its 4 mm tolerance |
+
+**"The way clear" (criterion 4) was defined after the first run, and is
+recorded as such.** The plan did not define it. First operationalized as
+truth's travel-to-contact >= 53 cm, that counted as "clear" 24 moves the
+safety layer DELIBERATELY stops short -- its 3 cm side margin and the cone's
+15 cm body are more cautious than truth -- so it scored the vet's caution as
+a ROS shortfall (93.2%). Defined instead as **direct mode, from the same
+pose, completes the full move**: which is the parity the gate is about. No
+threshold moved.
+
+The fixes follow from 1 and 3: the wheel vet LOOKS AHEAD as direct mode's
+verbs do (a period may cover at most the room left before the line), and a
+verb the vet stopped before it achieved the minimum is refused on the ROS
+path as on the direct one. The executor's overshoot passes and is left alone.
+
+**G2 MET (2026-09-30), offline and live.** Live on the G2 commit: the chain + brain-view suites 10 of 10 consecutive runs (37 passed each, 1 xfail -- R3's pan bearing), the nav2 suite 5 of 5. Three fixes,
+each mutation-checked against its own criterion (removed -> only that
+criterion red):
+
+| criterion | baseline | met |
+|---|---|---|
+| 1 travel-to-contact >= 18.0 cm after every move | 1/1440 at 17.93 | **0/1440**, closest 19.73 |
+| 2 no contact | 0 | 0 |
+| 3 a verb achieving < 1 cm / 0.5 deg is a refusal | 8 unrefused | **0/252** |
+| 4 progress, straight | 95.2% | **97.2%** (807/830) |
+| 4 progress, turns (measured separately, 240 clear turns) | **80.0%** within 0.64 deg (p95 1.01) | **100%**, worst 0.49 |
+
+1. **The wheel vet LOOKS AHEAD** (`SafetyController.vet_wheel_velocity`): a
+   translation may cover at most the room left before the line in one
+   period, so it is slowed as the line nears and stops AT it. At the line,
+   no room left is a CLAMP with a reason, not a silent slow -- R2b's reverse
+   test caught the first version recording no refusal. `robot/server.py`'s
+   wheel loop now applies the vetted speeds whenever they differ, and
+   records a refusal only with a reason.
+2. **A verb the vet held is a refusal on the ROS path too**
+   (`_refuse_if_nothing_achieved`, only for a robot that drives by
+   velocity): under 1 cm or 0.5 deg raises the same `SafetyViolation` direct
+   mode's `_guarded()` raises, so a pinned robot ends `blocked` either way.
+3. **The executor settles to its tolerance**, not twice it, and turns
+   finish at a 0.05 rad/s floor with a 0.5 deg tolerance (was 0.10 and 0.8).
+   At the old floor the chain's 40-300 ms of delay carried each final
+   correction 0.2-1.7 deg on.
+
+Two metric corrections on the way, both recorded: a verb that covered
+EXACTLY the 1 cm minimum (the look-ahead stops it at the line) read
+0.99999 cm in truth's floating point, so the "under the minimum" test takes
+a 1e-6 tolerance; and the turn half of criterion 4, which the plan names and
+the first verdicts omitted, is now measured. `tests/test_ros_verb_safety.py`
+pins all of it, including the one start that broke criterion 1.
+
+**G3, made measurable (2026-09-30), before building.** The gate above says
+what; these say how it is judged. Today, with the bridge down, every
+`/action` -- a person's included -- is refused `ros_unavailable`, and on the
+brain side that refusal is an ordinary `SafetyViolation`, so a mission does
+NOT end: it keeps issuing refused moves until the stuck detector calls it
+`blocked`. The design: the robot server knows ROS is alive from the
+actuator's own heartbeat (`picar_sim_hardware` posts `/wheels` at 20 Hz), so
+ROS is DOWN after 0.5 s without a post; while down, a PERSON's `/action`
+runs through `drive: direct`'s guarded verb on the robot underneath (the
+same `SafetyController` path, re-vetted every period), and every autonomous
+`/action` is refused `ros_unavailable`, which the brain treats as the end of
+the mission. Back up the moment the posts resume -- no restart.
+
+* **G3.1 -- the mission ends.** Kill the container mid-mission: the wheels
+  stop within `watchdog_timeout_s` + 0.35 s (today's bar), and the mission
+  is no longer running within **3 s**, outcome `failed`, its reason naming
+  ROS; the robot does not move after it ends (truth unchanged over 2 s).
+* **G3.2 -- a person can drive.** Within **2 s** of the kill, a D-pad
+  FORWARD executes (`executed: true`, through the fallback), and it is
+  vetted: toward a wall it stops at the line or is refused
+  `safety_distance`, exactly as `drive: direct` does.
+* **G3.3 -- autonomy cannot.** During the outage every `/action` from an
+  autonomous driver is refused `ros_unavailable`, and a mission started
+  then ends `failed` at its first step without moving.
+* **G3.4 -- back without a restart.** Restart the container: within **5 s**
+  of its first `/wheels` post, `/health` reports ROS up, verbs go through
+  ROS again, and a new mission runs.
+
+Offline first (a real app, ROS "alive" while a test posts `/wheels` as
+`ros`, "dead" when it stops), then live against the container.
+
+**G3 MET (2026-09-30), offline and live.** Built: the robot server reads
+ROS's pulse from the actuator plugin's 20 Hz `/wheels` posts (0.5 s silent =
+down); while down a person's `/action` runs `drive: direct`'s guarded verb on
+the robot under the ROS wrapper, every autonomous `/action` is refused
+`ros_unavailable`, and `RemoteRobot` now ends the mission on that refusal
+(`failed`, naming ROS) instead of treating it as a veto. `/health`
+`drive.ros_up`. Offline (`tests/test_ros_fallback.py`, a real app, the
+plugin's pulse played by a thread): 6 tests, all red first, each part
+mutation-checked. The harness was corrected twice, both recorded in the
+test: a dead container's queued twists must not land, and the pulse must
+carry the plugin's actual command (posting zeros fought the chain and a
+turn sometimes went nowhere -- it also showed the ROS-path refusal claiming
+"the safety vet held it", which it cannot know; reworded). Live, against
+the real container:
+
+| criterion | bar | live |
+|---|---|---|
+| G3.1 the mission ends | <= 3 s, `failed`, naming ROS, no motion after | **2.04 s**, `failed` (ros_unavailable), unmoved over 2 s |
+| G3.2 a person drives | a D-pad FORWARD within 2 s, vetted | executed through the fallback **0.36 s** after the kill |
+| G3.3 autonomy cannot | refused; a mission started then ends at once | brain FORWARD refused `ros_unavailable`; mission `failed` at step 0, unmoved |
+| G3.4 back without a restart | ROS up <= 5 s after the first post | up at the first post; a D-pad turn and a new mission ran through ROS |
+
+In the first ~0.4 s after a kill -- before 0.5 s of silence -- a person's
+verb is refused `ros_unavailable`: that is the detection window, inside the
+2 s bar. (The first live script measured G3.3 while the D-pad still held the
+robot, so the brain was refused `preempted` -- correct, and not the test;
+re-run with the authority lapsed.)
+
+**G4 is next and needs the Jetson** (arriving Oct 14-26) -- and a bought
+robot base: `HANDOFF-2026-09-30.md` records the recommended Rover's ROS
+Driver board (660 pulses/rev), which G4's `SIM_MOTOR_BOARD=fake` run will
+need to model before it means anything for that chassis.
+
 **Then** `mode: hardware` defaults to `drive: ros`, and this section records
 the numbers. Until every gate holds, `direct` stays the default everywhere.
 

@@ -34,6 +34,7 @@ from typing import Optional, Tuple
 from robot.interface import (
     DEPTH_COLS_DEFAULT,
     RobotInterface,
+    VERB_PERIOD_S,
     carry_out_verb,
     ZONE_RANGE,
     ZONE_UNUSABLE,
@@ -590,6 +591,15 @@ class SafetyController:
         (`pivot_blocked()`, 3.19): turning away is always allowed, which is
         the property that lets a robot facing a wall turn away from it. Returns `(left, right, reason)`; `reason` is
         None when nothing was clamped.
+
+        **A translation LOOKS AHEAD (3.24, G2):** it may cover at most the room
+        left before the line in the one period until the next vet, so it is
+        SLOWED as the line nears and stops at it, rather than clamped only
+        once already past it. Direct mode's verbs have done this since 3.22;
+        the ROS path did not, and at 0.6 m/s (3 cm a period) one verb in the
+        G2 sweep ended under 3.18's 18 cm bar. Slowing is not refusing:
+        `reason` stays None when the command was only slowed, and the
+        returned wheel speeds are what to apply either way.
         """
         wheels = self.robot.get_wheel_state()
         if not wheels.get("usable"):
@@ -598,19 +608,24 @@ class SafetyController:
         v = (left_rad_s + right_rad_s) / 2.0 * radius
         omega = (right_rad_s - left_rad_s) * radius / track
         reason = None
-        if v > 0:
-            clearance, source = self.forward_clearance()
-            if clearance is not None and clearance < self.min_distance_cm:
-                v, reason = 0.0, f"forward clamped: {clearance}cm < {self.min_distance_cm}cm ({source})"
-        elif v < 0:
-            clearance, source = self.reverse_clearance()
-            if clearance is not None and clearance < self.min_distance_cm:
-                v, reason = 0.0, f"reverse clamped: {clearance}cm < {self.min_distance_cm}cm ({source})"
+        v_asked = v
+        if v != 0:
+            clearance, source = self.forward_clearance() if v > 0 else self.reverse_clearance()
+            way = "forward" if v > 0 else "reverse"
+            # AT the line is clamped too: no room left means the command is
+            # refused, and a refusal is recorded -- slowing to zero is not a
+            # silent "slow" (R2b's reverse test caught exactly that).
+            if clearance is not None and clearance <= self.min_distance_cm:
+                v, reason = 0.0, f"{way} clamped: {clearance}cm <= {self.min_distance_cm}cm ({source})"
+            elif clearance is not None:
+                room_m_s = (clearance - self.min_distance_cm) / 100.0 / VERB_PERIOD_S
+                if abs(v) > room_m_s:
+                    v = math.copysign(room_m_s, v)
         scale, pivot = self.pivot_scale(omega)
         if pivot:
             omega *= scale
             reason = pivot if reason is None else f"{reason}; {pivot}"
-        if reason is None:
+        if reason is None and v == v_asked:
             return left_rad_s, right_rad_s, None
         half = omega * track / 2.0
         return (v - half) / radius, (v + half) / radius, reason
@@ -650,7 +665,33 @@ class SafetyController:
                             duration=kwargs.get("duration", 0.5), angle=kwargs.get("angle", 90))
             if plan is not None:
                 return self._guarded(action, plan, **kwargs)
-        return self._dispatch(action, **kwargs)
+        result = self._dispatch(action, **kwargs)
+        if action in _VERBS and getattr(self.robot, "drives_by_velocity", False):
+            self._refuse_if_nothing_achieved(action, result)
+        return result
+
+    def _refuse_if_nothing_achieved(self, action: str, result: dict) -> None:
+        """The ROS path's half of 3.22's decision 1 (3.24, G2): a verb the
+        vet stopped before it achieved the minimum is a REFUSAL, exactly as
+        `_guarded()` reports one in direct mode -- so a pinned robot ends
+        `blocked` on both paths. `robot.ros_drive` reports what it covered
+        (`moved_m`, `turned_deg`); it cannot know why it stopped, so the
+        verdict is made here, beside the direct one."""
+        straight = action in ("FORWARD", "REVERSE")
+        if straight and "moved_m" in result:
+            got, least, unit = abs(result["moved_m"]), VERB_MIN_MOVE_M, "cm"
+        elif not straight and "turned_deg" in result:
+            got, least, unit = abs(result["turned_deg"]), VERB_MIN_TURN_DEG, "deg"
+        else:
+            return
+        if got >= least:
+            return
+        self.robot.stop()
+        shown = got * 100 if unit == "cm" else got
+        msg = (f"Blocked {action}: stopped after {shown:.1f}{unit} through ROS -- the wheels did "
+               "not carry it out (the safety vet, or the chain, held them)")
+        logger.warning(msg)
+        raise SafetyViolation(msg)
 
     def _guarded(self, action: str, plan: dict, **kwargs) -> dict:
         """Carry out a verb as a standing wheel command, re-vetted every
