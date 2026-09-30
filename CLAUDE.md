@@ -190,8 +190,16 @@ still load-bearing:
   one ST3215 pan servo, RPLidar C1. The software assumes JetPack 6.x /
   Ubuntu 22.04 / ROS 2 Humble. **The dev kit was ORDERED 2026-09-27**
   (Amazon, $399, arriving Oct 14-26) -- it is `JETSON-BOM.md` section 1's
-  "buy regardless" line. **The chassis is not ordered**: the Waveshare UGV
-  Rover kit waits on Waveshare's answer about 25 W from its 3S UPS.
+  "buy regardless" line. **The chassis is not bought (2026-09-30).** A
+  Hiwonder ROSOrin ordered 09-29 is being cancelled or returned: Hiwonder
+  confirmed its board sends **no encoder data** to the host, its firmware
+  is proprietary, and its Jetson port cannot sustain 25 W. The
+  recommendation is the **Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce
+  plus a separate Jetson battery** -- Waveshare confirmed the ROS Driver
+  board (closed loop, encoder odometry to the host), 660 pulses/rev and
+  ~5 A continuous. Record: `JETSON-BOM.md` section 9. **Concepts
+  (encoders, firmware, vendor protocols vs ROS 2/DDS, power budgets):
+  `GUIDE-robot-base.md`.**
 * **Perception, shipped:** `brain/perceive.py` defaults to
   `yoloe-11s-seg.pt` -> CLIP, `low_confidence` crops, 16 crops/frame, gate
   P >= 0.8, no floor mask -- 82% at 3 FP, 139 ms on laptop CPU, on the
@@ -669,6 +677,13 @@ vision-picar/
 │                               longer a PiCar-X
 │
 │   -- bill of materials. JETSON-BOM.md is the one to read --
+├── GUIDE-robot-base.md    **a learning guide**: the four layers from wheel
+│                           encoder to ROS 2 node, closed loop vs "reports
+│                           to the host", reading a vendor driver, firmware
+│                           openness, powering a Jetson from a robot battery,
+│                           chassis geometry, lidar and depth cameras, and
+│                           reading a kit listing. Written from the 2026-09
+│                           chassis search -- read before buying a robot base
 ├── JETSON-BOM.md          **what to buy** (recommended build, 2026-09-17),
 │                           doubling as a brief for a ready-made-kit
 │                           search. Carries the constraints that

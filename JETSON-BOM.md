@@ -8,6 +8,13 @@ showed OWLv2 compiles to **no** Hailo. The price gap is **~$86**
 `PLAN-onboard-perception.md` P17–P19; part numbers and vendors live in
 `HARDWARE-BOM.md`.
 
+> **Chassis status 2026-09-30:** the robot base is **not yet bought**.
+> The Hiwonder ROSOrin ordered 09-29 is being cancelled or returned (it sends
+> no encoder data to the Jetson and cannot power it at 25 W); the
+> recommendation is the **Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce
+> plus a separate Jetson battery**. Section 9 has the record;
+> `GUIDE-robot-base.md` explains the concepts.
+
 > **Status 2026-09-28.** The board decision **closed 2026-09-19 for the
 > Jetson**, and the Hailo path is not being pursued (`CLAUDE.md` section 3).
 > OWLv2 is no longer the reason for the board: P22-P24 found YOLOE matches it
@@ -294,3 +301,98 @@ Self-contained on purpose — the assistant has no access to this repo.
 > If nothing clears the constraints, say so plainly and tell me which
 > constraint each near-miss failed; buying the parts separately is a
 > perfectly good outcome.
+
+---
+
+## 9. The chassis search, 2026-09-27 to 09-30 -- what was found and decided
+
+The brief in section 8 was run, then widened to every vendor's full
+catalogue and to third-party retailers. **The concepts behind this section --
+encoders, firmware openness, vendor protocols, power budgets -- are explained
+in `GUIDE-robot-base.md`**; this section is the record.
+
+### 9.1 Where it stands
+
+| date | event |
+|---|---|
+| 09-27 | UGV Rover assumed as the chassis; sim, safety and nav2 switched to it and measured (`PLAN-ros-alignment.md` 3.21). |
+| 09-29 | **Hiwonder ROSOrin Advanced (no controller) ordered** on Amazon, $579.99, ASIN B0G2GPKZGZ, ships from Amazon, free 30-day return. |
+| 09-29 | Reading Hiwonder's driver source: its board **reports no encoder data** to the host. |
+| 09-30 | Hiwonder confirmed it, and more (9.3). **Under the rule set before asking, the ROSOrin is to be cancelled or returned.** |
+| 09-30 | Waveshare answered every open question about the UGV Rover (9.3). |
+| -- | **Recommended, not yet bought: Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce + a separate Jetson battery.** Route (Amazon or Waveshare direct) is the user's call. |
+
+### 9.2 Everything evaluated
+
+Prices without a computer, verified on the vendor's page unless tagged.
+
+| candidate | price | verdict |
+|---|---|---|
+| **Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce** | $539.99 direct; $675.99 Amazon (third-party, no Prime) | **Recommended.** Closed loop, measured odometry to the host, open firmware, our code speaks its protocol. Power tight: add a Jetson pack. 253 x 231 mm. |
+| **Waveshare Cobra Flex** (bare chassis) | $319.99 direct | **Runner-up.** 235 x 173 mm (inside the size target); battery DC output meant for a Jetson; reports 4 wheel speeds + odometry; open firmware; 12 kg payload. No IMU listed; sensors and brackets are DIY; not on Amazon. ~$510-555 as a lean build. |
+| Hiwonder ROSOrin Advanced | $529.99 direct, $579.99 Amazon | **Rejected 09-30** (9.3): no encoder data to the host, proprietary firmware, Jetson port can't sustain 25 W. |
+| Waveshare UGV02 (the Rover's bare chassis) | $149.99 | Same power board; 2 encoders; needs every sensor added. |
+| Waveshare UGV Beast (tracked) | $369.99+ | Closed loop out of the box, but tracks slip on every turn. |
+| Waveshare WAVE ROVER | $89.99 | No encoders. |
+| Yahboom ROSMASTER M1/M3/X3/X3 Plus/A1/R2 | -- | Mecanum or Ackermann. |
+| Yahboom Transbot SE | $279.99 | Tracked; Jetson Nano / Pi only; no lidar. |
+| Hiwonder JetRover (tank), JetAuto, JetAcker, ROSOrin Pro | $769.99+ | Too big, bundled arm, or wrong drive type. |
+| ROBOTIS TurtleBot3 Burger | $681-784 (includes a Pi) | ~1,800 mAh battery: too small for a 25 W Jetson. |
+| Husarion ROSbot 3 / XL; TurtleBot 4; AgileX LIMO Pro; Elephant myAGV | EUR 2,749+ / ~$1,195+ / $2,799 / $4,765 | Excellent but 3-8x the budget, or bundle their own Jetson. |
+| Micro Center "Hiwonder ROSOrin" | $299.99 | Part 21031708 = the **Starter** tier: mecanum only, no depth camera. |
+
+Retailers swept: OpenELAB and ThinkRobotics (full catalogues; ThinkRobotics
+prices in INR), Micro Center (blocked automated access; checked from a user
+PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
+
+### 9.3 What the vendors said, verbatim where it decides something
+
+**Waveshare support** (tickets 257272, 257427, 257511; 09-29 and 09-30):
+
+* The kit's UPS **is** the standalone UPS Module 3S; "12.6V / 2A ... refers to
+  the charger specification and does not mean that the UPS output is limited
+  to 2A."
+* No fixed continuous rating; overcurrent protection at ~7.5-12.5 A; "the
+  normal continuous output current can reach up to **5 A**". Use 18650s of
+  **4C or higher**, or "power the Jetson directly from an external battery
+  pack".
+* The Jetson is fed directly from the UPS through a **DC5525** connector.
+  25 W MAXN SUPER with all peripherals is **untested, not guaranteed**.
+* SKU 29227 ships the **ROS Driver for Robots** board (`ugv_base_ros`),
+  closed-loop speed control.
+* **660 pulses per wheel revolution**; **two** encoder channels, one left and
+  one right.
+
+**Hiwonder support** (Zora, 09-30):
+
+* "The STM32 firmware currently **does not support reporting motor data or
+  encoder feedback back to the host**."
+* "The STM32 controller firmware is **proprietary**, and the source code is
+  not open-source."
+* Encoder resolution: "we do not provide the specific encoder resolution
+  data."
+* Jetson power: "it can power the Jetson Orin Nano Super, but it **cannot
+  supply enough current** to support the board running continuously at full
+  load (25W mode)."
+* Lidar: D500 from the China warehouse; Amazon stock mixes D500 and MS200.
+  A charger is included.
+
+### 9.4 Two things this section corrects
+
+* **The ROSOrin's "four encoders" were never usable by the Jetson.** It was
+  recommended on 09-29 partly for them, before its driver source was read.
+  The lesson is in `GUIDE-robot-base.md` section 9: closed loop and
+  "reports to the host" are different claims.
+* **"Sold with an Orin Nano Super fitted" did not mean "powers it at 25 W".**
+  Hiwonder says it doesn't. Get power claims in writing.
+
+### 9.5 If the Rover is bought
+
+* Add a **separate Jetson battery** (e.g. Wheeltec E351S, 3S 5100 mAh with a
+  protection board and charger, ~EUR 85), an inline ~5 A fuse and a 5.5 x 2.1
+  to 5.5 x 2.5 mm barrel adapter; mount it on a Picatinny rail clamp or a
+  printed tray. ~$100-110 extra.
+* Use **4C-rated 18650s** in the Rover's own holder.
+* In code: the encoder constant becomes **660** (the sim and backends still
+  carry 1650 from 3.21), and `robot/hardware_robot.py` should read the ROS
+  Driver's `odl`/`odr` odometry rather than integrating wheel speeds.
