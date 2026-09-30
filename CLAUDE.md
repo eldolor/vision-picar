@@ -192,8 +192,12 @@ still load-bearing:
   ~$944 all-in (`JETSON-BOM.md`; parts, wiring and protocol in
   `HARDWARE-BOM.md`, read its editor's note first).** Stated by the user.
   The Hailo path is history: do not re-open it and do not spend on a Hailo
-  compile run. Camera IMX219, motor board Waveshare ESP32 General Driver,
-  one ST3215 pan servo, RPLidar C1. The software assumes JetPack 6.x /
+  compile run. The parts below the Jetson now come from the robot base
+  (not bought; see below): on the recommended UGV Rover kit, the **ROS
+  Driver** board (closed loop from the factory, encoder odometry `odl`/`odr`
+  to the host, 660 pulses/rev), a D500 lidar, an OAK-D Lite and a pan-tilt
+  -- not the General Driver + RPLidar C1 + IMX219 of the 2026-09-19 build,
+  which `HARDWARE-BOM.md` still describes. The software assumes JetPack 6.x /
   Ubuntu 22.04 / ROS 2 Humble. **The dev kit was ORDERED 2026-09-27**
   (Amazon, $399, arriving Oct 14-26) -- it is `JETSON-BOM.md` section 1's
   "buy regardless" line. **The chassis is not bought (2026-09-30).** A
@@ -996,12 +1000,14 @@ which is B5.
 
 ### Then buy
 
-**What to buy is `JETSON-BOM.md`** (the recommended build, ~$944 all-in,
-decided 2026-09-19); **part numbers, wiring, the ESP32 protocol and the
-bring-up order are `HARDWARE-BOM.md`** -- read its editor's note first,
-including correction 5 (the motor board's `T=1` is raw PWM in its stock
-mode, and closed-loop speed needs a firmware change). Verified prices are
-`BOM-COMPARISON.md`. *(Rewritten 2026-09-28: this section used to point at
+**The Jetson is ordered (2026-09-27). What is left to buy is the robot
+base: `JETSON-BOM.md` section 9** -- the Waveshare UGV Rover PT Jetson Orin
+ROS2 Kit Acce plus a separate Jetson battery (2026-09-30). Its ROS Driver
+board ships closed-loop firmware, so **no firmware change** is needed;
+`HARDWARE-BOM.md` correction 5 (raw PWM, reflash for closed loop) applies to
+the General Driver board of the 2026-09-19 build, not to the Rover.
+`HARDWARE-BOM.md` still holds the ESP32 JSON protocol, udev/`dialout` and
+the bring-up order. Verified prices are `BOM-COMPARISON.md`. *(Rewritten 2026-09-28: this section used to point at
 `PLAN-onboard-perception.md` section 1's Pi + Hailo-8L list at ~$555-620,
 which the Jetson decision superseded.)*
 
