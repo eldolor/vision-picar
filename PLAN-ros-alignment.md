@@ -2400,13 +2400,18 @@ today's code first):
 3. **Bounded error.** Over the fake with 5% of `1001` lines dropped on the
    wire and a stop-go drive with turns of at least 30 s, each wheel's
    reported travel stays within **1.0 cm** of the body's truth at every
-   sample, **and** speed integration alone (the anchor removed) exceeds
+   frame the host receives -- judged against the truth the board held when
+   it BUILT that frame, so this measures estimation and not the wire's
+   latency (latency is criterion 5's) -- **and** speed integration alone (the anchor removed) exceeds
    1.0 cm on the same run -- otherwise the scenario tests nothing and is made
    harder, recorded.
 4. **A board reboot is not a jump.** The fake's counters reset to 0 mid-run
    (a brownout): the host's reported wheel positions and `get_odometry()`
    move by at most 1 cm across it, and stay within criterion 3's bound
    after it. Odometry by contract never jumps (section 2 of `CLAUDE.md`).
+   A reboot also loses the host's set-up -- the heartbeat goes back to the
+   firmware's 3000 ms -- so the host must notice and re-send it: within
+   0.5 s of the reboot the board's heartbeat is `HEARTBEAT_MS` again.
 5. **Verbs still mean what they mean, at 20 Hz feedback** (progress, rule
    4): over the fake, on ground truth, a clear guarded FORWARD covers **30 cm
    +/- 1.0 cm** and clear guarded turns of 15, 45 and 90 degrees land within
