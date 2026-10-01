@@ -2,12 +2,13 @@
 tests/test_fake_esp32.py
 
 Phase R7 (`PLAN-ros-alignment.md` 3.16) -- the fake ESP32 driver board and
-`robot/hardware_robot.py` over a real pseudo-terminal.
+`robot/hardware_robot.py` over a real pseudo-terminal. Since 3.25 the board
+is the UGV Rover's ROS Driver; `tests/test_ros_driver_board.py` holds that
+phase's criteria and these keep R7's.
 
 Criterion 1 is that the fake IS the firmware, so each rule below cites the
-function in `waveshareteam/ugv_base_general`, `General_Driver/` it mirrors.
-A fake that behaved better than the board would hide exactly what it exists
-to find -- e.g. that T=1 is open-loop PWM in mainType 2.
+function in `waveshareteam/ugv_base_ros`, `ROS_Driver/` it mirrors. A fake
+that behaved better than the board would hide exactly what it exists to find.
 """
 
 import json
@@ -51,7 +52,7 @@ def read_frames(fd, seconds=0.2):
 # ---------- criterion 1: the fake is the firmware ----------
 
 def test_t1_in_closed_loop_sets_wheel_speeds(board):
-    b, _, fd = board                         # setGoalSpeed(), mainType 3
+    b, _, fd = board                         # setGoalSpeed(), mainType 2
     send(fd, {"T": 1, "L": 0.2, "R": -0.1})
     assert b.setpoint == [0.2, -0.1] and b.use_pid
 
@@ -61,13 +62,6 @@ def test_t1_out_of_range_is_ignored_in_closed_loop(board):
     send(fd, {"T": 1, "L": 0.2, "R": 0.2})
     send(fd, {"T": 1, "L": 2.5, "R": 0.0})
     assert b.setpoint == [0.2, 0.2]
-
-
-def test_t1_in_open_loop_is_pwm_not_speed(board):
-    b, _, fd = board                         # else { leftCtrl(inputLeft * 512 * spd_rate_A); }
-    send(fd, {"T": 900, "main": 2, "module": 0})
-    send(fd, {"T": 1, "L": 0.25, "R": 0.5})
-    assert not b.use_pid and b.pwm == [128, 255]
 
 
 def test_t13_is_ros_style_twist(board):
@@ -83,25 +77,29 @@ def test_t11_raw_pwm_turns_the_pid_off(board):
 
 
 def test_t130_sends_one_base_frame(board):
-    _, _, fd = board                         # baseInfoFeedback(): T 1001, L, R, r, p, y, temp, v
+    _, _, fd = board                         # baseInfoFeedback(), once
+    send(fd, {"T": 131, "cmd": 0})           # the stream is on from boot
     read_frames(fd, 0.1)
     send(fd, {"T": 130})
     frames = [f for f in read_frames(fd) if f.get("T") == 1001]
     assert len(frames) == 1
-    assert set(frames[0]) == {"T", "L", "R", "r", "p", "y", "temp", "v"}
+    assert {"L", "R", "odl", "odr", "v"} <= set(frames[0])
 
 
-def test_t131_turns_continuous_feedback_on(board):
+def test_t131_turns_continuous_feedback_off_and_on(board):
     _, _, fd = board                         # if (baseFeedbackFlow) baseInfoFeedback(); every loop
-    send(fd, {"T": 131, "cmd": 1})
-    assert len([f for f in read_frames(fd, 0.5) if f.get("T") == 1001]) >= 20
+    send(fd, {"T": 131, "cmd": 0})
+    read_frames(fd, 0.1)
+    assert not [f for f in read_frames(fd, 0.3) if f.get("T") == 1001]
+    send(fd, {"T": 131, "cmd": 1})           # ... at most one per 50 ms
+    assert len([f for f in read_frames(fd, 0.5) if f.get("T") == 1001]) >= 8
 
 
 @pytest.mark.parametrize("main_type", [2, 3])
 def test_the_heartbeat_stops_the_motors_in_both_modes(board, main_type):
     """heartBeatCtrl(): setGoalSpeed(0, 0) once HEART_BEAT_DELAY passes with no
-    T=1/11/13 -- a PID target of zero in mode 3, zero PWM in mode 2. The
-    BOM's 'believed' [U] is verified from source; this pins it."""
+    T=1/11 -- a PID target of zero whatever the mainType. The BOM's
+    'believed' [U] is verified from source; this pins it."""
     b, body, fd = board
     send(fd, {"T": 900, "main": main_type, "module": 0})
     send(fd, {"T": 136, "cmd": 300})

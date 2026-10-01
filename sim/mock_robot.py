@@ -78,10 +78,14 @@ DEFAULT_CELL_M = DEFAULT_CELL_CM / 100.0
 # **The chassis is the Waveshare UGV Rover since 2026-09-27**
 # (`PLAN-ros-alignment.md` 3.21; it replaced the 2WD Yahboom build these
 # were first read from). All three are the stock firmware's own values for
-# this robot -- `General_Driver/movtion_module.h`, `mm_settings()`,
-# mainType 2, "UGV Rover" -- and the tyre agrees with the product page:
+# this robot -- `ROS_Driver/movtion_module.h`, `mm_settings()`, mainType 2,
+# "UGV Rover" (`waveshareteam/ugv_base_ros`, the board the kit ships, 3.25)
+# -- and the tyre agrees with the product page:
 WHEEL_RADIUS_M = 0.040  # 80mm tyres [V]
-ENCODER_COUNTS_PER_REV = 1650  # ONE_CIRCLE_PLUSES for mainType 2 [V]
+# ONE_CIRCLE_PLUSES for mainType 2 [V]: 11 lines x 2 (half quad) x 30:1, and
+# Waveshare support says the same. The General Driver's 1650, carried until
+# 3.25, was a stale constant that firmware never used for control.
+ENCODER_COUNTS_PER_REV = 660
 # The firmware's TRACK_WIDTH for mainType 2 [V]. This was a flagged
 # PLACEHOLDER while the chassis was the Yahboom's -- Waveshare's number,
 # "the right shape and the wrong robot". It is the right robot now. What is
@@ -300,8 +304,8 @@ class MockRobot(RobotInterface):
 
         Positions in radians and velocities in rad/s because that is what
         `hardware_interface` exchanges; the counts are the same positions in
-        the units the ESP32 will actually report (1650 per revolution,
-        the firmware's figure for the UGV Rover), so R7's fake board has
+        the units the ESP32 counts in (660 per revolution, the ROS
+        Driver firmware's figure for the UGV Rover), so R7's fake board has
         something to serialise and R2 has something to publish.
         """
         per_rad = ENCODER_COUNTS_PER_REV / (2 * math.pi)

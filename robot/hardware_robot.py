@@ -1,9 +1,10 @@
 """
 robot/hardware_robot.py
 
-Phase R7 (`PLAN-ros-alignment.md` 3.16) -- the real robot's MOTORS, as a
-`RobotInterface` backend: the Waveshare ESP32 driver board over USB serial,
-newline-delimited JSON at 115200 baud (`HARDWARE-BOM.md` 4.2).
+Phase R7 (`PLAN-ros-alignment.md` 3.16), redone for the UGV Rover in 3.25 --
+the real robot's MOTORS, as a `RobotInterface` backend: the Rover's ESP32
+board (the Waveshare **ROS Driver**, `ugv_base_ros`) over USB serial,
+newline-delimited JSON at 115200 baud.
 
 This is the backend `robot/factory.py`'s `mode: hardware` has pointed at
 since Phase 0, and it is why hardware day is a config change: the robot
@@ -18,14 +19,21 @@ robot, the simulated body in the sim (`sim/fake_esp32.py` turns that body's
 wheels). With no `sensors` every sensing method answers the interface's
 honest "unusable" default.
 
-**What the firmware makes of this backend** (read from its source, 3.16):
+**What the firmware makes of this backend** (read from its source, 3.25):
 
-* It assumes the board runs in **closed-loop mode** (`mainType` 3) with THIS
-  chassis' constants -- a firmware change. In the stock `mainType` 2 that
-  `HARDWARE-BOM.md` 4.2's example selects, `T=1` is open-loop PWM, not m/s.
-* The `1001` frame carries wheel SPEEDS only, so wheel POSITIONS are
-  integrated here from speed x time -- the lossy way. A firmware change that
-  also reports encoder counts would replace this integral with a reading.
+* `T:1` is closed-loop wheel speed, m/s, in the Rover's stock mainType 2 --
+  no firmware change (the General Driver R7 was first written against was
+  open loop there).
+* The `1001` frame, streamed at most every 50 ms, carries MEASURED wheel
+  speeds and **`odl`/`odr`: each wheel's travel since the board booted, in
+  whole centimetres**. Positions are the speeds integrated, then clamped
+  into the centimetre each odometer allows (`_anchor()`): the integral alone
+  drifts with every lost line and mistimed interval, the odometer alone is
+  3.3 degrees of heading per centimetre, and together the error stays under
+  a centimetre with sub-centimetre resolution.
+* A reboot zeroes the odometers and forgets the host's set-up. Odometry by
+  contract never jumps, so a jump in `odl`/`odr` is taken as a reboot: the
+  origin moves to absorb it and the set-up is sent again.
 * The board's own heartbeat (`T=136`) stops the motors when commands stop,
   independently of this process: set to `HEARTBEAT_MS`, above the robot
   server's watchdog so that one normally acts first.
@@ -44,12 +52,21 @@ from typing import Optional
 from robot.interface import (
     RobotInterface, unusable_grid, unusable_odometry, unusable_scan)
 
-# The Waveshare UGV Rover (PLAN-ros-alignment.md 3.21): the stock firmware's
-# mainType 2 values, which the sim and the URDF carry too (tests/test_urdf.py
-# and tests/test_wall_linters.py pin them together).
+# The Waveshare UGV Rover (PLAN-ros-alignment.md 3.21): the ROS Driver
+# firmware's mainType 2 values, which the sim and the URDF carry too
+# (tests/test_urdf.py and tests/test_wall_linters.py pin them together; the
+# pulse count, which nothing on the ROS side holds, is pinned by
+# tests/test_ros_driver_board.py). 660 = 11 lines x 2 (half quad) x 30:1.
 WHEEL_RADIUS_M = 0.040
 TRACK_WIDTH_M = 0.172
-COUNTS_PER_REV = 1650
+COUNTS_PER_REV = 660
+# An odometer this far outside the wheel's estimate is not drift -- with the
+# anchor the estimate never strays a centimetre -- it is a board that
+# rebooted and started counting from zero.
+REBOOT_JUMP_M = 0.03
+# Two feedback intervals: a frame later than this is lost, not late, and the
+# last speed is no longer a fair guess.
+EXTRAPOLATE_MAX_S = 0.10
 # The board stops its own motors after this much silence. Longer than the
 # robot server's 1 s watchdog on purpose: the server should always act
 # first, and this is what acts if the server itself dies.
@@ -57,6 +74,20 @@ HEARTBEAT_MS = 1500
 # A verb's speed: 2 moves per second at speed 100, as MockRobot's verbs.
 MOVE_M = 0.30
 MOVES_PER_SECOND_AT_FULL_SPEED = 2.0
+
+
+def _bucket(odo_cm: int):
+    """The travel, m, a truncated whole-centimetre odometer reading allows."""
+    if odo_cm > 0:
+        return odo_cm / 100.0, (odo_cm + 1) / 100.0
+    if odo_cm < 0:
+        return (odo_cm - 1) / 100.0, odo_cm / 100.0
+    return -0.01, 0.01
+
+
+def _bucket_centre(odo_cm: int) -> float:
+    lo, hi = _bucket(odo_cm)
+    return (lo + hi) / 2.0
 
 
 class HardwareRobot(RobotInterface):
@@ -72,16 +103,25 @@ class HardwareRobot(RobotInterface):
         termios.tcsetattr(self._fd, termios.TCSANOW, attrs)
         self._lock = threading.Lock()
         self._cmd = (0.0, 0.0)          # rad/s, as last commanded
-        self._pos = [0.0, 0.0]          # rad, integrated from 1001 speeds
+        # Each wheel's travel on the BOARD's odometer, m since it booted,
+        # as estimated here; and what to add to make it travel since THIS
+        # process started (moved, never jumped, by a board reboot).
+        self._board_m = [0.0, 0.0]
+        self._origin_m = [0.0, 0.0]
         self._speed = [0.0, 0.0]        # m/s, the board's last report
         self._last_frame_at: Optional[float] = None
         self.frames = 0
+        self.board_reboots = 0          # odometer jumps taken as a reboot
         self._path_m = 0.0
         self._running = True
         self._buf = b""
         self._reader_thread = threading.Thread(target=self._reader, daemon=True)
         self._reader_thread.start()
-        # Closed loop, the heartbeat, continuous feedback (3.16).
+        self._set_up()
+
+    def _set_up(self):
+        """The heartbeat and continuous feedback -- sent at start, and again
+        after the board reboots, which forgets both."""
         self._send({"T": 136, "cmd": HEARTBEAT_MS})
         self._send({"T": 131, "cmd": 1})
 
@@ -114,22 +154,71 @@ class HardwareRobot(RobotInterface):
 
     def _on_base_feedback(self, frame: dict):
         now = time.monotonic()
+        speed = [float(frame["L"]), float(frame["R"])]
+        odo = (frame.get("odl"), frame.get("odr"))
+        anchored = all(isinstance(o, int) for o in odo)
+        rebooted = False
         with self._lock:
-            if self._last_frame_at is not None:
+            before = self._travel_m()
+            if self._last_frame_at is None:
+                if anchored:
+                    self._board_m = [_bucket_centre(o) for o in odo]
+                    self._origin_m = [-b for b in self._board_m]
+            else:
                 dt = now - self._last_frame_at
-                # Trapezoid over the two reports: the integral 3.16 calls lossy.
-                mean = []
-                for i, key in enumerate(("L", "R")):
-                    v = (self._speed[i] + float(frame[key])) / 2.0
-                    self._pos[i] += v * dt / WHEEL_RADIUS_M
-                    mean.append(v)
-                # Path is the BODY's travel -- the wheels' average -- so a
-                # pivot (wheels opposite) covers no ground, as MockRobot and
-                # get_odometry()'s contract say.
-                self._path_m += abs((mean[0] + mean[1]) / 2.0) * dt
-            self._speed = [float(frame["L"]), float(frame["R"])]
+                # Trapezoid over the two reports -- the interpolation the
+                # odometer's whole centimetres cannot give.
+                for i in range(2):
+                    self._board_m[i] += (self._speed[i] + speed[i]) / 2.0 * dt
+                if anchored:
+                    rebooted = self._absorb_reboot(odo)
+                    self._anchor(odo)
+            after = self._travel_m()
+            # Path is the BODY's travel -- the wheels' average -- so a pivot
+            # (wheels opposite) covers no ground, as MockRobot and
+            # get_odometry()'s contract say.
+            self._path_m += abs((after[0] + after[1]) / 2.0 - (before[0] + before[1]) / 2.0)
+            self._speed = speed
             self._last_frame_at = now
             self.frames += 1
+        if rebooted:
+            self._set_up()
+
+    def _travel_m(self):
+        return [self._board_m[i] + self._origin_m[i] for i in range(2)]
+
+    def _travel_now_m(self):
+        """The travel as of NOW rather than as of the last frame: up to one
+        feedback interval (50 ms) old, which a verb closed on the encoders
+        overshoots by. Carried forward on the board's last measured speeds,
+        never further than `EXTRAPOLATE_MAX_S`."""
+        travel = self._travel_m()
+        if self._last_frame_at is None:
+            return travel
+        age = min(time.monotonic() - self._last_frame_at, EXTRAPOLATE_MAX_S)
+        return [travel[i] + self._speed[i] * age for i in range(2)]
+
+    def _anchor(self, odo):
+        """Clamp each wheel's estimate into the centimetre its odometer
+        allows: `long int odl_cm = (en_odom_l * 100)` truncates toward zero,
+        so n > 0 means [n, n+1) cm, n < 0 means (n-1, n], and 0 means (-1, 1)."""
+        for i in range(2):
+            lo, hi = _bucket(odo[i])
+            self._board_m[i] = min(max(self._board_m[i], lo), hi)
+
+    def _absorb_reboot(self, odo) -> bool:
+        """A board that rebooted counts from zero again. Move the origin so
+        the travel reported here carries on from where it was."""
+        far = any(not (_bucket(o)[0] - REBOOT_JUMP_M <= self._board_m[i]
+                       <= _bucket(o)[1] + REBOOT_JUMP_M) for i, o in enumerate(odo))
+        if not far:
+            return False
+        self.board_reboots += 1
+        for i in range(2):
+            fresh = _bucket_centre(odo[i])
+            self._origin_m[i] += self._board_m[i] - fresh
+            self._board_m[i] = fresh
+        return True
 
     # ---------- wheels ----------
 
@@ -153,7 +242,8 @@ class HardwareRobot(RobotInterface):
         per_rad = COUNTS_PER_REV / (2 * math.pi)
         with self._lock:
             usable = self._last_frame_at is not None
-            pos, cmd = list(self._pos), self._cmd
+            pos = [m / WHEEL_RADIUS_M for m in self._travel_now_m()]
+            cmd = self._cmd
         return {"usable": usable,
                 "left": {"position_rad": pos[0], "velocity_rad_s": cmd[0],
                          "counts": int(round(pos[0] * per_rad))},
@@ -166,7 +256,7 @@ class HardwareRobot(RobotInterface):
         with self._lock:
             if self._last_frame_at is None:
                 return unusable_odometry()
-            left, right = self._pos
+            left, right = (m / WHEEL_RADIUS_M for m in self._travel_now_m())
             # Encoders know how far the body has TURNED, not which way is
             # north: clockwise-positive from wherever it started, the
             # project's convention for every angle (a left turn is right
