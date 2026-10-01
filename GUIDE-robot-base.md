@@ -313,7 +313,14 @@ checks are done, so a fault cannot be blamed on your build.
 it to whole centimetres on the way out, and sends no timestamp. Two new
 fields -- millimetre odometers and `millis()` -- remove the two limits 3.25
 measured. Adding fields rather than changing old ones keeps the vendor's
-tools working.
+tools working. Built as `firmware/ugv_base_ros/` (3.28); it cut the
+odometry error sevenfold and turn scatter about 2.5x in the sim.
+
+**Pin your toolchain.** Vendor firmware is written against whatever library
+versions were current that month. Waveshare's `2e7df97` (November 2025)
+already fails to compile against today's INA219_WE and ESP32 core -- renamed
+constants and a changed callback type. A firmware fork is only reproducible
+with the versions written down next to it.
 
 **What the board cannot do for you: safety.** The lidar and cameras plug
 into the Jetson, so the firmware never sees an obstacle. Its only guard is a

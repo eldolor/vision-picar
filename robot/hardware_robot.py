@@ -78,18 +78,37 @@ MOVE_M = 0.30
 MOVES_PER_SECOND_AT_FULL_SPEED = 2.0
 
 
-def _bucket(odo_cm: int):
-    """The travel, m, a truncated whole-centimetre odometer reading allows."""
-    if odo_cm > 0:
-        return odo_cm / 100.0, (odo_cm + 1) / 100.0
-    if odo_cm < 0:
-        return (odo_cm - 1) / 100.0, odo_cm / 100.0
-    return -0.01, 0.01
+# 3.28: our firmware fork adds `odlm`/`odrm` (the odometers in whole
+# millimetres) and `ms` (the board's millis() when the frame was built).
+# Stock frames lack them, and then everything below is exactly 3.25's.
+MM = 1e-3      # a unit, not a measurement (the wall linter looks for copied measurements)
+CM = 0.01
+MILLIS_WRAP = 1 << 32
 
 
-def _bucket_centre(odo_cm: int) -> float:
-    lo, hi = _bucket(odo_cm)
+def _bucket(odo: int, unit: float = CM):
+    """The travel, m, a truncated whole-unit odometer reading allows:
+    `(long)(x)` truncates toward zero, so n > 0 means [n, n+1), n < 0
+    means (n-1, n], and 0 means (-1, 1) units."""
+    if odo > 0:
+        return odo * unit, (odo + 1) * unit
+    if odo < 0:
+        return (odo - 1) * unit, odo * unit
+    return -unit, unit
+
+
+def _bucket_centre(odo: int, unit: float = CM) -> float:
+    lo, hi = _bucket(odo, unit)
     return (lo + hi) / 2.0
+
+
+def _fork_keys(frame: dict):
+    """(odometers_mm, ms) if the frame is the fork's, else None. All three
+    or none: a partial set is treated as stock."""
+    odo, ms = (frame.get("odlm"), frame.get("odrm")), frame.get("ms")
+    if all(isinstance(v, int) and not isinstance(v, bool) for v in (*odo, ms)):
+        return odo, ms
+    return None
 
 
 class HardwareRobot(RobotInterface):
@@ -112,6 +131,14 @@ class HardwareRobot(RobotInterface):
         self._origin_m = [0.0, 0.0]
         self._speed = [0.0, 0.0]        # m/s, the board's last report
         self._last_frame_at: Optional[float] = None
+        # The fork's board clock (3.28): the last `ms`, board time unwrapped
+        # since this process first heard the board (s), and the smallest
+        # host-minus-board offset seen -- the one-way latency estimate a
+        # delayed frame can only raise, never lower.
+        self._last_ms: Optional[int] = None
+        self._board_s = 0.0
+        self._clock_offset: Optional[float] = None
+        self.fork_frames = 0
         self.frames = 0
         self.board_reboots = 0          # odometer jumps taken as a reboot
         self._path_m = 0.0
@@ -157,24 +184,44 @@ class HardwareRobot(RobotInterface):
     def _on_base_feedback(self, frame: dict):
         now = time.monotonic()
         speed = [float(frame["L"]), float(frame["R"])]
-        odo = (frame.get("odl"), frame.get("odr"))
+        fork = _fork_keys(frame)
+        if fork is not None:
+            odo, unit = fork[0], MM
+        else:
+            odo, unit = (frame.get("odl"), frame.get("odr")), CM
         anchored = all(isinstance(o, int) for o in odo)
         rebooted = False
         with self._lock:
             before = self._travel_m()
             if self._last_frame_at is None:
                 if anchored:
-                    self._board_m = [_bucket_centre(o) for o in odo]
+                    self._board_m = [_bucket_centre(o, unit) for o in odo]
                     self._origin_m = [-b for b in self._board_m]
+                if fork is not None:
+                    self._track_board_clock(fork[1], now, first=True)
             else:
                 dt = now - self._last_frame_at
-                # Trapezoid over the two reports -- the interpolation the
-                # odometer's whole centimetres cannot give.
-                for i in range(2):
-                    self._board_m[i] += (self._speed[i] + speed[i]) / 2.0 * dt
+                clock_reset = False
+                if fork is not None:
+                    # The board's own clock: the time between the two
+                    # MEASUREMENTS, not between their arrivals (3.25's
+                    # failed turn criterion was that jitter).
+                    board_dt, clock_reset = self._track_board_clock(fork[1], now)
+                    if not clock_reset:
+                        dt = board_dt
+                if clock_reset:
+                    # A fresh boot: the integral since the last frame spans
+                    # an unknown gap; the odometers say where it is now.
+                    rebooted = self._absorb_reboot(odo, unit, forced=True)
+                else:
+                    # Trapezoid over the two reports -- the interpolation
+                    # the odometer's whole units cannot give.
+                    for i in range(2):
+                        self._board_m[i] += (self._speed[i] + speed[i]) / 2.0 * dt
+                    if anchored:
+                        rebooted = self._absorb_reboot(odo, unit)
                 if anchored:
-                    rebooted = self._absorb_reboot(odo)
-                    self._anchor(odo)
+                    self._anchor(odo, unit)
             after = self._travel_m()
             # Path is the BODY's travel -- the wheels' average -- so a pivot
             # (wheels opposite) covers no ground, as MockRobot and
@@ -183,8 +230,46 @@ class HardwareRobot(RobotInterface):
             self._speed = speed
             self._last_frame_at = now
             self.frames += 1
+            if fork is not None:
+                self.fork_frames += 1
+            else:
+                self._last_ms = None        # back on stock: no board clock
         if rebooted:
             self._set_up()
+
+    def _track_board_clock(self, ms: int, now: float, first: bool = False):
+        """Advance the unwrapped board clock to `ms`; return (dt, reset).
+
+        `millis()` is an unsigned 32-bit count, so the step is taken modulo
+        2^32 -- a wrap is a small step forward. A step "forward" of more
+        than half the range is the clock going BACKWARDS: the board booted
+        again. The host-minus-board offset keeps its minimum, which is the
+        frame that met the least delay."""
+        reset = False
+        dt = 0.0
+        if not first and self._last_ms is not None:
+            step = (ms - self._last_ms) % MILLIS_WRAP
+            if step > MILLIS_WRAP // 2:
+                reset = True
+            else:
+                dt = step / 1000.0
+        if reset or first or self._last_ms is None:
+            # A new board epoch: re-anchor the clock map on this frame.
+            self._clock_offset = None
+        self._board_s += dt
+        self._last_ms = ms
+        offset = now - self._board_s
+        if self._clock_offset is None or offset < self._clock_offset:
+            self._clock_offset = offset
+        return dt, reset
+
+    def _frame_age_s(self) -> float:
+        """How old the last frame's MEASUREMENT is now: on the board clock
+        when the fork's `ms` is there (arrival latency excluded), else since
+        it arrived (3.25)."""
+        if self._last_ms is not None and self._clock_offset is not None:
+            return max(0.0, time.monotonic() - (self._board_s + self._clock_offset))
+        return time.monotonic() - self._last_frame_at
 
     def _travel_m(self):
         return [self._board_m[i] + self._origin_m[i] for i in range(2)]
@@ -197,18 +282,19 @@ class HardwareRobot(RobotInterface):
         travel = self._travel_m()
         if self._last_frame_at is None:
             return travel
-        age = min(time.monotonic() - self._last_frame_at, EXTRAPOLATE_MAX_S)
+        age = min(self._frame_age_s(), EXTRAPOLATE_MAX_S)
         return [travel[i] + self._speed[i] * age for i in range(2)]
 
-    def _anchor(self, odo):
-        """Clamp each wheel's estimate into the centimetre its odometer
-        allows: `long int odl_cm = (en_odom_l * 100)` truncates toward zero,
-        so n > 0 means [n, n+1) cm, n < 0 means (n-1, n], and 0 means (-1, 1)."""
+    def _anchor(self, odo, unit: float = CM):
+        """Clamp each wheel's estimate into the unit its odometer allows:
+        `long int odl_cm = (en_odom_l * 100)` truncates toward zero, so n > 0
+        means [n, n+1) cm, n < 0 means (n-1, n], and 0 means (-1, 1); the
+        fork's `odlm` the same in millimetres (3.28)."""
         for i in range(2):
-            lo, hi = _bucket(odo[i])
+            lo, hi = _bucket(odo[i], unit)
             self._board_m[i] = min(max(self._board_m[i], lo), hi)
 
-    def _absorb_reboot(self, odo) -> bool:
+    def _absorb_reboot(self, odo, unit: float = CM, forced: bool = False) -> bool:
         """A board that rebooted counts from zero again. Move the origin so
         the travel reported here carries on from where it was.
 
@@ -217,16 +303,22 @@ class HardwareRobot(RobotInterface):
         move several centimetres between two the host integrated (7 -> 11 cm
         was seen), and that is drift the clamp corrects, not a new origin.
         The board stops its motors as it boots, so its first frame does
-        read zero."""
-        if not all(abs(o) <= 1 for o in odo):
+        read zero.
+
+        `forced`: the fork's clock went backwards (3.28) -- a reboot for
+        certain, whatever the odometers read."""
+        if not all(isinstance(o, int) for o in odo):
             return False
-        far = any(not (_bucket(o)[0] - REBOOT_JUMP_M <= self._board_m[i]
-                       <= _bucket(o)[1] + REBOOT_JUMP_M) for i, o in enumerate(odo))
-        if not far:
-            return False
+        if not forced:
+            if not all(abs(o) * unit <= CM for o in odo):
+                return False
+            far = any(not (_bucket(o, unit)[0] - REBOOT_JUMP_M <= self._board_m[i]
+                           <= _bucket(o, unit)[1] + REBOOT_JUMP_M) for i, o in enumerate(odo))
+            if not far:
+                return False
         self.board_reboots += 1
         for i in range(2):
-            fresh = _bucket_centre(odo[i])
+            fresh = _bucket_centre(odo[i], unit)
             self._origin_m[i] += self._board_m[i] - fresh
             self._board_m[i] = fresh
         return True

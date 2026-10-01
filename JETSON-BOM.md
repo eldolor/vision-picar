@@ -423,7 +423,9 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
   into the driver's angle offset or the URDF before the first scan is used.
 * **Before any firmware change:** dump the stock ESP32 image
   (`esptool.py read_flash`). Flash our build only after the checks above;
-  GPL-3.0 allows it (3.26).
+  GPL-3.0 allows it (3.26). The build is `firmware/ugv_base_ros/` (3.28):
+  compile with its `build.sh`, which pins library versions because stock
+  `2e7df97` no longer compiles against the latest ones.
 * In code: **done 2026-09-30** (`PLAN-ros-alignment.md` 3.25) -- the encoder
   constant is **660** everywhere, `sim/fake_esp32.py` is the ROS Driver, and
   `robot/hardware_robot.py` anchors its speed integral on `odl`/`odr` (whole

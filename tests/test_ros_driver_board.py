@@ -90,10 +90,13 @@ def frames_with_times(fd, seconds):
 # ---------- criterion 1: the fake is the ROS Driver ----------
 
 def test_1_the_base_frame_has_the_ros_driver_s_keys(board):
-    _, fd = board                            # ugv_advance.h baseInfoFeedback()
+    b, fd = board                            # ugv_advance.h baseInfoFeedback()
     frames = [f for f in read_frames(fd) if f.get("T") == 1001]
     assert frames, "the board streams 1001 frames from boot (baseFeedbackFlow = 1)"
-    assert set(frames[-1]) == FRAME_KEYS
+    # Our fork adds three keys and changes none (3.28); this suite runs over
+    # either firmware (SIM_BOARD_FIRMWARE).
+    extra = {"odlm", "odrm", "ms"} if b.firmware == "fork" else set()
+    assert set(frames[-1]) == FRAME_KEYS | extra
     assert isinstance(frames[-1]["odl"], int) and isinstance(frames[-1]["v"], int)
 
 

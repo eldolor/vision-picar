@@ -41,6 +41,7 @@ import select
 import threading
 import time
 import tty
+from typing import Optional
 
 BOARD_LOOP_S = 0.01            # the firmware's loop() runs at ~100 Hz and above
 # Motor model for T:11 (raw PWM, the one open-loop command left): the UGV
@@ -58,6 +59,9 @@ MAIN_TYPES = {
 }
 # ugv_config.h: int HEART_BEAT_DELAY = 3000; int feedbackFlowExtraDelay = 50;
 DEFAULT_HEARTBEAT_MS = 3000
+# "stock" is ugv_base_ros @ 2e7df97; "fork" adds firmware/ugv_base_ros/'s
+# patch (3.28).
+FIRMWARES = ("stock", "fork")
 DEFAULT_FEEDBACK_INTERVAL_MS = 50
 # The board's side of the wire: what may wait, unread by the host, before
 # whole lines start being lost (a USB-serial bridge's buffer, roughly).
@@ -72,11 +76,25 @@ class FakeEsp32:
     board set to another type reports odometry in that type's units, as the
     real one would. `drop_rate` loses that share of the board's lines on the
     wire, seeded by `seed`.
+
+    `firmware` is "stock" -- `ugv_base_ros` @ 2e7df97 -- or "fork", the same
+    plus this project's patch (`firmware/ugv_base_ros/`, 3.28): `odlm`/`odrm`,
+    the odometers in whole millimetres, and `ms`, the board's `millis()` when
+    the frame was built. `millis_at_boot` starts the board clock somewhere
+    other than zero on the FIRST boot only (a reboot restarts it at zero) --
+    to drive through `millis()`'s 2^32 wrap without waiting 49.7 days.
     """
 
     def __init__(self, body, main_type: int = 2, drop_rate: float = 0.0,
-                 seed: int = 0):
+                 seed: int = 0, firmware: Optional[str] = None, millis_at_boot: int = 0):
+        # Unnamed, the firmware is SIM_BOARD_FIRMWARE's (default "stock"), so
+        # any suite that builds a board can be re-run over the fork (3.28).
+        firmware = firmware or os.environ.get("SIM_BOARD_FIRMWARE", "stock")
+        if firmware not in FIRMWARES:
+            raise ValueError(f"firmware must be one of {FIRMWARES}")
         self.body = body
+        self.firmware = firmware
+        self._millis_start = int(millis_at_boot)
         self.drop_rate = drop_rate
         self._rng = random.Random(seed)
         self.lines_in = 0
@@ -129,6 +147,12 @@ class FakeEsp32:
         raw = self._raw_counts()
         self._raw_counts_at_boot = raw
         self._last_counts = [0, 0]
+        self._booted_at = time.monotonic()
+
+    def millis(self) -> int:
+        """millis(): ms since boot, an unsigned long -- it wraps at 2^32."""
+        ms = int((time.monotonic() - self._booted_at) * 1000) + self._millis_start
+        return ms & 0xFFFFFFFF
 
     def reboot(self):
         """A power cycle -- a brownout when the motors stall, a USB reset.
@@ -136,6 +160,7 @@ class FakeEsp32:
         set-up (heartbeat, feedback interval) is lost."""
         with self.lock:
             self.reboots += 1
+            self._millis_start = 0
             self._boot()
 
     # ---------- the encoders ----------
@@ -160,6 +185,11 @@ class FakeEsp32:
         baseInfoFeedback(): long int odl_cm = (en_odom_l * 100); -- a C cast,
         so truncated toward zero."""
         return [int(c / self.pulses * self.wheel_d * math.pi * 100) for c in counts]
+
+    def _odometers_mm(self, counts):
+        """The fork's `long int odl_mm = (en_odom_l * 1000);` -- the same
+        float, truncated toward zero at a millimetre (3.28)."""
+        return [int(c / self.pulses * self.wheel_d * math.pi * 1000) for c in counts]
 
     # ---------- the serial side ----------
 
@@ -189,7 +219,8 @@ class FakeEsp32:
         if self.drop_rate and self._rng.random() < self.drop_rate:
             self.frames_dropped += 1
             return False
-        line = (json.dumps(obj) + "\n").encode()
+        # ArduinoJson's serializeJson() writes compact JSON -- no spaces.
+        line = (json.dumps(obj, separators=(",", ":")) + "\n").encode()
         if len(self._out) + len(line) > OUT_BUFFER_BYTES:
             self.frames_overflowed += 1       # nobody reading: lost, as on the wire
             return False
@@ -287,6 +318,9 @@ class FakeEsp32:
                  "mx": 0, "my": 0, "mz": 0,
                  "odl": odl, "odr": odr,
                  "v": 1200}                       # int v_int = (int)(loadVoltage_V * 100);
+        if self.firmware == "fork":
+            frame["odlm"], frame["odrm"] = self._odometers_mm(self.counts)
+            frame["ms"] = self.millis()               # last_feedback_time = millis();
         w = self.body.get_wheel_state()
         truth = (w["left"]["position_rad"] * w["wheel_radius_m"],
                  w["right"]["position_rad"] * w["wheel_radius_m"])
