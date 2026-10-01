@@ -286,6 +286,11 @@ class MockRobot(RobotInterface):
             self._left_rad += (got_m - half) / WHEEL_RADIUS_M
             self._right_rad += (got_m + half) / WHEEL_RADIUS_M
 
+        # 3.30: the world's clock follows the robot's. AFTER the motion, so a
+        # mover that hops lands where the next vet will see it, never under
+        # a move that was vetted before it was there.
+        self.world.advance_time(dt)
+
         return {
             "moved_m": moved_m,
             "moved_cells": moved_m / DEFAULT_CELL_M,
@@ -293,6 +298,13 @@ class MockRobot(RobotInterface):
             "blocked": blocked,
             **self.get_wheel_state(),
         }
+
+    def pass_time(self, dt: float) -> None:
+        """Let `dt` elapse with the robot standing still (3.30): the robot
+        server's wheel loop calls this on idle ticks, so a person keeps
+        walking while the robot waits. Moves nothing of the robot's."""
+        if dt > 0:
+            self.world.advance_time(dt)
 
     def advance(self, dt: float) -> None:
         """The robot server's control loop lets time pass here (R2b): the

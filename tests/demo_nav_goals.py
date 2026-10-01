@@ -116,10 +116,22 @@ def _solids():
 SOLID = _solids()
 
 
-def clearance_m(x, y):
-    """Centre to the nearest solid surface, metres."""
+def movers_now(robot):
+    """3.30: the cells movers stand in right now, off the server's own
+    ground truth (`GET /sim/objects`); empty when there are none, or on a
+    server that predates the route."""
+    r = robot.get("/sim/objects")
+    if r.status_code != 200:
+        return set()
+    return {(o["x"], o["y"]) for o in r.json()["objects"] if o["mover"]}
+
+
+def clearance_m(x, y, movers=(), static=True):
+    """Centre to the nearest solid surface -- walls and furniture, plus,
+    since 3.30, wherever a mover stands at this sample (`static=False`: the
+    movers alone) -- in metres."""
     best = 9.9
-    for cx, cy in SOLID:
+    for cx, cy in (SOLID if static else set()) | set(movers):
         x0, y0 = cx * CELL, cy * CELL
         dx = max(x0 - x, 0.0, x - (x0 + CELL))
         dy = max(y0 - y, 0.0, y - (y0 + CELL))
@@ -132,9 +144,15 @@ def run_goal(robot, x, y, timeout_s=120.0):
     if not r.get("accepted"):
         return {"state": "not_sent", "reply": r}
     t0, state, min_clear, path_len = time.time(), "pending", 9.9, 0
+    min_static, min_mover = 9.9, 9.9
     while time.time() - t0 < timeout_s:
         truth = robot.get("/world/truth").json()
-        min_clear = min(min_clear, clearance_m(truth["x_m"], truth["y_m"]))
+        movers = movers_now(robot)
+        min_static = min(min_static, clearance_m(truth["x_m"], truth["y_m"]))
+        if movers:
+            min_mover = min(min_mover, clearance_m(truth["x_m"], truth["y_m"], movers,
+                                                   static=False))
+        min_clear = min(min_static, min_mover)
         g = robot.get("/world/goal").json()
         state = (g.get("goal") or {}).get("state", "none")
         path_len = max(path_len, len(g.get("plan") or []))
@@ -146,7 +164,10 @@ def run_goal(robot, x, y, timeout_s=120.0):
     wheels = robot.get("/wheels").json()
     return {"state": state, "seconds": round(time.time() - t0, 1),
             "end_error_m": round(math.dist((truth["x_m"], truth["y_m"]), (x, y)), 3),
-            "min_clearance_m": round(min_clear, 3), "plan_points": path_len,
+            "min_clearance_m": round(min_clear, 3),
+            "min_clearance_static_m": round(min_static, 3),
+            "min_clearance_mover_m": round(min_mover, 3) if min_mover < 9.9 else None,
+            "plan_points": path_len,
             "wheels_stopped": wheels["left"]["velocity_rad_s"] == 0 == wheels["right"]["velocity_rad_s"]}
 
 
@@ -155,7 +176,18 @@ def map_first(robot):
     if HOUSE == "home_first_floor":
         return                       # the tour maps as it goes
     for action, kw in (SCALED_LAP if HOUSE == "scaled_house" else LAP):
-        robot.post("/action", json={"action": action, **kw}, headers={"x-driver": "twin-dpad"})
+        # 3.30: a person crossing can stop a FORWARD short. The lap is a
+        # script, so let them pass and send it again rather than run the rest
+        # of the lap from the wrong place.
+        for _attempt in range(4):
+            r = robot.post("/action", json={"action": action, **kw},
+                           headers={"x-driver": "twin-dpad"}).json()
+            res = r.get("result") or {}
+            short = (action == "FORWARD" and res.get("requested")
+                     and res.get("moved", 1.0) < 0.5 * res["requested"])
+            if r.get("executed") and not short:
+                break
+            time.sleep(1.5)
     time.sleep(1.5)                      # the D-pad's authority lapses
 
 

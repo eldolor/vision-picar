@@ -94,7 +94,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -420,6 +420,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     left = w["left"]["velocity_rad_s"]
                     right = w["right"]["velocity_rad_s"]
                     if left == 0 and right == 0:
+                        # 3.30: a person keeps walking while the robot waits.
+                        # Sim bodies only; a real one has no clock to pass.
+                        pass_time = getattr(robot, "pass_time", None)
+                        if pass_time is not None:
+                            pass_time(dt)
                         continue
                     wl = state["wheel_loop"]
                     wl["moving_ticks"] += 1
@@ -766,6 +771,55 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         no decision may read it.
         """
         return world_model.get_truth()
+
+    # ---------- things that move, sim only (PLAN-ros-alignment.md 3.30) ----------
+
+    def _sim_grid():
+        """The simulated house under this robot, through any wrapper
+        (`drive: ros`'s `inner`, the fake motor board's sim body). A robot
+        with none answers 501: there is no furniture to move in a real room
+        from here, and a silent no-op would read as done."""
+        r = robot
+        for _ in range(3):
+            grid = getattr(r, "world", None)
+            if grid is not None and hasattr(grid, "move_object"):
+                return grid
+            r = getattr(r, "inner", None)
+            if r is None:
+                break
+        raise HTTPException(status_code=501, detail=(
+            "this robot has no simulated house -- /sim/* routes are sim-only "
+            "(PLAN-ros-alignment.md 3.30)"))
+
+    @app.get(prefix + "/sim/objects", dependencies=[Depends(require_secret)])
+    def sim_objects():
+        """Every object in the simulated house, movers marked, and the sim
+        clock. Ground truth, like `/world/truth`: no decision may read it."""
+        grid = _sim_grid()
+        movers = {m.cell for m in grid.movers}
+        return {
+            "sim_time_s": round(grid.sim_time, 3),
+            "objects": [{"x": x, "y": y, "name": name, "mover": (x, y) in movers}
+                        for (x, y), name in sorted(grid.objects.items())],
+        }
+
+    class MoveObjectRequest(BaseModel):
+        src: List[int]
+        dst: List[int]
+
+    @app.post(prefix + "/sim/objects/move", dependencies=[Depends(require_secret)])
+    def sim_objects_move(req: MoveObjectRequest):
+        """Move a piece of furniture, as someone rearranging the room would.
+        Seen at once by the scan, collision and the discovered map."""
+        grid = _sim_grid()
+        if len(req.src) != 2 or len(req.dst) != 2:
+            raise HTTPException(status_code=422, detail="src and dst are [x, y] cells")
+        with motion_lock:
+            try:
+                grid.move_object(req.src, req.dst)
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc))
+        return sim_objects()
 
     class GoalRequest(BaseModel):
         x_m: float

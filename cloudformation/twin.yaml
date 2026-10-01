@@ -253,6 +253,11 @@ Resources:
             - /world/truth
             - /world/error
             - /world/goal
+            # 3.30's sim-only house: what is where, and moving it. A robot
+            # with no simulated house answers 501, which has to be reachable
+            # to be read as an answer.
+            - /sim/objects
+            - /sim/objects/move
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

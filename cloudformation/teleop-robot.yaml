@@ -278,6 +278,23 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
 
+  # 3.30's sim-only routes. Under mode: teleop there is no simulated house
+  # and both answer 501 -- a real answer, reachable so it reads as one.
+  AlbListenerRuleTeleopSim:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 44
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /teleop-robot/sim/objects
+            - /teleop-robot/sim/objects/move
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
