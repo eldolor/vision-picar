@@ -183,7 +183,9 @@ Hailo/Jetson reversals, the handoffs -- is in
 `docs/archive/CLAUDE-history-2026-09.md`, verbatim. What is still true and
 still load-bearing:
 
-* **Latest session handoff: `HANDOFF-2026-09-30.md`** -- the robot base.
+* **Latest session handoffs: `HANDOFF-2026-09-30-ros-gates.md`** -- the 3.18-3.20
+  safety fixes, 3.24's G1-G3 met, and the next task (the Rover's numbers in
+  the sim) -- **and `HANDOFF-2026-09-30.md`** -- the robot base.
   The ROSOrin order was cancelled; the **UGV Rover was ORDERED 2026-09-30**
   (Amazon, ~$730 delivered); the separate Jetson battery is still to buy
   (`JETSON-BOM.md` 9.5). Its section 5 is the open work, in
