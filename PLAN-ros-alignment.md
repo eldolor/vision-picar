@@ -3201,3 +3201,37 @@ job, on a phone.
    and the commanded-speed log shows the slow zones engaging; (d) on the
    car, measured stopping distance at each speed band, against the
    formula, before the sim's bands are trusted.
+10. **Gyro-based heading: a phase, if turns on the car need better than
+   about +/- 2 deg (raised 2026-10-01, from 3.25's failed turn criterion;
+   for the user to decide).** Where turns stand without it: stock firmware,
+   sd 1.3-1.9 deg, worst 4.7 (3.25, 3.28); the 3.28 fork, 104/120 within
+   +/- 1, worst 2.1; 3.29's settle pass is the planned close of the +/- 1
+   bar. All of that is the **sim's** number, where a wheel never slips.
+   **Why the question outlives 3.29:** the Rover is a 4-wheel skid steer,
+   and its wheels SCRUB on every turn, so encoder heading is wrong on the
+   car in a way no fake board shows -- `wheel_separation_multiplier` corrects
+   the average, not the run-to-run spread on carpet against tile. The
+   ICM-20948 gyro measures the rotation itself, and `gz` is already in every
+   `T:1001` frame.
+   * **Trigger -- decide on the car, not before:** the arrival check's turn
+     test (3.26) -- commanded 15/45/90-degree turns against a measured
+     reference (lidar on a wall, or floor marks), on the floors the robot
+     will actually drive. If direct-mode turns miss +/- 2 deg there, or SLAM
+     (R5) is visibly fighting odometry heading, this becomes a phase.
+     Until then it is not built: 3.29 may make it unnecessary on hard
+     floors, and the gyro's bias and noise are unknown until measured.
+   * **Two ways to build it** (3.26 step 3): (a) `gz` integrated in
+     `robot/hardware_robot.py`, so direct-mode verbs close a turn on the
+     gyro and the encoders keep distance -- small, and keeps `safety.py`'s
+     path unchanged; (b) `robot_localization`'s EKF fusing wheel odometry
+     and the gyro on the ROS side (3.26: take Waveshare's idea, not its
+     file), which helps `drive: ros` and SLAM but not direct mode. Likely
+     (a) first, since direct mode is the car's fallback (3.24 G3).
+   * **Sim first, as always:** the fake would need a gyro (rate with bias,
+     noise and the firmware's `/16.4` LSB-per-deg/s scale, 3.26) and the sim
+     body would need wheel slip on turns, or the phase's data says nothing
+     about the car. **Criteria, to be confirmed before building:** turns
+     within +/- 1 deg on ground truth with a slip model ON (where the
+     encoder-only host measurably fails), a stationary robot's reported
+     heading drifting no more than a stated deg/min, and every 3.22/3.29 bar
+     unchanged.
