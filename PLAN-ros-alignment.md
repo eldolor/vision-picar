@@ -2935,6 +2935,70 @@ A `stop()` at any point ends it.
    unchanged.
 8. Whole suite green from `.venv`.
 
+### 3.30 Things that move, in the simulator (2026-10-01): criteria, written before building
+
+Section 6 item 7, agreed by the user ("go ahead"). Everything in the sim has
+stood still since 3.9 made objects solid, so nothing in this plan has met a
+moved sofa, a person or a pet. This phase adds both, and is the
+prerequisite for testing item 6's saved map and frontier retry and item 9's
+speed rule.
+
+**The design, recorded so the criteria can be read against it:**
+
+* **Movable furniture.** `GridWorld.move_object(src, dst)`. Everything that
+  senses or moves (`solid_cells`, the scan, collision, `MockWorld`'s
+  discovered map, the camera) already reads `objects` on every call, so a
+  move needs no restart. The dict is **replaced, never mutated in place**:
+  the robot server reads the scan on its threadpool while the wheel loop
+  steps the world, and iterating a dict another thread is resizing raises.
+  A sim-only route, `POST /sim/objects/move`, and `GET /sim/objects`; a
+  backend with no grid answers 501, as `/world/goal` does without nav2.
+* **Movers** (`sim/movers.py`). A named solid object that hops cell to cell
+  around a closed path of 4-adjacent floor cells, one hop per `hop_s`, on a
+  **sim clock** (`GridWorld.sim_time`). The clock advances when the robot is
+  integrated (`MockRobot.step()`, after the motion) and, in the robot
+  server, on idle wheel-loop ticks too, so a person keeps walking while the
+  robot waits. Deterministic: same path, same clock, same positions.
+* **The keep-out.** A mover never hops into a cell within
+  `MOVER_KEEPOUT_M` = 0.20 m of the chassis' turning circle (17.1 cm), so
+  never within 20 cm of any part of the robot at any heading. It waits and
+  retries next hop. That is what keeps responsibility clean: the robot can
+  only come closer than the stop line by its OWN motion, which is exactly
+  what 3.18's metric measures. **Fidelity limits, stated up front:** whole
+  30 cm hops, and no mover ever approaches the robot, so this cannot test a
+  pet darting at it (a continuous disc in the ray caster is the upgrade).
+* **Scenarios** live with their house (`MOVERS` in `sim/maps/*.py`), picked
+  by `SIM_MOVERS=<name>`, off by default.
+
+**Criteria:**
+
+1. **A move is seen at once.** After `move_object()` (and after a mover's
+   hop), with no restart: `get_scan()` returns the object at its new cell
+   and not its old one, a translation toward the new cell is blocked and
+   one through the old cell is not, and `MockWorld.observe()` marks the new
+   cell occupied and the old one free when both are in view. Also through
+   the route on a live robot server.
+2. **No contact the robot caused, on ground truth.** A sweep in the manner
+   of 3.18 (`tests/footprint_sweep.py`'s geometry, sharing no code with what
+   it judges): standing forward commands through `vet_wheel_velocity()` +
+   `advance()`, with a mover pacing across the robot's path ahead. Over
+   every run: **0 periods** where travel-to-contact after the robot moved is
+   under 18 cm, **0 contacts** (gap under 1 cm) and **0 penetration**.
+   Reported beside it, so a pass cannot be vacuous: how many runs had the
+   mover as the nearest obstacle inside 30 cm.
+3. **nav2 copes with a mover crossing.** On the scaled house, with a mover
+   pacing across the hallway, `tests/demo_nav_goals.py`'s six goals:
+   **6 of 6** reached, as 3.15 had without one, and on ground truth the
+   chassis never closer than 3.15's 16.5 cm floor to anything.
+4. **Off means off.** With no movers, the whole offline suite passes
+   unchanged, including every pinned trace
+   (`tests/data/frontier_trace_centred.json` and the rest), and
+   `MockRobot` output is identical to the pre-change code for the same
+   commands.
+5. **The deployed path.** One mission through the brain's HTTP API on a
+   live stack with `SIM_MOVERS` set, ending `found` or `blocked` with the
+   robot never inside a mover (`/world/truth` sampled).
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
