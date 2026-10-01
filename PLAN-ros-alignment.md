@@ -2735,6 +2735,94 @@ angle offset, or this joint once the sim publishes in that frame); a tape
 measure on every `[CAD]` value; and the tilt joint, which the URDF does not
 model (the pan-tilt's tilt is a second servo).
 
+### 3.28 Two fields in the board's firmware: millimetre odometers and a timestamp (2026-10-01): criteria, written before building
+
+**Asked by the user:** 3.26's step 2. 3.25 measured the two limits the stock
+`T:1001` frame puts on the host, and traced both to the frame itself:
+
+* **`odl`/`odr` are whole centimetres.** The firmware already holds each
+  wheel's travel as a float in metres (`en_odom_l`, `movtion_module.h`) and
+  truncates it on the way out (`long int odl_cm = (en_odom_l * 100)`,
+  `ugv_advance.h:410`). 3.25 had to build an anchor-and-interpolate scheme
+  around that centimetre, and its bar was the centimetre.
+* **The frame carries no time.** The host integrates speed over the frames'
+  ARRIVAL times, and arrival jitter around a speed step is what left turns
+  at sd 1.3-1.8 deg against a +/- 1 deg bar -- 3.25's failed criterion.
+
+**The change, in three new keys** (new keys rather than changed ones, so
+Waveshare's own tools and today's host keep working on a flashed board):
+
+| key | value | source line |
+|---|---|---|
+| `odlm`, `odrm` | each wheel's travel since boot, **whole millimetres**, a C `long` truncated toward zero | `(long)(en_odom_l * 1000)`, beside the existing `odl_cm` -- so the motor-direction sign handling in `getLeftSpeed()` applies unchanged |
+| `ms` | `millis()` when the frame was built: an `unsigned long`, zero at boot, wrapping after 49.7 days | `ugv_advance.h` `baseInfoFeedback()` |
+
+Nothing else in the firmware changes. The fork lives in this repo as a
+**patch against `ugv_base_ros` @ `2e7df97`**, with its own GPL-3.0 notice
+(3.26: running it on our own board needs nothing more; giving the binary to
+someone would mean giving the source too).
+
+**The host** (`robot/hardware_robot.py`) uses the keys when they are present
+and is exactly 3.25's code when they are not -- the board arrives stock, and
+is flashed only after the arrival checks (`JETSON-BOM.md` 9.5):
+
+* the anchor clamps into the **millimetre** each `odlm`/`odrm` allows (two at
+  zero, as 3.25 found for the centimetre);
+* speed is integrated over the **board's** `ms` differences, not arrival
+  times, and a frame's age (for `_travel_now_m()`) is taken from the board
+  clock mapped to the host's by the smallest arrival-minus-`ms` seen -- the
+  usual one-way-latency estimate, which a delayed frame can only raise;
+* a reboot is `ms` going backwards (beyond what a wrap explains), a more
+  direct signal than 3.25's odometers-near-zero rule, which stays as the
+  stock fallback;
+* a `millis()` wrap is an unsigned difference, not a reboot.
+
+**Acceptance criteria** (each red on today's code first where it can be):
+
+1. **The patch is the change and nothing else.** It applies cleanly to a
+   checkout of `2e7df97` and touches only `baseInfoFeedback()`, adding the
+   three keys from the sources above (a test reads the patch). **It
+   compiles** for the board ("ESP32 Dev Module", `esp32:esp32:esp32`, with
+   the libraries the firmware's README lists) under `arduino-cli`; a test
+   runs that compile when `arduino-cli` is installed and skips otherwise,
+   and the compile is recorded here once.
+2. **The fake runs either firmware.** `FakeEsp32(firmware="stock")` is
+   3.25's board, unchanged; `firmware="fork"` adds the three keys, with
+   `odlm`/`odrm` = `trunc(counts / 660 * PI * 0.08 * 1000)` from the same
+   integer counts as `odl`, and `ms` from a board clock that starts at zero
+   on boot and on `reboot()` (optionally started near the 2^32 wrap). 3.25's
+   tests pass against both.
+3. **The wire still has room.** A fork frame is at most 35 bytes longer
+   than a stock one, and at the 20 Hz stream uses under 35% of a 115200-baud
+   link (stock: ~26%, 3.26), measured on the fake's real frames.
+4. **Bounded error, a tenth of 3.25's.** 3.25 criterion 3's drive (30 s
+   stop-go with turns, 5% of lines lost), on the fork: each wheel within
+   **one millimetre bucket plus one encoder edge** -- 0.138 cm, 0.238 cm
+   where the reading is 0 -- of the truth the board held when it built each
+   frame, at every frame received. Stock is unchanged (3.25's bound, still
+   met).
+5. **Turns land on their angle -- 3.25's failed criterion.** Over the fork,
+   on ground truth, clear guarded turns of 15, 45 and 90 degrees land
+   within **+/- 1.0 degree, 120 turns** (the sample 3.25 failed on), and a
+   clear FORWARD covers 30 cm +/- 1.0 cm (five). Stock keeps 3.25's
+   recorded result and its non-strict xfail; if the fork passes, its test
+   carries no xfail. If the fork still fails, the per-turn table is
+   recorded and the cause looked for, not the bar moved.
+6. **Reboots, on the board clock.** Fork: 8/8 mid-drive reboots detected
+   from `ms`, each moving reported travel by at most one bucket (0.238 cm),
+   the set-up re-sent within 0.5 s; and **no false reboot** over criterion
+   4's drive or across a `millis()` wrap (a board started 2 s before
+   2^32 ms, driven through it: no reboot counted, no jump over one bucket).
+7. **Mixed is safe.** A fork board's frames with the new keys stripped (a
+   host-side guard against a partial flash or an older fork) behave
+   exactly as stock; the contract suite and 3.22's guarded-verb hardware
+   tests pass over both firmwares.
+8. Whole suite green from `.venv`.
+
+**Not in this phase:** flashing the real board (after the arrival checks);
+the gyro (`gz`), which is 3.26's step 3 and may not be needed if criterion 5
+passes; and the PID's deadband, still a hardware-day check.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
