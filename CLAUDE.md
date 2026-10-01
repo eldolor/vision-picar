@@ -204,8 +204,10 @@ still load-bearing:
   to the host, 660 pulses/rev), a D500 lidar, an OAK-D Lite and a pan-tilt
   -- not the General Driver + RPLidar C1 + IMX219 of the 2026-09-19 build,
   which `HARDWARE-BOM.md` still describes. The software assumes JetPack 6.x /
-  Ubuntu 22.04 / ROS 2 Humble. **The dev kit was ORDERED 2026-09-27**
-  (Amazon, $399, arriving Oct 14-26) -- it is `JETSON-BOM.md` section 1's
+  Ubuntu 22.04 / ROS 2 Humble. **The dev kit ARRIVED 2026-09-30**
+  (Amazon, $399, ordered 09-27) and is kept UNOPENED until the Rover
+  arrives, by the user's decision -- Amazon's return window closes ~Oct 30,
+  possibly before the Rover (Oct 19 - Nov 11). It is `JETSON-BOM.md` section 1's
   "buy regardless" line. **The chassis was ORDERED 2026-09-30** -- the
   Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce, Amazon, ~$730
   delivered, expected Oct 19 - Nov 11, 30-day return. A
