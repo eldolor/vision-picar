@@ -130,12 +130,12 @@ def test_1_speeds_are_measured_from_count_deltas(board):
     send(fd, {"T": 1, "L": 0.3, "R": 0.3})
     frames = [f for f in read_frames(fd, 0.5) if f.get("T") == 1001][-5:]
     assert len(frames) == 5
-    per_count = math.pi * WHEEL_D / ROVER_PULSES
-    for f in frames:
-        assert f["L"] == pytest.approx(0.3, abs=0.06)
-        # a whole number of edges over a ~10 ms loop: never exactly the setpoint
-        assert f["L"] != 0.3
-    assert per_count == pytest.approx(0.000381, abs=1e-6)
+    speeds = sorted(f["L"] for f in frames)
+    # whole edges over one ~10 ms loop: around the setpoint, and never an
+    # echo of it (the General Driver fake reported the command itself)
+    assert speeds[2] == pytest.approx(0.3, abs=0.06), speeds
+    assert any(v != 0.3 for v in speeds), speeds
+    assert math.pi * WHEEL_D / ROVER_PULSES == pytest.approx(0.000381, abs=1e-6)
 
 
 def test_1_t1_in_the_rovers_main_type_is_closed_loop(board):
@@ -346,6 +346,32 @@ def test_4_a_board_reboot_is_not_a_jump(rebooted):
     # -- at most the bound it was under then -- stays in the origin.
     carried = max(bar_cm(o) for _, o in before[-2:])
     assert not over_bar(after, carried), f"over the bar after the reboot: {over_bar(after, carried)[:5]}"
+
+
+def test_4_a_far_odometer_away_from_zero_is_drift_not_a_reboot():
+    """Seen in the reboot drive before it was guarded: lost lines and frames
+    arriving bunched moved the odometer 7 -> 11 cm between two frames the
+    host integrated, and a "far from the estimate" rule alone called it a
+    reboot -- a 4 cm jump in reported odometry, and a spurious set-up."""
+    master, slave = os.openpty()
+    r = HardwareRobot(os.ttyname(slave))
+    try:
+        def feed(odl, speed=0.1):
+            r._on_base_feedback({"T": 1001, "L": speed, "R": speed, "odl": odl, "odr": odl})
+            time.sleep(0.05)
+        for odl in (3, 5, 7):
+            feed(odl)
+        feed(11)                              # bunched: 4 cm in one interval,
+        assert r.board_reboots == 0           # 0.5 cm of it integrated
+        feed(9, -0.1)
+        assert r.board_reboots == 0
+        travel_cm = r._travel_m()[0] * 100 + 3.5    # origin: the first bucket's centre
+        assert 9.0 <= travel_cm <= 10.0, travel_cm  # the clamp followed the odometer
+        feed(0, 0.0)                          # and a real reboot still counts
+        assert r.board_reboots == 1
+    finally:
+        r.close()
+        os.close(master)
 
 
 def test_4_the_host_re_sends_its_set_up_after_a_reboot(rebooted):

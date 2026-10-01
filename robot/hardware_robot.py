@@ -60,9 +60,8 @@ from robot.interface import (
 WHEEL_RADIUS_M = 0.040
 TRACK_WIDTH_M = 0.172
 COUNTS_PER_REV = 660
-# An odometer this far outside the wheel's estimate is not drift -- with the
-# anchor the estimate never strays a centimetre -- it is a board that
-# rebooted and started counting from zero.
+# Odometers back at zero while the estimate is this far from them: a board
+# that rebooted and started counting again (`_absorb_reboot()`).
 REBOOT_JUMP_M = 0.03
 # Two feedback intervals: a frame later than this is lost, not late, and the
 # last speed is no longer a fair guess.
@@ -208,7 +207,16 @@ class HardwareRobot(RobotInterface):
 
     def _absorb_reboot(self, odo) -> bool:
         """A board that rebooted counts from zero again. Move the origin so
-        the travel reported here carries on from where it was."""
+        the travel reported here carries on from where it was.
+
+        Both odometers must read (near) zero: a far reading alone is not a
+        reboot -- lost lines and frames arriving bunched let the odometer
+        move several centimetres between two the host integrated (7 -> 11 cm
+        was seen), and that is drift the clamp corrects, not a new origin.
+        The board stops its motors as it boots, so its first frame does
+        read zero."""
+        if not all(abs(o) <= 1 for o in odo):
+            return False
         far = any(not (_bucket(o)[0] - REBOOT_JUMP_M <= self._board_m[i]
                        <= _bucket(o)[1] + REBOOT_JUMP_M) for i, o in enumerate(odo))
         if not far:
