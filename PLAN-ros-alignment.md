@@ -3094,6 +3094,214 @@ job, on a phone.
      last few, write access limited to the robot's own prefix. It is a floor
      plan of the user's home; privacy, not cost (under 1 MB), drives the
      design.
+   * **A saved map is a starting guess, not the truth (decided by the
+     user 2026-10-01: "let's go with your recommendation").** Furniture moves between sessions. nav2's
+     static layer is drawn from SLAM's `/map`, and the live obstacle layer's
+     ray clearing never clears it. So a map loaded once and frozen keeps a
+     moved sofa as a phantom obstacle, which can make a room look
+     unreachable. **Recommended:** reload `slam_toolbox`'s serialised pose
+     graph and keep **mapping** on top of it, rather than localising only
+     against a frozen copy. `/map` is then redrawn about every second
+     (`map_update_interval` 1.0), and new scans outvote the old ones, so a
+     ghost fades as the robot re-sees the spot. **Fallback:** start a fresh
+     map when the reloaded one matches badly. The trigger is unchosen
+     (scan-match response, or a share of new scans contradicting the map).
+     **Not lifelong mode:** it is the purpose-built answer, but it is
+     experimental upstream and is only worth trying if pose-graph growth
+     across many sessions becomes the measured problem. Open in this
+     design: where the robot starts on a reloaded map (a known dock, a
+     given pose, or a whole-map localise; `slam_toolbox`'s deserialise
+     offers all three). **Criteria, to be confirmed before building:**
+     (a) with 7's movable furniture, move an object across a doorway
+     between two sessions: on the second session the doorway reads free on
+     `/map` within N re-sightings, and a goal through it succeeds;
+     (b) localisation on the reloaded map stays within 3.14's bars (5 cm /
+     3 deg at rest) with up to M objects moved; (c) a no-change reload is
+     no worse than a fresh map on the same lap. N and M are set from a
+     first run, before the bar is applied.
+   * **An unreachable frontier is retried, not dropped (agreed by the
+     user 2026-10-01).** The search sets aside a frontier nav2 cannot reach, for
+     example a gap between dining chairs. A person or pet standing in a
+     doorway causes the same "unreachable" for a minute, so set-aside must
+     be **temporary**: a frontier comes back after a cooldown, or sooner
+     when the map changes near it, and is dropped only after K failures at
+     different times. "Searched everything reachable" may only be declared
+     once every set-aside frontier has had its last retry. **Criteria, to
+     be confirmed before building:** (a) a mover parked in the only
+     doorway to the target's room for 60 s, then leaving: the search still
+     ends `found`; (b) a truly unreachable frontier (the dining-chair gap)
+     costs at most K attempts and does not stall the mission; (c) arrival
+     rate on the existing search starts is unchanged against R1's baseline.
 4. **`use_sim_time`, or real time?** R0 uses `sim.realtime` and wall-clock,
    which is simplest. A `/clock` publisher would buy determinism for
    regression runs; not needed until it is.
+7. **Things that move, in the simulator (agreed by the user 2026-10-01;
+   first in order).** Every
+   object in the sim is static (`GridWorld.objects`, solid since 3.9), so
+   nothing in this plan has been tested against moved furniture, people or
+   pets. The cheap part already exists in the data model: solidity is
+   `solid_cells`, derived from `objects` on every call, and the scan,
+   collision and `MockWorld`'s discovered map all read it. So moving an
+   object is a dict update, and everything that senses picks it up. Two
+   pieces:
+   * **Movable furniture.** `GridWorld.move_object(from, to)`, plus a
+     sim-only route on the robot server (like `/world/truth`, answering
+     "unavailable" on hardware), so a test or the twin can move the sofa
+     mid-session or between sessions.
+   * **Movers (people, pets).** Scripted solid objects whose cell is a pure
+     function of time along a path (deterministic, so tests can inject the
+     clock). A mover never steps into the robot's footprint; it waits, so
+     the sim never puts the robot inside an obstacle. It is drawn by the
+     camera as a billboard, like any object. **Fidelity limit, stated up
+     front:** a mover hops whole 30 cm cells. That is good enough for
+     "something appeared and later left"; it cannot test a pet darting at
+     the robot. A continuous disc in the ray caster is the upgrade if a
+     result needs it.
+   **Criteria, to be confirmed before building:** (a) a moved object
+   appears at its new cell in the scan, collision and `MockWorld` within one
+   scan period, with no restart; (b) 3.18's ground-truth sweep, re-run with
+   movers crossing the robot's path, never closes under 18 cm of
+   travel-to-contact, and the robot never ends inside a mover; (c) a nav2
+   goal with a mover crossing the corridor still succeeds at 3.15's rate;
+   (d) with movers off, every existing pinned trace is byte-identical.
+   This is the prerequisite for testing 6's saved-map and frontier-retry
+   items and 9's speed rule, so it goes first.
+8. **Seeing below the lidar's plane (proposed 2026-10-01).** The lidar
+   sees one horizontal slice, 12 cm off the floor (3.27, from Waveshare's
+   CAD). A cat lying flat, a dog's tail, a shoe or a cable sits
+   under it, and nothing else on the car looks there: `HardwareRobot`
+   answers `get_depth_grid()` with "unusable" (`robot/hardware_robot.py`
+   481), so `robot/safety.py` runs on the scan alone. The UGV Rover kit's
+   OAK-D Lite is a depth camera, and `RobotInterface.get_depth_grid()` (M2)
+   plus the depth-grid veto (M3) are already the path that would carry it.
+   **Proposed:** (a) a depth-grid source on the car from the OAK-D Lite;
+   (b) a **floor band** in `robot/safety.py`: depth returns between the
+   floor and the lidar's plane, inside the swept corridor, veto forward
+   motion, in series with the scan checks as 3.18 does. (c) The sim cannot
+   test this today, because its world is 2D: every object fills the
+   lidar's slice. It needs objects with a height, so a **low** object is
+   invisible to `get_scan()` and visible to the depth grid. **Criteria, to
+   be confirmed before building:** (a) in the sim, a low object in the
+   corridor stops the robot at `min_distance_cm` (ground truth, 3.18's
+   method) with the scan alone missing it, and the check fails red without
+   the floor band; (b) no false vetoes from the floor itself on the
+   furnished-home tour (the floor must not read as an obstacle, which is
+   1.12's camera-tilt problem); (c) on the car, the same stop against a
+   real low object, measured with a tape.
+
+   **What the camera can see, researched 2026-10-01** (vendor sources,
+   not measured on a car; `[V]` = read from the source, `[I]` = computed
+   from it):
+   * **Mount `[V]`.** Waveshare's own description of the Rover
+     (`waveshareteam/ugv_ws`, `ugv_description/urdf/ugv_rover.urdf`) puts
+     the OAK-D Lite (`3d_camera_link`) **fixed to the chassis, level**
+     (rpy 0 0 0), 6.5 cm ahead of `base_link` and 2.2 cm above it. Its
+     `base_link` sits 8 cm above `base_footprint`, so the camera is about
+     **10.2 cm off the floor** `[I]`. It is **not** on the pan-tilt: that
+     carries the separate 5 MP wide-angle camera (`pt_camera_link`), which
+     is the perception camera's analogue. The same file puts the D500
+     lidar about **12 cm** off the floor `[I]`, which 3.27 has already
+     put in the xacro. These are a CAD file's frame origins, not optical
+     centres; measure on the car.
+   * **Range `[V]`** ([Luxonis, OAK-D Lite](https://docs.luxonis.com/hardware/products/OAK-D%20Lite)):
+     stereo pair 640x480, field of view 73 deg x 58 deg (H x V), baseline
+     7.5 cm (the page prints "75cm", a typo). Minimum depth ("MinZ") is
+     **~20 cm at 400P with extended disparity**, **~40 cm** without it,
+     ~80 cm at 800P. Ideal range ~80 cm to 12 m.
+   * **What that means for a 20 cm stop `[I]`.**
+     - The lens sits about 6 cm behind the front edge (the body is 25.3 cm
+       long), so the stop line, 20 cm ahead of the bumper, is **about 26 cm
+       from the lens**.
+     - With extended disparity (MinZ ~20 cm), the stop line is in range
+       with about 6 cm to spare.
+     - **Waveshare's stock driver config does not enable extended
+       disparity**: `ugv_vision/config/oak_d_lite.yaml` sets only
+       `i_subpixel: true`. So out of the box MinZ is ~40 cm, about 34 cm
+       past the bumper, and the camera **cannot see the stop line**. The
+       floor band needs `400P + extended disparity` (and whether depthai
+       allows it together with subpixel on this driver version is to be
+       checked).
+     - **Floor visibility.** A level camera at 10.2 cm with a 29 deg
+       half-angle down sees the floor from about 18 cm ahead of the lens.
+       A 5 cm-high object is in view from about 9 cm. So at the stop line
+       the geometry is fine and MinZ is the binding limit. Width at 26 cm
+       is about 38 cm, wider than the 23.1 cm body.
+     - **What it still cannot cover:** anything that enters the last
+       ~14 cm in front of the bumper (inside MinZ), the sides while
+       pivoting (73 deg forward field only), and reverse. For those, the
+       lidar and low speed remain the only protection; this is a forward
+       floor band, not a ring.
+     - **Grazing floor.** A level camera 10 cm up sees the floor at a
+       shallow angle, where stereo depth is noisiest; criterion (b)'s
+       false-veto bar is the test of whether that matters.
+9. **Speed set by clearance: faster in open space, slower near things
+   (agreed by the user 2026-10-01; after 7, and after the speed-dependent
+   stop).** Today nav2 is capped flat at 0.2 m/s
+   (`desired_linear_vel`), which is what makes a fixed 20 cm stop safe. A
+   good part of the dynamic behaviour already exists and only needs
+   tuning, not code:
+   * `collision_monitor`'s `approach` action brakes on **time** to
+     collision (1.0 s). A faster robot therefore starts braking further
+     out, automatically.
+   * `PolygonSlow` halves the speed within about 20 cm ahead. It can become
+     **nested** zones, for example full speed beyond 1 m, a fraction inside
+     1 m, the 0.2 m/s of today inside 0.5 m.
+   * Regulated Pure Pursuit's `use_cost_regulated_linear_velocity_scaling`
+     (off today) slows the controller as costmap cost rises near
+     obstacles, and its `max_allowed_time_to_collision_up_to_carrot` is
+     already on.
+
+   **The part that is not tuning:** `robot/safety.py`'s `min_distance_cm`
+   is a **fixed** 20 cm. `PLAN-onboard-perception.md` 1.14 item 5 ("The
+   collar becomes speed-dependent, and 20cm is already marginal") puts it
+   at about 0.45 m/s, and only **~0.15-0.2 m/s once its corrected reaction
+   time and the sensor offset are applied**. Today's 0.2 m/s is therefore
+   already at the edge, and the robot server's stop must become
+   speed-dependent, as 1.14 item 5 proposes, **before** any speed is
+   raised. That is the same "cover the travel until the next check" lesson
+   as 3.18 and 3.22. Two limits stay regardless: the lidar's 10 Hz
+   (at 0.5 m/s, 5 cm between scans) and 8's blind band below the lidar,
+   which argues for keeping speed low near the floor-level unknown until 8
+   is built. **Criteria, to be confirmed before building:** (a) on the
+   scaled house and the furnished home, 3.15's goal success and closest
+   approach are no worse, and mean speed on open stretches rises by a
+   stated factor; (b) 3.18's ground-truth sweep at the new top speed: no
+   run under 18 cm of travel-to-contact; (c) with 7's movers crossing:
+   never within 20 cm of a mover that was still when the robot committed,
+   and the commanded-speed log shows the slow zones engaging; (d) on the
+   car, measured stopping distance at each speed band, against the
+   formula, before the sim's bands are trusted.
+10. **Gyro-based heading: a phase, if turns on the car need better than
+   about +/- 2 deg (raised 2026-10-01, from 3.25's failed turn criterion;
+   for the user to decide).** Where turns stand without it: stock firmware,
+   sd 1.3-1.9 deg, worst 4.7 (3.25, 3.28); the 3.28 fork, 104/120 within
+   +/- 1, worst 2.1; 3.29's settle pass is the planned close of the +/- 1
+   bar. All of that is the **sim's** number, where a wheel never slips.
+   **Why the question outlives 3.29:** the Rover is a 4-wheel skid steer,
+   and its wheels SCRUB on every turn, so encoder heading is wrong on the
+   car in a way no fake board shows -- `wheel_separation_multiplier` corrects
+   the average, not the run-to-run spread on carpet against tile. The
+   ICM-20948 gyro measures the rotation itself, and `gz` is already in every
+   `T:1001` frame.
+   * **Trigger -- decide on the car, not before:** the arrival check's turn
+     test (3.26) -- commanded 15/45/90-degree turns against a measured
+     reference (lidar on a wall, or floor marks), on the floors the robot
+     will actually drive. If direct-mode turns miss +/- 2 deg there, or SLAM
+     (R5) is visibly fighting odometry heading, this becomes a phase.
+     Until then it is not built: 3.29 may make it unnecessary on hard
+     floors, and the gyro's bias and noise are unknown until measured.
+   * **Two ways to build it** (3.26 step 3): (a) `gz` integrated in
+     `robot/hardware_robot.py`, so direct-mode verbs close a turn on the
+     gyro and the encoders keep distance -- small, and keeps `safety.py`'s
+     path unchanged; (b) `robot_localization`'s EKF fusing wheel odometry
+     and the gyro on the ROS side (3.26: take Waveshare's idea, not its
+     file), which helps `drive: ros` and SLAM but not direct mode. Likely
+     (a) first, since direct mode is the car's fallback (3.24 G3).
+   * **Sim first, as always:** the fake would need a gyro (rate with bias,
+     noise and the firmware's `/16.4` LSB-per-deg/s scale, 3.26) and the sim
+     body would need wheel slip on turns, or the phase's data says nothing
+     about the car. **Criteria, to be confirmed before building:** turns
+     within +/- 1 deg on ground truth with a slip model ON (where the
+     encoder-only host measurably fails), a stationary robot's reported
+     heading drifting no more than a stated deg/min, and every 3.22/3.29 bar
+     unchanged.
