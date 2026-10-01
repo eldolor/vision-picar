@@ -29,6 +29,7 @@ against a threshold rather than anything cleverer.
 
 import logging
 import math
+import time
 from typing import Optional, Tuple
 
 from robot.interface import (
@@ -154,6 +155,23 @@ PIVOT_MIN_LOOKAHEAD_DEG = 1.0
 # refusal -- so R1b's stuck detector still ends a pinned robot `blocked`.
 VERB_MIN_MOVE_M = 0.01
 VERB_MIN_TURN_DEG = 0.5
+
+# ---- the settle pass (PLAN-ros-alignment.md 3.29) ----
+#
+# On a real board (a plan on the wall clock) a verb's stop lands a little
+# late -- 0.7 degrees per 10 ms at 1.2 rad/s -- and no feedback field can
+# remove that. So after a verb that ended `complete`, wait for the wheels to
+# stop and for fresh feedback, look again, and correct what is left SLOWLY,
+# as a small verb of its own through `run_verb()`: vetted exactly as a move
+# is, in whichever direction the error points. The ROS path has done this
+# since 3.24 (robot/ros_drive.py), with the same tolerances. The sim's
+# verbs (`advance()`, not the wall clock) are exact and never settle.
+SETTLE_TOLERANCE_DEG = 0.5
+SETTLE_TOLERANCE_M = 0.003
+SETTLE_TURN_RAD_S = 0.1        # body yaw while correcting: 10 ms late = 0.06 deg
+SETTLE_LINEAR_M_S = 0.02       # 10 ms late = 0.2 mm
+SETTLE_WAIT_S = 0.15           # wheels stopped, and three 50 ms feedback frames
+SETTLE_PASSES = 3
 
 # What counts as "the path the next move crosses" -- phase M3, reworked by
 # PLAN-onboard-perception.md section 5.1. The reason is geometry rather
@@ -759,7 +777,61 @@ class SafetyController:
             scale, why = self.pivot_scale(omega)
             return amount * scale, why
 
-        return carry_out_verb(self.robot, plan, limit)
+        if not plan.get("wall_clock"):
+            return carry_out_verb(self.robot, plan, limit)
+        start = self.robot.get_wheel_state()
+        stops0 = getattr(self.robot, "stop_count", 0)
+        outcome = carry_out_verb(self.robot, plan, limit)
+        if outcome["ended"] == "complete" and not plan.get("settling"):
+            outcome = self._settle(plan, start, stops0, outcome)
+        return outcome
+
+    def _progress(self, plan: dict, start: dict) -> float:
+        """Signed progress since `start` ALONG the plan: metres for a
+        straight, degrees for a turn, positive the way the plan goes."""
+        w = self.robot.get_wheel_state()
+        r, track = w["wheel_radius_m"], w["track_width_m"]
+        dl = w["left"]["position_rad"] - start["left"]["position_rad"]
+        dr = w["right"]["position_rad"] - start["right"]["position_rad"]
+        if plan["kind"] == "straight":
+            sign = 1.0 if plan["left_rad_s"] + plan["right_rad_s"] > 0 else -1.0
+            return sign * (dl + dr) / 2.0 * r
+        sign = 1.0 if plan["right_rad_s"] > plan["left_rad_s"] else -1.0
+        return sign * math.degrees((dr - dl) * r / track)
+
+    def _settle(self, plan: dict, start: dict, stops0: int, outcome: dict) -> dict:
+        """3.29: look again once the wheels have stopped, and correct what is
+        left slowly, in either direction, through `run_verb()` -- so the
+        correction is vetted as a move is. A `stop()` ends it at once."""
+        straight = plan["kind"] == "straight"
+        tol = SETTLE_TOLERANCE_M if straight else SETTLE_TOLERANCE_DEG
+        w = self.robot.get_wheel_state()
+        r, track = w["wheel_radius_m"], w["track_width_m"]
+        wheel = (SETTLE_LINEAR_M_S / r if straight
+                 else SETTLE_TURN_RAD_S * track / 2.0 / r)
+        ended, reason = outcome["ended"], outcome["reason"]
+        for _ in range(SETTLE_PASSES):
+            time.sleep(SETTLE_WAIT_S)
+            if getattr(self.robot, "stop_count", 0) != stops0:
+                ended, reason = "stopped", "stop() was called while settling"
+                break
+            err = plan["target"] - self._progress(plan, start)
+            if abs(err) <= tol:
+                break
+            # The plan's own wheel directions at the floor rate, reversed
+            # when the verb overshot.
+            way = 1.0 if err > 0 else -1.0
+            sl = way * math.copysign(wheel, plan["left_rad_s"])
+            sr = way * math.copysign(wheel, plan["right_rad_s"])
+            fix = self.run_verb({"kind": plan["kind"], "left_rad_s": sl, "right_rad_s": sr,
+                                 "target": abs(err), "wall_clock": True, "settling": True})
+            if fix["ended"] == "stopped":
+                ended, reason = "stopped", fix["reason"]
+                break
+            if fix["ended"] == "clamped":
+                reason = f"settle refused: {fix['reason']}"
+                break
+        return {"done": self._progress(plan, start), "ended": ended, "reason": reason}
 
     def _dispatch(self, action: str, **kwargs) -> dict:
         dispatch_table = {
