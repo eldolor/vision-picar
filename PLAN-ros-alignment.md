@@ -2886,6 +2886,15 @@ at rest is good to ~0.4 deg; the gyro (`gz`, 3.26 step 3); or slowing the
 last few degrees of a turn so a late stop costs less. Each is a phase with
 its own criteria.
 
+**Amended 2026-10-01 by 3.29, with the user's decision:** the odometer keys
+are now `odlt`/`odrt`, **tenths of a millimetre** (`en_odom_l * 10000`),
+not `odlm`/`odrm`. 3.29 measured whole millimetres as the limit on turn
+accuracy (the estimate at rest was up to 1.26 deg out; a tenth of a
+millimetre is finer than one 0.38 mm edge, so no edge is lost). The patch is
+re-cut and renamed `0001-feedback-fine-odometers-and-board-time.patch`; the
+numbers above are 3.28's as measured on millimetres, and 3.29 has the new
+ones.
+
 ### 3.29 A settle pass for direct-mode verbs (2026-10-01): criteria, written before building
 
 **Asked by the user** ("yes" to closing 3.28's failed turn criterion this
@@ -2934,6 +2943,67 @@ A `stop()` at any point ends it.
    (`tests/data/frontier_trace_centred.json`) and every mission test pass
    unchanged.
 8. Whole suite green from `.venv`.
+
+**Measured 2026-10-01 -- met, after one design change decided by the user.**
+
+**As first built, the settle pass did not close it.** 120 fork turns, 1 mm
+odometers: 110/120 within +/- 1 deg with the settle, 106/120 without; worst
+1.45. Splitting a settled turn (45 turns) showed why: the settle brings the
+ESTIMATE to the target (worst 0.77 off), but the estimate itself was up to
+**1.26 deg** from the truth at rest -- whole millimetres lose up to 2.6
+encoder edges. The same split at **0.1 mm** units: estimate within 0.48 deg
+of the truth, every settled turn within 0.71 deg (45/45). The user chose to
+change the fork's units (3.28's amendment above) and to settle only where
+the estimate is fine enough: `HardwareRobot.verb_plan()` sets
+`plan["settle"]` only while frames carry the fork's keys -- on stock, a
+settle chased a 1.5-deg estimate and cost +0.57 s a turn for nothing
+(56/120 with it, 59/120 without).
+
+1. **Met.** Fork, 0.1 mm units, with the settle, 120 turns:
+
+   | | within +/-1 deg | sd (15 / 45 / 90) | worst | median time |
+   |---|---|---|---|---|
+   | fork + settle | **120/120** | 0.36 / 0.28 / 0.34 | **0.84** | 0.82 s |
+   | fork, no settle | 118/120 | 0.37 / 0.39 / 0.44 | 1.22 | 0.66 s |
+   | stock (no settle, by design) | 60/120 and 51/120 in two identical runs | 1.4-2.0 | 4.6-5.2 | 0.66 s |
+
+   For the record: 3.28 at 1 mm, no settle, was 104/120, worst 2.07.
+2. **Met by construction, and the spread recorded.** Stock does not settle,
+   so it runs 3.28's exact path; its two identical 120-turn runs read 60 and
+   51 -- the 60/120 bar sits inside stock's own run-to-run noise.
+3. **Met on the fork:** ten clear FORWARDs, worst 0.13 cm (bar 0.5). **On
+   stock, one of ten read 1.15 cm** against the +/- 1 cm bar -- unchanged
+   code (no settle on stock), and the same rare excess the 3.25 forward test
+   showed under load earlier today; recorded, not attributed to 3.29. The
+   pinned five-run test passes.
+4. **Met:** the fork's median turn grows 0.66 -> 0.82 s (+0.16, bar 0.5);
+   stock unchanged.
+5. **Met.** The unit tests: an overshoot (a board applying commands 60 ms
+   late) is corrected to within 0.5 deg when clear, and a clockwise
+   correction toward a return 1 cm off the flank is refused, the overshoot
+   kept. Mutation-checked: a settle that bypasses `run_verb()`'s vetting
+   fails the second. 3.22's hardware verb tests and the contract suite pass
+   with `SIM_BOARD_FIRMWARE=fork` (149). 3.22's ground-truth SWEEP runs on
+   `MockRobot`, which never settles, so it says nothing new here -- named so
+   nobody counts it.
+6. **Met.** A stop 50 ms into the settle wait ends the verb; only zeros are
+   sent after it. Mutation-checked: a settle that ignores `stop()` fails it.
+7. **Met by construction:** only plans with `wall_clock` AND `settle` take
+   the new path, and only `HardwareRobot` makes them; the sim's verbs are
+   the old code. The full suite, below, includes the pinned frontier trace.
+8. **1520 passed, 1 failed:** 3.25's `test_5_a_clear_forward_covers_a_cell`
+   -- the STOCK board, whose plans never settle, so it runs exactly the
+   code it ran before this phase. It failed the same way once under
+   full-suite load earlier today (before 3.29 existed) and passes alone,
+   and stock straights read up to 1.15 cm in criterion 3's ten. **A
+   pre-existing timing flake in 3.25's stock-path test, recorded and left
+   for its own fix** -- its bar is not moved here.
+
+**3.28 on the new units:** odometry worst **0.047 cm** over the 30 s lossy
+drive (1 mm: 0.139; stock: 1.02), 0/1028 over the 0.1 mm-plus-one-edge bar;
+frame 160 bytes against stock's 125 (+35, at the bar), ~28% of the link at
+20 Hz; reboots move travel by at most 0.058 cm; the re-cut patch applies to
+`2e7df97` and compiles at 1,223,030 bytes (+236 over stock).
 
 ## 4. Honest residue -- what the twin cannot tell you
 

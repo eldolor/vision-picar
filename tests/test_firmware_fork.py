@@ -2,8 +2,8 @@
 tests/test_firmware_fork.py
 
 `PLAN-ros-alignment.md` 3.28 -- our two-field fork of the UGV Rover's board
-firmware (`firmware/ugv_base_ros/`): `odlm`/`odrm`, the odometers in whole
-millimetres, and `ms`, the board's millis() when the frame was built. One
+firmware (`firmware/ugv_base_ros/`): `odlt`/`odrt`, the odometers in whole
+tenths of a millimetre (3.29; 3.28 sent millimetres), and `ms`, the board's millis() when the frame was built. One
 test (or group) per criterion. Criteria 4-6 run the hardware backend over
 the fake on a real pseudo-terminal, on the wall clock, and judge it on the
 simulated body's TRUTH -- as 3.25's do, whose helpers these reuse.
@@ -29,8 +29,8 @@ from tests.test_ros_driver_board import EDGE_CM, ROVER_PULSES, WHEEL_D, body, re
 
 ROOT = Path(__file__).resolve().parent.parent
 FORK = ROOT / "firmware/ugv_base_ros"
-PATCH = FORK / "0001-feedback-mm-odometers-and-board-time.patch"
-NEW_KEYS = {"odlm", "odrm", "ms"}
+PATCH = FORK / "0001-feedback-fine-odometers-and-board-time.patch"
+NEW_KEYS = {"odlt", "odrt", "ms"}
 
 
 # ---------- criterion 1: the patch is the change and nothing else ----------
@@ -45,9 +45,9 @@ def test_1_the_patch_only_adds_three_keys_inside_baseInfoFeedback():
     assert not [l for l in body_lines if l.startswith("-")], "the patch removes nothing"
     added = "\n".join(l[1:] for l in body_lines if l.startswith("+"))
     assert set(re.findall(r'jsonInfoHttp\["(\w+)"\]', added)) == NEW_KEYS
-    # The same floats the stock odl/odr truncate, at a millimetre; the time
+    # The same floats the stock odl/odr truncate, at a tenth of a mm; the time
     # the frame was built.
-    assert "(en_odom_l * 1000)" in added and "(en_odom_r * 1000)" in added
+    assert "(en_odom_l * 10000)" in added and "(en_odom_r * 10000)" in added
     assert 'jsonInfoHttp["ms"] = last_feedback_time' in added
 
 
@@ -104,16 +104,16 @@ def test_2_each_firmware_s_frame_keys(any_board):
     assert all(set(f) == want for f in frames), frames[0]
 
 
-def test_2_fork_odometers_are_whole_millimetres_of_the_same_counts():
+def test_2_fork_odometers_are_whole_tenths_of_a_mm_of_the_same_counts():
     b = FakeEsp32(body(), firmware="fork")
     try:
         for counts in ([0, 0], [1, -1], [5, -5], [263, -263], [2627, -2627]):
-            mm = b._odometers_mm(counts)
+            mm = b._odometers_tenth_mm(counts)
             cm = b._odometers_cm(counts)
-            want = [int(c / ROVER_PULSES * math.pi * WHEEL_D * 1000) for c in counts]
+            want = [int(c / ROVER_PULSES * math.pi * WHEEL_D * 10000) for c in counts]
             assert mm == want, (counts, mm)
-            # the same float, truncated toward zero: mm // 10 == cm (sign-aware)
-            assert [int(m / 10) for m in mm] == cm, (mm, cm)
+            # the same float, truncated toward zero: tenths // 100 == cm (sign-aware)
+            assert [int(m / 100) for m in mm] == cm, (mm, cm)
     finally:
         b.close()
 
@@ -176,7 +176,7 @@ class Recording(HardwareRobot):
 
     def _on_base_feedback(self, frame):
         super()._on_base_feedback(frame)
-        self.odometers_mm.append((frame.get("odlm"), frame.get("odrm")))
+        self.odometers_mm.append((frame.get("odlt"), frame.get("odrt")))
         self.reboots_seen.append(self.board_reboots)
         w = self.get_wheel_state()
         self.estimates.append((w["left"]["position_rad"] * w["wheel_radius_m"],
@@ -189,8 +189,8 @@ class Recording(HardwareRobot):
 
 
 def bar_mm_cm(odo_mm):
-    """One millimetre bucket plus one edge; two at 0 (truncation toward 0)."""
-    return (0.2 if odo_mm == 0 else 0.1) + EDGE_CM
+    """One 0.1 mm bucket plus one edge; two at 0 (truncation toward 0), cm."""
+    return (0.02 if odo_mm == 0 else 0.01) + EDGE_CM
 
 
 def errors(robot, board):
@@ -220,7 +220,7 @@ def fork_drive():
     return r, b
 
 
-def test_4_the_millimetre_odometer_bounds_the_error(fork_drive):
+def test_4_the_fine_odometer_bounds_the_error(fork_drive):
     robot, board = fork_drive
     errs = errors(robot, board)
     assert board.frames_dropped > 0 and robot.board_reboots == 0
@@ -250,7 +250,7 @@ def test_6_reboots_are_seen_on_the_board_clock_and_are_not_jumps():
         r.close()
         b.close()
     assert b.reboots == 8 and r.board_reboots == 8, (b.reboots, r.board_reboots)
-    assert all(j <= 0.238 for j in jumps), jumps
+    assert all(j <= 0.058 for j in jumps), jumps     # two buckets plus an edge, cm
     assert all(h == HEARTBEAT_MS for h in heartbeats), heartbeats
 
 
@@ -282,10 +282,10 @@ def _feed(robot, frames):
 
 
 def test_7_a_frame_without_the_new_keys_is_read_as_stock():
-    """A partial flash, an older fork: the same frames with odlm/odrm/ms
+    """A partial flash, an older fork: the same frames with odlt/odrt/ms
     stripped leave the host exactly where a stock board would."""
     stock_frames = [{"T": 1001, "L": 0.1, "R": 0.1, "odl": o, "odr": o} for o in (0, 0, 1, 1, 2)]
-    partial = [dict(f, odlm=f["odl"] * 10) for f in stock_frames]     # ms missing
+    partial = [dict(f, odlt=f["odl"] * 100) for f in stock_frames]    # ms missing
     results = []
     for frames in (stock_frames, partial):
         master, slave = os.openpty()
@@ -343,15 +343,11 @@ def _turn_errors(hardware, angle, n):
     return errs
 
 
-@pytest.mark.xfail(strict=False, reason=(
-    "3.28 criterion 5 FAILED, recorded: on the fork 104/120 turns land within "
-    "+/-1 deg (stock 60/120), sd 0.46-0.72 (stock 1.35-1.89), worst 2.07 "
-    "(stock 4.73). Half the residue is the host's estimate (1 mm buckets, "
-    "whole-edge speeds: sd 0.44 at rest), half the stop arriving up to a "
-    "board loop late (0.7 deg per 10 ms at 1.2 rad/s), which no feedback "
-    "field removes."))
 @pytest.mark.parametrize("angle", [15, 45, 90])
 def test_5_a_clear_turn_lands_on_its_angle_on_the_fork(fork_hardware, angle):
+    """3.28 criterion 5 FAILED on whole millimetres (104/120, worst 2.07 deg)
+    and was closed by 3.29: tenths of a millimetre plus the settle pass,
+    120/120, worst 0.84."""
     errs = _turn_errors(fork_hardware, angle, 5)
     assert all(abs(e) <= 1.0 for e in errs), errs
 

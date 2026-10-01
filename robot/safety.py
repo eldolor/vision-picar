@@ -777,12 +777,15 @@ class SafetyController:
             scale, why = self.pivot_scale(omega)
             return amount * scale, why
 
-        if not plan.get("wall_clock"):
+        # 3.29: a backend whose estimate at rest is good enough asks for a
+        # settle (`plan["settle"]`); only a real board's wall-clock plans
+        # ever do. A correction's own plan never carries it.
+        if not (plan.get("wall_clock") and plan.get("settle")):
             return carry_out_verb(self.robot, plan, limit)
         start = self.robot.get_wheel_state()
         stops0 = getattr(self.robot, "stop_count", 0)
         outcome = carry_out_verb(self.robot, plan, limit)
-        if outcome["ended"] == "complete" and not plan.get("settling"):
+        if outcome["ended"] == "complete":
             outcome = self._settle(plan, start, stops0, outcome)
         return outcome
 
@@ -824,7 +827,7 @@ class SafetyController:
             sl = way * math.copysign(wheel, plan["left_rad_s"])
             sr = way * math.copysign(wheel, plan["right_rad_s"])
             fix = self.run_verb({"kind": plan["kind"], "left_rad_s": sl, "right_rad_s": sr,
-                                 "target": abs(err), "wall_clock": True, "settling": True})
+                                 "target": abs(err), "wall_clock": True})
             if fix["ended"] == "stopped":
                 ended, reason = "stopped", fix["reason"]
                 break

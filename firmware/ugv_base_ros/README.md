@@ -1,17 +1,17 @@
 # Our fork of the UGV Rover's motor-board firmware
 
-`0001-feedback-mm-odometers-and-board-time.patch` applies to Waveshare's
+`0001-feedback-fine-odometers-and-board-time.patch` applies to Waveshare's
 [`ugv_base_ros`](https://github.com/waveshareteam/ugv_base_ros) at commit
 `2e7df97` -- the **ROS Driver for Robots** board's ESP32 firmware (C++, an
 Arduino sketch). Why it exists, and how it is judged: `PLAN-ros-alignment.md`
-3.28.
+3.28 and 3.29.
 
 It adds three keys to the `T:1001` feedback frame, in `baseInfoFeedback()`
 (`ROS_Driver/ugv_advance.h`), and changes nothing else:
 
 | key | value |
 |---|---|
-| `odlm`, `odrm` | each wheel's travel since boot in whole millimetres, a C `long` truncated toward zero -- the same `en_odom_l`/`en_odom_r` the stock `odl`/`odr` truncate to centimetres |
+| `odlt`, `odrt` | each wheel's travel since boot in whole **tenths of a millimetre**, a C `long` truncated toward zero -- the same `en_odom_l`/`en_odom_r` the stock `odl`/`odr` truncate to centimetres. A tenth of a millimetre is finer than one encoder edge (0.38 mm on the Rover), so no edge is lost; 3.28's first cut sent whole millimetres, and 3.29 measured that as the limit on turn accuracy |
 | `ms` | `millis()` when the frame was built: zero at boot, wraps after 49.7 days |
 
 `odl`/`odr` are untouched, so Waveshare's tools and a host that does not
@@ -29,7 +29,7 @@ or a robot running it -- means giving them this source too.
 ```bash
 git clone https://github.com/waveshareteam/ugv_base_ros && cd ugv_base_ros
 git checkout 2e7df97
-git apply /path/to/vision-picar/firmware/ugv_base_ros/0001-feedback-mm-odometers-and-board-time.patch
+git apply /path/to/vision-picar/firmware/ugv_base_ros/0001-feedback-fine-odometers-and-board-time.patch
 bash /path/to/vision-picar/firmware/ugv_base_ros/build.sh .      # compile only
 ```
 

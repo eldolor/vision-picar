@@ -311,10 +311,14 @@ checks are done, so a fault cannot be blamed on your build.
 **What is worth changing on the Rover's board** (`PLAN-ros-alignment.md`
 3.26): the firmware already holds wheel travel in float metres and truncates
 it to whole centimetres on the way out, and sends no timestamp. Two new
-fields -- millimetre odometers and `millis()` -- remove the two limits 3.25
+fields -- finer odometers and `millis()` -- remove the two limits 3.25
 measured. Adding fields rather than changing old ones keeps the vendor's
-tools working. Built as `firmware/ugv_base_ros/` (3.28); it cut the
-odometry error sevenfold and turn scatter about 2.5x in the sim.
+tools working. Built as `firmware/ugv_base_ros/` (3.28-3.29). **Send at
+least the encoder's own resolution:** the first cut sent whole millimetres
+and lost up to 2.6 of the Rover's 0.38 mm edges, which left the host's
+heading estimate up to 1.3 degrees out at rest; tenths of a millimetre lose
+none. With that and a slow settle pass after each turn (3.29), every one of
+120 simulated turns landed within 1 degree (stock: about half).
 
 **Pin your toolchain.** Vendor firmware is written against whatever library
 versions were current that month. Waveshare's `2e7df97` (November 2025)

@@ -78,8 +78,9 @@ class FakeEsp32:
     wire, seeded by `seed`.
 
     `firmware` is "stock" -- `ugv_base_ros` @ 2e7df97 -- or "fork", the same
-    plus this project's patch (`firmware/ugv_base_ros/`, 3.28): `odlm`/`odrm`,
-    the odometers in whole millimetres, and `ms`, the board's `millis()` when
+    plus this project's patch (`firmware/ugv_base_ros/`, 3.28-3.29):
+    `odlt`/`odrt`, the odometers in whole tenths of a millimetre (finer than
+    one encoder edge), and `ms`, the board's `millis()` when
     the frame was built. `millis_at_boot` starts the board clock somewhere
     other than zero on the FIRST boot only (a reboot restarts it at zero) --
     to drive through `millis()`'s 2^32 wrap without waiting 49.7 days.
@@ -186,10 +187,11 @@ class FakeEsp32:
         so truncated toward zero."""
         return [int(c / self.pulses * self.wheel_d * math.pi * 100) for c in counts]
 
-    def _odometers_mm(self, counts):
-        """The fork's `long int odl_mm = (en_odom_l * 1000);` -- the same
-        float, truncated toward zero at a millimetre (3.28)."""
-        return [int(c / self.pulses * self.wheel_d * math.pi * 1000) for c in counts]
+    def _odometers_tenth_mm(self, counts):
+        """The fork's `long int odl_tenth_mm = (en_odom_l * 10000);` -- the
+        same float, truncated toward zero at a tenth of a millimetre (3.29;
+        3.28 sent whole millimetres, which lost up to 2.6 edges)."""
+        return [int(c / self.pulses * self.wheel_d * math.pi * 10000) for c in counts]
 
     # ---------- the serial side ----------
 
@@ -319,7 +321,7 @@ class FakeEsp32:
                  "odl": odl, "odr": odr,
                  "v": 1200}                       # int v_int = (int)(loadVoltage_V * 100);
         if self.firmware == "fork":
-            frame["odlm"], frame["odrm"] = self._odometers_mm(self.counts)
+            frame["odlt"], frame["odrt"] = self._odometers_tenth_mm(self.counts)
             frame["ms"] = self.millis()               # last_feedback_time = millis();
         w = self.body.get_wheel_state()
         truth = (w["left"]["position_rad"] * w["wheel_radius_m"],

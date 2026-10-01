@@ -154,7 +154,7 @@ def _turn_plan(deg, ccw=True):
     w = 1.2 * 0.172 / 2 / 0.04
     l, r = (-w, w) if ccw else (w, -w)
     return {"kind": "turn", "left_rad_s": l, "right_rad_s": r,
-            "target": float(deg), "wall_clock": True}
+            "target": float(deg), "wall_clock": True, "settle": True}
 
 
 def test_5_a_settle_corrects_an_overshoot_when_the_way_is_clear():

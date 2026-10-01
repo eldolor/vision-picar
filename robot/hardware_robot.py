@@ -78,10 +78,12 @@ MOVE_M = 0.30
 MOVES_PER_SECOND_AT_FULL_SPEED = 2.0
 
 
-# 3.28: our firmware fork adds `odlm`/`odrm` (the odometers in whole
-# millimetres) and `ms` (the board's millis() when the frame was built).
-# Stock frames lack them, and then everything below is exactly 3.25's.
-MM = 1e-3      # a unit, not a measurement (the wall linter looks for copied measurements)
+# 3.28-3.29: our firmware fork adds `odlt`/`odrt` (the odometers in whole
+# tenths of a millimetre -- finer than one 0.38 mm encoder edge, so none is
+# lost; 3.28's whole millimetres left the estimate at rest up to 1.3 deg out)
+# and `ms` (the board's millis() when the frame was built). Stock frames
+# lack them, and then everything below is exactly 3.25's.
+TENTH_MM = 1e-4  # a unit, not a measurement (the wall linter looks for copied measurements)
 CM = 0.01
 MILLIS_WRAP = 1 << 32
 
@@ -103,9 +105,9 @@ def _bucket_centre(odo: int, unit: float = CM) -> float:
 
 
 def _fork_keys(frame: dict):
-    """(odometers_mm, ms) if the frame is the fork's, else None. All three
-    or none: a partial set is treated as stock."""
-    odo, ms = (frame.get("odlm"), frame.get("odrm")), frame.get("ms")
+    """(odometers in tenths of a mm, ms) if the frame is the fork's, else
+    None. All three or none: a partial set is treated as stock."""
+    odo, ms = (frame.get("odlt"), frame.get("odrt")), frame.get("ms")
     if all(isinstance(v, int) and not isinstance(v, bool) for v in (*odo, ms)):
         return odo, ms
     return None
@@ -186,7 +188,7 @@ class HardwareRobot(RobotInterface):
         speed = [float(frame["L"]), float(frame["R"])]
         fork = _fork_keys(frame)
         if fork is not None:
-            odo, unit = fork[0], MM
+            odo, unit = fork[0], TENTH_MM
         else:
             odo, unit = (frame.get("odl"), frame.get("odr")), CM
         anchored = all(isinstance(o, int) for o in odo)
@@ -289,7 +291,7 @@ class HardwareRobot(RobotInterface):
         """Clamp each wheel's estimate into the unit its odometer allows:
         `long int odl_cm = (en_odom_l * 100)` truncates toward zero, so n > 0
         means [n, n+1) cm, n < 0 means (n-1, n], and 0 means (-1, 1); the
-        fork's `odlm` the same in millimetres (3.28)."""
+        fork's `odlt` the same in tenths of a millimetre (3.29)."""
         for i in range(2):
             lo, hi = _bucket(odo[i], unit)
             self._board_m[i] = min(max(self._board_m[i], lo), hi)
@@ -389,7 +391,13 @@ class HardwareRobot(RobotInterface):
                   angle: int = 90) -> Optional[dict]:
         """The verbs above, for the safety layer to carry out and re-vet
         every period (3.22) -- the same speeds and extents, on the wall
-        clock."""
+        clock.
+
+        `settle` (3.29): whether the safety layer should look again once the
+        wheels stop and correct what is left. Only on the fork's fine
+        odometers -- on stock, the estimate at rest is itself off by ~1.5
+        deg, so a correction chases noise and costs ~0.6 s a turn."""
+        settle = self._last_ms is not None
         if action in ("FORWARD", "REVERSE"):
             speed = max(0, min(100, speed))
             moves = (speed / 100.0) * MOVES_PER_SECOND_AT_FULL_SPEED * duration
@@ -399,14 +407,15 @@ class HardwareRobot(RobotInterface):
             sign = 1.0 if action == "FORWARD" else -1.0
             w = sign * speed / 100.0 * MOVES_PER_SECOND_AT_FULL_SPEED * MOVE_M / WHEEL_RADIUS_M
             return {"kind": "straight", "left_rad_s": w, "right_rad_s": w,
-                    "target": moves * MOVE_M, "wall_clock": True, "moves": sign * moves}
+                    "target": moves * MOVE_M, "wall_clock": True, "settle": settle,
+                    "moves": sign * moves}
         if action in ("LEFT", "RIGHT"):
             if not angle:
                 return None
             w = 1.2 * TRACK_WIDTH_M / 2 / WHEEL_RADIUS_M          # 1.2 rad/s body
             left, right = (w, -w) if action == "RIGHT" else (-w, w)
             return {"kind": "turn", "left_rad_s": left, "right_rad_s": right,
-                    "target": float(abs(angle)), "wall_clock": True}
+                    "target": float(abs(angle)), "wall_clock": True, "settle": settle}
         return None
 
     def verb_done(self, action: str, plan: dict, outcome: dict, **kwargs) -> dict:

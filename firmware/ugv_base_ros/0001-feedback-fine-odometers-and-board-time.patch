@@ -1,0 +1,24 @@
+diff --git a/ROS_Driver/ugv_advance.h b/ROS_Driver/ugv_advance.h
+index 48e7c9e..330b1c8 100644
+--- a/ROS_Driver/ugv_advance.h
++++ b/ROS_Driver/ugv_advance.h
+@@ -413,6 +413,19 @@ void baseInfoFeedback() {
+ 	long int odr_cm = (en_odom_r * 100);
+ 	jsonInfoHttp["odr"] = odr_cm;
+ 
++	// vision-picar fork (PLAN-ros-alignment.md 3.28-3.29): the same travel
++	// in tenths of a millimetre -- finer than one encoder edge (0.38 mm on
++	// the UGV Rover), so no edge is lost to rounding -- and the board time
++	// this frame was built, so a host can integrate over the board's clock
++	// instead of arrival times. New keys only: odl/odr above are unchanged.
++	long int odl_tenth_mm = (en_odom_l * 10000);
++	jsonInfoHttp["odlt"] = odl_tenth_mm;
++
++	long int odr_tenth_mm = (en_odom_r * 10000);
++	jsonInfoHttp["odrt"] = odr_tenth_mm;
++
++	jsonInfoHttp["ms"] = last_feedback_time;
++
+     int v_int = (int)(loadVoltage_V * 100);
+ 	jsonInfoHttp["v"] = v_int;
+ 

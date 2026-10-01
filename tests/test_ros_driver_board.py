@@ -95,7 +95,7 @@ def test_1_the_base_frame_has_the_ros_driver_s_keys(board):
     assert frames, "the board streams 1001 frames from boot (baseFeedbackFlow = 1)"
     # Our fork adds three keys and changes none (3.28); this suite runs over
     # either firmware (SIM_BOARD_FIRMWARE).
-    extra = {"odlm", "odrm", "ms"} if b.firmware == "fork" else set()
+    extra = {"odlt", "odrt", "ms"} if b.firmware == "fork" else set()
     assert set(frames[-1]) == FRAME_KEYS | extra
     assert isinstance(frames[-1]["odl"], int) and isinstance(frames[-1]["v"], int)
 
