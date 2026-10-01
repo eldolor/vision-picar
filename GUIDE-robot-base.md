@@ -72,6 +72,79 @@ sends up the cable -- and the driver can only publish what the board sends.
 which runs a small DDS client on the board. Neither board considered here
 uses it.)
 
+### Layer 2 on the UGV Rover: which chip, and where the JSON comes from
+
+**The chip is the original ESP32** -- dual-core Xtensa LX6, Wi-Fi plus
+Bluetooth Classic/BLE -- not an S3, C3 or C6, and almost certainly an
+**ESP32-WROOM-32** module `[I]`. Neither Waveshare's wiki nor the firmware
+repo names it; the pin map does (`ugv_base_ros` @ `2e7df97`,
+`ROS_Driver/ugv_config.h`) `[V]`:
+
+* encoders on **GPIO 34 and 35** -- input-only pins, which only the
+  original ESP32 has;
+* motor pins on **GPIO 21, 22, 23 and 25** -- the S3 has no GPIO 22-25, and
+  the C3/C6 have far fewer pins;
+* **GPIO 16 and 17** used as ordinary pins -- the WROVER module reserves them
+  for its PSRAM, so WROOM fits.
+
+The older General Driver is documented as an ESP32-WROOM-32
+(`HARDWARE-BOM.md` 4.2), Waveshare calls the ROS Driver a variant of it, and
+the pin assignments match. **Confirm by reading the module's shield on
+arrival.** If you ever flash it, choose **"ESP32 Dev Module"** in the
+Arduino IDE, not an S3 profile.
+
+**The JSON is the firmware's, not the chip's.** `uart_ctrl.h` reads `Serial`
+a character at a time until a newline, then parses the line with
+`deserializeJson`; the same firmware builds the `T:1001` frames and writes
+them back on the same port `[V]`. That `Serial` is the ESP32's **UART0**, a
+plain TX/RX line -- the original ESP32 has **no USB hardware** -- and the
+board carries it two ways:
+
+| route | conversion | host sees |
+|---|---|---|
+| USB cable | a USB-to-UART bridge chip on the board (two CP2102s on the General Driver `[V]`; not yet checked on the ROS Driver `[U]`) | `/dev/ttyUSB0` |
+| 40-pin header | none: raw UART. Waveshare's README says the kit uses it, and both of their Jetson nodes open `/dev/ttyTHS1` `[V]` | a Jetson UART: `/dev/ttyTHS1` |
+
+Same bytes, same JSON lines, either way. `robot/hardware_robot.py` takes the
+device from `ROBOT_SERIAL`, so the route is a setting, not code; expect
+`/dev/ttyTHS1`, and confirm on arrival (`JETSON-BOM.md` 9.5). And because the
+protocol lives in open firmware, `sim/fake_esp32.py` copies it from source
+and is pinned to `2e7df97` -- a firmware update can change it.
+
+**The firmware is C++**, written as an Arduino sketch: `ROS_Driver.ino`
+(`setup()` / `loop()`) plus about twenty headers (`uart_ctrl.h`,
+`movtion_module.h`, `IMU_ctrl.h`, ...), compiled by GCC through Espressif's
+Arduino core, which sits on ESP-IDF and FreeRTOS. Its libraries are Arduino
+ones: ArduinoJson, ESP32Encoder, PID_v2, Adafruit's IMU and OLED drivers,
+LittleFS `[V]`.
+
+### Why the board is called a "ROS Driver" when it speaks no ROS
+
+**"ROS Driver for Robots" is the board's product name.** Waveshare sells two
+versions of one ESP32 board: the *General Driver* (firmware
+`ugv_base_general`) and the *ROS Driver* (`ugv_base_ros`), the one that ships
+in their ROS kits because it runs closed loop and reports measured odometry.
+The firmware contains **no ROS at all** -- no micro-ROS, no rosserial -- only
+JSON over UART, HTTP and ESP-NOW `[V]`.
+
+The translation into ROS 2 messages is **layer 3**, a separate program on the
+Jetson. Waveshare's is two Python nodes in `waveshareteam/ugv_ws`
+(`ugv_bringup` package) `[V]`:
+
+| node | direction | does |
+|---|---|---|
+| `ugv_bringup.py` | board -> ROS | parses `T:1001`, publishes `imu/data_raw`, `imu/mag`, `odom/odom_raw`, `voltage` |
+| `ugv_driver.py` | ROS -> board | subscribes `cmd_vel`, writes `{"T":13,"X":<m/s>,"Z":<rad/s>}` |
+
+**This project does not use them.** `robot/hardware_robot.py` plays
+`ugv_bringup.py`'s part, and the ros2_control chain (`picar_sim_hardware` ->
+`diff_drive_controller`) plays `ugv_driver.py`'s, so every command passes
+through `robot/safety.py`. Waveshare's nodes would own the serial port and
+send `cmd_vel` to the motors unchecked. Only one program can hold the port,
+so their nodes and the kit's stock app must be disabled on the car. What the
+audit of their code found, and what is worth reusing, is
+`PLAN-ros-alignment.md` 3.26.
+
 ---
 
 ## 2. Encoders, closed loop, and where the data goes
@@ -224,6 +297,29 @@ that is a one-evening fix or a permanent limit.
 
 The ROS 2 **driver** being open (both are) does not help here: the driver is
 layer 3, and the missing data is withheld at layer 2.
+
+### May you flash your own firmware?
+
+**Yes, on a GPL-3.0 board.** The licence lets you modify the firmware and run
+it on your own device; its obligations start only when you *convey* the
+binary to someone else (sell or give them the robot, publish an image), and
+then your changed source must go with it. Practical rules: dump the stock
+image first (`esptool.py read_flash`), keep the vendor's restore tool
+(Waveshare's ESP32 Download Tool), and flash only after any return-window
+checks are done, so a fault cannot be blamed on your build.
+
+**What is worth changing on the Rover's board** (`PLAN-ros-alignment.md`
+3.26): the firmware already holds wheel travel in float metres and truncates
+it to whole centimetres on the way out, and sends no timestamp. Two new
+fields -- millimetre odometers and `millis()` -- remove the two limits 3.25
+measured. Adding fields rather than changing old ones keeps the vendor's
+tools working.
+
+**What the board cannot do for you: safety.** The lidar and cameras plug
+into the Jetson, so the firmware never sees an obstacle. Its only guard is a
+deadman heartbeat (`T:136`, default 3 s) that zeroes the wheel speed when
+commands stop. Its `T:0` "emergency stop" releases the robot arm's servos,
+not the wheels.
 
 ---
 

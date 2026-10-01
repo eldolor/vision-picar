@@ -216,6 +216,14 @@ still load-bearing:
   `JETSON-BOM.md` section 9. **Concepts
   (encoders, firmware, vendor protocols vs ROS 2/DDS, power budgets):
   `GUIDE-robot-base.md`.**
+* **Waveshare's own code was audited 2026-10-01** (`PLAN-ros-alignment.md`
+  3.26). The "ROS Driver" board runs C++ Arduino firmware (GPL-3.0, ours to
+  modify and flash) that speaks JSON, not ROS; their Jetson nodes are NOT
+  used, because they would bypass `robot/safety.py`. Worth taking: the
+  Rover URDF's CAD offsets (BSD; the pan axis sits ~1 cm behind centre, not
+  8 cm ahead), the `ldlidar` driver (MIT), and two one-line firmware fields
+  (mm odometers, a timestamp). The board's `T:0` "e-stop" releases the arm,
+  not the wheels.
 * **Perception, shipped:** `brain/perceive.py` defaults to
   `yoloe-11s-seg.pt` -> CLIP, `low_confidence` crops, 16 crops/frame, gate
   P >= 0.8, no floor mask -- 82% at 3 FP, 139 ms on laptop CPU, on the

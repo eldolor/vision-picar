@@ -405,7 +405,20 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
   without cells.
 * **Within the 30-day return window, on arrival:** a 25 W stress test with
   the motors running, confirm `T:1001` carries `odl`/`odr`, an odometry check
-  over a measured metre, and the safety sweep against the real lidar.
+  over a measured metre, and the safety sweep against the real lidar. Also
+  read the ESP32 module's shield (expected: ESP32-WROOM-32, the original
+  ESP32, inferred from the firmware's pin map) and note which serial route
+  the kit wires -- expected the 40-pin header's UART, `/dev/ttyTHS1`, which
+  both of Waveshare's Jetson nodes open (USB through a bridge chip would be
+  `/dev/ttyUSB0`) -- for `ROBOT_SERIAL`. Why both matter:
+  `GUIDE-robot-base.md` section 1, "Layer 2 on the UGV Rover".
+* **Disable Waveshare's own software on the Jetson image** -- the stock
+  `ugv_jetson` app and any `ugv_bringup` / `ugv_driver` service. Only one
+  program can hold the serial port, and theirs send `cmd_vel` to the motors
+  without `robot/safety.py` (`PLAN-ros-alignment.md` 3.26).
+* **Before any firmware change:** dump the stock ESP32 image
+  (`esptool.py read_flash`). Flash our build only after the checks above;
+  GPL-3.0 allows it (3.26).
 * In code: **done 2026-09-30** (`PLAN-ros-alignment.md` 3.25) -- the encoder
   constant is **660** everywhere, `sim/fake_esp32.py` is the ROS Driver, and
   `robot/hardware_robot.py` anchors its speed integral on `odl`/`odr` (whole

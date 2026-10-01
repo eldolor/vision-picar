@@ -2497,6 +2497,92 @@ PID deadband; whether the real firmware's loop and feedback timing match the
 fake's 10 ms / 50 ms; and using `gz` -- a candidate next phase if direct-mode
 turns on the car need better than +/- 2.5 deg.
 
+### 3.26 Waveshare's own code, audited (2026-10-01) -- for the user to decide, NOT built
+
+**Asked by the user:** what in Waveshare's code could replace code of ours,
+is it any good, could we write it better, and may we flash our own firmware.
+Read from source, three repositories:
+
+* `waveshareteam/ugv_base_ros` @ `2e7df97` -- the ROS Driver board's ESP32
+  firmware. **C++ as an Arduino sketch** (`ROS_Driver.ino` + ~20 headers, on
+  Espressif's Arduino core / ESP-IDF / FreeRTOS). **GPL-3.0.**
+* `waveshareteam/ugv_ws` @ `f0b3ad9` -- the kit's ROS 2 Humble workspace for
+  the Jetson. Waveshare's own packages declare `<license>TODO</license>` and
+  the repo has no root licence, so **no right to copy them**; bundled
+  third-party packages carry their own (BSD, MIT, GPL, LGPL, CC-NC).
+* `waveshareteam/ugv_jetson` -- the kit's stock Flask/Jupyter app.
+  **AGPL-3.0.**
+
+**"ROS Driver" is a board name, not a description.** The firmware contains no
+ROS (no micro-ROS, no rosserial): newline-delimited JSON on UART0, plus HTTP
+and ESP-NOW. ROS starts on the Jetson, where `ugv_bringup.py` turns `T:1001`
+into `imu/data_raw`, `imu/mag`, `odom/odom_raw` and `voltage`, and
+`ugv_driver.py` turns `cmd_vel` into `{"T":13,"X":..,"Z":..}`. Both open
+**`/dev/ttyTHS1`** on a Jetson -- the 40-pin header UART -- which is the best
+evidence yet for how the kit wires the board.
+
+**Findings:**
+
+| Waveshare component | Verdict | Why |
+|---|---|---|
+| `ugv_bringup.py` + `ugv_driver.py` (JSON <-> ROS) | **Do not use** | They own the serial port and pass `cmd_vel` straight to the motors, which takes `robot/safety.py` out of the path (3.16's reason for owning the port in `robot/hardware_robot.py`). Also weaker than ours: a 1 ms ROS timer that blocks on a serial `readline()` (stalls the executor), stamps at receipt rather than by frame, ignores the measured `L`/`R` speeds, and flushes the whole input buffer on one bad line. **Keep:** the IMU scale factors, accel `/8192` g, gyro `/16.4` LSB per deg/s, mag `x0.15` uT -- facts about the board, read from their code `[V]`, to confirm against the ICM-20948 configuration on the car |
+| `ugv_base_node/base_node.cpp` (odometry) | **Do not use** | Integrates whole-centimetre `odl`/`odr` directly, so one count turns the heading by 0.01 / 0.175 rad = **3.3 deg**. First callback differences against an uninitialised `pre_odl` and a zero `last_time_`; "IMU present" is tested as `imu_yaw != 0`; publishes the IMU quaternion as orientation even when position was integrated on odometry yaw; covariance 1e-9 while stopped; track 0.175 m hard-coded against the firmware's 0.172. Ours (`hardware_robot.py`'s anchored integral -> `diff_drive_controller`) measured worst 1.02 cm in 3.25 |
+| `ugv_description/urdf/ugv_rover.urdf` | **Reuse the numbers** (BSD) | CAD-derived offsets for this exact kit; they resolve most of the xacro's `[PLACEHOLDER]`s -- table below |
+| `ugv_else/ldlidar` (LDROBOT's driver) | **Candidate for the car's lidar** (MIT) | Supports LD19 at 230400 baud on `/dev/ttyACM0`; the D500 is LDROBOT's STL-19P, expected to speak the same protocol `[I]`. Bears on open question 5: run it as the `/scan` source, or port its small parser into the robot server so `safety.py` does not depend on the container |
+| `ugv_bringup/param/ekf.yaml` + `imu_filter_param.yaml` | **Take the idea, not the file** | `robot_localization` EKF fusing wheel odometry with the gyro, after `imu_filter_madgwick` -- the fix 3.25 named for turn scatter. Unlicensed as Waveshare's file; the configuration itself is upstream-documented |
+| `ugv_nav/param/*.yaml` (nav2) | **Do not copy** | `robot_radius: 0.1` for a 0.253 x 0.231 m body whose corners reach ~0.171 m, so its plans clip furniture. R6 plans with the real rectangle |
+| `explore_lite` (BSD) | Already decided | Open question 6 puts exploration in the brain |
+| `rf2o_laser_odometry` (GPL-3.0) | Optional | Lidar odometry; SLAM already corrects drift (R5) |
+| `ugv_jetson` stock app (AGPL-3.0) | **Disable on arrival** | Replaced by this stack; if it starts at boot it holds the serial port |
+| Firmware safety | **Keep the heartbeat as a backstop; nothing replaces `safety.py`** | The board sees no obstacle (lidar and cameras are on the Jetson). Its heartbeat (`T:136`, default 3000 ms) zeroes the wheel speed once on silence; `hardware_robot.py` already sets it to 1500 ms, above the robot server's 1 s watchdog. **`T:0` "emergency stop" releases the RoArm-M2 arm's servo torque, not the wheels** -- never rely on it (our backend does not send it) |
+
+**The URDF's numbers, measured from the floor** (`base_link` is 0.080 m up;
+x forward of the wheel centre; CAD, not yet measured on the car):
+
+| | Waveshare URDF | our xacro | effect |
+|---|---|---|---|
+| wheel axle height | 0.039 m (radius ~0.040) | radius 0.040 `[BOM]` | agrees |
+| wheel centres, side to side | **0.1745 m** | `wheel_separation` 0.172 (firmware `TRACK_WIDTH`) | 1.5% apart; the effective skid-steer track is measured on the car anyway |
+| wheelbase (driven wheels) | 0.171 m (+/-0.0855) | -- | rotation centre at the middle `[I]` holds |
+| lidar | x **+0.040**, **0.120 m** up, **yawed +90 deg** | `laser_z` placeholder | a 90-degree mounting yaw means the scan's zero is the robot's left; TF must carry it or every bearing is wrong |
+| OAK-D (`3d_camera_link`) | x +0.065, 0.102 m up | -- | fixed depth camera |
+| pan axis | x **-0.009** | `pan_x` +0.080 placeholder | **nearly over the rotation centre** -- R3's criterion 4 failed on an 8 cm offset (4.6 deg at 1 m); on this chassis it may be moot. Re-run that test with these numbers |
+| pan joint / tilt axis | 0.168 m / 0.211 m up; tilt -30 to +90 deg | `pan_z`, `camera_up` placeholders | the pan-tilt camera is ~0.21-0.23 m off the floor `[I]`, double Stage 0's 10-13 cm rig height |
+
+The URDF carries both a fixed 3D camera and a pan-tilt camera, and four
+wheels for a six-wheel body; which sensors this kit has is an arrival check.
+
+**May we flash our own firmware? Yes.** GPL-3.0 allows modifying the firmware
+and running it on your own device; its obligations start only when the
+binary is *conveyed* to someone else (then our changed source goes with it).
+In practice: dump the stock image first (`esptool.py read_flash`), flash only
+after the 30-day-window arrival checks (`JETSON-BOM.md` 9.5), and Waveshare's
+ESP32 Download Tool restores stock. Build with "ESP32 Dev Module" (the chip
+is the original ESP32 -- `GUIDE-robot-base.md` section 1).
+
+**Firmware changes worth making, smallest first** -- each is a new field, so
+stock tools that read `odl`/`odr` keep working:
+
+1. **Odometers in millimetres.** The firmware holds `en_odom_l`/`_r` as float
+   metres and truncates them to whole centimetres on output
+   (`ugv_advance.h:410-414`). Sending mm (or raw pulse counts) removes the
+   centimetre anchor 3.25 had to build around. One line per wheel.
+2. **A timestamp.** `"ms": millis()` in `T:1001`. 3.25's failed criterion --
+   turns scatter sd 1.3-1.8 deg against a +/- 1 bar -- was traced to frames
+   carrying no time of measurement. One line.
+3. **On-board yaw** (larger): the ICM-20948's DMP quaternion code is present
+   and commented out. The host-side gyro (`gz`) path is the cheaper first
+   step.
+
+Wire budget for all of it: a `T:1001` line is ~150 bytes, ~13 ms at 115200
+baud; at 20 Hz that is ~26% of the link, so two short fields fit.
+
+**Proposed order:** (1) the URDF's numbers into the xacro, tagged `[CAD]`,
+and R3's criterion 4 re-run; (2) firmware changes 1-2 as one small fork,
+mirrored in `sim/fake_esp32.py` first and flashed after the arrival checks;
+(3) `gz` into `hardware_robot.py` or an EKF; (4) the lidar driver, once open
+question 5 is settled. Each gets criteria before it is built.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.

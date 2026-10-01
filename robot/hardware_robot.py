@@ -3,8 +3,11 @@ robot/hardware_robot.py
 
 Phase R7 (`PLAN-ros-alignment.md` 3.16), redone for the UGV Rover in 3.25 --
 the real robot's MOTORS, as a `RobotInterface` backend: the Rover's ESP32
-board (the Waveshare **ROS Driver**, `ugv_base_ros`) over USB serial,
-newline-delimited JSON at 115200 baud.
+board (the Waveshare **ROS Driver**, `ugv_base_ros`) over serial,
+newline-delimited JSON at 115200 baud. The JSON is that firmware's; the line
+is the ESP32's UART0, reached through the board's USB bridge (`/dev/ttyUSB*`)
+or the header UART (`/dev/ttyTHS*`) -- `ROBOT_SERIAL` picks which
+(`GUIDE-robot-base.md` section 1, "Layer 2 on the UGV Rover").
 
 This is the backend `robot/factory.py`'s `mode: hardware` has pointed at
 since Phase 0, and it is why hardware day is a config change: the robot
