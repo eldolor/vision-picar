@@ -406,9 +406,10 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
 * **Within the 30-day return window, on arrival:** a 25 W stress test with
   the motors running, confirm `T:1001` carries `odl`/`odr`, an odometry check
   over a measured metre, and the safety sweep against the real lidar.
-* In code: the encoder constant becomes **660** (the sim and backends still
-  carry 1650 from 3.21), and `robot/hardware_robot.py` should read the ROS
-  Driver's `odl`/`odr` odometry rather than integrating wheel speeds.
+* In code: **done 2026-09-30** (`PLAN-ros-alignment.md` 3.25) -- the encoder
+  constant is **660** everywhere, `sim/fake_esp32.py` is the ROS Driver, and
+  `robot/hardware_robot.py` anchors its speed integral on `odl`/`odr` (whole
+  centimetres, so they bound the drift rather than replace the integral).
 
 ### 9.6 The Cobra Flex, from its firmware source
 

@@ -1794,7 +1794,7 @@ with the camera left at -90 by the chain suite's preempted mission.
 > (`JETSON-BOM.md` section 9). Waveshare has confirmed the kit's **ROS
 > Driver** board (closed loop, encoder odometry to the host) and **660
 > pulses per revolution**: the **1650** below was the open-loop firmware's
-> stale constant and is now due to be corrected.
+> stale constant, corrected to 660 in 3.25.
 
 **Decided by the user** ("let's assume that I am buying the car you
 recommended"; not yet ordered -- Waveshare has been asked whether the kit's
@@ -2339,9 +2339,8 @@ robot, so the brain was refused `preempted` -- correct, and not the test;
 re-run with the authority lapsed.)
 
 **G4 is next and needs the Jetson** (arriving Oct 14-26) and the robot
-base (the Rover, ordered 2026-09-30): `HANDOFF-2026-09-30.md` records its ROS
-Driver board (660 pulses/rev), which G4's `SIM_MOTOR_BOARD=fake` run will
-need to model before it means anything for that chassis.
+base (the Rover, ordered 2026-09-30). The fake board G4 runs against is the
+Rover's ROS Driver since 3.25.
 
 **Then** `mode: hardware` defaults to `drive: ros`, and this section records
 the numbers. Until every gate holds, `direct` stays the default everywhere.
@@ -2423,6 +2422,80 @@ Not modelled, named so nobody assumes it was: the PID's dynamics (the fake
 is an ideal PID) including its `THRESHOLD_PWM` 23 deadband, which may make
 slow pivots stick-slip -- a hardware-day check; the IMU (its fields are
 zeros); battery drain (`v` constant).
+
+**Measured 2026-09-30 -- criteria 1, 2, 4 (corrected), 3 (corrected), 5
+forward and 6 met; criterion 5 FAILED for turns, and why is the finding.**
+Built: `sim/fake_esp32.py` is now the ROS Driver (frame, odometers, measured
+speeds, 20 Hz stream, `T:142`, `T:900`'s three mainTypes, `T:13` not feeding
+the heartbeat, `reboot()`, a lossy wire); `robot/hardware_robot.py` clamps its
+speed integral into each odometer's centimetre (`_anchor()`), takes odometers
+back at zero with the estimate far away as a reboot (`_absorb_reboot()`:
+origin moved, set-up re-sent), and carries positions forward over the last
+frame's age on its measured speeds (`_travel_now_m()`, at most 0.1 s); 660 in
+all three places. `tests/test_ros_driver_board.py`; red first on the General
+Driver fake (15 of 16 criterion-1/2 tests -- the 16th passed vacuously, no
+frames, and was fixed) and on the old host against the new fake.
+
+| criterion | old host, new fake | 3.25 |
+|---|---|---|
+| 3 worst error, 30 s stop-go, 5% lines lost | **9.57 cm** (speed integral alone) | within the corrected bar every frame; worst 1.02 cm where `odl` != 0, 1.63 cm where `odl` = 0 |
+| 4 reboot mid-drive | travel jumps with the odometer; heartbeat stays 3000 ms | one detection, <= 1 cm move, heartbeat back to 1500 ms; 8/8 runs |
+| 5 clear FORWARD, 30 cm | 30.6 - 32.8 cm | within +/- 1 cm, 5 of 5 |
+| 5 clear turns 15/45/90 deg | up to +5.9 deg, mostly over | **unbiased (mean -0.5..+0.5), sd 1.3-1.8, p95 2.3-3.5, worst 4.2 deg over 120 turns -- bar was +/- 1: FAILED** |
+
+**Corrections, made after the first run and recorded as such** (thresholds
+not moved where the instrument can meet them):
+
+* **Criterion 3's "1.0 cm" assumed every odometer bucket is a centimetre.**
+  `odl` truncates toward zero, so 0 means (-1, 1) cm -- two -- and the
+  odometer is built from whole encoder edges (0.038 cm) while the truth is
+  continuous. The bar is now the bucket plus one edge: 1.04 cm, 2.04 cm at
+  zero. Every excess over 1.0 seen was one of those two (`odl` 0: 1.29, 1.03,
+  1.63; elsewhere: 1.015 at most).
+* **Criterion 4's "within criterion 3's bound after it" is unreachable by
+  information:** a reboot erases the board's absolute reference, so whatever
+  error the estimate carried at that instant -- at most the bound it was under
+  -- stays in the origin. The bar after a reboot is the bound plus that.
+* **The test harness lied once, as the handoff warned they do:** the first
+  non-blocking fake could write a PARTIAL line under load, garbling the next
+  frame and shifting the frame-to-truth alignment -- one seed read 4.6 cm on
+  454 frames. The fake now queues whole lines and loses them whole.
+
+**Found and fixed on the way:** with streaming on from boot, a blocking pty
+write stalled the fake's firmware loop while holding its lock whenever the
+host stopped reading (the real board's USB bridge drops instead); and the
+first reboot rule ("odometer > 3 cm from the estimate") fired falsely in 1 of
+6 runs -- lost lines plus bunched arrival moved the odometer 7 -> 11 cm between
+two frames the host integrated. A reboot now also needs both odometers within
++/- 1 cm of zero (the board stops its motors as it boots, so its first frame
+does read zero); `test_4_a_far_odometer_away_from_zero_is_drift_not_a_reboot`
+pins it, red without the guard.
+
+**Criterion 5, turns: the finding.** Diagnosed by removing one cause at a
+time, eight turns per angle each: exact (unquantised) speeds from the fake,
++/- 1.7 deg; exact speeds AND no anchor, +/- 2.5; no extrapolation, +3 to +5
+deg (that half is fixed); a slowed final approach (5 deg at quarter speed, 3
+deg at 0.15), no better. What is left is the host's clock: the `1001` frame
+carries **no timestamp**, so the host integrates over the times frames
+ARRIVE, and that jitter around a speed step is a few millimetres per wheel in
+opposite directions -- 1.5-2.5 degrees on a 17 cm track. No host-side change
+removes it. On the car, heading wants the gyro (`gz` is in the same frame)
+or SLAM (R5) -- which `drive: ros` already has. Pinned: the +/- 1 deg test as
+a non-strict xfail with this reason, and a guard that stays green: the mean of
+ten turns within 2.0 deg (3.5 standard errors of the measured sd), none past
+6 deg -- it catches the systematic +3 to +5 the stale frame caused. (A first
+guard sized from six turns -- mean 1.5, max 4 -- flaked 1 run in 20 and was
+resized from the 120-turn sample.)
+
+**Mutation checks** (each fix removed alone): no anchor -> criteria 3, 4 and
+a turn guard red; no reboot absorption -> both criterion-4 tests red; no
+set-up re-send -> its test red; no extrapolation -> criterion 5 forward and
+the turn guards red.
+
+**Not done here, still due on the car:** `wheel_separation_multiplier`; the
+PID deadband; whether the real firmware's loop and feedback timing match the
+fake's 10 ms / 50 ms; and using `gz` -- a candidate next phase if direct-mode
+turns on the car need better than +/- 2.5 deg.
 
 ## 4. Honest residue -- what the twin cannot tell you
 

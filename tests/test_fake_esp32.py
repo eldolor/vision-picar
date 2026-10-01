@@ -133,7 +133,11 @@ def test_wheels_over_the_wire():
         truth = body.get_wheel_state()["left"]["position_rad"] - truth0
         est = robot.get_wheel_state()["left"]["position_rad"] - est0
         assert moved_m == pytest.approx(3.0 * WHEEL_RADIUS_M * commanded_s, rel=0.05)
-        assert est == pytest.approx(truth, rel=0.02)
+        # Within the centimetre the board's odometer allows, plus one edge
+        # (3.25 criterion 3). This was rel=0.02 against the General Driver
+        # fake, which reported perfect speeds; the ROS Driver's measured
+        # speeds and whole-centimetre odometers do not resolve finer.
+        assert abs(est - truth) * WHEEL_RADIUS_M <= 0.0104, (est, truth)
     finally:
         robot.close()
         b.close()
