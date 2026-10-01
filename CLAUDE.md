@@ -207,7 +207,9 @@ still load-bearing:
   Ubuntu 22.04 / ROS 2 Humble. **The dev kit ARRIVED 2026-09-30**
   (Amazon, $399, ordered 09-27) and is kept UNOPENED until the Rover
   arrives, by the user's decision -- Amazon's return window closes ~Oct 30,
-  possibly before the Rover (Oct 19 - Nov 11). It is `JETSON-BOM.md` section 1's
+  possibly before the Rover (Oct 19 - Nov 11). **It will run at 15 W to
+  start** (user, 2026-10-01), which makes the separate Jetson battery
+  conditional on the arrival stress test (`JETSON-BOM.md` 9.5). It is `JETSON-BOM.md` section 1's
   "buy regardless" line. **The chassis was ORDERED 2026-09-30** -- the
   Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce, Amazon, ~$730
   delivered, expected Oct 19 - Nov 11, 30-day return. A

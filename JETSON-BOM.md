@@ -394,7 +394,17 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
 
 ### 9.5 Now that the Rover is ordered (2026-09-30)
 
-* Buy a **separate Jetson battery** (e.g. Wheeltec E351S, 3S 5100 mAh with a
+* **The Jetson runs at 15 W to start** (user, 2026-10-01; the GUIDE's own
+  advice: 15 W first, step up only if brownouts are absent). At ~11 V that
+  is ~1.4 A, ~2.7 A with the motors' ~15 W peak -- inside the 5 A Waveshare
+  says the kit's UPS sustains. **So the separate battery below is now
+  CONDITIONAL:** run the arrival stress test at 15 W with the motors
+  working hard, logging the Jetson's input voltage; buy the battery only if
+  it sags, or before ever moving to 25 W. Perception is slower at 15 W
+  (NVIDIA: ~40 TOPS against ~67), by an amount to be measured on the board
+  -- P7b found preprocessing, not the model, dominates, so it may be less
+  than that ratio.
+* *(Conditional, see above)* Buy a **separate Jetson battery** (e.g. Wheeltec E351S, 3S 5100 mAh with a
   protection board and charger, ~EUR 85) and a **fused male 5.5 x 2.1 to male
   5.5 x 2.5 mm cable** (~5 A fuse) -- a cable, not an "adapter", because the
   E351S output is a female socket. **Unplug the kit's own DC5525 Jetson
@@ -403,8 +413,9 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
   ordered.**
 * Use **4C-rated 18650s** in the Rover's own holder, if the kit arrives
   without cells.
-* **Within the 30-day return window, on arrival:** a 25 W stress test with
-  the motors running, confirm `T:1001` carries `odl`/`odr`, an odometry check
+* **Within the 30-day return window, on arrival:** a stress test at the
+  power mode in use (15 W to start) with the motors running and the input
+  voltage logged, confirm `T:1001` carries `odl`/`odr`, an odometry check
   over a measured metre, and the safety sweep against the real lidar. Also
   read the ESP32 module's shield (expected: ESP32-WROOM-32, the original
   ESP32, inferred from the firmware's pin map) and note which serial route
