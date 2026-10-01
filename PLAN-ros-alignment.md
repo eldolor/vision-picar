@@ -2583,6 +2583,79 @@ mirrored in `sim/fake_esp32.py` first and flashed after the arrival checks;
 (3) `gz` into `hardware_robot.py` or an EKF; (4) the lidar driver, once open
 question 5 is settled. Each gets criteria before it is built.
 
+### 3.27 The Rover's CAD geometry, and the lidar off-centre end to end (2026-10-01): criteria, written before building
+
+**Asked by the user:** "start on the plan" -- 3.26's step 1. Reading the code
+first turned a number swap into a phase: `robot/safety.py`, `brain/arrival.py`
+and the sim's `get_scan()` all assume **the lidar sits at the rotation
+centre**, and the Rover's CAD puts it **4.0 cm ahead**. Put the CAD number
+into the URDF alone and TF would place every sim scan 4 cm from where the sim
+cast it; leave it out and the car's safety layer is wrong by 4 cm -- in the
+UNSAFE direction astern and on pivots, where a return 4 cm nearer the rear
+bumper than the code believes is 4 cm of room that does not exist. So the
+offset goes in everywhere at once, as one number.
+
+**Values, from Waveshare's `ugv_rover.urdf`** (`ugv_ws` @ `f0b3ad9`, BSD,
+forward kinematics computed here), converted to our frames -- `base_link` at
+the rotation centre, 0.040 m above the floor:
+
+| property | was | becomes | tag |
+|---|---|---|---|
+| `axle_x` | 0.0 | 0.0 (wheels symmetric at +/-0.0855) | `[CAD]` |
+| `laser_x` (new) | -- (0) | **0.040** | `[CAD]` |
+| `laser_z` | 0.100 | **0.080** (lidar 0.120 m off the floor) | `[CAD]` |
+| `pan_x` | 0.080 | **-0.009** | `[CAD]` |
+| `pan_z` | 0.070 | **0.128** (pan joint 0.168 m off the floor) | `[CAD]` |
+| `camera_x` (new) | -- (0) | **0.048** (lens ahead of the pan axis) | `[CAD]` |
+| `camera_up` | 0.0175 | **0.042** (lens 0.210 m off the floor) | `[CAD]` |
+| `camera_pitch`, `pan_limit`, `deck_height` | | unchanged | `[PLACEHOLDER]` |
+
+Not taken: the lidar's **+90-degree mounting yaw**. The sim's scan and the
+bridge publish `laser` with zero ahead; adding the yaw to the URDF without the
+sim casting in that frame would rotate every sim scan a quarter-turn. On the
+car it is the D500 driver's angle offset or this joint -- a hardware-day item,
+recorded in the xacro beside `laser_x`.
+
+**Acceptance criteria:**
+
+1. **The xacro is the CAD.** Each `[CAD]` value equals the conversion above
+   within 1 mm, pinned by a test that carries Waveshare's numbers as literals
+   with their source and commit.
+2. **One lidar offset.** `laser_x` in the xacro, the sim's scan origin and
+   `robot/safety.py`'s offset are one number, enforced by
+   `tests/test_wall_linters.py` (a registry entry, inside the existing
+   budget or the budget raised in this entry with the reason).
+3. **The sim casts from the laser frame.** Every beam of `MockRobot.get_scan()`,
+   placed through the URDF's `base_link -> laser` transform, ends on a true
+   surface of the layout within 1 cm (ground-truth geometry, not
+   `cast_ray()`), at 24 headings in two houses. Confirmed red against the
+   unchanged sim.
+4. **Safety reads the body frame.** Every scan consumer that judges distance
+   to the chassis -- `footprint_clearance`, `pivot_blocked`/`pivot_scale`,
+   `rear_clearance`, and `brain/arrival.py`'s range -- converts returns to
+   `base_link` through the offset. **3.18's and 3.19's ground-truth bars
+   hold with the offset lidar**: 0 runs under 18 cm of travel-to-contact and
+   0 contacts (`tests/footprint_sweep.py`, the 3.18 sample), 0 pivots within
+   1 cm (3.19), progress no worse than 1 point below 3.18's 98.8%. **And a
+   mutation shows it mattered:** the same sweeps with the offset in the sim
+   but NOT in safety fail at least one bar -- or, if none fails, that is
+   recorded as the finding (4 cm absorbed by the margins) rather than
+   tuned until one does.
+5. **Arrival unchanged in outcome:** 3.11's sweep still ends `found` on
+   69/69 at perfect detection and >= 99% at 90% detection, none beyond
+   0.40 m measured from `base_link`.
+6. **R3's criterion 4, re-measured** with the CAD pan axis and lens offset,
+   and the shortcut measured from `camera_link` (the lens) rather than
+   `pan_link` -- identical for the old geometry, where they coincided, which
+   a check confirms. **Pass if under 3 degrees for every target at >= 1 m**,
+   unchanged. If it passes, the strict xfail comes off; if not, the table is
+   recorded.
+7. **SLAM still maps:** one live R5 lap (`tests/demo_slam_lap.py`, drift on)
+   ends with SLAM within R5's recorded 1-4.5 cm and the map within its
+   96-100% of occupied cells near a true surface. A scan placed 4 cm wrong
+   would show here first.
+8. Whole suite green from `.venv`.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
