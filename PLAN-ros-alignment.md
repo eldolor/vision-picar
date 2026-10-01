@@ -2578,7 +2578,8 @@ Wire budget for all of it: a `T:1001` line is ~150 bytes, ~13 ms at 115200
 baud; at 20 Hz that is ~26% of the link, so two short fields fit.
 
 **Proposed order:** (1) the URDF's numbers into the xacro, tagged `[CAD]`,
-and R3's criterion 4 re-run; (2) firmware changes 1-2 as one small fork,
+and R3's criterion 4 re-run -- **done as 3.27**, which found the lidar offset
+reaches the safety layer; (2) firmware changes 1-2 as one small fork,
 mirrored in `sim/fake_esp32.py` first and flashed after the arrival checks;
 (3) `gz` into `hardware_robot.py` or an EKF; (4) the lidar driver, once open
 question 5 is settled. Each gets criteria before it is built.
@@ -2655,6 +2656,84 @@ recorded in the xacro beside `laser_x`.
    96-100% of occupied cells near a true surface. A scan placed 4 cm wrong
    would show here first.
 8. Whole suite green from `.venv`.
+
+**Measured 2026-10-01 -- six met, criterion 7 met on the map and marginal on
+position, criterion 3 amended for the march:**
+
+1. **Met.** Seven `[CAD]` values within 1 mm of Waveshare's forward
+   kinematics (`tests/test_cad_geometry.py`).
+2. **Met.** `laser_x` = `LIDAR_X_M` = the sim's scan origin; registered in
+   `tests/test_wall_linters.py`, **budget raised 10 -> 11** (the offset must
+   exist on both sides: TF places scans with it, and `safety.py` judges them
+   before ROS, 3.16).
+3. **Met, with an amendment written down before the bar was moved.** The
+   instrument was checked first: with no offset on either side, 0 of 67,000
+   exact-cast beams miss a true surface; with the offset in the truth but
+   not the sim, 87% miss. After the fix, 0 miss at 1 cm. **The full scan**
+   (SLAM's, the ray march) cannot meet 1 cm: it over-reads by up to ~1.5 cm
+   and slips past diagonal corners on 0.1-0.2% of beams from any origin
+   (3.18). It is held to 2 cm and a 0.2% slip rate: **0.09% / 0.15%** after
+   the fix, **67% / 68%** cast from the centre, 0.07% for a centre-cast
+   control against a centre truth.
+4. **Met, and the mutation shows it mattered** (60 starts, three houses):
+
+   | | fixed | `safety.py` still assuming a centred lidar |
+   |---|---|---|
+   | runs under 18 cm travel-to-contact (of 2880) | **0** | **177**, worst 15.7 cm, all astern |
+   | runs touching | 0 | 0 |
+   | progress | 98.4% | 98.3% |
+   | pivots touching (of 120) | **0**, worst gap 1.03 cm | **56**, contact |
+   | pivots with room that turned into it | 100% | 83% |
+
+   On the car, before this phase, the safety layer would have backed the
+   Rover to within 15.7 cm and swung its corners INTO furniture on almost
+   half of close pivots. `LIDAR_TO_REAR_BUMPER_CM` is now derived (12.65 +
+   4.0 = 16.65 cm; it was 15.0, half the old sim's 30 cm robot).
+
+   **One threshold moved after seeing data, recorded as such.** The whole
+   suite then found one of 3.22's 96 guarded turns coming to **0.96 cm**
+   against its 1.0 cm bar (scaled house, a LEFT 90 with 52 degrees of
+   room). Cause: with the lidar 4 cm ahead, the rear corners are read from
+   ~4 cm farther, and adjacent 1-degree beams land ~0.07 cm further apart
+   there -- 3.19 had set `PIVOT_MARGIN_CM` = 1.2 empirically with a centred
+   lidar and a closest pivot of 1.02 cm, no slack for that. Raised to
+   **1.3** (1.2 plus that spacing, rounded up). Re-measured: 0/96 guarded
+   turns within 1 cm (worst 1.1), 0/120 pivots touching (worst 1.03), every
+   pivot with room turned into it, and 3.22's other bars unchanged (0/192
+   verbs under 18 cm, clear moves 98.9% whole, clear turns 100%).
+5. **Met.** 69/69 arrivals `found` at perfect detection, 669/669 at 90%,
+   664/666 at 80% (3.11: 676/678 over both); no `found` farther than 0.30 m
+   centre to goal.
+6. **Met -- R3's criterion 4 now PASSES.** The instrument reproduces 3.12's
+   table exactly on the old geometry, from `pan_link` and from
+   `camera_link` alike. On the CAD (pan axis 0.9 cm behind the centre, lens
+   4.8 cm ahead of it), the worst shortcut error over pan -90..90 is
+   **1.89 deg at 1 m** (was 4.59), 1.25 at 1.5 m, 5.01 at 0.4 m; centred,
+   0.32 deg at 0.4 m. The strict xfail is gone. What still holds: a panned
+   bearing under 1 m is several degrees out, and the sim renders from the
+   centre, so it cannot show even this.
+7. **Map met, position marginal.** Four laps each, fresh robot and
+   container, drift on, same image apart from the URDF:
+
+   | | SLAM final (cm) | worst at rest (cm) | map precision | blocked moves |
+   |---|---|---|---|---|
+   | control (pre-3.27) | 1.5, 1.8, 3.0, 3.6 | 2.9-4.4 | 100% x4 | 12 x4 |
+   | offset lidar | **4.7**, 4.0, 2.6, 2.8 | 3.8-6.3 | 100% x4 | 12 x4 |
+
+   Three of four laps end inside R5's 1-4.5 cm; the first ended at 4.7. The
+   means differ by ~1 cm and the ranges overlap; whether the off-centre
+   sensor costs SLAM a centimetre or this is lap-to-lap noise is **not
+   established** at n=4. Odometry alone ends 8.8 cm off on every lap. The 12
+   blocked moves are the same in both arms: the Rover in the starter house's
+   30 cm doors (3.21), not this phase.
+8. **Met:** the whole suite green from `.venv`, with the live ROS stack up
+   (its TF tests pass on the rebuilt image). Three tests compared beams
+   with a cast from the robot's centre and now cast from the lidar.
+
+**Still due on the car:** the lidar's +90-degree mounting yaw (D500 driver
+angle offset, or this joint once the sim publishes in that frame); a tape
+measure on every `[CAD]` value; and the tilt joint, which the URDF does not
+model (the pan-tilt's tilt is a second servo).
 
 ## 4. Honest residue -- what the twin cannot tell you
 

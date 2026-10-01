@@ -110,6 +110,23 @@ def live():
     _bridge("/pan", {"angle_rad": 0.0})
 
 
+@pytest.fixture(scope="module")
+def urdf():
+    """The REPO's xacro, expanded in the ROS image -- not the copy installed
+    in it, which is only as new as the last image build. No bridge needed:
+    criterion 4 is geometry."""
+    if not shutil.which("docker"):
+        pytest.skip("docker is needed to expand the xacro")
+    src = XACRO.parent.parent
+    run = subprocess.run(
+        ["docker", "run", "--rm", "-v", f"{src}:/pd:ro", IMAGE, "bash", "-c",
+         "source /opt/ros/humble/setup.bash && xacro /pd/urdf/picar.urdf.xacro"],
+        capture_output=True, text=True)
+    if run.returncode != 0:
+        pytest.skip(f"could not expand the xacro in {IMAGE}: {run.stderr[-300:]}")
+    return ET.fromstring(run.stdout)
+
+
 def _rot(rpy):
     r, p, y = rpy
     rx = np.array([[1, 0, 0], [0, math.cos(r), -math.sin(r)], [0, math.sin(r), math.cos(r)]])
@@ -184,41 +201,46 @@ def test_published_tf_matches_the_urdf(live, frame, pan_deg):
 
 # ---------- criterion 4: how wrong is the hand shortcut ----------
 
-def shortcut_error_deg(urdf, pan_deg, target_body_deg, range_m):
+def shortcut_error_deg(urdf, pan_deg, target_body_deg, range_m, frame="camera_link"):
     """The project's shortcut composes a panned bearing as pan + in-frame
-    azimuth, measured from the PAN AXIS; the truth is the bearing from
-    base_link. Both in the project's clockwise-positive convention."""
+    azimuth, the azimuth measured at the LENS (`camera_link`); the truth is
+    the bearing from base_link. Both in the project's clockwise-positive
+    convention. (3.12 measured at `pan_link`, which was the lens's x/y while
+    the lens sat on the pan axis; 3.27's CAD puts it 4.8 cm ahead of it.)"""
     pan = -math.radians(pan_deg)                       # ROS joint: CCW-positive
-    T = fk(urdf, "pan_link", joints={"pan_joint": pan})
+    T = fk(urdf, frame, joints={"pan_joint": pan})
     b = -math.radians(target_body_deg)                 # CCW angle in base_link
     p_body = np.array([range_m * math.cos(b), range_m * math.sin(b), T[2, 3], 1.0])
-    p_pan = np.linalg.inv(T) @ p_body
-    in_frame_cw = -math.degrees(math.atan2(p_pan[1], p_pan[0]))
+    # Azimuth in the lens's own horizontal plane: the pan yaw only, so the
+    # camera's downward pitch does not leak into a horizontal bearing.
+    yaw = math.atan2(T[1, 0], T[0, 0])
+    dx, dy = p_body[0] - T[0, 3], p_body[1] - T[1, 3]
+    in_frame_cw = -math.degrees(math.atan2(-math.sin(yaw) * dx + math.cos(yaw) * dy,
+                                           math.cos(yaw) * dx + math.sin(yaw) * dy))
     shortcut = pan_deg + in_frame_cw
     return abs((shortcut - target_body_deg + 180) % 360 - 180)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "R3 criterion 4 FAILED as measured (PLAN-ros-alignment.md 3.12): with the "
-    "pan axis 8 cm ahead of base_link the shortcut is 4.6 deg out at 1 m and "
-    "90 deg of pan. Strict, so moving the pan axis over the rotation centre "
-    "turns this into a failure that asks for the plan to be updated."))
-def test_the_hand_shortcut_is_inside_the_steering_band_beyond_a_metre(live):
+def test_the_hand_shortcut_is_inside_the_steering_band_beyond_a_metre(urdf):
+    """R3 criterion 4. FAILED on 3.12's placeholder (pan axis 8 cm ahead:
+    4.59 deg at 1 m); PASSES on the Rover's CAD (3.27: axis 0.9 cm behind,
+    lens 4.8 cm ahead of it): worst 1.89 deg at 1 m, 5.01 at 0.4 m."""
     worst = {}
     for pan_deg in range(-90, 91, 15):
         for off in range(-30, 31, 5):                  # targets within the view
             for range_m in (0.4, 0.7, 1.0, 1.5, 2.0, 3.0):
-                e = shortcut_error_deg(live, pan_deg, pan_deg + off, range_m)
+                e = shortcut_error_deg(urdf, pan_deg, pan_deg + off, range_m)
                 worst[range_m] = max(worst.get(range_m, 0.0), e)
     print("\nshortcut error, worst over pan and target bearing:",
           {r: round(e, 2) for r, e in sorted(worst.items())})
     assert all(e < 3.0 for r, e in worst.items() if r >= 1.0), worst
 
 
-def test_a_centred_target_is_safe_to_read_with_the_shortcut(live):
+def test_a_centred_target_is_safe_to_read_with_the_shortcut(urdf):
     """What the tier and brain/arrival.py actually rely on: camera centred,
     target inside the 3-degree steering band. Measured worst 0.75 degree at
-    0.4 m -- well inside the band, so the final approach is sound."""
-    worst = max(shortcut_error_deg(live, 0, off, r)
+    0.4 m on 3.12's placeholder, 0.32 on the CAD (3.27) -- well inside the
+    band, so the final approach is sound."""
+    worst = max(shortcut_error_deg(urdf, 0, off, r)
                 for off in range(-3, 4) for r in (0.4, 0.7, 1.0, 2.0, 3.0))
     assert worst < 1.0, worst

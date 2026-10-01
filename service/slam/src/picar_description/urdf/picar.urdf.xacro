@@ -25,12 +25,18 @@
   <xacro:property name="wheel_width"       value="0.0425"/> <!-- [BOM] 42.5 mm tyres -->
   <xacro:property name="body_length"       value="0.253"/>  <!-- [BOM] outer, 253 x 231 mm: the FOOTPRINT nav2 and robot/safety.py use -->
   <xacro:property name="body_width"        value="0.231"/>  <!-- [BOM] outer; the shell, not the wheels, sets the width -->
+  <!-- [CAD] values are Waveshare's ugv_rover.urdf (ugv_ws @ f0b3ad9, BSD),
+       converted to these frames in PLAN-ros-alignment.md 3.27 and pinned by
+       tests/test_cad_geometry.py. CAD, not a tape measure: re-measure on
+       the car. -->
   <xacro:property name="deck_height"       value="0.040"/>  <!-- [PLACEHOLDER] chassis plate ~40 mm (CLAUDE.md Stage 0) -->
-  <xacro:property name="axle_x"            value="0.0"/>    <!-- [PLACEHOLDER] drive axle under the deck centre -->
-  <xacro:property name="laser_z"           value="0.100"/>  <!-- [PLACEHOLDER] lidar above base_link, deck centre -->
-  <xacro:property name="pan_x"             value="0.080"/>  <!-- [PLACEHOLDER] pan axis ahead of base_link -->
-  <xacro:property name="pan_z"             value="0.070"/>  <!-- [PLACEHOLDER] -->
-  <xacro:property name="camera_up"         value="0.0175"/> <!-- [PLACEHOLDER] lens above the pan joint: camera 0.12 m off the floor -->
+  <xacro:property name="axle_x"            value="0.0"/>    <!-- [CAD] driven wheels symmetric at +/-0.0855 m about the centre -->
+  <xacro:property name="laser_x"           value="0.040"/>  <!-- [CAD] lidar ahead of base_link; = robot/safety.py LIDAR_X_M and the sim's scan origin. The D500 is also mounted YAWED +90 deg (its zero faces left): not modelled, because the sim publishes the scan with zero ahead; a hardware-day item (3.27) -->
+  <xacro:property name="laser_z"           value="0.080"/>  <!-- [CAD] lidar 0.120 m off the floor -->
+  <xacro:property name="pan_x"             value="-0.009"/> <!-- [CAD] pan axis just BEHIND base_link -->
+  <xacro:property name="pan_z"             value="0.128"/>  <!-- [CAD] pan joint 0.168 m off the floor -->
+  <xacro:property name="camera_x"          value="0.048"/>  <!-- [CAD] lens ahead of the pan axis -->
+  <xacro:property name="camera_up"         value="0.042"/>  <!-- [CAD] lens above the pan joint: 0.210 m off the floor -->
   <xacro:property name="camera_pitch"      value="0.2618"/> <!-- [PLACEHOLDER] 15 deg down; the wedge is 10-20 deg, unmodelled -->
   <xacro:property name="pan_limit"         value="1.5708"/> <!-- [PLACEHOLDER] +/-90 deg; ST3215 can do more, the cable cannot -->
 
@@ -85,7 +91,7 @@
   <link name="laser"/>
   <joint name="laser_joint" type="fixed">
     <parent link="base_link"/><child link="laser"/>
-    <origin xyz="${-axle_x} 0 ${laser_z}"/>
+    <origin xyz="${laser_x - axle_x} 0 ${laser_z}"/>
   </joint>
 
   <!-- The camera pans; bearings compose through this joint. -->
@@ -99,7 +105,7 @@
   <link name="camera_link"/>
   <joint name="camera_joint" type="fixed">
     <parent link="pan_link"/><child link="camera_link"/>
-    <origin xyz="0 0 ${camera_up}" rpy="0 ${camera_pitch} 0"/>
+    <origin xyz="${camera_x} 0 ${camera_up}" rpy="0 ${camera_pitch} 0"/>
   </joint>
   <!-- REP-103's optical convention (z forward, x right, y down), for an
        image pipeline that wants it. -->

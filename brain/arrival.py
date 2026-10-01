@@ -34,6 +34,7 @@ import math
 from typing import Optional
 
 from brain.perceive import DETECTED
+from robot.safety import LIDAR_X_M
 
 # Measured, not chosen (3.11): over the 3.5/3.6b starts the scan at the
 # target's bearing reads 0.465 m one move out and 0.165 m where the collar
@@ -124,14 +125,29 @@ class ArrivalCheck:
         window is whatever is nearest NEAR the target; the median is the
         target unless something covers most of the window -- in which case
         the camera could not be seeing past it either."""
+        # In the BODY frame (3.27): the lidar sits LIDAR_X_M ahead of the
+        # centre, so each beam is re-expressed as a bearing and range from
+        # `base_link`, and the window takes the beam nearest each body
+        # bearing. A beam with no return keeps its own angle. With the lidar
+        # at the centre this is exactly the old beam-index lookup.
         ranges = scan["ranges_m"]
         start, step = scan["angle_min_deg"], scan["angle_increment_deg"]
+        off = LIDAR_X_M
+        body = []
+        for i, r in enumerate(ranges):
+            a = start + i * step
+            if r is None:
+                body.append((a, math.inf))
+                continue
+            x = r * math.cos(math.radians(a)) + off
+            y = r * math.sin(math.radians(a))          # clockwise-positive, as the scan
+            body.append((math.degrees(math.atan2(y, x)), math.hypot(x, y)))
         window = []
         for k in range(-ARRIVAL_BEAM_HALF_DEG, ARRIVAL_BEAM_HALF_DEG + 1):
-            i = int(round((bearing_deg + k - start) / step)) % len(ranges)
-            window.append(math.inf if ranges[i] is None else ranges[i])
+            want = bearing_deg + k
+            window.append(min(body, key=lambda b: abs((b[0] - want + 180.0) % 360.0 - 180.0))[1])
         middle = sorted(window)[len(window) // 2]
-        return None if math.isinf(middle) else middle
+        return None if math.isinf(middle) else round(middle, 4)
 
 
 def arrived_scene(scene: dict, target: str, readout: dict) -> dict:

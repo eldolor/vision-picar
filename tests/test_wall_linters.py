@@ -58,7 +58,11 @@ CONSUMER_DIRS = PROJECT_DIRS + ("tests", "web-twin")
 # ---------- budgets: raise deliberately, never to make a test pass ----------
 
 # 2026-09-27: ten concepts, all listed below. An eleventh is a decision.
-MAX_DUPLICATES = 10
+# 2026-10-01 (3.27): eleven -- the lidar's mounting offset. The URDF must
+# carry it (TF places every scan with it) and robot/safety.py must too (it
+# judges distance to the chassis off the scan BEFORE ROS, by design, 3.16),
+# so it cannot live on one side only.
+MAX_DUPLICATES = 11
 # 2026-09-27: thirteen method+path pairs (R4-R6). A fourteenth is a decision.
 MAX_BRIDGE_ROUTES = 13
 
@@ -212,7 +216,17 @@ def _map_thresholds():
     return not offenders, {"thresholds outside world/ros_world.py": offenders}
 
 
+def _lidar_offset():
+    """The lidar sits ahead of base_link (3.27). TF places every beam with
+    the xacro's laser_x; robot/safety.py moves returns into the body frame
+    with LIDAR_X_M, and the sim casts from it."""
+    from robot.safety import LIDAR_X_M
+    values = {"xacro laser_x": _xacro("laser_x"), "robot/safety.py LIDAR_X_M": LIDAR_X_M}
+    return len(set(values.values())) == 1, values
+
+
 DUPLICATES = {
+    "lidar mounting offset": _lidar_offset,
     "wheel radius": _wheel_radius,
     "wheel separation": _wheel_separation,
     "driver priority order (M4 vs twist_mux)": _driver_order,

@@ -416,6 +416,11 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
   `ugv_jetson` app and any `ugv_bringup` / `ugv_driver` service. Only one
   program can hold the serial port, and theirs send `cmd_vel` to the motors
   without `robot/safety.py` (`PLAN-ros-alignment.md` 3.26).
+* **Measure the `[CAD]` geometry** (`PLAN-ros-alignment.md` 3.27): the
+  lidar's offset ahead of the wheel centre (CAD 4.0 cm -- the safety layer
+  depends on it), its height, the pan axis and lens; and which way the
+  D500's zero faces (CAD: turned 90 degrees, to the left), which must go
+  into the driver's angle offset or the URDF before the first scan is used.
 * **Before any firmware change:** dump the stock ESP32 image
   (`esptool.py read_flash`). Flash our build only after the checks above;
   GPL-3.0 allows it (3.26).

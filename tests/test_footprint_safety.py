@@ -162,8 +162,11 @@ def test_a_range_hinted_scan_stops_at_the_hint_and_is_exact(monkeypatch):
     robot = MockRobot(build_world("starter_house"), render=False)
     full, near = robot.get_scan(), robot.get_scan(max_range_m=0.6)
     assert near["range_max_m"] == full["range_max_m"], "the hint trims the call, not the sensor"
+    from robot.safety import LIDAR_X_M      # beams leave the lidar, not the centre (3.27)
+    ox = robot.world.x + LIDAR_X_M / DEFAULT_CELL_M * math.cos(robot.world.theta)
+    oy = robot.world.y + LIDAR_X_M / DEFAULT_CELL_M * math.sin(robot.world.theta)
     for i, r in enumerate(near["ranges_m"]):
-        exact = renderer.cast_ray_exact(robot.world.layout, robot.world.x, robot.world.y,
+        exact = renderer.cast_ray_exact(robot.world.layout, ox, oy,
                                         robot.world.theta + math.radians(-180 + i),
                                         solid=robot.world.solid_cells, max_dist=0.6 / DEFAULT_CELL_M)
         assert r == (None if exact >= 0.6 / DEFAULT_CELL_M else round(exact * DEFAULT_CELL_M, 4))

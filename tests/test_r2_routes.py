@@ -38,11 +38,15 @@ def test_every_beam_is_the_renderers_own_ray():
     built from, so the three cannot disagree about where a wall is."""
     robot = _robot_at(5.5, 7.5, Heading.E)
     scan = robot.get_scan()
+    from robot.safety import LIDAR_X_M
+    ox = robot.world.x + LIDAR_X_M / DEFAULT_CELL_M * math.cos(robot.world.theta)
+    oy = robot.world.y + LIDAR_X_M / DEFAULT_CELL_M * math.sin(robot.world.theta)
     for i, r in enumerate(scan["ranges_m"]):
         angle = robot.world.theta + math.radians(scan["angle_min_deg"] + i * scan["angle_increment_deg"])
         # Objects are solid to sensing (3.9), so the lidar's ray is the one
         # that stops at them too.
-        cells = renderer.cast_ray(robot.world.layout, robot.world.x, robot.world.y,
+        # ... cast from the LIDAR, 4 cm ahead of the centre (3.27).
+        cells = renderer.cast_ray(robot.world.layout, ox, oy,
                                   angle, solid=robot.world.solid_cells)
         if cells >= renderer.FPV_MAX_DIST:
             assert r is None

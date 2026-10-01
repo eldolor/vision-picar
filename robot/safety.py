@@ -61,12 +61,16 @@ REVERSE_ACTIONS = {"REVERSE"}
 # The verbs `run_verb()` carries out (3.22).
 _VERBS = {"FORWARD", "REVERSE", "LEFT", "RIGHT"}
 
-# How far the lidar (at the robot's centre) sits from the REAR bumper. The
-# scan measures from the centre, so this is subtracted before a rear range is
-# compared with `min_distance_cm`. 15cm is half the sim's 30cm robot; the real
-# deck-centre lidar is 11-14cm from either bumper -- measure it on the chassis
-# (R8), and at R3 it becomes a transform rather than a constant.
-LIDAR_TO_REAR_BUMPER_CM = 15.0
+# Where the lidar sits: this far AHEAD of the rotation centre (`base_link`),
+# on the centre-line -- the UGV Rover's CAD (Waveshare's ugv_rover.urdf,
+# PLAN-ros-alignment.md 3.27). A scan is measured from HERE, not from the
+# centre, so every consumer that judges distance to the chassis moves its
+# returns into the body frame first (`scan_points_cm()`). Until 3.27 this was
+# 0 by assumption, which on the car puts every return 4 cm further from the
+# REAR bumper than it is -- the unsafe direction astern and on a pivot. The
+# same number is `laser_x` in the xacro and the sim's scan origin
+# (`tests/test_wall_linters.py`). Re-measure on the car.
+LIDAR_X_M = 0.040
 
 # ---- the chassis FOOTPRINT, and the corridor it sweeps (PLAN-ros-alignment 3.18) ----
 #
@@ -88,6 +92,11 @@ LIDAR_TO_REAR_BUMPER_CM = 15.0
 # less decides), so nothing the cone caught before is released by it.
 FOOTPRINT_LENGTH_M = 0.253
 FOOTPRINT_WIDTH_M = 0.231
+# How far the lidar sits from the REAR bumper: half the chassis plus its
+# offset ahead of the centre. Subtracted from a rear range before it is
+# compared with `min_distance_cm`. (Was 15.0 -- half the old sim's 30 cm
+# robot -- until 3.27 derived it from the chassis it describes.)
+LIDAR_TO_REAR_BUMPER_CM = FOOTPRINT_LENGTH_M * 50.0 + LIDAR_X_M * 100.0
 # Lateral room the corridor keeps beyond each side of the chassis. Returns
 # BESIDE the body (not ahead of the leading edge) never stop a straight
 # move -- a straight move cannot close on them, and treating them as
@@ -120,7 +129,12 @@ SAFETY_SCAN_RANGE_M = 0.6
 # `PIVOT_MARGIN_CM` of a scan return AND that direction closes on it --
 # turning AWAY is never refused, which is what lets a robot pinned against
 # furniture free itself (R2b's "pivot away from a wall").
-PIVOT_MARGIN_CM = 1.2
+# 1.2 when 3.19 set it, with the lidar at the centre (closest pivot then
+# 1.02 cm). 3.27 put the lidar 4 cm ahead, so the REAR corners are read from
+# ~4 cm farther and adjacent 1-degree beams land ~0.07 cm further apart
+# there; one guarded turn then came to 0.96 cm. 1.3 = 1.2 plus that spacing,
+# rounded up -- moved after seeing the data, and recorded as such in 3.27.
+PIVOT_MARGIN_CM = 1.3
 PIVOT_LOOKAHEAD_S = 0.05         # one wheel-loop period; scales with the turn rate
 PIVOT_MIN_LOOKAHEAD_DEG = 1.0
 
@@ -321,6 +335,22 @@ class SafetyViolation(Exception):
     """Raised when an action is blocked by the safety layer."""
 
 
+def scan_points_cm(scan: dict):
+    """Every return of a scan as a point in the BODY frame (`base_link`):
+    `(x, y)` in cm, x ahead and y to the LEFT (REP-103), with the lidar's
+    `LIDAR_X_M` offset applied -- 3.27. Scan angles are clockwise-positive
+    with 0 ahead, the project's bearing convention. Beams with no return are
+    skipped. The one place a scan is moved off the lidar; every distance-to-
+    chassis judgement goes through it."""
+    a0, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
+    off = LIDAR_X_M * 100.0
+    for i, r in enumerate(scan["ranges_m"]):
+        if r is None:
+            continue
+        a = math.radians(a0 + i * inc)
+        yield r * 100.0 * math.cos(a) + off, -r * 100.0 * math.sin(a)
+
+
 class SafetyController:
     def __init__(self, robot: RobotInterface, min_distance_cm: float = 20.0,
                  sensor_to_bumper_cm: float = SENSOR_TO_BUMPER_CM):
@@ -449,8 +479,8 @@ class SafetyController:
         """Room in the corridor the chassis sweeps -- 3.18.
 
         `direction` +1 is forward, -1 is astern. Every scan return is put in
-        the body frame (the lidar at the rotation centre, as in the sim and
-        as `base_link` is in the URDF); a return counts if it lies within
+        the body frame (`scan_points_cm()`: the lidar sits `LIDAR_X_M`
+        ahead of `base_link`, 3.27); a return counts if it lies within
         half the chassis width plus `FOOTPRINT_SIDE_MARGIN_CM` of the
         centre-line AND beyond the leading edge in the direction of travel.
         The clearance is its distance past that edge -- how far the chassis
@@ -467,14 +497,10 @@ class SafetyController:
             return None, "no_scan"
         half_len = FOOTPRINT_LENGTH_M * 50.0
         half_wid = FOOTPRINT_WIDTH_M * 50.0
-        a0, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
         best = None
-        for i, r in enumerate(scan["ranges_m"]):
-            if r is None:
-                continue
-            a = math.radians(a0 + i * inc)
-            along = direction * r * 100.0 * math.cos(a)
-            lateral = abs(r * 100.0 * math.sin(a))
+        for x, y in scan_points_cm(scan):
+            along = direction * x
+            lateral = abs(y)
             if along > half_len and lateral <= half_wid + FOOTPRINT_SIDE_MARGIN_CM:
                 room = along - half_len
             elif 0.0 < along <= half_len and lateral <= half_wid:
@@ -536,12 +562,7 @@ class SafetyController:
         def dist(x, y):
             return math.hypot(max(abs(x) - hl, 0.0), max(abs(y) - hw, 0.0))
 
-        a0, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
-        for i, r in enumerate(scan["ranges_m"]):
-            if r is None:
-                continue
-            a = math.radians(a0 + i * inc)
-            x, y = r * 100.0 * math.cos(a), -r * 100.0 * math.sin(a)   # scan is clockwise-positive
+        for x, y in scan_points_cm(scan):
             now = dist(x, y)
             if now > PIVOT_MARGIN_CM + 20.0:
                 continue

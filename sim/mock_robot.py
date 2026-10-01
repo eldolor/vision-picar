@@ -53,6 +53,7 @@ from sim.grid_world import (
 from sim.sensors import DistanceSensorModel
 from sim import renderer
 from robot.interface import RobotInterface, carry_out_verb
+from robot.safety import LIDAR_X_M
 
 logger = logging.getLogger("mock_robot")
 
@@ -622,8 +623,10 @@ class MockRobot(RobotInterface):
         `get_depth_grid()`, which is the camera's field. Ranges come from
         `renderer.cast_ray()`, the geometry the picture is drawn from and
         the ring `MockWorld` builds its map out of, measured from the
-        robot's centre (the sim's robot is a point; a real lidar sits
-        11-14cm behind the bumper, which R3 makes a transform).
+        LIDAR's position, `robot.safety.LIDAR_X_M` ahead of the centre --
+        the URDF's `laser` frame (3.27). Consumers that judge distance to
+        the chassis move returns into the body frame
+        (`robot.safety.scan_points_cm()`).
 
         **`range_max_m` is the RPLidar C1's 12 m** (`LIDAR_RANGE_M`). It
         was the camera renderer's 4.2 m horizon until a house at real size
@@ -649,10 +652,15 @@ class MockRobot(RobotInterface):
         # scan -- SLAM's -- keeps the march its map is pinned to.
         cast = renderer.cast_ray if max_range_m is None else renderer.cast_ray_exact
         solid = self.world.solid_cells
+        # Cast from the LIDAR, not the centre: it sits `LIDAR_X_M` ahead of
+        # the rotation centre on the Rover (3.27), which is where the URDF's
+        # `laser` frame puts every beam SLAM and the safety layer read.
+        ox = self.world.x + LIDAR_X_M / DEFAULT_CELL_M * math.cos(self.world.theta)
+        oy = self.world.y + LIDAR_X_M / DEFAULT_CELL_M * math.sin(self.world.theta)
         ranges = []
         for i in range(rays):
             rel = math.radians(-180 + i)
-            dist = cast(self.world.layout, self.world.x, self.world.y,
+            dist = cast(self.world.layout, ox, oy,
                         self.world.theta + rel, solid=solid, max_dist=max_cells)
             ranges.append(None if dist >= max_cells
                           else round(dist * DEFAULT_CELL_M, 4))

@@ -53,8 +53,9 @@ def test_criterion_1_the_robot_never_enters_an_objects_cell():
 def test_criterion_2_the_sensors_see_the_backpack_not_the_wall_behind_it():
     grid, robot = _facing_backpack_from(8.5, 7.5)
     face_cells = BACKPACK[0] - 8.5  # centre to the backpack's near face
+    from robot.safety import LIDAR_X_M  # the lidar is 4 cm nearer it (3.27)
     assert robot.get_scan()["ranges_m"][180] == \
-        __import__("pytest").approx(face_cells * DEFAULT_CELL_M, abs=0.02)
+        __import__("pytest").approx(face_cells * DEFAULT_CELL_M - LIDAR_X_M, abs=0.02)
     # The scalar speaks in whole free cells ahead of the robot's own: one.
     assert robot.get_distance() == 30.0
     path = [z for i, z in enumerate(robot.get_depth_grid()["zones"]) if i in (3, 4)]
