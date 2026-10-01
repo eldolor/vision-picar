@@ -2346,6 +2346,79 @@ need to model before it means anything for that chassis.
 **Then** `mode: hardware` defaults to `drive: ros`, and this section records
 the numbers. Until every gate holds, `direct` stays the default everywhere.
 
+### 3.25 The Rover's motor board in the sim (2026-09-30): criteria, written before building
+
+The Rover is bought (3.21's status note), and its board is the **ROS
+Driver** (`waveshareteam/ugv_base_ros`, `ROS_Driver/`), not the General
+Driver R7 faked. Read from its source at commit `2e7df97` before writing
+anything below `[V]`:
+
+* **Closed loop by default.** `usePIDCompute = true` at boot and
+  `setGoalSpeed()` sets it on every `T:1`; mainType 2 ("UGV Rover") is
+  `WHEEL_D 0.0800`, **`ONE_CIRCLE_PLUSES 660`** (`// 1650(v=0.90) ->
+  660(v>=0.93)`), `TRACK_WIDTH 0.172`. 3.16's "T=1 is open-loop PWM in mode
+  2" is the General Driver's, and the "mainType 3 firmware change" is not
+  needed: on this board mainType 3 is the **UGV Beast** (0.0523 m, 1092, 0.141,
+  motors reversed).
+* **The `1001` frame** is `T, L, R, ax, ay, az, gx, gy, gz, mx, my, mz, odl,
+  odr, v`. `L`/`R` are MEASURED wheel speeds (encoder delta x
+  `PI*WHEEL_D/660` over the loop's own `micros()`), m/s. **`odl`/`odr` are
+  the distance each wheel has rolled since the board booted, as a C `long`
+  of centimetres** -- `(long)(pulses/660 * PI * 0.08 * 100)`, truncated
+  toward zero: 1 cm resolution, no rollover in practice, zeroed only by a
+  reboot. `v` is hundredths of a volt, an int.
+* **Feedback streams by default** (`baseFeedbackFlow = 1`), at most one
+  frame per `feedbackFlowExtraDelay` = **50 ms** (`T:142` sets it); `T:130`
+  goes through the same rate limit. The General Driver fake streamed at the
+  board loop's ~100 Hz once asked.
+* **`T:13` (ROS twist) does not feed the heartbeat** -- only `T:1` and
+  `T:11` set `lastCmdRecvTime`. (This project sends `T:1`.)
+
+**What 1 cm means.** Position from `odl`/`odr` alone is 1 cm of wheel
+travel: 3.3 degrees of heading per centimetre of difference, against 3.22's
+0.5-degree turn tolerance. So the counters are the **anchor** and the
+measured speeds the **interpolation**: the host integrates `L`/`R` as today,
+and every frame clamps each wheel's estimate into the 1 cm bucket its
+counter allows. The integral's error is then bounded by 1 cm forever instead
+of growing with every lost frame or mistimed `dt`, and a reading still
+resolves sub-centimetre motion.
+
+**Criteria** (each test cites the firmware line it mirrors; each red on
+today's code first):
+
+1. **The fake is the ROS Driver.** Frame keys exactly as above; `odl`/`odr`
+   equal `trunc(counts/660 * PI * 0.08 * 100)` from an integer encoder count
+   of the body's true wheel travel; `L`/`R` from count deltas; `T:1` in
+   mainType 2 is closed loop; `T:13` leaves the heartbeat alone; streaming
+   on at boot, frames >= 50 ms apart; `T:900` loads the three mainTypes'
+   constants.
+2. **One encoder constant.** 660 in `sim/mock_robot.py`,
+   `robot/hardware_robot.py` and the fake's mainType 2, pinned together by
+   one test. (Not a wall duplicate: nothing on the ROS side holds it --
+   `controllers.yaml` and the plugin speak radians -- so
+   `tests/test_wall_linters.py`'s registry and budget are unchanged.)
+3. **Bounded error.** Over the fake with 5% of `1001` lines dropped on the
+   wire and a stop-go drive with turns of at least 30 s, each wheel's
+   reported travel stays within **1.0 cm** of the body's truth at every
+   sample, **and** speed integration alone (the anchor removed) exceeds
+   1.0 cm on the same run -- otherwise the scenario tests nothing and is made
+   harder, recorded.
+4. **A board reboot is not a jump.** The fake's counters reset to 0 mid-run
+   (a brownout): the host's reported wheel positions and `get_odometry()`
+   move by at most 1 cm across it, and stay within criterion 3's bound
+   after it. Odometry by contract never jumps (section 2 of `CLAUDE.md`).
+5. **Verbs still mean what they mean, at 20 Hz feedback** (progress, rule
+   4): over the fake, on ground truth, a clear guarded FORWARD covers **30 cm
+   +/- 1.0 cm** and clear guarded turns of 15, 45 and 90 degrees land within
+   **+/- 1.0 degree**, five of each. The guarded-verb hardware tests (3.22
+   criterion 3) and the contract suite pass unchanged.
+6. **No regressions:** the offline suite passes.
+
+Not modelled, named so nobody assumes it was: the PID's dynamics (the fake
+is an ideal PID) including its `THRESHOLD_PWM` 23 deadband, which may make
+slow pivots stick-slip -- a hardware-day check; the IMU (its fields are
+zeros); battery drain (`v` constant).
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
