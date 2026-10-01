@@ -2886,6 +2886,55 @@ at rest is good to ~0.4 deg; the gyro (`gz`, 3.26 step 3); or slowing the
 last few degrees of a turn so a late stop costs less. Each is a phase with
 its own criteria.
 
+### 3.29 A settle pass for direct-mode verbs (2026-10-01): criteria, written before building
+
+**Asked by the user** ("yes" to closing 3.28's failed turn criterion this
+way). 3.28 split a turn's error in two: the host's ESTIMATE at rest (sd 0.44
+deg on the fork) and the STOP landing late (sd 0.59 -- 0.7 deg per 10 ms at
+1.2 rad/s). Feedback cannot remove the second; a second, slow look can. The
+ROS path already does this (`robot/ros_drive.py` `_run()`, 3.24 G2: a
+signed correction at a floor rate after the wheels settle); the direct path
+(`robot/interface.py` `carry_out_verb()`) does not -- 3.25 tried a settle on
+stock and it did not help, because the stock estimate itself was off by sd
+1.58. On the fork it is not.
+
+**The change.** In `SafetyController.run_verb()`, for a plan that runs on
+the WALL CLOCK (a real board; never the sim's `advance()` verbs) and ended
+`complete`: wait for the wheels to stop and two fresh feedback frames, read
+the signed error, and if it exceeds the tolerance (**0.5 deg** for a turn,
+**3 mm** for a straight -- the ROS path's), correct it as a small verb of its
+own at a slow floor rate (**0.1 rad/s** body yaw, **2 cm/s**), in whichever
+direction the error points, through the SAME `run_verb()` -- so a
+correction is vetted exactly as a move is, including a turn correction in
+the opposite direction and a straight one astern. At most **three** passes.
+A `stop()` at any point ends it.
+
+**Acceptance criteria:**
+
+1. **Turns land on their angle -- 3.28 criterion 5, closed.** On the fork,
+   on ground truth, 120 clear turns (40 each of 15, 45, 90 deg) land within
+   **+/- 1.0 deg**. 3.28's non-strict xfail comes off.
+2. **Stock is no worse, and measured.** The same 120 on stock firmware:
+   recorded; at least 3.28's 60/120 within +/- 1 deg (a progress guard -- the
+   stock estimate is what limits it, sd 1.58).
+3. **Straights still mean a cell.** A clear FORWARD covers 30 +/- 1.0 cm,
+   five of five, on both firmwares; with the settle it is held to
+   **+/- 0.5 cm** on the fork.
+4. **It costs little time** (rule 4's progress half): a clear turn's median
+   wall-clock duration grows by at most **0.5 s**, measured on the 120.
+5. **A correction is vetted like a move.** 3.22's guarded-verb sweep bars
+   hold over the fork (0 verbs under 18 cm, 0 turns within 1 cm, clear
+   moves and turns still whole); and a unit test where the correction would
+   close on a scan return within `PIVOT_MARGIN_CM` (or, for a straight, the
+   rear clearance) shows it clamped, never driven.
+6. **A stop wins.** `stop()` during the settle wait or a correction ends the
+   verb at once; nothing is sent after it (the 3.22 criterion-3 shape).
+7. **The sim is untouched.** Verbs on `MockRobot` (`advance()`, not the wall
+   clock) are bit-identical: the pinned 83-step frontier trace
+   (`tests/data/frontier_trace_centred.json`) and every mission test pass
+   unchanged.
+8. Whole suite green from `.venv`.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
