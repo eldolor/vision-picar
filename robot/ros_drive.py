@@ -250,6 +250,13 @@ class RosDriveRobot(RobotInterface):
     def advance(self, dt: float) -> None:
         return self.inner.advance(dt)
 
+    def pass_time(self, dt: float) -> None:
+        """3.30: idle time for the sim body underneath (its movers), if it
+        has a clock; a real body has none and this is a no-op."""
+        fn = getattr(self.inner, "pass_time", None)
+        if fn is not None:
+            fn(dt)
+
     # ---------- everything else reads the robot underneath ----------
 
     def look_left(self) -> dict:

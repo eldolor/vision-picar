@@ -34,6 +34,7 @@ the starter house stays the default and every test written against it stands.
 """
 
 from sim.grid_world import GridWorld, Heading
+from sim.movers import Mover
 
 _ROOM_ROW = "#..........#....#.........#"
 _DOOR_ROW = "#..........D....D.........#"
@@ -86,3 +87,15 @@ def build_scaled_world() -> GridWorld:
         robot_y=4,
         heading=Heading.E,
     )
+
+
+# PLAN-ros-alignment.md 3.30 -- people and pets, by SIM_MOVERS=<name>. Each
+# value builds a fresh list: a Mover carries its own position and clock.
+MOVERS = {
+    # A person pacing across the hallway on the middle door row, from the
+    # living-room door to the kitchen door and back, one cell a second --
+    # straight across every route between the two rooms.
+    "hallway_crossing": lambda: [
+        Mover("person", [(12, 4), (13, 4), (14, 4), (15, 4), (14, 4), (13, 4)], hop_s=1.0),
+    ],
+}

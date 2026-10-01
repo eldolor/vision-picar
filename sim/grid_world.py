@@ -60,6 +60,7 @@ import math
 # how a robot starts driving through a wall it can see.
 from sim import renderer
 from robot.safety import FOOTPRINT_LENGTH_M, FOOTPRINT_WIDTH_M
+from sim.movers import MOVER_KEEPOUT_M, point_to_cell_cells as movers_point_to_cell
 
 logger = logging.getLogger("grid_world")
 
@@ -216,10 +217,17 @@ class GridWorld:
         x: float = None,
         y: float = None,
         theta: float = None,
+        movers: list = None,
     ):
         self.layout = layout
         self.rooms = rooms
         self.objects = {} if objects is None else objects
+        # 3.30: the sim's own clock, in seconds, advanced by whoever lets
+        # time pass (`MockRobot.step()`, the robot server's idle ticks).
+        # Nothing reads it but the movers, so a world without movers is
+        # unchanged by it to the last bit.
+        self.sim_time = 0.0
+        self.movers = []
         self.log = [] if log is None else log
         self.pan = pan
         self.height = len(self.layout)
@@ -242,6 +250,9 @@ class GridWorld:
             self.y = y
         if theta is not None:
             self.theta = renderer.normalize_angle(theta)
+
+        for mover in movers or ():
+            self.add_mover(mover)
 
     def __repr__(self):  # pragma: no cover - debugging convenience
         return (f"GridWorld({self.width}x{self.height}, x={self.x:.3f}, "
@@ -308,6 +319,91 @@ class GridWorld:
         stops a robot and returns a lidar beam; until then the robot drove
         onto it and lost it under its own footprint."""
         return frozenset(self.objects)
+
+    # ---------- things that move (PLAN-ros-alignment.md 3.30) ----------
+    #
+    # `objects` is REPLACED, never mutated in place: the robot server reads
+    # the scan on its threadpool while the wheel loop steps the world, and
+    # iterating a dict another thread is resizing raises. Rebinding an
+    # attribute is atomic, so a reader holds either the old dict or the new.
+
+    def _turning_circle_cells(self) -> float:
+        return math.hypot(FOOTPRINT_HALF_LENGTH, FOOTPRINT_HALF_WIDTH)
+
+    def move_object(self, src, dst) -> None:
+        """Move the object at cell `src` to cell `dst` -- furniture someone
+        rearranged. Seen by everything at once: there is nothing to refresh.
+
+        Refused (ValueError) onto a wall, onto another object, onto the
+        robot's turning circle (that would put the robot inside it), or for
+        a mover, which walks its own path."""
+        src, dst = tuple(src), tuple(dst)
+        if src not in self.objects:
+            raise ValueError(f"no object at {src}")
+        if any(m.cell == src for m in self.movers):
+            raise ValueError(f"{self.objects[src]!r} at {src} is a mover; it walks its own path")
+        if not self._is_passable(*dst):
+            raise ValueError(f"{dst} is not floor")
+        if dst in self.objects:
+            raise ValueError(f"{dst} already holds {self.objects[dst]!r}")
+        if movers_point_to_cell(self.x, self.y, dst) < self._turning_circle_cells():
+            raise ValueError(f"{dst} is inside the robot's turning circle")
+        objects = dict(self.objects)
+        objects[dst] = objects.pop(src)
+        self.objects = objects
+        self._record(f"MOVED {objects[dst]} {src} -> {dst}")
+
+    def add_mover(self, mover) -> None:
+        """Put a `sim.movers.Mover` at the start of its path."""
+        for cell in mover.path:
+            if not self._is_passable(*cell):
+                raise ValueError(f"mover {mover.name!r}: {cell} is not floor")
+        if mover.cell in self.objects:
+            raise ValueError(f"mover {mover.name!r}: {mover.cell} already holds "
+                             f"{self.objects[mover.cell]!r}")
+        # The keep-out holds from the first instant, not only from the first
+        # hop: a mover placed on the robot would leave it inside an obstacle
+        # (found by the 3.30 sweep, which started one there).
+        keepout = self._turning_circle_cells() + MOVER_KEEPOUT_M / FOOTPRINT_CELL_M
+        if movers_point_to_cell(self.x, self.y, mover.cell) < keepout:
+            raise ValueError(f"mover {mover.name!r}: {mover.cell} is inside the keep-out "
+                             "around the robot")
+        objects = dict(self.objects)
+        objects[mover.cell] = mover.name
+        self.objects = objects
+        mover.next_hop_at = self.sim_time + mover.hop_s
+        self.movers.append(mover)
+
+    def advance_time(self, dt: float) -> None:
+        """Let `dt` seconds of sim time pass: every mover takes the hops
+        that fell due. A mover whose next cell is blocked, or inside the
+        keep-out around the robot, waits and tries again at its next hop."""
+        self.sim_time += dt
+        for mover in self.movers:
+            while mover.next_hop_at <= self.sim_time + 1e-9:
+                mover.next_hop_at += mover.hop_s
+                self._hop(mover)
+
+    def _hop(self, mover) -> None:
+        dst = mover.next_cell
+        keepout = self._turning_circle_cells() + MOVER_KEEPOUT_M / FOOTPRINT_CELL_M
+        # Never CLOSER to the robot than the keep-out -- or than it already
+        # is, when the robot came nearer itself. Stepping past at the same
+        # distance, or away, is allowed: the first version waited whenever
+        # the next cell was inside the keep-out at all, and a person beside a
+        # doorway then froze for good with nav2 waiting on them (3.30's
+        # second live run, 5/6). A person keeps walking.
+        floor = min(keepout, movers_point_to_cell(self.x, self.y, mover.cell))
+        if (dst in self.objects or not self._is_passable(*dst)
+                or movers_point_to_cell(self.x, self.y, dst) < floor - 1e-9):
+            mover.waits += 1
+            return
+        objects = dict(self.objects)
+        del objects[mover.cell]
+        objects[dst] = mover.name
+        self.objects = objects
+        mover.index = (mover.index + 1) % len(mover.path)
+        mover.hops += 1
 
     def view_angle(self) -> float:
         """The angle the CAMERA points along, in `theta`'s convention.

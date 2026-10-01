@@ -42,6 +42,19 @@ def _with_drive(robot: RobotInterface, config: dict) -> RobotInterface:
     raise ValueError(f"Unknown drive mode in config: {mode!r} (direct | ros)")
 
 
+def _sim_world():
+    """The house SIM_MAP names (the starter house by default), with the
+    people and pets SIM_MOVERS names, if any (PLAN-ros-alignment.md 3.30)."""
+    from sim.maps import build_movers, build_world
+
+    house = os.environ.get("SIM_MAP") or "starter_house"
+    world = build_world(house)
+    if os.environ.get("SIM_MOVERS"):
+        for mover in build_movers(house, os.environ["SIM_MOVERS"]):
+            world.add_mover(mover)
+    return world
+
+
 def _backend(config: dict) -> RobotInterface:
     # ROBOT_MODE overrides the yaml, the same pattern control/brain_config.py
     # already uses for ROBOT_URL/VISION_URL: a deployed image stays generic
@@ -53,12 +66,11 @@ def _backend(config: dict) -> RobotInterface:
 
     if mode == "sim":
         from sim.mock_robot import MockRobot
-        from sim.maps import build_world
         from sim.sensors import DistanceSensorModel
 
         # SIM_MAP picks the house (sim/maps/__init__.py); the starter house
         # is the default and what every existing test was measured on.
-        world = build_world(os.environ.get("SIM_MAP") or "starter_house")
+        world = _sim_world()
         sim_config = config.get("sim", {})
         realtime = bool(sim_config.get("realtime", False))
 
@@ -110,10 +122,9 @@ def _backend(config: dict) -> RobotInterface:
 
         if os.environ.get("SIM_MOTOR_BOARD") == "fake":
             from sim.fake_esp32 import FakeEsp32
-            from sim.maps import build_world
             from sim.mock_robot import MockRobot
 
-            body = MockRobot(build_world(os.environ.get("SIM_MAP") or "starter_house"))
+            body = MockRobot(_sim_world())
             board = FakeEsp32(body)
             robot = HardwareRobot(board.path, sensors=body)
             robot.fake_board = board          # kept alive with the robot
