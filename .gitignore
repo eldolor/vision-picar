@@ -13,6 +13,9 @@ venv/
 .env
 *.pem
 recordings/
+# ...but not the recordings domain's specs (docs/README.md)
+!docs/recordings/
+!docs/engineering/recordings/
 
 # Lambda packaging output (service/lambda/build.sh)
 .build/

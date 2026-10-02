@@ -1,0 +1,256 @@
+---
+kind: architecture
+domain: policy
+status: current
+verified: 2026-10-02
+---
+
+# Policy -- architecture
+
+The policy is what decides each move. Every tick, the mission runner hands it
+one camera frame; it returns one action out of a small fixed set, which the
+safety layer then vets. Three policies exist -- a free rule-based explorer, a
+cloud vision policy, and a tiered policy that asks the cloud only on events
+-- plus the arrival rule that lets a mission end `found` on its own evidence.
+Read this for why decisions are split the way they are; the
+[engineering spec](../engineering/policy/ENGINEERING.md) has the constants,
+precedence code, and the sweeps that pin them.
+
+## Purpose
+
+A mission needs something that turns "what the robot sees and where it is"
+into "what to do next", in a way that can be swapped without touching the
+mission lifecycle, the safety layer or the body. The policy domain owns that
+decision and nothing else. It depends on perception (what is in view), the
+world (where the robot is), the body's sensors (how much room there is), and
+the cloud vision service (what the target is, when asked). The mission
+service depends on it for every step, and the twin's readouts (turns, tier
+counters, arrival) are its outputs.
+
+## Components and boundaries
+
+```text
+            frame (pixels, pan, odometry, sim detections)
+                         |
+                         v
+  +----------------- vision function -----------------+
+  |  frontier: sensed scene (depth/scan clearance)    |
+  |  vision:   one cloud navigation call -> scene     |
+  |  tiered:   local perception every frame,          |
+  |            cloud only on a trigger -> scene       |
+  +---------------------------------------------------+
+                         |  one scene schema
+                         v
+  arrival review (local perception + lidar) -> may rewrite to STOP/found
+                         |
+                         v
+  decide: frontier preference | trust the model | stuck-breaker
+                         |
+                         v
+           safety layer (robot side) -> body
+```
+
+| Part | Owns | Must not |
+|---|---|---|
+| Constrained agent | the allowed action set, the capture -> scene -> decide -> vet -> execute step, the three-STOPs stuck-breaker | bypass the safety layer; trust a model's distance claim over a sensor |
+| Mission agent | recording every step into mission memory, arrival review, room backfill from the cloud's room guess, sighting poses from the world | read simulator state; import a world backend |
+| Frontier explorer | rule-based coverage: peek, prefer unvisited directions | grow; it is kept, not extended (`PLAN-sim-hardening.md` 2.2) |
+| Vision agent | trusting the model's action unless the mission is complete | peek (a pan costs a real move and buys nothing a photograph lacks) |
+| Cloud vision step | one frame -> one cloud navigation answer -> the scene schema | retry; the mission's failure budget is the retry policy |
+| Tier (trigger discipline) | when to spend a cloud call, and what to do on free frames | become a planner or a reactive goal executor |
+| Arrival check | "found" from detection + bearing + lidar range | read the detector's own distance, or any simulator fact |
+| Goal pose | holding an anchored sighting across rotation | decide anything |
+| Mission memory, room matching | rooms visited/searched, sightings, action history | drive control flow beyond completion |
+
+The brain-wide rule applies with full force: nothing here imports a robot or
+world backend or the simulator. Simulator-provided detections reach the tier
+only as data in the frame (see [perception](../perception/ARCHITECTURE.md)).
+
+## Decisions
+
+### A constrained action set, one short move at a time
+
+**Decision.** The policy picks one of seven actions (forward, left, right,
+reverse, stop, look left, look right; the explorer's look-around also
+re-centres the camera) each tick, every move short and
+re-evaluated next tick. The safety layer re-checks every move against
+sensors and can veto it.
+
+**Rejected.** Longer commands or free-form plans from the model: errors here
+are physical and not cheaply reversible, which argues for the least agentic
+thing that does the job (`AGENT-HARNESS.md` section 11).
+**Trade-off.** More ticks, and turn/forward alternation is visible by design.
+
+### One scene schema behind one seam
+
+**Decision.** Every policy produces the same scene -- obstacles, free space,
+the important objects, the safest direction -- from a single "frame in, scene
+out" function. Swapping the rule-based policy for the model changes nothing
+downstream. A target counts as found only when it appears in the scene's
+important objects, which the cloud policy fills only on **target reached**,
+not on first sight -- otherwise a mission would end in a doorway across the
+room from the backpack (`brain/navigate.py`'s note).
+
+### The cloud-driven policies are the hardware path; the explorer is a test tool
+
+**Decision** (`PLAN-sim-hardening.md` Q1, 2.2). The robot is vision-driven.
+The frontier explorer is kept because it is free, deterministic and the
+fastest way to exercise the safety layer and mission memory, and since the
+ROS alignment it reads only robot sensors and the world's pose, never grid
+cells (`PLAN-ros-alignment.md` 3.2). Without a world that can localise it
+degrades to the right-hand rule rather than failing. nav2's frontier
+exploration is its replacement on the car.
+
+### Deliberation is event-driven, never periodic
+
+**Decision** (`PLAN-onboard-perception.md` 2.4). The tier runs local
+perception on every frame for free and calls the cloud only on: mission
+start, a confirmed candidate sighting, a run of confirmed absence (cold
+search), and a staleness floor so a robot that can see its target is not
+silenced by things going well. An edge must hold for consecutive frames
+before it is believed.
+
+**Rejected.** A cloud call per frame (the vision policy's cost profile), and
+firing on raw edges: 6.1 measured that about 40% of a naive trigger count is
+field flicker; hysteresis took the saving from 2.8x to 4.1x. The three other
+triggers in 2.4 (goal achieved, goal impossible, room change) need tiers that
+do not exist and are named as unavailable rather than faked.
+
+**Scope of the hysteresis.** It gates *when the cloud is called*, and nothing
+else. It does not gate steering: the next decision makes that explicit.
+
+### Arbitration split by question, and whoever sees the target steers
+
+**Decision** (1.11, and Phase G of 2026-09-12). Identity belongs to the cloud
+model; bearing to the local detector; range to the lidar; collision to the
+safety layer, which never votes. On a frame where local perception has a
+measured bearing, that bearing steers -- ahead of a cloud direction several
+seconds old. The full precedence on a free frame is: a bearing measured this
+frame, then a dead-reckoned bearing to an anchored sighting (built, off),
+then the last cloud goal, then a search turn.
+
+**Rejected.** Letting the cloud keep both identity and direction: on the rig
+walk that motivated the change, the robot turned right 28 times and forward
+4 on 37 frames where the target was locally detected.
+
+**Trade-off, stated as the code behaves.** A single detected frame steers --
+the consecutive-frame hysteresis gates only the cloud triggers, not steering.
+The only per-frame bound is the local verifier's probability gate: a wrong
+object steers the robot on every frame it passes that gate. The cloud's
+identity does not stop it. With the cloud call dispatched asynchronously (the
+shipped mode) the cloud's answer only becomes the held goal, which a local
+sighting outranks, so a cloud "not visible" never overrides a frame where the
+wrong object is detected. With a blocking call it decides only the frame the
+call was made on. And arrival (below) is judged on local detection plus range,
+so a wrong object that keeps passing the gate can be driven to and reported
+`found`. The corroboration verdict ([perception](../perception/ARCHITECTURE.md))
+measures this exposure and does not enforce anything. Whether steering should
+also wait for consecutive frames is an open question below.
+
+### Turns are sized; search turns are smaller than the field of view
+
+**Decision** (R1, R1b, R1c -- `PLAN-ros-alignment.md` 3.3, 3.5, 3.6b). A turn
+chosen from a measured bearing turns by that bearing (clamped); a turn with no
+bearing behind it is a search step smaller than the camera's field of view;
+corrections use a finer band than the reporting vocabulary; and the spin
+guard that forces a forward after long unproductive turning counts degrees,
+not turns.
+
+**Why.** Quarter turns against a 10-degree centre band closed zero distance
+and flipped left/right on 52 of 60 steps. Quarter-turn search steps left
+blind gaps between views. And when the search step halved, a guard counted in
+turns silently halved its meaning. **Lesson recorded:** a threshold counted in
+steps changes meaning when the step does.
+
+### Arrival is the rule the car runs, judged by the range sensor
+
+**Decision** (P7e first half, `PLAN-ros-alignment.md` 3.11, decided by the
+user). A mission ends `found` locally when the target is detected, centred
+within the steering band, and the lidar reads it within the arrival radius at
+that bearing, on consecutive frames. It refuses to judge -- rather than
+guess -- with no local perception, no usable scan, or a panned camera, and it
+refuses a window of returns that looks like an edge rather than one face
+(3.32: a mission had stopped beside a door jamb and declared `found` 1.1 m
+short).
+
+**Rejected.** 3.8's sim-only rule using the simulator's detection distances:
+it would pass in the sim while saying nothing about the robot. **Rejected
+also:** the detector's box size as range. **Acceptance bars (commitments):**
+of missions that physically arrive, at least 95% end `found`, at perfect and
+at degraded detection; and no mission ends `found` more than 0.60 m from the
+target.
+
+### Hold the cloud's goal; never block on it
+
+**Decision** (2.5, Phases A and F). The cloud call is dispatched without
+blocking the tick, at most one in flight, and the last cloud direction is
+held on free frames. An answer that lands after the mission ends is dropped.
+**Rejected.** Blocking the tick on a multi-second call (a stall every few
+frames), and scanning on every free frame, which on five rig walks outvoted
+the cloud five to one.
+
+### A sighting can outlive the frame -- but only when data says so
+
+**Decision** (P25 / P7c item 2). A goal pose anchors a sighting in the
+odometry frame so the bearing survives rotation; without a range it holds a
+direction, exact under rotation and wrong under translation, and says so. It
+is built and wired in, and **off** until a run shows it helps: the problem it
+targets is measured, the cure is not, and a 1-in-3 detector needs a
+range-anchored point, not a direction (R1).
+
+### A model's distance guess is never a safety input
+
+**Decision.** An optional brain-side veto stops a forward when the model says
+the obstacle is within one step, only on a backend with no distance sensor,
+and off by default. It exists to exercise the veto path on photograph-driven
+backends; models disagree on obstacle presence from about 0% to about 100% on
+the same frames, so it must never be copied onto the hardware backend.
+
+## Contracts
+
+| With | Direction | Category | Ownership |
+|---|---|---|---|
+| Mission runner ([mission](../mission/ARCHITECTURE.md)) | runner calls the agent's step; the agent calls the vision function | in-process | runner owns budget, timeout, outcome; policy owns the action |
+| Safety layer (safety domain) | agent submits each action | in-process controller over the gated body, re-vetted on the robot | the robot's veto is final; a refusal is a normal outcome |
+| Body ([body](../body/ARCHITECTURE.md)) | agent reads frame, distance, depth, scan, odometry | in-process interface, HTTP underneath | body owns all readings; the policy never fabricates one |
+| World ([world](../world/ARCHITECTURE.md)) | agent reads pose and map resolution | in-process interface, HTTP underneath | advisory: failure degrades exploration only |
+| Perception ([perception](../perception/ARCHITECTURE.md)) | tier calls the pipeline once per frame | in-process: frame -> tri-state with bearing | perception owns what is seen; the policy owns what to do about it |
+| Cloud vision ([cloud-vision](../cloud-vision/ARCHITECTURE.md)) | vision step calls the service | HTTP/JSON | the service owns model, wording and the decision vocabulary |
+
+## Failure modes and resilience targets
+
+| Failure | Response | Target |
+|---|---|---|
+| Cloud call errors or hangs | raised to the mission's failure budget (an async failure on the next frame) | every blind step is counted, never swallowed |
+| Local perception unavailable (camera wedged, model error) | never a trigger, never advances the cold-search count, never read as absent | a dead camera never looks like an empty room |
+| Detector misses frames | trigger hysteresis, held goals, degree-counted spin guard | at 90% per-frame detection, at least 95% of missions arrive (3.6b's bar) |
+| Target directly on the straight line through a door jamb | refused forwards; the mission ends `blocked` | no policy spends its budget pushing into a wall; going around is nav2's job |
+| No range sensor (phone walk, replay) | arrival not judged | a mission never ends `found` on a guess |
+| An edge beside the target | arrival refused | zero false arrivals beyond 0.60 m |
+| World unreachable | right-hand rule | a mapper outage never ends a mission |
+| Local false positive | steers on every frame it passes the probability gate; one frame is enough; the cloud's answer does not override a local sighting | bounded only by the per-frame gate; no target yet -- the corroboration verdict measures it (open question) |
+| Spin with no detection | forced forward after a fixed amount of rotation | a held turn cannot repeat forever |
+
+## Open questions
+
+- **The room-level planner** -- an LLM reasoning over mission memory to
+  choose which room to search next -- is designed and not built; it is the
+  main gap on the hardware path. Decided by the user; it has a slot (the
+  vision function) and a prompt shape (mission memory's context block)
+  waiting.
+- **Dead-reckoned bearing**: stays off until a run both ways shows the run
+  length of commands rise without losing arrival.
+- **Arrival on real pixels**: needs the real detector to keep recognising the
+  target at 40 cm (it relabelled a bottle as a vase); a rig walk on the robot
+  answers it.
+- **P7e's second half** (a held cloud STOP versus steering) no longer matters
+  on the lidar path and is left alone.
+- **Extend the hysteresis to steering?** Today one detected frame steers,
+  and the cloud's identity never overrides a local sighting, so a false
+  positive that keeps passing the gate is followed to the end (including to a
+  `found`). Requiring the same consecutive frames before steering would cost a
+  frame of lag on every true sighting; enforcing corroboration at arrival is
+  the other lever. Needs a user decision and an A/B through the mission path
+  (arrival rate paired with false arrivals).
+- **Steering by verbs versus nav2 goals**: the tier keeps steering by verbs
+  for now (R6). Revisit with continuous motion.

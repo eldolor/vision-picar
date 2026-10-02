@@ -111,6 +111,22 @@ succeeds through it exercises the path the car will use). **Changed
 phase done only when someone had watched it on a phone; the user replaced
 that with a data-driven definition of done.
 
+**The third, for the documentation (2026-10-02, decided by the user):
+every component has an ARCHITECTURE spec and an ENGINEERING spec, kept
+apart** -- `docs/decisions/0001-architecture-vs-engineering-specs.md`.
+Architecture (`docs/<domain>/ARCHITECTURE.md`) says WHAT and WHY --
+boundaries, decisions with the alternatives rejected, contracts, failure
+modes -- and stays true if the code is rewritten. Engineering
+(`docs/engineering/<domain>/ENGINEERING.md`) says HOW -- modules,
+signatures, config keys, thresholds, procedures, tests -- names its parent
+architecture spec, and **changes in the same commit as the code it
+describes**. The test: if a competent engineer could build it more than one
+reasonable way and the document does not care which, it is architecture.
+`docs/README.md` is the index and reading path; `tools/spec_lint.py`
+(run by `tests/test_spec_lint.py`) enforces the mechanical rules, and
+`docs/SPEC_REVIEW_PROMPT.md` (`/spec-review`) the judgement ones. The
+`PLAN-*.md` documents stay as the dated history the specs cite.
+
 ---
 
 ## 3. Current status (what's actually built vs. what's still planned)
@@ -642,6 +658,12 @@ vision-picar/
 ├── .gitignore
 ├── README.md                  full build-plan-referenced documentation
 ├── CLAUDE.md                  this file -- session orientation
+├── docs/                       the specifications (decision 0001) -- start at
+│                              docs/README.md. <domain>/ARCHITECTURE.md is the
+│                              what and why, engineering/<domain>/ENGINEERING.md
+│                              the how; decisions/ the records; templates/ for
+│                              new ones; SPEC_REVIEW_PROMPT.md the review.
+│                              tools/spec_lint.py lints them in the suite
 ├── docs/archive/CLAUDE-history-2026-09.md
 │                              the dated narrative moved out of this file
 │                              2026-09-28, verbatim (P-series, Hailo/Jetson
