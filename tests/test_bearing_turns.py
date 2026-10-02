@@ -28,6 +28,7 @@ import math
 
 import pytest
 
+from brain.arrival import ARRIVAL_RADIUS_M
 from brain.perceive import FrameReportedPipeline
 from brain.tiered import MAX_TURN_DEG, MIN_TURN_DEG, TieredVision, turn_for
 from control.mission_runner import MissionRunner
@@ -38,6 +39,16 @@ from tests.conftest import mock_world_for
 TARGET = "red backpack"
 GOAL = (10.5, 7.5)  # the backpack's cell centre in the starter house
 STEPS = 60
+# Ground-truth "arrived", in cells from the backpack's CELL CENTRE: the
+# robot's centre within 3.11's arrival radius of the backpack's FACE (half a
+# cell from its centre). CORRECTED 2026-10-01 (PLAN 3.31): this was 1.05
+# cells -- the bumper about 4 cm from the backpack -- which an in-process
+# mission could reach only because its verbs bypassed the guarded loop
+# (`_HaltGate` did not forward `verb_plan()`) and an unguarded FORWARD
+# covered a whole cell past the 20 cm line. Guarded, every arrival stops
+# with the centre 35 cm from the face: the bumper 22 cm off, outside the
+# line, as the safety layer intends.
+ARRIVED_CELLS = (ARRIVAL_RADIUS_M * 100 + 15.0) / 30.0     # 1.83
 
 # Hallway starts with a line of sight through the kitchen door, headed
 # deliberately off the bearing to the target -- the case the flicker lives in.
@@ -136,7 +147,7 @@ def test_bearing_sized_turns_reach_the_target_from_off_axis():
     for start in CLEAR_STARTS:
         closed, _ = _mission(start)
         left = math.dist(start[:2], GOAL) - closed
-        assert left <= 1.05, f"from {start} it stopped {left:.2f} cells short"
+        assert left <= ARRIVED_CELLS, f"from {start} it stopped {left:.2f} cells short"
 
 
 def test_a_door_jamb_on_the_straight_line_is_a_planning_problem_not_a_steering_one():
@@ -371,7 +382,7 @@ def test_every_search_start_arrives_rather_than_drifting_into_a_jamb():
     100% once measured bearings steered on a 3-degree band -- every blocked
     run had driven FORWARD 5-6 degrees off the doorway's line."""
     failed = [(o, round(left, 2), outcome) for o in SEARCH_OFFSETS
-              for _, left, outcome in [_search(o)] if left > 1.05]
+              for _, left, outcome in [_search(o)] if left > ARRIVED_CELLS]
     assert not failed, f"did not arrive: {failed}"
 
 
@@ -425,7 +436,7 @@ def test_a_detector_that_misses_one_frame_in_ten_still_arrives():
             while runner.tick():
                 pass
             total += 1
-            arrived += math.dist((grid.x, grid.y), GOAL) <= 1.05
+            arrived += math.dist((grid.x, grid.y), GOAL) <= ARRIVED_CELLS
     assert arrived / total >= 0.95, f"{arrived}/{total} arrived"
 
 

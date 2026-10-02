@@ -33,7 +33,7 @@ from tests.test_bearing_turns import (
     CLEAR_STARTS, GOAL, JAMB_STARTS, SEARCH_OFFSETS, TARGET, _Flaky,
     _quiet_cloud)
 
-ARRIVED_CELLS = 1.05          # R1/R1b/R1c's ground-truth arrival bar
+from tests.test_bearing_turns import ARRIVED_CELLS  # noqa: E402 -- corrected 3.31, see there
 FALSE_ARRIVAL_M = 0.60        # criterion 2
 SWEEP = CLEAR_STARTS + [(5.5, 7.5, o) for o in SEARCH_OFFSETS]
 

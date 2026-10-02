@@ -171,6 +171,29 @@ class _HaltGate(RobotInterface):
         self._guard("turn_right")
         return self._robot.turn_right(angle)
 
+    # 3.22's guarded verbs, through the gate (found 2026-10-01, PLAN 3.31):
+    # without these the safety layer saw the gate's default `verb_plan()`
+    # (None) and called the raw verb, so every IN-PROCESS mission ran turns
+    # with no pivot vetting (3.19) and forwards checked once, not every
+    # period. The deployed path was unaffected -- RemoteRobot has no plan
+    # and the robot server guards its own verbs -- but the sim's mission
+    # sweeps measured a weaker path than the car's. The loop's motion still
+    # goes through `set_wheel_velocity()` below, so a mission that ends
+    # mid-verb is still cut off.
+    def verb_plan(self, action: str, speed: int = 50, duration: float = 0.5,
+                  angle: int = 90):
+        self._guard(action)
+        return self._robot.verb_plan(action, speed=speed, duration=duration, angle=angle)
+
+    def verb_done(self, action: str, plan: dict, outcome: dict, **kwargs) -> dict:
+        return self._robot.verb_done(action, plan, outcome, **kwargs)
+
+    @property
+    def stop_count(self) -> int:
+        """The body's stop count, so a verb in progress sees a stop() made
+        through the gate (3.22's criterion 3)."""
+        return getattr(self._robot, "stop_count", 0)
+
     def look_left(self) -> dict:
         self._guard("look_left")
         return self._robot.look_left()
