@@ -703,11 +703,17 @@ class GridWorld:
             # so the two cannot disagree. `brain/perceive.py`'s
             # `FrameReportedPipeline` is the only consumer; nothing on the
             # hardware path reads it, because nothing there has it.
+            # 3.32: the bearing is the centre of what the camera can SEE of
+            # the object (`renderer.visible_bearing`), as a detector's box
+            # would be, and an object no ray reaches is not reported.
             "detections": [
                 {"label": obj["name"],
-                 "bearing_deg": round(math.degrees(obj["rel_angle"]), 2),
+                 "bearing_deg": round(math.degrees(b), 2),
                  "distance_m": round(obj["dist"] * 0.30, 3)}
-                for obj in in_view
+                for obj, b in ((o, renderer.visible_bearing(
+                    self.layout, self.x, self.y, self.view_angle(), o["cell"]))
+                    for o in in_view)
+                if b is not None
             ],
         }
         self._record(f"FRAME {frame}")

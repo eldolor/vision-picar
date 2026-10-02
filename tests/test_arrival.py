@@ -198,5 +198,31 @@ def test_an_edge_beside_the_target_is_not_the_target():
         assert check.observe(_scene(0.13), _FakeRobot(ranges))["state"] != ARRIVED
 
 
+def test_a_jamb_edge_straddling_the_window_is_not_the_target():
+    """3.32 criterion 1, from the sweep that found it once missions used
+    guarded verbs: stopped 37 cm from a door jamb, the target visible
+    through the doorway at 0.4 deg, and the five-beam window -- 3 cm wide
+    at that range -- three beams on the jamb and two past it. The median
+    was the jamb, and the mission ended found 1.1 m short."""
+    ranges = [3.0] * 360
+    # Lidar ranges; the rule measures from base_link, 4 cm behind the lidar
+    # (3.27), so 0.33 here is the 0.37 m the mission read.
+    ranges[178:181] = [0.33] * 3        # the jamb, on one side of the bearing
+    ranges[181:183] = [1.08] * 2        # through the doorway, the target
+    check = ArrivalCheck()
+    for _ in range(3):
+        assert check.observe(_scene(0.4), _FakeRobot(ranges))["state"] != ARRIVED
+
+
+def test_a_face_that_fills_the_window_still_arrives():
+    """The edge rule must not cost a real arrival: a target face at 35 cm
+    reads within a few millimetres across the window."""
+    ranges = [3.0] * 360
+    ranges[177:184] = [0.352, 0.351, 0.350, 0.350, 0.350, 0.351, 0.352]
+    check = ArrivalCheck()
+    states = [check.observe(_scene(0.0), _FakeRobot(ranges))["state"] for _ in range(2)]
+    assert states[-1] == ARRIVED, states
+
+
 def test_the_centre_band_is_the_tiers_steering_band():
     assert ARRIVAL_CENTRE_DEG == STEER_BAND_DEG

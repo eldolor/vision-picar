@@ -79,6 +79,7 @@ rather than demanding identical bytes.
 import base64
 import io
 import math
+from typing import Optional
 
 from PIL import Image, ImageDraw
 
@@ -232,6 +233,53 @@ def wall_profile(layout, px: float, py: float, base_angle: float, width=DEFAULT_
 _ROBOT_FOOTPRINT_CELLS = 0.5
 
 
+VISIBLE_EXTENT_RAYS = 9
+
+
+def _ray_box(px: float, py: float, angle: float, x0: float, y0: float) -> Optional[float]:
+    """Distance along the ray to the unit square at (x0, y0), or None."""
+    dx, dy = math.cos(angle), math.sin(angle)
+    t_lo, t_hi = -math.inf, math.inf
+    for p, d, lo in ((px, dx, x0), (py, dy, y0)):
+        if abs(d) < 1e-12:
+            if not lo <= p <= lo + 1:
+                return None
+            continue
+        a, b = (lo - p) / d, (lo + 1 - p) / d
+        t_lo, t_hi = max(t_lo, min(a, b)), min(t_hi, max(a, b))
+    return t_lo if t_hi >= max(t_lo, 0.0) else None
+
+
+def visible_bearing(layout, px: float, py: float, base_angle: float, cell) -> Optional[float]:
+    """Where a detector's box would centre on a one-cell object: the
+    relative bearing (radians, positive clockwise in the grid's frame, as
+    `_visible_objects`' `rel_angle`) of the centre of the part of its face
+    the camera can see past the walls -- or None if no part is visible in
+    the field of view. PLAN-ros-alignment.md 3.32.
+
+    `_visible_objects()` asks one question per object -- does a ray to its
+    CENTRE clear the walls -- and reports the centre's bearing. A detector's
+    box covers only what is visible, so for an object half behind a door
+    jamb this samples rays across its angular extent and averages the ones
+    that reach it. Used for the synthetic DETECTIONS only; the picture keeps
+    the single-ray billboard (the golden image is unchanged)."""
+    x0, y0 = cell
+    corners = [(x0, y0), (x0 + 1, y0), (x0 + 1, y0 + 1), (x0, y0 + 1)]
+    angs = [normalize_angle(math.atan2(cy - py, cx - px) - base_angle) for cx, cy in corners]
+    lo, hi = max(min(angs), -FPV_FOV / 2), min(max(angs), FPV_FOV / 2)
+    if lo > hi:
+        return None
+    seen = []
+    for k in range(VISIBLE_EXTENT_RAYS):
+        a = lo + (hi - lo) * (k + 0.5) / VISIBLE_EXTENT_RAYS
+        d_box = _ray_box(px, py, base_angle + a, x0, y0)
+        if d_box is None:
+            continue
+        if cast_ray_exact(layout, px, py, base_angle + a, max_dist=d_box + 0.5) >= d_box - 1e-6:
+            seen.append(a)
+    return sum(seen) / len(seen) if seen else None
+
+
 def _visible_objects(layout, objects, px: float, py: float, base_angle: float):
     """Objects inside the field of view and not hidden behind a wall.
 
@@ -261,7 +309,8 @@ def _visible_objects(layout, objects, px: float, py: float, base_angle: float):
         # against a wall from being culled by its own backdrop.
         if cast_ray(layout, px, py, angle_to_obj) < dist_to_obj - 0.3:
             continue
-        visible.append({"name": name, "rel_angle": rel_angle, "dist": dist_to_obj})
+        visible.append({"name": name, "rel_angle": rel_angle, "dist": dist_to_obj,
+                        "cell": (ox_cell, oy_cell)})
     visible.sort(key=lambda o: o["dist"], reverse=True)
     return visible
 
