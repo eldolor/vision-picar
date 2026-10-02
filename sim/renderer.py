@@ -250,7 +250,8 @@ def _ray_box(px: float, py: float, angle: float, x0: float, y0: float) -> Option
     return t_lo if t_hi >= max(t_lo, 0.0) else None
 
 
-def visible_bearing(layout, px: float, py: float, base_angle: float, cell) -> Optional[float]:
+def visible_bearing(layout, px: float, py: float, base_angle: float, cell,
+                    solid=None) -> Optional[float]:
     """Where a detector's box would centre on a one-cell object: the
     relative bearing (radians, positive clockwise in the grid's frame, as
     `_visible_objects`' `rel_angle`) of the centre of the part of its face
@@ -262,7 +263,13 @@ def visible_bearing(layout, px: float, py: float, base_angle: float, cell) -> Op
     box covers only what is visible, so for an object half behind a door
     jamb this samples rays across its angular extent and averages the ones
     that reach it. Used for the synthetic DETECTIONS only; the picture keeps
-    the single-ray billboard (the golden image is unchanged)."""
+    the single-ray billboard (the golden image is unchanged).
+
+    `solid`: the OTHER objects' cells. Objects are solid (3.9), so a person
+    standing in front of the robot hides the backpack behind them as a wall
+    does -- found while building 3.31, where the camera saw the backpack
+    straight through a person and the arrival rule took the person's range
+    for the backpack's."""
     x0, y0 = cell
     corners = [(x0, y0), (x0 + 1, y0), (x0 + 1, y0 + 1), (x0, y0 + 1)]
     angs = [normalize_angle(math.atan2(cy - py, cx - px) - base_angle) for cx, cy in corners]
@@ -275,7 +282,8 @@ def visible_bearing(layout, px: float, py: float, base_angle: float, cell) -> Op
         d_box = _ray_box(px, py, base_angle + a, x0, y0)
         if d_box is None:
             continue
-        if cast_ray_exact(layout, px, py, base_angle + a, max_dist=d_box + 0.5) >= d_box - 1e-6:
+        if cast_ray_exact(layout, px, py, base_angle + a, solid=solid,
+                          max_dist=d_box + 0.5) >= d_box - 1e-6:
             seen.append(a)
     return sum(seen) / len(seen) if seen else None
 
@@ -306,14 +314,11 @@ def _visible_objects(layout, objects, px: float, py: float, base_angle: float):
         if abs(rel_angle) > FPV_FOV / 2 + 0.1:
             continue
         # A wall between us and it. The 0.3 slack keeps an object sitting
-        # against a wall from being culled by its own backdrop.
-        #
-        # Since 3.31, another OBJECT between us and it hides it too: objects
-        # are solid (3.9), and a person standing in front of the robot hides
-        # the backpack behind them. Before this the camera saw straight
-        # through, the lidar at that bearing returned the person, and the
-        # arrival rule declared the backpack found 2 m away. One ray down
-        # the middle -- partial occlusion is not modelled.
+        # against a wall from being culled by its own backdrop. Another
+        # OBJECT between us and it hides it too: objects are solid (3.9), and
+        # a person standing in front of the robot hides the backpack behind
+        # them (found while building 3.31). One ray down the middle here;
+        # `visible_bearing` samples the extent for the detections.
         others = {c for c in objects if c != (ox_cell, oy_cell)}
         if cast_ray(layout, px, py, angle_to_obj, solid=others) < dist_to_obj - 0.3:
             continue

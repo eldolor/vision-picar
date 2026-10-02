@@ -724,7 +724,8 @@ class GridWorld:
             dist = math.hypot(cell[0] + 0.5 - self.x, cell[1] + 0.5 - self.y)
             if not ROBOT_HALF_CELL < dist <= renderer.FPV_MAX_DIST:
                 continue
-            b = renderer.visible_bearing(self.layout, self.x, self.y, view, cell)
+            others = {c for c in self.objects if c != cell}
+            b = renderer.visible_bearing(self.layout, self.x, self.y, view, cell, solid=others)
             if b is not None:
                 out.append((dist, {"label": name, "bearing_deg": round(math.degrees(b), 2),
                                    "distance_m": round(dist * 0.30, 3)}))

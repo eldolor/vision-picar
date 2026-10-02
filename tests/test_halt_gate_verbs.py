@@ -27,7 +27,7 @@ from tests.footprint_sweep import CELL_CM, chassis, gap, square
 def _forward_at_a_person(wrap):
     g = build_world("scaled_house")
     g.x, g.y, g.theta = 14.5, 4.5, 0.0
-    g.add_mover(Mover("person", [(16, 4), (16, 5)], hop_s=1e9, start_s=1e9))
+    g.add_mover(Mover("person", [(16, 4), (16, 5)], hop_s=1e9))
     robot = MockRobot(g, render=False)
     driven = _HaltGate(robot, lambda: True) if wrap else robot
     SafetyController(driven, 20.0).check_and_execute("FORWARD")

@@ -267,9 +267,10 @@ def test_a_person_keeps_walking_while_the_robot_waits(monkeypatch):
 
 
 def test_a_person_in_front_hides_the_backpack_behind_them():
-    """3.31: objects occlude the camera as they block the lidar. The robot in
-    the hallway faces the backpack through the kitchen door; a person in the
-    door hides it."""
+    """Objects are solid (3.9), so they hide each other from the camera as a
+    wall does -- found while building 3.31, where the camera saw the backpack
+    straight through a person standing in the kitchen door and the arrival
+    rule took the person's range for the backpack's."""
     world = _scaled(14.9, 4.5, math.atan2(5.5 - 4.5, 23.5 - 14.9))
     seen = lambda: [d["label"] for d in world.frame_description()["detections"]]
     assert "red backpack" in seen()
