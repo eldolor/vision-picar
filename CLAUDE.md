@@ -206,6 +206,9 @@ Hailo/Jetson reversals, the handoffs -- is in
 `docs/archive/CLAUDE-history-2026-09.md`, verbatim. What is still true and
 still load-bearing:
 
+* **Open work from the 2026-10-02 spec review: `HANDOFF-2026-10-02-spec-review.md`**
+  -- one user decision (tiered arrival on a wrong object), hardware-path
+  fixes to make during 3.33, and smaller items, each with its done-when.
 * **Latest session handoffs: `HANDOFF-2026-09-30-ros-gates.md`** -- the 3.18-3.20
   safety fixes, 3.24's G1-G3 met, and the next task (the Rover's numbers in
   the sim) -- **and `HANDOFF-2026-09-30.md`** -- the robot base.
