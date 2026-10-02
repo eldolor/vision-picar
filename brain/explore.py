@@ -39,7 +39,7 @@ from typing import Callable, Optional, Protocol
 from brain.agent import MissionAgent, StepResult
 from brain.arrival import ArrivalCheck
 from brain.frontier import (RetryBook, camera_seen, find_frontiers, find_view_gaps,
-                            known_near)
+                            known_near, reachable)
 from brain.memory import MissionMemory
 from robot.interface import RobotInterface
 from robot.safety import SafetyViolation
@@ -56,6 +56,11 @@ GOAL_TIMEOUT_S = 120.0
 # "found" radius with the target ahead, outside the 0.40 m arrival radius
 # so the last metres are judged, not driven blind.
 APPROACH_STANDOFF_M = 0.5
+# Where to stand, if not on the straight line: the reachable floor nearest
+# the robot within this band of the target. The straight-line point lands
+# between chair legs often enough that nav2 refused it in the furnished
+# home's dining room; floor the chassis can reach is what nav2 can plan to.
+APPROACH_NEAR_M, APPROACH_FAR_M = 0.35, 0.6
 # A sighting this far from the last approach point is a new one.
 APPROACH_MOVED_M = 0.5
 # Camera pans after a goal succeeds.
@@ -210,14 +215,36 @@ class ExploreAgent(MissionAgent):
             # rule decides from here.
             self._approach = (tx, ty)
             return "WAIT", True, "at the target; looking"
-        k = (d - APPROACH_STANDOFF_M) / d
-        gx, gy = pose["x_m"] + (tx - pose["x_m"]) * k, pose["y_m"] + (ty - pose["y_m"]) * k
+        gx, gy = self._approach_point(pose, tx, ty, d)
         self._cancel()
         self._approach = (tx, ty)
         out = self._send(gx, gy, "approach", now)
         if out[0] == "GOAL":
             self._goal["target"] = (tx, ty)
         return out
+
+    def _approach_point(self, pose: dict, tx: float, ty: float, d: float) -> tuple:
+        """Reachable floor within APPROACH_NEAR_M..APPROACH_FAR_M of the
+        target, nearest the robot by path; the straight-line standoff point
+        if the map offers none."""
+        try:
+            m = self.world.get_map()
+        except Exception:  # noqa: BLE001
+            m = {}
+        steps, start, _need = reachable(m, pose["x_m"], pose["y_m"])
+        if start is not None:
+            res = m["resolution_m"]
+            best = None
+            for (cx, cy), n in steps.items():
+                px = m["origin_x_m"] + (cx + 0.5) * res
+                py = m["origin_y_m"] + (cy + 0.5) * res
+                if APPROACH_NEAR_M <= math.hypot(px - tx, py - ty) <= APPROACH_FAR_M:
+                    if best is None or n < best[0]:
+                        best = (n, px, py)
+            if best is not None:
+                return best[1], best[2]
+        k = (d - APPROACH_STANDOFF_M) / d
+        return pose["x_m"] + (tx - pose["x_m"]) * k, pose["y_m"] + (ty - pose["y_m"]) * k
 
     def _next_frontier(self, now: float):
         pose = self._pose()
@@ -265,6 +292,12 @@ class ExploreAgent(MissionAgent):
             if g["kind"] == "frontier":
                 self._reached.append((g["x_m"], g["y_m"]))
                 self._pending = list(LOOK_AROUND)
+            elif g["kind"] == "approach" and g.get("target"):
+                # nav2 takes no heading: turn to face what we came for. And if
+                # that still does not settle it, the next sighting may send
+                # another approach from here.
+                self._pending = [("FACE", g["target"])]
+                self._approach = None
             elif g.get("look_at"):
                 self._pending = [("FACE", g["look_at"])]
             return

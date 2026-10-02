@@ -123,7 +123,8 @@ def test_a_target_in_sight_is_approached_along_its_bearing_at_the_lidar_range():
     tx, ty = agent._goal["target"]
     # the backpack is the cell (23, 5): its near face is x = 23 * 0.3
     assert 6.6 <= tx <= 7.1 and 1.3 <= ty <= 1.9
-    assert math.hypot(tx - gx, ty - gy) == pytest.approx(0.5, abs=0.02)
+    from brain.explore import APPROACH_FAR_M, APPROACH_NEAR_M
+    assert APPROACH_NEAR_M - 0.01 <= math.hypot(tx - gx, ty - gy) <= APPROACH_FAR_M + 0.01
 
 
 def test_an_absent_target_ends_searched_not_blocked():
