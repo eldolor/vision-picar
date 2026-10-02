@@ -3314,20 +3314,43 @@ nav2 + `slam_toolbox`:
   the step budget; a vanished frontier kept a mission waiting for ever; a
   goal timeout that crashed; a 0.6 m door read as a wall.
 
+**Fixed since (2026-10-02), each confirmed red first:**
+
+* **Wedged in furniture** -- a goal that fails without the robot moving now
+  backs out instead of failing the place, and a search never ends
+  `searched` while the robot is boxed in. **Then a second defect behind it:**
+  one living-room goal was sent eleven times, each wedged against an
+  armchair, until the mission's time ran out -- a wedge was never held
+  against the place. A place that wedges the robot a SECOND time now counts
+  as a failed try (`deaa179`).
+* **A move refused by the mission's own nav2 goal ended the mission
+  `preempted`** (3.23 refuses autonomous `/action` while a goal is live, and
+  the mission's own goal was that goal). The mission now cancels its goal
+  first and waits on that refusal; a person taking over still ends it.
+* **A sighting was forgotten once out of view.** The den run saw the
+  backpack, lost the approach to an escape, and spent the rest of its half
+  hour in the garage. The search now goes back to where the target was last
+  seen, under the same retry rule as a place.
+* **The jamb false arrival** was closed by 3.32 (edge refusal), on dev.
+
+**Stopped 2026-10-02 on a SLAM fault, not a search fault.** The recorded
+batch on `106cd6d` was stopped after three rooms: in the furnished home
+`slam_toolbox` closed loops to the wrong place (1.6-3.2 m, never recovered,
+odometry exact), so goals went to points outside the house. That is 3.34.
+The rooms' numbers from that batch are not results.
+
 **Open, in order:**
 
-1. **The robot gets wedged in furniture** (the living room's sofa and coffee
-   table): every goal then aborts, frontiers are dropped, the search sees no
-   way out and ends `searched`. Planned: back out when goals abort without
-   the robot moving, and never end a search while the robot is boxed in.
-2. **A false arrival beside a door jamb** (pinned as a strict xfail in
-   `tests/test_arrival.py`): the camera sees the target past the jamb's edge
-   while every lidar beam at its bearing hits the jamb, and 3.11's arrival
-   rule declares `found` 1.13 m out. The car runs this rule, so the fix is
-   the user's call. Candidates: require the camera's own depth (the OAK-D
-   Lite's) to agree with the lidar before declaring arrival, or require the
-   lidar range to be stable over a small turn.
-3. Criteria 1, 2 and 6 on one recorded revision, after 1.
+1. **3.34 must be decided first** (below): its candidate D stops the jumps
+   but two criteria are short.
+2. **Criteria 1, 2, 4 and 6 on one recorded revision** -- the full batch,
+   `python -m tests.demo_explore rooms|absent|door|rule` (about 7 hours
+   unattended), on the branch's head once 3.34 settles. Nothing from the
+   earlier batches counts: every one ran on a revision since changed.
+3. **Coverage.** Exploration covered 32-94% of the reachable floor in
+   20 min across 3.34's runs, most of the low ones stuck in the living room
+   on the wedge loop now fixed. Criterion 2 needs 95%; unmeasured since the
+   fix.
 
 ### 3.32 Arrival that an edge cannot fake, and detections that respect occlusion (2026-10-01): criteria, written before building
 
@@ -3484,6 +3507,40 @@ confirmed by the user):**
    and R6's scaled-house goals stay 6/6 (`tests/demo_nav_goals.py`).
 4. **One file changes:** `service/slam/src/picar_bringup/config/slam.yaml`,
    each changed key commented with the run that justified it.
+
+**Results 2026-10-02 -- NOT closed: criterion 0 met, 1 FAILED (4/6), 2
+incomplete (1/2), 3 not run.** Every run: furnished home, fresh stack, 20 min
+`explore` for an absent target, error sampled at 1 Hz (raw series in each
+run's `slam_home_<t>.json` in the session scratchpad, not kept).
+
+| config | runs | jumps | max error | final error | verdict |
+|---|---|---|---|---|---|
+| image (original) | 3 | **3/3** (1.6-2.1 m at 230-296 s) | 2.4-12.5 m | 2.4-9.0 m | criterion 0 met: reproduced |
+| A: `do_loop_closing: false` (diagnostic) | 3 | 0 | 0.08-0.39 m | 0.06-0.36 m | the jumps ARE loop closures; scan matching alone drifts ~0.4 m |
+| B: nodes 20 cm / 0.2 rad, closures within 2 m at response 0.6 | 3 + 3 | 0 | 0.04-0.24 m | 0.02-0.13 m | stopped the jumps, tracked worse: 2 of 3 acceptance runs ended 0.13 m (bar 0.10) -- abandoned |
+| C: chain 40 nodes, response 0.6, within 2 m | 2 | **1** (2.48 m at 241 s, the living-room entrance) | 5.2 m | 3.6 m | rejected: tightening WHEN a closure is accepted does not stop it |
+| **D: `loop_search_space_dimension` 8 -> 2 m** (a closure may move the robot at most 1 m) | 3 trial + 6 acceptance | **0 of 9** | 0.09-0.43 m | 0.005-0.43 m | **committed** (`4a36d0f`); see criteria below |
+| D, right encoder 3% long | 2 of 3 | 0 | 0.15, 0.46 m | 0.03, 0.27 m | odometry alone 10.6-11.9 m off |
+
+* **Criterion 1 FAILED, 4 of 6.** The two failures (final 0.43 and 0.19 m)
+  both began as the robot went through the den's 0.6 m door into a room it
+  had not seen, and were never corrected (it stayed in the den). The den
+  door is PROVISIONAL (inferred from the appraisal sketch). Both nav2 tours
+  passed the same door at 3-4 cm, so it is not every time.
+* **Criterion 2 incomplete: 1 of 2** (the third run was stopped). SLAM
+  corrects ~11 m of odometry error to 0.03-0.27 m; the 0.27 m run fails the
+  0.15 m bar.
+* **Criterion 3 not run** (R5 laps, R6 goals) -- stopped before it.
+* **A tour regression to check before accepting D:** R6's nine-goal home
+  tour (`--tour 1`) failed the five east-side goals on D in both runs
+  (first `rejected`, then `aborted`), where 3.21 reached 8 of 9 on the
+  original config. Not yet known whether D or the tour's start-up timing
+  causes it: run one tour on the original config as the control.
+
+**Next:** the control tour; then either tune how far scan matching may
+leave odometry (the den door), measured against the drift runs too, or
+record criterion 1 as failed and accept D for having removed the jumps --
+the user's call.
 
 ## 4. Honest residue -- what the twin cannot tell you
 
