@@ -8198,6 +8198,51 @@ architecture leans harder on the cloud -- which raises cost per mission
 and makes 2.9's latency budget the binding constraint again. That is a
 worse system, not a broken one, and it is the outcome to plan against.
 
+#### P26: the image handling, off the CPU -- **criteria written 2026-10-02, before building**
+
+**Asked by the user** (2026-10-02, with the decision to open the Jetson,
+`PLAN-ros-alignment.md` 3.33). P7b projected that on the Orin the tier
+spends ~36 ms in the model and ~229 ms handling the image on the CPU, and
+the board's six cores are shared with SLAM, nav2 and the safety loop. This
+is fix 1 of three in `PLAN-ros-alignment.md` 1.1 (then TensorRT fp16, then
+Isaac ROS only on a measured trigger), and it stays in the brain's Python --
+no wall moves.
+
+**Found reading the code first:** `ClipScorer` decodes the whole JPEG again
+for every crop it scores (`brain/perceive.py` ~1171), up to 16 crops a
+frame, and the detector decodes it once more. Each crop is then resized,
+centre-cropped and normalised by open_clip's PIL transforms, one at a time.
+
+**The change:**
+
+1. **Decode once per frame** and hand the decoded image to the detector and
+   every crop.
+2. **Crops as one batch:** cut, resize and normalise all of a frame's crops
+   as tensors and score them in a single CLIP forward pass.
+3. **On the GPU when there is one:** the resize, crop and normalise run on
+   `cuda` tensors where PyTorch has CUDA; the CPU path stays for machines
+   without it (the laptop, CI).
+
+**Acceptance criteria:**
+
+1. **Same answers.** On the pinned corpus (`control/perception_eval.py
+   score`, the frame set pinned before the run), the shipped gate's true and
+   false positives are **identical**, and every CLIP probability is within
+   **0.01** of today's. A resize that differs from PIL's anti-aliasing
+   could move scores; if it does, that is measured, not assumed away.
+2. **The CPU time it removes, on the Jetson at 15 W:** CPU image handling
+   per frame down by at least **50%** against today's code on the same
+   frames, with the GPU time and the end-to-end time recorded alongside.
+   (Today's numbers are taken first on the board, as the baseline.)
+3. **No regression without a GPU:** on the laptop's CPU path, per-frame
+   time no worse than today's (decoding once should make it better).
+4. The perception tests (`tests/test_perceive.py`, which run on fakes) and
+   the whole suite pass.
+
+**Why on the Jetson rather than a rented GPU:** the board is being opened
+this weekend (3.33), and an A10G is not an Orin; P7b's whole lesson was that
+projections from one to the other moved 2.4x once measured.
+
 #### P9: composing YOLO-World instead of replacing with it -- **MEASURED 2026-09-13**
 
 4.11 ran YOLO-World as a **replacement** for all three models and

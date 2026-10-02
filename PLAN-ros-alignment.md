@@ -3332,6 +3332,81 @@ golden image is unchanged. Full suite 1555 passed; one real-time serial test
 (`test_settle_pass` stock forward) failed once under parallel load and
 passes 6 of 6 alone.
 
+### 3.33 The Jetson before the Rover: bring-up, its two risks, and G4 (2026-10-02): plan and criteria, written before starting
+
+**Decided by the user 2026-10-02:** open the Jetson now ("definitely open
+the Jetson this evening") rather than keep it boxed until the Rover
+arrives. The reason that decides it: Amazon's return window closes ~Oct 30
+and the Rover may arrive as late as Nov 11, so waiting could mean learning
+the board fails a risk after it can no longer go back. Opened now, both of
+`JETSON-BOM.md` section 7's open risks are settled while it is still
+returnable. **Keep the box and all packaging, and modify nothing on the
+board,** so a return stays clean.
+
+**G4 does not need the Rover.** As written (3.24) it is the stack on the
+car's own computer against `SIM_MOTOR_BOARD=fake` -- the real motor-board
+code over a pty -- so this weekend can close it.
+
+**What is needed first** (`JETSON-BOM.md` section 1; confirm each is in
+hand): the stock 19 V adapter (every firmware step runs on it, never a
+battery), a microSD of 64 GB or more (or the NVMe), a DisplayPort monitor
+and USB keyboard for the firmware check, and network for the board.
+
+**The steps, in order** (each a stop point -- a failure is recorded and
+decided on, not worked around):
+
+1. **Firmware check** (`HARDWARE-BOM.md` 5.1): Esc at the splash, read the
+   UEFI version. Older than 36.0 means NVIDIA's JetPack 6 update path first,
+   on the stock adapter.
+2. **JetPack 6.2.1** (Ubuntu 22.04), so the Humble container stays as it is
+   (`JETSON-BOM.md` section 7: JetPack 7 would mean moving to Jazzy).
+   Record `nvpmodel -q`; set **15 W** (the user's choice, 2026-10-01).
+3. **Risk 1: a working torch.** NVIDIA's torch wheel for this JetPack in the
+   project's venv; `torch.cuda.is_available()`; then the shipped pipeline
+   (`brain/perceive.py`, `yoloe-11s-seg` + CLIP) on one corpus frame with
+   both models on `cuda`.
+4. **Risk 2: latency on the board.** The tier's per-frame time on the
+   pinned corpus, split into GPU model time and CPU image handling, at 15 W
+   and at 25 W (MAXN SUPER only on the stock adapter). This is the number
+   section 1.1's perception trigger reads; P26
+   (`PLAN-onboard-perception.md`) is measured here too.
+5. **The project on the board.** Clone from GitHub (`dev` pushed first),
+   `.venv`, the offline suite, then Docker with the NVIDIA runtime and the
+   ROS image built natively (`docker build -t vision-picar-ros service/slam`).
+6. **G4.** Robot server (`SIM_MAP=scaled_house`, `ROBOT_DRIVE=ros`,
+   `WORLD_MODE=ros`, `ROBOT_MODE=hardware`, `SIM_MOTOR_BOARD=fake`), brain
+   and container on the Jetson; the live chain and nav suites.
+7. **Headroom.** The whole stack at once -- SLAM, nav2, the safety loop at
+   20 Hz and the perception tier on frames -- watched for the safety loop's
+   lateness, memory and temperature.
+
+**Acceptance criteria:**
+
+1. **Firmware and OS:** the board boots JetPack 6.2.1, power mode recorded.
+2. **torch works on the GPU:** `torch.cuda.is_available()` is true and the
+   shipped pipeline returns the same verdict on a corpus frame as the
+   laptop (same detection status, CLIP probability within 0.01).
+3. **Latency recorded:** per-frame GPU and CPU times over at least 50
+   corpus frames, at 15 W and 25 W. **Budget, proposed for the user to
+   confirm:** 250 ms a frame (4 Hz) at 15 W. Over it, section 1.1's trigger
+   is live and P26 is the first fix.
+4. **The suite passes** on the board from its `.venv` (the offline suite;
+   live and UI tests may skip, and each skip is listed).
+5. **G4:** the live chain and nav suites pass **5 consecutive runs** on the
+   Jetson (3.24's gate, unchanged).
+6. **Headroom, with everything running:** the robot server's wheel loop
+   reports **0 late ticks** at 20 Hz over a 10-minute nav2 run with the
+   tier processing frames (the `/health` `wheel_loop` readout, 3.18);
+   at least **1 GB** of memory free; no thermal throttling
+   (`tegrastats`).
+7. **Reversible:** the box and packaging kept, nothing on the board
+   modified, until the user decides to keep it.
+
+**If a risk fails:** torch with no working wheel for JetPack 6.2.1, or
+latency far over budget with P26 unable to close it, is the decision point
+the return window exists for -- recorded here and taken to the user before
+Oct 30.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
