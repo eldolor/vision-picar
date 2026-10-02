@@ -171,7 +171,7 @@ class _HaltGate(RobotInterface):
         self._guard("turn_right")
         return self._robot.turn_right(angle)
 
-    # 3.22's guarded verbs, through the gate (found 2026-10-01, PLAN 3.31):
+    # 3.22's guarded verbs, through the gate (found 2026-10-01, PLAN 3.32):
     # without these the safety layer saw the gate's default `verb_plan()`
     # (None) and called the raw verb, so every IN-PROCESS mission ran turns
     # with no pivot vetting (3.19) and forwards checked once, not every

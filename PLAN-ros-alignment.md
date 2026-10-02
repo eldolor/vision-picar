@@ -3119,80 +3119,11 @@ the keep-out rule was amended mid-phase; both rules' runs are recorded.**
   in 41 s alone. Section 6 item 6's frontier retry is the same lesson:
   a blocked path may be blocked only for now.
 
-### 3.31 A search that uses the map: frontier exploration (2026-10-01): criteria, written before building
+### 3.32 Arrival that an edge cannot fake, and detections that respect occlusion (2026-10-01): criteria, written before building
 
-**Asked by the user** ("go ahead", on the next item after 3.29): section 6
-item 6's first part. Today's searches are reactive -- each step looks at
-what is in front of it -- and in the furnished home they do not find the
-backpack in 200 steps (`CLAUDE.md`'s Home row; item 6's motivating
-mission held a cloud FORWARD into the dining room and ended `blocked`
-after 14 steps, never having seen the kitchen). Saving the map, its S3
-backup, and reloading a saved map are later phases; this one is the search.
-
-**The policy, `policy: "explore"`** (in `brain/`, so the mission's
-decisions stay in one place, item 6):
-
-1. **Frontiers** from `WorldInterface.get_map()`'s tri-state grid: free
-   cells next to unknown ones, grouped into connected clusters; each
-   cluster's goal is a free cell in it the chassis fits on.
-2. **Choose** the reachable frontier with the shortest path from the pose,
-   searching only through cells KNOWN free on the discovered map -- never
-   the layout (R1's lesson: a harness that reads the truth reports a number
-   the robot cannot reach).
-3. **Go there by a goal**, not by verbs: through the world's goal API
-   (`POST /world/goal` -> nav2 on `world: ros`). 3.23 makes a goal an
-   autonomous driver that the brain must not interleave verbs with, so
-   while a goal is active the mission issues no motion of its own.
-4. **Perceive throughout.** Every tick runs the policy's perception (the
-   tiered pipeline, or the sim's synthetic detections, 1.12); on a
-   sighting with a lidar range the goal becomes a point short of the
-   target, and 3.11's arrival rule ends the mission `found`.
-5. **Set aside, then retry** a frontier whose goal fails: back after a
-   cooldown, or sooner if the map near it changes; dropped after **K = 3**
-   failures at different times (item 6, agreed). **Done** -- outcome
-   `searched` -- only when no reachable frontier remains and every set-aside
-   one has had its last try.
-
-**A sim goal executor.** `world: sim` has no nav2, and the sweeps below
-need hundreds of missions in-process (rule 2). So `MockWorld` gains the
-same goal API, executed by a deliberately plain stand-in: a shortest path
-over the DISCOVERED map's free cells (the same rule as 2), driven as verbs
-through `robot/safety.py`. It is not nav2 and claims nothing about nav2;
-criterion 6 is the live run that does.
-
-**Acceptance criteria:**
-
-1. **It finds things a reactive search does not.** Furnished home
-   (`home_first_floor`), backpack where the map puts it, sim ground-truth
-   detections, **20 starts spread over the house**: at least **18 of 20**
-   end `found`, against today's tiered search on the same 20 starts
-   (measured first, as the baseline). Paired progress metric: median
-   distance driven to `found`, recorded.
-2. **It knows when it is done.** The same 20 starts with no target: every
-   mission ends `searched` (not `max_steps`, not `blocked`), having seen at
-   least **95%** of the free cells reachable from the start (ground truth,
-   read by the test only), in bounded time.
-3. **No regression where reactive search already works.** R1b's search
-   starts in the starter house: arrival at least R1b's 100%.
-4. **Safe on ground truth.** Every mission in 1-3: 0 contacts and no move
-   ending under 18 cm of travel-to-contact (3.18's bar,
-   `tests/footprint_sweep.py`'s geometry).
-5. **A frontier nav2 cannot reach does not stall it.** The dining-chair
-   gap (the planner/controller footprint mismatch the Home row records),
-   or a doorway held by a 3.30 mover: at most K = 3 attempts per frontier,
-   and the search still ends `found` or `searched`.
-6. **Live, through the real path, once.** One mission through the brain's
-   HTTP API with `drive: ros`, `world: ros`, nav2 and SLAM, in the scaled
-   house: ends `found`, with every move through `twist_mux`,
-   `collision_monitor` and `robot/safety.py`.
-7. **The wall holds.** `brain/` and `control/` import no ROS
-   (`tests/test_ros_containment.py`), and the policy reads the world only
-   through `WorldInterface` / `RemoteWorld` -- which gains the goal calls
-   as a consumer of `/world/goal`, with no hint of nav2 behind it.
-8. Whole suite green from `.venv`.
-
-**Found before building, 2026-10-01 -- in-process missions never used the
-guarded verbs.** The baseline for criterion 1 (today's tiered search, 20
+**Background -- found 2026-10-01: in-process missions never used the
+guarded verbs.** A baseline taken for the frontier search (3.31, which a
+separate session builds on its own branch; today's tiered search from 20
 furnished-home starts: **1/20 found**, median 14% of the reachable floor
 seen) showed six missions turning a corner into furniture on ground truth.
 `MissionRunner` wraps its robot in `_HaltGate`, which did not forward
@@ -3206,14 +3137,12 @@ own verbs. **Fixed** (the gate forwards all three;
 `tests/test_mission_guarded_verbs.py`, red without it): the same baseline
 has no contact, closest 1.30 cm -- the pivot margin.
 
-**Two consequences, both in 3.32:** five arrival/bearing tests had pinned an
+**Two consequences, both below:** five arrival/bearing tests had pinned an
 approach only an unguarded verb could make (bumper ~4 cm from the target,
 inside the 20 cm line), and a false arrival appeared that the overshoot had
 been hiding.
 
-### 3.32 Arrival that an edge cannot fake, and detections that respect occlusion (2026-10-01): criteria, written before building
-
-**Asked by the user** ("fix both", after 3.31's gate finding). With guarded
+**Asked by the user** ("fix both", after the gate finding above). With guarded
 verbs, one 3.11 mission under a 90% detector ended `found` **1.1 m short**:
 stopped 37 cm from a door jamb, the backpack visible through the doorway at
 0.4 deg, and the five-beam arrival window -- 3 cm wide at that range --

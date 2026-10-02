@@ -1,7 +1,8 @@
 """
 tests/test_mission_guarded_verbs.py
 
-Found 2026-10-01 while measuring `PLAN-ros-alignment.md` 3.31: an
+Found 2026-10-01 (`PLAN-ros-alignment.md` 3.32's background), taking a
+baseline for the frontier search: an
 IN-PROCESS mission's verbs bypassed 3.22's guarded verbs. `MissionRunner`
 wraps its robot in `_HaltGate`, which did not forward `verb_plan()`, so the
 safety layer saw None and called the raw verb -- turns with no pivot vetting

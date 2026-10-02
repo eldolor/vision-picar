@@ -33,7 +33,7 @@ from tests.test_bearing_turns import (
     _build,
     _quiet_cloud)
 
-from tests.test_bearing_turns import ARRIVED_CELLS  # noqa: E402 -- corrected 3.31, see there
+from tests.test_bearing_turns import ARRIVED_CELLS  # noqa: E402 -- corrected 3.32, see there
 FALSE_ARRIVAL_M = 0.60        # criterion 2
 SWEEP = CLEAR_STARTS + [(*SEARCH_START, o) for o in SEARCH_OFFSETS]
 

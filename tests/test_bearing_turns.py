@@ -50,7 +50,7 @@ GOAL = (23.5, 5.5)  # the backpack's cell centre in the scaled house
 STEPS = 60
 # Ground-truth "arrived", in cells from the backpack's CELL CENTRE: the
 # robot's centre within 3.11's arrival radius of the backpack's FACE (half a
-# cell from its centre). CORRECTED 2026-10-01 (PLAN 3.31): this was 1.05
+# cell from its centre). CORRECTED 2026-10-01 (PLAN 3.32): this was 1.05
 # cells -- the bumper about 4 cm from the backpack -- which an in-process
 # mission could reach only because its verbs bypassed the guarded loop
 # (`_HaltGate` did not forward `verb_plan()`) and an unguarded FORWARD
