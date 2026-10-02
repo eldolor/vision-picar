@@ -1,5 +1,5 @@
 """
-python -m tests.demo_slam_home [n] [--slam path/to/slam.yaml] [--drift L,R] [--limit S]
+python -m tests.demo_slam_home [n] [--slam path/to/slam.yaml] [--drift L,R] [--limit S] [--tour 1]
 
 PLAN-ros-alignment.md 3.34's instrument: does slam_toolbox keep the robot
 where it is in the furnished home? Each run is a fresh stack (tests/
@@ -7,6 +7,10 @@ demo_explore.stack) and one `explore` mission for a target that is not in
 the house -- the workload that broke SLAM in 3.31's batch: long, wandering,
 past many chair and table legs. /world/error (SLAM's pose against the sim's
 truth) is sampled at 1 Hz for the whole mission. One JSON line per run.
+
+`--tour 1` replaces the mission with R6's nine-goal nav2 tour of every room
+(tests/demo_nav_goals.py HOME_GOALS): a search that never leaves two rooms
+exercises SLAM in two rooms.
 
 A JUMP is the error growing by more than 0.5 m between two samples at most
 2 s apart: odometry cannot do that, so it is the map frame moving under the
@@ -26,13 +30,14 @@ HOUSE = "home_first_floor"
 JUMP_M = 0.5
 
 
-def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400):
+def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False):
     robot = dx.stack(HOUSE, slam_yaml=slam_yaml, odom_drift=drift)
     brain = httpx.Client(base_url=f"http://127.0.0.1:{dx.BRAIN}", timeout=60)
-    r = brain.post("/mission/start", json={"target_object": "purple elephant",
-                                           "policy": "explore", "max_steps": max_steps})
-    if r.status_code != 200:
-        return {"start": r.status_code, "detail": r.text[:300]}
+    if not tour:
+        r = brain.post("/mission/start", json={"target_object": "purple elephant",
+                                               "policy": "explore", "max_steps": max_steps})
+        if r.status_code != 200:
+            return {"start": r.status_code, "detail": r.text[:300]}
     samples, stop = [], threading.Event()
 
     def sampler():
@@ -49,13 +54,24 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400):
             stop.wait(1.0)
     th = threading.Thread(target=sampler, daemon=True)
     th.start()
-    t0, status = time.time(), {}
-    while time.time() - t0 < limit_s:
+    t0, status, full_log = time.time(), {}, []
+    if tour:
+        import os
+        os.environ.update(SIM_MAP=HOUSE, PICAR_ROBOT_URL=f"http://127.0.0.1:{dx.ROBOT}")
+        from tests import demo_nav_goals as ng
+        goals = [ng.run_goal(robot, x, y)["state"] for _name, x, y in ng.HOME_GOALS]
+        status = {"outcome": "tour", "step": goals}
+    while not tour and time.time() - t0 < limit_s:
         status = brain.get("/mission/status").json()
+        tail = status.get("log_tail") or []
+        k = len(tail)
+        while k and tail[:k] != full_log[-k:]:
+            k -= 1
+        full_log.extend(tail[k:])
         if not status.get("running") and status.get("outcome") not in (None, "idle", "running"):
             break
         time.sleep(2)
-    else:
+    if not tour and status.get("running"):
         brain.post("/mission/stop")
     time.sleep(3)                      # at rest: the error now is not latency
     stop.set()
@@ -74,7 +90,7 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400):
            "final_heading_error_deg": final.get("heading_error_deg"),
            "jumps": jumps}
     with open(f"{dx.LOGDIR}/slam_home_{int(t0)}.json", "w") as f:
-        json.dump({**out, "series": samples}, f)
+        json.dump({**out, "series": samples, "full_log": full_log}, f)
     return out
 
 
@@ -84,7 +100,8 @@ def main():
     opt = dict(zip(args[::2], args[1::2]))
     for _ in range(n):
         print(json.dumps(run(opt.get("--slam"), opt.get("--drift", ""),
-                             int(opt.get("--limit", 1200)))), flush=True)
+                             int(opt.get("--limit", 1200)), tour=opt.get("--tour") == "1")),
+              flush=True)
     dx._kill_ports()
 
 

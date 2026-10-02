@@ -42,29 +42,31 @@ slam_toolbox:
 
     use_scan_matching: true
     use_scan_barycenter: true
-    # 3.34: a node every 20 cm / 11 degrees (was 5 cm / 3 degrees). At 5 cm a
-    # loop chain of 10 nodes spanned half a metre, and in the furnished home
-    # every one of three baseline runs closed a loop to the wrong place
-    # (1.6-2.1 m jumps at 230-300 s, never recovered; odometry within 8 cm).
-    minimum_travel_distance: 0.2
-    minimum_travel_heading: 0.2
+    minimum_travel_distance: 0.05
+    minimum_travel_heading: 0.05
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
     link_match_minimum_response_fine: 0.1
     link_scan_maximum_distance: 1.5
-    # 3.34: candidates within 2 m (was 3; every false jump was 1.6-2.1 m).
-    loop_search_maximum_distance: 2.0
+    loop_search_maximum_distance: 3.0
     do_loop_closing: true
     loop_match_minimum_chain_size: 10
     loop_match_maximum_variance_coarse: 3.0
     loop_match_minimum_response_coarse: 0.35
-    # 3.34: a stricter match to accept a closure (was 0.45).
-    loop_match_minimum_response_fine: 0.6
+    loop_match_minimum_response_fine: 0.45
 
     correlation_search_space_dimension: 0.5
     correlation_search_space_resolution: 0.01
     correlation_search_space_smear_deviation: 0.1
-    loop_search_space_dimension: 8.0
+    # 3.34: how far ONE loop closure may move the robot -- a 2 m window, so at
+    # most 1 m each way (was 8 m: up to 4 m). In the furnished home every one
+    # of three runs on 8 m closed a loop to the wrong place, 1.6-2.5 m off,
+    # and never recovered (odometry within 8 cm throughout). Closing a loop
+    # here corrects drift of centimetres; a metre of it is not a correction.
+    # Tightening WHEN a closure is accepted instead did not hold: a 40-node
+    # chain at response 0.6 still jumped 2.5 m, and 20 cm nodes stopped the
+    # jumps but tracked 13 cm worse.
+    loop_search_space_dimension: 2.0
     loop_search_space_resolution: 0.05
     loop_search_space_smear_deviation: 0.03
 
