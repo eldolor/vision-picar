@@ -3387,9 +3387,9 @@ decided on, not worked around):
    shipped pipeline returns the same verdict on a corpus frame as the
    laptop (same detection status, CLIP probability within 0.01).
 3. **Latency recorded:** per-frame GPU and CPU times over at least 50
-   corpus frames, at 15 W and 25 W. **Budget, proposed for the user to
-   confirm:** 250 ms a frame (4 Hz) at 15 W. Over it, section 1.1's trigger
-   is live and P26 is the first fix.
+   corpus frames, at 15 W and 25 W. **Budget: 250 ms a frame (4 Hz) at
+   15 W -- confirmed by the user 2026-10-02.** Over it, section 1.1's
+   trigger is live and P26 is the first fix.
 4. **The suite passes** on the board from its `.venv` (the offline suite;
    live and UI tests may skip, and each skip is listed).
 5. **G4:** the live chain and nav suites pass **5 consecutive runs** on the
