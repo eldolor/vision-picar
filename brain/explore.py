@@ -104,6 +104,12 @@ class ExploreAgent(MissionAgent):
         # origin moves.
         self.seen: set = set()
         self._looked: list = []        # view-gap centres already visited
+        # Frontier goals already reached. A frontier that is still there
+        # after the robot stood at it cannot be cleared from there -- the
+        # unknown under a table, behind a sofa -- and nearest-first would
+        # send it straight back: the first house run made 50 goals at
+        # 0.36 m apiece.
+        self._reached: list = []
         self.seen_res: Optional[float] = None
         self.goals_sent = 0
         self.goals_failed = 0
@@ -117,9 +123,10 @@ class ExploreAgent(MissionAgent):
         action, executed, detail = self._choose(frame, scene)
         result = StepResult(step=len(self.history), frame=frame, scene=scene,
                             action=action, executed=executed, detail=detail)
-        # Waiting on nav2 is not a decision: it neither spends the step
-        # budget nor lands in the history the memory and the log read.
-        if action != "WAIT":
+        # A GOAL (or the final STOP) is a decision and spends the step
+        # budget; waiting on nav2 and the camera pans after an arrival do
+        # not -- the first house run spent 150 of its 200 steps on pans.
+        if action in ("GOAL", "STOP"):
             self.history.append(result)
         pose = self._pose()
         if pose.get("usable"):
@@ -139,9 +146,11 @@ class ExploreAgent(MissionAgent):
         self._note_seen()
 
         state = self._goal_state()
+        ended = None
         if self._goal is not None:
             if state in TERMINAL_STATES or state is None:
                 self._goal_ended(state or "lost", now)
+                ended = self.last_event
             elif now - self._goal["sent_at"] > self.goal_timeout_s:
                 # Record the failure first (it reads the goal), then cancel.
                 self._goal_ended("timeout", now)
@@ -165,7 +174,10 @@ class ExploreAgent(MissionAgent):
         if self._goal is not None:
             return "WAIT", True, f"nav2 {state}: {self._goal['kind']}"
 
-        return self._next_frontier(now)
+        action, executed, detail = self._next_frontier(now)
+        if ended:
+            detail = f"{ended}; {detail}"
+        return action, executed, detail
 
     # ---------- goals ----------
 
@@ -220,6 +232,9 @@ class ExploreAgent(MissionAgent):
             return known_near(m, x, y, self.retry.radius_m)
 
         for f in find_frontiers(m, pose["x_m"], pose["y_m"]):
+            if any(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < self.retry.radius_m
+                   for rx, ry in self._reached):
+                continue
             if self.retry.available(f.goal[0], f.goal[1], now, known):
                 return self._send(f.goal[0], f.goal[1], "frontier", now)
         seen_cells = {self._to_cell(m, c) for c in self.seen}
@@ -248,6 +263,7 @@ class ExploreAgent(MissionAgent):
         if state == "succeeded":
             self.last_event = f"reached {g['kind']} goal"
             if g["kind"] == "frontier":
+                self._reached.append((g["x_m"], g["y_m"]))
                 self._pending = list(LOOK_AROUND)
             elif g.get("look_at"):
                 self._pending = [("FACE", g["look_at"])]

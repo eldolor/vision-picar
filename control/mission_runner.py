@@ -544,6 +544,12 @@ class MissionRunner:
             self._vision_failures = 0
             self._last_action = result.action
             self._last_reasoning = self._describe(result)
+            if self.policy == "explore":
+                # The explore policy's 'why' is its goal bookkeeping (sent,
+                # reached, aborted and set aside, waiting on a cooldown), not
+                # the scene -- 3.31's first house runs could not be read
+                # without it.
+                self._last_reasoning = f"{result.detail} -- {self._last_reasoning}"
             scene = result.scene or {}
             if result.action in ("LEFT", "RIGHT"):
                 self._turns += 1

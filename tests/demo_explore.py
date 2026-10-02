@@ -41,6 +41,10 @@ LOGDIR = os.environ.get("EXPLORE_LOGDIR", "/tmp")
 
 
 def _kill_ports():
+    # Keep nav2's own account of a run before the container goes.
+    if subprocess.run(["docker", "inspect", CONTAINER], capture_output=True).returncode == 0:
+        with open(f"{LOGDIR}/explore_ros_{int(time.time())}.log", "w") as f:
+            subprocess.run(["docker", "logs", CONTAINER], stdout=f, stderr=subprocess.STDOUT)
     for port in (ROBOT, BRAIN):
         out = subprocess.run(["lsof", "-nP", f"-tiTCP:{port}", "-sTCP:LISTEN"],
                              capture_output=True, text=True).stdout.split()
@@ -90,26 +94,34 @@ def free_cells(world):
 
 
 def reachable_cells(world):
-    """Truth floor the robot can get to from its start: 4-connected free
-    cells with a free cell on every side (room for the chassis)."""
-    free = free_cells(world)
-    roomy = {c for c in free if all((c[0] + dx, c[1] + dy) in free
-                                    for dx in (-1, 0, 1) for dy in (-1, 0, 1))}
-    start = (world.robot_x, world.robot_y)
-    seen, q = {start}, deque([start])
-    while q:
-        c = q.popleft()
-        for n in ((c[0] + 1, c[1]), (c[0] - 1, c[1]), (c[0], c[1] + 1), (c[0], c[1] - 1)):
-            if n in roomy and n not in seen:
-                seen.add(n)
-                q.append(n)
-    return seen
+    """Truth floor cells the CHASSIS can get to from the start: any heading,
+    connected in configuration space (3.21's instrument, tests/chassis_fit.py).
+    A cell counts if the robot's centre can stand anywhere in it."""
+    import math as _m
+    from robot.safety import FOOTPRINT_LENGTH_M, FOOTPRINT_WIDTH_M
+    from tests import chassis_fit as cf
+    occ = cf.occupancy(world)
+    free = cf.free_space(occ, FOOTPRINT_LENGTH_M, FOOTPRINT_WIDTH_M)
+    start_px = (round((world.y + 1) * cf.PX), round((world.x + 1) * cf.PX))
+    start_k = round(world.theta / (2 * _m.pi / cf.HEADINGS)) % cf.HEADINGS
+    where = cf.reachable(free, start_px, start_k).any(axis=0)
+    out = set()
+    for (cx, cy) in free_cells(world):
+        block = where[(cy + 1) * cf.PX:(cy + 2) * cf.PX, (cx + 1) * cf.PX:(cx + 2) * cf.PX]
+        if block.any():
+            out.add((cx, cy))
+    return out
 
 
 def room_spot(world, room, reach):
     """A reachable cell near the middle of `room`, away from the start."""
+    # Floor nav2 can plan to: reachable, and no furniture in the eight cells
+    # around it. A room's middle is often under its table (the breakfast
+    # room's is, between the legs) -- a test of furniture, not of search.
     cells = [c for c in world.rooms[room] if c in reach
-             and math.hypot(c[0] - world.robot_x, c[1] - world.robot_y) > 4]
+             and math.hypot(c[0] - world.robot_x, c[1] - world.robot_y) > 4
+             and not any((c[0] + dx, c[1] + dy) in world.objects
+                         for dx in (-1, 0, 1) for dy in (-1, 0, 1))]
     if not cells:
         return None
     mx = sum(c[0] for c in cells) / len(cells)
@@ -128,7 +140,7 @@ def run_mission(robot, house, policy="explore", target=TARGET, max_steps=200):
         return {"start": r.status_code, "detail": r.text[:300]}
     t0, last, travel = time.time(), None, 0.0
     min_gap, contacts, inside, samples = math.inf, 0, 0, 0
-    status = {}
+    status, full_log = {}, []
     while time.time() - t0 < MISSION_LIMIT_S:
         truth = robot.get("/world/truth").json()
         objs = {(o["x"], o["y"]) for o in robot.get("/sim/objects").json()["objects"]}
@@ -149,12 +161,22 @@ def run_mission(robot, house, policy="explore", target=TARGET, max_steps=200):
                 inside += 1
         samples += 1
         status = brain.get("/mission/status").json()
+        tail = status.get("log_tail") or []
+        # The status keeps 20 lines; keep every one seen, in order.
+        k = len(tail)
+        while k and tail[:k] != full_log[-k:]:
+            k -= 1
+        full_log.extend(tail[k:])
         if not status.get("running") and status.get("outcome") not in (None, "idle", "running"):
             break
         time.sleep(0.5)
     else:
         brain.post("/mission/stop")
+    tag = f"{policy}-{target}-{int(t0)}".replace(" ", "_")
+    with open(f"{LOGDIR}/explore_status_{tag}.json", "w") as f:
+        json.dump({**status, "full_log": full_log}, f, indent=1)
     return {"outcome": status.get("outcome"), "seconds": round(time.time() - t0),
+            "status_file": f"explore_status_{tag}.json",
             "steps": status.get("step"), "explore": status.get("explore"),
             "stuck_episodes": status.get("stuck_episodes"), "travel_m": round(travel, 1),
             "min_gap_cm": round(min_gap, 1), "contact_samples": contacts,

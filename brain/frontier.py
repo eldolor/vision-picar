@@ -321,12 +321,17 @@ class RetryBook:
         return False
 
     def cooling(self, now: float) -> bool:
-        """Is anything waiting out a cooldown -- i.e. not yet given up on?"""
-        return any(e.failures < self.limit for e in self.entries)
+        """Is anything still inside its cooldown? A place whose cooldown has
+        passed is no longer waited on: if it is still a frontier it is
+        offered again, and if the map has moved on it is simply gone. (The
+        first version counted every not-yet-dropped place, so a frontier that
+        vanished kept a mission "retrying in 0 s" for ever.)"""
+        return any(e.failures < self.limit and now - e.last_t < self.cooldown_s
+                   for e in self.entries)
 
     def next_ready_in(self, now: float) -> float:
         waits = [self.cooldown_s - (now - e.last_t) for e in self.entries
-                 if e.failures < self.limit]
+                 if e.failures < self.limit and now - e.last_t < self.cooldown_s]
         return max(0.0, min(waits)) if waits else 0.0
 
 

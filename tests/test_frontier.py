@@ -98,6 +98,8 @@ def test_a_failure_cools_down_then_comes_back():
     assert not book.available(1.0, 1.0, now=10)
     assert book.available(1.0, 1.0, now=31)
     assert book.cooling(now=10)
+    # past its cooldown it is offered again, not waited on
+    assert not book.cooling(now=31)
 
 
 def test_a_failure_covers_its_neighbourhood_not_the_house():
