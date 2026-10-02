@@ -3106,7 +3106,7 @@ the keep-out rule was amended mid-phase; both rules' runs are recorded.**
   in 41 s alone. Section 6 item 6's frontier retry is the same lesson:
   a blocked path may be blocked only for now.
 
-### 3.31 A search that uses the map: frontiers, and retrying what is blocked (2026-10-01): DRAFT criteria, for the user to confirm before building
+### 3.31 A search that uses the map: frontiers, and retrying what is blocked (2026-10-01): criteria, written before building
 
 Section 6 item 6's frontier search with its retry rule, chosen by the user
 as the next build ("frontier search + retry"). Why it matters: the user's
@@ -3142,7 +3142,7 @@ after 315 s; `found` in 41 s without them).
   only; the cloud's "a backpack is likelier in a bedroom" is a later
   option, measured against this one.
 
-**Criteria (DRAFT -- numbers to be confirmed by the user before any run):**
+**Criteria (confirmed by the user 2026-10-01, numbers as written):**
 
 1. **It finds things in a house it has not mapped.** Furnished home
    (`home_first_floor`), from the foyer, empty map, the backpack moved to
@@ -3214,14 +3214,22 @@ job, on a phone.
 ## 6. Open questions
 
 1. **Rename `service/slam/` to `service/nav/`?** It now holds nav2 too. Touches
-   `tests/test_ros_containment.py`.
+   `tests/test_ros_containment.py`. **Dropped 2026-10-01** (closed by Claude,
+   delegated by the user): a rename churns every doc and a test for no
+   change in behaviour.
 2. **Does `brain/tiered.py` still steer, or only pick goals?** Under nav2 the
    tier's action output competes with nav2's controller. P25's steering rung,
    Phase G's hold and `safest_direction` become inputs to goal selection rather
    than to motion. Settle at R6, against R1's measured baseline.
+   **Folded into 3.31 2026-10-01:** 3.15 kept the tier steering by verbs;
+   whether search sends nav2 goals instead is exactly 3.31's `explore`
+   policy, measured there.
 3. **Two collars, one robot.** `safety.py` on the teleop/vision path,
    `collision_monitor` on the nav path. They can disagree. Decide the
-   arbitration before R6, not after.
+   arbitration before R6, not after. **Closed 2026-10-01:** settled by 3.15
+   (in series, `robot/safety.py` last) and shown working by 3.30, where the
+   robot server's collar held the robot off a person after
+   `collision_monitor` let a creep through.
 5. **Who owns the lidar on the car?** (Raised 2026-09-26, after R7.) In the
    sim the robot server supplies the scan to both `robot/safety.py` (rear
    clearance, the depth path) and ROS (through the bridge). On the car the
@@ -3306,7 +3314,8 @@ job, on a phone.
      retry rule frontiers get, the stuck detector should share it.
 4. **`use_sim_time`, or real time?** R0 uses `sim.realtime` and wall-clock,
    which is simplest. A `/clock` publisher would buy determinism for
-   regression runs; not needed until it is.
+   regression runs; not needed until it is. **Parked 2026-10-01** until a
+   regression run actually needs determinism.
 7. **Things that move, in the simulator (agreed by the user 2026-10-01;
    first in order).** **BUILT as 3.30** (the results are there; this entry is
    the proposal as written). Every
