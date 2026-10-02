@@ -261,12 +261,16 @@ class ExploreAgent(MissionAgent):
         def known(x, y):
             return known_near(m, x, y, self.retry.radius_m)
 
-        for f in find_frontiers(m, pose["x_m"], pose["y_m"]):
+        frontiers = find_frontiers(m, pose["x_m"], pose["y_m"])
+        skipped = {"reached twice": 0, "set aside": 0}
+        for f in frontiers:
             if sum(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < self.retry.radius_m
                    for rx, ry in self._reached) >= 2:
+                skipped["reached twice"] += 1
                 continue
             if self.retry.available(f.goal[0], f.goal[1], now, known):
                 return self._send(f.goal[0], f.goal[1], "frontier", now)
+            skipped["set aside"] += 1
         seen_cells = {self._to_cell(m, c) for c in self.seen}
         for g in find_view_gaps(m, pose["x_m"], pose["y_m"], seen_cells):
             if any(math.hypot(g.centre[0] - lx, g.centre[1] - ly) < self.retry.radius_m
@@ -288,7 +292,9 @@ class ExploreAgent(MissionAgent):
             return "WAIT", True, (f"no frontier ready; retrying in "
                                   f"{self.retry.next_ready_in(now):.0f} s")
         self.searched = True
-        self.last_event = "no reachable frontier left"
+        self.last_event = (f"no reachable frontier left ({len(frontiers)} on the map: "
+                           f"{skipped['reached twice']} reached twice, "
+                           f"{skipped['set aside']} set aside or dropped)")
         return "STOP", True, self.last_event
 
     def _goal_ended(self, state: str, now: float) -> None:

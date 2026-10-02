@@ -174,7 +174,9 @@ def run_mission(robot, house, policy="explore", target=TARGET, max_steps=200):
         brain.post("/mission/stop")
     tag = f"{policy}-{target}-{int(t0)}".replace(" ", "_")
     with open(f"{LOGDIR}/explore_status_{tag}.json", "w") as f:
-        json.dump({**status, "full_log": full_log}, f, indent=1)
+        json.dump({**status, "full_log": full_log,
+                   "final_map": robot.get("/world/map").json(),
+                   "final_pose": robot.get("/world/pose").json()}, f)
     return {"outcome": status.get("outcome"), "seconds": round(time.time() - t0),
             "status_file": f"explore_status_{tag}.json",
             "steps": status.get("step"), "explore": status.get("explore"),
