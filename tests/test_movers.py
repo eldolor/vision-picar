@@ -264,3 +264,15 @@ def test_a_person_keeps_walking_while_the_robot_waits(monkeypatch):
     assert listed["sim_time_s"] >= 1.0
     person = [o for o in listed["objects"] if o["mover"]][0]
     assert (person["x"], person["y"]) != (12, 4)
+
+
+def test_a_person_in_front_hides_the_backpack_behind_them():
+    """Objects are solid (3.9), so they hide each other from the camera as a
+    wall does -- found while building 3.31, where the camera saw the backpack
+    straight through a person standing in the kitchen door and the arrival
+    rule took the person's range for the backpack's."""
+    world = _scaled(14.9, 4.5, math.atan2(5.5 - 4.5, 23.5 - 14.9))
+    seen = lambda: [d["label"] for d in world.frame_description()["detections"]]
+    assert "red backpack" in seen()
+    world.objects = {**world.objects, (16, 4): "person"}
+    assert "red backpack" not in seen() and "person" in seen()

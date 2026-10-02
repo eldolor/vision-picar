@@ -3321,6 +3321,17 @@ the user's decision.**
 6. **Met:** 1554 passed, 0 failed (3.25's stock forward test included,
    on its corrected bar).
 
+**Addendum 2026-10-02 (from 3.31's branch): objects hide objects too.**
+`visible_bearing()` and `_visible_objects()` let only WALLS hide an object,
+so the camera saw a backpack straight through a person standing in front of
+it; 3.31's door-sitter tests then had the arrival rule read the person's
+range as the backpack's. Both now take the OTHER objects as solid (3.9's
+rule, applied to the camera). `tests/test_movers.py::
+test_a_person_in_front_hides_the_backpack_behind_them`, red without it; the
+golden image is unchanged. Full suite 1555 passed; one real-time serial test
+(`test_settle_pass` stock forward) failed once under parallel load and
+passes 6 of 6 alone.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
