@@ -5,14 +5,24 @@ the decision-making is built and proven against a simulator before any
 hardware is bought. For a non-technical introduction read `INTRODUCTION.md`;
 for orientation in the code read `CLAUDE.md`.
 
-**Where things stand (2026-09-28).** Nothing has been bought yet.
+**Where things stand (2026-10-02).** The compute board has arrived and the
+chassis is on order; nothing has run on real hardware yet.
 
-- **Hardware (decided, not purchased):** an NVIDIA **Jetson Orin Nano
-  Super** on a **differential-drive** chassis (it pivots in place), a
-  **Slamtec RPLidar C1**, an IMX219 camera on a single pan servo, and a
-  Waveshare ESP32 motor board. Chosen 2026-09-19; the Raspberry Pi 5 +
-  Hailo-8L plan it replaced is history. Shopping list in `JETSON-BOM.md`,
-  part numbers and wiring in `HARDWARE-BOM.md`.
+- **Hardware (bought):** an NVIDIA **Jetson Orin Nano Super** (arrived
+  2026-09-30, to run at 15 W to start) on a **Waveshare UGV Rover** (ordered
+  2026-09-30, ~$730, due Oct 19 - Nov 11). The Rover is differential drive
+  (it pivots in place) and brings its own **ROS Driver** ESP32 board (closed
+  loop, encoder odometry to the host, 660 pulses/rev), a **D500 lidar**, an
+  **OAK-D Lite** camera and a pan-tilt. Still to buy: a separate Jetson
+  battery, and only if the 15 W stress test says so (`JETSON-BOM.md` 9.5).
+  The Raspberry Pi 5 + Hailo-8L plan, and the RPLidar C1 / IMX219 / General
+  Driver build of 2026-09-19, are history. Record in `JETSON-BOM.md`
+  section 9; concepts in `GUIDE-robot-base.md`.
+- **Next: the Jetson before the Rover** (`PLAN-ros-alignment.md` 3.33). It
+  gets opened while it is still returnable: firmware check, JetPack 6.2.1,
+  torch on the GPU, the perception tier's latency (budget 250 ms a frame at
+  15 W), and gate G4 -- the whole stack on the board against the fake motor
+  board.
 - **ROS 2 Humble, in one container** (`service/slam/`): the URDF,
   `ros2_control`, `slam_toolbox` and nav2 run there and nowhere else. The
   rest of the project talks to it over HTTP; a test fails if anything
@@ -23,10 +33,21 @@ for orientation in the code read `CLAUDE.md`.
   the robot through `RobotInterface` over HTTP. Both run locally today; the
   deployed twin reaches them through a tunnel (`service/tunnel/`).
 - **The simulator** now has continuous pose and wheel kinematics, solid
-  objects, a lidar, and several houses (`SIM_MAP`), including a model of
-  the owner's own first floor. The motor board is faked on a serial line
-  (`sim/fake_esp32.py`), so `robot/hardware_robot.py` -- the real motor
-  backend -- already runs against it.
+  objects, a lidar, several houses (`SIM_MAP`) including a model of the
+  owner's own first floor, the Rover's CAD geometry (lidar 4 cm ahead of the
+  rotation centre), and people and pets that move (`SIM_MOVERS`). The Rover's
+  motor board is faked on a serial line (`sim/fake_esp32.py`), so
+  `robot/hardware_robot.py` -- the real motor backend -- already runs
+  against it.
+- **Our firmware fork** (`firmware/ugv_base_ros/`, GPL-3.0, not flashed)
+  adds 0.1 mm odometers and a board timestamp to the Rover's board; with it,
+  direct-mode turns settle within +/-1 degree.
+- **`drive: ros` is to become the car's default**: gates G1-G3 are met in
+  the sim (a reliable live chain, the same safety bars as direct mode, and
+  a fallback where only a person drives if ROS dies); G4 needs the Jetson.
+- **Every component has two specs** under `docs/` -- an architecture spec
+  (what and why) and an engineering spec (how, today) -- checked by
+  `tools/spec_lint.py` in the test suite.
 
 `CLAUDE.md` section 3 has the authoritative built-vs-planned table.
 
@@ -36,11 +57,15 @@ for orientation in the code read `CLAUDE.md`.
 |---|---|
 | `CLAUDE.md` | orientation: status table, repo map, gotchas. Start here. |
 | `INTRODUCTION.md` | what the project is, for a non-technical reader |
-| `PLAN-ros-alignment.md` | the current plan: phases R0-R7 onwards (continuous pose, ROS 2, SLAM, nav2, the motor board), each closed on pre-stated data |
+| `docs/README.md` | the specifications: an architecture and an engineering spec for each of 15 components, and the reading path |
+| `PLAN-ros-alignment.md` | the current plan: phases R0-R7 and 3.17-3.33 (continuous pose, ROS 2, SLAM, nav2, safety, the motor board, the Jetson bring-up), each closed on pre-stated data |
+| `HANDOFF-2026-09-30-ros-gates.md` / `HANDOFF-2026-09-30.md` | the latest session handoffs: the ROS gates, and the robot base |
 | `service/slam/README.md` | the ROS 2 container: how to build and run it |
 | `AGENT-HARNESS.md` | how `control/` works: the mission tick, seams, failsafes, invariants |
 | `FEATURES.md` | every feature of the twin, how it works end to end, and the AWS topology it runs against |
-| `JETSON-BOM.md` / `HARDWARE-BOM.md` | what to buy / part numbers, wiring, bring-up order |
+| `JETSON-BOM.md` / `HARDWARE-BOM.md` | what to buy and what was bought / part numbers, wiring, bring-up order |
+| `GUIDE-robot-base.md` | a learning guide to robot bases: encoders, firmware, vendor protocols vs ROS 2, power |
+| `PI-VS-JETSON.md` | the "what if a Raspberry Pi instead" walkthrough |
 | `HARDWARE-READINESS.md` | before hardware day: verb-to-motor path and pre-flight checklist |
 | `PLAN-onboard-perception.md` | the perception tier and the reasoning behind the hardware |
 | `PLAN-mapping.md` | the mapping phase and the wall around ROS |
@@ -61,7 +86,7 @@ which lives in the Claude Project this work started in and is **not in
 this repo** -- the tables in `CLAUDE.md` are the in-repo source of truth.
 
 The rest of this file is an append-only build journal, oldest first,
-last extended 2026-09-07. Entries describe things as they were built; some
+last extended 2026-10-02. Entries describe things as they were built; some
 of them (the browser's Explore/Find and Vision Autopilot, the ECS
 deployment) have since been removed and are marked where they appear.
 
@@ -647,7 +672,9 @@ implementations of the robot's behavior.
 *Superseded 2026-09-19: the board is a **Jetson Orin Nano Super** with an
 IMX219 camera, not a Hailo-8L AI HAT+ with a Camera Module 3, and the build is
 ~$944 all-in, not ~$500. The chassis and lidar below still stand. See
-`JETSON-BOM.md` and `HARDWARE-BOM.md`.*
+`JETSON-BOM.md` and `HARDWARE-BOM.md`. Superseded again 2026-09-30: the
+chassis is the Waveshare UGV Rover, with its own D500 lidar and OAK-D Lite
+camera -- see the last two sections.*
 
 Reading Microduck (`PLAN-microduck-transplants.md`) turned into a rewrite
 of the hardware plan (`PLAN-onboard-perception.md`). The PiCar-X is out:
@@ -662,15 +689,53 @@ event-triggered deliberation tier.
 
 ## Swapping to real hardware (Phase 11, later)
 
-*Updated 2026-09-28.* `robot/hardware_robot.py` exists (R7, 2026-09-26): a
-`RobotInterface` backend that drives the Waveshare ESP32 motor board over
-serial. To use it, set `mode: hardware` in `config/robot.yaml` and give the
-robot server the board's port in `ROBOT_SERIAL` (or `hardware.serial_port`);
-`robot/factory.py` refuses to start without one. `SIM_MOTOR_BOARD=fake` runs
-the same backend against `sim/fake_esp32.py` instead of a board. The camera
-and lidar drivers are not written yet; until they are, on the car those
-readings answer "unusable" (under the fake board, the simulated body stands
-in for them). Before first power-on, read
-`HARDWARE-READINESS.md` section 5 (pre-flight, including flashing the board
-to closed-loop `mainType` 3) and `HARDWARE-BOM.md` section 5 (bring-up).
-Nothing in `brain/` should need to change.
+*Updated 2026-10-02.* `robot/hardware_robot.py` exists (R7, 2026-09-26;
+reworked for the Rover in 3.25): a `RobotInterface` backend that drives the
+Rover's ESP32 **ROS Driver** board over serial, anchoring on the board's
+`odl`/`odr` odometers. To use it, set `mode: hardware` in
+`config/robot.yaml` and give the robot server the board's port in
+`ROBOT_SERIAL` (or `hardware.serial_port`); `robot/factory.py` refuses to
+start without one. `SIM_MOTOR_BOARD=fake` runs the same backend against
+`sim/fake_esp32.py` instead of a board (`SIM_BOARD_FIRMWARE=fork` fakes our
+firmware fork). The Rover's board is closed loop from the factory, so it
+needs no reflash to drive; flashing `firmware/ugv_base_ros/` (finer
+odometers and a timestamp) comes after the arrival checks. The camera and
+lidar drivers are not written yet; until they are, on the car those
+readings answer "unusable", and **reverse is refused** while the robot has
+wheels but no usable scan (user decision, 2026-10-02) -- turns still work.
+Under the fake board, the simulated body stands in for the sensors. Before
+first power-on, read `HARDWARE-READINESS.md` section 5 (pre-flight) and
+`HARDWARE-BOM.md` section 5 (bring-up), then `PLAN-ros-alignment.md` 3.33
+for the Jetson. Nothing in `brain/` should need to change.
+
+## 2026-09-28 to 2026-10-02 -- the Rover, safety on the car's path, and specs
+
+- **The robot base was chosen and ordered.** A Hiwonder ROSOrin was
+  cancelled (its board sends no encoder data to the host and its firmware is
+  closed); the Waveshare UGV Rover was ordered instead. Its firmware was read
+  from source (3.26): it speaks JSON, not ROS, and Waveshare's Jetson nodes
+  are not used because they would bypass `robot/safety.py`.
+- **The sim became the Rover** (3.25, 3.27): the fake board is the Rover's
+  ROS Driver firmware (660 pulses/rev, `odl`/`odr`, a lossy 20 Hz stream,
+  reboots), and the URDF and safety layer take the Rover's CAD geometry,
+  including the lidar 4 cm off-centre.
+- **Firmware fork and settle pass** (3.28, 3.29): finer odometers and a
+  board clock, and a correction pass after each verb -- 120/120 turns within
+  +/-1 degree.
+- **Guarded verbs and `drive: ros` gates** (3.24): direct-mode moves are
+  re-vetted every 50 ms and stop at the line; the ROS verb path meets the
+  same ground-truth bars; when the ROS stack dies, the mission ends and only
+  a person can drive.
+- **Things that move** (3.30): `SIM_MOVERS` adds people and pets that walk
+  a path; across 2021 runs with a person crossing, no contact.
+- **Arrival an edge cannot fake** (3.32): a lidar window that spreads across
+  an edge no longer counts as arrival, and the sim's detections respect
+  occlusion. It also found that in-process missions had not been using the
+  guarded verbs -- fixed.
+- **Specs and a spec review** (decision 0001): `docs/` now holds an
+  architecture and an engineering spec for each of 15 components,
+  `tools/spec_lint.py` checks them, and the review
+  (`docs-review/SPEC-REVIEW.md`) led to three hardware-path fixes: a stop
+  under `drive: ros` never waits on the container, `/health` names the map
+  under the fake board, and no blind reverse.
+- **Next** (3.33): bring up the Jetson before the Rover arrives.
