@@ -462,11 +462,11 @@ class SafetyController:
         The beams within the same half-angle as the forward path cone
         (`PATH_HALF_ANGLE_DEG`) either side of dead astern, nearest return,
         minus `LIDAR_TO_REAR_BUMPER_CM`. A beam with no return is clear. A
-        backend with no usable scan answers `(None, "no_rear_sensor")` and
-        the reverse proceeds -- today's behaviour, because refusing every
-        reverse on a lidar-less backend would make it undrivable rather than
-        safe. With a lidar fitted, this is what stands between a reverse
-        and whatever is behind.
+        backend with no usable scan answers `(None, "no_rear_sensor")`;
+        `reverse_clearance()` then refuses the reverse if the body has
+        wheels to move (2026-10-02) and lets it through if it has none. With
+        a lidar fitted, this is what stands between a reverse and whatever
+        is behind.
         """
         scan = self._scan() if scan is None else scan
         if not scan or not scan.get("usable"):
@@ -613,9 +613,30 @@ class SafetyController:
 
     def reverse_clearance(self) -> Tuple[Optional[float], str]:
         """What a reverse is vetted against: the rear cone and the swept
-        corridor astern, in series, off one scan."""
+        corridor astern, in series, off one scan.
+
+        **If nothing can see astern and the body really moves, the answer is
+        0.0** (decided by the user 2026-10-02, docs-review/SPEC-REVIEW.md
+        finding 3): FORWARD's rule from 3.18 part 2, applied to backing up.
+        "Really moves" means its wheel encoders report -- the real car
+        before its lidar driver lands, which until now reversed blind. A
+        body with no wheels to read (a phone walk, a replay, a test double)
+        keeps the old answer, `(None, "no_rear_sensor")`: its REVERSE moves
+        nothing, or moves a person who can see. Turns stay allowed blind --
+        they are how a robot turns away from something."""
         scan = self._scan()
+        if not (scan and scan.get("usable")) and self._has_wheels():
+            return 0.0, "astern_not_observed"
         return self._nearer(self.rear_clearance(scan), self.footprint_clearance(-1, scan))
+
+    def _has_wheels(self) -> bool:
+        get_wheel_state = getattr(self.robot, "get_wheel_state", None)
+        if get_wheel_state is None:
+            return False
+        try:
+            return bool(get_wheel_state().get("usable"))
+        except Exception:  # noqa: BLE001 -- a body that cannot say has none to vet
+            return False
 
 
     def vet_wheel_velocity(self, left_rad_s: float, right_rad_s: float):

@@ -109,7 +109,15 @@ Prerequisites: Docker Desktop running; the repo's `.venv` set up
 `LOCAL_SECRET` (mode 600, never in the repo -- `service/tunnel/run.sh`
 reads it and refuses to start without it).
 
-**Order matters: the robot server first, then the container.**
+**Order matters: start the robot server, wait for `GET /wheels` to report
+`usable: true`, then start the container.** The plugin's `on_activate()`
+reads `/wheels` once, and a `usable: false` answer is a hardware error that
+makes ros2_control deactivate the plugin for good (until the container
+restarts). An *unreachable* server is retried, so a container started before
+the server is fine; one started while the server answers "no wheels" is not.
+`MockRobot` has wheels at once; `HardwareRobot` (the car, or
+`SIM_MOTOR_BOARD=fake`) answers `usable: false` until the board's first
+`T:1001` frame, so there the wait is real (step 2b below).
 
 ```bash
 # 1. Build (long the first time: tf2 and slam_toolbox compile from source)
@@ -120,9 +128,12 @@ docker build -t vision-picar-ros service/slam
 #    Add WORLD_MODE=ros for SLAM/nav2 (R5/R6), SIM_MAP to pick the house.
 ROBOT_DRIVE=ros WORLD_MODE=ros SIM_MAP=scaled_house bash service/tunnel/restart.sh
 
+# 2b. Wait until the robot server reports wheels (see "Order matters").
+set -a; source ~/.vision-picar-local-secrets; set +a
+until curl -s -H "x-app-secret: $LOCAL_SECRET" localhost:8000/wheels | grep -q '"usable": *true'; do sleep 0.5; done
+
 # 3. The container. The secret must be EXPORTED in this shell -- a bare
 #    `-e APP_SHARED_SECRET` forwards an empty value if it is not.
-set -a; source ~/.vision-picar-local-secrets; set +a
 export APP_SHARED_SECRET="$LOCAL_SECRET"
 docker run -d --name picar-ros --restart unless-stopped \
   -p 8090:8090 -p 127.0.0.1:8765:8765 \
@@ -232,7 +243,7 @@ visible, including the brain's; nothing can be published.
 | You see | It means |
 |---|---|
 | Container log: `POST /wheels to ... failed (N in a row) -- still trying` | The robot server is down, unreachable (Linux without host networking), or rejecting the secret (401) -- check `APP_SHARED_SECRET` was exported before `docker run`. The wheels are stopped meanwhile by the robot server's watchdog. |
-| Container log: `the robot server reports no wheels (usable: false)` | The robot server is not in a mode with wheels (`drive: direct` still, or a teleop/replay backend). Restart it with `ROBOT_DRIVE=ros`. |
+| Container log: `the robot server reports no wheels (usable: false)` | `GET /wheels` answered `usable: false`. `/wheels` answers in either drive mode and `MockRobot` always has wheels, so this is NOT a sign of `drive: direct` (check `drive.mode` in the robot server's `/health` for that). The real causes: a body with no wheels (teleop or replay), or `HardwareRobot` before the board's first `T:1001` frame -- the container was started too early (see "Order matters" in section 3). Either way the plugin is now deactivated for good: fix the cause, then `docker rm -f picar-ros` and run step 3 again. |
 | Robot server refuses `/action` with reason `ros_unavailable` | `drive: ros` and the bridge did not accept the twist. Usually the container is not up -- but ALSO what you get when the `/action` had no `x-driver` header or came from a teleop driver: the bridge maps only `twin-dpad`, `brain` and `ros` onto twist_mux inputs, answers 400 `unknown driver`, and the robot server reports that as unreachable (by code reading; a known gap). Check `curl localhost:8090/health` first. |
 | nav2 log: `Transform data too old` and the robot never moves | `map -> odom` is stale: the image was built without the pinned slam_toolbox (`restamp_tf`). Rebuild. |
 | nav2 "reaches" every goal in ~0.08 s | TF listeners frozen -- the tf2 deadlock, or Fast DDS instead of Cyclone. Check `echo $RMW_IMPLEMENTATION` in the container and that the image built tf2 from source. |

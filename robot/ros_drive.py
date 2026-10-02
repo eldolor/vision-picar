@@ -22,8 +22,17 @@ network: R4's first open-loop run moved 0.267-0.316 m for a nominal 0.30.
 
 Every READ goes straight to the robot underneath -- the camera, the depth
 grid, the scan, the encoders. Only motion goes round through ROS. `stop()`
-is the one exception, and deliberately: it zeroes the robot directly as well
-as through ROS, because a stop that waits on a container is not a stop.
+is the one exception, and deliberately: it zeroes the robot directly FIRST,
+and only then -- on a background thread, with a short timeout -- zeroes the
+ROS inputs, because a stop that waits on a container is not a stop. (Until
+2026-10-02 it posted the zeros first, each with the client's 2 s timeout: a
+bridge that accepted connections and never answered held a stop for ~6 s,
+and the watchdog's stop runs on the server's event loop, so every route
+froze with it. docs-review/SPEC-REVIEW.md, finding 1.) For STOP_HOLD_S after
+a stop, a non-zero wheel command arriving from ROS -- the stopped verb's
+last twists still in flight through twist_mux and the controller -- is
+held at zero, so the direct stop is not undone; the next verb lifts the
+hold.
 
 Not a backend of its own: `robot/factory.py` wraps whichever backend the
 config names, so this is the only place in `robot/` that knows a bridge
@@ -82,6 +91,18 @@ def moves_for(speed: int, duration: float) -> int:
     return max(1, round(moves)) if speed > 0 and duration > 0 else 0
 
 
+# A stop zeroes the ROS inputs in the background; each post may wait this
+# long, so a hung bridge costs a background thread 1.5 s and the caller
+# nothing.
+STOP_ZERO_TIMEOUT_S = 0.5
+# After a stop, non-zero wheel commands from ROS are held at zero this long:
+# twist_mux's input timeout (0.25 s, picar_bringup/config/twist_mux.yaml)
+# plus one 0.05 s plugin period, with margin. That is how long the stopped
+# verb's last twist can keep reaching the wheels when the bridge is hung and
+# the zeros never arrive.
+STOP_HOLD_S = 0.4
+
+
 class RosDriveRobot(RobotInterface):
     """Verbs through ROS, reads from the robot underneath."""
 
@@ -100,6 +121,13 @@ class RosDriveRobot(RobotInterface):
         self._generation = 0
         self._gen_lock = threading.Lock()
         self.verbs_through_ros = 0
+        # The stop hold: in force while the generation is still the stop's
+        # own and the clock is before _hold_until.
+        self._hold_gen = -1
+        self._hold_until = 0.0
+        # One background zeroing at a time: the watchdog stops every poll
+        # while the robot is silent, and each must not add a thread.
+        self._zeroing = threading.Lock()
 
     # ---------- who is driving ----------
 
@@ -120,9 +148,11 @@ class RosDriveRobot(RobotInterface):
 
     # ---------- motion, through ROS ----------
 
-    def _send(self, linear: float, angular: float, driver: Optional[str] = None) -> None:
+    def _send(self, linear: float, angular: float, driver: Optional[str] = None,
+              timeout: Optional[float] = None) -> None:
         r = self._http.post("/cmd_vel", json={"driver": driver or self._driver,
-                                              "linear_m_s": linear, "angular_rad_s": angular})
+                                              "linear_m_s": linear, "angular_rad_s": angular},
+                            timeout=httpx.USE_CLIENT_DEFAULT if timeout is None else timeout)
         r.raise_for_status()
 
     def _begin(self) -> int:
@@ -231,20 +261,38 @@ class RosDriveRobot(RobotInterface):
         return {"action": "turn_right", "angle": angle, "via": "ros", **self._turn(float(angle))}
 
     def stop(self) -> dict:
-        """Supersede any verb, zero every ROS input, and zero the robot
-        directly -- a stop must not depend on the container being alive."""
+        """Supersede any verb, zero the robot directly, then zero every ROS
+        input in the background -- a stop must not depend on the container
+        being alive, or answering."""
         with self._gen_lock:
             self._generation += 1
-        for driver in ("twin-dpad", "brain", "ros"):
-            try:
-                self._send(0.0, 0.0, driver=driver)
-            except Exception:  # noqa: BLE001 -- the direct stop below still happens
-                pass
-        return self.inner.stop()
+            self._hold_gen = self._generation
+            self._hold_until = time.monotonic() + STOP_HOLD_S
+        result = self.inner.stop()
+        if self._zeroing.acquire(blocking=False):
+            threading.Thread(target=self._zero_ros_inputs, daemon=True,
+                             name="ros-stop-zero").start()
+        return result
+
+    def _zero_ros_inputs(self) -> None:
+        try:
+            for driver in ("twin-dpad", "brain", "ros"):
+                try:
+                    self._send(0.0, 0.0, driver=driver, timeout=STOP_ZERO_TIMEOUT_S)
+                except Exception:  # noqa: BLE001 -- the robot is already stopped
+                    pass
+        finally:
+            self._zeroing.release()
+
+    def _holding_stop(self) -> bool:
+        return self._generation == self._hold_gen and time.monotonic() < self._hold_until
 
     # ---------- the ROS actuator's route ----------
 
     def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
+        if (left_rad_s or right_rad_s) and self._holding_stop():
+            # The stopped verb's last twist, still in flight through ROS.
+            return self.inner.set_wheel_velocity(0.0, 0.0)
         return self.inner.set_wheel_velocity(left_rad_s, right_rad_s)
 
     def advance(self, dt: float) -> None:

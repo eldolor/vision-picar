@@ -984,11 +984,18 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # it (PLAN-sim-hardening.md definition of done, item 10).
             "min_distance_cm": min_distance,
             "mode": mode,
-            # Which house the simulator built (SIM_MAP), so a live test can
-            # ask the SERVER what it is standing in rather than trusting its
-            # own environment -- the SLAM lap once ran its starter-house
-            # route inside the user's house. None off the simulator.
-            "sim_map": (os.environ.get("SIM_MAP") or "starter_house") if mode == "sim" else None,
+            # Which house the simulator built, so a live test can ask the
+            # SERVER what it is standing in rather than trusting its own
+            # environment -- the SLAM lap once ran its starter-house route
+            # inside the user's house. Read off the world the factory built
+            # (sim/maps/__init__.py names it), so it is right for every body
+            # standing in a sim house -- `mode: hardware` with the fake motor
+            # board included. It used to re-read SIM_MAP only when
+            # `mode == "sim"`, so under the fake board it was None and the
+            # live suites SKIPPED: 3.33's G4 would have "passed" on five runs
+            # of skips (docs-review/SPEC-REVIEW.md, finding 2). None when no
+            # sim house stands behind the robot.
+            "sim_map": getattr(getattr(robot, "world", None), "map_name", None),
             # Phase M5. Which build answered, for anyone reading a health
             # report rather than a log. Same content as the start-up line.
             "identity": ident,

@@ -4,15 +4,21 @@ read the same variable, so the robot and its judge are in the same house."""
 
 
 def build_world(name: str = "starter_house"):
+    """The named house. It carries its own name (`map_name`), so whoever
+    holds the world -- robot/server.py's /health -- reports the house that
+    was BUILT, not what an environment variable says now."""
     if name == "starter_house":
-        from sim.maps.starter_house import build_starter_world
-        return build_starter_world()
-    if name == "scaled_house":
-        from sim.maps.scaled_house import build_scaled_world
-        return build_scaled_world()
-    if name == "home_first_floor":
-        from sim.maps.home_first_floor import build_home_world
-        return build_home_world()
+        from sim.maps.starter_house import build_starter_world as build
+    elif name == "scaled_house":
+        from sim.maps.scaled_house import build_scaled_world as build
+    elif name == "home_first_floor":
+        from sim.maps.home_first_floor import build_home_world as build
+    else:
+        build = None
+    if build is not None:
+        world = build()
+        world.map_name = name
+        return world
     raise ValueError(f"unknown SIM_MAP {name!r} (starter_house | scaled_house | home_first_floor)")
 
 

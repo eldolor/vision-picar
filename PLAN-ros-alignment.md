@@ -3385,7 +3385,10 @@ decided on, not worked around):
 1. **Firmware and OS:** the board boots JetPack 6.2.1, power mode recorded.
 2. **torch works on the GPU:** `torch.cuda.is_available()` is true and the
    shipped pipeline returns the same verdict on a corpus frame as the
-   laptop (same detection status, CLIP probability within 0.01).
+   laptop (same detection status, CLIP probability within 0.01). **Both
+   networks on `cuda`** (added 2026-10-02): `tools/jetson/setup.sh`
+   asserts only CLIP's device, so the detector's must be checked by hand
+   until it asserts that too (`docs-review/SPEC-REVIEW.md` fix 9).
 3. **Latency recorded:** per-frame GPU and CPU times over at least 50
    corpus frames, at 15 W and 25 W. **Budget: 250 ms a frame (4 Hz) at
    15 W -- confirmed by the user 2026-10-02.** Over it, section 1.1's
@@ -3393,7 +3396,16 @@ decided on, not worked around):
 4. **The suite passes** on the board from its `.venv` (the offline suite;
    live and UI tests may skip, and each skip is listed).
 5. **G4:** the live chain and nav suites pass **5 consecutive runs** on the
-   Jetson (3.24's gate, unchanged).
+   Jetson (3.24's gate, unchanged). **A skip is not a pass** (added
+   2026-10-02): a run counts only if pytest's summary shows every test in
+   both suites PASSED and none skipped. Found by the spec review
+   (`docs-review/SPEC-REVIEW.md` finding 2): with step 6's configuration
+   `/health` reported `sim_map: null`, both suites skipped on their
+   house check, and five runs of skips would have read as the gate met.
+   Fixed the same day -- `sim_map` now names the house the factory built,
+   fake motor board included (`tests/test_health_sim_map.py`) -- and the
+   rule stays, because a suite that skips for any other reason (a secret
+   unset, a container not up) fails the same way.
 6. **Headroom, with everything running:** the robot server's wheel loop
    reports **0 late ticks** at 20 Hz over a 10-minute nav2 run with the
    tier processing frames (the `/health` `wheel_loop` readout, 3.18);
