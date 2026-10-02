@@ -236,3 +236,31 @@ def test_a_goal_that_fails_without_moving_is_an_escape_not_a_failed_place():
     assert agent.retry.entries == []          # the place was not held against
     assert agent.step().action in ("LEFT", "RIGHT")
     assert agent.escapes == 1
+
+
+def _agent_with_refusal(message):
+    from robot.interface import Preempted
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="x"),
+                         navigator=FakeNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid))
+
+    def refuse(action, **kw):
+        raise Preempted(message)
+    agent.safety.check_and_execute = refuse
+    agent._pending = ["LOOK_LEFT"]
+    return agent
+
+
+def test_a_move_refused_for_the_missions_own_goal_waits():
+    agent = _agent_with_refusal("a nav2 goal is active -- one autonomous driver at a time")
+    action, executed, _ = agent._do_pending()
+    assert action == "WAIT" and agent._pending == ["LOOK_LEFT"]
+
+
+def test_a_move_refused_because_a_person_took_over_still_ends_the_mission():
+    from robot.interface import Preempted
+    agent = _agent_with_refusal("preempted by twin-dpad")
+    with pytest.raises(Preempted):
+        agent._do_pending()

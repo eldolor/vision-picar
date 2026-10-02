@@ -41,7 +41,7 @@ from brain.arrival import ArrivalCheck
 from brain.frontier import (RetryBook, camera_seen, find_frontiers, find_view_gaps,
                             known_near, reachable)
 from brain.memory import MissionMemory
-from robot.interface import RobotInterface
+from robot.interface import Preempted, RobotInterface
 from robot.safety import SafetyViolation
 
 logger = logging.getLogger("explore")
@@ -72,6 +72,9 @@ STUCK_MOVED_M = 0.15
 MAX_ESCAPES = 3
 # "Boxed in": fewer reachable stopping places than this around the robot.
 BOXED_CELLS = 40
+# The robot server's refusal when the mission's OWN goal still holds the
+# robot (3.23) -- not a person taking over. A move refused for this waits.
+OWN_GOAL_REFUSAL = "nav2 goal is active"
 
 
 class Navigator(Protocol):
@@ -382,10 +385,10 @@ class ExploreAgent(MissionAgent):
                                for i, r in enumerate(scan["ranges_m"])
                                if lo <= start + i * inc <= hi)
                 side = "LEFT" if room(-120, -30) > room(30, 120) else "RIGHT"
-            try:
-                return side, True, self.safety.check_and_execute(side, angle=90)
-            except SafetyViolation as exc:
-                return side, False, str(exc)
+            out = self._verb(side, angle=90)
+            if out[0] == "WAIT":
+                self._requeue(side, item)
+            return out
         if isinstance(item, tuple) and item[0] == "FACE":
             pose = self._pose()
             if not pose.get("usable"):
@@ -400,14 +403,22 @@ class ExploreAgent(MissionAgent):
                 self._pending.insert(0, item)
                 turn = math.copysign(90, turn)
             action = "RIGHT" if turn > 0 else "LEFT"
-            try:
-                return action, True, self.safety.check_and_execute(action, angle=int(round(abs(turn))))
-            except SafetyViolation as exc:
+            out = self._verb(action, angle=int(round(abs(turn))))
+            if out[0] == "WAIT":
+                self._requeue(action, item)      # retry the look itself, not a bare turn
+            elif not out[1]:
                 # No room to turn here (3.19's pivot guard). Give up on this
                 # look rather than ask again every step.
                 self._pending = [p for p in self._pending if p is not item]
-                return action, False, str(exc)
+            return out
         return self._verb(item)
+
+    def _requeue(self, action: str, item) -> None:
+        """After a move waited: put the composite step back, once."""
+        if self._pending and self._pending[0] == action:
+            self._pending.pop(0)
+        if not (self._pending and self._pending[0] is item):
+            self._pending.insert(0, item)
 
     def _to_cell(self, m: dict, centre: tuple) -> tuple:
         res = m["resolution_m"]
@@ -432,11 +443,27 @@ class ExploreAgent(MissionAgent):
             self.seen.add((round(m["origin_x_m"] + (c[0] + 0.5) * res, 3),
                            round(m["origin_y_m"] + (c[1] + 0.5) * res, 3)))
 
-    def _verb(self, action: str):
+    def _verb(self, action: str, **kwargs):
+        """A camera pan or an escape move, between goals. Any goal still live
+        on the server is cancelled first: the agent can think a goal over
+        (a reply that briefly showed none) while the robot server still
+        holds it, and since 3.23 that refuses every autonomous move -- which
+        ended one house run `preempted`. A refusal for the mission's OWN goal
+        waits and tries again; one for anything else (a person at the D-pad)
+        still ends the mission."""
         try:
-            return action, True, self.safety.check_and_execute(action)
+            self.navigator.cancel_goal()
+        except Exception:  # noqa: BLE001 -- best effort; the refusal path covers it
+            pass
+        try:
+            return action, True, self.safety.check_and_execute(action, **kwargs)
         except SafetyViolation as exc:
             return action, False, str(exc)
+        except Preempted as exc:
+            if OWN_GOAL_REFUSAL not in str(exc):
+                raise
+            self._pending.insert(0, action)
+            return "WAIT", False, f"{action} waits: the mission's own goal still holds the robot"
 
     # ---------- perception ----------
 
