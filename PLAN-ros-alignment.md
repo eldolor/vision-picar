@@ -2999,6 +2999,19 @@ settle chased a 1.5-deg estimate and cost +0.57 s a turn for nothing
    pre-existing timing flake in 3.25's stock-path test, recorded and left
    for its own fix** -- its bar is not moved here.
 
+   **Fixed the same day, by correcting 3.25's bar to the information it
+   has.** Measured first: 280 stock forwards (120 under three busy CPU
+   processes) read 117-119 of 120 within 1.0 cm, worst 1.13, with normal
+   feedback gaps (62-77 ms) -- not a stall. A stock host knows a straight
+   only to the odometer's 1 cm bucket plus one edge (3.25's own corrected
+   bound), and the stop lands up to a board loop late (3 mm at 0.3 m/s), so
+   +/- 1.0 sat inside the noise and five-of-five failed about one run in
+   eight. The bar is now **1.0 + one edge + 0.3 = 1.34 cm**
+   (`STOCK_STRAIGHT_BAR_CM`), the fork's stays 0.5. Mutation-checked: the
+   host without 3.25's carry-forward over a frame's age still fails it
+   (31.94 cm). One earlier outlier, 3.65 cm in a single run, did not recur
+   in the 280 and is recorded as unexplained.
+
 **3.28 on the new units:** odometry worst **0.047 cm** over the 30 s lossy
 drive (1 mm: 0.139; stock: 1.02), 0/1028 over the 0.1 mm-plus-one-edge bar;
 frame 160 bytes against stock's 125 (+35, at the bar), ~28% of the link at
