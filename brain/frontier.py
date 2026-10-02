@@ -43,6 +43,12 @@ MIN_FRONTIER_M = 0.25
 # turning circle) plus a margin, so nav2's inflated costmap (0.12 m) does
 # not reject the goal outright.
 GOAL_CLEARANCE_M = 0.22
+# Room to PASS through on the way: the chassis' half-width (0.1155 m) plus a
+# margin. Lower than a goal's, because a doorway is somewhere to go through,
+# not to stop in -- and nav2, not this, decides whether it really can. With
+# one clearance for both, the furnished home's 0.6 m den door (narrower
+# still on SLAM's thick walls) read as a wall and the den was never mapped.
+PASS_CLEARANCE_M = 0.15
 # Larger frontiers are worth a longer drive: a whole unseen room against a
 # sliver behind a chair.
 SIZE_WEIGHT = 1.0
@@ -142,15 +148,19 @@ def _clusters(cells: set) -> list:
 
 
 def reachable(m: dict, x_m: float, y_m: float,
-              clearance_m: float = GOAL_CLEARANCE_M) -> tuple:
+              clearance_m: float = GOAL_CLEARANCE_M,
+              pass_m: float = PASS_CLEARANCE_M) -> tuple:
     """(steps, start, need): path length in cells from the robot to every
-    free cell with room for the chassis, over such cells. Empty on an
-    unusable map or a robot off it."""
+    free cell it can get to, walking through cells with `pass_m` of room;
+    only cells with `clearance_m` of room -- somewhere to STOP -- are kept.
+    Empty on an unusable map or a robot off it."""
     if not m.get("usable") or not m.get("resolution_m"):
         return {}, None, 1
     res, w, h = m["resolution_m"], m["width"], m["height"]
     need = max(1, int(math.ceil(clearance_m / res)))
     room = _clearance(m, need + 1)
+    goal_need = need
+    need = max(1, min(need, int(math.ceil(pass_m / res))))
     start = _cell_of(m, x_m, y_m)
     if not (0 <= start[0] < w and 0 <= start[1] < h):
         return {}, None, need
@@ -178,7 +188,9 @@ def reachable(m: dict, x_m: float, y_m: float,
                     continue
                 steps[n] = steps[c] + (diag if dx and dy else 1.0)
                 q.append(n)
-    return steps, start, need
+    w_ = w
+    stops = {c: d for c, d in steps.items() if room[c[1] * w_ + c[0]] >= goal_need}
+    return stops, start, goal_need
 
 
 def _split(group: list, max_cells: int) -> list:

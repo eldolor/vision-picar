@@ -129,3 +129,17 @@ def test_next_ready_in_counts_down():
     book = RetryBook(cooldown_s=30)
     book.fail(0, 0, now=0)
     assert book.next_ready_in(now=12) == pytest.approx(18)
+
+
+def test_a_door_narrower_than_a_stopping_place_can_still_be_passed():
+    """3.31, the furnished home's den: a doorway is somewhere to go through,
+    not to stop in. A 7-cell (0.35 m) gap in a wall -- room for the 23 cm
+    chassis, not for a goal -- still leads to the frontier beyond it."""
+    rows = [list(r) for r in ROOM]
+    for y in range(1, 21):
+        rows[y][15] = "." if 7 <= y <= 13 else "#"
+    m = grid(["".join(r) for r in rows])
+    # Start in open floor (8 cells from every wall), so the leave-a-tight-
+    # spot rule does not lower the clearance on its own.
+    found = find_frontiers(m, centre(8), centre(10))
+    assert found and found[0].goal[0] > centre(15)
