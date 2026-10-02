@@ -41,8 +41,9 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400):
             try:
                 e = c.get("/world/error").json()
                 if e.get("usable"):
+                    t = e.get("truth") or {}
                     samples.append((time.time(), e["position_error_m"], e["heading_error_deg"],
-                                    e["odom_position_error_m"]))
+                                    e["odom_position_error_m"], t.get("x_m"), t.get("y_m")))
             except Exception:  # noqa: BLE001 -- a missed sample is a gap, not an end
                 pass
             stop.wait(1.0)

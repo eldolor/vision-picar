@@ -42,18 +42,24 @@ slam_toolbox:
 
     use_scan_matching: true
     use_scan_barycenter: true
-    minimum_travel_distance: 0.05
-    minimum_travel_heading: 0.05
+    # 3.34: a node every 20 cm / 11 degrees (was 5 cm / 3 degrees). At 5 cm a
+    # loop chain of 10 nodes spanned half a metre, and in the furnished home
+    # every one of three baseline runs closed a loop to the wrong place
+    # (1.6-2.1 m jumps at 230-300 s, never recovered; odometry within 8 cm).
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.2
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
     link_match_minimum_response_fine: 0.1
     link_scan_maximum_distance: 1.5
-    loop_search_maximum_distance: 3.0
+    # 3.34: candidates within 2 m (was 3; every false jump was 1.6-2.1 m).
+    loop_search_maximum_distance: 2.0
     do_loop_closing: true
     loop_match_minimum_chain_size: 10
     loop_match_maximum_variance_coarse: 3.0
     loop_match_minimum_response_coarse: 0.35
-    loop_match_minimum_response_fine: 0.45
+    # 3.34: a stricter match to accept a closure (was 0.45).
+    loop_match_minimum_response_fine: 0.6
 
     correlation_search_space_dimension: 0.5
     correlation_search_space_resolution: 0.01
