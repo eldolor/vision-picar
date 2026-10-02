@@ -109,12 +109,15 @@ class ExploreAgent(MissionAgent):
         # origin moves.
         self.seen: set = set()
         self._looked: list = []        # view-gap centres already visited
-        # Frontier goals already reached. A frontier that is still there
-        # after the robot stood at it cannot be cleared from there -- the
-        # unknown under a table, behind a sofa -- and nearest-first would
-        # send it straight back: the first house run made 50 goals at
-        # 0.36 m apiece.
+        # Frontier goals already reached, with how often. A frontier still
+        # there after the robot has stood at it TWICE cannot be cleared from
+        # there -- the unknown under a table, behind a sofa -- and
+        # nearest-first would send it straight back (the first house run made
+        # 50 goals at 0.36 m apiece). Once is not enough to give up: a
+        # doorway is still a frontier the first time it is reached, and
+        # dropping it then cut a later run off from the den.
         self._reached: list = []
+        self._view_goals: list = []    # where view goals have stood the robot
         self.seen_res: Optional[float] = None
         self.goals_sent = 0
         self.goals_failed = 0
@@ -259,8 +262,8 @@ class ExploreAgent(MissionAgent):
             return known_near(m, x, y, self.retry.radius_m)
 
         for f in find_frontiers(m, pose["x_m"], pose["y_m"]):
-            if any(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < self.retry.radius_m
-                   for rx, ry in self._reached):
+            if sum(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < self.retry.radius_m
+                   for rx, ry in self._reached) >= 2:
                 continue
             if self.retry.available(f.goal[0], f.goal[1], now, known):
                 return self._send(f.goal[0], f.goal[1], "frontier", now)
@@ -269,10 +272,17 @@ class ExploreAgent(MissionAgent):
             if any(math.hypot(g.centre[0] - lx, g.centre[1] - ly) < self.retry.radius_m
                    for lx, ly in self._looked):
                 continue
+            # A patch's centre moves as the camera sees more of it, so also
+            # never stand at the same place twice to look: the den run sent
+            # twelve view goals to one spot.
+            if any(math.hypot(g.goal[0] - vx, g.goal[1] - vy) < self.retry.radius_m
+                   for vx, vy in self._view_goals):
+                continue
             if self.retry.available(g.goal[0], g.goal[1], now, known):
                 out = self._send(g.goal[0], g.goal[1], "view", now)
                 if out[0] == "GOAL":
                     self._goal["look_at"] = g.centre
+                    self._view_goals.append(g.goal)
                 return out
         if self.retry.cooling(now):
             return "WAIT", True, (f"no frontier ready; retrying in "
