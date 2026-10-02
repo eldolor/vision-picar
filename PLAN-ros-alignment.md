@@ -3191,6 +3191,75 @@ criterion 6 is the live run that does.
    as a consumer of `/world/goal`, with no hint of nav2 behind it.
 8. Whole suite green from `.venv`.
 
+**Found before building, 2026-10-01 -- in-process missions never used the
+guarded verbs.** The baseline for criterion 1 (today's tiered search, 20
+furnished-home starts: **1/20 found**, median 14% of the reachable floor
+seen) showed six missions turning a corner into furniture on ground truth.
+`MissionRunner` wraps its robot in `_HaltGate`, which did not forward
+`verb_plan()`, `verb_done()` or `stop_count`; the safety layer saw the
+interface's default plan (None) and called the raw verb. So every
+in-process mission since 3.22 ran turns with no pivot vetting (3.19) and
+forwards checked once, not every period -- the sweeps R1-R1c and 3.11 pinned
+were measured on a weaker path than the car's. The deployed path was not
+affected: `RemoteRobot` has no plan either, and the robot server guards its
+own verbs. **Fixed** (the gate forwards all three;
+`tests/test_mission_guarded_verbs.py`, red without it): the same baseline
+has no contact, closest 1.30 cm -- the pivot margin.
+
+**Two consequences, both in 3.32:** five arrival/bearing tests had pinned an
+approach only an unguarded verb could make (bumper ~4 cm from the target,
+inside the 20 cm line), and a false arrival appeared that the overshoot had
+been hiding.
+
+### 3.32 Arrival that an edge cannot fake, and detections that respect occlusion (2026-10-01): criteria, written before building
+
+**Asked by the user** ("fix both", after 3.31's gate finding). With guarded
+verbs, one 3.11 mission under a 90% detector ended `found` **1.1 m short**:
+stopped 37 cm from a door jamb, the backpack visible through the doorway at
+0.4 deg, and the five-beam arrival window -- 3 cm wide at that range --
+straddling the jamb's edge, so its median was the jamb. Two weaknesses, each
+enough on its own:
+
+* **The arrival rule cannot tell the target from an edge beside it.** A
+  target's face is one surface: at arrival range its returns agree within a
+  few centimetres. A window whose returns jump is looking at an edge.
+* **The sim's synthetic detections ignore partial occlusion.** An object
+  counts as visible if one ray to its CENTRE clears the walls, and reports
+  that centre's bearing; a real detector's box covers only what is visible.
+
+**Corrected first, recorded as such:** `ARRIVED_CELLS` in
+`tests/test_bearing_turns.py` (shared by `tests/test_arrival.py`) was 1.05
+cells from the target's centre -- the bumper ~4 cm off it, past the stop
+line. It is now 3.11's own radius: the robot's centre within **0.40 m of the
+target's face**, 1.83 cells. Guarded, all 69 perfect-detection arrivals end
+`found` with the centre 35 cm from the face (bumper 22 cm off).
+
+**Acceptance criteria:**
+
+1. **An edge in the window is not judged.** `ArrivalCheck` refuses to
+   declare arrival when the window's returns spread by more than
+   **10 cm**, or mix returns with no-returns; a unit test reproduces the
+   jamb case (near returns on one side of the bearing, far on the other)
+   and is red before the change. The existing arrival unit tests pass
+   unchanged.
+2. **No false arrival.** 3.11's sweeps with guarded verbs -- 69 starts at
+   perfect detection, 690 each at 90% and 80% -- end `found` nowhere
+   farther than **0.60 m** from the target (3.11 criterion 2, its bar
+   unchanged).
+3. **Recognition holds.** Of missions that arrive (ground truth, the
+   corrected bar), at least **95%** end `found` at each detection rate, and
+   69/69 at perfect detection (3.11 criterion 1).
+4. **Detections respect occlusion.** `GridWorld` frames report a detection
+   only if a ray reaches some part of the object's face, at the bearing of
+   the centre of its VISIBLE angular extent: a constructed doorway case
+   (target half behind a jamb) reports a bearing shifted toward the open
+   half; fully hidden, nothing. The camera image is NOT changed (the golden
+   image in `tests/test_renderer.py` stays byte-identical); the picture's
+   single-ray billboard rule is recorded as the remaining difference.
+5. **R1-R1c still hold** on guarded verbs with the corrected bar:
+   `tests/test_bearing_turns.py` green.
+6. Whole suite green from `.venv`.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
