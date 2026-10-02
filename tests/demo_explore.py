@@ -66,12 +66,15 @@ def _listeners(port):
                           capture_output=True, text=True).stdout.split()
 
 
-def stack(house, movers=""):
-    """A fresh robot server, brain and ROS container."""
+def stack(house, movers="", slam_yaml=None, odom_drift=""):
+    """A fresh robot server, brain and ROS container. `slam_yaml` mounts
+    another slam_toolbox config over the image's (it is symlink-installed);
+    `odom_drift` is SIM_ODOM_DRIFT ("left,right")."""
     _kill_ports()
     env = {k: v for k, v in os.environ.items()
            if k not in ("APP_SHARED_SECRET", "LOCAL_SECRET")}
     env.update(SIM_MAP=house, SIM_MOVERS=movers, ROBOT_DRIVE="ros", WORLD_MODE="ros",
+               SIM_ODOM_DRIFT=odom_drift,
                ROS_BRIDGE_URL=f"http://127.0.0.1:{BRIDGE}")
     procs = [subprocess.Popen([PY, "-m", "uvicorn", "robot.server:app", "--port", str(ROBOT),
                       "--host", "127.0.0.1", "--log-level", "warning"], cwd=ROOT, env=env,
@@ -84,7 +87,9 @@ def stack(house, movers=""):
     for proc, port in zip(procs, (ROBOT, BRAIN)):
         if proc.poll() is not None or str(proc.pid) not in _listeners(port):
             raise RuntimeError(f"port {port} is not served by this run's own server")
-    subprocess.run(["docker", "run", "-d", "--name", CONTAINER,
+    mount = (["-v", f"{os.path.abspath(slam_yaml)}:/ws/src/picar_bringup/config/slam.yaml:ro"]
+             if slam_yaml else [])
+    subprocess.run(["docker", "run", "-d", "--name", CONTAINER, *mount,
                     "-p", f"127.0.0.1:{BRIDGE}:8090", "-e", "ROS_DOMAIN_ID=73",
                     "-e", f"ROBOT_URL=http://host.docker.internal:{ROBOT}",
                     "-e", f"BRAIN_URL=http://host.docker.internal:{BRAIN}",

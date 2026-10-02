@@ -3448,6 +3448,43 @@ golden image is unchanged. Full suite 1555 passed; one real-time serial test
 (`test_settle_pass` stock forward) failed once under parallel load and
 passes 6 of 6 alone.
 
+### 3.34 SLAM that stays put in the furnished home (2026-10-02): criteria, written before measuring
+
+**Why.** 3.31's recorded batch stopped on it. In the furnished home, with
+odometry exact (error under 1 mm -- no drift was configured), SLAM's pose
+jumped **3.16 m and 26 degrees between two 10 s samples** in the living room
+and stayed ~3 m wrong; the den run on the same revision sent goals to
+x = -3.5 m, outside the house. Search cannot be judged on a map that moves
+under the robot. Signature: a step change with odometry exact, inside
+`loop_search_maximum_distance` (3.0 m) -- a false loop closure or a scan
+match to the wrong place among repeated chair and table legs. Not yet
+established which.
+
+**Instrument.** `python -m tests.demo_slam_home N [--slam yaml] [--drift L,R]`:
+a fresh stack per run, one `explore` mission for a target that is not in the
+house (the workload that failed), `/world/error` sampled at 1 Hz. A **jump**
+is the error growing by more than 0.5 m between samples at most 2 s apart.
+A candidate config is mounted over the image's (`--symlink-install`), so
+nothing is rebuilt until one wins.
+
+**Criteria (thresholds written before any candidate is measured; not yet
+confirmed by the user):**
+
+0. **The baseline reproduces it**, or the diagnosis is wrong: on the image's
+   `slam.yaml`, at least one of three runs shows a jump. If none does, widen
+   the sample before changing anything.
+1. **No jumps, no drift configured:** six runs, **0 jumps**, maximum SLAM
+   error **<= 0.30 m** at every sample, final error at rest **<= 0.10 m**.
+2. **SLAM still corrects drift:** with R5's 3%-long right encoder
+   (`--drift 1.0,1.03`), three runs, **0 jumps**, maximum **<= 0.30 m**,
+   final at rest **<= 0.15 m** -- and odometry alone measurably worse, or the
+   runs did not test correction.
+3. **Nothing earlier regresses:** R5's starter-house laps
+   (`tests/demo_slam_lap.py`) end within R5's recorded 1-4.5 cm with drift,
+   and R6's scaled-house goals stay 6/6 (`tests/demo_nav_goals.py`).
+4. **One file changes:** `service/slam/src/picar_bringup/config/slam.yaml`,
+   each changed key commented with the run that justified it.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
