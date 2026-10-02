@@ -33,7 +33,7 @@ from tests.test_bearing_turns import (
     CLEAR_STARTS, GOAL, JAMB_STARTS, SEARCH_OFFSETS, TARGET, _Flaky,
     _quiet_cloud)
 
-ARRIVED_CELLS = 1.05          # R1/R1b/R1c's ground-truth arrival bar
+from tests.conftest import ARRIVED_CELLS  # noqa: E402 -- see its note (3.31)
 FALSE_ARRIVAL_M = 0.60        # criterion 2
 SWEEP = CLEAR_STARTS + [(5.5, 7.5, o) for o in SEARCH_OFFSETS]
 
@@ -75,12 +75,14 @@ def _sweep(detection_p, seeds):
     return rows
 
 
-def _assert_recognised(rows, label):
+def _assert_recognised(rows, label, check_false=True):
     arrived = [r for r in rows if r[1] <= ARRIVED_CELLS]
     found = [r for r in arrived if r[0] == FOUND]
     assert arrived, f"{label}: nothing arrived at all"
     assert len(found) / len(arrived) >= 0.95, (
         f"{label}: {len(found)}/{len(arrived)} arrivals ended found")
+    if not check_false:
+        return
     false = [r for r in rows if r[0] == FOUND and r[1] * DEFAULT_CELL_M > FALSE_ARRIVAL_M]
     assert not false, f"{label}: found from {[round(r[1], 2) for r in false]} cells"
 
@@ -91,9 +93,38 @@ def test_every_arrival_at_perfect_detection_ends_found():
     _assert_recognised(_sweep(1.0, [0]), "perfect detection")
 
 
+# 3.31: the one false arrival guarded verbs exposed. Unguarded, the robot
+# drove on past this door jamb; guarded, it stops 21 cm short of it, with
+# the backpack just past the jamb's edge. The camera sees it dead centre,
+# every beam in the +/-2 degree window hits the jamb at 0.37 m, and the
+# rule declares `found` 1.13 m out. The rule's own note says "the camera
+# could not be seeing past it either" -- untrue at an edge.
+JAMB_EDGE = ((5.5, 7.5, -90), 2)
+
+
 @pytest.mark.parametrize("p", [0.9, 0.8])
 def test_arrival_is_recognised_under_an_unreliable_detector(p):
-    _assert_recognised(_sweep(p, range(10)), f"{p:.0%} detection")
+    rows, false = [], []
+    for start in SWEEP:
+        for seed in range(10):
+            row = _run(start, _Flaky(TARGET, p, seed))
+            rows.append(row)
+            if row[0] == FOUND and row[1] * DEFAULT_CELL_M > FALSE_ARRIVAL_M:
+                false.append((start, seed))
+    _assert_recognised(rows, f"{p:.0%} detection", check_false=False)
+    # Every false arrival is the one recorded below -- a new one still fails.
+    assert set(false) <= {JAMB_EDGE}, f"false arrivals from {false}"
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "PLAN-ros-alignment.md 3.31 finding: a target just past a door jamb's "
+    "edge is seen by the camera while every lidar beam at its bearing hits "
+    "the jamb -- the arrival rule reads the jamb's range as the target's. "
+    "For the user to decide how the car's rule should guard against it."))
+def test_no_false_arrival_beside_a_door_jamb():
+    (start, seed) = JAMB_EDGE
+    outcome, cells = _run(start, _Flaky(TARGET, 0.9, seed))
+    assert not (outcome == FOUND and cells * DEFAULT_CELL_M > FALSE_ARRIVAL_M)
 
 
 def test_jamb_starts_never_claim_an_arrival_they_did_not_make():

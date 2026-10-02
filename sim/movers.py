@@ -42,6 +42,10 @@ class Mover:
     name: str
     path: tuple
     hop_s: float = 1.0
+    # 3.31: stand still this long before the first hop (someone in a
+    # doorway), and walk the path once and stop at its end (they leave).
+    start_s: float = 0.0
+    loop: bool = True
     index: int = 0
     next_hop_at: float = 0.0
     hops: int = 0
@@ -53,16 +57,22 @@ class Mover:
             raise ValueError(f"mover {self.name!r}: a path needs at least two cells")
         if self.hop_s <= 0:
             raise ValueError(f"mover {self.name!r}: hop_s must be positive")
-        for i, (a, b) in enumerate(zip(self.path, self.path[1:] + self.path[:1])):
+        pairs = self.path[1:] + (self.path[:1] if self.loop else ())
+        for i, (a, b) in enumerate(zip(self.path, pairs)):
             if abs(a[0] - b[0]) + abs(a[1] - b[1]) != 1:
                 raise ValueError(
                     f"mover {self.name!r}: path cells {a} and {b} (step {i}) are not "
-                    "4-adjacent -- a mover walks, it does not jump, and the path "
-                    "closes from its last cell back to its first")
+                    "4-adjacent -- a mover walks, it does not jump, and a looping "
+                    "path closes from its last cell back to its first")
 
     @property
     def cell(self) -> tuple:
         return self.path[self.index]
+
+    @property
+    def done(self) -> bool:
+        """A one-way walk that has reached its end."""
+        return not self.loop and self.index == len(self.path) - 1
 
     @property
     def next_cell(self) -> tuple:

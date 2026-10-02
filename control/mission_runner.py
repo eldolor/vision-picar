@@ -48,9 +48,12 @@ import time
 from typing import Callable, Optional
 
 from brain.agent import ObjectSearchAgent
+from brain.explore import ExploreAgent
+from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
 from brain.memory import MissionMemory
 from brain.vision_agent import VisionAgent
 from robot.interface import Preempted, RobotInterface
+from robot.safety import SafetyViolation
 from world.interface import NullWorld, WorldInterface
 
 logger = logging.getLogger("mission_runner")
@@ -87,7 +90,7 @@ LOG_TAIL_LINES = 20
 # same seam with brain/tiered.py's trigger discipline in front of it, so
 # perception runs locally on every frame and the model is asked only on
 # an event (PLAN-onboard-perception.md 2.4, phase P2).
-POLICIES = ("frontier", "vision", "tiered")
+POLICIES = ("frontier", "vision", "tiered", "explore")
 
 # The two that hand the decision to a model. They differ only in what is
 # bound into vision_fn -- which is the point of P2: `control/` never
@@ -121,6 +124,11 @@ PREEMPTED = "preempted"
 # the same way, which is why this is an outcome rather than a recovery.
 BLOCKED = "blocked"
 DEFAULT_STUCK_AFTER = 5
+# 3.31. The `explore` policy ran out of places to look: no reachable frontier
+# left and nothing waiting out a cooldown. Not `blocked` -- it is a finding
+# about the house ("looked everywhere it could reach; not there"), and a
+# target that is absent should end here, never in a refusal.
+SEARCHED = "searched"
 
 
 class VisionUnavailable(RuntimeError):
@@ -226,6 +234,28 @@ class _HaltGate(RobotInterface):
     def advance(self, dt: float) -> None:
         return self._robot.advance(dt)
 
+    # 3.22's guarded verbs, through the gate. Without these the gate
+    # inherited RobotInterface's "no plan", so SafetyController vetted a
+    # verb once and drove the whole cell -- every in-process mission since
+    # 3.22 ran unguarded (found by 3.31; tests/test_halt_gate_verbs.py). A
+    # plan is a description, not a move: the moves it leads to still come
+    # back through set_wheel_velocity() above, which is gated.
+
+    def verb_plan(self, action: str, speed: int = 50, duration: float = 0.5,
+                  angle: int = 90):
+        self._guard(f"verb_plan({action})")
+        plan_for = getattr(self._robot, "verb_plan", None)
+        return plan_for(action, speed=speed, duration=duration, angle=angle) if plan_for else None
+
+    def verb_done(self, action: str, plan: dict, outcome: dict, **kwargs) -> dict:
+        return self._robot.verb_done(action, plan, outcome, **kwargs)
+
+    @property
+    def stop_count(self) -> int:
+        # The guarded loop ends a verb when anyone stops the robot; it reads
+        # the BODY's count, which only the body keeps.
+        return getattr(self._robot, "stop_count", 0)
+
 
 def call_with_timeout(fn: Callable, *args, timeout_s: Optional[float] = None):
     """Run `fn(*args)`, raising TimeoutError if it outlasts `timeout_s`.
@@ -285,6 +315,11 @@ class MissionRunner:
         max_vision_failures: int = DEFAULT_MAX_VISION_FAILURES,
         world: Optional[WorldInterface] = None,
         stuck_after: Optional[int] = DEFAULT_STUCK_AFTER,
+        navigator=None,
+        clock: Optional[Callable[[], float]] = None,
+        idle: Optional[Callable[[float], None]] = None,
+        retry_cooldown_s: float = RETRY_COOLDOWN_S,
+        retry_limit: int = RETRY_LIMIT,
     ):
         if policy not in POLICIES:
             raise ValueError(f"Unknown policy: {policy!r}. Known: {', '.join(POLICIES)}")
@@ -320,6 +355,24 @@ class MissionRunner:
         # See BLOCKED. 0 or None switches it off.
         self.stuck_after = stuck_after or 0
         self._refused_forwards = 0
+        # 3.31: being stuck is retried before it is believed. A wall stays a
+        # wall; a person in a doorway moves on. The clock a wait is measured
+        # on comes from the robot when it has one -- a simulated body offers
+        # `sim_clock()` and `pass_time()`, so an in-process mission waits on
+        # sim time at no wall cost -- and is wall time otherwise, with a
+        # short sleep per waiting tick (never longer than a tick interval,
+        # well inside the brain server's hung-tick deadline). Duck-typed,
+        # because `control/` may not import a backend.
+        sim_clock = getattr(robot, "sim_clock", None)
+        sim_idle = getattr(robot, "pass_time", None)
+        simulated = sim_clock is not None and sim_idle is not None
+        self.clock = clock or (sim_clock if simulated else time.monotonic)
+        self.idle = idle or (sim_idle if simulated else time.sleep)
+        self.retry_cooldown_s = retry_cooldown_s
+        self.retry_limit = retry_limit
+        self._stuck_episodes = 0
+        self._cooldown_until: Optional[float] = None
+        self._last_wait: Optional[str] = None
         # Metrics shipping. Off unless a URL is configured, which is what
         # keeps tests and laptop runs from POSTing anywhere.
         self.metrics_url = ""
@@ -343,11 +396,19 @@ class MissionRunner:
         # The agent drives a gated robot; self.robot stays the raw one so
         # stop() is never gated. The policy decides which agent class runs;
         # everything else about the mission is identical either way.
-        agent_class = VisionAgent if policy in VISION_POLICIES else ObjectSearchAgent
+        agent_class = (VisionAgent if policy in VISION_POLICIES
+                       else ExploreAgent if policy == "explore" else ObjectSearchAgent)
+        extra = {}
+        if policy == "explore":
+            if navigator is None:
+                raise ValueError("The explore policy needs a navigator -- nav2's goals "
+                                 "(control/remote_navigator.py), PLAN-ros-alignment.md 3.31")
+            extra = {"navigator": navigator, "clock": self.clock}
         self._gated = _HaltGate(robot, self.is_running)
         self.agent = agent_class(
             self._gated,
             self.memory,
+            **extra,
             min_distance_cm=min_distance_cm,
             vision_fn=self._guarded_vision,
             # Only reaches the vision policy: the rule-based one runs
@@ -422,6 +483,18 @@ class MissionRunner:
         # could never fire, and a second copy of the rule is one that can
         # drift from the real one. Removed after coverage showed it
         # unreachable rather than untested.
+        if self._cooldown_until is not None:
+            # 3.31: waiting out a stuck retry. Nothing moves; time passes.
+            remaining = self._cooldown_until - self.clock()
+            if remaining > 0:
+                with self._lock:
+                    self._last_tick_at = time.monotonic()
+                self.idle(min(0.25, remaining))
+                return self._running
+            self._cooldown_until = None
+            self._log_line(f"retrying after cooldown (episode {self._stuck_episodes} "
+                           f"of {self.retry_limit})")
+
         try:
             if self._ticks == 0 and not self._camera_centred:
                 # 3.20. A mission that ended mid-peek leaves the camera
@@ -512,10 +585,17 @@ class MissionRunner:
                 (result.frame or {}).get("metadata", {}).get("seq")
                 if isinstance(result.frame, dict) else None
             ) or self._last_frame_seq
-            self._log_line(
-                f"step {result.step}: {result.action} "
-                f"({'ok' if result.executed else 'blocked'}) -- {self._last_reasoning}"
-            )
+            if result.action != "WAIT":
+                self._log_line(
+                    f"step {result.step}: {result.action} "
+                    f"({'ok' if result.executed else 'blocked'}) -- {self._last_reasoning}"
+                )
+                self._last_wait = None
+            elif self._last_reasoning != self._last_wait:
+                # The explore policy waits on nav2 several times a second;
+                # log a wait only when what it is waiting on changes.
+                self._log_line(f"waiting -- {self._last_reasoning}")
+                self._last_wait = self._last_reasoning
             # Consecutive FORWARDs the safety layer refused. Any move that
             # went through resets it, so a robot that turns away and makes
             # progress is never called stuck.
@@ -530,16 +610,49 @@ class MissionRunner:
         if self.memory.is_complete():
             self._finish(FOUND if self.memory.found else ROOM_REACHED, self.memory.summary())
             return False
-        if self.stuck_after and self._refused_forwards >= self.stuck_after:
-            self._finish(BLOCKED, (
-                f"FORWARD refused {self._refused_forwards} times in a row by the "
-                "safety layer -- the way ahead is obstructed. Going around it is "
-                "route planning (nav2, PLAN-ros-alignment.md R6)"))
+        if getattr(self.agent, "searched", False):
+            self._finish(SEARCHED, self.agent.last_event or "no reachable frontier left")
             return False
+        if self.stuck_after and self._refused_forwards >= self.stuck_after:
+            self._stuck_episodes += 1
+            if self._stuck_episodes >= self.retry_limit:
+                self._finish(BLOCKED, (
+                    f"FORWARD refused {self._refused_forwards} times in a row by the "
+                    f"safety layer, {self._stuck_episodes} times over -- the way ahead "
+                    "is obstructed. Going around it is route planning (nav2, "
+                    "PLAN-ros-alignment.md R6)"))
+                return False
+            self._back_off()
+            if not self._running:
+                return False
+        if result.action == "WAIT":
+            self.idle(0.25)
         if len(self.agent.history) >= self.max_steps:
             self._finish(MAX_STEPS, f"step budget of {self.max_steps} exhausted")
             return False
         return True
+
+    def _back_off(self) -> None:
+        """3.31: one vetted REVERSE to give whatever is in the way room, then
+        a cooldown before the policy is asked again. A refused REVERSE is
+        fine -- the cooldown is the part that lets a person move on."""
+        self._log_line(
+            f"FORWARD refused {self._refused_forwards} times in a row; backing off "
+            f"and retrying in {self.retry_cooldown_s:.0f} s (episode "
+            f"{self._stuck_episodes} of {self.retry_limit})")
+        self._refused_forwards = 0
+        try:
+            self.agent.safety.check_and_execute("REVERSE")
+        except SafetyViolation as e:
+            self._log_line(f"back-off refused: {e}")
+        except Preempted as e:
+            self._finish(PREEMPTED, str(e))
+            return
+        except Exception as e:  # noqa: BLE001 -- same rule as a step that fails
+            logger.exception("back-off failed")
+            self._finish(FAILED, f"back-off failed: {e}")
+            return
+        self._cooldown_until = self.clock() + self.retry_cooldown_s
 
     def stop(self, reason: str = "stopped by operator") -> None:
         """Operator stop. Always stops the car as well as the loop --
@@ -601,6 +714,17 @@ class MissionRunner:
                 ),
                 "tick_rate_hz": self._tick_rate_hz(),
                 "sighting": self._sighting_dict(),
+                # 3.31. The retry rule's state, and the explore policy's
+                # goal counts -- absent (None) for a policy with no goals.
+                "stuck_episodes": self._stuck_episodes,
+                "cooling_down_s": (round(max(0.0, self._cooldown_until - self.clock()), 1)
+                                   if self._cooldown_until is not None else None),
+                "explore": ({"goals_sent": self.agent.goals_sent,
+                             "goals_failed": self.agent.goals_failed,
+                             "last_event": self.agent.last_event,
+                             "camera_seen_m2": round(len(self.agent.seen)
+                                                     * (self.agent.seen_res or 0) ** 2, 2)}
+                            if self.policy == "explore" else None),
                 "log_tail": self._log[-LOG_TAIL_LINES:],
             }
 

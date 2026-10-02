@@ -98,6 +98,7 @@ from control.recording_routes import (  # noqa: F401 -- re-exported, see above
     mount_recording_routes,
 )
 from control.remote_robot import RemoteRobot
+from control.remote_navigator import RemoteNavigator
 from control.remote_world import RemoteWorld
 from control.walk_store import walk_store_from_config
 from robot.identity import git_revision, log_identity
@@ -457,6 +458,23 @@ def create_app(
                 vision_fn = _tiered_vision_fn(req.target_object, vision_fn, config,
                                               simulated=_frames_are_simulated(robot))
 
+        navigator = None
+        if req.policy == "explore":
+            # 3.31. Goals go to nav2 through the robot server; checked here so
+            # a world with no planner refuses at start, not on the first tick.
+            if not req.target_object:
+                raise ValueError("The explore policy searches for an object -- it "
+                                 "needs a target_object.")
+            navigator = RemoteNavigator(
+                config.get("world_url") or getattr(robot, "base_url", None)
+                or config["robot_url"],
+                secret=robot_secret, timeout=config["request_timeout_s"])
+            if not navigator.available():
+                raise ValueError(
+                    "The explore policy needs nav2: this robot server's world cannot "
+                    "take goals (run it with WORLD_MODE=ros and the ROS container up "
+                    "-- service/slam/README.md).")
+
         kwargs = dict(
             target_object=req.target_object,
             target_room=req.target_room,
@@ -469,6 +487,8 @@ def create_app(
             vision_timeout_s=config["vision_timeout_s"],
             max_vision_failures=config["max_vision_failures"],
         )
+        if navigator is not None:
+            kwargs["navigator"] = navigator
         runner_class, kwargs, tick_timeout_s = drills.apply(req.fault, kwargs, config)
         # The dead-man deadline is per mission, not per process, so a drill
         # can shorten its own without touching anything else.

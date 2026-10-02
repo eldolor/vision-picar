@@ -33,7 +33,7 @@ from brain.tiered import MAX_TURN_DEG, MIN_TURN_DEG, TieredVision, turn_for
 from control.mission_runner import MissionRunner
 from sim.maps.starter_house import build_starter_world
 from sim.mock_robot import MockRobot
-from tests.conftest import mock_world_for
+from tests.conftest import ARRIVED_CELLS, mock_world_for
 
 TARGET = "red backpack"
 GOAL = (10.5, 7.5)  # the backpack's cell centre in the starter house
@@ -136,7 +136,7 @@ def test_bearing_sized_turns_reach_the_target_from_off_axis():
     for start in CLEAR_STARTS:
         closed, _ = _mission(start)
         left = math.dist(start[:2], GOAL) - closed
-        assert left <= 1.05, f"from {start} it stopped {left:.2f} cells short"
+        assert left <= ARRIVED_CELLS, f"from {start} it stopped {left:.2f} cells short"
 
 
 def test_a_door_jamb_on_the_straight_line_is_a_planning_problem_not_a_steering_one():
@@ -270,9 +270,13 @@ def _run_from(start, **runner_kw):
     robot = MockRobot(grid, render=False)
     tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
                         steer_on_sight=True, hold_goal=True)
+    # 3.31: a stuck mission backs off and waits out a cooldown before it is
+    # believed, so the sim's own clock runs the wait (not the wall's).
     runner = MissionRunner(robot, target_object=TARGET, max_steps=STEPS,
                            policy="tiered", vision_fn=tier,
-                           world=mock_world_for(robot), **runner_kw)
+                           world=mock_world_for(robot),
+                           clock=lambda: grid.sim_time, idle=robot.pass_time,
+                           **runner_kw)
     runner.start()
     while runner.tick():
         pass
@@ -284,13 +288,18 @@ def test_a_robot_pushing_into_a_door_jamb_ends_blocked_not_at_max_steps():
     backpack from a row whose straight line clips the door jamb, it said
     FORWARD into the jamb for its last 19 steps -- and paid for cloud calls
     doing it. Now it stops within a few refusals and says why."""
+    from brain.frontier import RETRY_LIMIT
     from control.mission_runner import BLOCKED, DEFAULT_STUCK_AFTER
 
     for start in JAMB_STARTS:
         status = _run_from(start)
         assert status["outcome"] == BLOCKED, (start, status["outcome"])
-        # Criterion 1 of PLAN-ros-alignment.md 3.4, measured 8-11 steps.
-        assert status["step"] <= 15, f"took {status['step']} steps to give up"
+        # Criterion 1 of PLAN-ros-alignment.md 3.4, measured 8-11 steps --
+        # plus, since 3.31, RETRY_LIMIT - 1 retries of a back-off and
+        # `stuck_after` refusals each (3.31 criterion 4, written first).
+        bound = 15 + (RETRY_LIMIT - 1) * (DEFAULT_STUCK_AFTER + 1)
+        assert status["step"] <= bound, f"took {status['step']} steps to give up"
+        assert status["stuck_episodes"] == RETRY_LIMIT
         assert "route planning" in status["log_tail"][-1]
         assert status["running"] is False
     assert DEFAULT_STUCK_AFTER == 5
@@ -371,7 +380,7 @@ def test_every_search_start_arrives_rather_than_drifting_into_a_jamb():
     100% once measured bearings steered on a 3-degree band -- every blocked
     run had driven FORWARD 5-6 degrees off the doorway's line."""
     failed = [(o, round(left, 2), outcome) for o in SEARCH_OFFSETS
-              for _, left, outcome in [_search(o)] if left > 1.05]
+              for _, left, outcome in [_search(o)] if left > ARRIVED_CELLS]
     assert not failed, f"did not arrive: {failed}"
 
 
@@ -425,7 +434,7 @@ def test_a_detector_that_misses_one_frame_in_ten_still_arrives():
             while runner.tick():
                 pass
             total += 1
-            arrived += math.dist((grid.x, grid.y), GOAL) <= 1.05
+            arrived += math.dist((grid.x, grid.y), GOAL) <= ARRIVED_CELLS
     assert arrived / total >= 0.95, f"{arrived}/{total} arrived"
 
 

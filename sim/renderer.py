@@ -259,7 +259,15 @@ def _visible_objects(layout, objects, px: float, py: float, base_angle: float):
             continue
         # A wall between us and it. The 0.3 slack keeps an object sitting
         # against a wall from being culled by its own backdrop.
-        if cast_ray(layout, px, py, angle_to_obj) < dist_to_obj - 0.3:
+        #
+        # Since 3.31, another OBJECT between us and it hides it too: objects
+        # are solid (3.9), and a person standing in front of the robot hides
+        # the backpack behind them. Before this the camera saw straight
+        # through, the lidar at that bearing returned the person, and the
+        # arrival rule declared the backpack found 2 m away. One ray down
+        # the middle -- partial occlusion is not modelled.
+        others = {c for c in objects if c != (ox_cell, oy_cell)}
+        if cast_ray(layout, px, py, angle_to_obj, solid=others) < dist_to_obj - 0.3:
             continue
         visible.append({"name": name, "rel_angle": rel_angle, "dist": dist_to_obj})
     visible.sort(key=lambda o: o["dist"], reverse=True)

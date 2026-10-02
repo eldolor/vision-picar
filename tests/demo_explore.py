@@ -1,41 +1,219 @@
 """
-demo_explore.py
+python -m tests.demo_explore <rooms|absent|door|rule|one> [house] [room]
 
-The first real checkpoint demo from the build plan: "explore this room
-without hitting anything" -- fully autonomous, no hardcoded plan, no
-hardware, running entirely against the grid-world.
+PLAN-ros-alignment.md 3.31's live instrument: missions through the brain's
+HTTP API on the full ROS stack (nav2 + slam_toolbox), judged on the sim's
+ground truth. Each run gets a FRESH stack -- robot server, brain and ROS
+container -- so every mission starts on an empty map.
 
-Run with: python -m tests.demo_explore
+    rooms   criterion 1: the backpack moved to each room in turn
+    absent  criterion 2: a target that is not in the house
+    door    criterion 3: someone in the kitchen door for 60 s (scaled house)
+    rule    criterion 4: the rule-based policy, someone crossing the hallway
+    one     criterion 6: one explore mission, as the house ships
+
+The stack runs beside any other on spare ports (robot 8100, brain 8101,
+bridge 8190) and its own ROS domain (73), so it never touches a stack
+another session has up on the defaults. One JSON line per mission.
 """
 
-import logging
-from robot.factory import get_robot
-from brain.agent import ConstrainedAgent
+import json
+import math
+import os
+import subprocess
+import sys
+import time
+from collections import deque
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
+import httpx
+
+from sim.grid_world import CELL_WALL
+from sim.maps import build_world
+from tests.footprint_sweep import CELL_CM, chassis, gap, penetration, square
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PY = sys.executable
+ROBOT, BRAIN, BRIDGE = 8100, 8101, 8190
+CONTAINER = "picar-ros-explore"
+TARGET = "red backpack"
+MISSION_LIMIT_S = 1800
+LOGDIR = os.environ.get("EXPLORE_LOGDIR", "/tmp")
+
+
+def _kill_ports():
+    for port in (ROBOT, BRAIN):
+        out = subprocess.run(["lsof", "-nP", f"-tiTCP:{port}", "-sTCP:LISTEN"],
+                             capture_output=True, text=True).stdout.split()
+        for pid in out:
+            subprocess.run(["kill", pid])
+    subprocess.run(["docker", "rm", "-f", CONTAINER], capture_output=True)
+    time.sleep(2)
+
+
+def stack(house, movers=""):
+    """A fresh robot server, brain and ROS container."""
+    _kill_ports()
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("APP_SHARED_SECRET", "LOCAL_SECRET")}
+    env.update(SIM_MAP=house, SIM_MOVERS=movers, ROBOT_DRIVE="ros", WORLD_MODE="ros",
+               ROS_BRIDGE_URL=f"http://127.0.0.1:{BRIDGE}")
+    subprocess.Popen([PY, "-m", "uvicorn", "robot.server:app", "--port", str(ROBOT),
+                      "--host", "127.0.0.1", "--log-level", "warning"], cwd=ROOT, env=env,
+                     stdout=open(f"{LOGDIR}/explore_robot.log", "w"), stderr=subprocess.STDOUT)
+    benv = dict(env, ROBOT_URL=f"http://127.0.0.1:{ROBOT}")
+    subprocess.Popen([PY, "-m", "uvicorn", "control.brain_server:app", "--port", str(BRAIN),
+                      "--host", "127.0.0.1", "--log-level", "warning"], cwd=ROOT, env=benv,
+                     stdout=open(f"{LOGDIR}/explore_brain.log", "w"), stderr=subprocess.STDOUT)
+    time.sleep(4)
+    subprocess.run(["docker", "run", "-d", "--name", CONTAINER,
+                    "-p", f"127.0.0.1:{BRIDGE}:8090", "-e", "ROS_DOMAIN_ID=73",
+                    "-e", f"ROBOT_URL=http://host.docker.internal:{ROBOT}",
+                    "-e", f"BRAIN_URL=http://host.docker.internal:{BRAIN}",
+                    "vision-picar-ros:latest", "ros2", "launch", "picar_bringup",
+                    "picar.launch.py"], capture_output=True, check=True)
+    robot = httpx.Client(base_url=f"http://127.0.0.1:{ROBOT}", timeout=30)
+    deadline = time.time() + 120
+    while time.time() < deadline:
+        try:
+            if robot.get("/health").json()["drive"]["ros_up"] and \
+                    robot.get("/world/map").json().get("usable"):
+                return robot
+        except Exception:  # noqa: BLE001 -- still coming up
+            pass
+        time.sleep(2)
+    raise RuntimeError("stack did not come up")
+
+
+def free_cells(world):
+    return {(x, y) for y, row in enumerate(world.layout) for x, c in enumerate(row)
+            if c != CELL_WALL and (x, y) not in world.objects}
+
+
+def reachable_cells(world):
+    """Truth floor the robot can get to from its start: 4-connected free
+    cells with a free cell on every side (room for the chassis)."""
+    free = free_cells(world)
+    roomy = {c for c in free if all((c[0] + dx, c[1] + dy) in free
+                                    for dx in (-1, 0, 1) for dy in (-1, 0, 1))}
+    start = (world.robot_x, world.robot_y)
+    seen, q = {start}, deque([start])
+    while q:
+        c = q.popleft()
+        for n in ((c[0] + 1, c[1]), (c[0] - 1, c[1]), (c[0], c[1] + 1), (c[0], c[1] - 1)):
+            if n in roomy and n not in seen:
+                seen.add(n)
+                q.append(n)
+    return seen
+
+
+def room_spot(world, room, reach):
+    """A reachable cell near the middle of `room`, away from the start."""
+    cells = [c for c in world.rooms[room] if c in reach
+             and math.hypot(c[0] - world.robot_x, c[1] - world.robot_y) > 4]
+    if not cells:
+        return None
+    mx = sum(c[0] for c in cells) / len(cells)
+    my = sum(c[1] for c in cells) / len(cells)
+    return min(cells, key=lambda c: math.hypot(c[0] - mx, c[1] - my))
+
+
+def run_mission(robot, house, policy="explore", target=TARGET, max_steps=200):
+    world = build_world(house)
+    walls = {(x, y) for y, row in enumerate(world.layout) for x, c in enumerate(row)
+             if c == CELL_WALL}
+    brain = httpx.Client(base_url=f"http://127.0.0.1:{BRAIN}", timeout=60)
+    r = brain.post("/mission/start", json={"target_object": target, "policy": policy,
+                                           "max_steps": max_steps})
+    if r.status_code != 200:
+        return {"start": r.status_code, "detail": r.text[:300]}
+    t0, last, travel = time.time(), None, 0.0
+    min_gap, contacts, inside, samples = math.inf, 0, 0, 0
+    status = {}
+    while time.time() - t0 < MISSION_LIMIT_S:
+        truth = robot.get("/world/truth").json()
+        objs = {(o["x"], o["y"]) for o in robot.get("/sim/objects").json()["objects"]}
+        x, y = truth["x_m"] / 0.3, truth["y_m"] / 0.3
+        th = math.radians(truth["heading_deg"]) - math.pi / 2
+        if last:
+            travel += math.hypot(x - last[0], y - last[1]) * 0.3
+        last = (x, y)
+        A = chassis(x, y, th)
+        for c in walls | objs:
+            if abs(c[0] + 0.5 - x) > 1.6 or abs(c[1] + 0.5 - y) > 1.6:
+                continue
+            g = gap(A, square(*c)) * CELL_CM
+            min_gap = min(min_gap, g)
+            if g < 1.0:
+                contacts += 1
+            if penetration(A, square(*c)) > 0:
+                inside += 1
+        samples += 1
+        status = brain.get("/mission/status").json()
+        if not status.get("running") and status.get("outcome") not in (None, "idle", "running"):
+            break
+        time.sleep(0.5)
+    else:
+        brain.post("/mission/stop")
+    return {"outcome": status.get("outcome"), "seconds": round(time.time() - t0),
+            "steps": status.get("step"), "explore": status.get("explore"),
+            "stuck_episodes": status.get("stuck_episodes"), "travel_m": round(travel, 1),
+            "min_gap_cm": round(min_gap, 1), "contact_samples": contacts,
+            "inside_samples": inside, "samples": samples,
+            "last_log": (status.get("log_tail") or [])[-3:]}
+
+
+def coverage(robot, house):
+    """Share of truth-reachable floor whose centre is no longer unknown on the
+    robot's map."""
+    world = build_world(house)
+    reach = reachable_cells(world)
+    m = robot.get("/world/map").json()
+    if not m.get("usable"):
+        return None
+    res, w, h = m["resolution_m"], m["width"], m["height"]
+    known = 0
+    for cx, cy in reach:
+        i = int(((cx + 0.5) * 0.3 - m["origin_x_m"]) / res)
+        j = int(((cy + 0.5) * 0.3 - m["origin_y_m"]) / res)
+        if 0 <= i < w and 0 <= j < h and m["cells"][j * w + i] != -1:
+            known += 1
+    return round(known / len(reach), 4)
 
 
 def main():
-    robot = get_robot()
-    agent = ConstrainedAgent(robot, min_distance_cm=30)
-
-    print("=== Autonomous explore demo (Phase 2 sim) ===\n")
-    history = agent.run(max_steps=25)
-
-    print("\n=== Summary ===")
-    action_counts = {}
-    for step in history:
-        action_counts[step.action] = action_counts.get(step.action, 0) + 1
-    for action, count in sorted(action_counts.items()):
-        print(f"{action}: {count}")
-
-    rooms_visited = {step.frame["room"] for step in history}
-    print(f"\nRooms visited: {rooms_visited}")
-
-    collisions = [r for r in history if not r.executed]
-    print(f"Safety interventions: {len(collisions)}")
-    print("No hardware, no wall strikes -- ready for Phase 3 (formalize safety) "
-          "and Phase 4 (agent harness / mission memory).")
+    mode = sys.argv[1]
+    house = sys.argv[2] if len(sys.argv) > 2 else "home_first_floor"
+    if mode == "rooms":
+        world = build_world(house)
+        reach = reachable_cells(world)
+        rooms = sys.argv[3:] or sorted(world.rooms)
+        for room in rooms:
+            spot = room_spot(world, room, reach)
+            if spot is None:
+                print(json.dumps({"room": room, "skipped": "no reachable spot"}), flush=True)
+                continue
+            robot = stack(house)
+            src = [(o["x"], o["y"]) for o in robot.get("/sim/objects").json()["objects"]
+                   if o["name"] == TARGET][0]
+            moved = robot.post("/sim/objects/move", json={"src": list(src), "dst": list(spot)})
+            res = run_mission(robot, house)
+            print(json.dumps({"room": room, "spot": spot, "moved": moved.status_code, **res}),
+                  flush=True)
+    elif mode == "absent":
+        robot = stack(house)
+        res = run_mission(robot, house, target="purple elephant", max_steps=400)
+        print(json.dumps({"mode": "absent", "coverage": coverage(robot, house), **res}), flush=True)
+    elif mode == "door":
+        robot = stack("scaled_house", "kitchen_door_sitter")
+        print(json.dumps({"mode": "door", **run_mission(robot, "scaled_house")}), flush=True)
+    elif mode == "rule":
+        robot = stack("scaled_house", "hallway_crossing")
+        print(json.dumps({"mode": "rule", **run_mission(robot, "scaled_house", policy="frontier",
+                                                        max_steps=150)}), flush=True)
+    elif mode == "one":
+        robot = stack(house)
+        print(json.dumps({"mode": "one", **run_mission(robot, house)}), flush=True)
+    _kill_ports()
 
 
 if __name__ == "__main__":
