@@ -45,13 +45,25 @@ def _kill_ports():
     if subprocess.run(["docker", "inspect", CONTAINER], capture_output=True).returncode == 0:
         with open(f"{LOGDIR}/explore_ros_{int(time.time())}.log", "w") as f:
             subprocess.run(["docker", "logs", CONTAINER], stdout=f, stderr=subprocess.STDOUT)
-    for port in (ROBOT, BRAIN):
-        out = subprocess.run(["lsof", "-nP", f"-tiTCP:{port}", "-sTCP:LISTEN"],
-                             capture_output=True, text=True).stdout.split()
-        for pid in out:
-            subprocess.run(["kill", pid])
+    # A server that outlives its run keeps answering on the port, and the
+    # next run's own server then fails to bind: the 2026-10-02 breakfast run
+    # chased the den run's backpack. Kill, escalate, and wait until free.
+    for sig in ("-TERM", "-KILL"):
+        for port in (ROBOT, BRAIN):
+            for pid in _listeners(port):
+                subprocess.run(["kill", sig, pid])
+        deadline = time.time() + 10
+        while time.time() < deadline and any(_listeners(p) for p in (ROBOT, BRAIN)):
+            time.sleep(0.5)
+    if any(_listeners(p) for p in (ROBOT, BRAIN)):
+        raise RuntimeError("ports still held after SIGKILL")
     subprocess.run(["docker", "rm", "-f", CONTAINER], capture_output=True)
     time.sleep(2)
+
+
+def _listeners(port):
+    return subprocess.run(["lsof", "-nP", f"-tiTCP:{port}", "-sTCP:LISTEN"],
+                          capture_output=True, text=True).stdout.split()
 
 
 def stack(house, movers=""):
@@ -61,14 +73,17 @@ def stack(house, movers=""):
            if k not in ("APP_SHARED_SECRET", "LOCAL_SECRET")}
     env.update(SIM_MAP=house, SIM_MOVERS=movers, ROBOT_DRIVE="ros", WORLD_MODE="ros",
                ROS_BRIDGE_URL=f"http://127.0.0.1:{BRIDGE}")
-    subprocess.Popen([PY, "-m", "uvicorn", "robot.server:app", "--port", str(ROBOT),
+    procs = [subprocess.Popen([PY, "-m", "uvicorn", "robot.server:app", "--port", str(ROBOT),
                       "--host", "127.0.0.1", "--log-level", "warning"], cwd=ROOT, env=env,
-                     stdout=open(f"{LOGDIR}/explore_robot.log", "w"), stderr=subprocess.STDOUT)
+                     stdout=open(f"{LOGDIR}/explore_robot.log", "w"), stderr=subprocess.STDOUT)]
     benv = dict(env, ROBOT_URL=f"http://127.0.0.1:{ROBOT}")
-    subprocess.Popen([PY, "-m", "uvicorn", "control.brain_server:app", "--port", str(BRAIN),
+    procs.append(subprocess.Popen([PY, "-m", "uvicorn", "control.brain_server:app", "--port", str(BRAIN),
                       "--host", "127.0.0.1", "--log-level", "warning"], cwd=ROOT, env=benv,
-                     stdout=open(f"{LOGDIR}/explore_brain.log", "w"), stderr=subprocess.STDOUT)
+                     stdout=open(f"{LOGDIR}/explore_brain.log", "w"), stderr=subprocess.STDOUT))
     time.sleep(4)
+    for proc, port in zip(procs, (ROBOT, BRAIN)):
+        if proc.poll() is not None or str(proc.pid) not in _listeners(port):
+            raise RuntimeError(f"port {port} is not served by this run's own server")
     subprocess.run(["docker", "run", "-d", "--name", CONTAINER,
                     "-p", f"127.0.0.1:{BRIDGE}:8090", "-e", "ROS_DOMAIN_ID=73",
                     "-e", f"ROBOT_URL=http://host.docker.internal:{ROBOT}",
@@ -138,6 +153,8 @@ def run_mission(robot, house, policy="explore", target=TARGET, max_steps=200):
                                            "max_steps": max_steps})
     if r.status_code != 200:
         return {"start": r.status_code, "detail": r.text[:300]}
+    target_at = [(o["x"], o["y"]) for o in robot.get("/sim/objects").json()["objects"]
+                 if o["name"] == target]
     t0, last, travel = time.time(), None, 0.0
     min_gap, contacts, inside, samples = math.inf, 0, 0, 0
     status, full_log = {}, []
@@ -178,6 +195,7 @@ def run_mission(robot, house, policy="explore", target=TARGET, max_steps=200):
                    "final_map": robot.get("/world/map").json(),
                    "final_pose": robot.get("/world/pose").json()}, f)
     return {"outcome": status.get("outcome"), "seconds": round(time.time() - t0),
+            "target_at": target_at,
             "status_file": f"explore_status_{tag}.json",
             "steps": status.get("step"), "explore": status.get("explore"),
             "stuck_episodes": status.get("stuck_episodes"), "travel_m": round(travel, 1),
