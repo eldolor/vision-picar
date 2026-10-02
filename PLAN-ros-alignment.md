@@ -3414,7 +3414,10 @@ Oct 30.
   3.10 and NVIDIA's CUDA builds of torch exist only for cp310; the
   laptop's `.venv` is 3.13. The whole project compiles under 3.10, and the
   offline suite was run under 3.10 on Arm Linux in Docker before the board
-  existed (result below).
+  existed: **1436 passed, 0 failed**; 5 errors, none about the Python
+  version -- 3 browser tests (Playwright installed, its browser not: they
+  error rather than skip) and 2 that import the cloud vision service, which
+  needs `pillow-heif`.
 * **torch:** 2.8.0 + torchvision 0.23.0 from the Jetson AI Lab index
   (`pypi.jetson-ai-lab.io/jp6/cu126`; the `.dev` domain is gone), plus
   `libcusolver-12-6` -- the combination NVIDIA's forum reports working on
