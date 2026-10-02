@@ -209,3 +209,30 @@ def test_a_goal_nav2_never_finishes_times_out_is_cancelled_and_set_aside():
     assert ("cancel",) in nav.calls
     assert agent.goals_failed >= 1
     assert "timeout" in agent.last_event or agent.goals_sent >= 2
+
+
+class WedgedNav(FakeNav):
+    """nav2 that aborts every goal without the robot moving -- the furnished
+    home's sofa-and-coffee-table trap."""
+
+    def get_goal(self):
+        self.calls.append(("get",))
+        if self.goal and self.goal["state"] == "active":
+            self.robot.pass_time(2.0)
+            self.goal["state"] = "aborted"
+        return {"goal": self.goal, "plan": []}
+
+
+def test_a_goal_that_fails_without_moving_is_an_escape_not_a_failed_place():
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="purple elephant"),
+                         navigator=WedgedNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid))
+    assert agent.step().action == "GOAL"
+    second = agent.step()
+    assert "without moving" in agent.last_event or "without moving" in str(second.detail)
+    assert second.action == "REVERSE"
+    assert agent.retry.entries == []          # the place was not held against
+    assert agent.step().action in ("LEFT", "RIGHT")
+    assert agent.escapes == 1

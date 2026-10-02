@@ -65,6 +65,13 @@ APPROACH_NEAR_M, APPROACH_FAR_M = 0.35, 0.6
 APPROACH_MOVED_M = 0.5
 # Camera pans after a goal succeeds.
 LOOK_AROUND = ("LOOK_LEFT", "LOOK_RIGHT", "LOOK_CENTER")
+# A goal that fails with the robot no further than this from where it was
+# sent is the ROBOT's problem (wedged in furniture), not the place's.
+STUCK_MOVED_M = 0.15
+# Escapes tried before a search may conclude, while boxed in.
+MAX_ESCAPES = 3
+# "Boxed in": fewer reachable stopping places than this around the robot.
+BOXED_CELLS = 40
 
 
 class Navigator(Protocol):
@@ -118,6 +125,10 @@ class ExploreAgent(MissionAgent):
         # dropping it then cut a later run off from the den.
         self._reached: list = []
         self._view_goals: list = []    # where view goals have stood the robot
+        # 3.31's furnished-home runs: wedged between a sofa and a coffee
+        # table, every goal aborted, the places were set aside one by one,
+        # and the search ended `searched` with the robot simply stuck.
+        self.escapes = 0
         self.seen_res: Optional[float] = None
         self.goals_sent = 0
         self.goals_failed = 0
@@ -203,7 +214,9 @@ class ExploreAgent(MissionAgent):
             # failure of the place: wait and ask again.
             self.last_event = f"goal refused: {reply.get('reason')}"
             return "WAIT", False, self.last_event
-        self._goal = {"x_m": x_m, "y_m": y_m, "kind": kind, "sent_at": now}
+        pose = self._pose()
+        self._goal = {"x_m": x_m, "y_m": y_m, "kind": kind, "sent_at": now,
+                      "from": (pose["x_m"], pose["y_m"]) if pose.get("usable") else None}
         self.goals_sent += 1
         self.last_event = f"goal sent ({kind}) to ({x_m:.2f}, {y_m:.2f})"
         return "GOAL", True, self.last_event
@@ -288,6 +301,11 @@ class ExploreAgent(MissionAgent):
                     self._goal["look_at"] = g.centre
                     self._view_goals.append(g.goal)
                 return out
+        steps, _start, _need = reachable(m, pose["x_m"], pose["y_m"])
+        if len(steps) < BOXED_CELLS and self.escapes < MAX_ESCAPES:
+            # Nowhere reachable to stop -- from HERE. Boxed in, not done.
+            self._queue_escape()
+            return self._do_pending()
         if self.retry.cooling(now):
             return "WAIT", True, (f"no frontier ready; retrying in "
                                   f"{self.retry.next_ready_in(now):.0f} s")
@@ -319,6 +337,17 @@ class ExploreAgent(MissionAgent):
             return
         target = g.get("target") or (g["x_m"], g["y_m"])
         self.goals_failed += 1
+        pose = self._pose()
+        if g.get("from") and pose.get("usable") and math.hypot(
+                pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M:
+            # It never left: the robot is wedged, not the place unreachable.
+            # Do not hold it against the place; get out first.
+            if g["kind"] == "approach":
+                self._approach = None
+            self._queue_escape()
+            self.last_event = f"{g['kind']} goal {state} without moving; backing out"
+            logger.info(self.last_event)
+            return
         n = self.retry.fail(target[0], target[1], now)
         if g["kind"] == "approach":
             self._approach = None
@@ -333,8 +362,30 @@ class ExploreAgent(MissionAgent):
                 logger.warning("goal cancel failed", exc_info=True)
             self._goal = None
 
+    def _queue_escape(self) -> None:
+        self.escapes += 1
+        self._pending = ["REVERSE", ("OPEN",)]
+
     def _do_pending(self):
         item = self._pending.pop(0)
+        if isinstance(item, tuple) and item[0] == "OPEN":
+            # Turn a quarter towards whichever side the lidar finds more room.
+            try:
+                scan = self.robot.get_scan()
+            except Exception:  # noqa: BLE001
+                scan = {}
+            side = "RIGHT"
+            if scan.get("usable"):
+                start, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
+                def room(lo, hi):
+                    return sum(min(r if r is not None else 12.0, 3.0)
+                               for i, r in enumerate(scan["ranges_m"])
+                               if lo <= start + i * inc <= hi)
+                side = "LEFT" if room(-120, -30) > room(30, 120) else "RIGHT"
+            try:
+                return side, True, self.safety.check_and_execute(side, angle=90)
+            except SafetyViolation as exc:
+                return side, False, str(exc)
         if isinstance(item, tuple) and item[0] == "FACE":
             pose = self._pose()
             if not pose.get("usable"):
