@@ -160,7 +160,10 @@ def run(recordings: Path, device=None) -> dict:
     cuda = bool(torch is not None and torch.cuda.is_available())
     any_pipe = next(iter(pipelines.values()))[0]
     yolo = getattr(getattr(any_pipe.detector, "backend", any_pipe.detector), "model", None)
-    det_device = str(getattr(getattr(yolo, "device", None), "type", getattr(yolo, "device", "?")))
+    # Ultralytics records the device it ran on in its PREDICTOR; `model.device`
+    # keeps reading "cpu" after a run on another device (seen on MPS).
+    ran_on = getattr(getattr(yolo, "predictor", None), "device", None) or getattr(yolo, "device", "?")
+    det_device = str(getattr(ran_on, "type", ran_on))
     return {
         "host": platform.node(), "machine": platform.machine(),
         "python": platform.python_version(),

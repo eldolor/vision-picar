@@ -54,8 +54,16 @@ python -m tools.jetson.bench_perception --recordings recordings --out bench-15w.
 
 `bench_frames.json` pins the 60 (+3 warm-up) frames, so the laptop and the
 board time the same frames. The budget is **250 ms a frame at 15 W**. The
-laptop's numbers to compare against (M1 MacBook Air, 2026-10-02): median
-119 ms, detector 108 ms, handling 6 ms, CLIP 31 ms a crop.
+laptop's numbers to compare against (M1 MacBook Air, 7-core GPU,
+2026-10-02):
+
+| devices | total (median / p90) | detector inference | handling | CLIP a crop |
+|---|---|---|---|---|
+| detector CPU, CLIP MPS (the defaults) | 119 / 156 ms | 108 ms | 6 ms | 31 ms |
+| both on MPS (`--device mps`) | **36 / 66 ms** | **22 ms** | 14 ms | 26 ms |
+
+Ultralytics does not choose the Mac's GPU by itself; `brain/perceive.py`'s
+CLIP does.
 
 **The first run downloads ~600 MB of weights** into the directory it runs
 from: `yoloe-11s-seg.pt` (28 MB) and YOLOE's text encoder

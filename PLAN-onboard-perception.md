@@ -8257,6 +8257,12 @@ than the median. **Build P26 only if the Jetson's own split says the
 handling matters** (3.33 step 4); the decode-once fix stays worth doing
 whenever `perceive.py` is next open, because it is free.
 
+**With both models on the laptop's GPU** (`--device mps`; Ultralytics does
+not pick MPS by itself): median **36 ms** a frame (p90 66), the detector
+**22 ms** -- a fifth of its CPU time -- and handling 14 ms. On a GPU the
+handling becomes a larger SHARE (~40%) of a much smaller total, which is
+P26's argument in a new form; on the Jetson that share is what decides it.
+
 #### P9: composing YOLO-World instead of replacing with it -- **MEASURED 2026-09-13**
 
 4.11 ran YOLO-World as a **replacement** for all three models and
