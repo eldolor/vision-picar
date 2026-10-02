@@ -1,6 +1,11 @@
-# Plan: ROS 2, with the twin still doing the proving
+# Plan: ROS 2, proved on the sim's data
 
-Status: **R0-R7 BUILT (R0-R1c 2026-09-25, R2-R7 and arrival 2026-09-26); R8-R9 need the hardware** · Date: 2026-09-25 · Phase IDs: `R0`-`R9`,
+*(Retitled 2026-10-01: it was "with the twin still doing the proving", from
+the watched-on-a-phone rule retired the day it was written -- see section 0.)*
+
+Status (updated 2026-10-01): **R0-R7 BUILT (R0-R1c 2026-09-25, R2-R7 and
+arrival 2026-09-26); 3.17-3.30 built on data, with 3.24's gates G1-G3 met
+and G4 waiting on the Jetson; R8-R9 need the hardware** · Date: 2026-09-25 · Phase IDs: `R0`-`R9`,
 alongside `S*` (`PLAN-sim-hardening.md`), `B*` (`PLAN-brain-relocation.md`),
 `M*` (`PLAN-microduck-transplants.md`), `T*` (`PLAN-teleop-robot.md`),
 `N*` (`PLAN-mapping.md`), `C*`/`P*` (`PLAN-onboard-perception.md`).
@@ -18,8 +23,12 @@ exposing `GET /pose`, `GET /map`, `POST /goto`. **This plan revises that in two
 ways**, both settled 2026-09-25 by the user:
 
 1. **ROS 2 is adopted properly, not minimally.** `nav2`, `slam_toolbox`,
-   `ros2_control`, `tf2`, `robot_localization` and `twist_mux` all run, and
-   ROS owns the metric layer down to the hardware interface. The reason is
+   `ros2_control`, `tf2` and `twist_mux` all run, and
+   ROS owns the metric layer down to the hardware interface.
+   *(Corrected 2026-10-01: this listed `robot_localization` as running too.
+   It was planned and is NOT in the container -- nothing in `service/slam/src`
+   installs or launches it. It is open question 10's option (b), built only
+   if that question's trigger fires on the car.)* The reason is
    integration, not algorithms: those packages already agree on message types,
    REP-103 units and REP-105's `map -> odom -> base_link`. Wiring five
    standalone libraries together means writing all of that by hand.
@@ -48,14 +57,25 @@ rule: the sim's ground truth is exactly the data hardware cannot produce.
 `read()` pulls state, `write()` pushes commands, and **nothing requires the
 hardware to be real**. So there are two implementations:
 
+**Redrawn 2026-10-01** for 3.16's moved seam and the UGV Rover. The first
+drawing put a `picar_hardware` plugin and "RPLidar via `sllidar_ros2`" in the
+right-hand column; neither will exist.
+
 ```
-                    nav2 -> twist_mux -> collision_monitor -> ros2_control
-                    slam_toolbox · robot_state_publisher · robot_localization
-    ============ hardware_interface::SystemInterface -- THE SEAM ============
-    picar_sim_hardware                      |  picar_hardware
-      -> HTTP -> robot/server.py mode:sim   |    -> USB JSON -> ESP32
-      -> MockRobot + MockWorld              |    -> RPLidar via sllidar_ros2
-    (today, laptop only)                    |  (hardware day)
+  ROS container (service/slam/)
+    nav2 -> twist_mux -> collision_monitor -> diff_drive_controller
+    slam_toolbox · robot_state_publisher · tf2
+    (robot_localization: not built, see open question 10)
+    picar_sim_hardware (the ros2_control plugin, on the car too)
+    picar_bridge (HTTP :8090)
+  ======== HTTP: POST/GET /wheels, GET /scan -- the ROS wall ========
+  robot/server.py: robot/safety.py (last word on every path),
+                   watchdog, M4 arbitration
+  =========== RobotInterface -- the backend swap (3.16) ===========
+  MockRobot + MockWorld        |  robot/hardware_robot.py
+    (the sim)                  |    -> USB JSON -> ESP32 ROS Driver board
+                               |  D500 lidar, OAK-D Lite depth:
+                               |    driver placement OPEN (questions 5, 8)
 ```
 
 Everything above the seam is written once. Hardware day is a plugin swap.
@@ -67,8 +87,8 @@ it as the last word -- and would give the board two masters. So
 `picar_sim_hardware` stays on the car too, still talking HTTP to
 `robot/server.py`, and the seam below the robot server is the one this
 project has always had: `RobotInterface`, with `robot/hardware_robot.py`
-(the ESP32 over serial) beside `MockRobot`. The diagram above is kept as
-first drawn; read its right-hand column as `robot/hardware_robot.py`.
+(the ESP32 over serial) beside `MockRobot`. The diagram above was redrawn
+on 2026-10-01 to show this.
 
 **No Gazebo.** The simulator already exists; a second one is a second thing to
 disagree with the first.
@@ -76,6 +96,80 @@ disagree with the first.
 **Containment is unchanged.** All of this lives in `service/slam/` (rename to
 `service/nav/` is a live question), `tests/test_ros_containment.py` still
 passes, and the twin speaks HTTP only.
+
+### 1.1 What goes inside ROS, and what stays out -- DECIDED by the user 2026-10-02
+
+Discussed with the user 2026-10-01 and decided 2026-10-02. Nothing in this
+section is built yet; each item still gets its criteria written before
+building.
+
+**The rule: plumbing in, judgment and safety out.** ROS gets what is
+generic to any mobile robot (control, mapping, planning, transforms).
+These stay outside:
+
+* **The brain**: mission logic and the LLM calls.
+* **`robot/safety.py` and the watchdog**, because they must keep working
+  when ROS hangs. ROS did hang: 3.15's tf2 deadlock.
+* **The phone**: a web page over HTTP.
+
+**Refinement: a sensor that feeds a veto stays outside, even though a
+driver is plumbing.** The test is whether safety or the direct-mode
+fallback (3.24 G3) needs it while ROS is down. That keeps these outside:
+
+* the motor board's serial port (3.16);
+* the lidar driver (open question 5);
+* the OAK-D's depth for the floor band (question 8);
+* M4's arbitration;
+* the direct-mode verb executor (`SafetyController.run_verb()`).
+
+**Today's line already matches the rule almost everywhere.** One piece of
+logic should cross:
+
+* **Sighting geometry: `brain/goal_pose.py` -> TF plus the lidar range.**
+  `goal_pose.py` anchors a sighting in odometry by hand, and holds only a
+  DIRECTION when it has no range. R3's row calls TF "the general form of what
+  goal_pose.py does by hand".
+  * A bridge route would take a bearing and a timestamp, read the lidar at
+    that bearing, and return a POINT in the map frame. That point is composed
+    through the pan joint, which also closes 3.12's warning that a panned
+    bearing is not body-relative.
+  * This is R1's open item: a detector that lands 1 frame in 3 needs a
+    range-anchored goal.
+  * The brain still decides what to do with the point.
+    `goal_pose.py` stays as the direct-mode fallback.
+  * Criteria, before building: the point within X cm of ground truth with
+    the camera panned +/-45 degrees; arrival with a 1-in-3 detector against
+    R1's ~1.6 cells closed, with the target written before the run.
+
+**Already inside ROS, but not yet switched on.** These need configuration
+or a package, not a move across the wall:
+
+* map save and reload in `slam_toolbox`, plus `map_saver` (question 6);
+* nested slow zones and cost-regulated speed in `nav2.yaml` (question 9),
+  only after `safety.py`'s stop distance depends on speed;
+* `robot_localization`, only if question 10's trigger fires.
+
+**Perception: inside later, on a measured trigger only.**
+
+* **The trigger.** The Jetson (3.24 G4) measures the tier over budget, and
+  moving image preprocessing onto the GPU (Isaac ROS / NITROS) fixes it.
+  P7b found preprocessing, not the model, is the bottleneck.
+* **The wall then moves; it does not disappear.** Camera driver, detector
+  and CLIP scoring go inside. They publish per-frame
+  `detected`/`absent`/`unavailable` with a TF bearing and a lidar range.
+* **The brain keeps the judgment:**
+  * the match gate;
+  * `brain/tiered.py`'s cloud-call triggers (`mission_start`,
+    `candidate_sighting`, `cold_search`, `staleness`, and the two-frame
+    hysteresis under them);
+  * 1.11a's corroboration;
+  * arrival;
+  * the cloud call itself.
+
+**Cost to plan for:** the bridge already serves 13 routes, exactly
+`MAX_BRIDGE_ROUTES` (`tests/test_wall_linters.py`, counted 2026-10-01). Any
+new route, whether for sighting geometry or map save/reload, raises the
+budget. Raise it deliberately, in a commit that says why.
 
 ---
 
@@ -117,7 +211,7 @@ honest all-unusable defaults.
 | **R6** | **DONE on data 2026-09-26, on the SCALED house -- see 3.15.** **nav2 + `collision_monitor`.** Costmaps, planner, controller, recovery. `collision_monitor` between the mux and the base, with the footprint term the hand-written collar never had. **`robot/safety.py` is NOT deleted** -- it keeps the teleop and vision-policy paths. Then re-run R1's metric: a DWB/MPPI controller scores continuity in its cost function and should not flicker | Tap a goal on the map, path draws, robot follows. Block it, watch recovery. Read run-length against R1 |
 | **R7** | **DONE on data 2026-09-26 -- see 3.16, which also moves the seam: the serial port belongs to `robot/hardware_robot.py`, and `picar_hardware` is not written.** **Fake ESP32 on a pty** speaking `HARDWARE-BOM.md` §4.2's real protocol (`T=1/11/13/126/130/131/136`, `1001`/`1002` frames), and `picar_hardware` written against it. Closes C3's stated blocker: *"nothing in this repo simulates a serial peer"*. Also falsifies §4.2's unverified belief that the heartbeat stops the motors | A drill that severs the link mid-mission; the board's heartbeat expires and reports motors stopped, watchdog quiet |
 | **R8** | **Order + bring up.** `JETSON-BOM.md` as priced, plus the **latching e-stop in the motor rail** (1.16 #19, in no bill) and a pack-capacity decision (see `HARDWARE-BOM.md` §6 and the amendment noted in §5 below). `HARDWARE-BOM.md` §5 order unchanged | D-pad moves real wheels; e-stop kills them mid-move with the software none the wiser |
-| **R9** | **Swap the BACKEND (3.16): `mode: sim` -> `mode: hardware` + `ROBOT_SERIAL`, and the camera and lidar drivers in place of the sim body's.** `sim_scan_node` -> `sllidar_ros2`. **Nothing above the seam changes.** Then N5's real work: scans sanity-checked in the actual house against glass, mirrors, dark matte, mounting vibration. Re-read P7e here | Same map view, same goal-tap, same recovery -- in a real room. Drive at glass and watch the ring |
+| **R9** | **Swap the BACKEND (3.16): `mode: sim` -> `mode: hardware` + `ROBOT_SERIAL`, and the camera and lidar drivers in place of the sim body's.** `sim_scan_node` -> the D500's driver (`ldlidar`, MIT; NOT `sllidar_ros2`, which was the RPLidar's), wherever open question 5 puts it. **Nothing above the seam changes.** Then N5's real work: scans sanity-checked in the actual house against glass, mirrors, dark matte, mounting vibration. Re-read P7e here | Same map view, same goal-tap, same recovery -- in a real room. Drive at glass and watch the ring |
 
 ---
 
@@ -3114,7 +3208,7 @@ All physical, all hardware-day, none a gap in this plan.
 |---|---|---|
 | Lidar on glass, mirrors, dark matte | A raycaster returns the geometric answer | R9 / N5 |
 | Mounting vibration | No mechanical model | R9 / N5 |
-| CPU contention | A laptop is not 6 A78AE cores at 25W | R9, plus P7b's preprocessing work |
+| CPU contention | A laptop is not 6 A78AE cores at **15 W** (the user's starting power mode, 2026-10-01; this row assumed 25 W when written, and 15 W makes contention more likely) | R9, plus P7b's preprocessing work |
 | Wheel slip magnitude | Slip is modellable; the coefficient is not known | R8 calibration |
 | Serial electrical reality | R7's pty tests the protocol, not the wire | R8 |
 
@@ -3143,7 +3237,10 @@ job, on a phone.
 - **`HARDWARE-BOM.md` §4.1** -- add from the verified datasheet: no NVENC,
   2x M.2 Key M (x4 + x2 PCIe Gen3), 12-pin button header, 103 x 90.5 x
   34.77mm footprint (bears on §8's unmeasured chassis deck).
-- **`HARDWARE-BOM.md` §6** -- no 3S 5000-6000mAh middle option is costed
+- **SUPERSEDED 2026-10-01** by the UGV Rover (3.21): its ROS Driver board and
+  pack replace the General Driver build this bullet priced, and the Jetson's
+  separate battery is `JETSON-BOM.md` 9.5. Kept as written:
+  **`HARDWARE-BOM.md` §6** -- no 3S 5000-6000mAh middle option is costed
   (~2.4x runtime, lower IR, no architecture change, stays inside the driver
   board's 7-13V). And the 4S fallback's **Pololu D36V28F12 is 12V 2.4A**,
   which is exactly two TB6612FNG channels at continuous rating before the
@@ -3159,17 +3256,33 @@ job, on a phone.
    tier's action output competes with nav2's controller. P25's steering rung,
    Phase G's hold and `safest_direction` become inputs to goal selection rather
    than to motion. Settle at R6, against R1's measured baseline.
-3. **Two collars, one robot.** `safety.py` on the teleop/vision path,
+   **Half-answered (2026-10-01 note):** 3.15 decided "the tier keeps
+   steering by verbs for now". Question 6's frontier search reopens it,
+   because it hands motion to nav2 goals. Settle it with question 6.
+3. **CLOSED -- decided in 3.15: the two collars run in SERIES**, nav2 ->
+   `twist_mux` -> `collision_monitor` -> ... -> `robot/safety.py`, with
+   `safety.py` the last word on every path. The question as raised:
+   *Two collars, one robot.* `safety.py` on the teleop/vision path,
    `collision_monitor` on the nav path. They can disagree. Decide the
    arbitration before R6, not after.
-5. **Who owns the lidar on the car?** (Raised 2026-09-26, after R7.) In the
+4. **`use_sim_time`, or real time?** R0 uses `sim.realtime` and wall-clock,
+   which is simplest. A `/clock` publisher would buy determinism for
+   regression runs; not needed until it is.
+5. **Who owns the lidar on the car?** (Raised 2026-09-26, after R7. The
+   lidar is now the Rover's **D500**, not the RPLidar this was first written
+   for.) In the
    sim the robot server supplies the scan to both `robot/safety.py` (rear
    clearance, the depth path) and ROS (through the bridge). On the car the
-   RPLidar plugs into the Jetson: either `sllidar_ros2` publishes `/scan` and
-   the bridge hands it to the robot server, or a Python driver in the robot
-   server reads it and the bridge republishes it as today. The second keeps
-   `safety.py` independent of the ROS container being up, which is the same
-   argument 3.16 made for the motor board.
+   D500 plugs into the Jetson: either a ROS driver (`ldlidar`, MIT) publishes
+   `/scan` and the bridge hands it to the robot server, or a driver in the
+   robot server reads it and the bridge republishes it as today. The second
+   keeps `safety.py` independent of the ROS container being up, which is the
+   same argument 3.16 made for the motor board.
+   **DECIDED by the user 2026-10-02: the second.** See
+   1.1: a sensor that feeds a veto stays outside. The cost is porting the
+   D500's serial protocol out of `ldlidar`'s ROS node into the robot process.
+   Before this goes to the car, the fake board and the sim's scan need a
+   matching fake lidar on a pty, as R7 did for the motor board.
 6. **The robot's map: a search that uses it, and keeping it.** (Raised
    2026-09-27 by the user's first brain mission in their own furnished house:
    the tiered search held a cloud FORWARD into the dining room and ended
@@ -3238,9 +3351,6 @@ job, on a phone.
      person who will move (the same mission: `found` in 41 s alone,
      `blocked` after 315 s with someone walking the hallway). Whatever
      retry rule frontiers get, the stuck detector should share it.
-4. **`use_sim_time`, or real time?** R0 uses `sim.realtime` and wall-clock,
-   which is simplest. A `/clock` publisher would buy determinism for
-   regression runs; not needed until it is.
 7. **Things that move, in the simulator (agreed by the user 2026-10-01;
    first in order).** **BUILT as 3.30** (the results are there; this entry is
    the proposal as written). Every
@@ -3282,7 +3392,9 @@ job, on a phone.
    OAK-D Lite is a depth camera, and `RobotInterface.get_depth_grid()` (M2)
    plus the depth-grid veto (M3) are already the path that would carry it.
    **Proposed:** (a) a depth-grid source on the car from the OAK-D Lite;
-   (b) a **floor band** in `robot/safety.py`: depth returns between the
+   (b) a **floor band** in `robot/safety.py` (which, by 1.1's proposed rule,
+   puts the OAK-D's depth driver -- `depthai` -- in the robot process, not
+   `depthai-ros`): depth returns between the
    floor and the lidar's plane, inside the swept corridor, veto forward
    motion, in series with the scan checks as 3.18 does. (c) The sim cannot
    test this today, because its world is 2D: every object fills the
