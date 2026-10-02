@@ -3177,6 +3177,51 @@ after 315 s; `found` in 41 s without them).
 6. **The deployed path.** One `explore` mission through the brain's HTTP
    API on the live ROS stack, furnished home: `found`.
 
+**Status 2026-10-02 -- IN PROGRESS, not closed.** Built on branch
+`frontier-search` (not merged): `brain/frontier.py`, `brain/explore.py`,
+`control/remote_navigator.py`, the `explore` policy and `searched` outcome,
+the shared retry rule in `MissionRunner`, and `tests/demo_explore.py`, the
+live instrument. Measured so far, all live through the brain's HTTP API on
+nav2 + `slam_toolbox`:
+
+| | result |
+|---|---|
+| 3. a person in the kitchen door for 60 s (scaled house) | **met** -- `found` in 613 s, 8 goals failed and were retried until the door cleared, 0 contacts |
+| 4. the rule-based policy, a person crossing the hallway | **FAILED as written** -- still `blocked` after 3 retries (358 s, 24 m); its last refusals were in the living room, not at the person. In process the same policy livelocked in a bedroom corner (turns reset the refusal count), a limit of the rule-based agent, which is not extended |
+| 1. the backpack in each room of the furnished home | **not yet met** -- one revision found the breakfast room and the den, others did not; outcomes vary run to run on the same code (SLAM and nav2 timing). Found every time in the scaled house (a smoke run: 465 s, 11 m) |
+| 2, 6 | not yet run on a final revision |
+| 5. safety | met on every run so far: 0 contacts on ground truth, closest 1.1-1.8 cm (3.18's bar is 1 cm) |
+
+**Found and fixed on the way** (each confirmed red first):
+
+* **Every in-process mission since 3.22 drove its verbs unguarded.** The
+  mission's `_HaltGate` hid `verb_plan()`, so a FORWARD was vetted once and
+  drove the whole cell -- 2.3 cm from a person. The deployed path was never
+  affected (the robot server guards every verb). Fixed; the reactive
+  missions' arrival bar was re-derived from the safety line (1.05 -> 1.76
+  cells), since 1.05 was only reachable unguarded.
+* **The sim camera saw through solid objects.** Now another object on the
+  line hides one, as a wall does (golden image unchanged).
+* Frontier and search defects only the live house showed: one 27 m frontier
+  put every goal on the robot; revisited unclearable frontiers; pans spent
+  the step budget; a vanished frontier kept a mission waiting for ever; a
+  goal timeout that crashed; a 0.6 m door read as a wall.
+
+**Open, in order:**
+
+1. **The robot gets wedged in furniture** (the living room's sofa and coffee
+   table): every goal then aborts, frontiers are dropped, the search sees no
+   way out and ends `searched`. Planned: back out when goals abort without
+   the robot moving, and never end a search while the robot is boxed in.
+2. **A false arrival beside a door jamb** (pinned as a strict xfail in
+   `tests/test_arrival.py`): the camera sees the target past the jamb's edge
+   while every lidar beam at its bearing hits the jamb, and 3.11's arrival
+   rule declares `found` 1.13 m out. The car runs this rule, so the fix is
+   the user's call. Candidates: require the camera's own depth (the OAK-D
+   Lite's) to agree with the lidar before declaring arrival, or require the
+   lidar range to be stable over a small turn.
+3. Criteria 1, 2 and 6 on one recorded revision, after 1.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
