@@ -264,3 +264,65 @@ def test_a_move_refused_because_a_person_took_over_still_ends_the_mission():
     agent = _agent_with_refusal("preempted by twin-dpad")
     with pytest.raises(Preempted):
         agent._do_pending()
+
+
+def _agent_that_saw_the_backpack_once(nav_cls):
+    """Kitchen door, backpack in view on the first frame only -- after that
+    the camera never sees it again, as when an escape turns the robot away."""
+    grid = build_world("scaled_house")
+    grid.x, grid.y, grid.theta = 16.5, 4.5, math.radians(5)
+    robot = MockRobot(grid, render=False)
+    nav = nav_cls(robot)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="red backpack"),
+                         navigator=nav, clock=lambda: grid.sim_time, world=MockWorld(grid))
+    real, calls = agent._sighting, []
+
+    def once(frame):
+        calls.append(1)
+        return real(frame) if len(calls) == 1 else None
+    agent._sighting = once
+    return agent, nav
+
+
+class OnceWedgedNav(FakeNav):
+    """The first goal aborts without the robot moving; then nav2 as usual."""
+
+    def get_goal(self):
+        if self.goal and self.goal["state"] == "active" and not getattr(self, "_done", False):
+            self._done = True
+            self.calls.append(("get",))
+            self.robot.pass_time(2.0)
+            self.goal["state"] = "aborted"
+            return {"goal": self.goal, "plan": []}
+        return super().get_goal()
+
+
+def test_a_lost_approach_goes_back_to_the_last_sighting():
+    """The den run: it saw the backpack, the approach failed without moving,
+    the escape turned it away -- and it never went back."""
+    agent, nav = _agent_that_saw_the_backpack_once(OnceWedgedNav)
+    first = agent.step()
+    assert first.action == "GOAL" and agent._goal["kind"] == "approach"
+    target = agent._goal["target"]
+    # The failed try puts the spot on the retry cooldown, so a frontier may
+    # come first -- but the robot must come back to it.
+    back = None
+    for _ in range(80):
+        r = agent.step()
+        if r.action == "GOAL" and agent._goal and agent._goal["kind"] == "approach":
+            back = agent._goal["target"]
+            break
+    assert agent.escapes == 1
+    assert back == target
+
+
+def test_a_sighting_that_always_wedges_runs_out_of_tries():
+    from brain.frontier import RETRY_LIMIT
+    agent, nav = _agent_that_saw_the_backpack_once(WedgedNav)
+    approaches = 0
+    for _ in range(200):
+        r = agent.step()
+        if r.action == "GOAL" and agent._goal and agent._goal["kind"] == "approach":
+            approaches += 1
+    assert 1 < approaches <= RETRY_LIMIT
+    assert agent._last_seen is None

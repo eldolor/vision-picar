@@ -114,6 +114,10 @@ class ExploreAgent(MissionAgent):
         self._goal: Optional[dict] = None   # {"x_m","y_m","kind","sent_at"}
         self._pending: list = []
         self._approach: Optional[tuple] = None
+        # Where the target was last seen, kept after it leaves view: the den
+        # run saw the backpack, lost the approach to an escape, and spent the
+        # rest of its half hour in the garage.
+        self._last_seen: Optional[tuple] = None
         # Floor the camera has had a clear look at, as house-frame cell
         # centres -- not map indices, because a SLAM map grows and its
         # origin moves.
@@ -188,6 +192,7 @@ class ExploreAgent(MissionAgent):
         sighting = self._sighting(frame)
         if sighting is not None:
             tx, ty = sighting
+            self._last_seen = (tx, ty)
             moved = (self._approach is None
                      or math.hypot(tx - self._approach[0], ty - self._approach[1]) > APPROACH_MOVED_M)
             if moved and self.retry.available(tx, ty, now):
@@ -196,7 +201,11 @@ class ExploreAgent(MissionAgent):
         if self._goal is not None:
             return "WAIT", True, f"nav2 {state}: {self._goal['kind']}"
 
-        action, executed, detail = self._next_frontier(now)
+        remembered = self._back_to_sighting(now)
+        if remembered is not None:
+            action, executed, detail = remembered
+        else:
+            action, executed, detail = self._next_frontier(now)
         if ended:
             detail = f"{ended}; {detail}"
         return action, executed, detail
@@ -240,6 +249,31 @@ class ExploreAgent(MissionAgent):
         out = self._send(gx, gy, "approach", now)
         if out[0] == "GOAL":
             self._goal["target"] = (tx, ty)
+        return out
+
+    def _back_to_sighting(self, now: float):
+        """Return to where the target was last seen, before any frontier --
+        under the same retry rule as a place, so an unreachable sighting
+        costs at most RETRY_LIMIT tries."""
+        if self._last_seen is None:
+            return None
+        tx, ty = self._last_seen
+        if self.retry.dropped(tx, ty):
+            self._last_seen = None
+            return None
+        if not self.retry.available(tx, ty, now):
+            return None
+        pose = self._pose()
+        if pose.get("usable") and math.hypot(tx - pose["x_m"], ty - pose["y_m"]) \
+                <= APPROACH_STANDOFF_M + 0.05:
+            # Here and not seeing it: look once, then let it go. A fresh
+            # sighting brings it back.
+            self._last_seen = None
+            self._pending = [("FACE", (tx, ty))]
+            return self._do_pending()
+        out = self._send_approach(tx, ty, now)
+        if out[0] == "GOAL":
+            out = (out[0], out[1], f"back to the last sighting; {out[2]}")
         return out
 
     def _approach_point(self, pose: dict, tx: float, ty: float, d: float) -> tuple:
@@ -347,6 +381,9 @@ class ExploreAgent(MissionAgent):
             # Do not hold it against the place; get out first.
             if g["kind"] == "approach":
                 self._approach = None
+                # The place is not to blame, but a sighting that wedges the
+                # robot every time must still run out of tries.
+                self.retry.fail(target[0], target[1], now)
             self._queue_escape()
             self.last_event = f"{g['kind']} goal {state} without moving; backing out"
             logger.info(self.last_event)
