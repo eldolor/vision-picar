@@ -3407,6 +3407,39 @@ latency far over budget with P26 unable to close it, is the decision point
 the return window exists for -- recorded here and taken to the user before
 Oct 30.
 
+**Prepared before the board, 2026-10-02** (the procedure is
+`tools/jetson/README.md`):
+
+* **Python 3.10 is a constraint, found first.** JetPack 6 ships Python
+  3.10 and NVIDIA's CUDA builds of torch exist only for cp310; the
+  laptop's `.venv` is 3.13. The whole project compiles under 3.10, and the
+  offline suite was run under 3.10 on Arm Linux in Docker before the board
+  existed (result below).
+* **torch:** 2.8.0 + torchvision 0.23.0 from the Jetson AI Lab index
+  (`pypi.jetson-ai-lab.io/jp6/cu126`; the `.dev` domain is gone), plus
+  `libcusolver-12-6` -- the combination NVIDIA's forum reports working on
+  6.2.1. A plain `pip install torch` gets a CPU build on aarch64, and
+  PyTorch's own cu126 wheels fail there ("no kernel image is available").
+  `tools/jetson/setup.sh` installs it, pins it with a constraints file so
+  no requirement can swap it for a CPU build, and checks the shipped
+  pipeline lands on `cuda`.
+* **`numpy` was missing from `requirements.txt`** -- a test imports it, and
+  the laptop only had it as a side effect of other installs; a fresh
+  machine (the 3.10 run) failed at collection. Added.
+* **The latency bench:** `tools/jetson/bench_perception.py` times the
+  shipped pipeline per frame and splits it -- Ultralytics' own
+  preprocess / inference / postprocess for YOLOE, CLIP's encoder
+  (synchronised) against the rest of its scoring -- over 60 pinned frames
+  (+3 warm-up) from 20 walks and 7 targets (`bench_frames.json`, names
+  only), so the laptop and the board time the same frames.
+* **Access:** a dedicated SSH key on the Mac and a `picar-jetson` host
+  entry (user `picar`). The repo is private, so code reaches the board by
+  `git push` over SSH, never with GitHub credentials on the robot.
+* **The image:** `jetson-orin-nano-devkit-super-SD-image_JP6.2.1.zip`,
+  downloaded and checked against the server's size (11,725,610,175 bytes;
+  its one file, `sd-blob.img`, is 24 GB). 6.2.2 is an `apt upgrade` from
+  there, optional.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.

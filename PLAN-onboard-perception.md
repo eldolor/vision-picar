@@ -8243,6 +8243,20 @@ centre-cropped and normalised by open_clip's PIL transforms, one at a time.
 this weekend (3.33), and an A10G is not an Orin; P7b's whole lesson was that
 projections from one to the other moved 2.4x once measured.
 
+**The premise weakened before building -- measured on the laptop
+2026-10-02** (`tools/jetson/bench_perception.py`, 60 pinned frames,
+M1 MacBook Air, detector on CPU, CLIP on MPS): median **119 ms** a frame
+(p90 156), of which the detector's inference is **108 ms** and all the
+handling around the models **6 ms** (p90 31). P7b's 229 ms of CPU resizing
+was **OWLv2** at 1280 with its anti-aliased resize; the shipped YOLOE's own
+preprocessing is ~1 ms. CLIP costs **31 ms a crop** -- about two thirds of
+it decode, crop and resize -- but only 16 of 60 frames had a crop at all.
+So with YOLOE the work is the detector's compute, which is the GPU's on the
+Jetson, and P26's three changes trim the tail (frames with crops) rather
+than the median. **Build P26 only if the Jetson's own split says the
+handling matters** (3.33 step 4); the decode-once fix stays worth doing
+whenever `perceive.py` is next open, because it is free.
+
 #### P9: composing YOLO-World instead of replacing with it -- **MEASURED 2026-09-13**
 
 4.11 ran YOLO-World as a **replacement** for all three models and
