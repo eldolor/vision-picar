@@ -85,7 +85,10 @@ def forward_cells(robot, b, n=5):
 def test_3_a_forward_is_a_cell_on_either_firmware(rig):
     firmware, robot, b = rig
     moved = forward_cells(robot, b)
-    bar = 0.5 if firmware == "fork" else 1.0
+    # Stock: the corrected information bound (tests/test_ros_driver_board.py
+    # STOCK_STRAIGHT_BAR_CM); the fork settles, to 0.5.
+    from tests.test_ros_driver_board import STOCK_STRAIGHT_BAR_CM
+    bar = 0.5 if firmware == "fork" else STOCK_STRAIGHT_BAR_CM
     assert all(abs(m - 30.0) <= bar for m in moved), [round(m, 2) for m in moved]
 
 

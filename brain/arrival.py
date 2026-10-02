@@ -50,6 +50,13 @@ ARRIVAL_FRAMES = 2
 # Beams either side of the bearing, read as a median (see _range_at). Five
 # degrees at 40 cm is 3.5 cm of arc: any object worth finding covers it.
 ARRIVAL_BEAM_HALF_DEG = 2
+# A target's face is ONE surface: at arrival range its returns across the
+# window agree to millimetres. Returns that spread by more than this, or
+# that mix returns with beams that hit nothing, are an EDGE -- a door jamb
+# beside a target seen through the doorway -- and are not judged (3.32:
+# with guarded verbs a mission stopped 37 cm from a jamb and its median was
+# the jamb, `found` 1.1 m short).
+ARRIVAL_EDGE_M = 0.10
 
 # Readout states.
 ARRIVED = "arrived"
@@ -82,17 +89,21 @@ class ArrivalCheck:
         scan = robot.get_scan()
         if not scan.get("usable") or not scan.get("ranges_m"):
             return self._not_judged("no range sensor")
-        range_m = self._range_at(scan, bearing)
+        window = self._window(scan, bearing)
+        middle = sorted(window)[len(window) // 2]
+        range_m = None if math.isinf(middle) else round(middle, 4)
+        edge = self._is_edge(window)
         centred = abs(bearing) <= self.centre_deg
         close = range_m is not None and range_m <= self.radius_m
         readout = {"bearing_deg": round(bearing, 1),
                    "range_m": None if range_m is None else round(range_m, 3),
                    "radius_m": self.radius_m}
-        if not (centred and close):
+        if not (centred and close) or edge:
             self.streak = 0
             why = ("off centre" if not centred
                    else "no return at the bearing" if range_m is None
-                   else "not yet within the radius")
+                   else "not yet within the radius" if not close
+                   else "an edge at the bearing, not one surface")
             return {"state": APPROACHING, "streak": 0, "reason": why, **readout}
         self.streak += 1
         state = ARRIVED if self.streak >= self.frames else APPROACHING
@@ -113,7 +124,27 @@ class ArrivalCheck:
 
     @staticmethod
     def _range_at(scan: dict, bearing_deg: float) -> Optional[float]:
-        """The MEDIAN return over the beams within ARRIVAL_BEAM_HALF_DEG of
+        window = ArrivalCheck._window(scan, bearing_deg)
+        middle = sorted(window)[len(window) // 2]
+        return None if math.isinf(middle) else round(middle, 4)
+
+    @staticmethod
+    def _is_edge(window) -> bool:
+        """3.32: returns that do not agree are an edge, not a face -- a
+        spread over ARRIVAL_EDGE_M, or returns mixed with beams that hit
+        nothing."""
+        finite = [r for r in window if not math.isinf(r)]
+        if not finite:
+            return False
+        if len(finite) < len(window):
+            return True
+        return max(finite) - min(finite) > ARRIVAL_EDGE_M
+
+    @staticmethod
+    def _window(scan: dict, bearing_deg: float) -> list:
+        """The returns of the beams within ARRIVAL_BEAM_HALF_DEG of the
+        bearing, read as a MEDIAN by `_range_at` -- a missing return counting
+        as far. Scan angles are
         the bearing -- a missing return counting as far. Scan angles are
         body-frame, clockwise-positive, 0 ahead -- the same convention as a
         perception bearing.
@@ -146,8 +177,7 @@ class ArrivalCheck:
         for k in range(-ARRIVAL_BEAM_HALF_DEG, ARRIVAL_BEAM_HALF_DEG + 1):
             want = bearing_deg + k
             window.append(min(body, key=lambda b: abs((b[0] - want + 180.0) % 360.0 - 180.0))[1])
-        middle = sorted(window)[len(window) // 2]
-        return None if math.isinf(middle) else round(middle, 4)
+        return window
 
 
 def arrived_scene(scene: dict, target: str, readout: dict) -> dict:

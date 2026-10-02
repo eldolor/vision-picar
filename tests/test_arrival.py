@@ -26,16 +26,16 @@ from brain.perceive import FrameReportedPipeline
 from brain.tiered import STEER_BAND_DEG, TieredVision
 from control.mission_runner import FOUND, MissionRunner
 from robot.interface import unusable_scan
-from sim.maps.starter_house import build_starter_world
 from sim.mock_robot import DEFAULT_CELL_M, MockRobot
 from tests.conftest import mock_world_for
 from tests.test_bearing_turns import (
-    CLEAR_STARTS, GOAL, JAMB_STARTS, SEARCH_OFFSETS, TARGET, _Flaky,
+    CLEAR_STARTS, GOAL, JAMB_STARTS, SEARCH_OFFSETS, SEARCH_START, TARGET, _Flaky,
+    _build,
     _quiet_cloud)
 
-from tests.conftest import ARRIVED_CELLS  # noqa: E402 -- see its note (3.31)
+from tests.test_bearing_turns import ARRIVED_CELLS  # noqa: E402 -- corrected 3.32, see there
 FALSE_ARRIVAL_M = 0.60        # criterion 2
-SWEEP = CLEAR_STARTS + [(5.5, 7.5, o) for o in SEARCH_OFFSETS]
+SWEEP = CLEAR_STARTS + [(*SEARCH_START, o) for o in SEARCH_OFFSETS]
 
 
 @pytest.fixture(autouse=True)
@@ -49,7 +49,7 @@ def _quiet_logs():
 
 def _run(start, pipeline, *, robot_wrapper=None):
     x, y, off = start
-    grid = build_starter_world()
+    grid = _build()
     grid.x, grid.y = x, y
     grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
     robot = MockRobot(grid, render=False)
@@ -75,14 +75,12 @@ def _sweep(detection_p, seeds):
     return rows
 
 
-def _assert_recognised(rows, label, check_false=True):
+def _assert_recognised(rows, label):
     arrived = [r for r in rows if r[1] <= ARRIVED_CELLS]
     found = [r for r in arrived if r[0] == FOUND]
     assert arrived, f"{label}: nothing arrived at all"
     assert len(found) / len(arrived) >= 0.95, (
         f"{label}: {len(found)}/{len(arrived)} arrivals ended found")
-    if not check_false:
-        return
     false = [r for r in rows if r[0] == FOUND and r[1] * DEFAULT_CELL_M > FALSE_ARRIVAL_M]
     assert not false, f"{label}: found from {[round(r[1], 2) for r in false]} cells"
 
@@ -93,38 +91,9 @@ def test_every_arrival_at_perfect_detection_ends_found():
     _assert_recognised(_sweep(1.0, [0]), "perfect detection")
 
 
-# 3.31: the one false arrival guarded verbs exposed. Unguarded, the robot
-# drove on past this door jamb; guarded, it stops 21 cm short of it, with
-# the backpack just past the jamb's edge. The camera sees it dead centre,
-# every beam in the +/-2 degree window hits the jamb at 0.37 m, and the
-# rule declares `found` 1.13 m out. The rule's own note says "the camera
-# could not be seeing past it either" -- untrue at an edge.
-JAMB_EDGE = ((5.5, 7.5, -90), 2)
-
-
 @pytest.mark.parametrize("p", [0.9, 0.8])
 def test_arrival_is_recognised_under_an_unreliable_detector(p):
-    rows, false = [], []
-    for start in SWEEP:
-        for seed in range(10):
-            row = _run(start, _Flaky(TARGET, p, seed))
-            rows.append(row)
-            if row[0] == FOUND and row[1] * DEFAULT_CELL_M > FALSE_ARRIVAL_M:
-                false.append((start, seed))
-    _assert_recognised(rows, f"{p:.0%} detection", check_false=False)
-    # Every false arrival is the one recorded below -- a new one still fails.
-    assert set(false) <= {JAMB_EDGE}, f"false arrivals from {false}"
-
-
-@pytest.mark.xfail(strict=True, reason=(
-    "PLAN-ros-alignment.md 3.31 finding: a target just past a door jamb's "
-    "edge is seen by the camera while every lidar beam at its bearing hits "
-    "the jamb -- the arrival rule reads the jamb's range as the target's. "
-    "For the user to decide how the car's rule should guard against it."))
-def test_no_false_arrival_beside_a_door_jamb():
-    (start, seed) = JAMB_EDGE
-    outcome, cells = _run(start, _Flaky(TARGET, 0.9, seed))
-    assert not (outcome == FOUND and cells * DEFAULT_CELL_M > FALSE_ARRIVAL_M)
+    _assert_recognised(_sweep(p, range(10)), f"{p:.0%} detection")
 
 
 def test_jamb_starts_never_claim_an_arrival_they_did_not_make():
@@ -227,6 +196,32 @@ def test_an_edge_beside_the_target_is_not_the_target():
     check = ArrivalCheck()
     for _ in range(3):
         assert check.observe(_scene(0.13), _FakeRobot(ranges))["state"] != ARRIVED
+
+
+def test_a_jamb_edge_straddling_the_window_is_not_the_target():
+    """3.32 criterion 1, from the sweep that found it once missions used
+    guarded verbs: stopped 37 cm from a door jamb, the target visible
+    through the doorway at 0.4 deg, and the five-beam window -- 3 cm wide
+    at that range -- three beams on the jamb and two past it. The median
+    was the jamb, and the mission ended found 1.1 m short."""
+    ranges = [3.0] * 360
+    # Lidar ranges; the rule measures from base_link, 4 cm behind the lidar
+    # (3.27), so 0.33 here is the 0.37 m the mission read.
+    ranges[178:181] = [0.33] * 3        # the jamb, on one side of the bearing
+    ranges[181:183] = [1.08] * 2        # through the doorway, the target
+    check = ArrivalCheck()
+    for _ in range(3):
+        assert check.observe(_scene(0.4), _FakeRobot(ranges))["state"] != ARRIVED
+
+
+def test_a_face_that_fills_the_window_still_arrives():
+    """The edge rule must not cost a real arrival: a target face at 35 cm
+    reads within a few millimetres across the window."""
+    ranges = [3.0] * 360
+    ranges[177:184] = [0.352, 0.351, 0.350, 0.350, 0.350, 0.351, 0.352]
+    check = ArrivalCheck()
+    states = [check.observe(_scene(0.0), _FakeRobot(ranges))["state"] for _ in range(2)]
+    assert states[-1] == ARRIVED, states
 
 
 def test_the_centre_band_is_the_tiers_steering_band():

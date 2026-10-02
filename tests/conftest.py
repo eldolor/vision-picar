@@ -267,13 +267,3 @@ def mock_world_for(robot):
             f"{robot!r} has no GridWorld to build a world model on. "
             "Only the grid-world backend can -- see world/factory.py.")
     return MockWorld(grid.world)
-
-
-# Ground truth "arrived" for the reactive missions (R1/R1b/R1c, 3.11): the
-# robot's centre within this many cells of the target cell's centre. It was
-# 1.05 (31.5 cm), which puts the front ~4 cm from the backpack -- inside the
-# 20 cm stop, reachable only because mission verbs ran UNGUARDED until 3.31
-# fixed the mission gate (tests/test_halt_gate_verbs.py). Re-derived from the
-# safety line: half a cell to the target's face + min_distance_cm + the
-# chassis' half-length (12.65 cm) = 47.65 cm, plus 5 cm slack = 1.76 cells.
-ARRIVED_CELLS = (15.0 + 20.0 + 12.65 + 5.0) / 30.0

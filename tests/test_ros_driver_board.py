@@ -397,6 +397,17 @@ def hardware():
     board.close()
 
 
+# A stock straight's bound, CORRECTED 2026-10-01 after it flaked (the same
+# kind of correction 3.25 made to criterion 3): the host can know the travel
+# only to the odometer's 1 cm bucket plus one encoder edge (`bar_cm`), and
+# the stop lands up to a board loop late -- 10 ms at the verb's 0.3 m/s is
+# 3 mm. 1.0 sat inside that: 280 measured forwards read up to 1.13 cm (117
+# to 119 of 120 within 1.0), so five-of-five failed about one run in eight.
+# The old host overshot to 32.8 cm, which this still catches. The fork's
+# straights are held to 0.5 (tests/test_settle_pass.py).
+STOCK_STRAIGHT_BAR_CM = 1.0 + EDGE_CM + 0.3
+
+
 def test_5_a_clear_forward_covers_a_cell(hardware):
     robot, b = hardware
     safety = SafetyController(robot, 20.0)
@@ -408,7 +419,8 @@ def test_5_a_clear_forward_covers_a_cell(hardware):
         moved.append(math.hypot(b.world.x - x0, b.world.y - y0) * 30.0)
         safety.check_and_execute("REVERSE", speed=50, duration=1.0)
         time.sleep(0.15)
-    assert all(abs(m - 30.0) <= 1.0 for m in moved), [round(m, 2) for m in moved]
+    bar = STOCK_STRAIGHT_BAR_CM if robot.fork_frames == 0 else 1.0
+    assert all(abs(m - 30.0) <= bar for m in moved), [round(m, 2) for m in moved]
 
 
 def turn_errors(hardware, angle, n=5):

@@ -179,6 +179,29 @@ class _HaltGate(RobotInterface):
         self._guard("turn_right")
         return self._robot.turn_right(angle)
 
+    # 3.22's guarded verbs, through the gate (found 2026-10-01, PLAN 3.32):
+    # without these the safety layer saw the gate's default `verb_plan()`
+    # (None) and called the raw verb, so every IN-PROCESS mission ran turns
+    # with no pivot vetting (3.19) and forwards checked once, not every
+    # period. The deployed path was unaffected -- RemoteRobot has no plan
+    # and the robot server guards its own verbs -- but the sim's mission
+    # sweeps measured a weaker path than the car's. The loop's motion still
+    # goes through `set_wheel_velocity()` below, so a mission that ends
+    # mid-verb is still cut off.
+    def verb_plan(self, action: str, speed: int = 50, duration: float = 0.5,
+                  angle: int = 90):
+        self._guard(action)
+        return self._robot.verb_plan(action, speed=speed, duration=duration, angle=angle)
+
+    def verb_done(self, action: str, plan: dict, outcome: dict, **kwargs) -> dict:
+        return self._robot.verb_done(action, plan, outcome, **kwargs)
+
+    @property
+    def stop_count(self) -> int:
+        """The body's stop count, so a verb in progress sees a stop() made
+        through the gate (3.22's criterion 3)."""
+        return getattr(self._robot, "stop_count", 0)
+
     def look_left(self) -> dict:
         self._guard("look_left")
         return self._robot.look_left()
@@ -233,28 +256,6 @@ class _HaltGate(RobotInterface):
 
     def advance(self, dt: float) -> None:
         return self._robot.advance(dt)
-
-    # 3.22's guarded verbs, through the gate. Without these the gate
-    # inherited RobotInterface's "no plan", so SafetyController vetted a
-    # verb once and drove the whole cell -- every in-process mission since
-    # 3.22 ran unguarded (found by 3.31; tests/test_halt_gate_verbs.py). A
-    # plan is a description, not a move: the moves it leads to still come
-    # back through set_wheel_velocity() above, which is gated.
-
-    def verb_plan(self, action: str, speed: int = 50, duration: float = 0.5,
-                  angle: int = 90):
-        self._guard(f"verb_plan({action})")
-        plan_for = getattr(self._robot, "verb_plan", None)
-        return plan_for(action, speed=speed, duration=duration, angle=angle) if plan_for else None
-
-    def verb_done(self, action: str, plan: dict, outcome: dict, **kwargs) -> dict:
-        return self._robot.verb_done(action, plan, outcome, **kwargs)
-
-    @property
-    def stop_count(self) -> int:
-        # The guarded loop ends a verb when anyone stops the robot; it reads
-        # the BODY's count, which only the body keeps.
-        return getattr(self._robot, "stop_count", 0)
 
 
 def call_with_timeout(fn: Callable, *args, timeout_s: Optional[float] = None):

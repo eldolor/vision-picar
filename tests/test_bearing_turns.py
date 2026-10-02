@@ -28,27 +28,58 @@ import math
 
 import pytest
 
+from brain.arrival import ARRIVAL_RADIUS_M
 from brain.perceive import FrameReportedPipeline
 from brain.tiered import MAX_TURN_DEG, MIN_TURN_DEG, TieredVision, turn_for
 from control.mission_runner import MissionRunner
-from sim.maps.starter_house import build_starter_world
+from sim.maps import build_world
 from sim.mock_robot import MockRobot
-from tests.conftest import ARRIVED_CELLS, mock_world_for
+from tests.conftest import mock_world_for
 
 TARGET = "red backpack"
-GOAL = (10.5, 7.5)  # the backpack's cell centre in the starter house
+# The house these run in. MOVED 2026-10-01 (PLAN 3.32, the user's decision)
+# from the starter house: its 30 cm doors leave the UGV Rover ~3.5 cm a
+# side (3.21), and once detections report the bearing of the VISIBLE part
+# of the target, as a detector does, the robot aims ~2 deg off the door's
+# axis -- inside the 3 deg steering band -- and its swept corridor clips
+# the jamb. The scaled house is the same plan with 90 cm doors (3.15, and
+# 3.24 moved the ROS chain suite here for the same reason). Every start
+# below is the starter house's, mapped onto it.
+HOUSE = "scaled_house"
+GOAL = (23.5, 5.5)  # the backpack's cell centre in the scaled house
 STEPS = 60
+# Ground-truth "arrived", in cells from the backpack's CELL CENTRE: the
+# robot's centre within 3.11's arrival radius of the backpack's FACE (half a
+# cell from its centre). CORRECTED 2026-10-01 (PLAN 3.32): this was 1.05
+# cells -- the bumper about 4 cm from the backpack -- which an in-process
+# mission could reach only because its verbs bypassed the guarded loop
+# (`_HaltGate` did not forward `verb_plan()`) and an unguarded FORWARD
+# covered a whole cell past the 20 cm line. Guarded, every arrival stops
+# with the centre 35 cm from the face: the bumper 22 cm off, outside the
+# line, as the safety layer intends.
+ARRIVED_CELLS = (ARRIVAL_RADIUS_M * 100 + 15.0) / 30.0     # 1.83
 
 # Hallway starts with a line of sight through the kitchen door, headed
 # deliberately off the bearing to the target -- the case the flicker lives in.
 OFFSETS = (-65, -25, 30, 70)
 # The straight line to the backpack passes cleanly through the doorway.
-CLEAR_STARTS = [(x, y, off) for (x, y) in ((4.5, 7.5), (5.5, 7.5), (6.5, 7.5))
+CLEAR_STARTS = [(x, y, off) for (x, y) in ((12.5, 4.5), (13.5, 4.5), (14.5, 4.5))
                 for off in OFFSETS]
 # The straight line clips the door jamb. A pursuer that aims AT the target
 # cannot go around -- that is path planning, and it is nav2's job at R6.
-JAMB_STARTS = [(5.5, 6.5, off) for off in OFFSETS]
+# In the scaled house the centre line from here passes ~0.3 cells from the
+# door frame's corner: the CHASSIS' swept corridor clips it, which is the
+# honest form of "the line clips the jamb" for a robot with width. Starts
+# whose centre line crosses the wall outright wander the 90 cm door's
+# hallway instead (measured: max_steps on 2-3 of 4 offsets).
+JAMB_STARTS = [(14.5, 2.5, off) for off in OFFSETS]
+# The hallway start the search sweeps turn from (R1b).
+SEARCH_START = (13.5, 4.5)
 STARTS = CLEAR_STARTS + JAMB_STARTS
+
+
+def _build():
+    return build_world(HOUSE)
 
 
 def _quiet_cloud(frame):
@@ -101,7 +132,7 @@ class _DropTurnSize:
 
 def _mission(start, *, sized=True):
     x, y, off = start
-    grid = build_starter_world()
+    grid = _build()
     grid.x, grid.y = x, y
     grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
     robot = MockRobot(grid, render=False)
@@ -142,7 +173,7 @@ def test_bearing_sized_turns_reach_the_target_from_off_axis():
 def test_a_door_jamb_on_the_straight_line_is_a_planning_problem_not_a_steering_one():
     """The honest residue, pinned so it is decided rather than forgotten.
 
-    From (5.5, 6.5) the line to the backpack clips the doorway's jamb. The
+    From JAMB_STARTS the chassis' path to the backpack clips the doorway's jamb. The
     tier aims AT the target, the collar refuses to drive into the wall, and
     the robot waits at the jamb -- correct on both counts, and still short.
     Going around is path planning, which a steering rule cannot do and nav2
@@ -195,7 +226,7 @@ def test_the_mission_reports_its_turns_and_reversals():
     """R1's readout at the source: the runner counts what the panel shows,
     by the same definition this file's A/B scores on."""
     x, y, off = CLEAR_STARTS[0]
-    grid = build_starter_world()
+    grid = _build()
     grid.x, grid.y = x, y
     grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
     robot = MockRobot(grid, render=False)
@@ -220,7 +251,7 @@ def test_a_spin_is_named_a_spin_not_scored_as_zero_reversals():
     one-way rotation what it is."""
     from control.mission_runner import SPIN_TURN_SHARE
 
-    grid = build_starter_world()  # living room start: the backpack is out of sight
+    grid = _build()  # the house's own start, in the far room: the backpack is out of sight
     robot = MockRobot(grid, render=False)
 
     def spin(frame):
@@ -244,7 +275,7 @@ def test_an_aimed_approach_is_not_called_a_spin():
     """The other side of the rule: a mission that corrects a few times and
     then drives is mostly FORWARD, and must not be flagged."""
     x, y, off = CLEAR_STARTS[0]
-    grid = build_starter_world()
+    grid = _build()
     grid.x, grid.y = x, y
     grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
     robot = MockRobot(grid, render=False)
@@ -264,7 +295,7 @@ def test_an_aimed_approach_is_not_called_a_spin():
 
 def _run_from(start, **runner_kw):
     x, y, off = start
-    grid = build_starter_world()
+    grid = _build()
     grid.x, grid.y = x, y
     grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
     robot = MockRobot(grid, render=False)
@@ -325,7 +356,7 @@ def test_stuck_detection_can_be_switched_off():
 def test_a_refusal_followed_by_progress_resets_the_count():
     """One or two refusals and then a turn that goes through is a policy
     finding its way, not a stuck robot."""
-    runner = MissionRunner(MockRobot(build_starter_world(), render=False),
+    runner = MissionRunner(MockRobot(_build(), render=False),
                            target_object=TARGET, max_steps=3, stuck_after=2)
     runner._refused_forwards = 1
 
@@ -348,8 +379,8 @@ def test_a_refusal_followed_by_progress_resets_the_count():
 SEARCH_OFFSETS = [o for o in range(-180, 180, 5) if abs(o) >= 40]
 
 
-def _search(offset, x=5.5, y=7.5, steps=60):
-    grid = build_starter_world()
+def _search(offset, x=SEARCH_START[0], y=SEARCH_START[1], steps=60):
+    grid = _build()
     grid.x, grid.y = x, y
     grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(offset)
     robot = MockRobot(grid, render=False)
@@ -416,12 +447,12 @@ def test_a_detector_that_misses_one_frame_in_ten_still_arrives():
     missions the noise was +/- 3 missions and three seeds read 95.2%, then
     94.2% after an unrelated change, straddling the bar by chance. At 690 the
     estimate is tight enough for a threshold to mean something."""
-    starts = CLEAR_STARTS + [(5.5, 7.5, o) for o in SEARCH_OFFSETS]
+    starts = CLEAR_STARTS + [(*SEARCH_START, o) for o in SEARCH_OFFSETS]
     arrived = total = 0
     for start in starts:
         for seed in range(10):
             x, y, off = start
-            grid = build_starter_world()
+            grid = _build()
             grid.x, grid.y = x, y
             grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
             robot = MockRobot(grid, render=False)
