@@ -3260,6 +3260,44 @@ target's face**, 1.83 cells. Guarded, all 69 perfect-detection arrivals end
    `tests/test_bearing_turns.py` green.
 6. Whole suite green from `.venv`.
 
+**Measured 2026-10-01 -- met, with R1's sweeps moved to the scaled house by
+the user's decision.**
+
+1. **Met.** `ArrivalCheck` does not judge a window whose returns spread by
+   more than `ARRIVAL_EDGE_M` (0.10 m) or mix returns with misses. The jamb
+   case (three beams on the jamb at 0.37 m from `base_link`, two past it) is
+   red without the rule; a face filling the window still arrives. A first
+   version of that test passed vacuously -- its 0.37 m was a LIDAR range,
+   and since 3.27 the rule measures from `base_link`, 4 cm further -- and
+   was corrected before the rule was written.
+2. **Met.** No false arrivals: 0 of 69 / 690 / 690; the farthest `found`
+   is 0.51-0.52 m from the target's centre (bar 0.60).
+3. **Met.** Of missions that arrived, 69/69, 689/689 and 677/689 (98.3%)
+   end `found` (bar 95%).
+4. **Met.** `renderer.visible_bearing()` samples nine rays across an
+   object's face and returns the centre of the part that is visible past
+   the walls, clipped to the field of view; `GridWorld._detections()`
+   reports every object some ray reaches, nearest first.
+   `tests/test_visible_detections.py`: wholly hidden -> nothing; half
+   behind a wall block -> reported, its bearing shifted toward the half
+   that shows; in the open -> the centre. The golden image is
+   byte-identical. Still a difference: the PICTURE keeps the single-ray
+   billboard, so an object half behind a jamb is detected but drawn whole
+   or not at all.
+5. **Met, in the scaled house.** With honest bearings the robot aims ~2
+   deg off the starter house's 30 cm door -- inside the 3 deg band -- and
+   the Rover's corridor clips the jamb (`blocked`, 3 of R1's tests). The
+   user chose to move R1's sweeps to the scaled house (90 cm doors, as
+   3.24 did for the ROS chain); `tests/test_bearing_turns.py` has a
+   `HOUSE` and every start mapped onto it. The jamb start had to be
+   re-found: starts whose centre line crosses the wall outright wander the
+   wide hallway (`max_steps`), and the one that reproduces the case,
+   (14.5, 2.5), has a centre line passing ~0.3 cells from the door frame's
+   corner -- the CHASSIS clips it. `blocked` in 7-13 steps on all four
+   offsets.
+6. **Met:** 1554 passed, 0 failed (3.25's stock forward test included,
+   on its corrected bar).
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.

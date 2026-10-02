@@ -26,16 +26,16 @@ from brain.perceive import FrameReportedPipeline
 from brain.tiered import STEER_BAND_DEG, TieredVision
 from control.mission_runner import FOUND, MissionRunner
 from robot.interface import unusable_scan
-from sim.maps.starter_house import build_starter_world
 from sim.mock_robot import DEFAULT_CELL_M, MockRobot
 from tests.conftest import mock_world_for
 from tests.test_bearing_turns import (
-    CLEAR_STARTS, GOAL, JAMB_STARTS, SEARCH_OFFSETS, TARGET, _Flaky,
+    CLEAR_STARTS, GOAL, JAMB_STARTS, SEARCH_OFFSETS, SEARCH_START, TARGET, _Flaky,
+    _build,
     _quiet_cloud)
 
 from tests.test_bearing_turns import ARRIVED_CELLS  # noqa: E402 -- corrected 3.31, see there
 FALSE_ARRIVAL_M = 0.60        # criterion 2
-SWEEP = CLEAR_STARTS + [(5.5, 7.5, o) for o in SEARCH_OFFSETS]
+SWEEP = CLEAR_STARTS + [(*SEARCH_START, o) for o in SEARCH_OFFSETS]
 
 
 @pytest.fixture(autouse=True)
@@ -49,7 +49,7 @@ def _quiet_logs():
 
 def _run(start, pipeline, *, robot_wrapper=None):
     x, y, off = start
-    grid = build_starter_world()
+    grid = _build()
     grid.x, grid.y = x, y
     grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
     robot = MockRobot(grid, render=False)

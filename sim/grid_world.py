@@ -706,15 +706,26 @@ class GridWorld:
             # 3.32: the bearing is the centre of what the camera can SEE of
             # the object (`renderer.visible_bearing`), as a detector's box
             # would be, and an object no ray reaches is not reported.
-            "detections": [
-                {"label": obj["name"],
-                 "bearing_deg": round(math.degrees(b), 2),
-                 "distance_m": round(obj["dist"] * 0.30, 3)}
-                for obj, b in ((o, renderer.visible_bearing(
-                    self.layout, self.x, self.y, self.view_angle(), o["cell"]))
-                    for o in in_view)
-                if b is not None
-            ],
+            "detections": self._detections(),
         }
         self._record(f"FRAME {frame}")
         return frame
+
+    def _detections(self) -> list:
+        """What a detector would report on this frame -- PLAN 3.32. Every
+        object in range whose face some ray reaches past the walls, at the
+        bearing of the centre of its VISIBLE part (`renderer.visible_bearing`),
+        nearest first. Unlike the picture's billboard rule (one ray to the
+        object's centre), an object half behind a door jamb is reported, at
+        the bearing of the half that shows; one wholly behind it is not."""
+        out = []
+        view = self.view_angle()
+        for cell, name in self.objects.items():
+            dist = math.hypot(cell[0] + 0.5 - self.x, cell[1] + 0.5 - self.y)
+            if not ROBOT_HALF_CELL < dist <= renderer.FPV_MAX_DIST:
+                continue
+            b = renderer.visible_bearing(self.layout, self.x, self.y, view, cell)
+            if b is not None:
+                out.append((dist, {"label": name, "bearing_deg": round(math.degrees(b), 2),
+                                   "distance_m": round(dist * 0.30, 3)}))
+        return [d for _, d in sorted(out, key=lambda t: t[0])]
