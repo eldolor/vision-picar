@@ -3127,10 +3127,19 @@ after 315 s; `found` in 41 s without them).
   and every set-aside one has had its last retry, the mission ends with a
   new outcome, **`searched`** -- "looked everywhere it could reach, not
   there" -- which is not `blocked`.
-* **The brain reaches nav2 through `WorldInterface`**: `set_goal()` /
-  `get_goal()` / `cancel_goal()` gain an honest "unsupported" default and a
-  `RemoteWorld` implementation over the existing routes. No ROS in the
-  brain; 3.23's arbitration is unchanged (a goal is an autonomous driver).
+* **The brain reaches nav2 through a `Navigator`, not `WorldInterface`**
+  *(amended before building)*: `WorldInterface`'s contract says a world
+  model "is never asked to drive" (`tests/test_world_contract.py`), and a
+  goal is a drive command. So the brain declares the three calls it needs
+  (`set_goal` / `get_goal` / `cancel_goal`) as a Protocol, the way
+  `brain/perceive.py` declares its detector, and `control/` implements it
+  over the existing `/world/goal` routes. No ROS in the brain; 3.23's
+  arbitration is unchanged (a goal is an autonomous driver, so the
+  `explore` policy never sends an `/action` while a goal is live).
+* **One clock, injected.** Cooldowns and goal timeouts read a clock and
+  never block a tick (the brain server's hung-tick deadline is 30 s). The
+  default is wall time; in-process sweeps pass the sim's own clock, so a
+  person keeps walking while the robot waits.
 * **Retry, not drop.** A frontier nav2 aborts on is set aside for a
   cooldown (starting value 30 s), or less if the map changes near it, and
   dropped after **K = 3** failures at different times.
@@ -3159,7 +3168,9 @@ after 315 s; `found` in 41 s without them).
 4. **The stuck detector no longer gives up on a person.** 3.30's
    `hallway_crossing` mission with the rule-based policy: `found` (was
    `blocked`). R1b's door-jamb starts still end `blocked`, within their
-   old 8-11 steps plus at most K cooldowns.
+   old 8-11 steps plus at most K cooldowns. *(Read before measuring: the
+   refused FORWARDs and the back-off inside each retry are steps too, so
+   the step bound is the old 15 plus (K - 1) x (`stuck_after` + 1).)*
 5. **Safety unchanged.** No change to `robot/safety.py`; the 3.18, 3.19
    and 3.30 ground-truth sweeps pass as they are; over every mission run
    for 1-4, 0 contacts and 0 samples inside a mover on ground truth.
