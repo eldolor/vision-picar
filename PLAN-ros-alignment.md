@@ -3106,6 +3106,66 @@ the keep-out rule was amended mid-phase; both rules' runs are recorded.**
   in 41 s alone. Section 6 item 6's frontier retry is the same lesson:
   a blocked path may be blocked only for now.
 
+### 3.31 A search that uses the map: frontiers, and retrying what is blocked (2026-10-01): DRAFT criteria, for the user to confirm before building
+
+Section 6 item 6's frontier search with its retry rule, chosen by the user
+as the next build ("frontier search + retry"). Why it matters: the user's
+first mission in their furnished house drove into the dining room and
+ended `blocked` after 14 steps without seeing the kitchen, and 3.30 showed
+the same search giving up on a person who would have moved (`blocked`
+after 315 s; `found` in 41 s without them).
+
+**The design, to be read against the criteria:**
+
+* **A new mission policy, `explore`, in the brain** (not ROS's
+  `explore_lite`), so perception, arrival and the cloud call stay in one
+  place. Each decision: read SLAM's map (`GET /world/map`) and pose, find
+  frontier cells (seen floor next to unknown), group them, pick one by
+  distance and size, send it to nav2 (`POST /world/goal`), and keep
+  perception running. On a sighting, a goal toward the target, and 3.11's
+  arrival rule ends the mission `found`. When no reachable frontier is left
+  and every set-aside one has had its last retry, the mission ends with a
+  new outcome, **`searched`** -- "looked everywhere it could reach, not
+  there" -- which is not `blocked`.
+* **The brain reaches nav2 through `WorldInterface`**: `set_goal()` /
+  `get_goal()` / `cancel_goal()` gain an honest "unsupported" default and a
+  `RemoteWorld` implementation over the existing routes. No ROS in the
+  brain; 3.23's arbitration is unchanged (a goal is an autonomous driver).
+* **Retry, not drop.** A frontier nav2 aborts on is set aside for a
+  cooldown (starting value 30 s), or less if the map changes near it, and
+  dropped after **K = 3** failures at different times.
+* **The stuck detector shares the rule.** R1b's five refused FORWARDs no
+  longer end a mission at once: the mission backs off and retries on the
+  same cooldown, and ends `blocked` only after K failures. A wall still
+  ends it; a person who moves does not.
+* **No paid call to choose frontiers in v1.** Nearest-and-largest scoring
+  only; the cloud's "a backpack is likelier in a bedroom" is a later
+  option, measured against this one.
+
+**Criteria (DRAFT -- numbers to be confirmed by the user before any run):**
+
+1. **It finds things in a house it has not mapped.** Furnished home
+   (`home_first_floor`), from the foyer, empty map, the backpack moved to
+   each of the 12 rooms in turn: **`found` in every room nav2 can plan
+   into** (3.21's tour reached 8 of 9 goals; a room nav2 cannot enter is
+   reported, not counted), median time and distance recorded.
+2. **An absent target ends `searched`, never `blocked`,** with at least
+   95% of the reachable floor seen (ground truth: cells reachable by the
+   chassis, 3.21's fit check), in a bounded time.
+3. **A blocked doorway is retried.** A mover standing in the only doorway
+   to the target's room for 60 s, then leaving: `found`. A truly
+   unreachable frontier (the dining-room chair gap) costs at most K
+   attempts and does not stall the mission.
+4. **The stuck detector no longer gives up on a person.** 3.30's
+   `hallway_crossing` mission with the rule-based policy: `found` (was
+   `blocked`). R1b's door-jamb starts still end `blocked`, within their
+   old 8-11 steps plus at most K cooldowns.
+5. **Safety unchanged.** No change to `robot/safety.py`; the 3.18, 3.19
+   and 3.30 ground-truth sweeps pass as they are; over every mission run
+   for 1-4, 0 contacts and 0 samples inside a mover on ground truth.
+6. **The deployed path.** One `explore` mission through the brain's HTTP
+   API on the live ROS stack, furnished home: `found`.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
@@ -3170,6 +3230,12 @@ job, on a phone.
    server reads it and the bridge republishes it as today. The second keeps
    `safety.py` independent of the ROS container being up, which is the same
    argument 3.16 made for the motor board.
+   **Decided by the user 2026-10-01: the robot server owns it** -- a Python
+   driver for the Rover's D500 inside the robot server, the bridge
+   republishing `/scan` to ROS as it does in the sim today. The deciding
+   argument is 3.24 G3: when ROS dies the car falls back to direct mode
+   with a person driving, and `robot/safety.py` must still have its scan
+   then. Through ROS, the fallback would drive blind.
 6. **The robot's map: a search that uses it, and keeping it.** (Raised
    2026-09-27 by the user's first brain mission in their own furnished house:
    the tiered search held a cloud FORWARD into the dining room and ended
