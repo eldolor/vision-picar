@@ -136,6 +136,7 @@ class ExploreAgent(MissionAgent):
         # table, every goal aborted, the places were set aside one by one,
         # and the search ended `searched` with the robot simply stuck.
         self.escapes = 0
+        self._wedged: list = []        # goals that failed without the robot moving
         self.seen_res: Optional[float] = None
         self.goals_sent = 0
         self.goals_failed = 0
@@ -378,11 +379,18 @@ class ExploreAgent(MissionAgent):
         if g.get("from") and pose.get("usable") and math.hypot(
                 pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M:
             # It never left: the robot is wedged, not the place unreachable.
-            # Do not hold it against the place; get out first.
+            # Do not hold it against the place -- once. A place that wedges
+            # it AGAIN is one the robot cannot leave for: 3.34's acceptance
+            # run sent one living-room goal eleven times, each wedged against
+            # an armchair, until the mission's time ran out.
+            again = any(math.hypot(target[0] - wx, target[1] - wy) < self.retry.radius_m
+                        for wx, wy in self._wedged)
+            self._wedged.append(target)
             if g["kind"] == "approach":
                 self._approach = None
-                # The place is not to blame, but a sighting that wedges the
-                # robot every time must still run out of tries.
+            if again or g["kind"] == "approach":
+                # (An approach wedging at all counts: a sighting that wedges
+                # the robot every time must still run out of tries.)
                 self.retry.fail(target[0], target[1], now)
             self._queue_escape()
             self.last_event = f"{g['kind']} goal {state} without moving; backing out"

@@ -326,3 +326,21 @@ def test_a_sighting_that_always_wedges_runs_out_of_tries():
             approaches += 1
     assert 1 < approaches <= RETRY_LIMIT
     assert agent._last_seen is None
+
+
+def test_a_place_that_wedges_the_robot_again_runs_out_of_tries():
+    """3.34's acceptance run: one goal, wedged against an armchair, sent
+    eleven times -- a wedge was never held against the place."""
+    from brain.frontier import RETRY_LIMIT
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    nav = WedgedNav(robot)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="purple elephant"),
+                         navigator=nav, clock=lambda: grid.sim_time, world=MockWorld(grid))
+    for _ in range(300):
+        agent.step()
+        robot.pass_time(1.0)
+    sent = [c[1:] for c in nav.calls if c[0] == "set"]
+    worst = max(sum(math.hypot(a[0] - b[0], a[1] - b[1]) < agent.retry.radius_m for b in sent)
+                for a in sent)
+    assert worst <= 1 + RETRY_LIMIT, worst
