@@ -206,6 +206,10 @@ Hailo/Jetson reversals, the handoffs -- is in
 `docs/archive/CLAUDE-history-2026-09.md`, verbatim. What is still true and
 still load-bearing:
 
+* **The Jetson bring-up: `HANDOFF-2026-10-03-jetson.md`** -- the user's
+  desk steps first (write the card, firmware check, first boot, SSH key),
+  then what the session runs over SSH (3.33 steps 2-7), and the parts on
+  order.
 * **Open work from the 2026-10-02 spec review: `HANDOFF-2026-10-02-spec-review.md`**
   -- one user decision (tiered arrival on a wrong object), hardware-path
   fixes to make during 3.33, and smaller items, each with its done-when.
