@@ -73,6 +73,11 @@ Nothing here is kit-replaceable. Prices `[V]` from `HARDWARE-BOM.md`.
 | USB flash ≥16GB (JetPack installer) | any | ~10.00 | — |
 | *Optional* NVMe SSD, M.2 **2280** | Team MP33 256GB | 68.99 | Newegg |
 
+*What was actually bought (2026-09-27 to 10-03) is the ledger in 9.1: the
+Jetson, a 128 GB microSD, a 500 GB SanDisk NVMe, the UGV Rover kit (whose
+OAK-D Lite and D500 lidar replace the CSI camera and the C1 below) and its
+cells. The rows above are the 2026-09-17 price plan, kept as the record.*
+
 **The camera is not negotiable.** It must be **IMX219**, not the Raspberry
 Pi Camera Module 3 (IMX708) — JetPack driver support for IMX708 is poor.
 Many kits bundle a Pi-oriented camera; assume it is the wrong one.
@@ -327,6 +332,9 @@ in `GUIDE-robot-base.md`**; this section is the record.
 | 09-30 | Yahboom ROSMASTER A1 (Amazon, two trims) rejected: Ackermann steering (9.2). |
 | 09-30 | Buying-route questions sent to **sales@waveshare.com** (9.7); Waveshare is on holiday until Oct 7. |
 | 09-30 | **ORDERED: Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce on Amazon, ~$730 delivered** (9.7). Still to buy: the separate Jetson battery and fused cable (9.5). |
+| 10-02 | **Ordered for the Jetson bring-up** (`PLAN-ros-alignment.md` 3.33): a 128 GB A2 / U3 / V30 microSD card and a USB-C card reader for the Mac. |
+| 10-03 | **ORDERED: the NVMe** -- a SanDisk / WD SN5100-family 500 GB, M.2 2280 (QLC; runs at Gen 3 x4 in the Jetson's slot). Exact SKU and price not recorded here. |
+| 10-03 | **ORDERED: the Rover's cells** -- 4x Molicel P26A 18650 (flat-top, unprotected, 2600 mAh, 35 A), IMR Batteries, **$34 with shipping**, expected Oct 7-9. Three go in the pack, one is a spare (9.5). |
 
 ### 9.2 Everything evaluated
 
@@ -411,8 +419,15 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
   lead** so the two supplies are never joined. Mount the pack on a
   Picatinny rail clamp or a printed tray. ~$100-110 extra. **Not yet
   ordered.**
-* Use **4C-rated 18650s** in the Rover's own holder, if the kit arrives
-  without cells.
+* **The Rover ships without cells** (Waveshare's wiki): it takes **3x 18650,
+  >= 2200 mAh, >= 4C, flat-top, unprotected**, in series (3S). **Ordered
+  2026-10-03:** 4x Molicel P26A from IMR Batteries (9.1). Install three
+  from the same order, as a matched set; the fourth is a spare, best used
+  only in an emergency, since it will not age with the others. On arrival:
+  inspect the wraps (no tears near the + end, no dents), match the holder's
+  polarity, and charge fully on the kit's 12.6 V charger before the first
+  drive. There is no meter check: once the Jetson is connected, the pack
+  voltage is the `v` field of `T:1001` (~12.6 V full, charge below ~10.5 V).
 * **Within the 30-day return window, on arrival:** a stress test at the
   power mode in use (15 W to start) with the motors running and the input
   voltage logged, confirm `T:1001` carries `odl`/`odr`, an odometry check
