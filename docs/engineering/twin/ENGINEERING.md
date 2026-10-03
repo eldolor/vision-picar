@@ -23,9 +23,9 @@ in the same commit as the code. For a button-by-button walkthrough, see
 | `web-twin/app.js` | All behaviour (about 5,400 lines): one IIFE in `"use strict"`, with no modules and no build step. Sections are marked by `// ---------- <name> ----------` banners, listed below. |
 | `web-twin/manifest.json`, `web-twin/icons/` | PWA manifest and the three home-screen icons |
 | `web-twin/README.md` | How to run, reach, deploy and test the page |
-| `service/static/assets.json` | Every file published to the static bucket, with its S3 key, content type and cache policy (`none` = `no-cache, must-revalidate`, `day` = `max-age=86400`). It also lists the admin and metrics consoles. |
+| `service/static/assets.json` | Every file published to the static bucket, with its S3 key, content type and cache policy (`none` = `no-cache, must-revalidate`, `day` = `public, max-age=86400`, as `service/static/sync.sh` writes them). It also lists the admin and metrics consoles. |
 | `service/static/sync.sh` | Uploads exactly that list with `put-object` (never `aws s3 sync`), then invalidates `/*` |
-| `robot/server.py` | Serves the page locally: `GET /`, `/app.js` (with `Cache-Control: no-cache`), `/manifest.json`, `/icons/*.png` |
+| `robot/server.py` | Serves the page locally: `GET /`, `/app.js`, `/manifest.json`, `/icons/*.png`. Only `/app.js` sends `Cache-Control: no-cache`; `GET /` is a plain `FileResponse` with no `Cache-Control`, so locally the HTML may be reused from cache (heuristically) against a fresh script. |
 
 **`app.js` sections, in file order:** tester error capture (registered
 first) · icon system (inline SVG, `data-icon`) · twin state · persisted
@@ -50,10 +50,10 @@ for hosts matching `NGROK_HOST`):
 | Route | Used by | Notes |
 |---|---|---|
 | `POST /action` | D-pad, look buttons | `x-driver: twin-dpad`; body `{action, angle?}`, where `angle` is the turn step |
-| `POST /stop` | STOP | `x-driver: twin-dpad` |
+| `POST /stop` | STOP | `x-driver: twin-dpad`. Does NOT cancel a nav2 goal: the server only calls `robot.stop()`, and the bridge cancels a goal only on a non-zero `twin-dpad` twist, so a goal resumes after the stop hold (H1 in `docs-review/SPEC-REVIEW-2.md`; the rule is undecided and the safety domain's). |
 | `GET /frame` | Sim camera | `image_base64` drawn as-is; no pixels sets the frame source to `none` |
 | `GET /distance`, `GET /depth` | Sim readouts | The depth strip draws the server's zones and outlines the `path` zones it reports |
-| `GET /odometry` | odometry line | "NO ENCODERS" when unusable; "not reported" when the route is missing |
+| `GET /odometry` | odometry line | "no encoders on this backend — pacing falls back to frame count" when unusable; "not reported" when the route is missing |
 | `GET /world/map`, `GET /world/pose`, `GET /world/error` | the map | Tri-state cells at the server's size. Under SLAM, the truth is drawn as a ghost and the errors are printed. |
 | `GET /world/goal`, `POST /world/goal` | tap-to-goal | `{x_m, y_m}` in the house frame; only when the map is SLAM's; `accepted: false` shows the reason. `onMapTap()` sends it through `apiPost()` with NO `x-driver` header. The header would not matter: `world_goal_set()` in `robot/server.py` always arbitrates a goal as `DRIVER_ROS` (3.23), so during a mission a person's tap comes back `accepted: false`, `reason: preempted`, and the toast says "Could not send the goal: preempted". |
 | `GET /health` | watchdog readout, driver and last refusal, `min_distance_cm`, Drive via brain pre-flight (`mode` must be `teleop`) | polled every `WATCHDOG_POLL_MS` |
@@ -92,25 +92,31 @@ environment banner (`env_label`).
 `brainSecret`, `visionUrl`, `serverUrl`, `brainUrl`. They are read once
 at load by the prefill section.
 
-**Persisted preferences** (in `localStorage`, every access in
-try/catch): through `PREF`, `vp_server_url`, `vp_brain_url`,
-`vp_vision_url`, `vp_active_tab`, `vp_guide_muted`, `vp_guide_onboarded`,
-`vp_guide_rotate_dismissed`, `vp_debug_readouts`, `vp_record_walk`,
-`vp_drive_via_brain`, `vp_drive_policy`, `vp_turn_step_deg`,
-`vp_navigate_model_id`, `vp_navigate_prompt_variant`, `vp_brain_policy`.
-Written directly by the prefill section and the Settings inputs, outside
-`PREF`: the three secrets `vp_cfg_secret` (vision),
-`vp_cfg_server_secret` (robot) and `vp_cfg_brain_secret` (brain). Also
-`guidanceMode` (`guide` or `robot`, unprefixed, set by
-`setGuidanceMode()`), `vp_debug_log` and `vp_target_history`.
+**Persisted preferences** (in `localStorage`): through `PREF`,
+`vp_server_url`, `vp_brain_url`, `vp_cfg_server_secret` (robot secret),
+`vp_vision_url`, `vp_cfg_secret` (vision secret), `vp_active_tab`,
+`vp_guide_muted`, `vp_guide_onboarded`, `vp_guide_rotate_dismissed`,
+`vp_debug_readouts`, `vp_record_walk`, `vp_drive_via_brain`,
+`vp_drive_policy`, `vp_turn_step_deg`, `vp_navigate_model_id`,
+`vp_navigate_prompt_variant`, `vp_brain_policy`. The two secret keys in
+`PREF` are also read and written by literal name, in the prefill section
+and the Settings secret inputs. Outside `PREF`: the brain secret
+`vp_cfg_brain_secret` (same two places), `guidanceMode` (`guide` or
+`robot`, unprefixed, set by `setGuidanceMode()`), `vp_debug_log` and
+`vp_target_history`. `PREF` reads and writes go through try/catch
+helpers (`prefGet()` and its siblings); the prefill section's direct
+writes sit inside its own try block.
 
 **Default endpoints when no saved value exists:** robot = the page's
 origin. Vision = `:8080` on localhost, otherwise the page's host. Brain =
-the page's host on `:8001`. A saved value always wins. On a laptop
-running `service/tunnel/run.sh`, :8080 is the tunnel proxy, not the
-vision service, so the localhost default is wrong there; set the vision
-URL by hand (the cloud-vision engineering spec, "Port 8080 is shared
-with the tunnel proxy").
+the page's host on `:8001`. A saved value always wins. The vision default
+is right only for a page served from CloudFront (vision = the site). On a
+laptop running `service/tunnel/run.sh`, :8080 is the tunnel proxy, not
+the vision service, and the proxy forwards vision only under `/vision`:
+set the vision URL by hand to `http://127.0.0.1:8080/vision` for a page
+loaded locally, or `https://<domain>/vision` for a page loaded through
+the tunnel (the table in the cloud-vision engineering spec, "Port 8080 is
+shared with the tunnel proxy").
 
 ## Parameters and configuration
 
@@ -159,7 +165,12 @@ parity check). They are not repeated here. What is the twin's own:
 
 - **Settings after the tunnel is up:** robot `https://<domain>`, brain
   `https://<domain>/brain`, and the local secret in both. The vision URL
-  stays the deployed site. The page sends `ngrok-skip-browser-warning`
+  depends on where the page was loaded from: the site itself for a page
+  from CloudFront; `https://<domain>/vision` for a page loaded through the
+  tunnel (the deployed site directly is cross-origin there, and the
+  serverless stack answers no preflight, so every call fails as "Load
+  failed"). The vision secret is the deployed vision service's in every
+  case: the proxy forwards it unchanged. The page sends `ngrok-skip-browser-warning`
   only to hosts matching `NGROK_HOST`; a tunnel on any other provider's
   domain gets the interstitial HTML and fails with a JSON parse error.
 - **Publishing a page change:** the change is not shipped until the
@@ -233,4 +244,15 @@ with a browser; a phone-size screenshot is part of the evidence
   tap cannot pre-empt a mission and is refused `preempted` while one
   holds the robot. The architecture spec records the exception and the
   open question; the driver order is the safety domain's.
+- **The vision connection check misdiagnoses a working cross-origin
+  setup.** `checkVision()` treats any URL failing `sameOrigin()` as
+  "Reachable, but blocked by the browser ... publishes no CORS headers",
+  without looking at the reply's headers. That is true of the deployed
+  vision service and false of a local one (`ALLOWED_ORIGINS`) and of the
+  tunnel's `/vision` route (`service/tunnel/proxy.py` answers the
+  preflight and adds the headers), both of which work from a
+  cross-origin page.
+- **The endpoint mismatch notice is suppressed whenever the page's own
+  host is `localhost` or `127.0.0.1`** (`hostDiffersFromPage()`), so a
+  locally loaded page pointed at another deployment gets no notice.
 - **The S1 contract button is not built.**

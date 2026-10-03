@@ -78,7 +78,11 @@ of `{label, bearing_deg, distance_m}` written by `sim/grid_world.py`
 (bearing of the visible part via `renderer.visible_bearing`). No key ->
 `unavailable`; no label containing the target -> `absent`; else `detected`,
 nearest first, `synthesised: true`, models named `sim ground truth`.
-`distance_m` is used only to order matches; arrival never reads it.
+`distance_m` is used only to order matches; arrival never reads it. Sim
+frames carry no `pan_deg`, and the `Perception` it builds leaves `pan_deg`
+at 0, while the bearings are already camera-relative (cast along
+`GridWorld.view_angle()`). Arrival's panned-camera refusal therefore never
+fires in the sim (policy ENG, Known gaps).
 
 **Health fields** (`GET /health` on the brain): `perception_available`,
 `perception_detector`, `perception_clip_model`,
@@ -107,7 +111,7 @@ module default):
 |---|---|---|---|
 | `perception_detector` | `""` | `yoloe-11s-seg.pt` | P22 promoted YOLOE; P23 on all 1234 labelled frames: 82% recall at 3 false positives vs 72% for `26l`, 139 ms vs 296 ms on laptop CPU |
 | `perception_clip_model` | `""` | `RN50` (OpenAI weights) | 4.9: 7-10 ms a crop vs 25-50 for ViT-B/32, ~25M vs ~88M parameters |
-| `perception_match_probability` | 0.0 | 0.8 | two rig walks: 18/18 (bottle) and 25/31 (backpack) at P >= 0.8; the bottle's non-target max was 0.39 |
+| `perception_match_probability` | 0.0 | 0.8 | for the shipped detector, P23's calibration on all 1234 frames: `yoloe-11s-seg` reads 80% at 0.8 against its own best of 82%, with 2 false positives (`PLAN-onboard-perception.md` P23, "the gate problem dissolves"). The value was first set on 2026-09-07's two rig walks with an earlier pipeline (18/18 bottle, 25/31 backpack); those numbers do not describe today's detector |
 | `perception_match_margin` | 0.0 | unused (probability gate) | override for sweeping the raw margin |
 | `perception_crop_path` | `""` | `low_confidence` | bottle walk: label gate 7/18, open vocabulary 18/18, both with 0 false positives; backpack 9/31 vs 25/31 |
 | `perception_floor_mask` | false | off | P24: with YOLOE the mask lost on 9 of 11 checkpoints, cost 15 points at a 3-FP budget, and took 836 ms against 139 |
@@ -136,13 +140,15 @@ YOLOE takes Ultralytics' default unless a `device` is passed (the bench's
 **Instrument constants:** `control/perception_eval.py` `DEFAULT_GATES`
 (0.90 ... 0.30), `--gate` 0.8, `MIN_USABLE_MARGIN` 1e-4;
 `control/target_probe.py` `DEFAULT_SAMPLE` 200, `SEED` 7, gate 0.8, reject
-above a 10% firing rate or a peak below 0.01 (inert);
+above a 10% firing rate or a peak below 0.01 (labelled "inert", but see
+Known gaps for what that peak actually measures);
 `tools/jetson/bench_perception.py` `BUDGET_MS` 250, `DEFAULT_N` 60,
 `WARMUP` 3.
 
 ## Procedures
 
-**Install and warm the models** (once per machine; the first run downloads
+**Install and warm the models** (the canonical home of the warm-up command;
+other specs link here. Once per machine; the first run downloads
 ~600 MB: `yoloe-11s-seg.pt` 28 MB, YOLOE's text encoder
 `mobileclip_blt.ts` 572 MB, and CLIP's weights):
 
@@ -210,8 +216,11 @@ a pin, but that is not its purpose. Never compare a GPU row with a CPU row
 python -m control.target_probe "a red toolbox" "a white phone charger cable"
 ```
 
-Read two numbers: a firing rate over 10% rejects the string; a peak of 0.000
-means the prompt is inert. A verdict of `REJECT -- gated to COCO ...` means a
+Read two numbers: a firing rate over 10% rejects the string. The peak is
+read from `r.best`, which the pipeline sets only on a `detected` frame
+(P >= 0.8), so a peak of 0.000 means "never passed 0.8 on any sampled frame",
+not "the detector never grounds the prompt", and `--gate` below 0.8 changes
+nothing (see Known gaps). A verdict of `REJECT -- gated to COCO ...` means a
 colour word or noun put the target back into COCO's vocabulary.
 
 **Look at one walk without labels:** `python -m tests.manual_perceive_walk
@@ -268,8 +277,20 @@ commit.
 - **INT8 is untested on the Jetson.**
 - **1.11a is unenforced** and `oov_cold_search_after` has no config key.
 - **A local false positive can end a mission `found`.** Arrival reads local
-  detection plus lidar and never the cloud. The only per-frame bound is
-  `match_probability` (0.8). See the policy spec's open question.
+  detection plus lidar and never the cloud. For steering, the only bound is
+  the per-frame `match_probability` (0.8). For ending `found`, arrival adds
+  `ARRIVAL_FRAMES` (2) consecutive frames, a bearing within
+  `ARRIVAL_CENTRE_DEG` (3 degrees), a lidar range within `ARRIVAL_RADIUS_M`
+  (0.40 m) and one surface (`ARRIVAL_EDGE_M`) -- all local, none asking the
+  cloud (`brain/arrival.py`). See the policy spec's open question.
+- **`control/target_probe.py` reads its peak from `r.best`** (lines 65-69),
+  which `PerceptionPipeline.perceive()` sets only on a `detected` result
+  (P >= `match_probability`). The "peak" is therefore taken only over frames
+  that already passed 0.8: a 0.000 peak means "never passed 0.8", not an
+  inert prompt, and `--gate` below 0.8 has no effect (it can only raise the
+  bar). The fix is to take the peak over every candidate's probability. Not
+  fixed. `CLAUDE.md`'s repo map repeats the wrong reading ("a ZERO rate with
+  a 0.000 peak means the prompt is INERT").
 - **`YoloDetector`'s default weights are the YOLOE checkpoint.** Its
   signature is `weights: str = DEFAULT_DETECTOR`, which is now
   `yoloe-11s-seg.pt`, loaded through Ultralytics' `YOLO` class.
@@ -285,4 +306,8 @@ commit.
   `perception_floor_mask` line, but it belongs to `perception_crop_path`, two
   lines above; `requirements-perception.txt` and
   `brain/perceive_lab.py`'s docstring still describe YOLO11s and the floor
-  mask as the shipped tier.
+  mask as the shipped tier. `YoloE`'s class docstring in
+  `brain/perceive.py` (around lines 1316-1333) gives P22's numbers for the
+  `26l` checkpoint (91% vs 90%, a 3-FP gate at 0.391, "74% at the old
+  P>=0.8 ... 91% at a gate near 0.4") as if they described the shipped
+  `11s`, which P23 found calibrated at 0.8.

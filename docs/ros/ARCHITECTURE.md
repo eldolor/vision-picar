@@ -182,8 +182,15 @@ this is in the [engineering spec](../engineering/ros/ENGINEERING.md).
 wheels. People and programs reach the wheels through the robot server's
 verb route, where driver arbitration decides who may drive. The
 multiplexer's priorities mirror that order, with a person above every
-autonomous source. A person's command cancels an active nav2 goal. The
-driver order itself, including that a nav2 goal is an autonomous driver, is
+autonomous source. A person's **non-zero** D-pad command cancels an active
+nav2 goal inside ROS.
+
+**A stop pauses a goal; it does not end it.** A stop zeroes the wheels and
+the multiplexer's inputs, but nothing cancels the goal, so nav2 keeps
+publishing and the wheels resume once the stop's hold ends. Whether a stop
+must also end a goal is the safety domain's rule to make, and it is open
+there ([safety architecture](../safety/ARCHITECTURE.md), Open questions).
+The driver order itself, including that a nav2 goal is an autonomous driver, is
 owned by the [safety architecture](../safety/ARCHITECTURE.md); this domain
 only mirrors it inside ROS.
 
@@ -282,7 +289,7 @@ the wheels, one that skips arbitration (3.17).
 | Neighbour | Direction | Protocol | Ownership |
 |---|---|---|---|
 | Robot server, wheels | ROS's actuator plugin calls the server | HTTP/JSON: post a standing wheel velocity, read wheel state | The robot server owns the wheels, the veto and the watchdog. ROS is one driver among several. The plugin's steady posts are also ROS's heartbeat. |
-| Robot server, scan and truth | The bridge polls the server | HTTP/JSON | The body owns the scan. The bridge converts it to ROS's convention. The simulator's truth is read once per session, never published into ROS. |
+| Robot server, scan and truth | The bridge polls the server | HTTP/JSON | The body owns the scan. The bridge converts it to ROS's convention. The simulator's truth only anchors SLAM's frame and is never published into ROS. |
 | Robot server, verbs | The server's ROS drive mode calls the bridge | HTTP/JSON: a twist for a named driver | The robot server decides who may drive. The bridge only maps a driver to a multiplexer input. |
 | World (SLAM backend) | It calls the bridge | HTTP/JSON in ROS's frame, tagged with a session | ROS owns the estimate, the grid and the goal's state. The world owns the conversion. See [world](../world/ARCHITECTURE.md). |
 | Brain | The bridge polls the brain | HTTP/JSON, read-only | The brain owns the mission. ROS only displays it. |
@@ -295,13 +302,14 @@ the wheels, one that skips arbitration (3.17).
 | Velocity commands stop arriving inside ROS | The multiplexer's input times out, then the controller's command times out | Wheels at zero within 0.5 s (R4, 3.13) |
 | The container dies | The plugin's posts stop. The robot server's watchdog stops the wheels; after a silence it counts ROS as down | A running mission ends `failed`, naming ROS, within 3 s. A person can drive within 2 s, vetted by the safety layer. Autonomy is refused (G3, measured 2.04 s and 0.36 s) |
 | The container comes back | The plugin's posts resume | ROS counts as up again within 5 s of its first post, with no server restart (G3.4) |
-| The robot server restarts | The plugin keeps retrying and reports the outage. It never declares a hardware error, because ros2_control would then deactivate it for good | The ROS chain recovers by itself |
+| The robot server restarts | While the server is unreachable the plugin keeps retrying and reports the outage; it does not declare a hardware error for that, because ros2_control would then deactivate it for good. If the restarted server answers "no wheels" before its body reports them, which the car's backend does until the board's first feedback, the plugin takes that as a hardware error (next row) | The ROS chain recovers by itself, but only when the restarted server reports wheels at its first answer (the simulator does). On the car's backend it is not met: see Open questions. UNCONFIRMED, by reading |
 | The robot server reports no wheels | The plugin reports a hardware error, and ROS's control framework deactivates it until the container restarts | It fails loudly in the container's log. Not met: the controllers can still read "active" while commanding nothing, and it does not recover by itself (open questions) |
-| The bridge is unreachable or hangs during a verb or a stop | The robot server stops the robot directly, without waiting on ROS, and refuses the verb by name | A stop never waits on the container, and a command still in flight inside ROS cannot undo it |
+| The bridge is unreachable or hangs during a stop | The robot server stops the robot directly, without waiting on ROS | A stop never waits on the container, and the stopped verb's commands still in flight inside ROS cannot undo it. A nav2 goal is not such a command: it resumes after the stop (D6) |
+| The bridge is unreachable or hangs during a verb | The verb waits out its client timeout, then the robot server stops the robot directly and refuses the verb by name | Refused by name, robot stopped. Only the stop avoids the wait |
 | An obstacle near the chassis | The collision monitor slows or stops, then the safety layer re-vets | Stops at or beyond the safety layer's line on every path (R4: at least 19.4 cm; G2: travel-to-contact at least 18 cm after every move, no contact) |
 | A goal nav2 cannot reach | nav2 aborts, and the wheels are at zero | Aborted and stopped within 60 s (R6: 19-24 s) |
 | A person taps during a goal | The goal is cancelled inside ROS | Cancelled within 1 s (R6: 0.04-0.05 s) |
-| tf2 or a transform goes stale | Prevented by the pinned tf2 and the re-stamped transform | Not a runtime guard: the symptom is a goal "reached" instantly |
+| tf2 or a transform goes stale | Prevented by the distro defect fix (D10) | Not a runtime guard: the symptom is a goal "reached" instantly |
 
 ## Open questions
 
@@ -318,9 +326,12 @@ where noted.
 - **Start-up order and the actuator's "no wheels" error.** The plugin treats
   a robot server that answers "no wheels" as a hardware error, and on the
   car's backend that is what the server says until the board's first
-  feedback frame. A container started too early is then deactivated for
-  good. The runbook orders the start-up today; whether the plugin should
-  treat "no wheels yet" like an unreachable server is open.
+  feedback frame. A container started too early, or one running when the
+  robot server restarts, is then deactivated for good. The runbook orders
+  the start-up today; nothing orders a server restart. Whether the plugin
+  should treat "no wheels yet" like an unreachable server is open.
+- **A stop under a nav2 goal** pauses the goal rather than ending it (D6).
+  The rule is the safety domain's open question.
 - **Sighting geometry inside ROS.** A route would turn a camera bearing plus
   the lidar's range into a point on the map, composed through the transform
   tree. It is decided in principle (1.1), has no criteria yet, and would

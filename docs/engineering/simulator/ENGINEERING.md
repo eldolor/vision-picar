@@ -96,7 +96,7 @@ follows is the sim-specific shape of each answer. The routes are served by
 | `get_odometry()` | `usable: true`, `distance_m` (path length actually covered, reverse included), `heading_deg` (body, compass, continuous) |
 | `get_distance()` | Free cells ahead times 30.0 cm, exact. Through `DistanceSensorModel.read()` when noise is on; a dropout reads `0.0` (fail-safe: always trips the veto) |
 | `get_camera_frame()` | `room`, `objects_visible`, `detections`, `image_base64` (320 x 200 JPEG), `media_type: image/jpeg`, `metadata` |
-| `GridWorld.move_object(src, dst)` | Raises `ValueError` onto a wall, onto another object, inside the robot's turning circle, or for a mover |
+| `GridWorld.move_object(src, dst)` | Raises `ValueError` when there is no object at `src`, for a mover, onto a cell that is not floor, onto another object, or inside the robot's turning circle |
 
 Sim-only routes on the robot server (501 on a backend with no house):
 
@@ -132,7 +132,7 @@ differs, both are given.
 | `sim.sensor_noise.min_range_cm` / `max_range_cm` | `2.0` / `400.0` | cm | `DistanceSensorModel` | HC-SR04's datasheet range |
 | `sim.sensor_noise.read_latency_s` | `0.0` | s | `MockRobot.get_distance()` | Only slept when `sim.realtime` is also on |
 | `sim.odom_drift.enabled` / `left_scale` / `right_scale` | `false` / `1.0` / `1.0` in code; the yaml sets `right_scale: 1.03` | ratio | `robot/factory.py` | R5: a right encoder 3% long. Odometry then ends up to 99 cm / 54 deg off over a lap while SLAM stays within 1-4.5 cm (3.14) |
-| `WHEEL_RADIUS_M`, `TRACK_WIDTH_M`, `ENCODER_COUNTS_PER_REV` | see platform | m, m, counts | `sim/mock_robot.py` | Chassis constants. Values and sources are canonical in the platform engineering spec's chassis table (docs/engineering/platform/ENGINEERING.md); `tests/test_wall_linters.py` and `tests/test_urdf.py` hold the copies equal. In the sim, the track scales pivot rate only: a straight line does not depend on it |
+| `WHEEL_RADIUS_M`, `TRACK_WIDTH_M`, `ENCODER_COUNTS_PER_REV` | see platform | m, m, counts | `sim/mock_robot.py` | Chassis constants. Values and sources are canonical in the platform engineering spec's chassis table (docs/engineering/platform/ENGINEERING.md), which also lists what pins each copy: radius and track by `tests/test_wall_linters.py` and `tests/test_urdf.py`, the encoder count only by `tests/test_ros_driver_board.py`. In the sim, the track scales pivot rate only: a straight line does not depend on it |
 | `CELLS_PER_SECOND_AT_FULL_SPEED` | 2.0 | cells/s | `sim/mock_robot.py` | Keeps a default `drive_forward()` at one cell. `WHEEL_MAX_RAD_S` (15 rad/s here) is derived from it, not from motor rpm |
 | `DEFAULT_CELL_CM` | 30.0 | cm | `sim/mock_robot.py`, `sim/sensors.py` | One grid cell. Every verb, collar and step budget is measured against it |
 | `LIDAR_RANGE_M` | 12.0 | m | `MockRobot.get_scan()` | D500 and RPLidar C1 rated range. The renderer's 4.2 m horizon left SLAM mapping almost nothing in the home |
@@ -143,10 +143,10 @@ differs, both are given.
 | `DEFAULT_WIDTH` x `DEFAULT_HEIGHT`, `JPEG_QUALITY` | 320 x 200, 82 | px, quality | `sim/renderer.py` | The twin's canvas defaults. Fixed so the golden image is reproducible. A whole `get_camera_frame()` costs with the house: about 6 ms in the starter house, 11 ms in the scaled house and 42 ms in the furnished home (laptop, 2026-10-02) |
 | `COLOR_CEILING` / `COLOR_FLOOR` | (198, 203, 211) / (128, 120, 110) | RGB | `sim/renderer.py` | Lit room. The old near-black UI colours made the model report "a blank gray wall" (2026-09-02) |
 | `VISIBLE_EXTENT_RAYS` | 9 | rays | `sim/renderer.py` | Rays across an object for its visible bearing (3.32) |
-| `MAX_SUBSTEP_CELLS` / `MAX_SUBSTEP_RAD` | 0.1 / 5 deg | cells / rad | `sim/grid_world.py` | Bounds travel between two collision checks, so an arc cannot cut a corner |
+| `MAX_SUBSTEP_CELLS` / `MAX_SUBSTEP_RAD` | 0.1 / 5 (stored as radians) | cells / deg | `sim/grid_world.py` | Bounds travel between two collision checks, so an arc cannot cut a corner |
 | `FOOTPRINT_SKIN_CM` | 0.2 | cm | `sim/grid_world.py` | Sized for the 2WD chassis pivoting in a 30 cm gap. The Rover's 17.1 cm corner radius cannot pivot there at all |
 | `FOOTPRINT_LENGTH_M` x `FOOTPRINT_WIDTH_M` | see platform | m | imported from `robot/safety.py` | The chassis outline the sim collides with. Canonical value in the platform chassis table |
-| `PAN_ANGLE_RAD` | 90 | deg | `sim/grid_world.py` | What `look_left()` / `look_right()` swing the camera by |
+| `PAN_ANGLE_RAD` | 90 (stored as pi/2 radians) | deg | `sim/grid_world.py` | What `look_left()` / `look_right()` swing the camera by |
 | `SIM_PERCEPTION_RANGE_CELLS` | 3.0 | cells | `sim/grid_world.py` | Arrival radius for `objects_visible` only. Detections go to the horizon |
 | `MOVER_KEEPOUT_M` | 0.20 | m | `sim/movers.py`, `sim/grid_world.py` | Beyond the chassis turning circle. Same as `min_distance_cm`, so a mover never appears inside the stop line |
 | `Mover.hop_s` | 1.0 | s of sim time | `sim/movers.py` | One 30 cm hop a second, a walking person |
@@ -185,8 +185,10 @@ curl -s -X POST http://127.0.0.1:8000/sim/objects/move \
   -H 'content-type: application/json' -d '{"src": [2, 2], "dst": [3, 2]}'
 ```
 
-A 409 names why (not floor, occupied, inside the turning circle, or a
-mover). Add `-H "x-app-secret: ..."` when `APP_SHARED_SECRET` is set.
+This example moves the scaled house's sofa, so it works only with
+`SIM_MAP=scaled_house`; take a `src` from `GET /sim/objects` for any other
+house. A 409 names why (`no object at (x, y)`, a mover, not floor,
+occupied, or inside the turning circle). Add `-H "x-app-secret: ..."` when `APP_SHARED_SECRET` is set.
 
 **Ground-truth sweeps** (the acceptance instruments, not unit tests):
 
@@ -245,7 +247,7 @@ docstring. It renders the starter house from (5.5, 7.5) facing east to
 | `tests/test_renderer.py` | The golden image byte for byte (raw RGB, not JPEG), determinism, doors pass rays, objects behind walls or under the robot are not drawn |
 | `tests/test_frame_source.py` | The twin shows real pixels or says it has none (browser test; skips without Chromium) |
 | `tests/test_sensors.py` | S5: noise, dropout as 0.0, range clamp; `min_distance_cm` is load-bearing at a non-multiple of 30 |
-| `tests/test_solid_objects.py` | 3.9: collision, scan, distance, depth and map all see objects; the forward beam from (8.5, 7.5) reads the backpack face at 0.45 m; the picture is unchanged |
+| `tests/test_solid_objects.py` | 3.9: collision, scan, distance, depth and map all see objects; the forward beam from (8.5, 7.5) reads the backpack face at 0.41 m (the face is 0.45 m from the centre, less `LIDAR_X_M`); the picture is unchanged |
 | `tests/test_bearing_turns.py` | R1: sized turns, against quarter turns, on RELATIVE bars: sized turns close more than 2 cells more on average, with fewer than half the reversals. It does not pin the absolute numbers (R1 recorded 4.06 cells / 0.6 reversals against -1.23 / 4.8 in the starter house on 2026-09-25), so those can drift without failing it. Quote a fresh run, not the R1 figures |
 | `tests/test_movers.py` | 3.30 criteria 1 and 4: a move is seen at once by scan, collision and map; movers are deterministic and keep out; with no movers the object table is untouched by time |
 | `tests/test_mover_safety.py` | 3.30 criterion 2 on a sample (scaled house, 2 starts, 8 headings), and that the same sample FAILS with the clamp off |
@@ -271,18 +273,21 @@ real mission path):
 1. Write the metric and the bar in the plan entry before measuring.
 2. Run `pytest tests/ -q` from `.venv`. With realism off, every pinned
    trace must pass unchanged, including `tests/data/frontier_trace_centred.json`.
-3. If a chassis constant changed, `tests/test_wall_linters.py` and
-   `tests/test_urdf.py` must agree across sim, xacro and backend.
+3. If a chassis constant changed, `tests/test_wall_linters.py`,
+   `tests/test_urdf.py` and `tests/test_ros_driver_board.py` must agree
+   across sim, xacro, the fake board and the backend.
 4. For anything touching collision or sensing, run the ground-truth sweep
    and record its numbers, never the veto's own readings.
 5. If the picture changed, re-bless the golden image and look at it.
 
 ## Known gaps
 
-- **No wheel slip.** Encoders count what the body achieved, so skid
-  steer's scrub on every turn is invisible (R8).
-- **2D only.** Every object fills the lidar's plane, so a low obstacle
-  cannot be represented (open question 8).
+The open design questions (wheel slip, low obstacles in a 2D world, sim
+time against ROS time, the home's interior, whether the lit renderer helps
+a vision run) are the
+[architecture spec's open questions](../../simulator/ARCHITECTURE.md#open-questions)
+and are not repeated here. These are the implementation gaps:
+
 - **Movers hop whole cells** and never approach the robot.
 - **`config/robot.yaml`'s `sim_map` key is dead.** It names a file path
   and nothing reads it. `SIM_MAP` is the switch.
@@ -297,4 +302,3 @@ real mission path):
   draws a jamb one 5 cm cell thick, and the guarded verbs refuse on about
   0.5 deg of heading error (G1, 3.24). Use the scaled house for nav2, the
   ROS chain suite and anything else that must pass a door reliably.
-- **The lit renderer is unmeasured** as an improvement for a vision run.

@@ -197,14 +197,18 @@ session may already own ports 8000/8090; use 8100/8101/8190 with a separate
 | `tests/test_r2_routes.py`, `tests/test_ros_goals.py` | `/wheels`, `/scan`, `/world/truth`, goal conversion |
 | `tests/test_bridge_keepalive.py` (7) | The bridge polls this server over kept-open connections (3.24 G1) |
 | `tests/test_http_rate_live.py` | Live HTTP rate: a bare app holds 200 Hz at p99 1.6-4 ms over the Docker hop; this server's 20-34 ms p99 tail is the simulator sharing the process (3.17). Skips without the stack |
-| `tests/test_serverless_routes.py`, `tests/test_static_assets.py` | Deployed routes and static files (the S3/CloudFront twin) |
+| `tests/test_serverless_routes.py`, `tests/test_static_assets.py` | The deployed vision and walks Lambda routes, and the static files the S3/CloudFront pages reference. **Not this server's routes**: the deployed twin reaches them through `service/tunnel/`'s proxy, which forwards every path except `/brain/...` and `/vision/...` to this server (`tests/test_tunnel_proxy.py`) |
+| `tests/test_ui.py` | The twin in a real browser against this server's routes, including the ngrok header the tunnel needs. Skips without `playwright install chromium` |
 | `tests/test_ros_containment.py` | No `rclpy` outside `service/slam/` |
 
 Change checklist for a new route: put it under `/world/` if it is about the
 house; protect it with `require_secret` unless a load balancer must reach
 it; answer an unsupported body or world by name (400/501/`unsupported`); add
-the 404 rule to `RemoteRobot`/`RemoteWorld`; add it to
-`tests/test_serverless_routes.py` if the deployed twin calls it.
+the 404 rule to `RemoteRobot`/`RemoteWorld`. If the deployed twin calls
+it, no route list needs editing (`service/tunnel/proxy.py` forwards every
+path to this server except `/brain`, `/brain/...`, `/vision` and
+`/vision/...`, which a robot route must therefore never use); cover the twin's use of it in
+`tests/test_ui.py`.
 
 ## Known gaps
 

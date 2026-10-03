@@ -64,7 +64,7 @@ nothing about the car.
 | **Remote body** | The contract over the robot server's HTTP API | Import a backend, the simulator or the robot server |
 | **Replay body** | A recorded walk played back one photograph per move | Claim any sensor or motion it does not have |
 | **Teleop body** | A live phone camera; a person is the motor | Claim any sensor or motion it does not have |
-| **Hardware body** | The real motors over the motor board's serial line; sensors from attached drivers | Hand the serial port to anything else (see Decisions) |
+| **Hardware body** | The real motors over the motor board's serial line; sensors from attached drivers | Hand the serial port to anything else ([motor-board](../motor-board/ARCHITECTURE.md), D1) |
 | **Wrappers** | Re-routing motion (through ROS) or gating it (after a mission ends) | Fall behind the contract: every read must reach the wrapped body |
 | **The factory** (`robot/factory.py`) | Choosing one backend and wrapper from configuration | Be bypassed: nothing else constructs a backend for the robot server |
 
@@ -163,15 +163,17 @@ missing sensing route means "this server predates the route" and reads as
 unusable. Any other error raises. **Rejected:** treating every error as an
 absent sensor, which would let a broken sensor read as a missing one.
 
-### Devices that feed a veto belong to the robot process
+### Devices that feed a veto are reached through a body
 
-The motor board's serial port is owned by the hardware body, not by a ROS
-hardware plugin. **Rejected:** a ROS plugin owning the port. That gives the
-board two masters and takes the safety layer out of the navigation path
-(`PLAN-ros-alignment.md` 3.16). The same rule decided on 2026-10-02 that the
-lidar driver also lives in the robot process. A sensor that feeds a veto
-must keep working while ROS is down (`PLAN-ros-alignment.md` 1.1, open
-question 5).
+Where those devices live is decided elsewhere, and this domain only records
+what it means for the contract. The motor board's serial port belongs to
+the hardware body ([motor-board](../motor-board/ARCHITECTURE.md), D1, with
+the alternatives it rejected). Where the car's lidar driver lives is
+decided by [ros](../ros/ARCHITECTURE.md) (D3). For the body, both mean the
+same thing: anything a veto depends on reaches the safety layer through a
+body in the robot process, so it keeps working while ROS is down. A new
+sensor or actuator of that kind is added to the contract, never reached
+around it.
 
 ### The contract is pinned by one suite run against every body
 
@@ -206,15 +208,16 @@ covered only by its own tests.
 | Motor board reboots mid-run | The odometer jump is absorbed and the board is set up again | Odometry never decreases and never jumps |
 | Someone calls stop during a verb | The shared verb loop ends at its next period | A stop ends any verb within one control period, and is never overwritten. **Not yet met in one window:** a stop landing between the loop's check and its next wheel command is overwritten, and the wheels run until the watchdog stops them (see Open questions) |
 | Robot server unreachable | The remote body raises a transport error distinct from a refusal | "Nobody heard it" is never mistaken for "it was refused" |
-| ROS chain dead, or hung, under ROS drive | The wrapper stops the wrapped body first and directly; telling ROS its inputs are zero happens afterwards and cannot hold the stop up. Motion from ROS still in flight from the stopped verb cannot restart the wheels | A stop never depends on the container, dead or merely not answering |
+| ROS chain dead, or hung, under ROS drive | The wrapper stops the wrapped body first and directly; telling ROS its inputs are zero happens afterwards and cannot hold the stop up. For a short hold after the stop, motion from ROS still in flight from the stopped verb is turned into a zero | A stop never depends on the container, dead or merely not answering |
+| Stop while a nav2 goal is active | The stop zeroes the wheels, but **it pauses the goal, it does not end it**. nav2 keeps commanding, and the wheels resume once the hold lapses (under ROS drive) or on the actuator's next post (under direct drive with the ROS world) | Not met: whether a stop should end a goal is undecided, and owned by [safety](../safety/ARCHITECTURE.md) (Open questions) |
 | A wrapper falls behind the contract | The conformance suite fails, for the wrappers it covers | A wrapper reports exactly what it wraps |
 
 ## Open questions
 
-- **The lidar driver in the robot process.** Decided 2026-10-02, not built.
-  It means porting the D500's serial protocol out of its ROS node, plus a
-  fake lidar on a pseudo-terminal like the fake motor board. Owner: the user
-  approves the criteria (`PLAN-ros-alignment.md` 6, question 5).
+- **The car's lidar driver** is placed by [ros](../ros/ARCHITECTURE.md)
+  (D3) and not built. Until it is, the car's body has no scan; what that
+  costs, and the build plan, are in the
+  [engineering spec](../engineering/body/ENGINEERING.md), Known gaps.
 - **Where the depth camera's driver lives**, and whether its floor band
   reaches the body as a second depth grid (`PLAN-ros-alignment.md` 6,
   question 8).
@@ -223,14 +226,15 @@ covered only by its own tests.
   front depth sensor needs the offset to travel with each reading, as the
   field of view already does. Settled on hardware day, when both are fitted.
 - **The stop race inside the shared verb loop** (`docs-review/SPEC-REVIEW.md`
-  fix-list 7, not fixed). The loop checks for a stop, then commands the
-  wheels; a stop between the two is overwritten, and the loop's final
-  zeroing is skipped because it saw the stop on its next pass
-  (`robot/interface.py:241-271`). Until the loop re-checks after commanding,
-  the failure table's "never overwritten" is a target, not a fact.
+  fix-list 7, not fixed). A stop that lands between the loop's check and its
+  next wheel command is overwritten. Until the loop re-checks after
+  commanding, the failure table's "never overwritten" is a target, not a
+  fact. Mechanism and fix: the
+  [engineering spec](../engineering/body/ENGINEERING.md), Known gaps.
 - **The ROS drive wrapper is not in the conformance suite**
-  (`tests/test_robot_contract.py:85`; `docs-review/SPEC-REVIEW.md`
-  section 5). Adding it needs a fake bridge fixture.
+  (`docs-review/SPEC-REVIEW.md` section 5). Adding it needs a fake bridge
+  fixture; see the [engineering spec](../engineering/body/ENGINEERING.md),
+  Known gaps.
 - **One odometry heading convention.** The contract says heading is
   measured from the start; the sim body reports its compass bearing and the
   hardware body reports turn since start. Both are clockwise-positive, so

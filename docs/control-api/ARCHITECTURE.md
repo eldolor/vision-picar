@@ -56,12 +56,12 @@ Who depends on it:
 
 | Part | Owns | May not |
 |---|---|---|
-| Motion routes (verbs, stop, standing wheel command) | Entry for anything that moves the robot | Move anything without arbitration (except stop) and the vet |
+| Motion routes (verbs, stop, standing wheel command) | Entry for anything that moves the robot | Move anything without arbitration and the vet. Three things skip arbitration only: a stop; under ROS drive, the ROS actuator's standing commands, which are still vetted; and a zero standing command, which can only stop the wheels and only for the driver holding them |
 | Body sensing routes | One route per sensor, answering exactly what the body said | Compute a reading of their own |
 | World routes | The house map, pose, goals and (in the sim) ground truth, under their own namespace | Compute world state. They pass through to the world model. The one exception is the sim-only error readout, which compares two of the world model's own answers (estimate against truth) and is never an input to a decision |
 | Teleop ingress | Accepting a phone's frame for a teleop body | Accept a frame no body can read |
 | Sim-only routes | Inspecting and rearranging the simulated house | Exist silently off the simulator |
-| Control loops | The watchdog and the wheel loop | Wait on the motion lock (that would freeze stop) |
+| Control loops | The watchdog and the wheel loop | Block behind a motion in progress (that would freeze every route, stop included) |
 | Health and identity | Facts about this process and the robot | Decide a verdict. That belongs to the health command |
 
 The server never imports the brain (`control/`), never imports ROS, and
@@ -202,6 +202,7 @@ Restarting the server is the reset.
 | ROS bridge unreachable during a verb | Stop the robot directly. Refuse with a ROS-unavailable reason | |
 | ROS bridge hung (accepts, never answers) when a stop arrives | The stop reaches the motors directly; zeroing ROS's inputs proceeds on its own and may fail | A stop never depends on the container, and never stalls the server's other routes |
 | ROS bridge unreadable when checking for a goal | Treated as "no goal" | An outage never becomes a lockout of every autonomous driver |
+| Part of the ROS container dies while the actuator lives (the bridge, or the velocity multiplexer or controller). **UNCONFIRMED** (read, not run) | ROS still reads as alive, because liveness is judged only from the actuator's posts. With the bridge gone, every verb, a person's included, is refused as ROS-unavailable; with the multiplexer or controller gone, verbs achieve nothing and are refused as unsafe | **Not met.** The target is a dead container's: a person can drive. Fix undecided, owned by [safety](../safety/ARCHITECTURE.md) (Open questions) |
 | Unknown verb, malformed body | Client error, nothing moves | |
 | Body without motors gets a wheel command | Refused "unsupported" | Never a silent no-op |
 | Sim-only or goal route on a world or body that cannot serve it | "Not implemented", naming why | Never a silent no-op |

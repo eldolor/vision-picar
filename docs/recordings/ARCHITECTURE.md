@@ -56,7 +56,7 @@ detail.
    walks service: list, view, download, label, annotate, score, replay,
                   summarise, delete; serves the review console's API
         |  scorer (pure functions, plus an optional model judge)
-        |  replayer --> cloud vision /navigate (deployed service)
+        |  replayer --> cloud vision, the move question (deployed)
         v
    review console (static page)
 
@@ -79,8 +79,8 @@ detail.
 - **Scorer.** Deterministic metrics over a walk's per-frame log. An
   optional model judge looks at sampled frames, and an optional collision
   check looks at frames that commanded FORWARD.
-- **Replayer.** Re-asks each frame of a walk through the deployed
-  `/navigate` under a chosen model and wording.
+- **Replayer.** Re-asks each frame of a walk through the deployed cloud
+  vision service's move question, under a chosen model and wording.
 - **Label proposer.** Ranks frames by a different detector's confidence,
   so a person can adjudicate the uncertain band. It never writes ground
   truth.
@@ -104,6 +104,9 @@ containers. Because those containers sit beside the walks, the walk list
 currently shows them as empty walks. The split of that problem is fixed:
 operations owns where metrics rows are stored and the fix to that layout;
 this domain owns the walk list and its filter, which must show walks only.
+Until the filter exists there is a hazard as well as clutter: a metrics
+container passes the walk-name check, so deleting it from the console as
+if it were an empty walk deletes a day of mission rows.
 The twin owns the decision to record and the walk's name. This domain owns
 everything from the first stored byte onwards.
 
@@ -191,9 +194,15 @@ a judgement.
 
 ### Replay asks the deployed service, and an incomplete replay is not evidence
 
-**Decision.** Replay calls the deployed `/navigate`, prompt, parsing and
-allow-list included. A replay that got back too few of its frames is
-stored but left unscored, so it can never read as a low score.
+**Decision.** Replay asks the deployed service the move question, prompt,
+parsing and allow-list included. A replay that got back too few of its
+frames is stored but left unscored, so it can never read as a low score.
+
+**Not yet the same question.** Two inputs differ from a live call today:
+replay labels every frame as JPEG whatever format it was recorded in, and
+it never sends the rooms already searched, which a live mission does. A
+replay therefore answers "what would this model say with no search
+memory". The engineering spec records both as known gaps.
 
 **Rejected:**
 
@@ -231,10 +240,12 @@ which would pass every test and fail on the walks that matter.
 ### Recording never interrupts a walk
 
 **Decision.** Frames are saved fire-and-forget, and failures are counted
-and shown. The "finished" marker is best-effort and only records what
-produced the walk; it never triggers scoring. A walk is scored when it is
-first read, so a walk whose marker never arrived is scored exactly like
-one whose marker did.
+and shown. The "finished" marker is best-effort. It records what produced
+the walk, and it is also what makes the console score a walk on its own:
+the console scores finished, unscored walks when it loads, and leaves a
+walk without the marker (still recording, or cut off) to a person's
+explicit Evaluate, so a fragment is never judged as a whole walk. Every
+saved frame stays scorable either way.
 
 **Rejected.** Blocking capture on a save. A dropped connection would stop
 a walk that cannot be repeated cheaply.
@@ -256,7 +267,7 @@ a walk that cannot be repeated cheaply.
 
 | Failure | Response | Target |
 |---|---|---|
-| A tab closes or the battery dies mid-walk | No finish marker. Frames already saved stay. Scoring runs on first read. | Every saved frame stays scorable. |
+| A tab closes or the battery dies mid-walk | No finish marker. Frames already saved stay. The console does not score it on its own; a person's Evaluate does. | Every saved frame stays scorable, and an unfinished walk is never auto-scored as if complete. |
 | Overlapping calls give two frames the same number | The twin allocates numbers at dispatch | No frame silently overwrites another |
 | A frame lands after its walk ended | The twin drops it and counts it as orphaned | No frame is filed under the wrong walk |
 | The brain has recording off | Refused, or forwarded to a peer, and the twin checks at start | A walk never silently records nothing |
@@ -267,6 +278,7 @@ a walk that cannot be repeated cheaply.
 | A replay loses frames | Stored, flagged incomplete, unscored | A partial replay never reads as a model result |
 | Walks recorded on the laptop only | Manual sync to the bucket after each rig session | Every walk carrying adjudicated labels has a cloud copy |
 | A name with a separator or a parent element | Refused by both the routes and the store | No traversal on either backend |
+| A day of metrics rows is deleted from the console as an "empty walk" | Not guarded: the delete succeeds. On the bucket, versioning keeps the old versions for the retention window; on a directory the rows are gone. | Open: the walk list's filter is the fix; until then a delete is recoverable only from bucket versions |
 
 ## Open questions
 
@@ -275,17 +287,11 @@ a walk that cannot be repeated cheaply.
   decides.
 - **Should replay become a job?** A job would return an id to poll, where
   today one synchronous request outlives its HTTP response.
-- **Does replay work on the deployed walks service at all?** As
-  templated, no. The walks function is given neither the vision service's
-  URL nor the vision service's secret. With no URL, replay is refused as
-  unavailable. If a URL were added on its own, the function would sign
-  each frame with its own walks secret, the vision service would refuse
-  every frame as unauthenticated, refusals are not retried, and every
-  replay would be stored incomplete. Either both values are templated, or
-  replay is stated to be a local-only tool. UNCONFIRMED against the live
-  stack, which may carry values set outside the template; checking the
-  deployed function's environment settles it. The operations domain
-  records the same gap.
+- **Is replay a deployed feature or a local-only tool?** As templated,
+  the deployed walks service cannot replay. Either the deployment is given
+  what replay needs, or replay is declared local-only. The analysis, the
+  failure signatures and how to check the live stack are in the
+  [engineering spec's Known gaps](../engineering/recordings/ENGINEERING.md#known-gaps).
 - **Is the judge on in the deployed walks service?** The template does not
   opt in. Checking the deployed stack settles it.
 - **Which walks to record next.** Two out-of-vocabulary searches and a

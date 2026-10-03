@@ -95,12 +95,15 @@ def moves_for(speed: int, duration: float) -> int:
 # long, so a hung bridge costs a background thread 1.5 s and the caller
 # nothing.
 STOP_ZERO_TIMEOUT_S = 0.5
-# After a stop, non-zero wheel commands from ROS are held at zero this long:
-# twist_mux's input timeout (0.25 s, picar_bringup/config/twist_mux.yaml)
-# plus one 0.05 s plugin period, with margin. That is how long the stopped
-# verb's last twist can keep reaching the wheels when the bridge is hung and
-# the zeros never arrive.
-STOP_HOLD_S = 0.4
+# After a stop, non-zero wheel commands from ROS are held at zero this long.
+# It must outlast how long the stopped verb's last twist can keep reaching
+# the wheels when the bridge is hung and the zeros never arrive: twist_mux
+# holds a silent input for its timeout (0.25 s) and THEN
+# diff_drive_controller holds its last command for its own cmd_vel_timeout
+# (0.25 s) -- the two ADD (picar_bringup/config/twist_mux.yaml says so) --
+# plus one 0.05 s plugin period: 0.55 s. Was 0.4 until the second spec
+# review (2026-10-02) caught the two timeouts counted as one.
+STOP_HOLD_S = 0.6
 
 
 class RosDriveRobot(RobotInterface):

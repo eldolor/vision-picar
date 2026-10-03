@@ -180,8 +180,11 @@ Map first. nav2 cannot plan into a room SLAM has not seen, so map with
 | `POST /world/goal` answers 501 | The world is not `ros`. |
 | `{"accepted": false, "reason": "no SLAM session yet"}` | The bridge has not yet published a map-frame pose. |
 | `{"accepted": false, "reason": "preempted"}` | The brain or a person holds the robot. Wait for it to lapse, which takes `watchdog_timeout_s`. |
-| `/world/pose` reads `usable: false` under `WORLD_MODE=ros` | The bridge is unreachable, or there is no `map -> base_footprint` transform yet. Check `curl localhost:8090/health`. |
-| The twin's error readout shows "0.0 cm" after driving | The anchor fell back to `first_contact`: the bridge has no `start_truth`. Either the image predates `start_truth` (rebuild it), or the bridge's one read of `/world/truth` failed. It reads the truth once, right after its first successful scan poll, and never retries (`_record_start_truth()` in `bridge.py`); if that one read raises or answers `usable: false`, it stays null for the container's life. Restart the container. |
+
+Signatures that depend on the bridge's state (`/world/pose` unusable under
+`WORLD_MODE=ros`, and the SLAM error readout stuck at "0.0 cm" because the
+bridge has no `start_truth`) are in the ROS chain's one table,
+`service/slam/README.md` section 4 ("Failure signatures").
 
 ## Verification
 
@@ -239,7 +242,15 @@ Checklist for a change here:
 - **`map_version` under SLAM counts publications, not cell changes.** See
   "What RosWorld reads from the bridge". UNCONFIRMED.
 - **`start_truth` is read once.** A failed first read is never retried; see
-  the failure signatures.
+  `service/slam/README.md` section 4.
+- **A stop does not end a goal.** `POST /stop` cancels nothing, so nav2
+  resumes after the stop; the code reference is in the
+  [ros engineering spec](../ros/ENGINEERING.md)'s Known gaps, and the rule is
+  the safety architecture's open question.
+- **Stale factory docstring.** `world/factory.py:14-22` still calls `none`
+  "TODAY'S DEFAULT" with "nothing in this project can build a map yet", and
+  labels `ros` as N6. `config/robot.yaml` ships `sim`, and `ros` is built
+  (R5/R6).
 - **Goals are found by duck typing.** `set_goal`, `get_goal`, `cancel_goal`
   and `get_odom_pose` live only on `RosWorld`, and the server discovers them
   with `hasattr`.

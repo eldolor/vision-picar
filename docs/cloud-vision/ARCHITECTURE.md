@@ -49,7 +49,8 @@ either way, because no move depends on this service being up.
                                              |
                                              v
             +--------------- vision service (stateless) ---------------+
-            | route layer: auth, decode, size cap, allow-lists, 4xx    |
+            | route layer: auth, base64, size cap, allow-lists;        |
+            |   a refusal here comes before any model call             |
             | question layer: one prompt + one schema per route        |
             | model layer: managed model API, per-model region         |
             | parsing: merge over a safe default, coerce, strip unasked|
@@ -62,9 +63,11 @@ either way, because no move depends on this service being up.
  manual only: brain-side scene describer -> direct Anthropic API
 ```
 
-- **Route layer.** Owns authentication by shared secret, image decoding,
-  the image size cap, and the two allow-lists (models and prompt wordings).
-  A request that fails here never reaches a model and costs nothing.
+- **Route layer.** Owns authentication by shared secret, decoding the
+  upload's text encoding, the image size cap, and the two allow-lists
+  (models and prompt wordings). A request that fails here never reaches a
+  model and costs nothing. It does not check that the bytes are an image:
+  that is first discovered by the provider, as a server error.
 - **Question layer.** One prompt and one response schema per question.
   The four questions are: what the robot's scene contains, a description
   of the photo for a person, the robot's next move, and which way to
@@ -73,7 +76,8 @@ either way, because no move depends on this service being up.
   cloud identity, with no API key in the service. Each route has its own
   default model.
 - **Parsing.** Turns free text into a fixed schema. It fails towards "do
-  not act on this", with two fields not yet covered (see Decisions).
+  not act on this", with three fields not yet covered and one only
+  partly covered (see Decisions).
 - **Room guesser.** A deterministic object-to-room matcher, a copy of the
   brain's.
 - **The brain-side scene describer** (`brain/vision.py`). It calls the
@@ -145,22 +149,28 @@ say "reached". Over-running is cheap. Stopping short is not.
 **Decision.** A reply that does not parse becomes the empty schema, with
 STOP, not visible and not reached. The fields a caller may act on fail
 safe: a move outside the vocabulary becomes STOP, arrival counts only
-when it is a literal true, and the room guess and the distance and path
-answers fall back to their "unknown" or "unclear" value when
-off-vocabulary. The person-steering reply gets the same treatment for its
-position, proximity and box. The one
+when it is a literal true, and the distance and path answers fall back to
+their "unknown" or "unclear" value when off-vocabulary. The room guess
+falls back to "unclear" only when it is missing, empty or not text; any
+other text is passed on as a room label. The person-steering reply gets
+the same treatment for its position, proximity and box. The one
 question a wording may leave out, the obstacle question, is removed from
 the reply rather than defaulted when the wording did not ask it, so a
 caller can tell "the model saw no obstacle" from "nobody asked". The
 distance and path answers are never removed; they read "unknown" when
 not asked.
 
-**Not yet covered.** Two move-reply fields pass through as the model
+**Not yet covered.** Three move-reply fields pass through as the model
 wrote them: the target's direction is not checked against its
-vocabulary, and the visibility flag is not type-checked. A string
-"false" for visibility therefore reads as true, and can satisfy the
-reached-implies-visible guard. The engineering spec lists it as a known
-gap. Whether to coerce both in code is open.
+vocabulary, and neither the visibility flag nor the obstacle flag is
+type-checked. A string "false" in either flag therefore reads as true to
+any caller that tests truthiness, and in visibility's case it can
+satisfy the reached-implies-visible guard. The room guess is only partly
+covered: an invented room name passes through. Callers differ today: the
+brain accepts only a literal true for both flags, while the twin reads
+them by truthiness. The person-steering reply's visibility flag is not
+type-checked either. The engineering spec lists these as known gaps.
+Whether to coerce them in the service is open.
 
 **Rejected.** Passing model text through as-is, or defaulting absent
 fields to false. A false that nobody measured reads exactly like a
@@ -194,8 +204,10 @@ and stayed aware of obstacles; which model that is, and the replay's
 numbers, are in the engineering spec. A model enters the allow-list only
 after a real call with a real walk frame, from the deployed region, has
 succeeded. It stays labelled "unmeasured" until a replay has ranked it.
-The person-steering question runs on a cheaper, faster model, which was
-measured to match accuracy for that task.
+The person-steering question runs on a cheaper model. A measurement that
+it is faster and matches accuracy for that task is claimed in the
+service's own notes but recorded nowhere (UNCONFIRMED); the choice has
+not been through a replay.
 
 **Rejected.** Promoting a model because it is newer or appears in the
 provider's catalogue. Several catalogue entries returned access-denied on
@@ -288,7 +300,7 @@ small delay to a call that already takes seconds.
 | Brain (vision and tiered policies) | brain calls service | HTTP/JSON, shared-secret header | Service owns the answer schema and both allow-lists. The brain owns mission memory and sends the searched rooms in. |
 | Twin, Guide tab | browser calls service, same origin | HTTP/JSON | Service owns the vocabularies (actions, positions, proximities). The twin only renders them. |
 | Twin, model and wording pickers | browser reads service | HTTP/JSON, unauthenticated read | The service is the only source of model ids and wordings. No client may hardcode them. |
-| Walks service (replay) | walks service calls service | HTTP/JSON | Replay asks exactly the question a live call asks. Recordings owns the comparison. |
+| Walks service (replay) | walks service calls service | HTTP/JSON | Replay asks the live move question with the same prompt, parsing and allow-list. Two inputs differ from a live call: replay labels every frame as JPEG whatever its format, and sends no searched rooms. Recordings owns the comparison and records the gap. |
 | Model provider | service calls provider | managed API under the service's cloud role | Provider owns availability per model and region. The service owns which models are allowed. |
 | Gateway and CDN | edge routes to service | HTTP | Each public path is listed on purpose. A path missing from the edge is a 404 on one feature while the page still loads. |
 
@@ -299,10 +311,11 @@ small delay to a call that already takes seconds.
 | The provider errors, throttles or times out | The service answers with a server error. The caller counts it against its own budget. | No vision failure can move or strand the robot. Stopping is the brain's guard, not this service's. |
 | The model replies with something that is not JSON | Safe default: STOP, not visible, not reached | A malformed reply never reads as arrival. |
 | The model volunteers an obstacle answer the wording did not ask for | The field is removed | "Not asked" is never reported as "false". |
-| The model returns an off-vocabulary direction or a non-boolean visibility | Passed through unchanged (known gap) | Target: no field a caller acts on is trusted as typed. Not met for these two. |
+| The model returns an off-vocabulary direction, a non-boolean visibility or obstacle flag, or an invented room name | Passed through unchanged (known gap) | Target: no field a caller acts on is trusted as typed. Not met for these four. |
 | A model id or wording not on the allow-list | Refused as a client error before any model call | An invalid choice never reaches the provider and never costs money. |
 | A missing or wrong shared secret | Refused | When a secret is configured, no unauthenticated call is billed. A deployment with no secret is open, and the deploy instructions say so. |
-| An image over the size cap, or one that does not decode | Refused before any model call | |
+| An image over the size cap, or an upload whose text encoding does not decode | Refused before any model call | |
+| Bytes that decode but are not an image the provider accepts (or a phone format that fails conversion) | Sent on; the provider or the conversion fails, and the service answers with a server error | Costs a call attempt, never a move. Whether to validate the image before the call is open. |
 | A phone uploads a format the provider rejects | Converted to an accepted format before the call | Real phone photos work. |
 | The page is served from a different origin | The browser blocks the call. The twin's own connection check names that as the fault. | Never misreported as a bad secret. |
 | A model the local region refuses | Pinned to a region that accepts it | Every listed model answers from the deployed region. |
@@ -314,10 +327,11 @@ small delay to a call that already takes seconds.
   deployed?** Nothing in the twin calls them since the Camera tab was
   removed on 2026-09-25. They are still routed and tested. The user decides. Evidence would be a caller
   that needs them.
-- **Coerce the target's direction and visibility?** Today they pass
-  through as the model wrote them (see "Every answer fails towards 'do
-  not act on it'"). Coercing them in the service closes the gap for every
-  caller at once; the alternative is each caller checking types.
+- **Coerce the target's direction, visibility, the obstacle flag and the
+  room guess?** Today they pass through as the model wrote them (see
+  "Every answer fails towards 'do not act on it'"). Coercing them in the
+  service closes the gap for every caller at once; the alternative is each
+  caller checking types, which the brain does and the twin does not.
 - **Promote a newer model?** Three models were added on 2026-09-21 and
   are unmeasured. A replay over the rig corpus decides it, through the
   recordings domain's replay.

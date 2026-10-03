@@ -30,7 +30,7 @@ command table for the Rover.
 | `firmware/ugv_base_ros/0001-feedback-fine-odometers-and-board-time.patch` | Our GPL-3.0 fork. It adds 13 lines inside `baseInfoFeedback()` (`ROS_Driver/ugv_advance.h`) and removes none. |
 | `firmware/ugv_base_ros/build.sh` | Compiles a checkout, stock or patched, with `arduino-cli`. Compile only. |
 | `firmware/ugv_base_ros/README.md` | How to apply, build, dump and restore the firmware. |
-| `robot/safety.py` | `SafetyController.run_verb()` and `_settle()` carry out and settle wall-clock verbs. Owned by the safety domain; listed here because `HardwareRobot.verb_plan()` turns the settle pass on. A correction runs through `run_verb()` and is vetted like a move: since 2026-10-02 `reverse_clearance()` answers `(0.0, "astern_not_observed")` on a body whose wheels report but whose scan is unusable, so a correction that would back up ends `clamped` ("settle refused") on `HardwareRobot` with no `sensors`. Over the fake board the sim body supplies the scan (`sensors=body`), so the settle behaves as recorded below. |
+| `robot/safety.py` | `SafetyController.run_verb()` and `_settle()` carry out and settle wall-clock verbs. Owned by the safety domain; listed here because `HardwareRobot.verb_plan()` turns the settle pass on. A correction runs through `run_verb()` and is vetted like a move: since 2026-10-02 `reverse_clearance()` answers `(0.0, "astern_not_observed")` on a body whose wheels report but whose scan is unusable, so a correction that would back up ends `clamped` ("settle refused") on `HardwareRobot` with no `sensors`, and so does one that would go forward, because every FORWARD is refused there too (`get_distance()` is 0.0). The rule for a body with no sensors is the safety domain's, specified once in the [safety engineering spec](../safety/ENGINEERING.md) (Known gaps). Over the fake board the sim body supplies the scan (`sensors=body`), so the settle behaves as recorded below. |
 
 ## Interfaces
 
@@ -46,7 +46,7 @@ which has spaces; the firmware accepts either.
 |---|---|---|
 | `{"T":136,"cmd":1500}` | At start, and after a reboot | Heartbeat: zero the wheel speeds after 1500 ms without a `T:1` or `T:11` |
 | `{"T":131,"cmd":1}` | At start, and after a reboot | Continuous feedback on (already the stock boot default) |
-| `{"T":1,"L":<m/s>,"R":<m/s>}` | Every wheel command; re-sent by `advance()` while non-zero | Closed-loop wheel surface speeds, `rad/s x WHEEL_RADIUS_M`, rounded to 5 places. Ignored if either is outside +/-2.0. Feeds the heartbeat. |
+| `{"T":1,"L":<m/s>,"R":<m/s>}` | Every wheel command; re-sent by `advance()` while non-zero | Closed-loop wheel surface speeds, `rad/s x WHEEL_RADIUS_M`, rounded to 5 places. If either is outside +/-2.0 the board drops the new speeds but still feeds the heartbeat, so the OLD setpoint keeps running; the host never clamps (Known gaps). |
 
 **Other commands the fake models** (the host never sends these):
 
@@ -161,30 +161,131 @@ bash /path/to/vision-picar/firmware/ugv_base_ros/build.sh .
   pins.
 
 **Flash.** This happens on hardware day, after the arrival checks in
-`JETSON-BOM.md` 9.5.
+`JETSON-BOM.md` 9.5. **UNCONFIRMED: not run.** The commands are
+`arduino-cli`'s and esptool's documented ones, with the core `build.sh` pins
+(esp32 3.2.1, which carries its own esptool). Stop the robot server and
+Waveshare's `ugv_jetson` app first, so nothing else holds the port.
 
-1. Dump the stock image first: `esptool.py --port <port> read_flash 0 ALL
-   stock-ugv_base_ros.bin`.
-2. Board: "ESP32 Dev Module" (`esp32:esp32:esp32`).
-3. To restore: write back that dump, or use Waveshare's ESP32 Download
-   Tool.
+1. Dump the stock image: `esptool.py --port <port> read_flash 0 ALL
+   stock-ugv_base_ros.bin`. Keep it off the car.
+2. Upload the build from the checkout `build.sh` compiled:
 
-**On first contact with the real board.** Start the robot server with no
-world, because a board with no sim body has no house to map, and the shipped
-`world.mode: sim` refuses it at start-up. Use the udev symlink, never
-`/dev/ttyUSB0`:
+   ```bash
+   CLI="${ARDUINO_CLI:-$HOME/.local/bin/arduino-cli}"
+   "$CLI" upload --fqbn esp32:esp32:esp32 --port <port> --input-dir <checkout>/build
+   ```
+
+   Board: "ESP32 Dev Module" (`esp32:esp32:esp32`). Expected: esptool's
+   `Connecting...`, `Chip is ESP32-D0WD...`, `Writing at 0x...` lines,
+   `Hash of data verified.` for each region, then `Hard resetting via RTS
+   pin...`.
+3. Confirm the fork's keys with the heartbeat check below: frames now carry
+   `odlt`, `odrt` and `ms`.
+4. To restore: `esptool.py --port <port> write_flash 0 stock-ugv_base_ros.bin`,
+   or Waveshare's ESP32 Download Tool with their published image.
+
+| Symptom | Meaning |
+|---|---|
+| `A fatal error occurred: Failed to connect to ESP32: No serial data received` | The port is held (the robot server, `ugv_jetson`), the wrong port, or the board did not enter its bootloader: hold BOOT while the upload starts. |
+| `Permission denied` / `could not open port` | Not in `dialout`, or the udev rule is missing (below). |
+| `Hash of data verified` missing, or a `MD5 of file does not match` error | A bad write. Upload again before power-cycling; restore the dump if it repeats. |
+| `Error during Upload: ... no such file` | `--input-dir` does not point at `build.sh`'s `<checkout>/build`. |
+
+**A stable device name (udev).** Skip this if the kit wires the Jetson's
+header UART (`/dev/ttyTHS1` is already stable). For the board's USB bridge,
+fill the values from the car, never from a guess: the board and the lidar
+can both be CP210x, so `idVendor` and `idProduct` alone may match both, and
+the `serial` attribute is what tells them apart.
 
 ```bash
-ROBOT_MODE=hardware ROBOT_SERIAL=/dev/<udev-symlink> WORLD_MODE=none uvicorn robot.server:app --port 8000
+udevadm info -a -n /dev/ttyUSB0 | grep -E 'idVendor|idProduct|serial' | head
 ```
 
-- **Confirm the frame.** Read a few `T:1001` frames and check they carry
-  `odl` and `odr`, plus `odlt`, `odrt` and `ms` once flashed.
-- **Check the heartbeat on the stand,** wheels off the floor. Send `T:1` at
-  0.1 m/s, then stop sending, and the wheels should stop 1.5 s later.
-- **Do not send `T:0` to stop the wheels.** See Known gaps.
-- **Free the port.** The stock `ugv_jetson` app must be disabled, or it
-  holds the port (3.26).
+`/etc/udev/rules.d/99-picar-motor-board.rules` (the values are to be filled
+from that output on the car):
+
+```text
+SUBSYSTEM=="tty", ATTRS{idVendor}=="<vid>", ATTRS{idProduct}=="<pid>", ATTRS{serial}=="<serial>", SYMLINK+="picar-motor-board", GROUP="dialout", MODE="0660"
+```
+
+```bash
+sudo udevadm control --reload-rules && sudo udevadm trigger
+ls -l /dev/picar-motor-board          # -> ttyUSB<n>
+```
+
+`ROBOT_SERIAL=/dev/picar-motor-board` from then on. A
+`/dev/serial/by-id/` path is an acceptable alternative.
+
+**On first contact with the real board: the heartbeat, with the robot
+server STOPPED.** The server cannot do this check: with no sensors it
+refuses every FORWARD and clamps a standing forward `/wheels` to zero
+(safety domain). Talk to the board directly instead. Wheels off the floor.
+pyserial is installed alongside esptool (`pip install pyserial` otherwise).
+UNCONFIRMED: not run against a board.
+
+```python
+import json, serial, time
+s = serial.Serial("/dev/picar-motor-board", 115200, timeout=0.1)  # opening may reset the board
+def send(c): s.write((json.dumps(c) + "\n").encode())
+def frames(seconds):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        line = s.readline().decode(errors="replace").strip()
+        if '"T":1001' in line:
+            f = json.loads(line); print(round(time.monotonic() - t0, 2), f["L"], f["R"], f["odl"], f["odr"], f.get("ms"))
+send({"T": 136, "cmd": 1500}); send({"T": 131, "cmd": 1})
+t0 = time.monotonic()
+for _ in range(10):                      # 2 s at 0.1 m/s, re-sent every 0.2 s
+    send({"T": 1, "L": 0.1, "R": 0.1}); frames(0.2)
+print("--- stopped sending T:1 ---")
+frames(2.5)
+send({"T": 1, "L": 0, "R": 0}); s.close()
+```
+
+Expected:
+
+- `T:1001` lines about every 50 ms, carrying `L`, `R`, `odl`, `odr` (plus
+  `odlt`, `odrt`, `ms` once flashed with the fork).
+- While sending, `L` and `R` near 0.1 and the odometers climbing.
+- After "stopped sending", `L` and `R` still near 0.1 until about 1.5 s
+  later, then 0: the board's heartbeat (`T:136`) stopped the wheels on its
+  own. That is the check.
+- If the wheels never stop, the heartbeat is not being honoured: do not run
+  the car. If they stop at about 3 s, the `T:136` was lost and the firmware
+  default applied.
+- **Do not send `T:0` to stop the wheels.** See Known gaps. A `T:1` of zero
+  stops them.
+
+**Odometry over a measured metre.** The same session, on the floor, with a
+tape along a straight line and the robot server still stopped. UNCONFIRMED:
+not run.
+
+1. Mark the chassis' front edge against the tape and note the last frame's
+   `odl` and `odr` (and `odlt`, `odrt` on the fork).
+2. Send `{"T":1,"L":0.1,"R":0.1}` every 0.2 s for 10 s (about 1 m), then
+   zero, and wait for `L` and `R` to read 0.
+3. Note the frame's odometers again, and measure the front edge's travel on
+   the tape.
+
+Compare each odometer's change with the tape, not with what was commanded:
+the board's speed loop and the stop's slip are not the odometry. A ratio
+that is consistently off 1.0 on both wheels means `WHEEL_D` is off for this
+unit; a difference between the wheels on a straight run is a hardware-day
+calibration item. Record both numbers against `PLAN-ros-alignment.md`'s
+hardware-day entry; the bars are not yet written.
+
+**Then start the robot server** with no world, because a board with no sim
+body has no house to map, and the shipped `world.mode: sim` refuses it at
+start-up:
+
+```bash
+ROBOT_MODE=hardware ROBOT_SERIAL=/dev/picar-motor-board WORLD_MODE=none uvicorn robot.server:app --port 8000
+```
+
+`GET /wheels` should turn `usable: true` within one feedback interval, and
+turns run (FORWARD and REVERSE are refused until the lidar driver lands).
+**Free the port** first: the stock `ugv_jetson` app must be disabled, or it
+holds the port (3.26).
 
 **Failure signatures:**
 
@@ -192,7 +293,8 @@ ROBOT_MODE=hardware ROBOT_SERIAL=/dev/<udev-symlink> WORLD_MODE=none uvicorn rob
 |---|---|
 | Start-up `ValueError: mode: hardware needs ROBOT_SERIAL` | Set the port, or `SIM_MOTOR_BOARD=fake`. |
 | Start-up `ValueError: world mode 'sim' needs the grid-world robot` | A real board with the shipped `world.mode: sim`. Add `WORLD_MODE=none`. |
-| A REVERSE blocked with `rear clearance=0.0cm ... (astern_not_observed)`, or a settle ending "settle refused" on a backwards correction | The real board with no lidar scan yet: the safety layer will not back up blind (safety domain). Expected until the lidar driver lands. |
+| A FORWARD blocked with `Blocked FORWARD: distance=0.0cm < min=...cm (distance_sensor)`, or a standing forward `/wheels` answered `forward clamped: 0.0cm <= ...cm (distance_sensor)` | The real board with no sensors: `get_distance()` is 0.0, which reads as an obstacle at the bumper. Expected until the lidar driver lands; only turns move (safety domain). |
+| A REVERSE blocked with `rear clearance=0.0cm ... (astern_not_observed)`, or a settle ending "settle refused" | The real board with no lidar scan yet: the safety layer will not back up blind, and a straight correction either way is refused (safety domain). Expected until the lidar driver lands. |
 | `PermissionError` / EACCES on open | The user is not in `dialout`, or the udev rule is missing. |
 | `get_wheel_state()` stays `usable: false` | No `1001` frames are arriving: wrong port or baud, feedback off, or another process holds the port. |
 | `board_reboots` climbing | Brownouts. Check the pack and the motor stall current. |
@@ -220,6 +322,10 @@ Recorded numbers:
 | Clear FORWARD, 30 cm | 117-119 of 120 within 1.0 cm, worst 1.13 | worst 0.13 cm over ten |
 | Reboot mid-drive | 8/8 detected, at most 1 cm move | 8/8 from `ms`, at most 0.058 cm move |
 
+R7's heartbeat drill (3.16, criterion 4, `tests/test_fake_esp32.py`): a
+host severed mid-motion, and the board's own heartbeat stopped the wheels
+1.5 s later, within one loop.
+
 Checklist for a change:
 
 - Run `pytest tests/test_fake_esp32.py tests/test_ros_driver_board.py
@@ -243,10 +349,23 @@ Checklist for a change:
 - **The fake's limits.** Its PID is ideal: no `THRESHOLD_PWM` deadband, no
   dynamics. Its IMU fields are zero and its voltage is constant. Its loop
   and feedback timing are assumed.
-- **No straight-line settle backwards before the lidar.** On the car with no
-  scan, a FORWARD that overshot cannot be corrected, because the correction
-  is a reverse and is refused (see the `robot/safety.py` row). Turns still
-  settle.
+- **No straight driving before the lidar.** On the car with no sensors,
+  every FORWARD is refused (`get_distance()` 0.0) and every REVERSE too
+  (`astern_not_observed`), so no straight verb runs and no straight
+  correction either; only turns move and settle. The rule is the safety
+  domain's ([safety engineering](../safety/ENGINEERING.md), Known gaps).
+- **The host never clamps wheel commands, and the board ignores bad ones
+  silently.** `HardwareRobot.set_wheel_velocity()`
+  (`robot/hardware_robot.py:330-336`) sends any speed as `T:1`, and the
+  server's `WheelsRequest` (`robot/server.py`) bounds nothing; the safety
+  vet slows and stops, but sets no maximum. The firmware drops a `T:1`
+  whose `L` or `R` is outside +/-2.0 m/s after it has fed the heartbeat
+  (`sim/fake_esp32.py:254-257`, `:289-295`), so the OLD setpoint keeps
+  running and the heartbeat never fires, while the host reports the new,
+  commanded value in `velocity_rad_s`. 2.0 m/s is 50 rad/s at this wheel,
+  far above anything a verb or nav2 sends today, so it takes a bad caller
+  of `/wheels`. Not fixed: the host could clamp, or refuse, past the
+  board's limit.
 - **Stock turns miss the +/-1 degree bar.** Stock frames carry no
   timestamp, so arrival jitter limits heading. On the car, heading wants the
   gyro (`gz`) or SLAM.

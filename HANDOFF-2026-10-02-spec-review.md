@@ -55,7 +55,52 @@ false-positive run (absent, absent, detected-wrong, ...) cannot end
 `found`, and the sweep in `tests/test_arrival.py` still meets 3.11's bars
 in the scaled house: >= 95% of arrivals `found`, none beyond 0.60 m.
 
+**1b. A stop does not stop a nav2 goal** (second review, H1;
+`docs-review/SPEC-REVIEW-2.md`). Two reviewers found this independently.
+
+- `POST /stop` only calls `robot.stop()` (`robot/server.py:656-669`).
+- The bridge cancels a goal only on a non-zero `twin-dpad` twist
+  (`service/slam/src/picar_bridge/picar_bridge/bridge.py:453-455`).
+- So nav2 resumes once the stop hold ends. Under `drive: direct` with
+  `WORLD_MODE=ros`, it resumes within ~50 ms.
+- This predates today's work.
+- **Proposed fix:** `/stop` cancels any active goal, on a background thread
+  after `robot.stop()`.
+- Owner: the safety spec, where it is an open question.
+
+**Done when** a test with an active goal shows the wheels still at zero
+past `STOP_HOLD_S` after `/stop`, and a person can still set a new goal
+afterwards.
+
+**1c. Should a landed cloud `target_reached` end a tiered mission?**
+(second review, M3)
+
+- Under the shipped `tier_async_cloud: true` it never does. Only
+  `brain/arrival.py` can end the mission, which is why tiered phone walks
+  end `max_steps` (P7e).
+- Decide this together with 1a.
+
+**1d. ROS liveness misses part of the container dying** (second review,
+M2).
+
+- `ros_up()` is judged only from the plugin's `/wheels` posts.
+- If the bridge dies but the plugin lives, even a person's `/action` is
+  refused `ros_unavailable`.
+- Options: count the bridge's HTTP failures toward `ros_up`, or shut the
+  container down when the bridge exits.
+
 ## 2. Hardware-path code fixes (before the Rover, ideally during 3.33)
+
+**2-pre. G4 cannot pass as written** (second review, H2). It needs, in
+order:
+
+- a brain on :8001 with `ROUTE_PREFIX=/brain`;
+- `SIM_MAP=scaled_house` in pytest's own environment;
+- the container started only after `GET /wheels` is usable;
+- the container named `picar-ros`.
+
+Platform ENG now has the full command set. **`tools/jetson/README.md` §4
+needs the same; it is owned by the 3.33 session.**
 
 **2a. The wheel plugin's start-up race (fix 4).**
 
@@ -186,6 +231,23 @@ bridge, as `tests/test_ros_drive.py` does), or change body ARCH to say
   - the `AGENT-HARNESS.md` §12-vs-§10 citations;
   - `service/vision_analyze/vision_core.py:69`.
 
+- **4h. `control/target_probe.py:65-69` reads its "peak" from
+  `r.best`,** which is set only on DETECTED (P >= 0.8). So "0.000 = inert
+  prompt" is wrong, and `--gate` below 0.8 does nothing. Compute the peak
+  over `max(c.probability for c in r.candidates)`, then fix `CLAUDE.md`'s
+  description of the probe (second review, M5).
+- **4i. `service/lambda/build.sh` prints a deploy command that expands
+  `$VISION_SHARED_SECRET` and `$WALKS_SHARED_SECRET`,** but the secrets
+  files define `VISION_SECRET` and `WALKS_SECRET`. Pasted as printed, it
+  deploys with **no auth**. Make the script refuse to print the command
+  when either is empty (M4). Operations ENG now gives the export lines.
+- **4j. The host never clamps wheel commands to the board's ±2.0 m/s
+  window.** The board drops an out-of-range `T:1` and keeps running the
+  old setpoint, while the command still feeds the heartbeat
+  (`robot/hardware_robot.py:330-336`).
+- **4k. `brain/arrival.py:6-9`'s docstring is stale** (see 1c), and so is
+  `world/factory.py:14-22`'s docstring.
+
 ## 5. To investigate
 
 **5a. `python -m tests.demo_active_search` ends NOT FOUND after 150
@@ -194,8 +256,12 @@ steps.**
 - Of 132 `Blocked` lines, nearly all are LEFT turns clamped by the pivot
   guard (3.19), and the stuck-breaker never fires.
 - It predates today: the result is the same with fix 3 reverted.
-- First question: when did it stop finding the backpack? A `git bisect`
-  over 3.19 to 3.32 should answer it.
+- **Probable cause** (second review, UNCONFIRMED): two clearance
+  definitions disagree. The left ray clears `side_clearance_cm + 1`, but
+  the pivot guard refuses the swept corner. A refused LEFT is not
+  "executed", so the next `decide()` re-peeks and picks LEFT forever, and
+  neither the boxed-in fallback nor the stuck-breaker fires
+  (`brain/agent.py:356-411`).
 - Recorded in `docs/engineering/policy/ENGINEERING.md`, Known gaps.
 
 **5b.** `tests/demo_hold_bearing_ab.py` still builds the starter house,

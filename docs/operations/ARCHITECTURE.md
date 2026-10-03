@@ -63,7 +63,7 @@ record to compare across releases.
 | Health verdict | One answer for both halves, with an exit code | Only conditions a release can be blamed for may change it |
 | Build identity | Which build is running, from where, logged first and published on health | Lives on the robot side of the code, because both servers report it and the robot server may never depend on the brain's code |
 | Mission metrics | One summary row per mission, shipped at the end and stored with the walks | The shipper can never fail a mission |
-| Boot-time deployment (B5, planned) | Starting the ROS container, robot server and brain on the car at boot | Nothing it restarts may move the robot on its own |
+| Boot-time deployment (B5, planned) | Starting the robot server, brain and ROS container on the car at boot, the container last | Nothing it restarts may move the robot on its own |
 
 The recordings domain owns the walk store, the walk console and the
 evaluation tools (docs/recordings/ARCHITECTURE.md). This domain owns where
@@ -91,15 +91,8 @@ system for walks) moved to object storage first.
 **Trade-off.** Cold starts are paid per warm period, small next to a 1-3 s
 vision call. A replay would have to finish within one function invocation
 instead of being a proper job. Every public route must be declared in two
-routing tables, the CDN's and the gateway's.
-
-**Deployed replay is disabled as templated.** The walks function is given
-no vision service address and no vision secret, so a replay asked of the
-deployed console is refused (no vision service configured). Even with an
-address alone it would send the walks secret to the vision service and be
-refused on every frame. This is read from the template, UNCONFIRMED
-against the live stack. A walks service run locally with both set can
-still replay. Enabling it in the cloud is an open question below.
+routing tables, the CDN's and the gateway's. Whether replay runs in the
+deployed stack at all is an open question below.
 
 ### The gateway invokes functions with an assumed role
 
@@ -193,17 +186,20 @@ Averaging percentiles across runs, which flatters.
 **Trade-off.** A metrics outage loses rows silently, apart from a log line.
 That is accepted: a robot that stopped because a dashboard was down would be
 worse. Sharing the walk bucket also means every reader of walks must tell a
-metrics record from a walk. Today the walk listing does not, so metrics
-records appear as empty walks. Operations owns that fix, because its
-storage layout causes it; the recordings domain owns the list filter the
-fix lands in.
+metrics record from a walk. Operations owns the storage layout that makes
+the two distinguishable; the recordings domain implements the walk list's
+filter. The current state is in the engineering spec's Known gaps.
 
 ### Boot-time deployment on the car uses the OS service manager (B5, planned)
 
-**Decision.** On the car, the ROS container, the robot server and the brain
-start as separate supervised services, in that order. Secrets and modes
-come from an environment file, not the unit files or the repo
-(`PLAN-brain-relocation.md` B5). Not built.
+**Decision.** On the car, the robot server, the brain and the ROS container
+start as separate supervised services. The robot server starts first, and
+the ROS container only once the robot server reports usable wheels: until
+the wheel plugin's start-up race is fixed
+(`HANDOFF-2026-10-02-spec-review.md` item 2a), a container that comes up
+first can lose its wheels for good (docs/engineering/ros/ENGINEERING.md).
+Secrets and modes come from an environment file, not the unit files or the
+repo (`PLAN-brain-relocation.md` B5). Not built.
 
 **Alternative rejected.** One supervisor process hosting everything, which
 loses the two-process watchdog guarantee.
@@ -229,7 +225,7 @@ move the robot on its own.
 | Failure | Response | Target |
 |---|---|---|
 | A route is added to an app but not to the CDN or the gateway | Route-drift tests compare each app's real routes with the template | No route ships without both entries. This class shipped five times on the old load balancer |
-| A page references a file the publisher does not upload | A test compares the pages' references with the manifest. Today it covers the twin and the walk console, not the metrics dashboard | Every referenced file is published |
+| A page references a file the publisher does not upload | A test compares the pages' references with the manifest | Every referenced file is published |
 | The publisher uploads nothing | It refuses an empty manifest and checks the upload count | Never reports success over an unchanged bucket |
 | A restart leaves old code answering | The restart script compares each server's published revision with the checkout | Never reports success unless both servers run the expected revision |
 | Either half is down, or its guard loop has stopped | Health verdict UNHEALTHY or UNREACHABLE, non-zero exit | A broken release is always visible. A parked robot is never reported unhealthy |
@@ -247,12 +243,12 @@ move the robot on its own.
   needs the board and the Rover.
 - **Cross-origin support on the serverless stack.** It would retire the
   proxy's vision shim. It needs a deploy and the route tests.
-- **Deployed replay, and replay as a job.** Replay is disabled in the
-  deployed stack as templated (see the serverless decision). Enabling it
-  means giving the walks function the vision service's address and its own
-  secret; it would then rely on the function's long timeout, and a job with
-  an id would remove that class of problem. Verify against the live stack
-  first.
+- **Deployed replay, and replay as a job.** Whether the deployed walks
+  function should replay at all, or replay should be local-only. Enabling
+  it would rely on the function's long timeout, and a job with an id would
+  remove that class of problem. Today's state, read from the template, is
+  in the recordings engineering spec's Known gaps
+  (docs/engineering/recordings/ENGINEERING.md).
 - **Map backup to object storage.** Decided by the user (a private,
   versioned prefix per robot), not built (`PLAN-ros-alignment.md` section 6,
   question 6). Operations will own its bucket and permissions.

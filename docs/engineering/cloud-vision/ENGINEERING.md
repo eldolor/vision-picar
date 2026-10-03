@@ -42,7 +42,7 @@ route requires header `x-app-secret`. `GET /health` and
 | Method, path | Request | 200 response | Errors |
 |---|---|---|---|
 | `GET /health` | none | `{"status": "ok"}` (no `env_label`) | none |
-| `POST /analyze` | `image_base64`, `media_type` (default `image/jpeg`) | `obstacles_ahead[]`, `free_space`, `doorway_visible`, `important_objects[]`, `safest_direction`, `room_guess` (from `identify_room`) | 400 bad JSON, missing `image_base64` or bad base64; 401 secret; 413 over 5 MB; 502 model failure. A body that is valid JSON but not an object (a list, a string) raises `TypeError` in `_decode_image()` and is a 500, not a 400. |
+| `POST /analyze` | `image_base64`, `media_type` (default `image/jpeg`) | `obstacles_ahead[]`, `free_space`, `doorway_visible`, `important_objects[]`, `safest_direction`, `room_guess` (from `identify_room`) | 400 bad JSON, missing `image_base64`, or base64 that cannot be decoded at all (decoding is non-strict, and the bytes are never checked to be an image: non-image bytes go to Bedrock and come back 502); 401 secret; 413 over 5 MB; 502 model failure. A body that is valid JSON but not an object (a list, a string) raises `TypeError` in `_decode_image()` and is a 500, not a 400. |
 | `POST /describe` | same as `/analyze` | `summary`, `room_type`, `objects[]` | same as `/analyze` |
 | `GET /navigate/models` | none | `default`, `models[{id,label}]`, `default_prompt`, `prompts[]` (sorted) | none |
 | `POST /navigate` | `image_base64`, `media_type`, `target_object` (required), `searched_rooms[]` (optional; non-strings dropped), `model_id` (optional, must be in the list), `prompt_variant` (optional, must be in the list) | see the schema below | 400 missing target, or `model_id`/`prompt_variant` off the list (checked before any Bedrock call); 401; 413; 502 |
@@ -53,11 +53,11 @@ the model's JSON, then coerced by `_parse_navigate_json()`:
 
 | Field | Values | Coercion |
 |---|---|---|
-| `target_visible` | bool | as returned; NOT type-checked, so a string `"false"` is truthy and satisfies the reached-implies-visible check below |
+| `target_visible` | bool | as returned; NOT type-checked, so a string `"false"` is truthy and satisfies the reached-implies-visible check below. `brain/navigate.py` reads it with `is True`; `web-twin/app.js` reads it by truthiness (Robot view's zone highlight, `const zone = result.target_visible ? ...`). |
 | `target_direction` | `left`, `center`, `right`, `not_visible` | as returned; NOT checked against the vocabulary |
 | `target_reached` | bool | `is True` only. Forced `false` when `target_visible` is false. |
-| `obstacle_ahead` | bool | REMOVED when the variant's template does not ask for it (`variant_asks_obstacle()`) |
-| `room_guess` | string | non-string or empty becomes `unclear` |
+| `obstacle_ahead` | bool | REMOVED when the variant's template does not ask for it (`variant_asks_obstacle()`). Otherwise as returned; NOT type-checked, so a string `"false"` is truthy. `brain/navigate.py` reads it with `is True`; Robot view's obstacle cue (`if (result.obstacle_ahead)`) reads it by truthiness. |
+| `room_guess` | string | non-string, or empty after `strip()`, becomes `unclear`; any other string passes through stripped, so an invented label (`"spaceship"`) reaches the caller as a room |
 | `action` | `FORWARD`, `LEFT`, `RIGHT`, `REVERSE`, `STOP` | anything else becomes `STOP` |
 | `reasoning` | string | |
 | `distance_estimate` | `within_one_step`, `a_few_steps`, `far`, `unknown` | off-list becomes `unknown`; always present |
@@ -76,6 +76,16 @@ Any format outside `gif`, `jpeg`, `png`, `webp` (in practice iPhone HEIC)
 is transcoded to JPEG with Pillow and `pillow_heif` before the call
 (`_convert_to_jpeg()`). This is how the architecture spec's "converted to
 an accepted format" is met today.
+
+**What is not validated before the model call.** `_decode_image()` only
+base64-decodes, with `base64.b64decode()`'s default non-strict mode (it
+discards characters outside the alphabet rather than refusing them), and
+checks the size. It never opens the bytes as an image. So a body whose
+base64 decodes to something that is not an image, or that does not match
+its `media_type`, goes to Bedrock and comes back as a 502 ("Vision ...
+failed: ... ValidationException ..."). A HEIC that Pillow cannot open
+fails inside `_convert_to_jpeg()`, also as a 502. Only a base64 string
+that cannot be decoded at all is a 400.
 
 **CORS.** `allow_origins` comes from `ALLOWED_ORIGINS`, defaulting to
 `http://localhost:5173` and `http://localhost:8000`. Methods are `POST`
@@ -98,7 +108,7 @@ API Gateway answer 403).
 | `BEDROCK_MODEL_ID` (`MODEL_ID`) | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | id | `vision_core.py` | Base model for `/describe`, and the fallback for `/analyze`. `claude-sonnet-5` returned AccessDenied on Bedrock for this account. |
 | `BEDROCK_ANALYZE_MODEL_ID` | `MODEL_ID` | id | `vision_core.py` | `/analyze` stays on the conservative default |
 | `BEDROCK_NAVIGATE_MODEL_ID` (`NAVIGATE_MODEL_ID`) | `us.anthropic.claude-opus-4-5-20251101-v1:0` (Claude Opus 4.5, today's default) | id | `vision_core.py`; set by the template's `NavigateModelId` (same default) | Chosen by replay, as the architecture spec requires: all 22 frames of `red-backpack-20260829-195904` through every invokable model. Opus 4.5 made forward progress on 10/22, stayed aware of obstacles, and was the only model to refuse a red blanket as the target. Keep the code and the template in step. |
-| `BEDROCK_GUIDANCE_MODEL_ID` | `amazon.nova-lite-v1:0` | id | `vision_core.py` | Measured at about 3x faster than Sonnet with matching accuracy for steering a person |
+| `BEDROCK_GUIDANCE_MODEL_ID` | `amazon.nova-lite-v1:0` | id | `vision_core.py` | Cheaper than Sonnet for steering a person. `vision_core.py`'s header says it was "measured (real Bedrock calls, real photo) at ~3x Sonnet's latency with matching accuracy", but no numbers, frames or date are recorded anywhere in the repo, and "3x Sonnet's latency" literally says slower: UNCONFIRMED on both speed and accuracy. Never replayed. |
 | `BEDROCK_NAVIGATE_MODEL_CHOICES` | the 7 below | comma list | `_load_navigate_model_choices()` | Overrides the allow-list without a code change. Labels then equal the ids. |
 | `BEDROCK_MODEL_REGIONS` | `us.anthropic.claude-fable-5-1` and `global.anthropic.claude-fable-5-1` to `us-east-1` | `model=region` list | `_load_model_regions()` | Fable 5.1 was refused from us-east-2 and us-west-2 ("data retention mode 'default' is not available", 2026-09-21). An empty string drops every pin. |
 | `NAVIGATE_PROMPT_VARIANT` (`DEFAULT_PROMPT_VARIANT`) | `default` | name | `vision_core.py` | One shipped wording (decided 2026-09-03) |
@@ -162,12 +172,27 @@ The twin's Settings default the vision URL to port 8080 on localhost.
 **Port 8080 is shared with the tunnel proxy.** `service/tunnel/run.sh`
 starts its proxy on 127.0.0.1:8080 (operations owns that layout), so the
 local vision service and the tunnel stack cannot both use it. While the
-tunnel stack is up, either use the deployed vision service (the twin's
-vision URL = the site) or start this service on another port, for example
-`--port 8085`, and set the twin's vision URL (or the walks service's
-`VISION_URL`) to match. Symptom of the collision: uvicorn exits with
-`address already in use`, or, if the proxy won, `/navigate` answers 404
-from the robot server behind it.
+tunnel stack is up, the twin's vision URL depends on where the page was
+loaded from:
+
+| Page served from | Vision URL |
+|---|---|
+| CloudFront (the deployed site) | the site itself (same origin) |
+| the tunnel's public domain (ngrok) | `https://<domain>/vision` |
+| the laptop, through the proxy or the robot server | `http://127.0.0.1:8080/vision` |
+
+`service/tunnel/proxy.py` forwards `/vision/*` to the DEPLOYED vision
+service (`PROXY_VISION_URL`) and answers the preflight itself, because the
+serverless stack answers no `OPTIONS` and sends no CORS headers; pointing
+a tunnel-served page straight at the site fails as "Load failed". The
+bare `:8080` (no `/vision`) is the robot server behind the proxy, and
+`/navigate` there answers 404.
+
+To use a LOCAL vision service while the tunnel is up, start it on
+another port, for example `--port 8085`, and set the twin's vision URL
+(or the walks service's `VISION_URL`) to match. Symptom of the collision:
+uvicorn exits with `address already in use`, or, if the proxy won,
+`/navigate` answers 404 from the robot server behind it.
 
 **Build and deploy the function.** The canonical procedure, including the
 region, both secrets and the expected output, is "Deploy the functions" in
@@ -192,11 +217,42 @@ in Failure signatures below.
 **Add a model to the allow-list.**
 
 1. Make one real Converse call with a real walk frame, from the DEPLOYED
-   region (not the laptop's ambient region). Confirm the reply parses
-   inside 300 tokens. Expected: a JSON object with `action`,
-   `target_visible` and `reasoning`; `ValidationException` or
-   `AccessDeniedException` means the model is not usable from that region
-   (Failure signatures).
+   region (`us-east-2`, not the laptop's ambient region). Confirm the reply
+   parses inside 300 tokens. The most faithful call is the service's own
+   `/navigate`, run locally against Bedrock with the candidate as the only
+   allowed model, so the real prompt, parser and token cap are used (a real
+   call costs money; stop the tunnel stack first, or pick another port):
+
+   ```bash
+   cd service/vision_analyze && AWS_REGION=us-east-2 \
+     BEDROCK_NAVIGATE_MODEL_CHOICES=<new id> uvicorn app:app --port 8085 &
+   sleep 3   # until uvicorn logs "Application startup complete"
+   python -c 'import base64,json,sys; print(json.dumps({"image_base64": base64.b64encode(open(sys.argv[1],"rb").read()).decode(), "media_type":"image/jpeg", "target_object":"blue bottle", "model_id":sys.argv[2]}))' \
+     recordings/blue-bottle-20260907-142454/frame-0010.jpg '<new id>' \
+     | curl -s localhost:8085/navigate -H 'content-type: application/json' -d @- | python -m json.tool
+   kill %1
+   ```
+
+   Expected: a 200 whose JSON has `action` in the vocabulary,
+   `target_visible`, `reasoning`, `model_id` equal to the new id, a
+   `usage.output_tokens` below 300, and NO `_raw` key (`_raw` means the
+   reply did not parse as JSON). A 502 whose detail carries
+   `ValidationException` or `AccessDeniedException` means the model is not
+   usable from that region (Failure signatures). The bare Bedrock call,
+   without the service, has this shape (AWS CLI v2 takes the image bytes
+   as base64 inside the JSON):
+
+   ```bash
+   B64=$(base64 < recordings/blue-bottle-20260907-142454/frame-0010.jpg | tr -d '\n')
+   printf '[{"role":"user","content":[{"image":{"format":"jpeg","source":{"bytes":"%s"}}},{"text":"Is a blue bottle visible? Reply with ONLY JSON: {\\"action\\": \\"FORWARD|LEFT|RIGHT|REVERSE|STOP\\", \\"target_visible\\": true|false, \\"reasoning\\": \\"...\\"}"}]}]' "$B64" > /tmp/converse-msg.json
+   aws bedrock-runtime converse --region us-east-2 --model-id '<new id>' \
+     --messages file:///tmp/converse-msg.json --inference-config maxTokens=300 \
+     --query '{text: output.message.content[0].text, stop: stopReason, usage: usage}'
+   ```
+
+   Expected: `stop` is `end_turn` (not `max_tokens`) and `text` is a JSON
+   object. This proves the model answers from the region; only the
+   `/navigate` call above proves the service's prompt parses.
 2. Add the model to `_DEFAULT_NAVIGATE_MODEL_CHOICES` labelled
    "unmeasured".
 3. If the model only answers elsewhere, add a `_DEFAULT_MODEL_REGIONS`
@@ -215,7 +271,24 @@ either place means the env var (the template parameter) still wins.
 
 **Mirror a prompt or room change.** Any change to `brain/vision.py`'s
 schema or to `brain/rooms.py` is copied into `vision_core.py` /
-`rooms_core.py` by hand.
+`rooms_core.py` by hand. Then check the copies from the repo root:
+
+```bash
+diff <(sed -n '/^ROOM_FEATURES/,/^}/p' brain/rooms.py) \
+     <(sed -n '/^ROOM_FEATURES/,/^}/p' service/vision_analyze/rooms_core.py) && echo ROOM_FEATURES match
+diff <(sed -n '/^def identify_room/,$p' brain/rooms.py) \
+     <(sed -n '/^def identify_room/,$p' service/vision_analyze/rooms_core.py)
+diff <(sed -n '/^SCENE_PROMPT = /,/"""$/p' brain/vision.py) \
+     <(sed -n '/^SCENE_PROMPT = /,/"""$/p' service/vision_analyze/vision_core.py)
+```
+
+Expected as of 2026-10-02: the first prints `ROOM_FEATURES match`; the
+second differs only by `identify_room()`'s docstring (seven `<` lines,
+present in `brain/rooms.py` and absent from the copy); the third differs
+in exactly two hunks, the opening framing (lines 1-2) and the
+object-naming question (line 6), which is the known drift in Known gaps,
+and NOT in the JSON schema lines. Any other difference is an unmirrored
+change.
 
 **Failure signatures.**
 
@@ -267,11 +340,23 @@ template parameter agree; a live reply echoes the expected `model_id` and
   `boto3`/`botocore` (about 10 MB) instead of the runtime's. Harmless
   today; the comment in `requirements-vision.txt` and the test name
   `test_boto3_is_not_bundled` overstate what is checked.
-- **Two `/navigate` fields are not coerced.** `target_direction` passes
-  through off-vocabulary values, and `target_visible` is not type-checked,
-  so `"false"` is truthy and satisfies the reached-implies-visible guard
-  in `_parse_navigate_json()`. The architecture spec records this as an
-  open question (coerce in the service, or in every caller).
+- **Three `/navigate` fields are not coerced, and a fourth only
+  partly.** `target_direction` passes through off-vocabulary values.
+  `target_visible` and `obstacle_ahead` are not type-checked, so a string
+  `"false"` is truthy; for `target_visible` it also satisfies the
+  reached-implies-visible guard in `_parse_navigate_json()`. `room_guess`
+  falls back to `unclear` only when non-string or empty, so any invented
+  label passes. `brain/navigate.py` protects itself (`is True` on all
+  three flags); the twin does not (`web-twin/app.js` tests
+  `result.target_visible` and `result.obstacle_ahead` by truthiness in
+  Robot view, and `/guidance`'s `target_visible`, also unchecked by
+  `_parse_guidance_json()`, by truthiness in Guide me's
+  `isGuidanceFound()`). The architecture spec records this as an open
+  question (coerce in the service, or in every caller).
+- **Non-image bytes reach Bedrock.** The route layer base64-decodes
+  non-strictly and never opens the image, so a bad upload costs a call
+  attempt and comes back 502, not 400 (Interfaces, "What is not validated
+  before the model call").
 - **A non-object JSON request body is a 500,** not a 400
   (`_decode_image()` catches `KeyError` and `ValueError` only).
 - **The two scene prompts differ.** `brain/vision.py`'s `SCENE_PROMPT`

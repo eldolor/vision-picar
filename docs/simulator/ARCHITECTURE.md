@@ -72,7 +72,7 @@ backend run with no board also needs a sim body to turn.
 | The simulated body | Turning wheel commands into motion, the discrete verbs as wrappers over that one path, and every sensor reading | Bypass the safety layer for a guarded verb, or report what the body achieved as what it was commanded |
 | Sensor noise model | Opt-in noise, dropout and range limits on distance readings | Be on by default |
 | Movers | People and pets as solid objects that walk a closed path on the sim clock | Ever move closer to the robot than the keep-out allows |
-| Map library | The named houses and their mover scenarios | Be chosen anywhere but the backend factory |
+| Map library | The named houses and their mover scenarios | Be chosen by decision code. The backend factory picks the house a body stands in; judges (sweeps and live suites) pick their own |
 
 Three boundaries carry the weight:
 
@@ -208,13 +208,11 @@ the user's own first floor (from the appraisal sketch) are added beside it.
 **Alternative rejected.** Rescaling the starter house, which would have
 re-tuned every test written against it.
 
-**Trade-off.** Results must name their house. The UGV Rover's body does
-fit every room of the starter house (3 of 3, `PLAN-ros-alignment.md` 3.21),
-but its doors leave only a few centimetres a side. That is too little
-margin for two things: nav2's costmap seals a door whenever SLAM draws a
-jamb thick, and a guarded verb is refused on about half a degree of heading
-error. So nav2, the R1 sweeps and the live ROS chain suite are judged in
-the scaled house.
+**Trade-off.** Results must name their house. nav2, the R1 sweeps and the
+live ROS chain suite are judged in the scaled house, because the starter
+house's doors leave the UGV Rover too little margin
+(`PLAN-ros-alignment.md` 3.21, 3.24; the numbers are in the engineering
+spec).
 
 ### The renderer is Python, and it is the vision policy's real input (S2)
 

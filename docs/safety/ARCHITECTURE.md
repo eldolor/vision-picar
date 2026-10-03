@@ -70,10 +70,11 @@ heartbeat ([motor-board](../motor-board/ARCHITECTURE.md)).
 Every motion, from any driver and through any route, passes the vet on the
 robot. That covers verbs, standing wheel commands, and the ROS chain's wheel
 posts. A person on the D-pad gets the same collision protection as an AI
-decision. **One exception today:** a standing wheel command on a body that
-cannot yet report its own wheels (a real motor board before its first
-feedback) passes unvetted. That is a gap, not a decision (see Open
-questions). **Rejected:** trusting the brain's own check. The brain keeps one
+decision. **Two exceptions today, in one window:** on a body that cannot
+yet report its own wheels (a real motor board before its first feedback),
+a standing wheel command passes unvetted, and a reverse verb runs unguarded
+astern, because until the wheels report the layer cannot tell that the body
+really moves. That is a gap, not a decision (see Open questions). **Rejected:** trusting the brain's own check. The brain keeps one
 as an early out, but the robot's check is authoritative, and both must be
 able to veto. **Rejected:** relying on ROS's `collision_monitor` on the
 navigation path. The two collars run in series with this layer last,
@@ -183,6 +184,10 @@ Ranks are by role, not by client. The five rules, each chosen because its
 opposite is a real failure (`AGENT-HARNESS.md` 4.1):
 
 1. **Stop is never arbitrated.** Anyone may stop the robot at any time.
+   A stop zeroes the wheels. **Today it pauses an active navigation goal
+   rather than ending it**: the planner keeps commanding, and the wheels
+   resume shortly after the stop. Whether a stop must end a goal is
+   undecided (see Open questions).
 2. **Stop claims nothing.** Otherwise the loser of an arbitration takes the
    robot back by giving up.
 3. **People share; autonomy is exclusive.** Two taps of a person pass. At
@@ -226,8 +231,10 @@ that is alive but stuck.
 Under ROS drive, the robot server judges ROS alive from the actuator's own
 regular wheel posts. **Rejected:** asking the container whether it is
 healthy. The container can answer while the chain behind it no longer
-reaches the wheels; the actuator's posts are the one signal that the whole
-chain is working. While ROS is down, a person's verbs run through the
+reaches the wheels. The actuator's posts prove the end of the chain is
+alive, but not every part before it: if another part of the container dies
+while the actuator keeps posting, ROS still reads as alive (see Failure
+modes and Open questions). While ROS is down, a person's verbs run through the
 direct path, which uses the same vet, re-checked every period. Every
 autonomous command is refused with a reason that ends the mission. Recovery
 needs no restart (decided by the user, `PLAN-ros-alignment.md` 3.24 G3).
@@ -264,12 +271,14 @@ are commitments, not tuning.
 | A pivot near furniture | A closing turn is slowed or stopped. A turn away proceeds | No corner within **1.0 cm**. At least 95% of turns with room complete (3.19) |
 | Camera panned away, no scan | Forward refused (path not observed) | A panned camera never stops the robot later than a centred one (3.18) |
 | Nothing sees astern, on a body that moves | Every reverse refused; turns allowed | The robot never backs into what it cannot see |
-| Sensor dropout | The zone is dropped from the comparison. A blind scalar fails to stop | Never read as clear |
+| Sensor dropout | The zone or beam is dropped from the comparison. A scalar sensor that drops out reads zero, which vetoes: it fails toward stop | Never read as clear |
 | Link to the driver lost, or the caller crashes mid-command | The watchdog stops the motors. Under ROS drive, a silent ROS input is dropped sooner by the ROS chain's own input timeout ([ros](../ros/ARCHITECTURE.md)); the watchdog is the backstop for a silent actuator | Motors stop within one watchdog period of the last command, plus at most the watchdog's own wake-up interval |
 | Brain alive but stuck, or the model service down | Brain-side failsafes end the mission ([mission](../mission/ARCHITECTURE.md)) | The robot stopped and the mission `failed` |
 | A person takes over from a mission | The mission is refused `preempted` and ends | The person's command executes. The mission never retries |
 | Two autonomous drivers at once | The second is refused | One autonomous writer at a time |
 | ROS container dies under ROS drive | Autonomy refused. A person drives on the direct path | The mission ends within **3 s**. A person drives within **2 s**. ROS is back without a restart (3.24 G3) |
+| Part of the container dies while the actuator lives (the bridge, or the velocity multiplexer or controller), under ROS drive. **UNCONFIRMED** (read, not run) | ROS still reads as alive, because liveness is judged only from the actuator's posts. With the bridge gone, every verb, a person's included, is refused as ROS-unavailable. With the multiplexer or controller gone, a verb achieves nothing and comes back as a safety refusal | **Not met.** The target is the dead container's: a person can drive and autonomy is refused. Fix undecided (Open questions) |
+| A stop while a navigation goal is active | The wheels stop, then resume: the goal is paused, not ended | **Not met** if a stop must end a goal. Undecided (Open questions) |
 | The robot server process dies | The board's heartbeat stops the motors | Motors stop without the host |
 | A person or pet crosses the path | Same vet, same bars | The static-obstacle bars above hold with something moving (3.30) |
 
@@ -286,12 +295,24 @@ are commitments, not tuning.
   brain and ROS. A bare unnamed command, and both teleop drivers, are refused
   under ROS drive (`docs-review/REPORT.md` V10). Decide whether the bridge
   learns them or the server maps them.
-- **Standing commands before a body can report its wheels.** The wheel vet
-  passes a command through unvetted when the body's wheel state is not yet
-  usable (`robot/safety.py:665`); a real motor board is in that state until
-  its first feedback (`robot/hardware_robot.py:349`). In the same window the
-  blind-reverse rule cannot tell the body moves. Refuse instead, or accept
-  and record (`docs-review/SPEC-REVIEW.md` fix-list 6). Owner: the user.
+- **Motion before a body can report its wheels.** Until a real motor board
+  sends its first feedback, a standing command passes unvetted and a
+  reverse verb runs unguarded, because the blind-reverse rule cannot tell
+  the body moves. Refuse instead, or accept and record
+  (`docs-review/SPEC-REVIEW.md` fix-list 6). Owner: the user. Where in the
+  code: the [engineering spec](../engineering/safety/ENGINEERING.md),
+  Known gaps.
+- **Does a stop end a navigation goal?** Today it does not (Failure modes).
+  This domain owns the rule, because "stop" is the top of the authority
+  order; [ros](../ros/ARCHITECTURE.md) and the twin link here. Proposed:
+  a stop also cancels any active goal, on a background thread after the
+  wheels are zeroed, so the stop never waits on the bridge. Owner: the
+  user (`docs-review/SPEC-REVIEW-2.md` H1). Mechanism: the
+  [engineering spec](../engineering/safety/ENGINEERING.md), Known gaps.
+- **Liveness from part of the ROS chain.** ROS is judged alive from the
+  actuator's posts alone (Failure modes). Proposed: count the bridge's own
+  side toward liveness, or have the container exit when its bridge does.
+  Owner: the user (`docs-review/SPEC-REVIEW-2.md` M2).
 - **G4 on the Jetson.** Safety-loop timing under full perception load
   (`PLAN-ros-alignment.md` 3.33) is unmeasured. Zero late safety ticks is
   the written bar.

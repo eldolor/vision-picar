@@ -113,11 +113,15 @@ reads it and refuses to start without it).
 `usable: true`, then start the container.** The plugin's `on_activate()`
 reads `/wheels` once, and a `usable: false` answer is a hardware error that
 makes ros2_control deactivate the plugin for good (until the container
-restarts). An *unreachable* server is retried, so a container started before
-the server is fine; one started while the server answers "no wheels" is not.
-`MockRobot` has wheels at once; `HardwareRobot` (the car, or
-`SIM_MOTOR_BOARD=fake`) answers `usable: false` until the board's first
-`T:1001` frame, so there the wait is real (step 2b below).
+restarts). An *unreachable* server is retried, and `MockRobot` has wheels at
+its first answer, so in the simulator a container started before the server
+is fine. `HardwareRobot` (the car, or `SIM_MOTOR_BOARD=fake`) answers
+`usable: false` until the board's first `T:1001` frame, so a container that
+is already retrying when it starts can read "no wheels" first and be
+deactivated: there, start the container only after step 2b, never before
+the server. **The same holds for a restart:** on `HardwareRobot`, restart
+the container after any robot server restart (UNCONFIRMED, by reading
+`picar_sim_hardware.cpp`'s `read()`).
 
 ```bash
 # 1. Build (long the first time: tf2 and slam_toolbox compile from source)
@@ -211,10 +215,12 @@ From the host:
 curl -s localhost:8090/health | python -m json.tool   # no secret needed
 ```
 
-Healthy: `"ok": true`, `odom_age_s` and `scan_age_s` under ~0.2,
-`scans_published` climbing, `brain_error` null (or the brain view off).
-`odom_age_s: null` means the controllers never came up; `scan_age_s: null`
-means the bridge cannot read the robot server's `/scan`.
+Healthy: the bridge answers at all (its `ok` is always `true`, so it is not
+a signal), `odom_age_s` and `scan_age_s` under ~0.2, `scans_published`
+climbing, `brain_error` null (or the brain view off), and the robot
+server's `/health` shows `drive.ros_up: true`. `odom_age_s: null` means the
+controllers never came up; `scan_age_s: null` means the bridge cannot read
+the robot server's `/scan`.
 
 Inside the container (`docker exec` bypasses the entrypoint, so go through
 it to get the ROS environment):
@@ -243,12 +249,17 @@ visible, including the brain's; nothing can be published.
 | You see | It means |
 |---|---|
 | Container log: `POST /wheels to ... failed (N in a row) -- still trying` | The robot server is down, unreachable (Linux without host networking), or rejecting the secret (401) -- check `APP_SHARED_SECRET` was exported before `docker run`. The wheels are stopped meanwhile by the robot server's watchdog. |
-| Container log: `the robot server reports no wheels (usable: false)` | `GET /wheels` answered `usable: false`. `/wheels` answers in either drive mode and `MockRobot` always has wheels, so this is NOT a sign of `drive: direct` (check `drive.mode` in the robot server's `/health` for that). The real causes: a body with no wheels (teleop or replay), or `HardwareRobot` before the board's first `T:1001` frame -- the container was started too early (see "Order matters" in section 3). Either way the plugin is now deactivated for good: fix the cause, then `docker rm -f picar-ros` and run step 3 again. |
+| Container log: `the robot server reports no wheels (usable: false)` | `GET /wheels` answered `usable: false`. `/wheels` answers in either drive mode and `MockRobot` always has wheels, so this is NOT a sign of `drive: direct` (check `drive.mode` in the robot server's `/health` for that). The real causes: a body with no wheels (teleop or replay), or `HardwareRobot` before the board's first `T:1001` frame -- the container was started too early, or the robot server restarted under it (see "Order matters" in section 3). Either way the plugin is now deactivated for good: fix the cause, then `docker rm -f picar-ros` and run step 3 again. The two timings look different; next two rows. |
+| `odom_age_s: null` from the start; `ros2 control list_hardware_components` does not show `picar` active; the robot server's `drive.ros_up` never turns true | Deactivated at START-UP: `on_activate()` read "no wheels", so the controllers never came up. |
+| Controllers read `active` in `list_controllers`, but nothing moves; the robot server's `drive.ros_up` turns `false` while the container is up (the plugin's posts have stopped), so autonomy is refused `ros_unavailable` | Deactivated MID-RUN: a `read()` returned ERROR (typically a robot server restarted on `HardwareRobot`). Only a container restart recovers it. UNCONFIRMED, by reading. |
+| The robot moves again a fraction of a second after Stop, during a nav2 goal | Expected today: a stop pauses a goal and does not cancel it (`docs/ros/ARCHITECTURE.md` D6; the rule is undecided). Cancel with `DELETE /world/goal`, or a non-zero D-pad move under `drive: ros`. |
 | Robot server refuses `/action` with reason `ros_unavailable` | `drive: ros` and the bridge did not accept the twist. Usually the container is not up -- but ALSO what you get when the `/action` had no `x-driver` header or came from a teleop driver: the bridge maps only `twin-dpad`, `brain` and `ros` onto twist_mux inputs, answers 400 `unknown driver`, and the robot server reports that as unreachable (by code reading; a known gap). Check `curl localhost:8090/health` first. |
 | nav2 log: `Transform data too old` and the robot never moves | `map -> odom` is stale: the image was built without the pinned slam_toolbox (`restamp_tf`). Rebuild. |
 | nav2 "reaches" every goal in ~0.08 s | TF listeners frozen -- the tf2 deadlock, or Fast DDS instead of Cyclone. Check `echo $RMW_IMPLEMENTATION` in the container and that the image built tf2 from source. |
 | Goals abort "off the global costmap" | nav2 cannot plan into a room SLAM has never seen. Map first: `python -m tests.demo_slam_lap`, then goals. |
 | `/diagnostics` shows the brain STALE | `BRAIN_URL` prefix mismatch (section 3) or the brain is down. |
+| The robot server's `/world/pose` reads `usable: false` under `WORLD_MODE=ros` | The bridge is unreachable, or there is no `map -> base_footprint` transform yet. Check `curl localhost:8090/health`. |
+| The twin's SLAM error readout shows "0.0 cm" after driving | The world's anchor fell back to `first_contact`: the bridge has no `start_truth`. Either the image predates `start_truth` (rebuild it), or the bridge's one read of `/world/truth` failed. It reads the truth once, right after its first successful scan poll, and never retries (`_record_start_truth()` in `bridge.py`); if that read raises or answers `usable: false`, it stays null for the container's life. Restart the container. |
 
 ---
 

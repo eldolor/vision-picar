@@ -23,7 +23,9 @@ and not delivered. Every item below is tagged:
 - **[V]** verified against a primary source (a datasheet, a devkit spec, or
   the vendor's own written answer), but not measured by us;
 - **[I]** inferred or estimated (a worked budget, an assumption from
-  geometry); treat it as a planning number only.
+  geometry); treat it as a planning number only;
+- **[U]** unverified: reported by a third-party search and not re-checked
+  (`JETSON-BOM.md` marks these the same way).
 
 The chassis geometry table also carries the robot description's own tags:
 **[BOM]** (a product-page or firmware value), **[CAD]** (Waveshare's
@@ -39,7 +41,7 @@ specified by the motor-board domain (docs/engineering/motor-board/ENGINEERING.md
 | Item | Part | Status | Source of record |
 |---|---|---|---|
 | Compute | NVIDIA Jetson Orin Nano Super Developer Kit, 945-13766-0000-000, $399 (Amazon, ordered 2026-09-27) | [in hand] since 2026-09-30, return window to about Oct 30 | `JETSON-BOM.md` section 1, `CLAUDE.md` section 3b |
-| Chassis kit | Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce, SKU 29227, ~$730 delivered (Amazon) | [planned] ordered 2026-09-30, expected Oct 19 - Nov 11, 30-day return. Bought on Amazon rather than from Waveshare direct, whose returns ship to China within 15 days: too short for the on-arrival checks | `JETSON-BOM.md` 9.1, 9.7 |
+| Chassis kit | Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce, SKU 29227, ~$730 delivered (Amazon) | [planned] ordered 2026-09-30, expected Oct 19 - Nov 11, 30-day return. Bought on Amazon rather than from Waveshare direct, whose returns were reported as 15 days, shipped to China [U] (`JETSON-BOM.md` 9.7, a search not re-checked): too short for the on-arrival checks | `JETSON-BOM.md` 9.1, 9.7 |
 | Motor board | Waveshare "ROS Driver for Robots" (ESP32, closed loop), firmware `ugv_base_ros` | [planned] with the kit | `JETSON-BOM.md` 9.3, motor-board domain |
 | Lidar | D500 (LDROBOT STL-19P), 360 degrees, 12 m, 10 Hz | [planned] with the kit | `PLAN-ros-alignment.md` 3.21 |
 | Depth camera | Luxonis OAK-D Lite (passive stereo) | [planned] with the kit; which sensors ship is an arrival check | 3.21, 3.26 |
@@ -70,8 +72,8 @@ Physical and host-side interfaces. Device names are expected, not seen.
 | Jetson power input | Barrel 5.5 x 2.5 mm, 9-20 V | [V] devkit spec |
 | Rover supply to Jetson | DC5525 lead from the kit's UPS board | [unmeasured] |
 | Motor board serial | Which device, how it is named (a udev symlink, never enumeration order) and `ROBOT_SERIAL` are owned by the motor-board spec (docs/engineering/motor-board/ENGINEERING.md). Which route the kit wires is an arrival check | [planned] |
-| Lidar serial | LD19 protocol at 230400 baud on `/dev/ttyACM0`, read by the robot process | [planned]; protocol inferred from `ldlidar` |
-| Serial permissions | Service user in `dialout`; a udev rule for a stable name (motor-board spec; B5 in operations) | [planned] |
+| Lidar serial | LD19 protocol at 230400 baud, read by the robot process. Opened by a udev symlink (name to be chosen), never by enumeration order such as `ttyACM0`, the same rule as the motor board's | [planned]; protocol inferred from `ldlidar` |
+| Serial permissions | Service user in `dialout`; udev rules for stable names (the motor board's in motor-board ENG §Procedures, docs/engineering/motor-board/ENGINEERING.md; B5 in operations) | [planned] |
 | SSH | `Host picar-jetson` -> `picar@picar-jetson.local`, key `~/.ssh/id_ed25519_jetson` | [built] on the Mac |
 | Code delivery | The Mac pushes over SSH to a non-bare repo on the board (`receive.denyCurrentBranch updateInstead`, a `jetson` remote on the Mac). No GitHub credentials on the robot. One-time setup and the push command: `tools/jetson/README.md` section 2 | [planned] |
 | Power mode | `sudo nvpmodel -q` / `sudo nvpmodel -m <id>`; ids from `/etc/nvpmodel.conf` | [planned] |
@@ -94,24 +96,36 @@ the budget).
 **Chassis and mounting geometry** (`base_link` at the rotation centre,
 0.040 m above the floor; x forward). **This table is the canonical home of
 the chassis' physical constants.** Other specs (body, motor-board, ros,
-simulator, safety, policy) link here rather than restating values; the
-safety spec owns the margins the chassis is vetted with. The copies in
-code are held equal by `tests/test_urdf.py`, `tests/test_cad_geometry.py`
-and `tests/test_wall_linters.py`.
+simulator, safety, policy) link here rather than restate values; the
+safety spec owns the margins the chassis is vetted with.
+
+**Where the copies live in code, and what holds each one equal:**
+
+| Fact | Copies | Pinned by |
+|---|---|---|
+| Wheel radius | xacro `wheel_radius`, `controllers.yaml`, `sim/mock_robot.py` `WHEEL_RADIUS_M`, `robot/hardware_robot.py` `WHEEL_RADIUS_M`, `sim/fake_esp32.py` `MAIN_TYPES[2]` (as the diameter) | `tests/test_wall_linters.py` (all four named files); `tests/test_urdf.py` (xacro, yaml, sim only); `tests/test_ros_driver_board.py` (the fake board's diameter against the sim) |
+| Wheel separation | the same four, plus `MAIN_TYPES[2]`'s track | as above |
+| Encoder pulses per rev | `sim/mock_robot.py` `ENCODER_COUNTS_PER_REV`, `robot/hardware_robot.py` `COUNTS_PER_REV`, `MAIN_TYPES[2]` | `tests/test_ros_driver_board.py` only (criterion 2) |
+| Footprint | `robot/safety.py` `FOOTPRINT_LENGTH_M` / `FOOTPRINT_WIDTH_M` (imported by `sim/grid_world.py`), the xacro body, and three copies in `nav2.yaml`: the local costmap's and the global costmap's `footprint`, and `collision_monitor`'s `FootprintApproach` points | `tests/test_wall_linters.py` |
+| Lidar offset | xacro `laser_x`, `robot/safety.py` `LIDAR_X_M` (the sim's scan origin imports it) | `tests/test_cad_geometry.py`, `tests/test_wall_linters.py` |
+| Lidar range | `sim/mock_robot.py` `LIDAR_RANGE_M`, `slam.yaml` `max_laser_range` | `tests/test_wall_linters.py` |
+
+The two YAML files are `service/slam/src/picar_bringup/config/nav2.yaml`
+and `slam.yaml` beside it.
 
 | Constant | Value | Tag | Where read | Why / source |
 |---|---|---|---|---|
-| `wheel_radius` / `WHEEL_RADIUS_M` | 0.040 m | [BOM] | xacro, `controllers.yaml`, `sim/mock_robot.py`, `robot/hardware_robot.py` | 80 mm tyres; firmware mainType 2 `WHEEL_D`. One number (`tests/test_urdf.py`) |
-| `wheel_separation` / `TRACK_WIDTH_M` | 0.172 m | [BOM] | same four | Firmware `TRACK_WIDTH`. CAD's wheel centres are 0.1745 m apart (1.5%); the effective skid-steer track is measured on the car |
+| `wheel_radius` / `WHEEL_RADIUS_M` | 0.040 m | [BOM] | xacro, `controllers.yaml`, `sim/mock_robot.py`, `robot/hardware_robot.py`, `sim/fake_esp32.py` (diameter) | 80 mm tyres; firmware mainType 2 `WHEEL_D`. One number (copies table above) |
+| `wheel_separation` / `TRACK_WIDTH_M` | 0.172 m | [BOM] | same five | Firmware `TRACK_WIDTH`. CAD's wheel centres are 0.1745 m apart (1.5%); the effective skid-steer track is measured on the car |
 | `wheel_separation_multiplier` | not set (controller default) | [planned] | `controllers.yaml` | R8: set from a measured pivot on the car |
-| Encoder pulses per wheel rev (`ENCODER_COUNTS_PER_REV`, `COUNTS_PER_REV`) | 660 | [V] Waveshare support | `sim/mock_robot.py`, `robot/hardware_robot.py` | Two channels, left and right (3.25) |
+| Encoder pulses per wheel rev (`ENCODER_COUNTS_PER_REV`, `COUNTS_PER_REV`) | 660 | [V] Waveshare support | `sim/mock_robot.py`, `robot/hardware_robot.py`, `sim/fake_esp32.py` | Two channels, left and right (3.25). Pinned only by `tests/test_ros_driver_board.py` |
 | `body_length` x `body_width` / `FOOTPRINT_LENGTH_M` x `FOOTPRINT_WIDTH_M` | 0.253 x 0.231 m | [BOM] | xacro; `robot/safety.py` (imported by `sim/grid_world.py`) | Product page |
 | Corner radius from the rotation centre | 17.1 cm | derived | not a constant; follows from the footprint | What a pivot sweeps; the old 2WD chassis was 15.1 cm (3.19, 3.21) |
 | `LIDAR_TO_REAR_BUMPER_CM` | 16.65 cm | derived | `robot/safety.py` | Half the length plus `LIDAR_X_M`: how far astern the body reaches from the scan origin |
 | Wheelbase (driven wheels) | 0.171 m | [CAD] | not in the xacro | Rotation centre assumed at its middle [I] |
 | `laser_x` / `LIDAR_X_M` | 0.040 m | [CAD] | xacro, `robot/safety.py`, sim scan origin | One number (`tests/test_cad_geometry.py`, wall-linter registry) |
 | `laser_z` | 0.080 m (0.120 m off the floor) | [CAD] | xacro | The lidar's scan plane. Anything lower is invisible to it |
-| Lidar range (`LIDAR_RANGE_M`) | 12.0 m | [V] datasheet | `sim/mock_robot.py` | D500 rated range; the sim's scan uses it |
+| Lidar range (`LIDAR_RANGE_M`) | 12.0 m | [V] datasheet | `sim/mock_robot.py`, `slam.yaml` `max_laser_range` | D500 rated range; the sim's scan and SLAM use it |
 | Lidar mounting yaw | +90 deg (zero faces left) | [CAD] | NOT modelled | Must go into the driver's angle offset or the URDF before the first scan is used |
 | `pan_x` / `pan_z` | -0.009 m / 0.128 m (0.168 m off the floor) | [CAD] | xacro | Pan axis almost over the rotation centre, which is why R3 criterion 4 now passes (1.89 deg at 1 m, was 4.59) |
 | `camera_x` / `camera_up` | 0.048 m / 0.042 m (lens 0.210 m off the floor) | [CAD] | xacro | About double the Stage 0 rig height of 10-13 cm |
@@ -176,27 +190,63 @@ must show:
    detector's device; step 5's `devices:` line does.
 5. **Latency** at 15 W (`sudo nvpmodel -m <id>`, record `nvpmodel -q`),
    then at 25 W (MAXN SUPER only on the stock adapter), with
-   `tools/jetson/bench_perception.py --out bench-<mode>.json`. Expected:
+   `python -m tools.jetson.bench_perception --recordings recordings --out
+   bench-<mode>.json` from the repo root (`--recordings` is required; run it
+   as a module, as the README does). Expected:
    a header line naming host, Python, torch and the CUDA device; `devices:
    detector cuda, CLIP cuda` (anything else fails risk 1, whatever setup
    said); one median / p90 line per key; then `budget 250 ms: WITHIN` or
    `OVER`. The first run downloads about 600 MB of weights.
 6. **Suite**: `pytest tests/ -q` from `.venv`, with Chromium installed for
    Playwright first, or the browser tests ERROR rather than skip.
-7. **G4**: build the ROS image natively, then run the live chain and nav
-   suites (`tests/test_ros_chain_live.py`, `tests/test_nav_live.py`) 5
-   times in a row against a robot server started with
-   `SIM_MAP=scaled_house ROBOT_DRIVE=ros WORLD_MODE=ros ROBOT_MODE=hardware
-   SIM_MOTOR_BOARD=fake`. First confirm `GET /health` reports `"sim_map":
-   "scaled_house"`: the live suites ask the server which house it is in and
-   skip if it is not theirs (the fake board reports it since 2026-10-02).
-   **A skip is not a pass.** G4 counts only runs where the chain and nav
-   suites PASSED: pytest's summary line must read `N passed` with 0
-   skipped and 0 failed. A run with any skip is not one of the five; find
-   why it skipped and start the count again.
+7. **G4**: the live chain and nav suites, 5 runs in a row, against the
+   fake motor board. The commands are below this list. **A skip is not a
+   pass**: a run counts only if pytest's summary reads `18 passed` with 0
+   skipped and 0 failed (`pytest --collect-only -q` on the two files
+   collects 18 tests: 13 chain, 5 nav). A run with any skip or failure is
+   not one of the five; find why and start the count again.
 8. **Headroom**: everything at once for 10 minutes, watching `/health`'s
    `wheel_loop` (0 late ticks at the 20 Hz loop), free memory (at least
    1 GB) and `tegrastats` (no throttling).
+
+**G4, the full command set** (on the board, from the repo root). Each
+omission below forces a skip or a failure, which is why none is optional:
+
+| Requirement | Without it |
+|---|---|
+| A brain on :8001 under `ROUTE_PREFIX=/brain` (`service/tunnel/run.sh` starts one) | `test_a_dpad_tap_still_preempts_a_mission_under_drive_ros` skips "no brain server" (`tests/test_ros_chain_live.py` reads `PICAR_BRAIN_URL`, default `:8001/brain`) |
+| `SIM_MAP=scaled_house` for the robot server **and** in pytest's own environment | The server's `/health` `sim_map` gates both suites; `tests/test_nav_live.py` also checks `tests/demo_nav_goals.py`'s `HOUSE`, which that module reads from pytest's `SIM_MAP` |
+| The container started only after `GET /wheels` reports `usable: true` | The fake board's `HardwareRobot` answers `usable: false` until its first frame, and a container that activates then loses its wheel plugin for good (`service/slam/README.md` section 3, "Order matters"; docs/engineering/ros/ENGINEERING.md) |
+| The container named `picar-ros` | `test_killing_the_container_stops_the_wheels_on_the_robots_own_watchdog` runs `docker kill picar-ros` with `check=True` and FAILS (`PICAR_ROS_CONTAINER` overrides the name). The user running pytest must be able to run `docker` without sudo |
+| The secret in pytest's environment (`LOCAL_SECRET` or `APP_SHARED_SECRET`) | The chain suite skips "the robot server wants a secret" |
+| A fresh server and a fresh container for each run | The nav suite's mapping lap is a script from the house's start pose, and SLAM keeps its map for the container's lifetime |
+
+```bash
+cd ~/vision-picar
+docker build -t vision-picar-ros service/slam                  # once; long the first time
+set -a; source ~/.vision-picar-local-secrets; set +a           # LOCAL_SECRET (and VISION_SECRET, which run.sh requires to be defined)
+export APP_SHARED_SECRET="$LOCAL_SECRET"
+
+# one run; repeat this block five times
+docker rm -f picar-ros 2>/dev/null
+SIM_MAP=scaled_house ROBOT_DRIVE=ros WORLD_MODE=ros ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake \
+  bash service/tunnel/restart.sh                               # robot :8000 and brain :8001/brain, both on 127.0.0.1
+curl -s localhost:8000/health | grep -o '"sim_map": *"[a-z_]*"'   # expect "sim_map": "scaled_house"
+until curl -s -H "x-app-secret: $LOCAL_SECRET" localhost:8000/wheels | grep -q '"usable": *true'; do sleep 0.5; done
+docker run -d --name picar-ros --restart unless-stopped --network host \
+  -e APP_SHARED_SECRET -e ROBOT_URL=http://127.0.0.1:8000 -e BRAIN_URL=http://127.0.0.1:8001/brain \
+  vision-picar-ros ros2 launch picar_bringup picar.launch.py
+until curl -s localhost:8090/health >/dev/null; do sleep 1; done
+SIM_MAP=scaled_house .venv/bin/python -m pytest tests/test_ros_chain_live.py tests/test_nav_live.py -rs
+```
+
+The container line is `service/slam/README.md`'s Linux form (host
+networking, because `run.sh` binds the servers to 127.0.0.1; that form is
+not yet exercised on a board). `restart.sh` reports `OK: robot and brain
+both running <rev>` only once both answer with the checkout's revision.
+Expected from pytest: `18 passed`, and the `-rs` summary lists no skips.
+`tools/jetson/README.md` section 4 does not yet carry these requirements;
+its owner is to update it from this list.
 
 **On arrival of the Rover** [planned] (`JETSON-BOM.md` 9.5), inside the
 30-day window:
@@ -208,15 +258,16 @@ must show:
    Naming the device, permissions and first contact with the board follow
    the motor-board spec (docs/engineering/motor-board/ENGINEERING.md).
 3. Confirm the feedback frame carries `odl`/`odr`, and check odometry over
-   a measured metre (motor-board procedure).
+   a measured distance, following motor-board ENG §Procedures
+   (docs/engineering/motor-board/ENGINEERING.md).
 4. Disable Waveshare's `ugv_jetson` app and any `ugv_bringup` /
    `ugv_driver` service, so only our backend opens the port.
 5. Measure the CAD geometry: lidar offset and height, pan axis, lens height,
    and the lidar's zero direction.
-6. Expect no driving under the safety layer until the lidar driver exists:
-   with no usable scan, FORWARD is refused (distance reads 0.0) and so is
-   REVERSE (`astern_not_observed`, since 2026-10-02); turns are allowed.
-   Wheel tests before then are on the stand, wheels off the floor.
+6. Expect no translation under the safety layer until the lidar driver
+   exists; only turns move. The rule and its refusals are canonical in the
+   safety spec's Known gaps (docs/engineering/safety/ENGINEERING.md). Wheel
+   tests before then are on the stand, wheels off the floor.
 7. Once the lidar driver lands, run the safety sweep against the real
    lidar.
 8. Before any firmware change, dump the stock ESP32 image. The command and
@@ -239,24 +290,32 @@ must show:
 
 ## Known gaps
 
-- **No battery cutoff.** Reading pack voltage at 1 Hz or faster, warning,
-  stopping and shutting down before 9 V, and a twin readout are all
-  unbuilt (`HARDWARE-BOM.md` editor's caution).
+The open design questions (which camera feeds perception, depth below the
+lidar's plane, skid-steer slip, the battery cutoff, the 15 W result) are
+the [architecture spec's open questions](../../platform/ARCHITECTURE.md#open-questions)
+and are not repeated here. These are the implementation gaps:
+
+- **No battery cutoff code.** Nothing reads pack voltage, warns, stops or
+  shuts down before 9 V, and the twin has no readout
+  (`HARDWARE-BOM.md` editor's caution).
 - **The lidar driver in the robot process is not written**, and the
-  simulator has no fake lidar on a pty yet (question 5). Until it is, the
-  car can pivot but cannot drive forward or reverse under the safety layer
-  (`robot/safety.py`: FORWARD on a 0.0 distance, REVERSE as
-  `astern_not_observed`).
+  simulator has no fake lidar on a pty yet (`PLAN-ros-alignment.md`
+  section 6, question 5). What the safety layer then refuses is canonical
+  in the safety spec's Known gaps (docs/engineering/safety/ENGINEERING.md).
 - **`tools/jetson/setup.sh` asserts only CLIP's device.** It prints the
   detector's weights but never asserts the detector runs on `cuda`, so risk
   1 could close with YOLOE on the CPU inside the return window (the same
   gap is in 3.33 criterion 2). Until the script asserts it, read the
   bench's `devices:` line (Procedures step 5) as the check.
+- **`tools/jetson/README.md` section 4 lacks G4's requirements** (a brain
+  under `/brain`, `SIM_MAP` in pytest's environment, the `/wheels` wait,
+  the `picar-ros` name). Procedures above has the full set; the README's
+  owner is to bring it in line.
 - **The lidar's +90 degree yaw is not modelled** in the xacro or the sim.
 - **Every `[CAD]` value is unmeasured**, and three geometry values are
   still `[PLACEHOLDER]`.
-- **Which camera feeds perception is undecided.** `JETSON-BOM.md` section 1
-  still lists an IMX219 as "buy regardless"; the kit brings two cameras.
+- **`JETSON-BOM.md` section 1 still lists an IMX219 as "buy regardless"**,
+  although the kit brings two cameras.
 - **No on-board latency number exists yet.** The ~205 ms Orin figure in
   `PI-VS-JETSON.md` was projected for OWLv2, not measured for YOLOE.
 - **`HARDWARE-READINESS.md` and `HARDWARE-BOM.md` describe the 2026-09-19

@@ -36,7 +36,7 @@ finding 1), in order:
 
 1. Bumps the verb generation, so any verb in flight stops streaming twists,
    and arms a **stop hold** until `time.monotonic() + STOP_HOLD_S`.
-2. Calls `inner.stop()`, the wrapped body's own stop, and returns its result.
+2. Calls `inner.stop()`, the wrapped body's own stop, and keeps its result.
    Nothing before this step touches the network.
 3. If no zeroing is already running (a non-blocking `threading.Lock`),
    starts one daemon thread named `ros-stop-zero` that posts a zero
@@ -44,15 +44,27 @@ finding 1), in order:
    `STOP_ZERO_TIMEOUT_S`, swallowing every error. The watchdog calls
    `stop()` every 0.1 s poll while the robot is silent, so this
    single-flight rule is what keeps a hung bridge from accumulating threads.
+4. Returns step 2's result. The thread has been started, not waited on.
 
 While the hold is in force (same generation as the stop, and before its
 deadline), `set_wheel_velocity()` turns any **non-zero** command into a zero
 on the wrapped body. That is the stopped verb's last twist still on its way
 through `twist_mux`, `diff_drive_controller` and the plugin's `POST /wheels`.
-The next verb (`_begin()`, a new generation) lifts the hold at once. Before
-this change the three posts ran first, each with the client's 2.0 s timeout,
-so a bridge that accepted connections and never answered held a stop for
-about 6 s, on the server's event loop when the watchdog called it.
+The next verb (`_begin()`, a new generation) lifts the hold at once.
+
+`STOP_HOLD_S` is 0.6 s because a stale twist can reach the wheels for
+0.55 s when the zeros never arrive: `twist_mux` holds a silent input for its
+0.25 s timeout, and only then does `diff_drive_controller` start its own
+0.25 s `cmd_vel_timeout` on the last command (the two add; see
+`service/slam/src/picar_bringup/config/twist_mux.yaml` and
+`service/slam/src/picar_bringup/config/controllers.yaml`), plus one 0.05 s
+plugin period. The margin covers scheduling jitter. History of the change:
+`docs-review/SPEC-REVIEW-2.md` (M1).
+
+**The stop does not cancel a nav2 goal.** It zeroes `twist_mux`'s inputs and
+holds non-zero commands for `STOP_HOLD_S`; nav2 keeps publishing on
+`cmd_vel/nav` (overriding the stop's zero on that input), and the wheels
+resume after the hold. See Known gaps.
 
 ## Interfaces
 
@@ -138,23 +150,25 @@ reads**; `SIM_MAP` is the only selector.
 | `DEPTH_COLS_DEFAULT` | 8 | `robot/interface.py` | A VL53L5CX row; the twin's strip width |
 | `VERB_PERIOD_S` | 0.05 s | `robot/interface.py` | One wheel-loop period (`robot/server.py`) |
 | `VERB_TURN_STEP_DEG` | 5.0 deg | `robot/interface.py` | Most a turn rotates between checks; the sim's collision sub-step |
-| `WHEEL_RADIUS_M` | 0.040 m | `sim/mock_robot.py`, `robot/hardware_robot.py` | UGV Rover firmware, mainType 2 (3.21/3.25) |
-| `TRACK_WIDTH_M` | 0.172 m | same | Rover firmware; effective skid-steer track still to measure (R8) |
-| `ENCODER_COUNTS_PER_REV` / `COUNTS_PER_REV` | 660 | same | 11 lines x 2 x 30:1 (3.25) |
 | `CELLS_PER_SECOND_AT_FULL_SPEED` / `MOVES_PER_SECOND_AT_FULL_SPEED` | 2.0 | sim, hardware, ROS wrapper | `speed` 0-100 as a fraction of 2 moves/s; `duration` rounds to whole moves, at least one |
 | `DEFAULT_CELL_M` / `MOVE_M` | 0.30 m | same | One move. Every step budget is in these |
-| `LIDAR_RANGE_M` | 12.0 m | `sim/mock_robot.py` | RPLidar C1 and D500 rating; the 4.2 m camera horizon mapped nothing in the home (3.17) |
-| `LIDAR_X_M` | 0.040 m | `robot/safety.py`, read by the sim | Scan origin 4 cm ahead of `base_link` (3.27) |
 | `DEFAULT_TIMEOUT_S` | 10.0 s | `control/remote_robot.py` | Per-request timeout |
 | `DEFAULT_STALL_TIMEOUT_S` | 15.0 s | `sim/teleop_robot.py` | Teleop staleness |
 | Hardware verb turn rate | 1.2 rad/s body | `robot/hardware_robot.py` | Same as `TURN_RATE_RAD_S` in `robot/ros_drive.py` |
 | `HEARTBEAT_MS` | 1500 ms | `robot/hardware_robot.py` | Board-side deadman, above the server's 1.0 s watchdog |
 | `RosDriveRobot` client timeout | 2.0 s | `robot/ros_drive.py` (`timeout_s`) | Every bridge call except the stop's zeroing posts |
 | `STOP_ZERO_TIMEOUT_S` | 0.5 s | `robot/ros_drive.py` | Per zeroing post after a stop; a hung bridge costs the background thread at most 1.5 s and the caller nothing |
-| `STOP_HOLD_S` | 0.4 s | `robot/ros_drive.py` | `twist_mux`'s 0.25 s input timeout (`service/slam/src/picar_bringup/config/twist_mux.yaml`) plus one 0.05 s plugin period, with margin: how long the stopped verb's last twist can keep reaching the wheels if the zeros never arrive |
+| `STOP_HOLD_S` | 0.6 s | `robot/ros_drive.py` | `twist_mux`'s 0.25 s input timeout plus `diff_drive_controller`'s 0.25 s `cmd_vel_timeout` (they add) plus one 0.05 s plugin period = 0.55 s, with margin: how long the stopped verb's last twist can keep reaching the wheels if the zeros never arrive (see "The ROS drive stop") |
 
-The chassis constants are kept equal across the sim, the hardware body,
-the xacro and `controllers.yaml` by `tests/test_wall_linters.py` and
+**Chassis constants.** Body code defines the chassis' physical constants
+(`WHEEL_RADIUS_M`, `TRACK_WIDTH_M`, `ENCODER_COUNTS_PER_REV` and
+`LIDAR_RANGE_M` in `sim/mock_robot.py`; `WHEEL_RADIUS_M`, `TRACK_WIDTH_M`
+and `COUNTS_PER_REV` in `robot/hardware_robot.py`; the scan origin
+`LIDAR_X_M`, read by the sim from `robot/safety.py`). Their values and
+sources are not repeated here: the canonical table is
+[platform engineering](../platform/ENGINEERING.md), "Parameters and
+configuration". The copies are kept equal across the sim, the hardware
+body, the xacro and `controllers.yaml` by `tests/test_wall_linters.py` and
 `tests/test_urdf.py`.
 
 ## Procedures
@@ -237,8 +251,20 @@ did not measure.
 
 - **No camera, lidar or depth driver on the car yet.** `HardwareRobot`
   without `sensors` raises on `get_camera_frame()` and answers 0.0 for
-  `get_distance()`. The lidar driver is decided for the robot process but
-  not ported.
+  `get_distance()`. What the car may then do is the lidar-less driving rule
+  in [safety engineering](../safety/ENGINEERING.md) ("Driving without a
+  lidar"). The lidar driver is placed in the robot process by
+  [ros](../../ros/ARCHITECTURE.md) (D3) and not ported. The plan: port the
+  D500's serial protocol out of its ROS node into a `sensors` body for
+  `HardwareRobot`, plus a fake lidar on a pseudo-terminal like
+  `sim/fake_esp32.py`, with criteria the user approves
+  (`PLAN-ros-alignment.md` 6, question 5).
+- **A stop pauses a nav2 goal; it does not end it** (UNDECIDED,
+  `docs-review/SPEC-REVIEW-2.md` H1). `RosDriveRobot.stop()`
+  (`robot/ros_drive.py`) zeroes the `twist_mux` inputs and holds for
+  `STOP_HOLD_S` but cancels nothing, and the wheels resume after the hold.
+  Mechanism and the proposed fix are recorded once, in
+  [safety engineering](../safety/ENGINEERING.md), Known gaps.
 - **Stale comments in code:** `sim/mock_robot.py` around line 186 says the
   wheel methods "are NOT on `RobotInterface`" (they are, since R2).
   `robot/interface.py`'s `get_depth_grid()` docstring says "Nothing in

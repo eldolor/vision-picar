@@ -68,10 +68,8 @@ and its odometry, before the board arrived.
 - **The hardware backend** is the only process that opens the serial port.
   It turns body commands into board commands and board feedback into wheel
   state and odometry. The motors are all it knows about.
-- **The fake board** follows the firmware source rule by rule, including its
-  limits: whole-centimetre odometers, a rate-limited feedback stream, lost
-  lines.
-  It turns a simulated body's wheels. It runs the stock or the forked
+- **The fake board** follows the firmware source rule by rule, including the
+  board's real limits. It turns a simulated body's wheels. It runs the stock or the forked
   firmware.
 
 Lines not crossed:
@@ -201,10 +199,12 @@ fork's fine odometers.
 itself about 1.5 degrees out, so a settle chases noise and adds about
 0.6 s a turn.
 
-**A correction is a move like any other.** A correction that would back up
-is refused when nothing can see behind the robot (the safety domain's rule
-since 2026-10-02), so on the car before its lidar driver lands, a straight
-verb that overshot keeps its overshoot. Turn corrections are unaffected.
+**A correction is a move like any other.** It is vetted by the safety
+domain's rules for driving with no sensors, which belong to that domain
+([safety engineering](../engineering/safety/ENGINEERING.md), Known gaps). On
+the car before its lidar driver lands, nothing can see ahead or behind, so
+the car cannot drive straight at all: every forward and every reverse is
+refused, and only turns, and turn corrections, run.
 
 ### D8. The fake follows the firmware source and runs on a real serial device
 
@@ -224,7 +224,9 @@ feedback rate, partial lines (3.16, 3.25).
 **Decision.** The camera, lidar and depth camera are separate devices, with
 their own drivers, and none of them is this domain's. Until those exist, a
 stand-in body supplies them in the simulator. On the car they answer the
-honest "unusable" defaults. Where the lidar driver lives is decided by the
+body contract's defaults, and those are not all silent: the distance sensor
+reads as an obstacle at zero range, which refuses every forward move, and a
+request for a camera frame fails rather than answering "unusable". Where the lidar driver lives is decided by the
 [ros architecture](../ros/ARCHITECTURE.md) (D3).
 
 ## Contracts
@@ -241,7 +243,7 @@ honest "unusable" defaults. Where the lidar driver lives is decided by the
 
 | Failure | What happens | Target |
 |---|---|---|
-| The robot process dies or the link is cut | The board's heartbeat zeroes the wheel speeds | Wheels stop within the heartbeat interval plus one board loop, with no host involvement (R7 drill: stopped at 1.5 s) |
+| The robot process dies or the link is cut | The board's heartbeat zeroes the wheel speeds | Wheels stop within the heartbeat interval plus one board loop, with no host involvement |
 | Feedback lines are lost or arrive bunched | The odometer clamp corrects the integral | Each wheel within one odometer unit plus one encoder edge of the truth, at every frame (stock: worst 1.02 cm; fork: worst 0.047 cm, 30 s with 5% loss) |
 | The board reboots mid-drive | The origin moves and the set-up is re-sent | Reported travel moves by at most one unit; the heartbeat is restored within 0.5 s (8 of 8 runs on both firmwares) |
 | The board's clock wraps after 49.7 days | Read as a small step forward | No false reboot, no jump |

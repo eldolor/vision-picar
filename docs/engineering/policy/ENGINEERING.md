@@ -56,7 +56,10 @@ in flight) > `SCAN_ACTION` ("RIGHT"); then the spin guard replaces a turn
 with FORWARD once consecutive turning reaches `spin_guard_after * 90`
 degrees and the target is not detected. A cloud turn is sized from the local
 bearing when both agree on the side (`_annotate`), else it is a
-`SCAN_TURN_DEG` search step. The cloud's direction is never overridden.
+`SCAN_TURN_DEG` search step. The tier never overrides the cloud's direction
+on a call frame, but `MissionAgent._review_scene()` runs after the vision
+step: on a synchronous call frame that satisfies arrival it rewrites the
+scene to STOP and `found` (`arrived_scene()`), whatever the cloud said.
 
 **What the hysteresis does and does not gate.** `consecutive_frames` is
 read only in `_trigger_for()`. `_steer_to()` returns a direction for any
@@ -86,7 +89,7 @@ since last call >= `stale_after` -> `staleness`. `max_calls` caps the total.
 | `obstacles_ahead` | list of str |
 | `free_space` | `none` / `some` / `clear`, or `unknown` (a prompt variant that did not ask; every tier free frame) |
 | `doorway_visible` | always False today |
-| `important_objects` | list; this is what marks memory `found`. Under `vision`/`tiered` the target appears here only on arrival (`target_reached`, or `arrived_scene()`). Under `frontier` `sensed_scene()` copies the frame's `objects_visible`, so the target is `found` on first sight |
+| `important_objects` | list; this is what marks memory `found`. Under `vision` the target appears here only when the cloud answers `target_reached` (`brain/navigate.py` `to_scene()`) or `arrived_scene()` fires. Under `tiered` with `tier_async_cloud: true` (shipped) only `arrived_scene()` puts it here: `_collect_inflight()` stores a landed cloud scene in `_last_cloud_scene` and every returned scene is `_local_scene()`, with `important_objects: []` and `target_reached: False`. Synchronously, the call frame returns the annotated cloud scene, so its `target_reached` can end the mission too. Checked 2026-10-02 with a fake pipeline (always `absent`) and a cloud that always answers `target_reached` with the target named: over 20 frames and 5 calls, async put the target here on 0 frames, sync on 5 (every call frame). Under `frontier` `sensed_scene()` copies the frame's `objects_visible`, so the target is `found` on first sight |
 | `safest_direction` | `FORWARD` `LEFT` `RIGHT` `REVERSE` `STOP` (`LOOK_*` from the explorer); anything else becomes STOP |
 | `turn_deg` | optional int, the size of a LEFT/RIGHT; absent means the executor's default 90 |
 | `_navigate` | `target_visible`, `target_direction` (`left`/`center`/`right`/`not_visible`/`unknown`), `target_reached`, `obstacle_ahead` (None = not asked), `room_guess`, `distance_estimate`, `reasoning` |
@@ -156,8 +159,9 @@ decision, and its value and evidence are kept in one place,
 | `ARRIVAL_BEAM_HALF_DEG` | 2 | `brain/arrival.py` | median of 5 beams; the first version used the nearest and declared `found` 95 cm out |
 | `ARRIVAL_EDGE_M` | 0.10 | `brain/arrival.py` | 3.32: a jamb window is refused |
 
-Arrival reads the scan in the body frame using `LIDAR_X_M` (0.040 m) from
-`robot/safety.py`.
+Arrival reads the scan in the body frame using `LIDAR_X_M` from
+`robot/safety.py`; its value is in the canonical chassis table,
+[platform](../platform/ENGINEERING.md) "Parameters and configuration".
 
 ## Procedures
 
@@ -192,6 +196,8 @@ Look-around scans performed: 6 pan actions across 2 room entries
 Rooms searched: ['hallway', 'living room']
 
 NOT FOUND after 150 steps.
+
+Memory summary: Hallway, living room searched. No red backpack found.
 ```
 
 132 lines of `Blocked ...` precede it, almost all `Blocked LEFT: stopped
@@ -202,8 +208,10 @@ after 0.0deg -- turn left clamped: a corner would come within 1.3cm < 1.3cm
 `VISION_URL` and `pip install -r requirements-perception.txt`):
 `python -m tests.demo_replay_mission <walk dir> "red backpack" --policy tiered`.
 Expect the trigger beside each step and a calls-and-frames counter at the end.
-A replay has no scan, so arrival is never judged and the outcome is not a
-navigation result.
+**This caveat's canonical home is here; other specs link to it.** A replay
+has no scan, so arrival is never judged, and under the shipped asynchronous
+tier a landed cloud `target_reached` cannot end the mission either (see the
+scene's `important_objects` row). The outcome is not a navigation result.
 
 **Read a live mission** (`GET /mission/status`, mission domain):
 `turns.spinning` true means mostly one-way turning with few reversals;
@@ -255,8 +263,19 @@ threshold counted in steps.
   `brain/vision_agent.py` says "no room memory yet" (built, via
   `brain/navigate.py`). Several docstrings cite `AGENT-HARNESS.md` section 12
   for room memory; it is section 10.
-- Arrival cannot be judged on a phone walk; tiered phone walks end
-  `max_steps` when they arrive (P7e).
+- Arrival cannot be judged on a phone walk, and under `tier_async_cloud:
+  true` a landed cloud `target_reached` is never applied, so tiered phone
+  walks end `max_steps` when they arrive (P7e). Whether to apply it is an
+  open question in the [architecture spec](../../policy/ARCHITECTURE.md).
+  `brain/arrival.py`'s module docstring (lines 6-9) says that before arrival
+  "only a paid cloud call could end a mission"; that holds only for a
+  synchronous tier, not the shipped asynchronous one.
+- Arrival's panned-camera refusal reads `perception.pan_deg`, which is 0 for
+  every sim frame: `sim/mock_robot.py`'s frame carries no `pan_deg`,
+  `FrameReportedPipeline` builds `Perception` without one, and the sim's
+  detection bearings are already camera-relative (`GridWorld.view_angle()`).
+  So the refusal works on real frames only. Harmless today: `VisionAgent`
+  never peeks and 3.20 centres the camera at mission start.
 - **Local false positives steer, and can end `found`.** One detected frame
   steers, the hysteresis gates only triggers, and arrival never consults the
   cloud's identity (see "What the hysteresis does and does not gate").
@@ -268,7 +287,16 @@ threshold counted in steps.
 - **`tests/demo_active_search.py` ends NOT FOUND after 150 steps** (observed
   2026-10-02). Almost every step is a LEFT that the pivot guard clamps to
   0 degrees, so the robot never moves. The stuck-breaker counts STOPs, not
-  refused turns. Why `decide()` keeps choosing LEFT is not yet diagnosed.
+  refused turns. **Probable diagnosis, UNCONFIRMED** (read from
+  `brain/agent.py`'s `MissionAgent.decide()`, not traced): the demo passes no
+  world, so `decide()` uses the right-hand rule. A refused LEFT is recorded
+  as not executed, so the next `decide()` skips the "FORWARD after an
+  executed turn" branch and peeks again. The left ray clears
+  `side_clearance_cm + 1` (31 cm), so LEFT is chosen again, and the pivot
+  guard again refuses the swept corner -- LEFT forever. The boxed-in
+  fallback (the stuck-breaker) never fires because LEFT reads clear. Two
+  definitions of "clear" disagree: a peek ray along the turned heading,
+  and the chassis' swept corners during the pivot.
 - **`tests/demo_hold_bearing_ab.py` still builds the starter house**, which
   the tests left in 3.32.
 - More code prose that has drifted: `config/robot.yaml`'s

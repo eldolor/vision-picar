@@ -43,7 +43,7 @@ Who depends on it:
 ## Components and boundaries
 
 ```text
-  brain (control/)  ---HTTP--->  robot server  /world/*  (pass-through, computes nothing)
+  brain (control/)  ---HTTP--->  robot server  /world/*  (pass-through; derives only the sim-only error readout)
   twin (web page)   ---HTTP--->        |
                                        v
                               world contract  (pose, map, truth; honest "unusable" defaults)
@@ -130,9 +130,7 @@ up (`PLAN-mapping.md` section 4).
 **Decision.** Every pose names the map its coordinates belong to. The map
 carries a version that is guaranteed to change whenever its cells change. It
 may also change when they have not: a consumer that refetches on a new
-version is never stale, only sometimes wasteful. Under SLAM today the version
-counts the mapper's publications rather than cell changes (UNCONFIRMED; see
-the [engineering spec](../engineering/world/ENGINEERING.md)).
+version is never stale, only sometimes wasteful.
 
 **Why.** A pose from yesterday's map is byte-identical to one from today's,
 so without the map's name a stale pose would plot somewhere plausible and
@@ -178,7 +176,8 @@ reach across to the world to tell it.
 ### D7. World state is served by the robot server as a pass-through
 
 **Decision.** The world routes live on the robot server, which returns
-exactly what the backend answered.
+exactly what the backend answered. The one thing it derives is the error
+readout, from pose and truth, and that exists only in the simulator (D8).
 
 **Rejected:** a separate world service with its own address. The usual
 reason to split a service is that it should survive the other's restarts.
@@ -214,6 +213,12 @@ blocks, is the driver order, which the
 [safety architecture](../safety/ARCHITECTURE.md) owns ("a navigation goal is
 an autonomous driver too"). The world's part is only to say whether a goal
 is in progress.
+
+**A stop pauses a goal; it does not end it.** A stop zeroes the wheels, but
+nothing cancels the goal, so the planner resumes driving afterwards. Whether
+a stop must end a goal is the safety domain's rule, and it is open there
+([safety architecture](../safety/ARCHITECTURE.md), Open questions; see also
+the [ros architecture](../ros/ARCHITECTURE.md), D6).
 
 **Rejected:**
 

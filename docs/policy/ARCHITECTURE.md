@@ -52,7 +52,7 @@ counters, arrival) are its outputs.
 
 | Part | Owns | Must not |
 |---|---|---|
-| Constrained agent | the allowed action set, the capture -> scene -> decide -> vet -> execute step, the three-STOPs stuck-breaker | bypass the safety layer; trust a model's distance claim over a sensor |
+| Constrained agent | the allowed action set, the capture -> scene -> decide -> vet -> execute step, a stuck-breaker | bypass the safety layer; trust a model's distance claim over a sensor |
 | Mission agent | recording every step into mission memory, arrival review, room backfill from the cloud's room guess, sighting poses from the world | read simulator state; import a world backend |
 | Frontier explorer | rule-based coverage: peek, prefer unvisited directions | grow; it is kept, not extended (`PLAN-sim-hardening.md` 2.2) |
 | Vision agent | trusting the model's action unless the mission is complete | peek (a pan costs a real move and buys nothing a photograph lacks) |
@@ -90,6 +90,17 @@ downstream. A target counts as found only when it appears in the scene's
 important objects, which the cloud policy fills only on **target reached**,
 not on first sight -- otherwise a mission would end in a doorway across the
 room from the backpack (`brain/navigate.py`'s note).
+
+**Which paths can end a mission `found`, as the code behaves.** Under the
+vision policy, the cloud's target-reached answer does. Under the tiered
+policy with the cloud call dispatched asynchronously (the shipped mode), it
+cannot: a landed cloud answer only becomes the held goal, and the scene every
+frame returns is the local one, which never names the target. There, only
+the arrival rule (below) ends a tiered mission `found`. With a blocking cloud
+call, the trigger frame's cloud answer can end it as well. This, rather than
+the arrival rule alone, is why a tiered phone walk (no range sensor) that
+reaches its target ends at the step budget (P7e). Whether a landed
+target-reached should count is an open question below.
 
 ### The cloud-driven policies are the hardware path; the explorer is a test tool
 
@@ -135,15 +146,19 @@ walk that motivated the change, the robot turned right 28 times and forward
 
 **Trade-off, stated as the code behaves.** A single detected frame steers --
 the consecutive-frame hysteresis gates only the cloud triggers, not steering.
-The only per-frame bound is the local verifier's probability gate: a wrong
-object steers the robot on every frame it passes that gate. The cloud's
-identity does not stop it. With the cloud call dispatched asynchronously (the
-shipped mode) the cloud's answer only becomes the held goal, which a local
-sighting outranks, so a cloud "not visible" never overrides a frame where the
-wrong object is detected. With a blocking call it decides only the frame the
-call was made on. And arrival (below) is judged on local detection plus range,
-so a wrong object that keeps passing the gate can be driven to and reported
-`found`. The corroboration verdict ([perception](../perception/ARCHITECTURE.md))
+For **steering**, the only bound is the local verifier's per-frame
+probability gate: a wrong object steers the robot on every frame it passes
+that gate. The cloud's identity does not stop it. With the cloud call
+dispatched asynchronously (the shipped mode) the cloud's answer only becomes
+the held goal, which a local sighting outranks, so a cloud "not visible"
+never overrides a frame where the wrong object is detected. With a blocking
+call the cloud's answer decides the frame the call was made on -- unless the
+arrival review, which runs after the vision step, rewrites that same frame
+to a stop and `found` against the cloud's answer. For **ending `found`**, the
+bound is the arrival rule's conditions on top of the gate (consecutive
+frames, centred, a lidar range within the radius, one surface), all of them
+local: a wrong object that keeps passing the gate can be driven to and
+reported `found`. The corroboration verdict ([perception](../perception/ARCHITECTURE.md))
 measures this exposure and does not enforce anything. Whether steering should
 also wait for consecutive frames is an open question below.
 
@@ -172,6 +187,13 @@ guess -- with no local perception, no usable scan, or a panned camera, and it
 refuses a window of returns that looks like an edge rather than one face
 (3.32: a mission had stopped beside a door jamb and declared `found` 1.1 m
 short).
+
+**The panned-camera refusal holds on real frames only.** Sim frames carry no
+pan angle and their reported bearings are already relative to the camera,
+so in the sim arrival cannot tell a panned camera from a centred one. That is
+harmless today: the cloud-driven policies never peek, and a mission starts
+with the camera centred (`PLAN-ros-alignment.md` 3.20). It stops being
+harmless the day a tiered policy pans.
 
 **Rejected.** 3.8's sim-only rule using the simulator's detection distances:
 it would pass in the sim while saying nothing about the robot. **Rejected
@@ -225,7 +247,7 @@ the same frames, so it must never be copied onto the hardware backend.
 | Local perception unavailable (camera wedged, model error) | never a trigger, never advances the cold-search count, never read as absent | a dead camera never looks like an empty room |
 | Detector misses frames | trigger hysteresis, held goals, degree-counted spin guard | at 90% per-frame detection, at least 95% of missions arrive (3.6b's bar) |
 | Target directly on the straight line through a door jamb | refused forwards; the mission ends `blocked` | no policy spends its budget pushing into a wall; going around is nav2's job |
-| No range sensor (phone walk, replay) | arrival not judged | a mission never ends `found` on a guess |
+| No range sensor (phone walk, replay) | arrival not judged; under the shipped asynchronous tier nothing else can end the mission `found`, so it runs to its step budget (P7e) | a mission never ends `found` on a guess |
 | An edge beside the target | arrival refused | zero false arrivals beyond 0.60 m |
 | World unreachable | right-hand rule | a mapper outage never ends a mission |
 | Local false positive | steers on every frame it passes the probability gate; one frame is enough; the cloud's answer does not override a local sighting | bounded only by the per-frame gate; no target yet -- the corroboration verdict measures it (open question) |
@@ -245,6 +267,13 @@ the same frames, so it must never be copied onto the hardware backend.
   answers it.
 - **P7e's second half** (a held cloud STOP versus steering) no longer matters
   on the lidar path and is left alone.
+- **Should a landed cloud target-reached end a tiered mission?** Under the
+  shipped asynchronous tier it never does; only arrival can. Applying it
+  would let a phone walk (no range sensor) end `found`, at the price of
+  trusting a distance judged from a photograph -- exactly what the arrival
+  rule was built not to do. Keeping arrival as the only end keeps "how far"
+  with the range sensor. Needs a user decision; either way P7e's record and
+  this spec say which.
 - **Extend the hysteresis to steering?** Today one detected frame steers,
   and the cloud's identity never overrides a local sighting, so a false
   positive that keeps passing the gate is followed to the end (including to a

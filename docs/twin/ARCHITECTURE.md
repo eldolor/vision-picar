@@ -46,8 +46,8 @@ walks that the corpus is made of could not be recorded.
 ```text
  +----------------------------- web twin (browser) ------------------------------+
  | Guide tab                 | Sim tab                       | Settings          |
- |  Guide me  -> /guidance   |  D-pad, turn step, look       |  robot, brain and |
- |  Robot view -> /navigate  |  camera frame, depth strip,   |  vision URLs and  |
+ |  Guide me: steer a person |  D-pad, turn step, look       |  robot, brain and |
+ |  Robot view: robot's move |  camera frame, depth strip,   |  vision URLs and  |
  |   + Record this walk      |  odometry, discovered map     |  secrets, health, |
  |   + Drive via brain       |  (tap-to-goal on SLAM maps)   |  setup code,      |
  |                           |  Remote brain panel           |  debug            |
@@ -172,14 +172,20 @@ path (the operations domain owns the tunnel).
 **Trade-off.** Locally the robot server still serves the page, so there
 are two ways to load it. A saved endpoint can follow a person between
 deployments. The page shows a notice whenever an endpoint's host differs
-from the page's. It is a notice and not an error, because a tunnel is a
-legitimate reason for them to differ.
+from the page's, except when the page itself was loaded from the
+developer's own machine, where splitting the page and the services across
+ports is the normal layout. It is a notice and not an error, because a
+tunnel is a legitimate reason for them to differ.
 
 ### No content-hashed filenames: revalidate every load, and publish an explicit asset list
 
-**Decision.** Pages and scripts are served "revalidate every time". An
-explicit manifest lists every published file with its type and cache
-policy. A test checks the manifest against what the pages reference.
+**Decision.** On the deployed site, pages and scripts are served
+"revalidate every time". An explicit manifest lists every published file
+with its type and cache policy. A test checks the manifest against what
+the pages reference. Locally, only the script is marked "revalidate"; the
+page itself carries no cache instruction, so a browser may reuse a stale
+page against a fresh script. The decision's guarantee (page and script
+never a version apart) is therefore met on the deployed site only.
 
 **Rejected.** Hashed filenames. They need HTML templating and a build
 step, for one page served to one household. Also rejected: a guessing
@@ -194,12 +200,13 @@ the page with one feature silently dead. That has shipped five times.
 **Decision.** In Guide me and Robot view, vision calls overlap (a small
 fixed number in flight), so a person walking gets a steady stream of
 decisions. An answer overtaken by a newer one is discarded. An answer from
-a previous session is discarded. The paid-call budget is reserved when a
-call is sent, not when it returns. When a real mission is driving (Drive
-via brain), the page allows one call in flight.
+a previous session is discarded. Calls in flight count against the
+paid-call budget, so overlap can never overshoot it. When a real mission
+is driving (Drive via brain), the page allows one call in flight.
 
 **Rejected.** A strictly serial loop. Its real cadence was the throttle
-plus the model's latency, about 3 s on the current model. Also rejected:
+plus the model's latency, about 3 s on the model in use when this was
+decided (dated; not re-measured on today's default). Also rejected:
 unbounded overlap, which Bedrock throttles and which competes with
 production for the account's quota.
 
@@ -221,7 +228,15 @@ command. The server arbitrates every goal as an autonomous driver (the
 safety domain's rule that a navigation goal is autonomous), so a tap
 during a mission is refused rather than pre-empting it, and the page
 shows the refusal. A person who wants the robot back mid-mission uses the
-D-pad or stop. Whether a person's goal should rank as a person is open.
+D-pad, which pre-empts the mission, or the Remote brain panel's Stop,
+which ends it. The robot STOP button is not the same thing: it holds the
+motors but claims no authority and ends nothing. Against a navigation
+goal in particular, a stop today only PAUSES it: the goal keeps planning
+and the wheels resume when the stop's hold ends. Only a non-zero D-pad
+movement cancels a goal. Whether a stop should end a goal is undecided;
+the rule belongs to the [safety domain](../safety/ARCHITECTURE.md).
+Whether a person's goal should rank as a person
+is also open.
 
 ### Configuration lives on the device, and shares by QR, never through a third party
 
@@ -261,7 +276,7 @@ setup.
 | The brain stops answering | Marks it lost, disables Start with the reason, retries on its own | A restarted brain reconnects without a person pressing Connect |
 | The brain answers with an error | Stays connected and shows the error | "Answered badly" is never shown as "gone" |
 | A secret is rejected by a different deployment | The error names the host it went to | A 401 is never misread as a wrong secret when the endpoint is wrong |
-| The vision service is healthy but cross-origin | The connection check names the origin as the fault | "Load failed" always has a diagnosis |
+| The vision service is healthy but cross-origin | The connection check names the origin as the fault | "Load failed" always has a diagnosis. Not met precisely: the check flags EVERY cross-origin vision URL as publishing no cross-origin headers, including a local service and the tunnel's vision route, which do publish them and work. The diagnosis is right only for the deployed service. |
 | The tab is backgrounded mid-mission | The mission continues in the brain, and the page catches up on return | Closing the page never stops or orphans a mission |
 | A stale call returns after Stop or a newer answer | Dropped before it can touch the overlay or the recorder | No previous session's answer is ever drawn |
 | A forgotten Guide session | Pauses at the per-session call cap | Unattended spend is bounded |

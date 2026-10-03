@@ -48,13 +48,35 @@ within range, never "unknown".
 | `footprint_clearance(+1 / -1)` | `scan_footprint`, `scan_footprint_no_target`, `no_scan` | Returns in the body frame within half-width + 3 cm of the centre-line and beyond the leading edge: distance past the edge. A return inside the outline reads 0.0 |
 | `rear_clearance()` | `scan_rear`, `scan_rear_no_target`, `no_rear_sensor` | Beams within `PATH_HALF_ANGLE_DEG` of astern, minus `LIDAR_TO_REAR_BUMPER_CM` |
 | `forward_clearance()` | the lesser of cone and corridor, or `path_not_observed` (0.0) | `path_not_observed` when the grid faces away and there is no scan |
-| `reverse_clearance()` | `astern_not_observed` (0.0), or the lesser of rear and corridor astern, off one scan | `(0.0, "astern_not_observed")` when the scan is missing or unusable **and** `_has_wheels()` (the body's `get_wheel_state()` reports `usable: true`; a body without the method, or whose call raises, has none). Otherwise as before: with no scan that is `(None, "no_rear_sensor")` and the reverse proceeds, which is right only for bodies that move nothing (teleop, replay, test doubles). Decided by the user 2026-10-02 |
+| `reverse_clearance()` | `astern_not_observed` (0.0), or the lesser of rear and corridor astern, off one scan | `(0.0, "astern_not_observed")` when the scan is missing or unusable **and** `_has_wheels()` (the body's `get_wheel_state()` reports `usable: true`; a body without the method, or whose call raises, has none). Otherwise, with no scan, `(None, "no_rear_sensor")` and the reverse proceeds. The rule and its reasons: [architecture spec](../../safety/ARCHITECTURE.md), "A body that cannot see astern does not reverse" |
 | `pivot_blocked(omega)` / `pivot_scale(omega)` | reason string or None / `(fraction, reason)` | A return whose distance to the rectangle would end under `PIVOT_MARGIN_CM` **and** shrink. Binary search to 1/64 of the turn rate. No usable scan: never blocked |
 
 Comparison edges: the verb pre-check refuses at `< min_distance_cm`; the
 wheel vet clamps at `<= min_distance_cm` and otherwise limits speed to
 `(clearance - min) / 0.05 s`. `run_verb()`'s limit allows
 `clearance - min` metres, so it ends `clamped` at the line.
+
+### Driving without a lidar
+
+The canonical statement of what a body that moves but has no scan may do;
+other specs link here. Today that body is the car: `HardwareRobot` with no
+`sensors` (no scan, the default all-unusable depth grid, `get_distance()`
+0.0). Once the board's first feedback frame has arrived (`get_wheel_state()`
+usable):
+
+| Motion | Result | Why |
+|---|---|---|
+| FORWARD verb, or a forward component of `/wheels` | Refused / clamped, `safety_distance` (source `distance_sensor`) | No usable grid, so the cone falls back to the scalar, which reads 0.0 |
+| REVERSE verb, a reverse component of `/wheels`, a settle pass astern | Refused / clamped, `astern_not_observed` | `reverse_clearance()` with `_has_wheels()` and no scan |
+| LEFT / RIGHT verb, rotation in `/wheels`, a turning settle pass | Allowed, never limited | `pivot_blocked()` / `pivot_scale()` never refuse with no usable scan |
+
+So on the car only turns move until its lidar driver lands, and a straight
+verb that overshoots keeps its overshoot. **Before the first feedback
+frame** the table does not hold: `vet_wheel_velocity()` passes a standing
+command through unvetted and a REVERSE verb answers `no_rear_sensor` and
+proceeds (Known gaps). The decision behind the reverse row:
+[architecture spec](../../safety/ARCHITECTURE.md), "A body that cannot see
+astern does not reverse".
 
 ## Interfaces
 
@@ -84,7 +106,10 @@ brain was deleted 2026-09-25).
 5. Otherwise allow (equal manual rank, or a higher rank taking over).
 
 Allowed `/action` and non-zero direct `/wheels` set `driver`, `driver_at`
-and `last_command_at`. `/stop` sets only `last_command_at`. A zero direct
+and `last_command_at` as soon as `arbitrate()` passes, before the command
+runs. The claim stands even if the command is then refused or fails:
+`ros_unavailable`, `safety_distance`, a 400 for an unknown action, or
+`unsupported` from `/wheels` on a body without motors. `/stop` sets only `last_command_at`. A zero direct
 `/wheels` is never arbitrated and sets none of the three: from the holder
 it zeroes the wheels, from anyone else it returns `ignored: true` (direct
 drive only). Under ROS drive, `/wheels` is accepted only from `ros`, is not
@@ -115,16 +140,14 @@ silence).
 | Key / constant | Value | Unit | Read in | Why |
 |---|---|---|---|---|
 | `safety.min_distance_cm` | 20 | cm | `robot/server.py` | The stopping floor. 20 on both server and brain since S5: 3.3 sigma clear of one cell under sensor noise; 30 vetoed ~45% of legal moves |
-| `brain.min_distance_cm` | 20.0 (code default 30.0) | cm | `control/brain_config.py` -> `brain/agent.py` | The brain's early out |
+| `brain.min_distance_cm` | see mission | cm | `control/brain_config.py` -> `brain/agent.py` | The brain's early out. Value and code default: [mission engineering](../mission/ENGINEERING.md), the canonical home |
 | `safety.watchdog_timeout_s` | 1.0 | s | `robot/server.py` | Watchdog and authority lapse |
 | `safety.sensor_to_bumper_cm` | 0.0 | cm | `robot/server.py` | Subtracted from cone ranges. To measure on the car |
 | `WATCHDOG_POLL_INTERVAL_S` | 0.1 | s | `robot/server.py` | Watchdog wake rate; published in `/health` for `control/health.py` |
 | `WHEEL_LOOP_INTERVAL_S` / `VERB_PERIOD_S` / `PIVOT_LOOKAHEAD_S` | 0.05 | s | `robot/server.py`, `robot/interface.py`, `robot/safety.py` | nav2's controller rate. A tick over 0.1 s counts as late |
 | `ROS_SILENCE_S` | 0.5 | s | `robot/server.py` | Ten missed 20 Hz actuator posts = ROS down (3.24 G3) |
-| `FOOTPRINT_LENGTH_M` x `FOOTPRINT_WIDTH_M` | 0.253 x 0.231 | m | `robot/safety.py` | UGV Rover outer shell (3.21). Equal to the xacro and nav2 footprint by `tests/test_wall_linters.py` |
+| `FOOTPRINT_LENGTH_M`, `FOOTPRINT_WIDTH_M`, `LIDAR_X_M`, `LIDAR_TO_REAR_BUMPER_CM` | see platform | m / cm | `robot/safety.py` (defined here; the footprint is imported by `sim/grid_world.py`, `LIDAR_X_M` is the sim's scan origin) | The chassis geometry every check places returns against. `LIDAR_TO_REAR_BUMPER_CM` is derived: half the length plus `LIDAR_X_M`. Values and sources: [platform engineering](../platform/ENGINEERING.md), the canonical table. Held equal to the xacro and nav2 by `tests/test_wall_linters.py` |
 | `FOOTPRINT_SIDE_MARGIN_CM` | 3.0 | cm | `robot/safety.py` | Starter-house doors are 30 cm against a 23.1 cm chassis. 3 cm less the march's 1.5 cm over-read; larger refuses every door (`tests/chassis_fit.py`) |
-| `LIDAR_X_M` | 0.040 | m | `robot/safety.py` (also sim scan origin, xacro `laser_x`) | Rover CAD (3.27) |
-| `LIDAR_TO_REAR_BUMPER_CM` | 16.65 (derived) | cm | `robot/safety.py` | Half the length plus the lidar offset |
 | `PIVOT_MARGIN_CM` | 1.3 | cm | `robot/safety.py` | 1.2 at 3.19. Raised after one guarded turn read 0.96 cm once the lidar moved 4 cm ahead (3.27). Moved after seeing data, as recorded |
 | `PIVOT_MIN_LOOKAHEAD_DEG` | 1.0 | deg | `robot/safety.py` | Minimum look-ahead for a slow turn |
 | `SAFETY_SCAN_RANGE_M` | 0.6 | m | `robot/safety.py` | Scan hint. Effective `max(0.6, half-length + 1.5 x min_distance)`. Without it the sim cast 360 rays to 12 m, about 13 ms a period |
@@ -156,7 +179,7 @@ worst runs with their house, pose, `T` (travel-to-contact) and `G` (gap).
 `sim/grid_world.py`'s collision, or a chassis constant:
 
 ```bash
-python -m tests.demo_footprint_sweep              # 40 starts/house x 24 headings
+python -m tests.demo_footprint_sweep              # 40 starts/house x 24 headings x 2 directions
 python -m tests.demo_footprint_sweep --unclamped  # no clamp: judges the sim's own collision (no run > 0.5 cm deep)
 python -m tests.demo_verb_sweep
 python -m tests.demo_mover_sweep
@@ -200,7 +223,7 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | `tests/test_wheels_command.py` (8) | R2b's six criteria plus the zero-heartbeat rules |
 | `tests/test_ros_verb_safety.py` (7) | 3.24 G2: the same bars through the ROS path |
 | `tests/test_mover_safety.py` (3) | 3.30: a crossing person |
-| `tests/test_blind_reverse.py` (5) | 2026-10-02: `HardwareRobot` over the fake board with no sensors refuses REVERSE without moving, clamps a standing reverse to zero, still turns; a teleop body still reverses; a body with a scan is judged by it |
+| `tests/test_blind_reverse.py` (5) | 2026-10-02: `HardwareRobot` over the fake board with no sensors refuses a REVERSE verb without moving and clamps a standing reverse to zero; a standing turn (`vet_wheel_velocity()`) passes; a teleop body still reverses; a body with a scan is judged by it. Not pinned: a turn VERB, and a settle pass astern (Known gaps) |
 | `tests/test_authority.py` (13) | M4: ranks, lapse, stop claims nothing, reasons on the wire, preemption ends a mission |
 | `tests/test_goal_arbitration.py` (9) | 3.23: a goal is an autonomous driver |
 | `tests/test_ros_fallback.py` (6) | 3.24 G3, all four criteria |
@@ -231,18 +254,48 @@ order; record the table in the plan entry.
 - **Stale comment:** `robot/safety.py:46-57` says only FORWARD is checked
   and that turns "can never collide". Since 3.19 and 3.22, REVERSE is
   checked and turns are vetted through `run_verb()` and the wheel vet.
-- **The car reverses nowhere and turns blind until its lidar driver
-  lands.** `HardwareRobot` without `sensors` has no scan, so
-  `reverse_clearance()` answers `astern_not_observed` once its first
-  feedback frame arrives, and `pivot_blocked()` never refuses. FORWARD is
-  refused too (`get_distance()` 0.0). By decision; see the architecture
-  spec.
+- **The car only turns until its lidar driver lands**: see "Driving
+  without a lidar" above. By decision.
+- **`tests/test_blind_reverse.py` pins less than the rule.** It covers the
+  REVERSE verb, a standing reverse and a standing turn. Nothing pins that a
+  turn VERB still runs blind on the car, or that a settle pass astern is
+  refused `astern_not_observed` (`_settle()` -> `run_verb()` in
+  `robot/safety.py`); both are read from the code, not tested.
 - **Before the board's first feedback frame**, `get_wheel_state()` is
   unusable (`robot/hardware_robot.py:349`): `vet_wheel_velocity()` passes a
   standing command through unvetted (`robot/safety.py:665`), and
-  `_has_wheels()` is false, so a reverse in that window answers
-  `no_rear_sensor` and proceeds. Open decision
+  `_has_wheels()` is false, so a REVERSE verb in that window answers
+  `no_rear_sensor` and proceeds unguarded. Open decision
   (`docs-review/SPEC-REVIEW.md` fix-list 6).
+- **A stop pauses a nav2 goal; it does not end it** (UNDECIDED,
+  `docs-review/SPEC-REVIEW-2.md` H1). `POST /stop` only records the command
+  time and calls `robot.stop()` (`robot/server.py:655-669`).
+  `RosDriveRobot.stop()` (`robot/ros_drive.py:266-278`) zeroes the
+  `twist_mux` inputs and holds non-zero commands for `STOP_HOLD_S` (0.6 s)
+  but cancels no goal, and the bridge cancels a goal only on a **non-zero**
+  `twin-dpad` twist
+  (`service/slam/src/picar_bridge/picar_bridge/bridge.py:453-455`). nav2
+  keeps publishing on `cmd_vel/nav`, the same input the stop's `ros` zero
+  goes to, so its next message overrides the zero; under `drive: ros` the
+  wheels resume when the hold lapses; under `drive: direct` with
+  `WORLD_MODE=ros` they resume on the plugin's next `/wheels` post, about
+  50 ms later, because a stop claims nothing and the plugin's next non-zero
+  post is arbitrated and allowed. Pre-existing.
+  Proposed fix (a decision for the user): `/stop` also cancels any active
+  goal, on a background thread after `robot.stop()` returns, so the stop
+  never waits on the bridge; pinned by a test with an active goal in which
+  the wheels stay at zero past `STOP_HOLD_S`.
+- **ROS liveness is judged only from the plugin's `/wheels` posts**
+  (UNCONFIRMED: read, not run; `docs-review/SPEC-REVIEW-2.md` M2).
+  `ros_up()` (`robot/server.py:319-323`) reads `last_ros_post_at`, set only
+  by the actuator's posts (`robot/server.py:620`). If the bridge dies while
+  `picar_sim_hardware` keeps posting, `ros_up()` stays true, every verb
+  fails at `RosDriveRobot._send()`, and `/action` refuses even a person
+  `ros_unavailable` (`robot/server.py:571-575`), so the direct fallback
+  never engages. If `twist_mux` or `diff_drive_controller` dies, verbs
+  achieve nothing and `_refuse_if_nothing_achieved()` returns
+  `safety_distance`. Proposed (decision): count the bridge's HTTP side
+  toward `ros_up()`, or have the container exit when the bridge does.
 - **Turns on a body with no `verb_plan()`** (the remote body, the ROS
   wrapper) get no pivot check inside `check_and_execute()`. The remote body
   is vetted again by the server, and the ROS path by the wheel vet, so the
@@ -255,9 +308,9 @@ order; record the table in the plan entry.
 - **Unnamed, `teleop` and `teleop-operator` drivers under ROS drive** are
   refused `ros_unavailable`: the bridge maps only `twin-dpad`, `brain` and
   `ros` (`docs-review/REPORT.md` V10).
-- **About 0.4 s after a container dies**, before 0.5 s of silence, a
-  person's verb is refused `ros_unavailable`. That window is inside G3's
-  2 s bar.
+- **Until `ROS_SILENCE_S` (0.5 s) of silence after a container dies**,
+  `ros_up()` is still true, so a person's verb goes to the dead bridge and
+  is refused `ros_unavailable`. That window is inside G3's 2 s bar.
 - **The fixed 20 cm floor** is a stopping distance for about 0.45 m/s
   (`PLAN-onboard-perception.md`); a ROS verb peaks at 0.6 m/s and relies on
   the look-ahead.

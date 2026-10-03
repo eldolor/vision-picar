@@ -26,7 +26,7 @@ commit as the code.
 | `control/walk_replay.py` | `replay_walk(entries, frame_bytes_for, target_object, post_navigate, model_id, prompt_variant, max_workers)`, which returns entries in `walk.jsonl` shape plus a per-frame diff |
 | `control/label_assist.py` | CLI and functions: `propose()` (OWLv2 crops + CLIP), `propose_cloud()` (a Bedrock VLM), `assert_absent()` (walk-level negative). Writes `labels.candidate.json`; only `assert_absent()` produces a `labels.json` document. |
 | `control/brain_server.py` | Mounts the same write routes locally, with `allow_recording` read per request and `_proxy_recording()` forwarding `/recording/*` to `recording_proxy_url`. `/health` publishes `recording_allowed`. |
-| `service/lambda/walks_handler.py` | `Mangum(create_app(...))`. `_assert_configured()` refuses to import when `RECORDING_BACKEND=s3` and no `RECORDING_BUCKET` is set. The refusal is conditional on `RECORDING_BACKEND=s3`: with the variable unset the function starts on the `local` backend and writes to its ephemeral disk (Known gaps). The template sets `s3`. |
+| `service/lambda/walks_handler.py` | `Mangum(create_app(...))`, built at module level, then `_assert_configured()`. With `RECORDING_BACKEND=s3` and no `RECORDING_BUCKET`, the import fails first inside `create_app()`: `walk_store_from_config()` constructs `S3WalkStore("")`, which raises `WalkStoreError: S3WalkStore needs a bucket name.`, so `_assert_configured()`'s own `RuntimeError` never runs (checked 2026-10-02 by a dry import with `mangum` stubbed). Either way the function refuses to start. With `RECORDING_BACKEND` unset it starts on the `local` backend and writes to its ephemeral disk (Known gaps). The template sets `s3`. |
 | `cloudformation/recordings-s3.yaml` | The bucket and its `RecordingsAccessPolicy`. Exports `<stack>-BucketName`, `-BucketArn`, `-AccessPolicyArn`. |
 | `cloudformation/serverless.yaml` | `WalksFunction`, `WalksRole` (the imported access policy plus `bedrock:InvokeModel`), routes `ANY /recording/{proxy+}`, `GET /stats`, `ANY /metrics/{proxy+}` |
 
@@ -60,13 +60,13 @@ routes and the page routes):
 | `PUT /recording/walks/{walk}/tag` | `{label}` in `good`, `bad`, `training-ready`; empty or null clears it. 400 otherwise. |
 | `PUT /recording/walks/{walk}/meta` | Merges `model_id`, `target_object`, `note` into `meta.json` |
 | `POST /recording/walks/{walk}/evaluate?judge=true` | Recomputes and overwrites `eval.json` (manual) |
-| `GET /recording/walks/{walk}/evaluation` | `eval.json` if its `schema` is current, else computes it (with the judge, when enabled) and stores it. This lazy read is the ONLY automatic scoring path: `POST /recording/finish` writes `meta.json` and never scores. `GET /recording/walks` only reads an existing `eval.json`. |
-| `POST /recording/walks/{walk}/replay` | `{model_id, prompt_variant}`, synchronous. 503 only when no vision URL is configured (checked before any frame). Otherwise per-frame failures are swallowed by `replay_walk()`, counted in `errors` and described in `diff[].error`; below `REPLAY_MIN_COVERAGE` the sidecar is stored with `verdict: unusable`, `score: null`, flag `incomplete`, and the route returns **200** with that record. A vision service that is entirely down therefore yields a 200 `unusable` replay, not a 503. |
+| `GET /recording/walks/{walk}/evaluation` | `eval.json` if its `schema` is current, else computes it (with the judge, when enabled) and stores it. This lazy read is the ONLY automatic scoring path: `POST /recording/finish` writes `meta.json` and never scores. `GET /recording/walks` only reads an existing `eval.json`. The console calls this route on page load for FINISHED walks only (`scorePendingWalks()` in `control/admin.js` filters `w.finished && !w.eval`), one at a time; an unfinished walk (no `meta.json`) is never scored automatically, only by the Evaluate button (`POST .../evaluate`). Any other client that GETs this route on an unfinished walk does score it. |
+| `POST /recording/walks/{walk}/replay` | `{model_id, prompt_variant}`, synchronous. Each frame goes to `/navigate` through `post_navigate()`, which always sends `media_type: image/jpeg` (even for a `.png` or `.webp` frame) and never sends `searched_rooms` (Known gaps). 503 only when no vision URL is configured (checked before any frame). Otherwise per-frame failures are swallowed by `replay_walk()`, counted in `errors` and described in `diff[].error`; below `REPLAY_MIN_COVERAGE` the sidecar is stored with `verdict: unusable`, `score: null`, flag `incomplete`, and the route returns **200** with that record. A vision service that is entirely down therefore yields a 200 `unusable` replay, not a 503. |
 | `GET /recording/walks/{walk}/replays` | Every stored `replay-*.json` |
 | `GET /recording/models` | Relays the vision service's `/navigate/models`. An empty list (never an error) when unreachable. |
 | `GET /recording/summary` | Per (model, prompt, source) rows over scored walks and replays: `mean_score`, `median_score`, `best`, `worst`, `reach_rate`, `collisions`, `flags`, `median_frames`. Rows with collisions sort last. Anything with a null or missing score is skipped, which includes `unusable` replays and every metrics container (no `eval.json`, no replays). |
 | `GET /stats` | `walks`, `frames`, `bytes` |
-| `DELETE /recording/walks/{walk}` and `.../frames/{file}` | Deletes; a frame delete also rewrites `walk.jsonl` without that frame's row |
+| `DELETE /recording/walks/{walk}` and `.../frames/{file}` | Deletes; a frame delete also rewrites `walk.jsonl` without that frame's row. `metrics-YYYY-MM-DD` passes `WALK_NAME`, so this deletes a whole day of mission rows when pointed at a metrics container (Known gaps). |
 | `GET /admin`, `GET /admin.js` | The console (local runs; deployed copies come from S3) |
 
 **The walk layout** (identical on both backends; `<root>` is a directory
@@ -83,10 +83,20 @@ or the `recordings/` key prefix):
 | `labels.json` | a person (or `assert_absent()`) | `walk`, `description`, `target_visible_labels{file: bool}`, `adjudicated[]`, `proposed_by`, `note` |
 | `labels.candidate.json` | `label_assist` | as `labels.json`, plus `candidate_scores` and `review_bands{visible,review,absent}`; `adjudicated` is always empty |
 
-The twin builds walk names as
-`<target>-<model tag>[-<prompt tag>]-YYYYMMDD-HHMMSS`. The walks service
-parses `recorded_at` from that timestamp, not from mtime, and recovers a
-missing target from the name.
+The twin builds walk names in `newWalkName()` as
+`<target>[-<model tag>][-<prompt tag>]-YYYYMMDD-HHMMSS`. The target is
+lower-cased, non-alphanumerics become `-`, and it is cut at 24 characters.
+The model tag is present only when a model was picked in the twin, and is
+the id with its region and provider prefixes, `claude-`, and any date or
+version suffix removed (`opus-4-5`, `fable-5-1`, `gpt-6-astra`). The prompt
+tag is present only for a non-`default` wording. Walks without a model tag
+exist in the corpus (`blue-bottle-20260907-142454`). The walks service
+parses `recorded_at` from the timestamp, not from mtime, and, when
+`meta.json` has no `target_object`, recovers the target from the name in
+`_walk_target()`: it strips the timestamp, then a prompt tag matching only
+`default` or `next-step*`, then a model tag starting with only `nova`,
+`claude`, `haiku`, `sonnet`, `opus`, `qwen`, `llama` or `pixtral`. Any
+other tag stays in the recovered target (Known gaps).
 
 ## Parameters and configuration
 
@@ -161,10 +171,11 @@ VISION_URL=http://127.0.0.1:8080 VISION_SHARED_SECRET=<vision secret> \
 
 `VISION_URL` names a local vision service on its default port. That port
 is also the tunnel proxy's (`service/tunnel/run.sh`): with the tunnel
-stack up, point `VISION_URL` at the deployed site, or at a local vision
+stack up, point `VISION_URL` at the deployed site (or at the proxy's
+forward to it, `http://127.0.0.1:8080/vision`), or at a local vision
 service started on another port (see the cloud-vision engineering spec,
-"Port 8080 is shared with the tunnel proxy"). Pointed at the proxy by
-mistake, every replay frame is a 404 from the robot server and the replay
+"Port 8080 is shared with the tunnel proxy"). Pointed at the bare proxy
+by mistake, every replay frame is a 404 from the robot server and the replay
 is stored `unusable`. Set `VISION_SHARED_SECRET` whenever the vision
 service has a secret; without it the walks service signs with its own
 `APP_SHARED_SECRET` and every frame is a 401.
@@ -198,11 +209,29 @@ other two, record every looked-at frame in `adjudicated`, then save the
 result as `labels.json`. Score it with `control/perception_eval.py`
 (perception domain).
 
-**Play a walk as a mission** (paid calls, one per frame or per trigger):
+**Play a walk as a mission** (paid calls, one per frame under `vision`,
+one per trigger under `tiered`). `VISION_URL` is the vision service's base
+URL (the deployed site, or a local service); the client reads the vision
+secret from `APP_SHARED_SECRET`, not `VISION_SHARED_SECRET`. `--policy
+tiered` needs `requirements-perception.txt`; what a tiered replay does and
+does not measure is canonical in the
+[policy engineering spec](../policy/ENGINEERING.md#procedures).
 
 ```bash
-VISION_URL=... python -m tests.demo_replay_mission recordings/<walk> "<target>" --policy tiered
+VISION_URL=<vision base URL> APP_SHARED_SECRET=<vision secret> \
+  python -m tests.demo_replay_mission recordings/<walk> "<target>" --policy vision
+python -m tests.demo_replay_mission recordings/<walk> "<target>" --policy tiered   # same env
 ```
+
+Expected output: a header `=== <n> frames from recordings/<walk>,
+target='<target>', policy=<policy> ===`, then one line per step (step,
+action, `[frame-NNNN.jpg]`, and under `tiered` a `<status margin | CLOUD
+<trigger>>` or `| local>` tag, then the reasoning), then a summary block:
+`Outcome:`, `Steps/calls:` (vision) or `Steps:` / `Paid calls: <c> over
+<f> frames -- 1 per <r>` / `Triggers:` (tiered), `Wall clock:`, `Frames
+used: <i> of <n>`, and `Arrived:`. With `VISION_URL` unset it exits at
+once with `Set VISION_URL to the deployed vision service's base URL.`
+A replay is open loop: `Outcome` is not a navigation result.
 
 **Deploy or update the bucket stack**, and confirm what is actually
 deployed, not what git says:
@@ -212,16 +241,19 @@ aws cloudformation deploy --template-file cloudformation/recordings-s3.yaml \
   --stack-name vision-picar-recordings-s3 --region us-east-2 \
   --capabilities CAPABILITY_NAMED_IAM
 aws cloudformation get-template --stack-name vision-picar-recordings-s3 \
-  --region us-east-2 --query TemplateBody | grep -E 'DeletionPolicy|UpdateReplacePolicy'
+  --region us-east-2 --query TemplateBody --output text \
+  | grep -E '^\s*(DeletionPolicy|UpdateReplacePolicy):'
 ```
 
 `--capabilities CAPABILITY_NAMED_IAM` is required because the template
 creates a named managed policy (`RecordingsAccessPolicy`, named
 `<stack>-access`). Without it the deploy fails with
 `InsufficientCapabilitiesException` before changing anything. Expected
-from the second command: `DeletionPolicy` and `UpdateReplacePolicy`, both
-`Retain`, on the bucket. Nothing printed means the deployed template is
-not the one in git.
+from the second command, exactly two lines: `DeletionPolicy: Retain` and
+`UpdateReplacePolicy: Retain` (indented, on the bucket). `--output text`
+matters: with the default JSON output `TemplateBody` is one escaped string
+on a single line, and grep prints the whole template or nothing useful.
+Nothing printed means the deployed template is not the one in git.
 
 The walks function is built and deployed together with the vision
 function; the procedure is "Deploy the functions" in the
@@ -229,13 +261,42 @@ function; the procedure is "Deploy the functions" in the
 Pass `WalksSharedSecret`. As templated, that deploy does not enable
 replay (Known gaps).
 
-**Recover a deleted object** (within the 90-day noncurrent window):
+**Recover a deleted object** (within the 90-day noncurrent window). A
+delete on the versioned bucket leaves a delete marker on top of the old
+version; removing the marker restores it. First see what is there:
 
 ```bash
-aws s3api list-object-versions --bucket <bucket> --prefix recordings/<walk>/
-aws s3api copy-object --bucket <bucket> --key <key> \
-  --copy-source "<bucket>/<key>?versionId=<version>"
+aws s3api list-object-versions --bucket <bucket> --prefix recordings/<walk>/ \
+  --query '{deleted: DeleteMarkers[?IsLatest].[Key,VersionId], versions: Versions[].[Key,VersionId,IsLatest,LastModified]}' \
+  --output table
 ```
+
+Expected: under `deleted`, one row per deleted key with its marker's
+version id; under `versions`, the earlier versions of those keys with
+`IsLatest` `False`. Both empty means nothing was ever under that prefix
+(check the walk name) or the window has passed.
+
+Restore a whole deleted walk by removing its latest delete markers:
+
+```bash
+aws s3api list-object-versions --bucket <bucket> --prefix recordings/<walk>/ \
+  --query 'DeleteMarkers[?IsLatest].[Key,VersionId]' --output text \
+  | while read -r key vid; do aws s3api delete-object --bucket <bucket> --key "$key" --version-id "$vid"; done
+aws s3 ls s3://<bucket>/recordings/<walk>/ | wc -l
+```
+
+Expected: one `{"DeleteMarker": true, "VersionId": "..."}` per key, then a
+count equal to the walk's object count before the delete. To roll back a
+REWRITTEN object instead (a frame delete rewrites `walk.jsonl`), copy the
+wanted older version over the current one:
+
+```bash
+aws s3api copy-object --bucket <bucket> --key recordings/<walk>/walk.jsonl \
+  --copy-source "<bucket>/recordings/<walk>/walk.jsonl?versionId=<version>"
+```
+
+Expected: a JSON reply with `CopyObjectResult.ETag` and a new `VersionId`.
+`GET /recording/walks/<walk>` then shows the restored rows.
 
 **Failure signatures.**
 
@@ -247,7 +308,7 @@ aws s3api copy-object --bucket <bucket> --key <key> \
 | Replay answers 200 but the sidecar is `unusable` and the failed frames' `diff[].error` read `RuntimeError: HTTP 401: ...` | `VISION_SHARED_SECRET` is unset, so frames were signed with the walks secret |
 | Replay answers 200 but the sidecar is `unusable` and the failed frames' `diff[].error` read `RuntimeError: HTTP 404: ...` | `VISION_URL` points at something other than the vision service, typically the tunnel proxy on :8080 |
 | `aws s3 sync` reports nothing to upload after a label edit | `--size-only` was used and the edit kept the file's size |
-| The walks function fails at import with `RECORDING_BACKEND=s3 but RECORDING_BUCKET is unset` | The stack was deployed without the bucket import |
+| The walks function fails at import (`Runtime.ImportModuleError` / init error) with `control.walk_store.WalkStoreError: S3WalkStore needs a bucket name.` | `RECORDING_BACKEND=s3` with no `RECORDING_BUCKET`: the stack was deployed without the bucket import. (`_assert_configured()`'s `RECORDING_BACKEND=s3 but RECORDING_BUCKET is unset` cannot appear: `create_app()` fails first.) |
 | A replay row shows `unusable` / `incomplete` | Coverage below 0.8. `errors` in the sidecar is a count; the per-frame reasons are in `diff[].error`. |
 
 ## Verification
@@ -303,13 +364,21 @@ import is added to `requirements-walks.txt`; a `SCHEMA_VERSION` bump if
   Ownership: operations owns the storage layout that puts them there and
   its fix (the operations engineering spec); this domain owns the list
   filter, a prefix exclusion in `list_walks()` or in the routes that call
-  it.
-- **The bucket-missing refusal keys on `RECORDING_BACKEND=s3`.**
-  `walks_handler._assert_configured()` refuses only when the backend is
-  `s3` and no bucket is set. A function deployed with `RECORDING_BACKEND`
-  unset starts on the `local` backend and writes frames to its ephemeral
-  disk, which is the failure the guard exists to stop. The template always
-  sets `s3`, so this needs a hand-edited deployment to bite.
+  it. **It is also a deletion hazard:** `metrics-YYYY-MM-DD` matches
+  `WALK_NAME`, so the console's Delete (or bulk delete) on that "empty
+  walk", or `DELETE /recording/walks/metrics-YYYY-MM-DD`, calls
+  `store.delete_walk()` and removes a whole day of mission rows. On S3 the
+  rows are recoverable from versions ("Recover a deleted object"); on the
+  local backend they are gone.
+- **The bucket-missing refusal keys on `RECORDING_BACKEND=s3`, and its
+  own guard is dead code.** With `s3` and no bucket, `create_app()` raises
+  `WalkStoreError` before `walks_handler._assert_configured()` runs, so
+  the guard's message never appears; the refusal still happens, by
+  accident of ordering. No test covers either path. A function deployed
+  with `RECORDING_BACKEND` unset starts on the `local` backend and writes
+  frames to its ephemeral disk, which is the failure the guard exists to
+  stop. The template always sets `s3`, so this needs a hand-edited
+  deployment to bite.
 - **An empty walk exists locally and not on S3.** `create_walk()` makes a
   directory on `LocalWalkStore` and is a no-op on `S3WalkStore`, because a
   prefix exists only while an object carries it. Every real walk gets a
@@ -328,5 +397,26 @@ import is added to `requirements-walks.txt`; a `SCHEMA_VERSION` bump if
   `walks_handler.py` cites "two of the 39 walks", a corpus deleted on
   2026-09-07.
 - **Replay is a synchronous request,** not a job.
+- **Replay does not ask exactly the live question.** `post_navigate()`
+  hardcodes `media_type: image/jpeg`, so a `.png` or `.webp` frame (which
+  `FRAME_SUFFIX` allows) is sent to Bedrock labelled as JPEG; and it never
+  sends `searched_rooms`, which a live mission's `brain/navigate.py`
+  sends from mission memory. Replay therefore measures a model with no
+  search memory. Every rig walk so far is JPEG, so the first difference
+  has not bitten.
+- **The recovered target can carry tags.** `_walk_target()` strips only
+  prompt tags `default` / `next-step*` and model tags starting
+  `nova|claude|haiku|sonnet|opus|qwen|llama|pixtral` (the model pattern
+  also swallows any prompt tag after a recognised model). So with no
+  `meta.json` target, a `fable-5-1` or `gpt-6-astra` model tag, and any
+  prompt tag other than `next-step*` that follows one of them or no model
+  tag at all (`bearing-only`, `center-third-path`,
+  `default-with-distance`), stays in the recovered target, which goes into
+  the judge's and the collision check's prompts. Checked against the
+  regexes: `red-backpack-gpt-6-astra-<ts>` gives "red backpack gpt 6
+  astra", `red-backpack-bearing-only-<ts>` gives "red backpack bearing
+  only", while `red-backpack-opus-4-5-bearing-only-<ts>` gives "red
+  backpack". Setting `target_object` through `PUT .../meta` avoids it for
+  one walk.
 - **The 307 redirect is tested only at the store level.** No route test
   drives `GET .../download` against an S3-backed store.

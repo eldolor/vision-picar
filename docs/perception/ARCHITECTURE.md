@@ -135,9 +135,13 @@ model on a subsample of the corpus. A ranking that leads on a fraction of the
 frames has inverted on the whole labelled set before (P23), so a model choice
 is made on every labelled frame.
 
-**Trade-off.** Recall is worth more than precision here by design: a false
-positive costs one cloud call that the cloud rejects; a miss means driving
-past the target.
+**Trade-off.** Recall is worth more than precision here by design: a miss
+means driving past the target. The price is not small. A false positive that
+passes the gate is a sighting: it may fire a paid cloud call, it steers the
+robot on that frame (steering has no frame hysteresis, and the cloud's answer
+does not override a local sighting), and near the wrong object it can satisfy
+the arrival rule and end the mission `found` (see "Where that intent is not
+yet met" above, and the failure-mode table).
 
 ### Gate on a probability, not a raw similarity
 
@@ -160,8 +164,9 @@ gone" and would let a stalled capture end a search.
 ### The simulator reports detections; no detector ever runs on a render
 
 **Decision** (1.12, built at R1). In the sim, detections come from the
-simulator's geometry -- in the field of view, unoccluded, with the bearing of
-the visible part (3.32) -- and are marked synthesised. The sim tests the
+simulator's geometry -- in the field of view and at least partly visible,
+reported at the bearing of the visible part and not at all when hidden (3.32)
+-- and are marked synthesised. The sim tests the
 detector's *consumers*, never the detector. **Rejected:** keeping the sim out
 of the loop (no steering could be tested), and running real models on
 raycaster frames or on textured sprites -- "the detector finds a sprite"
@@ -187,10 +192,10 @@ are recall and latency. Do not re-open the Hailo path or fund a compile run.
 
 **Commitment** (`PLAN-ros-alignment.md` 3.33, confirmed by the user
 2026-10-02): **250 ms a frame at the board's 15 W mode.** Over it, the first
-fix is moving image handling off the CPU (P26), then TensorRT. P26 is
-specified with its own bar -- identical true and false positives, every
-probability within 0.01 -- and is built only if the board's own GPU/CPU split
-says the handling matters.
+fix is moving image handling off the CPU (P26), then TensorRT. P26 is built
+only if the board's own GPU/CPU split says the handling matters; its
+acceptance bar is a plan criterion (`PLAN-onboard-perception.md` P26), not a
+commitment of this spec.
 
 ### Measure against people, at a matched cost
 
@@ -225,7 +230,7 @@ without committing.
 | With | Direction | Category | Ownership |
 |---|---|---|---|
 | Tiered policy ([policy](../policy/ARCHITECTURE.md)) | policy calls the pipeline once per frame | in-process: frame in, tri-state result out | perception owns what was seen; the policy owns what to do |
-| Arrival rule (policy) | reads the result's bearing and pan | in-process, via the scene | arrival refuses a panned bearing; perception only reports it |
+| Arrival rule (policy) | reads the result's bearing and pan | in-process, via the scene | arrival refuses a panned bearing; perception only reports it. Holds on real frames only: a sim frame carries no pan, so the sim stand-in always reports pan 0 with a camera-relative bearing (harmless while no tiered policy pans) |
 | Mission service ([mission](../mission/ARCHITECTURE.md)) | builds the pipeline at mission start | in-process construction | a pipeline that cannot load is a start-time refusal, never a mid-mission vision failure |
 | Body ([body](../body/ARCHITECTURE.md)) | supplies the frame and its pan angle | frame dict | the body owns pixels and servo angles; perception never asks for more |
 | Simulator ([simulator](../simulator/ARCHITECTURE.md)) | supplies reported detections in sim frames | frame data | the simulator owns visibility geometry |
@@ -240,8 +245,8 @@ without committing.
 | Camera frame missing or undecodable; a model raises | **unavailable** | a broken sensor never reads as an empty room |
 | Target the detector has no word for | open-vocabulary path; the vocabulary verdict says so; the cloud's cold search covers it | absence from a blind detector is never trusted as absence |
 | Close-range relabelling | crops are not gated on label | the frames where the target fills the view are kept |
-| Local false positive | each frame that passes the gate is a sighting. It may fire a cloud trigger. It steers the robot on that frame, because steering has no frame hysteresis. Near the object it can satisfy arrival. | the per-frame probability gate is the only bound today. The cloud's identity does not override a local sighting. The target "a false positive never confirms a target" is **not met** on the tiered arrival path (open question) |
-| Camera panned | pan is added to the bearing; tilt is not corrected; arrival refuses to judge | no panned bearing is treated as body-relative without composing it with range |
+| Local false positive | each frame that passes the gate is a sighting. It may fire a cloud trigger. It steers the robot on that frame, because steering has no frame hysteresis. Near the object it can satisfy arrival. | for steering, the per-frame probability gate is the only bound today. For ending `found`, the arrival rule adds consecutive frames, a centred bearing, a lidar range within the radius and one surface -- all local. The cloud's identity does not override a local sighting. The target "a false positive never confirms a target" is **not met** on the tiered arrival path (open question) |
+| Camera panned | on real frames: pan is added to the bearing; tilt is not corrected; arrival refuses to judge. Sim frames carry no pan, so neither happens in the sim (harmless today: the cloud-driven policies never peek and a mission starts centred) | no panned bearing is treated as body-relative without composing it with range |
 | Over the latency budget on the board | P26, then TensorRT | 250 ms a frame at 15 W |
 | A real camera mistaken for the sim | provenance read once; failure assumes a real camera | real frames never get synthetic detections |
 

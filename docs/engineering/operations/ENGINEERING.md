@@ -94,7 +94,7 @@ required):
 | Server | Verdict inputs | Description fields |
 |---|---|---|
 | Robot `GET /health` | `seconds_since_watchdog_poll` against `watchdog_poll_interval_s` x 10 | `mode`, `seconds_since_last_command`, `watchdog_timeout_s`, `driver`, `authority_holder`, `last_refusal`, `env_label`; also on the route: `drive`, `wheel_loop`, `min_distance_cm`, `sim_map`, `refusal_counts`, `identity` |
-| Brain `GET /health` (under `/brain` behind the tunnel) | `mission_running` and `seconds_since_last_tick` against `tick_timeout_s` | `robot_url`, `tick_rate_hz`, `navigate_model_id`, `navigate_prompt_variant`; also `drills_allowed`, `identity` |
+| Brain `GET /health` (under `/brain` behind the tunnel) | `mission_running` and `seconds_since_last_tick` against `tick_timeout_s` | `robot_url`, `tick_rate_hz`, `navigate_model_id`, `navigate_prompt_variant`; also on the route, among others: `drills_allowed`, `identity`, `perception_available`, the `perception_*` settings, the `tier_*` settings (`tier_consecutive_frames` and others), `recording_allowed`, `faults` (`control/brain_server.py`'s `health()` is the full list) |
 
 `control.health` output: `{status: ok|unhealthy, failed: [names],
 parts: [{name, url, status: ok|unhealthy|unreachable, problems, identity,
@@ -148,9 +148,28 @@ PICAR_BRIDGE_URL=http://127.0.0.1:9 PICAR_ROS_CONTAINER=no-such-container \
 **Deploy the functions** (from the repo root, with AWS credentials):
 
 ```bash
+set -a; source ~/.vision-picar-local-secrets
+[ -f ~/.vision-picar-serverless-secrets ] && source ~/.vision-picar-serverless-secrets; set +a
+export VISION_SHARED_SECRET="$VISION_SECRET" WALKS_SHARED_SECRET="$WALKS_SECRET"
+[ -n "$VISION_SHARED_SECRET" ] && [ -n "$WALKS_SHARED_SECRET" ] || echo "STOP: a secret is empty"
 bash service/lambda/build.sh <deploy-bucket> [region]   # bucket: deploy stack's DeployBucketName output; region defaults to us-east-2
-# then run the "Deploy with:" command it prints, passing BOTH secrets
+# then run the "Deploy with:" command it prints, in THIS shell
 ```
+
+**The export line is not optional.** The printed command expands
+`$VISION_SHARED_SECRET` and `$WALKS_SHARED_SECRET`
+(`service/lambda/build.sh`), but the secrets files define `VISION_SECRET`
+and `WALKS_SECRET`. Pasted without the exports, both parameters deploy
+empty, and `cloudformation/serverless.yaml` then omits each function's
+`APP_SHARED_SECRET`, which means **no authentication** on either function.
+Failure signature: an unauthenticated request to a gated route succeeds
+instead of answering 401. Check the deployed functions' variable NAMES
+(not values) with `aws lambda get-function-configuration --function-name
+<name> --query 'keys(Environment.Variables)'`, taking each name from
+`aws cloudformation describe-stack-resource --stack-name
+vision-picar-serverless --logical-resource-id VisionFunction` (and
+`WalksFunction`) `--query StackResourceDetail.PhysicalResourceId`; each
+list must include `APP_SHARED_SECRET`.
 
 Expected: `vision: <n>MB -> s3://...` and `walks: <n>MB -> s3://...`, then
 the command. It deploys `cloudformation/serverless.yaml` to the stack
@@ -186,10 +205,9 @@ ngrok start picar                               # in another terminal
 
 In the twin's Settings: robot URL `https://<tunnel domain>`, brain URL
 `https://<tunnel domain>/brain`, the local secret in both. Before a rig
-walk, warm the models once with
-`python -c 'from brain.perceive import pipeline_for; pipeline_for("x")'`,
-or the first `POST /mission/start` sits on "Starting..." while weights
-download. Failure signatures: `missing ~/.vision-picar-local-secrets` from
+walk, warm the perception models once, as the perception spec's
+Procedures say (docs/engineering/perception/ENGINEERING.md), or the first
+`POST /mission/start` sits on "Starting..." while weights download. Failure signatures: `missing ~/.vision-picar-local-secrets` from
 `run.sh`; `ERR_NGROK_334` from a second tunnel on the domain; a bare "Load
 failed" on the phone when the servers were restarted under it.
 
@@ -218,8 +236,13 @@ exe=<python>`. `UNHEALTHY  (brain)` with the robot ok when the brain is
 down. A robot parked against a wall stays `OK`.
 
 **B5 on the Jetson (planned, not built).** `PLAN-brain-relocation.md` B5
-lists what the units must cover: a ROS container unit ordered before the
-robot server, an `EnvironmentFile` for `APP_SHARED_SECRET`, `ROBOT_MODE`,
+lists what the units must cover: the robot server first, and the ROS
+container started only after `GET /wheels` reports `usable: true` (the
+order docs/engineering/ros/ENGINEERING.md's Procedures and
+`service/slam/README.md` section 3 require until
+`HANDOFF-2026-10-02-spec-review.md` item 2a is fixed; a plain `After=` on
+the robot server's unit is not enough, the unit must wait on `/wheels`), an
+`EnvironmentFile` for `APP_SHARED_SECRET`, `ROBOT_MODE`,
 `ROBOT_DRIVE`, `WORLD_MODE` and `ROBOT_SERIAL`, `dialout` group and a udev
 rule for the motor board, and `Restart=on-failure` that never brings back
 anything that moves on its own. There is no `deploy` directory yet. The
@@ -258,26 +281,30 @@ job, map backup, M11 rollback) are in the
 [architecture spec's open questions](../../operations/ARCHITECTURE.md#open-questions)
 and are not repeated here. These are the implementation gaps:
 
-- **Deployed replay is disabled as templated.** `serverless.yaml`'s
-  `WalksFunction` sets neither `VISION_URL` nor `VISION_SHARED_SECRET`, and
-  the shipped `config/robot.yaml` has `brain.vision_url: ""`. So
-  `POST /recording/walks/{walk}/replay` on the deployed console answers 503
-  ("No vision service configured"). Setting `VISION_URL` alone would not
-  fix it: `control/admin_server.py` falls back to `APP_SHARED_SECRET`, which
-  on that function is the walks secret, so every frame would be refused by
-  the vision service, 4xx is not retried, and the replay would be stored
-  `unusable`. The fix is both variables on the function, then a deploy and
-  a check against the live stack. UNCONFIRMED against the live stack: read
-  from the template only. The recordings spec lists the judge half of this
-  (docs/engineering/recordings/ENGINEERING.md).
+- **Deployed replay is disabled as templated, and would fail on auth if
+  half-enabled.** Both halves (no `VISION_URL`, so a 503; `VISION_URL`
+  alone, so the walks secret is sent to the vision service and every frame
+  is refused) are recorded in the recordings spec's Known gaps
+  (docs/engineering/recordings/ENGINEERING.md), the canonical home. The
+  fix touches `WalksFunction` in `cloudformation/serverless.yaml`, which
+  this domain deploys.
 - **Metrics records appear as walks.** `POST /metrics/runs` writes
   `metrics-YYYY-MM-DD/<run_id>.json` into the same store as the walks, and
   `list_walks()` (`control/walk_store.py`, both backends) does not skip the
   `metrics-` prefix. The console list, `/stats` and `/recording/summary`
-  then iterate over them as zero-frame walks. Operations owns the fix,
-  because its layout causes it: filter the `METRICS_PREFIX` containers
-  (`control/metrics_routes.py`) in `list_walks()`, and pin it in
+  then iterate over them as zero-frame walks. Operations owns the layout
+  (`METRICS_PREFIX` in `control/metrics_routes.py`); the recordings domain
+  implements the filter in `list_walks()` and pins it in
   `tests/test_walk_store.py`.
+- **Deleting a "walk" can delete a day of mission metrics.**
+  `DELETE /recording/walks/metrics-YYYY-MM-DD` passes the walk-name check
+  and the exists check (`_require_walk()` in `control/admin_server.py`), so
+  it deletes that day's mission rows, and the console lists those
+  containers as walks. Read from the code, not exercised.
+- **`build.sh` prints its deploy command even with empty secrets.** It
+  only warns. Proposed: refuse to print the command (or exit non-zero)
+  when `VISION_SHARED_SECRET` or `WALKS_SHARED_SECRET` is empty, so the
+  no-auth deploy above cannot be pasted by accident.
 - **`control/metrics.html` is not asset-checked.** `tests/test_static_assets.py`
   walks the twin and the walk console only, so a file the metrics
   dashboard references could be missing from `service/static/assets.json`

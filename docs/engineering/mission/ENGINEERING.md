@@ -56,8 +56,9 @@ threads; where it and this file disagree, check the code.
    `VisionUnavailable` -> `_handle_vision_failure()`; `Preempted` -> finish
    `preempted`; anything else -> finish `failed` ("step failed: ...").
 4. Under the lock: bump `ticks`, reset `vision_failures`, record the action,
-   the turn counters, and copy `_tier`, `_perception`, `_arrival` and the
-   frame's `metadata.seq` off the scene (held, not overwritten with None).
+   the turn counters, and copy `_tier`, `_perception` and `_arrival` off the
+   scene (held, not overwritten with None); `last_frame_seq` is read from
+   `result.frame`'s `metadata.seq`, not from the scene.
 5. Count consecutive refused FORWARDs (reset by any executed move).
 6. Outside the lock: `found`/`room_reached` if `memory.is_complete()`;
    `blocked` if the refused count reaches `stuck_after`; `max_steps` if
@@ -66,7 +67,9 @@ threads; where it and this file disagree, check the code.
 ### How a tiered mission is built
 
 This is the canonical description. The policy and perception specs link
-here. `POST /mission/start` with `policy` `vision` or `tiered`, in
+here. The chooser between the sim stand-in and real models is
+`control/brain_server.py` (`_tiered_vision_fn()`), not `brain/perceive.py`,
+which only supplies both pipelines. `POST /mission/start` with `policy` `vision` or `tiered`, in
 `control/brain_server.py`:
 
 1. Refuse with 400 if `vision_url` is empty or there is no `target_object`.
@@ -89,8 +92,10 @@ here. `POST /mission/start` with `policy` `vision` or `tiered`, in
    - **Real camera.** It builds `pipeline_for(target, **overrides)`. A
      non-empty or non-zero `perception_*` key overrides the module default.
      `PerceptionUnavailable` becomes a 400 `The tiered policy cannot start:
-     ...`, and any other load error becomes a 400 `The tiered policy could
-     not load its perception models: ...`. The pipeline is then wrapped the
+     ...`, and any other exception from `pipeline_for()` becomes a 400 `The
+     tiered policy could not load its perception models: ...` -- including a
+     construction error that has nothing to do with models, such as a bad
+     `perception_crop_path`. The pipeline is then wrapped the
      same way.
    - The `tier_*` keys become `TieredVision` keyword arguments. A 0
      `tier_cold_search_after_cm` or `tier_max_calls` becomes `None` (off).
@@ -262,14 +267,15 @@ fault is a 403 naming `brain.allow_drills`.
 
 | Response | Cause |
 |---|---|
-| 400 `The vision policy needs a vision service. Set brain.vision_url ...` | `vision_url` empty |
+| 400 `The {policy} policy needs a vision service. Set brain.vision_url ...` (`vision` or `tiered`) | `vision_url` empty |
 | 400 `... searches for an object -- /navigate takes a target_object` | room-only mission under a cloud policy |
 | 400 `model_id 'x' is not offered by the vision service. Available: ...` | bad model; same shape for `prompt_variant` |
 | 400 `The tiered policy cannot start: ... pip install -r requirements-perception.txt` | perception extras missing (perception domain) |
 | 400 `Unknown policy: 'x'. Known: frontier, vision, tiered` | bad `policy` value (a 400, not a 422) |
 | 400 `Unknown fault: 'x'. Known drills: none, vision_error, vision_hang, tick_hang` | bad `fault` value |
-| 400 `The tiered policy could not load its perception models: ...` | weights failed to load or download |
-| 422 naming `extra_forbidden` | an unknown field in the start body, or a wrong type (`max_steps` not an int) |
+| 400 `The tiered policy could not load its perception models: ...` | any other error building the pipeline: weights failed to load or download, or a bad `perception_*` value (e.g. an unknown `perception_crop_path`) |
+| 422 naming `extra_forbidden` | an unknown field in the start body |
+| 422 naming the type error, e.g. `int_parsing` (`max_steps: "abc"`) or `int_type` (`max_steps: [1]`) | a wrong type |
 | `ValueError: Unknown keys in config brain block` at boot | a typo in `config/robot.yaml`'s `brain:` block |
 
 **Demonstrate the HTTP boundary is invisible:** `python -m
@@ -287,7 +293,7 @@ tests/test_mission_guarded_verbs.py -q`.
 | `tests/test_mission_runner.py` (32) | tick-driven equals blocking `run_mission()` step for step; outcomes and idempotent `_finish`; the gate refuses after stop; a stop landing mid-tick records no step; tiered readouts reach status and survive a scene with no tier; the tick keeps advancing while an async call is in flight |
 | `tests/test_brain_server.py` (60) | **the import boundary, by mechanism:** a subprocess imports the brain app and lists `sys.modules`, so a forbidden import fails the suite and does not depend on review; two-hop mission completes; 409 on a second start; stop with no mission stops the car; secret gating; `ROUTE_PREFIX`; **the brain process loads no `sim`, and from `robot`/`world` only `robot.interface`, `robot.safety`, `robot.identity`, `world.interface`**; model and wording validation (refused at start, outage tolerated, one round trip); unknown field is 422; tiered start refusals and sim-vs-real perception choice |
 | `tests/test_failsafes.py` (15) | B3.2 budget and hang; one failure survivable; no movement after stop; B3.3 dead-man; every drill ends `failed` with the robot stopped; no-fault builds the ordinary mission; drills can be switched off |
-| `tests/test_camera_centred_start.py` (11) | 3.20's four criteria: centred first decision for every policy, no step or vision call spent, centred start unchanged against `tests/data/frontier_trace_centred.json`, a refused centring ends the mission like any refused move |
+| `tests/test_camera_centred_start.py` (11) | 3.20's four criteria: centred first decision under `frontier` and `vision` (tiered is not parametrised), no step or vision call spent, centred start unchanged against `tests/data/frontier_trace_centred.json`, a refused centring ends the mission like any refused move |
 | `tests/test_mission_guarded_verbs.py` (3) | 3.32: a mission's verbs go through the safety layer's guarded plan; the gate forwards plan and stop count; a finished mission refuses a plan |
 | `tests/test_bearing_turns.py` | `blocked` after `stuck_after` refusals, never on an arrival, switchable off, reset by progress |
 | `tests/test_robot_contract.py` | `_HaltGate` passes the body conformance suite as a backend |
@@ -314,8 +320,9 @@ the yaml, or the walks Lambda fails at cold start.
 - **S7 (chaos and soak)** not run.
 - Stale prose in code: `control/brain_server.py`'s docstring still says
   MockRobot cannot carry pixels until S2 (it has since 2026-08-31).
-  `config/robot.yaml`'s comment on `max_steps` says "The reference backpack
-  hunt takes 83 steps with the frontier policy", but it has been 61 since
-  the trace was re-pinned on 2026-09-28. The comment `# "" =
+  `config/robot.yaml`'s comment on `max_steps` (line 293) says "The
+  reference backpack hunt takes 83 steps with the frontier policy", and the
+  `tick_interval_s` comment (line 321) says "a whole 83-step mission", but it
+  has been 61 since the trace was re-pinned on 2026-09-28. The comment `# "" =
   brain/perceive.py's DEFAULT_CROP_PATH` in `control/brain_config.py`
   `DEFAULTS` is on the wrong line (see [perception](../perception/ENGINEERING.md)).

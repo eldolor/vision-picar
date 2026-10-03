@@ -12,9 +12,10 @@ This is how the ROS container and the code on the project's side of the
 wall are built today. The what and the why are in the
 [architecture spec](../../ros/ARCHITECTURE.md). This document is true only
 until the implementation changes. The full operator runbook is kept beside
-the code in `service/slam/README.md`, and its section 4 is the one table of
-failure signatures; this spec links to it rather than copying it. The
-procedures below are the runbook's short form.
+the code in `service/slam/README.md`: its section 3 is the start-up runbook
+and its section 4 the one table of failure signatures for the ROS chain and
+its bridge, including the world's SLAM readouts. This spec links to both
+rather than copying them.
 
 ## Implementation
 
@@ -58,7 +59,7 @@ The nodes `picar.launch.py` starts:
 
 | File | What it does |
 |---|---|
-| `robot/ros_drive.py` | `RosDriveRobot(inner, bridge_url, secret="", timeout_s=2.0)`. Under `drive: ros`, `robot/factory.py` wraps the backend in it. Each verb becomes `POST <bridge>/cmd_vel` at `CONTROL_HZ`, closed on `inner.get_wheel_state()`: a main pass, then at most two signed correction passes after the zero lands. A verb ends early if no progress is made for `STALL_S`. `stop()` is described under "Stop" below. Every read goes straight to `inner`. |
+| `robot/ros_drive.py` | `RosDriveRobot(inner, bridge_url, secret="", timeout_s=2.0)`. Under `drive: ros`, `robot/factory.py` wraps the backend in it. Each verb becomes `POST <bridge>/cmd_vel` at `CONTROL_HZ`, closed on `inner.get_wheel_state()`: a main pass, then at most two signed correction passes after the zero lands. A verb ends early if no progress is made for `STALL_S`. `stop()` and its constants are specified once, in the [body engineering spec](../body/ENGINEERING.md) ("The ROS drive stop"). Every read goes straight to `inner`. |
 | `robot/server.py` | Under `drive: ros` (`by_velocity`), `POST /wheels` accepts only driver `ros` (otherwise `not_the_actuator`), and each post stamps `last_ros_post_at`. `ros_up()` is true when the last post is younger than `ROS_SILENCE_S`. While ROS is down, a person's `/action` runs through `fallback_safety`, a `SafetyController` over `robot.inner`, and an autonomous `/action` is refused `ros_unavailable`. `/health` reports `drive.mode` and `drive.ros_up`. |
 | `world/ros_world.py` | The world's SLAM backend. See the [world engineering spec](../world/ENGINEERING.md). |
 
@@ -137,7 +138,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 |---|---|
 | `POST /wheels` under `drive: ros` | Only `x-driver: ros` is accepted. Each post counts toward `wheel_posts` and refreshes `last_command_at`, so it feeds the watchdog. The command is still vetted by `SafetyController.vet_wheel_velocity()` and re-vetted by the 20 Hz wheel loop. |
 | `/action` under `drive: ros` | M4 arbitration runs first. With ROS up, the verb runs `RosDriveRobot` through `safety.check_and_execute()`, and an `httpx.HTTPError` or `RuntimeError` gives `robot.stop()` plus `ros_unavailable`. With ROS down, a person runs `fallback_safety` and the result is tagged `via: direct-fallback`; an autonomous driver is refused `ros_unavailable`. The verb's twists go on the `/action`'s driver's twist_mux input; a driver with no input (anything but `twin-dpad`, `brain` and `ros`) gets 400 `unknown driver` from the bridge, which surfaces as `ros_unavailable` (Known gaps). |
-| Stop (`RosDriveRobot.stop()`) | Supersedes any verb, then calls `inner.stop()` FIRST, so the robot is stopped before ROS is asked anything. It then zeroes the three twist_mux inputs on one background thread (`ros-stop-zero`), each post with a `STOP_ZERO_TIMEOUT_S` timeout; a second stop while one zeroing is in flight starts no new thread (single-flight). For `STOP_HOLD_S` after the stop, a non-zero `set_wheel_velocity()` arriving from ROS (the stopped verb's last twist, still inside twist_mux's input timeout and the controller) is held at zero; the next verb lifts the hold. So a bridge that accepts connections and never answers costs a background thread 1.5 s and the caller nothing. Until 2026-10-02 the zeros went first, each with the 2 s client timeout, on the server's event loop for a watchdog stop (`docs-review/SPEC-REVIEW.md` finding 1). |
+| Stop (`RosDriveRobot.stop()`) | Specified in the [body engineering spec](../body/ENGINEERING.md) ("The ROS drive stop"), including `STOP_ZERO_TIMEOUT_S` and `STOP_HOLD_S`. What the ROS side determines: the hold must outlast twist_mux's input `timeout` plus `diff_drive_controller`'s `cmd_vel_timeout` (the two ADD) plus one plugin period, so a change to either yaml timeout below means re-deriving the hold there. A stop cancels no nav2 goal: nav2 resumes once the hold ends (architecture D6; Known gaps). |
 
 ## Parameters and configuration
 
@@ -150,11 +151,9 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | `ROBOT_URL` (container) | `http://host.docker.internal:8000` | URL | bridge, launch file (xacro arg), and the plugin, where the env var wins | Docker Desktop's name for the host. On Linux use `--network host` and `127.0.0.1`. |
 | `BRAIN_URL` (container) | `http://host.docker.internal:8001/brain`; `""` turns it off | URL | bridge | The `/brain` prefix is what `service/tunnel/run.sh` sets. |
 | `BRIDGE_PORT` | 8090 | port | bridge | -- |
-| `RMW_IMPLEMENTATION` | `rmw_cyclonedds_cpp` | -- | image `ENV` | Under Fast DDS, R6 lost `map -> odom` delivery (3.15). |
+| `RMW_IMPLEMENTATION` | `rmw_cyclonedds_cpp` | -- | image `ENV` | The architecture's D10. |
 | `GEOMETRY2_SHA`, `SLAM_TOOLBOX_SHA` | `404b722...`, `1729c0f...` | git SHA | `service/slam/Dockerfile` | The tf2 0.25.24 ABBA deadlock fix; slam_toolbox with `restamp_tf`. |
 | `ROS_SILENCE_S` | 0.5 | s | `robot/server.py` | Ten missed 20 Hz posts: well past jitter, and inside the 1 s watchdog (G3). |
-| `STOP_ZERO_TIMEOUT_S` | 0.5 | s | `robot/ros_drive.py` | Per zeroing post after a stop, on the background thread: a hung bridge costs that thread 1.5 s at most. |
-| `STOP_HOLD_S` | 0.4 | s | `robot/ros_drive.py` | twist_mux's 0.25 s input timeout plus one 0.05 s plugin period, with margin: how long the stopped verb's last twist can keep reaching the wheels when the zeros never arrive. |
 | `WHEEL_LOOP_INTERVAL_S` | 0.05 | s | `robot/server.py` | 20 Hz, the rate nav2 emits at. Wall duplicate "control rate". |
 | `CONTROL_HZ` | 20.0 | Hz | `robot/ros_drive.py` | The same 20 Hz. Wall duplicate. |
 | `TURN_RATE_RAD_S`, `ANGULAR_GAIN_PER_S` | 1.2, 1.5 | rad/s, 1/s | `robot/ros_drive.py` | At 2 rad/s and a gain of 3, a 45-degree turn landed at 59-74 degrees over 40-150 ms of jitter (3.13). |
@@ -164,7 +163,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | `kTimeoutMs` | 40 | ms | `picar_sim_hardware.cpp` | One 50 ms controller cycle. A slower round trip is stale. |
 | `update_rate` | 20 | Hz | `controllers.yaml` | Matches the wheel loop and the nav2 controller. |
 | `wheel_radius`, `wheel_separation` | 0.040, 0.172 | m | `controllers.yaml` | What `diff_drive_controller` reads. The physical values, their sources and every other copy are in the [platform engineering spec](../platform/ENGINEERING.md); `tests/test_urdf.py` and the wall linters pin the copies equal. |
-| `cmd_vel_timeout` | 0.25 | s | `controllers.yaml` | It adds to twist_mux's 0.25, so silence stops the wheels within 0.5 s (R4 criterion 6). |
+| `cmd_vel_timeout` | 0.25 | s | `controllers.yaml` | It adds to twist_mux's 0.25, so silence stops the wheels within 0.5 s (R4 criterion 6). The ROS drive stop's hold is derived from this sum (body engineering spec). |
 | `linear.x.max_velocity`, `angular.z.max_velocity` | +/-0.6, +/-6.0 | m/s, rad/s | `controllers.yaml` | 0.6 m/s is the sim's ceiling: 2 cells per second (wall duplicate). |
 | twist_mux `timeout` / `priority` | 0.25 s; teleop 100, brain 50, nav 50 | s, -- | `twist_mux.yaml` | The order mirrors `DRIVER_PRIORITY` (wall duplicate). |
 | `resolution` | 0.05 | m | `slam.yaml` | -- |
@@ -172,7 +171,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | `restamp_tf`, `transform_publish_period`, `map_update_interval` | true, 0.05 s, 1.0 s | -- | `slam.yaml` | `restamp_tf` stops `map -> odom` going stale while the robot is at rest (3.15). |
 | `footprint` / `FootprintApproach.points` | +/-0.1265 x +/-0.1155 | m | `nav2.yaml` | Half the chassis outline; the outline itself is in the [platform engineering spec](../platform/ENGINEERING.md). A wall duplicate with `robot/safety.py`. |
 | `inflation_radius`, `cost_scaling_factor` | 0.12, 8.0 | m, -- | `nav2.yaml` | Kept small for doors. |
-| Regulated Pure Pursuit `desired_linear_vel`, `lookahead_dist` | 0.20, 0.30 | m/s, m | `nav2.yaml` | -- |
+| Regulated Pure Pursuit `desired_linear_vel`, `lookahead_dist` | 0.20, 0.30 | m/s, m | `nav2.yaml` | The flat 0.2 m/s cap is what makes the safety layer's fixed 20 cm stop sound (`PLAN-ros-alignment.md` question 9, speed set by clearance). No recorded reason for the lookahead. |
 | `xy_goal_tolerance`, `yaw_goal_tolerance` | 0.10, 6.28 | m, rad | `nav2.yaml` | Position goals only. |
 | NavFn `allow_unknown`, `tolerance` | true, 0.10 | --, m | `nav2.yaml` | -- |
 | collision_monitor `time_before_collision`; `PolygonSlow` `slowdown_ratio` | 1.0 s; 0.5 | s, -- | `nav2.yaml` | The monitor projects the footprint along the command (`approach`) and has no `stop` polygon. A stop polygon froze the robot against a door jamb, because Humble's stop action refuses every command, turning away included (3.15). This is how the architecture's "a collision guard never blocks turning away" is kept. |
@@ -182,50 +181,11 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 
 ## Procedures
 
-These need Docker Desktop running and `~/.vision-picar-local-secrets`
-defining `LOCAL_SECRET`.
-
-**Start-up order: start the robot server, wait for `GET /wheels` to report
-`usable: true`, then start the container.** The actuator plugin's
-`on_activate()` does one `read()`, and `read()` returns ERROR when
-`GET /wheels` answers `usable: false`
-(`service/slam/src/picar_sim_hardware/src/picar_sim_hardware.cpp:90-94`,
-`:157-160`). ros2_control then deactivates the plugin for good: the
-controllers can still read active and command nothing until the container
-restarts. An unreachable server is retried, so starting the container before
-the server is fine; starting it while the server answers "no wheels" is not.
-`MockRobot` reports wheels at once. `HardwareRobot` reports
-`usable: false` until the board's first `T:1001` frame
-(`robot/hardware_robot.py:346-352`), so on the car, and over the fake board,
-the wait is real.
-
-```bash
-docker build -t vision-picar-ros service/slam          # first build is long (tf2, slam_toolbox from source)
-set -a; source ~/.vision-picar-local-secrets; set +a; export APP_SHARED_SECRET="$LOCAL_SECRET"
-ROBOT_DRIVE=ros WORLD_MODE=ros SIM_MAP=scaled_house bash service/tunnel/restart.sh
-until curl -s -H "x-app-secret: $LOCAL_SECRET" localhost:8000/wheels | grep -q '"usable": *true'; do sleep 0.5; done
-docker run -d --name picar-ros --restart unless-stopped -p 8090:8090 -p 127.0.0.1:8765:8765 \
-  -e APP_SHARED_SECRET -e ROBOT_URL=http://host.docker.internal:8000 \
-  vision-picar-ros ros2 launch picar_bringup picar.launch.py
-curl -s localhost:8090/health | python -m json.tool
-```
-
-**Healthy.** The bridge answers at all (its `ok` is always `true`, so it is
-not a signal), `odom_age_s` and `scan_age_s` are under about 0.2, and
-`scans_published` is climbing. The robot server's `/health` shows
-`drive.ros_up: true`. `odom_age_s: null` means the controllers never came
-up, which is what a plugin deactivated by the start-up race looks like.
-
-**Inside the container**, go through the entrypoint:
-`docker exec -it picar-ros /entrypoint.sh bash`. Expected:
-
-- `ros2 control list_controllers` shows both controllers active.
-- `ros2 topic hz /diff_drive_controller/odom` reads about 20 Hz.
-
-**Fresh map.** `docker rm -f picar-ros` and run it again.
-
-**Back to direct.** `docker rm -f picar-ros && bash
-service/tunnel/restart.sh`.
+**Start-up, health, inside the container, fresh map, back to direct:**
+`service/slam/README.md` section 3 ("Run it") and section 4 ("Is it
+working?"). The start-up order there (robot server first, then the
+container only once `GET /wheels` reports `usable: true`) is not optional
+on `HardwareRobot`; Known gaps says why.
 
 **Failure signatures** are kept in one place, `service/slam/README.md`
 section 4 ("Failure signatures"). Read them there.
@@ -287,11 +247,36 @@ Checklist for a change:
   suites run there instead of skipping. A skip is still not a pass.
 - **The plugin deactivates for good on "no wheels".**
   `service/slam/src/picar_sim_hardware/src/picar_sim_hardware.cpp:90-94` (`on_activate()` through `read()`) and
-  `:157-160` (`read()` returns ERROR on `usable: false`). Combined with
-  `HardwareRobot`'s `usable: false` before its first frame
-  (`robot/hardware_robot.py:346-352`), that is a start-up race on hardware
-  day; the procedure above orders around it. Not fixed: the plugin could
-  treat `usable: false` like an unreachable server.
+  `:157-160` (`read()` returns ERROR on `usable: false`). `HardwareRobot`
+  answers `usable: false` until its first frame
+  (`robot/hardware_robot.py:349`). Two symptoms, by when it happens:
+  - **At start-up** (the container's `on_activate()` reads "no wheels"):
+    activation fails, so the controllers never come up.
+    `ros2 control list_hardware_components` does not show `picar` active,
+    and the bridge's `odom_age_s` stays `null`. The README's start-up order
+    avoids this.
+  - **Mid-run** (a robot server restarted under a running container
+    answers "no wheels" before the board's first frame): `read()` returns
+    ERROR and ros2_control deactivates the component. The controllers can
+    still read active in `list_controllers` while commanding nothing; the
+    plugin's posts stop, so the robot server's `drive.ros_up` turns false
+    with the container still up. Nothing recovers it but a container
+    restart. Nothing orders around
+    this one: on `HardwareRobot`, restart the container after any robot
+    server restart. UNCONFIRMED, by reading; the simulator never shows it,
+    because `MockRobot` reports wheels at its first answer.
+
+  Not fixed: the plugin could treat `usable: false` like an unreachable
+  server.
+- **A stop does not cancel a nav2 goal.** `POST /stop` calls only
+  `robot.stop()` (`robot/server.py`, `stop()`). `RosDriveRobot.stop()`
+  zeroes the twist_mux inputs and cancels nothing, and the bridge cancels a
+  goal only on a non-zero `twin-dpad` twist
+  (`service/slam/src/picar_bridge/picar_bridge/bridge.py:453-455`). nav2
+  keeps publishing on `cmd_vel/nav`, so the wheels resume when
+  `STOP_HOLD_S` ends; under `drive: direct` with `WORLD_MODE=ros`, on the
+  plugin's next post. The rule is undecided (safety architecture, Open
+  questions); until then, cancel with `DELETE /world/goal`.
 - `picar_sim_hardware` has no unit tests of its own.
 - **Stale header comment.** `picar_sim_hardware.hpp`'s header still says a
   `picar_hardware` (R7) "is the same class against the ESP32". 3.16 decided

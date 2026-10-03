@@ -119,12 +119,11 @@ on-arrival checks, rather than direct from the maker, whose return terms
 are not (the terms are in the engineering spec).
 
 **Trade-off.** Skid steer scrubs on every turn and the simulator models no
-slip. The body is wider than the old chassis: it still fits every room of
-the simulator's starter house, but that house's one-cell doors leave too
-little margin for nav2's costmap and for the guarded verbs' heading
-tolerance, so navigation is judged in the scaled house
-(docs/simulator/ARCHITECTURE.md). Its power board is rated for about 5 A
-continuous, which is tight for a Jetson at 25 W.
+slip. The body is wider than the old chassis, so results name their house,
+and nav2 and the ROS chain are judged in the simulator's scaled house
+(docs/simulator/ARCHITECTURE.md; the margins are in the simulator's
+engineering spec). Its power board is rated for about 5 A continuous,
+which is tight for a Jetson at 25 W.
 
 ### Software baseline: JetPack 6, Ubuntu 22.04, ROS 2 Humble
 
@@ -137,8 +136,6 @@ Jazzy for no gain and has a less mature torch story.
 
 **Trade-off.** An older OS, and an older Python on the board than on the
 laptop, because NVIDIA's CUDA torch is built only for the board's Python.
-The suite was run under the board's Python before the board arrived
-(3.33).
 
 ### Power: 15 W first, a separate battery only if measured necessary
 
@@ -204,12 +201,12 @@ container being up.
 ROS driver, and the simulator needs a matching fake lidar first.
 
 **Consequence for bring-up.** Until that driver exists the car has no
-usable scan, and the safety layer refuses what it cannot see: FORWARD
-(the distance reads as zero) and, since 2026-10-02 by the user's decision,
-REVERSE (nothing observes astern). The car can pivot, but cannot drive
-forward or back under the safety layer. Before the lidar driver lands, a
-motion test on the floor is a turn; anything else is a bench test with the
-wheels off the floor (the motor-board domain's first-contact procedure).
+usable scan, so the safety layer lets it pivot but not drive forward or
+back; the rule, and the window before the board's first feedback frame,
+are recorded in the safety engineering spec
+(docs/engineering/safety/ENGINEERING.md). Anything but a turn is a bench
+test with the wheels off the floor (the motor-board domain's first-contact
+procedure).
 
 ### Bring the computer up before the chassis arrives
 
@@ -243,7 +240,7 @@ could be after the return window closes.
 | Everything at once overloads the board | A headroom run with the whole stack loaded | 0 late safety-loop ticks over 10 minutes, at least 1 GB free, no thermal throttling |
 | A CAD offset is wrong on the real car | Measure every CAD value on arrival | The lidar offset is measured before the safety sweep runs on the car |
 | The lidar's zero faces left, not ahead | Set its angle offset before the first scan is used | No scan is used by safety or SLAM before the yaw is set |
-| No usable scan yet (lidar driver not written) | FORWARD and REVERSE are refused; turns are allowed | The car never translates unobserved |
+| No usable scan yet (lidar driver not written) | FORWARD and REVERSE are refused; turns are allowed | Once wheel feedback arrives, the car never translates unobserved. Before the board's first feedback frame the reverse refusal does not yet apply (a known gap in the safety spec) |
 | Vendor software holds the serial port | Disable it on arrival | Only one process opens the motor board |
 | The chassis fails the on-arrival checks | Return it within the retailer's window | The checks finish inside the window |
 
