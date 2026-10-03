@@ -51,7 +51,7 @@ applies: 401 `Missing or invalid x-app-secret header.` when
 |---|---|---|---|
 | `POST /action` | yes | `{"action", "speed": 50, "duration": 0.5, "angle": 90}`, header `x-driver` | `{"executed": true, "result", "driver"}`; refusal `{"executed": false, "reason", "detail"}` (200); 400 on an unknown action. On the ROS fallback `result` gains `"via": "direct-fallback"` |
 | `POST /wheels` | yes | `{"left_rad_s", "right_rad_s"}`, `x-driver` | `{"executed": true, "driver", "applied": {...}, "clamped": reason or null}`. In direct drive a zero is never arbitrated and claims nothing: from the holder it zeroes the wheels, from anyone else it gives `{"executed": true, "ignored": true, ...}`. Under ROS drive only `ros` may post, unarbitrated, and a zero is not special; refusals as above (`not_the_actuator` under ROS drive for any driver but `ros`; `unsupported` on a body without motors) |
-| `POST /stop` | yes | `x-driver` (echoed only) | `{"executed": true, "result", "driver"}`. Never arbitrated; feeds the watchdog; claims nothing |
+| `POST /stop` | yes | `x-driver` (echoed only) | `{"executed": true, "result", "driver"}`. Never arbitrated; feeds the watchdog; claims nothing; then cancels any nav2 goal on a background thread ([safety engineering](../safety/ENGINEERING.md), "Stop ends a nav2 goal") |
 
 Actions: `FORWARD`, `REVERSE`, `LEFT`, `RIGHT`, `STOP`, `LOOK_LEFT`,
 `LOOK_RIGHT`, `LOOK_CENTER`.

@@ -117,6 +117,13 @@ arbitrated, and sets `last_command_at` and `last_ros_post_at`, never
 authority. `POST /world/goal` arbitrates as `ros` and does not feed the
 watchdog.
 
+**Stop ends a nav2 goal** (handoff 2026-10-02 1b). After `robot.stop()`
+returns, `POST /stop` starts a daemon thread (`stop-cancel-goal`) that calls
+`world_model.cancel_goal()` when the world has one (`RosWorld`: `DELETE
+/goal` on the bridge). A failure is logged and swallowed: the robot is
+already stopped. The thread is why a hung bridge costs the stop nothing.
+Only `/stop` does this; the watchdog calls `robot.stop()` directly.
+
 **The watchdog** (`watchdog_loop()`): every `WATCHDOG_POLL_INTERVAL_S` it
 skips while `verb_active`, else calls `robot.stop()` once
 `now - last_command_at > watchdog_timeout_s`. Detection is therefore the
@@ -169,7 +176,8 @@ minute or two):
   tests/test_mission_guarded_verbs.py tests/test_wheels_command.py \
   tests/test_ros_verb_safety.py tests/test_mover_safety.py -q
 .venv/bin/pytest tests/test_authority.py tests/test_goal_arbitration.py \
-  tests/test_ros_fallback.py tests/test_server.py tests/test_watchdog_integration.py -q
+  tests/test_ros_fallback.py tests/test_stop_cancels_goal.py tests/test_server.py \
+  tests/test_watchdog_integration.py -q
 ```
 
 A failure names a criterion (`test_criterion_N_...`) and prints the three
@@ -226,6 +234,7 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | `tests/test_blind_reverse.py` (5) | 2026-10-02: `HardwareRobot` over the fake board with no sensors refuses a REVERSE verb without moving and clamps a standing reverse to zero; a standing turn (`vet_wheel_velocity()`) passes; a teleop body still reverses; a body with a scan is judged by it. Not pinned: a turn VERB, and a settle pass astern (Known gaps) |
 | `tests/test_authority.py` (13) | M4: ranks, lapse, stop claims nothing, reasons on the wire, preemption ends a mission |
 | `tests/test_goal_arbitration.py` (9) | 3.23: a goal is an autonomous driver |
+| `tests/test_stop_cancels_goal.py` (4) | Handoff 2026-10-02 1b: with an active goal and a fake nav2 that drives while it holds one, the wheels are still at zero `STOP_HOLD_S` + 0.1 s after `/stop`; a new goal can be set afterwards; a hung cancel costs the stop nothing |
 | `tests/test_ros_fallback.py` (6) | 3.24 G3, all four criteria |
 | `tests/test_watchdog_integration.py` (6) | The watchdog against a live `uvicorn` subprocess with a 0.3 s timeout |
 | `tests/test_server.py` (23) | `watchdog_should_stop()`, sensing does not feed the watchdog, safety over HTTP |
@@ -267,27 +276,6 @@ order; record the table in the plan entry.
   `_has_wheels()` is false, so a REVERSE verb in that window answers
   `no_rear_sensor` and proceeds unguarded. Open decision
   (`docs-review/SPEC-REVIEW.md` fix-list 6).
-- **A stop pauses a nav2 goal; it does not end it** (decided fix not yet
-  built; `docs-review/SPEC-REVIEW-2.md` H1). `POST /stop` only records the command
-  time and calls `robot.stop()` (`robot/server.py:655-669`).
-  `RosDriveRobot.stop()` (`robot/ros_drive.py:266-278`) zeroes the
-  `twist_mux` inputs and holds non-zero commands for `STOP_HOLD_S` (0.6 s)
-  but cancels no goal, and the bridge cancels a goal only on a **non-zero**
-  `twin-dpad` twist
-  (`service/slam/src/picar_bridge/picar_bridge/bridge.py:453-455`). nav2
-  keeps publishing on `cmd_vel/nav`, the same input the stop's `ros` zero
-  goes to, so its next message overrides the zero; under `drive: ros` the
-  wheels resume when the hold lapses; under `drive: direct` with
-  `WORLD_MODE=ros` they resume on the plugin's next `/wheels` post, about
-  50 ms later, because a stop claims nothing and the plugin's next non-zero
-  post is arbitrated and allowed. Pre-existing.
-  **Decided by the user 2026-10-02; not yet built** (the rule is in the
-  [architecture spec](../../safety/ARCHITECTURE.md), "Who drives"): `/stop`
-  also cancels any active goal, on a background thread after
-  `robot.stop()` returns, so the stop never waits on the bridge; a person
-  re-sends a goal to resume. Done when a test with an active goal shows the
-  wheels still at zero past `STOP_HOLD_S` after `/stop`, and a new goal can
-  be set afterwards.
 - **ROS liveness is judged only from the plugin's `/wheels` posts**
   (UNCONFIRMED: read, not run; `docs-review/SPEC-REVIEW-2.md` M2).
   `ros_up()` (`robot/server.py:319-323`) reads `last_ros_post_at`, set only

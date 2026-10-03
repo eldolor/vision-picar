@@ -243,11 +243,6 @@ Checklist for a change here:
   "What RosWorld reads from the bridge". UNCONFIRMED.
 - **`start_truth` is read once.** A failed first read is never retried; see
   `service/slam/README.md` section 4.
-- **A stop does not end a goal.** `POST /stop` cancels nothing, so nav2
-  resumes after the stop; the code reference is in the
-  [ros engineering spec](../ros/ENGINEERING.md)'s Known gaps. The rule (a
-  stop also cancels the goal) was decided by the user 2026-10-02 in the
-  safety architecture, and is not yet built.
 - **Stale factory docstring.** `world/factory.py:14-22` still calls `none`
   "TODAY'S DEFAULT" with "nothing in this project can build a map yet", and
   labels `ros` as N6. `config/robot.yaml` ships `sim`, and `ros` is built

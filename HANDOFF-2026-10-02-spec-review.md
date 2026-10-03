@@ -61,7 +61,11 @@ single false-positive run (absent, absent, detected-wrong, ...) cannot end
 `found`; and the sweep in `tests/test_arrival.py` still meets 3.11's bars
 in the scaled house: >= 95% of arrivals `found`, none beyond 0.60 m.
 
-**1b. DECIDED: a stop ends a nav2 goal** (second review, H1;
+~~**1b. DECIDED: a stop ends a nav2 goal**~~ **BUILT 2026-10-02:**
+`robot/server.py` `stop()` cancels the goal on a background thread;
+`tests/test_stop_cancels_goal.py`. Kept below as the record.
+
+(second review, H1;
 `docs-review/SPEC-REVIEW-2.md`). Two reviewers found this independently.
 
 - `POST /stop` only calls `robot.stop()` (`robot/server.py:656-669`).

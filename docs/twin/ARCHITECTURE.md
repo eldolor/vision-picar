@@ -230,12 +230,10 @@ during a mission is refused rather than pre-empting it, and the page
 shows the refusal. A person who wants the robot back mid-mission uses the
 D-pad, which pre-empts the mission, or the Remote brain panel's Stop,
 which ends it. The robot STOP button is not the same thing: it holds the
-motors but claims no authority and ends nothing. Against a navigation
-goal in particular, a stop today only PAUSES it: the goal keeps planning
-and the wheels resume when the stop's hold ends. Only a non-zero D-pad
-movement cancels a goal. The user decided on 2026-10-02 that a stop also
-ends a goal (not yet built); to resume, a person sends the goal again. The
-rule belongs to the [safety domain](../safety/ARCHITECTURE.md).
+motors and claims no authority; the one thing it ends is a navigation
+goal (decided by the user 2026-10-02, built the same day), and a non-zero
+D-pad movement cancels one too. To resume, a person sends the goal again.
+The rule belongs to the [safety domain](../safety/ARCHITECTURE.md).
 Whether a person's goal should rank as a person
 is also open.
 

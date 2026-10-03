@@ -61,11 +61,11 @@ The next verb (`_begin()`, a new generation) lifts the hold at once.
 plugin period. The margin covers scheduling jitter. History of the change:
 `docs-review/SPEC-REVIEW-2.md` (M1).
 
-**The stop does not cancel a nav2 goal.** It zeroes `twist_mux`'s inputs and
-holds non-zero commands for `STOP_HOLD_S`; nav2 keeps publishing on
-`cmd_vel/nav` (overriding the stop's zero on that input), and the wheels
-resume after the hold. The user decided on 2026-10-02 that a stop also
-cancels the goal (not yet built). See Known gaps.
+**The body's stop does not cancel a nav2 goal; the server's does.**
+`RosDriveRobot.stop()` zeroes `twist_mux`'s inputs and holds non-zero
+commands for `STOP_HOLD_S`. Ending the goal is `POST /stop`'s job, after
+the body has stopped ([safety engineering](../safety/ENGINEERING.md),
+"Stop ends a nav2 goal").
 
 ## Interfaces
 
@@ -260,13 +260,6 @@ did not measure.
   `HardwareRobot`, plus a fake lidar on a pseudo-terminal like
   `sim/fake_esp32.py`, with criteria the user approves
   (`PLAN-ros-alignment.md` 6, question 5).
-- **A stop pauses a nav2 goal; it does not end it** (decided fix not yet
-  built, `docs-review/SPEC-REVIEW-2.md` H1). `RosDriveRobot.stop()`
-  (`robot/ros_drive.py`) zeroes the `twist_mux` inputs and holds for
-  `STOP_HOLD_S` but cancels nothing, and the wheels resume after the hold.
-  Mechanism and the decided fix (2026-10-02: `/stop` also cancels the goal,
-  on a background thread after `robot.stop()`) are recorded once, in
-  [safety engineering](../safety/ENGINEERING.md), Known gaps.
 - **Stale comments in code:** `sim/mock_robot.py` around line 186 says the
   wheel methods "are NOT on `RobotInterface`" (they are, since R2).
   `robot/interface.py`'s `get_depth_grid()` docstring says "Nothing in

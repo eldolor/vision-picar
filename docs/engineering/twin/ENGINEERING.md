@@ -50,7 +50,7 @@ for hosts matching `NGROK_HOST`):
 | Route | Used by | Notes |
 |---|---|---|
 | `POST /action` | D-pad, look buttons | `x-driver: twin-dpad`; body `{action, angle?}`, where `angle` is the turn step |
-| `POST /stop` | STOP | `x-driver: twin-dpad`. Does NOT cancel a nav2 goal: the server only calls `robot.stop()`, and the bridge cancels a goal only on a non-zero `twin-dpad` twist, so a goal resumes after the stop hold (H1 in `docs-review/SPEC-REVIEW-2.md`). Decided by the user 2026-10-02, the safety domain's rule: the server will also cancel the goal; decided fix not yet built, and nothing changes in the page for it. |
+| `POST /stop` | STOP | `x-driver: twin-dpad`. Also ends any nav2 goal: the server cancels it after `robot.stop()`, on a background thread (the safety domain's rule, decided by the user 2026-10-02 and built the same day). Nothing in the page changed for it; to resume, tap the goal again. |
 | `GET /frame` | Sim camera | `image_base64` drawn as-is; no pixels sets the frame source to `none` |
 | `GET /distance`, `GET /depth` | Sim readouts | The depth strip draws the server's zones and outlines the `path` zones it reports |
 | `GET /odometry` | odometry line | "no encoders on this backend — pacing falls back to frame count" when unusable; "not reported" when the route is missing |

@@ -662,10 +662,28 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         else is driving is not a stop. It does not claim authority either,
         because stopping is not a bid to drive; the holder keeps its claim
         and keeps it only as long as it keeps commanding, exactly as
-        before."""
+        before.
+
+        **A stop also ENDS a nav2 goal** (handoff 2026-10-02 1b, decided by
+        the user): otherwise nav2 keeps its goal and drives again the moment
+        the stop hold ends. The cancel runs on a background thread AFTER
+        `robot.stop()`, so the stop never waits on ROS; a person re-sends a
+        goal to resume."""
         state["last_command_at"] = time.monotonic()
-        return {"executed": True, "result": robot.stop(),
+        result = robot.stop()
+        if hasattr(world_model, "cancel_goal"):
+            threading.Thread(target=_cancel_goal_quietly, daemon=True,
+                             name="stop-cancel-goal").start()
+        return {"executed": True, "result": result,
                 "driver": (x_driver or "").strip() or DRIVER_UNKNOWN}
+
+    def _cancel_goal_quietly():
+        """The robot is already stopped; an unreachable bridge has no goal
+        to resume, so a failure here is logged and nothing else."""
+        try:
+            world_model.cancel_goal()
+        except Exception as e:  # noqa: BLE001 -- see above
+            logger.warning(f"stop: could not cancel the nav2 goal: {e}")
 
     @app.get(prefix + "/distance", dependencies=[Depends(require_secret)])
     def distance():

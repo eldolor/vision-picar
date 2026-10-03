@@ -185,8 +185,7 @@ opposite is a real failure (`AGENT-HARNESS.md` 4.1):
 
 1. **Stop is never arbitrated.** Anyone may stop the robot at any time.
    A stop zeroes the wheels, **and it ends any active navigation goal**
-   (decided by the user 2026-10-02; not yet built -- today a stop only
-   pauses a goal, see below and Failure modes).
+   (decided by the user 2026-10-02, built the same day; see below).
 2. **Stop claims nothing.** Otherwise the loser of an arbitration takes the
    robot back by giving up.
 3. **People share; autonomy is exclusive.** Two taps of a person pass. At
@@ -199,7 +198,7 @@ opposite is a real failure (`AGENT-HARNESS.md` 4.1):
    themselves are a person with curl, a script run by hand, or a test.
 
 **A stop ends a navigation goal; it does not pause it.** Decided by the
-user 2026-10-02; not yet built. A stop also cancels any active goal, and
+user 2026-10-02 and built the same day. A stop also cancels any active goal, and
 the cancel runs after the wheels are zeroed and off the stop's own path, so
 a stop never waits on ROS. A person who wants the goal back sends it again.
 **Rejected:** a stop that only pauses the goal, with a separate cancel
@@ -297,7 +296,7 @@ are commitments, not tuning.
 | Two autonomous drivers at once | The second is refused | One autonomous writer at a time |
 | ROS container dies under ROS drive | Autonomy refused. A person drives on the direct path | The mission ends within **3 s**. A person drives within **2 s**. ROS is back without a restart (3.24 G3) |
 | Part of the container dies while the actuator lives (the bridge, or the velocity multiplexer or controller), under ROS drive. **UNCONFIRMED** (read, not run) | ROS still reads as alive, because liveness is judged only from the actuator's posts. With the bridge gone, every verb, a person's included, is refused as ROS-unavailable. With the multiplexer or controller gone, a verb achieves nothing and comes back as a safety refusal | **Not met.** The target is the dead container's: a person can drive and autonomy is refused. Fix decided by the user 2026-10-02, not yet built: a failed send to the bridge marks ROS down (Decisions, "When ROS dies, only a person drives"). A dead multiplexer or controller behind a live bridge is left as is: it fails toward stop |
-| A stop while a navigation goal is active | Today: the wheels stop, then resume, because the goal is paused, not ended | **Not met.** Target: the wheels stay stopped and the goal is ended; a person can set a new one. Decided by the user 2026-10-02 (Decisions, "Who drives"); decided fix not yet built |
+| A stop while a navigation goal is active | The wheels stop and the goal is ended; a person can set a new one | **Met** (Decisions, "Who drives"; built 2026-10-02). Before that the goal was only paused and the wheels resumed after the stop's hold |
 | The robot server process dies | The board's heartbeat stops the motors | Motors stop without the host |
 | A person or pet crosses the path | Same vet, same bars | The static-obstacle bars above hold with something moving (3.30) |
 
