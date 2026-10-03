@@ -12,8 +12,8 @@ and for free: **is the mission's target in this frame, and at what bearing?**
 It is what lets the tiered policy call the cloud only on events, what gives
 the robot a bearing to steer on, and what the arrival rule pairs with the
 lidar. It does not decide moves ([policy](../policy/ARCHITECTURE.md)) and it
-is not meant to confirm identity -- the cloud model is. The tiered arrival
-rule does not yet honour that (see "Detect, then verify"). Read this for why the tier
+is not meant to confirm identity -- the cloud model is, at arrival too (see
+"Detect, then verify"). Read this for why the tier
 is a detector plus a verifier with a three-state answer; read the
 [engineering spec](../engineering/perception/ENGINEERING.md) for the shipped
 models, thresholds, commands and recorded numbers.
@@ -146,9 +146,9 @@ means driving past the target. The price is not small. A false positive that
 passes the gate is a sighting: it may fire a paid cloud call, it steers the
 robot on that frame (steering has no frame hysteresis, and the cloud's answer
 does not override a local sighting), and near the wrong object it can satisfy
-the arrival rule and end the mission `found` (see "Where that intent is not
-yet met" above, and the failure-mode table). The decided cloud check at
-arrival, once built, removes the last of these and leaves the rest.
+the arrival rule's distance half. It cannot end the mission `found` there:
+the cloud check at arrival (see "At arrival too" above, and the failure-mode
+table) refuses it. The rest stands.
 
 ### Gate on a probability, not a raw similarity
 

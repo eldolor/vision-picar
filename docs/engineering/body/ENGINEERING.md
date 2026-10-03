@@ -160,6 +160,7 @@ reads**; `SIM_MAP` is the only selector.
 | `RosDriveRobot` client timeout | 2.0 s | `robot/ros_drive.py` (`timeout_s`) | Every bridge call except the stop's zeroing posts |
 | `STOP_ZERO_TIMEOUT_S` | 0.5 s | `robot/ros_drive.py` | Per zeroing post after a stop; a hung bridge costs the background thread at most 1.5 s and the caller nothing |
 | `STOP_HOLD_S` | 0.6 s | `robot/ros_drive.py` | `twist_mux`'s 0.25 s input timeout plus `diff_drive_controller`'s 0.25 s `cmd_vel_timeout` (they add) plus one 0.05 s plugin period = 0.55 s, with margin: how long the stopped verb's last twist can keep reaching the wheels if the zeros never arrive (see "The ROS drive stop") |
+| `BRIDGE_PROBE_S`, `BRIDGE_PROBE_TIMEOUT_S` | 0.5 s, 0.5 s | `robot/ros_drive.py` | After a send marks the bridge down, how often `bridge_up()` may start a background `GET /health` probe, and how long a probe may take; the first 200 marks it up. Never on a request's path. What marks it down, and what the server does with it: [safety engineering](../safety/ENGINEERING.md), "ROS liveness" |
 
 **Chassis constants.** Body code defines the chassis' physical constants
 (`WHEEL_RADIUS_M`, `TRACK_WIDTH_M`, `ENCODER_COUNTS_PER_REV` and
@@ -236,7 +237,7 @@ key means the new body returns something the contract does not allow.
 | `tests/test_remote_robot.py` (10) | The same mission gives an identical action sequence in-process and over HTTP; refusal mapping |
 | `tests/test_teleop_robot.py` (8) | Staleness, the non-blocking read, push/pull |
 | `tests/test_config_and_factory.py` (22) | Mode and drive selection, env overrides, errors on an unknown mode |
-| `tests/test_ros_drive.py` (14) | The ROS wrapper's verbs, encoder closure, reads to the wrapped body; the stop: direct and under 0.1 s against a bridge that hangs, all three ROS inputs zeroed in the background, no thread pile-up over 20 stops, a stale ROS command held at zero, and the hold lifted by the next verb or by `STOP_HOLD_S` |
+| `tests/test_ros_drive.py` (20) | The ROS wrapper's verbs, encoder closure, reads to the wrapped body; the stop: direct and under 0.1 s against a bridge that hangs, all three ROS inputs zeroed in the background, no thread pile-up over 20 stops, a stale ROS command held at zero, and the hold lifted by the next verb or by `STOP_HOLD_S`; a 4xx from the bridge does not mark it down, a 5xx or a transport error does |
 | `tests/test_blind_reverse.py` (5) | `HardwareRobot` with no sensors refuses reverse; a body without wheels still reverses (rule in [safety engineering](../safety/ENGINEERING.md)) |
 | `tests/test_health_sim_map.py` (4) | `/health` `sim_map` names the house the factory built, including `mode: hardware` with the fake board |
 | `tests/test_fake_esp32.py`, `tests/test_ros_driver_board.py` | The hardware body against the fake board (detail in [motor-board](../motor-board/ENGINEERING.md)) |

@@ -643,6 +643,17 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             state["last_command_at"] = now
             state["wheel_posts"] += 1
             state["last_ros_post_at"] = now
+            bridge_up = getattr(robot, "bridge_up", None)
+            if bridge_up is not None and not bridge_up():
+                # The bridge is dead and the plugin is not (spec review 3,
+                # V8): a person is driving the fallback, so ROS's actuator
+                # must not stay a second writer. The post still proves the
+                # plugin alive (stamped above); it moves nothing.
+                # Answered directly, not through refuse(): the plugin posts at
+                # 20 Hz, and logging each would bury the log.
+                return {"executed": False, "reason": "ros_unavailable",
+                        "detail": "the bridge is down -- ROS's wheel commands are not "
+                                  "applied while a person drives the fallback"}
             if goal_stop["hold"]:
                 req = WheelsRequest(left_rad_s=0.0, right_rad_s=0.0)
         else:
@@ -1061,7 +1072,14 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                       "wheel_posts_from_ros": state["wheel_posts"] if by_velocity else None,
                       # 3.24 G3: whether ROS is alive, and so whether a person's
                       # verbs are running on the direct fallback.
-                      "ros_up": ros_up(time.monotonic()) if by_velocity else None},
+                      "ros_up": ros_up(time.monotonic()) if by_velocity else None,
+                      # Which half of ROS is down (spec review 3, V9): the
+                      # bridge, or the actuator plugin's posts.
+                      "bridge_up": (robot.bridge_up() if by_velocity
+                                    and hasattr(robot, "bridge_up") else None),
+                      "ros_post_age_s": (round(time.monotonic() - state["last_ros_post_at"], 3)
+                                         if by_velocity and state["last_ros_post_at"] is not None
+                                         else None)},
             "watchdog_timeout_s": watchdog_timeout,
             "wheel_loop": {**state["wheel_loop"], "period_s": WHEEL_LOOP_INTERVAL_S},
             # The single source of truth for the safety threshold this

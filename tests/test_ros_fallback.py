@@ -275,3 +275,35 @@ def test_1d_ros_is_back_once_the_bridge_answers_again(stack):
     assert stack.client.get("/health").json()["drive"]["ros_up"] is True
     reply = stack.act("LEFT", angle=15)
     assert reply.get("executed") is True and reply["result"].get("via") == "ros", reply
+
+
+# ---------------------------------------------------------------------------
+# Spec review 3, V8-V9: with the bridge dead and the plugin alive, ROS's
+# actuator must not stay a second writer beside a person on the fallback, and
+# /health must say WHICH half of ROS failed.
+
+def test_a_dead_bridge_stops_the_actuators_posts_reaching_the_wheels(stack):
+    stack.ros_up()
+    time.sleep(0.3)
+    stack.bridge_up = False
+    stack.act("LEFT", angle=15)                       # the send that marks it down
+    reply = stack.client.post("/wheels", json={"left_rad_s": 3.0, "right_rad_s": 3.0},
+                              headers={"x-driver": "ros"}).json()
+    assert reply.get("executed") is False and reply.get("reason") == "ros_unavailable", reply
+    w = stack.inner.get_wheel_state()
+    assert (w["left"]["velocity_rad_s"], w["right"]["velocity_rad_s"]) == (0.0, 0.0)
+
+
+def test_health_says_which_half_of_ros_is_down(stack):
+    stack.ros_up()
+    time.sleep(0.3)
+    drive = stack.client.get("/health").json()["drive"]
+    assert drive["bridge_up"] is True and drive["ros_post_age_s"] < ROS_SILENCE
+    stack.bridge_up = False
+    stack.act("LEFT", angle=15)
+    drive = stack.client.get("/health").json()["drive"]
+    assert drive["ros_up"] is False and drive["bridge_up"] is False
+    assert drive["ros_post_age_s"] < ROS_SILENCE, "the plugin is still posting"
+
+
+ROS_SILENCE = server.ROS_SILENCE_S

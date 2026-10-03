@@ -92,7 +92,8 @@ Goal routes answer **501** on a world without `set_goal` (anything but
 ### `GET /health` (no secret)
 
 `status`, `seconds_since_last_command`, `drive` (`mode`,
-`verbs_through_ros`, `wheel_posts_from_ros`, `ros_up`), `watchdog_timeout_s`,
+`verbs_through_ros`, `wheel_posts_from_ros`, `ros_up`, `bridge_up`,
+`ros_post_age_s`), `watchdog_timeout_s`,
 `wheel_loop` (`moving_ticks`, `late_ticks`, `max_dt_s`, `period_s`),
 `min_distance_cm`, `mode`, `sim_map`, `identity`,
 `seconds_since_watchdog_poll`, `watchdog_poll_interval_s`, `driver`,
@@ -190,7 +191,7 @@ session may already own ports 8000/8090; use 8100/8101/8190 with a separate
 |---|---|
 | `tests/test_server.py` (23) | Routes, 400 on unknown action, the secret gate (protected routes 401, `/health` and `/` open), CORS headers, `ROUTE_PREFIX`, teleop push/pull and 503 on a stall, sensing does not feed the watchdog, the twin's script |
 | `tests/test_watchdog_integration.py` (6) | The watchdog and its liveness against a live `uvicorn` subprocess, `sim.realtime`, and the health command against it |
-| `tests/test_authority.py` (13), `tests/test_wheels_command.py` (8), `tests/test_goal_arbitration.py` (9), `tests/test_ros_fallback.py` (8), `tests/test_stop_cancels_goal.py` (13) | Arbitration, `/wheels`, goals and the ROS fallback through a real app |
+| `tests/test_authority.py` (13), `tests/test_wheels_command.py` (8), `tests/test_goal_arbitration.py` (9), `tests/test_ros_fallback.py` (10), `tests/test_stop_cancels_goal.py` (13) | Arbitration, `/wheels`, goals and the ROS fallback through a real app |
 | `tests/test_health.py` (15) | `control/health.py`'s verdict rules over `/health` |
 | `tests/test_health_sim_map.py` (4) | `sim_map` names the house built, for `mode: sim` and `mode: hardware` with the fake board; null for teleop; unchanged by a later `SIM_MAP` |
 | `tests/test_ros_drive.py` (14) | Among the ROS wrapper's tests, a stop that returns in under 0.1 s against a hung bridge ([body engineering](../body/ENGINEERING.md)) |

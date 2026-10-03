@@ -311,4 +311,23 @@ So nobody re-checks these. Each reviewer's §(g) has the full list.
   ARCH and ENG, world ARCH, control-api ENG, and `service/slam/README.md`
   §4 (V6).
 
-Fixes 3-20 are open.
+**Fixes 3-6: built 2026-10-03.**
+
+- **Fix 3.** `service/slam/README.md` §4 now says what `ros_up` false
+  means. There is a new row for a dead bridge, and the unknown-driver row
+  says its 400 does not mark ROS down.
+- **Fix 4.** perception ARCH's intro and trade-off now say the cloud
+  confirms identity at arrival.
+- **Fix 5 (V7).** `RosDriveRobot._send()` marks the bridge down only on a
+  transport error or a 5xx. A 4xx is the bridge answering, so it clears an
+  earlier mark instead. `tests/test_ros_drive.py` +6; the three 4xx cases
+  failed before the fix.
+- **Fix 6 (V8, V9).** While the bridge is down, the actuator's `/wheels`
+  posts still prove the plugin alive, but they are answered
+  `ros_unavailable` (unlogged) and move nothing. `/health` publishes
+  `drive.bridge_up` and `drive.ros_post_age_s`. `tests/test_ros_fallback.py`
+  +2, both of which failed before the fix.
+- **Part of fix 16.** The 1d mechanism is now written in safety ENG ("ROS
+  liveness"), and the `BRIDGE_PROBE_*` row has moved to body ENG.
+
+Fixes 7-15 and 17-20 are open.

@@ -169,7 +169,17 @@ class RosDriveRobot(RobotInterface):
                                                   "linear_m_s": linear, "angular_rad_s": angular},
                                 timeout=httpx.USE_CLIENT_DEFAULT if timeout is None else timeout)
             r.raise_for_status()
-        except httpx.HTTPError:
+        except httpx.HTTPStatusError as e:
+            # The bridge ANSWERED: a 4xx (an unknown driver's 400, a wrong
+            # secret's 401) is proof of life, not an outage -- marking it down
+            # would flap against the unauthenticated /health probe (spec
+            # review 3, V7). Only a 5xx says the bridge itself is failing.
+            if e.response.status_code >= 500:
+                self._mark_bridge_down()
+            else:
+                self._bridge_down_since = None
+            raise
+        except httpx.TransportError:
             self._mark_bridge_down()
             raise
         self._bridge_down_since = None
