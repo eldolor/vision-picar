@@ -96,6 +96,17 @@ def instrument(pipeline, torch, record: dict) -> None:
     scorer.score = timed_score
 
 
+def detector_device(pipeline) -> str:
+    """The device the detector RAN on -- "cuda", "mps", "cpu" -- or "?".
+
+    Ultralytics records it in its PREDICTOR, which exists only after the
+    first `perceive()`; `model.device` keeps reading "cpu" after a run on
+    another device (seen on MPS). `tools/jetson/setup.sh` asserts on this."""
+    yolo = getattr(getattr(pipeline.detector, "backend", pipeline.detector), "model", None)
+    ran_on = getattr(getattr(yolo, "predictor", None), "device", None) or getattr(yolo, "device", "?")
+    return str(getattr(ran_on, "type", ran_on))
+
+
 def run(recordings: Path, device=None) -> dict:
     from brain.perceive import pipeline_for
     from control.perception_eval import frame_dict
@@ -159,11 +170,7 @@ def run(recordings: Path, device=None) -> dict:
             "det_post_ms", "clip_gpu_ms", "clip_cpu_ms", "clip_ms_per_crop", "crops"]
     cuda = bool(torch is not None and torch.cuda.is_available())
     any_pipe = next(iter(pipelines.values()))[0]
-    yolo = getattr(getattr(any_pipe.detector, "backend", any_pipe.detector), "model", None)
-    # Ultralytics records the device it ran on in its PREDICTOR; `model.device`
-    # keeps reading "cpu" after a run on another device (seen on MPS).
-    ran_on = getattr(getattr(yolo, "predictor", None), "device", None) or getattr(yolo, "device", "?")
-    det_device = str(getattr(ran_on, "type", ran_on))
+    det_device = detector_device(any_pipe)
     return {
         "host": platform.node(), "machine": platform.machine(),
         "python": platform.python_version(),

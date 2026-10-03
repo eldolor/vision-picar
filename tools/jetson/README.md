@@ -52,6 +52,11 @@ cd vision-picar && bash tools/jetson/setup.sh     # torch on cuda -- risk 1
 python -m tools.jetson.bench_perception --recordings recordings --out bench-15w.json   # risk 2
 ```
 
+`setup.sh` runs the pipeline once on a blank frame and asserts that BOTH
+networks ran on `cuda`. It should end with
+`detector crops:yoloe-11s-seg.pt on cuda | CLIP on cuda`. The detector picks
+its device on its first run, which is why the script runs it.
+
 `bench_frames.json` pins the 60 (+3 warm-up) frames, so the laptop and the
 board time the same frames. The budget is **250 ms a frame at 15 W**. The
 laptop's numbers to compare against (M1 MacBook Air, 7-core GPU,
@@ -76,7 +81,52 @@ browser, they ERROR rather than skip (seen in the Python 3.10 run).
 
 ## 4. G4 and headroom
 
-The ROS image built natively (`docker build -t vision-picar-ros service/slam`),
-then 3.33 steps 6-7: the live chain and nav suites 5 times in a row against
-`SIM_MOTOR_BOARD=fake`, and the whole stack at once with the wheel loop's
-late ticks, memory and `tegrastats` watched.
+**G4 is 5 consecutive runs of the live chain and nav suites against the
+fake motor board, and a skip is not a pass.** A run counts only if pytest's
+summary reads `18 passed` (13 chain, 5 nav) with 0 skipped and 0 failed. Any
+skip or failure: find why, and start the count again.
+
+Each requirement below is there because leaving it out forces a skip or a
+failure:
+
+| Requirement | Without it |
+|---|---|
+| A brain on :8001 under `ROUTE_PREFIX=/brain` (`run.sh` starts one) | the D-pad preemption test skips "no brain server" |
+| `SIM_MAP=scaled_house` for the robot server **and** in pytest's own environment | the suites gate on `/health`'s `sim_map`; the nav suite also reads pytest's `SIM_MAP` |
+| The container started only after `GET /wheels` reports `usable: true` | the fake board answers `usable: false` until its first frame, and a container that activates then loses its wheel plugin for good (`service/slam/README.md` section 3) |
+| The container named `picar-ros`, and `docker` usable without sudo | the kill test runs `docker kill picar-ros` and FAILS (`PICAR_ROS_CONTAINER` overrides the name) |
+| The secret in pytest's environment | the chain suite skips "the robot server wants a secret" |
+| A fresh server and container for every run | the nav suite's mapping lap starts from the house's start pose, and SLAM keeps its map for the container's lifetime |
+
+```bash
+cd ~/vision-picar
+docker build -t vision-picar-ros service/slam                  # once; long the first time
+set -a; source ~/.vision-picar-local-secrets; set +a           # LOCAL_SECRET, and VISION_SECRET (run.sh needs it defined)
+export APP_SHARED_SECRET="$LOCAL_SECRET"
+
+# one run -- repeat this block five times
+docker rm -f picar-ros 2>/dev/null
+SIM_MAP=scaled_house ROBOT_DRIVE=ros WORLD_MODE=ros ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake \
+  bash service/tunnel/restart.sh                               # robot :8000, brain :8001/brain, both on 127.0.0.1
+curl -s localhost:8000/health | grep -o '"sim_map": *"[a-z_]*"'   # expect "sim_map": "scaled_house"
+until curl -s -H "x-app-secret: $LOCAL_SECRET" localhost:8000/wheels | grep -q '"usable": *true'; do sleep 0.5; done
+docker run -d --name picar-ros --restart unless-stopped --network host \
+  -e APP_SHARED_SECRET -e ROBOT_URL=http://127.0.0.1:8000 -e BRAIN_URL=http://127.0.0.1:8001/brain \
+  vision-picar-ros ros2 launch picar_bringup picar.launch.py
+until curl -s localhost:8090/health >/dev/null; do sleep 1; done
+SIM_MAP=scaled_house .venv/bin/python -m pytest tests/test_ros_chain_live.py tests/test_nav_live.py -rs
+```
+
+`restart.sh` prints `OK: robot and brain both running <rev>` only once both
+answer with the checkout's revision. The container line is
+`service/slam/README.md`'s Linux form: host networking, because `run.sh`
+binds the servers to 127.0.0.1. **It has not yet run on a board**, so the
+first run here is also its first test. The authority for this list is
+`docs/engineering/platform/ENGINEERING.md`; if the two disagree, fix both.
+
+**Headroom** (3.33 step 7): a 10-minute nav2 run with the perception tier
+processing frames. It passes when all three hold:
+
+* 0 late ticks on the wheel loop (`/health`'s `wheel_loop`);
+* at least 1 GB of memory free;
+* no thermal throttling in `tegrastats`.

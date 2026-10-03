@@ -123,10 +123,8 @@ In order, each against 3.33's criteria:
    - it creates a Python 3.10 venv with torch pinned;
    - it checks the shipped pipeline is on `cuda`.
 
-   **First, close spec-review item 4a:** make `setup.sh` assert the
-   *detector's* device as well. Today it only asserts CLIP's (`:73-74`);
-   `bench_perception.py` already reads the right attribute
-   (`predictor.device`).
+   Spec-review item 4a is **done** (2026-10-03): `setup.sh` now asserts the
+   detector's device as well as CLIP's.
 4. **Risk 2, latency.** Run
    `python -m tools.jetson.bench_perception --recordings recordings --out bench-15w.json`,
    then the same at 25 W.
@@ -148,8 +146,8 @@ In order, each against 3.33's criteria:
      - `SIM_MAP=scaled_house` in pytest's own environment;
      - the container named `picar-ros`, started only after `GET /wheels`
        reports usable.
-   - **`tools/jetson/README.md` section 4 still lacks that command set.**
-     It belongs to this session; write it there.
+   - The full command set is in `tools/jetson/README.md` section 4
+     (written 2026-10-03).
 7. **Headroom.** Run a 10-minute nav2 run with the perception tier
    processing frames. Pass means all three:
    - 0 late ticks on the wheel loop (`/health` `wheel_loop`);

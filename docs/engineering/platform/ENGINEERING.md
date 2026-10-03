@@ -183,11 +183,13 @@ must show:
    one-time setup the push has nowhere to go. Then `recordings/` by rsync
    (about 450 MB).
 4. **Setup** (section 3, `tools/jetson/setup.sh`). Expected: `torch 2.8.0
-   on <GPU name> -- OK`, then `detector yoloe-11s-seg.pt | scorer device
-   cuda`. Failure signatures: `STOP: expected L4T R36 (JetPack 6.x)`,
+   on <GPU name> -- OK`, then `detector crops:yoloe-11s-seg.pt on cuda |
+   CLIP on cuda` (it runs the pipeline once on a blank frame, because the
+   detector picks its device on its first run). Failure signatures:
+   `STOP: expected L4T R36 (JetPack 6.x)`,
    `torch.cuda.is_available() is False`, `a requirement replaced torch with
-   a CPU build`, `CLIP is not on cuda`. The script does not check the
-   detector's device; step 5's `devices:` line does.
+   a CPU build`, `CLIP is not on cuda`, `the detector ran on <device>, not
+   cuda`.
 5. **Latency** at 15 W (`sudo nvpmodel -m <id>`, record `nvpmodel -q`),
    then at 25 W (MAXN SUPER only on the stock adapter), with
    `python -m tools.jetson.bench_perception --recordings recordings --out
@@ -245,8 +247,8 @@ networking, because `run.sh` binds the servers to 127.0.0.1; that form is
 not yet exercised on a board). `restart.sh` reports `OK: robot and brain
 both running <rev>` only once both answer with the checkout's revision.
 Expected from pytest: `18 passed`, and the `-rs` summary lists no skips.
-`tools/jetson/README.md` section 4 does not yet carry these requirements;
-its owner is to update it from this list.
+`tools/jetson/README.md` section 4 carries the same list and commands;
+change both together.
 
 **On arrival of the Rover** [planned] (`JETSON-BOM.md` 9.5), inside the
 30-day window:

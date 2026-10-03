@@ -68,10 +68,21 @@ python -c "import torch; assert torch.cuda.is_available(), 'a requirement replac
 
 say "the shipped pipeline on the GPU"
 python - <<'EOF'
+import base64, io
+from PIL import Image
 from brain.perceive import pipeline_for
+from tools.jetson.bench_perception import detector_device
 p = pipeline_for("red backpack")
-print("detector", p.detector.weights, "| scorer device", p.scorer.device)
+# The detector picks its device when it first RUNS, so run it once on a
+# blank frame -- no recordings needed yet.
+buf = io.BytesIO()
+Image.new("RGB", (640, 480), (128, 128, 128)).save(buf, "JPEG")
+p.perceive({"image_base64": base64.b64encode(buf.getvalue()).decode(),
+            "media_type": "image/jpeg", "image_width": 640})
+det = detector_device(p)
+print("detector", p.detector.weights, "on", det, "| CLIP on", p.scorer.device)
 assert p.scorer.device == "cuda", "CLIP is not on cuda"
+assert det == "cuda", f"the detector ran on {det}, not cuda"
 EOF
 
 say "docker"

@@ -3387,8 +3387,8 @@ decided on, not worked around):
    shipped pipeline returns the same verdict on a corpus frame as the
    laptop (same detection status, CLIP probability within 0.01). **Both
    networks on `cuda`** (added 2026-10-02): `tools/jetson/setup.sh`
-   asserts only CLIP's device, so the detector's must be checked by hand
-   until it asserts that too (`docs-review/SPEC-REVIEW.md` fix 9).
+   asserts both since 2026-10-03 (`docs-review/SPEC-REVIEW.md` fix 9). It
+   reads the detector's device the way `bench_perception.py` does.
 3. **Latency recorded:** per-frame GPU and CPU times over at least 50
    corpus frames, at 15 W and 25 W. **Budget: 250 ms a frame (4 Hz) at
    15 W -- confirmed by the user 2026-10-02.** Over it, section 1.1's

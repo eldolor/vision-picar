@@ -144,8 +144,8 @@ order:
 - the container started only after `GET /wheels` is usable;
 - the container named `picar-ros`.
 
-Platform ENG now has the full command set. **`tools/jetson/README.md` §4
-needs the same; it is owned by the 3.33 session.**
+Platform ENG has the full command set, and `tools/jetson/README.md` §4
+carries it too (2026-10-03).
 
 **2a. The wheel plugin's start-up race (fix 4).**
 
@@ -242,7 +242,7 @@ bridge, as `tests/test_ros_drive.py` does), or change body ARCH to say
 
 ## 4. Smaller code items
 
-- **4a.** `tools/jetson/setup.sh` should assert the detector's device on
+- **4a. DONE 2026-10-03.** `tools/jetson/setup.sh` should assert the detector's device on
   `cuda`, not only CLIP's (`:73-74`). PLAN 3.33 criterion 2 says to check
   it by hand until then. **Do this before 3.33 step 3 if you can**: it is a
   one-liner, now that `bench_perception.py` reads the predictor's device
