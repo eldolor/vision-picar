@@ -11,7 +11,10 @@ mission, and in the sim every mission that reached the backpack was labelled
 held at P = 0.998, and driven into until the step budget ran out.
 
 The rule splits the question the way the project splits every question:
-**the camera says WHAT and WHICH WAY, the range sensor says HOW FAR.** Arrival
+**the camera says WHICH WAY, the range sensor says HOW FAR** -- and, since
+2026-10-02 (handoff 1a), the cloud says WHAT: an arrival judged here ends
+`found` only once `brain/agent.py` has had a cloud call on the arrival frame
+confirm the target's identity (`brain/tiered.py` `confirm_arrival()`). Arrival
 is the target detected, centred, and the lidar reading within
 `ARRIVAL_RADIUS_M` at its bearing -- on `ARRIVAL_FRAMES` consecutive frames,
 so one bad frame can never end a mission. The detector's own distance
@@ -62,6 +65,10 @@ ARRIVAL_EDGE_M = 0.10
 ARRIVED = "arrived"
 APPROACHING = "approaching"
 NOT_JUDGED = "not_judged"
+# Arrived by this rule, but the cloud did not confirm the target's identity
+# on the arrival frame (handoff 2026-10-02 1a) -- set by `brain/agent.py`,
+# which holds the cloud; this module never calls out.
+REFUSED = "refused"
 
 
 class ArrivalCheck:

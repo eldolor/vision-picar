@@ -85,6 +85,10 @@ logger = logging.getLogger("tiered")
 TRIGGER_START = "mission_start"
 TRIGGER_CANDIDATE = "candidate_sighting"
 TRIGGER_COLD_SEARCH = "cold_search"
+# Handoff 2026-10-02 1a: not a trigger the policy fires on its own, but a
+# paid call all the same, so it is counted beside them. `brain/agent.py`
+# asks for it once per arrival, through `confirm_arrival()`.
+TRIGGER_ARRIVAL = "arrival_confirmation"
 
 # 2.4's other four. Named, not implemented -- each needs a tier that does
 # not exist yet, and a trigger that cannot fire is worse than one that is
@@ -215,12 +219,16 @@ TURN_ACTIONS = ("LEFT", "RIGHT")
 # bearing to steer on. No mode, nothing to get stuck in.
 #
 # **The risk is a local false positive steering at the wrong object.**
-# Bounded rather than eliminated: the existing P>=0.8 gate and two-frame
-# hysteresis have to pass first, and the cloud still owns identity, so a
-# wrong lock-on is corrected at the next paid call. On this corpus the
-# local tier reads 26% and 68% at zero false positives on the basket
-# walks, so it WILL sometimes steer at a handbag. That is recoverable.
-# Not steering at all is not.
+# Bounded only by the P>=0.8 gate: ONE frame that passes it steers. The
+# two-frame hysteresis gates the cloud triggers, not steering, and under
+# `async_cloud` a landed cloud answer never overrides a local sighting, so a
+# wrong lock-on is not corrected by the next paid call either. On this
+# corpus the local tier reads 26% and 68% at zero false positives on the
+# basket walks, so it WILL sometimes steer at a handbag. That is
+# recoverable; what must not happen is ending `found` there, and that is
+# guarded at ARRIVAL instead (handoff 2026-10-02 1a): `confirm_arrival()`
+# puts the arrival frame to the cloud, and without its yes there is no
+# `found`. Not steering at all is not recoverable.
 DEFAULT_STEER_ON_SIGHT = True
 
 # P25 / P7c item 2 -- dead-reckon the bearing to a sighting the detector is
@@ -726,6 +734,38 @@ class TieredVision:
         # scanning -- the exact behaviour Phase F exists to remove.
         self._last_cloud_scene = scene
         return self._annotate(scene, perception, trigger)
+
+    # -- 1a: the cloud confirms identity at arrival -----------------------
+
+    def confirm_arrival(self, frame: dict) -> dict:
+        """One paid, synchronous cloud call on the ARRIVAL frame: is the
+        target in it? (Handoff 2026-10-02 1a, decided by the user.)
+
+        `brain/arrival.py` decides DISTANCE from the lidar; this decides
+        IDENTITY, which is the cloud's question by 1.11's split. Only an
+        explicit `target_visible: true` confirms -- a scene that does not
+        say, or a call cap already spent, is a refusal, because the cost of
+        a missed `found` is a few more steps and the cost of a wrong one is
+        the mission. Synchronous even under `async_cloud`: the mission is
+        about to end on the answer, so there is nothing to hold meanwhile.
+        A failure raises, and the runner counts it against B3.2's budget.
+        """
+        if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
+            return {"confirmed": False, "cloud_called": False,
+                    "reason": "call cap reached -- identity not confirmed"}
+        self.stats.cloud_calls += 1
+        self.stats.triggers[TRIGGER_ARRIVAL] = self.stats.triggers.get(TRIGGER_ARRIVAL, 0) + 1
+        started = time.perf_counter()
+        try:
+            scene = self.cloud_vision_fn(frame) or {}
+        finally:
+            self.stats.record("cloud_ms", (time.perf_counter() - started) * 1000)
+        nav = scene.get("_navigate") or {}
+        confirmed = nav.get("target_visible") is True
+        return {"confirmed": confirmed, "cloud_called": True,
+                "reason": ("the cloud sees the target in the arrival frame" if confirmed
+                           else "the cloud does not see the target in the arrival frame"),
+                "cloud_reasoning": nav.get("reasoning")}
 
     # -- Phase A: dispatch, collect, and hold the goal --------------------
 

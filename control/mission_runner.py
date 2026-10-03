@@ -373,6 +373,9 @@ class MissionRunner:
             self.memory,
             min_distance_cm=min_distance_cm,
             vision_fn=self._guarded_vision,
+            # Handoff 2026-10-02 1a: identity at arrival, under the same
+            # B3.2 timeout and failure budget as every other cloud call.
+            arrival_confirm_fn=self._guarded_confirm,
             # Only reaches the vision policy: the rule-based one runs
             # against MockRobot, which has a real distance reading, so the
             # veto would return immediately anyway. Passing it either way
@@ -693,6 +696,22 @@ class MissionRunner:
             raise VisionUnavailable(f"vision timed out after {self.vision_timeout_s}s") from e
         except Exception as e:  # noqa: BLE001
             raise VisionUnavailable(f"vision call failed: {e}") from e
+
+    def _guarded_confirm(self, frame: dict) -> dict:
+        """The policy's `confirm_arrival` (brain/tiered.py), wrapped in
+        B3.2's timeout like `_guarded_vision`. A policy without one cannot
+        confirm identity, so its arrivals are never confirmed (1a)."""
+        confirm = getattr(self.vision_fn, "confirm_arrival", None)
+        if confirm is None:
+            return {"confirmed": False, "cloud_called": False,
+                    "reason": "this policy has no cloud to confirm identity"}
+        try:
+            return call_with_timeout(confirm, frame, timeout_s=self.vision_timeout_s)
+        except TimeoutError as e:
+            raise VisionUnavailable(
+                f"arrival confirmation timed out after {self.vision_timeout_s}s") from e
+        except Exception as e:  # noqa: BLE001
+            raise VisionUnavailable(f"arrival confirmation failed: {e}") from e
 
     def _handle_vision_failure(self, error: Exception) -> bool:
         with self._lock:

@@ -106,7 +106,10 @@ def _quiet_cloud(frame):
         direction = "LEFT" if seen[0]["bearing_deg"] < 0 else "RIGHT"
     return {"obstacles_ahead": [], "free_space": "unknown",
             "doorway_visible": False, "important_objects": [],
-            "safest_direction": direction}
+            "safest_direction": direction,
+            # As /navigate reports it (brain/navigate.py). Only the arrival
+            # confirmation (handoff 1a) acts on it; elsewhere it is readout.
+            "_navigate": {"target_visible": bool(seen)}}
 
 
 def _tier(**kw):

@@ -25,7 +25,7 @@ from typing import Callable, Optional
 from robot.interface import RobotInterface
 from robot.interface import NO_SENSOR_CM
 from robot.safety import FORWARD_ACTIONS, VERB_MIN_MOVE_M, SafetyController, SafetyViolation
-from brain.arrival import ARRIVED, NOT_JUDGED, ArrivalCheck, arrived_scene
+from brain.arrival import ARRIVED, NOT_JUDGED, REFUSED, ArrivalCheck, arrived_scene
 from brain.memory import MissionMemory
 from world.interface import NullWorld, WorldInterface, unusable_pose
 
@@ -315,6 +315,7 @@ class MissionAgent(ConstrainedAgent):
         memory: MissionMemory,
         side_clearance_cm: float = 30.0,
         world: Optional[WorldInterface] = None,
+        arrival_confirm_fn: Optional[Callable[[dict], dict]] = None,
         **kwargs,
     ):
         super().__init__(robot, **kwargs)
@@ -339,6 +340,32 @@ class MissionAgent(ConstrainedAgent):
         # ends the mission found. Judged only for scenes carrying local
         # perception -- see brain/arrival.py for what it refuses to judge.
         self.arrival = ArrivalCheck()
+        # Handoff 2026-10-02 1a: the lidar decides DISTANCE, the cloud
+        # IDENTITY. An arrival ends `found` only once a cloud call on the
+        # arrival frame says the target is in it. MissionRunner passes a
+        # guarded call; otherwise the vision_fn's own `confirm_arrival`
+        # (brain/tiered.py) is used, and with neither nothing is confirmed.
+        self.arrival_confirm_fn = arrival_confirm_fn
+        # One question per arrival: set when the cloud says no, cleared when
+        # the arrival rule stops holding -- so a robot parked in front of the
+        # wrong object pays once, not every frame.
+        self._identity_refused = False
+
+    def _confirm_identity(self, readout: dict, frame: dict) -> dict:
+        if self._identity_refused:
+            return {**readout, "state": REFUSED,
+                    "reason": "the cloud did not confirm this arrival; not asking again "
+                              "until the arrival ends"}
+        confirm = self.arrival_confirm_fn or getattr(self.vision_fn, "confirm_arrival", None)
+        verdict = (confirm(frame) if confirm is not None
+                   else {"confirmed": False, "cloud_called": False,
+                         "reason": "no cloud on this policy to confirm identity"})
+        readout = {**readout, "identity": verdict}
+        if verdict.get("confirmed"):
+            return readout
+        self._identity_refused = True
+        return {**readout, "state": REFUSED,
+                "reason": f"arrived, but identity not confirmed: {verdict.get('reason')}"}
 
     def _review_scene(self, scene: dict, frame: dict) -> dict:
         if not self.memory.target_object or self.memory.is_complete():
@@ -346,6 +373,10 @@ class MissionAgent(ConstrainedAgent):
         readout = self.arrival.observe(scene, self.robot)
         if readout["state"] == NOT_JUDGED and not scene.get("_perception"):
             return scene  # a policy with no local perception: nothing to say
+        if readout["state"] == ARRIVED:
+            readout = self._confirm_identity(readout, frame)
+        else:
+            self._identity_refused = False
         if readout["state"] == ARRIVED:
             scene = arrived_scene(scene, self.memory.target_object, readout)
         else:

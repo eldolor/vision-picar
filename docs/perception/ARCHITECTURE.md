@@ -100,15 +100,15 @@ confirms one -- identity belongs to the cloud (1.11). Which models fill the
 two seams is an engineering choice, measured and recorded in the
 [engineering spec](../engineering/perception/ENGINEERING.md).
 
-**Where that intent is not yet met.** "Never confirms" holds for the cloud
-policy's `found`. It does not hold for arrival. On the tiered path the
-arrival rule ([policy](../policy/ARCHITECTURE.md)) ends a mission `found` on
-a local detection centred at close lidar range, and it does not ask the
-cloud. A verifier false positive that keeps passing the gate can therefore
-end a mission at the wrong object. Corroboration (below) measures this and
-is not enforced. **Decided by the user 2026-10-02; not yet built:** the
-cloud confirms identity at arrival -- one paid call on the arrival frame must
-agree before a tiered mission ends `found`. The rule, its rejected
+**At arrival too.** "Never confirms" holds for the cloud policy's `found`,
+and since 2026-10-02 for arrival as well. On the tiered path the arrival
+rule ([policy](../policy/ARCHITECTURE.md)) judges distance from a local
+detection centred at close lidar range; before that ends a mission `found`,
+one paid cloud call on the arrival frame must agree the target is in it
+(decided by the user 2026-10-02, built the same day). Until then a verifier
+false positive that kept passing the gate could end a mission at the wrong
+object. Corroboration (below) still measures the local tier's agreement and
+is not enforced. The rule, its rejected
 alternatives and its trade-off are the [policy](../policy/ARCHITECTURE.md)'s
 ("The cloud confirms identity at arrival; the lidar decides distance"). It
 fits this domain's split: the cloud owns identity, and the local tier is
@@ -255,7 +255,7 @@ instead ([policy](../policy/ARCHITECTURE.md)).
 | Camera frame missing or undecodable; a model raises | **unavailable** | a broken sensor never reads as an empty room |
 | Target the detector has no word for | open-vocabulary path; the vocabulary verdict says so; the cloud's cold search covers it | absence from a blind detector is never trusted as absence |
 | Close-range relabelling | crops are not gated on label | the frames where the target fills the view are kept |
-| Local false positive | each frame that passes the gate is a sighting. It may fire a cloud trigger. It steers the robot on that frame, because steering has no frame hysteresis. Near the object it can satisfy arrival. | for steering, the per-frame probability gate is the only bound today. For ending `found`, the arrival rule adds consecutive frames, a centred bearing, a lidar range within the radius and one surface -- all local. The cloud's identity does not override a local sighting. The target "a false positive never confirms a target" is **not met** on the tiered arrival path. Decided fix (the cloud confirms identity at arrival, decided by the user 2026-10-02, owned by [policy](../policy/ARCHITECTURE.md)) not yet built |
+| Local false positive | each frame that passes the gate is a sighting. It may fire a cloud trigger. It steers the robot on that frame, because steering has no frame hysteresis. Near the object it can satisfy arrival. | for steering, the per-frame probability gate is the only bound today. For ending `found`, the arrival rule adds consecutive frames, a centred bearing, a lidar range within the radius and one surface -- all local. The cloud's identity does not override a local sighting. Before `found`, the cloud must confirm identity on the arrival frame. The target "a false positive never confirms a target" is **met** on the tiered arrival path (the cloud confirms identity at arrival; decided by the user 2026-10-02 and built the same day, owned by [policy](../policy/ARCHITECTURE.md)). A false positive can still steer the robot to the wrong object |
 | Camera panned | on real frames: pan is added to the bearing; tilt is not corrected; arrival refuses to judge. Sim frames carry no pan, so neither happens in the sim (harmless today: the cloud-driven policies never peek and a mission starts centred) | no panned bearing is treated as body-relative without composing it with range |
 | Over the latency budget on the board | P26, then TensorRT | 250 ms a frame at 15 W |
 | A real camera mistaken for the sim | provenance read once; failure assumes a real camera | real frames never get synthetic detections |

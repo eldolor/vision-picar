@@ -26,12 +26,20 @@ result in a test. Each item says "**Done when**".
 
 ## 1. Decided 2026-10-02 -- build these first
 
-The user decided all four on 2026-10-02. None is built. Each decision, its
+The user decided all four on 2026-10-02. **All four are built or closed
+(2026-10-02): 1b, 1d and 1a in separate commits; 1c needed nothing beyond
+1a.** Each decision, its
 rejected alternatives and its trade-off are now in the architecture specs
 named below; the mechanism is in the matching engineering spec's Known
 gaps, which says "decided fix not yet built" until it lands.
 
-**1a. DECIDED: the cloud confirms identity at arrival.** A tiered mission
+~~**1a. DECIDED: the cloud confirms identity at arrival.**~~ **BUILT
+2026-10-02:** `TieredVision.confirm_arrival()`, asked by
+`MissionAgent._review_scene()` through `MissionRunner._guarded_confirm()`;
+`tests/test_arrival_confirmation.py`; the 3.11 sweep unchanged (69/69,
+689/689, 677/689, 0 false). Kept below as the record.
+
+A tiered mission
 can end `found` on a wrong object today. Found by the fix agent and
 confirmed with a fake pipeline (no models):
 
@@ -84,8 +92,11 @@ the twin and body link to it.
 **Done when** a test with an active goal shows the wheels still at zero
 past `STOP_HOLD_S` after `/stop`, and a new goal can be set afterwards.
 
-**1c. DECIDED: a landed cloud `target_reached` does not end a tiered
-mission; the arrival rule only** (second review, M3).
+~~**1c. DECIDED: a landed cloud `target_reached` does not end a tiered
+mission; the arrival rule only**~~ **DONE 2026-10-02:** nothing to build
+beyond 1a; the policy specs record it. Kept below as the record.
+
+ (second review, M3).
 
 - Under the shipped `tier_async_cloud: true` it never does. Only
   `brain/arrival.py` can end the mission, and that stays so: the lidar's

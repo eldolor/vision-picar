@@ -21,7 +21,7 @@ file is true only until the code changes and is updated in the same commit.
 | `brain/vision_agent.py` | `VisionAgent(MissionAgent)`: `decide()` skips the frontier logic and calls `ConstrainedAgent.decide()` on the model's `safest_direction`. |
 | `brain/navigate.py` | `navigate_scene()` (one POST to `{vision_url}/navigate`), `to_scene()` (pure mapping), `vision_fn_for()` (binds target, URL, secret, model, wording; carries `set_searched_rooms`). |
 | `brain/tiered.py` | `TieredVision` (a callable `vision_fn`), `TierStats`, `corroboration_for()`, `turn_for()`, `tiered_vision_fn_for()`. Trigger policy, free-frame stand-in with its precedence ladder, async dispatch with an epoch, sized turns, spin guard. |
-| `brain/arrival.py` | `ArrivalCheck.observe(scene, robot)`, `arrived_scene()`. |
+| `brain/arrival.py` | `ArrivalCheck.observe(scene, robot)`, `arrived_scene()`, the readout states (`REFUSED` is set by the agent, never here: this module makes no calls). |
 | `brain/goal_pose.py` | `OdomTracker` (integrates `get_odometry()` path length along heading), `GoalPose` (`sight()`, `bearing_from()`, `distance_from()`, `clear()`; `is_point`). |
 | `brain/memory.py` | `MissionMemory` (visited/searched rooms, `Sighting` with a map-frame pose, `ActionRecord`, `is_complete()`, `summary()`, `as_context()`). |
 | `brain/rooms.py` | `ROOM_FEATURES`, `identify_room()`. Tested, but nothing in the mission path calls it: sim frames carry a room label and real frames take the cloud's `room_guess`. |
@@ -58,8 +58,24 @@ degrees and the target is not detected. A cloud turn is sized from the local
 bearing when both agree on the side (`_annotate`), else it is a
 `SCAN_TURN_DEG` search step. The tier never overrides the cloud's direction
 on a call frame, but `MissionAgent._review_scene()` runs after the vision
-step: on a synchronous call frame that satisfies arrival it rewrites the
-scene to STOP and `found` (`arrived_scene()`), whatever the cloud said.
+step: on a synchronous call frame that satisfies arrival -- and whose arrival
+the cloud then confirms, see "Arrival" below -- it rewrites the scene to
+STOP and `found` (`arrived_scene()`), whatever the trigger's answer said.
+
+**Arrival** (handoff 2026-10-02 1a). `MissionAgent._review_scene()` runs
+`ArrivalCheck.observe()`; on `arrived` it calls `_confirm_identity(readout,
+frame)`, which asks `arrival_confirm_fn(frame)` -- `MissionRunner` passes
+`_guarded_confirm`, the policy's `confirm_arrival` under B3.2's
+`vision_timeout_s`, a failure raising `VisionUnavailable` into the budget;
+without a runner the agent falls back to `vision_fn.confirm_arrival`.
+`TieredVision.confirm_arrival(frame)` makes one synchronous call to the
+cloud `vision_fn` (even under `async_cloud`), counts it in `cloud_calls`
+and in `triggers["arrival_confirmation"]` (`TRIGGER_ARRIVAL`), and confirms
+only on `_navigate.target_visible is True`; at `max_calls` it refuses
+without calling. Not confirmed, or no confirmer on the policy: the readout
+becomes `refused`, the scene is not rewritten, and `_identity_refused`
+stops further calls until `observe()` stops returning `arrived`. The
+readout carries the verdict under `identity`.
 
 **What the hysteresis does and does not gate.** `consecutive_frames` is
 read only in `_trigger_for()`. `_steer_to()` returns a direction for any
@@ -95,7 +111,7 @@ since last call >= `stale_after` -> `staleness`. `max_calls` caps the total.
 | `_navigate` | `target_visible`, `target_direction` (`left`/`center`/`right`/`not_visible`/`unknown`), `target_reached`, `obstacle_ahead` (None = not asked), `room_guess`, `distance_estimate`, `reasoning` |
 | `_perception` | `Perception.as_dict()` (perception domain) |
 | `_tier` | `cloud_called`, `trigger`, `cloud_landed`, `models`, `corroboration`, `in_flight`, `holding`, `vocabulary`, `pacing`, `stats` (`frames`, `cloud_calls`, `frames_per_call`, `triggers`, `perception`, `claims`, `corroborated`, `verdicts`, `cloud_ms`, `perception_ms`) |
-| `_arrival` | `state` (`arrived`/`approaching`/`not_judged`), `streak`, `reason`, `bearing_deg`, `range_m`, `radius_m`. `observe()` checks detection before the scan, so a frame without a detection reads `approaching` ("target not detected") even with no scan; `not_judged` needs a detection plus a panned camera or an unusable scan, or a policy with no `_perception` at all |
+| `_arrival` | `state` (`arrived`/`approaching`/`not_judged`/`refused`), `streak`, `reason`, `bearing_deg`, `range_m`, `radius_m`, and on an arrival `identity` (`confirmed`, `cloud_called`, `reason`, `cloud_reasoning`). `observe()` checks detection before the scan, so a frame without a detection reads `approaching` ("target not detected") even with no scan; `not_judged` needs a detection plus a panned camera or an unusable scan, or a policy with no `_perception` at all |
 
 **Frame keys the policy reads:** `image_base64`, `media_type`, `room`,
 `objects_visible` (explorer), `detections` (sim only, via the perception
@@ -170,7 +186,7 @@ Arrival reads the scan in the body frame using `LIDAR_X_M` from
 ```bash
 pytest tests/test_agent.py tests/test_mission_agent.py tests/test_object_search.py \
        tests/test_vision_policy.py tests/test_tiered.py tests/test_bearing_turns.py \
-       tests/test_arrival.py tests/test_goal_pose.py tests/test_memory.py tests/test_rooms.py -q
+       tests/test_arrival.py tests/test_arrival_confirmation.py tests/test_goal_pose.py tests/test_memory.py tests/test_rooms.py -q
 ```
 
 The sweeps in `tests/test_bearing_turns.py` and `tests/test_arrival.py`
@@ -226,7 +242,8 @@ On a backend without a scan (teleop, replay), `arrival.state` reads
 | Test file (count 2026-10-02) | What it pins, with recorded numbers |
 |---|---|
 | `tests/test_bearing_turns.py` (17) | Runs in the **scaled house** since 3.32 (`HOUSE = "scaled_house"`). R1: sized turns arrive from off-axis while quarter turns are the defect (relative bars). R1b: every search start sees the target within 12 steps and arrives. R1c: at 90% per-frame detection >= 95% of missions arrive. Spin guard counts degrees; stuck -> `blocked`; spin named a spin. **3.32 recorded only that these pass in the scaled house**; the numbers below are history |
-| `tests/test_arrival.py` (14) | Uses `tests/test_bearing_turns.py`'s `_build()`, so the scaled house. **Recorded 2026-10-01 (PLAN 3.32, guarded verbs):** of missions that arrived, 69/69 (perfect detection), 689/689 (90%) and 677/689 = 98.3% (80%) end `found` (bar 95%); 0 false arrivals in 69 / 690 / 690; farthest `found` 0.51-0.52 m from the target's centre (bar 0.60 m, so 0.08 m of margin). Also: not judged without scan, with a panned camera, or without local perception; two frames needed; range read at the bearing; edges refused |
+| `tests/test_arrival.py` (14) | Uses `tests/test_bearing_turns.py`'s `_build()`, so the scaled house. **Recorded 2026-10-01 (PLAN 3.32, guarded verbs):** of missions that arrived, 69/69 (perfect detection), 689/689 (90%) and 677/689 = 98.3% (80%) end `found` (bar 95%); 0 false arrivals in 69 / 690 / 690; farthest `found` 0.51-0.52 m from the target's centre (bar 0.60 m, so 0.08 m of margin). **Re-measured 2026-10-02 with the arrival confirmation (handoff 1a) and a cloud that reports `target_visible`:** identical -- 69/69, 689/689, 677/689, 0 false, farthest 0.507/0.515/0.515 m. Also: not judged without scan, with a panned camera, or without local perception; two frames needed; range read at the bearing; edges refused |
+| `tests/test_arrival_confirmation.py` (5) | Handoff 2026-10-02 1a, scaled house, cloud faked: the right object ends `found` after one `arrival_confirmation` call; a cloud that disagrees refuses the arrival (ends `blocked`, at most 2 confirmation calls); a false-positive run (absent, absent, detected...) cannot end `found` and the same run with an agreeing cloud does; the call is counted; at the call cap it refuses without calling |
 | `tests/test_tiered.py` (92) | triggers and hysteresis, call cap, staleness floor, async dispatch and epoch drop, an async failure reaching B3.2, landed verdicts shown once, local bearing beats a stale cloud goal, spin guard never overrides a sighting, timing on the worker |
 | `tests/test_vision_policy.py` (46) | visible is not found; absent `obstacle_ahead` is `unknown`; room guess backfill and `searched_rooms`; the policy does not peek; replay missions; proximity veto off by default and never over a real sensor |
 | `tests/test_agent.py`, `tests/test_mission_agent.py`, `tests/test_object_search.py` | constrained loop, frontier preference, look-around scan |
@@ -280,25 +297,15 @@ threshold counted in steps.
   detection bearings are already camera-relative (`GridWorld.view_angle()`).
   So the refusal works on real frames only. Harmless today: `VisionAgent`
   never peeks and 3.20 centres the camera at mission start.
-- **Local false positives steer, and can end `found`.** One detected frame
-  steers, the hysteresis gates only triggers, and arrival never consults the
-  cloud's identity (see "What the hysteresis does and does not gate").
-  `brain/tiered.py`'s comment above `DEFAULT_STEER_ON_SIGHT` says the two-frame
-  hysteresis has to pass before steering and that a wrong lock-on "is
-  corrected at the next paid call". Neither is what the code does. The
-  comment is left as is until the fix below lands with it.
-  **Decided by the user 2026-10-02; not yet built** (the rule is in the
-  [architecture spec](../../policy/ARCHITECTURE.md), "The cloud confirms
-  identity at arrival; the lidar decides distance"): before a tiered mission
-  ends `found`, one paid cloud call on the arrival frame must agree it is
-  the target. Where it plugs in: `MissionAgent._review_scene()`
-  (`brain/agent.py`), which applies `arrived_scene()` (`brain/arrival.py`)
-  today on local perception and lidar alone; the cloud call goes through
-  the tier's `vision_fn`, so it counts toward the mission's failure budget
-  and the calls-and-frames counter. Steering is unchanged. Done when a test
-  (with the cloud faked) shows a wrong-object arrival refused when the cloud
-  disagrees and a right one still ending `found`, and the 3.11 sweep bars in
-  `tests/test_arrival.py` still hold.
+- **Local false positives steer.** One detected frame steers and the
+  hysteresis gates only triggers (see "What the hysteresis does and does not
+  gate"). Accepted by the 2026-10-02 decision; only `found` is guarded, at
+  arrival.
+- **A refused arrival leaves the robot parked.** The tier keeps steering at
+  the object the cloud rejected, so the mission ends in front of it --
+  `blocked` after 17-18 steps in both of `tests/test_arrival_confirmation.py`'s
+  refused runs, having paid for one confirmation. Nothing turns the robot
+  away from a rejected object.
 - **`tests/demo_active_search.py` ends NOT FOUND after 150 steps** (observed
   2026-10-02). Almost every step is a LEFT that the pivot guard clamps to
   0 degrees, so the robot never moves. The stuck-breaker counts STOPs, not

@@ -159,11 +159,12 @@ to a stop and `found` against the cloud's answer. For **ending `found`**, the
 bound is the arrival rule's conditions on top of the gate (consecutive
 frames, centred, a lidar range within the radius, one surface), all of them
 local: a wrong object that keeps passing the gate can be driven to and
-reported `found`. The corroboration verdict ([perception](../perception/ARCHITECTURE.md))
-measures this exposure and does not enforce anything. The user decided on
-2026-10-02 that a cloud identity check closes the `found` half of this; it is
-not yet built, and steering stays as described (see "The cloud confirms
-identity at arrival; the lidar decides distance").
+reported `found` -- until 2026-10-02, when the user decided, and the same
+day it was built, that a cloud identity check closes the `found` half of
+this. Steering stays as described (see "The cloud confirms identity at
+arrival; the lidar decides distance"). The corroboration verdict
+([perception](../perception/ARCHITECTURE.md)) still measures the exposure and
+enforces nothing.
 
 ### Turns are sized; search turns are smaller than the field of view
 
@@ -207,14 +208,16 @@ target.
 
 ### The cloud confirms identity at arrival; the lidar decides distance
 
-**Decision.** Decided by the user 2026-10-02; **not yet built.** Two rules,
+**Decision.** Decided by the user 2026-10-02; built the same day. Two rules,
 decided together, that split the end of a tiered mission by question, as the
 arbitration above splits steering:
 
 - **Identity: the cloud confirms at arrival.** Before a tiered mission ends
   `found`, one paid cloud call on the arrival frame must agree that what the
-  robot has stopped at is the target. If the cloud disagrees, the mission
-  does not end `found`.
+  robot has stopped at is the target. If the cloud disagrees, or cannot be
+  asked, the mission does not end `found`, and the same arrival is not put
+  to the cloud again: it is asked once more only after the arrival rule has
+  stopped holding.
 - **Distance: the arrival rule only.** A cloud target-reached answer that
   lands under the asynchronous tier does not end a tiered mission. The
   lidar-judged arrival rule stays the only way a tiered mission ends `found`
@@ -295,7 +298,7 @@ the same frames, so it must never be copied onto the hardware backend.
 | No range sensor (phone walk, replay) | arrival not judged; under the shipped asynchronous tier nothing else can end the mission `found`, so it runs to its step budget (P7e) | a mission never ends `found` on a guess. By design since 2026-10-02: a landed cloud target-reached does not end it |
 | An edge beside the target | arrival refused | zero false arrivals beyond 0.60 m |
 | World unreachable | right-hand rule | a mapper outage never ends a mission |
-| Local false positive | steers on every frame it passes the probability gate; one frame is enough; the cloud's answer does not override a local sighting | target: a false positive never ends a mission `found`. **Not met:** today bounded only by the per-frame gate, and a wrong object that keeps passing it can end `found`. Decided fix (the cloud confirms identity at arrival, 2026-10-02) not yet built. Steering on a false positive is accepted |
+| Local false positive | steers on every frame it passes the probability gate; one frame is enough; the cloud's answer does not override a local sighting | target: a false positive never ends a mission `found`. **Met** (the cloud confirms identity at arrival; decided and built 2026-10-02): a wrong object can be driven to, and the arrival is refused unless the cloud agrees. Steering on a false positive is accepted |
 | Spin with no detection | forced forward after a fixed amount of rotation | a held turn cannot repeat forever |
 
 ## Open questions
