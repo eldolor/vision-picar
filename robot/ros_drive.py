@@ -48,7 +48,7 @@ from typing import Optional
 
 import httpx
 
-from robot.interface import RobotInterface, WheelFeedbackLost
+from robot.interface import VERB_STALL_S, RobotInterface, WheelFeedbackLost
 
 logger = logging.getLogger("ros_drive")
 
@@ -78,9 +78,9 @@ MIN_ANGULAR_RAD_S = 0.05
 CONTROL_HZ = 20.0
 LINEAR_TOLERANCE_M = 0.004
 ANGULAR_TOLERANCE_RAD = math.radians(0.5)
-# No encoder progress for this long while commanding motion: the safety
-# vet (or a wall) has stopped the wheels. End the verb rather than push.
-STALL_S = 0.6
+# No encoder progress for VERB_STALL_S while commanding motion: the safety
+# vet (or a wall) has stopped the wheels. End the verb rather than push. The
+# number is robot/interface.py's, shared with direct mode's verbs (3.35).
 
 
 def moves_for(speed: int, duration: float) -> int:
@@ -260,7 +260,7 @@ class RosDriveRobot(RobotInterface):
                     break
                 if abs(done - last_progress) > tolerance / 4:
                     last_progress, last_change = done, time.monotonic()
-                elif time.monotonic() - last_change > STALL_S:
+                elif time.monotonic() - last_change > VERB_STALL_S:
                     logger.info("verb stalled at %.3f of %.3f -- ended", done, target)
                     deadline = 0.0          # a wall is not something to retry into
                     break

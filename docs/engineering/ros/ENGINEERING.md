@@ -149,6 +149,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | `drive.bridge_url` | `http://127.0.0.1:8090` (shipped yaml and code default) | URL | `robot/factory.py` only | Where verbs go. |
 | `world.bridge_url` | not in the shipped yaml; code default `http://127.0.0.1:8090` | URL | `world/factory.py` only | Where `RosWorld` reads map, pose and goals. Setting `drive.bridge_url` alone sends verbs and world reads to different bridges. |
 | `ROBOT_URL` (container) | `http://host.docker.internal:8000` | URL | bridge, launch file (xacro arg), and the plugin, where the env var wins | Docker Desktop's name for the host. On Linux use `--network host` and `127.0.0.1`. |
+| `TRACK_SCRUB` (container) | `1.0` | > 0 | `picar.launch.py` (`_controllers_with_scrub()`) | Skid steer's effective/geometric track (3.35). Not 1.0: the launch writes a copy of `controllers.yaml` with `wheel_separation_multiplier` set to it. The robot server reads the same variable (`hardware.track_scrub`); set both on the car. `[PLACEHOLDER]` until measured |
 | `BRAIN_URL` (container) | `http://host.docker.internal:8001/brain`; `""` turns it off | URL | bridge | The `/brain` prefix is what `service/tunnel/run.sh` sets. |
 | `BRIDGE_PORT` | 8090 | port | bridge | -- |
 | `RMW_IMPLEMENTATION` | `rmw_cyclonedds_cpp` | -- | image `ENV` | The architecture's D10. |

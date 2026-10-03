@@ -62,7 +62,11 @@ CONSUMER_DIRS = PROJECT_DIRS + ("tests", "web-twin")
 # carry it (TF places every scan with it) and robot/safety.py must too (it
 # judges distance to the chassis off the scan BEFORE ROS, by design, 3.16),
 # so it cannot live on one side only.
-MAX_DUPLICATES = 11
+# 2026-10-03 (3.35): twelve -- the skid-steer track scrub. The robot server
+# needs it for direct-mode turns and odometry (which never pass through ROS)
+# and diff_drive_controller needs it for twists, so it exists on both sides;
+# both read one env var at start-up, and this pins their defaults.
+MAX_DUPLICATES = 12
 # 2026-09-27: thirteen method+path pairs (R4-R6). A fourteenth is a decision.
 MAX_BRIDGE_ROUTES = 13
 
@@ -112,6 +116,27 @@ def _wheel_separation():
         "controllers.yaml": _params("controllers.yaml", "diff_drive_controller")["wheel_separation"],
         "sim/mock_robot.py": TRACK_WIDTH_M,
         "robot/hardware_robot.py": hardware_robot.TRACK_WIDTH_M,
+    }
+    return len(set(values.values())) == 1, values
+
+
+def _track_scrub():
+    """3.35: skid steer's effective/geometric track. Every DEFAULT must be
+    1.0-and-equal: the config's, HardwareRobot's, controllers.yaml's and the
+    launch file's. On the car one env var, TRACK_SCRUB, sets both sides."""
+    import inspect
+    from robot import hardware_robot
+    launch = (SLAM / "src/picar_bringup/launch/picar.launch.py").read_text()
+    m = re.search(r'TRACK_SCRUB_DEFAULT = "([^"]+)"', launch)
+    assert m, "picar.launch.py no longer names its TRACK_SCRUB default"
+    cfg = yaml.safe_load((ROOT / "config" / "robot.yaml").read_text())
+    values = {
+        "config/robot.yaml hardware.track_scrub": float(cfg["hardware"]["track_scrub"]),
+        "HardwareRobot(track_scrub=)": float(inspect.signature(
+            hardware_robot.HardwareRobot.__init__).parameters["track_scrub"].default),
+        "controllers.yaml wheel_separation_multiplier": float(
+            _params("controllers.yaml", "diff_drive_controller")["wheel_separation_multiplier"]),
+        "picar.launch.py TRACK_SCRUB_DEFAULT": float(m.group(1)),
     }
     return len(set(values.values())) == 1, values
 
@@ -229,6 +254,7 @@ DUPLICATES = {
     "lidar mounting offset": _lidar_offset,
     "wheel radius": _wheel_radius,
     "wheel separation": _wheel_separation,
+    "skid-steer track scrub (default)": _track_scrub,
     "driver priority order (M4 vs twist_mux)": _driver_order,
     "control rate (20 Hz)": _control_rate,
     "silence stops the wheels (timeouts)": _silence_stops,

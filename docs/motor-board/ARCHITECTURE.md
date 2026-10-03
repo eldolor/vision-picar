@@ -265,6 +265,8 @@ request for a camera frame fails rather than answering "unusable". Where the lid
 - **Unmeasurable before arrival:**
   - the speed loop's deadband at low speeds (slow pivots may stick-slip);
   - the board's real loop and feedback timing;
-  - the effective skid-steer track width.
+  - the effective skid-steer track width. Where it goes is settled
+    (`PLAN-ros-alignment.md` 3.35): one setting, the track scrub, read by
+    the robot server and the ROS container; only the value is owed.
 - **Battery voltage.** The board reports it. A software cutoff is owed by
   the platform and safety domains, not here.

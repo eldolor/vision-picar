@@ -20,6 +20,16 @@ def load_config(config_path: str | Path = _DEFAULT_CONFIG) -> dict:
         return yaml.safe_load(f)
 
 
+def _track_scrub(config: dict) -> float:
+    """3.35: the real chassis' effective/geometric track ratio. TRACK_SCRUB
+    wins over `hardware.track_scrub`; 1.0 (no correction) when neither is
+    set. The ROS container reads the same TRACK_SCRUB at launch -- set both."""
+    raw = os.environ.get("TRACK_SCRUB")
+    if raw is None:
+        raw = (config.get("hardware") or {}).get("track_scrub", 1.0)
+    return float(raw)
+
+
 def get_robot(config_path: str | Path = _DEFAULT_CONFIG) -> RobotInterface:
     config = load_config(config_path)
     return _with_drive(_backend(config), config)
@@ -126,13 +136,15 @@ def _backend(config: dict) -> RobotInterface:
 
             body = MockRobot(_sim_world())
             board = FakeEsp32(body)
-            robot = HardwareRobot(board.path, sensors=body)
+            # track_scrub 1.0 whatever the setting: the sim body does not
+            # scrub, so the car's correction would make it turn wrong (3.35).
+            robot = HardwareRobot(board.path, sensors=body, track_scrub=1.0)
             robot.fake_board = board          # kept alive with the robot
             return robot
         port = os.environ.get("ROBOT_SERIAL") or (config.get("hardware") or {}).get("serial_port")
         if not port:
             raise ValueError("mode: hardware needs ROBOT_SERIAL (or hardware.serial_port) "
                              "-- the ESP32 driver board's serial device")
-        return HardwareRobot(port)
+        return HardwareRobot(port, track_scrub=_track_scrub(config))
 
     raise ValueError(f"Unknown robot mode in config: {mode!r}")

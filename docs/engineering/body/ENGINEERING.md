@@ -98,6 +98,23 @@ safety layer reads usable wheels as "this body really moves":
 passes commands through from a body without wheels. Answering unusable
 without refusing motion would have let a silent board drive unvetted.
 
+**Stalls on the wall clock** (3.35): `carry_out_verb()` keeps a progress
+mark; progress beyond `_VERB_STALL_M` (1 mm) or `_VERB_STALL_DEG`
+(0.125 deg) moves it, and `VERB_STALL_S` without that ends the verb
+`stalled`, wheels zeroed. The sim's path (`advance()`) keeps its exact
+check.
+
+**The skid-steer scrub** (3.35): `HardwareRobot(track_scrub=)` sets
+`_track_m = TRACK_WIDTH_M * track_scrub`, used for pivot wheel speeds
+(`verb_plan()`, `_pivot()`), the odometry heading, and the published
+`track_width_m` (so `carry_out_verb()`, the settle pass and
+`vet_wheel_velocity()` convert with it). `robot/factory.py`'s
+`_track_scrub()` reads `TRACK_SCRUB`, else `hardware.track_scrub`, else
+1.0, for a real board only; the fake board is built with 1.0. The ROS
+container's launch applies the same env var as
+`wheel_separation_multiplier` ([ros engineering](../ros/ENGINEERING.md)).
+`feedback_status()` reports it.
+
 **A short move is not a move** (`brain/agent.py`, `SHORT_MOVES`): a result
 whose `stopped_short` is `timeout` or `stalled` reaches the mission as
 `executed: false`, so it counts toward `stuck_after`. `clamped` stays
@@ -176,6 +193,7 @@ above raises `RobotTransportError`. Sensing routes catch only `HTTP 404`.
 | `sim.odom_drift.*` / `SIM_ODOM_DRIFT` (`"left,right"`) | `enabled: false`, right 1.03 | Encoder scale per wheel, for SLAM tests (R5) |
 | `teleop.stall_timeout_s` | 15.0 s | Teleop staleness window |
 | `ROBOT_SERIAL` / `hardware.serial_port` | none (required) | The board's serial device under `mode: hardware` |
+| `TRACK_SCRUB` / `hardware.track_scrub` | 1.0 | Skid steer's effective/geometric track for a real board (3.35); ignored for the fake board. Set the env var for the ROS container too. `[PLACEHOLDER]` |
 | `SIM_MOTOR_BOARD=fake` | unset | `mode: hardware` against `sim/fake_esp32.py` on a pty, with a sim body as `sensors` |
 
 `config/robot.yaml` also carries a top-level `sim_map:` key that **no code
@@ -194,6 +212,7 @@ reads**; `SIM_MAP` is the only selector.
 | `DEFAULT_TIMEOUT_S` | 10.0 s | `control/remote_robot.py` | Per-request timeout |
 | `DEFAULT_STALL_TIMEOUT_S` | 15.0 s | `sim/teleop_robot.py` | Teleop staleness |
 | Hardware verb turn rate | 1.2 rad/s body | `robot/hardware_robot.py` | Same as `TURN_RATE_RAD_S` in `robot/ros_drive.py` |
+| `VERB_STALL_S` | 0.6 s | `robot/interface.py` | No encoder progress this long while commanded: the verb has stalled. Shared by direct mode and `robot/ros_drive.py` (3.35). `[PLACEHOLDER]` until the board's low-speed deadband is measured |
 | `HEARTBEAT_MS` | 1500 ms | `robot/hardware_robot.py` | Board-side deadman, above the server's 1.0 s watchdog |
 | `FEEDBACK_STALE_S` | 0.25 s | `robot/hardware_robot.py` | No frame for this long and the wheels are not measured (3.34). Five of the board's 50 ms feedback intervals, below the 1 s watchdog and the 1.5 s heartbeat, so it acts first |
 | `RosDriveRobot` client timeout | 2.0 s | `robot/ros_drive.py` (`timeout_s`) | Every bridge call except the stop's zeroing posts |
@@ -279,6 +298,7 @@ key means the new body returns something the contract does not allow.
 | `tests/test_ros_drive.py` (20) | The ROS wrapper's verbs, encoder closure, reads to the wrapped body; the stop: direct and under 0.1 s against a bridge that hangs, all three ROS inputs zeroed in the background, no thread pile-up over 20 stops, a stale ROS command held at zero, and the hold lifted by the next verb or by `STOP_HOLD_S`; a 4xx from the bridge does not mark it down, a 5xx or a transport error does |
 | `tests/test_blind_reverse.py` (5) | `HardwareRobot` with no sensors refuses reverse; a body without wheels still reverses (rule in [safety engineering](../safety/ENGINEERING.md)) |
 | `tests/test_wheel_feedback.py` (15) | 3.34: silence makes wheels and odometry unusable within 0.35 s; the body zeroes a standing command within 0.4 s; motion refused and stop never raising, on a dead port too; a verb losing feedback ends within 0.5 s; clean recovery; `/action` and `/wheels` answer `no_feedback`, `/health` `motor_board` describes the link, `RemoteRobot` raises; a `timeout` or `stalled` FORWARD is not executed and five end a mission `blocked` |
+| `tests/test_stall_and_scrub.py` (11) | 3.35: a snagged wall-clock verb ends `stalled` within `VERB_STALL_S` + 0.2 s; a pivot blocked by furniture on the fake board ends `stalled` (was `timeout`); clear fake-board verbs complete; one stall constant; the scrub sizes pivots, scales heading and is published; the fake board ignores `TRACK_SCRUB`, a real board reads it |
 | `tests/test_health_sim_map.py` (4) | `/health` `sim_map` names the house the factory built, including `mode: hardware` with the fake board |
 | `tests/test_fake_esp32.py`, `tests/test_ros_driver_board.py` | The hardware body against the fake board (detail in [motor-board](../motor-board/ENGINEERING.md)) |
 | `tests/test_continuous_pose.py` | The sim's wheel kinematics; a straight line independent of the track width |
@@ -327,5 +347,12 @@ did not measure.
   (`robot/hardware_robot.py:371`), and the contract suite pins neither.
   Differences agree; absolute headings do not. Pending a decision
   (fix-list 11).
+- **Two placeholders the car must replace** (3.35). `VERB_STALL_S` (0.6 s,
+  `robot/interface.py`) ends a verb with no encoder progress while
+  commanded -- on the wall clock (`carry_out_verb()`, and
+  `RosDriveRobot._run()`, which shares it); the board's low-speed deadband,
+  which decides whether a slow pivot or settle pass can stick that long, is
+  unmeasured. `track_scrub` (1.0) is skid steer's effective/geometric
+  track; nothing is corrected until the Rover's effective track is measured.
 - **`RemoteRobot` does not override `set_wheel_velocity()`**, so the brain
   cannot send a standing command over HTTP. Nothing needs it today.

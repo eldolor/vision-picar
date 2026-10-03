@@ -212,6 +212,14 @@ VERB_PERIOD_S = 0.05          # one wheel-loop period (robot/server.py)
 # turn at ~400 deg/s, 20 degrees a period; five is the sim's own collision
 # sub-step (`sim/grid_world.py` MAX_SUBSTEP_RAD).
 VERB_TURN_STEP_DEG = 5.0
+# 3.35: a verb commanded to move whose encoders have not advanced for this
+# long has stalled -- a wall, a snag, a wheel the safety vet held -- and ends
+# rather than push. Moved here from robot/ros_drive.py so the two paths share
+# one number. [PLACEHOLDER] on the car: the board's low-speed deadband
+# (stick-slip on slow pivots and settle passes) is unmeasured.
+VERB_STALL_S = 0.6
+_VERB_STALL_M = 0.001          # progress that resets the window: 1 mm ...
+_VERB_STALL_DEG = 0.125        # ... or 0.125 degrees (ros_drive's tolerance / 4)
 _VERB_DONE_M = 1e-7
 _VERB_DONE_DEG = 1e-5
 
@@ -263,6 +271,11 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
 
     ended, reason = "timeout", None
     periods = int(math.ceil(target / rate / VERB_PERIOD_S)) * 3 + 20 if rate else 0
+    # 3.35: on the wall clock a stall is time without progress -- the same
+    # rule, and number, as robot/ros_drive.py's. The sim's clock is advance(),
+    # which detects it exactly below.
+    mark, mark_at = None, time.monotonic()
+    budge = _VERB_STALL_M if straight else _VERB_STALL_DEG
     try:
         for _ in range(periods):
             if getattr(robot, "stop_count", 0) != stops0:
@@ -273,6 +286,14 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
             if remaining <= (_VERB_DONE_M if straight else _VERB_DONE_DEG):
                 ended = "complete"
                 break
+            if plan.get("wall_clock"):
+                now = time.monotonic()
+                if mark is None or done - mark > budge:
+                    mark, mark_at = done, now
+                elif now - mark_at > VERB_STALL_S:
+                    ended, reason = "stalled", (
+                        f"no encoder progress for {VERB_STALL_S}s while commanded")
+                    break
             amount = min(remaining, rate * VERB_PERIOD_S)
             if not straight:
                 amount = min(amount, VERB_TURN_STEP_DEG)

@@ -18,6 +18,12 @@ diff_drive_controller:
     # MUST equal the URDF and sim/mock_robot.py -- tests/test_urdf.py pins
     # all three together.
     wheel_separation: 0.172
+    # 3.35: skid steer's effective/geometric track. The launch file
+    # overrides it from env TRACK_SCRUB -- the same variable the robot server
+    # reads (config/robot.yaml hardware.track_scrub) -- so leave this 1.0,
+    # which is right for the simulator. [PLACEHOLDER] until measured on the
+    # Rover; tests/test_wall_linters.py pins the defaults together.
+    wheel_separation_multiplier: 1.0
     wheel_radius: 0.040
     publish_rate: 20.0
     odom_frame_id: odom

@@ -197,6 +197,7 @@ network you do not own. Starting this and the robot server at boot is
 | Variable | Default | Read by |
 |---|---|---|
 | `ROBOT_URL` | `http://host.docker.internal:8000` | bridge, `picar_sim_hardware` (via the xacro arg) |
+| `TRACK_SCRUB` | `1.0` | the launch file: `diff_drive_controller`'s `wheel_separation_multiplier` (skid steer's effective/geometric track, `PLAN-ros-alignment.md` 3.35). Leave unset in the simulator; on the car set it to the measured value here AND for the robot server |
 | `BRAIN_URL` | `http://host.docker.internal:8001/brain` (`""` = off) | bridge (`brain_view`) |
 | `APP_SHARED_SECRET` | empty (= no header sent, bridge accepts anything) | bridge (both directions), `picar_sim_hardware` |
 | `BRIDGE_PORT` | `8090` | bridge |

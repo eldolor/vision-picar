@@ -66,6 +66,19 @@ teleop:
   # that fires first with a less specific message.
   stall_timeout_s: 15.0
 
+# Read only when mode is "hardware" on a REAL board (PLAN-ros-alignment.md
+# 3.35). The serial port comes from ROBOT_SERIAL (or a `serial_port:` key
+# here).
+hardware:
+  # Skid steer's effective track over the geometric 0.172 m: the wheels
+  # scrub on every turn, so the body turns less than the geometric track
+  # predicts. Direct-mode turns, the odometry heading and the ROS
+  # controller's wheel_separation_multiplier all take this one number. Env
+  # TRACK_SCRUB wins, and the ROS container reads the same env var at launch:
+  # set it for both. Never applied to the fake board (its sim body does not
+  # scrub). [PLACEHOLDER] 1.0 until measured on the Rover.
+  track_scrub: 1.0
+
 # World state -- the map and the robot's pose on it (PLAN-mapping.md N1).
 # Read by world/factory.py, which is robot/factory.py's sibling.
 #
