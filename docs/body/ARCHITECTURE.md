@@ -209,7 +209,7 @@ covered only by its own tests.
 | Someone calls stop during a verb | The shared verb loop ends at its next period | A stop ends any verb within one control period, and is never overwritten. **Not yet met in one window:** a stop landing between the loop's check and its next wheel command is overwritten, and the wheels run until the watchdog stops them (see Open questions) |
 | Robot server unreachable | The remote body raises a transport error distinct from a refusal | "Nobody heard it" is never mistaken for "it was refused" |
 | ROS chain dead, or hung, under ROS drive | The wrapper stops the wrapped body first and directly; telling ROS its inputs are zero happens afterwards and cannot hold the stop up. For a short hold after the stop, motion from ROS still in flight from the stopped verb is turned into a zero | A stop never depends on the container, dead or merely not answering |
-| Stop while a nav2 goal is active | The stop zeroes the wheels, then ends the goal, without the stop waiting on ROS. A person re-sends the goal to resume | Met (built 2026-10-02; before that a stop only paused the goal and the wheels resumed after the hold). The rule is [safety](../safety/ARCHITECTURE.md)'s ("Who drives") |
+| Stop while a nav2 goal is active | Not the body's: the body's stop zeroes the wheels; ending the goal is the robot server's, after the body has stopped | See [safety](../safety/ARCHITECTURE.md)'s failure row and "Who drives" |
 | A wrapper falls behind the contract | The conformance suite fails, for the wrappers it covers | A wrapper reports exactly what it wraps |
 
 ## Open questions

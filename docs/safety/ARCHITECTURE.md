@@ -184,8 +184,9 @@ Ranks are by role, not by client. The five rules, each chosen because its
 opposite is a real failure (`AGENT-HARNESS.md` 4.1):
 
 1. **Stop is never arbitrated.** Anyone may stop the robot at any time.
-   A stop zeroes the wheels, **and it ends any active navigation goal**
-   (decided by the user 2026-10-02, built the same day; see below).
+   A stop zeroes the wheels, **and a person's stop ends any active
+   navigation goal** (decided by the user 2026-10-02, built the same day;
+   see below).
 2. **Stop claims nothing.** Otherwise the loser of an arbitration takes the
    robot back by giving up.
 3. **People share; autonomy is exclusive.** Two taps of a person pass. At
@@ -207,6 +208,29 @@ planner keeps commanding and the robot drives on once the stop's hold ends,
 which is the opposite of what the top of this order promises. **Trade-off:**
 an interrupted goal is lost, and resuming it is one more action for a
 person (`docs-review/SPEC-REVIEW-2.md` H1).
+
+**"Ended" means nav2 says so.** The goal lives in the planner, not in the
+link to it, so a cancel that fails, or that reaches a goal the planner has
+not yet accepted, ends nothing by itself. Until the planner reports the goal
+over, the robot server holds the planner's wheel commands at zero and keeps
+cancelling (`docs-review/SPEC-REVIEW-3.md` V2). **Rejected:** trusting the
+one cancel, which let the robot drive on whenever the cancel failed.
+**Trade-off:** while the link to ROS is down, a goal stopped before it went
+down cannot be confirmed ended, so the planner stays held until a person
+sends a new goal.
+
+**An autonomous stop spares the goal.** Decided by the user 2026-10-03. A
+stop from an autonomous driver other than the planner -- the brain -- still
+zeroes the wheels, but does not end a goal. While a goal holds the robot
+the brain cannot drive (3.23), so its stop can only be a loser's teardown:
+a mission refused because of the goal stops the robot as it ends, and
+before this rule that stop cancelled the goal that had refused it -- the
+loser taking the robot back by giving up, which rule 2 exists to prevent
+(`docs-review/SPEC-REVIEW-3.md` V1). **Rejected:** having the mission skip
+its exit stop, which fixes one caller and leaves the rule false for every
+other autonomous client; and letting only a person's stop end a goal,
+which would stop the planner ending its own. **Trade-off:** the brain
+cannot cancel a goal by stopping; it never holds the robot while one runs.
 
 A navigation goal is an autonomous driver too. While one is pending or
 active, every other autonomous command is refused, and a person is never
@@ -296,7 +320,7 @@ are commitments, not tuning.
 | Two autonomous drivers at once | The second is refused | One autonomous writer at a time |
 | ROS container dies under ROS drive | Autonomy refused. A person drives on the direct path | The mission ends within **3 s**. A person drives within **2 s**. ROS is back without a restart (3.24 G3) |
 | Part of the container dies while the actuator lives (the bridge, or the velocity multiplexer or controller), under ROS drive | With the bridge gone, the first send that finds it dead is refused as ROS-unavailable and marks ROS down; from then a person drives on the direct path and autonomy is refused, until the bridge answers again. With the multiplexer or controller gone, ROS still reads as alive; a verb achieves nothing and comes back as a safety refusal | **Met for the bridge** (Decisions, "When ROS dies, only a person drives"; built 2026-10-02): a person can drive and autonomy is refused, as for a dead container. A dead multiplexer or controller behind a live bridge is left as is: it fails toward stop |
-| A stop while a navigation goal is active | The wheels stop and the goal is ended; a person can set a new one | **Met** (Decisions, "Who drives"; built 2026-10-02). Before that the goal was only paused and the wheels resumed after the stop's hold |
+| A stop while a navigation goal is active | The wheels stop and, for a person's stop, the goal is ended: the planner's wheel commands are held at zero until it reports the goal over, through a slow or failed cancel and a goal not yet accepted; a person can set a new one. The brain's stop leaves the goal running | **Met** (Decisions, "Who drives"; built 2026-10-02, completed 2026-10-03 after `docs-review/SPEC-REVIEW-3.md` V1-V2). The not-yet-accepted case is pinned against a fake planner only; the real bridge's side of it is unverified live |
 | The robot server process dies | The board's heartbeat stops the motors | Motors stop without the host |
 | A person or pet crosses the path | Same vet, same bars | The static-obstacle bars above hold with something moving (3.30) |
 

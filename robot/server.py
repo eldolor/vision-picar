@@ -160,6 +160,14 @@ WHEEL_LOOP_INTERVAL_S = 0.05
 # counts as DOWN. It posts /wheels at 20 Hz, so 0.5 s is ten missed posts --
 # long past jitter, well inside the watchdog.
 ROS_SILENCE_S = 0.5
+# After a stop that ends a nav2 goal (spec review 3, V2): how often the
+# server re-reads the goal and re-sends the cancel until nav2 reports it no
+# longer pending or active. Non-zero `ros` wheel commands are held at zero
+# meanwhile, and for GOAL_STOP_SETTLE_S after -- the same derivation as
+# robot/ros_drive.py's STOP_HOLD_S (twist_mux's input timeout plus the
+# controller's cmd_vel_timeout, which add, plus one plugin period).
+GOAL_STOP_POLL_S = 0.25
+GOAL_STOP_SETTLE_S = 0.6
 
 
 @contextmanager
@@ -397,6 +405,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # the threadpool, the wheel loop on the event loop, and MockRobot is not
     # thread-safe. Held for microseconds -- nothing inside it waits.
     motion_lock = threading.Lock()
+    # A stop ending a nav2 goal (see _end_goal_after_stop): the generation,
+    # and whether nav2's wheel commands are held at zero meanwhile.
+    goal_stop = {"gen": 0, "hold": False}
+    goal_stop_lock = threading.Lock()
 
     async def wheel_loop():
         """Vet and (in the sim) integrate a standing wheel command -- R2b.
@@ -571,6 +583,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 # motion, so it is not held; MockRobot's reads are safe
                 # alongside the wheel loop, and M4 above already decided who
                 # may drive.
+                # A verb allowed to drive lifts the stop's goal hold, as it
+                # lifts RosDriveRobot's own stop hold: under this drive its
+                # twists come back as `ros` wheel posts. The ending loop keeps
+                # cancelling the goal regardless.
+                goal_stop["hold"] = False
                 try:
                     with robot.driving_as(driver):
                         result = safety.check_and_execute(
@@ -626,7 +643,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             state["last_command_at"] = now
             state["wheel_posts"] += 1
             state["last_ros_post_at"] = now
+            if goal_stop["hold"]:
+                req = WheelsRequest(left_rad_s=0.0, right_rad_s=0.0)
         else:
+            if driver == DRIVER_ROS and goal_stop["hold"]:
+                # nav2 still driving a goal a stop is ending: a zero command.
+                req = WheelsRequest(left_rad_s=0.0, right_rad_s=0.0)
             if req.left_rad_s == 0 and req.right_rad_s == 0:
                 # A ZERO command is not driving, so it never takes or refreshes
                 # authority. Found live 2026-09-26: the ROS container, left
@@ -676,22 +698,59 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         the user): otherwise nav2 keeps its goal and drives again the moment
         the stop hold ends. The cancel runs on a background thread AFTER
         `robot.stop()`, so the stop never waits on ROS; a person re-sends a
-        goal to resume."""
-        state["last_command_at"] = time.monotonic()
-        result = robot.stop()
-        if hasattr(world_model, "cancel_goal"):
-            threading.Thread(target=_cancel_goal_quietly, daemon=True,
-                             name="stop-cancel-goal").start()
-        return {"executed": True, "result": result,
-                "driver": (x_driver or "").strip() or DRIVER_UNKNOWN}
+        goal to resume.
 
-    def _cancel_goal_quietly():
-        """The robot is already stopped; an unreachable bridge has no goal
-        to resume, so a failure here is logged and nothing else."""
-        try:
-            world_model.cancel_goal()
-        except Exception as e:  # noqa: BLE001 -- see above
-            logger.warning(f"stop: could not cancel the nav2 goal: {e}")
+        **Except an autonomous stop** (spec review 3, V1; decided by the
+        user 2026-10-03): a stop from an autonomous driver other than `ros`
+        -- the brain -- zeroes the wheels and spares the goal. While a goal
+        holds the robot the brain cannot drive (3.23), so its stop can only
+        be a loser's teardown: `MissionRunner` stops the robot on its way
+        out of a mission the goal preempted, and that stop used to cancel
+        the very goal that won."""
+        state["last_command_at"] = time.monotonic()
+        driver = (x_driver or "").strip() or DRIVER_UNKNOWN
+        result = robot.stop()
+        spares_goal = driver != DRIVER_ROS and driver_priority(driver) == DRIVER_AUTONOMOUS
+        if hasattr(world_model, "cancel_goal") and not spares_goal:
+            with goal_stop_lock:
+                goal_stop["gen"] += 1
+                goal_stop["hold"] = True
+                gen = goal_stop["gen"]
+            threading.Thread(target=_end_goal_after_stop, args=(gen,), daemon=True,
+                             name="stop-end-goal").start()
+        return {"executed": True, "result": result, "driver": driver}
+
+    def _end_goal_after_stop(gen: int):
+        """Make the stop's "the goal is ended" true, not merely attempted
+        (spec review 3, V2). The goal lives in nav2, not in the bridge, so a
+        cancel that fails, or that reaches a goal nav2 has not yet accepted,
+        leaves it able to drive. So: cancel, then re-read the goal and
+        re-send the cancel every GOAL_STOP_POLL_S until nav2 reports it
+        neither pending nor active, holding `ros` wheel commands at zero the
+        whole time and for GOAL_STOP_SETTLE_S after. A newer stop or a new
+        goal supersedes this loop (the generation), so there is one at a
+        time and a person's next goal is never cancelled by it."""
+        settled_at = None
+        warned = False
+        while True:
+            try:
+                with goal_stop_lock:
+                    if goal_stop["gen"] != gen:
+                        return
+                    goal = (world_model.get_goal() or {}).get("goal") if settled_at is None else None
+                    if settled_at is None and goal and goal.get("state") in ("pending", "active"):
+                        world_model.cancel_goal()
+                    elif settled_at is None:
+                        settled_at = time.monotonic()
+                    elif time.monotonic() - settled_at >= GOAL_STOP_SETTLE_S:
+                        goal_stop["hold"] = False
+                        return
+            except Exception as e:  # noqa: BLE001 -- keep holding, keep trying
+                settled_at = None
+                if not warned:
+                    logger.warning(f"stop: could not end the nav2 goal yet, retrying: {e}")
+                    warned = True
+            time.sleep(GOAL_STOP_POLL_S)
 
     @app.get(prefix + "/distance", dependencies=[Depends(require_secret)])
     def distance():
@@ -872,7 +931,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         refused = arbitrate(DRIVER_ROS, time.monotonic())
         if refused:
             return {"accepted": False, **refused}
-        return world.set_goal(req.x_m, req.y_m)
+        # A person re-sending a goal after a stop: it supersedes the stop's
+        # ending loop, which must never cancel this new goal.
+        with goal_stop_lock:
+            goal_stop["gen"] += 1
+            goal_stop["hold"] = False
+            return world.set_goal(req.x_m, req.y_m)
 
     @app.get(prefix + "/world/goal", dependencies=[Depends(require_secret)])
     def world_goal_get():

@@ -287,3 +287,28 @@ So nobody re-checks these. Each reviewer's §(g) has the full list.
 - **Earlier corrections:** pass 2's citations into `robot/safety.py`,
   `robot/interface.py`, `hardware_robot.py`, `picar_sim_hardware.cpp` and
   `bridge.py` still hold.
+
+## 9. Resolution
+
+**Fixes 1 and 2: built 2026-10-03.**
+
+- **Fix 1 (V1).** The user chose the rule: a `/stop` from an autonomous
+  driver other than `ros` (the brain) zeroes the wheels and spares a goal in
+  progress. A preempted mission's exit stop now leaves the goal that beat it
+  running.
+- **Fix 2 (V2, V3).** A person's stop now runs a loop that cancels, re-reads
+  the goal, and re-cancels until nav2 reports it neither pending nor active.
+  `ros` wheel commands are held at zero for that time and for 0.6 s after.
+  A new goal supersedes the loop, and a verb on the ROS drive path lifts the
+  hold. The bridge also cancels a goal that a cancel reached while it was
+  still `pending`, once nav2 accepts it. That bridge change is
+  **unverified live**: it is container code, and the server's loop covers
+  the case without it.
+- **Tests.** `tests/test_stop_cancels_goal.py` grew from 4 tests to 13. All
+  five new V1/V2 cases failed against `50b2293`.
+- **Specs.** Updated: safety ARCH and ENG (the two new decisions, the
+  mechanism and the constants), body ARCH (the row is now a pointer), ros
+  ARCH and ENG, world ARCH, control-api ENG, and `service/slam/README.md`
+  §4 (V6).
+
+Fixes 3-20 are open.

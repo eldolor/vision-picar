@@ -285,6 +285,10 @@ class Bridge(Node):
             if record is not self.goal:          # superseded while pending
                 handle.cancel_goal_async()
                 return
+            if record.get("cancel_reason"):      # cancelled while pending (spec review 3, V2)
+                handle.cancel_goal_async()
+                record["state"] = "canceled"
+                return
             self.goal_handle = handle
             record["state"] = "active"
         handle.get_result_async().add_done_callback(lambda f: self._on_result(f, record))
@@ -308,7 +312,10 @@ class Bridge(Node):
         if handle is not None:
             handle.cancel_goal_async()
             return True
-        return False
+        # A pending goal has no handle yet; the cancel_reason set above makes
+        # _on_goal_response() cancel it the moment nav2 accepts it.
+        return bool(self.goal and self.goal.get("cancel_reason")
+                    and self.goal["state"] == "pending")
 
     def goal_state(self):
         with self.lock:

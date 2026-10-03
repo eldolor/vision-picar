@@ -217,9 +217,10 @@ is in progress.
 **A stop ends a goal.** Decided by the user 2026-10-02 as the safety
 domain's rule ([safety architecture](../safety/ARCHITECTURE.md), "Who
 drives"; see also the [ros architecture](../ros/ARCHITECTURE.md), D6);
-built 2026-10-02. A stop zeroes the wheels and then cancels the goal, so
-the planner does not resume driving afterwards; a person re-sends the goal
-to resume.
+built 2026-10-02. A person's stop zeroes the wheels and then ends the
+goal -- held until the planner reports it over -- so the planner does not
+resume driving afterwards; a person re-sends the goal to resume. The
+brain's stop spares a goal (the safety architecture says why).
 
 **Rejected:**
 

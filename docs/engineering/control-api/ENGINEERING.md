@@ -51,7 +51,7 @@ applies: 401 `Missing or invalid x-app-secret header.` when
 |---|---|---|---|
 | `POST /action` | yes | `{"action", "speed": 50, "duration": 0.5, "angle": 90}`, header `x-driver` | `{"executed": true, "result", "driver"}`; refusal `{"executed": false, "reason", "detail"}` (200); 400 on an unknown action. On the ROS fallback `result` gains `"via": "direct-fallback"` |
 | `POST /wheels` | yes | `{"left_rad_s", "right_rad_s"}`, `x-driver` | `{"executed": true, "driver", "applied": {...}, "clamped": reason or null}`. In direct drive a zero is never arbitrated and claims nothing: from the holder it zeroes the wheels, from anyone else it gives `{"executed": true, "ignored": true, ...}`. Under ROS drive only `ros` may post, unarbitrated, and a zero is not special; refusals as above (`not_the_actuator` under ROS drive for any driver but `ros`; `unsupported` on a body without motors) |
-| `POST /stop` | yes | `x-driver` (echoed only) | `{"executed": true, "result", "driver"}`. Never arbitrated; feeds the watchdog; claims nothing; then cancels any nav2 goal on a background thread ([safety engineering](../safety/ENGINEERING.md), "Stop ends a nav2 goal") |
+| `POST /stop` | yes | `x-driver` (echoed only) | `{"executed": true, "result", "driver"}`. Never arbitrated; feeds the watchdog; claims nothing; then, unless the driver is the brain, ends any nav2 goal from a background thread, holding `ros` wheel commands at zero until nav2 reports it over ([safety engineering](../safety/ENGINEERING.md), "Stop ends a nav2 goal") |
 
 Actions: `FORWARD`, `REVERSE`, `LEFT`, `RIGHT`, `STOP`, `LOOK_LEFT`,
 `LOOK_RIGHT`, `LOOK_CENTER`.
@@ -190,7 +190,7 @@ session may already own ports 8000/8090; use 8100/8101/8190 with a separate
 |---|---|
 | `tests/test_server.py` (23) | Routes, 400 on unknown action, the secret gate (protected routes 401, `/health` and `/` open), CORS headers, `ROUTE_PREFIX`, teleop push/pull and 503 on a stall, sensing does not feed the watchdog, the twin's script |
 | `tests/test_watchdog_integration.py` (6) | The watchdog and its liveness against a live `uvicorn` subprocess, `sim.realtime`, and the health command against it |
-| `tests/test_authority.py` (13), `tests/test_wheels_command.py` (8), `tests/test_goal_arbitration.py` (9), `tests/test_ros_fallback.py` (8) | Arbitration, `/wheels`, goals and the ROS fallback through a real app |
+| `tests/test_authority.py` (13), `tests/test_wheels_command.py` (8), `tests/test_goal_arbitration.py` (9), `tests/test_ros_fallback.py` (8), `tests/test_stop_cancels_goal.py` (13) | Arbitration, `/wheels`, goals and the ROS fallback through a real app |
 | `tests/test_health.py` (15) | `control/health.py`'s verdict rules over `/health` |
 | `tests/test_health_sim_map.py` (4) | `sim_map` names the house built, for `mode: sim` and `mode: hardware` with the fake board; null for teleop; unchanged by a later `SIM_MAP` |
 | `tests/test_ros_drive.py` (14) | Among the ROS wrapper's tests, a stop that returns in under 0.1 s against a hung bridge ([body engineering](../body/ENGINEERING.md)) |

@@ -117,12 +117,25 @@ arbitrated, and sets `last_command_at` and `last_ros_post_at`, never
 authority. `POST /world/goal` arbitrates as `ros` and does not feed the
 watchdog.
 
-**Stop ends a nav2 goal** (handoff 2026-10-02 1b). After `robot.stop()`
-returns, `POST /stop` starts a daemon thread (`stop-cancel-goal`) that calls
-`world_model.cancel_goal()` when the world has one (`RosWorld`: `DELETE
-/goal` on the bridge). A failure is logged and swallowed: the robot is
-already stopped. The thread is why a hung bridge costs the stop nothing.
-Only `/stop` does this; the watchdog calls `robot.stop()` directly.
+**Stop ends a nav2 goal** (handoff 2026-10-02 1b; completed after
+`docs-review/SPEC-REVIEW-3.md` V1-V2). After `robot.stop()` returns,
+`POST /stop` -- unless its `x-driver` is autonomous and not `ros` (the
+brain), which spares the goal -- bumps `goal_stop["gen"]`, sets
+`goal_stop["hold"]`, and starts a daemon thread `_end_goal_after_stop(gen)`
+(`stop-end-goal`) when the world has `cancel_goal` (`RosWorld`). Every
+`GOAL_STOP_POLL_S` the thread, under `goal_stop_lock`, reads
+`world_model.get_goal()` and re-sends `cancel_goal()` (`DELETE /goal`)
+while the goal is `pending` or `active`; once it is neither it waits
+`GOAL_STOP_SETTLE_S` and clears the hold. An exception (bridge down,
+timeout) is logged once and retried, still holding. While the hold is set,
+a non-zero `/wheels` from `ros` is treated as zero: under ROS drive it is
+applied as zero; under direct drive it takes the zero-command branch. A
+newer stop or an accepted `POST /world/goal` bumps the generation, so one
+loop runs at a time and never cancels a new goal (the goal route sets it
+under the same lock). A verb allowed through on the ROS drive path clears
+the hold, as it lifts `RosDriveRobot`'s own stop hold; the loop keeps
+cancelling. The `/action` STOP verb and the watchdog do none of this; they
+call `robot.stop()`.
 
 **The watchdog** (`watchdog_loop()`): every `WATCHDOG_POLL_INTERVAL_S` it
 skips while `verb_active`, else calls `robot.stop()` once
@@ -153,6 +166,7 @@ silence).
 | `WATCHDOG_POLL_INTERVAL_S` | 0.1 | s | `robot/server.py` | Watchdog wake rate; published in `/health` for `control/health.py` |
 | `WHEEL_LOOP_INTERVAL_S` / `VERB_PERIOD_S` / `PIVOT_LOOKAHEAD_S` | 0.05 | s | `robot/server.py`, `robot/interface.py`, `robot/safety.py` | nav2's controller rate. A tick over 0.1 s counts as late |
 | `ROS_SILENCE_S` | 0.5 | s | `robot/server.py` | Ten missed 20 Hz actuator posts = ROS down (3.24 G3) |
+| `GOAL_STOP_POLL_S`, `GOAL_STOP_SETTLE_S` | 0.25, 0.6 | s | `robot/server.py` | How often a stop re-reads and re-cancels a goal until nav2 reports it over, and how long `ros` wheel commands stay held after that. The settle is `STOP_HOLD_S`'s derivation: twist_mux's input timeout plus the controller's `cmd_vel_timeout` (they add) plus one plugin period |
 | `BRIDGE_PROBE_S`, `BRIDGE_PROBE_TIMEOUT_S` | 0.5, 0.5 | s | `robot/ros_drive.py` | After a failed send marks the bridge down, how often its `/health` is probed in the background, and how long a probe may take; the first 200 marks it up (handoff 2026-10-02 1d). Never on a request's path |
 | `FOOTPRINT_LENGTH_M`, `FOOTPRINT_WIDTH_M`, `LIDAR_X_M`, `LIDAR_TO_REAR_BUMPER_CM` | see platform | m / cm | `robot/safety.py` (defined here; the footprint is imported by `sim/grid_world.py`, `LIDAR_X_M` is the sim's scan origin) | The chassis geometry every check places returns against. `LIDAR_TO_REAR_BUMPER_CM` is derived: half the length plus `LIDAR_X_M`. Values and sources: [platform engineering](../platform/ENGINEERING.md), the canonical table. Held equal to the xacro and nav2 by `tests/test_wall_linters.py` |
 | `FOOTPRINT_SIDE_MARGIN_CM` | 3.0 | cm | `robot/safety.py` | Starter-house doors are 30 cm against a 23.1 cm chassis. 3 cm less the march's 1.5 cm over-read; larger refuses every door (`tests/chassis_fit.py`) |
@@ -235,7 +249,7 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | `tests/test_blind_reverse.py` (5) | 2026-10-02: `HardwareRobot` over the fake board with no sensors refuses a REVERSE verb without moving and clamps a standing reverse to zero; a standing turn (`vet_wheel_velocity()`) passes; a teleop body still reverses; a body with a scan is judged by it. Not pinned: a turn VERB, and a settle pass astern (Known gaps) |
 | `tests/test_authority.py` (13) | M4: ranks, lapse, stop claims nothing, reasons on the wire, preemption ends a mission |
 | `tests/test_goal_arbitration.py` (9) | 3.23: a goal is an autonomous driver |
-| `tests/test_stop_cancels_goal.py` (4) | Handoff 2026-10-02 1b: with an active goal and a fake nav2 that drives while it holds one, the wheels are still at zero `STOP_HOLD_S` + 0.1 s after `/stop`; a new goal can be set afterwards; a hung cancel costs the stop nothing |
+| `tests/test_stop_cancels_goal.py` (13) | Handoff 2026-10-02 1b: with an active goal and a fake nav2 that drives while it holds one, the wheels are still at zero `STOP_HOLD_S` + 0.1 s after `/stop`; a new goal can be set afterwards; a hung cancel costs the stop nothing. Spec review 3 V1: the brain's `/stop` spares the goal, and a mission preempted by a goal (`MissionRunner` over `RemoteRobot`) ends `preempted` with the goal still active; a person's stop still ends it. V2, nav2 ticking at 20 Hz from the moment of the stop: zero wheels while a 0.3 s cancel is in flight, through a failing cancel (retried once the bridge returns), and for a goal accepted after the stop; a new goal drives again |
 | `tests/test_ros_fallback.py` (8) | 3.24 G3, all four criteria; handoff 1d: a dead bridge behind a live plugin reads `drive.ros_up` false, a person's verb runs direct, an autonomous one is refused `ros_unavailable`, and ROS is back once the bridge answers |
 | `tests/test_watchdog_integration.py` (6) | The watchdog against a live `uvicorn` subprocess with a 0.3 s timeout |
 | `tests/test_server.py` (23) | `watchdog_should_stop()`, sensing does not feed the watchdog, safety over HTTP |
