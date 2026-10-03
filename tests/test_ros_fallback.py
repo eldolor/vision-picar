@@ -233,3 +233,45 @@ def test_criterion_4_back_without_a_restart(stack):
     assert stack.client.get("/health").json()["drive"].get("ros_up") is True
     reply = stack.act("LEFT", angle=15)
     assert reply.get("executed") is True and reply["result"].get("via") == "ros", reply
+
+
+# ---------------------------------------------------------------------------
+# Handoff 2026-10-02 1d (decided by the user): a failed send to the bridge
+# marks ROS down. Before it, liveness was judged only from the plugin's
+# /wheels posts, so a dead BRIDGE behind a live plugin refused every verb --
+# a person's included -- as ros_unavailable, with no fallback at all.
+
+def test_1d_a_dead_bridge_behind_a_live_plugin_marks_ros_down(stack):
+    stack.ros_up()
+    time.sleep(0.3)
+    stack.bridge_up = False                           # the bridge dies; the plugin keeps posting
+    first = stack.act("LEFT", angle=15)               # the send that finds it dead
+    assert first.get("executed") is False and first.get("reason") == "ros_unavailable", first
+    assert stack.client.get("/health").json()["drive"]["ros_up"] is False
+
+    before = stack.pose()
+    reply = stack.act("FORWARD")                      # a person drives on, direct
+    assert reply.get("executed") is True and reply["result"].get("via") == "direct-fallback", reply
+    moved = math.hypot(stack.pose()[0] - before[0], stack.pose()[1] - before[1]) * 30
+    assert abs(moved - 30.0) <= 0.5, f"moved {moved:.2f} cm"
+
+    # The person's claim must lapse first, or the brain is refused
+    # `preempted` before ROS's liveness is ever asked.
+    time.sleep(stack.client.get("/health").json()["watchdog_timeout_s"] + 0.2)
+    auto = stack.act("LEFT", driver="brain", angle=15)
+    assert auto.get("executed") is False and auto.get("reason") == "ros_unavailable", auto
+
+
+def test_1d_ros_is_back_once_the_bridge_answers_again(stack):
+    stack.ros_up()
+    time.sleep(0.3)
+    stack.bridge_up = False
+    stack.act("LEFT", angle=15)
+    assert stack.client.get("/health").json()["drive"]["ros_up"] is False
+    stack.bridge_up = True
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 5.0 and not stack.client.get("/health").json()["drive"]["ros_up"]:
+        time.sleep(0.05)
+    assert stack.client.get("/health").json()["drive"]["ros_up"] is True
+    reply = stack.act("LEFT", angle=15)
+    assert reply.get("executed") is True and reply["result"].get("via") == "ros", reply

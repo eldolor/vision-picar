@@ -153,6 +153,7 @@ silence).
 | `WATCHDOG_POLL_INTERVAL_S` | 0.1 | s | `robot/server.py` | Watchdog wake rate; published in `/health` for `control/health.py` |
 | `WHEEL_LOOP_INTERVAL_S` / `VERB_PERIOD_S` / `PIVOT_LOOKAHEAD_S` | 0.05 | s | `robot/server.py`, `robot/interface.py`, `robot/safety.py` | nav2's controller rate. A tick over 0.1 s counts as late |
 | `ROS_SILENCE_S` | 0.5 | s | `robot/server.py` | Ten missed 20 Hz actuator posts = ROS down (3.24 G3) |
+| `BRIDGE_PROBE_S`, `BRIDGE_PROBE_TIMEOUT_S` | 0.5, 0.5 | s | `robot/ros_drive.py` | After a failed send marks the bridge down, how often its `/health` is probed in the background, and how long a probe may take; the first 200 marks it up (handoff 2026-10-02 1d). Never on a request's path |
 | `FOOTPRINT_LENGTH_M`, `FOOTPRINT_WIDTH_M`, `LIDAR_X_M`, `LIDAR_TO_REAR_BUMPER_CM` | see platform | m / cm | `robot/safety.py` (defined here; the footprint is imported by `sim/grid_world.py`, `LIDAR_X_M` is the sim's scan origin) | The chassis geometry every check places returns against. `LIDAR_TO_REAR_BUMPER_CM` is derived: half the length plus `LIDAR_X_M`. Values and sources: [platform engineering](../platform/ENGINEERING.md), the canonical table. Held equal to the xacro and nav2 by `tests/test_wall_linters.py` |
 | `FOOTPRINT_SIDE_MARGIN_CM` | 3.0 | cm | `robot/safety.py` | Starter-house doors are 30 cm against a 23.1 cm chassis. 3 cm less the march's 1.5 cm over-read; larger refuses every door (`tests/chassis_fit.py`) |
 | `PIVOT_MARGIN_CM` | 1.3 | cm | `robot/safety.py` | 1.2 at 3.19. Raised after one guarded turn read 0.96 cm once the lidar moved 4 cm ahead (3.27). Moved after seeing data, as recorded |
@@ -235,7 +236,7 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | `tests/test_authority.py` (13) | M4: ranks, lapse, stop claims nothing, reasons on the wire, preemption ends a mission |
 | `tests/test_goal_arbitration.py` (9) | 3.23: a goal is an autonomous driver |
 | `tests/test_stop_cancels_goal.py` (4) | Handoff 2026-10-02 1b: with an active goal and a fake nav2 that drives while it holds one, the wheels are still at zero `STOP_HOLD_S` + 0.1 s after `/stop`; a new goal can be set afterwards; a hung cancel costs the stop nothing |
-| `tests/test_ros_fallback.py` (6) | 3.24 G3, all four criteria |
+| `tests/test_ros_fallback.py` (8) | 3.24 G3, all four criteria; handoff 1d: a dead bridge behind a live plugin reads `drive.ros_up` false, a person's verb runs direct, an autonomous one is refused `ros_unavailable`, and ROS is back once the bridge answers |
 | `tests/test_watchdog_integration.py` (6) | The watchdog against a live `uvicorn` subprocess with a 0.3 s timeout |
 | `tests/test_server.py` (23) | `watchdog_should_stop()`, sensing does not feed the watchdog, safety over HTTP |
 | `tests/test_wall_linters.py` | Footprint and `LIDAR_X_M` equal across the ROS wall; both collars still exist |
@@ -276,24 +277,15 @@ order; record the table in the plan entry.
   `_has_wheels()` is false, so a REVERSE verb in that window answers
   `no_rear_sensor` and proceeds unguarded. Open decision
   (`docs-review/SPEC-REVIEW.md` fix-list 6).
-- **ROS liveness is judged only from the plugin's `/wheels` posts**
-  (UNCONFIRMED: read, not run; `docs-review/SPEC-REVIEW-2.md` M2).
-  `ros_up()` (`robot/server.py:319-323`) reads `last_ros_post_at`, set only
-  by the actuator's posts (`robot/server.py:620`). If the bridge dies while
-  `picar_sim_hardware` keeps posting, `ros_up()` stays true, every verb
-  fails at `RosDriveRobot._send()`, and `/action` refuses even a person
-  `ros_unavailable` (`robot/server.py:571-575`), so the direct fallback
-  never engages. If `twist_mux` or `diff_drive_controller` dies, verbs
-  achieve nothing and `_refuse_if_nothing_achieved()` returns
-  `safety_distance`. **Decided by the user 2026-10-02; not yet built** (the
-  rule is in the [architecture spec](../../safety/ARCHITECTURE.md), "When
-  ROS dies, only a person drives"): a failed send to the bridge
-  (`RosDriveRobot._send()`) marks ROS down, so `ros_up()` is false and
-  3.24 G3's fallback applies. Making the container exit when a node dies
-  was rejected. Done when a test with a bridge that refuses connections
-  shows `drive.ros_up` false, a person's verb runs direct, and an
-  autonomous verb is refused `ros_unavailable`. The multiplexer or
-  controller case is unchanged by it.
+- **The verb that finds the bridge dead is refused, a person's too.** The
+  first failed `RosDriveRobot._send()` raises inside the verb, which
+  `/action` refuses `ros_unavailable` after stopping the robot directly; it
+  is not retried on the direct path, because some of it may already have
+  gone through ROS. Only the next verb sees `ros_up()` false and falls back.
+- **A dead `twist_mux` or `diff_drive_controller` behind a live bridge**
+  still reads as alive (decided 2026-10-02 to leave it): verbs achieve
+  nothing and `_refuse_if_nothing_achieved()` returns `safety_distance`,
+  which fails toward stop.
 - **Turns on a body with no `verb_plan()`** (the remote body, the ROS
   wrapper) get no pivot check inside `check_and_execute()`. The remote body
   is vetted again by the server, and the ROS path by the wheel vet, so the
@@ -309,8 +301,8 @@ order; record the table in the plan entry.
 - **Until `ROS_SILENCE_S` (0.5 s) of silence after a container dies**,
   `ros_up()` is still true, so a person's verb goes to the dead bridge and
   is refused `ros_unavailable`. That window is inside G3's 2 s bar. The
-  bridge-failure rule above (decided, not yet built) would close it at the
-  first failed send.
+  bridge-failure rule (built 2026-10-02) shortens it: the first failed send
+  marks ROS down, so only that one verb is refused.
 - **The fixed 20 cm floor** is a stopping distance for about 0.45 m/s
   (`PLAN-onboard-perception.md`); a ROS verb peaks at 0.6 m/s and relies on
   the look-ahead.

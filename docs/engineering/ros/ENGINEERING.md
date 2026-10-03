@@ -60,7 +60,7 @@ The nodes `picar.launch.py` starts:
 | File | What it does |
 |---|---|
 | `robot/ros_drive.py` | `RosDriveRobot(inner, bridge_url, secret="", timeout_s=2.0)`. Under `drive: ros`, `robot/factory.py` wraps the backend in it. Each verb becomes `POST <bridge>/cmd_vel` at `CONTROL_HZ`, closed on `inner.get_wheel_state()`: a main pass, then at most two signed correction passes after the zero lands. A verb ends early if no progress is made for `STALL_S`. `stop()` and its constants are specified once, in the [body engineering spec](../body/ENGINEERING.md) ("The ROS drive stop"). Every read goes straight to `inner`. |
-| `robot/server.py` | Under `drive: ros` (`by_velocity`), `POST /wheels` accepts only driver `ros` (otherwise `not_the_actuator`), and each post stamps `last_ros_post_at`. `ros_up()` is true when the last post is younger than `ROS_SILENCE_S`. While ROS is down, a person's `/action` runs through `fallback_safety`, a `SafetyController` over `robot.inner`, and an autonomous `/action` is refused `ros_unavailable`. `/health` reports `drive.mode` and `drive.ros_up`. |
+| `robot/server.py` | Under `drive: ros` (`by_velocity`), `POST /wheels` accepts only driver `ros` (otherwise `not_the_actuator`), and each post stamps `last_ros_post_at`. `ros_up()` is true when the last post is younger than `ROS_SILENCE_S` and `RosDriveRobot.bridge_up()` is true: a failed `/cmd_vel` send marks the bridge down, and a background `GET /health` probe (at most every `BRIDGE_PROBE_S`, 0.5 s timeout) marks it up again ([safety engineering](../safety/ENGINEERING.md)). While ROS is down, a person's `/action` runs through `fallback_safety`, a `SafetyController` over `robot.inner`, and an autonomous `/action` is refused `ros_unavailable`. `/health` reports `drive.mode` and `drive.ros_up`. |
 | `world/ros_world.py` | The world's SLAM backend. See the [world engineering spec](../world/ENGINEERING.md). |
 
 ## Interfaces
@@ -154,6 +154,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | `RMW_IMPLEMENTATION` | `rmw_cyclonedds_cpp` | -- | image `ENV` | The architecture's D10. |
 | `GEOMETRY2_SHA`, `SLAM_TOOLBOX_SHA` | `404b722...`, `1729c0f...` | git SHA | `service/slam/Dockerfile` | The tf2 0.25.24 ABBA deadlock fix; slam_toolbox with `restamp_tf`. |
 | `ROS_SILENCE_S` | 0.5 | s | `robot/server.py` | Ten missed 20 Hz posts: well past jitter, and inside the 1 s watchdog (G3). |
+| `BRIDGE_PROBE_S`, `BRIDGE_PROBE_TIMEOUT_S` | 0.5, 0.5 | s | `robot/ros_drive.py` | After a failed send marks the bridge down, how often its `/health` is probed in the background, and how long a probe may take; the first 200 marks it up (handoff 2026-10-02 1d). Never on a request's path |
 | `WHEEL_LOOP_INTERVAL_S` | 0.05 | s | `robot/server.py` | 20 Hz, the rate nav2 emits at. Wall duplicate "control rate". |
 | `CONTROL_HZ` | 20.0 | Hz | `robot/ros_drive.py` | The same 20 Hz. Wall duplicate. |
 | `TURN_RATE_RAD_S`, `ANGULAR_GAIN_PER_S` | 1.2, 1.5 | rad/s, 1/s | `robot/ros_drive.py` | At 2 rad/s and a gain of 3, a 45-degree turn landed at 59-74 degrees over 40-150 ms of jitter (3.13). |
@@ -213,7 +214,7 @@ Always-run tests (no Docker; counts from `pytest --collect-only`,
 | `tests/test_cad_geometry.py` | 13 | The `[CAD]` values from Waveshare's URDF (3.27). |
 | `tests/test_ros_drive.py` | 14 | The verb executor against a fake chain carrying R4's measured 40-150 ms jitter. The stop (2026-10-02): a hung bridge does not delay it, every ROS input is still zeroed, repeated stops on a hung bridge start no extra threads, a stale ROS command cannot undo it, and the hold ends on its own and on the next verb. |
 | `tests/test_ros_verb_safety.py` | 7 | G2 through `tests/ros_verb_sweep.py`: travel-to-contact at least 18.0 cm after every move (0/1440 under, closest 19.73), no contact, a verb achieving under 1 cm or 0.5 deg is a refusal (0/252 unrefused), clear turns 100% within 0.64 deg (worst 0.49). |
-| `tests/test_ros_fallback.py` | 6 | G3 offline: the pulse, the person-only fallback, autonomy refused, recovery with no restart. |
+| `tests/test_ros_fallback.py` | 8 | G3 offline: the pulse, the person-only fallback, autonomy refused, recovery with no restart. Handoff 1d: a dead bridge behind a live plugin marks ROS down, and ROS is back once the bridge answers. |
 | `tests/test_bridge_convert.py`, `tests/test_bridge_keepalive.py`, `tests/test_brain_view.py` | 16, 7, 19 | The bridge's plain-Python parts. |
 
 Live tests (skip without the stack):

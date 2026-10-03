@@ -104,6 +104,12 @@ STOP_ZERO_TIMEOUT_S = 0.5
 # plus one 0.05 s plugin period: 0.55 s. Was 0.4 until the second spec
 # review (2026-10-02) caught the two timeouts counted as one.
 STOP_HOLD_S = 0.6
+# A failed send to the bridge marks it down (handoff 2026-10-02 1d). While
+# down, its `/health` is probed in the background at most this often, and
+# the first answer marks it up again -- so a person's verbs, running direct
+# meanwhile, never wait on it and never send it anything.
+BRIDGE_PROBE_S = 0.5
+BRIDGE_PROBE_TIMEOUT_S = 0.5
 
 
 class RosDriveRobot(RobotInterface):
@@ -128,6 +134,11 @@ class RosDriveRobot(RobotInterface):
         # own and the clock is before _hold_until.
         self._hold_gen = -1
         self._hold_until = 0.0
+        # Bridge liveness (1d): None while sends succeed; the time of the
+        # failure that marked it down otherwise.
+        self._bridge_down_since: Optional[float] = None
+        self._probed_at = 0.0
+        self._probing = threading.Lock()
         # One background zeroing at a time: the watchdog stops every poll
         # while the robot is silent, and each must not add a thread.
         self._zeroing = threading.Lock()
@@ -153,10 +164,48 @@ class RosDriveRobot(RobotInterface):
 
     def _send(self, linear: float, angular: float, driver: Optional[str] = None,
               timeout: Optional[float] = None) -> None:
-        r = self._http.post("/cmd_vel", json={"driver": driver or self._driver,
-                                              "linear_m_s": linear, "angular_rad_s": angular},
-                            timeout=httpx.USE_CLIENT_DEFAULT if timeout is None else timeout)
-        r.raise_for_status()
+        try:
+            r = self._http.post("/cmd_vel", json={"driver": driver or self._driver,
+                                                  "linear_m_s": linear, "angular_rad_s": angular},
+                                timeout=httpx.USE_CLIENT_DEFAULT if timeout is None else timeout)
+            r.raise_for_status()
+        except httpx.HTTPError:
+            self._mark_bridge_down()
+            raise
+        self._bridge_down_since = None
+
+    # ---------- is the bridge alive (handoff 2026-10-02 1d) ----------
+
+    def _mark_bridge_down(self) -> None:
+        if self._bridge_down_since is None:
+            self._bridge_down_since = time.monotonic()
+            logger.warning("a send to the bridge failed -- ROS marked down until it answers")
+
+    def bridge_up(self) -> bool:
+        """False from a failed send until the bridge answers again.
+
+        The robot server ANDs this into `ros_up()`: the actuator's posts prove
+        the end of the chain is alive, this proves the start is. Never blocks:
+        while down it starts at most one background `/health` probe per
+        BRIDGE_PROBE_S and answers from the last result."""
+        if self._bridge_down_since is None:
+            return True
+        now = time.monotonic()
+        if now - self._probed_at >= BRIDGE_PROBE_S and self._probing.acquire(blocking=False):
+            self._probed_at = now
+            threading.Thread(target=self._probe, daemon=True, name="ros-bridge-probe").start()
+        return False
+
+    def _probe(self) -> None:
+        try:
+            r = self._http.get("/health", timeout=BRIDGE_PROBE_TIMEOUT_S)
+            if r.status_code == 200:
+                self._bridge_down_since = None
+                logger.info("the bridge answers again -- ROS no longer marked down by it")
+        except httpx.HTTPError:
+            pass
+        finally:
+            self._probing.release()
 
     def _begin(self) -> int:
         with self._gen_lock:

@@ -100,7 +100,12 @@ mission; the arrival rule only** (second review, M3).
 **Done when** nothing beyond 1a is built: today's code already behaves
 this way. The policy specs record it.
 
-**1d. DECIDED: bridge failures count toward ROS liveness** (second review,
+~~**1d. DECIDED: bridge failures count toward ROS liveness**~~ **BUILT
+2026-10-02:** `RosDriveRobot.bridge_up()` (`robot/ros_drive.py`), ANDed into
+`ros_up()`; `tests/test_ros_fallback.py` `test_1d_*`. Kept below as the
+record.
+
+(second review,
 M2).
 
 - `ros_up()` is judged only from the plugin's `/wheels` posts.

@@ -244,8 +244,8 @@ reaches the wheels. The actuator's posts prove the end of the chain is
 alive, but not every part before it: if another part of the container dies
 while the actuator keeps posting, ROS still reads as alive (see Failure
 modes). **So a failed send to the bridge counts too: it marks ROS down**,
-and the fallback below applies. Decided by the user 2026-10-02; not yet
-built. **Rejected:** making the container exit when one of its nodes dies.
+and the fallback below applies. Decided by the user 2026-10-02 and built
+the same day; ROS is up again once the bridge answers. **Rejected:** making the container exit when one of its nodes dies.
 That is only a launch-file change, but it covers only deaths the launcher
 sees, and a hung bridge is not one. **Rejected:** both together, which adds
 the launch change for no case the bridge-failure rule misses on the
@@ -295,7 +295,7 @@ are commitments, not tuning.
 | A person takes over from a mission | The mission is refused `preempted` and ends | The person's command executes. The mission never retries |
 | Two autonomous drivers at once | The second is refused | One autonomous writer at a time |
 | ROS container dies under ROS drive | Autonomy refused. A person drives on the direct path | The mission ends within **3 s**. A person drives within **2 s**. ROS is back without a restart (3.24 G3) |
-| Part of the container dies while the actuator lives (the bridge, or the velocity multiplexer or controller), under ROS drive. **UNCONFIRMED** (read, not run) | ROS still reads as alive, because liveness is judged only from the actuator's posts. With the bridge gone, every verb, a person's included, is refused as ROS-unavailable. With the multiplexer or controller gone, a verb achieves nothing and comes back as a safety refusal | **Not met.** The target is the dead container's: a person can drive and autonomy is refused. Fix decided by the user 2026-10-02, not yet built: a failed send to the bridge marks ROS down (Decisions, "When ROS dies, only a person drives"). A dead multiplexer or controller behind a live bridge is left as is: it fails toward stop |
+| Part of the container dies while the actuator lives (the bridge, or the velocity multiplexer or controller), under ROS drive | With the bridge gone, the first send that finds it dead is refused as ROS-unavailable and marks ROS down; from then a person drives on the direct path and autonomy is refused, until the bridge answers again. With the multiplexer or controller gone, ROS still reads as alive; a verb achieves nothing and comes back as a safety refusal | **Met for the bridge** (Decisions, "When ROS dies, only a person drives"; built 2026-10-02): a person can drive and autonomy is refused, as for a dead container. A dead multiplexer or controller behind a live bridge is left as is: it fails toward stop |
 | A stop while a navigation goal is active | The wheels stop and the goal is ended; a person can set a new one | **Met** (Decisions, "Who drives"; built 2026-10-02). Before that the goal was only paused and the wheels resumed after the stop's hold |
 | The robot server process dies | The board's heartbeat stops the motors | Motors stop without the host |
 | A person or pet crosses the path | Same vet, same bars | The static-obstacle bars above hold with something moving (3.30) |

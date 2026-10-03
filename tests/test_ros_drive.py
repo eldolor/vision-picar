@@ -48,6 +48,8 @@ class FakeChain:
         self.thread.start()
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/health":
+            return httpx.Response(200, json={"ok": True})     # the bridge's liveness probe (1d)
         body = __import__("json").loads(request.content)
         with self.lock:
             self.twists.append(body)

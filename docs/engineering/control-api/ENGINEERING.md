@@ -190,7 +190,7 @@ session may already own ports 8000/8090; use 8100/8101/8190 with a separate
 |---|---|
 | `tests/test_server.py` (23) | Routes, 400 on unknown action, the secret gate (protected routes 401, `/health` and `/` open), CORS headers, `ROUTE_PREFIX`, teleop push/pull and 503 on a stall, sensing does not feed the watchdog, the twin's script |
 | `tests/test_watchdog_integration.py` (6) | The watchdog and its liveness against a live `uvicorn` subprocess, `sim.realtime`, and the health command against it |
-| `tests/test_authority.py` (13), `tests/test_wheels_command.py` (8), `tests/test_goal_arbitration.py` (9), `tests/test_ros_fallback.py` (6) | Arbitration, `/wheels`, goals and the ROS fallback through a real app |
+| `tests/test_authority.py` (13), `tests/test_wheels_command.py` (8), `tests/test_goal_arbitration.py` (9), `tests/test_ros_fallback.py` (8) | Arbitration, `/wheels`, goals and the ROS fallback through a real app |
 | `tests/test_health.py` (15) | `control/health.py`'s verdict rules over `/health` |
 | `tests/test_health_sim_map.py` (4) | `sim_map` names the house built, for `mode: sim` and `mode: hardware` with the fake board; null for teleop; unchanged by a later `SIM_MAP` |
 | `tests/test_ros_drive.py` (14) | Among the ROS wrapper's tests, a stop that returns in under 0.1 s against a hung bridge ([body engineering](../body/ENGINEERING.md)) |

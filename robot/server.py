@@ -318,9 +318,17 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
     def ros_up(now: float) -> bool:
         """Is the ROS stack alive? Its actuator plugin posts /wheels at
-        20 Hz; ROS_SILENCE_S without one is a dead container (3.24 G3)."""
+        20 Hz; ROS_SILENCE_S without one is a dead container (3.24 G3).
+
+        **And the bridge must be answering** (handoff 2026-10-02 1d): a
+        failed send to it marks ROS down until it answers again, because a
+        dead bridge behind a live plugin otherwise refused every verb -- a
+        person's included -- with no fallback at all."""
         last = state["last_ros_post_at"]
-        return last is not None and now - last < ROS_SILENCE_S
+        if last is None or now - last >= ROS_SILENCE_S:
+            return False
+        bridge_up = getattr(robot, "bridge_up", None)
+        return bridge_up() if bridge_up is not None else True
 
     def arbitrate(driver: str, now: float):
         """Refusal dict if `driver` may not drive right now, else None.
