@@ -28,6 +28,9 @@ there.
 
 ## Reading path
 
+0. **[Architecture overview](ARCHITECTURE.md)** is the whole system on
+   one page: the five processes, the four walls, the ROS container, and
+   one command traced end to end. Start there, then read the specs below.
 1. **[Decision 0001](decisions/0001-architecture-vs-engineering-specs.md)**
    explains why there are two documents per component.
 2. **The two interfaces everything else is built around.** Read

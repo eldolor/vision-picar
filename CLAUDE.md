@@ -666,7 +666,8 @@ vision-picar/
 ├── README.md                  full build-plan-referenced documentation
 ├── CLAUDE.md                  this file -- session orientation
 ├── docs/                       the specifications (decision 0001) -- start at
-│                              docs/README.md. <domain>/ARCHITECTURE.md is the
+│                              docs/ARCHITECTURE.md (the whole system on one
+│                              page), then docs/README.md. <domain>/ARCHITECTURE.md is the
 │                              what and why, engineering/<domain>/ENGINEERING.md
 │                              the how; decisions/ the records; templates/ for
 │                              new ones; SPEC_REVIEW_PROMPT.md the review.

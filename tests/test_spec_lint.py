@@ -40,6 +40,17 @@ def test_every_domain_in_the_index_has_both_specs():
         assert (spec_lint.REPO / "docs" / "engineering" / domain / "ENGINEERING.md").exists(), domain
 
 
+def test_overview_references_exist():
+    # docs/ARCHITECTURE.md is not a spec (no domain), so lint() skips it --
+    # but a dead path in the system overview is the same drift E6 catches.
+    path = spec_lint.REPO / "docs" / "ARCHITECTURE.md"
+    spec = spec_lint.Spec(path, "docs/ARCHITECTURE.md", {},
+                          path.read_text(encoding="utf-8").splitlines(), 1)
+    rep = spec_lint.Report()
+    spec_lint.check_references(spec, rep, spec_lint.REPO)
+    assert not rep.errors, "\n" + "\n".join(map(str, rep.errors))
+
+
 # ---------------------------------------------------------------- a fixture repo
 
 ARCH = """\

@@ -71,7 +71,10 @@ STALE_DAYS = 120
 MIN_ENGINEERING_FACTS = 15
 
 # Files under docs/ that are not specs and carry no front matter.
-NOT_SPECS = {"docs/README.md", "docs/SPEC_REVIEW_PROMPT.md"}
+# docs/ARCHITECTURE.md is the whole-system overview: it spans every domain,
+# so it has no domain to sit under, but its references are still checked
+# (tests/test_spec_lint.py).
+NOT_SPECS = {"docs/README.md", "docs/SPEC_REVIEW_PROMPT.md", "docs/ARCHITECTURE.md"}
 EXCLUDED_DIRS = ("docs/archive/", "docs/templates/")
 
 REQUIRED_SECTIONS = {
