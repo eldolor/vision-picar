@@ -255,6 +255,10 @@ budget (P7e stays).
 **Decision** (2.5, Phases A and F). The cloud call is dispatched without
 blocking the tick, at most one in flight, and the last cloud direction is
 held on free frames. An answer that lands after the mission ends is dropped.
+**One exception, by design:** the identity confirmation at arrival blocks the
+tick, because the mission is about to end on its answer. It waits for any
+call already in flight before it is made, so "at most one in flight" holds
+for it too (`docs-review/SPEC-REVIEW-3.md` fix 8).
 **Rejected.** Blocking the tick on a multi-second call (a stall every few
 frames), and scanning on every free frame, which on five rig walks outvoted
 the cloud five to one.

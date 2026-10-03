@@ -366,20 +366,28 @@ class MissionAgent(ConstrainedAgent):
         # the arrival rule stops holding -- so a robot parked in front of the
         # wrong object pays once, not every frame.
         self._identity_refused = False
+        # The refusing verdict, carried on every later refused frame so the
+        # mission's final status still says why (spec review 3, fix 9).
+        self._refusal: Optional[dict] = None
+        self._confirmed_this_frame = False
 
     def _confirm_identity(self, readout: dict, frame: dict) -> dict:
+        """Returns the readout; sets `self._confirmed_this_frame` when this
+        frame asked the cloud."""
         if self._identity_refused:
-            return {**readout, "state": REFUSED,
+            return {**readout, "state": REFUSED, "identity": self._refusal,
                     "reason": "the cloud did not confirm this arrival; not asking again "
                               "until the arrival ends"}
         confirm = self.arrival_confirm_fn or getattr(self.vision_fn, "confirm_arrival", None)
         verdict = (confirm(frame) if confirm is not None
                    else {"confirmed": False, "cloud_called": False,
                          "reason": "no cloud on this policy to confirm identity"})
+        self._confirmed_this_frame = bool(verdict.get("cloud_called"))
         readout = {**readout, "identity": verdict}
         if verdict.get("confirmed"):
             return readout
         self._identity_refused = True
+        self._refusal = verdict
         return {**readout, "state": REFUSED,
                 "reason": f"arrived, but identity not confirmed: {verdict.get('reason')}"}
 
@@ -389,15 +397,38 @@ class MissionAgent(ConstrainedAgent):
         readout = self.arrival.observe(scene, self.robot)
         if readout["state"] == NOT_JUDGED and not scene.get("_perception"):
             return scene  # a policy with no local perception: nothing to say
+        self._confirmed_this_frame = False
         if readout["state"] == ARRIVED:
             readout = self._confirm_identity(readout, frame)
         else:
             self._identity_refused = False
+            self._refusal = None
         if readout["state"] == ARRIVED:
             scene = arrived_scene(scene, self.memory.target_object, readout)
         else:
             scene = dict(scene)
+        if self._confirmed_this_frame:
+            scene = self._label_confirmation(scene, readout, readout["identity"])
         scene["_arrival"] = readout
+        return scene
+
+    @staticmethod
+    def _label_confirmation(scene: dict, readout: dict, verdict: dict) -> dict:
+        """The step that paid for the confirmation says so (spec review 3,
+        fixes 9-10): `_tier` is marked as a cloud step with its trigger, so
+        the log reads `[cloud: arrival_confirmation]`, and its stats are the
+        tier's AFTER the call -- the snapshot the vision step took predates
+        it, and a mission that ends `found` takes no later one."""
+        tier = dict(scene.get("_tier") or {})
+        tier.update(cloud_called=True, trigger="arrival_confirmation")
+        if verdict.get("stats"):
+            tier["stats"] = verdict["stats"]
+        scene["_tier"] = tier
+        if readout.get("state") == REFUSED:
+            nav = dict(scene.get("_navigate") or {})
+            nav["reasoning"] = (f"arrival refused -- {verdict.get('reason')}; "
+                                + nav.get("reasoning", ""))
+            scene["_navigate"] = nav
         return scene
 
     def decide(self, scene: dict, frame: Optional[dict] = None) -> str:

@@ -119,3 +119,78 @@ def test_the_call_cap_refuses_rather_than_confirms():
     tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud, max_calls=0)
     verdict = tier.confirm_arrival({"detections": [{"label": TARGET, "bearing_deg": 0.0}]})
     assert verdict["confirmed"] is False and "cap" in verdict["reason"]
+
+
+# ---------------------------------------------------------------------------
+# Spec review 3, fixes 8-10.
+
+import threading  # noqa: E402
+import time  # noqa: E402
+
+
+class _CountingCloud:
+    """A correct cloud that takes `delay_s` and records peak concurrency."""
+
+    def __init__(self, base, delay_s=0.2):
+        self.base, self.delay_s = base, delay_s
+        self.live = self.peak = 0
+        self.lock = threading.Lock()
+
+    def __call__(self, frame):
+        with self.lock:
+            self.live += 1
+            self.peak = max(self.peak, self.live)
+        try:
+            time.sleep(self.delay_s)
+            return self.base(frame)
+        finally:
+            with self.lock:
+                self.live -= 1
+
+
+def _run_async(cloud):
+    x, y, off = CLEAR_STARTS[0]
+    grid = _build()
+    grid.x, grid.y = x, y
+    grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
+    robot = MockRobot(grid, render=False)
+    tier = TieredVision(FrameReportedPipeline(TARGET), cloud, steer_on_sight=True,
+                        hold_goal=True, async_cloud=True, stale_after=1)
+    runner = MissionRunner(robot, target_object=TARGET, max_steps=60, policy="tiered",
+                           vision_fn=tier, world=mock_world_for(robot))
+    runner.start()
+    while runner.tick():
+        pass
+    return runner, tier
+
+
+def test_8_the_confirmation_never_overlaps_an_async_call():
+    """policy ARCH: at most one cloud call in flight. stale_after=1 keeps a
+    trigger call in flight on nearly every frame, so arrival lands on one."""
+    cloud = _CountingCloud(_quiet_cloud)
+    runner, tier = _run_async(cloud)
+    assert tier.stats.triggers.get(TRIGGER_ARRIVAL), tier.stats.triggers
+    assert cloud.peak == 1, f"{cloud.peak} cloud calls were in flight at once"
+
+
+def test_10_a_found_missions_status_counts_the_confirmation():
+    status, _, tier = _run(_quiet_cloud)
+    assert status["outcome"] == FOUND
+    stats = status["tier"]["stats"]
+    assert stats["triggers"].get(TRIGGER_ARRIVAL) == 1, stats["triggers"]
+    assert stats["cloud_calls"] == tier.stats.cloud_calls
+
+
+def test_9_the_paid_arrival_step_is_labelled_in_the_log():
+    status, _, _ = _run(_quiet_cloud)
+    assert any("[cloud: arrival_confirmation]" in line for line in status["log_tail"]), \
+        status["log_tail"][-3:]
+
+
+def test_9_a_refused_arrival_says_so_to_the_end():
+    status, _, _ = _run(_disagreeing_cloud)
+    assert status["outcome"] != FOUND
+    assert status["arrival"]["state"] == "refused"
+    assert status["arrival"].get("identity", {}).get("confirmed") is False, status["arrival"]
+    ended = status["log_tail"][-1]
+    assert "identity" in ended and "obstructed" not in ended, ended

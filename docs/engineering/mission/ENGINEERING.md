@@ -51,7 +51,11 @@ threads; where it and this file disagree, check the code.
    function if it has `set_searched_rooms`, attaches
    `frame["odometry"] = robot.get_odometry()` (failure ignored), and wraps the
    call in `call_with_timeout(..., vision_timeout_s)`, converting any error to
-   `VisionUnavailable`.
+   `VisionUnavailable`. On an arrival the agent makes a second guarded call,
+   `_guarded_confirm()` -- the policy's `confirm_arrival(frame)` under the same
+   timeout and error mapping, so it counts against the same B3.2 budget
+   ([policy engineering](../policy/ENGINEERING.md), "Arrival"). A policy with
+   no `confirm_arrival` never confirms, and its arrivals never end `found`.
 3. Exceptions: `MissionHalted` -> return False (stop landed mid-tick);
    `VisionUnavailable` -> `_handle_vision_failure()`; `Preempted` -> finish
    `preempted`; anything else -> finish `failed` ("step failed: ...").

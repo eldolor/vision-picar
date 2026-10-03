@@ -1481,6 +1481,11 @@
              mission believes the cloud exactly as it did before, and the
              row says so. -->
         <div class="full">Corroboration: <span class="val" id="brain-tel-corroboration">&ndash;</span></div>
+        <!-- Spec review 3, fix 9. How a tiered mission ends: the lidar judges
+             distance, the cloud confirms identity. A REFUSED arrival -- the
+             robot reached an object the cloud says is not the target -- has
+             to be seen here, or it reads as an obstacle. -->
+        <div class="full">Arrival: <span class="val" id="brain-tel-arrival">&ndash;</span></div>
         <!-- Phase C. WHICH rule is pacing the cloud right now, named rather
              than left to be inferred: a silent fall back from distance to
              frame count is how a walk becomes unattributable, which is the

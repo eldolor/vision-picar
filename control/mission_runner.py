@@ -557,6 +557,17 @@ class MissionRunner:
             self._finish(FOUND if self.memory.found else ROOM_REACHED, self.memory.summary())
             return False
         if self.stuck_after and self._refused_forwards >= self.stuck_after:
+            if (self._arrival or {}).get("state") == "refused":
+                # Not an obstacle: the robot reached what it was steering at
+                # and the cloud said it is not the target (spec review 3,
+                # fix 9). Blaming the path would point the operator at nav2.
+                note = ((self._arrival.get("identity") or {}).get("reason")
+                        or "the cloud did not confirm it")
+                self._finish(BLOCKED, (
+                    "stopped at an object whose identity the cloud did not confirm "
+                    f"as the target ({note}); FORWARD then refused "
+                    f"{self._refused_forwards} times by the safety layer"))
+                return False
             self._finish(BLOCKED, (
                 f"FORWARD refused {self._refused_forwards} times in a row by the "
                 "safety layer -- the way ahead is obstructed. Going around it is "

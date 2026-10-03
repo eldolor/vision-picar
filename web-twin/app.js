@@ -1620,6 +1620,33 @@
         corroboration && corroboration.verdict === "unclear" ? "alert" : null);
     }
 
+    // Spec review 3, fix 9: arrival, from status.arrival. The lidar judges
+    // distance and the cloud confirms identity; a refusal is the state an
+    // operator most needs, because without it the mission's end reads as
+    // an obstacle.
+    const arrival = status.arrival;
+    if (!arrival) {
+      setBrainText("brain-tel-arrival", null);
+    } else {
+      const range = typeof arrival.range_m === "number"
+        ? arrival.range_m.toFixed(2) + " m" : null;
+      const identity = arrival.identity || {};
+      let text, cls = null;
+      if (arrival.state === "arrived") {
+        text = "arrived" + (range ? " at " + range : "")
+          + (identity.confirmed ? " \u00b7 identity confirmed by the cloud" : "");
+        cls = "safe";
+      } else if (arrival.state === "refused") {
+        text = "refused" + (range ? " at " + range : "") + " \u00b7 "
+          + (identity.reason || arrival.reason || "identity not confirmed");
+        cls = "alert";
+      } else {
+        text = arrival.state.replace("_", " ") + (range ? " (" + range + ")" : "")
+          + (arrival.reason ? " \u00b7 " + arrival.reason : "");
+      }
+      setBrainText("brain-tel-arrival", text, cls);
+    }
+
     // Phase C. The pacing rule, and the distance to the next look. Reads
     // "frames" on every teleop walk, because a phone on a wheeled rig has
     // no encoders -- and that has to be legible rather than inferred from

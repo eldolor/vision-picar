@@ -752,7 +752,19 @@ class TieredVision:
         """
         if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
             return {"confirmed": False, "cloud_called": False,
-                    "reason": "call cap reached -- identity not confirmed"}
+                    "reason": "call cap reached -- identity not confirmed",
+                    "stats": self.stats.as_dict()}
+        # One call in flight at a time, this one included (spec review 3,
+        # fix 8): under `async_cloud` a trigger call may still be out. Wait
+        # for it and apply it first -- the confirmation already blocks the
+        # tick, and the runner's per-call timeout bounds the whole wait.
+        fut = self._inflight
+        if fut is not None:
+            try:
+                fut.result()
+            except BaseException:  # noqa: BLE001 -- _collect_inflight holds it
+                pass
+            self._collect_inflight()
         self.stats.cloud_calls += 1
         self.stats.triggers[TRIGGER_ARRIVAL] = self.stats.triggers.get(TRIGGER_ARRIVAL, 0) + 1
         started = time.perf_counter()
@@ -765,7 +777,10 @@ class TieredVision:
         return {"confirmed": confirmed, "cloud_called": True,
                 "reason": ("the cloud sees the target in the arrival frame" if confirmed
                            else "the cloud does not see the target in the arrival frame"),
-                "cloud_reasoning": nav.get("reasoning")}
+                "cloud_reasoning": nav.get("reasoning"),
+                # The frame's `_tier` snapshot was taken before this call; the
+                # agent refreshes it from here so status and metrics count it.
+                "stats": self.stats.as_dict()}
 
     # -- Phase A: dispatch, collect, and hold the goal --------------------
 

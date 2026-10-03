@@ -75,7 +75,19 @@ only on `_navigate.target_visible is True`; at `max_calls` it refuses
 without calling. Not confirmed, or no confirmer on the policy: the readout
 becomes `refused`, the scene is not rewritten, and `_identity_refused`
 stops further calls until `observe()` stops returning `arrived`. The
-readout carries the verdict under `identity`.
+readout carries the verdict under `identity`, and every later refused frame
+carries the refusing verdict too (`_refusal`), so the final status says why.
+Since spec review 3 (fixes 8-10): `confirm_arrival()` first waits for an
+async call still in flight and applies it (`_collect_inflight()`), so one
+call is in flight at a time; it returns the tier's `stats` after the call,
+and on the frame that asked, the agent's `_label_confirmation()` sets the
+scene's `_tier` to `cloud_called: true`, `trigger: "arrival_confirmation"`
+and those stats -- so the log reads `[cloud: arrival_confirmation]` and a
+mission that ends `found` publishes the call in `status.tier.stats` and its
+metrics row. A refused frame's `_navigate.reasoning` is prefixed `arrival
+refused -- <reason>`. A mission then ended `blocked` by `stuck_after` says it
+stopped at an object the cloud did not confirm, not that the way was
+obstructed (`MissionRunner.tick()`).
 
 **What the hysteresis does and does not gate.** `consecutive_frames` is
 read only in `_trigger_for()`. `_steer_to()` returns a direction for any
@@ -243,7 +255,7 @@ On a backend without a scan (teleop, replay), `arrival.state` reads
 |---|---|
 | `tests/test_bearing_turns.py` (17) | Runs in the **scaled house** since 3.32 (`HOUSE = "scaled_house"`). R1: sized turns arrive from off-axis while quarter turns are the defect (relative bars). R1b: every search start sees the target within 12 steps and arrives. R1c: at 90% per-frame detection >= 95% of missions arrive. Spin guard counts degrees; stuck -> `blocked`; spin named a spin. **3.32 recorded only that these pass in the scaled house**; the numbers below are history |
 | `tests/test_arrival.py` (14) | Uses `tests/test_bearing_turns.py`'s `_build()`, so the scaled house. **Recorded 2026-10-01 (PLAN 3.32, guarded verbs):** of missions that arrived, 69/69 (perfect detection), 689/689 (90%) and 677/689 = 98.3% (80%) end `found` (bar 95%); 0 false arrivals in 69 / 690 / 690; farthest `found` 0.51-0.52 m from the target's centre (bar 0.60 m, so 0.08 m of margin). **Re-measured 2026-10-02 with the arrival confirmation (handoff 1a) and a cloud that reports `target_visible`:** identical -- 69/69, 689/689, 677/689, 0 false, farthest 0.507/0.515/0.515 m. Also: not judged without scan, with a panned camera, or without local perception; two frames needed; range read at the bearing; edges refused |
-| `tests/test_arrival_confirmation.py` (5) | Handoff 2026-10-02 1a, scaled house, cloud faked: the right object ends `found` after one `arrival_confirmation` call; a cloud that disagrees refuses the arrival (ends `blocked`, at most 2 confirmation calls); a false-positive run (absent, absent, detected...) cannot end `found` and the same run with an agreeing cloud does; the call is counted; at the call cap it refuses without calling |
+| `tests/test_arrival_confirmation.py` (9) | Handoff 2026-10-02 1a, scaled house, cloud faked: the right object ends `found` after one `arrival_confirmation` call; a cloud that disagrees refuses the arrival (ends `blocked`, at most 2 confirmation calls); a false-positive run (absent, absent, detected...) cannot end `found` and the same run with an agreeing cloud does; the call is counted; at the call cap it refuses without calling. Spec review 3: under `async_cloud` the confirmation never overlaps a trigger call (peak concurrency 1 with a 0.2 s cloud); a `found` mission's `status.tier.stats` counts it; the paid step is logged `[cloud: arrival_confirmation]`; a refused mission's final `status.arrival` keeps `identity` and its end line does not say "obstructed" |
 | `tests/test_tiered.py` (92) | triggers and hysteresis, call cap, staleness floor, async dispatch and epoch drop, an async failure reaching B3.2, landed verdicts shown once, local bearing beats a stale cloud goal, spin guard never overrides a sighting, timing on the worker |
 | `tests/test_vision_policy.py` (46) | visible is not found; absent `obstacle_ahead` is `unknown`; room guess backfill and `searched_rooms`; the policy does not peek; replay missions; proximity veto off by default and never over a real sensor |
 | `tests/test_agent.py`, `tests/test_mission_agent.py`, `tests/test_object_search.py` | constrained loop, frontier preference, look-around scan |

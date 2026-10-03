@@ -86,7 +86,7 @@ required):
 
 | Method, path | Request | Response |
 |---|---|---|
-| `POST /metrics/runs` | `MetricsRun`: `run_id` (matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$`), `started_at`, `finished_at`, `git_revision`, `policy`, `config`, `outcome`, `steps`, `target_object`, `walk`, `stats`. Extra fields are refused (422); a `run_id` that fails the pattern is a 400 | `{stored, day}`. Stored in the walk store as container `metrics-YYYY-MM-DD` (one per UTC day, beside the walks), object `<run_id>.json` |
+| `POST /metrics/runs` | `MetricsRun`: `run_id` (matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$`), `started_at`, `finished_at`, `git_revision`, `policy`, `config`, `outcome`, `steps`, `target_object`, `walk`, `stats` (the tier's stats verbatim; since `50b2293` `cloud_calls` includes one `arrival_confirmation` call per tiered arrival, so a release comparison across that commit shows the step). Extra fields are refused (422); a `run_id` that fails the pattern is a 400 | `{stored, day}`. Stored in the walk store as container `metrics-YYYY-MM-DD` (one per UTC day, beside the walks), object `<run_id>.json` |
 | `GET /metrics/summary?days=14` | `days` clamped to 1..90 | `{days, runs, count}`, newest first, rows whole, never aggregated |
 
 **Health routes** (unauthenticated on both servers):

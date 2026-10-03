@@ -330,4 +330,22 @@ So nobody re-checks these. Each reviewer's §(g) has the full list.
 - **Part of fix 16.** The 1d mechanism is now written in safety ENG ("ROS
   liveness"), and the `BRIDGE_PROBE_*` row has moved to body ENG.
 
-Fixes 7-15 and 17-20 are open.
+**Fixes 8-10: built 2026-10-03.**
+
+- **Fix 8.** `confirm_arrival()` waits for an async call still in flight,
+  so there is one call at a time; the probe measured a peak concurrency of
+  1, against 2 before. policy ARCH now names the confirmation as the one
+  deliberate blocking call.
+- **Fix 9.** The twin has an Arrival row, and its four UI tests failed
+  before the row existed. A refusal shows in the alert colour with the
+  cloud's reason. The paid step is logged `[cloud: arrival_confirmation]`.
+  A refused mission keeps `identity` in its final status, and its `blocked`
+  note no longer blames an obstacle.
+- **Fix 10.** The confirmation's stats refresh the frame's `_tier`, so a
+  `found` mission's status and metrics row count it. operations ENG notes
+  the step in `cloud_calls`.
+- **Tests.** `tests/test_arrival_confirmation.py` +4 and `tests/test_ui.py`
+  +4, all of which failed first.
+
+Fixes 7, 11-15 and 17-20 are open. Fix 7 needs a paid live run and a
+decision on confirming sim frames.

@@ -1449,10 +1449,11 @@ TIERED_BRAIN_HEALTH = {
 
 def tiered_status(*, frames=12, cloud_calls=3, status="detected", margin=0.21,
                   detector="yolo11s.pt", running=True, verdict="corroborated",
-                  local_p=0.69, claims=3, corroborated=2):
+                  local_p=0.69, claims=3, corroborated=2, arrival=None):
     """A /mission/status body shaped as control/mission_runner.py emits one
     under `policy: "tiered"`."""
     return {
+        "arrival": arrival,
         "running": running, "outcome": "running" if running else "found",
         "policy": "tiered", "mission": "Find the red backpack.",
         "target_object": "red backpack", "step": frames, "max_steps": 120,
@@ -2177,6 +2178,69 @@ def test_the_corroboration_row_is_readable_on_a_phone(browser, twin_server):
     page, _ = open_with_brain(browser, twin_server,
                               status=tiered_status(verdict="unclear", claims=17))
     box = page.locator("#brain-tel-corroboration").bounding_box()
+    assert box is not None and box["width"] >= 40, box
+    assert box["x"] + box["width"] <= PHONE["width"] + 1, box
+    overflow = page.evaluate(
+        "() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 0, f"the page scrolls sideways by {overflow}px"
+    page.close()
+
+
+# ---------- arrival: the end of a tiered mission, visible ----------
+#
+# Spec review 3 (fix 9): status.arrival existed only in the JSON, so a
+# REFUSED arrival -- the cloud saying the object the robot reached is not the
+# target -- showed on the panel as a mission that ended `blocked` against an
+# obstacle. policy ARCH said the twin rendered arrival; it did not.
+
+REFUSED_ARRIVAL = {
+    "state": "refused", "streak": 3, "bearing_deg": 1.1, "range_m": 0.355,
+    "radius_m": 0.4,
+    "reason": "the cloud did not confirm this arrival; not asking again until the arrival ends",
+    "identity": {"confirmed": False, "cloud_called": True,
+                 "reason": "the cloud does not see the target in the arrival frame",
+                 "cloud_reasoning": "a handbag, not a backpack"},
+}
+
+
+def test_a_refused_arrival_is_on_the_panel(browser, twin_server):
+    page, errors = open_with_brain(browser, twin_server,
+                                   status=tiered_status(arrival=REFUSED_ARRIVAL))
+    row = page.locator("#brain-tel-arrival")
+    sync_api.expect(row).to_contain_text("refused", timeout=5000)
+    text = row.inner_text()
+    assert "does not see the target" in text, text
+    assert "alert" in (row.get_attribute("class") or ""), "a refusal must be seen"
+    assert not errors, errors
+    page.close()
+
+
+def test_a_confirmed_arrival_names_its_range_and_the_cloud(browser, twin_server):
+    arrived = {"state": "arrived", "streak": 2, "bearing_deg": 0.4, "range_m": 0.36,
+               "radius_m": 0.4, "reason": "target centred at 0.355 m, 2 frame(s) running",
+               "identity": {"confirmed": True, "cloud_called": True,
+                            "reason": "the cloud sees the target in the arrival frame"}}
+    page, _ = open_with_brain(browser, twin_server,
+                              status=tiered_status(running=False, arrival=arrived))
+    row = page.locator("#brain-tel-arrival")
+    sync_api.expect(row).to_contain_text("arrived", timeout=5000)
+    text = row.inner_text()
+    assert "0.36 m" in text and "confirmed" in text, text
+    page.close()
+
+
+def test_the_arrival_row_says_nothing_before_any_judgement(browser, twin_server):
+    page, _ = open_with_brain(browser, twin_server, status=tiered_status(arrival=None))
+    page.wait_for_timeout(600)
+    assert page.locator("#brain-tel-arrival").inner_text().strip() == "\u2013"
+    page.close()
+
+
+def test_the_arrival_row_is_readable_on_a_phone(browser, twin_server):
+    page, _ = open_with_brain(browser, twin_server,
+                              status=tiered_status(arrival=REFUSED_ARRIVAL))
+    sync_api.expect(page.locator("#brain-tel-arrival")).to_contain_text("refused", timeout=5000)
+    box = page.locator("#brain-tel-arrival").bounding_box()
     assert box is not None and box["width"] >= 40, box
     assert box["x"] + box["width"] <= PHONE["width"] + 1, box
     overflow = page.evaluate(
