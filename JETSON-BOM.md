@@ -333,7 +333,7 @@ in `GUIDE-robot-base.md`**; this section is the record.
 | 09-30 | Buying-route questions sent to **sales@waveshare.com** (9.7); Waveshare is on holiday until Oct 7. |
 | 09-30 | **ORDERED: Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce on Amazon, ~$730 delivered** (9.7). Still to buy: the separate Jetson battery and fused cable (9.5). |
 | 10-02 | **Ordered for the Jetson bring-up** (`PLAN-ros-alignment.md` 3.33): a 128 GB A2 / U3 / V30 microSD card and a USB-C card reader for the Mac. |
-| 10-03 | **ORDERED: the NVMe** -- **SanDisk Optimus 5100 500 GB, SDSP51500GAN** (the renamed WD Blue SN5100), M.2 2280, PCIe 4.0, QLC, on Amazon with a free 30-day return. It runs at Gen 3 x4 in the Jetson's slot (~3.5 GB/s, far above the robot's needs). Price not recorded. |
+| 10-03 | **ORDERED: the NVMe** -- **SanDisk Optimus 5100 500 GB, SDSP51500GAN** (the renamed WD Blue SN5100), M.2 2280, PCIe 4.0, QLC, **$110 + tax** on Amazon, free 30-day return. It runs at Gen 3 x4 in the Jetson's slot (~3.5 GB/s, far above the robot's needs). |
 | 10-03 | **ORDERED: the Rover's cells** -- 4x Molicel P26A 18650 (flat-top, unprotected, 2600 mAh, 35 A), IMR Batteries, **$34 with shipping**, expected Oct 7-9. Three go in the pack, one is a spare (9.5). |
 
 ### 9.2 Everything evaluated
