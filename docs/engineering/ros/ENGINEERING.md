@@ -138,7 +138,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 |---|---|
 | `POST /wheels` under `drive: ros` | Only `x-driver: ros` is accepted. Each post counts toward `wheel_posts` and refreshes `last_command_at`, so it feeds the watchdog. The command is still vetted by `SafetyController.vet_wheel_velocity()` and re-vetted by the 20 Hz wheel loop. |
 | `/action` under `drive: ros` | M4 arbitration runs first. With ROS up, the verb runs `RosDriveRobot` through `safety.check_and_execute()`, and an `httpx.HTTPError` or `RuntimeError` gives `robot.stop()` plus `ros_unavailable`. With ROS down, a person runs `fallback_safety` and the result is tagged `via: direct-fallback`; an autonomous driver is refused `ros_unavailable`. The verb's twists go on the `/action`'s driver's twist_mux input; a driver with no input (anything but `twin-dpad`, `brain` and `ros`) gets 400 `unknown driver` from the bridge, which surfaces as `ros_unavailable` (Known gaps). |
-| Stop (`RosDriveRobot.stop()`) | Specified in the [body engineering spec](../body/ENGINEERING.md) ("The ROS drive stop"), including `STOP_ZERO_TIMEOUT_S` and `STOP_HOLD_S`. What the ROS side determines: the hold must outlast twist_mux's input `timeout` plus `diff_drive_controller`'s `cmd_vel_timeout` (the two ADD) plus one plugin period, so a change to either yaml timeout below means re-deriving the hold there. A stop cancels no nav2 goal: nav2 resumes once the hold ends (architecture D6; Known gaps). |
+| Stop (`RosDriveRobot.stop()`) | Specified in the [body engineering spec](../body/ENGINEERING.md) ("The ROS drive stop"), including `STOP_ZERO_TIMEOUT_S` and `STOP_HOLD_S`. What the ROS side determines: the hold must outlast twist_mux's input `timeout` plus `diff_drive_controller`'s `cmd_vel_timeout` (the two ADD) plus one plugin period, so a change to either yaml timeout below means re-deriving the hold there. A stop cancels no nav2 goal today: nav2 resumes once the hold ends. That a stop also cancels the goal is decided (architecture D6) and not yet built (Known gaps). |
 
 ## Parameters and configuration
 
@@ -275,8 +275,11 @@ Checklist for a change:
   (`service/slam/src/picar_bridge/picar_bridge/bridge.py:453-455`). nav2
   keeps publishing on `cmd_vel/nav`, so the wheels resume when
   `STOP_HOLD_S` ends; under `drive: direct` with `WORLD_MODE=ros`, on the
-  plugin's next post. The rule is undecided (safety architecture, Open
-  questions); until then, cancel with `DELETE /world/goal`.
+  plugin's next post. **Decided by the user 2026-10-02; not yet built**
+  (safety architecture, "Who drives"; this spec's architecture, D6): `/stop`
+  also cancels any active goal, on a background thread after
+  `robot.stop()`, and a person re-sends a goal to resume. Until it is
+  built, cancel with `DELETE /world/goal`.
 - `picar_sim_hardware` has no unit tests of its own.
 - **Stale header comment.** `picar_sim_hardware.hpp`'s header still says a
   `picar_hardware` (R7) "is the same class against the ESP32". 3.16 decided

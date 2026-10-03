@@ -184,10 +184,9 @@ Ranks are by role, not by client. The five rules, each chosen because its
 opposite is a real failure (`AGENT-HARNESS.md` 4.1):
 
 1. **Stop is never arbitrated.** Anyone may stop the robot at any time.
-   A stop zeroes the wheels. **Today it pauses an active navigation goal
-   rather than ending it**: the planner keeps commanding, and the wheels
-   resume shortly after the stop. Whether a stop must end a goal is
-   undecided (see Open questions).
+   A stop zeroes the wheels, **and it ends any active navigation goal**
+   (decided by the user 2026-10-02; not yet built -- today a stop only
+   pauses a goal, see below and Failure modes).
 2. **Stop claims nothing.** Otherwise the loser of an arbitration takes the
    robot back by giving up.
 3. **People share; autonomy is exclusive.** Two taps of a person pass. At
@@ -198,6 +197,17 @@ opposite is a real failure (`AGENT-HARNESS.md` 4.1):
    release call to forget, and one tap does not lock the brain out forever.
 5. **An unnamed command ranks as a person.** The callers that do not name
    themselves are a person with curl, a script run by hand, or a test.
+
+**A stop ends a navigation goal; it does not pause it.** Decided by the
+user 2026-10-02; not yet built. A stop also cancels any active goal, and
+the cancel runs after the wheels are zeroed and off the stop's own path, so
+a stop never waits on ROS. A person who wants the goal back sends it again.
+**Rejected:** a stop that only pauses the goal, with a separate cancel
+control. That keeps a goal resumable, but it means "stop" does not stop: the
+planner keeps commanding and the robot drives on once the stop's hold ends,
+which is the opposite of what the top of this order promises. **Trade-off:**
+an interrupted goal is lost, and resuming it is one more action for a
+person (`docs-review/SPEC-REVIEW-2.md` H1).
 
 A navigation goal is an autonomous driver too. While one is pending or
 active, every other autonomous command is refused, and a person is never
@@ -234,7 +244,16 @@ healthy. The container can answer while the chain behind it no longer
 reaches the wheels. The actuator's posts prove the end of the chain is
 alive, but not every part before it: if another part of the container dies
 while the actuator keeps posting, ROS still reads as alive (see Failure
-modes and Open questions). While ROS is down, a person's verbs run through the
+modes). **So a failed send to the bridge counts too: it marks ROS down**,
+and the fallback below applies. Decided by the user 2026-10-02; not yet
+built. **Rejected:** making the container exit when one of its nodes dies.
+That is only a launch-file change, but it covers only deaths the launcher
+sees, and a hung bridge is not one. **Rejected:** both together, which adds
+the launch change for no case the bridge-failure rule misses on the
+commanding path. **Trade-off:** a dead multiplexer or controller behind a
+live bridge still reads as alive; its verbs achieve nothing and come back as
+safety refusals, which fails toward stop (`docs-review/SPEC-REVIEW-2.md`
+M2). While ROS is down, a person's verbs run through the
 direct path, which uses the same vet, re-checked every period. Every
 autonomous command is refused with a reason that ends the mission. Recovery
 needs no restart (decided by the user, `PLAN-ros-alignment.md` 3.24 G3).
@@ -277,8 +296,8 @@ are commitments, not tuning.
 | A person takes over from a mission | The mission is refused `preempted` and ends | The person's command executes. The mission never retries |
 | Two autonomous drivers at once | The second is refused | One autonomous writer at a time |
 | ROS container dies under ROS drive | Autonomy refused. A person drives on the direct path | The mission ends within **3 s**. A person drives within **2 s**. ROS is back without a restart (3.24 G3) |
-| Part of the container dies while the actuator lives (the bridge, or the velocity multiplexer or controller), under ROS drive. **UNCONFIRMED** (read, not run) | ROS still reads as alive, because liveness is judged only from the actuator's posts. With the bridge gone, every verb, a person's included, is refused as ROS-unavailable. With the multiplexer or controller gone, a verb achieves nothing and comes back as a safety refusal | **Not met.** The target is the dead container's: a person can drive and autonomy is refused. Fix undecided (Open questions) |
-| A stop while a navigation goal is active | The wheels stop, then resume: the goal is paused, not ended | **Not met** if a stop must end a goal. Undecided (Open questions) |
+| Part of the container dies while the actuator lives (the bridge, or the velocity multiplexer or controller), under ROS drive. **UNCONFIRMED** (read, not run) | ROS still reads as alive, because liveness is judged only from the actuator's posts. With the bridge gone, every verb, a person's included, is refused as ROS-unavailable. With the multiplexer or controller gone, a verb achieves nothing and comes back as a safety refusal | **Not met.** The target is the dead container's: a person can drive and autonomy is refused. Fix decided by the user 2026-10-02, not yet built: a failed send to the bridge marks ROS down (Decisions, "When ROS dies, only a person drives"). A dead multiplexer or controller behind a live bridge is left as is: it fails toward stop |
+| A stop while a navigation goal is active | Today: the wheels stop, then resume, because the goal is paused, not ended | **Not met.** Target: the wheels stay stopped and the goal is ended; a person can set a new one. Decided by the user 2026-10-02 (Decisions, "Who drives"); decided fix not yet built |
 | The robot server process dies | The board's heartbeat stops the motors | Motors stop without the host |
 | A person or pet crosses the path | Same vet, same bars | The static-obstacle bars above hold with something moving (3.30) |
 
@@ -302,17 +321,6 @@ are commitments, not tuning.
   (`docs-review/SPEC-REVIEW.md` fix-list 6). Owner: the user. Where in the
   code: the [engineering spec](../engineering/safety/ENGINEERING.md),
   Known gaps.
-- **Does a stop end a navigation goal?** Today it does not (Failure modes).
-  This domain owns the rule, because "stop" is the top of the authority
-  order; [ros](../ros/ARCHITECTURE.md) and the twin link here. Proposed:
-  a stop also cancels any active goal, on a background thread after the
-  wheels are zeroed, so the stop never waits on the bridge. Owner: the
-  user (`docs-review/SPEC-REVIEW-2.md` H1). Mechanism: the
-  [engineering spec](../engineering/safety/ENGINEERING.md), Known gaps.
-- **Liveness from part of the ROS chain.** ROS is judged alive from the
-  actuator's posts alone (Failure modes). Proposed: count the bridge's own
-  side toward liveness, or have the container exit when its bridge does.
-  Owner: the user (`docs-review/SPEC-REVIEW-2.md` M2).
 - **G4 on the Jetson.** Safety-loop timing under full perception load
   (`PLAN-ros-alignment.md` 3.33) is unmeasured. Zero late safety ticks is
   the written bar.

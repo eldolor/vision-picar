@@ -99,8 +99,9 @@ frame returns is the local one, which never names the target. There, only
 the arrival rule (below) ends a tiered mission `found`. With a blocking cloud
 call, the trigger frame's cloud answer can end it as well. This, rather than
 the arrival rule alone, is why a tiered phone walk (no range sensor) that
-reaches its target ends at the step budget (P7e). Whether a landed
-target-reached should count is an open question below.
+reaches its target ends at the step budget (P7e). That a landed
+target-reached does not count was decided by the user on 2026-10-02 (see
+"The cloud confirms identity at arrival; the lidar decides distance").
 
 ### The cloud-driven policies are the hardware path; the explorer is a test tool
 
@@ -159,8 +160,10 @@ bound is the arrival rule's conditions on top of the gate (consecutive
 frames, centred, a lidar range within the radius, one surface), all of them
 local: a wrong object that keeps passing the gate can be driven to and
 reported `found`. The corroboration verdict ([perception](../perception/ARCHITECTURE.md))
-measures this exposure and does not enforce anything. Whether steering should
-also wait for consecutive frames is an open question below.
+measures this exposure and does not enforce anything. The user decided on
+2026-10-02 that a cloud identity check closes the `found` half of this; it is
+not yet built, and steering stays as described (see "The cloud confirms
+identity at arrival; the lidar decides distance").
 
 ### Turns are sized; search turns are smaller than the field of view
 
@@ -201,6 +204,48 @@ also:** the detector's box size as range. **Acceptance bars (commitments):**
 of missions that physically arrive, at least 95% end `found`, at perfect and
 at degraded detection; and no mission ends `found` more than 0.60 m from the
 target.
+
+### The cloud confirms identity at arrival; the lidar decides distance
+
+**Decision.** Decided by the user 2026-10-02; **not yet built.** Two rules,
+decided together, that split the end of a tiered mission by question, as the
+arbitration above splits steering:
+
+- **Identity: the cloud confirms at arrival.** Before a tiered mission ends
+  `found`, one paid cloud call on the arrival frame must agree that what the
+  robot has stopped at is the target. If the cloud disagrees, the mission
+  does not end `found`.
+- **Distance: the arrival rule only.** A cloud target-reached answer that
+  lands under the asynchronous tier does not end a tiered mission. The
+  lidar-judged arrival rule stays the only way a tiered mission ends `found`
+  on the car.
+
+**Rejected, for identity:**
+
+- Enforcing the corroboration verdict ([perception](../perception/ARCHITECTURE.md))
+  at arrival. It is free, but it was measured net-negative on the search
+  walk and is unproven on out-of-vocabulary targets.
+- Extending the hysteresis to steering. It reduces wrong-object chases, but
+  a wrong object that keeps passing the gate for consecutive frames still
+  ends `found`.
+- Leaving it as is: the per-frame probability gate is then the only bound on
+  a wrong `found`.
+
+**Rejected, for distance:**
+
+- Applying a landed cloud target-reached. It reintroduces a distance judged
+  from a photograph -- uncalibrated, and exactly what the arrival rule was
+  built not to trust -- onto the car.
+- Applying it only on bodies with no range sensor. It lets phone walks end
+  `found`, but makes a mission's ending depend on which body ran it, and the
+  phone walk is not the car.
+
+**Trade-off.** One paid cloud call per arrival, spent on the judgement the
+cloud model is good at (identity) and never on the one it is not (range).
+Steering is unchanged: a wrong object can still be driven to; it can no
+longer be reported `found`. Accepted consequence: a tiered phone walk, which
+has no range sensor, cannot end `found`, by design, and ends at its step
+budget (P7e stays).
 
 ### Hold the cloud's goal; never block on it
 
@@ -247,10 +292,10 @@ the same frames, so it must never be copied onto the hardware backend.
 | Local perception unavailable (camera wedged, model error) | never a trigger, never advances the cold-search count, never read as absent | a dead camera never looks like an empty room |
 | Detector misses frames | trigger hysteresis, held goals, degree-counted spin guard | at 90% per-frame detection, at least 95% of missions arrive (3.6b's bar) |
 | Target directly on the straight line through a door jamb | refused forwards; the mission ends `blocked` | no policy spends its budget pushing into a wall; going around is nav2's job |
-| No range sensor (phone walk, replay) | arrival not judged; under the shipped asynchronous tier nothing else can end the mission `found`, so it runs to its step budget (P7e) | a mission never ends `found` on a guess |
+| No range sensor (phone walk, replay) | arrival not judged; under the shipped asynchronous tier nothing else can end the mission `found`, so it runs to its step budget (P7e) | a mission never ends `found` on a guess. By design since 2026-10-02: a landed cloud target-reached does not end it |
 | An edge beside the target | arrival refused | zero false arrivals beyond 0.60 m |
 | World unreachable | right-hand rule | a mapper outage never ends a mission |
-| Local false positive | steers on every frame it passes the probability gate; one frame is enough; the cloud's answer does not override a local sighting | bounded only by the per-frame gate; no target yet -- the corroboration verdict measures it (open question) |
+| Local false positive | steers on every frame it passes the probability gate; one frame is enough; the cloud's answer does not override a local sighting | target: a false positive never ends a mission `found`. **Not met:** today bounded only by the per-frame gate, and a wrong object that keeps passing it can end `found`. Decided fix (the cloud confirms identity at arrival, 2026-10-02) not yet built. Steering on a false positive is accepted |
 | Spin with no detection | forced forward after a fixed amount of rotation | a held turn cannot repeat forever |
 
 ## Open questions
@@ -267,19 +312,5 @@ the same frames, so it must never be copied onto the hardware backend.
   answers it.
 - **P7e's second half** (a held cloud STOP versus steering) no longer matters
   on the lidar path and is left alone.
-- **Should a landed cloud target-reached end a tiered mission?** Under the
-  shipped asynchronous tier it never does; only arrival can. Applying it
-  would let a phone walk (no range sensor) end `found`, at the price of
-  trusting a distance judged from a photograph -- exactly what the arrival
-  rule was built not to do. Keeping arrival as the only end keeps "how far"
-  with the range sensor. Needs a user decision; either way P7e's record and
-  this spec say which.
-- **Extend the hysteresis to steering?** Today one detected frame steers,
-  and the cloud's identity never overrides a local sighting, so a false
-  positive that keeps passing the gate is followed to the end (including to a
-  `found`). Requiring the same consecutive frames before steering would cost a
-  frame of lag on every true sighting; enforcing corroboration at arrival is
-  the other lever. Needs a user decision and an A/B through the mission path
-  (arrival rate paired with false arrivals).
 - **Steering by verbs versus nav2 goals**: the tier keeps steering by verbs
   for now (R6). Revisit with continuous motion.

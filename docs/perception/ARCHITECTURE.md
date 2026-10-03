@@ -106,7 +106,13 @@ arrival rule ([policy](../policy/ARCHITECTURE.md)) ends a mission `found` on
 a local detection centred at close lidar range, and it does not ask the
 cloud. A verifier false positive that keeps passing the gate can therefore
 end a mission at the wrong object. Corroboration (below) measures this and
-is not enforced.
+is not enforced. **Decided by the user 2026-10-02; not yet built:** the
+cloud confirms identity at arrival -- one paid call on the arrival frame must
+agree before a tiered mission ends `found`. The rule, its rejected
+alternatives and its trade-off are the [policy](../policy/ARCHITECTURE.md)'s
+("The cloud confirms identity at arrival; the lidar decides distance"). It
+fits this domain's split: the cloud owns identity, and the local tier is
+recall-first.
 
 **Rejected.** A single open-vocabulary detector as the whole pipeline (OWLv2,
 Grounding DINO, YOLO-World): measured as replacements in P7, P9 and P21, an
@@ -141,7 +147,8 @@ passes the gate is a sighting: it may fire a paid cloud call, it steers the
 robot on that frame (steering has no frame hysteresis, and the cloud's answer
 does not override a local sighting), and near the wrong object it can satisfy
 the arrival rule and end the mission `found` (see "Where that intent is not
-yet met" above, and the failure-mode table).
+yet met" above, and the failure-mode table). The decided cloud check at
+arrival, once built, removes the last of these and leaves the rest.
 
 ### Gate on a probability, not a raw similarity
 
@@ -223,7 +230,10 @@ on the twin and in recorded walks, and change no decision:
 
 **Rejected:** enforcing either now. A target the local tier cannot see would
 make every cloud sighting "unclear" and leave the robot steering forever
-without committing.
+without committing. **Rejected also, on 2026-10-02, as the guard on a wrong
+`found`:** enforcing corroboration at arrival. It is free, but measured
+net-negative and unproven; the user chose a cloud identity check at arrival
+instead ([policy](../policy/ARCHITECTURE.md)).
 
 ## Contracts
 
@@ -245,7 +255,7 @@ without committing.
 | Camera frame missing or undecodable; a model raises | **unavailable** | a broken sensor never reads as an empty room |
 | Target the detector has no word for | open-vocabulary path; the vocabulary verdict says so; the cloud's cold search covers it | absence from a blind detector is never trusted as absence |
 | Close-range relabelling | crops are not gated on label | the frames where the target fills the view are kept |
-| Local false positive | each frame that passes the gate is a sighting. It may fire a cloud trigger. It steers the robot on that frame, because steering has no frame hysteresis. Near the object it can satisfy arrival. | for steering, the per-frame probability gate is the only bound today. For ending `found`, the arrival rule adds consecutive frames, a centred bearing, a lidar range within the radius and one surface -- all local. The cloud's identity does not override a local sighting. The target "a false positive never confirms a target" is **not met** on the tiered arrival path (open question) |
+| Local false positive | each frame that passes the gate is a sighting. It may fire a cloud trigger. It steers the robot on that frame, because steering has no frame hysteresis. Near the object it can satisfy arrival. | for steering, the per-frame probability gate is the only bound today. For ending `found`, the arrival rule adds consecutive frames, a centred bearing, a lidar range within the radius and one surface -- all local. The cloud's identity does not override a local sighting. The target "a false positive never confirms a target" is **not met** on the tiered arrival path. Decided fix (the cloud confirms identity at arrival, decided by the user 2026-10-02, owned by [policy](../policy/ARCHITECTURE.md)) not yet built |
 | Camera panned | on real frames: pan is added to the bearing; tilt is not corrected; arrival refuses to judge. Sim frames carry no pan, so neither happens in the sim (harmless today: the cloud-driven policies never peek and a mission starts centred) | no panned bearing is treated as body-relative without composing it with range |
 | Over the latency budget on the board | P26, then TensorRT | 250 ms a frame at 15 W |
 | A real camera mistaken for the sim | provenance read once; failure assumes a real camera | real frames never get synthetic detections |
@@ -254,7 +264,9 @@ without committing.
 
 - **Enforce corroboration (1.11a)?** Decided by the user after two
   out-of-vocabulary searches and one control walk under the tiered policy
-  (`PLAN-onboard-perception.md`, "What to record next").
+  (`PLAN-onboard-perception.md`, "What to record next"). Not as the guard on
+  arrival: that was decided 2026-10-02 in favour of a cloud identity check
+  ([policy](../policy/ARCHITECTURE.md)).
 - **Is the matcher or the proposer the weak half?** The labels carry
   per-frame booleans and no boxes, so the two failures are not separable on
   this corpus.
@@ -264,9 +276,3 @@ without committing.
 - **Its own process** (2.7: features, not frames) so a stalled detector
   degrades perception rather than the control loop -- proposed, not built
   (see "Perception runs in the brain process").
-- **Should a local sighting need more than one frame, or the cloud's
-  agreement, before it steers or ends a mission?** Today one frame that passes
-  the gate steers, and arrival does not consult the cloud. Owned by the
-  [policy](../policy/ARCHITECTURE.md) open question on extending the
-  hysteresis to steering; enforcing corroboration at arrival is the other
-  lever. Both need a user decision.

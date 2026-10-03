@@ -265,8 +265,12 @@ threshold counted in steps.
   for room memory; it is section 10.
 - Arrival cannot be judged on a phone walk, and under `tier_async_cloud:
   true` a landed cloud `target_reached` is never applied, so tiered phone
-  walks end `max_steps` when they arrive (P7e). Whether to apply it is an
-  open question in the [architecture spec](../../policy/ARCHITECTURE.md).
+  walks end `max_steps` when they arrive (P7e). **Decided by the user
+  2026-10-02:** it is not applied; the arrival rule stays the only way a
+  tiered mission ends `found` on the car, and phone walks ending
+  `max_steps` is by design ([architecture spec](../../policy/ARCHITECTURE.md),
+  "The cloud confirms identity at arrival; the lidar decides distance").
+  Nothing to build for this half: it is what the code does today.
   `brain/arrival.py`'s module docstring (lines 6-9) says that before arrival
   "only a paid cloud call could end a mission"; that holds only for a
   synchronous tier, not the shipped asynchronous one.
@@ -282,8 +286,19 @@ threshold counted in steps.
   `brain/tiered.py`'s comment above `DEFAULT_STEER_ON_SIGHT` says the two-frame
   hysteresis has to pass before steering and that a wrong lock-on "is
   corrected at the next paid call". Neither is what the code does. The
-  comment is left as is, and the open question is in the
-  [architecture spec](../../policy/ARCHITECTURE.md).
+  comment is left as is until the fix below lands with it.
+  **Decided by the user 2026-10-02; not yet built** (the rule is in the
+  [architecture spec](../../policy/ARCHITECTURE.md), "The cloud confirms
+  identity at arrival; the lidar decides distance"): before a tiered mission
+  ends `found`, one paid cloud call on the arrival frame must agree it is
+  the target. Where it plugs in: `MissionAgent._review_scene()`
+  (`brain/agent.py`), which applies `arrived_scene()` (`brain/arrival.py`)
+  today on local perception and lidar alone; the cloud call goes through
+  the tier's `vision_fn`, so it counts toward the mission's failure budget
+  and the calls-and-frames counter. Steering is unchanged. Done when a test
+  (with the cloud faked) shows a wrong-object arrival refused when the cloud
+  disagrees and a right one still ending `found`, and the 3.11 sweep bars in
+  `tests/test_arrival.py` still hold.
 - **`tests/demo_active_search.py` ends NOT FOUND after 150 steps** (observed
   2026-10-02). Almost every step is a LEFT that the pivot guard clamps to
   0 degrees, so the robot never moves. The stuck-breaker counts STOPs, not

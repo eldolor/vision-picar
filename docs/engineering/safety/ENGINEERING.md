@@ -267,8 +267,8 @@ order; record the table in the plan entry.
   `_has_wheels()` is false, so a REVERSE verb in that window answers
   `no_rear_sensor` and proceeds unguarded. Open decision
   (`docs-review/SPEC-REVIEW.md` fix-list 6).
-- **A stop pauses a nav2 goal; it does not end it** (UNDECIDED,
-  `docs-review/SPEC-REVIEW-2.md` H1). `POST /stop` only records the command
+- **A stop pauses a nav2 goal; it does not end it** (decided fix not yet
+  built; `docs-review/SPEC-REVIEW-2.md` H1). `POST /stop` only records the command
   time and calls `robot.stop()` (`robot/server.py:655-669`).
   `RosDriveRobot.stop()` (`robot/ros_drive.py:266-278`) zeroes the
   `twist_mux` inputs and holds non-zero commands for `STOP_HOLD_S` (0.6 s)
@@ -281,10 +281,13 @@ order; record the table in the plan entry.
   `WORLD_MODE=ros` they resume on the plugin's next `/wheels` post, about
   50 ms later, because a stop claims nothing and the plugin's next non-zero
   post is arbitrated and allowed. Pre-existing.
-  Proposed fix (a decision for the user): `/stop` also cancels any active
-  goal, on a background thread after `robot.stop()` returns, so the stop
-  never waits on the bridge; pinned by a test with an active goal in which
-  the wheels stay at zero past `STOP_HOLD_S`.
+  **Decided by the user 2026-10-02; not yet built** (the rule is in the
+  [architecture spec](../../safety/ARCHITECTURE.md), "Who drives"): `/stop`
+  also cancels any active goal, on a background thread after
+  `robot.stop()` returns, so the stop never waits on the bridge; a person
+  re-sends a goal to resume. Done when a test with an active goal shows the
+  wheels still at zero past `STOP_HOLD_S` after `/stop`, and a new goal can
+  be set afterwards.
 - **ROS liveness is judged only from the plugin's `/wheels` posts**
   (UNCONFIRMED: read, not run; `docs-review/SPEC-REVIEW-2.md` M2).
   `ros_up()` (`robot/server.py:319-323`) reads `last_ros_post_at`, set only
@@ -294,8 +297,15 @@ order; record the table in the plan entry.
   `ros_unavailable` (`robot/server.py:571-575`), so the direct fallback
   never engages. If `twist_mux` or `diff_drive_controller` dies, verbs
   achieve nothing and `_refuse_if_nothing_achieved()` returns
-  `safety_distance`. Proposed (decision): count the bridge's HTTP side
-  toward `ros_up()`, or have the container exit when the bridge does.
+  `safety_distance`. **Decided by the user 2026-10-02; not yet built** (the
+  rule is in the [architecture spec](../../safety/ARCHITECTURE.md), "When
+  ROS dies, only a person drives"): a failed send to the bridge
+  (`RosDriveRobot._send()`) marks ROS down, so `ros_up()` is false and
+  3.24 G3's fallback applies. Making the container exit when a node dies
+  was rejected. Done when a test with a bridge that refuses connections
+  shows `drive.ros_up` false, a person's verb runs direct, and an
+  autonomous verb is refused `ros_unavailable`. The multiplexer or
+  controller case is unchanged by it.
 - **Turns on a body with no `verb_plan()`** (the remote body, the ROS
   wrapper) get no pivot check inside `check_and_execute()`. The remote body
   is vetted again by the server, and the ROS path by the wheel vet, so the
@@ -310,7 +320,9 @@ order; record the table in the plan entry.
   `ros` (`docs-review/REPORT.md` V10).
 - **Until `ROS_SILENCE_S` (0.5 s) of silence after a container dies**,
   `ros_up()` is still true, so a person's verb goes to the dead bridge and
-  is refused `ros_unavailable`. That window is inside G3's 2 s bar.
+  is refused `ros_unavailable`. That window is inside G3's 2 s bar. The
+  bridge-failure rule above (decided, not yet built) would close it at the
+  first failed send.
 - **The fixed 20 cm floor** is a stopping distance for about 0.45 m/s
   (`PLAN-onboard-perception.md`); a ROS verb peaks at 0.6 m/s and relies on
   the look-ahead.

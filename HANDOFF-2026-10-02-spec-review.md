@@ -24,10 +24,16 @@ result in a test. Each item says "**Done when**".
 - Read `docs-review/SPEC-REVIEW.md` §5 and §7 for the evidence behind each
   item. The § and fix numbers below refer to that file.
 
-## 1. Decision needed from the user first
+## 1. Decided 2026-10-02 -- build these first
 
-**1a. A tiered mission can end `found` on a wrong object.** Found by the
-fix agent and confirmed with a fake pipeline (no models):
+The user decided all four on 2026-10-02. None is built. Each decision, its
+rejected alternatives and its trade-off are now in the architecture specs
+named below; the mechanism is in the matching engineering spec's Known
+gaps, which says "decided fix not yet built" until it lands.
+
+**1a. DECIDED: the cloud confirms identity at arrival.** A tiered mission
+can end `found` on a wrong object today. Found by the fix agent and
+confirmed with a fake pipeline (no models):
 
 - One local `DETECTED` frame steers the robot (`brain/tiered.py`
   `_steer_to()`).
@@ -37,25 +43,25 @@ fix agent and confirmed with a fake pipeline (no models):
 - `brain/arrival.py` declares `found` on a local detection plus lidar range
   alone.
 
-So the only bound on a wrong object is the per-frame P >= 0.8 gate. The
-options:
+**Build:** before a tiered mission ends `found`, one paid cloud call on the
+arrival frame must agree it is the target; if it disagrees, no `found`.
+Steering is unchanged. Rejected: enforcing 1.11a corroboration at arrival
+(free, but measured net-negative and unproven); extending the hysteresis to
+steering (reduces wrong-object chases, does not stop a wrong `found`);
+leaving it as is. Trade-off: one paid call per arrival, spent on identity,
+which the cloud is good at. Specs: `docs/policy/ARCHITECTURE.md` ("The
+cloud confirms identity at arrival; the lidar decides distance"),
+`docs/perception/ARCHITECTURE.md`, and both engineering Known gaps. The
+`brain/tiered.py:217-218` comment still claims hysteresis bounds it, so fix
+the comment in the same commit.
 
-- extend the hysteresis to steering;
-- enforce 1.11a corroboration at arrival (it is reported today, not
-  enforced, see `pending_decision_1_11a` in memory);
-- require a cloud identity check before `found`;
-- some combination of these.
-
-Specs: `docs/policy/ARCHITECTURE.md` and `docs/perception/ARCHITECTURE.md`
-(open questions). The `brain/tiered.py:217-218` comment still claims
-hysteresis bounds it, so fix the comment with the decision.
-
-**Done when** the chosen rule is pinned by a test where a single
-false-positive run (absent, absent, detected-wrong, ...) cannot end
-`found`, and the sweep in `tests/test_arrival.py` still meets 3.11's bars
+**Done when** a test, with the cloud faked, shows a wrong-object arrival is
+refused when the cloud disagrees and a right one still ends `found`; a
+single false-positive run (absent, absent, detected-wrong, ...) cannot end
+`found`; and the sweep in `tests/test_arrival.py` still meets 3.11's bars
 in the scaled house: >= 95% of arrivals `found`, none beyond 0.60 m.
 
-**1b. A stop does not stop a nav2 goal** (second review, H1;
+**1b. DECIDED: a stop ends a nav2 goal** (second review, H1;
 `docs-review/SPEC-REVIEW-2.md`). Two reviewers found this independently.
 
 - `POST /stop` only calls `robot.stop()` (`robot/server.py:656-669`).
@@ -64,30 +70,49 @@ in the scaled house: >= 95% of arrivals `found`, none beyond 0.60 m.
 - So nav2 resumes once the stop hold ends. Under `drive: direct` with
   `WORLD_MODE=ros`, it resumes within ~50 ms.
 - This predates today's work.
-- **Proposed fix:** `/stop` cancels any active goal, on a background thread
-  after `robot.stop()`.
-- Owner: the safety spec, where it is an open question.
+
+**Build:** `/stop` also cancels any active goal, on a background thread
+after `robot.stop()`, so the stop never waits on ROS; a person re-sends a
+goal to resume. Rejected: a stop that only pauses, plus a separate cancel
+control. Owner: the safety architecture ("Who drives"); ros D6, world D9,
+the twin and body link to it.
 
 **Done when** a test with an active goal shows the wheels still at zero
-past `STOP_HOLD_S` after `/stop`, and a person can still set a new goal
-afterwards.
+past `STOP_HOLD_S` after `/stop`, and a new goal can be set afterwards.
 
-**1c. Should a landed cloud `target_reached` end a tiered mission?**
-(second review, M3)
+**1c. DECIDED: a landed cloud `target_reached` does not end a tiered
+mission; the arrival rule only** (second review, M3).
 
 - Under the shipped `tier_async_cloud: true` it never does. Only
-  `brain/arrival.py` can end the mission, which is why tiered phone walks
-  end `max_steps` (P7e).
-- Decide this together with 1a.
+  `brain/arrival.py` can end the mission, and that stays so: the lidar's
+  distance is measured, the cloud's is not.
+- Rejected: applying it (puts an uncalibrated distance back on the car);
+  applying it only on bodies with no scan.
+- With 1a: the cloud confirms IDENTITY at arrival, the lidar decides
+  DISTANCE.
+- Accepted consequence: tiered phone walks (no lidar) end `max_steps` when
+  they arrive, **by design** (P7e stays).
 
-**1d. ROS liveness misses part of the container dying** (second review,
+**Done when** nothing beyond 1a is built: today's code already behaves
+this way. The policy specs record it.
+
+**1d. DECIDED: bridge failures count toward ROS liveness** (second review,
 M2).
 
 - `ros_up()` is judged only from the plugin's `/wheels` posts.
 - If the bridge dies but the plugin lives, even a person's `/action` is
   refused `ros_unavailable`.
-- Options: count the bridge's HTTP failures toward `ros_up`, or shut the
-  container down when the bridge exits.
+
+**Build:** a failed send to the bridge marks ROS down, so 3.24 G3's
+fallback applies (a person drives direct, autonomy refused). Rejected:
+making the container exit when a node dies (launch-file change only); both.
+Owner: the safety architecture ("When ROS dies, only a person drives");
+control-api and ros link to it. A dead multiplexer or controller behind a
+live bridge is left as is (fails toward stop).
+
+**Done when** a test with a bridge that refuses connections shows
+`drive.ros_up` false, a person's verb runs direct, and an autonomous verb
+is refused `ros_unavailable`.
 
 ## 2. Hardware-path code fixes (before the Rover, ideally during 3.33)
 

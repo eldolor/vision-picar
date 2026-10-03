@@ -185,11 +185,15 @@ multiplexer's priorities mirror that order, with a person above every
 autonomous source. A person's **non-zero** D-pad command cancels an active
 nav2 goal inside ROS.
 
-**A stop pauses a goal; it does not end it.** A stop zeroes the wheels and
-the multiplexer's inputs, but nothing cancels the goal, so nav2 keeps
-publishing and the wheels resume once the stop's hold ends. Whether a stop
-must also end a goal is the safety domain's rule to make, and it is open
-there ([safety architecture](../safety/ARCHITECTURE.md), Open questions).
+**A stop ends a goal.** Decided by the user 2026-10-02 as the safety
+domain's rule ([safety architecture](../safety/ARCHITECTURE.md), "Who
+drives"); not yet built. The robot server cancels any active goal after it
+has zeroed the wheels, and never makes the stop wait on ROS; a person
+re-sends a goal to resume. Rejected there: a stop that only pauses the goal
+plus a separate cancel control. **Today a stop still pauses a goal**: it
+zeroes the wheels and the multiplexer's inputs, but nothing cancels the
+goal, so nav2 keeps publishing and the wheels resume once the stop's hold
+ends.
 The driver order itself, including that a nav2 goal is an autonomous driver, is
 owned by the [safety architecture](../safety/ARCHITECTURE.md); this domain
 only mirrors it inside ROS.
@@ -301,10 +305,11 @@ the wheels, one that skips arbitration (3.17).
 |---|---|---|
 | Velocity commands stop arriving inside ROS | The multiplexer's input times out, then the controller's command times out | Wheels at zero within 0.5 s (R4, 3.13) |
 | The container dies | The plugin's posts stop. The robot server's watchdog stops the wheels; after a silence it counts ROS as down | A running mission ends `failed`, naming ROS, within 3 s. A person can drive within 2 s, vetted by the safety layer. Autonomy is refused (G3, measured 2.04 s and 0.36 s) |
+| The bridge dies while the plugin keeps posting. UNCONFIRMED, by reading | ROS still reads as alive, so every verb, a person's included, is refused as ROS-unavailable | Not met. Decided by the user 2026-10-02, not yet built: a failed send to the bridge marks ROS down, so the row above applies. The rule is [safety](../safety/ARCHITECTURE.md)'s ("When ROS dies, only a person drives") |
 | The container comes back | The plugin's posts resume | ROS counts as up again within 5 s of its first post, with no server restart (G3.4) |
 | The robot server restarts | While the server is unreachable the plugin keeps retrying and reports the outage; it does not declare a hardware error for that, because ros2_control would then deactivate it for good. If the restarted server answers "no wheels" before its body reports them, which the car's backend does until the board's first feedback, the plugin takes that as a hardware error (next row) | The ROS chain recovers by itself, but only when the restarted server reports wheels at its first answer (the simulator does). On the car's backend it is not met: see Open questions. UNCONFIRMED, by reading |
 | The robot server reports no wheels | The plugin reports a hardware error, and ROS's control framework deactivates it until the container restarts | It fails loudly in the container's log. Not met: the controllers can still read "active" while commanding nothing, and it does not recover by itself (open questions) |
-| The bridge is unreachable or hangs during a stop | The robot server stops the robot directly, without waiting on ROS | A stop never waits on the container, and the stopped verb's commands still in flight inside ROS cannot undo it. A nav2 goal is not such a command: it resumes after the stop (D6) |
+| The bridge is unreachable or hangs during a stop | The robot server stops the robot directly, without waiting on ROS | A stop never waits on the container, and the stopped verb's commands still in flight inside ROS cannot undo it. A nav2 goal is not such a command: today it resumes after the stop. Not met against D6's decided rule (a stop ends the goal; decided 2026-10-02, not yet built) |
 | The bridge is unreachable or hangs during a verb | The verb waits out its client timeout, then the robot server stops the robot directly and refuses the verb by name | Refused by name, robot stopped. Only the stop avoids the wait |
 | An obstacle near the chassis | The collision monitor slows or stops, then the safety layer re-vets | Stops at or beyond the safety layer's line on every path (R4: at least 19.4 cm; G2: travel-to-contact at least 18 cm after every move, no contact) |
 | A goal nav2 cannot reach | nav2 aborts, and the wheels are at zero | Aborted and stopped within 60 s (R6: 19-24 s) |
@@ -330,8 +335,6 @@ where noted.
   robot server restarts, is then deactivated for good. The runbook orders
   the start-up today; nothing orders a server restart. Whether the plugin
   should treat "no wheels yet" like an unreachable server is open.
-- **A stop under a nav2 goal** pauses the goal rather than ending it (D6).
-  The rule is the safety domain's open question.
 - **Sighting geometry inside ROS.** A route would turn a camera bearing plus
   the lidar's range into a point on the map, composed through the transform
   tree. It is decided in principle (1.1), has no criteria yet, and would

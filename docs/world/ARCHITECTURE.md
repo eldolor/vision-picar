@@ -214,11 +214,12 @@ blocks, is the driver order, which the
 an autonomous driver too"). The world's part is only to say whether a goal
 is in progress.
 
-**A stop pauses a goal; it does not end it.** A stop zeroes the wheels, but
-nothing cancels the goal, so the planner resumes driving afterwards. Whether
-a stop must end a goal is the safety domain's rule, and it is open there
-([safety architecture](../safety/ARCHITECTURE.md), Open questions; see also
-the [ros architecture](../ros/ARCHITECTURE.md), D6).
+**A stop ends a goal.** Decided by the user 2026-10-02 as the safety
+domain's rule ([safety architecture](../safety/ARCHITECTURE.md), "Who
+drives"; see also the [ros architecture](../ros/ARCHITECTURE.md), D6); not
+yet built. **Today a stop still pauses a goal**: it zeroes the wheels, but
+nothing cancels the goal, so the planner resumes driving afterwards. Once
+built, a person re-sends the goal to resume.
 
 **Rejected:**
 

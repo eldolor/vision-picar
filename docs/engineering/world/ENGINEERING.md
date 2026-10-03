@@ -245,8 +245,9 @@ Checklist for a change here:
   `service/slam/README.md` section 4.
 - **A stop does not end a goal.** `POST /stop` cancels nothing, so nav2
   resumes after the stop; the code reference is in the
-  [ros engineering spec](../ros/ENGINEERING.md)'s Known gaps, and the rule is
-  the safety architecture's open question.
+  [ros engineering spec](../ros/ENGINEERING.md)'s Known gaps. The rule (a
+  stop also cancels the goal) was decided by the user 2026-10-02 in the
+  safety architecture, and is not yet built.
 - **Stale factory docstring.** `world/factory.py:14-22` still calls `none`
   "TODAY'S DEFAULT" with "nothing in this project can build a map yet", and
   labels `ros` as N6. `config/robot.yaml` ships `sim`, and `ros` is built

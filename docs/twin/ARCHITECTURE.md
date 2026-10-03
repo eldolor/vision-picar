@@ -233,8 +233,9 @@ which ends it. The robot STOP button is not the same thing: it holds the
 motors but claims no authority and ends nothing. Against a navigation
 goal in particular, a stop today only PAUSES it: the goal keeps planning
 and the wheels resume when the stop's hold ends. Only a non-zero D-pad
-movement cancels a goal. Whether a stop should end a goal is undecided;
-the rule belongs to the [safety domain](../safety/ARCHITECTURE.md).
+movement cancels a goal. The user decided on 2026-10-02 that a stop also
+ends a goal (not yet built); to resume, a person sends the goal again. The
+rule belongs to the [safety domain](../safety/ARCHITECTURE.md).
 Whether a person's goal should rank as a person
 is also open.
 

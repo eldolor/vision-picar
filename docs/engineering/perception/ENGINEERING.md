@@ -276,13 +276,18 @@ commit.
   correction is absent (no intrinsics).
 - **INT8 is untested on the Jetson.**
 - **1.11a is unenforced** and `oov_cold_search_after` has no config key.
+  Enforcing it at arrival was rejected on 2026-10-02 in favour of a cloud
+  identity check (policy).
 - **A local false positive can end a mission `found`.** Arrival reads local
   detection plus lidar and never the cloud. For steering, the only bound is
   the per-frame `match_probability` (0.8). For ending `found`, arrival adds
   `ARRIVAL_FRAMES` (2) consecutive frames, a bearing within
   `ARRIVAL_CENTRE_DEG` (3 degrees), a lidar range within `ARRIVAL_RADIUS_M`
   (0.40 m) and one surface (`ARRIVAL_EDGE_M`) -- all local, none asking the
-  cloud (`brain/arrival.py`). See the policy spec's open question.
+  cloud (`brain/arrival.py`). Decided by the user 2026-10-02, not yet built:
+  the cloud confirms identity on the arrival frame before `found`;
+  mechanism and done-when are in the
+  [policy engineering spec](../policy/ENGINEERING.md), Known gaps.
 - **`control/target_probe.py` reads its peak from `r.best`** (lines 65-69),
   which `PerceptionPipeline.perceive()` sets only on a `detected` result
   (P >= `match_probability`). The "peak" is therefore taken only over frames
