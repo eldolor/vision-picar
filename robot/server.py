@@ -103,7 +103,8 @@ from pydantic import BaseModel
 
 from robot.factory import get_robot, load_config
 from robot.identity import log_identity
-from robot.interface import DRIVER_AUTONOMOUS, DRIVER_UNKNOWN, driver_priority
+from robot.interface import (
+    DRIVER_AUTONOMOUS, DRIVER_UNKNOWN, WheelFeedbackLost, driver_priority)
 
 # The ROS container's driver name on POST /wheels (R2b, R4).
 DRIVER_ROS = "ros"
@@ -612,6 +613,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             return {"executed": True, "result": result, "driver": driver}
         except SafetyViolation as e:
             return refuse("safety_distance", str(e), driver)
+        except WheelFeedbackLost as e:
+            # 3.34: the body cannot measure its wheels, so it will not move
+            # them. Not a veto to steer around: RemoteRobot ends the mission.
+            return refuse("no_feedback", str(e), driver)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -687,6 +692,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 robot.set_wheel_velocity(left, right)
             except NotImplementedError as e:
                 return refuse("unsupported", str(e), driver)
+            except WheelFeedbackLost as e:
+                if driver == DRIVER_ROS:
+                    # The plugin posts at 20 Hz: answered, not logged each time
+                    # (as for a dead bridge above).
+                    return {"executed": False, "reason": "no_feedback", "detail": str(e)}
+                return refuse("no_feedback", str(e), driver)
         if reason:
             refuse("safety_distance", reason, driver)
         return {"executed": True, "driver": driver,
@@ -1082,6 +1093,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                                          else None)},
             "watchdog_timeout_s": watchdog_timeout,
             "wheel_loop": {**state["wheel_loop"], "period_s": WHEEL_LOOP_INTERVAL_S},
+            # 3.34: the motor board's link -- frame age, frames, reboots --
+            # for a body that has one; None otherwise. Description only
+            # (control/health.py): a quiet board is a fact about the car, not
+            # about the release.
+            "motor_board": (robot.feedback_status()
+                            if callable(getattr(robot, "feedback_status", None)) else None),
             # The single source of truth for the safety threshold this
             # server actually enforces -- see web-twin/index.html's
             # renderWatchdog(), which reads this into state.minDistanceCm

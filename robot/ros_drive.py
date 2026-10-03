@@ -48,7 +48,7 @@ from typing import Optional
 
 import httpx
 
-from robot.interface import RobotInterface
+from robot.interface import RobotInterface, WheelFeedbackLost
 
 logger = logging.getLogger("ros_drive")
 
@@ -229,7 +229,10 @@ class RosDriveRobot(RobotInterface):
     def _encoders(self):
         w = self.inner.get_wheel_state()
         if not w.get("usable"):
-            raise RuntimeError("drive: ros needs wheel encoders, and this robot has none")
+            # 3.34: none, or none that are being measured right now -- either
+            # way no verb can be closed on them, and the server says so.
+            raise WheelFeedbackLost("drive: ros needs wheel encoders, and this robot's "
+                                    "are not measured (none, or no fresh feedback)")
         return (w["left"]["position_rad"], w["right"]["position_rad"],
                 w["wheel_radius_m"], w["track_width_m"])
 

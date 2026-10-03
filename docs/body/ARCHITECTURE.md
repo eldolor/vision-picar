@@ -211,6 +211,13 @@ covered only by its own tests.
 | ROS chain dead, or hung, under ROS drive | The wrapper stops the wrapped body first and directly; telling ROS its inputs are zero happens afterwards and cannot hold the stop up. For a short hold after the stop, motion from ROS still in flight from the stopped verb is turned into a zero | A stop never depends on the container, dead or merely not answering |
 | Stop while a nav2 goal is active | Not the body's: the body's stop zeroes the wheels; ending the goal is the robot server's, after the body has stopped | See [safety](../safety/ARCHITECTURE.md)'s failure row and "Who drives" |
 | A wrapper falls behind the contract | The conformance suite fails, for the wrappers it covers | A wrapper reports exactly what it wraps |
+| The car's serial port is missing or not permitted at start (a wrong device name, a user outside the serial group) | The hardware body cannot be built, so the robot server does not start | A misnamed or forbidden port fails loudly at start-up. There is never a body that silently drives nothing |
+| The robot process dies or hangs while the wheels turn | Nothing in the process can act; the motor board's own heartbeat stops the wheels ([motor-board](../motor-board/ARCHITECTURE.md)) | The wheels stop with no host involvement. The board's interval is longer than the robot server's watchdog, so the server normally acts first |
+| The serial link drops mid-run (USB unplugged, a loose cable) | Motion commands are refused, and a stop still returns. The body stops reporting its wheels and says the link failed. The board's heartbeat stops the wheels | The wheels stop within the heartbeat interval, and wheel state and odometry turn unusable within a quarter of a second. The health check names the failed link. Met (`PLAN-ros-alignment.md` 3.34) |
+| Feedback stops while commands still reach the board (feedback switched off, firmware partly hung) | **No fresh feedback, no wheel motion.** Wheel state and odometry turn unusable, the body zeroes a standing command itself, a verb in progress ends, and new motion is refused by name. The rule is the body's, not the safety layer's: answering "unusable" alone would have let commands through unvetted, because the safety layer reads usable wheels as "this body really moves" | A frozen encoder reading counts as "cannot tell", never as a robot standing still; the host stops the wheels within 0.4 s, where only the heartbeat (which never fires while commands arrive) did before. A mission ends `failed`, naming the cause. Met (3.34) |
+| A wheel stalls with feedback live (snagged on a rug or a cable, or pushing on something the scan cannot see) | The closed-loop board drives the motor harder. Only the simulator ends a verb as "stalled"; on the car the verb runs to its time cap and reports that it stopped short. The mission counts that as a move not made | The mission learns that the move fell short, and five in a row end it `blocked`: met (3.34). **Not yet met:** the verb itself still runs to its time cap, about three times its expected duration plus a second, before it ends |
+| Skid-steer turns scrub | The wheels slide sideways on every turn, so the body turns less than its encoders say. Turns are measured with the geometric track, so a direct-mode turn ends short and the odometry heading reads more turn than really happened. The ROS controller has a parameter for the correction, but it is still at its default, so neither path corrects yet | Turns land within the settle band on the real floor. **Unmeasured** until the car arrives: the effective track width is a hardware-day measurement ([motor-board](../motor-board/ARCHITECTURE.md), Open questions) |
+| A wheel slips on a straight (smooth floor, a rug edge) | The encoders count distance the body did not cover. The body cannot see this, because odometry is by contract its own account of itself | No consumer treats odometry as pose. The world's SLAM pose, which corrects for slip, is the "where am I" answer. That is the body/world split above, and it is accepted as designed |
 
 ## Open questions
 
@@ -240,6 +247,15 @@ covered only by its own tests.
   hardware body reports turn since start. Both are clockwise-positive, so
   differences agree and absolute values do not. Owner: the user picks one,
   and the suite pins it (`docs-review/SPEC-REVIEW.md` fix-list 11).
+- **Stall detection on the car.** A verb on the wall clock cannot tell
+  "slow" from "stuck" today, so a snagged wheel is pushed until the verb's
+  time cap. It needs a rule (no encoder progress for some time while
+  commanded) with a threshold measured on the car. The brain already
+  treats the result as a move not made (3.34).
+- **The effective skid-steer track.** Once it is measured on the car, the
+  direct-mode turn verbs, the odometry heading and the ROS controller all
+  need the same correction, or one path will turn differently from the
+  others.
 - **Discrete camera pans.** The pan verbs are three positions. A pan-tilt
   head with a commanded angle may want a contract change; nothing needs it
   yet.

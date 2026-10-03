@@ -67,6 +67,11 @@ _PIVOT_DEG = 90.0
 SCENE_CLEAR_CM = 90.0
 
 
+# 3.34: how a verb can end without having made its move (robot/interface.py
+# carry_out_verb). `clamped` is deliberately absent -- see ConstrainedAgent.step.
+SHORT_MOVES = ("timeout", "stalled")
+
+
 @dataclass
 class StepResult:
     step: int
@@ -242,6 +247,17 @@ class ConstrainedAgent:
                 kwargs["angle"] = int(scene["turn_deg"])
             result = self.safety.check_and_execute(action, **kwargs)
             executed = True
+            # 3.34: a verb that ran out of time, or whose body did not move,
+            # fell short of the move it was asked for -- a wheel snagged on a
+            # rug, on the car. It did not happen, and five in a row is a
+            # robot that is stuck (MissionRunner's `stuck_after`). A verb
+            # `clamped` by the safety layer at the line is not this: it moved
+            # as far as was safe, which is what a guarded move means.
+            short = result.get("stopped_short") if isinstance(result, dict) else None
+            if short in SHORT_MOVES:
+                executed = False
+                result = (f"{action} fell short ({short}): "
+                          f"{result.get('reason') or 'the wheels did not reach the target'}")
         except SafetyViolation as e:
             result = str(e)
             executed = False

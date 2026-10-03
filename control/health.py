@@ -118,6 +118,11 @@ def check_robot(url: str, secret=None, timeout=DEFAULT_TIMEOUT_S) -> dict:
             "authority_holder": body.get("authority_holder"),
             "last_refusal": body.get("last_refusal"),
             "env_label": body.get("env_label") or None,
+            # 3.34: the motor board's link. Description, not a verdict input:
+            # a board goes quiet for reasons no release is to blame for (a
+            # cable, a flat battery), and the body already refuses to drive
+            # without it -- `no_feedback` in last_refusal says so.
+            "motor_board": body.get("motor_board"),
         },
     }
 

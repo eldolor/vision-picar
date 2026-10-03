@@ -93,7 +93,7 @@ required):
 
 | Server | Verdict inputs | Description fields |
 |---|---|---|
-| Robot `GET /health` | `seconds_since_watchdog_poll` against `watchdog_poll_interval_s` x 10 | `mode`, `seconds_since_last_command`, `watchdog_timeout_s`, `driver`, `authority_holder`, `last_refusal`, `env_label`; also on the route: `drive`, `wheel_loop`, `min_distance_cm`, `sim_map`, `refusal_counts`, `identity` |
+| Robot `GET /health` | `seconds_since_watchdog_poll` against `watchdog_poll_interval_s` x 10 | `mode`, `seconds_since_last_command`, `watchdog_timeout_s`, `driver`, `authority_holder`, `last_refusal`, `env_label`; also on the route: `drive`, `wheel_loop`, `motor_board`, `min_distance_cm`, `sim_map`, `refusal_counts`, `identity` |
 | Brain `GET /health` (under `/brain` behind the tunnel) | `mission_running` and `seconds_since_last_tick` against `tick_timeout_s` | `robot_url`, `tick_rate_hz`, `navigate_model_id`, `navigate_prompt_variant`; also on the route, among others: `drills_allowed`, `identity`, `perception_available`, the `perception_*` settings, the `tier_*` settings (`tier_consecutive_frames` and others), `recording_allowed`, `faults` (`control/brain_server.py`'s `health()` is the full list) |
 
 `control.health` output: `{status: ok|unhealthy, failed: [names],

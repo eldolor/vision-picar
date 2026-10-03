@@ -71,6 +71,21 @@ DRIVER_PRIORITY = {
 DRIVER_UNKNOWN = "unknown"
 
 
+class WheelFeedbackLost(RuntimeError):
+    """A body refused to move its wheels because it cannot measure them --
+    PLAN-ros-alignment.md 3.34.
+
+    Raised by a body whose wheel feedback has gone stale (a dropped serial
+    link, a board that hears commands but no longer reports) when asked for
+    a non-zero wheel command or a verb, and by the safety layer when a verb
+    in progress loses its feedback. A zero command and `stop()` are never
+    refused. Not a `SafetyViolation`: the next move will not be fine either,
+    so the robot server answers `no_feedback` and a mission ends `failed`.
+    A `RuntimeError` so callers that already treat a backend fault as one
+    keep doing so.
+    """
+
+
 def driver_priority(name: str) -> int:
     return DRIVER_PRIORITY.get(name, DRIVER_MANUAL)
 
@@ -216,23 +231,35 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
     `advance()` for the sim.
 
     Returns {"done": metres or degrees achieved, "ended": "complete" |
-    "clamped" | "stopped" | "stalled" | "timeout", "reason"}.
+    "clamped" | "stopped" | "stalled" | "timeout" | "no_feedback",
+    "reason"}. `no_feedback` (3.34): the wheels stopped being measured
+    mid-verb, so nothing can say how far it got; `done` is what was measured
+    before that.
     """
     straight = plan["kind"] == "straight"
     left, right, target = plan["left_rad_s"], plan["right_rad_s"], plan["target"]
     w0 = robot.get_wheel_state()
+    if not w0.get("usable"):
+        return {"done": 0.0, "ended": "no_feedback",
+                "reason": "the wheels are not measured -- no verb can be closed on them"}
     radius, track = w0["wheel_radius_m"], w0["track_width_m"]
     v = (left + right) / 2.0 * radius
     rate = abs(v) if straight else math.degrees(abs((right - left) * radius / track))
     stops0 = getattr(robot, "stop_count", 0)
 
+    last = {"done": 0.0}
+
     def achieved() -> float:
         w = robot.get_wheel_state()
+        if not w.get("usable"):
+            raise WheelFeedbackLost("the wheels stopped being measured mid-verb")
         dl = w["left"]["position_rad"] - w0["left"]["position_rad"]
         dr = w["right"]["position_rad"] - w0["right"]["position_rad"]
         if straight:
-            return abs((dl + dr) / 2.0 * radius)
-        return abs(math.degrees((dr - dl) * radius / track))
+            last["done"] = abs((dl + dr) / 2.0 * radius)
+        else:
+            last["done"] = abs(math.degrees((dr - dl) * radius / track))
+        return last["done"]
 
     ended, reason = "timeout", None
     periods = int(math.ceil(target / rate / VERB_PERIOD_S)) * 3 + 20 if rate else 0
@@ -266,9 +293,13 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
                 if abs(achieved() - done) <= 1e-12:
                     ended, reason = "stalled", "the body did not move"
                     break
+    except WheelFeedbackLost as e:
+        ended, reason = "no_feedback", str(e)
     finally:
         if ended != "stopped":
             robot.set_wheel_velocity(0.0, 0.0)
+    if ended == "no_feedback":
+        return {"done": last["done"], "ended": ended, "reason": reason}
     return {"done": achieved(), "ended": ended, "reason": reason}
 
 

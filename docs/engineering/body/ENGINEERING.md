@@ -67,6 +67,42 @@ commands for `STOP_HOLD_S`. Ending the goal is `POST /stop`'s job, after
 the body has stopped ([safety engineering](../safety/ENGINEERING.md),
 "Stop ends a nav2 goal").
 
+### The hardware body's feedback rule
+
+Since 3.34 (`PLAN-ros-alignment.md`), `HardwareRobot` moves its wheels only
+while it is measuring them: a `T:1001` frame arrived within
+`FEEDBACK_STALE_S` (`_fresh()`, on the host's arrival clock). Otherwise:
+
+| Call | Answer |
+|---|---|
+| `get_wheel_state()`, `get_odometry()` | `unusable_wheels()`, `unusable_odometry()` |
+| `set_wheel_velocity()` non-zero | sends a zero, raises `WheelFeedbackLost` |
+| `set_wheel_velocity(0, 0)`, `stop()` | always succeed; `_send()` returns False on `OSError` instead of raising, and records `link_error` |
+| `verb_plan()` for a motion verb | raises `WheelFeedbackLost` |
+| a standing command | zeroed by `_zero_if_stale()`, which the reader thread runs every pass (at most 0.1 s apart); counted in `stale_zeroed` |
+
+This applies before the first frame too. A verb already running when
+feedback stops ends `no_feedback` in `carry_out_verb()`, and
+`SafetyController.check_and_execute()` then stops the body and raises
+`WheelFeedbackLost` (the settle pass returns `no_feedback` the same way).
+`RosDriveRobot._encoders()` raises it when the wrapped body's wheels are
+unusable. The robot server answers `no_feedback` from `/action` and
+`/wheels` (unlogged for driver `ros`), and `/health`'s `motor_board` is
+`feedback_status()`: `fresh`, `age_s`, `stale_after_s`, `frames`,
+`board_reboots`, `stale_zeroed`, `fork_firmware`, `link_error`. It is
+description, not part of `control/health.py`'s verdict.
+
+The rule lives in the body rather than in the safety layer because the
+safety layer reads usable wheels as "this body really moves":
+`_has_wheels()` gates the blind-reverse rule, and `vet_wheel_velocity()`
+passes commands through from a body without wheels. Answering unusable
+without refusing motion would have let a silent board drive unvetted.
+
+**A short move is not a move** (`brain/agent.py`, `SHORT_MOVES`): a result
+whose `stopped_short` is `timeout` or `stalled` reaches the mission as
+`executed: false`, so it counts toward `stuck_after`. `clamped` stays
+executed.
+
 ## Interfaces
 
 ### Methods
@@ -97,7 +133,8 @@ of `cols` points at `-fov/2 + fov*(i+0.5)/cols` degrees.
 
 `carry_out_verb(robot, plan, limit=None)` returns `{"done", "ended",
 "reason"}`, where `ended` is one of `complete`, `clamped`, `stopped`,
-`stalled` or `timeout`. Each period it checks `stop_count`, reads the
+`stalled`, `timeout` or `no_feedback` (the wheels went unusable mid-verb,
+or were at the start). Each period it checks `stop_count`, reads the
 encoders, asks `limit(amount)` (the safety layer's hook), commands the
 wheels, then sleeps (`wall_clock`) or calls `advance()`.
 
@@ -118,7 +155,8 @@ wheels, then sleeps (`wall_clock`) or calls `advance()`.
 `RemoteRobot._action()` reads `{"executed": false, "reason"}` from
 `POST /action`: `preempted` raises `Preempted`; `ros_unavailable` raises
 `RobotTransportError("ros_unavailable: ...")`, which ends a mission
-`failed`; anything else, including no reason (a pre-M4 server), raises
+`failed`; `no_feedback` (3.34) raises `RobotTransportError("no_feedback:
+...")`, likewise; anything else, including no reason (a pre-M4 server), raises
 `SafetyViolation`. HTTP 400 raises `ValueError`; any other status of 400 or
 above raises `RobotTransportError`. Sensing routes catch only `HTTP 404`.
 
@@ -157,6 +195,7 @@ reads**; `SIM_MAP` is the only selector.
 | `DEFAULT_STALL_TIMEOUT_S` | 15.0 s | `sim/teleop_robot.py` | Teleop staleness |
 | Hardware verb turn rate | 1.2 rad/s body | `robot/hardware_robot.py` | Same as `TURN_RATE_RAD_S` in `robot/ros_drive.py` |
 | `HEARTBEAT_MS` | 1500 ms | `robot/hardware_robot.py` | Board-side deadman, above the server's 1.0 s watchdog |
+| `FEEDBACK_STALE_S` | 0.25 s | `robot/hardware_robot.py` | No frame for this long and the wheels are not measured (3.34). Five of the board's 50 ms feedback intervals, below the 1 s watchdog and the 1.5 s heartbeat, so it acts first |
 | `RosDriveRobot` client timeout | 2.0 s | `robot/ros_drive.py` (`timeout_s`) | Every bridge call except the stop's zeroing posts |
 | `STOP_ZERO_TIMEOUT_S` | 0.5 s | `robot/ros_drive.py` | Per zeroing post after a stop; a hung bridge costs the background thread at most 1.5 s and the caller nothing |
 | `STOP_HOLD_S` | 0.6 s | `robot/ros_drive.py` | `twist_mux`'s 0.25 s input timeout plus `diff_drive_controller`'s 0.25 s `cmd_vel_timeout` (they add) plus one 0.05 s plugin period = 0.55 s, with margin: how long the stopped verb's last twist can keep reaching the wheels if the zeros never arrive (see "The ROS drive stop") |
@@ -239,6 +278,7 @@ key means the new body returns something the contract does not allow.
 | `tests/test_config_and_factory.py` (22) | Mode and drive selection, env overrides, errors on an unknown mode |
 | `tests/test_ros_drive.py` (20) | The ROS wrapper's verbs, encoder closure, reads to the wrapped body; the stop: direct and under 0.1 s against a bridge that hangs, all three ROS inputs zeroed in the background, no thread pile-up over 20 stops, a stale ROS command held at zero, and the hold lifted by the next verb or by `STOP_HOLD_S`; a 4xx from the bridge does not mark it down, a 5xx or a transport error does |
 | `tests/test_blind_reverse.py` (5) | `HardwareRobot` with no sensors refuses reverse; a body without wheels still reverses (rule in [safety engineering](../safety/ENGINEERING.md)) |
+| `tests/test_wheel_feedback.py` (15) | 3.34: silence makes wheels and odometry unusable within 0.35 s; the body zeroes a standing command within 0.4 s; motion refused and stop never raising, on a dead port too; a verb losing feedback ends within 0.5 s; clean recovery; `/action` and `/wheels` answer `no_feedback`, `/health` `motor_board` describes the link, `RemoteRobot` raises; a `timeout` or `stalled` FORWARD is not executed and five end a mission `blocked` |
 | `tests/test_health_sim_map.py` (4) | `/health` `sim_map` names the house the factory built, including `mode: hardware` with the fake board |
 | `tests/test_fake_esp32.py`, `tests/test_ros_driver_board.py` | The hardware body against the fake board (detail in [motor-board](../motor-board/ENGINEERING.md)) |
 | `tests/test_continuous_pose.py` | The sim's wheel kinematics; a straight line independent of the track width |
@@ -287,9 +327,5 @@ did not measure.
   (`robot/hardware_robot.py:371`), and the contract suite pins neither.
   Differences agree; absolute headings do not. Pending a decision
   (fix-list 11).
-- **Before the board's first feedback frame**, `HardwareRobot` reports its
-  wheels unusable (`robot/hardware_robot.py:349`), so the safety layer's
-  wheel vet passes commands through and the blind-reverse rule does not
-  apply (see [safety engineering](../safety/ENGINEERING.md), Known gaps).
 - **`RemoteRobot` does not override `set_wheel_velocity()`**, so the brain
   cannot send a standing command over HTTP. Nothing needs it today.

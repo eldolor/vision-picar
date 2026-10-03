@@ -40,6 +40,16 @@ honest "unusable" default.
 * The board's own heartbeat (`T=136`) stops the motors when commands stop,
   independently of this process: set to `HEARTBEAT_MS`, above the robot
   server's watchdog so that one normally acts first.
+
+**No fresh feedback, no wheel motion** (3.34). With no frame for
+`FEEDBACK_STALE_S` -- a dropped link, or a board that hears commands but
+has stopped reporting -- the wheels and odometry answer "unusable", a
+standing command is zeroed by this process, and a non-zero command or a
+verb raises `WheelFeedbackLost`. The rule lives HERE, not in the safety
+layer, because the safety layer reads usable wheels as "this body really
+moves": answering unusable alone would have let commands through unvetted.
+A zero command and `stop()` are never refused, and never raise on a dead
+port -- the board's heartbeat is what stops it then.
 """
 
 import json
@@ -53,7 +63,8 @@ import tty
 from typing import Optional
 
 from robot.interface import (
-    RobotInterface, unusable_grid, unusable_odometry, unusable_scan)
+    RobotInterface, WheelFeedbackLost, unusable_grid, unusable_odometry,
+    unusable_scan, unusable_wheels)
 
 # The Waveshare UGV Rover (PLAN-ros-alignment.md 3.21): the ROS Driver
 # firmware's mainType 2 values, which the sim and the URDF carry too
@@ -73,6 +84,11 @@ EXTRAPOLATE_MAX_S = 0.10
 # robot server's 1 s watchdog on purpose: the server should always act
 # first, and this is what acts if the server itself dies.
 HEARTBEAT_MS = 1500
+# 3.34: no frame for this long and the wheels are no longer measured --
+# five of the board's 50 ms feedback intervals, so bunched and dropped lines
+# never trip it, and below both the robot server's 1 s watchdog and the
+# board's 1.5 s heartbeat, so it is the first of the three to act.
+FEEDBACK_STALE_S = 0.25
 # A verb's speed: 2 moves per second at speed 100, as MockRobot's verbs.
 MOVE_M = 0.30
 MOVES_PER_SECOND_AT_FULL_SPEED = 2.0
@@ -143,6 +159,8 @@ class HardwareRobot(RobotInterface):
         self.fork_frames = 0
         self.frames = 0
         self.board_reboots = 0          # odometer jumps taken as a reboot
+        self.stale_zeroed = 0           # standing commands zeroed on stale feedback
+        self.link_error: Optional[str] = None   # the serial line's last OSError
         self._path_m = 0.0
         self._running = True
         self._buf = b""
@@ -158,20 +176,63 @@ class HardwareRobot(RobotInterface):
 
     # ---------- the wire ----------
 
-    def _send(self, obj: dict):
-        os.write(self._fd, (json.dumps(obj) + "\n").encode())
+    def _send(self, obj: dict) -> bool:
+        """Write one command; False (never an exception) if the line is
+        gone, so a stop on a dead port still returns -- the board's
+        heartbeat stops the wheels then."""
+        try:
+            os.write(self._fd, (json.dumps(obj) + "\n").encode())
+            return True
+        except OSError as e:
+            self.link_error = str(e)
+            return False
+
+    def _fresh(self) -> bool:
+        """Whether the wheels are being measured: a frame arrived within
+        `FEEDBACK_STALE_S`. Arrival time, not the board's clock -- the
+        question is whether the HOST is hearing the board."""
+        return (self._last_frame_at is not None
+                and time.monotonic() - self._last_frame_at <= FEEDBACK_STALE_S)
+
+    def _zero_if_stale(self) -> None:
+        """3.34: the body stops its own wheels when it stops hearing them.
+        Run by the reader thread on every pass (at most 0.1 s apart), so a
+        standing command outlives its feedback by at most that."""
+        with self._lock:
+            if self._cmd == (0.0, 0.0) or self._fresh():
+                return
+            self._cmd = (0.0, 0.0)
+            self.stale_zeroed += 1
+        self._send({"T": 1, "L": 0.0, "R": 0.0})
+
+    def feedback_status(self) -> dict:
+        """The board link, for `/health` -- description, never a verdict
+        (M5): a board can go quiet for reasons no release is to blame for."""
+        with self._lock:
+            age = (None if self._last_frame_at is None
+                   else round(time.monotonic() - self._last_frame_at, 3))
+            return {"fresh": self._fresh(), "age_s": age,
+                    "stale_after_s": FEEDBACK_STALE_S, "frames": self.frames,
+                    "board_reboots": self.board_reboots,
+                    "stale_zeroed": self.stale_zeroed,
+                    "fork_firmware": self._last_ms is not None,
+                    "link_error": self.link_error}
 
     def _reader(self):
         # select() with a timeout rather than a bare blocking read: on macOS,
         # closing a pty while another thread sits in read() on it hangs the
         # close -- the first contract-suite run never got past teardown.
         while self._running:
+            self._zero_if_stale()
             try:
                 ready, _, _ = select.select([self._fd], [], [], 0.1)
                 if not ready:
                     continue
                 chunk = os.read(self._fd, 4096)
-            except (OSError, ValueError):
+            except (OSError, ValueError) as e:
+                # The line is gone. No more frames, so the readings go stale
+                # by themselves; what is left is to say why.
+                self.link_error = str(e)
                 return
             self._buf += chunk
             while b"\n" in self._buf:
@@ -328,12 +389,29 @@ class HardwareRobot(RobotInterface):
     # ---------- wheels ----------
 
     def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
+        moving = bool(left_rad_s or right_rad_s)
         with self._lock:
-            self._cmd = (left_rad_s, right_rad_s)
+            fresh = self._fresh()
+            self._cmd = (left_rad_s, right_rad_s) if fresh or not moving else (0.0, 0.0)
+        if moving and not fresh:
+            self._send({"T": 1, "L": 0.0, "R": 0.0})
+            raise WheelFeedbackLost(self._no_feedback())
         # T=1 in closed-loop mode: wheel surface speeds, m/s.
-        self._send({"T": 1, "L": round(left_rad_s * WHEEL_RADIUS_M, 5),
-                    "R": round(right_rad_s * WHEEL_RADIUS_M, 5)})
+        sent = self._send({"T": 1, "L": round(left_rad_s * WHEEL_RADIUS_M, 5),
+                           "R": round(right_rad_s * WHEEL_RADIUS_M, 5)})
+        if moving and not sent:
+            with self._lock:
+                self._cmd = (0.0, 0.0)
+            raise WheelFeedbackLost(f"the serial line to the motor board failed: {self.link_error}")
         return {"left_rad_s": left_rad_s, "right_rad_s": right_rad_s}
+
+    def _no_feedback(self) -> str:
+        if self._last_frame_at is None:
+            return "no feedback from the motor board yet -- the wheels are not measured"
+        age = time.monotonic() - self._last_frame_at
+        why = f" ({self.link_error})" if self.link_error else ""
+        return (f"no feedback from the motor board for {age:.2f}s "
+                f"(> {FEEDBACK_STALE_S}s){why} -- the wheels are not measured")
 
     def advance(self, dt: float) -> None:
         # The board integrates its own motors; the robot server's wheel loop
@@ -346,10 +424,11 @@ class HardwareRobot(RobotInterface):
     def get_wheel_state(self) -> dict:
         per_rad = COUNTS_PER_REV / (2 * math.pi)
         with self._lock:
-            usable = self._last_frame_at is not None
+            if not self._fresh():
+                return unusable_wheels()
             pos = [m / WHEEL_RADIUS_M for m in self._travel_now_m()]
             cmd = self._cmd
-        return {"usable": usable,
+        return {"usable": True,
                 "left": {"position_rad": pos[0], "velocity_rad_s": cmd[0],
                          "counts": int(round(pos[0] * per_rad))},
                 "right": {"position_rad": pos[1], "velocity_rad_s": cmd[1],
@@ -359,7 +438,7 @@ class HardwareRobot(RobotInterface):
 
     def get_odometry(self) -> dict:
         with self._lock:
-            if self._last_frame_at is None:
+            if not self._fresh():
                 return unusable_odometry()
             left, right = (m / WHEEL_RADIUS_M for m in self._travel_now_m())
             # Encoders know how far the body has TURNED, not which way is
@@ -398,6 +477,11 @@ class HardwareRobot(RobotInterface):
         odometers -- on stock, the estimate at rest is itself off by ~1.5
         deg, so a correction chases noise and costs ~0.6 s a turn."""
         settle = self._last_ms is not None
+        if action in ("FORWARD", "REVERSE", "LEFT", "RIGHT"):
+            with self._lock:
+                fresh = self._fresh()
+            if not fresh:
+                raise WheelFeedbackLost(self._no_feedback())
         if action in ("FORWARD", "REVERSE"):
             speed = max(0, min(100, speed))
             moves = (speed / 100.0) * MOVES_PER_SECOND_AT_FULL_SPEED * duration
@@ -465,7 +549,7 @@ class HardwareRobot(RobotInterface):
 
     def stop(self) -> dict:
         self.stop_count += 1
-        self.set_wheel_velocity(0.0, 0.0)
+        self.set_wheel_velocity(0.0, 0.0)          # never raises: see _send()
         return {"action": "stop"}
 
     # ---------- everything the board is not ----------

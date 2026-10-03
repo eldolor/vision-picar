@@ -95,7 +95,9 @@ Goal routes answer **501** on a world without `set_goal` (anything but
 `verbs_through_ros`, `wheel_posts_from_ros`, `ros_up`, `bridge_up`,
 `ros_post_age_s`), `watchdog_timeout_s`,
 `wheel_loop` (`moving_ticks`, `late_ticks`, `max_dt_s`, `period_s`),
-`min_distance_cm`, `mode`, `sim_map`, `identity`,
+`motor_board` (the body's `feedback_status()`, or null for a body without
+a board: `fresh`, `age_s`, `stale_after_s`, `frames`, `board_reboots`,
+`stale_zeroed`, `fork_firmware`, `link_error`; 3.34), `min_distance_cm`, `mode`, `sim_map`, `identity`,
 `seconds_since_watchdog_poll`, `watchdog_poll_interval_s`, `driver`,
 `authority_holder`, `refusal_counts`, `last_refusal` (with `seconds_ago`),
 `env_label`. `sim_map` is `robot.world.map_name`, the name
@@ -184,6 +186,7 @@ session may already own ports 8000/8090; use 8100/8101/8190 with a separate
 | `/health` `sim_map` null where a live suite expects a house | No sim house behind the body. The live ROS suites skip on it; a skip is not a pass |
 | `seconds_since_watchdog_poll` growing | The watchdog task is dead; restart the server |
 | `wheel_loop.late_ticks` > 0 | The event loop was starved while the wheels turned |
+| `/action` or `/wheels` refused `no_feedback`; `motor_board.fresh` false | The motor board has not reported for `stale_after_s`. `link_error` set: the serial line is gone. Null, with `age_s` growing: the board hears commands and no longer reports. Nothing moves until frames return |
 
 ## Verification
 

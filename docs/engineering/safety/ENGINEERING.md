@@ -108,8 +108,8 @@ brain was deleted 2026-09-25).
 Allowed `/action` and non-zero direct `/wheels` set `driver`, `driver_at`
 and `last_command_at` as soon as `arbitrate()` passes, before the command
 runs. The claim stands even if the command is then refused or fails:
-`ros_unavailable`, `safety_distance`, a 400 for an unknown action, or
-`unsupported` from `/wheels` on a body without motors. `/stop` sets only `last_command_at`. A zero direct
+`ros_unavailable`, `safety_distance`, `no_feedback`, a 400 for an unknown
+action, or `unsupported` from `/wheels` on a body without motors. `/stop` sets only `last_command_at`. A zero direct
 `/wheels` is never arbitrated and sets none of the three: from the holder
 it zeroes the wheels, from anyone else it returns `ignored: true` (direct
 drive only). Under ROS drive, `/wheels` is accepted only from `ros`, is not
@@ -168,8 +168,10 @@ does not wait on the bridge ([body engineering](../body/ENGINEERING.md)).
 **Refusal reasons** (body `{"executed": false, "reason", "detail"}`,
 counted in `/health` `refusal_counts`, last one in `last_refusal`):
 `safety_distance`, `preempted`, `ros_unavailable`, `not_the_actuator`,
-`unsupported`, and `watchdog` (recorded in `last_refusal` only, once per
-silence).
+`unsupported`, `no_feedback` (3.34: the body's wheel feedback is stale, so
+it refuses to move them; from driver `ros` on `/wheels` it is answered
+unlogged, as `ros_unavailable` is), and `watchdog` (recorded in
+`last_refusal` only, once per silence).
 
 ## Parameters and configuration
 
@@ -238,6 +240,11 @@ gives `blocked`, `veto_cm`, `veto_source` and `clearance_cm`.
 - `safety_distance` with `veto_source` `path_not_observed`: the camera is
   panned and there is no scan. Send `LOOK_CENTER`.
 - `ros_unavailable`: the container is down. A person can still drive.
+- `no_feedback`: the motor board has not reported for
+  `FEEDBACK_STALE_S`. Read `/health` `motor_board`: `link_error` set means
+  the serial line is gone (cable, USB, udev); `link_error` null with a
+  growing `age_s` means the board is heard-but-silent (feedback switched
+  off, firmware hung). Nothing moves until frames return.
 - `safety_distance` with `astern_not_observed`: a REVERSE (or a negative
   `/wheels`, or a settle pass astern) on a body with wheels and no usable
   scan. Expected on the car until its lidar driver lands; turn instead.

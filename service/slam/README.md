@@ -111,17 +111,18 @@ reads it and refuses to start without it).
 
 **Order matters: start the robot server, wait for `GET /wheels` to report
 `usable: true`, then start the container.** The plugin's `on_activate()`
-reads `/wheels` once, and a `usable: false` answer is a hardware error that
-makes ros2_control deactivate the plugin for good (until the container
+reads `/wheels` once, and a `usable: false` answer there is a hardware error
+that makes ros2_control deactivate the plugin for good (until the container
 restarts). An *unreachable* server is retried, and `MockRobot` has wheels at
 its first answer, so in the simulator a container started before the server
 is fine. `HardwareRobot` (the car, or `SIM_MOTOR_BOARD=fake`) answers
 `usable: false` until the board's first `T:1001` frame, so a container that
 is already retrying when it starts can read "no wheels" first and be
 deactivated: there, start the container only after step 2b, never before
-the server. **The same holds for a restart:** on `HardwareRobot`, restart
-the container after any robot server restart (UNCONFIRMED, by reading
-`picar_sim_hardware.cpp`'s `read()`).
+the server. **Once active, "no wheels" is retried, not fatal** (since
+`PLAN-ros-alignment.md` 3.34): a robot server restarted under the container,
+or a motor board that goes quiet for a moment, is ridden out the same way
+as an unreachable server.
 
 ```bash
 # 1. Build (long the first time: tf2 and slam_toolbox compile from source)
@@ -249,9 +250,9 @@ visible, including the brain's; nothing can be published.
 | You see | It means |
 |---|---|
 | Container log: `POST /wheels to ... failed (N in a row) -- still trying` | The robot server is down, unreachable (Linux without host networking), or rejecting the secret (401) -- check `APP_SHARED_SECRET` was exported before `docker run`. The wheels are stopped meanwhile by the robot server's watchdog. |
-| Container log: `the robot server reports no wheels (usable: false)` | `GET /wheels` answered `usable: false`. `/wheels` answers in either drive mode and `MockRobot` always has wheels, so this is NOT a sign of `drive: direct` (check `drive.mode` in the robot server's `/health` for that). The real causes: a body with no wheels (teleop or replay), or `HardwareRobot` before the board's first `T:1001` frame -- the container was started too early, or the robot server restarted under it (see "Order matters" in section 3). Either way the plugin is now deactivated for good: fix the cause, then `docker rm -f picar-ros` and run step 3 again. The two timings look different; next two rows. |
+| Container log: `the robot server reports no wheels (usable: false)` | `GET /wheels` answered `usable: false`. `/wheels` answers in either drive mode and `MockRobot` always has wheels, so this is NOT a sign of `drive: direct` (check `drive.mode` in the robot server's `/health` for that). The real causes: a body with no wheels (teleop or replay), or `HardwareRobot` before the board's first `T:1001` frame -- the container was started too early (see "Order matters" in section 3). The plugin is then not activated: fix the cause, then `docker rm -f picar-ros` and run step 3 again. Mid-run the log reads `GET /wheels (no fresh wheel feedback) ... still trying` instead, and the plugin recovers by itself when the board reports again (3.34). |
 | `odom_age_s: null` from the start; `ros2 control list_hardware_components` does not show `picar` active; the robot server's `drive.ros_up` never turns true | Deactivated at START-UP: `on_activate()` read "no wheels", so the controllers never came up. |
-| Controllers read `active` in `list_controllers`, but nothing moves; the robot server's `drive.ros_up` turns `false` while the container is up, with `drive.ros_post_age_s` climbing past 0.5 (the plugin's posts have stopped), so autonomy is refused `ros_unavailable` | Deactivated MID-RUN: a `read()` returned ERROR (typically a robot server restarted on `HardwareRobot`). Only a container restart recovers it. UNCONFIRMED, by reading. |
+| Controllers read `active` in `list_controllers`, but nothing moves; the robot server's `drive.ros_up` turns `false` while the container is up, with `drive.ros_post_age_s` climbing past 0.5 (the plugin's posts have stopped), so autonomy is refused `ros_unavailable` | Deactivated MID-RUN. Since 3.34 `read()` no longer returns ERROR on "no wheels", so this should not happen; an image built before 3.34 does it on a robot server restart under `HardwareRobot`. Rebuild the image; a container restart recovers it meanwhile. |
 | The robot moves again after Stop, during a nav2 goal | Not expected since 2026-10-03: a person's stop holds nav2's wheel commands at zero until nav2 reports the goal over. Check who stopped: the brain's stop (`x-driver: brain`) spares a goal by design. Otherwise look for the robot server's log line `stop: could not end the nav2 goal yet, retrying` (the bridge is not answering -- the hold stays on) and for `GET /world/goal` still reading `active`. |
 | `drive.ros_up` is `false` with `drive.bridge_up` `false` and `drive.ros_post_age_s` small | The BRIDGE failed (a refused connection, a timeout or a 5xx on a send) while the plugin still posts. A person drives on the direct fallback; autonomy is refused, and the plugin's `/wheels` posts are answered `ros_unavailable` and move nothing. It clears by itself at the bridge's first answer to the server's background `/health` probe. Check `curl localhost:8090/health`; restart the container only if that fails. |
 | Robot server refuses `/action` with reason `ros_unavailable` | `drive: ros` and the bridge did not accept the twist. Usually the container is not up, or the bridge is down (row above) -- but ALSO what you get when the `/action` had no `x-driver` header or came from a teleop driver: the bridge maps only `twin-dpad`, `brain` and `ros` onto twist_mux inputs and answers 400 `unknown driver` (a known gap). That 400 does not mark ROS down: `drive.bridge_up` stays `true`. Check `curl localhost:8090/health` first. |

@@ -245,29 +245,20 @@ Checklist for a change:
   2026-10-02 `/health`'s `sim_map` names the house actually built, under
   `ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake` too, so the chain and nav2
   suites run there instead of skipping. A skip is still not a pass.
-- **The plugin deactivates for good on "no wheels".**
-  `service/slam/src/picar_sim_hardware/src/picar_sim_hardware.cpp:90-94` (`on_activate()` through `read()`) and
-  `:157-160` (`read()` returns ERROR on `usable: false`). `HardwareRobot`
-  answers `usable: false` until its first frame
-  (`robot/hardware_robot.py:349`). Two symptoms, by when it happens:
-  - **At start-up** (the container's `on_activate()` reads "no wheels"):
-    activation fails, so the controllers never come up.
-    `ros2 control list_hardware_components` does not show `picar` active,
-    and the bridge's `odom_age_s` stays `null`. The README's start-up order
-    avoids this.
-  - **Mid-run** (a robot server restarted under a running container
-    answers "no wheels" before the board's first frame): `read()` returns
-    ERROR and ros2_control deactivates the component. The controllers can
-    still read active in `list_controllers` while commanding nothing; the
-    plugin's posts stop, so the robot server's `drive.ros_up` turns false
-    with the container still up. Nothing recovers it but a container
-    restart. Nothing orders around
-    this one: on `HardwareRobot`, restart the container after any robot
-    server restart. UNCONFIRMED, by reading; the simulator never shows it,
-    because `MockRobot` reports wheels at its first answer.
-
-  Not fixed: the plugin could treat `usable: false` like an unreachable
-  server.
+- **"No wheels" deactivates the plugin only at activation** (since 3.34).
+  `on_activate()` in `service/slam/src/picar_sim_hardware/src/picar_sim_hardware.cpp`
+  reads `GET /wheels` itself and refuses to come up on `usable: false` (a
+  phone walk or a replay has no wheels to drive). Once active, `read()`
+  treats `usable: false` like an unreachable server: `note_failure()`,
+  velocities zeroed, positions held, `OK`, keep trying. Before 3.34 it
+  returned ERROR and ros2_control deactivated the component for good, so a
+  robot server restarted under a running container on `HardwareRobot`, or
+  (from 3.34 on) any quarter second without board feedback, would have left
+  the chain dead. Measured against a stub robot server flipping
+  `usable: false` for 2 s: the previous image went `unconfigured` and posted
+  nothing afterwards; this one stayed `active` and resumed at 20 Hz (61
+  posts in 3 s). Starting the container before the board's first frame
+  still fails activation, so the README's start-up order stands.
 - `picar_sim_hardware` has no unit tests of its own.
 - **Stale header comment.** `picar_sim_hardware.hpp`'s header still says a
   `picar_hardware` (R7) "is the same class against the ESP32". 3.16 decided

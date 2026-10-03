@@ -3455,6 +3455,114 @@ Oct 30.
   its one file, `sd-blob.img`, is 24 GB). 6.2.2 is an `apt upgrade` from
   there, optional.
 
+### 3.34 A body that cannot measure its wheels does not drive them, and a move that fell short is not a move (2026-10-03): criteria, written before building
+
+**Found 2026-10-03** while adding the car body's failure modes to
+`docs/body/ARCHITECTURE.md`; asked for by the user ("go ahead", on gaps 1
+and 3 of the four that write-up found).
+
+**Gap 1 -- stale feedback reads as a stationary robot.** `HardwareRobot`
+reports its wheels and odometry `usable` whenever ANY frame has ever
+arrived. If the link drops or the board goes quiet, both freeze and still
+claim to be measurements. Today's consequences: a verb closed on the
+encoders sees no progress and drives on until its period cap (about 3x its
+expected time plus 1 s); the wheel loop keeps re-sending the standing
+command, which feeds the board's heartbeat; and a lost port makes
+`stop()` raise. Only the board's 1.5 s heartbeat stops the wheels, and only
+on a dropped link, not on a board that hears commands but stops reporting.
+
+Simply answering `unusable` is not enough, and would be unsafe: the safety
+layer reads usable wheels as "this body really moves" (the blind-reverse
+rule), and passes wheel commands unvetted from a body without them. So the
+rule is enforced AT THE BODY: **no fresh feedback, no wheel motion.**
+
+**Gap 3 -- a move that fell short looks complete.** A wall-clock verb that
+ends `timeout` (or `stalled`) returns `stopped_short` in its result, and
+nothing in `brain/` or `control/` reads it, so a FORWARD stuck on a rug is
+recorded as executed and never counts toward `stuck_after`.
+
+**Acceptance criteria** (against `sim/fake_esp32.py`; the feedback window
+`FEEDBACK_STALE_S` is 0.25 s, five of the board's 50 ms feedback intervals,
+and below both the server's 1 s watchdog and the board's 1.5 s heartbeat):
+
+1. **Silence is unusable.** With the board still accepting commands but no
+   longer reporting, `get_wheel_state()` and `get_odometry()` answer
+   `usable: false` within 0.35 s of the last frame.
+2. **The host stops the wheels.** A standing non-zero command when feedback
+   goes stale is zeroed by the body itself: the fake board's setpoint is
+   zero within 0.4 s of the last frame (the heartbeat alone takes 1.5 s,
+   and never fires while commands keep arriving).
+3. **Motion is refused while stale; a stop never is.** A non-zero
+   `set_wheel_velocity()` raises `WheelFeedbackLost` and sends zero; a zero
+   command, and `stop()`, always succeed, including after the serial port
+   has gone (they used to raise `OSError`).
+4. **A verb in progress ends promptly.** A FORWARD whose feedback stops
+   mid-move ends within 0.5 s of the last frame with the wheels zeroed,
+   against several seconds before.
+5. **Recovery is clean.** When frames resume, readings are usable again,
+   odometry has moved by no more than one odometer unit across the gap,
+   and motion is accepted.
+6. **The robot server names it.** Under `mode: hardware`, `/action` and
+   `/wheels` answer `executed: false, reason: "no_feedback"` while stale
+   (not HTTP 500); `RemoteRobot` raises a transport error, so a mission
+   ends `failed` naming `no_feedback`; `/health` describes the board link
+   (frame age, frames, reboots) without making it a verdict (M5).
+7. **A short move is not a move.** A verb that ends `timeout` or `stalled`
+   reaches the agent as `executed: false` with the reason, so five stalled
+   FORWARDs end a mission `blocked`. A verb that ends `clamped` (the
+   safety layer slowing it to the line) stays executed, as today.
+8. **No regression.** The pinned frontier trace and every sweep-backed test
+   pass unchanged; the full suite passes.
+
+Each of 1-7 is confirmed red against the code before the change.
+
+**Results (2026-10-03).** Built as criteria 1-7 describe;
+`tests/test_wheel_feedback.py` (15 tests) was run first against the old
+code with only the new names added: 13 red, and the failures were the
+behaviour this entry describes (readings frozen and `usable`; `stop()`
+raising `OSError` on a dead port; a verb with no feedback still running
+after 5 s; five stalled FORWARDs ending `max_steps`). The two that passed
+were the window's bounds and "`clamped` stays executed", which already
+held. Measured over 20 runs each against the fake board:
+
+| Criterion | Bar | Median | Worst |
+|---|---|---|---|
+| 1. readings unusable after the last frame | 0.35 s | 0.252 s | 0.253 s |
+| 2. standing command zeroed by the body | 0.4 s | 0.320 s | 0.330 s |
+| 4. a verb in progress ends | 0.5 s | 0.290 s | 0.307 s |
+
+Criterion 4's verb (two moves at speed 30, 3.3 s expected) had a cap of
+about 11 s before. Criteria 3, 5, 6 and 7 pass as stated. Five runs of the
+file back to back: 15/15 each.
+
+**Where the rule lives, and why.** In `HardwareRobot`, not
+`robot/safety.py`: the safety layer reads usable wheels as "this body
+really moves" (the blind-reverse rule) and passes wheel commands unvetted
+from a body without them, so a body that only answered "unusable" would
+have driven unvetted. The shared verb loop gained `ended: "no_feedback"`;
+the safety layer turns it into `WheelFeedbackLost` after stopping the body,
+and so does the settle pass. The rule also closes the "before the first
+frame" gap the body and safety specs carried: commands were vetted against
+no wheels then, and are refused now.
+
+**A third consumer, found while building: the ROS plugin.**
+`picar_sim_hardware`'s `read()` returned ERROR on `usable: false`, and
+ros2_control deactivates a component for good on ERROR -- so a quarter
+second of silence from the board would have killed the car's ROS chain
+until a container restart. `read()` now treats it as an unreachable server
+(retry, zero velocity, hold position); `on_activate()` checks for wheels
+itself, so a body without any still fails at start-up. Measured against a
+stub robot server that flipped `usable: false` for 2 s: the previous image
+went `unconfigured` and posted nothing for the 3 s after; the new one
+stayed `active` and posted 61 times. With the stub answering "no wheels"
+from the start, the new plugin read once, posted nothing and did not
+activate.
+
+**Not in scope, still open:** stall detection on the wall clock (gap 2: a
+snagged wheel is still pushed until the verb's cap, though the mission now
+counts it as a move not made) and the skid-steer effective track (gap 4).
+Both need numbers from the car.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.

@@ -404,6 +404,7 @@ correct responses.
 | `ros_unavailable` | robot server, `drive: ros` | the bridge did not accept the twist -- container down, or a driver the bridge does not map; the robot was stopped directly |
 | `not_the_actuator` | robot server, `/wheels` under `drive: ros` | only `ros` writes the wheels; drive through `/action` |
 | `unsupported` | robot server | this backend has no motors (or this world takes no goals); not a transient |
+| `no_feedback` | robot server | the body cannot measure its wheels (a lost link, a silent motor board) and will not move them; `RemoteRobot` raises a transport error and the mission ends `failed` (`PLAN-ros-alignment.md` 3.34) |
 
 *(Corrected 2026-09-27: `ros_unavailable`, `not_the_actuator` and
 `unsupported` were added by R2b/R4 and were missing here. This table also

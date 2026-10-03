@@ -90,6 +90,22 @@ std::vector<hardware_interface::CommandInterface> PicarSimHardware::export_comma
 CallbackReturn PicarSimHardware::on_activate(const rclcpp_lifecycle::State &)
 {
   cmd_[0] = cmd_[1] = 0.0;
+  // A body that answers "no wheels" at activation has none to drive (a phone
+  // walk, a replay): refuse to come up. An unreachable server is not that --
+  // read() keeps trying -- and neither is a body whose wheels are only
+  // momentarily unmeasured once running (3.34; see read()).
+  std::string out;
+  if (request("GET", "/wheels", "", out)) {
+    try {
+      if (!json::parse(out).value("usable", false)) {
+        RCLCPP_ERROR(logger_, "the robot server reports no wheels (usable: false) -- "
+                     "not activating");
+        return CallbackReturn::ERROR;
+      }
+    } catch (const std::exception &) {
+      // A bad reply is read()'s to report; it keeps trying.
+    }
+  }
   return read(rclcpp::Time(), rclcpp::Duration(0, 0)) == return_type::OK ?
          CallbackReturn::SUCCESS : CallbackReturn::ERROR;
 }
@@ -155,9 +171,14 @@ return_type PicarSimHardware::read(const rclcpp::Time &, const rclcpp::Duration 
   try {
     const json w = json::parse(out);
     if (!w.value("usable", false)) {
-      RCLCPP_ERROR_THROTTLE(logger_, *rclcpp::Clock::make_shared(), 5000,
-                            "the robot server reports no wheels (usable: false)");
-      return return_type::ERROR;
+      // 3.34: mid-run this is a body that has stopped HEARING its wheels (a
+      // dropped serial link, a silent motor board) -- it refuses to move
+      // them meanwhile. Returning ERROR would make ros2_control deactivate
+      // this component for good, so the chain would stay dead after the
+      // board recovered. Same answer as an unreachable server: hold the
+      // position, report no velocity, keep trying.
+      note_failure("GET /wheels (no fresh wheel feedback)");
+      return return_type::OK;
     }
     for (size_t i = 0; i < 2; ++i) {
       // Joint i is whichever the URDF declared; match it by side.

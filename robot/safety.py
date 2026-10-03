@@ -36,6 +36,7 @@ from robot.interface import (
     DEPTH_COLS_DEFAULT,
     RobotInterface,
     VERB_PERIOD_S,
+    WheelFeedbackLost,
     carry_out_verb,
     ZONE_RANGE,
     ZONE_UNUSABLE,
@@ -758,6 +759,12 @@ class SafetyController:
         period -- 3.22. Returns the backend's result; raises SafetyViolation
         if the verb achieved (almost) nothing because the way was shut."""
         outcome = self.run_verb(plan)
+        if outcome["ended"] == "no_feedback":
+            # 3.34: not a veto -- the next move cannot be closed either.
+            self.robot.stop()
+            msg = f"{action} ended: {outcome['reason']}"
+            logger.warning(msg)
+            raise WheelFeedbackLost(msg)
         straight = plan["kind"] == "straight"
         done, least = outcome["done"], (VERB_MIN_MOVE_M if straight else VERB_MIN_TURN_DEG)
         if outcome["ended"] == "clamped" and done < least:
@@ -830,6 +837,9 @@ class SafetyController:
         straight = plan["kind"] == "straight"
         tol = SETTLE_TOLERANCE_M if straight else SETTLE_TOLERANCE_DEG
         w = self.robot.get_wheel_state()
+        if not w.get("usable"):
+            return {"done": outcome["done"], "ended": "no_feedback",
+                    "reason": "the wheels stopped being measured before settling"}
         r, track = w["wheel_radius_m"], w["track_width_m"]
         wheel = (SETTLE_LINEAR_M_S / r if straight
                  else SETTLE_TURN_RAD_S * track / 2.0 / r)
@@ -839,6 +849,10 @@ class SafetyController:
             if getattr(self.robot, "stop_count", 0) != stops0:
                 ended, reason = "stopped", "stop() was called while settling"
                 break
+            if not self.robot.get_wheel_state().get("usable"):
+                # 3.34: nothing left to settle against.
+                return {"done": outcome["done"], "ended": "no_feedback",
+                        "reason": "the wheels stopped being measured while settling"}
             err = plan["target"] - self._progress(plan, start)
             if abs(err) <= tol:
                 break
@@ -852,9 +866,14 @@ class SafetyController:
             if fix["ended"] == "stopped":
                 ended, reason = "stopped", fix["reason"]
                 break
+            if fix["ended"] == "no_feedback":
+                return {"done": outcome["done"], "ended": "no_feedback", "reason": fix["reason"]}
             if fix["ended"] == "clamped":
                 reason = f"settle refused: {fix['reason']}"
                 break
+        if not self.robot.get_wheel_state().get("usable"):
+            return {"done": outcome["done"], "ended": "no_feedback",
+                    "reason": "the wheels stopped being measured while settling"}
         return {"done": self._progress(plan, start), "ended": ended, "reason": reason}
 
     def _dispatch(self, action: str, **kwargs) -> dict:
