@@ -665,127 +665,121 @@ vision-picar/
 ├── .gitignore
 ├── README.md                  full build-plan-referenced documentation
 ├── CLAUDE.md                  this file -- session orientation
-├── docs/                       the specifications (decision 0001) -- start at
-│                              docs/ARCHITECTURE.md (the whole system on one
-│                              page), then docs/README.md. <domain>/ARCHITECTURE.md is the
-│                              what and why, engineering/<domain>/ENGINEERING.md
-│                              the how; decisions/ the records; templates/ for
-│                              new ones; SPEC_REVIEW_PROMPT.md the review.
-│                              tools/spec_lint.py lints them in the suite
-├── docs/archive/CLAUDE-history-2026-09.md
-│                              the dated narrative moved out of this file
-│                              2026-09-28, verbatim (P-series, Hailo/Jetson
-│                              reversals, Stage 0 findings on the deleted corpus)
-├── docs-review/REPORT.md       the 2026-09-27 documentation review: scores,
-│                              verified mismatches, and the fix list
-├── FEATURES.md                 every UI feature (all tabs), how each
-│                               one works end-to-end, and the AWS topology
-│                               it runs against -- start here for "how does
-│                               X work" questions about the app itself
+├── docs/                      everything written that is not code. Start at
+│   │                          docs/ARCHITECTURE.md (the whole system on one
+│   │                          page), then docs/README.md (the index). Files
+│   │                          are cited by NAME across the repo and every
+│   │                          name is unique, so search for the name
+│   ├── ARCHITECTURE.md        the system overview: five processes, four walls
+│   ├── <domain>/ARCHITECTURE.md   the specifications (decision 0001): the
+│   ├── engineering/<domain>/      what and why, and the how. decisions/ the
+│   │                              records, templates/ for new ones,
+│   │                              SPEC_REVIEW_PROMPT.md the review;
+│   │                              tools/spec_lint.py lints them in the suite
+│   ├── archive/CLAUDE-history-2026-09.md
+│   │                          the dated narrative moved out of this file
+│   │                          2026-09-28, verbatim (P-series, Hailo/Jetson
+│   │                          reversals, Stage 0 findings on the deleted corpus)
+│   │
+│   ├── guides/                explainers (moved from the repo root 2026-10-03)
+│   │   ├── FEATURES.md        every UI feature (all tabs), how each one works
+│   │   │                       end-to-end, and the AWS topology it runs
+│   │   │                       against -- start here for "how does X work"
+│   │   │                       questions about the app itself (+ .html copy)
+│   │   ├── INTRODUCTION.md    project introduction (+ a hand-built .html copy,
+│   │   │                       out of sync)
+│   │   └── AGENT-HARNESS.md   how control/ works: the tick, the seams, the
+│   │                           failsafes, the invariants, and where the LLM
+│   │                           policy plugs in (BUILT -- read before editing
+│   │                           control/)
+│   │
+│   ├── plans/                 the dated plans: criteria first, then results
+│   │   ├── PLAN-ros-alignment.md      **the governing plan since 2026-09-25**
+│   │   │                       -- ROS 2 adopted properly (nav2,
+│   │   │                       slam_toolbox, ros2_control, twist_mux),
+│   │   │                       R0-R7 and 3.17-3.33 built on data.
+│   │   │                       Supersedes parts of PLAN-mapping.md
+│   │   ├── PLAN-onboard-perception.md  what runs on the car itself -- and the
+│   │   │                       hardware chain that question turned out to be
+│   │   │                       hiding. Supersedes parts of
+│   │   │                       HARDWARE-READINESS.md and retires most of S6;
+│   │   │                       its section 5 says exactly what
+│   │   ├── PLAN-mapping.md    map the house while searching it. N1 BUILT; N6
+│   │   │                       became R5+R6; superseded in part by
+│   │   │                       PLAN-ros-alignment.md. ROS 2 enters as ONE
+│   │   │                       service behind an HTTP wall ((b+)), never
+│   │   │                       near brain/ or RobotInterface. Its section 2
+│   │   │                       lists what is already decided
+│   │   ├── PLAN-sim-hardening.md  how the sim diverges from hardware, phased
+│   │   │                       fixes, definition of done before a hardware
+│   │   │                       swap (S1-S5 BUILT, S6 RETIRED except its
+│   │   │                       continuous-pose half, built as R0; S7 PROPOSED)
+│   │   ├── PLAN-microduck-transplants.md  twelve designs borrowed from Pollen
+│   │   │                       Robotics' Microduck -- a depth sensor, refusal
+│   │   │                       reasons, driver arbitration, a health verdict
+│   │   │                       and a rollback. M1-M5 BUILT, M6-M12 proposed
+│   │   ├── PLAN-brain-relocation.md  moving the autonomy loop onto the car
+│   │   │                       (B0-B4 BUILT, B5 needs the board)
+│   │   ├── PLAN-teleop-robot.md  a live phone walk driving the real
+│   │   │                       MissionRunner mission, closed loop -- T1-T4
+│   │   │                       (BUILT); see the T1-T4 status-table row above
+│   │   ├── PLAN-guarded-verbs.md  direct-mode moves re-checked while they
+│   │   │                       drive (BUILT 2026-09-28; criteria and
+│   │   │                       results in PLAN-ros-alignment.md 3.22)
+│   │   ├── PLAN-ar-guidance.md  the Guide tab: spec, redesign, changelog (BUILT)
+│   │   └── PLAN-aws-cost-redesign.md  the ~$159/month of fixed AWS cost and
+│   │                           the rebuild that removed ~$110 of it. ALL
+│   │                           DONE: walks on S3, VPC and ECS torn down
+│   │                           2026-09-05, serverless the only deployment.
+│   │                           Read section 1 before quoting any cost number
+│   │                           and section 6 before trusting the design --
+│   │                           its central assumption is still untested
+│   │
+│   ├── hardware/              what to buy, and what the real robot changes.
+│   │   │                       JETSON-BOM.md is the one to read
+│   │   ├── JETSON-BOM.md      **what to buy** (recommended build,
+│   │   │                       2026-09-17), doubling as a brief for a
+│   │   │                       ready-made-kit search; section 9 is the robot
+│   │   │                       base record. Carries the constraints that
+│   │   │                       disqualify most kits -- 3S power above the
+│   │   │                       Jetson's 9V floor, differential drive,
+│   │   │                       quadrature encoders, a serial motor controller
+│   │   ├── HARDWARE-BOM.md    the Jetson BOM as PRICED, 2026-09-17 -- exact
+│   │   │                       part numbers, vendor plan, bring-up order,
+│   │   │                       power budget, and the ESP32 driver board's
+│   │   │                       JSON protocol. Researched by Claude Cowork;
+│   │   │                       filed verbatim under an editor's note. Read
+│   │   │                       its note first (corrections 5-6, 2026-09-27:
+│   │   │                       the motor protocol and JetPack)
+│   │   ├── HARDWARE-READINESS.md  what the real robot changes: verb-to-motor
+│   │   │                       path, pre-flight checklist, where the brain
+│   │   │                       lives
+│   │   ├── BOM-COMPARISON.md  Pi 5 + Hailo-8L vs Jetson Orin Nano Super,
+│   │   │                       verified retailer prices, like for like.
+│   │   │                       **Price from here, never from 3.6** -- 3.6's
+│   │   │                       Pi 5 line reads $80 against $175. The decision
+│   │   │                       is made (Jetson, 2026-09-19); this is the
+│   │   │                       price record
+│   │   ├── PI-VS-JETSON.md    the "what if the Pi instead" walkthrough
+│   │   │                       (2026-09-30): price, gains, losses, and the
+│   │   │                       one test that could change the answer
+│   │   ├── GUIDE-robot-base.md  **a learning guide**: wheel encoder to ROS 2
+│   │   │                       node, closed loop vs "reports to the host",
+│   │   │                       vendor drivers, firmware openness, powering a
+│   │   │                       Jetson from a robot battery, reading a kit
+│   │   │                       listing -- read before buying a robot base
+│   │   └── BOM.md             SUPERSEDED -- the 2026-09-12 Jetson build, on
+│   │                           estimates. Right argument, wrong prices
+│   │
+│   ├── evaluations/           one-off measurement write-ups: the edge
+│   │                          perception bench, the 2026-09-22 navigate-model
+│   │                          evaluation (evaluations/ at the repo root holds
+│   │                          the RAW records -- a different thing)
+│   └── handoffs/              HANDOFF-<date>.md session handoffs; the newest
+│                              names the open work
 │
-│   -- planning / explainer docs (no code; read before hardware work) --
-├── INTRODUCTION.md            project introduction
-├── AGENT-HARNESS.md           how control/ works: the tick, the seams, the
-│                               failsafes, the invariants, and where the LLM
-│                               policy plugs in (BUILT -- read before editing
-│                               control/)
-├── PLAN-ar-guidance.md        the Guide tab: spec, redesign, changelog (BUILT)
-├── PLAN-sim-hardening.md      how the sim diverges from hardware, phased fixes,
-│                               definition of done before a hardware swap
-│                               (S1-S5 BUILT, S6 RETIRED except its
-│                               continuous-pose half, un-retired 2026-09-06
-│                               by PLAN-onboard-perception.md 1.14;
-│                               S7 PROPOSED)
-├── HARDWARE-READINESS.md      what the real robot changes: verb-to-motor path,
-│                               pre-flight checklist, where the brain lives.
-│                               Rewritten 2026-09-04 for the chosen hardware
-├── PLAN-brain-relocation.md   moving the autonomy loop onto the Pi (B0-B4 BUILT,
-│                               B5 needs the Pi)
-├── PLAN-teleop-robot.md       a live phone walk driving the real MissionRunner
-│                               mission, closed loop -- T1-T4 (BUILT); see the
-│                               T1-T4 status-table row above
-├── PLAN-ros-alignment.md      **the governing plan since 2026-09-25** -- ROS 2
-│                               adopted properly (nav2, slam_toolbox,
-│                               ros2_control, twist_mux), R0-R7 and 3.17-3.23
-│                               built on data. Supersedes parts of
-│                               PLAN-mapping.md
-├── PLAN-mapping.md            map the house while searching it. N1 BUILT;
-│                               N6 became R5+R6; superseded in part by
-│                               PLAN-ros-alignment.md. N1-N7. Mapping being the point is the
-│                               stated trigger in PLAN-onboard-perception
-│                               3.3, so ROS 2 enters the project as ONE
-│                               service behind an HTTP wall ((b+)), never
-│                               near brain/ or RobotInterface. N1-N4 need
-│                               no hardware. Its section 2 lists what is
-│                               already decided (1.5, 1.6, 3.4) and must
-│                               be implemented rather than re-argued
-├── PLAN-microduck-transplants.md
-│                               twelve designs borrowed from Pollen Robotics'
-│                               Microduck -- a depth sensor instead of asking
-│                               the model how far, plus refusal reasons, driver
-│                               arbitration, a health verdict and a rollback.
-│                               M1-M5 BUILT (2026-09-03, not deployed), M6-M12
-│                               proposed; seven need no hardware
-├── BOM-COMPARISON.md          Pi 5 + Hailo-8L vs Jetson Orin Nano Super,
-│                               like for like at 2026-09-17 prices. The
-│                               delta is ~$86 and has been stable across
-│                               four passes. Read section 4 before quoting
-│                               it: the Pi's accelerator line is the only
-│                               Hailo form still in stock, and it costs the
-│                               NVMe. **The decision is made (Jetson,
-│                               2026-09-19)**; this is the price record
-├── HARDWARE-BOM.md            the Jetson BOM as PRICED, 2026-09-17 -- exact
-│                               part numbers, vendor plan, bring-up order,
-│                               power budget, and the ESP32 driver board's
-│                               JSON protocol (which is RobotInterface's
-│                               shape on the hardware side). Researched by
-│                               Claude Cowork; filed verbatim under an
-│                               editor's note listing four corrections.
-│                               Read its note first (corrections 5-6,
-│                               2026-09-27: the motor protocol and JetPack)
-├── PLAN-onboard-perception.md  what runs on the car itself -- and the hardware
-│                               chain that question turned out to be hiding.
-│                               DESIGN SETTLED, NOTHING BUILT. Supersedes parts
-│                               of HARDWARE-READINESS.md and retires most of S6;
-│                               its section 5 says exactly what. Read it before
-│                               any hardware purchase -- the chassis is no
-│                               longer a PiCar-X
-│
-│   -- bill of materials. JETSON-BOM.md is the one to read --
-├── GUIDE-robot-base.md    **a learning guide**: the four layers from wheel
-│                           encoder to ROS 2 node, closed loop vs "reports
-│                           to the host", reading a vendor driver, firmware
-│                           openness, powering a Jetson from a robot battery,
-│                           chassis geometry, lidar and depth cameras, and
-│                           reading a kit listing. Written from the 2026-09
-│                           chassis search -- read before buying a robot base
-├── JETSON-BOM.md          **what to buy** (recommended build, 2026-09-17),
-│                           doubling as a brief for a ready-made-kit
-│                           search. Carries the constraints that
-│                           disqualify most kits -- 3S power above the
-│                           Jetson's 9V floor, differential drive,
-│                           quadrature encoders, and a serial motor
-│                           controller rather than a Pi HAT
-├── BOM-COMPARISON.md      verified retailer prices, Pi vs Jetson, like
-│                           for like. **Price from here, never from 3.6**
-│                           -- 3.6's Pi 5 line reads $80 against $175
-├── PI-VS-JETSON.md        the "what if the Pi instead" walkthrough
-│                           (2026-09-30): price, gains, losses, and the
-│                           one test (YOLOE on a Hailo-8L at INT8) that
-│                           could change the answer
-├── HARDWARE-BOM.md        part numbers, vendors, wiring and bring-up
-│                           order (Cowork's research + editor's note)
-├── BOM.md                 SUPERSEDED -- the 2026-09-12 Jetson build, on
-│                           estimates. Right argument, wrong prices
-└── PLAN-aws-cost-redesign.md  the ~$159/month of fixed AWS cost, where it
-                                comes from, and the rebuild that removes
-                                ~$110 of it. ALL DONE: walks on S3, the VPC
-                                and ECS stacks torn down 2026-09-05, and the
-                                serverless stack is the only deployment.
-                                Read section 1 before quoting any cost
-                                number and section 6 before trusting the
-                                design -- its central assumption is still
-                                untested
+└── docs-review/REPORT.md       the 2026-09-27 documentation review: scores,
+                               verified mismatches, and the fix list
 ```
 
 ---

@@ -75,7 +75,13 @@ MIN_ENGINEERING_FACTS = 15
 # so it has no domain to sit under, but its references are still checked
 # (tests/test_spec_lint.py).
 NOT_SPECS = {"docs/README.md", "docs/SPEC_REVIEW_PROMPT.md", "docs/ARCHITECTURE.md"}
-EXCLUDED_DIRS = ("docs/archive/", "docs/templates/")
+# Not specs either: the dated plans, hardware records, session handoffs,
+# evaluation write-ups and guides that used to sit at the repo root
+# (moved 2026-10-03). They are history and explainers, cited by name.
+EXCLUDED_DIRS = (
+    "docs/archive/", "docs/templates/", "docs/plans/", "docs/hardware/",
+    "docs/handoffs/", "docs/evaluations/", "docs/guides/",
+)
 
 REQUIRED_SECTIONS = {
     "architecture": (

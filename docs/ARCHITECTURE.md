@@ -7,7 +7,7 @@ that will drive the car, so moving onto hardware is a config change.
 
 This page is the map. Each component's own specification sits under
 `docs/<domain>/` and is listed in the [index](README.md). The
-`PLAN-*.md` documents at the repo root hold the dated history and every
+`PLAN-*.md` documents in [plans/](plans/) hold the dated history and every
 measured number. This overview is adapted from the "ROS 2 for vision-picar"
 explainer (checked against the repo on 2026-09-30) and re-checked on
 2026-10-03.

@@ -320,5 +320,5 @@ whole method.
 *vision-picar — simulation-first build of a vision-driven robot car.
 The engineering reference for the searching loop itself is
 [`AGENT-HARNESS.md`](AGENT-HARNESS.md).
-Phase 11 next: real hardware. See [`README.md`](README.md) for the engineering
+Phase 11 next: real hardware. See [`README.md`](../../README.md) for the engineering
 detail behind each phase.*

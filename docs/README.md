@@ -21,7 +21,7 @@ Once it commits to one way, it is engineering.
 covers the rules that need judgement. New specs start from
 `templates/`.
 
-The `PLAN-*.md` documents at the repo root are the dated history: criteria
+The `PLAN-*.md` documents in [plans/](plans/) are the dated history: criteria
 written first, then results, then corrections. Specs describe each
 component as it is now and cite the plan sections that record how it got
 there.
@@ -72,6 +72,21 @@ there.
 | twin | [twin/](twin/ARCHITECTURE.md) | [engineering/twin/](engineering/twin/ENGINEERING.md) | The web twin: the phone UI over both servers |
 | recordings | [recordings/](recordings/ARCHITECTURE.md) | [engineering/recordings/](engineering/recordings/ENGINEERING.md) | Recorded walks, their storage, and the evaluation instruments |
 | operations | [operations/](operations/ARCHITECTURE.md) | [engineering/operations/](engineering/operations/ENGINEERING.md) | Deployment, the tunnel, secrets, health and metrics |
+
+## Beyond the specs
+
+Everything else that used to sit at the repo root, grouped by what it is.
+None of these are specs, and the linter skips them. They are cited by file
+name, and every name is unique, so a search for a name still finds it.
+
+| Folder | Holds |
+|---|---|
+| [plans/](plans/) | `PLAN-*.md`: each phase's criteria, results and corrections, dated. `PLAN-ros-alignment.md` is the governing plan |
+| [hardware/](hardware/) | What to buy and why: `JETSON-BOM.md` (the build), `HARDWARE-BOM.md` (parts, wiring, the board protocol), `HARDWARE-READINESS.md`, `BOM-COMPARISON.md` (verified prices), `PI-VS-JETSON.md`, `GUIDE-robot-base.md`, and the superseded `BOM.md` |
+| [guides/](guides/) | Explainers: `INTRODUCTION.md`, `FEATURES.md` (every UI feature end to end), `AGENT-HARNESS.md` (how `control/` works) |
+| [evaluations/](evaluations/) | Write-ups of one-off measurements: the edge perception bench and the 2026-09-22 navigate-model evaluation |
+| [handoffs/](handoffs/) | Session handoffs, dated; the newest says what is open |
+| [archive/](archive/) | Older material moved out of `CLAUDE.md`, verbatim |
 
 ## Decisions
 

@@ -2,7 +2,7 @@
 
 An indoor robot car you can send to find something, built simulation-first:
 the decision-making is built and proven against a simulator before any
-hardware is bought. For a non-technical introduction read `INTRODUCTION.md`;
+hardware is bought. For a non-technical introduction read [`INTRODUCTION.md`](docs/guides/INTRODUCTION.md);
 for orientation in the code read `CLAUDE.md`.
 
 **Where things stand (2026-10-02).** The compute board has arrived and the
@@ -56,24 +56,16 @@ chassis is on order; nothing has run on real hardware yet.
 | Doc | For |
 |---|---|
 | `CLAUDE.md` | orientation: status table, repo map, gotchas. Start here. |
-| `INTRODUCTION.md` | what the project is, for a non-technical reader |
-| `docs/README.md` | the specifications: an architecture and an engineering spec for each of 15 components, and the reading path |
-| `PLAN-ros-alignment.md` | the current plan: phases R0-R7 and 3.17-3.33 (continuous pose, ROS 2, SLAM, nav2, safety, the motor board, the Jetson bring-up), each closed on pre-stated data |
-| `HANDOFF-2026-09-30-ros-gates.md` / `HANDOFF-2026-09-30.md` | the latest session handoffs: the ROS gates, and the robot base |
-| `service/slam/README.md` | the ROS 2 container: how to build and run it |
-| `AGENT-HARNESS.md` | how `control/` works: the mission tick, seams, failsafes, invariants |
-| `FEATURES.md` | every feature of the twin, how it works end to end, and the AWS topology it runs against |
-| `JETSON-BOM.md` / `HARDWARE-BOM.md` | what to buy and what was bought / part numbers, wiring, bring-up order |
-| `GUIDE-robot-base.md` | a learning guide to robot bases: encoders, firmware, vendor protocols vs ROS 2, power |
-| `PI-VS-JETSON.md` | the "what if a Raspberry Pi instead" walkthrough |
-| `HARDWARE-READINESS.md` | before hardware day: verb-to-motor path and pre-flight checklist |
-| `PLAN-onboard-perception.md` | the perception tier and the reasoning behind the hardware |
-| `PLAN-mapping.md` | the mapping phase and the wall around ROS |
-| `PLAN-sim-hardening.md` | where the sim diverges from hardware, and the phased fix |
-| `PLAN-microduck-transplants.md` | designs borrowed from Microduck: depth grid, refusal reasons, arbitration, health verdict |
-| `PLAN-brain-relocation.md` | the brain as its own service, and moving it onto the car |
-| `PLAN-ar-guidance.md` | the Guide tab, as built |
-| `PLAN-teleop-robot.md` | a live phone walk driving the real brain, closed loop |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | the whole system on one page |
+| [`docs/README.md`](docs/README.md) | the specifications: an architecture and an engineering spec for each of 15 components, the reading path, and where everything else lives |
+| [`docs/guides/INTRODUCTION.md`](docs/guides/INTRODUCTION.md) | what the project is, for a non-technical reader |
+| [`docs/plans/PLAN-ros-alignment.md`](docs/plans/PLAN-ros-alignment.md) | the current plan: phases R0-R7 and 3.17-3.33 (continuous pose, ROS 2, SLAM, nav2, safety, the motor board, the Jetson bring-up), each closed on pre-stated data |
+| [`docs/handoffs/`](docs/handoffs/) | session handoffs, dated; the newest says what is open |
+| [`service/slam/README.md`](service/slam/README.md) | the ROS 2 container: how to build and run it |
+| [`docs/guides/AGENT-HARNESS.md`](docs/guides/AGENT-HARNESS.md) | how `control/` works: the mission tick, seams, failsafes, invariants |
+| [`docs/guides/FEATURES.md`](docs/guides/FEATURES.md) | every feature of the twin, how it works end to end, and the AWS topology it runs against |
+| [`docs/hardware/`](docs/hardware/) | what to buy and what was bought (`JETSON-BOM.md`), part numbers and wiring (`HARDWARE-BOM.md`), pre-flight (`HARDWARE-READINESS.md`), prices, the Pi-vs-Jetson walkthrough, and a guide to robot bases |
+| [`docs/plans/`](docs/plans/) | the other phase plans: perception, mapping, sim hardening, Microduck transplants, brain relocation, the Guide tab, teleop, AWS cost |
 
 The Guide tab has two modes: **Guide me** steers a person to an object
 (`/guidance`), and **Robot view** shows the move the robot would make from
