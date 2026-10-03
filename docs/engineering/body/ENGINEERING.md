@@ -136,7 +136,7 @@ default shown.
 | `get_camera_frame()` | `{"image_base64", "media_type", "room", "metadata", ...}`; may raise | abstract |
 | `get_distance()` | float, cm | abstract |
 | `get_depth_grid()` | `{"rows", "cols", "fov_deg"?, "pan_deg"?, "zones": [{"status", "distance_cm"}]}`, row-major | `unusable_grid()`: 1 x 8, all `unusable`, no `fov_deg` |
-| `get_odometry()` | `{"usable", "distance_m", "heading_deg"}`. Path length, never decreasing. Heading is clockwise-positive on both moving bodies, but its zero differs: `HardwareRobot` reports turn since start (0.0 at start); `MockRobot` reports the grid world's compass bearing (90.0 at start in the starter house). See Known gaps | `unusable_odometry()` |
+| `get_odometry()` | `{"usable", "distance_m", "heading_deg"}`. Path length, never decreasing. Heading is degrees turned since start, clockwise-positive, in [0, 360), on every body that measures it (handoff 2d, 2026-10-03; `MockRobot` used to report its compass bearing). `tests/test_robot_contract.py` pins it on all six backends: 0 at start, 90 after a RIGHT 90 | `unusable_odometry()` |
 | `get_wheel_state()` | `{"usable", "left": {"position_rad", "velocity_rad_s", "counts"}, "right": {...}, "wheel_radius_m", "track_width_m", "counts_per_rev"}` | `unusable_wheels()` |
 | `get_scan(max_range_m=None)` | `{"usable", "angle_min_deg", "angle_increment_deg", "range_min_m", "range_max_m", "ranges_m"}`. Angles relative to the body, clockwise-positive, 0 ahead; `None` per beam = no return | `unusable_scan()` (`ranges_m: None`) |
 | `set_wheel_velocity(left_rad_s, right_rad_s)` | dict; a standing command | raises `NotImplementedError` |
@@ -291,11 +291,13 @@ key means the new body returns something the contract does not allow.
 
 | Test | What it pins |
 |---|---|
-| `tests/test_robot_contract.py` (134 collected) | Return shapes, units, `stop()` idempotency, decodable pixels plus media type, depth tri-state, odometry monotonic and pivot-invariant, wheels/scan shapes, wrappers reporting what they wrap |
+| `tests/test_robot_contract.py` (163 collected) | Over seven backends since handoff 2e (`RosDriveRobot` over a fake ROS chain joined the six): return shapes, units, `stop()` idempotency, decodable pixels plus media type, depth tri-state, odometry monotonic and pivot-invariant, odometry heading 0 at start and clockwise-positive (2d), wheels/scan shapes, wrappers reporting what they wrap |
 | `tests/test_remote_robot.py` (10) | The same mission gives an identical action sequence in-process and over HTTP; refusal mapping |
 | `tests/test_teleop_robot.py` (8) | Staleness, the non-blocking read, push/pull |
 | `tests/test_config_and_factory.py` (22) | Mode and drive selection, env overrides, errors on an unknown mode |
 | `tests/test_ros_drive.py` (20) | The ROS wrapper's verbs, encoder closure, reads to the wrapped body; the stop: direct and under 0.1 s against a bridge that hangs, all three ROS inputs zeroed in the background, no thread pile-up over 20 stops, a stale ROS command held at zero, and the hold lifted by the next verb or by `STOP_HOLD_S`; a 4xx from the bridge does not mark it down, a 5xx or a transport error does |
+| `tests/test_verb_stop_race.py` (2) | Handoff 2c: a `stop()` injected between `carry_out_verb()`'s `stop_count` check and its re-command (a body that stops itself on the third command) leaves the wheels at zero, FORWARD and LEFT; `carry_out_verb()` re-checks `stop_count` after each re-command and zeroes if it changed |
+| `tests/test_startup_race.py` (4) | Handoffs 2a-2b: `HardwareRobot` before its first frame answers `awaiting_feedback: true` (a teleop body does not); `POST /wheels` then is refused `no_feedback` and vetted as usual after the first frame; the live half (skips without the stack) starts a container inside `SIM_BOARD_SILENT_S` and drives a LEFT 45 through ROS once frames arrive |
 | `tests/test_blind_reverse.py` (5) | `HardwareRobot` with no sensors refuses reverse; a body without wheels still reverses (rule in [safety engineering](../safety/ENGINEERING.md)) |
 | `tests/test_wheel_feedback.py` (15) | 3.34: silence makes wheels and odometry unusable within 0.35 s; the body zeroes a standing command within 0.4 s; motion refused and stop never raising, on a dead port too; a verb losing feedback ends within 0.5 s; clean recovery; `/action` and `/wheels` answer `no_feedback`, `/health` `motor_board` describes the link, `RemoteRobot` raises; a `timeout` or `stalled` FORWARD is not executed and five end a mission `blocked` |
 | `tests/test_stall_and_scrub.py` (11) | 3.35: a snagged wall-clock verb ends `stalled` within `VERB_STALL_S` + 0.2 s; a pivot blocked by furniture on the fake board ends `stalled` (was `timeout`); clear fake-board verbs complete; one stall constant; the scrub sizes pivots, scales heading and is published; the fake board ignores `TRACK_SCRUB`, a real board reads it |
@@ -332,21 +334,6 @@ did not measure.
   achieved (`PLAN-ros-alignment.md` section 4).
 - **Pan is three positions**, and the sim's depth grid swings with it
   (`pan_deg`). A real pan-tilt's angle is not in the contract.
-- **The stop race in `carry_out_verb()`** (`robot/interface.py:241-271`).
-  It checks `stop_count`, then calls `set_wheel_velocity()`; a `stop()`
-  between the two is overwritten, and on the next pass the loop sees the
-  stop and skips its `finally` zeroing. The wheels then run until the
-  watchdog stops them (about 1 s). `/stop` does not take `motion_lock`.
-  Read, not run (`docs-review/SPEC-REVIEW.md` section 5, fix-list 7). Fix:
-  re-check `stop_count` after commanding and zero if it changed.
-- **`RosDriveRobot` is not in the conformance suite**: `BACKENDS` has six
-  entries (`tests/test_robot_contract.py:85`). Its own tests in
-  `tests/test_ros_drive.py` cover verbs, reads and the stop, not every shape.
-- **Odometry heading has two zeros**: `MockRobot` reports the compass
-  bearing (`sim/mock_robot.py:710`), `HardwareRobot` the turn since start
-  (`robot/hardware_robot.py:371`), and the contract suite pins neither.
-  Differences agree; absolute headings do not. Pending a decision
-  (fix-list 11).
 - **Two placeholders the car must replace** (3.35). `VERB_STALL_S` (0.6 s,
   `robot/interface.py`) ends a verb with no encoder progress while
   commanded -- on the wall clock (`carry_out_verb()`, and

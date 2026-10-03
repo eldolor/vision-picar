@@ -193,11 +193,9 @@ filter. The current state is in the engineering spec's Known gaps.
 ### Boot-time deployment on the car uses the OS service manager (B5, planned)
 
 **Decision.** On the car, the robot server, the brain and the ROS container
-start as separate supervised services. The robot server starts first, and
-the ROS container only once the robot server reports usable wheels: until
-the wheel plugin's start-up race is fixed
-(`HANDOFF-2026-10-02-spec-review.md` item 2a), a container that comes up
-first can lose its wheels for good (docs/engineering/ros/ENGINEERING.md).
+start as separate supervised services, the robot server first and the ROS
+container after it, because the container's actuator talks to the robot
+server.
 Secrets and modes come from an environment file, not the unit files or the
 repo (`PLAN-brain-relocation.md` B5). Not built.
 

@@ -176,9 +176,10 @@ class WorldInterface(ABC):
         and a map is even more firmly on the metres side. Mixing them in
         one unit guarantees an off-by-100 somewhere.
 
-        **Degrees, to match `get_odometry()`'s `heading_deg`, and the
-        SAME CONVENTION as it** -- compass bearing, clockwise, positive to
-        the robot's right, which is what every other angle in this project
+        **Degrees, to match `get_odometry()`'s `heading_deg`, and the same
+        direction** -- clockwise, positive to the robot's right. The zero
+        differs on purpose: this is a compass bearing (0 = +y_m), odometry's
+        is wherever the robot started (handoff 2d). That is what every other angle in this project
         already uses (1.15.3's pan, the depth grid's columns). Radians and
         a maths-convention angle are what `sim/renderer.py` takes and what
         a mapper produces internally; both conversions belong in the

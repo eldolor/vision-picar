@@ -131,9 +131,22 @@ def _fork_keys(frame: dict):
 
 class HardwareRobot(RobotInterface):
     def __init__(self, port: str, sensors: Optional[RobotInterface] = None,
-                 baud: int = 115200):
+                 baud: int = 115200, track_scrub: float = 1.0):
+        if not track_scrub > 0:
+            raise ValueError(f"track_scrub must be positive, got {track_scrub!r}")
         self.port = port
         self.sensors = sensors
+        # 3.35: skid steer's EFFECTIVE track over the geometric one -- the
+        # wheels scrub sideways on every turn, so the body turns less than
+        # the geometric track predicts. A property of the real chassis
+        # (`hardware.track_scrub` / TRACK_SCRUB, read by robot/factory.py,
+        # which pins it to 1.0 for the fake board's sim body). Every
+        # conversion between wheel travel and body rotation here uses
+        # `self._track_m`, and it is what `get_wheel_state()` publishes, so the
+        # safety layer and the verb loop convert with the same number.
+        # [PLACEHOLDER] 1.0 until measured on the Rover.
+        self.track_scrub = float(track_scrub)
+        self._track_m = TRACK_WIDTH_M * self.track_scrub
         self._fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
         tty.setraw(self._fd)
         attrs = termios.tcgetattr(self._fd)
@@ -216,6 +229,7 @@ class HardwareRobot(RobotInterface):
                     "board_reboots": self.board_reboots,
                     "stale_zeroed": self.stale_zeroed,
                     "fork_firmware": self._last_ms is not None,
+                    "track_scrub": self.track_scrub,
                     "link_error": self.link_error}
 
     def _reader(self):
@@ -425,7 +439,11 @@ class HardwareRobot(RobotInterface):
         per_rad = COUNTS_PER_REV / (2 * math.pi)
         with self._lock:
             if not self._fresh():
-                return unusable_wheels()
+                # This body HAS wheels; it cannot measure them right now --
+                # no first frame yet, or the feedback went stale (3.34). Said
+                # apart from "no wheels" so the ROS plugin activates and waits
+                # rather than refusing for good (handoff 2a).
+                return {**unusable_wheels(), "awaiting_feedback": True}
             pos = [m / WHEEL_RADIUS_M for m in self._travel_now_m()]
             cmd = self._cmd
         return {"usable": True,
@@ -433,7 +451,7 @@ class HardwareRobot(RobotInterface):
                          "counts": int(round(pos[0] * per_rad))},
                 "right": {"position_rad": pos[1], "velocity_rad_s": cmd[1],
                           "counts": int(round(pos[1] * per_rad))},
-                "wheel_radius_m": WHEEL_RADIUS_M, "track_width_m": TRACK_WIDTH_M,
+                "wheel_radius_m": WHEEL_RADIUS_M, "track_width_m": self._track_m,
                 "counts_per_rev": COUNTS_PER_REV}
 
     def get_odometry(self) -> dict:
@@ -445,7 +463,7 @@ class HardwareRobot(RobotInterface):
             # north: clockwise-positive from wherever it started, the
             # project's convention for every angle (a left turn is right
             # wheel ahead of left, counter-clockwise, so negated).
-            turned_ccw = math.degrees((right - left) * WHEEL_RADIUS_M / TRACK_WIDTH_M)
+            turned_ccw = math.degrees((right - left) * WHEEL_RADIUS_M / self._track_m)
             return {"usable": True, "distance_m": round(self._path_m, 4),
                     "heading_deg": round((-turned_ccw) % 360.0, 3)}
 
@@ -496,7 +514,7 @@ class HardwareRobot(RobotInterface):
         if action in ("LEFT", "RIGHT"):
             if not angle:
                 return None
-            w = 1.2 * TRACK_WIDTH_M / 2 / WHEEL_RADIUS_M          # 1.2 rad/s body
+            w = 1.2 * self._track_m / 2 / WHEEL_RADIUS_M          # 1.2 rad/s body
             left, right = (w, -w) if action == "RIGHT" else (-w, w)
             return {"kind": "turn", "left_rad_s": left, "right_rad_s": right,
                     "target": float(abs(angle)), "wall_clock": True, "settle": settle}
@@ -525,7 +543,7 @@ class HardwareRobot(RobotInterface):
         return {"requested": sign * moves}
 
     def _pivot(self, degrees_right: float) -> dict:
-        w = 1.2 * TRACK_WIDTH_M / 2 / WHEEL_RADIUS_M          # 1.2 rad/s body
+        w = 1.2 * self._track_m / 2 / WHEEL_RADIUS_M          # 1.2 rad/s body
         seconds = math.radians(abs(degrees_right)) / 1.2
         s = 1.0 if degrees_right > 0 else -1.0
         self._run(s * w, -s * w, seconds)

@@ -93,11 +93,15 @@ CallbackReturn PicarSimHardware::on_activate(const rclcpp_lifecycle::State &)
   // A body that answers "no wheels" at activation has none to drive (a phone
   // walk, a replay): refuse to come up. An unreachable server is not that --
   // read() keeps trying -- and neither is a body whose wheels are only
-  // momentarily unmeasured once running (3.34; see read()).
+  // momentarily unmeasured once running (3.34; see read()), nor a motor board
+  // that has not sent its first frame yet: it says `awaiting_feedback`, and
+  // the plugin comes up and waits (handoff 2a; it used to refuse for good,
+  // so the container had to be started after the board's first frame).
   std::string out;
   if (request("GET", "/wheels", "", out)) {
     try {
-      if (!json::parse(out).value("usable", false)) {
+      const json w = json::parse(out);
+      if (!w.value("usable", false) && !w.value("awaiting_feedback", false)) {
         RCLCPP_ERROR(logger_, "the robot server reports no wheels (usable: false) -- "
                      "not activating");
         return CallbackReturn::ERROR;

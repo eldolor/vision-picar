@@ -557,7 +557,7 @@ vision-picar/
 │                              count), 93% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
-│                              six backends,
+│                              seven backends,
 │                              test_sensors.py [S5],
 │                              test_depth_veto.py [M3],
 │                              test_authority.py [M4],

@@ -185,8 +185,8 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 **Start-up, health, inside the container, fresh map, back to direct:**
 `service/slam/README.md` section 3 ("Run it") and section 4 ("Is it
 working?"). The start-up order there (robot server first, then the
-container only once `GET /wheels` reports `usable: true`) is not optional
-on `HardwareRobot`; Known gaps says why.
+container) still holds; waiting for `GET /wheels` to report `usable: true`
+first is optional since handoff 2a (Known gaps).
 
 **Failure signatures** are kept in one place, `service/slam/README.md`
 section 4 ("Failure signatures"). Read them there.
@@ -258,8 +258,15 @@ Checklist for a change:
   the chain dead. Measured against a stub robot server flipping
   `usable: false` for 2 s: the previous image went `unconfigured` and posted
   nothing afterwards; this one stayed `active` and resumed at 20 Hz (61
-  posts in 3 s). Starting the container before the board's first frame
-  still fails activation, so the README's start-up order stands.
+  posts in 3 s). **At activation** (handoff 2a, 2026-10-03) it refuses only
+  a body with no wheels: `HardwareRobot` answers `awaiting_feedback: true`
+  beside `usable: false` before its first frame (and while feedback is
+  stale), and the plugin activates on that and waits. Measured live with
+  `SIM_BOARD_SILENT_S=30`: the old image logged "reports no wheels" and ROS
+  never came up; this one activated, logged `no fresh wheel feedback ...
+  still trying`, recovered at the first frame ("reachable again after 584
+  failed cycles"), and a LEFT 45 through ROS landed within 40-50 degrees
+  (`tests/test_startup_race.py`, live half).
 - `picar_sim_hardware` has no unit tests of its own.
 - **Stale header comment.** `picar_sim_hardware.hpp`'s header still says a
   `picar_hardware` (R7) "is the same class against the ESP32". 3.16 decided

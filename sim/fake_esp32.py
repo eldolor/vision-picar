@@ -103,6 +103,11 @@ class FakeEsp32:
         self.frames_dropped = 0
         self.frames_overflowed = 0
         self.reboots = 0
+        # A board that stays silent this long after power-up (handoff 2a):
+        # the start-up race a ROS container that comes up first must ride
+        # out. SIM_BOARD_SILENT_S sets it for a server run; 0 = streams at once.
+        self.silent_until = time.monotonic() + float(
+            os.environ.get("SIM_BOARD_SILENT_S", "0") or 0)
         # What the board's encoders were at the frames it actually sent:
         # (left_m, right_m) of the body's wheels, for tests to judge against.
         self.sent_truth = []
@@ -311,6 +316,8 @@ class FakeEsp32:
         """ugv_advance.h baseInfoFeedback(): rate-limited to one frame per
         feedbackFlowExtraDelay ms, whether streamed or asked for (T:130)."""
         now = time.monotonic()
+        if now < self.silent_until:
+            return
         if (now - self._last_feedback_at) * 1000 < self.feedback_interval_ms:
             return
         self._last_feedback_at = now

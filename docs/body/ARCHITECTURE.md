@@ -182,8 +182,7 @@ and it is meant to run against every backend **and** every wrapper. The
 wrappers are included because the mission halt gate once silently inherited
 "unusable" for the depth grid while wrapping a body that had one
 (`PLAN-sim-hardening.md` S1). Nothing else in the suite would have noticed.
-**Today the ROS drive wrapper is not in it** (see Open questions); it is
-covered only by its own tests.
+Both wrappers are in it, the ROS drive wrapper since 2026-10-03.
 
 ## Contracts
 
@@ -238,15 +237,6 @@ covered only by its own tests.
   commanding, the failure table's "never overwritten" is a target, not a
   fact. Mechanism and fix: the
   [engineering spec](../engineering/body/ENGINEERING.md), Known gaps.
-- **The ROS drive wrapper is not in the conformance suite**
-  (`docs-review/SPEC-REVIEW.md` section 5). Adding it needs a fake bridge
-  fixture; see the [engineering spec](../engineering/body/ENGINEERING.md),
-  Known gaps.
-- **One odometry heading convention.** The contract says heading is
-  measured from the start; the sim body reports its compass bearing and the
-  hardware body reports turn since start. Both are clockwise-positive, so
-  differences agree and absolute values do not. Owner: the user picks one,
-  and the suite pins it (`docs-review/SPEC-REVIEW.md` fix-list 11).
 - **Two numbers the car must supply** (3.35). The stall window is 0.6 s, a
   placeholder until the board's low-speed deadband is measured. The
   skid-steer scrub factor is 1.0 until the effective track is measured.

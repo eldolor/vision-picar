@@ -33,7 +33,7 @@ changes it.
 | `/action` REVERSE | same | `reverse_clearance()`, then `run_verb()`. Refused outright (`astern_not_observed`) on a body with wheels and no usable scan |
 | `/action` LEFT / RIGHT | same | No pre-check. `run_verb()` limits each step with `pivot_scale()` (only on bodies with a plan). With no usable scan, never limited |
 | `/action` LOOK_* / STOP | `_dispatch()` | None |
-| `POST /wheels` (direct drive) | `vet_wheel_velocity()` on receipt, then every `wheel_loop()` tick | Forward/reverse look-ahead and clamp; rotation scaled by `pivot_scale()`. Passed through unvetted while the body's wheel state is unusable (Known gaps) |
+| `POST /wheels` (direct drive) | `vet_wheel_velocity()` on receipt, then every `wheel_loop()` tick | Forward/reverse look-ahead and clamp; rotation scaled by `pivot_scale()`. Its own early return passes a command through while the body's wheel state is unusable; on `HardwareRobot` the body then refuses it (`no_feedback`, 3.34), so nothing reaches the board unvetted |
 | ROS drive: verbs | `check_and_execute()` -> `RosDriveRobot` (no plan) | The pre-check, then the actuator's `/wheels` posts are vetted on receipt and every tick. `_refuse_if_nothing_achieved()` turns a verb that covered under 1 cm / 0.5 deg into a `SafetyViolation` |
 | ROS drive, ROS down: a person's verbs | `fallback_safety.check_and_execute()` on the wrapped body | Exactly direct drive's path |
 
@@ -72,9 +72,10 @@ usable):
 
 So on the car only turns move until its lidar driver lands, and a straight
 verb that overshoots keeps its overshoot. **Before the first feedback
-frame** the table does not hold: `vet_wheel_velocity()` passes a standing
-command through unvetted and a REVERSE verb answers `no_rear_sensor` and
-proceeds (Known gaps). The decision behind the reverse row:
+frame** (and whenever feedback is stale) the body refuses every non-zero
+command and verb `no_feedback` (3.34), so the table's gaps there are moot
+(`tests/test_startup_race.py` pins the first-frame case). The decision
+behind the reverse row:
 [architecture spec](../../safety/ARCHITECTURE.md), "A body that cannot see
 astern does not reverse".
 
@@ -307,12 +308,11 @@ order; record the table in the plan entry.
   turn VERB still runs blind on the car, or that a settle pass astern is
   refused `astern_not_observed` (`_settle()` -> `run_verb()` in
   `robot/safety.py`); both are read from the code, not tested.
-- **Before the board's first feedback frame**, `get_wheel_state()` is
-  unusable (`robot/hardware_robot.py:349`): `vet_wheel_velocity()` passes a
-  standing command through unvetted (`robot/safety.py:665`), and
-  `_has_wheels()` is false, so a REVERSE verb in that window answers
-  `no_rear_sensor` and proceeds unguarded. Open decision
-  (`docs-review/SPEC-REVIEW.md` fix-list 6).
+- **`vet_wheel_velocity()` still passes a command through when the body's
+  wheel state is unusable** (`robot/safety.py`, the early return). Harmless
+  on every body today: `HardwareRobot` refuses motion without fresh feedback
+  (3.34; handoff 2b closed), and the sim's bodies always have wheels. A new
+  backend that reports unusable wheels and still moves would reopen it.
 - **The verb that finds the bridge dead is refused, a person's too.** The
   first failed `RosDriveRobot._send()` raises inside the verb, which
   `/action` refuses `ros_unavailable` after stopping the robot directly; it

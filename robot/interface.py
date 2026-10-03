@@ -307,6 +307,15 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
             # motion, at the rate the motors are asked for.
             step = amount / rate
             robot.set_wheel_velocity(left, right)
+            # A stop that landed between the check at the top of this period
+            # and the line above was just overwritten (handoff 2c): /stop does
+            # not take motion_lock. Zero it here -- the finally below skips
+            # zeroing after a stop so it cannot cut off a NEWER verb, and no
+            # newer verb can have started while this one holds the robot.
+            if getattr(robot, "stop_count", 0) != stops0:
+                robot.set_wheel_velocity(0.0, 0.0)
+                ended, reason = "stopped", "stop() was called"
+                break
             if plan.get("wall_clock"):
                 time.sleep(step)
             else:

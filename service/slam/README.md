@@ -109,17 +109,18 @@ Prerequisites: Docker Desktop running; the repo's `.venv` set up
 `LOCAL_SECRET` (mode 600, never in the repo -- `service/tunnel/run.sh`
 reads it and refuses to start without it).
 
-**Order matters: start the robot server, wait for `GET /wheels` to report
-`usable: true`, then start the container.** The plugin's `on_activate()`
-reads `/wheels` once, and a `usable: false` answer there is a hardware error
-that makes ros2_control deactivate the plugin for good (until the container
-restarts). An *unreachable* server is retried, and `MockRobot` has wheels at
-its first answer, so in the simulator a container started before the server
-is fine. `HardwareRobot` (the car, or `SIM_MOTOR_BOARD=fake`) answers
-`usable: false` until the board's first `T:1001` frame, so a container that
-is already retrying when it starts can read "no wheels" first and be
-deactivated: there, start the container only after step 2b, never before
-the server. **Once active, "no wheels" is retried, not fatal** (since
+**Order: the robot server first, then the container.** The plugin's
+`on_activate()` reads `/wheels` once and refuses to come up on a body with
+NO wheels (`usable: false` with no `awaiting_feedback` -- a phone walk, a
+replay). An *unreachable* server is retried. `HardwareRobot` (the car, or
+`SIM_MOTOR_BOARD=fake`) answers `usable: false, awaiting_feedback: true`
+until the board's first `T:1001` frame, and since 2026-10-03 (handoff 2a)
+the plugin activates on that and waits: a container started before the
+board's first frame drives once frames arrive (measured: started 29 s before
+it, then a 45-degree LEFT through ROS landed within 40-50 degrees;
+`tests/test_startup_race.py`). Step 2b's wait is no longer required; it
+still shortens the first verb's wait. **Once active, "no wheels" is retried,
+not fatal** (since
 `PLAN-ros-alignment.md` 3.34): a robot server restarted under the container,
 or a motor board that goes quiet for a moment, is ridden out the same way
 as an unreachable server.
@@ -133,7 +134,7 @@ docker build -t vision-picar-ros service/slam
 #    Add WORLD_MODE=ros for SLAM/nav2 (R5/R6), SIM_MAP to pick the house.
 ROBOT_DRIVE=ros WORLD_MODE=ros SIM_MAP=scaled_house bash service/tunnel/restart.sh
 
-# 2b. Wait until the robot server reports wheels (see "Order matters").
+# 2b. Optional since handoff 2a: wait until the robot server reports wheels.
 set -a; source ~/.vision-picar-local-secrets; set +a
 until curl -s -H "x-app-secret: $LOCAL_SECRET" localhost:8000/wheels | grep -q '"usable": *true'; do sleep 0.5; done
 
@@ -251,7 +252,7 @@ visible, including the brain's; nothing can be published.
 | You see | It means |
 |---|---|
 | Container log: `POST /wheels to ... failed (N in a row) -- still trying` | The robot server is down, unreachable (Linux without host networking), or rejecting the secret (401) -- check `APP_SHARED_SECRET` was exported before `docker run`. The wheels are stopped meanwhile by the robot server's watchdog. |
-| Container log: `the robot server reports no wheels (usable: false)` | `GET /wheels` answered `usable: false`. `/wheels` answers in either drive mode and `MockRobot` always has wheels, so this is NOT a sign of `drive: direct` (check `drive.mode` in the robot server's `/health` for that). The real causes: a body with no wheels (teleop or replay), or `HardwareRobot` before the board's first `T:1001` frame -- the container was started too early (see "Order matters" in section 3). The plugin is then not activated: fix the cause, then `docker rm -f picar-ros` and run step 3 again. Mid-run the log reads `GET /wheels (no fresh wheel feedback) ... still trying` instead, and the plugin recovers by itself when the board reports again (3.34). |
+| Container log: `the robot server reports no wheels (usable: false)` | `GET /wheels` answered `usable: false`. `/wheels` answers in either drive mode and `MockRobot` always has wheels, so this is NOT a sign of `drive: direct` (check `drive.mode` in the robot server's `/health` for that). The real causes: a body with no wheels (teleop or replay), or (before 2026-10-03, or a robot server older than that) `HardwareRobot` before the board's first `T:1001` frame. Since handoff 2a a board not yet reporting answers `awaiting_feedback: true` and the plugin activates and waits. The plugin is then not activated: fix the cause, then `docker rm -f picar-ros` and run step 3 again. Mid-run the log reads `GET /wheels (no fresh wheel feedback) ... still trying` instead, and the plugin recovers by itself when the board reports again (3.34). |
 | `odom_age_s: null` from the start; `ros2 control list_hardware_components` does not show `picar` active; the robot server's `drive.ros_up` never turns true | Deactivated at START-UP: `on_activate()` read "no wheels", so the controllers never came up. |
 | Controllers read `active` in `list_controllers`, but nothing moves; the robot server's `drive.ros_up` turns `false` while the container is up, with `drive.ros_post_age_s` climbing past 0.5 (the plugin's posts have stopped), so autonomy is refused `ros_unavailable` | Deactivated MID-RUN. Since 3.34 `read()` no longer returns ERROR on "no wheels", so this should not happen; an image built before 3.34 does it on a robot server restart under `HardwareRobot`. Rebuild the image; a container restart recovers it meanwhile. |
 | The robot moves again after Stop, during a nav2 goal | Not expected since 2026-10-03: a person's stop holds nav2's wheel commands at zero until nav2 reports the goal over. Check who stopped: the brain's stop (`x-driver: brain`) spares a goal by design. Otherwise look for the robot server's log line `stop: could not end the nav2 goal yet, retrying` (the bridge is not answering -- the hold stays on) and for `GET /world/goal` still reading `active`. |

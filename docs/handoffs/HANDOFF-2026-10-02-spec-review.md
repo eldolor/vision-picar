@@ -147,7 +147,10 @@ order:
 Platform ENG has the full command set, and `tools/jetson/README.md` §4
 carries it too (2026-10-03).
 
-**2a. The wheel plugin's start-up race (fix 4).**
+~~**2a. The wheel plugin's start-up race (fix 4).**~~ **BUILT 2026-10-03:**
+`HardwareRobot` answers `awaiting_feedback: true` before its first frame and
+`on_activate()` activates on it; live-tested with `SIM_BOARD_SILENT_S=30`
+(`tests/test_startup_race.py`). The start order no longer needs the wait.
 
 - **What goes wrong:** if the ROS container activates before
   `HardwareRobot` has read its first `T:1001` frame, `GET /wheels` answers
@@ -165,7 +168,10 @@ carries it too (2026-10-03).
 normally once frames arrive (live test against the fake board with a
 delayed first frame).
 
-**2b. Unvetted wheel commands before the first feedback frame (fix 6).**
+~~**2b. Unvetted wheel commands before the first feedback frame (fix 6).**~~
+**CLOSED by 3.34 (2026-10-03):** `POST /wheels` before the first frame is
+refused `no_feedback`; pinned in the handoff's terms in
+`tests/test_startup_race.py`.
 
 - **What goes wrong:** `SafetyController.vet_wheel_velocity()` passes a
   command through untouched when `get_wheel_state()` is unusable
@@ -178,7 +184,8 @@ delayed first frame).
 **Done when** a test shows `POST /wheels` before the first frame is
 refused, and the same command after the first frame is vetted as usual.
 
-**2c. The stop race in `carry_out_verb` (fix 7).**
+~~**2c. The stop race in `carry_out_verb` (fix 7).**~~ **BUILT 2026-10-03:**
+re-checked after the re-command; `tests/test_verb_stop_race.py` (red first).
 
 - **What goes wrong:** a `stop()` that lands between the `stop_count` check
   and `set_wheel_velocity()` gets overwritten, and the `finally` then skips
@@ -191,7 +198,10 @@ refused, and the same command after the first frame is vetted as usual.
 **Done when** a test that injects a stop exactly in that window (a hook or
 a fake body) shows the wheels at zero within one control period.
 
-**2d. One odometry heading convention (fix 11).**
+~~**2d. One odometry heading convention (fix 11).**~~ **BUILT 2026-10-03:**
+start-relative, clockwise-positive (the docstring's); `MockRobot` changed,
+pinned on every backend in `tests/test_robot_contract.py`; the frontier
+trace is unchanged.
 
 - **What goes wrong:** `MockRobot.get_odometry()` returns a compass bearing
   (90 at start), while `HardwareRobot` returns degrees turned since start.
@@ -205,7 +215,9 @@ a fake body) shows the wheels at zero within one control period.
 frontier trace (`tests/data/frontier_trace_centred.json`) is unchanged, or
 re-pinned with the reason given.
 
-**2e. `RosDriveRobot` is not in the conformance suite (fix 6 in §5).**
+~~**2e. `RosDriveRobot` is not in the conformance suite (fix 6 in §5).**~~
+**BUILT 2026-10-03:** `ros_drive` is the seventh entry in `BACKENDS`, over
+`tests/test_ros_drive.py`'s fake chain; every contract test passes.
 Either add it to `BACKENDS` in `tests/test_robot_contract.py` (with a fake
 bridge, as `tests/test_ros_drive.py` does), or change body ARCH to say
 "every backend and the mission gate".

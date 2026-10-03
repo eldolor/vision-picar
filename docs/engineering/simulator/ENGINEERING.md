@@ -93,7 +93,7 @@ follows is the sim-specific shape of each answer. The routes are served by
 | `step(dt)` | `moved_m`, `moved_cells`, `turned_deg`, `blocked`, plus the wheel state |
 | `get_depth_grid()` | `rows: 1`, `cols: 8`, `fov_deg: 60`, `pan_deg`, `zones[]` of `{status, distance_cm}`. Status is range, no-target (ray reached the horizon) or unusable (dropout, only with a sensor model). Cast along the **view** angle. Clearance is reduced by half a cell and one march step so it never overstates |
 | `get_scan(max_range_m=None)` | 360 beams, 1 degree apart, `angle_min_deg: -180`, clockwise-positive, zero dead ahead, cast from the **lidar** 4.0 cm ahead of centre along the **body** heading. `range_max_m: 12.0`. A beam with no return is `null`. With a range hint (the safety layer's short scan) the beams use `cast_ray_exact()` and stop at the hint |
-| `get_odometry()` | `usable: true`, `distance_m` (path length actually covered, reverse included), `heading_deg` (body, compass, continuous) |
+| `get_odometry()` | `usable: true`, `distance_m` (path length actually covered, reverse included), `heading_deg` (body, degrees turned since the robot was built, clockwise-positive, continuous; the compass bearing is `MockWorld.get_pose()`'s) |
 | `get_distance()` | Free cells ahead times 30.0 cm, exact. Through `DistanceSensorModel.read()` when noise is on; a dropout reads `0.0` (fail-safe: always trips the veto) |
 | `get_camera_frame()` | `room`, `objects_visible`, `detections`, `image_base64` (320 x 200 JPEG), `media_type: image/jpeg`, `metadata` |
 | `GridWorld.move_object(src, dst)` | Raises `ValueError` when there is no object at `src`, for a mover, onto a cell that is not floor, onto another object, or inside the robot's turning circle |
