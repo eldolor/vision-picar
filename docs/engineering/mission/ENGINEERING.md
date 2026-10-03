@@ -184,7 +184,7 @@ The `brain:` block of `config/robot.yaml`, read by
 | `world_url` | (unset) | `""` | URL | `default_world_factory` | empty = the URL of the robot actually built; diverges if the world moves behind SLAM |
 | `vision_url` | `""` | `""` | URL | start validation, `vision_fn_for` | required for `vision`/`tiered` |
 | `navigate_model_id`, `navigate_prompt_variant` | (unset) | `""` | -- | start | headless default; never guessed |
-| `max_steps` | 120 | 120 | steps | runner | set when the reference frontier hunt took 83 steps (now 61); every vision step is a paid call, so lower it for those policies |
+| `max_steps` | 120 | 120 | steps | runner | set when the reference frontier hunt took 83 steps (61 since 2026-09-28); every vision step is a paid call, so lower it for those policies |
 | `stuck_after` | (unset) | 5 | refused FORWARDs | runner | an unlucky policy gets 1-2 refusals then turns; the first watched R1 run spent 19 on one jamb |
 | `min_distance_cm` | 20.0 | **30.0** | cm | agent's brain-side pre-check | 20 matches `safety.min_distance_cm`; 30 is one sim cell and vetoed ~half of legal moves with sensor noise on. See Known gaps |
 | `request_timeout_s` | 10.0 | 10.0 | s | robot and world clients, allow-list check | |
@@ -322,11 +322,3 @@ the yaml, or the walks Lambda fails at cold start.
   `MissionMemory` per mission (`AGENT-HARNESS.md` section 12).
 - **No boot units (B5)** on the Jetson.
 - **S7 (chaos and soak)** not run.
-- Stale prose in code: `control/brain_server.py`'s docstring still says
-  MockRobot cannot carry pixels until S2 (it has since 2026-08-31).
-  `config/robot.yaml`'s comment on `max_steps` (line 293) says "The
-  reference backpack hunt takes 83 steps with the frontier policy", and the
-  `tick_interval_s` comment (line 321) says "a whole 83-step mission", but it
-  has been 61 since the trace was re-pinned on 2026-09-28. The comment `# "" =
-  brain/perceive.py's DEFAULT_CROP_PATH` in `control/brain_config.py`
-  `DEFAULTS` is on the wrong line (see [perception](../perception/ENGINEERING.md)).

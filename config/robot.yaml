@@ -3,7 +3,8 @@
 # "teleop"   -> sim/teleop_robot.py, a live phone camera + a human motor --
 #               see PLAN-teleop-robot.md. Robot view's "drive via brain"
 #               mode pushes frames into this backend.
-# "hardware" -> robot/hardware_robot.py (added in Phase 11, real PiCar-X)
+# "hardware" -> robot/hardware_robot.py (R7): the UGV Rover's ESP32 motor
+#               board over serial (ROBOT_SERIAL; SIM_MOTOR_BOARD=fake in the sim)
 mode: sim
 
 # How verbs reach the wheels -- PLAN-ros-alignment.md R4 (3.13).
@@ -18,8 +19,10 @@ drive:
   mode: direct
   bridge_url: http://127.0.0.1:8090
 
-# Grid-world map to load when mode is "sim"
-sim_map: sim/maps/starter_house.py
+# Grid-world map to load when mode is "sim" (or the fake motor board's sim
+# body): starter_house | scaled_house | home_first_floor (sim/maps/). The
+# SIM_MAP environment variable overrides it.
+sim_map: starter_house
 
 # Read only when mode is "sim". Both blocks default to MockRobot's
 # original exact/instant behavior -- see sim/mock_robot.py and
@@ -96,7 +99,7 @@ hardware:
 #             Requires `mode: sim` -- the map and the body must be two
 #             views of ONE GridWorld, and the factory refuses otherwise.
 #   "ros"  -> world/ros_world.py, an HTTP client of the SLAM container
-#             (N6 -- not built yet)
+#             (R5/R6, built; off by default -- WORLD_MODE=ros)
 world:
   mode: sim
 
@@ -244,8 +247,9 @@ brain:
   # Now it keeps doing what the cloud last said. 2.5's own text.
   tier_hold_goal: true
 
-  # And a floor under that: after this many consecutive turns with the
-  # target not detected, emit one FORWARD. A held RIGHT repeated forever
+  # And a floor under that: after this many QUARTER TURNS' worth of
+  # consecutive turning (counted in degrees since R1c: 8 = 720 degrees) with
+  # the target not detected, emit one FORWARD. A held RIGHT repeated forever
   # is the same spin by another route. 0 disables. The collar still owns
   # safety -- a FORWARD it refuses is the correct outcome, not a bug.
   tier_spin_guard_after: 8
@@ -303,7 +307,8 @@ brain:
   # forever without committing.
   tier_corroboration_bar: 0.5
 
-  # The reference backpack hunt takes 83 steps with the frontier policy.
+  # The reference backpack hunt takes 61 steps with the frontier policy
+  # (tests/data/frontier_trace_centred.json, starter house).
   # Under a vision policy each step is a paid call -- lower this then.
   max_steps: 120
   # Brain-side pre-check; the robot server re-checks against
@@ -331,7 +336,7 @@ brain:
   tick_timeout_s: 30.0
   # Extra pause between steps. 0 runs as fast as the loop allows, which in
   # simulation is far too fast to watch: MockRobot._settle() is a no-op
-  # (Phase S4 puts time in the loop), so a whole 83-step mission finishes in
+  # (Phase S4 puts time in the loop), so a whole 61-step mission finishes in
   # about half a second and the twin only ever shows you the result. Pacing
   # it here makes the mission observable, which is the point of running it
   # from the twin at all. On hardware a move takes real seconds and this can

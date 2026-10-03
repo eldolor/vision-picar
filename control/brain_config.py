@@ -55,19 +55,19 @@ DEFAULTS = {
     "navigate_prompt_variant": "",
     # ---- policy: "tiered" (PLAN-onboard-perception.md 4.10, phase P2) ----
     # Which weights the local detector loads, and which CLIP encoder scores
-    # the crops. Empty means brain/perceive.py's own defaults (yolo11s.pt,
-    # RN50), which is where the reasoning for each choice is written down --
+    # the crops. Empty means brain/perceive.py's own defaults
+    # (DEFAULT_DETECTOR, yoloe-11s-seg.pt since P23; DEFAULT_CLIP, RN50),
+    # which is where the reasoning for each choice is written down --
     # 4.3.1 measured the detector on-chip and 4.9 chose the encoder. These
     # exist so a candidate model can be swapped WITHOUT editing code, which
     # is 4.7's promotion rule in its cheapest form: the name the twin shows
     # changes with it, and that is the experiment loop made watchable (6.3).
     "perception_detector": "",
     "perception_clip_model": "",
-    # The CLIP margin a crop must beat to count as a sighting. 0 means
-    # brain/perceive.py's DEFAULT_MATCH_MARGIN (0.05), which that module
-    # calls "provisional and uncalibrated" and which the 2026-09-07 corpus
-    # run found to be ~2x too high: true positives on recorded walks band at
-    # +0.016..+0.034, so every one of them read `absent`.
+    # HISTORY: the CLIP margin used to be the gate (DEFAULT_MATCH_MARGIN,
+    # 0.05, found ~2x too high on the 2026-09-07 corpus: true positives
+    # banded at +0.016..+0.034). The gate is now the probability below;
+    # `perception_match_margin` survives only as an override for sweeps.
     #
     # Exposed rather than lowered, deliberately. The corpus it was measured
     # on is the invalid standing-height one, and the negative column
@@ -94,7 +94,7 @@ DEFAULTS = {
     # mask alone 59%, BOTH 94% -- it is worse alone and better together.
     # Off by default because it is a third model per frame and 2.9's budget
     # says segmentation must not run at the detector's rate on the real part.
-    "perception_floor_mask": False,   # "" = brain/perceive.py's DEFAULT_CROP_PATH
+    "perception_floor_mask": False,
     # 6.1's hysteresis, in frames. 1 reproduces the naive trigger count
     # (2.8x); 2 is the measured 4.1x. Not tuning -- see brain/tiered.py.
     "tier_consecutive_frames": 2,
@@ -153,7 +153,9 @@ DEFAULTS = {
     # Five because a policy that is merely unlucky gets one or two refusals
     # and then turns; the first watched R1 run spent nineteen on one jamb.
     "stuck_after": 5,
-    "min_distance_cm": 30.0,
+    # The same number as config/robot.yaml's safety.min_distance_cm (20)
+    # since S5; this default only applies when the yaml omits the key.
+    "min_distance_cm": 20.0,
     "request_timeout_s": 10.0,
     # B3.2 -- the AWS link failsafe.
     "vision_timeout_s": 20.0,

@@ -37,20 +37,19 @@ protection an AI decision does. This is a deliberate extension of "AI
 sits at the bottom of the safety hierarchy": nothing that can move the
 robot bypasses the safety layer, regardless of who's driving.
 
-Auth: /action, /stop, /distance, /frame, /teleop/frame require a matching
-x-app-secret header when APP_SHARED_SECRET is set in the environment (see
-require_secret() below) -- added when this server started being
-deployed publicly (ECS Fargate, service/twin/), not just run on a home
-LAN. /health stays open (the ALB health check can't send custom
-headers) and / stays open (the page has to load before a user can enter
-the secret in the UI).
+Auth: every route except /health, / and the page's static assets requires a
+matching x-app-secret header when APP_SHARED_SECRET is set in the
+environment (see require_secret() below) -- needed because the server is
+reachable from the public internet through service/tunnel/. /health stays
+open (a health check cannot always send custom headers) and / stays open
+(the page has to load before a user can enter the secret in the UI).
 
 Watchdog (build plan Phase 9; failsafe B3.1 in
 PLAN-brain-relocation.md): if commands stop arriving for ~1 second, the
-motors stop. `last_command_at` is updated by /action and /stop only -- a
-sensing read is not a command, and counting one would let a passive
-observer (the twin polling /frame while it watches a mission) hold the
-watchdog off indefinitely. A background task polls it and calls
+motors stop. `last_command_at` is updated by /action, /stop and non-zero
+/wheels (under drive: ros, every actuator post) -- a sensing read is not a
+command, and counting one would let a passive observer (the twin polling
+/frame while it watches a mission) hold the watchdog off indefinitely. A background task polls it and calls
 robot.stop() once it's stale.
 
 ROUTE_PREFIX (env var, unset/empty by default): prepended to every route
@@ -797,11 +796,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     def wheels():
         """Per-wheel position, velocity and encoder count -- phase R2.
 
-        What `picar_sim_hardware`'s `read()` will poll at R4. Read-only on
-        purpose: `POST /wheels` -- a standing velocity command, the first way
-        to move the robot without a verb -- needs its safety semantics
-        decided before it exists (`PLAN-ros-alignment.md` 3.7). A backend
-        with no encoders answers `usable: False`.
+        What `picar_sim_hardware`'s `read()` polls (R4). Its writing half is
+        `POST /wheels` below (R2b). A backend with no encoders answers
+        `usable: False`; one with wheels it cannot measure yet adds
+        `awaiting_feedback: true` (handoff 2a).
         """
         return robot.get_wheel_state()
 
@@ -958,15 +956,29 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         with goal_stop_lock:
             goal_stop["gen"] += 1
             goal_stop["hold"] = False
-            return world.set_goal(req.x_m, req.y_m)
+            try:
+                return world.set_goal(req.x_m, req.y_m)
+            except httpx.HTTPError as e:
+                # Handoff 4d: refused by name, not a 500.
+                return {"accepted": False, "reason": "ros_unavailable",
+                        "detail": f"the ROS bridge did not take the goal: {e}"}
+
+    def _bridge_call(fn):
+        """A goal read or cancel against a bridge that is down answers 503
+        `ros_unavailable`, not a 500 (handoff 4d)."""
+        try:
+            return fn()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=503,
+                                detail=f"ros_unavailable: the ROS bridge did not answer: {e}")
 
     @app.get(prefix + "/world/goal", dependencies=[Depends(require_secret)])
     def world_goal_get():
-        return _goals().get_goal()
+        return _bridge_call(_goals().get_goal)
 
     @app.delete(prefix + "/world/goal", dependencies=[Depends(require_secret)])
     def world_goal_cancel():
-        return _goals().cancel_goal()
+        return _bridge_call(_goals().cancel_goal)
 
     @app.get(prefix + "/world/error", dependencies=[Depends(require_secret)])
     def world_error():

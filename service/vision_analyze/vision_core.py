@@ -66,8 +66,8 @@ logger = logging.getLogger()
 
 MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 ANALYZE_MODEL_ID = os.environ.get("BEDROCK_ANALYZE_MODEL_ID", MODEL_ID)
-# Keep this in step with cloudformation/service.yaml's NavigateModelId
-# parameter. They disagreed for a while -- this said Nova Lite, the template
+# Keep this in step with cloudformation/serverless.yaml's NavigateModelId
+# parameter (service.yaml, where this started, was deleted 2026-09-05). They disagreed for a while -- this said Nova Lite, the template
 # said Sonnet 4.5, and the env var silently won -- which meant a week of
 # recorded walks were attributed to the wrong model. If you change one,
 # change both.
@@ -766,6 +766,8 @@ _NAVIGATE_EMPTY_SCHEMA = {
 # Ordinal, deliberately. See NAVIGATE_PROMPT_WITH_DISTANCE for why there is
 # no centimetre figure here and why there should not be one.
 DISTANCE_ESTIMATES = ("within_one_step", "a_few_steps", "far", "unknown")
+# /navigate's `target_direction` vocabulary, as the prompt states it.
+TARGET_DIRECTIONS = ("left", "center", "right", "not_visible")
 
 
 def describe_image_bytes_navigate(
@@ -854,6 +856,19 @@ def _parse_navigate_json(text: str) -> dict:
         # not read as truthy to a caller. Reached also implies visible --
         # the robot cannot have arrived at something it cannot see.
         merged["target_reached"] = merged["target_reached"] is True
+        # The other two flags the same way (handoff 4b), with one leniency:
+        # a model that writes the STRING "true" means true. Since 2026-10-02
+        # the brain decides `found` on target_visible at arrival, so a
+        # string "true" read as false would refuse the right object, and a
+        # string "false" read by truthiness (the twin) would be a sighting.
+        for flag in ("target_visible", "obstacle_ahead"):
+            v = merged.get(flag)
+            merged[flag] = v is True or (isinstance(v, str) and v.strip().lower() == "true")
+        # The vocabulary, case-insensitively; anything else fails towards
+        # "do not act on it".
+        direction = merged.get("target_direction")
+        direction = direction.strip().lower() if isinstance(direction, str) else ""
+        merged["target_direction"] = direction if direction in TARGET_DIRECTIONS else "not_visible"
         if merged["target_reached"] and not merged["target_visible"]:
             merged["target_reached"] = False
         # A non-string (or empty) room_guess is as good as "unclear" -- this
@@ -987,6 +1002,10 @@ def _parse_guidance_json(text: str) -> dict:
         if merged["proximity"] not in _GUIDANCE_PROXIMITIES:
             merged["proximity"] = "unknown"
         merged["bounding_box"] = _validate_bounding_box(merged["bounding_box"])
+        # Same rule as /navigate's flags (handoff 4b): Guide me reads this by
+        # truthiness, so a string "false" must not arrive as a string.
+        v = merged.get("target_visible")
+        merged["target_visible"] = v is True or (isinstance(v, str) and v.strip().lower() == "true")
         return merged
     except json.JSONDecodeError:
         logger.warning(f"Failed to parse VLM guidance response as JSON: {text!r}")

@@ -259,20 +259,26 @@ bridge, as `tests/test_ros_drive.py` does), or change body ARCH to say
   it by hand until then. **Do this before 3.33 step 3 if you can**: it is a
   one-liner, now that `bench_perception.py` reads the predictor's device
   (`87c92f1`).
-- **4b.** cloud-vision: coerce `target_direction` to its vocabulary and
+- ~~**4b.**~~ **BUILT 2026-10-03** (service-side, plus `/guidance`'s flag; not
+  deployed until the Lambda is rebuilt). cloud-vision: coerce `target_direction` to its vocabulary and
   type-check `target_visible` in `service/vision_analyze/vision_core.py`.
   Today the string `"false"` is truthy and can pass the
   reached-implies-visible guard. Or decide every caller coerces.
-- **4c.** Metrics rows show up as zero-frame walks. Filter the metrics
+- ~~**4c.**~~ **BUILT 2026-10-03:** filtered in `list_walks()` and refused by
+  every walk route (`tests/test_walk_store.py`, `tests/test_admin_server.py`). Metrics rows show up as zero-frame walks. Filter the metrics
   prefix in `control/walk_store.py` `list_walks()`. Operations owns the
   storage layout and recordings owns the filter.
-- **4d.** `world/ros_world.py` goal routes return 500 when the bridge is
+- ~~**4d.**~~ **BUILT 2026-10-03:** refused by name (`ros_unavailable`; 503 on
+  read and cancel), `tests/test_ros_goals.py`. `world/ros_world.py` goal routes return 500 when the bridge is
   down (no `except` around httpx). Refuse them by name instead.
-- **4e.** `control/health.py`: its verdict ignores `drive.ros_up`, so a
+- ~~**4e.**~~ **BUILT 2026-10-03:** `drive.ros_up` false under `drive: ros` is a
+  verdict input, named by half (`tests/test_health.py`). `control/health.py`: its verdict ignores `drive.ros_up`, so a
   dead ROS container doesn't show in the health check.
-- **4f.** `config/robot.yaml`'s `sim_map:` key is read by nothing. Wire it
+- ~~**4f.**~~ **BUILT 2026-10-03:** wired (`SIM_MAP` overrides it), now a map
+  name; `tests/test_config_and_factory.py`. `config/robot.yaml`'s `sim_map:` key is read by nothing. Wire it
   or delete it.
-- **4g.** Stale code prose to fix in one pass:
+- ~~**4g.**~~ **DONE 2026-10-03** (every item below; the specs' matching
+  Known-gap bullets removed). Stale code prose to fix in one pass:
   - `config/robot.yaml` :6 ("PiCar-X"), :86 ("ros not built yet"), :241
     ("turns"; the guard counts degrees), :293 ("83 steps"; it is 61);
   - `control/brain_config.py` :58-59, :66-70, :97, and :156, where
@@ -288,21 +294,24 @@ bridge, as `tests/test_ros_drive.py` does), or change body ARCH to say
   - the `AGENT-HARNESS.md` §12-vs-§10 citations;
   - `service/vision_analyze/vision_core.py:69`.
 
-- **4h. `control/target_probe.py:65-69` reads its "peak" from
+- ~~**4h.**~~ **BUILT 2026-10-03:** peak and hits over every candidate
+  (`tests/test_target_probe.py`). **`control/target_probe.py:65-69` reads its "peak" from
   `r.best`,** which is set only on DETECTED (P >= 0.8). So "0.000 = inert
   prompt" is wrong, and `--gate` below 0.8 does nothing. Compute the peak
   over `max(c.probability for c in r.candidates)`, then fix `CLAUDE.md`'s
   description of the probe (second review, M5).
-- **4i. `service/lambda/build.sh` prints a deploy command that expands
+- ~~**4i.**~~ **BUILT 2026-10-03:** `build.sh` exits 2 before building when
+  either secret is empty (`tests/test_lambda_packaging.py`). **`service/lambda/build.sh` prints a deploy command that expands
   `$VISION_SHARED_SECRET` and `$WALKS_SHARED_SECRET`,** but the secrets
   files define `VISION_SECRET` and `WALKS_SECRET`. Pasted as printed, it
   deploys with **no auth**. Make the script refuse to print the command
   when either is empty (M4). Operations ENG now gives the export lines.
-- **4j. The host never clamps wheel commands to the board's ±2.0 m/s
+- ~~**4j.**~~ **BUILT 2026-10-03:** scaled into the window, ratio kept
+  (`tests/test_board_speed_clamp.py`). **The host never clamps wheel commands to the board's ±2.0 m/s
   window.** The board drops an out-of-range `T:1` and keeps running the
   old setpoint, while the command still feeds the heartbeat
   (`robot/hardware_robot.py:330-336`).
-- **4k. `brain/arrival.py:6-9`'s docstring is stale** (see 1c), and so is
+- ~~**4k.**~~ **DONE 2026-10-03.** **`brain/arrival.py:6-9`'s docstring is stale** (see 1c), and so is
   `world/factory.py:14-22`'s docstring.
 
 ## 5. To investigate

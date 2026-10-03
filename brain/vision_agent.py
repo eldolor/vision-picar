@@ -32,13 +32,11 @@ and buys nothing the photograph does not already show -- the model is
 looking at the scene, not at a distance number. Removing the peek also
 removes six HTTP round trips per step.
 
-**No room memory yet.** A photograph carries no room label, so
-`frame["room"]` is `"unknown"` and `MissionMemory.visited_rooms` stays
-empty. Nothing therefore stops this policy revisiting a room it has
-already searched except the step cap. That is the open half of S2b, and
-it is called out in `AGENT-HARNESS.md` section 12; closing it needs a room
-signal in the frame (the `/analyze` route's room guess, or `identify_room`
-over a caption), not a change here.
+**Room memory comes from the cloud.** A photograph carries no room label;
+`/navigate` returns a `room_guess` that `MissionAgent.step()` backfills
+into `frame["room"]`, and the searched rooms go back to it on every call
+(`brain/navigate.py`, "Room-level step memory";
+`docs/guides/AGENT-HARNESS.md` section 10).
 
 **No safety, of its own.** Same as every other policy: the action goes
 through `robot/safety.py`, which re-reads the distance sensor and can veto

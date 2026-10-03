@@ -44,11 +44,12 @@ and tests/test_brain_server.py asserts the import surface directly.
 
 `policy: "vision"` hands each decision to the model via
 brain/navigate.py, and needs both `brain.vision_url` and a backend whose
-frames carry pixels (`sim/replay_robot.py` today; MockRobot cannot until
-phase S2). `policy: "tiered"` is the same call wrapped in
-brain/tiered.py's trigger discipline (P2): a local YOLO + CLIP pipeline
-looks at every frame for free and the paid call goes out only on
-`mission_start`, `candidate_sighting` or `cold_search`. **Those models
+frames carry pixels (every backend since S2, 2026-08-31). `policy:
+"tiered"` is the same call wrapped in brain/tiered.py's trigger discipline
+(P2): a local detector + CLIP pipeline looks at every frame for free and
+the paid call goes out only on a trigger (`mission_start`,
+`candidate_sighting`, `cold_search`, `staleness`) and once at arrival to
+confirm identity. **Those models
 run in THIS process**, which is why the pipeline is built at mission
 start rather than on the first tick: `ultralytics`/`torch` are optional
 (requirements-perception.txt), and a missing one has to be a 400 naming

@@ -71,9 +71,11 @@ the picture does not change (the phase's UI proof). Two things are
   * **Font.** Object labels use PIL's default bitmap font rather than the
     browser's monospace stack.
 
-`tests/test_renderer_parity.py` therefore compares the wall-height
-profile column by column, which is what "the same view" actually means,
-rather than demanding identical bytes.
+The parity suite (`tests/test_renderer_parity.py`) compared the wall-height
+profile column by column, which is what "the same view" actually means. It
+and `renderFPV` were deleted on 2026-09-25 with the ROS alignment; the
+golden image in `tests/test_renderer.py` pins this module now. The section
+above is the record of how the port was proved.
 """
 
 import base64
@@ -84,9 +86,9 @@ from typing import Optional
 from PIL import Image, ImageDraw
 
 # ---------- constants, ported verbatim from web-twin/app.js ----------
-# The JS names are kept so the two files can be diffed by eye. Changing
-# any of these without changing its twin is what the parity test exists
-# to catch.
+# The JS names are kept from the port (the JS was deleted 2026-09-25).
+# Changing any of these changes what the model sees; the golden image in
+# tests/test_renderer.py is what catches it now.
 
 HEADING_ANGLE = {"N": -math.pi / 2, "E": 0.0, "S": math.pi / 2, "W": math.pi}
 FPV_FOV = math.pi / 3  # 60 degrees
@@ -106,10 +108,8 @@ FPV_WALL_RGB = (118, 129, 150)
 # next room. This render is the policy's *input*, so it is lit like a room
 # rather than themed like a panel.
 #
-# `renderFPV` in web-twin/app.js carries the same two constants, for the same
-# reason it carries every other one on this page -- see "Parity" above. It no
-# longer reads them from CSS either, so restyling the twin cannot silently
-# change what the model sees.
+# `renderFPV` in web-twin/app.js carried the same two constants until it was
+# deleted (2026-09-25); restyling the twin cannot change what the model sees.
 COLOR_CEILING = (198, 203, 211)  # upper half: a lit ceiling, not a night sky
 COLOR_FLOOR = (128, 120, 110)  # lower half: floor, distinct from the walls
 COLOR_TARGET = (255, 107, 53)  # --accent-alert: #FF6B35
@@ -407,8 +407,8 @@ def render_world_image(world, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT) -> Ima
     centre, which was the whole reason the twin could not show a
     non-cardinal pose; it now takes the world's real `x`/`y`/`view_angle()`.
     `HEADING_ANGLE` stays where it is -- it is the line-for-line port of the
-    JavaScript's own table, and `tests/test_renderer_parity.py` compares
-    against it directly. On a cardinal pose the two agree exactly, so no
+    JavaScript's own table (the JS and its parity suite were deleted
+    2026-09-25). On a cardinal pose the two agreed exactly, so no
     rendered frame changed.
     """
     return render(

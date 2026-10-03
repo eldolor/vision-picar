@@ -59,7 +59,7 @@ record to compare across releases.
 | Deploy-artifact bucket | The function packages, which are the only rollback path for the functions | Adopted into infrastructure-as-code so it can be checked against its template |
 | Static publisher | Publishing exactly the files the manifest lists, each served as the right type, and making the CDN serve the new copies | The manifest is the single list of what the site consists of |
 | Tunnel and proxy | One public domain in front of the local robot and brain, split by path | A proxy, never a merge. Both servers stay separate processes |
-| Secrets | One gate per trust boundary: driving the local robot, asking the vision service, reading walks and metrics | Values live outside the repo. A deploy with an empty secret runs with no authentication, and the build prints that warning |
+| Secrets | One gate per trust boundary: driving the local robot, asking the vision service, reading walks and metrics | Values live outside the repo. A deploy with an empty secret would run with no authentication, so the build refuses to start without both (handoff 4i) |
 | Health verdict | One answer for both halves, with an exit code | Only conditions a release can be blamed for may change it |
 | Build identity | Which build is running, from where, logged first and published on health | Lives on the robot side of the code, because both servers report it and the robot server may never depend on the brain's code |
 | Mission metrics | One summary row per mission, shipped at the end and stored with the walks | The shipper can never fail a mission |
@@ -140,9 +140,12 @@ cross-origin support is deployed there.
 ### One verdict, and only blameable inputs reach it (M5)
 
 **Decision.** Health is one command over both halves. Its verdict is built
-from three inputs only: each process answers; the robot's watchdog loop has
-polled recently; and when a mission is running, the brain's loop has
-completed a tick within the mission's own tick deadline. Everything else is
+from four inputs only: each process answers; the robot's watchdog loop has
+polled recently; when a mission is running, the brain's loop has
+completed a tick within the mission's own tick deadline; and when the robot
+drives through ROS, ROS is up -- the container is part of what was
+deployed, and with it down no mission can run (handoff 4e, 2026-10-03).
+Everything else is
 printed as description and never changes the exit code. The twin's health
 line renders this verdict and never invents its own.
 
@@ -229,7 +232,7 @@ move the robot on its own.
 | Either half is down, or its guard loop has stopped | Health verdict UNHEALTHY or UNREACHABLE, non-zero exit | A broken release is always visible. A parked robot is never reported unhealthy |
 | A mission is alive but no longer ticking | Health verdict UNHEALTHY for the brain | Detected within the mission's own tick deadline |
 | Metrics service unreachable | Row dropped, warning logged | Never delays or fails a mission |
-| A secret is unset on an exposed process | The gate is inert. The build prints a warning; the run script refuses to start without its secrets file | Nothing reachable through the tunnel runs without a secret |
+| A secret is unset on an exposed process | The gate is inert. The build refuses to start without both deploy secrets; the run script refuses to start without its secrets file | Nothing reachable through the tunnel runs without a secret |
 | The tunnel stops while servers restart | Restart leaves the tunnel alone and warns if it is not running | Restarting servers never takes the tunnel down |
 | A deleted stack is "restored" by habit | The old templates are kept as history only | Nothing deployed depends on them |
 

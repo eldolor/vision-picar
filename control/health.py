@@ -101,6 +101,19 @@ def check_robot(url: str, secret=None, timeout=DEFAULT_TIMEOUT_S) -> dict:
                 f"(wakes every {interval}s) -- the guard is not running"
             )
 
+    # Verdict input 3 (handoff 4e). Under drive: ros the ROS container is
+    # part of what was deployed, and with it down no mission can run --
+    # autonomy is refused ros_unavailable. Said by half, because the remedy
+    # differs: a dead bridge may answer again by itself; a plugin whose
+    # posts stopped needs a container restart (service/slam/README.md).
+    drive = body.get("drive") or {}
+    if drive.get("mode") == "ros" and drive.get("ros_up") is False:
+        if drive.get("bridge_up") is False:
+            problems.append("ROS is down under drive: ros -- the bridge is not answering")
+        else:
+            problems.append("ROS is down under drive: ros -- the wheel plugin's posts "
+                            f"have stopped (last {drive.get('ros_post_age_s')}s ago)")
+
     return {
         "name": "robot",
         "url": url,
@@ -123,6 +136,9 @@ def check_robot(url: str, secret=None, timeout=DEFAULT_TIMEOUT_S) -> dict:
             # cable, a flat battery), and the body already refuses to drive
             # without it -- `no_feedback` in last_refusal says so.
             "motor_board": body.get("motor_board"),
+            # Drive mode and ROS liveness; ros_up false under drive: ros is
+            # also a verdict input above.
+            "drive": body.get("drive"),
         },
     }
 

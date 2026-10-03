@@ -53,10 +53,10 @@ the model's JSON, then coerced by `_parse_navigate_json()`:
 
 | Field | Values | Coercion |
 |---|---|---|
-| `target_visible` | bool | as returned; NOT type-checked, so a string `"false"` is truthy and satisfies the reached-implies-visible check below. `brain/navigate.py` reads it with `is True`; `web-twin/app.js` reads it by truthiness (Robot view's zone highlight, `const zone = result.target_visible ? ...`). |
-| `target_direction` | `left`, `center`, `right`, `not_visible` | as returned; NOT checked against the vocabulary |
+| `target_visible` | bool | coerced to a real bool (handoff 4b): `true` or the string `"true"` (any case, trimmed) is true, anything else false -- before the reached-implies-visible check below. `brain/navigate.py` reads it with `is True`; `web-twin/app.js` reads it by truthiness (Robot view's zone highlight, `const zone = result.target_visible ? ...`). |
+| `target_direction` | `left`, `center`, `right`, `not_visible` | trimmed and lower-cased, then anything off `TARGET_DIRECTIONS` becomes `not_visible` (handoff 4b) |
 | `target_reached` | bool | `is True` only. Forced `false` when `target_visible` is false. |
-| `obstacle_ahead` | bool | REMOVED when the variant's template does not ask for it (`variant_asks_obstacle()`). Otherwise as returned; NOT type-checked, so a string `"false"` is truthy. `brain/navigate.py` reads it with `is True`; Robot view's obstacle cue (`if (result.obstacle_ahead)`) reads it by truthiness. |
+| `obstacle_ahead` | bool | REMOVED when the variant's template does not ask for it (`variant_asks_obstacle()`). Otherwise coerced like `target_visible` (handoff 4b). `brain/navigate.py` reads it with `is True`; Robot view's obstacle cue (`if (result.obstacle_ahead)`) reads it by truthiness. |
 | `room_guess` | string | non-string, or empty after `strip()`, becomes `unclear`; any other string passes through stripped, so an invented label (`"spaceship"`) reaches the caller as a room |
 | `action` | `FORWARD`, `LEFT`, `RIGHT`, `REVERSE`, `STOP` | anything else becomes `STOP` |
 | `reasoning` | string | |
@@ -305,7 +305,7 @@ change.
 
 | Test | What it proves |
 |---|---|
-| `service/vision_analyze/tests/test_app.py` (58 collected, passing 2026-10-02) | Each route's validation and status codes (400/401/413/502); searched rooms forwarded and sanitised; `model_id` and `prompt_variant` rejected off-list before any model call; `/navigate/models` publishes both lists; each variant changes only what it claims (string-surgery tests); `distance_estimate` and `path_ahead` always present and coerced; `obstacle_ahead` stripped under `bearing-only` even when volunteered; region pins and per-region client caching; pins emptied by env |
+| `service/vision_analyze/tests/test_app.py` (76 collected, passing 2026-10-03; +18 for handoff 4b's coercion) | Each route's validation and status codes (400/401/413/502); searched rooms forwarded and sanitised; `model_id` and `prompt_variant` rejected off-list before any model call; `/navigate/models` publishes both lists; each variant changes only what it claims (string-surgery tests); `distance_estimate` and `path_ahead` always present and coerced; `obstacle_ahead` stripped under `bearing-only` even when volunteered; region pins and per-region client caching; pins emptied by env |
 | `tests/test_serverless_routes.py` | Every vision route has an API Gateway route and a CloudFront behaviour, and no gateway route points at a path no app serves |
 | `tests/test_lambda_packaging.py` | The vision zip installs the service's own requirements, those cover its imports, `mangum` is packaged, and `boto3` is not LISTED in `requirements-vision.txt`. It reads requirement files, not the built zip, so it does not catch that `boto3` is bundled anyway through the service's own list. |
 | `tests/test_cfn_templates.py` | cfn-lint over the templates. Skips without cfn-lint. |
@@ -340,19 +340,11 @@ template parameter agree; a live reply echoes the expected `model_id` and
   `boto3`/`botocore` (about 10 MB) instead of the runtime's. Harmless
   today; the comment in `requirements-vision.txt` and the test name
   `test_boto3_is_not_bundled` overstate what is checked.
-- **Three `/navigate` fields are not coerced, and a fourth only
-  partly.** `target_direction` passes through off-vocabulary values.
-  `target_visible` and `obstacle_ahead` are not type-checked, so a string
-  `"false"` is truthy; for `target_visible` it also satisfies the
-  reached-implies-visible guard in `_parse_navigate_json()`. `room_guess`
-  falls back to `unclear` only when non-string or empty, so any invented
-  label passes. `brain/navigate.py` protects itself (`is True` on all
-  three flags); the twin does not (`web-twin/app.js` tests
-  `result.target_visible` and `result.obstacle_ahead` by truthiness in
-  Robot view, and `/guidance`'s `target_visible`, also unchecked by
-  `_parse_guidance_json()`, by truthiness in Guide me's
-  `isGuidanceFound()`). The architecture spec records this as an open
-  question (coerce in the service, or in every caller).
+- **`room_guess` is coerced only partly**: it falls back to `unclear`
+  when non-string or empty, so an invented label passes. The flags and
+  `target_direction` (and `/guidance`'s `target_visible`) are coerced in
+  the service since handoff 4b; the coercion takes effect on the deployed
+  Lambda only after `service/lambda/build.sh` and a stack deploy.
 - **Non-image bytes reach Bedrock.** The route layer base64-decodes
   non-strictly and never opens the image, so a bad upload costs a call
   attempt and comes back 502, not 400 (Interfaces, "What is not validated

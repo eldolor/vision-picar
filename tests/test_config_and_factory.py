@@ -222,3 +222,37 @@ def test_the_environment_overrides_the_world_block(tmp_path, monkeypatch):
     with pytest.raises(ValueError) as e:
         get_world(str(path))
     assert "atlas" in str(e.value)
+
+
+# ---------- handoff 4f: the yaml's sim_map key is read ----------
+# It was read by nothing: SIM_MAP picked the house and the key (a stale
+# path) sat in config/robot.yaml looking authoritative. Now it names a map,
+# as SIM_MAP does, and the environment still overrides the file.
+
+def test_the_yaml_sim_map_picks_the_house(tmp_path, monkeypatch):
+    from robot.factory import get_robot
+
+    monkeypatch.delenv("SIM_MAP", raising=False)
+    monkeypatch.delenv("ROBOT_MODE", raising=False)
+    path = tmp_path / "robot.yaml"
+    path.write_text("mode: sim\nsim_map: scaled_house\n")
+    assert get_robot(str(path)).world.map_name == "scaled_house"
+
+
+def test_sim_map_in_the_environment_overrides_the_yaml(tmp_path, monkeypatch):
+    from robot.factory import get_robot
+
+    monkeypatch.setenv("SIM_MAP", "starter_house")
+    monkeypatch.delenv("ROBOT_MODE", raising=False)
+    path = tmp_path / "robot.yaml"
+    path.write_text("mode: sim\nsim_map: scaled_house\n")
+    assert get_robot(str(path)).world.map_name == "starter_house"
+
+
+def test_the_shipped_yaml_names_a_real_map():
+    import yaml
+
+    from sim.maps import build_world
+
+    shipped = yaml.safe_load(open("config/robot.yaml"))["sim_map"]
+    build_world(shipped)          # raises on an unknown map name

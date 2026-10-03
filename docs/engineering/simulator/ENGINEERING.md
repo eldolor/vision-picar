@@ -39,9 +39,9 @@ house name from `SIM_MAP` (the only place outside `tests/` that reads it),
 passes it to `build_world()` and adds any movers. The same `_sim_world()`
 builds the house a `HardwareRobot` stands in under `SIM_MOTOR_BOARD=fake`. `_backend()` then
 builds a `MockRobot` with the `sim:` block's `realtime`, `sensor_noise` and
-`odom_drift` settings. `config/robot.yaml`'s top-level `sim_map` key is
-**not read** by any code; the house comes only from the environment
-variable below.
+`odom_drift` settings. The house is `SIM_MAP`, else `config/robot.yaml`'s
+top-level `sim_map` (a map name; read since handoff 4f), else the starter
+house.
 
 **One tick of motion** (`MockRobot.step(dt)`). With wheel speeds
 `v_left`, `v_right` (m/s), `v = (v_right + v_left) / 2` and
@@ -289,11 +289,6 @@ a vision run) are the
 and are not repeated here. These are the implementation gaps:
 
 - **Movers hop whole cells** and never approach the robot.
-- **`config/robot.yaml`'s `sim_map` key is dead.** It names a file path
-  and nothing reads it. `SIM_MAP` is the switch.
-- **`sim/renderer.py`'s parity section is stale.** It names
-  a parity test file (test_renderer_parity.py) that was deleted with the JavaScript renderer on
-  2026-09-25. The golden image is the pin now.
 - **The D500's +90 degree mounting yaw is not modelled.** The sim publishes
   the scan with zero dead ahead (3.27, a hardware-day item).
 - **The starter house's doors are tight for the UGV Rover.** The body

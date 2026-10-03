@@ -425,3 +425,16 @@ def test_factory_refuses_s3_without_a_bucket():
 def test_factory_refuses_an_unknown_backend():
     with pytest.raises(WalkStoreError):
         walk_store_from_config({"recording_backend": "gcs", "recording_dir": "x"})
+
+
+# ---------- handoff 4c: metrics rows are not walks ----------
+# control/metrics_routes.py stores one container per UTC day, `metrics-<day>`,
+# beside the walks. list_walks() returned them, so the console listed each
+# day of metrics as a zero-frame walk.
+
+def test_metrics_containers_are_not_listed_as_walks(store):
+    seed(store, "red-backpack-20260929-101500", {"frame-001.jpg": b"x"})
+    store.write_json("metrics-2026-10-03", "run-1.json", {"run_id": "run-1"})
+    assert store.list_walks() == ["red-backpack-20260929-101500"]
+    # ...and the metrics are still where the dashboard reads them.
+    assert store.list_names("metrics-2026-10-03", prefix="") == ["run-1.json"]

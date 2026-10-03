@@ -285,13 +285,6 @@ threshold counted in steps.
 - The vision proximity veto cannot be turned on from the brain service
   (`control/brain_server.py` never passes it); only a direct `MissionRunner`
   can.
-- Code prose that has drifted: `brain/tiered.py`'s module docstring says
-  three triggers and staleness "deliberately absent" (it is implemented);
-  `_held_direction()`'s docstring says the goal is held only while a call is
-  in flight (with `hold_goal` it is held on every free frame);
-  `brain/vision_agent.py` says "no room memory yet" (built, via
-  `brain/navigate.py`). Several docstrings cite `AGENT-HARNESS.md` section 12
-  for room memory; it is section 10.
 - Arrival cannot be judged on a phone walk, and under `tier_async_cloud:
   true` a landed cloud `target_reached` is never applied, so tiered phone
   walks end `max_steps` when they arrive (P7e). **Decided by the user

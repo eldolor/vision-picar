@@ -248,6 +248,7 @@ The Jetson numbers at 15 W and 25 W are not yet taken.
 | `tests/test_perceive.py` (57) | tri-state (an empty good frame is `absent`; missing, undecodable, wedged detector or scorer is `unavailable`); open vocabulary is the default and `auto` still means 4.2's rule; probability over every score; margin override; crop cap and its growth with a second source; bearing from centre, pan added, width read from the image; soft gate and vocabulary verdict; real backends say what to install |
 | `tests/test_perceive_lab.py` (22) | lab backends and `pipeline_for_spec()` on fakes |
 | `tests/test_perception_eval.py` (47) | the four cells, inclusive gate, `unavailable` never scored, recall at an FP budget admits exactly the budget, a walk without labels cannot be scored |
+| `tests/test_target_probe.py` (2) | handoff 4h, fake pipeline: the probe's peak and its hits at `--gate` are taken over every candidate, so a prompt grounding below 0.8 is not called inert and a gate below 0.8 counts hits |
 | `tests/test_tiered.py` (92) | corroboration verdicts, a wedged camera is not a failure to corroborate, landed async verdicts shown once |
 | `tests/test_brain_server.py` | missing extras or bad weights refuse at start, health reports availability and the effective gate, a simulated robot loads no model, a real camera is never taken for the sim (the start-time probe frame) |
 | `tests/test_bearing_turns.py`, `tests/test_arrival.py` | the consumers, driven by `FrameReportedPipeline` (1.12) |
@@ -283,28 +284,21 @@ commit.
   `found`: since 2026-10-02 arrival also needs the cloud's yes on the
   arrival frame (`TieredVision.confirm_arrival()`; mechanism in the
   [policy engineering spec](../policy/ENGINEERING.md), "Arrival").
-- **`control/target_probe.py` reads its peak from `r.best`** (lines 65-69),
-  which `PerceptionPipeline.perceive()` sets only on a `detected` result
-  (P >= `match_probability`). The "peak" is therefore taken only over frames
-  that already passed 0.8: a 0.000 peak means "never passed 0.8", not an
-  inert prompt, and `--gate` below 0.8 has no effect (it can only raise the
-  bar). The fix is to take the peak over every candidate's probability. Not
-  fixed. `CLAUDE.md`'s repo map repeats the wrong reading ("a ZERO rate with
-  a 0.000 peak means the prompt is INERT").
+- **Probe peaks recorded before 2026-10-03 are peaks over DETECTED frames
+  only.** Until handoff 4h `control/target_probe.py` read the peak from
+  `r.best`, set only at P >= 0.8, so an old "0.000 -- inert" verdict means
+  "never passed 0.8", not "never grounded". It now takes the peak, and
+  counts hits at `--gate`, over every candidate's probability
+  (`tests/test_target_probe.py`). Re-probe a string before trusting an old
+  inert verdict.
 - **`YoloDetector`'s default weights are the YOLOE checkpoint.** Its
   signature is `weights: str = DEFAULT_DETECTOR`, which is now
   `yoloe-11s-seg.pt`, loaded through Ultralytics' `YOLO` class.
   `detector_for()` always passes weights explicitly, so nothing hits this
   today. A bare `YoloDetector()` would load the wrong model, and its intended
   default is `DEFAULT_YOLO_DETECTOR` (`yolo11s.pt`). This is latent.
-- **Stale prose:** `brain/perceive.py`'s comment at the crop-path block says
-  `auto` "stays the default" (the default is `low_confidence`);
-  `control/brain_config.py` names `yolo11s.pt` as the detector default and,
-  with `config/robot.yaml`, says a 0 margin means "the module default 0.05"
-  (0 means the probability gate). The comment `# "" = brain/perceive.py's
-  DEFAULT_CROP_PATH` in `control/brain_config.py`'s `DEFAULTS` sits on the
-  `perception_floor_mask` line, but it belongs to `perception_crop_path`, two
-  lines above; `requirements-perception.txt` and
+- **Stale prose:** `config/robot.yaml` still says a 0 margin means "the
+  module default 0.05" (0 means the probability gate); `requirements-perception.txt` and
   `brain/perceive_lab.py`'s docstring still describe YOLO11s and the floor
   mask as the shipped tier. `YoloE`'s class docstring in
   `brain/perceive.py` (around lines 1316-1333) gives P22's numbers for the

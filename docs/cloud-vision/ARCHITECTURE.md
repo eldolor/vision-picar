@@ -160,17 +160,15 @@ caller can tell "the model saw no obstacle" from "nobody asked". The
 distance and path answers are never removed; they read "unknown" when
 not asked.
 
-**Not yet covered.** Three move-reply fields pass through as the model
-wrote them: the target's direction is not checked against its
-vocabulary, and neither the visibility flag nor the obstacle flag is
-type-checked. A string "false" in either flag therefore reads as true to
-any caller that tests truthiness, and in visibility's case it can
-satisfy the reached-implies-visible guard. The room guess is only partly
-covered: an invented room name passes through. Callers differ today: the
-brain accepts only a literal true for both flags, while the twin reads
-them by truthiness. The person-steering reply's visibility flag is not
-type-checked either. The engineering spec lists these as known gaps.
-Whether to coerce them in the service is open.
+**Coerced in the service, once, for every caller** (handoff 4b,
+2026-10-03). The target's direction is held to its vocabulary, and the
+visibility and obstacle flags (and the person-steering reply's
+visibility) are made real booleans, a written "true" counting as true.
+**Rejected:** leaving each caller to check types -- the brain did and the
+twin did not, and since the brain decides `found` on the visibility flag
+at arrival, a written "true" read as false would refuse the right object.
+**Not yet covered:** the room guess, where an invented room name passes
+through.
 
 **Rejected.** Passing model text through as-is, or defaulting absent
 fields to false. A false that nobody measured reads exactly like a
@@ -327,11 +325,9 @@ small delay to a call that already takes seconds.
   deployed?** Nothing in the twin calls them since the Camera tab was
   removed on 2026-09-25. They are still routed and tested. The user decides. Evidence would be a caller
   that needs them.
-- **Coerce the target's direction, visibility, the obstacle flag and the
-  room guess?** Today they pass through as the model wrote them (see
-  "Every answer fails towards 'do not act on it'"). Coercing them in the
-  service closes the gap for every caller at once; the alternative is each
-  caller checking types, which the brain does and the twin does not.
+- **Coerce the room guess to a known room list?** The flags and the
+  direction are coerced since handoff 4b; an invented room name still
+  passes.
 - **Promote a newer model?** Three models were added on 2026-09-21 and
   are unmeasured. A replay over the rig corpus decides it, through the
   recordings domain's replay.

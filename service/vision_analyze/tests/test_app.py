@@ -816,3 +816,71 @@ def test_a_variant_that_asks_still_reports_obstacle_ahead(monkeypatch):
         b"jpegbytes", "red backpack", "image/jpeg", prompt_variant="default")
 
     assert decision["obstacle_ahead"] is True
+
+
+# ---------- handoff 4b: every boolean and the direction coerced ----------
+# `target_reached` was coerced (`is True`) but `target_visible` and
+# `obstacle_ahead` were passed through as the model wrote them, and so was
+# `target_direction`. A string "false" is truthy to the twin, and since
+# 2026-10-02 the brain decides `found` on `target_visible` -- where a string
+# "true" read as not-visible made a sticky refusal at the right object.
+
+
+@pytest.mark.parametrize("raw, expected", [
+    (True, True), (False, False), ("true", True), ("True", True),
+    ("false", False), ("yes", False), (1, False), (None, False),
+])
+def test_target_visible_and_obstacle_ahead_are_real_booleans(raw, expected):
+    import json as _json
+
+    import vision_core
+
+    parsed = vision_core._parse_navigate_json(_json.dumps({
+        "target_visible": raw, "obstacle_ahead": raw, "target_direction": "center",
+        "target_reached": False, "action": "FORWARD", "reasoning": "x"}))
+    assert parsed["target_visible"] is expected
+    assert parsed["obstacle_ahead"] is expected
+
+
+def test_a_string_false_cannot_pass_the_reached_implies_visible_guard():
+    import json as _json
+
+    import vision_core
+
+    parsed = vision_core._parse_navigate_json(_json.dumps({
+        "target_visible": "false", "target_reached": True,
+        "target_direction": "center", "action": "STOP", "reasoning": "x"}))
+    assert parsed["target_visible"] is False and parsed["target_reached"] is False
+
+
+def test_a_direction_in_the_wrong_case_is_still_the_vocabulary():
+    import json as _json
+
+    import vision_core
+
+    parsed = vision_core._parse_navigate_json(_json.dumps({
+        "target_visible": True, "target_direction": " Left ",
+        "target_reached": False, "action": "FORWARD", "reasoning": "x"}))
+    assert parsed["target_direction"] == "left"
+
+
+@pytest.mark.parametrize("raw", ["ahead", "", None, 3])
+def test_an_off_vocabulary_direction_fails_towards_not_visible(raw):
+    import json as _json
+
+    import vision_core
+
+    parsed = vision_core._parse_navigate_json(_json.dumps({
+        "target_visible": True, "target_direction": raw,
+        "target_reached": False, "action": "FORWARD", "reasoning": "x"}))
+    assert parsed["target_direction"] == "not_visible"
+
+
+@pytest.mark.parametrize("raw, expected", [("false", False), ("true", True), (True, True), (0, False)])
+def test_guidance_target_visible_is_a_real_boolean_too(raw, expected):
+    import json as _json
+
+    import vision_core
+
+    parsed = vision_core._parse_guidance_json(_json.dumps({"target_visible": raw}))
+    assert parsed["target_visible"] is expected

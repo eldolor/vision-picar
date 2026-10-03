@@ -186,7 +186,7 @@ above raises `RobotTransportError`. Sensing routes catch only `HTTP 404`.
 | `mode` / `ROBOT_MODE` | `sim` | `sim`, `teleop` or `hardware`; anything else is a `ValueError`. The env var wins |
 | `drive.mode` / `ROBOT_DRIVE` | `direct` | `ros` wraps the backend in `RosDriveRobot` |
 | `drive.bridge_url` / `ROS_BRIDGE_URL` | `http://127.0.0.1:8090` | Where the ROS wrapper posts twists |
-| `SIM_MAP` | `starter_house` | Which house `sim/maps/` builds |
+| `SIM_MAP` / `sim_map` | `starter_house` | Which house `sim/maps/` builds; the environment variable overrides the yaml key (handoff 4f) |
 | `SIM_MOVERS` | unset | People/pets scenario added to the house |
 | `sim.realtime` | `false` | Sim verbs sleep their declared duration (S4) |
 | `sim.sensor_noise.*` | `enabled: false` | `DistanceSensorModel`: `stddev_cm` 3.0 in the shipped yaml (code default 0.0 when the key is absent), `dropout_rate` 0.0, range 2-400 cm, `read_latency_s` 0.0 (S5) |
@@ -195,9 +195,6 @@ above raises `RobotTransportError`. Sensing routes catch only `HTTP 404`.
 | `ROBOT_SERIAL` / `hardware.serial_port` | none (required) | The board's serial device under `mode: hardware` |
 | `TRACK_SCRUB` / `hardware.track_scrub` | 1.0 | Skid steer's effective/geometric track for a real board (3.35); ignored for the fake board. Set the env var for the ROS container too. `[PLACEHOLDER]` |
 | `SIM_MOTOR_BOARD=fake` | unset | `mode: hardware` against `sim/fake_esp32.py` on a pty, with a sim body as `sensors` |
-
-`config/robot.yaml` also carries a top-level `sim_map:` key that **no code
-reads**; `SIM_MAP` is the only selector.
 
 ### Constants
 
@@ -323,13 +320,6 @@ did not measure.
   `HardwareRobot`, plus a fake lidar on a pseudo-terminal like
   `sim/fake_esp32.py`, with criteria the user approves
   (`PLAN-ros-alignment.md` 6, question 5).
-- **Stale comments in code:** `sim/mock_robot.py` around line 186 says the
-  wheel methods "are NOT on `RobotInterface`" (they are, since R2).
-  `robot/interface.py`'s `get_depth_grid()` docstring says "Nothing in
-  `brain/` reads this yet"; `brain/agent.py` reads it through
-  `forward_clearance()`. `robot/interface.py`'s module docstring says
-  `hardware_robot.py` is "added in Phase 11"; it exists (R7).
-- **Dead config key:** `config/robot.yaml`'s `sim_map:` is never read.
 - **Wheel slip is not modelled**: sim encoders count what the body
   achieved (`PLAN-ros-alignment.md` section 4).
 - **Pan is three positions**, and the sim's depth grid swings with it

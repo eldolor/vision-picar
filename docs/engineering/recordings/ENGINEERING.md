@@ -19,7 +19,7 @@ commit as the code.
 | File | What it does |
 |---|---|
 | `control/recording_routes.py` | `mount_recording_routes(app, store, *, prefix, require_secret, allow_recording, proxy)` adds `POST /recording/frame` and `POST /recording/finish`. It holds the naming contract (`WALK_NAME`) and the size caps. |
-| `control/walk_store.py` | `WalkStore` (abstract), `LocalWalkStore(root)`, `S3WalkStore(bucket, prefix="recordings", client=None, export_prefix="exports")`, and `walk_store_from_config(config)`, the only place that picks a backend. `SAFE_NAME` guards every walk and file name on both backends. |
+| `control/walk_store.py` | `WalkStore` (abstract), `LocalWalkStore(root)`, `S3WalkStore(bucket, prefix="recordings", client=None, export_prefix="exports")`, and `walk_store_from_config(config)`, the only place that picks a backend. `SAFE_NAME` guards every walk and file name on both backends. `list_walks()` skips `METRICS_PREFIX` (`metrics-`) containers on both backends, and `admin_server._require_walk()` answers 404 for one, so no walk route reads, replays or deletes a day of metrics (handoff 4c). |
 | `control/admin_server.py` | The walks service: `create_app(config_path=None, store=None)`. Mounts the write routes and the metrics routes, then the review API and `/admin` + `/admin.js`. Its own `require_secret` reads `APP_SHARED_SECRET`. |
 | `control/admin.html`, `control/admin.js` | The review console. Deployed from the static bucket at `/admin` and `/admin.js` (`service/static/assets.json`). |
 | `control/walk_eval.py` | `compute_metrics(entries)`, `metric_flags()`, `judge_walk()`, `check_collisions()`, `score_walk(metrics, judge, collisions)`. Pure apart from the injected Bedrock client. |
@@ -357,19 +357,6 @@ import is added to `requirements-walks.txt`; a `SCHEMA_VERSION` bump if
   made, and values set outside the template would change the answer.
   `aws lambda get-function-configuration` on the walks function settles
   it.
-- **Metrics containers appear as walks.** `list_walks()` does not filter
-  `metrics-YYYY-MM-DD`, so the console list (`GET /recording/walks`) and
-  `/stats` count them as zero-frame walks. `/recording/summary` iterates
-  them but adds no row, because they have no `eval.json` and no replays.
-  Ownership: operations owns the storage layout that puts them there and
-  its fix (the operations engineering spec); this domain owns the list
-  filter, a prefix exclusion in `list_walks()` or in the routes that call
-  it. **It is also a deletion hazard:** `metrics-YYYY-MM-DD` matches
-  `WALK_NAME`, so the console's Delete (or bulk delete) on that "empty
-  walk", or `DELETE /recording/walks/metrics-YYYY-MM-DD`, calls
-  `store.delete_walk()` and removes a whole day of mission rows. On S3 the
-  rows are recoverable from versions ("Recover a deleted object"); on the
-  local backend they are gone.
 - **The bucket-missing refusal keys on `RECORDING_BACKEND=s3`, and its
   own guard is dead code.** With `s3` and no bucket, `create_app()` raises
   `WalkStoreError` before `walks_handler._assert_configured()` runs, so

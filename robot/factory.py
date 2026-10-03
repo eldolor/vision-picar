@@ -52,12 +52,14 @@ def _with_drive(robot: RobotInterface, config: dict) -> RobotInterface:
     raise ValueError(f"Unknown drive mode in config: {mode!r} (direct | ros)")
 
 
-def _sim_world():
-    """The house SIM_MAP names (the starter house by default), with the
-    people and pets SIM_MOVERS names, if any (PLAN-ros-alignment.md 3.30)."""
+def _sim_world(config: dict):
+    """The house SIM_MAP names -- else config/robot.yaml's `sim_map`, else
+    the starter house (handoff 4f: the yaml key used to be read by nothing)
+    -- with the people and pets SIM_MOVERS names, if any
+    (PLAN-ros-alignment.md 3.30)."""
     from sim.maps import build_movers, build_world
 
-    house = os.environ.get("SIM_MAP") or "starter_house"
+    house = os.environ.get("SIM_MAP") or config.get("sim_map") or "starter_house"
     world = build_world(house)
     if os.environ.get("SIM_MOVERS"):
         for mover in build_movers(house, os.environ["SIM_MOVERS"]):
@@ -80,7 +82,7 @@ def _backend(config: dict) -> RobotInterface:
 
         # SIM_MAP picks the house (sim/maps/__init__.py); the starter house
         # is the default and what every existing test was measured on.
-        world = _sim_world()
+        world = _sim_world(config)
         sim_config = config.get("sim", {})
         realtime = bool(sim_config.get("realtime", False))
 
@@ -134,7 +136,7 @@ def _backend(config: dict) -> RobotInterface:
             from sim.fake_esp32 import FakeEsp32
             from sim.mock_robot import MockRobot
 
-            body = MockRobot(_sim_world())
+            body = MockRobot(_sim_world(config))
             board = FakeEsp32(body)
             # track_scrub 1.0 whatever the setting: the sim body does not
             # scrub, so the car's correction would make it turn wrong (3.35).

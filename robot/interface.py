@@ -2,8 +2,8 @@
 interface.py
 
 The abstract contract brain/ is allowed to depend on. Both the simulation
-backend (sim/mock_robot.py) and the eventual real hardware backend
-(robot/hardware_robot.py, added in Phase 11) implement this exact set of
+backend (sim/mock_robot.py) and the real hardware backend
+(robot/hardware_robot.py, R7: the UGV Rover's motor board) implement this exact set of
 methods. brain/ never imports a backend directly -- only this interface,
 via robot/factory.py.
 """
@@ -445,8 +445,7 @@ class RobotInterface(ABC):
         dimension is absent instead of reading eight identical copies of
         one row and believing it has a matrix.
 
-        **Nothing in `brain/` reads this yet.** M3 gives it its first
-        consumer: `robot/safety.py` reduces the centre zones to one scalar
+        Its consumers: `robot/safety.py` (M3) reduces the centre zones to one scalar
         and compares that to `min_distance_cm`, so the veto stays a number
         against a threshold and the safety layer's shape does not change.
         The scalar `get_distance()` remains the veto for any backend whose

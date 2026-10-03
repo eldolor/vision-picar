@@ -671,7 +671,7 @@ class MissionRunner:
         """The agent's vision_fn, wrapped in B3.2's timeout. Raises
         VisionUnavailable, which tick() turns into the failure budget.
 
-        Also where room-level step memory (AGENT-HARNESS.md section 12)
+        Also where room-level step memory (docs/guides/AGENT-HARNESS.md section 10)
         reaches the vision call: if self.vision_fn carries a
         set_searched_rooms attribute (brain/navigate.py's vision_fn_for()
         does; the rule-based default does not), refresh it from

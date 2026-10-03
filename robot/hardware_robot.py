@@ -72,6 +72,10 @@ from robot.interface import (
 # pulse count, which nothing on the ROS side holds, is pinned by
 # tests/test_ros_driver_board.py). 660 = 11 lines x 2 (half quad) x 30:1.
 WHEEL_RADIUS_M = 0.040
+# The firmware's own window for a T:1 wheel speed (setGoalSpeed(): an input
+# outside +/-2.0 m/s is DROPPED and the previous setpoint keeps running).
+# The host scales into it rather than letting a command vanish (handoff 4j).
+BOARD_MAX_WHEEL_M_S = 2.0
 TRACK_WIDTH_M = 0.172
 COUNTS_PER_REV = 660
 # Odometers back at zero while the estimate is this far from them: a board
@@ -403,6 +407,11 @@ class HardwareRobot(RobotInterface):
     # ---------- wheels ----------
 
     def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
+        # Both wheels by the same factor, so the ratio -- the turn -- holds.
+        fastest = max(abs(left_rad_s), abs(right_rad_s)) * WHEEL_RADIUS_M
+        if fastest > BOARD_MAX_WHEEL_M_S:
+            k = BOARD_MAX_WHEEL_M_S / fastest
+            left_rad_s, right_rad_s = left_rad_s * k, right_rad_s * k
         moving = bool(left_rad_s or right_rad_s)
         with self._lock:
             fresh = self._fresh()

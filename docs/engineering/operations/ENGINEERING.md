@@ -93,7 +93,7 @@ required):
 
 | Server | Verdict inputs | Description fields |
 |---|---|---|
-| Robot `GET /health` | `seconds_since_watchdog_poll` against `watchdog_poll_interval_s` x 10 | `mode`, `seconds_since_last_command`, `watchdog_timeout_s`, `driver`, `authority_holder`, `last_refusal`, `env_label`; also on the route: `drive`, `wheel_loop`, `motor_board`, `min_distance_cm`, `sim_map`, `refusal_counts`, `identity` |
+| Robot `GET /health` | `seconds_since_watchdog_poll` against `watchdog_poll_interval_s` x 10; and `drive.ros_up` false when `drive.mode` is `ros`, named by half (`drive.bridge_up` false: the bridge; else the plugin's posts, with `drive.ros_post_age_s`) | `mode`, `seconds_since_last_command`, `watchdog_timeout_s`, `driver`, `authority_holder`, `last_refusal`, `env_label`; also on the route: `drive`, `wheel_loop`, `motor_board`, `min_distance_cm`, `sim_map`, `refusal_counts`, `identity` |
 | Brain `GET /health` (under `/brain` behind the tunnel) | `mission_running` and `seconds_since_last_tick` against `tick_timeout_s` | `robot_url`, `tick_rate_hz`, `navigate_model_id`, `navigate_prompt_variant`; also on the route, among others: `drills_allowed`, `identity`, `perception_available`, the `perception_*` settings, the `tier_*` settings (`tier_consecutive_frames` and others), `recording_allowed`, `faults` (`control/brain_server.py`'s `health()` is the full list) |
 
 `control.health` output: `{status: ok|unhealthy, failed: [names],
@@ -151,12 +151,13 @@ PICAR_BRIDGE_URL=http://127.0.0.1:9 PICAR_ROS_CONTAINER=no-such-container \
 set -a; source ~/.vision-picar-local-secrets
 [ -f ~/.vision-picar-serverless-secrets ] && source ~/.vision-picar-serverless-secrets; set +a
 export VISION_SHARED_SECRET="$VISION_SECRET" WALKS_SHARED_SECRET="$WALKS_SECRET"
-[ -n "$VISION_SHARED_SECRET" ] && [ -n "$WALKS_SHARED_SECRET" ] || echo "STOP: a secret is empty"
-bash service/lambda/build.sh <deploy-bucket> [region]   # bucket: deploy stack's DeployBucketName output; region defaults to us-east-2
+bash service/lambda/build.sh <deploy-bucket> [region]   # exits 2 before building if either is empty   # bucket: deploy stack's DeployBucketName output; region defaults to us-east-2
 # then run the "Deploy with:" command it prints, in THIS shell
 ```
 
-**The export line is not optional.** The printed command expands
+**The export line is not optional, and `build.sh` enforces it** (handoff
+4i): with either variable empty it prints `STOP: <name> is empty ...` on
+stderr and exits 2 before building or uploading anything. The printed command expands
 `$VISION_SHARED_SECRET` and `$WALKS_SHARED_SECRET`
 (`service/lambda/build.sh`), but the secrets files define `VISION_SECRET`
 and `WALKS_SECRET`. Pasted without the exports, both parameters deploy
@@ -288,23 +289,6 @@ and are not repeated here. These are the implementation gaps:
   (docs/engineering/recordings/ENGINEERING.md), the canonical home. The
   fix touches `WalksFunction` in `cloudformation/serverless.yaml`, which
   this domain deploys.
-- **Metrics records appear as walks.** `POST /metrics/runs` writes
-  `metrics-YYYY-MM-DD/<run_id>.json` into the same store as the walks, and
-  `list_walks()` (`control/walk_store.py`, both backends) does not skip the
-  `metrics-` prefix. The console list, `/stats` and `/recording/summary`
-  then iterate over them as zero-frame walks. Operations owns the layout
-  (`METRICS_PREFIX` in `control/metrics_routes.py`); the recordings domain
-  implements the filter in `list_walks()` and pins it in
-  `tests/test_walk_store.py`.
-- **Deleting a "walk" can delete a day of mission metrics.**
-  `DELETE /recording/walks/metrics-YYYY-MM-DD` passes the walk-name check
-  and the exists check (`_require_walk()` in `control/admin_server.py`), so
-  it deletes that day's mission rows, and the console lists those
-  containers as walks. Read from the code, not exercised.
-- **`build.sh` prints its deploy command even with empty secrets.** It
-  only warns. Proposed: refuse to print the command (or exit non-zero)
-  when `VISION_SHARED_SECRET` or `WALKS_SHARED_SECRET` is empty, so the
-  no-auth deploy above cannot be pasted by accident.
 - **`control/metrics.html` is not asset-checked.** `tests/test_static_assets.py`
   walks the twin and the walk console only, so a file the metrics
   dashboard references could be missing from `service/static/assets.json`
@@ -316,9 +300,8 @@ and are not repeated here. These are the implementation gaps:
 - **`run.sh`'s warm-up hint is stale.** It says the first mission downloads
   `yolo11s.pt` (18 MB); the shipped detector is `yoloe-11s-seg.pt`, plus a
   text encoder of about 572 MB (`tools/jetson/README.md`).
-- **`control/health.py` reads no ROS or wheel-loop field.** Under
-  `drive: ros`, a dead container shows only as `drive.ros_up` on the robot's
-  health route, not in the verdict. Whether that is blameable is undecided.
+- **`control/health.py` reads no wheel-loop field.** Late safety ticks
+  (`wheel_loop.late_ticks`) show only on the robot's health route.
 - **`control.health`'s default brain URL does not match `run.sh`.** The
   default is `http://127.0.0.1:8001` with no prefix, so against the tunnel
   stack it needs `--brain-url .../brain` (see Procedures).

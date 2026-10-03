@@ -100,13 +100,11 @@ separate files on purpose:
 and reads the ground-truth labels, never the log. Tier metrics share the
 bucket and the walks service but belong to the operations domain. They
 are about missions, not walks: one row per mission, kept in per-day
-containers. Because those containers sit beside the walks, the walk list
-currently shows them as empty walks. The split of that problem is fixed:
-operations owns where metrics rows are stored and the fix to that layout;
-this domain owns the walk list and its filter, which must show walks only.
-Until the filter exists there is a hazard as well as clutter: a metrics
-container passes the walk-name check, so deleting it from the console as
-if it were an empty walk deletes a day of mission rows.
+containers beside the walks. Operations owns where metrics rows are
+stored; this domain owns the walk list and its filter, which shows walks
+only, and no walk route reads or deletes a metrics container (handoff 4c,
+2026-10-03; before it, the console listed each day as an empty walk and
+its Delete removed a day of mission rows).
 The twin owns the decision to record and the walk's name. This domain owns
 everything from the first stored byte onwards.
 
@@ -278,7 +276,7 @@ a walk that cannot be repeated cheaply.
 | A replay loses frames | Stored, flagged incomplete, unscored | A partial replay never reads as a model result |
 | Walks recorded on the laptop only | Manual sync to the bucket after each rig session | Every walk carrying adjudicated labels has a cloud copy |
 | A name with a separator or a parent element | Refused by both the routes and the store | No traversal on either backend |
-| A day of metrics rows is deleted from the console as an "empty walk" | Not guarded: the delete succeeds. On the bucket, versioning keeps the old versions for the retention window; on a directory the rows are gone. | Open: the walk list's filter is the fix; until then a delete is recoverable only from bucket versions |
+| A day of metrics rows is deleted from the console as an "empty walk" | Guarded: metrics containers are not listed as walks, and every walk route answers 404 for one | Met (handoff 4c, 2026-10-03) |
 
 ## Open questions
 

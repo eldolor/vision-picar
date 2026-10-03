@@ -193,12 +193,9 @@ class MockRobot(RobotInterface):
     # `write()` sets wheel velocity commands and whose `read()` returns wheel
     # positions, which is the shape of the three methods below.
     #
-    # These are NOT on `RobotInterface`, and not yet. R2 is where `/wheels`
-    # becomes a route and where promoting them to the interface (with an
-    # honest "this backend has no wheels to report" default, as
-    # `get_depth_grid()` and `get_odometry()` both carry) belongs. Until a
-    # consumer exists, adding an abstraction is adding a second thing to
-    # keep in step.
+    # On `RobotInterface` since R2, with an honest "this backend has no
+    # wheels to report" default, as `get_depth_grid()` and `get_odometry()`
+    # both carry; served as GET/POST `/wheels`.
 
     def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
         """Command both wheels, in rad/s. Positive is forward on both.

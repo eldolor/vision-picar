@@ -76,6 +76,12 @@ from typing import Optional
 SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
+# Mission metrics live beside the walks, one container per UTC day
+# (control/metrics_routes.py). They are not walks, so list_walks() leaves
+# them out (handoff 4c: the console listed each day as a zero-frame walk).
+METRICS_PREFIX = "metrics-"
+
+
 class WalkStoreError(Exception):
     """A name the store refuses, or a backend that could not be reached."""
 
@@ -230,7 +236,8 @@ class LocalWalkStore(WalkStore):
     def list_walks(self) -> list[str]:
         if not self.root.is_dir():
             return []
-        return sorted(p.name for p in self.root.iterdir() if p.is_dir())
+        return sorted(p.name for p in self.root.iterdir()
+                      if p.is_dir() and not p.name.startswith(METRICS_PREFIX))
 
     def list_files(self, walk: str) -> list[tuple[str, int]]:
         d = self._dir(walk)
@@ -332,7 +339,7 @@ class S3WalkStore(WalkStore):
         for page in self._pages(Prefix=root, Delimiter="/"):
             for cp in page.get("CommonPrefixes", []):
                 name = cp["Prefix"][len(root):].strip("/")
-                if name:
+                if name and not name.startswith(METRICS_PREFIX):
                     names.add(name)
         return sorted(names)
 

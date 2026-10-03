@@ -298,9 +298,6 @@ order; record the table in the plan entry.
 
 ## Known gaps
 
-- **Stale comment:** `robot/safety.py:46-57` says only FORWARD is checked
-  and that turns "can never collide". Since 3.19 and 3.22, REVERSE is
-  checked and turns are vetted through `run_verb()` and the wheel vet.
 - **The car only turns until its lidar driver lands**: see "Driving
   without a lidar" above. By decision.
 - **`tests/test_blind_reverse.py` pins less than the rule.** It covers the

@@ -46,7 +46,7 @@ which has spaces; the firmware accepts either.
 |---|---|---|
 | `{"T":136,"cmd":1500}` | At start, and after a reboot | Heartbeat: zero the wheel speeds after 1500 ms without a `T:1` or `T:11` |
 | `{"T":131,"cmd":1}` | At start, and after a reboot | Continuous feedback on (already the stock boot default) |
-| `{"T":1,"L":<m/s>,"R":<m/s>}` | Every wheel command; re-sent by `advance()` while non-zero | Closed-loop wheel surface speeds, `rad/s x WHEEL_RADIUS_M`, rounded to 5 places. If either is outside +/-2.0 the board drops the new speeds but still feeds the heartbeat, so the OLD setpoint keeps running; the host never clamps (Known gaps). |
+| `{"T":1,"L":<m/s>,"R":<m/s>}` | Every wheel command; re-sent by `advance()` while non-zero | Closed-loop wheel surface speeds, `rad/s x WHEEL_RADIUS_M`, rounded to 5 places. The host scales both speeds by one factor into the board's +/-`BOARD_MAX_WHEEL_M_S` (2.0) first, keeping their ratio, because the firmware drops an out-of-range `T:1` and keeps the OLD setpoint running (handoff 4j). |
 
 **Other commands the fake models** (the host never sends these):
 
@@ -306,6 +306,7 @@ Counts are from `pytest --collect-only`, 2026-10-02.
 
 | Test file | Tests | What it pins |
 |---|---|---|
+| `tests/test_board_speed_clamp.py` | 2 | Handoff 4j: an over-fast command (3.2 m/s) reaches the fake board scaled into +/-2.0 with its ratio kept, not dropped. |
 | `tests/test_fake_esp32.py` | 11 | R7's criteria on the ROS Driver fake: `T:1` closed loop and its +/-2.0 guard, `T:13`, `T:11` turning the PID off, `T:130` and `T:131`, the heartbeat in every mode, wheels over the wire, a severed host stopped by the board's own heartbeat. |
 | `tests/test_ros_driver_board.py` | 24 | 3.25: frame keys, cm odometers truncated toward zero, integer edges, measured speeds, at most one frame per 50 ms, `T:142`, `T:900`, 660 in one place, the anchor bound and its mutation, reboot absorption with no false reboot, set-up re-sent, a clear FORWARD within `STOCK_STRAIGHT_BAR_CM` (1.34). Stock turns within +/-1 deg is a NON-STRICT XFAIL with a guard: the mean of ten within 2.0, none past 6. |
 | `tests/test_firmware_fork.py` | 21 | 3.28 and 3.29: the patch adds only three keys inside `baseInfoFeedback()`; it applies to `2e7df97` and compiles (both skip unless `PICAR_FIRMWARE_SRC` names a checkout, and the compile also needs `arduino-cli`); the fork's keys and units; the board clock and its wrap; frame size; the 0.1 mm bound; reboots on the board clock; partial keys read as stock; fork straights and turns. |
@@ -355,26 +356,12 @@ Checklist for a change:
   (`astern_not_observed`), so no straight verb runs and no straight
   correction either; only turns move and settle. The rule is the safety
   domain's ([safety engineering](../safety/ENGINEERING.md), Known gaps).
-- **The host never clamps wheel commands, and the board ignores bad ones
-  silently.** `HardwareRobot.set_wheel_velocity()`
-  (`robot/hardware_robot.py:330-336`) sends any speed as `T:1`, and the
-  server's `WheelsRequest` (`robot/server.py`) bounds nothing; the safety
-  vet slows and stops, but sets no maximum. The firmware drops a `T:1`
-  whose `L` or `R` is outside +/-2.0 m/s after it has fed the heartbeat
-  (`sim/fake_esp32.py:254-257`, `:289-295`), so the OLD setpoint keeps
-  running and the heartbeat never fires, while the host reports the new,
-  commanded value in `velocity_rad_s`. 2.0 m/s is 50 rad/s at this wheel,
-  far above anything a verb or nav2 sends today, so it takes a bad caller
-  of `/wheels`. Not fixed: the host could clamp, or refuse, past the
-  board's limit.
 - **Stock turns miss the +/-1 degree bar.** Stock frames carry no
   timestamp, so arrival jitter limits heading. On the car, heading wants the
   gyro (`gz`) or SLAM.
 - **Not reported by the backend:** the measured wheel speed in
   `velocity_rad_s` (it reports the commanded one), the IMU and the battery
   voltage.
-- **Stale comment.** `config/robot.yaml`'s header still describes `hardware`
-  as "real PiCar-X".
 - **Two hardware-day measurements:** `wheel_separation_multiplier` (the
   skid-steer effective track) and the real device path (`/dev/ttyTHS1`
   versus USB).

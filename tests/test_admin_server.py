@@ -1310,3 +1310,19 @@ def test_a_replay_skips_a_log_entry_with_no_readable_frame(vision):
     body = c.post("/recording/walks/walk-badentry2/replay", json={}).json()
     assert body["errors"] == 1
     assert len(calls) == 1
+
+
+def test_a_day_of_metrics_is_neither_listed_nor_deletable_as_a_walk(client):
+    """Handoff 4c. Metrics rows live beside the walks as `metrics-<day>`; the
+    console listed each day as an empty walk, and its Delete removed a whole
+    day of mission rows."""
+    c, root = client
+    day = root / "recordings" / "metrics-2026-10-03"
+    day.mkdir()
+    (day / "run-1.json").write_text('{"run_id": "run-1"}')
+    make_walk(root, "walk-m1", ["FORWARD"])
+    names = [w["walk"] for w in c.get("/recording/walks").json()["walks"]]
+    assert names == ["walk-m1"], names
+    assert "metrics-2026-10-03" not in names
+    assert c.delete("/recording/walks/metrics-2026-10-03").status_code == 404
+    assert (day / "run-1.json").exists(), "a day of mission metrics was deleted"

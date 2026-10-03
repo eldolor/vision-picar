@@ -66,9 +66,9 @@ header) whenever `APP_SHARED_SECRET` is set.
 | `GET /world/map` | `get_map()`, verbatim |
 | `GET /world/truth` | `get_truth()`, verbatim |
 | `GET /world/error` | See the next table. |
-| `POST /world/goal` `{x_m, y_m}` (house frame) | **501** if the world has no `set_goal`. Otherwise it arbitrates as driver `ros`. A refusal answers `{"accepted": false, "reason": "preempted", ...}`. On success it returns `RosWorld.set_goal()`'s answer: `{"accepted": bool, ...bridge reply}`, or `{"accepted": false, "reason": "no SLAM session yet"}`. |
-| `GET /world/goal` | **501** as above. Otherwise `{"goal": {...state, x_m, y_m} or None, "plan": [[x, y], ...]}`, in the house frame. A goal from an earlier session reads as `None`. |
-| `DELETE /world/goal` | **501** as above. Otherwise the bridge's `{"cancelled": bool}`. |
+| `POST /world/goal` `{x_m, y_m}` (house frame) | **501** if the world has no `set_goal`. Otherwise it arbitrates as driver `ros`. A refusal answers `{"accepted": false, "reason": "preempted", ...}`. On success it returns `RosWorld.set_goal()`'s answer: `{"accepted": bool, ...bridge reply}`, or `{"accepted": false, "reason": "no SLAM session yet"}`. A bridge that does not answer gives `{"accepted": false, "reason": "ros_unavailable", "detail"}` (handoff 4d). A new goal also supersedes a stop's goal-ending loop ([safety engineering](../safety/ENGINEERING.md), "Stop ends a nav2 goal"). |
+| `GET /world/goal` | **501** as above. Otherwise `{"goal": {...state, x_m, y_m} or None, "plan": [[x, y], ...]}`, in the house frame. A goal from an earlier session reads as `None`. **503** `ros_unavailable: ...` when the bridge does not answer or answers an error status (handoff 4d). |
+| `DELETE /world/goal` | **501** as above. Otherwise the bridge's `{"cancelled": bool}`; **503** `ros_unavailable: ...` as for `GET`. `RosWorld.cancel_goal()` and `get_goal()` raise on an error status (a 401, a 5xx) instead of returning its body, so a refused cancel never reads as done. |
 
 What `GET /world/error` answers:
 
@@ -195,7 +195,7 @@ The world tests and what each pins (test counts from `pytest
 |---|---|---|
 | `tests/test_world_contract.py` | 57 | The contract's shapes over `NullWorld`, `MockWorld` and `RosWorld`, the last against a fake bridge. The body/world split in both directions (`get_pose`, `get_map` and `get_truth` are absent from `RobotInterface`; the body methods are absent from `WorldInterface`). No abstract methods. The discovered map: it starts unknown, what is behind a wall stays unknown, the robot's own cell is free, the version holds when nothing new is seen. The pose is the body heading, not the view heading. Cell sizes agree. `RemoteWorld`'s 404 versus broken-mapper rule. |
 | `tests/test_ros_world.py` | 13 | The anchor at the session's start, not at the first question. Left turns are counter-clockwise in ROS and clockwise on the compass. The map is not mirrored. A sideways displacement lands on the correct side. A restart is a new map and a new anchor. No anchor and no truth on hardware. Odometry is in the same frame. |
-| `tests/test_ros_goals.py` | 26 | Goal conversion both ways, plans converted point by point, an earlier session's goal hidden, no goal sent before a session exists, cancel, 501 for a world that cannot plan, the secret, and `/world/error` with and without truth. |
+| `tests/test_ros_goals.py` | 29 | Goal conversion both ways, plans converted point by point, an earlier session's goal hidden, no goal sent before a session exists, cancel, 501 for a world that cannot plan, the secret, and `/world/error` with and without truth. Handoff 4d: the routes refuse by name with the bridge down; `RosWorld` raises on an error status. |
 | `tests/test_goal_arbitration.py` | 9 | `PLAN-ros-alignment.md` 3.23: a goal is refused while the brain holds the robot; brain and teleop are refused during a goal; a person never is; an ended goal blocks nothing; a lapsed claim does not block a goal. |
 | `tests/test_wall_linters.py` | (1 of 18) | The occupancy thresholds exist only in `world/ros_world.py`. |
 | `tests/test_slam_live.py` | 3 | The live SLAM lap. It skips without the stack and wants `starter_house` with `WORLD_MODE=ros`. |
@@ -213,7 +213,7 @@ The recorded numbers (`PLAN-ros-alignment.md` 3.14, eighteen laps with
 Checklist for a change here:
 
 - Run `pytest tests/test_world_contract.py tests/test_ros_world.py
-  tests/test_ros_goals.py tests/test_goal_arbitration.py
+  tests/test_ros_goals.py tests/test_goal_arbitration.py tests/test_stop_cancels_goal.py
   tests/test_ros_containment.py tests/test_wall_linters.py`.
 - Any change to the frame or the anchor needs a live lap
   (`python -m tests.demo_slam_lap`) with its numbers recorded against the
@@ -227,26 +227,14 @@ Checklist for a change here:
   horizon. The simulator's lidar (`get_scan()`) reaches 12 m. In a large
   house the simulator world discovers less than SLAM would from the same
   scans.
-- **Stale docstrings.** `MockWorld.get_pose()`'s docstring still says
-  "quantised to cell centres", which has not been true since R0. The pose
-  is continuous.
 - **No version-only route.** The twin re-fetches the whole map on a timer.
-- **Goal routes during a bridge outage.** `RosWorld.set_goal()`,
-  `cancel_goal()` and `get_goal()` (`world/ros_world.py:231-245`) do not
-  catch `httpx` errors, and the routes that call them
-  (`robot/server.py:837-857`) do not either, so `POST`, `GET` and
-  `DELETE /world/goal` answer 500 when the bridge is down. A non-JSON bridge
-  reply fails the same way. UNCONFIRMED, established by reading the code
-  only. (`goal_in_progress()`, `robot/server.py:370-385`, does catch them,
-  so arbitration fails open as the architecture spec says.)
+- **A non-JSON bridge reply** on a goal route still fails as a 500 (a
+  `ValueError`, not an `httpx` error). `goal_in_progress()` catches it, so
+  arbitration fails open as the architecture spec says.
 - **`map_version` under SLAM counts publications, not cell changes.** See
   "What RosWorld reads from the bridge". UNCONFIRMED.
 - **`start_truth` is read once.** A failed first read is never retried; see
   `service/slam/README.md` section 4.
-- **Stale factory docstring.** `world/factory.py:14-22` still calls `none`
-  "TODAY'S DEFAULT" with "nothing in this project can build a map yet", and
-  labels `ros` as N6. `config/robot.yaml` ships `sim`, and `ros` is built
-  (R5/R6).
 - **Goals are found by duck typing.** `set_goal`, `get_goal`, `cancel_goal`
   and `get_odom_pose` live only on `RosWorld`, and the server discovers them
   with `hasattr`.
@@ -255,5 +243,3 @@ Checklist for a change here:
   inventing a state, but blocky.
 - **No persistence.** The map lives for the container's lifetime
   (`PLAN-ros-alignment.md` section 6, question 6).
-- **Stale config comment.** `config/robot.yaml`'s `world:` comment still
-  says `ros` is "not built yet".

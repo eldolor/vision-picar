@@ -14,20 +14,23 @@ person would ask a colleague. It plugs into `MissionRunner`'s existing
 `vision_fn(frame) -> scene` seam, so nothing in `control/` learns that
 perception got a new tier -- 2.6's first invariant, kept.
 
-## The three triggers this can actually fire
+## The triggers this can actually fire
 
-2.4 lists seven. Four of them belong to a reactive tier that holds and
+2.4 lists seven. Three of them belong to a reactive tier that holds and
 executes a goal (C6) and to a planner that issues one (C8), neither of
-which exists, so firing them here would be theatre. The three that are
-real without either:
+which exists, so firing them here would be theatre. The four that are
+real without either -- the three below, and `staleness` (added 2026-09-07,
+see `DEFAULT_STALE_AFTER`) -- plus one paid call that is not a trigger:
+`arrival_confirmation`, the identity check at arrival (handoff 1a,
+`confirm_arrival()`).
 
 | Trigger | When | Why it is honest here |
 |---|---|---|
-| `mission_start` | first frame | 2.5: the one genuinely blocking call |
+| `mission_start` | first frame | 2.5: blocking only under a synchronous tier; under `async_cloud` the one blocking call is the arrival confirmation |
 | `candidate_sighting` | perception says `detected` | 2.4's *"the one that does real work"* -- on-board proposes, the cloud confirms identity and **reachability** |
 | `cold_search` | `absent` for `cold_search_after` consecutive frames | 2.4's inverse: the cloud proposes, on-board tracks. Without it a target outside COCO's 80 never fires anything and the robot can drive past it indefinitely |
 
-`goal_achieved`, `goal_impossible`, `room_change` and `staleness` are
+`goal_achieved`, `goal_impossible` and `room_change` are
 deliberately absent. They are listed in `UNAVAILABLE_TRIGGERS` so the gap
 is legible rather than looking like an oversight.
 
@@ -883,10 +886,9 @@ class TieredVision:
     def _held_direction(self) -> Optional[str]:
         """The last direction the cloud gave, if there is one.
 
-        2.5's *"the reactive tier always holds a current goal"*. Used only
-        while a call is in flight: on an ordinary free frame the stand-in
-        keeps its scan, because holding a goal indefinitely with nothing
-        confirming it is a different design and an unmeasured one.
+        2.5's *"the reactive tier always holds a current goal"*. Used while
+        a call is in flight and, under `hold_goal` (shipped `true`), on
+        every free frame -- see `_local_scene()`.
         """
         if not self._last_cloud_scene:
             return None

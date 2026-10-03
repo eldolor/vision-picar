@@ -5,8 +5,10 @@ P7e's first half (`PLAN-ros-alignment.md` 3.11): **recognising arrival.**
 
 Until this existed no tiered mission could end `found`. The local tier's
 scene hard-codes `target_reached: False` -- rightly, since a detector alone
-cannot say how far away something is -- so only a paid cloud call could end a
-mission, and in the sim every mission that reached the backpack was labelled
+cannot say how far away something is -- and under the shipped asynchronous
+tier a landed cloud `target_reached` is never applied either (handoff 1c:
+the cloud's distance is not measured, the lidar's is), so in the sim every
+mission that reached the backpack was labelled
 `max_steps` or `blocked`. On a rig walk it was worse: P7e's basket, reached,
 held at P = 0.998, and driven into until the step budget ran out.
 

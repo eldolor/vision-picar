@@ -44,17 +44,11 @@ from robot.interface import (
 
 logger = logging.getLogger("safety")
 
-# Only FORWARD triggers the pre-move distance re-check below. Correct today
-# because every current backend either pivots in place (MockRobot's grid
-# turns hit nothing) or doesn't move at all (ReplayRobot/TeleopRobot log-only
-# acks) -- so a turn can never collide. It will be WRONG once
-# robot/hardware_robot.py exists: a real PiCar-X's LEFT/RIGHT is Ackermann
-# steering plus forward motion, an arc that consumes real space ahead, with
-# no obstacle check at all as written. HARDWARE-READINESS.md section 5.2
-# has the full reasoning. Nothing in simulation can ever surface the need
-# for this, which is exactly why it's easy to forget -- flip this to
-# {"FORWARD", "LEFT", "RIGHT"} as part of writing hardware_robot.py, not
-# after the first collision.
+# The actions the forward pre-move check below applies to. Turns are not in
+# it because the chassis is differential drive (the PiCar-X's Ackermann arc
+# was retired, PLAN-onboard-perception.md 1.1): a turn pivots in place, and
+# what it can still hit -- a corner swinging into furniture -- is vetted by
+# pivot_scale() (3.19), reverse by reverse_clearance() (3.18).
 FORWARD_ACTIONS = {"FORWARD"}
 # R2b: checked against the lidar's REAR beams, by the user's decision
 # (PLAN-ros-alignment.md 3.10). Every way of backing up -- /action REVERSE
