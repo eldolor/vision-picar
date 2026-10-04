@@ -3455,6 +3455,42 @@ Oct 30.
   its one file, `sd-blob.img`, is 24 GB). 6.2.2 is an `apt upgrade` from
   there, optional.
 
+**Results so far (2026-10-04, on the board, microSD, Wi-Fi, stock 19 V
+adapter).**
+
+1. **Firmware and OS -- met.** UEFI firmware 36.4.4 (read over SSH from
+   `/sys/class/dmi/id/bios_version`, not at the splash); L4T R36.4.4 =
+   JetPack 6.2.1, Ubuntu 22.04.5. Power mode out of the box **25W** (id 1);
+   set to **15W** (id 0). Two set-up facts: the Mac cannot resolve
+   `picar-jetson.local` on this network (Google mesh), so the SSH entry
+   points at 192.168.86.26 -- a DHCP reservation is still to make; and
+   `picar` has passwordless sudo (`/etc/sudoers.d/picar-nopasswd`, the
+   user's decision, so the session can run it; delete the file to undo).
+2. **torch on the GPU -- met, after one fix.** torch 2.8.0 on `cuda`
+   ("Orin"). **Found: the Jetson AI Lab wheel is built against NumPy 1.x**
+   and pip installed 2.2.6, so every detector call failed with "Numpy is
+   not available" -- and `setup.sh` still printed "on cuda" for both,
+   because a detector that raised keeps its device. Fixed in `setup.sh`
+   (pins `numpy<2`, pip then takes opencv-python 4.11; asserts the
+   perception is not `unavailable`) and in `bench_perception.py` (refuses to
+   report times if any frame was). Parity on all 63 pinned frames against
+   the laptop (detector CPU, CLIP MPS): **status agrees 63/63** (6 detected,
+   57 absent), CLIP probability within **0.0002** on all 6 scored (bar
+   0.01), 0 unavailable.
+3. **Latency -- met, well within budget.** 60 frames after 3 warm-up, both
+   networks on `cuda`, 0 unavailable:
+
+   | power | total median / p90 | model (GPU) | handling (CPU) | detector inference | CLIP a crop |
+   |---|---|---|---|---|---|
+   | **15W** | **60.6 / 109.9 ms** | 44.4 / 72.4 | 18.6 / 38.1 | 40.5 | 43.0 |
+   | 25W | 64.2 / 120.4 ms | 43.6 / 79.1 | 19.9 / 41.4 | 43.3 | 47.0 |
+
+   Budget 250 ms at 15W: the p90 uses 44% of it. **25W bought nothing**
+   (cause not established; `jetson_clocks` was not run), so 15W costs the
+   tier no latency. Against the laptop's 119 ms default and 36 ms all-GPU:
+   the board sits between them. P26 is not needed to meet the budget.
+   Records: `bench-15w.json`, `bench-25w.json` on the board.
+
 ### 3.34 A body that cannot measure its wheels does not drive them, and a move that fell short is not a move (2026-10-03): criteria, written before building
 
 **Found 2026-10-03** while adding the car body's failure modes to
