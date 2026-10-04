@@ -461,6 +461,17 @@ class MissionAgent(ConstrainedAgent):
         left_clear = self.robot.get_distance() >= room_cm
         self.robot.look_center()
         forward_clear = self.robot.get_distance() >= room_cm
+        # A turn the safety layer refused from here is not clear, whatever
+        # the side ray said (handoff 5a): the ray clears a SIDE at
+        # side_clearance_cm, the pivot guard (3.19) refuses a swept CORNER,
+        # and a refused turn is not "executed" -- so re-peeking from the same
+        # spot picked the same refused LEFT 130 times in one demo run. Held
+        # until something executes; with nothing left, the boxed-in
+        # fallback below takes over.
+        refused = self._refused_since_last_move()
+        right_clear = right_clear and "RIGHT" not in refused
+        left_clear = left_clear and "LEFT" not in refused
+        forward_clear = forward_clear and "FORWARD" not in refused
 
         if pose.get("usable"):
             heading_deg = pose["heading_deg"]
@@ -495,6 +506,20 @@ class MissionAgent(ConstrainedAgent):
 
         # Boxed in on all three sides -- reuse Phase 2's stuck-breaker.
         return super().decide(scene, frame)
+
+    def _refused_since_last_move(self) -> set:
+        """The moves refused since the last MOVE that executed (handoff 5a).
+        A STOP or a camera peek executes without going anywhere, so it must
+        not clear the set -- the first version let an executed STOP do so,
+        and the agent alternated a refused LEFT with a STOP forever."""
+        refused = set()
+        for result in reversed(self.history):
+            if result.action not in ("FORWARD", "REVERSE", "LEFT", "RIGHT"):
+                continue
+            if result.executed:
+                break
+            refused.add(result.action)
+        return refused
 
     def _pose(self) -> dict:
         """Where the world says we are, or an honest "it cannot say".

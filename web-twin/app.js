@@ -2031,7 +2031,8 @@
 
   function tieredCostSentence() {
     const tail = " A paid <code>/navigate</code> call goes out only on a "
-      + "trigger: mission start, a candidate sighting, or a cold search.";
+      + "trigger (mission start, a candidate sighting, a cold search, or "
+      + "staleness) and once at arrival to confirm the target.";
     // R1 / 1.12: against the simulator nothing runs a detector on a
     // raycaster render -- the simulator reports what its own geometry shows,
     // and the mission's Models line will read "sim ground truth". Saying

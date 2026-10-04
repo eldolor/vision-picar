@@ -11,7 +11,8 @@ The policy is what decides each move. Every tick, the mission runner hands it
 one camera frame; it returns one action out of a small fixed set, which the
 safety layer then vets. Three policies exist -- a free rule-based explorer, a
 cloud vision policy, and a tiered policy that asks the cloud only on events
--- plus the arrival rule that lets a mission end `found` on its own evidence.
+-- plus the arrival rule that lets a mission end `found`: the lidar judges
+the distance, and one cloud call on the arrival frame confirms the identity.
 Read this for why decisions are split the way they are; the
 [engineering spec](../engineering/policy/ENGINEERING.md) has the constants,
 precedence code, and the sweeps that pin them.
@@ -41,7 +42,8 @@ counters, arrival) are its outputs.
   +---------------------------------------------------+
                          |  one scene schema
                          v
-  arrival review (local perception + lidar) -> may rewrite to STOP/found
+  arrival review (local perception + lidar; then one cloud call confirms
+  identity) -> may rewrite to STOP/found
                          |
                          v
   decide: frontier preference | trust the model | stuck-breaker
@@ -58,7 +60,8 @@ counters, arrival) are its outputs.
 | Vision agent | trusting the model's action unless the mission is complete | peek (a pan costs a real move and buys nothing a photograph lacks) |
 | Cloud vision step | one frame -> one cloud navigation answer -> the scene schema | retry; the mission's failure budget is the retry policy |
 | Tier (trigger discipline) | when to spend a cloud call, and what to do on free frames | become a planner or a reactive goal executor |
-| Arrival check | "found" from detection + bearing + lidar range | read the detector's own distance, or any simulator fact |
+| Arrival check | "arrived" from detection + bearing + lidar range | read the detector's own distance, or any simulator fact; call the cloud |
+| Identity confirmation (the mission agent) | asking the cloud, once per arrival, whether the arrival frame shows the target; "found" only on its yes | end a mission on a judgement it did not ask the cloud for |
 | Goal pose | holding an anchored sighting across rotation | decide anything |
 | Mission memory, room matching | rooms visited/searched, sightings, action history | drive control flow beyond completion |
 
@@ -155,7 +158,8 @@ the held goal, which a local sighting outranks, so a cloud "not visible"
 never overrides a frame where the wrong object is detected. With a blocking
 call the cloud's answer decides the frame the call was made on -- unless the
 arrival review, which runs after the vision step, rewrites that same frame
-to a stop and `found` against the cloud's answer. For **ending `found`**, the
+to a stop and `found` (it overrides the trigger's direction, never its
+identity: `found` still needs the arrival confirmation's yes). For **ending `found`**, the
 bound is the arrival rule's conditions on top of the gate (consecutive
 frames, centred, a lidar range within the radius, one surface), all of them
 local: a wrong object that keeps passing the gate can be driven to and
@@ -184,7 +188,7 @@ steps changes meaning when the step does.
 ### Arrival is the rule the car runs, judged by the range sensor
 
 **Decision** (P7e first half, `PLAN-ros-alignment.md` 3.11, decided by the
-user). A mission ends `found` locally when the target is detected, centred
+user). A mission is judged ARRIVED locally when the target is detected, centred
 within the steering band, and the lidar reads it within the arrival radius at
 that bearing, on consecutive frames. It refuses to judge -- rather than
 guess -- with no local perception, no usable scan, or a panned camera, and it
@@ -214,10 +218,11 @@ arbitration above splits steering:
 
 - **Identity: the cloud confirms at arrival.** Before a tiered mission ends
   `found`, one paid cloud call on the arrival frame must agree that what the
-  robot has stopped at is the target. If the cloud disagrees, or cannot be
-  asked, the mission does not end `found`, and the same arrival is not put
-  to the cloud again: it is asked once more only after the arrival rule has
-  stopped holding.
+  robot has stopped at is the target. If the cloud says no, or the mission's
+  call budget is spent, the mission does not end `found`, and a refused
+  arrival is not paid for again while the robot stays there. A call that
+  FAILS is not an answer: it counts against the vision failure budget like
+  any cloud failure, and the arrival is asked again.
 - **Distance: the arrival rule only.** A cloud target-reached answer that
   lands under the asynchronous tier does not end a tiered mission. The
   lidar-judged arrival rule stays the only way a tiered mission ends `found`
@@ -243,7 +248,8 @@ arbitration above splits steering:
   `found`, but makes a mission's ending depend on which body ran it, and the
   phone walk is not the car.
 
-**Trade-off.** One paid cloud call per arrival, spent on the judgement the
+**Trade-off.** One paid cloud call per arrival (a synchronous tier whose
+trigger fires on the arrival frame pays twice for that frame), spent on the judgement the
 cloud model is good at (identity) and never on the one it is not (range).
 Steering is unchanged: a wrong object can still be driven to; it can no
 longer be reported `found`. Accepted consequence: a tiered phone walk, which
@@ -284,12 +290,12 @@ the same frames, so it must never be copied onto the hardware backend.
 
 | With | Direction | Category | Ownership |
 |---|---|---|---|
-| Mission runner ([mission](../mission/ARCHITECTURE.md)) | runner calls the agent's step; the agent calls the vision function | in-process | runner owns budget, timeout, outcome; policy owns the action |
+| Mission runner ([mission](../mission/ARCHITECTURE.md)) | runner calls the agent's step; the agent calls the vision function, and at an arrival the identity confirmation, both through the runner's guard | in-process | runner owns budget, timeout, outcome; policy owns the action |
 | Safety layer (safety domain) | agent submits each action | in-process controller over the gated body, re-vetted on the robot | the robot's veto is final; a refusal is a normal outcome |
 | Body ([body](../body/ARCHITECTURE.md)) | agent reads frame, distance, depth, scan, odometry | in-process interface, HTTP underneath | body owns all readings; the policy never fabricates one |
 | World ([world](../world/ARCHITECTURE.md)) | agent reads pose and map resolution | in-process interface, HTTP underneath | advisory: failure degrades exploration only |
 | Perception ([perception](../perception/ARCHITECTURE.md)) | tier calls the pipeline once per frame | in-process: frame -> tri-state with bearing | perception owns what is seen; the policy owns what to do about it |
-| Cloud vision ([cloud-vision](../cloud-vision/ARCHITECTURE.md)) | vision step calls the service | HTTP/JSON | the service owns model, wording and the decision vocabulary |
+| Cloud vision ([cloud-vision](../cloud-vision/ARCHITECTURE.md)) | vision step calls the service; the tier also asks it on the arrival frame, reading only its visibility flag | HTTP/JSON | the service owns model, wording and the decision vocabulary |
 
 ## Failure modes and resilience targets
 

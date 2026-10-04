@@ -36,7 +36,7 @@ file that holds it.
 |---|---|
 | `service/lambda/build.sh` | Builds two zips with `pip --platform manylinux2014_aarch64 --only-binary=:all:` for cp3.12. The vision zip is flat: `service/vision_analyze/` app files plus `service/lambda/vision_handler.py`. The walks zip carries all of `control/*.py`, `control/admin.html`/`.js`, `config/robot.yaml` and `service/lambda/walks_handler.py`. Uploads to `s3://<bucket>/lambda/<name>-<UTC stamp>.zip` and prints the deploy command |
 | `service/static/sync.sh` | Uploads each file in `service/static/assets.json` with `put-object` and an explicit content type and cache policy, then invalidates `/*`. It does not use `aws s3 sync`, which would guess a type for the extensionless `admin` and `metrics` keys |
-| `service/static/assets.json` | The site: `index.html`, `app.js`, `manifest.json`, icons, `admin`, `admin.js`, `metrics`, `metrics.js`. Cache `none` = `no-cache, must-revalidate`; `day` = `max-age=86400` |
+| `service/static/assets.json` | The site: `index.html`, `app.js`, `manifest.json`, icons, `admin`, `admin.js`, `metrics`, `metrics.js`. Cache `none` = `no-cache, must-revalidate`; `day` = `public, max-age=86400` |
 
 **The tunnel** (`service/tunnel/`):
 

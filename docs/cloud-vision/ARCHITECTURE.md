@@ -25,8 +25,10 @@ Three callers depend on it:
 
 - **The brain's paid policies.** The vision policy and the tiered policy
   (the policy domain) send a frame and a target and get back one move. The
-  tiered policy calls only on a trigger. The vision policy calls on every
-  step.
+  tiered policy calls only on a trigger, and once at each arrival, when it
+  reads only the visibility flag: that flag is its identity verdict and
+  decides `found` (the policy domain's rule, 2026-10-02). The vision policy
+  calls on every step.
 - **The twin's Guide tab** (the twin domain). "Guide me" steers a person
   to an object and "Robot view" shows the move the robot would make, both
   on the phone's real camera.
@@ -143,6 +145,13 @@ mission would then end on an obstacle or on garbage.
 
 **Trade-off.** Over-running by a step or two when the model is slow to
 say "reached". Over-running is cheap. Stopping short is not.
+
+The arrival field is what the vision policy and Robot view end on. The
+tiered policy ignores it -- a range judged from a photograph is not
+measured -- and uses the visibility flag on its arrival frame as an identity
+verdict instead, with the lidar deciding distance. That flag therefore
+carries a `found`, and its accuracy at arrival range (a floor camera at
+0.40 m or less) is unmeasured; see Open questions.
 
 ### Every answer fails towards "do not act on it"
 
@@ -320,6 +329,12 @@ small delay to a call that already takes seconds.
 | A decision has to be attributed later | Model and wording are on the reply | Every recorded decision names what produced it. |
 
 ## Open questions
+
+- **How often does the move route call the target visible at arrival
+  range?** Since 2026-10-02 that answer decides a tiered mission's `found`,
+  and nothing has measured it: every sweep fakes the cloud from the
+  simulator's ground truth. Replaying the rig walks' last frames (the
+  recordings domain's replay) would measure it on real pixels.
 
 - **Should the robot-scene and person-description questions stay
   deployed?** Nothing in the twin calls them since the Camera tab was

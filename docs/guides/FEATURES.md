@@ -717,7 +717,10 @@ Every readout here is a route the robot serves:
 it sends `POST /world/goal` with the tapped point in the house frame
 (`x_m`, `y_m`); nav2 plans and drives, and its commands still pass
 `collision_monitor` and `robot/safety.py`. `GET /world/goal` is polled to
-draw the goal and its state; a D-pad twist cancels it. **Since
+draw the goal and its state. A person's STOP ends it (since 2026-10-02:
+the server cancels it and holds nav2 at zero until it is over; the brain's
+stop spares it), and under `drive: ros` a non-zero D-pad move cancels it
+too -- under direct drive only STOP does. **Since
 `PLAN-ros-alignment.md` 3.23 a goal is an autonomous driver**
 (`ros`), arbitrated like the brain: while a mission holds the robot the
 goal is refused with `accepted: false` and reason `preempted`, and the twin

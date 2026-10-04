@@ -28,10 +28,10 @@ result in a test. Each item says "**Done when**".
 
 The user decided all four on 2026-10-02. **All four are built or closed
 (2026-10-02): 1b, 1d and 1a in separate commits; 1c needed nothing beyond
-1a.** Each decision, its
-rejected alternatives and its trade-off are now in the architecture specs
-named below; the mechanism is in the matching engineering spec's Known
-gaps, which says "decided fix not yet built" until it lands.
+1a.** Each decision, its rejected alternatives and its trade-off are in
+the architecture specs named below, and the mechanism in the matching
+engineering spec. Spec review 3 (`docs-review/SPEC-REVIEW-3.md`) then found
+the builds closed less than claimed; its fixes are recorded there (§9).
 
 ~~**1a. DECIDED: the cloud confirms identity at arrival.**~~ **BUILT
 2026-10-02:** `TieredVision.confirm_arrival()`, asked by
@@ -316,7 +316,9 @@ bridge, as `tests/test_ros_drive.py` does), or change body ARCH to say
 
 ## 5. To investigate
 
-**5a. `python -m tests.demo_active_search` ends NOT FOUND after 150
+~~**5a.**~~ **FIXED 2026-10-03:** the diagnosis held (a refused turn re-chosen
+forever), and the demo also passed no world; both fixed, `tests/test_refused_turn_loop.py`,
+the demo now finds the backpack at step 60. **`python -m tests.demo_active_search` ends NOT FOUND after 150
 steps.**
 
 - Of 132 `Blocked` lines, nearly all are LEFT turns clamped by the pivot
@@ -330,12 +332,14 @@ steps.**
   (`brain/agent.py:356-411`).
 - Recorded in `docs/engineering/policy/ENGINEERING.md`, Known gaps.
 
-**5b.** `tests/demo_hold_bearing_ab.py` still builds the starter house,
+~~**5b.**~~ **DONE 2026-10-03:** scaled house, re-measured (sized 6.36 cells /
+0.2 reversals vs quarter -0.29 / 12.3; policy ENG). `tests/demo_hold_bearing_ab.py` still builds the starter house,
 which the Rover's chassis clips (3.32). Move it to the scaled house and
 re-measure R1's A/B there. Policy ENG holds the old numbers as
 starter-house history only.
 
-**5c.** `tests/test_settle_pass.py::test_3_a_forward_is_a_cell_on_either_firmware[stock]`
+~~**5c.**~~ **CHECKED 2026-10-03:** 10/10 alone and 5/5 full-suite runs passed;
+load-only, left as is. `tests/test_settle_pass.py::test_3_a_forward_is_a_cell_on_either_firmware[stock]`
 failed once in a full-suite run while five agents loaded the machine: a
 28.6 cm move against a bar of 30 ± 1.34. It passed alone (2/2) and in its
 file (8/8). If it fails again without load, it is a real flake in a

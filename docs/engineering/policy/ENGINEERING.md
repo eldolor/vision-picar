@@ -106,7 +106,9 @@ was FORWARD again.
 edge detector); `unavailable` -> nothing, clears the run; confirmed edge into
 `detected` -> `candidate_sighting`; `absent` streak >= cold-search bar, or
 distance since last call >= `cold_search_after_cm` -> `cold_search`; frames
-since last call >= `stale_after` -> `staleness`. `max_calls` caps the total.
+since last call >= `stale_after` -> `staleness`. `max_calls` caps the total,
+the arrival confirmation included (a sixth key in `stats.triggers`,
+`arrival_confirmation`; see "Arrival").
 
 ## Interfaces
 
@@ -133,9 +135,9 @@ runner: `usable`, `distance_m`, `heading_deg`).
 **Signatures:**
 `vision_fn_for(target_object, vision_url=None, secret=None, timeout_s=60.0, client=None, model_id=None, prompt_variant=None)`;
 `TieredVision(pipeline, cloud_vision_fn, *, consecutive_frames=2, cold_search_after=6, cold_search_after_cm=None, stale_after=8, max_calls=None, corroboration_bar=0.5, oov_cold_search_after=None, async_cloud=False, hold_goal=True, steer_on_sight=True, spin_guard_after=8, hold_bearing=False, hold_bearing_max_m=1.0)`
-with `close()`, `reset_epoch()`, `set_searched_rooms()`;
+with `close()`, `reset_epoch()`, `set_searched_rooms()`, `confirm_arrival(frame) -> {confirmed, cloud_called, reason, cloud_reasoning, stats}`;
 `ArrivalCheck(radius_m=0.40, centre_deg=3.0, frames=2)`;
-`MissionAgent(robot, memory, side_clearance_cm=30.0, world=None, min_distance_cm=20.0, vision_fn=None, max_consecutive_stops=3, vision_proximity_veto=False)`.
+`MissionAgent(robot, memory, side_clearance_cm=30.0, world=None, arrival_confirm_fn=None, min_distance_cm=20.0, vision_fn=None, max_consecutive_stops=3, vision_proximity_veto=False)`.
 
 ## Parameters and configuration
 
@@ -204,33 +206,34 @@ pytest tests/test_agent.py tests/test_mission_agent.py tests/test_object_search.
 The sweeps in `tests/test_bearing_turns.py` and `tests/test_arrival.py`
 run hundreds of in-process missions; expect them to dominate the time.
 
-**Print the R1 A/B:** `python -m tests.demo_hold_bearing_ab`. It still
-builds the **starter house** (`build_starter_world()`), while
-`tests/test_bearing_turns.py` moved to the scaled house in 3.32, and the
-Rover's corridor clips the starter house's door jamb. Its output is starter
--house history, not today's record. When last quoted (2026-09-25), sized
-turns closed about 4.1 cells with about 1 reversal, and quarter turns ended
-further away with about 5. Not re-run for this spec.
+**Print the R1 A/B:** `python -m tests.demo_hold_bearing_ab` (about 50 s).
+It builds the scaled house since handoff 5b -- it had been building the
+starter house around the scaled-house coordinates `test_bearing_turns.py`
+moved to in 3.32. **Recorded 2026-10-03**, 16 starts, 60 steps, cells closed
+/ reversals: detector every frame, sized 6.36 / 0.2 (hold-bearing the
+same), quarter turns -0.29 / 12.3; detector 1 frame in 3, sized 4.48 / 0.2,
+with hold-bearing 4.95 / 0.2, quarter 0.69 / 8.2. R1's conclusion holds:
+sized turns dominate, and dead-reckoning adds about half a cell only when
+the detector misses frames; `tier_hold_bearing` stays off.
 
 **Run the free explorer:** `python -m tests.demo_active_search`. It builds
-`ObjectSearchAgent` directly, with no world and `min_distance_cm=30`.
-**Observed 2026-10-02:** it does not find the backpack. Output ends:
+`ObjectSearchAgent` with the world `world/factory.py` gives the robot (as
+`robot/server.py` does) and `min_distance_cm=30`. Expected, starter house:
+`FOUND: red backpack in the hallway, at step 60` -- the reference hunt
+(`tests/data/frontier_trace_centred.json`, 61 steps). **Failure signatures:**
+`NOT FOUND after 150 steps` with no `Blocked` lines means the agent got no
+world (the right-hand rule wanders); a run of `Blocked LEFT ... (scan_footprint)`
+lines means a refused turn is being chosen again (handoff 5a, fixed
+2026-10-03; `tests/test_refused_turn_loop.py`).
 
-```text
-=== Find the red backpack. (active scanning) ===
-
-Steps taken: 150
-Look-around scans performed: 6 pan actions across 2 room entries
-Rooms searched: ['hallway', 'living room']
-
-NOT FOUND after 150 steps.
-
-Memory summary: Hallway, living room searched. No red backpack found.
-```
-
-132 lines of `Blocked ...` precede it, almost all `Blocked LEFT: stopped
-after 0.0deg -- turn left clamped: a corner would come within 1.3cm < 1.3cm
-(scan_footprint)`. See Known gaps.
+**A refused move is not offered again until a move executes** (handoff 5a).
+`MissionAgent.decide()` drops from its options any of FORWARD, LEFT, RIGHT
+refused since the last executed movement (`_refused_since_last_move()`; a
+STOP or a camera peek does not clear it). With nothing left it falls to the
+boxed-in fallback (`ConstrainedAgent`'s stuck-breaker). Before this, the
+side ray cleared a side at `side_clearance_cm` while the pivot guard (3.19)
+refused the swept corner, and the agent chose the same refused LEFT 130
+times in one demo run.
 
 **Run a tiered mission over a recorded walk** (paid on every trigger, needs
 `VISION_URL` and `pip install -r requirements-perception.txt`):
@@ -247,7 +250,10 @@ scene's `important_objects` row). The outcome is not a navigation result.
 On a backend without a scan (teleop, replay), `arrival.state` reads
 `approaching` ("target not detected") on frames with no detection, and
 `not_judged` ("no range sensor") on frames with one. It never reads
-`arrived`.
+`arrived` or `refused`. On a tiered mission with a scan, `refused` means the
+lidar judged an arrival and the cloud did not confirm the target; `identity`
+carries the cloud's reason, and the twin's Arrival row shows it in the
+alert colour.
 
 ## Verification
 
@@ -256,6 +262,7 @@ On a backend without a scan (teleop, replay), `arrival.state` reads
 | `tests/test_bearing_turns.py` (17) | Runs in the **scaled house** since 3.32 (`HOUSE = "scaled_house"`). R1: sized turns arrive from off-axis while quarter turns are the defect (relative bars). R1b: every search start sees the target within 12 steps and arrives. R1c: at 90% per-frame detection >= 95% of missions arrive. Spin guard counts degrees; stuck -> `blocked`; spin named a spin. **3.32 recorded only that these pass in the scaled house**; the numbers below are history |
 | `tests/test_arrival.py` (14) | Uses `tests/test_bearing_turns.py`'s `_build()`, so the scaled house. **Recorded 2026-10-01 (PLAN 3.32, guarded verbs):** of missions that arrived, 69/69 (perfect detection), 689/689 (90%) and 677/689 = 98.3% (80%) end `found` (bar 95%); 0 false arrivals in 69 / 690 / 690; farthest `found` 0.51-0.52 m from the target's centre (bar 0.60 m, so 0.08 m of margin). **Re-measured 2026-10-02 with the arrival confirmation (handoff 1a) and a cloud that reports `target_visible`:** identical -- 69/69, 689/689, 677/689, 0 false, farthest 0.507/0.515/0.515 m. Also: not judged without scan, with a panned camera, or without local perception; two frames needed; range read at the bearing; edges refused |
 | `tests/test_arrival_confirmation.py` (9) | Handoff 2026-10-02 1a, scaled house, cloud faked: the right object ends `found` after one `arrival_confirmation` call; a cloud that disagrees refuses the arrival (ends `blocked`, at most 2 confirmation calls); a false-positive run (absent, absent, detected...) cannot end `found` and the same run with an agreeing cloud does; the call is counted; at the call cap it refuses without calling. Spec review 3: under `async_cloud` the confirmation never overlaps a trigger call (peak concurrency 1 with a 0.2 s cloud); a `found` mission's `status.tier.stats` counts it; the paid step is logged `[cloud: arrival_confirmation]`; a refused mission's final `status.arrival` keeps `identity` and its end line does not say "obstructed" |
+| `tests/test_refused_turn_loop.py` (3) | Handoff 5a, starter house: a refused turn is never chosen again from the same spot (was 130 times); with the world the active-search demo finds the backpack in 61 steps (the reference trace); with no world the boxed-in fallback runs instead of a refused LEFT alternating with STOP |
 | `tests/test_tiered.py` (92) | triggers and hysteresis, call cap, staleness floor, async dispatch and epoch drop, an async failure reaching B3.2, landed verdicts shown once, local bearing beats a stale cloud goal, spin guard never overrides a sighting, timing on the worker |
 | `tests/test_vision_policy.py` (46) | visible is not found; absent `obstacle_ahead` is `unknown`; room guess backfill and `searched_rooms`; the policy does not peek; replay missions; proximity veto off by default and never over a real sensor |
 | `tests/test_agent.py`, `tests/test_mission_agent.py`, `tests/test_object_search.py` | constrained loop, frontier preference, look-around scan |
@@ -266,7 +273,7 @@ only so older plan entries can be read, not as today's record): R1 4.06 cells
 closed / 0.6 reversals vs -1.23 / 4.8 for quarter turns; R1b 171 starts,
 100% found / 100% arrive; R1c 98.3-98.6% arrival at 90% and 80% detection
 over 690 missions each; 3.11 arrival 69/69, 676/678, 676/678, farthest
-`found` 0.386 m. The R1 figure was not re-measured in the scaled house. PLAN
+`found` 0.386 m. The R1 figure was re-measured in the scaled house on 2026-10-03 ("Print the R1 A/B" above). PLAN
 3.5 records the demo's every-frame row falling from 4.06 to 3.69 once stuck
 detection landed. That was also measured in the starter house.
 
@@ -285,17 +292,10 @@ threshold counted in steps.
 - The vision proximity veto cannot be turned on from the brain service
   (`control/brain_server.py` never passes it); only a direct `MissionRunner`
   can.
-- Arrival cannot be judged on a phone walk, and under `tier_async_cloud:
-  true` a landed cloud `target_reached` is never applied, so tiered phone
-  walks end `max_steps` when they arrive (P7e). **Decided by the user
-  2026-10-02:** it is not applied; the arrival rule stays the only way a
-  tiered mission ends `found` on the car, and phone walks ending
-  `max_steps` is by design ([architecture spec](../../policy/ARCHITECTURE.md),
-  "The cloud confirms identity at arrival; the lidar decides distance").
-  Nothing to build for this half: it is what the code does today.
-  `brain/arrival.py`'s module docstring (lines 6-9) says that before arrival
-  "only a paid cloud call could end a mission"; that holds only for a
-  synchronous tier, not the shipped asynchronous one.
+- **Tiered phone walks end `max_steps` when they arrive** (P7e), by design:
+  arrival needs the lidar, and a landed cloud `target_reached` is never
+  applied ([architecture spec](../../policy/ARCHITECTURE.md), "The cloud
+  confirms identity at arrival; the lidar decides distance").
 - Arrival's panned-camera refusal reads `perception.pan_deg`, which is 0 for
   every sim frame: `sim/mock_robot.py`'s frame carries no `pan_deg`,
   `FrameReportedPipeline` builds `Perception` without one, and the sim's
@@ -311,23 +311,3 @@ threshold counted in steps.
   `blocked` after 17-18 steps in both of `tests/test_arrival_confirmation.py`'s
   refused runs, having paid for one confirmation. Nothing turns the robot
   away from a rejected object.
-- **`tests/demo_active_search.py` ends NOT FOUND after 150 steps** (observed
-  2026-10-02). Almost every step is a LEFT that the pivot guard clamps to
-  0 degrees, so the robot never moves. The stuck-breaker counts STOPs, not
-  refused turns. **Probable diagnosis, UNCONFIRMED** (read from
-  `brain/agent.py`'s `MissionAgent.decide()`, not traced): the demo passes no
-  world, so `decide()` uses the right-hand rule. A refused LEFT is recorded
-  as not executed, so the next `decide()` skips the "FORWARD after an
-  executed turn" branch and peeks again. The left ray clears
-  `side_clearance_cm + 1` (31 cm), so LEFT is chosen again, and the pivot
-  guard again refuses the swept corner -- LEFT forever. The boxed-in
-  fallback (the stuck-breaker) never fires because LEFT reads clear. Two
-  definitions of "clear" disagree: a peek ray along the turned heading,
-  and the chassis' swept corners during the pivot.
-- **`tests/demo_hold_bearing_ab.py` still builds the starter house**, which
-  the tests left in 3.32.
-- More code prose that has drifted: `config/robot.yaml`'s
-  `tier_spin_guard_after` comment says "after this many consecutive turns",
-  but the guard counts degrees (`spin_guard_after * 90`, since R1c). The
-  `max_steps` comment's stale "83 steps" is listed in
-  [mission](../mission/ENGINEERING.md).

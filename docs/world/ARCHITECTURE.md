@@ -43,7 +43,7 @@ Who depends on it:
 ## Components and boundaries
 
 ```text
-  brain (control/)  ---HTTP--->  robot server  /world/*  (pass-through; derives only the sim-only error readout)
+  brain (control/)  ---HTTP--->  robot server  /world/*  (pass-through, plus the sim-only error readout; goals: see D9)
   twin (web page)   ---HTTP--->        |
                                        v
                               world contract  (pose, map, truth; honest "unusable" defaults)

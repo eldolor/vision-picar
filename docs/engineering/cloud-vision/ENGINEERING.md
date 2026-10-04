@@ -53,10 +53,10 @@ the model's JSON, then coerced by `_parse_navigate_json()`:
 
 | Field | Values | Coercion |
 |---|---|---|
-| `target_visible` | bool | coerced to a real bool (handoff 4b): `true` or the string `"true"` (any case, trimmed) is true, anything else false -- before the reached-implies-visible check below. `brain/navigate.py` reads it with `is True`; `web-twin/app.js` reads it by truthiness (Robot view's zone highlight, `const zone = result.target_visible ? ...`). |
+| `target_visible` | bool | coerced to a real bool (handoff 4b): `true` or the string `"true"` (any case, trimmed) is true, anything else false -- before the reached-implies-visible check below. `brain/navigate.py` reads it with `is True`; `brain/tiered.py`'s `confirm_arrival()` reads the normalised `_navigate.target_visible` as the arrival's identity verdict (handoff 1a); `web-twin/app.js` reads it by truthiness (Robot view's zone highlight, `const zone = result.target_visible ? ...`). |
 | `target_direction` | `left`, `center`, `right`, `not_visible` | trimmed and lower-cased, then anything off `TARGET_DIRECTIONS` becomes `not_visible` (handoff 4b) |
 | `target_reached` | bool | `is True` only. Forced `false` when `target_visible` is false. |
-| `obstacle_ahead` | bool | REMOVED when the variant's template does not ask for it (`variant_asks_obstacle()`). Otherwise coerced like `target_visible` (handoff 4b). `brain/navigate.py` reads it with `is True`; Robot view's obstacle cue (`if (result.obstacle_ahead)`) reads it by truthiness. |
+| `obstacle_ahead` | bool | REMOVED when the variant's template does not ask for it (`variant_asks_obstacle()`). Otherwise coerced like `target_visible` (handoff 4b). `brain/navigate.py` reads it with `is True`; in Robot view the OBSTACLE banner is strict (`=== true`) while the HUD's OBS row and the haptic/audio cue read it by truthiness -- harmless since the service coerces it (handoff 4b). |
 | `room_guess` | string | non-string, or empty after `strip()`, becomes `unclear`; any other string passes through stripped, so an invented label (`"spaceship"`) reaches the caller as a room |
 | `action` | `FORWARD`, `LEFT`, `RIGHT`, `REVERSE`, `STOP` | anything else becomes `STOP` |
 | `reasoning` | string | |

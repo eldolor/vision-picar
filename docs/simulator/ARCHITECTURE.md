@@ -156,7 +156,12 @@ Making the renderer realistic enough for a real detector.
 
 **Trade-off.** The sim tests the consumers of perception: triggers,
 steering, arrival and arbitration. It never tests the detector. Any claim
-about detection accuracy must come from real frames.
+about detection accuracy must come from real frames. Arrival has two
+halves since 2026-10-02: the sim tests the DISTANCE half (the lidar), but
+the IDENTITY half -- a cloud call on the arrival frame -- is faked from the
+sim's own ground truth in every sweep, and on a live sim mission it is a
+real model looking at a raycaster render. Neither says how often the real
+model confirms a real target (see Open questions).
 
 ### Objects are solid to everything that senses or moves (3.9)
 
@@ -252,6 +257,14 @@ note).
 | An unknown house or mover scenario is named | Start-up refuses with the valid names | Never a silent fallback to another house |
 
 ## Open questions
+
+- **Should a sim frame's arrival be confirmed from geometry?** A live
+  tiered mission on the Sim tab now pays one real cloud call on a render to
+  end `found`, which ties its outcome to whether the model recognises a
+  flat-shaded billboard (the "lit renderer" question below). By analogy with
+  1.12 (the sim reports detections, it does not run a detector), the sim
+  could answer identity from its own geometry. The user decides; the policy
+  domain owns the rule.
 
 - **Low obstacles.** The world is 2D, so every object fills the lidar's
   plane. Testing a floor band from a depth camera needs objects with a

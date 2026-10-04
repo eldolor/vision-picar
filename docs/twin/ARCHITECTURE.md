@@ -235,7 +235,7 @@ goal (decided by the user 2026-10-02, built the same day), and a non-zero
 D-pad movement cancels one too. To resume, a person sends the goal again.
 The rule belongs to the [safety domain](../safety/ARCHITECTURE.md).
 Whether a person's goal should rank as a person
-is also open.
+is open.
 
 ### Configuration lives on the device, and shares by QR, never through a third party
 

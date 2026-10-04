@@ -347,5 +347,27 @@ So nobody re-checks these. Each reviewer's §(g) has the full list.
 - **Tests.** `tests/test_arrival_confirmation.py` +4 and `tests/test_ui.py`
   +4, all of which failed first.
 
-Fixes 7, 11-15 and 17-20 are open. Fix 7 needs a paid live run and a
-decision on confirming sim frames.
+**Fixes 12-14 and 16-20: done 2026-10-03.**
+
+- **12.** CLAUDE.md has a status row for the review fixes. Its open-work
+  bullet, the arrival rule and the test counts are current.
+- **13.** The policy, mission and cloud-vision text now covers 1a.
+- **14.** The simulator spec says the identity half of arrival is faked in
+  sweeps.
+- **16.** The rest of the 1d documentation.
+- **17.** The stop's goal loop is single-flight, and `RosWorld` raises on an
+  error status.
+- **18.** The constraint is recorded in mission ENG; the value is unchanged.
+- **19.** Covered by 4i and 4e, plus the cache header.
+- **20.** The small items: the twin's cost hint, FEATURES §3, the world
+  diagram, the "also", owners for the four tools, `.coverage` untracked,
+  and the handoff preamble.
+
+Still open:
+
+- **Fix 7.** A paid live run, and the user's decision on confirming sim
+  frames from geometry, now an Open question in simulator ARCH.
+- **Fix 11.** The user decides whether a person's verb cancels a goal.
+- **Fix 15.** 3.33 criterion 2's comparison procedure; left to the Jetson
+  session, which owns `tools/jetson/`.
+

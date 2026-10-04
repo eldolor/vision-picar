@@ -24,6 +24,13 @@ the door jamb (see `tests/test_bearing_turns.py`):
     sized turns     closed ~4.1 cells, ~1 reversal, all clear starts arrive
     quarter turns   ends FURTHER away than it started, ~5 reversals
 
+Re-measured 2026-10-03 in the SCALED house (handoff 5b -- this demo had
+been building the starter house around scaled-house coordinates since
+3.32), 16 starts, 60 steps, cells closed / reversals per run:
+
+    detector 1 in 1   sized 6.36 / 0.2 (hold 6.36 / 0.2)   quarter -0.29 / 12.3
+    detector 1 in 3   sized 4.48 / 0.2 (hold 4.95 / 0.2)   quarter  0.69 / 8.2
+
 Dead-reckoning (`tier_hold_bearing`) is worth little once turns are sized:
 each sighting fully corrects the heading, so there is less for memory to
 bridge. It stays OFF.
@@ -36,11 +43,10 @@ import statistics
 from brain.perceive import ABSENT, FrameReportedPipeline, Perception
 from brain.tiered import TieredVision
 from control.mission_runner import MissionRunner
-from sim.maps.starter_house import build_starter_world
 from sim.mock_robot import MockRobot
 from tests.conftest import mock_world_for
 from tests.test_bearing_turns import (
-    GOAL, STARTS, STEPS, TARGET, _DropTurnSize, _quiet_cloud)
+    GOAL, STARTS, STEPS, TARGET, _DropTurnSize, _build, _quiet_cloud)
 
 
 class _Intermittent(FrameReportedPipeline):
@@ -59,7 +65,10 @@ class _Intermittent(FrameReportedPipeline):
 
 def run(start, *, sized, every, hold):
     x, y, off = start
-    grid = build_starter_world()
+    # The scaled house (handoff 5b): GOAL and STARTS are its coordinates
+    # since 3.32, so building the starter house here put them in the wrong
+    # house.
+    grid = _build()
     grid.x, grid.y = x, y
     grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
     robot = MockRobot(grid, render=False)

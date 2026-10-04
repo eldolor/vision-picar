@@ -37,7 +37,7 @@ threads; where it and this file disagree, check the code.
 |---|---|
 | asyncio event loop | every HTTP handler and `mission_loop()` |
 | worker (`asyncio.to_thread`) | one `runner.tick()`; also `make_runner` at start (it may make a blocking HTTP call) |
-| daemon `vision-call` thread | one `vision_fn` call under `call_with_timeout()`; abandoned, never killed, on timeout |
+| daemon `vision-call` thread | one `vision_fn` call under `call_with_timeout()`; abandoned, never killed, on timeout. A tick that judges an arrival starts a second one for `confirm_arrival` |
 | `tiered-cloud` worker | the tiered policy's async cloud call (policy domain); shut down by `runner._finish()` via `vision_fn.close()` |
 
 `MissionRunner` guards state with an `RLock`, never held across
@@ -165,8 +165,9 @@ without a perception tier. `AGENT-HARNESS.md` section 8 describes each.
   `start()`, `tick() -> bool`, `stop(reason)`, `abort(reason)`,
   `is_running()`, `status()`. `start()` on a used runner raises.
 - `vision_fn(frame: dict) -> dict` -- the scene schema (policy domain).
-  Optional attributes the runner uses if present: `set_searched_rooms(list)`
-  and `close()`.
+  Optional attributes the runner uses if present: `set_searched_rooms(list)`,
+  `close()`, and `confirm_arrival(frame)` (handoff 1a; called through
+  `_guarded_confirm()` only when the agent judges an arrival).
 - `_HaltGate.MOVEMENT`: `drive_forward`, `reverse`, `turn_left`,
   `turn_right`, `look_left`, `look_right`, `look_center`,
   `set_wheel_velocity`; plus `verb_plan()` (guarded) and `verb_done()` /
@@ -190,7 +191,7 @@ The `brain:` block of `config/robot.yaml`, read by
 | `request_timeout_s` | 10.0 | 10.0 | s | robot and world clients, allow-list check | |
 | `vision_timeout_s` | 20.0 | 20.0 | s | B3.2 per-call timeout | |
 | `max_vision_failures` | 3 | 3 | calls | B3.2 budget | B3 plan's suggestion; three abandoned threads at most |
-| `tick_timeout_s` | 30.0 | 30.0 | s | B3.3 dead-man | must stay above `teleop.stall_timeout_s` (15 s) so the specific teleop error fires first |
+| `tick_timeout_s` | 30.0 | 30.0 | s | B3.3 dead-man | must stay above `teleop.stall_timeout_s` (15 s) so the specific teleop error fires first. **Not** above two `vision_timeout_s` (40 s): under a SYNCHRONOUS tier a tick that judges an arrival holds the vision call and the confirmation, each up to 20 s, so a slow pair is ended by B3.3 as "loop hung" rather than counted by B3.2. The shipped asynchronous tier has only the confirmation in the tick (review 3, fix 18; left as is, recorded) |
 | `tick_interval_s` | 0.25 | 0.0 | s | `mission_loop` | pacing so a sim mission is watchable; 0 in code so tests stay fast; can be 0 on hardware |
 | `allow_drills` | true | true | -- | `drills.apply` | off for any brain reachable beyond the LAN |
 | `drill_vision_timeout_s` | 2.0 | 2.0 | s | vision drills | a demo in seconds, same guard |

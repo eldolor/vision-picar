@@ -9,6 +9,7 @@ Run with: python -m tests.demo_active_search
 """
 
 from robot.factory import get_robot
+from world.factory import get_world
 from brain.agent import ObjectSearchAgent
 from brain.memory import MissionMemory
 
@@ -16,7 +17,12 @@ from brain.memory import MissionMemory
 def main():
     robot = get_robot()
     memory = MissionMemory(mission="Find the red backpack.", target_object="red backpack")
-    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30)
+    # The world, as robot/server.py builds it: since 3.2 the rule-based
+    # policy reads its pose from WorldInterface, and without one it degrades
+    # to the right-hand rule -- which is how this demo came to end NOT FOUND
+    # (handoff 5a). With it: found in 61 steps, the reference trace.
+    agent = ObjectSearchAgent(robot, memory, min_distance_cm=30,
+                              world=get_world(robot=robot))
 
     print(f"=== {memory.mission} (active scanning) ===\n")
     report = agent.run_mission(max_steps=150)
