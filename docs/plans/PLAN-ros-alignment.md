@@ -3490,6 +3490,18 @@ adapter).**
    tier no latency. Against the laptop's 119 ms default and 36 ms all-GPU:
    the board sits between them. P26 is not needed to meet the budget.
    Records: `bench-15w.json`, `bench-25w.json` on the board.
+4. **The suite -- met.** From the board's `.venv` (Python 3.10.12), with
+   Playwright's Chromium installed: **1728 passed, 0 failed, 56 skipped,
+   3 xfailed in 73.6 min** (the laptop's single-thread Python is ~4x
+   faster; the three slowest tests, mission sweeps, took ~12 min each).
+   Every skip names a missing live stack, ROS image or firmware checkout:
+   `test_ros_chain_live` 13 and `test_nav_live` 5 (no stack -- G4 runs
+   them), `test_urdf` 17 (no bridge / no image), `test_slam_live` 3,
+   `test_brain_view_live` 5 and `test_http_rate_live` 2 (no Docker stack
+   and secret), `test_startup_race` 1, `test_firmware_fork` 2
+   (`PICAR_FIRMWARE_SRC` unset), `test_robot_contract` 6 (a backend with no
+   odometry, allowed), `test_perceive` 1 and `test_ros_containment` 1 (both
+   by design). None is about the board.
 
 ### 3.34 A body that cannot measure its wheels does not drive them, and a move that fell short is not a move (2026-10-03): criteria, written before building
 
