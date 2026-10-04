@@ -3530,6 +3530,18 @@ adapter).**
    (~1.73 GHz, at most ~15% more). Criterion 6 (0 late ticks) would fail
    today for the same reason.
 
+   **Diagnostic run at MAXN SUPER (user's choice, not a G4 run -- G4 is
+   judged at 15W): 2 failed, 16 passed in 13.1 min.** The silence-stop test
+   now passed; nav reached **3 of 6** goals (bar 5); the wheel loop was
+   still late on **926 of 6027 ticks (15%)**, worst 0.191 s, and the
+   container logged **1986** failed `POST /wheels` to the robot server.
+   ~15% more CPU clock moved lateness from 20% to 15% and one test across
+   the line: the process is short by much more than a clock bump, which is
+   the case for 3.36. The `/odom` test failed identically at both clocks
+   (0.115 m truth, 0.000 m odom) -- most likely the same overload starving
+   the wheel plugin's reads, but not established; 3.36's G4 run settles it.
+   Board returned to 15W.
+
 ### 3.34 A body that cannot measure its wheels does not drive them, and a move that fell short is not a move (2026-10-03): criteria, written before building
 
 **Found 2026-10-03** while adding the car body's failure modes to
@@ -3726,6 +3738,94 @@ were the clear verbs (criterion 2), which already held.
 
 **Still owed by the car:** the two values -- the stall window (0.6 s, the
 board's low-speed deadband decides it) and the scrub (1.0).
+
+### 3.36 The simulated body in its own process, so G4 measures the robot server and not the simulator (2026-10-04): plan and criteria, written before building
+
+**Why.** 3.33's G4 failed on the Jetson (3 of 18 at 15W, 2 of 18 at MAXN
+SUPER) with the robot server at 98% of one core and its 20 Hz wheel loop
+late on 15-20% of ticks. Under `SIM_MOTOR_BOARD=fake` that one process runs
+three things: the robot server proper (routes, `robot/safety.py`, the wheel
+loop, `HardwareRobot`'s serial reader), **and** the simulated body
+(`MockRobot` on a `GridWorld`, its ray-cast scan and depth grid), **and**
+the fake board (`sim/fake_esp32.py`'s ~100 Hz loop, which steps the body and
+collides it). A 15 s profile put the fake board's loop and `HardwareRobot`'s
+reader at ~22% of samples each and the scan casting at ~16-17%, all under
+one GIL. On the car the second and third do not exist: the board is a real
+ESP32 on a serial port and the sensors are real devices. So today's G4
+judges the simulator's cost on a slow CPU and charges it to the robot
+server -- it cannot say whether the code the car will run keeps up.
+(Decided by the user 2026-10-04: "do option 1 then plan option 2".)
+
+**The change.** A **sim body process** (working name `sim/body_server.py`)
+owns the `GridWorld`, the `MockRobot` body, the movers and the `FakeEsp32`.
+It opens the fake board's pty and serves the body's sensors and the
+sim-only truth over HTTP on 127.0.0.1. The robot server, under
+`SIM_MOTOR_BOARD=fake` with `SIM_BODY_URL` set, does what it does on the
+car: `HardwareRobot` opens the pty path **as a serial device** (a pty works
+across processes, which is why the fake was built on one), and its
+`sensors` become a thin HTTP client to the body process instead of an
+in-process `MockRobot`. Everything that is the robot server's on the car --
+the wheel loop, the safety vet, arbitration, the serial reader -- stays
+where it is and is now the only thing in that process.
+
+Design points to settle while building, each recorded in the results:
+
+* **Where the client lives.** `robot/` may not import `control/`, so not
+  `RemoteRobot`; a sensors-only client in `sim/` (it is sim plumbing) that
+  the factory imports only on the fake path.
+* **The safety vet reads the scan every wheel-loop period.** Over HTTP that
+  is a localhost round trip per tick; 3.17 measured a bare app over a
+  Docker hop at p99 1.6-4 ms at 200 Hz, inside the 50 ms period. The client
+  may cache the last scan for at most one period if a round trip per tick
+  proves too costly -- judged by criterion 4, never assumed.
+* **Truth and sim-only routes** (`/world/truth`, `/sim/objects`, the
+  `RosWorld` start anchor) read the body process, so the world model's
+  truth source becomes the same client.
+* **Who starts it.** `service/tunnel/run.sh` starts the body process before
+  the robot server when `SIM_MOTOR_BOARD=fake`; `restart.sh` checks its
+  revision like the other two.
+* **The in-process path stays** for the unit suite and the laptop
+  (`SIM_BODY_URL` unset), so nothing that passes today has to change. Two
+  ways of building the same fake body is a duplicate the wall linter should
+  not need to register: the body process builds it through the SAME factory
+  function the in-process path uses.
+
+**Acceptance criteria:**
+
+1. **The robot server runs no simulation.** With `SIM_BODY_URL` set, the
+   robot server process has not imported `sim.fake_esp32`, `sim.grid_world`
+   or `sim.renderer` (checked in a subprocess via `sys.modules`, as
+   `tests/test_brain_server.py` checks the brain).
+2. **Same body, same answers.** On the laptop, `tests/test_fake_esp32.py`,
+   `tests/test_robot_contract.py`'s fake-board backend and
+   `tests/test_ros_chain_live.py` pass with the body out of process; the
+   ground-truth safety sweep `tests/footprint_sweep.py` (3.18's bars: 0
+   under 18 cm of travel-to-contact, 0 contacts) holds through the process
+   boundary.
+3. **No new latency in the stop.** The live silence-stop test (wheels zero
+   within 0.5 s) and 3.34's stale-feedback stop (median <= 0.35 s after the
+   last frame) pass with the body out of process, on the laptop and the
+   Jetson.
+4. **The robot server keeps up on the Jetson at 15W.** Over a full G4 run:
+   wheel loop late ticks **<= 1%** of moving ticks (target 0 -- criterion 6
+   of 3.33 still demands 0 under full load) and the robot server process
+   under **50% of one core**. Recorded alongside the body process's own CPU,
+   so the simulator's cost stays visible rather than disappearing.
+5. **G4.** 3.33 criterion 5 on the Jetson at 15W: 5 consecutive runs of the
+   live chain and nav suites, each `18 passed`, 0 skipped, 0 failed.
+6. **No regression.** The full suite passes on the laptop and the board;
+   the wall linter's budgets are unchanged or raised with a reason.
+
+Criteria 1, 3 and 4 are confirmed red against today's code first (1 by the
+import check, 4 from 3.33's run: 20% late, 98% of a core).
+
+**If criterion 4 fails with the body out of process,** the robot server's
+own code is too slow for this CPU at 15W -- a real finding about the car,
+not the rig -- and the next step is a profile of what is left, taken to the
+user before anything is tuned.
+
+**Estimate:** about half a day to build and verify on the laptop, plus the
+Jetson runs (~15 min each).
 
 ## 4. Honest residue -- what the twin cannot tell you
 
