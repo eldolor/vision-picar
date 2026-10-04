@@ -87,6 +87,12 @@ def get_world(
                 "hardware robot with no mapper -- both /world routes "
                 "then answer `usable: false`)."
             )
+        if callable(getattr(grid, "get_truth", None)):
+            raise ValueError(
+                "world mode 'sim' maps the house by casting over its grid, and "
+                "this robot's house is in another process (SIM_BODY_URL, "
+                "PLAN-ros-alignment.md 3.36). Use WORLD_MODE=ros, or unset "
+                "SIM_BODY_URL to keep the body in this process.")
         return MockWorld(grid)
 
     if mode == "ros":
@@ -99,7 +105,11 @@ def get_world(
 
         grid = getattr(robot, "world", None)
         truth = None
-        if grid is not None:
+        if grid is not None and callable(getattr(grid, "get_truth", None)):
+            # 3.36: the house is in sim/body_server.py's process, which
+            # serves the truth itself (sim/body_client.py's RemoteGrid).
+            truth = grid
+        elif grid is not None:
             from sim.mock_world import MockWorld
             truth = MockWorld(grid)
         url = (os.environ.get("ROS_BRIDGE_URL")

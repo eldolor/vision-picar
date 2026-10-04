@@ -330,6 +330,18 @@ class GridWorld:
     def _turning_circle_cells(self) -> float:
         return math.hypot(FOOTPRINT_HALF_LENGTH, FOOTPRINT_HALF_WIDTH)
 
+    def describe_objects(self) -> dict:
+        """Every object, movers marked, and the sim clock -- what
+        `GET /sim/objects` serves. Here rather than in the route so the
+        body served from another process (`sim/body_server.py`, 3.36)
+        answers with the same code."""
+        objects, movers = self.objects, {m.cell for m in self.movers}
+        return {
+            "sim_time_s": round(self.sim_time, 3),
+            "objects": [{"x": x, "y": y, "name": name, "mover": (x, y) in movers}
+                        for (x, y), name in sorted(objects.items())],
+        }
+
     def move_object(self, src, dst) -> None:
         """Move the object at cell `src` to cell `dst` -- furniture someone
         rearranged. Seen by everything at once: there is nothing to refresh.

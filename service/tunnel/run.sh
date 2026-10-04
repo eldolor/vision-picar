@@ -80,6 +80,15 @@ pids=()
 cleanup() { for pid in "${pids[@]:-}"; do kill "$pid" 2>/dev/null || true; done; }
 trap cleanup EXIT INT TERM
 
+# 3.36: with SIM_BODY_URL set (and SIM_MOTOR_BOARD=fake), the simulated
+# body, its sensors and the fake board run in their own process, started
+# first -- the robot server waits for it, then opens the board's pty.
+if [ -n "${SIM_BODY_URL:-}" ]; then
+  body_port="${SIM_BODY_URL##*:}"; body_port="${body_port%%/*}"
+  python -m uvicorn sim.body_server:app --port "$body_port" --host 127.0.0.1 --log-level warning &
+  pids+=($!)
+  echo "  body   $SIM_BODY_URL   (sim body + fake board, own process)"
+fi
 python -m uvicorn robot.server:app --port 8000 --host 127.0.0.1 --log-level warning &
 pids+=($!)
 ROUTE_PREFIX=/brain python -m uvicorn control.brain_server:app \

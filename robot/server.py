@@ -900,13 +900,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     def sim_objects():
         """Every object in the simulated house, movers marked, and the sim
         clock. Ground truth, like `/world/truth`: no decision may read it."""
-        grid = _sim_grid()
-        movers = {m.cell for m in grid.movers}
-        return {
-            "sim_time_s": round(grid.sim_time, 3),
-            "objects": [{"x": x, "y": y, "name": name, "mover": (x, y) in movers}
-                        for (x, y), name in sorted(grid.objects.items())],
-        }
+        return _sim_grid().describe_objects()
 
     class MoveObjectRequest(BaseModel):
         src: List[int]

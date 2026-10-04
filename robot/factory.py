@@ -52,6 +52,17 @@ def _with_drive(robot: RobotInterface, config: dict) -> RobotInterface:
     raise ValueError(f"Unknown drive mode in config: {mode!r} (direct | ros)")
 
 
+def build_fake_body(config: dict):
+    """The fake motor board's simulated body and the board turning it
+    (R7). One function for both places it runs: in this process, and in
+    sim/body_server.py's (3.36) -- so the two cannot drift apart."""
+    from sim.fake_esp32 import FakeEsp32
+    from sim.mock_robot import MockRobot
+
+    body = MockRobot(_sim_world(config))
+    return body, FakeEsp32(body)
+
+
 def _sim_world(config: dict):
     """The house SIM_MAP names -- else config/robot.yaml's `sim_map`, else
     the starter house (handoff 4f: the yaml key used to be read by nothing)
@@ -133,13 +144,19 @@ def _backend(config: dict) -> RobotInterface:
         from robot.hardware_robot import HardwareRobot
 
         if os.environ.get("SIM_MOTOR_BOARD") == "fake":
-            from sim.fake_esp32 import FakeEsp32
-            from sim.mock_robot import MockRobot
-
-            body = MockRobot(_sim_world(config))
-            board = FakeEsp32(body)
             # track_scrub 1.0 whatever the setting: the sim body does not
             # scrub, so the car's correction would make it turn wrong (3.35).
+            body_url = os.environ.get("SIM_BODY_URL")
+            if body_url:
+                # 3.36: the body, its sensors and the board run in
+                # sim/body_server.py's process. This process opens the
+                # board's pty as a serial device and reads the sensors over
+                # HTTP -- what it does on the car, with no simulator in it.
+                from sim.body_client import SimBodyClient
+
+                sensors = SimBodyClient(body_url, secret=os.environ.get("APP_SHARED_SECRET", ""))
+                return HardwareRobot(sensors.board_path, sensors=sensors, track_scrub=1.0)
+            body, board = build_fake_body(config)
             robot = HardwareRobot(board.path, sensors=body, track_scrub=1.0)
             robot.fake_board = board          # kept alive with the robot
             return robot

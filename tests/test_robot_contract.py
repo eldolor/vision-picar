@@ -85,7 +85,8 @@ PAN_METHODS = ("look_left", "look_right", "look_center")
 # "ros_drive" (handoff 2e, 2026-10-03): the body every `drive: ros` server
 # drives -- verbs as twists through a fake ROS chain, reads from the robot
 # underneath. Wrappers are where the interface falls behind silently.
-BACKENDS = ["mock", "replay", "teleop", "remote", "halt_gate", "hardware", "ros_drive"]
+BACKENDS = ["mock", "replay", "teleop", "remote", "halt_gate", "hardware", "hardware_remote_body",
+            "ros_drive"]
 
 
 def _write_walk(tmp_path, count=3):
@@ -144,6 +145,25 @@ def robot(request, tmp_path):
         yield bot
         bot.close()
         board.close()
+
+    elif kind == "hardware_remote_body":
+        # 3.36: the same backend with its body, sensors and board in
+        # sim/body_server.py's process -- the robot server's G4 shape.
+        from robot.hardware_robot import HardwareRobot
+        from sim.body_client import SimBodyClient
+        from tests.test_sim_body_process import _start_body, _stop
+
+        proc, url = _start_body()
+        client = SimBodyClient(url)
+        bot = HardwareRobot(client.board_path, sensors=client)
+        import time as _time
+        deadline = _time.monotonic() + 2
+        while bot.frames == 0 and _time.monotonic() < deadline:
+            _time.sleep(0.01)
+        yield bot
+        bot.close()
+        client.close()
+        _stop(proc)
 
     elif kind == "ros_drive":
         # R4's wrapper over a sim body, its bridge a fake twist_mux +
