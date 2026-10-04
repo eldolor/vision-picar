@@ -18,11 +18,16 @@
 #   plain `pip install torch` gets a CPU-only build on aarch64; PyPI's
 #   cu126 wheels fail here with "no kernel image is available".
 # * libcusolver: the forum fix for torch 2.8 on JetPack 6.2.1.
+# * numpy<2 (found on the board, 2026-10-04): the Jetson AI Lab torch 2.8
+#   wheel is built against NumPy 1.x. With NumPy 2 torch imports and runs
+#   on cuda, but its numpy bridge is gone, and every detector call fails
+#   with "Numpy is not available". pip then settles on opencv-python 4.11.
 set -euo pipefail
 
 INDEX="https://pypi.jetson-ai-lab.io/jp6/cu126"
 TORCH="torch==2.8.0"
 VISION="torchvision==0.23.0"
+NUMPY="numpy<2"
 
 say() { printf '\n== %s\n' "$*"; }
 die() { printf '\nSTOP: %s\n' "$*" >&2; exit 1; }
@@ -49,7 +54,7 @@ say "venv (.venv, python3.10)"
 python -m pip install -q --upgrade pip
 
 say "torch for JetPack 6 (CUDA 12.6)"
-pip install -q "$TORCH" "$VISION" --index-url "$INDEX"
+pip install -q "$TORCH" "$VISION" "$NUMPY" --index-url "$INDEX"
 python - <<'EOF'
 import torch
 assert torch.cuda.is_available(), "torch.cuda.is_available() is False -- see 3.33 step 3"
@@ -59,12 +64,13 @@ print("torch", torch.__version__, "on", torch.cuda.get_device_name(0), "-- OK")
 EOF
 
 say "project requirements (torch pinned so pip cannot replace it with a CPU build)"
-printf '%s\n%s\n' "$TORCH" "$VISION" > /tmp/jetson-constraints.txt
+printf '%s\n%s\n%s\n' "$TORCH" "$VISION" "$NUMPY" > /tmp/jetson-constraints.txt
 pip install -q -r requirements.txt numpy pytest -c /tmp/jetson-constraints.txt \
     --extra-index-url "$INDEX"
 pip install -q -r requirements-perception.txt -c /tmp/jetson-constraints.txt \
     --extra-index-url "$INDEX"
 python -c "import torch; assert torch.cuda.is_available(), 'a requirement replaced torch with a CPU build'"
+python -c "import numpy; assert numpy.__version__.startswith('1.'), f'numpy {numpy.__version__}: torch here needs numpy<2'"
 
 say "the shipped pipeline on the GPU"
 python - <<'EOF'
@@ -77,8 +83,11 @@ p = pipeline_for("red backpack")
 # blank frame -- no recordings needed yet.
 buf = io.BytesIO()
 Image.new("RGB", (640, 480), (128, 128, 128)).save(buf, "JPEG")
-p.perceive({"image_base64": base64.b64encode(buf.getvalue()).decode(),
-            "media_type": "image/jpeg", "image_width": 640})
+r = p.perceive({"image_base64": base64.b64encode(buf.getvalue()).decode(),
+                "media_type": "image/jpeg", "image_width": 640})
+# A detector that RAISED still has a device; only the status says it ran.
+# (2026-10-04: with numpy 2 this read "cuda" on both while every call failed.)
+assert r.status != "unavailable", f"the pipeline did not run: {r.reason}"
 det = detector_device(p)
 print("detector", p.detector.weights, "on", det, "| CLIP on", p.scorer.device)
 assert p.scorer.device == "cuda", "CLIP is not on cuda"

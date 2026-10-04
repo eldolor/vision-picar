@@ -178,6 +178,9 @@ def run(recordings: Path, device=None) -> dict:
         "device": (torch.cuda.get_device_name(0) if cuda else "no cuda"),
         "detector_device": det_device, "clip_device": str(any_pipe.scorer.device),
         "frames_with_crops": sum(1 for x in rows if x["crops"]),
+        # A frame whose detector raised returns fast and would time as a
+        # good one (2026-10-04, numpy 2 on the board) -- main() refuses it.
+        "frames_unavailable": sum(1 for x in rows if x["status"] == "unavailable"),
         "frames": len(rows), "warmup": WARMUP,
         "median": {k: med(k) for k in keys},
         "p90": {k: p90(k) for k in keys},
@@ -209,6 +212,10 @@ def main(argv=None) -> int:
     for k in ("total_ms", "model_ms", "handling_ms", "det_pre_ms", "det_infer_ms", "det_post_ms",
               "clip_gpu_ms", "clip_cpu_ms", "clip_ms_per_crop", "crops"):
         print(f"  {k:13} median {res['median'][k]:8}   p90 {res['p90'][k]:8}")
+    if res["frames_unavailable"]:
+        print(f"  STOP: {res['frames_unavailable']} of {res['frames']} frames came back "
+              f"'unavailable' -- the pipeline failed, so these times are not latency")
+        return 1
     print(f"  budget {BUDGET_MS:.0f} ms: {'WITHIN' if res['within_budget'] else 'OVER'}")
     return 0
 
