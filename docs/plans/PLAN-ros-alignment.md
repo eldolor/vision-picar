@@ -3486,7 +3486,7 @@ adapter).**
    | 25W | 64.2 / 120.4 ms | 43.6 / 79.1 | 19.9 / 41.4 | 43.3 | 47.0 |
 
    Budget 250 ms at 15W: the p90 uses 44% of it. **25W bought nothing**
-   (cause not established; `jetson_clocks` was not run), so 15W costs the
+   (25W caps the CPU LOWER than 15W -- 1.344 against 1.498 GHz, see 5 below -- trading CPU clock for GPU), so 15W costs the
    tier no latency. Against the laptop's 119 ms default and 36 ms all-GPU:
    the board sits between them. P26 is not needed to meet the budget.
    Records: `bench-15w.json`, `bench-25w.json` on the board.
@@ -3502,6 +3502,33 @@ adapter).**
    (`PICAR_FIRMWARE_SRC` unset), `test_robot_contract` 6 (a backend with no
    odometry, allowed), `test_perceive` 1 and `test_ros_containment` 1 (both
    by design). None is about the board.
+5. **G4 -- NOT met; run 1 failed, stopped and taken to the user.** The ROS
+   image built natively in ~15 min (2.58 GB). Run 1 (15W, README section 4
+   exactly, 18 collected, 0 skipped): **3 failed, 15 passed in 12.9 min.**
+   - chain 1: `/odom` read 0.000 m while truth moved 0.114 m (bar 0.02);
+   - chain 6: silence inside ROS stopped the wheels in **0.636 s** (bar 0.5);
+   - nav: **2 of 6 goals** succeeded (bar 5), the others timing out at
+     ~120 s with nav2 logging "Failed to make progress", "Control loop
+     missed its desired rate of 20 Hz" and a local-costmap TF timeout.
+
+   **What the data says the cause is:** the robot server process -- which
+   in G4's configuration also runs the simulator (the scan ray casting and
+   `sim/fake_esp32.py`'s board loop) -- sat at **98% of one core**, and its
+   wheel loop ran **1192 of 6017 ticks late (20%), worst 0.206 s against a
+   0.05 s period**. A 15 s py-spy profile: the fake board's loop and
+   `HardwareRobot`'s reader thread ~22% of samples each, `get_scan` ->
+   `cast_ray` ~16-17%. The whole board was not loaded (load average ~2.5 of
+   6 cores); one Python process, under its GIL, was. 3.17 predicted this
+   ("the robot server's 20-34 ms p99 tail is the SIMULATOR ... re-measure
+   on the Jetson"). Not yet established: that the failures go away when that
+   process keeps up -- this is the hypothesis the data supports, not a
+   result.
+
+   **CPU clocks by mode (from `/etc/nvpmodel.conf`):** 15W caps the A78
+   cores at **1.498 GHz**, 25W at **1.344 GHz** (lower -- which also
+   explains why 25W bought perception nothing), MAXN SUPER uncapped
+   (~1.73 GHz, at most ~15% more). Criterion 6 (0 late ticks) would fail
+   today for the same reason.
 
 ### 3.34 A body that cannot measure its wheels does not drive them, and a move that fell short is not a move (2026-10-03): criteria, written before building
 
