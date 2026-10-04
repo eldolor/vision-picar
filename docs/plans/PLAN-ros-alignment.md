@@ -3827,6 +3827,78 @@ user before anything is tuned.
 **Estimate:** about half a day to build and verify on the laptop, plus the
 Jetson runs (~15 min each).
 
+**First build, first Jetson run (2026-10-04) -- worse, and why.** Built as
+above (`sim/body_server.py`, `sim/body_client.py`, `SIM_BODY_URL`;
+criteria 1-3 met on the laptop, `tests/test_sim_body_process.py` 8 tests,
+contract suite +1 backend). G4 on the Jetson at 15W: **8 failed, 10 passed**
+(verbs overshooting 2-8 cm, a brain forward leaking past teleop, the wall
+stop at 19.3 cm, nav 0 of 6). The robot server averaged 48% of a core and
+the body process 83%, but the wheel loop counted only **193 moving ticks in
+12 min** (6017 before). Cause: `vet_wheel_velocity()` reads the scan
+**inside `motion_lock`**, and the scan is now an HTTP round trip to a body
+process that is itself near one core -- so the lock is held across a slow
+read, the wheel loop skips every tick it finds the lock taken, and `/wheels`
+posts queue behind it (a py-spy profile showed request threads parked on
+the lock). The split moved the work; it did not let it run in parallel.
+
+**Amended by the user, 2026-10-04:** *"Split the components into separate
+Python programs so that these could fully utilize all available CPU
+cores"* -- and the in-process fallback is withdrawn: *"Add to the plan split
+into multiple programs for the laptop test suite as well."*
+
+**Revised design:**
+
+1. **Physics and sensing in different programs.** `sim/body_server.py`
+   keeps the truth: the GridWorld, the body's kinematics and collision, the
+   movers, furniture moves and the fake board's loop. It publishes a state
+   snapshot (pose, pan, sim clock, an objects version and the objects) to
+   shared memory every board loop, under a sequence counter so a reader
+   never sees a torn write. A **sensor program** (`sim/sensor_server.py`)
+   holds a replica of the house's static layout, rebuilds its objects when
+   the version changes, and casts the scan, the depth grid, the distance
+   and the camera frame from the latest snapshot -- run as **several worker
+   processes**, so rendering and ray casting spread over the free cores
+   instead of queueing on one GIL.
+2. **No sensor read inside `motion_lock`.** The robot server's sensors
+   client keeps the latest scan and depth grid from a background thread
+   (polling at the lidar's own rate, 20 Hz) and the vet reads that copy.
+   This is also the car's shape: a lidar driver delivers scans
+   asynchronously, and nothing on the car can make a scan arrive on demand.
+   **A copy older than `SENSOR_STALE_S` answers `usable: false`** -- the
+   existing fail-safe path (a blind path vetoes forward), never a stale
+   clearance read as fresh. The bound is a criterion, not a tuning knob.
+3. **One way to run the fake board, laptop and board alike.** The
+   in-process `SIM_MOTOR_BOARD=fake` path is removed: every fake-board
+   robot -- `run.sh`, the live suites, and the unit tests that build one
+   (the contract suite's `hardware` backend, `tests/test_fake_esp32.py`'s
+   host side, the 3.25-3.35 board suites) -- runs against the split
+   programs. Tests that test the SIMULATOR itself (`MockRobot`, the
+   renderer, the sweeps) keep building it in process: that is the code
+   under test, not a stand-in for a device. To keep the suite's time
+   bounded, the test fixture starts the programs once per module and
+   resets the body between tests through a sim-only `POST /sim/reset`.
+
+**Criteria, amended** (1-6 above still stand; these are added):
+
+7. **The body is shared by more than one core.** On the Jetson over a G4
+   run: no single simulator process above 80% of one core, the sensor
+   workers' load spread over at least two processes, and the robot server
+   under 50% (criterion 4, unchanged).
+8. **Safety never reads a stale scan as fresh.** A scan or depth copy older
+   than `SENSOR_STALE_S` (proposed 0.15 s -- three wheel-loop periods; the
+   real lidar's own period is 0.1 s) is `usable: false`; killing the sensor
+   program makes forward motion stop within the 0.5 s silence bar. The
+   ground-truth stopping sweep (3.18: 0 under 18 cm of travel-to-contact,
+   0 contacts) is re-run with the vet fed copies of this age, so the cost
+   of a one-period-old scan is MEASURED, not assumed to be zero.
+9. **No `motion_lock` holder blocks on a socket.** Asserted in a test: the
+   vet's sensor reads never touch the network.
+10. **The laptop suite runs the split.** No code path builds `FakeEsp32`
+    in the robot server's process (a test asserts the factory refuses it);
+    the full suite's wall time on the laptop is recorded before and after.
+
+**Estimate, revised:** one to two days, then the Jetson runs.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
