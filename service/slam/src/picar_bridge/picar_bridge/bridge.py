@@ -83,6 +83,9 @@ DRIVER_TOPICS = {
     "ros": "cmd_vel/nav",
 }
 SCAN_HZ = 10.0
+# The robot is still where odometry zero is for the first seconds of a
+# session: the container brings the controllers up with the robot at rest.
+START_TRUTH_WINDOW_S = 10.0
 PAN_HZ = 20.0
 # The brain ticks at ~4 Hz; a status twice a second is enough to follow it
 # and cheap enough to leave on.
@@ -126,6 +129,7 @@ class Bridge(Node):
         # into ROS: nothing on this side may navigate by it.
         self.start_truth = None
         self.start_truth_tried = False
+        self.started_at = time.time()
         self.last_map = None
         self.map_version = 0
         # slam_toolbox publishes /map latched (transient local).
@@ -384,11 +388,20 @@ class Bridge(Node):
         """First time the robot answers: the robot has not moved yet (the
         controllers came up with this container), so its truth now is its
         truth at odometry zero."""
-        self.start_truth_tried = True
         try:
             t = self._robot_get("/world/truth")
-        except Exception:  # noqa: BLE001 -- a pre-R2 robot, or hardware
+        except Exception as e:  # noqa: BLE001 -- busy, a pre-R2 robot, or hardware
+            # Tried again on the next poll, but only inside START_TRUTH_WINDOW_S
+            # of this session (3.36): once the robot may have moved, its truth
+            # is no longer its truth at odometry zero. A single try used to
+            # end on one timeout from a busy robot server (the Jetson), and
+            # every goal was then converted with no anchor at all.
+            if time.time() - self.started_at > START_TRUTH_WINDOW_S:
+                self.start_truth_tried = True
+                self.get_logger().error(f"no start truth recorded ({e}); house-frame goals "
+                                        "and /world/error are unanchored this session")
             return
+        self.start_truth_tried = True
         if t.get("usable"):
             self.start_truth = {k: t[k] for k in ("x_m", "y_m", "heading_deg")}
 
