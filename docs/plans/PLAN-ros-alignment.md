@@ -4020,6 +4020,34 @@ live **turn** test (+/-2 deg) fails about one Jetson run in three on stock
 worse under the Jetson's timing jitter, not 3.36. The user chose to judge G4
 on the fork firmware (2026-10-05); see 3.33 item 5.
 
+### 3.37 The robot server's full garbage collections, frozen out of the wheel loop (2026-10-05): criteria, written before building
+
+**Why.** 3.33's headroom rerun (desktop off, one perception pipeline at
+4 Hz -- see 3.33 item 6) still saw 5 late wheel-loop ticks in 10 minutes,
+about every 76 s. A diagnostic run of the unchanged robot server under a
+`gc.callbacks` logger found a **generation-2 collection every 70-85 s
+lasting 55-92 ms**, and the run's late tick one second after a 78 ms one;
+a tick is late past 0.1 s, so a pause that size crosses it only sometimes.
+The same run with `gc.freeze()` 15 s after start (68 313 start-up objects
+moved out of the collector's reach) had **no collection over 20 ms and 0
+late ticks** in 10 minutes. The user had asked for the cause to be
+profiled before anything was tuned (2026-10-05).
+
+**The change.** `robot/server.py`'s lifespan collects and freezes once its
+start-up is done, and unfreezes at shutdown -- the suite starts the app
+hundreds of times in one process, and a freeze that outlived its app would
+keep every later-garbage object alive for the rest of the run.
+
+**Acceptance criteria:**
+
+1. **Frozen while serving, released after.** Inside a running app
+   `gc.get_freeze_count()` > 0; after its shutdown it is back to what it was.
+2. **Headroom (3.33 criterion 6) on the Jetson at 15W**, run as 3.33's
+   rerun was: **0 late ticks** over the 10-minute window, MemAvailable
+   >= 1 GB, no throttling.
+3. **No regression.** The full suite on the laptop; G4's chain and nav
+   suites once on the Jetson.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.

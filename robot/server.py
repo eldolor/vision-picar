@@ -83,6 +83,7 @@ running event loop and is exercised by actually running the server (see
 README), not in the automated unit suite.
 """
 
+import gc
 import os
 import threading
 import math
@@ -468,11 +469,20 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         task = asyncio.create_task(watchdog_loop())
         wheels_task = asyncio.create_task(wheel_loop())
+        # 3.37: everything start-up built (the app, the backend, every module
+        # imported) out of the collector's reach. On the Jetson a full
+        # (generation-2) collection walked it all every ~75 s and paused the
+        # wheel loop 55-92 ms -- the late ticks 3.33's headroom run counted.
+        # Unfrozen at shutdown, so an app started and stopped in-process (the
+        # test suite, hundreds of times) leaves nothing pinned behind it.
+        gc.collect()
+        gc.freeze()
         try:
             yield
         finally:
             task.cancel()
             wheels_task.cancel()
+            gc.unfreeze()
 
     app = FastAPI(title="vision-picar robot server", lifespan=lifespan)
 
