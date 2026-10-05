@@ -243,3 +243,16 @@ def test_the_static_default_is_not_shadowed_by_a_wildcard_api_behaviour():
     writing a pattern broad enough to swallow index.html."""
     for p in cloudfront_patterns():
         assert p != "/*", "a /* behaviour would route the SPA to the API origin"
+
+
+def test_the_walks_function_can_reach_the_vision_service_for_replay():
+    """Handoff 3c: the deployed walks Lambda had neither VISION_URL nor
+    VISION_SHARED_SECRET, so the console's Replay answered "no vision
+    service configured". BOTH must be wired -- with the URL alone,
+    control/admin_server.py falls back to APP_SHARED_SECRET, which on this
+    function is the WALKS secret, and /navigate answers 401."""
+    text = TEMPLATE.read_text()
+    walks = text[text.index("  WalksFunction:"):]
+    walks = walks[:walks.index("\n  # ----")]
+    assert re.search(r"VISION_URL: !If \[HasReplayVisionUrl, !Ref ReplayVisionUrl", walks), walks
+    assert re.search(r"VISION_SHARED_SECRET: !If \[HasVisionSecret, !Ref VisionSharedSecret", walks), walks
