@@ -56,15 +56,21 @@ class SimBodyClient:
         headers = {"x-app-secret": secret} if secret else {}
         self._body = httpx.Client(base_url=body_url.rstrip("/"), headers=headers,
                                   timeout=READ_TIMEOUT_S)
-        # Three clients, one per thread that uses them: the poller, the
-        # request threads (frames, unhinted scans) -- httpx clients are not
-        # promised safe to share across threads under load.
-        self._sensors = httpx.Client(base_url=sensors_url.rstrip("/"), headers=headers,
-                                     timeout=READ_TIMEOUT_S)
-        self._poll_http = httpx.Client(base_url=sensors_url.rstrip("/"), headers=headers,
-                                       timeout=READ_TIMEOUT_S)
+        # `sensors_url` may name several sensor programs, comma-separated.
+        # The FIRST serves the safety bundle the poller fetches at 20 Hz; the
+        # LAST, the heavy reads -- ROS's full-range scans and camera frames --
+        # so the two loads run on different cores by construction. (Workers
+        # sharing one listening socket do not share its load: on the Jetson
+        # one of three took 61% of a core and two sat idle.) One client per
+        # thread that uses it: httpx clients are not promised thread-safe.
+        urls = [u.strip().rstrip("/") for u in sensors_url.split(",") if u.strip()]
+        self.sensor_urls = urls
+        self._poll_http = httpx.Client(base_url=urls[0], headers=headers, timeout=READ_TIMEOUT_S)
+        self._sensors = httpx.Client(base_url=urls[-1], headers=headers, timeout=READ_TIMEOUT_S)
         health = _wait_for(self._body, "/health", start_timeout_s, "sim/body_server.py")
-        _wait_for(self._sensors, "/health", start_timeout_s, "sim/sensor_server.py")
+        for u in urls:
+            with httpx.Client(base_url=u, headers=headers) as c:
+                _wait_for(c, "/health", start_timeout_s, "sim/sensor_server.py")
         self.board_path = health["board_path"]
         self.world = RemoteGrid(self, health.get("sim_map"))
         self._hint: Optional[float] = None       # the scan range the vet asks for

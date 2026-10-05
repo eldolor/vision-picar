@@ -87,17 +87,20 @@ trap cleanup EXIT INT TERM
 # both, then opens the board's pty as a serial device.
 if [ "${SIM_MOTOR_BOARD:-}" = "fake" ]; then
   export SIM_BODY_URL="${SIM_BODY_URL:-http://127.0.0.1:8002}"
-  export SIM_SENSORS_URL="${SIM_SENSORS_URL:-http://127.0.0.1:8003}"
+  # Two sensor programs by default: the robot server's safety stream on the
+  # first, ROS's full scans and camera frames on the second (sim/body_client.py).
+  export SIM_SENSORS_URL="${SIM_SENSORS_URL:-http://127.0.0.1:8003,http://127.0.0.1:8004}"
   export SIM_BODY_SHM="${SIM_BODY_SHM:-picar_sim_body}"
   body_port="${SIM_BODY_URL##*:}"; body_port="${body_port%%/*}"
-  sensor_port="${SIM_SENSORS_URL##*:}"; sensor_port="${sensor_port%%/*}"
   python -m uvicorn sim.body_server:app --port "$body_port" --host 127.0.0.1 --log-level warning &
   pids+=($!)
-  python -m uvicorn sim.sensor_server:app --port "$sensor_port" --host 127.0.0.1 \
-    --workers "${SIM_SENSOR_WORKERS:-3}" --log-level warning &
-  pids+=($!)
   echo "  body    $SIM_BODY_URL   (physics + fake board)"
-  echo "  sensors $SIM_SENSORS_URL   (${SIM_SENSOR_WORKERS:-3} workers)"
+  for u in ${SIM_SENSORS_URL//,/ }; do
+    sensor_port="${u##*:}"; sensor_port="${sensor_port%%/*}"
+    python -m uvicorn sim.sensor_server:app --port "$sensor_port" --host 127.0.0.1 --log-level warning &
+    pids+=($!)
+    echo "  sensors $u"
+  done
 fi
 python -m uvicorn robot.server:app --port 8000 --host 127.0.0.1 --log-level warning &
 pids+=($!)

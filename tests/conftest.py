@@ -278,21 +278,26 @@ class SimPrograms:
     server needs to use them; `kill_body()` / `kill_sensors()` let a test
     take one away."""
 
-    def __init__(self, sensor_workers: int = 2, **env_extra):
+    def __init__(self, sensor_programs: int = 2, **env_extra):
         self.shm = f"picar_test_{os.getpid()}_{free_port()}"
         env = {k: v for k, v in os.environ.items()
                if k not in ("APP_SHARED_SECRET", "SIM_BODY_URL", "SIM_SENSORS_URL")}
         env.update({"SIM_MAP": "starter_house", "SIM_BODY_SHM": self.shm})
         env.update({k: str(v) for k, v in env_extra.items()})
         self._env = env
-        body_port, sensor_port = free_port(), free_port()
+        body_port = free_port()
         self.body_url = f"http://127.0.0.1:{body_port}"
-        self.sensors_url = f"http://127.0.0.1:{sensor_port}"
         self.body = self._start("sim.body_server:app", body_port)
         self._wait(self.body, self.body_url)
-        self.sensors = self._start("sim.sensor_server:app", sensor_port,
-                                   "--workers", str(sensor_workers))
-        self._wait(self.sensors, self.sensors_url)
+        self.sensors, urls = [], []
+        for _ in range(sensor_programs):
+            port = free_port()
+            proc = self._start("sim.sensor_server:app", port)
+            self.sensors.append(proc)
+            urls.append(f"http://127.0.0.1:{port}")
+            self._wait(proc, urls[-1])
+        self.sensor_urls = urls
+        self.sensors_url = ",".join(urls)
 
     def _start(self, app, port, *extra):
         return subprocess.Popen(
@@ -349,11 +354,12 @@ class SimPrograms:
         self._stop(self.body, kill=True)
 
     def kill_sensors(self):
-        self._stop(self.sensors, kill=True)
+        for p in self.sensors:
+            self._stop(p, kill=True)
 
     def close(self):
         import signal
-        for p in (getattr(self, "sensors", None), getattr(self, "body", None)):
+        for p in [*getattr(self, "sensors", []), getattr(self, "body", None)]:
             if p is not None:
                 try:
                     os.killpg(p.pid, signal.SIGCONT)      # a frozen program cannot stop

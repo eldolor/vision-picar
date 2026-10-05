@@ -75,7 +75,7 @@ def test_the_robot_server_process_imports_no_simulator(programs):
 
 def test_an_unhinted_scan_is_the_sensor_programs_own(remote_robot, programs):
     mine = remote_robot.get_scan()
-    theirs = httpx.get(f"{programs.sensors_url}/scan").json()
+    theirs = httpx.get(f"{programs.sensor_urls[-1]}/scan").json()
     assert mine["usable"] and len(mine["ranges_m"]) == 360
     assert mine["ranges_m"] == theirs["ranges_m"]
 
@@ -98,7 +98,7 @@ def test_the_sensors_follow_the_body_as_it_moves(remote_robot, programs):
     carry_out_verb(remote_robot, remote_robot.verb_plan("LEFT", angle=90))
     time.sleep(0.3)
     bundle = remote_robot.get_scan(max_range_m=hint)
-    direct = httpx.get(f"{programs.sensors_url}/scan", params={"max_range_m": hint}).json()
+    direct = httpx.get(f"{programs.sensor_urls[-1]}/scan", params={"max_range_m": hint}).json()
     assert bundle["usable"] and bundle["ranges_m"] == direct["ranges_m"]
     assert bundle["ranges_m"] != before
 
@@ -256,11 +256,19 @@ def test_the_vet_never_touches_the_network(programs):
         client._poll_http.close()
 
 
-# ---------- criterion 7: the sensors really are several processes ----------
+# ---------- criterion 7: the sensor load is on more than one core ----------
 
-def test_the_sensor_load_spreads_over_worker_processes(programs):
-    pids = {httpx.get(f"{programs.sensors_url}/safety").json()["pid"] for _ in range(60)}
-    assert len(pids) >= 2, pids
+def test_the_safety_stream_and_the_heavy_reads_are_different_programs(remote_robot):
+    """The poller's bundles come from the first sensor program and ROS's
+    full scans and frames from the last -- different processes, so the two
+    loads cannot queue on one GIL."""
+    client = remote_robot.sensors
+    assert len(client.sensor_urls) >= 2
+    poll_pid = client._poll_http.get("/health").json()["pid"]
+    heavy_pid = client._sensors.get("/health").json()["pid"]
+    assert poll_pid != heavy_pid
+    assert remote_robot.get_scan()["usable"]                 # served by the heavy one
+    assert client.polls > 0                                  # and the stream is live
 
 
 # ---------- criterion 10: no fake board in the robot server's process ----------

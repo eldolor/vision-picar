@@ -28,8 +28,8 @@ PORTS="8000 8001 8080"
 # stopped too (run.sh's default ports unless SIM_BODY_URL/SIM_SENSORS_URL say).
 if [ "${SIM_MOTOR_BOARD:-}" = "fake" ]; then
   SIM_BODY_URL="${SIM_BODY_URL:-http://127.0.0.1:8002}"
-  SIM_SENSORS_URL="${SIM_SENSORS_URL:-http://127.0.0.1:8003}"
-  for u in "$SIM_BODY_URL" "$SIM_SENSORS_URL"; do
+  SIM_SENSORS_URL="${SIM_SENSORS_URL:-http://127.0.0.1:8003,http://127.0.0.1:8004}"
+  for u in "$SIM_BODY_URL" ${SIM_SENSORS_URL//,/ }; do
     p="${u##*:}"; PORTS="$PORTS ${p%%/*}"
   done
 fi
