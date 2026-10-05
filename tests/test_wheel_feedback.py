@@ -331,4 +331,7 @@ def test_five_stalled_forwards_end_a_mission_blocked():
         pass
     status = runner.status()
     assert status["outcome"] == BLOCKED, status
-    assert body.forwards == 5
+    # 3.31 (merged 2026-10-05): a stuck robot backs off and tries again, so
+    # a mission ends BLOCKED after `stuck_after` refused forwards in each of
+    # `retry_limit` episodes -- not after the first five, as before 3.31.
+    assert body.forwards == runner.stuck_after * runner.retry_limit, body.forwards
