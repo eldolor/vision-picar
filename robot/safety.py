@@ -604,7 +604,7 @@ class SafetyController:
         cone, corridor = self.path_clearance(), self.footprint_clearance(+1)
         if cone[1] == "depth_grid_facing_away" and corridor[1] == "no_scan":
             return 0.0, "path_not_observed"
-        return self._nearer(cone, corridor)
+        return self._aged(self._nearer(cone, corridor), +1)
 
     def reverse_clearance(self) -> Tuple[Optional[float], str]:
         """What a reverse is vetted against: the rear cone and the swept
@@ -622,7 +622,37 @@ class SafetyController:
         scan = self._scan()
         if not (scan and scan.get("usable")) and self._has_wheels():
             return 0.0, "astern_not_observed"
-        return self._nearer(self.rear_clearance(scan), self.footprint_clearance(-1, scan))
+        return self._aged(self._nearer(self.rear_clearance(scan),
+                                       self.footprint_clearance(-1, scan)), -1)
+
+    def _aged(self, result: Tuple[Optional[float], str], direction: int
+              ) -> Tuple[Optional[float], str]:
+        """A reading taken `sensor_age_s()` ago, less the way covered since
+        (3.36). The look-ahead (3.24 G2) stops a move AT the line only if the
+        clearance is the clearance NOW; a lidar scan is 0-100 ms old when it
+        is read on the car, and the split simulator's bundle up to
+        `SENSOR_STALE_S`. Moving toward the obstacle at v for that long ate
+        v x age of it. A robot that cannot say how old its readings are
+        (every in-process backend: they read on demand) is unchanged."""
+        clearance, source = result
+        age_of = getattr(self.robot, "sensor_age_s", None)
+        if clearance is None or clearance <= 0 or age_of is None:
+            return result
+        age = age_of()
+        if not age:
+            return result
+        try:
+            w = self.robot.get_wheel_state()
+        except Exception:  # noqa: BLE001 -- no speed to age by
+            return result
+        if not w.get("usable"):
+            return result
+        v = (w["left"]["velocity_rad_s"] + w["right"]["velocity_rad_s"]) / 2.0 * w["wheel_radius_m"]
+        toward = max(0.0, direction * v)
+        if toward == 0:
+            return result
+        return (max(0.0, round(clearance - toward * age * 100.0, 1)),
+                f"{source}, aged {age * 1000:.0f} ms")
 
     def _has_wheels(self) -> bool:
         get_wheel_state = getattr(self.robot, "get_wheel_state", None)

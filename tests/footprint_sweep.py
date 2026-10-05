@@ -186,8 +186,8 @@ class _Lagged:
     as the split simulator's robot server reads a bundle up to
     SENSOR_STALE_S old. Everything else is the live robot."""
 
-    def __init__(self, robot, lag):
-        self._robot, self._lag, self._history = robot, lag, []
+    def __init__(self, robot, lag, age=True):
+        self._robot, self._lag, self._history, self.age = robot, lag, [], age
 
     def record(self, hint):
         self._history.append((hint, self._robot.get_scan(max_range_m=hint),
@@ -196,6 +196,11 @@ class _Lagged:
 
     def _old(self):
         return self._history[0]
+
+    def sensor_age_s(self):
+        # What the split simulator's client reports, so the vet ages its
+        # clearance as it does live (3.36). `age=False` measures without.
+        return (len(self._history) - 1) * PERIOD_S if self.age else None
 
     def get_scan(self, max_range_m=None):
         hint, scan, _, _ = self._old()
@@ -211,7 +216,7 @@ class _Lagged:
         return getattr(self._robot, name)
 
 
-def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0):
+def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0, age=True):
     """One standing command through the wheel loop's two calls. Returns a
     dict of the truth it met. `lag` > 0 vets on readings that many periods
     old (3.36); the truth is always now."""
@@ -219,7 +224,7 @@ def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0):
     world.x, world.y, world.theta = x, y, math.radians(heading_deg)
     world.pan = pan   # 3.18 part 2: the camera, left where a mission left it
     robot = MockRobot(world, render=False)
-    sensed = _Lagged(robot, lag) if lag else robot
+    sensed = _Lagged(robot, lag, age) if lag else robot
     safety = SafetyController(sensed, 20.0)
     hint = None
     if lag:
@@ -256,13 +261,14 @@ def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0):
             "max_P": max_P, "travel": math.hypot(world.x - x0, world.y - y0) * CELL_CM}
 
 
-def sweep(houses, starts_per_house, seed=0, clamp=True, directions=(+1, -1), pan=0.0, lag=0):
+def sweep(houses, starts_per_house, seed=0, clamp=True, directions=(+1, -1), pan=0.0, lag=0,
+          age=True):
     out = []
     for house in houses:
         for x, y in starts(house, starts_per_house, seed):
             for h in range(HEADINGS):
                 for d in directions:
-                    out.append(run(house, x, y, h * 15, d, clamp, pan, lag))
+                    out.append(run(house, x, y, h * 15, d, clamp, pan, lag, age))
     return out
 
 

@@ -115,6 +115,11 @@ class SimBodyClient:
         with self._lock:
             return None if self._bundle is None else time.monotonic() - self._bundle_at
 
+    def sensor_age_s(self) -> Optional[float]:
+        """How old the readings the safety layer gets are: it takes the way
+        covered since off the clearance (`SafetyController._aged`, 3.36)."""
+        return self.bundle_age_s()
+
     # ---------- sensing ----------
 
     def get_scan(self, max_range_m: Optional[float] = None) -> dict:
