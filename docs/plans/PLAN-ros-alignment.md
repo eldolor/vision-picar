@@ -3592,6 +3592,44 @@ adapter).**
    min **4253 MB**; max 52.0 C against a 70 C passive trip; nav 29/29;
    perception median 83 ms, p90 141 ms.
 
+**The NVMe (2026-10-05).** The user kept the board and fitted the SanDisk
+Optimus 5100 500 GB (PCIe link Gen3 x4 -- the drive is Gen4, the slot is
+not). Migrated on the board, no x86 host (JetsonHacks' JP6 method with two
+fixes): the SD's GPT loaded onto the NVMe with fresh disk/partition GUIDs and
+APP grown to 464 GB; p2-p15 copied and compared byte for byte; the NVMe's
+ESP given a new FAT volume ID; a fresh ext4 APP rsync'd from the live root
+(Docker stopped); the NVMe copy alone pointed at `root=PARTUUID=<its p1>`
+and its own ESP in fstab; one `BootNext` test boot, then BootOrder NVMe,
+SD. The SD is untouched and boots as the fallback. One hazard met on the
+way: between the copy and the ID change both ESPs carried one UUID, and
+remounting `/boot/efi` picked the NVMe's -- caught by the step's own check,
+remounted before anything was written.
+
+Same code (`4064a99`), same scripts, 15W, cold page cache where marked:
+
+| measurement | microSD | NVMe |
+|---|---|---|
+| sequential read (2 GiB, direct) | 86.9 MB/s | **2.2 GB/s** (25x) |
+| random 4 KiB read (QD32) | 7 660 IOPS | **158 000 IOPS** (21x) |
+| cold `import torch` | 10.4 s | **3.8 s** |
+| cold perception: models loaded / first frame / total | 31.1 / 13.3 / 44.5 s | **15.8 / 3.3 / 19.2 s** |
+| cold stack start to anchored | 11.4 s | 12.5 s (ROS start-up is CPU) |
+| 20-min headroom: goals / late ticks / worst period | 57/57 / 0 / 0.071 s | 57/57 / 0 / 0.067 s |
+| perception median / p90 under load | 83 / 138 ms | 82 / 138 ms |
+| MemAvailable min (drift over 20 min) | 4202 MB (-110) | 4389 MB (-185) |
+| max temperature | 52.0 C | 54.4 C |
+| full suite wall time | 4975 s | 4992 s* |
+
+\* The NVMe suite ran with a robot stack the headroom script had left up
+(two live tests ran that skip otherwise; one failed asking without the
+secret) -- a harness fault, fixed; its time is if anything pessimistic.
+
+**What the NVMe buys:** anything that reads the disk -- a mission's
+perception is ready 25 s sooner cold (44.5 -> 19.2 s). **What it does
+not:** steady-state behaviour, which is CPU and GPU (headroom, perception
+per frame, the suite). The slow MemAvailable decline appears on both
+disks, so it is not storage; it is S7's soak question.
+
 ### 3.34 A body that cannot measure its wheels does not drive them, and a move that fell short is not a move (2026-10-03): criteria, written before building
 
 **Found 2026-10-03** while adding the car body's failure modes to
