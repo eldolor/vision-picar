@@ -90,6 +90,11 @@ def _clearance(robot):
 
 def test_a_twist_reaches_the_wheels_intact_and_odom_agrees_with_truth(stack):
     robot, bridge = stack
+    # 3.36: the bridge's blocking scan poll once starved its /odom
+    # subscription on the Jetson -- odometry published at 20 Hz in ROS and
+    # read by nobody for minutes. The bridge must be HEARING odometry.
+    age = bridge.get("/health").json().get("odom_age_s")
+    assert age is not None and age < 0.5, f"the bridge has not heard /odom for {age} s"
     _face(robot, 90)                    # east: a clear run from the start room
     t0, o0 = _truth(robot), bridge.get("/odom").json()
     seen = []

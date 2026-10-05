@@ -62,6 +62,7 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Point, PoseStamped, Twist
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -142,7 +143,15 @@ class Bridge(Node):
         self.create_subscription(Twist, "/diff_drive_controller/cmd_vel_unstamped",
                                  self._on_applied, 10)
         self._reset_stats()
-        self.create_timer(1.0 / SCAN_HZ, self._poll_scan)
+        # Its own callback group (PLAN-ros-alignment.md 3.36): the poll is a
+        # BLOCKING HTTP read, and in the node's default (mutually exclusive)
+        # group it starved every subscription -- on the Jetson a full scan
+        # takes about one timer period, the timer is then always due, and
+        # rclpy serves due timers before subscriptions: /odom went unread for
+        # minutes, nav2's odom TF went stale, every goal stalled. Here the
+        # poll holds one executor thread and the rest keep running.
+        self.create_timer(1.0 / SCAN_HZ, self._poll_scan,
+                          callback_group=MutuallyExclusiveCallbackGroup())
         self.create_timer(1.0 / PAN_HZ, self._publish_pan)
         # ---- the brain, for ROS tools ----
         self.brain_url = os.environ.get("BRAIN_URL", "http://host.docker.internal:8001/brain").rstrip("/")
