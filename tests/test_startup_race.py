@@ -107,8 +107,10 @@ def test_a_wheel_command_before_the_first_frame_is_refused_and_after_it_vetted(m
 
     monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
     monkeypatch.setenv("ROBOT_MODE", "hardware")
-    # 3.36: the board (and its silent start) is in the physics program.
-    sim_programs(SIM_MAP="scaled_house", SIM_BOARD_SILENT_S="1.0").apply(monkeypatch)
+    # 3.36: the board (and its silent start) is in the physics program, so
+    # the silence is counted from ITS boot, before the sensor workers and
+    # this server start -- seconds on the Jetson. Wide enough to cover that.
+    sim_programs(SIM_MAP="scaled_house", SIM_BOARD_SILENT_S="20.0").apply(monkeypatch)
     monkeypatch.setenv("SIM_MAP", "scaled_house")
     monkeypatch.setenv("WORLD_MODE", "none")
     with TestClient(server.create_app()) as client:
@@ -116,7 +118,8 @@ def test_a_wheel_command_before_the_first_frame_is_refused_and_after_it_vetted(m
         hdr = {"x-driver": "twin-dpad"}
         before = client.post("/wheels", json=cmd, headers=hdr).json()
         assert before["executed"] is False and before["reason"] == "no_feedback", before
-        assert _wait(lambda: client.get("/wheels").json()["usable"]), "no first frame"
+        assert _wait(lambda: client.get("/wheels").json()["usable"], timeout=30.0), \
+            "no first frame"
         after = client.post("/wheels", json=cmd, headers=hdr).json()
         assert after["executed"] is True and "clamped" in after, after
         client.post("/stop", headers=hdr)
