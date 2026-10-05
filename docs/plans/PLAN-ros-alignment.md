@@ -3558,7 +3558,7 @@ adapter).**
    0.73 cm and 0.025 deg from the truth (odometry alone 0.31 cm, 0.05 deg).
    On stock firmware G4 is not met: the +/-2 deg turn test fails about one
    run in three (3.25).
-6. **Headroom -- NOT met on two of three; taken to the user.** 10 minutes
+6. **Headroom -- met after 3.37** (first run short on two of three, taken to the user). 10 minutes
    (21:14:46-21:25:01, after the mapping lap) of nav2 goals round the
    scaled house with the perception tier running continuously on real
    frames on the GPU (`bench_perception` in a loop, its own process), the
@@ -3572,10 +3572,25 @@ adapter).**
    - perception under that load: median 67-68 ms, p90 124-131 ms a frame
      (60.6 / 109.9 alone) -- still within 250.
 
-   Two things inflate the memory number and are not yet measured: the
-   benchmark loads its own copy of the models in a second process (on the
-   car they load once, in the brain), and the Ubuntu desktop (GNOME) is
-   still running. The 8 late ticks are unexplained.
+   Two things inflated the memory number, both since measured: the load
+   was `bench_perception` in a loop, which **builds one pipeline per target
+   -- seven detector + CLIP copies -- and was restarted five times** (a
+   mission has one target, one pipeline, loaded once; the "second copy in
+   the brain" first suspected was wrong: the brain ran `frontier` and loaded
+   nothing); and the Ubuntu desktop was running.
+
+   **Rerun (2026-10-05, the user's go-ahead):** desktop off for the window
+   (`systemctl isolate multi-user.target`, restored after), the tier as a
+   mission carries it -- ONE pipeline, loaded once, real frames at 4 Hz --
+   and lateness sampled every 5 s. MemAvailable min **4144 MB**; 52 C; nav
+   29/29; perception median 83 ms, p90 140 ms (one 3.2 s first frame, the
+   GPU warming). Still **5 late ticks**, about every 76 s -- profiled as the
+   robot server's generation-2 garbage collections and fixed in 3.37.
+
+   **Met with 3.37 (`89a4eab`):** **0 late ticks in 14 289** moving ticks
+   (mapping lap included), worst period 0.065 s against 0.05; MemAvailable
+   min **4253 MB**; max 52.0 C against a 70 C passive trip; nav 29/29;
+   perception median 83 ms, p90 141 ms.
 
 ### 3.34 A body that cannot measure its wheels does not drive them, and a move that fell short is not a move (2026-10-03): criteria, written before building
 
@@ -4047,6 +4062,10 @@ keep every later-garbage object alive for the rest of the run.
    >= 1 GB, no throttling.
 3. **No regression.** The full suite on the laptop; G4's chain and nav
    suites once on the Jetson.
+
+**Results (2026-10-05).** Criterion 1 met (`tests/test_gc_freeze.py`).
+Criterion 2 **met**: 0 late ticks in 14 289, worst 0.065 s, MemAvailable
+4253 MB, 52 C (3.33 item 6 has the run). Criterion 3 **met**: G4 on the Jetson (fork firmware) **18 passed**, 0 late ticks in 5328, worst 0.068 s, robot server 49% of a core; the laptop suite 1755 passed, 57 skipped, 1 failed and 1 xpassed -- both the stock-firmware turn scatter of 3.25 (`test_odometry_heading_..[hardware]`, measured 6/8 on the unchanged code, and `test_5_a_clear_turn_lands_on_its_angle`, a non-strict xfail for the same cause), not this change.
 
 ## 4. Honest residue -- what the twin cannot tell you
 
