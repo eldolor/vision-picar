@@ -434,6 +434,17 @@ vision-picar/
 │   │                           a path on the sim clock (SIM_MOVERS=<scenario>)
 │   ├── fake_esp32.py          R7: the ESP32 driver board's firmware, on a pty,
 │   │                           turning a sim body's wheels (SIM_MOTOR_BOARD=fake)
+│   ├── body_server.py         3.36: under SIM_MOTOR_BOARD=fake the sim body
+│   │                           is NOT in the robot server's process. This
+│   │                           program holds physics, the house and the fake
+│   │                           board (:8002 from run.sh)
+│   ├── body_state.py          its state, published to shared memory every
+│   │                           5 ms (sequence + CRC32)
+│   ├── sensor_server.py       casts scan/depth/frame from that state; run.sh
+│   │                           starts two (:8003 safety stream, :8004 ROS)
+│   ├── body_client.py         the robot server's side (SIM_BODY_URL,
+│   │                           SIM_SENSORS_URL): a polled safety bundle that
+│   │                           reads unusable after 0.15 s
 │   └── maps/                  SIM_MAP picks one (sim/maps/__init__.py):
 │       ├── starter_house.py   the original, 30 cm doors -- too narrow for nav2
 │       ├── scaled_house.py    R6: real proportions, 90 cm doors
@@ -567,7 +578,7 @@ vision-picar/
 │                              count), 93% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
-│                              seven backends,
+│                              eight backends,
 │                              test_sensors.py [S5],
 │                              test_depth_veto.py [M3],
 │                              test_authority.py [M4],
@@ -934,7 +945,7 @@ is built too. What is left in this stage is the demo that spends real
 money -- see **Done when** below.
 
 - **S1 -- pin the contract -- BUILT.** `tests/test_robot_contract.py`:
-  a backend-agnostic conformance suite (36 tests when written; six
+  a backend-agnostic conformance suite (36 tests when written; eight
   backends now -- `BACKENDS` in the file) parameterized over all
   four `RobotInterface` backends that existed then (`MockRobot`,
   `RemoteRobot`, `ReplayRobot`, `TeleopRobot`), asserting return shapes,

@@ -2,7 +2,7 @@
 kind: engineering
 domain: operations
 status: current
-verified: 2026-10-02
+verified: 2026-10-04
 parent: docs/operations/ARCHITECTURE.md
 ---
 
@@ -42,9 +42,9 @@ file that holds it.
 
 | File | What it does |
 |---|---|
-| `service/tunnel/run.sh` | Sources the secrets files, exports the variables below, sets `WORLD_MODE` from `ROBOT_MODE` (sim -> sim, anything else -> none), then starts three uvicorns on 127.0.0.1: robot :8000, brain :8001 with `ROUTE_PREFIX=/brain`, proxy :8080. Its cleanup kills only its own children, so the ngrok agent survives |
+| `service/tunnel/run.sh` | Sources the secrets files, exports the variables below, sets `WORLD_MODE` from `ROBOT_MODE` (sim -> sim, anything else -> none), then starts three uvicorns on 127.0.0.1: robot :8000, brain :8001 with `ROUTE_PREFIX=/brain`, proxy :8080. With `SIM_MOTOR_BOARD=fake` it first starts the simulated body's programs (`PLAN-ros-alignment.md` 3.36): `sim/body_server.py` on `SIM_BODY_URL` (default :8002) and one `sim/sensor_server.py` per entry of `SIM_SENSORS_URL` (default :8003 and :8004), exporting both URLs and `SIM_BODY_SHM` (default `picar_sim_body`) for the robot server. Its cleanup kills only its own children, so the ngrok agent survives |
 | `service/tunnel/proxy.py` | FastAPI catch-all. `/brain/*` -> brain; `/vision/*` -> the deployed vision service, answering `OPTIONS` itself with 204; everything else -> robot. On the REQUEST it drops `host` and `content-length`; on the RESPONSE it drops `content-encoding`, `content-length`, `transfer-encoding` and `connection`, and adds permissive CORS headers. An upstream error becomes 502 `upstream <url> unreachable`. Timeout 120 s |
-| `service/tunnel/restart.sh` | Stops whatever holds :8000/:8001/:8080 (graceful, then `kill -9` after 5 s), restarts `run.sh` detached (log `~/.vision-picar-tunnel.log`), then polls both `/health` routes until each reports the checkout's `git rev-parse --short HEAD` |
+| `service/tunnel/restart.sh` | Stops whatever holds :8000/:8001/:8080 (graceful, then `kill -9` after 5 s), plus the simulator programs' ports under `SIM_MOTOR_BOARD=fake` (3.36; :8002-8004 unless the URLs say otherwise), restarts `run.sh` detached (log `~/.vision-picar-tunnel.log`), then polls both `/health` routes, and under the fake board the body program's too, until each reports the checkout's `git rev-parse --short HEAD` |
 
 ngrok itself is configured outside the repo: `ngrok start picar` uses the
 user's own ngrok config, pointing at :8080.
@@ -132,7 +132,10 @@ page) on the robot server.
 | `MAX_DAYS` | 90 | days | `control/metrics_routes.py` | Bounds a summary to 90 LIST calls |
 
 **Ports.** Default local stack: robot :8000, brain :8001, tunnel proxy
-:8080, ROS bridge :8090, foxglove 127.0.0.1:8765. When another session owns
+:8080, ROS bridge :8090, foxglove 127.0.0.1:8765, and under the fake motor
+board the sim body :8002 and sensors :8003/:8004 (3.36; a parallel stack
+moves them with `SIM_BODY_URL` / `SIM_SENSORS_URL` and needs its own
+`SIM_BODY_SHM`, or two body programs share one state block). When another session owns
 those, run your own stack on robot :8100, brain :8101, bridge :8190 with
 `ROS_DOMAIN_ID=73`, bind to 127.0.0.1, and point the live tests at a dead
 port so they cannot drive someone else's robot:

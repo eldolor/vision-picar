@@ -2,7 +2,7 @@
 kind: engineering
 domain: simulator
 status: current
-verified: 2026-10-02
+verified: 2026-10-04
 parent: docs/simulator/ARCHITECTURE.md
 ---
 
@@ -15,8 +15,15 @@ that changes it.
 
 ## Implementation
 
-Everything lives under `sim/` and runs in the robot server's process (or in
-a test's process). Nothing here is a service of its own.
+Everything lives under `sim/`. Under `mode: sim` it runs in the robot
+server's process (or in a test's process). Under `mode: hardware` with
+`SIM_MOTOR_BOARD=fake` it runs in **separate programs** and never in the
+robot server's process (`PLAN-ros-alignment.md` 3.36): one physics program
+(`sim/body_server.py`) and one or more sensor programs
+(`sim/sensor_server.py`), joined by a shared-memory snapshot. On the Jetson
+the in-process simulator held the robot server at 98% of one core and its
+20 Hz wheel loop ran late on 15-20% of ticks; in one separate program the
+sensor reads queued behind the board loop. See "The split simulator" below.
 
 | File | What it does |
 |---|---|
@@ -25,20 +32,27 @@ a test's process). Nothing here is a service of its own.
 | `sim/mock_robot.py` | `MockRobot`, the sim backend of the body contract. Wheel primitive `set_wheel_velocity()` / `step()` / `get_wheel_state()`. Verbs `drive_forward()` / `reverse()` / `turn_left()` / `turn_right()` via `verb_plan()` + `carry_out_verb()` + `verb_done()`. Sensors `get_camera_frame()`, `get_depth_grid()`, `get_scan()`, `get_odometry()`, `get_distance()`. Time: `pass_time()` and `advance()` |
 | `sim/sensors.py` | `DistanceSensorModel` (S5): Gaussian noise, dropout, range clamp and read latency on `get_distance()`, plus per-zone dropout on the depth grid |
 | `sim/movers.py` | `Mover` (a named solid object on a closed path of 4-adjacent cells), `MOVER_KEEPOUT_M`, `point_to_cell_cells()` |
+| `sim/body_server.py` | 3.36's physics program (FastAPI app `sim.body_server:app`). Builds the house, `MockRobot` and `FakeEsp32` with `robot.factory.build_fake_body()`, so it reads `SIM_MAP`, `SIM_MOVERS`, `SIM_BOARD_FIRMWARE` and `SIM_BOARD_SILENT_S` as the in-process build did. Owns kinematics, collision, movers, furniture moves, the camera pan and the board's pty. A thread publishes the body state every `PUBLISH_S`, under the board's lock, so a snapshot is one instant |
+| `sim/body_state.py` | The shared-memory snapshot, `StateWriter` (the body program, the one writer) and `StateReader` (each sensor program). Pose, pan, sim clock, house name and the objects (re-encoded only when the dict is replaced). A sequence number (odd mid-write) and a CRC32 of the payload: a reader retries until both sides of its copy show the same even sequence and the CRC matches, which is what makes it safe on the Jetson's weakly ordered Arm cores without a cross-process lock. Attaches without the resource tracker (`track=False` on 3.13, an unregister on 3.10), so a sensor program exiting never unlinks the body's block |
+| `sim/sensor_server.py` | 3.36's sensor program (`sim.sensor_server:app`). Each process keeps a replica `MockRobot` of the house, moves it to the latest snapshot, and casts with the same methods the in-process sim uses, so a reading is the reading the body would have produced at that pose. Stateless apart from the snapshot, so several run side by side |
+| `sim/body_client.py` | The robot server's side: `SimBodyClient`, handed to `HardwareRobot` as `sensors`, and `RemoteGrid` (its `world`: the house's name, its objects, moving one, the truth). Imports nothing of the simulator, so the robot server's process holds no `GridWorld` (`tests/test_sim_body_process.py`) |
 | `sim/maps/__init__.py` | `build_world(name)` and `build_movers(house, scenario)`: the only map registry. `build_world()` stamps the name it was given on the world it returns (`world.map_name`), which is how the server reports the house it built |
 | `sim/maps/starter_house.py` | 13 x 10 cells, 30 cm doors. Robot at cell (2, 2) facing east, backpack at (10, 7). The default house |
 | `sim/maps/scaled_house.py` | 27 x 14 cells, 90 cm doors (R6). Robot at (6, 4) facing east, backpack at (23, 5). The only house with a mover scenario (`hallway_crossing`) |
 | `sim/maps/home_first_floor.py` | The user's first floor, rasterised from feet (appraisal sketch, exterior measured, interior provisional), furnished with solid objects. Tables are four legs |
 
 Owned by other domains but built on this one: `sim/mock_world.py` (world),
-`sim/fake_esp32.py` (motor-board), `sim/replay_robot.py` and
+`sim/fake_esp32.py` (motor-board; since 3.36 it runs only in the body
+program), `sim/replay_robot.py` and
 `sim/teleop_robot.py` (body backends with no grid).
 
 **How the backend is built.** `robot/factory.py`'s `_sim_world()` reads the
 house name from `SIM_MAP` (the only place outside `tests/` that reads it),
 passes it to `build_world()` and adds any movers. The same `_sim_world()`
-builds the house a `HardwareRobot` stands in under `SIM_MOTOR_BOARD=fake`. `_backend()` then
-builds a `MockRobot` with the `sim:` block's `realtime`, `sensor_noise` and
+builds the house for `build_fake_body()`, which `sim/body_server.py` calls
+under `SIM_MOTOR_BOARD=fake`; the robot server itself then builds only a
+`SimBodyClient` (and refuses to start without `SIM_BODY_URL` and
+`SIM_SENSORS_URL`). Under `mode: sim`, `_backend()` builds a `MockRobot` with the `sim:` block's `realtime`, `sensor_noise` and
 `odom_drift` settings. The house is `SIM_MAP`, else `config/robot.yaml`'s
 top-level `sim_map` (a map name; read since handoff 4f), else the starter
 house.
@@ -81,6 +95,35 @@ object), nearest first, with `label`, `bearing_deg` and `distance_m`.
 `brain/perceive.py` choose `FrameReportedPipeline` rather than a real
 detector.
 
+**The split simulator** (3.36). Under `SIM_MOTOR_BOARD=fake`:
+
+- The **body program** advances the body with the board loop (~100 Hz)
+  and publishes the snapshot every 5 ms. It serves the sim extras the robot
+  server's routes forward: the pan, the truth and the object table.
+- Each **sensor program** casts from the newest consistent snapshot.
+  `GET /safety?max_range_m=` returns the hinted scan, the depth grid and the
+  distance cast from ONE snapshot, so the vet never mixes two instants.
+- **`SIM_SENSORS_URL` is ordered.** The FIRST program serves the safety
+  bundle, polled at the wheel loop's 20 Hz by a background thread in
+  `SimBodyClient`; the LAST serves the heavy reads, ROS's unhinted full
+  scans and camera frames. The two loads then land on different cores by
+  construction: uvicorn workers sharing one socket did not share the load
+  (on the Jetson one of three took 61% of a core and two sat idle).
+- **The safety layer's reads never touch the network.** `get_scan()` with a
+  range hint, `get_depth_grid()` and `get_distance()` answer from the latest
+  bundle. The first build made the vet an HTTP round trip inside
+  `motion_lock`, and the wheel loop skipped most of its ticks.
+- **A bundle older than `SENSOR_STALE_S` (0.15 s) is not a reading:** the
+  scan answers `usable: false`, the zones unusable and the distance `0.0`,
+  the existing fail-safe path, so a dead sensor program stops forward motion
+  within the bound plus one wheel-loop period. The client never raises into
+  the wheel loop. `sensor_age_s()` reports the bundle's age, and the safety
+  layer takes the way covered since off the clearance (`SafetyController._aged()`,
+  safety engineering).
+- The robot server opens the board's pty (`board_path` from the body
+  program's `/health`) as a serial device, as on the car, and waits up to 30
+  s for every program's `/health` before it does.
+
 ## Interfaces
 
 The simulator implements the body contract (`robot/interface.py`). What
@@ -105,10 +148,24 @@ Sim-only routes on the robot server (501 on a backend with no house):
 | `GET /sim/objects` | -- | `{sim_time_s, objects: [{x, y, name, mover}]}` |
 | `POST /sim/objects/move` | `{src: [x, y], dst: [x, y]}` | The same listing; 409 naming the reason for an impossible move; 422 for a malformed cell |
 
+Routes of the split simulator's programs (3.36; all but `/health` behind
+`APP_SHARED_SECRET` when it is set):
+
+| Program, method, path | Response |
+|---|---|
+| body, `GET /health` | `{ok, identity, board_path, sim_map, state_shm, board_frames_out, state_publishes}` |
+| body, `POST /look/{side}` | Pans the camera (`left`, `right`, `center`; 404 otherwise) and publishes at once, so the next sensor read sees the pan |
+| body, `GET /truth` | `MockWorld.get_truth()` over the body's house: what the robot server's `/world/truth` answers with |
+| body, `GET /sim/objects`, `POST /sim/objects/move` | As on the robot server (both compute it with `GridWorld.describe_objects()`) |
+| sensors, `GET /health` | `{ok, pid, house, seq}`; `ok: false` while no consistent snapshot is readable |
+| sensors, `GET /scan`, `/depth`, `/distance`, `/frame` | One reading each, cast from the latest snapshot |
+| sensors, `GET /safety?max_range_m=` | `{scan, depth, distance_cm, state_seq, pid}` from one snapshot: the bundle `SimBodyClient` polls |
+
 `GET /health` on the robot server carries `sim_map`: the `map_name` of the
 world the factory built, read as `robot.world.map_name` (the ROS-drive
 wrapper forwards `world`). It is right for every body standing in a sim
-house, including `ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake`, and `null` when
+house, including `ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake` (read off
+`RemoteGrid`, from the body program's `/health`), and `null` when
 no sim house stands behind the robot (teleop, replay, the real board).
 Changing `SIM_MAP` after start-up does not change it. Until 2026-10-02 it
 re-read `SIM_MAP` only under `mode: sim`, so the fake-board configuration
@@ -150,6 +207,13 @@ differs, both are given.
 | `SIM_PERCEPTION_RANGE_CELLS` | 3.0 | cells | `sim/grid_world.py` | Arrival radius for `objects_visible` only. Detections go to the horizon |
 | `MOVER_KEEPOUT_M` | 0.20 | m | `sim/movers.py`, `sim/grid_world.py` | Beyond the chassis turning circle. Same as `min_distance_cm`, so a mover never appears inside the stop line |
 | `Mover.hop_s` | 1.0 | s of sim time | `sim/movers.py` | One 30 cm hop a second, a walking person |
+| `SIM_BODY_URL`, `SIM_SENSORS_URL` (env) | none; `service/tunnel/run.sh` sets `http://127.0.0.1:8002` and `http://127.0.0.1:8003,http://127.0.0.1:8004` | URL | `robot/factory.py` -> `SimBodyClient` | 3.36. Required with `SIM_MOTOR_BOARD=fake`. Sensors comma-separated: the first serves the safety bundle, the last full scans and frames |
+| `SIM_BODY_SHM` (env) | `picar_sim_body` | name | `sim/body_server.py`, `sim/sensor_server.py` | The shared-memory block. Every program of one stack uses the same name; tests use a unique one per `SimPrograms` |
+| `PUBLISH_S` | 0.005 | s | `sim/body_server.py` | Twice the board loop's rate, so a sensor never casts from a state more than one board step old |
+| `SIZE` | 1 MiB | bytes | `sim/body_state.py` | The furnished home's objects fit many times over |
+| `SENSOR_STALE_S` | 0.15 | s | `sim/body_client.py` | Three wheel-loop periods; the real lidar's period is 0.1 s. Fed bundles this old, 3.36's sweep (2880 runs) kept the 3.18 bars: worst travel-to-contact 19.0 cm with `_aged()`, 18.2 cm without (`tests/test_footprint_safety.py` pins it, and asserts the bound is three periods) |
+| `POLL_S` | 0.05 | s | `sim/body_client.py` | The wheel loop's period |
+| `READ_TIMEOUT_S`, `FRAME_TIMEOUT_S`, `START_TIMEOUT_S` | 0.5, 3.0, 30.0 | s | `sim/body_client.py` | A poll (staleness, not this, is the safety bound); a rendered frame; how long the robot server waits for the programs at start-up |
 
 ## Procedures
 
@@ -189,6 +253,29 @@ This example moves the scaled house's sofa, so it works only with
 `SIM_MAP=scaled_house`; take a `src` from `GET /sim/objects` for any other
 house. A 409 names why (`no object at (x, y)`, a mover, not floor,
 occupied, or inside the turning circle). Add `-H "x-app-secret: ..."` when `APP_SHARED_SECRET` is set.
+
+**Run the split simulator** (3.36, the fake motor board). `service/tunnel/run.sh`
+with `SIM_MOTOR_BOARD=fake` starts the body program, then the sensor
+programs, then the robot server, on the defaults above; `restart.sh` stops
+ports 8002-8004 too and checks the body program's git revision. By hand:
+
+```bash
+export SIM_BODY_SHM=picar_sim_body SIM_MAP=scaled_house
+uvicorn sim.body_server:app --host 127.0.0.1 --port 8002 &
+uvicorn sim.sensor_server:app --host 127.0.0.1 --port 8003 &
+uvicorn sim.sensor_server:app --host 127.0.0.1 --port 8004 &
+ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake WORLD_MODE=ros \
+  SIM_BODY_URL=http://127.0.0.1:8002 \
+  SIM_SENSORS_URL=http://127.0.0.1:8003,http://127.0.0.1:8004 \
+  uvicorn robot.server:app --port 8000
+```
+
+`SIM_MAP` and `SIM_MOVERS` belong to the body program; the robot server
+reports the house it reads from there. `WORLD_MODE=sim` is refused with a
+remote body (the world would need the grid in-process); use `ros` or
+`none`. In tests, `tests/conftest.py`'s `sim_programs` fixture
+(`SimPrograms`) starts the programs, each in its own process group, on free
+ports with a unique `SIM_BODY_SHM`.
 
 **Ground-truth sweeps** (the acceptance instruments, not unit tests):
 
@@ -255,6 +342,7 @@ docstring. It renders the starter house from (5.5, 7.5) facing east to
 | `tests/test_cad_geometry.py` | 3.27: the scan is cast from the lidar 4 cm ahead, judged on beam endpoints against the layout |
 | `tests/test_home_map.py` | The home's outline and garage still match the appraisal (1483.05 and 428.24 sq ft); every room is reachable around the furniture |
 | `tests/test_r2_routes.py` | R2: every scan beam equals the renderer's ray; truth equals the pose |
+| `tests/test_sim_body_process.py` | 3.36: the robot server's process imports no simulator module; readings follow the body across the boundary and equal what the body measured; furniture moves reach physics and sensors; the physics program dying stops the wheels; a dead sensor program blinds the vet in time; the vet never touches the network; safety stream and heavy reads are different programs; the factory refuses an in-process fake board |
 
 Recorded acceptance numbers (from the plan sections, measured through the
 real mission path):

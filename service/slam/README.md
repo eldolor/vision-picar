@@ -170,6 +170,18 @@ Notes on those choices:
 * **Odometry drift** (to watch loop closure fix it, R5): add
   `SIM_ODOM_DRIFT=1.0,1.03` (left,right encoder scale -- "right encoder 3%
   long") to step 2. The yaml equivalent is `sim.odom_drift`.
+* **Over the fake motor board** (G4's configuration): add
+  `ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake` to step 2. Since
+  `PLAN-ros-alignment.md` 3.36 `run.sh` then starts the simulated body as
+  its own programs before the robot server -- `sim/body_server.py` (physics
+  and the board's pty) on :8002, `sim/sensor_server.py` on :8003 and :8004
+  -- and `restart.sh` frees those ports too and checks the body program's
+  revision. `WORLD_MODE=ros` (or `none`) is required there: `sim` is
+  refused with a remote body.
+* **Start truth.** The bridge records where the robot stood at odometry
+  zero within 30 s of start (a thread of its own; troubleshooting row
+  below). The live chain and nav suites wait up to 35 s for it before they
+  move the robot.
 * **Back to normal:** `docker rm -f picar-ros` and a plain
   `bash service/tunnel/restart.sh` (which returns to `drive: direct`).
 
@@ -263,7 +275,9 @@ visible, including the brain's; nothing can be published.
 | Goals abort "off the global costmap" | nav2 cannot plan into a room SLAM has never seen. Map first: `python -m tests.demo_slam_lap`, then goals. |
 | `/diagnostics` shows the brain STALE | `BRAIN_URL` prefix mismatch (section 3) or the brain is down. |
 | The robot server's `/world/pose` reads `usable: false` under `WORLD_MODE=ros` | The bridge is unreachable, or there is no `map -> base_footprint` transform yet. Check `curl localhost:8090/health`. |
-| The twin's SLAM error readout shows "0.0 cm" after driving | The world's anchor fell back to `first_contact`: the bridge has no `start_truth`. Either the image predates `start_truth` (rebuild it), or the bridge's one read of `/world/truth` failed. It reads the truth once, right after its first successful scan poll, and never retries (`_record_start_truth()` in `bridge.py`); if that read raises or answers `usable: false`, it stays null for the container's life. Restart the container. |
+| The twin's SLAM error readout shows "0.0 cm" after driving | The world's anchor fell back to `first_contact`: the bridge has no `start_truth`. Either the image predates `start_truth` (rebuild it), or the bridge recorded none in its window: since `PLAN-ros-alignment.md` 3.36 a thread started with the node (`_record_start_truth()` in `bridge.py`) waits for the controllers' first `/odom`, then retries `/world/truth` for up to `START_TRUTH_WINDOW_S` (30 s) and logs `no start truth recorded in the first 30 s`. An answer of `usable: false` (hardware) also leaves it null. Restart the container. |
+| House-frame goals land consistently off by a rotation (~20 deg) for a whole session | An image older than 3.36, whose start truth was the truth at the first scan poll on the assumption the robot had not moved; a late read (a slow board, a container restarted while a person drove) broke that. Rebuild: the bridge now composes the house pose at odometry zero from truth and odometry read at one instant (`convert.odometry_zero_in_house()`). |
+| `odom_age_s` climbs to minutes while `ros2 topic hz /diff_drive_controller/odom` shows 20 Hz; nav2 goals stall (odom TF stale) | An image older than 3.36: the bridge's blocking scan poll shared the node's default callback group and starved the `/odom` subscription. The poll now has its own `MutuallyExclusiveCallbackGroup`. Rebuild. `tests/test_ros_chain_live.py`'s first test fails on it. |
 
 ---
 

@@ -2,7 +2,7 @@
 kind: engineering
 domain: control-api
 status: current
-verified: 2026-10-02
+verified: 2026-10-04
 parent: docs/control-api/ARCHITECTURE.md
 ---
 
@@ -86,7 +86,7 @@ Goal routes answer **501** on a world without `set_goal` (anything but
 |---|---|---|
 | `POST /teleop/frame` | yes | `{"image_base64", "media_type"}` -> `{"received": true, "seq"}`; **400** if the body has no `push_frame` |
 | `GET /sim/objects` | yes | `{"sim_time_s", "objects": [{"x", "y", "name", "mover"}]}`; **501** with no simulated house (searched through `.inner` up to 3 levels) |
-| `POST /sim/objects/move` | yes | `{"src": [x, y], "dst": [x, y]}`; 422 if not pairs, 409 if the move is illegal |
+| `POST /sim/objects/move` | yes | `{"src": [x, y], "dst": [x, y]}`; 422 if not pairs, 409 if the move is illegal. Both sim routes answer with `GridWorld.describe_objects()`; under the fake board (3.36) they are forwarded to the body program's own `/sim/objects` routes through `RemoteGrid` |
 | `GET /`, `/app.js`, `/manifest.json`, `/icons/icon-192.png`, `/icons/icon-512.png`, `/icons/apple-touch-icon.png` | no | the twin. `app.js` is served `Cache-Control: no-cache` |
 
 ### `GET /health` (no secret)
@@ -104,7 +104,9 @@ a board: `fresh`, `age_s`, `stale_after_s`, `frames`, `board_reboots`,
 `sim/maps/__init__.py`'s `build_world()` stamps on the house it built, read
 through the wrappers' attribute forwarding. It names that house for any body
 standing in one: `mode: sim`, and `mode: hardware` with
-`SIM_MOTOR_BOARD=fake` (3.33's G4 configuration). It is null when no sim
+`SIM_MOTOR_BOARD=fake` (3.33's G4 configuration; since 3.36 the house is in
+`sim/body_server.py`'s process and `robot.world` is `sim/body_client.py`'s
+`RemoteGrid`, which reports the name the body program's `/health` gave). It is null when no sim
 house stands behind the body (`mode: teleop`, a real board). Changing
 `SIM_MAP` after start-up does not change it. Until 2026-10-02 it re-read
 `SIM_MAP` and only under `mode: sim`, so under the fake board it was null and
@@ -182,7 +184,10 @@ session may already own ports 8000/8090; use 8100/8101/8190 with a separate
 | 503 on `/frame`, other routes fine | The camera, not the server: a stalled teleop phone, or no camera driver on hardware |
 | 400 on `/teleop/frame` | Not `mode: teleop` |
 | 501 on `/world/goal` or `/sim/objects` | Not a ROS world, or not a sim body |
-| `ValueError` at start-up about world mode `sim` | A body with no sim house (`mode: teleop`, or `mode: hardware` on a real board) under the shipped `world.mode: sim`; set `WORLD_MODE=none`. `mode: hardware` with `SIM_MOTOR_BOARD=fake` starts fine: the fake board's body is a sim house |
+| `ValueError` at start-up about world mode `sim` | A body with no sim house (`mode: teleop`, or `mode: hardware` on a real board) under the shipped `world.mode: sim`; set `WORLD_MODE=none`. With `SIM_MOTOR_BOARD=fake` the message names `SIM_BODY_URL`: the house is in another process (`PLAN-ros-alignment.md` 3.36), so `MockWorld` cannot cast over it; use `WORLD_MODE=ros` or `none` |
+| `ValueError` at start-up: `SIM_MOTOR_BOARD=fake runs the simulated body as separate programs` | `SIM_BODY_URL` / `SIM_SENSORS_URL` unset. Start `sim/body_server.py` and `sim/sensor_server.py` first, or use `service/tunnel/run.sh`, which does (3.36; [simulator engineering](../simulator/ENGINEERING.md)) |
+| `RuntimeError: no sim/body_server.py at ...` (or `sim/sensor_server.py`) at start-up | The robot server waited 30 s for that program's `/health` |
+| FORWARD vetoed everywhere under the fake board, the scan `usable: false` | The sensor programs' safety bundle is older than `SENSOR_STALE_S` (0.15 s): the first program in `SIM_SENSORS_URL` is dead or overloaded. Fail-safe by design (3.36) |
 | `/health` `sim_map` null where a live suite expects a house | No sim house behind the body. The live ROS suites skip on it; a skip is not a pass |
 | `seconds_since_watchdog_poll` growing | The watchdog task is dead; restart the server |
 | `wheel_loop.late_ticks` > 0 | The event loop was starved while the wheels turned |

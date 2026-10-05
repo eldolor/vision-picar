@@ -2,7 +2,7 @@
 kind: engineering
 domain: ros
 status: current
-verified: 2026-10-02
+verified: 2026-10-04
 parent: docs/ros/ARCHITECTURE.md
 ---
 
@@ -31,8 +31,22 @@ tf2_ros and slam_toolbox, built from source), then `/ws/install`. It then
 |---|---|---|
 | `picar_description` | xacro | `service/slam/src/picar_description/urdf/picar.urdf.xacro`. Every dimension sits in one block at the top, tagged `[BOM]`, `[CAD]` or `[PLACEHOLDER]`. It declares the `ros2_control` system `picar`, whose plugin is `picar_sim_hardware/PicarSimHardware`, with velocity command and position/velocity state interfaces on `left_wheel_joint` and `right_wheel_joint`. |
 | `picar_sim_hardware` | C++ | `service/slam/src/picar_sim_hardware/src/picar_sim_hardware.cpp`, a `hardware_interface::SystemInterface`. `write()` sends `POST /wheels {left_rad_s, right_rad_s}` with `x-driver: ros` on every cycle, zeros included, because those posts are ROS's heartbeat to the robot server. `read()` does `GET /wheels` and reads `left` and `right` `position_rad` and `velocity_rad_s`. libcurl keeps one connection open. |
-| `picar_bridge` | Python | `bridge.py` is the `Bridge` node plus a `ThreadingHTTPServer` on `BRIDGE_PORT`. `convert.py` holds the wall's two conversions and imports no rclpy. `brain_view.py` maps brain status to diagnostics and markers, with no rclpy. `keepalive.py` holds one kept-open HTTP connection per thread, with no rclpy. |
+| `picar_bridge` | Python | `bridge.py` is the `Bridge` node plus a `ThreadingHTTPServer` on `BRIDGE_PORT`. `convert.py` holds the wall's conversions (scan, quaternion, and since `PLAN-ros-alignment.md` 3.36 `odometry_zero_in_house()`) and imports no rclpy. The node runs on a `MultiThreadedExecutor`; the 10 Hz scan poll (a blocking HTTP read of the robot's `/scan`) has its own `MutuallyExclusiveCallbackGroup` (3.36), because in the node's default group it starved every subscription on the Jetson: a full scan took about one timer period, the timer was always due, rclpy serves due timers first, and `/odom` went unread for minutes (nav2's odom TF went stale and every goal stalled). The start truth is recorded by its own thread from node start (next paragraph). `brain_view.py` maps brain status to diagnostics and markers, with no rclpy. `keepalive.py` holds one kept-open HTTP connection per thread, with no rclpy. |
 | `picar_bringup` | launch + yaml | `service/slam/src/picar_bringup/launch/picar.launch.py` starts everything (next table). Its `config/` directory holds `controllers.yaml`, `twist_mux.yaml`, `slam.yaml` and `nav2.yaml`. |
+
+**The start truth** (`GET /slam/pose`'s `start_truth`, what
+`world/ros_world.py` anchors SLAM's frame to). A thread started with the
+node waits for the controllers' first `/odom`, then reads the robot's
+`/world/truth`, and composes the house pose at odometry zero from that
+truth and the odometry held at the same instant
+(`convert.odometry_zero_in_house(truth, odom)`, 3.36). It retries a failed
+read until `START_TRUTH_WINDOW_S`, stops at the first answer (usable, or
+`usable: false` on hardware, which leaves it null), and logs an error if
+the window closes with none. It used to be the truth at the first
+successful scan poll, on the assumption the robot had not moved; on the
+Jetson that read came after motion (the chain suite had begun driving, or
+a person drove the fallback through a container restart) and anchored
+SLAM's frame about 20 degrees off for the session.
 
 **Built from source** (the architecture's D10 says why source builds exist
 at all; these are today's):
@@ -177,6 +191,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | NavFn `allow_unknown`, `tolerance` | true, 0.10 | --, m | `nav2.yaml` | -- |
 | collision_monitor `time_before_collision`; `PolygonSlow` `slowdown_ratio` | 1.0 s; 0.5 | s, -- | `nav2.yaml` | The monitor projects the footprint along the command (`approach`) and has no `stop` polygon. A stop polygon froze the robot against a door jamb, because Humble's stop action refuses every command, turning away included (3.15). This is how the architecture's "a collision guard never blocks turning away" is kept. |
 | `SCAN_HZ`, `PAN_HZ`, `BRAIN_HZ` | 10, 20, 2 | Hz | `bridge.py` | The scan reaches about 10 Hz (R4 criterion 7 needs at least 5). The brain ticks at about 4 Hz. |
+| `START_TRUTH_WINDOW_S` | 30 | s | `bridge.py` | How long the start-truth thread waits for the controllers' first odometry and one answer from the robot's `/world/truth` (3.36). Generous for a slow board; the anchor no longer assumes the robot is at rest, so waiting costs nothing. The live chain and nav suites wait 35 s for `start_truth` before they move the robot. |
 | `KeepAliveClient` timeout | 0.5 (robot), 1.0 (brain) | s | `bridge.py` | New connections through Docker Desktop stalled past 0.5 s on 41 of 433 polls. A kept-open connection stalled on 0 of 595 (G1). |
 | `MAX_DUPLICATES`, `MAX_BRIDGE_ROUTES` | 11, 13 | count | `tests/test_wall_linters.py` | Raise only in a commit that says why. Eleven since 3.27's lidar offset. |
 
@@ -221,11 +236,11 @@ Live tests (skip without the stack):
 
 | Test file | Tests | Recorded |
 |---|---|---|
-| `tests/test_ros_chain_live.py` | 13 | R4: verbs within 4.4 mm / 0.64 deg; stopped at least 19.4 cm from a wall; silence stops within 0.5 s; scan about 10 Hz. G1: 20/20 consecutive runs (2026-09-29). |
+| `tests/test_ros_chain_live.py` | 13 | R4: verbs within 4.4 mm / 0.64 deg; stopped at least 19.4 cm from a wall; silence stops within 0.5 s; scan about 10 Hz. G1: 20/20 consecutive runs (2026-09-29). Since 3.36 it waits for the bridge's `start_truth` before moving, and its first test fails if the bridge's `odom_age_s` is not under 0.5 s (the starved-subscription defect). |
 | `tests/test_nav_live.py` | 5 | R6, two runs: 6/6 goals, end error 0.090-0.133 m, never nearer than 0.165 m to a surface, 0.76-0.81 reversals per metre, unreachable goal aborted in 19-24 s, tap cancels in 0.04-0.05 s, `safety.py` clamps 0. |
 | `tests/test_slam_live.py` | 3 | R5's lap; numbers in the [world engineering spec](../world/ENGINEERING.md). |
 | `tests/test_brain_view_live.py` | 5 | The bridge's brain topics. |
-| `tests/test_http_rate_live.py` | 2 | HTTP at 20 Hz over the Docker hop. A bare app holds p99 1.6-4 ms. The robot server's 20-34 ms tail is the simulator sharing its process (3.17). |
+| `tests/test_http_rate_live.py` | 2 | HTTP at 20 Hz over the Docker hop. A bare app holds p99 1.6-4 ms. The robot server's 20-34 ms tail is the simulator sharing its process (3.17, under `mode: sim`; the fake-board configuration has run the simulator in separate programs since 3.36). |
 
 G3 live (3.24): the mission ended `failed` 2.04 s after a container kill; a
 D-pad move executed 0.36 s after it; ROS was up at the first post on return.
@@ -242,10 +257,14 @@ Checklist for a change:
 
 ## Known gaps
 
-- **G4 is not run.** No Jetson build or live runs yet (3.33). Since
-  2026-10-02 `/health`'s `sim_map` names the house actually built, under
-  `ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake` too, so the chain and nav2
-  suites run there instead of skipping. A skip is still not a pass.
+- **G4 is not closed** (3.33). Since 2026-10-02 `/health`'s `sim_map`
+  names the house actually built, under `ROBOT_MODE=hardware
+  SIM_MOTOR_BOARD=fake` too, so the chain and nav2 suites run there instead
+  of skipping. A skip is still not a pass. Since 3.36 that configuration
+  runs the simulated body as separate programs (`sim/body_server.py` on
+  :8002, `sim/sensor_server.py` on :8003 and :8004), which
+  `service/tunnel/run.sh` starts; the robot server alone refuses to start
+  without `SIM_BODY_URL` / `SIM_SENSORS_URL`.
 - **"No wheels" deactivates the plugin only at activation** (since 3.34).
   `on_activate()` in `service/slam/src/picar_sim_hardware/src/picar_sim_hardware.cpp`
   reads `GET /wheels` itself and refuses to come up on `usable: false` (a

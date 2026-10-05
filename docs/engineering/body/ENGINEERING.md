@@ -2,7 +2,7 @@
 kind: engineering
 domain: body
 status: current
-verified: 2026-10-02
+verified: 2026-10-04
 parent: docs/body/ARCHITECTURE.md
 ---
 
@@ -194,7 +194,9 @@ above raises `RobotTransportError`. Sensing routes catch only `HTTP 404`.
 | `teleop.stall_timeout_s` | 15.0 s | Teleop staleness window |
 | `ROBOT_SERIAL` / `hardware.serial_port` | none (required) | The board's serial device under `mode: hardware` |
 | `TRACK_SCRUB` / `hardware.track_scrub` | 1.0 | Skid steer's effective/geometric track for a real board (3.35); ignored for the fake board. Set the env var for the ROS container too. `[PLACEHOLDER]` |
-| `SIM_MOTOR_BOARD=fake` | unset | `mode: hardware` against `sim/fake_esp32.py` on a pty, with a sim body as `sensors` |
+| `SIM_MOTOR_BOARD=fake` | unset | `mode: hardware` against `sim/fake_esp32.py` on a pty, the board and its sim body in **another program** (`PLAN-ros-alignment.md` 3.36): `sim/body_server.py` for physics and the board, `sim/sensor_server.py` for the sensors, read through `sim/body_client.py`'s `SimBodyClient` as `sensors`. Requires the two URLs below; a `ValueError` without them. The in-process build is gone from the factory |
+| `SIM_BODY_URL` | none (required with `SIM_MOTOR_BOARD=fake`) | The body program; `service/tunnel/run.sh` defaults it to `http://127.0.0.1:8002` |
+| `SIM_SENSORS_URL` | none (required with `SIM_MOTOR_BOARD=fake`) | One or more sensor programs, comma-separated: the FIRST serves the 20 Hz safety bundle, the LAST full scans (ROS) and camera frames. `run.sh` defaults to `http://127.0.0.1:8003,http://127.0.0.1:8004` |
 
 ### Constants
 
@@ -230,17 +232,21 @@ body, the xacro and `controllers.yaml` by `tests/test_wall_linters.py` and
 
 ## Procedures
 
-**Run the conformance suite** (six bodies: `mock`, `replay`, `teleop`,
-`remote`, `halt_gate`, `hardware` over the fake board):
+**Run the conformance suite** (eight bodies: `mock`, `replay`, `teleop`,
+`remote`, `halt_gate`, `hardware` over an in-test fake board,
+`hardware_remote_body` over the split simulator's programs (3.36, started
+by `tests/conftest.py`'s `SimPrograms`), and `ros_drive`):
 
 ```bash
 .venv/bin/pytest tests/test_robot_contract.py -q
 ```
 
-Expected on 2026-10-02: `130 passed, 4 skipped`. The skips are the two
-odometry-motion tests on replay and teleop ("backend reports no odometry,
-which this suite allows"). A `hardware` fixture failure that times out
-waiting for frames means the pty fake board did not start.
+Expected on 2026-10-04: `180 passed, 6 skipped`, about two minutes. The
+skips are the three odometry-motion tests on replay and teleop ("backend
+reports no odometry, which this suite allows"). A `hardware` fixture
+failure that times out waiting for frames means the pty fake board did not
+start; a `hardware_remote_body` one that times out in `_wait_for` means
+`sim/body_server.py` or `sim/sensor_server.py` did not come up.
 
 **Start the robot server on a given body:**
 
@@ -248,14 +254,25 @@ waiting for frames means the pty fake board did not start.
 uvicorn robot.server:app --port 8000                                  # sim, starter house
 SIM_MAP=scaled_house uvicorn robot.server:app --port 8000             # sim, 90 cm doors
 ROBOT_MODE=teleop WORLD_MODE=none uvicorn robot.server:app --port 8000
-ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake uvicorn robot.server:app --port 8000
+# the fake board: start the body and sensor programs first (run.sh does all of this)
+SIM_BODY_SHM=picar_sim_body uvicorn sim.body_server:app --port 8002 &
+SIM_BODY_SHM=picar_sim_body uvicorn sim.sensor_server:app --port 8003 &
+SIM_BODY_SHM=picar_sim_body uvicorn sim.sensor_server:app --port 8004 &
+ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake WORLD_MODE=ros \
+  SIM_BODY_URL=http://127.0.0.1:8002 \
+  SIM_SENSORS_URL=http://127.0.0.1:8003,http://127.0.0.1:8004 \
+  uvicorn robot.server:app --port 8000
 ROBOT_MODE=hardware WORLD_MODE=none ROBOT_SERIAL=/dev/serial/by-id/<the board> \
   uvicorn robot.server:app --port 8000
 ```
 
 `curl -s localhost:8000/health` reports `mode`, and `sim_map` names the
 house that was built for any body standing in a sim house (the sim, and
-`mode: hardware` with `SIM_MOTOR_BOARD=fake`); it is null otherwise. A body
+`mode: hardware` with `SIM_MOTOR_BOARD=fake`, whose house is in the body
+program); it is null otherwise. Under the fake board `WORLD_MODE=sim` is
+refused too (the house is in another process; use `ros` or `none`).
+`SIM_MAP`, `SIM_MOVERS`, `SIM_BOARD_FIRMWARE` and `SIM_BOARD_SILENT_S` are
+read by the body program, so set them where it starts. A body
 with no sim house behind it (`mode: teleop`, or `mode: hardware` on a real
 board) fails at start-up under the shipped `world.mode: sim`: the world
 factory refuses a sim world for a body with no grid. Set `WORLD_MODE=none`
@@ -300,6 +317,7 @@ key means the new body returns something the contract does not allow.
 | `tests/test_stall_and_scrub.py` (11) | 3.35: a snagged wall-clock verb ends `stalled` within `VERB_STALL_S` + 0.2 s; a pivot blocked by furniture on the fake board ends `stalled` (was `timeout`); clear fake-board verbs complete; one stall constant; the scrub sizes pivots, scales heading and is published; the fake board ignores `TRACK_SCRUB`, a real board reads it |
 | `tests/test_health_sim_map.py` (4) | `/health` `sim_map` names the house the factory built, including `mode: hardware` with the fake board |
 | `tests/test_fake_esp32.py`, `tests/test_ros_driver_board.py` | The hardware body against the fake board (detail in [motor-board](../motor-board/ENGINEERING.md)) |
+| `tests/test_sim_body_process.py` | 3.36's split simulator: the robot server's process imports no simulator module, the factory refuses an in-process fake board, sensors follow the body and furniture moves reach both programs, the physics program dying stops the wheels, a dead sensor program blinds the vet within the stale bound, the vet never touches the network, and the safety stream and heavy reads land on different programs |
 | `tests/test_continuous_pose.py` | The sim's wheel kinematics; a straight line independent of the track width |
 | `tests/test_brain_server.py` | The brain imports no backend (a subprocess `sys.modules` check) |
 | `tests/test_wall_linters.py` | Chassis constants and `LIDAR_X_M` agree across the ROS wall |

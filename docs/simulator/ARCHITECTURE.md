@@ -2,7 +2,7 @@
 kind: architecture
 domain: simulator
 status: current
-verified: 2026-10-02
+verified: 2026-10-04
 ---
 
 # Simulator -- architecture
@@ -90,6 +90,18 @@ Three boundaries carry the weight:
 
 The fake motor board (motor-board domain) and the world domain's map
 backend are built on this simulator, and each is owned by its own domain.
+
+**Under the fake motor board the simulator is not in the robot server's
+process** (`PLAN-ros-alignment.md` 3.36). The physics, the house and the
+fake board run as one program, and the sensors are cast from its published
+state by one or more others; the robot server opens the board's serial
+line and reads the sensors from outside itself, as it will on the car. Two
+reasons: the configuration that rehearses the car should hold only the
+car's code in the robot server's process, and on the Jetson the simulator
+in that process starved the 20 Hz safety loop. Sensor readings that cross
+the boundary carry their age, and one older than a stated bound reads as
+no reading, so a dead sensor program fails safe. Under `mode: sim` the
+simulator stays in-process.
 
 ## Decisions
 
@@ -236,7 +248,7 @@ note).
 |---|---|---|---|
 | Body contract (docs/body/ARCHITECTURE.md) | Robot server and in-process missions call the simulated body | In-process interface | The body contract is owned by the body domain. The simulator implements it in full, including wheel state and scan |
 | World domain's sim backend | Reads the simulator's world | In-process, shared state | The simulator owns the world state. The world backend only reads it and builds its discovered map |
-| Robot server (control-api) | Calls the body. Its wheel loop advances sim time, and its idle ticks let movers walk while the robot waits. Publishes the name of the house that was built | In-process | The server owns time pacing. The simulator owns what happens in that time, and a built house carries its own name |
+| Robot server (control-api) | Calls the body. Its wheel loop advances sim time, and its idle ticks let movers walk while the robot waits. Publishes the name of the house that was built | In-process under `mode: sim`; under the fake motor board, separate programs: the board's serial line, and HTTP for sensors and truth (3.36) | The server owns time pacing. The simulator owns what happens in that time, and a built house carries its own name |
 | Sim-only routes (object listing, moving furniture) | The twin and tests call the robot server, which calls the world | HTTP/JSON at the server, in-process here | Served by control-api. A backend with no house answers "not implemented". Ground truth: no decision may read it |
 | ROS container (ros domain) | Its hardware plugin posts wheel velocities to the robot server, which integrates them here | HTTP at the wall, then in-process | ROS never touches the simulator directly |
 | Fake motor board (motor-board domain) | Wraps a sim body and turns its wheels from the serial protocol | In-process | Owned by motor-board |

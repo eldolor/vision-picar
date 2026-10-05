@@ -2,7 +2,7 @@
 kind: engineering
 domain: platform
 status: current
-verified: 2026-10-02
+verified: 2026-10-04
 parent: docs/platform/ARCHITECTURE.md
 ---
 
@@ -232,7 +232,7 @@ export APP_SHARED_SECRET="$LOCAL_SECRET"
 # one run; repeat this block five times
 docker rm -f picar-ros 2>/dev/null
 SIM_MAP=scaled_house ROBOT_DRIVE=ros WORLD_MODE=ros ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake \
-  bash service/tunnel/restart.sh                               # robot :8000 and brain :8001/brain, both on 127.0.0.1
+  bash service/tunnel/restart.sh                               # sim body :8002, sensors :8003/:8004, robot :8000, brain :8001/brain, all on 127.0.0.1
 curl -s localhost:8000/health | grep -o '"sim_map": *"[a-z_]*"'   # expect "sim_map": "scaled_house"
 until curl -s -H "x-app-secret: $LOCAL_SECRET" localhost:8000/wheels | grep -q '"usable": *true'; do sleep 0.5; done
 docker run -d --name picar-ros --restart unless-stopped --network host \
@@ -249,6 +249,21 @@ both running <rev>` only once both answer with the checkout's revision.
 Expected from pytest: `18 passed`, and the `-rs` summary lists no skips.
 `tools/jetson/README.md` section 4 carries the same list and commands;
 change both together.
+
+**The fake board runs outside the robot server** (`PLAN-ros-alignment.md`
+3.36). With `SIM_MOTOR_BOARD=fake`, `run.sh` (which `restart.sh` calls)
+starts `sim/body_server.py` (physics and the board's pty) on :8002 and two
+`sim/sensor_server.py` programs on :8003 and :8004 before the robot server,
+and exports `SIM_BODY_URL` / `SIM_SENSORS_URL` for it; `restart.sh` frees
+those ports too and also waits for the body program to report the
+checkout's revision. The commands above need nothing extra. Started by hand
+without the two URLs, the robot server refuses at start-up (`ValueError:
+SIM_MOTOR_BOARD=fake runs the simulated body as separate programs`). The
+in-process simulator was what held the robot server at 98% of a core with
+15-20% late wheel-loop ticks on the board. Both live suites also wait up to
+35 s for the bridge's `start_truth` before they move the robot, and the
+chain suite's first test fails if the bridge has not heard `/odom` within
+0.5 s (3.36's bridge fixes, [ros engineering](../ros/ENGINEERING.md)).
 
 **On arrival of the Rover** [planned] (`JETSON-BOM.md` 9.5), inside the
 30-day window:

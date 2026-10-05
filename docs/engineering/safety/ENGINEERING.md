@@ -2,7 +2,7 @@
 kind: engineering
 domain: safety
 status: current
-verified: 2026-10-02
+verified: 2026-10-04
 parent: docs/safety/ARCHITECTURE.md
 ---
 
@@ -47,9 +47,26 @@ within range, never "unknown".
 | `path_clearance()` | `depth_grid_facing_away`, `depth_grid`, `depth_grid_no_target`, `distance_sensor` | The cone, tried in that order. A panned grid with no path zones left is no opinion (`None`); otherwise the nearest `ZONE_RANGE` in the path zones; otherwise, if any path zone answered, no target; otherwise (no grid, or every path zone unusable) the scalar `get_distance()`. Unusable zones are dropped. All values are bumper-relative (`sensor_to_bumper_cm` subtracted, floored at 0) |
 | `footprint_clearance(+1 / -1)` | `scan_footprint`, `scan_footprint_no_target`, `no_scan` | Returns in the body frame within half-width + 3 cm of the centre-line and beyond the leading edge: distance past the edge. A return inside the outline reads 0.0 |
 | `rear_clearance()` | `scan_rear`, `scan_rear_no_target`, `no_rear_sensor` | Beams within `PATH_HALF_ANGLE_DEG` of astern, minus `LIDAR_TO_REAR_BUMPER_CM` |
-| `forward_clearance()` | the lesser of cone and corridor, or `path_not_observed` (0.0) | `path_not_observed` when the grid faces away and there is no scan |
-| `reverse_clearance()` | `astern_not_observed` (0.0), or the lesser of rear and corridor astern, off one scan | `(0.0, "astern_not_observed")` when the scan is missing or unusable **and** `_has_wheels()` (the body's `get_wheel_state()` reports `usable: true`; a body without the method, or whose call raises, has none). Otherwise, with no scan, `(None, "no_rear_sensor")` and the reverse proceeds. The rule and its reasons: [architecture spec](../../safety/ARCHITECTURE.md), "A body that cannot see astern does not reverse" |
+| `forward_clearance()` | the lesser of cone and corridor, or `path_not_observed` (0.0); then aged (below) | `path_not_observed` when the grid faces away and there is no scan |
+| `reverse_clearance()` | `astern_not_observed` (0.0), or the lesser of rear and corridor astern, off one scan; then aged (below) | `(0.0, "astern_not_observed")` when the scan is missing or unusable **and** `_has_wheels()` (the body's `get_wheel_state()` reports `usable: true`; a body without the method, or whose call raises, has none). Otherwise, with no scan, `(None, "no_rear_sensor")` and the reverse proceeds. The rule and its reasons: [architecture spec](../../safety/ARCHITECTURE.md), "A body that cannot see astern does not reverse" |
 | `pivot_blocked(omega)` / `pivot_scale(omega)` | reason string or None / `(fraction, reason)` | A return whose distance to the rectangle would end under `PIVOT_MARGIN_CM` **and** shrink. Binary search to 1/64 of the turn rate. No usable scan: never blocked |
+
+**Aged readings** (`_aged(result, direction)`, `PLAN-ros-alignment.md`
+3.36). The look-ahead (3.24 G2) stops a move AT the line only if the
+clearance is the clearance now. A body that reports how old its readings
+are (`sensor_age_s()`; today only `sim/body_client.py`'s `SimBodyClient`,
+whose polled bundle is up to `SENSOR_STALE_S` 0.15 s old) has the way
+covered since subtracted: `clearance - max(0, direction x v) x age`, with
+`v` the mean wheel speed times `wheel_radius_m`, floored at 0.0 and
+rounded to 0.1 cm, and the source gains `, aged <n> ms`. It is skipped,
+leaving the result untouched, when the clearance is None or 0, the body
+has no `sensor_age_s` or reports no age, the wheel state is unusable or
+raises, or the robot is not closing (moving away, or still). Every
+in-process backend reads on demand and is unchanged. 3.36's sweep fed
+three-period-old readings: worst travel-to-contact 18.2 cm without it,
+19.0 cm with it (`tests/test_footprint_safety.py`). On the car a lidar scan
+is 0-100 ms old when it is read, which is the rule's reason beyond the
+sim.
 
 Comparison edges: the verb pre-check refuses at `< min_distance_cm`; the
 wheel vet clamps at `<= min_distance_cm` and otherwise limits speed to
@@ -88,7 +105,7 @@ astern does not reverse".
 | `check_and_execute(action, speed=, duration=, angle=)` | The body's result dict. Raises `SafetyViolation` on a veto, or when a guarded verb achieved under `VERB_MIN_MOVE_M` / `VERB_MIN_TURN_DEG`; `ValueError` on an unknown action |
 | `vet_wheel_velocity(left_rad_s, right_rad_s)` | `(left, right, reason)`. `reason` is None when only slowed. Pass-through if the body's wheels are unusable (`robot/safety.py:665`). A reverse component on a blind body with wheels is clamped to zero with `astern_not_observed` in the reason; rotation is untouched |
 | `run_verb(plan)` | `carry_out_verb()`'s `{"done", "ended", "reason"}`, after the settle pass when the plan asks for one |
-| `forward_clearance()`, `reverse_clearance()`, `path_clearance()`, `footprint_clearance(direction, scan)`, `rear_clearance(scan)`, `pivot_scale(omega, scan)`, `pivot_blocked(omega, scan, exact)` | See above |
+| `forward_clearance()`, `reverse_clearance()` (both aged), `path_clearance()`, `footprint_clearance(direction, scan)`, `rear_clearance(scan)`, `pivot_scale(omega, scan)`, `pivot_blocked(omega, scan, exact)` | See above |
 
 **Driver ranks** (`DRIVER_PRIORITY`): `twin-dpad` 30, `teleop-operator` 30,
 any unnamed or unknown name 30 (`DRIVER_UNKNOWN = "unknown"`), `brain` 20,
@@ -261,7 +278,7 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | Test (collected) | Pins |
 |---|---|
 | `tests/test_depth_veto.py` (28) | Tri-state handling; unusable zones never compared; fallback to the scalar; angle-based zone selection |
-| `tests/test_footprint_safety.py` (10) | 3.18: seeded sample of the oblique-approach sweep over three houses |
+| `tests/test_footprint_safety.py` (12) | 3.18: seeded sample of the oblique-approach sweep over three houses. 3.36: the same bars hold on readings `SENSOR_STALE_S` old, and `_aged()` subtracts `v x age` closing and nothing moving away or with no age |
 | `tests/test_pan_safety.py` (6) | 3.18 part 2: zones by body bearing; `path_not_observed` |
 | `tests/test_pivot_safety.py` (4) | 3.19: no contact from turning; turns with room complete |
 | `tests/test_guarded_verbs.py` (8) | 3.22: verbs stop at the line; a stop ends a verb within 100 ms on the fake board |

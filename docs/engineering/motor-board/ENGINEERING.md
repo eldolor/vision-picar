@@ -2,7 +2,7 @@
 kind: engineering
 domain: motor-board
 status: current
-verified: 2026-10-02
+verified: 2026-10-04
 parent: docs/motor-board/ARCHITECTURE.md
 ---
 
@@ -26,7 +26,7 @@ command table for the Rover.
 |---|---|
 | `robot/hardware_robot.py` | `HardwareRobot(port, sensors=None, baud=115200)`, a `RobotInterface` backend. It opens the tty raw at 115200 and starts a `select()`-polling reader thread, which parses only `T:1001` frames and skips bad lines. It sends its set-up (`T:136`, `T:131`) at start and again after a detected reboot. It turns wheel commands into `T:1`. It estimates each wheel's travel: a trapezoidal speed integral, clamped by `_anchor()`, with `_absorb_reboot()` and `_track_board_clock()` for the fork. `verb_plan()` and `verb_done()` let `SafetyController.run_verb()` carry verbs out on the wall clock. Camera, lidar, depth and pan are delegated to `sensors`; with none, they answer the interface's unusable defaults (`get_camera_frame()` raises). |
 | `sim/fake_esp32.py` | `FakeEsp32(body, main_type=2, drop_rate=0.0, seed=0, firmware=None, millis_at_boot=0)`. It opens a pty (`.path`) and runs a firmware loop thread that turns `body`'s wheels through `set_wheel_velocity()` and `advance()`. It keeps integer encoder counts and measures speeds from count deltas. It sends rate-limited `1001` frames, runs the heartbeat, and has `reboot()`. Its wire is lossy (`drop_rate`) and loses only whole lines. `sent_truth` records the body's wheel travel at each frame actually sent, which is what tests judge against. |
-| `robot/factory.py` | `mode: hardware`. With `SIM_MOTOR_BOARD=fake`, it builds `MockRobot`, then `FakeEsp32(body)`, then `HardwareRobot(board.path, sensors=body)`. Otherwise it builds `HardwareRobot(ROBOT_SERIAL or hardware.serial_port)`, and raises if neither is set. |
+| `robot/factory.py` | `mode: hardware`. With `SIM_MOTOR_BOARD=fake` (`PLAN-ros-alignment.md` 3.36), it builds `SimBodyClient(SIM_BODY_URL, SIM_SENSORS_URL)`, then `HardwareRobot(client.board_path, sensors=client, track_scrub=1.0)`: the board and its body are in `sim/body_server.py`'s process, and the robot server opens the board's pty as a serial device, as it opens the real one on the car. Without both URLs it raises. `build_fake_body(config)` (`MockRobot` in the `SIM_MAP` house, then `FakeEsp32(body)`) is what the body program calls. Otherwise it builds `HardwareRobot(ROBOT_SERIAL or hardware.serial_port)`, and raises if neither is set. |
 | `firmware/ugv_base_ros/0001-feedback-fine-odometers-and-board-time.patch` | Our GPL-3.0 fork. It adds 13 lines inside `baseInfoFeedback()` (`ROS_Driver/ugv_advance.h`) and removes none. |
 | `firmware/ugv_base_ros/build.sh` | Compiles a checkout, stock or patched, with `arduino-cli`. Compile only. |
 | `firmware/ugv_base_ros/README.md` | How to apply, build, dump and restore the firmware. |
@@ -109,9 +109,10 @@ The shapes are owned by the body contract.
 |---|---|---|---|---|
 | `mode` / `ROBOT_MODE` | `sim` | -- | `robot/factory.py` | `hardware` selects this backend. |
 | `ROBOT_SERIAL` or `hardware.serial_port` | none (required) | path | `robot/factory.py` | Not in the shipped yaml. Use a udev symlink on the car, never `/dev/ttyUSB0` by enumeration order. |
-| `SIM_MOTOR_BOARD` | unset | -- | `robot/factory.py` | `fake` runs the backend over `sim/fake_esp32.py` on a pty. |
-| `SIM_BOARD_FIRMWARE` | `stock` | -- | `sim/fake_esp32.py` | `fork` adds `odlt`, `odrt` and `ms`. It re-runs any suite over the fork. |
-| `SIM_BOARD_SILENT_S` | 0 | s | `sim/fake_esp32.py` (`silent_until`) | The fake board sends no feedback frame for this long after power-up, to reproduce the start-up race a ROS container started first must ride out (handoff 2a; `tests/test_startup_race.py`). |
+| `SIM_MOTOR_BOARD` | unset | -- | `robot/factory.py`, `service/tunnel/run.sh` | `fake` runs the backend over `sim/fake_esp32.py` on a pty, in the body program (3.36). |
+| `SIM_BODY_URL`, `SIM_SENSORS_URL` | none (required with `fake`); `run.sh` defaults `:8002` and `:8003,:8004` | URL | `robot/factory.py`, `sim/body_client.py` | The body program (board, physics, truth) and the sensor programs (first: the safety bundle; last: full scans and frames). Simulator detail: [simulator engineering](../simulator/ENGINEERING.md). |
+| `SIM_BOARD_FIRMWARE` | `stock` | -- | `sim/fake_esp32.py`, in the body program | `fork` adds `odlt`, `odrt` and `ms`. It re-runs any suite over the fork. |
+| `SIM_BOARD_SILENT_S` | 0 | s | `sim/fake_esp32.py` (`silent_until`), in the body program | The fake board sends no feedback frame for this long after power-up, to reproduce the start-up race a ROS container started first must ride out (handoff 2a; `tests/test_startup_race.py`). |
 | `WHEEL_RADIUS_M`, `TRACK_WIDTH_M`, `COUNTS_PER_REV` | 0.040, 0.172, 660 | m, m, edges/rev | `robot/hardware_robot.py` | What the backend converts with: mainType 2's `WHEEL_D` / 2, `TRACK_WIDTH` and pulses (table above). The physical facts, their sources and every other copy are in the [platform engineering spec](../platform/ENGINEERING.md); `tests/test_wall_linters.py` and `tests/test_ros_driver_board.py` pin the copies equal. |
 | `HEARTBEAT_MS` | 1500 | ms | `robot/hardware_robot.py` | Longer than the robot server's 1.0 s `watchdog_timeout_s`, so the server acts first. The firmware default is 3000. |
 | `REBOOT_JUMP_M` | 0.03 | m | `robot/hardware_robot.py` | On stock firmware, a reboot needs both odometers near zero AND the estimate this far outside their bucket. A rule on the distance alone fired falsely in 1 of 6 runs (3.25). |
@@ -130,12 +131,23 @@ The shapes are owned by the body contract.
 
 ## Procedures
 
-**Run the whole stack over the fake board:**
+**Run the whole stack over the fake board** (3.36: the board, its body and
+the body's sensors are separate programs; `service/tunnel/run.sh` starts
+them before the robot server, on ports 8002-8004, and `restart.sh` stops
+them too and checks the body program's git revision):
 
 ```bash
-ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake uvicorn robot.server:app --port 8000
-ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake SIM_BOARD_FIRMWARE=fork uvicorn robot.server:app --port 8000
+SIM_MOTOR_BOARD=fake ROBOT_MODE=hardware WORLD_MODE=ros bash service/tunnel/run.sh
+SIM_MOTOR_BOARD=fake SIM_BOARD_FIRMWARE=fork ROBOT_MODE=hardware WORLD_MODE=ros bash service/tunnel/run.sh
 ```
+
+By hand, the order is the body (`uvicorn sim.body_server:app --port 8002`),
+the sensors (`uvicorn sim.sensor_server:app --port 8003`, again on 8004),
+all with the same `SIM_BODY_SHM`, then the robot server with
+`SIM_BODY_URL=http://127.0.0.1:8002` and
+`SIM_SENSORS_URL=http://127.0.0.1:8003,http://127.0.0.1:8004`. The robot
+server waits up to 30 s for both to answer `/health`. `WORLD_MODE=sim` is
+refused with a remote body; use `ros` or `none`.
 
 `/health` answers as usual, and its `sim_map` names the house the sim body
 stands in (since 2026-10-02; it was `null` under the fake board, which made
@@ -293,6 +305,8 @@ holds the port (3.26).
 | Symptom | Meaning |
 |---|---|
 | Start-up `ValueError: mode: hardware needs ROBOT_SERIAL` | Set the port, or `SIM_MOTOR_BOARD=fake`. |
+| Start-up `ValueError: SIM_MOTOR_BOARD=fake runs the simulated body as separate programs` | The URLs are unset: start `sim/body_server.py` and `sim/sensor_server.py` and set `SIM_BODY_URL` / `SIM_SENSORS_URL`, or use `service/tunnel/run.sh` (3.36). |
+| Start-up `RuntimeError: no sim/body_server.py at ...` (or `sim/sensor_server.py`) | `SimBodyClient` waited 30 s for that program's `/health`: it is not running or is on another port. A sensor program that itself dies with `no simulated body state ...` waited 30 s for the body's shared memory: start the body first, with the same `SIM_BODY_SHM`. |
 | Start-up `ValueError: world mode 'sim' needs the grid-world robot` | A real board with the shipped `world.mode: sim`. Add `WORLD_MODE=none`. |
 | A FORWARD blocked with `Blocked FORWARD: distance=0.0cm < min=...cm (distance_sensor)`, or a standing forward `/wheels` answered `forward clamped: 0.0cm <= ...cm (distance_sensor)` | The real board with no sensors: `get_distance()` is 0.0, which reads as an obstacle at the bumper. Expected until the lidar driver lands; only turns move (safety domain). |
 | A REVERSE blocked with `rear clearance=0.0cm ... (astern_not_observed)`, or a settle ending "settle refused" | The real board with no lidar scan yet: the safety layer will not back up blind, and a straight correction either way is refused (safety domain). Expected until the lidar driver lands. |

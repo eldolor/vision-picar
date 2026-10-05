@@ -285,8 +285,10 @@ The wall has two costs that can grow unnoticed, and
 
 The wall's runtime cost is small. A bare HTTP app over the same Docker hop
 holds 200 Hz with a p99 of a few milliseconds; the robot server's slower
-tail comes from the simulator sharing its process, and must be re-measured
-on the Jetson (`tests/test_http_rate_live.py`).
+tail comes from the simulator sharing its process (under `mode: sim`;
+since `PLAN-ros-alignment.md` 3.36 the fake-board configuration runs the
+simulator as separate programs), and must be re-measured on the Jetson
+(`tests/test_http_rate_live.py`).
 
 ROS tools can still see the brain. The bridge **pulls** the brain's mission
 status over HTTP and republishes it on ROS topics for recording and

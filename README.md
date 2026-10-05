@@ -689,7 +689,9 @@ Rover's ESP32 **ROS Driver** board over serial, anchoring on the board's
 `ROBOT_SERIAL` (or `hardware.serial_port`); `robot/factory.py` refuses to
 start without one. `SIM_MOTOR_BOARD=fake` runs the same backend against
 `sim/fake_esp32.py` instead of a board (`SIM_BOARD_FIRMWARE=fork` fakes our
-firmware fork). The Rover's board is closed loop from the factory, so it
+firmware fork); since `PLAN-ros-alignment.md` 3.36 the fake board and its
+simulated body run as separate programs (`sim/body_server.py`,
+`sim/sensor_server.py`), which `service/tunnel/run.sh` starts. The Rover's board is closed loop from the factory, so it
 needs no reflash to drive; flashing `firmware/ugv_base_ros/` (finer
 odometers and a timestamp) comes after the arrival checks. The camera and
 lidar drivers are not written yet; until they are, on the car those

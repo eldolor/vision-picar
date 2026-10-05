@@ -2,7 +2,7 @@
 kind: engineering
 domain: world
 status: current
-verified: 2026-10-02
+verified: 2026-10-04
 parent: docs/world/ARCHITECTURE.md
 ---
 
@@ -27,7 +27,13 @@ as the code.
 
 `MockWorld` and `RosWorld` never import a body backend. `get_world()` reads
 the body's `robot.world` attribute, which is the `GridWorld`, and nothing
-else.
+else. Under the fake motor board (`PLAN-ros-alignment.md` 3.36) that
+attribute is `sim/body_client.py`'s `RemoteGrid`, a stand-in for a house in
+`sim/body_server.py`'s process: `WORLD_MODE=ros` then takes `RosWorld`'s
+truth from `RemoteGrid.get_truth()` (the body program's `GET /truth`)
+instead of wrapping a local `MockWorld`, and `WORLD_MODE=sim` is refused
+with a `ValueError`, because `MockWorld` casts over a grid that is not in
+this process. Use `ros` or `none` there.
 
 ## Interfaces
 
@@ -113,7 +119,12 @@ The bridge's routes and their fields are specified once, in the
   p + t`, and `alpha` is added to the heading.
 - **When the session starts** (`anchored_at = "session_start"`):
   `alpha = start_truth.heading_deg - 90` and `t = (start_truth.x_m,
-  start_truth.y_m)`.
+  start_truth.y_m)`. `start_truth` is where the robot stood in the house at
+  odometry zero. Since 3.36 the bridge composes it from the truth and the
+  odometry read at one instant (`convert.odometry_zero_in_house()`) rather
+  than assuming the robot had not moved; on the Jetson the old reading came
+  seconds late, after motion, and anchored SLAM's frame about 20 degrees off
+  for the session.
 - **Bridges older than `start_truth`** (`"first_contact"`): the anchor falls
   back to the truth at the first question.
 - **On hardware** (no truth): `alpha = 0`, `t = 0`, `anchored_at = None`.
@@ -233,8 +244,10 @@ Checklist for a change here:
   arbitration fails open as the architecture spec says.
 - **`map_version` under SLAM counts publications, not cell changes.** See
   "What RosWorld reads from the bridge". UNCONFIRMED.
-- **`start_truth` is read once.** A failed first read is never retried; see
-  `service/slam/README.md` section 4.
+- **`start_truth` has a window.** The bridge's own thread retries for
+  `START_TRUTH_WINDOW_S` (30 s) from node start, then gives up for the
+  container's life and logs an error; see `service/slam/README.md`
+  section 4.
 - **Goals are found by duck typing.** `set_goal`, `get_goal`, `cancel_goal`
   and `get_odom_pose` live only on `RosWorld`, and the server discovers them
   with `hasattr`.
