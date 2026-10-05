@@ -67,7 +67,7 @@ def stack():
     return robot, bridge
 
 
-def _await_start_truth(bridge, timeout_s=15.0):
+def _await_start_truth(bridge, timeout_s=35.0):
     """Nothing may move the robot before the bridge has recorded its truth
     at odometry zero (3.36): read after motion, it anchors SLAM's frame
     wrong for the whole session and house-frame goals land elsewhere."""

@@ -83,9 +83,10 @@ DRIVER_TOPICS = {
     "ros": "cmd_vel/nav",
 }
 SCAN_HZ = 10.0
-# The robot is still where odometry zero is for the first seconds of a
-# session: the container brings the controllers up with the robot at rest.
-START_TRUTH_WINDOW_S = 10.0
+# How long the start-truth thread tries (3.36): the controllers' first
+# odometry, then one answer from the robot. Generous for a slow board; the
+# anchor no longer assumes the robot is at rest, so waiting costs nothing.
+START_TRUTH_WINDOW_S = 30.0
 PAN_HZ = 20.0
 # The brain ticks at ~4 Hz; a status twice a second is enough to follow it
 # and cheap enough to leave on.
@@ -385,24 +386,31 @@ class Bridge(Node):
         return self.robot_http.get_json(path)
 
     def _record_start_truth(self):
-        """The robot's truth at odometry zero (R5), for world/ros_world.py to
-        lay SLAM's frame on the house. Its own thread, started with the node
-        (3.36): it used to be read on the first SUCCESSFUL scan poll, and on
-        the Jetson the first full scans time out for seconds -- the truth was
-        then read after the tests had started driving, and every house-frame
-        goal was converted with an anchor ~20 deg and ~45 cm off. Read as
-        early as the robot answers, retried briefly; the live suites wait for
-        it before they move anything."""
+        """Where the robot stood in the house at odometry zero (R5), for
+        world/ros_world.py to lay SLAM's frame on. Its own thread (3.36).
+
+        Composed from the truth and the odometry read at ONE instant
+        (`convert.odometry_zero_in_house`), never assumed from a robot at
+        rest: on the Jetson it was read seconds after start -- once after the
+        chain suite had begun driving, and after every container restart in
+        the fallback test, while a person drove -- and each time it anchored
+        SLAM's frame ~20 deg off for the session."""
         deadline = time.time() + START_TRUTH_WINDOW_S
         while rclpy.ok() and time.time() < deadline:
+            with self.lock:
+                have_odom = self.last_odom is not None
+            if not have_odom:                        # the controllers are not up yet
+                time.sleep(0.05)
+                continue
             try:
                 t = self._robot_get("/world/truth")
-            except Exception:  # noqa: BLE001 -- not up yet, or busy: try again
+            except Exception:  # noqa: BLE001 -- busy: try again
                 time.sleep(0.2)
                 continue
             if t.get("usable"):
                 with self.lock:
-                    self.start_truth = {k: t[k] for k in ("x_m", "y_m", "heading_deg")}
+                    odom = dict(self.last_odom)
+                    self.start_truth = convert.odometry_zero_in_house(t, odom)
             return                                  # answered: usable, or hardware
         self.get_logger().error("no start truth recorded in the first "
                                 f"{START_TRUTH_WINDOW_S:.0f} s; house-frame goals and "

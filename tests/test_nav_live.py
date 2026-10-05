@@ -37,7 +37,7 @@ def run():
         pytest.skip("R6 is judged on SIM_MAP=scaled_house (see the module docstring)")
     # 3.36: not before the bridge has its truth at odometry zero -- read
     # after the robot moved, it anchors every goal wrong for the session.
-    end = time.time() + 15.0
+    end = time.time() + 35.0          # the bridge's own window is 30 s
     while not bridge.get("/slam/pose").json().get("start_truth"):
         if time.time() > end:
             pytest.fail("the bridge recorded no start truth -- see its log")
