@@ -345,10 +345,15 @@ order; record the table in the plan entry.
   Re-measure on the car.
 - **`sensor_to_bumper_cm` is 0.0** and applies to the cone only; the
   corridor and rear checks place returns with `LIDAR_X_M` instead.
-- **Unnamed, `teleop` and `teleop-operator` drivers under ROS drive** are
-  refused `ros_unavailable`: the bridge maps only `twin-dpad`, `brain` and
-  `ros` (`docs-review/REPORT.md` V10). The bridge's 400 does not mark ROS
-  down (see "ROS liveness").
+- **Closed 2026-10-05 (handoff 3a):** unnamed, `teleop` and
+  `teleop-operator` drivers under ROS drive used to be refused
+  `ros_unavailable` (`docs-review/REPORT.md` V10); `robot/ros_drive.py`'s
+  `ros_input_for()` now sends every person on the D-pad's `twist_mux`
+  input and every other autonomous driver on the brain's. **And a person's
+  goal is a person driving (handoff 3b):** `POST /world/goal` with a
+  manual-rank `x-driver` arbitrates as that person -- it takes the robot
+  from the brain, whose next command is refused `preempted` -- while a goal
+  naming no one keeps 3.23's `ros` rank.
 - **Until `ROS_SILENCE_S` (0.5 s) of silence after a container dies**,
   `ros_up()` is still true, so a person's verb goes to the dead bridge and
   is refused `ros_unavailable`. That window is inside G3's 2 s bar. The

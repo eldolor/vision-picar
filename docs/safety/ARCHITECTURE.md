@@ -333,10 +333,13 @@ are commitments, not tuning.
 - **Calibration on the real chassis.** The cone's chassis width, the
   sensor-to-bumper offset and the corridor's side margin are hardware-day
   measurements (R8).
-- **Driver names under ROS drive.** The ROS bridge maps only the D-pad, the
-  brain and ROS. A bare unnamed command, and both teleop drivers, are refused
-  under ROS drive (`docs-review/REPORT.md` V10). Decide whether the bridge
-  learns them or the server maps them.
+- **Closed 2026-10-05: driver names under ROS drive.** The server maps
+  drivers to ROS inputs by rank (a person on the people's input), so every
+  driver it accepts can drive under ROS. Decided by the user on the
+  recommendation (handoff 3a).
+- **Closed 2026-10-05: a person's goal outranks the brain.** A goal that
+  names a person is that person driving, arbitrated at their rank; one that
+  names no one stays an autonomous `ros` goal (3.23). Handoff 3b.
 - **Motion before a body can report its wheels.** Until a real motor board
   sends its first feedback, a standing command passes unvetted and a
   reverse verb runs unguarded, because the blind-reverse rule cannot tell

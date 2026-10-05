@@ -48,7 +48,8 @@ from typing import Optional
 
 import httpx
 
-from robot.interface import VERB_STALL_S, RobotInterface, WheelFeedbackLost
+from robot.interface import (DRIVER_MANUAL, VERB_STALL_S, RobotInterface, WheelFeedbackLost,
+                             driver_priority)
 
 logger = logging.getLogger("ros_drive")
 
@@ -112,6 +113,22 @@ BRIDGE_PROBE_S = 0.5
 BRIDGE_PROBE_TIMEOUT_S = 0.5
 
 
+def ros_input_for(driver: Optional[str]) -> str:
+    """The bridge's twist_mux input for a driver (handoff 3a, decided
+    2026-10-05). Every PERSON -- the twin's D-pad, a teleop operator, an
+    unnamed caller, who ranks as a person -- drives on the D-pad's input,
+    the highest; `ros` (nav2) on its own; everything else autonomous on the
+    brain's. Named inputs used to be looked up by driver name, and a
+    `teleop-operator` verb was refused `ros_unavailable` on the bridge's 400
+    for an unknown driver. The names are picar_bridge's DRIVER_TOPICS keys
+    (tests/test_ros_drive.py reads them from bridge.py)."""
+    if driver == "ros":
+        return "ros"
+    if driver_priority(driver or "") >= DRIVER_MANUAL:
+        return "twin-dpad"
+    return "brain"
+
+
 class RosDriveRobot(RobotInterface):
     """Verbs through ROS, reads from the robot underneath."""
 
@@ -148,9 +165,12 @@ class RosDriveRobot(RobotInterface):
     @contextmanager
     def driving_as(self, driver: str):
         """robot/server.py names the driver of each /action, so the twists go
-        on that driver's twist_mux input (teleop outranks brain in ROS too)."""
+        on that driver's twist_mux input (teleop outranks brain in ROS too).
+        The input is chosen by RANK (`ros_input_for`), not by name: twist_mux
+        has one input per rank, and M4 has already decided between people
+        and autonomy before a verb gets here."""
         previous = getattr(self._local, "driver", None)
-        self._local.driver = driver
+        self._local.driver = ros_input_for(driver)
         try:
             yield
         finally:

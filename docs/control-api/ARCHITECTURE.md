@@ -159,8 +159,10 @@ alone (`PLAN-ros-alignment.md` 3.13). A stop zeroes the robot directly
 first; telling ROS its inputs are zero comes afterwards and cannot hold the
 stop up. How the server decides ROS is down, and who may drive while it is,
 are [safety](../safety/ARCHITECTURE.md)'s ("When ROS dies, only a person
-drives"). **Today only the D-pad among the people has a path through ROS**:
-other manual drivers are refused under ROS drive (see Open questions).
+drives"). **Every person has a path through ROS** (decided 2026-10-05):
+the robot server sends a manual-rank driver's commands on the people's
+input and an autonomous one's on the autonomy's, so ROS needs one input per
+rank, not per client -- the server has already decided between them.
 
 ### Health reports facts; the verdict is elsewhere
 

@@ -110,6 +110,13 @@ the `MAX_BRIDGE_ROUTES` budget.
 | `brain` | `cmd_vel/brain` | 50 |
 | `ros` | `cmd_vel/nav` | 50 |
 
+The robot server picks the input by the driver's RANK, not its name
+(`robot/ros_drive.py` `ros_input_for()`, handoff 3a, decided 2026-10-05):
+every manual-rank driver -- `twin-dpad`, `teleop-operator`, an unnamed
+caller -- posts on `twin-dpad`'s input; `ros` on its own; every other
+autonomous driver (`brain`, `teleop`) on `brain`'s. M4's `/action`
+arbitration has already chosen between people and autonomy by then.
+
 nav2's controller and behaviours also publish on `cmd_vel/nav`.
 
 **Command path.** `twist_mux` publishes `/cmd_vel_mux`. `collision_monitor`
@@ -292,14 +299,12 @@ Checklist for a change:
   that plugin will not be written.
 - **`robot_localization` is not installed.** Odometry comes from
   diff_drive_controller alone.
-- **Only `twin-dpad` can drive as a person under `drive: ros`.**
-  `DRIVER_TOPICS` (`service/slam/src/picar_bridge/picar_bridge/bridge.py:79-83`) maps only `twin-dpad`,
-  `brain` and `ros`. `teleop-operator` and unnamed callers, which rank as a
-  person, and the `teleop` driver get 400 `unknown driver`, which
-  `robot/server.py` (`do_action()`, the `httpx.HTTPError` branch) reports as
-  `ros_unavailable`; since spec review 3 (V7) a 4xx does not mark the bridge
-  down. The architecture's
-  D6 is narrowed to match (`docs-review/REPORT.md` V10, open).
+- **Closed 2026-10-05 (handoff 3a): every person drives under `drive:
+  ros`.** `teleop-operator`, unnamed callers and the `teleop` driver used to
+  post their own names, get 400 `unknown driver`, and be refused
+  `ros_unavailable` (`docs-review/REPORT.md` V10). `ros_input_for()` now
+  maps them by rank (see "Topics and frames"); `tests/test_ros_drive.py`
+  reads `DRIVER_TOPICS` from `bridge.py` so the two cannot drift.
 - **`cmd_vel/brain` and `cmd_vel/nav` share priority 50.** Only the robot
   server's arbitration separates them.
 - **Stale nav2 comments.** `nav2.yaml`'s header comments reason from the

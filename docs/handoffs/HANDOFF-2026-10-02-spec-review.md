@@ -224,7 +224,7 @@ bridge, as `tests/test_ros_drive.py` does), or change body ARCH to say
 
 ## 3. Decisions to make, then build
 
-**3a. People other than the D-pad under `drive: ros` (V10, fix 10).**
+**3a. People other than the D-pad under `drive: ros` (V10, fix 10).** **DECIDED 2026-10-05 (the user, on the recommendation): every person's commands go on the people's input -- `robot/ros_drive.py` `ros_input_for()`. Built.**
 
 - **Today:** only `twin-dpad` has a `twist_mux` input
   (`service/slam/src/picar_bridge/picar_bridge/bridge.py:79-83`).
@@ -234,7 +234,7 @@ bridge, as `tests/test_ros_drive.py` does), or change body ARCH to say
   the D-pad drives under ROS and say so as a decision.
 - Owner: the safety domain (driver order), with ros.
 
-**3b. Twin tap-to-goal is ranked as autonomous.**
+**3b. Twin tap-to-goal is ranked as autonomous.** **DECIDED 2026-10-05: yes, a person's tap outranks the brain. Built: the twin names the person, and `/world/goal` arbitrates a named person at their rank.**
 
 - **Today:** the page posts `/world/goal` with no `x-driver`, so the server
   arbitrates the goal as `ros` and a person's tap is refused while a
@@ -242,7 +242,7 @@ bridge, as `tests/test_ros_drive.py` does), or change body ARCH to say
 - **Decide:** should a person's tap outrank the brain, as the D-pad does?
 - Specs: twin and safety, open questions.
 
-**3c. Deployed replay (fix 12). Verify against the live stack first.**
+**3c. Deployed replay (fix 12). Verify against the live stack first.** **VERIFIED 2026-10-05: the walks Lambda had neither value. Template fixed (`ReplayVisionUrl` + the vision secret); NOT deployed.**
 
 - **Probable state:** as templated, the walks Lambda has neither
   `VISION_URL` nor `VISION_SHARED_SECRET`

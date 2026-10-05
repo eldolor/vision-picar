@@ -96,3 +96,28 @@ def test_a_lapsed_claim_does_not_block_a_goal(served, monkeypatch):
     real = time.monotonic
     monkeypatch.setattr(server.time, "monotonic", lambda: real() + 5.0)
     assert goal()["accepted"] is True and bridge.goal is not None
+
+
+# Handoff 3b (decided 2026-10-05) ----------------------------------------
+
+@pytest.mark.parametrize("person", ["twin-dpad", "teleop-operator"])
+def test_a_persons_tap_to_goal_outranks_the_brain(served, person):
+    """A goal that NAMES a person is that person driving: it is accepted
+    while the brain holds the robot, as a D-pad press would be, and the
+    brain is refused afterwards -- its mission ends `preempted`."""
+    client, bridge, act, _, _ = served
+    assert act("brain")["executed"] is True
+    r = client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0},
+                    headers={"x-driver": person}).json()
+    assert r["accepted"] is True, r
+    assert bridge.goal is not None
+    after = act("brain")
+    assert after["executed"] is False and after["reason"] == "preempted", after
+
+
+def test_an_unnamed_goal_still_ranks_as_ros(served):
+    """3.23 unchanged for a caller that names no one (scripts, the nav
+    suites): refused while the brain holds the robot."""
+    client, bridge, act, goal, _ = served
+    assert act("brain")["executed"] is True
+    assert goal()["accepted"] is False

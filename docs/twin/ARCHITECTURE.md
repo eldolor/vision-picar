@@ -71,10 +71,10 @@ walks that the corpus is made of could not be recorded.
 
 - **Move the robot except through the robot server's command routes.**
   Safety, arbitration and the watchdog all live on the server. Direct
-  commands (the D-pad, look and stop) name the page as their driver. A
-  goal tapped on the map does not: the server treats every goal as an
-  autonomous driver whoever sent it, so a person's tap is refused while
-  a mission holds the robot (see "A person outranks the brain").
+  commands (the D-pad, look and stop) name the page as their driver, and
+  since 2026-10-05 so does a goal tapped on the map: a person's tap is a
+  person driving, and outranks a running mission (see "A person outranks
+  the brain"; handoff 3b).
 - **Decide anything a policy decides.** Missions run in the brain service
   and survive the tab closing.
 - **Hold a copy of the house, the renderer, or any physical constant.**
@@ -223,19 +223,21 @@ reason.
 
 **Rejected.** Unnamed commands where the last writer wins.
 
-**Exception, as built.** A goal tapped on the map is not a direct
-command. The server arbitrates every goal as an autonomous driver (the
-safety domain's rule that a navigation goal is autonomous), so a tap
-during a mission is refused rather than pre-empting it, and the page
-shows the refusal. A person who wants the robot back mid-mission uses the
-D-pad, which pre-empts the mission, or the Remote brain panel's Stop,
-which ends it. The robot STOP button is not the same thing: it holds the
-motors and claims no authority; the one thing it ends is a navigation
-goal (decided by the user 2026-10-02, built the same day), and a non-zero
-D-pad movement cancels one too. To resume, a person sends the goal again.
-The rule belongs to the [safety domain](../safety/ARCHITECTURE.md).
-Whether a person's goal should rank as a person
-is open.
+**A tapped goal is a person driving too** (decided by the user 2026-10-05,
+handoff 3b). The page names the D-pad as the driver of a goal tapped on the
+map, so the server ranks it as a person: a tap during a mission takes the
+robot, and the mission ends pre-empted, as a D-pad press does. A goal sent
+by a program that names no one stays an autonomous navigation goal (the
+safety domain's rule). The robot STOP button is not the same thing: it
+holds the motors and claims no authority; the one thing it ends is a
+navigation goal (decided by the user 2026-10-02), and a non-zero D-pad
+movement cancels one too. To resume, a person sends the goal again. The
+rule belongs to the [safety domain](../safety/ARCHITECTURE.md).
+
+**Rejected.** Keeping the tap autonomous, refused while a mission holds
+the robot: it contradicted the order this section exists for, and left a
+person who had already said where the robot should go with no way to say
+it except the D-pad.
 
 ### Configuration lives on the device, and shares by QR, never through a third party
 

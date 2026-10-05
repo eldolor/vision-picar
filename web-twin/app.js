@@ -710,7 +710,9 @@
     var scale = canvas.width / grid.width;
     var x = grid.origin_x_m + (px / scale) * grid.resolution_m;
     var y = grid.origin_y_m + (py / scale) * grid.resolution_m;
-    apiPost("/world/goal", {x_m: x, y_m: y}).then(function (r) {
+    // A person's tap (handoff 3b): named as the D-pad is, so it outranks a
+    // running brain mission the way a D-pad press does.
+    apiPost("/world/goal", {x_m: x, y_m: y}, {"x-driver": "twin-dpad"}).then(function (r) {
       if (r && r.accepted === false) {
         showToast("Could not send the goal: " + (r.reason || r.error || "refused"), "error");
       } else {

@@ -104,7 +104,7 @@ from pydantic import BaseModel
 from robot.factory import get_robot, load_config
 from robot.identity import log_identity
 from robot.interface import (
-    DRIVER_AUTONOMOUS, DRIVER_UNKNOWN, WheelFeedbackLost, driver_priority)
+    DRIVER_AUTONOMOUS, DRIVER_MANUAL, DRIVER_UNKNOWN, WheelFeedbackLost, driver_priority)
 
 # The ROS container's driver name on POST /wheels (R2b, R4).
 DRIVER_ROS = "ros"
@@ -944,17 +944,31 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         return world_model
 
     @app.post(prefix + "/world/goal", dependencies=[Depends(require_secret)])
-    def world_goal_set(req: GoalRequest):
+    def world_goal_set(req: GoalRequest, x_driver: str = Header(default="")):
         """A place to go, in the house frame. nav2 plans and drives; its
         commands still pass collision_monitor and robot/safety.py (3.15).
 
         3.23: a goal is an AUTONOMOUS driver (`ros`), arbitrated like one --
         refused while the brain (or anyone who outranks it) holds the robot,
-        so it never reaches nav2 to interleave with a mission."""
+        so it never reaches nav2 to interleave with a mission.
+
+        Handoff 3b (decided 2026-10-05): a goal that NAMES a person (the
+        twin's tap sends `x-driver: twin-dpad`) is that person driving, ranked
+        as one -- it takes the robot from the brain, whose next command is
+        refused `preempted`, exactly as a D-pad press does. A goal naming no
+        one keeps 3.23's rank: scripts and the nav suites post those."""
         world = _goals()
-        refused = arbitrate(DRIVER_ROS, time.monotonic())
-        if refused:
-            return {"accepted": False, **refused}
+        now = time.monotonic()
+        person = (x_driver or "").strip()
+        if person and driver_priority(person) == DRIVER_MANUAL:
+            refused = arbitrate(person, now)
+            if refused:
+                return {"accepted": False, **refused}
+            state["driver"], state["driver_at"] = person, now
+        else:
+            refused = arbitrate(DRIVER_ROS, now)
+            if refused:
+                return {"accepted": False, **refused}
         # A person re-sending a goal after a stop: it supersedes the stop's
         # ending loop, which must never cancel this new goal.
         with goal_stop_lock:

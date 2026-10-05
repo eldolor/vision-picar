@@ -291,3 +291,45 @@ def test_a_5xx_or_transport_failure_marks_ros_down(case):
     with pytest.raises(httpx.HTTPError):
         robot._send(0.0, 0.0, driver="brain")
     assert robot.bridge_up() is False
+
+
+# ---------- handoff 3a: every person drives on the D-pad's input ----------
+
+def _bridge_inputs():
+    """picar_bridge's DRIVER_TOPICS keys, read from bridge.py (which imports
+    rclpy, so it cannot be imported here)."""
+    import re
+    from pathlib import Path
+    text = (Path(__file__).resolve().parent.parent / "service" / "slam" / "src" /
+            "picar_bridge" / "picar_bridge" / "bridge.py").read_text()
+    block = text[text.index("DRIVER_TOPICS = {"):]
+    block = block[:block.index("}")]
+    return set(re.findall(r'"([a-z-]+)":', block))
+
+
+@pytest.mark.parametrize("driver, expected", [
+    ("twin-dpad", "twin-dpad"), ("teleop-operator", "twin-dpad"), ("", "twin-dpad"),
+    ("someone-with-curl", "twin-dpad"), ("brain", "brain"), ("teleop", "brain"),
+    ("ros", "ros"),
+])
+def test_a_driver_reaches_the_input_of_its_rank(driver, expected):
+    from robot.ros_drive import ros_input_for
+    assert ros_input_for(driver) == expected
+    assert expected in _bridge_inputs()
+
+
+def test_a_teleop_operator_verb_drives_through_ros():
+    """It used to post driver 'teleop-operator', which the bridge has no
+    input for -- a 400, and the verb refused `ros_unavailable`."""
+    inner = _NoVerbs(build_starter_world())
+    chain = FakeChain(inner)
+    bot = RosDriveRobot(inner, "http://bridge")
+    bot._http = httpx.Client(base_url="http://bridge", transport=httpx.MockTransport(chain.handler))
+    try:
+        with bot.driving_as("teleop-operator"):
+            bot.turn_left(15)
+        drivers = {t["driver"] for t in chain.twists}
+        assert drivers == {"twin-dpad"}, drivers
+        assert drivers <= _bridge_inputs()
+    finally:
+        chain.close()

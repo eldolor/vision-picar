@@ -2774,6 +2774,7 @@ def test_tapping_a_slam_map_sends_the_robot_there(browser, twin_server):
     goal_state = {"goal": None, "plan": []}
     page.route("**/world/goal", lambda r: (
         goal_state.__setitem__("posted", json.loads(r.request.post_data)) or
+        goal_state.__setitem__("driver", r.request.headers.get("x-driver")) or
         r.fulfill(status=200, content_type="application/json",
                   body=json.dumps({"accepted": True, "state": "pending"})))
         if r.request.method == "POST" else
@@ -2795,6 +2796,8 @@ def test_tapping_a_slam_map_sends_the_robot_there(browser, twin_server):
     posted = goal_state.get("posted")
     assert posted is not None, "no goal was posted"
     assert abs(posted["x_m"] - 0.25) < 0.03 and abs(posted["y_m"] - 0.25) < 0.03, posted
+    # Handoff 3b: a person's tap names the person, so it outranks the brain.
+    assert goal_state.get("driver") == "twin-dpad", goal_state.get("driver")
     assert not errors, errors
     page.close()
 

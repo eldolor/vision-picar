@@ -55,7 +55,7 @@ for hosts matching `NGROK_HOST`):
 | `GET /distance`, `GET /depth` | Sim readouts | The depth strip draws the server's zones and outlines the `path` zones it reports |
 | `GET /odometry` | odometry line | "no encoders on this backend — pacing falls back to frame count" when unusable; "not reported" when the route is missing |
 | `GET /world/map`, `GET /world/pose`, `GET /world/error` | the map | Tri-state cells at the server's size. Under SLAM, the truth is drawn as a ghost and the errors are printed. |
-| `GET /world/goal`, `POST /world/goal` | tap-to-goal | `{x_m, y_m}` in the house frame; only when the map is SLAM's; `accepted: false` shows the reason. `onMapTap()` sends it through `apiPost()` with NO `x-driver` header. The header would not matter: `world_goal_set()` in `robot/server.py` always arbitrates a goal as `DRIVER_ROS` (3.23), so during a mission a person's tap comes back `accepted: false`, `reason: preempted`, and the toast says "Could not send the goal: preempted". |
+| `GET /world/goal`, `POST /world/goal` | tap-to-goal | `{x_m, y_m}` in the house frame; only when the map is SLAM's; `accepted: false` shows the reason. `onMapTap()` sends it with `x-driver: twin-dpad` (handoff 3b, 2026-10-05), so `world_goal_set()` arbitrates the tap as a person: during a mission it is accepted and the brain's next command is refused `preempted`. `tests/test_ui.py` pins the header. |
 | `GET /health` | watchdog readout, driver and last refusal, `min_distance_cm`, Drive via brain pre-flight (`mode` must be `teleop`) | polled every `WATCHDOG_POLL_MS` |
 | `POST /teleop/frame` | Drive via brain | `{image_base64, media_type}`, one push per Guide tick; also primed once before `/mission/start` |
 
