@@ -4429,3 +4429,48 @@ job, on a phone.
      encoder-only host measurably fails), a stationary robot's reported
      heading drifting no more than a stated deg/min, and every 3.22/3.29 bar
      unchanged.
+11. **Isaac ROS 5.0: anything worth taking, and on which stack? (raised
+   2026-10-05, from NVIDIA's ROSCon announcement; for the user to decide,
+   after the Rover.)** Released 2026-09-21/22, free and open source. **It
+   requires ROS 2 Lyrical, Ubuntu 24.04 and JetPack 7.2** (the Isaac ROS
+   supported-platforms table lists "Jetson Thor ... and Jetson Orin" on
+   JetPack 7.2; the Orin Nano is not named). The board runs JetPack 6.2.1
+   with the Humble container (3.33, results 2026-10-04), and every phase
+   from R3 on was proven there, so **Isaac ROS 5 is out of reach without a
+   platform migration.** 5.0 also removes NITROS in favour of Lyrical's
+   `rosidl::Buffer`, so anything written against NITROS is ported, not
+   upgraded.
+   * **Not for us:** FoundationPose (6-DoF object pose -- arrival reads the
+     lidar's range, not a pose), cuMotion and the pick-and-place skills
+     (arms; the Rover has a pan-tilt), FoundationStereo (a heavy depth
+     model competing with YOLOE + CLIP for the GPU inside 3.33's 250 ms a
+     frame at 15 W), Isaac Sim (the grid sim and the fake board carry the
+     data-driven definition of done).
+   * **The idea, not the package:** a GPU image pipeline. P7b found the
+     tier's cost is CPU preprocessing (229 ms resizing against 36 ms
+     detecting), but Isaac ROS accelerates images that travel the ROS
+     graph, and perception lives in the brain process, outside the wall.
+     P26 (decode once, batch the crops, resize on the GPU in torch) is the
+     same win without moving perception into ROS.
+   * **Worth a measured test, after the Rover:**
+     (a) **cuVSLAM** -- visual-inertial odometry from the OAK-D Lite's
+     stereo pair and the IMU. A candidate answer to 10 (heading on a
+     scrubbing skid steer) through its option (b), and a second opinion
+     against `slam_toolbox`'s false loop closures in the furnished home.
+     (b) **nvblox** -- 3D obstacles from depth into nav2's costmap: what a
+     single lidar plane misses (chair crossbars, table aprons). It overlaps
+     8, but would sit on nav2's side of the collars; 8's floor band stays
+     in `robot/safety.py` either way, by 1.1's rule that a sensor feeding a
+     veto stays outside ROS.
+     Either lives in `service/slam/`, behind the HTTP wall, so
+     `tests/test_ros_containment.py` is unaffected.
+   * **Check before migrating:** the release notes put Isaac ROS 4.4/4.5
+     as the last on JetPack 6 / Humble (read, not verified). If an older
+     cuVSLAM or nvblox runs there, (a) and (b) can be measured with no
+     migration at all. A move to JetPack 7.2 / Lyrical would be its own
+     phase, with criteria, and would re-prove R3-R7 and G1-G4 -- the
+     source-built tf2 fix and `slam_toolbox` commit included -- never
+     mixed into hardware bring-up.
+   * **Trigger:** the Rover's arrival checks. If 10's turn test fails, or
+     the car's lidar visibly misses obstacles that 8's floor band does not
+     cover, try (a) or (b) on the current stack first.
