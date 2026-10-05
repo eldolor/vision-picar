@@ -3502,7 +3502,7 @@ adapter).**
    (`PICAR_FIRMWARE_SRC` unset), `test_robot_contract` 6 (a backend with no
    odometry, allowed), `test_perceive` 1 and `test_ros_containment` 1 (both
    by design). None is about the board.
-5. **G4 -- NOT met; run 1 failed, stopped and taken to the user.** The ROS
+5. **G4 -- see "G4 after 3.36" below; run 1 failed, stopped and taken to the user.** The ROS
    image built natively in ~15 min (2.58 GB). Run 1 (15W, README section 4
    exactly, 18 collected, 0 skipped): **3 failed, 15 passed in 12.9 min.**
    - chain 1: `/odom` read 0.000 m while truth moved 0.114 m (bar 0.02);
@@ -3541,6 +3541,41 @@ adapter).**
    (0.115 m truth, 0.000 m odom) -- most likely the same overload starving
    the wheel plugin's reads, but not established; 3.36's G4 run settles it.
    Board returned to 15W.
+
+   **G4 after 3.36** (the split simulator, the bridge's two fixes, the aged
+   clearance; 15W): settled -- the `/odom` failure was the bridge's starved
+   subscription, not the overload. On the **stock** board firmware the
+   first all-green run came at `abf1237`: **18 passed** twice in a row, then
+   a run failed two turns (-42.2 for -45, 87.1 for 90 against +/-2 deg) --
+   3.25's stock-firmware turn scatter, not 3.36 (see 3.36's results). The
+   user chose (2026-10-05) to judge G4 on the **fork** firmware
+   (`SIM_BOARD_FIRMWARE=fork`, 3.28-3.29), the firmware the Rover will be
+   flashed with: **G4 MET -- 5 consecutive runs, each `18 passed`, 0
+   skipped, 0 failed** (`abf1237`, 2026-10-05, 7.8 min a run; `/health`
+   confirmed fork firmware each run). Wheel loop late on 2-4 of ~5370
+   moving ticks a run (worst 0.148 s); robot server 42-47% of one core;
+   physics 8%, sensor programs 19-23% and 46-55%. SLAM at the end of run 5:
+   0.73 cm and 0.025 deg from the truth (odometry alone 0.31 cm, 0.05 deg).
+   On stock firmware G4 is not met: the +/-2 deg turn test fails about one
+   run in three (3.25).
+6. **Headroom -- NOT met on two of three; taken to the user.** 10 minutes
+   (21:14:46-21:25:01, after the mapping lap) of nav2 goals round the
+   scaled house with the perception tier running continuously on real
+   frames on the GPU (`bench_perception` in a loop, its own process), the
+   split simulator, SLAM and the 20 Hz loop, 15W:
+   - nav2 **29/29** goals succeeded, 9-11 cm from each;
+   - wheel loop late on **8 of 11 270** moving ticks (0.07%), worst 0.208 s
+     -- **bar 0**;
+   - **MemAvailable min 711 MB** (tegrastats' used/total: 817 MB free) --
+     **bar 1 GB**;
+   - max **53 C** against a 70 C passive trip, no throttling -- met;
+   - perception under that load: median 67-68 ms, p90 124-131 ms a frame
+     (60.6 / 109.9 alone) -- still within 250.
+
+   Two things inflate the memory number and are not yet measured: the
+   benchmark loads its own copy of the models in a second process (on the
+   car they load once, in the brain), and the Ubuntu desktop (GNOME) is
+   still running. The 8 late ticks are unexplained.
 
 ### 3.34 A body that cannot measure its wheels does not drive them, and a move that fell short is not a move (2026-10-03): criteria, written before building
 
@@ -3898,6 +3933,92 @@ into multiple programs for the laptop test suite as well."*
     the full suite's wall time on the laptop is recorded before and after.
 
 **Estimate, revised:** one to two days, then the Jetson runs.
+
+**Results (2026-10-04/05).** Built as the revised design says: three
+programs (`sim/body_server.py` physics + board, `sim/sensor_server.py` x2,
+`sim/body_state.py` the snapshot) and `sim/body_client.py`'s polled safety
+bundle. Two design points settled while building: the sensor load is split
+across **separate programs on separate ports**, not uvicorn workers on one
+socket (workers sharing a listening socket did not share its load -- one of
+three took 61% of a core, two idled; the first program serves the 20 Hz
+safety stream, the last ROS's full scans and frames); and a stale reading is
+**aged**, not only bounded: `SafetyController._aged()` takes `v x age` off
+any clearance from a reading the robot reports as `sensor_age_s()` old, so
+the look-ahead (3.24 G2) still stops AT the line. That is the car's shape
+too -- a lidar scan is 0-100 ms old when read. `/sim/reset` was not needed
+(each test starts fresh programs; ~1-2 s each).
+
+1. **No simulation in the robot server -- met.** With the URLs set it
+   imports none of `sim.fake_esp32`, `sim.grid_world`, `sim.renderer`,
+   `sim.mock_robot` (it imported all four in process).
+2. **Same body, same answers -- met.** The contract suite's
+   `hardware_remote_body` backend 23/23; the scan crossing the boundary
+   equals the body's own at 240 sweep starts in three houses (the 3.18
+   sweep itself places an in-process body thousands of times, so the
+   boundary is tested on what crosses it, and live by G4's stopping tests).
+3. **No new latency in the stop -- met.** Physics killed: wheels zeroed
+   within 0.45 s (3.34's rule). Sensors killed: the bundle reads unusable
+   within `SENSOR_STALE_S` + one poll and forward is vetoed. Live silence
+   stop through ROS passes on the Jetson.
+4. **The robot server keeps up at 15W -- met.** Over G4 runs: wheel loop
+   late on **2-4 of ~5300-7000 moving ticks (0.04-0.07%)**, worst 0.13 s
+   (was 1192/6017, 20%); robot server **45-47%** of one core (was 98%).
+   The simulator's cost, kept visible: physics 8%, sensor programs 23% and
+   55%.
+5. **G4** -- see 3.33 item 5.
+6. **No regression -- met on the laptop.** Full suite **1752 passed, 0
+   failed** (57 skipped, 3 xfailed) before the aging change; the safety
+   suites (77) and the 3.36 file after it.
+7. **More than one core -- met** by construction (two sensor programs);
+   no simulator process above 56%.
+8. **Stale is never fresh -- met, and measured.** Ground truth, 2880 runs
+   (3.18's sweep fed readings N periods old):
+
+   | reading age | blind to age | aged (`_aged`) |
+   |---|---|---|
+   | 0 | 19.7 cm | -- |
+   | 50 ms | 19.2 cm | 19.7 cm |
+   | 150 ms (the bound) | 18.2 cm | 19.0 cm |
+
+   worst travel-to-contact, 0 under 18 cm and 0 contacts in every row;
+   pinned at the bound, and the pin fails at 0.4 s (63/432 under 18 cm).
+   The first lagged sweep reported 446 runs under 18 cm -- a harness bug
+   (periods with no motion were counted as moves once the early stop was
+   removed), fixed before any number was used.
+9. **No socket under `motion_lock` -- met**: the vet runs 60 times with
+   every network call made to raise.
+10. **The laptop suite runs the split -- met.** The factory refuses an
+    in-process fake board; the six test files that built one start the
+    programs. Wall time **1545 s before, 1659 s after** (both runs shared
+    the CPU with other work, so +7% is an upper bound, not a measurement).
+
+**Found on the way, both in the ROS bridge, both older than 3.36 and both
+invisible on a laptop** (they are why the chain suite's first test had
+failed in every Jetson run, at both power modes, with or without the split):
+
+* **The scan poll starved `/odom`.** A blocking HTTP read in a timer in the
+  node's default mutually exclusive callback group: on the Jetson the poll
+  took about one period, the timer was always due, rclpy serves due timers
+  first, and odometry published at 20 Hz went unread (`odom_age_s` 24-79
+  s). nav2's odom TF went stale with it. Fixed with its own callback group;
+  the live chain test asserts the bridge hears `/odom` (red on the old
+  image: 79 s).
+* **The start-truth anchor assumed a robot at rest.** It was read on the
+  first *successful* scan poll, and again by each restarted container --
+  the fallback test (3.24 G3) kills it while a person drives. On the
+  Jetson both happened after motion, anchoring SLAM's frame ~20 deg and
+  ~45 cm off, so house-frame goals "succeeded" 0.6-1.75 m away. Now
+  `convert.odometry_zero_in_house(truth, odom)` composes the anchor from
+  the truth and the odometry read at one instant, round-trip tested
+  through `world/ros_world.py`'s own conversion; the live suites wait for
+  it before moving. After the fix: SLAM within 0.95-1.2 cm and 0.03-0.7
+  deg of the truth at the end of a run.
+
+Also measured: the sweep's 3.18 bars hold on the stock firmware, but the
+live **turn** test (+/-2 deg) fails about one Jetson run in three on stock
+(-42.2 for -45, 87.1 for 90) -- 3.25's recorded stock-firmware scatter,
+worse under the Jetson's timing jitter, not 3.36. The user chose to judge G4
+on the fork firmware (2026-10-05); see 3.33 item 5.
 
 ## 4. Honest residue -- what the twin cannot tell you
 
