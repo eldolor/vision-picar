@@ -128,8 +128,8 @@ class Bridge(Node):
         # without reading the truth at any later moment. NEVER published
         # into ROS: nothing on this side may navigate by it.
         self.start_truth = None
-        self.start_truth_tried = False
-        self.started_at = time.time()
+        threading.Thread(target=self._record_start_truth, daemon=True,
+                         name="start-truth").start()
         self.last_map = None
         self.map_version = 0
         # slam_toolbox publishes /map latched (transient local).
@@ -385,31 +385,32 @@ class Bridge(Node):
         return self.robot_http.get_json(path)
 
     def _record_start_truth(self):
-        """First time the robot answers: the robot has not moved yet (the
-        controllers came up with this container), so its truth now is its
-        truth at odometry zero."""
-        try:
-            t = self._robot_get("/world/truth")
-        except Exception as e:  # noqa: BLE001 -- busy, a pre-R2 robot, or hardware
-            # Tried again on the next poll, but only inside START_TRUTH_WINDOW_S
-            # of this session (3.36): once the robot may have moved, its truth
-            # is no longer its truth at odometry zero. A single try used to
-            # end on one timeout from a busy robot server (the Jetson), and
-            # every goal was then converted with no anchor at all.
-            if time.time() - self.started_at > START_TRUTH_WINDOW_S:
-                self.start_truth_tried = True
-                self.get_logger().error(f"no start truth recorded ({e}); house-frame goals "
-                                        "and /world/error are unanchored this session")
-            return
-        self.start_truth_tried = True
-        if t.get("usable"):
-            self.start_truth = {k: t[k] for k in ("x_m", "y_m", "heading_deg")}
+        """The robot's truth at odometry zero (R5), for world/ros_world.py to
+        lay SLAM's frame on the house. Its own thread, started with the node
+        (3.36): it used to be read on the first SUCCESSFUL scan poll, and on
+        the Jetson the first full scans time out for seconds -- the truth was
+        then read after the tests had started driving, and every house-frame
+        goal was converted with an anchor ~20 deg and ~45 cm off. Read as
+        early as the robot answers, retried briefly; the live suites wait for
+        it before they move anything."""
+        deadline = time.time() + START_TRUTH_WINDOW_S
+        while rclpy.ok() and time.time() < deadline:
+            try:
+                t = self._robot_get("/world/truth")
+            except Exception:  # noqa: BLE001 -- not up yet, or busy: try again
+                time.sleep(0.2)
+                continue
+            if t.get("usable"):
+                with self.lock:
+                    self.start_truth = {k: t[k] for k in ("x_m", "y_m", "heading_deg")}
+            return                                  # answered: usable, or hardware
+        self.get_logger().error("no start truth recorded in the first "
+                                f"{START_TRUTH_WINDOW_S:.0f} s; house-frame goals and "
+                                "/world/error are unanchored this session")
 
     def _poll_scan(self):
         try:
             s = self._robot_get("/scan")
-            if not self.start_truth_tried:
-                self._record_start_truth()
         except Exception as e:  # noqa: BLE001 -- keep polling; say why once in a while
             self.get_logger().warn(f"scan poll failed: {e}", throttle_duration_sec=5.0)
             return

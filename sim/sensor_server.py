@@ -59,6 +59,14 @@ def create_app() -> FastAPI:
         world.objects = state["objects"]
         return replica["body"], state["seq"]
 
+    # Build the replica now, not on the first request: the first scans after
+    # start-up used to time out on the Jetson while it was built (3.36).
+    try:
+        with lock:
+            synced()
+    except HTTPException:
+        pass
+
     @app.get("/health")
     def health():
         state = reader.read()

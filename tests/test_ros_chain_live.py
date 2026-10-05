@@ -63,7 +63,20 @@ def stack():
     if house != "scaled_house":
         pytest.skip(f"the chain suite runs in the scaled house (SIM_MAP=scaled_house); "
                     f"the server is in {house!r}")
+    _await_start_truth(bridge)
     return robot, bridge
+
+
+def _await_start_truth(bridge, timeout_s=15.0):
+    """Nothing may move the robot before the bridge has recorded its truth
+    at odometry zero (3.36): read after motion, it anchors SLAM's frame
+    wrong for the whole session and house-frame goals land elsewhere."""
+    end = time.time() + timeout_s
+    while time.time() < end:
+        if bridge.get("/slam/pose").json().get("start_truth"):
+            return
+        time.sleep(0.2)
+    pytest.fail("the bridge recorded no start truth -- see its log")
 
 
 def _truth(robot):
@@ -95,10 +108,6 @@ def test_a_twist_reaches_the_wheels_intact_and_odom_agrees_with_truth(stack):
     # read by nobody for minutes. The bridge must be HEARING odometry.
     age = bridge.get("/health").json().get("odom_age_s")
     assert age is not None and age < 0.5, f"the bridge has not heard /odom for {age} s"
-    # 3.36: and it anchored this session on the robot's truth at odometry
-    # zero. One timeout from a busy robot server used to leave it None for
-    # the whole session, and every house-frame goal was then unanchored.
-    assert bridge.get("/slam/pose").json().get("start_truth"), "no start truth this session"
     _face(robot, 90)                    # east: a clear run from the start room
     t0, o0 = _truth(robot), bridge.get("/odom").json()
     seen = []

@@ -16,6 +16,8 @@ drives the robot for several minutes.
 
 import os
 
+import time
+
 import pytest
 
 from tests import demo_nav_goals as nav
@@ -33,6 +35,13 @@ def run():
         pytest.skip("no SLAM world with nav2 (WORLD_MODE=ros, ROBOT_DRIVE=ros)")
     if robot.get("/health").json().get("sim_map") != "scaled_house" or nav.HOUSE != "scaled_house":
         pytest.skip("R6 is judged on SIM_MAP=scaled_house (see the module docstring)")
+    # 3.36: not before the bridge has its truth at odometry zero -- read
+    # after the robot moved, it anchors every goal wrong for the session.
+    end = time.time() + 15.0
+    while not bridge.get("/slam/pose").json().get("start_truth"):
+        if time.time() > end:
+            pytest.fail("the bridge recorded no start truth -- see its log")
+        time.sleep(0.2)
     nav.map_first(robot)
     bridge.post("/nav/stats/reset", json={})
     before = dict(robot.get("/health").json().get("refusal_counts") or {})
