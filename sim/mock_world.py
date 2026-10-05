@@ -158,7 +158,7 @@ class MockWorld(WorldInterface):
     # ---------- WorldInterface ----------
 
     def get_pose(self) -> dict:
-        """Exact, and quantised to cell centres -- see the module note.
+        """Exact and continuous (R0) -- see the module note.
 
         `heading_deg` is the BODY heading, never the view heading, for the
         same reason `get_odometry()` reports the body one: a camera pan

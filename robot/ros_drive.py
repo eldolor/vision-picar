@@ -22,8 +22,17 @@ network: R4's first open-loop run moved 0.267-0.316 m for a nominal 0.30.
 
 Every READ goes straight to the robot underneath -- the camera, the depth
 grid, the scan, the encoders. Only motion goes round through ROS. `stop()`
-is the one exception, and deliberately: it zeroes the robot directly as well
-as through ROS, because a stop that waits on a container is not a stop.
+is the one exception, and deliberately: it zeroes the robot directly FIRST,
+and only then -- on a background thread, with a short timeout -- zeroes the
+ROS inputs, because a stop that waits on a container is not a stop. (Until
+2026-10-02 it posted the zeros first, each with the client's 2 s timeout: a
+bridge that accepted connections and never answered held a stop for ~6 s,
+and the watchdog's stop runs on the server's event loop, so every route
+froze with it. docs-review/SPEC-REVIEW.md, finding 1.) For STOP_HOLD_S after
+a stop, a non-zero wheel command arriving from ROS -- the stopped verb's
+last twists still in flight through twist_mux and the controller -- is
+held at zero, so the direct stop is not undone; the next verb lifts the
+hold.
 
 Not a backend of its own: `robot/factory.py` wraps whichever backend the
 config names, so this is the only place in `robot/` that knows a bridge
@@ -39,7 +48,8 @@ from typing import Optional
 
 import httpx
 
-from robot.interface import RobotInterface
+from robot.interface import (DRIVER_MANUAL, VERB_STALL_S, RobotInterface, WheelFeedbackLost,
+                             driver_priority)
 
 logger = logging.getLogger("ros_drive")
 
@@ -69,9 +79,9 @@ MIN_ANGULAR_RAD_S = 0.05
 CONTROL_HZ = 20.0
 LINEAR_TOLERANCE_M = 0.004
 ANGULAR_TOLERANCE_RAD = math.radians(0.5)
-# No encoder progress for this long while commanding motion: the safety
-# vet (or a wall) has stopped the wheels. End the verb rather than push.
-STALL_S = 0.6
+# No encoder progress for VERB_STALL_S while commanding motion: the safety
+# vet (or a wall) has stopped the wheels. End the verb rather than push. The
+# number is robot/interface.py's, shared with direct mode's verbs (3.35).
 
 
 def moves_for(speed: int, duration: float) -> int:
@@ -80,6 +90,43 @@ def moves_for(speed: int, duration: float) -> int:
     speed = max(0, min(100, speed))
     moves = (speed / 100.0) * MOVES_PER_SECOND_AT_FULL_SPEED * duration
     return max(1, round(moves)) if speed > 0 and duration > 0 else 0
+
+
+# A stop zeroes the ROS inputs in the background; each post may wait this
+# long, so a hung bridge costs a background thread 1.5 s and the caller
+# nothing.
+STOP_ZERO_TIMEOUT_S = 0.5
+# After a stop, non-zero wheel commands from ROS are held at zero this long.
+# It must outlast how long the stopped verb's last twist can keep reaching
+# the wheels when the bridge is hung and the zeros never arrive: twist_mux
+# holds a silent input for its timeout (0.25 s) and THEN
+# diff_drive_controller holds its last command for its own cmd_vel_timeout
+# (0.25 s) -- the two ADD (picar_bringup/config/twist_mux.yaml says so) --
+# plus one 0.05 s plugin period: 0.55 s. Was 0.4 until the second spec
+# review (2026-10-02) caught the two timeouts counted as one.
+STOP_HOLD_S = 0.6
+# A failed send to the bridge marks it down (handoff 2026-10-02 1d). While
+# down, its `/health` is probed in the background at most this often, and
+# the first answer marks it up again -- so a person's verbs, running direct
+# meanwhile, never wait on it and never send it anything.
+BRIDGE_PROBE_S = 0.5
+BRIDGE_PROBE_TIMEOUT_S = 0.5
+
+
+def ros_input_for(driver: Optional[str]) -> str:
+    """The bridge's twist_mux input for a driver (handoff 3a, decided
+    2026-10-05). Every PERSON -- the twin's D-pad, a teleop operator, an
+    unnamed caller, who ranks as a person -- drives on the D-pad's input,
+    the highest; `ros` (nav2) on its own; everything else autonomous on the
+    brain's. Named inputs used to be looked up by driver name, and a
+    `teleop-operator` verb was refused `ros_unavailable` on the bridge's 400
+    for an unknown driver. The names are picar_bridge's DRIVER_TOPICS keys
+    (tests/test_ros_drive.py reads them from bridge.py)."""
+    if driver == "ros":
+        return "ros"
+    if driver_priority(driver or "") >= DRIVER_MANUAL:
+        return "twin-dpad"
+    return "brain"
 
 
 class RosDriveRobot(RobotInterface):
@@ -100,15 +147,30 @@ class RosDriveRobot(RobotInterface):
         self._generation = 0
         self._gen_lock = threading.Lock()
         self.verbs_through_ros = 0
+        # The stop hold: in force while the generation is still the stop's
+        # own and the clock is before _hold_until.
+        self._hold_gen = -1
+        self._hold_until = 0.0
+        # Bridge liveness (1d): None while sends succeed; the time of the
+        # failure that marked it down otherwise.
+        self._bridge_down_since: Optional[float] = None
+        self._probed_at = 0.0
+        self._probing = threading.Lock()
+        # One background zeroing at a time: the watchdog stops every poll
+        # while the robot is silent, and each must not add a thread.
+        self._zeroing = threading.Lock()
 
     # ---------- who is driving ----------
 
     @contextmanager
     def driving_as(self, driver: str):
         """robot/server.py names the driver of each /action, so the twists go
-        on that driver's twist_mux input (teleop outranks brain in ROS too)."""
+        on that driver's twist_mux input (teleop outranks brain in ROS too).
+        The input is chosen by RANK (`ros_input_for`), not by name: twist_mux
+        has one input per rank, and M4 has already decided between people
+        and autonomy before a verb gets here."""
         previous = getattr(self._local, "driver", None)
-        self._local.driver = driver
+        self._local.driver = ros_input_for(driver)
         try:
             yield
         finally:
@@ -120,10 +182,60 @@ class RosDriveRobot(RobotInterface):
 
     # ---------- motion, through ROS ----------
 
-    def _send(self, linear: float, angular: float, driver: Optional[str] = None) -> None:
-        r = self._http.post("/cmd_vel", json={"driver": driver or self._driver,
-                                              "linear_m_s": linear, "angular_rad_s": angular})
-        r.raise_for_status()
+    def _send(self, linear: float, angular: float, driver: Optional[str] = None,
+              timeout: Optional[float] = None) -> None:
+        try:
+            r = self._http.post("/cmd_vel", json={"driver": driver or self._driver,
+                                                  "linear_m_s": linear, "angular_rad_s": angular},
+                                timeout=httpx.USE_CLIENT_DEFAULT if timeout is None else timeout)
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            # The bridge ANSWERED: a 4xx (an unknown driver's 400, a wrong
+            # secret's 401) is proof of life, not an outage -- marking it down
+            # would flap against the unauthenticated /health probe (spec
+            # review 3, V7). Only a 5xx says the bridge itself is failing.
+            if e.response.status_code >= 500:
+                self._mark_bridge_down()
+            else:
+                self._bridge_down_since = None
+            raise
+        except httpx.TransportError:
+            self._mark_bridge_down()
+            raise
+        self._bridge_down_since = None
+
+    # ---------- is the bridge alive (handoff 2026-10-02 1d) ----------
+
+    def _mark_bridge_down(self) -> None:
+        if self._bridge_down_since is None:
+            self._bridge_down_since = time.monotonic()
+            logger.warning("a send to the bridge failed -- ROS marked down until it answers")
+
+    def bridge_up(self) -> bool:
+        """False from a failed send until the bridge answers again.
+
+        The robot server ANDs this into `ros_up()`: the actuator's posts prove
+        the end of the chain is alive, this proves the start is. Never blocks:
+        while down it starts at most one background `/health` probe per
+        BRIDGE_PROBE_S and answers from the last result."""
+        if self._bridge_down_since is None:
+            return True
+        now = time.monotonic()
+        if now - self._probed_at >= BRIDGE_PROBE_S and self._probing.acquire(blocking=False):
+            self._probed_at = now
+            threading.Thread(target=self._probe, daemon=True, name="ros-bridge-probe").start()
+        return False
+
+    def _probe(self) -> None:
+        try:
+            r = self._http.get("/health", timeout=BRIDGE_PROBE_TIMEOUT_S)
+            if r.status_code == 200:
+                self._bridge_down_since = None
+                logger.info("the bridge answers again -- ROS no longer marked down by it")
+        except httpx.HTTPError:
+            pass
+        finally:
+            self._probing.release()
 
     def _begin(self) -> int:
         with self._gen_lock:
@@ -137,7 +249,10 @@ class RosDriveRobot(RobotInterface):
     def _encoders(self):
         w = self.inner.get_wheel_state()
         if not w.get("usable"):
-            raise RuntimeError("drive: ros needs wheel encoders, and this robot has none")
+            # 3.34: none, or none that are being measured right now -- either
+            # way no verb can be closed on them, and the server says so.
+            raise WheelFeedbackLost("drive: ros needs wheel encoders, and this robot's "
+                                    "are not measured (none, or no fresh feedback)")
         return (w["left"]["position_rad"], w["right"]["position_rad"],
                 w["wheel_radius_m"], w["track_width_m"])
 
@@ -165,7 +280,7 @@ class RosDriveRobot(RobotInterface):
                     break
                 if abs(done - last_progress) > tolerance / 4:
                     last_progress, last_change = done, time.monotonic()
-                elif time.monotonic() - last_change > STALL_S:
+                elif time.monotonic() - last_change > VERB_STALL_S:
                     logger.info("verb stalled at %.3f of %.3f -- ended", done, target)
                     deadline = 0.0          # a wall is not something to retry into
                     break
@@ -231,20 +346,38 @@ class RosDriveRobot(RobotInterface):
         return {"action": "turn_right", "angle": angle, "via": "ros", **self._turn(float(angle))}
 
     def stop(self) -> dict:
-        """Supersede any verb, zero every ROS input, and zero the robot
-        directly -- a stop must not depend on the container being alive."""
+        """Supersede any verb, zero the robot directly, then zero every ROS
+        input in the background -- a stop must not depend on the container
+        being alive, or answering."""
         with self._gen_lock:
             self._generation += 1
-        for driver in ("twin-dpad", "brain", "ros"):
-            try:
-                self._send(0.0, 0.0, driver=driver)
-            except Exception:  # noqa: BLE001 -- the direct stop below still happens
-                pass
-        return self.inner.stop()
+            self._hold_gen = self._generation
+            self._hold_until = time.monotonic() + STOP_HOLD_S
+        result = self.inner.stop()
+        if self._zeroing.acquire(blocking=False):
+            threading.Thread(target=self._zero_ros_inputs, daemon=True,
+                             name="ros-stop-zero").start()
+        return result
+
+    def _zero_ros_inputs(self) -> None:
+        try:
+            for driver in ("twin-dpad", "brain", "ros"):
+                try:
+                    self._send(0.0, 0.0, driver=driver, timeout=STOP_ZERO_TIMEOUT_S)
+                except Exception:  # noqa: BLE001 -- the robot is already stopped
+                    pass
+        finally:
+            self._zeroing.release()
+
+    def _holding_stop(self) -> bool:
+        return self._generation == self._hold_gen and time.monotonic() < self._hold_until
 
     # ---------- the ROS actuator's route ----------
 
     def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
+        if (left_rad_s or right_rad_s) and self._holding_stop():
+            # The stopped verb's last twist, still in flight through ROS.
+            return self.inner.set_wheel_velocity(0.0, 0.0)
         return self.inner.set_wheel_velocity(left_rad_s, right_rad_s)
 
     def advance(self, dt: float) -> None:

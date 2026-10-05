@@ -180,3 +180,56 @@ def test_world_error_is_unusable_without_a_truth(monkeypatch):
     monkeypatch.setattr(server, "get_world", lambda *a, **kw: world)
     e = TestClient(server.create_app()).get("/world/error").json()
     assert e["usable"] is False and e["position_error_m"] is None
+
+
+# ---------- handoff 4d: the goal routes when the bridge is down ----------
+# They used to answer 500 (no except around httpx). Now they refuse by name.
+# RosWorld itself still RAISES -- the stop's goal-ending loop
+# (robot/server.py _end_goal_after_stop) retries on exactly that.
+
+class _DeadBridge(GoalBridge):
+    def handler(self, request):
+        if request.url.path == "/goal":
+            raise httpx.ConnectError("bridge gone", request=request)
+        return super().handler(request)
+
+
+@pytest.fixture
+def dead_goal_routes(monkeypatch):
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    world, _ = world_with(truth=FakeTruth(1.0, 1.0, 90.0), bridge=_DeadBridge(
+        start_truth={"x_m": 1.0, "y_m": 1.0, "heading_deg": 90.0}))
+    monkeypatch.setattr(server, "get_world", lambda *a, **kw: world)
+    return TestClient(server.create_app())
+
+
+def test_setting_a_goal_with_the_bridge_down_is_refused_by_name(dead_goal_routes):
+    r = dead_goal_routes.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["accepted"] is False and body["reason"] == "ros_unavailable", body
+
+
+def test_reading_and_cancelling_with_the_bridge_down_are_refused_by_name(dead_goal_routes):
+    for method in ("get", "delete"):
+        r = getattr(dead_goal_routes, method)("/world/goal")
+        assert r.status_code == 503, (method, r.status_code, r.text)
+        assert "ros_unavailable" in r.text
+
+
+class _RefusingBridge(GoalBridge):
+    def handler(self, request):
+        if request.url.path == "/goal" and request.method in ("GET", "DELETE"):
+            return httpx.Response(401, json={"error": "bad secret"})
+        return super().handler(request)
+
+
+def test_rosworld_raises_on_an_error_status_rather_than_reporting_it_as_an_answer():
+    """V28 (spec review 3): a 401 came back as a 200 body, so a cancel the
+    bridge refused 'succeeded' and the stop's loop stopped trying."""
+    world, _ = world_with(truth=FakeTruth(1.0, 1.0, 90.0), bridge=_RefusingBridge(
+        start_truth={"x_m": 1.0, "y_m": 1.0, "heading_deg": 90.0}))
+    with pytest.raises(httpx.HTTPStatusError):
+        world.cancel_goal()
+    with pytest.raises(httpx.HTTPStatusError):
+        world.get_goal()

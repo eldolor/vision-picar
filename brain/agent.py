@@ -25,7 +25,7 @@ from typing import Callable, Optional
 from robot.interface import RobotInterface
 from robot.interface import NO_SENSOR_CM
 from robot.safety import FORWARD_ACTIONS, VERB_MIN_MOVE_M, SafetyController, SafetyViolation
-from brain.arrival import ARRIVED, NOT_JUDGED, ArrivalCheck, arrived_scene
+from brain.arrival import ARRIVED, NOT_JUDGED, REFUSED, ArrivalCheck, arrived_scene
 from brain.memory import MissionMemory
 from world.interface import NullWorld, WorldInterface, unusable_pose
 
@@ -65,6 +65,11 @@ _PIVOT_DEG = 90.0
 # cells, which is where the grid-fact converter this replaced drew the same
 # line, so a logged scene reads the same across the change.
 SCENE_CLEAR_CM = 90.0
+
+
+# 3.34: how a verb can end without having made its move (robot/interface.py
+# carry_out_verb). `clamped` is deliberately absent -- see ConstrainedAgent.step.
+SHORT_MOVES = ("timeout", "stalled")
 
 
 @dataclass
@@ -242,6 +247,17 @@ class ConstrainedAgent:
                 kwargs["angle"] = int(scene["turn_deg"])
             result = self.safety.check_and_execute(action, **kwargs)
             executed = True
+            # 3.34: a verb that ran out of time, or whose body did not move,
+            # fell short of the move it was asked for -- a wheel snagged on a
+            # rug, on the car. It did not happen, and five in a row is a
+            # robot that is stuck (MissionRunner's `stuck_after`). A verb
+            # `clamped` by the safety layer at the line is not this: it moved
+            # as far as was safe, which is what a guarded move means.
+            short = result.get("stopped_short") if isinstance(result, dict) else None
+            if short in SHORT_MOVES:
+                executed = False
+                result = (f"{action} fell short ({short}): "
+                          f"{result.get('reason') or 'the wheels did not reach the target'}")
         except SafetyViolation as e:
             result = str(e)
             executed = False
@@ -315,6 +331,7 @@ class MissionAgent(ConstrainedAgent):
         memory: MissionMemory,
         side_clearance_cm: float = 30.0,
         world: Optional[WorldInterface] = None,
+        arrival_confirm_fn: Optional[Callable[[dict], dict]] = None,
         **kwargs,
     ):
         super().__init__(robot, **kwargs)
@@ -339,6 +356,40 @@ class MissionAgent(ConstrainedAgent):
         # ends the mission found. Judged only for scenes carrying local
         # perception -- see brain/arrival.py for what it refuses to judge.
         self.arrival = ArrivalCheck()
+        # Handoff 2026-10-02 1a: the lidar decides DISTANCE, the cloud
+        # IDENTITY. An arrival ends `found` only once a cloud call on the
+        # arrival frame says the target is in it. MissionRunner passes a
+        # guarded call; otherwise the vision_fn's own `confirm_arrival`
+        # (brain/tiered.py) is used, and with neither nothing is confirmed.
+        self.arrival_confirm_fn = arrival_confirm_fn
+        # One question per arrival: set when the cloud says no, cleared when
+        # the arrival rule stops holding -- so a robot parked in front of the
+        # wrong object pays once, not every frame.
+        self._identity_refused = False
+        # The refusing verdict, carried on every later refused frame so the
+        # mission's final status still says why (spec review 3, fix 9).
+        self._refusal: Optional[dict] = None
+        self._confirmed_this_frame = False
+
+    def _confirm_identity(self, readout: dict, frame: dict) -> dict:
+        """Returns the readout; sets `self._confirmed_this_frame` when this
+        frame asked the cloud."""
+        if self._identity_refused:
+            return {**readout, "state": REFUSED, "identity": self._refusal,
+                    "reason": "the cloud did not confirm this arrival; not asking again "
+                              "until the arrival ends"}
+        confirm = self.arrival_confirm_fn or getattr(self.vision_fn, "confirm_arrival", None)
+        verdict = (confirm(frame) if confirm is not None
+                   else {"confirmed": False, "cloud_called": False,
+                         "reason": "no cloud on this policy to confirm identity"})
+        self._confirmed_this_frame = bool(verdict.get("cloud_called"))
+        readout = {**readout, "identity": verdict}
+        if verdict.get("confirmed"):
+            return readout
+        self._identity_refused = True
+        self._refusal = verdict
+        return {**readout, "state": REFUSED,
+                "reason": f"arrived, but identity not confirmed: {verdict.get('reason')}"}
 
     def _review_scene(self, scene: dict, frame: dict) -> dict:
         if not self.memory.target_object or self.memory.is_complete():
@@ -346,11 +397,38 @@ class MissionAgent(ConstrainedAgent):
         readout = self.arrival.observe(scene, self.robot)
         if readout["state"] == NOT_JUDGED and not scene.get("_perception"):
             return scene  # a policy with no local perception: nothing to say
+        self._confirmed_this_frame = False
+        if readout["state"] == ARRIVED:
+            readout = self._confirm_identity(readout, frame)
+        else:
+            self._identity_refused = False
+            self._refusal = None
         if readout["state"] == ARRIVED:
             scene = arrived_scene(scene, self.memory.target_object, readout)
         else:
             scene = dict(scene)
+        if self._confirmed_this_frame:
+            scene = self._label_confirmation(scene, readout, readout["identity"])
         scene["_arrival"] = readout
+        return scene
+
+    @staticmethod
+    def _label_confirmation(scene: dict, readout: dict, verdict: dict) -> dict:
+        """The step that paid for the confirmation says so (spec review 3,
+        fixes 9-10): `_tier` is marked as a cloud step with its trigger, so
+        the log reads `[cloud: arrival_confirmation]`, and its stats are the
+        tier's AFTER the call -- the snapshot the vision step took predates
+        it, and a mission that ends `found` takes no later one."""
+        tier = dict(scene.get("_tier") or {})
+        tier.update(cloud_called=True, trigger="arrival_confirmation")
+        if verdict.get("stats"):
+            tier["stats"] = verdict["stats"]
+        scene["_tier"] = tier
+        if readout.get("state") == REFUSED:
+            nav = dict(scene.get("_navigate") or {})
+            nav["reasoning"] = (f"arrival refused -- {verdict.get('reason')}; "
+                                + nav.get("reasoning", ""))
+            scene["_navigate"] = nav
         return scene
 
     def decide(self, scene: dict, frame: Optional[dict] = None) -> str:
@@ -383,6 +461,17 @@ class MissionAgent(ConstrainedAgent):
         left_clear = self.robot.get_distance() >= room_cm
         self.robot.look_center()
         forward_clear = self.robot.get_distance() >= room_cm
+        # A turn the safety layer refused from here is not clear, whatever
+        # the side ray said (handoff 5a): the ray clears a SIDE at
+        # side_clearance_cm, the pivot guard (3.19) refuses a swept CORNER,
+        # and a refused turn is not "executed" -- so re-peeking from the same
+        # spot picked the same refused LEFT 130 times in one demo run. Held
+        # until something executes; with nothing left, the boxed-in
+        # fallback below takes over.
+        refused = self._refused_since_last_move()
+        right_clear = right_clear and "RIGHT" not in refused
+        left_clear = left_clear and "LEFT" not in refused
+        forward_clear = forward_clear and "FORWARD" not in refused
 
         if pose.get("usable"):
             heading_deg = pose["heading_deg"]
@@ -417,6 +506,20 @@ class MissionAgent(ConstrainedAgent):
 
         # Boxed in on all three sides -- reuse Phase 2's stuck-breaker.
         return super().decide(scene, frame)
+
+    def _refused_since_last_move(self) -> set:
+        """The moves refused since the last MOVE that executed (handoff 5a).
+        A STOP or a camera peek executes without going anywhere, so it must
+        not clear the set -- the first version let an executed STOP do so,
+        and the agent alternated a refused LEFT with a STOP forever."""
+        refused = set()
+        for result in reversed(self.history):
+            if result.action not in ("FORWARD", "REVERSE", "LEFT", "RIGHT"):
+                continue
+            if result.executed:
+                break
+            refused.add(result.action)
+        return refused
 
     def _pose(self) -> dict:
         """Where the world says we are, or an honest "it cannot say".

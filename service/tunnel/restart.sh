@@ -24,6 +24,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 LOG="${TUNNEL_LOG:-$HOME/.vision-picar-tunnel.log}"
 PORTS="8000 8001 8080"
+# 3.36: the simulator's two programs, under SIM_MOTOR_BOARD=fake, are
+# stopped too (run.sh's default ports unless SIM_BODY_URL/SIM_SENSORS_URL say).
+if [ "${SIM_MOTOR_BOARD:-}" = "fake" ]; then
+  SIM_BODY_URL="${SIM_BODY_URL:-http://127.0.0.1:8002}"
+  SIM_SENSORS_URL="${SIM_SENSORS_URL:-http://127.0.0.1:8003,http://127.0.0.1:8004}"
+  for u in "$SIM_BODY_URL" ${SIM_SENSORS_URL//,/ }; do
+    p="${u##*:}"; PORTS="$PORTS ${p%%/*}"
+  done
+fi
 EXPECT="$(git rev-parse --short HEAD)"
 
 listeners() {
@@ -64,16 +73,17 @@ SECRETS="$HOME/.vision-picar-local-secrets"
 # shellcheck disable=SC1090
 [ -f "$SECRETS" ] && { set -a; source "$SECRETS"; set +a; }
 
-robot=""; brain=""
+robot=""; brain=""; body="$EXPECT"
 for _ in $(seq 1 40); do
   robot="$(revision http://127.0.0.1:8000/health)"
   brain="$(revision http://127.0.0.1:8001/brain/health)"
-  [ "$robot" = "$EXPECT" ] && [ "$brain" = "$EXPECT" ] && break
+  [ "${SIM_MOTOR_BOARD:-}" = "fake" ] && body="$(revision "$SIM_BODY_URL/health")"
+  [ "$robot" = "$EXPECT" ] && [ "$brain" = "$EXPECT" ] && [ "$body" = "$EXPECT" ] && break
   sleep 0.5
 done
 
-if [ "$robot" != "$EXPECT" ] || [ "$brain" != "$EXPECT" ]; then
-  echo "FAILED: expected both servers on $EXPECT; robot reports '${robot:-nothing}', brain '${brain:-nothing}'." >&2
+if [ "$robot" != "$EXPECT" ] || [ "$brain" != "$EXPECT" ] || [ "$body" != "$EXPECT" ]; then
+  echo "FAILED: expected every server on $EXPECT; robot reports '${robot:-nothing}', brain '${brain:-nothing}', sim body '${body:-nothing}'." >&2
   echo "Log: $LOG" >&2
   grep -E "ERROR|Traceback" "$LOG" >&2 || true
   exit 1

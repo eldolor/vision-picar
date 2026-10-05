@@ -11,12 +11,38 @@
         /brain/markers), and no way to publish, call services or set params
 """
 import os
+import tempfile
 
+import yaml
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.substitutions import Command, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
+
+
+# 3.35: the real chassis' skid-steer correction, from the same env var the
+# robot server reads. Unset is 1.0 -- right for the simulator, whose body
+# does not scrub -- and leaves controllers.yaml exactly as shipped.
+TRACK_SCRUB_DEFAULT = "1.0"
+
+
+def _controllers_with_scrub():
+    path = os.path.join(get_package_share_directory("picar_bringup"),
+                        "config", "controllers.yaml")
+    scrub = float(os.environ.get("TRACK_SCRUB", TRACK_SCRUB_DEFAULT))
+    if not scrub > 0:
+        raise ValueError(f"TRACK_SCRUB must be positive, got {scrub!r}")
+    if scrub == 1.0:
+        return path
+    with open(path) as f:
+        params = yaml.safe_load(f)
+    params["diff_drive_controller"]["ros__parameters"]["wheel_separation_multiplier"] = scrub
+    out = tempfile.NamedTemporaryFile("w", suffix="-controllers.yaml", delete=False)
+    yaml.safe_dump(params, out)
+    out.close()
+    return out.name
 
 
 def generate_launch_description():
@@ -25,8 +51,7 @@ def generate_launch_description():
         [FindPackageShare("picar_description"), "urdf", "picar.urdf.xacro"])
     description = ParameterValue(
         Command(["xacro ", xacro_file, " robot_url:=", robot_url]), value_type=str)
-    controllers = PathJoinSubstitution(
-        [FindPackageShare("picar_bringup"), "config", "controllers.yaml"])
+    controllers = _controllers_with_scrub()
     mux = PathJoinSubstitution(
         [FindPackageShare("picar_bringup"), "config", "twist_mux.yaml"])
     slam = PathJoinSubstitution(

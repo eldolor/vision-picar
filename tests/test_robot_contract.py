@@ -82,7 +82,11 @@ PAN_METHODS = ("look_left", "look_right", "look_center")
 # that had a working sensor. Nothing else in the suite would have noticed,
 # because a gate that forgets a *sensing* method still passes every test
 # about the methods it does guard.
-BACKENDS = ["mock", "replay", "teleop", "remote", "halt_gate", "hardware"]
+# "ros_drive" (handoff 2e, 2026-10-03): the body every `drive: ros` server
+# drives -- verbs as twists through a fake ROS chain, reads from the robot
+# underneath. Wrappers are where the interface falls behind silently.
+BACKENDS = ["mock", "replay", "teleop", "remote", "halt_gate", "hardware", "hardware_remote_body",
+            "ros_drive"]
 
 
 def _write_walk(tmp_path, count=3):
@@ -141,6 +145,47 @@ def robot(request, tmp_path):
         yield bot
         bot.close()
         board.close()
+
+    elif kind == "hardware_remote_body":
+        # 3.36: the same backend with its body, sensors and board in the
+        # split simulator's programs -- the robot server's G4 shape.
+        from robot.hardware_robot import HardwareRobot
+        from sim.body_client import SimBodyClient
+        from tests.conftest import SimPrograms
+
+        programs = SimPrograms()
+        client = SimBodyClient(programs.body_url, programs.sensors_url)
+        bot = HardwareRobot(client.board_path, sensors=client)
+        import time as _time
+        deadline = _time.monotonic() + 5
+        # The board's first frame AND the sensors' first bundle: until it
+        # lands the client honestly answers "cannot see", and a test that
+        # read the grid before it and the scalar after saw two instants
+        # (found on the Jetson, 2026-10-05).
+        while ((bot.frames == 0 or client.bundle_age_s() is None)
+               and _time.monotonic() < deadline):
+            _time.sleep(0.01)
+        yield bot
+        bot.close()
+        client.close()
+        programs.close()
+
+    elif kind == "ros_drive":
+        # R4's wrapper over a sim body, its bridge a fake twist_mux +
+        # diff_drive_controller (tests/test_ros_drive.py's FakeChain), so a
+        # verb really is a stream of twists closed on the encoders.
+        import httpx
+
+        from robot.ros_drive import RosDriveRobot
+        from tests.test_ros_drive import FakeChain, _NoVerbs
+
+        inner = _NoVerbs(build_starter_world())
+        chain = FakeChain(inner)
+        bot = RosDriveRobot(inner, "http://bridge")
+        bot._http = httpx.Client(base_url="http://bridge",
+                                 transport=httpx.MockTransport(chain.handler))
+        yield bot
+        chain.close()
 
     else:  # pragma: no cover -- guards a typo in BACKENDS above
         raise ValueError(f"unknown backend: {kind!r}")
@@ -382,6 +427,25 @@ def test_distance_travelled_never_goes_backwards(robot):
     robot.reverse(50, 0.5)
     after = robot.get_odometry()
     assert after["distance_m"] >= before["distance_m"]
+
+
+def test_odometry_heading_starts_at_zero_and_turns_clockwise_positive(robot):
+    """Handoff 2026-10-02 2d: ONE heading convention for every backend --
+    degrees turned since start, clockwise-positive, in [0, 360), as
+    `get_odometry()`'s docstring says ("0 = start"). The simulator used to
+    report its compass bearing (90 facing east at start) while the car's
+    board reported turn-since-start, so the same reading meant different
+    things on the two bodies. A RIGHT is clockwise, and a whole number of
+    degrees on every backend that measures one."""
+    odo = robot.get_odometry()
+    if not odo["usable"]:
+        pytest.skip("backend reports no odometry, which this suite allows")
+    assert odo["heading_deg"] == pytest.approx(0.0, abs=0.5), odo
+    robot.turn_right(90)
+    assert robot.get_odometry()["heading_deg"] == pytest.approx(90.0, abs=2.0)
+    robot.turn_left(90)
+    robot.turn_left(90)
+    assert robot.get_odometry()["heading_deg"] == pytest.approx(270.0, abs=2.0)
 
 
 def test_turning_in_place_moves_the_heading_and_not_the_distance(robot):

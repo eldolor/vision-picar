@@ -20,6 +20,16 @@ def load_config(config_path: str | Path = _DEFAULT_CONFIG) -> dict:
         return yaml.safe_load(f)
 
 
+def _track_scrub(config: dict) -> float:
+    """3.35: the real chassis' effective/geometric track ratio. TRACK_SCRUB
+    wins over `hardware.track_scrub`; 1.0 (no correction) when neither is
+    set. The ROS container reads the same TRACK_SCRUB at launch -- set both."""
+    raw = os.environ.get("TRACK_SCRUB")
+    if raw is None:
+        raw = (config.get("hardware") or {}).get("track_scrub", 1.0)
+    return float(raw)
+
+
 def get_robot(config_path: str | Path = _DEFAULT_CONFIG) -> RobotInterface:
     config = load_config(config_path)
     return _with_drive(_backend(config), config)
@@ -42,12 +52,25 @@ def _with_drive(robot: RobotInterface, config: dict) -> RobotInterface:
     raise ValueError(f"Unknown drive mode in config: {mode!r} (direct | ros)")
 
 
-def _sim_world():
-    """The house SIM_MAP names (the starter house by default), with the
-    people and pets SIM_MOVERS names, if any (PLAN-ros-alignment.md 3.30)."""
+def build_fake_body(config: dict):
+    """The fake motor board's simulated body and the board turning it
+    (R7). One function for both places it runs: in this process, and in
+    sim/body_server.py's (3.36) -- so the two cannot drift apart."""
+    from sim.fake_esp32 import FakeEsp32
+    from sim.mock_robot import MockRobot
+
+    body = MockRobot(_sim_world(config))
+    return body, FakeEsp32(body)
+
+
+def _sim_world(config: dict):
+    """The house SIM_MAP names -- else config/robot.yaml's `sim_map`, else
+    the starter house (handoff 4f: the yaml key used to be read by nothing)
+    -- with the people and pets SIM_MOVERS names, if any
+    (PLAN-ros-alignment.md 3.30)."""
     from sim.maps import build_movers, build_world
 
-    house = os.environ.get("SIM_MAP") or "starter_house"
+    house = os.environ.get("SIM_MAP") or config.get("sim_map") or "starter_house"
     world = build_world(house)
     if os.environ.get("SIM_MOVERS"):
         for mover in build_movers(house, os.environ["SIM_MOVERS"]):
@@ -70,7 +93,7 @@ def _backend(config: dict) -> RobotInterface:
 
         # SIM_MAP picks the house (sim/maps/__init__.py); the starter house
         # is the default and what every existing test was measured on.
-        world = _sim_world()
+        world = _sim_world(config)
         sim_config = config.get("sim", {})
         realtime = bool(sim_config.get("realtime", False))
 
@@ -121,18 +144,32 @@ def _backend(config: dict) -> RobotInterface:
         from robot.hardware_robot import HardwareRobot
 
         if os.environ.get("SIM_MOTOR_BOARD") == "fake":
-            from sim.fake_esp32 import FakeEsp32
-            from sim.mock_robot import MockRobot
+            # 3.36: the fake board, its simulated body and the body's sensors
+            # run as their own programs -- sim/body_server.py (physics, the
+            # board, the truth) and sim/sensor_server.py (the sensors, several
+            # workers) -- and NEVER in this process: the robot server opens
+            # the board's pty as a serial device and reads the sensors over
+            # HTTP, which is what it does on the car. service/tunnel/run.sh
+            # starts them; tests/conftest.py's `sim_programs` does in tests.
+            # track_scrub 1.0 whatever the setting: the sim body does not
+            # scrub, so the car's correction would make it turn wrong (3.35).
+            body_url = os.environ.get("SIM_BODY_URL")
+            sensors_url = os.environ.get("SIM_SENSORS_URL")
+            if not (body_url and sensors_url):
+                raise ValueError(
+                    "SIM_MOTOR_BOARD=fake runs the simulated body as separate programs "
+                    "(PLAN-ros-alignment.md 3.36): set SIM_BODY_URL and SIM_SENSORS_URL "
+                    "and start sim/body_server.py and sim/sensor_server.py -- "
+                    "service/tunnel/run.sh does all of it")
+            from sim.body_client import SimBodyClient
 
-            body = MockRobot(_sim_world())
-            board = FakeEsp32(body)
-            robot = HardwareRobot(board.path, sensors=body)
-            robot.fake_board = board          # kept alive with the robot
-            return robot
+            sensors = SimBodyClient(body_url, sensors_url,
+                                    secret=os.environ.get("APP_SHARED_SECRET", ""))
+            return HardwareRobot(sensors.board_path, sensors=sensors, track_scrub=1.0)
         port = os.environ.get("ROBOT_SERIAL") or (config.get("hardware") or {}).get("serial_port")
         if not port:
             raise ValueError("mode: hardware needs ROBOT_SERIAL (or hardware.serial_port) "
                              "-- the ESP32 driver board's serial device")
-        return HardwareRobot(port)
+        return HardwareRobot(port, track_scrub=_track_scrub(config))
 
     raise ValueError(f"Unknown robot mode in config: {mode!r}")

@@ -177,3 +177,49 @@ def test_a_range_hinted_scan_stops_at_the_hint_and_is_exact(monkeypatch):
         body = c.get("/scan", params={"max_range_m": 0.6}).json()
         assert all(r is None or r <= 0.6 for r in body["ranges_m"])
         assert any(r is None for r in body["ranges_m"])
+
+
+def test_3_36_scans_as_old_as_the_stale_bound_still_stop_short():
+    """3.36 criterion 8: the split simulator's robot server vets on a
+    bundle up to `SENSOR_STALE_S` old. Fed readings that old (three
+    periods), the ground-truth bars still hold on this sample. Measured over
+    2880 runs: worst travel-to-contact 19.7 cm fresh; 19.2 cm at one period
+    and 18.2 cm at three with the vet blind to the age (about half a
+    centimetre a period at 0.1 m/s); 19.7 and 19.0 cm once it takes the way
+    covered since off the clearance (`SafetyController._aged`)."""
+    from sim.body_client import POLL_S, SENSOR_STALE_S
+    lag = round(SENSOR_STALE_S / POLL_S)
+    assert lag == 3, "re-measure 3.36's sweep if the bound or the period moves"
+    lagged = fs.sweep(HOUSES, STARTS_PER_HOUSE, lag=lag)
+    v = fs.verdicts(lagged)
+    assert v["1 stopping distance"][0], v["1 stopping distance"][1]
+    assert v["2 no contact"][0], v["2 no contact"][1]
+
+
+def test_3_36_an_aged_reading_is_aged_by_the_way_covered_since():
+    """`SafetyController._aged`: a clearance from a reading `age` old, with
+    the robot closing at v, is `v x age` smaller; moving away, or with no age
+    to report (every in-process backend), it is unchanged."""
+    from robot.safety import SafetyController
+
+    class Body:
+        age = 0.1
+        v_rad_s = 0.1 / WHEEL_RADIUS_M                   # 0.1 m/s
+
+        def get_wheel_state(self):
+            w = {"velocity_rad_s": self.v_rad_s}
+            return {"usable": True, "left": w, "right": w,
+                    "wheel_radius_m": WHEEL_RADIUS_M, "track_width_m": 0.2}
+
+        def sensor_age_s(self):
+            return self.age
+
+    body = Body()
+    s = SafetyController(body, 20.0)
+    assert s._aged((30.0, "scan"), +1) == (29.0, "scan, aged 100 ms")
+    assert s._aged((30.0, "scan"), -1) == (30.0, "scan")       # moving away
+    body.age = None
+    assert s._aged((30.0, "scan"), +1) == (30.0, "scan")
+    class Fresh:
+        pass
+    assert SafetyController(Fresh(), 20.0)._aged((30.0, "scan"), +1) == (30.0, "scan")

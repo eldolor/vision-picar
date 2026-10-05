@@ -48,6 +48,8 @@ class FakeChain:
         self.thread.start()
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/health":
+            return httpx.Response(200, json={"ok": True})     # the bridge's liveness probe (1d)
         body = __import__("json").loads(request.content)
         with self.lock:
             self.twists.append(body)
@@ -175,3 +177,159 @@ def test_a_newer_verb_supersedes_one_in_flight(rig):
     # The superseded brain turn stopped streaming once the newer verb began.
     after = [x for x in chain.twists[-10:]]
     assert all(x["driver"] == "twin-dpad" for x in after), after
+
+
+# ---------- a stop never waits on the container (SPEC-REVIEW finding 1) ----------
+#
+# test_stop_does_not_depend_on_the_bridge covers a DEAD bridge, which fails
+# fast. A HUNG one -- accepts the connection, never answers -- is the case
+# that held a stop for ~6 s (three posts x the client's 2 s timeout) before
+# the direct stop ran, on the server's event loop when the watchdog called it.
+
+def _hung_robot(answer_after_s=3.0):
+    grid = build_starter_world()
+    inner = MockRobot(grid, render=False)
+    robot = RosDriveRobot(inner, "http://bridge")
+    posts = []
+
+    def hung(request):
+        posts.append(__import__("json").loads(request.content))
+        time.sleep(answer_after_s)
+        return httpx.Response(200, json={})
+    robot._http = httpx.Client(base_url="http://bridge", transport=httpx.MockTransport(hung))
+    return robot, inner, posts
+
+
+def test_a_hung_bridge_does_not_delay_the_stop():
+    robot, inner, _ = _hung_robot()
+    inner.set_wheel_velocity(5.0, 5.0)
+    t0 = time.monotonic()
+    robot.stop()
+    elapsed = time.monotonic() - t0
+    w = inner.get_wheel_state()
+    assert w["left"]["velocity_rad_s"] == 0 and w["right"]["velocity_rad_s"] == 0
+    assert elapsed < 0.1, f"stop took {elapsed:.2f}s waiting on the bridge"
+
+
+def test_the_stop_still_zeroes_every_ros_input():
+    robot, inner, posts = _hung_robot(answer_after_s=0.0)
+    robot.stop()
+    deadline = time.monotonic() + 2.0
+    while len(posts) < 3 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert sorted(p["driver"] for p in posts) == ["brain", "ros", "twin-dpad"]
+    assert all(p["linear_m_s"] == 0 and p["angular_rad_s"] == 0 for p in posts)
+
+
+def test_repeated_stops_on_a_hung_bridge_do_not_pile_up_threads():
+    def zeroing():
+        return {t for t in threading.enumerate() if t.name == "ros-stop-zero"}
+    already = zeroing()                 # earlier tests' hung threads, still sleeping
+    robot, _, posts = _hung_robot(answer_after_s=0.5)
+    for _ in range(20):                 # the watchdog stops every poll while silent
+        robot.stop()
+    time.sleep(0.1)
+    assert len(zeroing() - already) <= 1
+    assert len(posts) == 1              # the one in-flight zeroing, still on its first post
+
+
+def test_a_stale_ros_command_cannot_undo_the_stop():
+    # The stopped verb's last twist reaches the plugin AFTER the stop, and the
+    # plugin posts it to /wheels: it must not restart the wheels.
+    robot, inner, _ = _hung_robot()
+    robot.stop()
+    robot.set_wheel_velocity(5.0, 5.0)
+    w = inner.get_wheel_state()
+    assert w["left"]["velocity_rad_s"] == 0 and w["right"]["velocity_rad_s"] == 0
+
+
+def test_the_hold_ends_on_its_own_and_on_the_next_verb():
+    import robot.ros_drive as rd
+    robot, inner, _ = _hung_robot()
+    robot.stop()
+    robot._begin()                      # the next verb starts: commands flow again
+    robot.set_wheel_velocity(5.0, 5.0)
+    assert inner.get_wheel_state()["left"]["velocity_rad_s"] == 5.0
+
+    robot.stop()
+    time.sleep(rd.STOP_HOLD_S + 0.05)   # no verb, but the hold has expired
+    robot.set_wheel_velocity(4.0, 4.0)
+    assert inner.get_wheel_state()["left"]["velocity_rad_s"] == 4.0
+
+
+# ---------- spec review 3, V7: what marks the bridge down ----------
+# Liveness is about reachability. A 4xx is the bridge answering -- the 400
+# for an unknown driver, or a 401 for a wrong secret -- so it must not mark
+# ROS down; the unauthenticated /health probe would then mark it up again
+# and the state would flap.
+
+def _robot_answering(status=None, exc=None):
+    inner = MockRobot(build_starter_world(), render=False)
+    robot = RosDriveRobot(inner, "http://bridge")
+
+    def reply(request):
+        if exc is not None:
+            raise exc("bridge", request=request)
+        return httpx.Response(status, json={})
+
+    robot._http = httpx.Client(base_url="http://bridge", transport=httpx.MockTransport(reply))
+    return robot
+
+
+@pytest.mark.parametrize("status", [400, 401, 404])
+def test_a_4xx_from_the_bridge_does_not_mark_ros_down(status):
+    robot = _robot_answering(status=status)
+    with pytest.raises(httpx.HTTPStatusError):
+        robot._send(0.0, 0.0, driver="teleop")
+    assert robot.bridge_up() is True
+
+
+@pytest.mark.parametrize("case", [{"status": 503}, {"exc": httpx.ConnectError},
+                                  {"exc": httpx.ReadTimeout}])
+def test_a_5xx_or_transport_failure_marks_ros_down(case):
+    robot = _robot_answering(**case)
+    with pytest.raises(httpx.HTTPError):
+        robot._send(0.0, 0.0, driver="brain")
+    assert robot.bridge_up() is False
+
+
+# ---------- handoff 3a: every person drives on the D-pad's input ----------
+
+def _bridge_inputs():
+    """picar_bridge's DRIVER_TOPICS keys, read from bridge.py (which imports
+    rclpy, so it cannot be imported here)."""
+    import re
+    from pathlib import Path
+    text = (Path(__file__).resolve().parent.parent / "service" / "slam" / "src" /
+            "picar_bridge" / "picar_bridge" / "bridge.py").read_text()
+    block = text[text.index("DRIVER_TOPICS = {"):]
+    block = block[:block.index("}")]
+    return set(re.findall(r'"([a-z-]+)":', block))
+
+
+@pytest.mark.parametrize("driver, expected", [
+    ("twin-dpad", "twin-dpad"), ("teleop-operator", "twin-dpad"), ("", "twin-dpad"),
+    ("someone-with-curl", "twin-dpad"), ("brain", "brain"), ("teleop", "brain"),
+    ("ros", "ros"),
+])
+def test_a_driver_reaches_the_input_of_its_rank(driver, expected):
+    from robot.ros_drive import ros_input_for
+    assert ros_input_for(driver) == expected
+    assert expected in _bridge_inputs()
+
+
+def test_a_teleop_operator_verb_drives_through_ros():
+    """It used to post driver 'teleop-operator', which the bridge has no
+    input for -- a 400, and the verb refused `ros_unavailable`."""
+    inner = _NoVerbs(build_starter_world())
+    chain = FakeChain(inner)
+    bot = RosDriveRobot(inner, "http://bridge")
+    bot._http = httpx.Client(base_url="http://bridge", transport=httpx.MockTransport(chain.handler))
+    try:
+        with bot.driving_as("teleop-operator"):
+            bot.turn_left(15)
+        drivers = {t["driver"] for t in chain.twists}
+        assert drivers == {"twin-dpad"}, drivers
+        assert drivers <= _bridge_inputs()
+    finally:
+        chain.close()

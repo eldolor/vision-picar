@@ -2,8 +2,8 @@
 interface.py
 
 The abstract contract brain/ is allowed to depend on. Both the simulation
-backend (sim/mock_robot.py) and the eventual real hardware backend
-(robot/hardware_robot.py, added in Phase 11) implement this exact set of
+backend (sim/mock_robot.py) and the real hardware backend
+(robot/hardware_robot.py, R7: the UGV Rover's motor board) implement this exact set of
 methods. brain/ never imports a backend directly -- only this interface,
 via robot/factory.py.
 """
@@ -69,6 +69,21 @@ DRIVER_PRIORITY = {
 # what the order says should happen. When every client names itself this
 # can be tightened; until then, err toward the person.
 DRIVER_UNKNOWN = "unknown"
+
+
+class WheelFeedbackLost(RuntimeError):
+    """A body refused to move its wheels because it cannot measure them --
+    PLAN-ros-alignment.md 3.34.
+
+    Raised by a body whose wheel feedback has gone stale (a dropped serial
+    link, a board that hears commands but no longer reports) when asked for
+    a non-zero wheel command or a verb, and by the safety layer when a verb
+    in progress loses its feedback. A zero command and `stop()` are never
+    refused. Not a `SafetyViolation`: the next move will not be fine either,
+    so the robot server answers `no_feedback` and a mission ends `failed`.
+    A `RuntimeError` so callers that already treat a backend fault as one
+    keep doing so.
+    """
 
 
 def driver_priority(name: str) -> int:
@@ -197,6 +212,14 @@ VERB_PERIOD_S = 0.05          # one wheel-loop period (robot/server.py)
 # turn at ~400 deg/s, 20 degrees a period; five is the sim's own collision
 # sub-step (`sim/grid_world.py` MAX_SUBSTEP_RAD).
 VERB_TURN_STEP_DEG = 5.0
+# 3.35: a verb commanded to move whose encoders have not advanced for this
+# long has stalled -- a wall, a snag, a wheel the safety vet held -- and ends
+# rather than push. Moved here from robot/ros_drive.py so the two paths share
+# one number. [PLACEHOLDER] on the car: the board's low-speed deadband
+# (stick-slip on slow pivots and settle passes) is unmeasured.
+VERB_STALL_S = 0.6
+_VERB_STALL_M = 0.001          # progress that resets the window: 1 mm ...
+_VERB_STALL_DEG = 0.125        # ... or 0.125 degrees (ros_drive's tolerance / 4)
 _VERB_DONE_M = 1e-7
 _VERB_DONE_DEG = 1e-5
 
@@ -216,26 +239,43 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
     `advance()` for the sim.
 
     Returns {"done": metres or degrees achieved, "ended": "complete" |
-    "clamped" | "stopped" | "stalled" | "timeout", "reason"}.
+    "clamped" | "stopped" | "stalled" | "timeout" | "no_feedback",
+    "reason"}. `no_feedback` (3.34): the wheels stopped being measured
+    mid-verb, so nothing can say how far it got; `done` is what was measured
+    before that.
     """
     straight = plan["kind"] == "straight"
     left, right, target = plan["left_rad_s"], plan["right_rad_s"], plan["target"]
     w0 = robot.get_wheel_state()
+    if not w0.get("usable"):
+        return {"done": 0.0, "ended": "no_feedback",
+                "reason": "the wheels are not measured -- no verb can be closed on them"}
     radius, track = w0["wheel_radius_m"], w0["track_width_m"]
     v = (left + right) / 2.0 * radius
     rate = abs(v) if straight else math.degrees(abs((right - left) * radius / track))
     stops0 = getattr(robot, "stop_count", 0)
 
+    last = {"done": 0.0}
+
     def achieved() -> float:
         w = robot.get_wheel_state()
+        if not w.get("usable"):
+            raise WheelFeedbackLost("the wheels stopped being measured mid-verb")
         dl = w["left"]["position_rad"] - w0["left"]["position_rad"]
         dr = w["right"]["position_rad"] - w0["right"]["position_rad"]
         if straight:
-            return abs((dl + dr) / 2.0 * radius)
-        return abs(math.degrees((dr - dl) * radius / track))
+            last["done"] = abs((dl + dr) / 2.0 * radius)
+        else:
+            last["done"] = abs(math.degrees((dr - dl) * radius / track))
+        return last["done"]
 
     ended, reason = "timeout", None
     periods = int(math.ceil(target / rate / VERB_PERIOD_S)) * 3 + 20 if rate else 0
+    # 3.35: on the wall clock a stall is time without progress -- the same
+    # rule, and number, as robot/ros_drive.py's. The sim's clock is advance(),
+    # which detects it exactly below.
+    mark, mark_at = None, time.monotonic()
+    budge = _VERB_STALL_M if straight else _VERB_STALL_DEG
     try:
         for _ in range(periods):
             if getattr(robot, "stop_count", 0) != stops0:
@@ -246,6 +286,14 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
             if remaining <= (_VERB_DONE_M if straight else _VERB_DONE_DEG):
                 ended = "complete"
                 break
+            if plan.get("wall_clock"):
+                now = time.monotonic()
+                if mark is None or done - mark > budge:
+                    mark, mark_at = done, now
+                elif now - mark_at > VERB_STALL_S:
+                    ended, reason = "stalled", (
+                        f"no encoder progress for {VERB_STALL_S}s while commanded")
+                    break
             amount = min(remaining, rate * VERB_PERIOD_S)
             if not straight:
                 amount = min(amount, VERB_TURN_STEP_DEG)
@@ -259,6 +307,15 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
             # motion, at the rate the motors are asked for.
             step = amount / rate
             robot.set_wheel_velocity(left, right)
+            # A stop that landed between the check at the top of this period
+            # and the line above was just overwritten (handoff 2c): /stop does
+            # not take motion_lock. Zero it here -- the finally below skips
+            # zeroing after a stop so it cannot cut off a NEWER verb, and no
+            # newer verb can have started while this one holds the robot.
+            if getattr(robot, "stop_count", 0) != stops0:
+                robot.set_wheel_velocity(0.0, 0.0)
+                ended, reason = "stopped", "stop() was called"
+                break
             if plan.get("wall_clock"):
                 time.sleep(step)
             else:
@@ -266,9 +323,13 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
                 if abs(achieved() - done) <= 1e-12:
                     ended, reason = "stalled", "the body did not move"
                     break
+    except WheelFeedbackLost as e:
+        ended, reason = "no_feedback", str(e)
     finally:
         if ended != "stopped":
             robot.set_wheel_velocity(0.0, 0.0)
+    if ended == "no_feedback":
+        return {"done": last["done"], "ended": ended, "reason": reason}
     return {"done": achieved(), "ended": ended, "reason": reason}
 
 
@@ -384,8 +445,7 @@ class RobotInterface(ABC):
         dimension is absent instead of reading eight identical copies of
         one row and believing it has a matrix.
 
-        **Nothing in `brain/` reads this yet.** M3 gives it its first
-        consumer: `robot/safety.py` reduces the centre zones to one scalar
+        Its consumers: `robot/safety.py` (M3) reduces the centre zones to one scalar
         and compares that to `min_distance_cm`, so the veto stays a number
         against a threshold and the safety layer's shape does not change.
         The scalar `get_distance()` remains the veto for any backend whose

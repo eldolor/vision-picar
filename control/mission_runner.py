@@ -412,6 +412,9 @@ class MissionRunner:
             **extra,
             min_distance_cm=min_distance_cm,
             vision_fn=self._guarded_vision,
+            # Handoff 2026-10-02 1a: identity at arrival, under the same
+            # B3.2 timeout and failure budget as every other cloud call.
+            arrival_confirm_fn=self._guarded_confirm,
             # Only reaches the vision policy: the rule-based one runs
             # against MockRobot, which has a real distance reading, so the
             # veto would return immediately anyway. Passing it either way
@@ -621,6 +624,20 @@ class MissionRunner:
             self._finish(SEARCHED, self.agent.last_event or "no reachable frontier left")
             return False
         if self.stuck_after and self._refused_forwards >= self.stuck_after:
+            if (self._arrival or {}).get("state") == "refused":
+                # Not an obstacle: the robot reached what it was steering at
+                # and the cloud said it is not the target (spec review 3,
+                # fix 9). Backing off to approach the same object again would
+                # only buy another paid confirmation of the same "no", so this
+                # ends at once rather than through 3.31's retries -- and
+                # blaming the path would point the operator at nav2.
+                note = ((self._arrival.get("identity") or {}).get("reason")
+                        or "the cloud did not confirm it")
+                self._finish(BLOCKED, (
+                    "stopped at an object whose identity the cloud did not confirm "
+                    f"as the target ({note}); FORWARD then refused "
+                    f"{self._refused_forwards} times by the safety layer"))
+                return False
             self._stuck_episodes += 1
             if self._stuck_episodes >= self.retry_limit:
                 self._finish(BLOCKED, (
@@ -765,7 +782,7 @@ class MissionRunner:
         """The agent's vision_fn, wrapped in B3.2's timeout. Raises
         VisionUnavailable, which tick() turns into the failure budget.
 
-        Also where room-level step memory (AGENT-HARNESS.md section 12)
+        Also where room-level step memory (docs/guides/AGENT-HARNESS.md section 10)
         reaches the vision call: if self.vision_fn carries a
         set_searched_rooms attribute (brain/navigate.py's vision_fn_for()
         does; the rule-based default does not), refresh it from
@@ -801,6 +818,22 @@ class MissionRunner:
             raise VisionUnavailable(f"vision timed out after {self.vision_timeout_s}s") from e
         except Exception as e:  # noqa: BLE001
             raise VisionUnavailable(f"vision call failed: {e}") from e
+
+    def _guarded_confirm(self, frame: dict) -> dict:
+        """The policy's `confirm_arrival` (brain/tiered.py), wrapped in
+        B3.2's timeout like `_guarded_vision`. A policy without one cannot
+        confirm identity, so its arrivals are never confirmed (1a)."""
+        confirm = getattr(self.vision_fn, "confirm_arrival", None)
+        if confirm is None:
+            return {"confirmed": False, "cloud_called": False,
+                    "reason": "this policy has no cloud to confirm identity"}
+        try:
+            return call_with_timeout(confirm, frame, timeout_s=self.vision_timeout_s)
+        except TimeoutError as e:
+            raise VisionUnavailable(
+                f"arrival confirmation timed out after {self.vision_timeout_s}s") from e
+        except Exception as e:  # noqa: BLE001
+            raise VisionUnavailable(f"arrival confirmation failed: {e}") from e
 
     def _handle_vision_failure(self, error: Exception) -> bool:
         with self._lock:

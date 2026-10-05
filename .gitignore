@@ -13,6 +13,9 @@ venv/
 .env
 *.pem
 recordings/
+# ...but not the recordings domain's specs (docs/README.md)
+!docs/recordings/
+!docs/engineering/recordings/
 
 # Lambda packaging output (service/lambda/build.sh)
 .build/
@@ -37,3 +40,6 @@ mobileclip*.ts
 # arrays, all reproducible from the corpus by two commands. The compile
 # REPORT is the artifact worth keeping, and it goes in the plan document.
 build/
+
+# coverage.py databases -- artifacts of a local run, not source
+.coverage

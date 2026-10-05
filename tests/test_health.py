@@ -216,3 +216,30 @@ def test_the_report_names_the_build_that_answered(patched, capsys):
     health.main([])
     out = capsys.readouterr().out
     assert "abc1234" in out and "/usr/bin/python3" in out
+
+
+# ---------- handoff 4e: a dead ROS stack under drive: ros ----------
+# Under drive: ros the container is part of what was deployed, and with it
+# down no mission can run (autonomy is refused ros_unavailable). The verdict
+# used to ignore drive.ros_up entirely.
+
+def test_ros_down_under_ros_drive_is_non_zero_and_says_which_half(patched, capsys):
+    body = {**HEALTHY_ROBOT, "drive": {"mode": "ros", "ros_up": False,
+                                       "bridge_up": False, "ros_post_age_s": 0.02}}
+    patched(robot_body=body, brain_body=HEALTHY_BRAIN)
+    assert health.main([]) == 1
+    out = capsys.readouterr().out
+    assert "ROS" in out and "bridge" in out, out
+
+
+def test_ros_up_under_ros_drive_is_healthy(patched):
+    body = {**HEALTHY_ROBOT, "drive": {"mode": "ros", "ros_up": True,
+                                       "bridge_up": True, "ros_post_age_s": 0.02}}
+    patched(robot_body=body, brain_body=HEALTHY_BRAIN)
+    assert health.main([]) == 0
+
+
+def test_direct_drive_is_never_judged_on_ros(patched):
+    body = {**HEALTHY_ROBOT, "drive": {"mode": "direct", "ros_up": None}}
+    patched(robot_body=body, brain_body=HEALTHY_BRAIN)
+    assert health.main([]) == 0

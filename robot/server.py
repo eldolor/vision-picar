@@ -37,20 +37,19 @@ protection an AI decision does. This is a deliberate extension of "AI
 sits at the bottom of the safety hierarchy": nothing that can move the
 robot bypasses the safety layer, regardless of who's driving.
 
-Auth: /action, /stop, /distance, /frame, /teleop/frame require a matching
-x-app-secret header when APP_SHARED_SECRET is set in the environment (see
-require_secret() below) -- added when this server started being
-deployed publicly (ECS Fargate, service/twin/), not just run on a home
-LAN. /health stays open (the ALB health check can't send custom
-headers) and / stays open (the page has to load before a user can enter
-the secret in the UI).
+Auth: every route except /health, / and the page's static assets requires a
+matching x-app-secret header when APP_SHARED_SECRET is set in the
+environment (see require_secret() below) -- needed because the server is
+reachable from the public internet through service/tunnel/. /health stays
+open (a health check cannot always send custom headers) and / stays open
+(the page has to load before a user can enter the secret in the UI).
 
 Watchdog (build plan Phase 9; failsafe B3.1 in
 PLAN-brain-relocation.md): if commands stop arriving for ~1 second, the
-motors stop. `last_command_at` is updated by /action and /stop only -- a
-sensing read is not a command, and counting one would let a passive
-observer (the twin polling /frame while it watches a mission) hold the
-watchdog off indefinitely. A background task polls it and calls
+motors stop. `last_command_at` is updated by /action, /stop and non-zero
+/wheels (under drive: ros, every actuator post) -- a sensing read is not a
+command, and counting one would let a passive observer (the twin polling
+/frame while it watches a mission) hold the watchdog off indefinitely. A background task polls it and calls
 robot.stop() once it's stale.
 
 ROUTE_PREFIX (env var, unset/empty by default): prepended to every route
@@ -84,6 +83,7 @@ running event loop and is exercised by actually running the server (see
 README), not in the automated unit suite.
 """
 
+import gc
 import os
 import threading
 import math
@@ -103,7 +103,8 @@ from pydantic import BaseModel
 
 from robot.factory import get_robot, load_config
 from robot.identity import log_identity
-from robot.interface import DRIVER_AUTONOMOUS, DRIVER_UNKNOWN, driver_priority
+from robot.interface import (
+    DRIVER_AUTONOMOUS, DRIVER_MANUAL, DRIVER_UNKNOWN, WheelFeedbackLost, driver_priority)
 
 # The ROS container's driver name on POST /wheels (R2b, R4).
 DRIVER_ROS = "ros"
@@ -160,6 +161,14 @@ WHEEL_LOOP_INTERVAL_S = 0.05
 # counts as DOWN. It posts /wheels at 20 Hz, so 0.5 s is ten missed posts --
 # long past jitter, well inside the watchdog.
 ROS_SILENCE_S = 0.5
+# After a stop that ends a nav2 goal (spec review 3, V2): how often the
+# server re-reads the goal and re-sends the cancel until nav2 reports it no
+# longer pending or active. Non-zero `ros` wheel commands are held at zero
+# meanwhile, and for GOAL_STOP_SETTLE_S after -- the same derivation as
+# robot/ros_drive.py's STOP_HOLD_S (twist_mux's input timeout plus the
+# controller's cmd_vel_timeout, which add, plus one plugin period).
+GOAL_STOP_POLL_S = 0.25
+GOAL_STOP_SETTLE_S = 0.6
 
 
 @contextmanager
@@ -318,9 +327,17 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
     def ros_up(now: float) -> bool:
         """Is the ROS stack alive? Its actuator plugin posts /wheels at
-        20 Hz; ROS_SILENCE_S without one is a dead container (3.24 G3)."""
+        20 Hz; ROS_SILENCE_S without one is a dead container (3.24 G3).
+
+        **And the bridge must be answering** (handoff 2026-10-02 1d): a
+        failed send to it marks ROS down until it answers again, because a
+        dead bridge behind a live plugin otherwise refused every verb -- a
+        person's included -- with no fallback at all."""
         last = state["last_ros_post_at"]
-        return last is not None and now - last < ROS_SILENCE_S
+        if last is None or now - last >= ROS_SILENCE_S:
+            return False
+        bridge_up = getattr(robot, "bridge_up", None)
+        return bridge_up() if bridge_up is not None else True
 
     def arbitrate(driver: str, now: float):
         """Refusal dict if `driver` may not drive right now, else None.
@@ -389,6 +406,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # the threadpool, the wheel loop on the event loop, and MockRobot is not
     # thread-safe. Held for microseconds -- nothing inside it waits.
     motion_lock = threading.Lock()
+    # A stop ending a nav2 goal (see _end_goal_after_stop): the generation,
+    # and whether nav2's wheel commands are held at zero meanwhile.
+    goal_stop = {"gen": 0, "hold": False}
+    goal_stop_lock = threading.Lock()
 
     async def wheel_loop():
         """Vet and (in the sim) integrate a standing wheel command -- R2b.
@@ -448,11 +469,20 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         task = asyncio.create_task(watchdog_loop())
         wheels_task = asyncio.create_task(wheel_loop())
+        # 3.37: everything start-up built (the app, the backend, every module
+        # imported) out of the collector's reach. On the Jetson a full
+        # (generation-2) collection walked it all every ~75 s and paused the
+        # wheel loop 55-92 ms -- the late ticks 3.33's headroom run counted.
+        # Unfrozen at shutdown, so an app started and stopped in-process (the
+        # test suite, hundreds of times) leaves nothing pinned behind it.
+        gc.collect()
+        gc.freeze()
         try:
             yield
         finally:
             task.cancel()
             wheels_task.cancel()
+            gc.unfreeze()
 
     app = FastAPI(title="vision-picar robot server", lifespan=lifespan)
 
@@ -563,6 +593,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 # motion, so it is not held; MockRobot's reads are safe
                 # alongside the wheel loop, and M4 above already decided who
                 # may drive.
+                # A verb allowed to drive lifts the stop's goal hold, as it
+                # lifts RosDriveRobot's own stop hold: under this drive its
+                # twists come back as `ros` wheel posts. The ending loop keeps
+                # cancelling the goal regardless.
+                goal_stop["hold"] = False
                 try:
                     with robot.driving_as(driver):
                         result = safety.check_and_execute(
@@ -587,6 +622,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             return {"executed": True, "result": result, "driver": driver}
         except SafetyViolation as e:
             return refuse("safety_distance", str(e), driver)
+        except WheelFeedbackLost as e:
+            # 3.34: the body cannot measure its wheels, so it will not move
+            # them. Not a veto to steer around: RemoteRobot ends the mission.
+            return refuse("no_feedback", str(e), driver)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -618,7 +657,23 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             state["last_command_at"] = now
             state["wheel_posts"] += 1
             state["last_ros_post_at"] = now
+            bridge_up = getattr(robot, "bridge_up", None)
+            if bridge_up is not None and not bridge_up():
+                # The bridge is dead and the plugin is not (spec review 3,
+                # V8): a person is driving the fallback, so ROS's actuator
+                # must not stay a second writer. The post still proves the
+                # plugin alive (stamped above); it moves nothing.
+                # Answered directly, not through refuse(): the plugin posts at
+                # 20 Hz, and logging each would bury the log.
+                return {"executed": False, "reason": "ros_unavailable",
+                        "detail": "the bridge is down -- ROS's wheel commands are not "
+                                  "applied while a person drives the fallback"}
+            if goal_stop["hold"]:
+                req = WheelsRequest(left_rad_s=0.0, right_rad_s=0.0)
         else:
+            if driver == DRIVER_ROS and goal_stop["hold"]:
+                # nav2 still driving a goal a stop is ending: a zero command.
+                req = WheelsRequest(left_rad_s=0.0, right_rad_s=0.0)
             if req.left_rad_s == 0 and req.right_rad_s == 0:
                 # A ZERO command is not driving, so it never takes or refreshes
                 # authority. Found live 2026-09-26: the ROS container, left
@@ -646,6 +701,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 robot.set_wheel_velocity(left, right)
             except NotImplementedError as e:
                 return refuse("unsupported", str(e), driver)
+            except WheelFeedbackLost as e:
+                if driver == DRIVER_ROS:
+                    # The plugin posts at 20 Hz: answered, not logged each time
+                    # (as for a dead bridge above).
+                    return {"executed": False, "reason": "no_feedback", "detail": str(e)}
+                return refuse("no_feedback", str(e), driver)
         if reason:
             refuse("safety_distance", reason, driver)
         return {"executed": True, "driver": driver,
@@ -662,10 +723,65 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         else is driving is not a stop. It does not claim authority either,
         because stopping is not a bid to drive; the holder keeps its claim
         and keeps it only as long as it keeps commanding, exactly as
-        before."""
+        before.
+
+        **A stop also ENDS a nav2 goal** (handoff 2026-10-02 1b, decided by
+        the user): otherwise nav2 keeps its goal and drives again the moment
+        the stop hold ends. The cancel runs on a background thread AFTER
+        `robot.stop()`, so the stop never waits on ROS; a person re-sends a
+        goal to resume.
+
+        **Except an autonomous stop** (spec review 3, V1; decided by the
+        user 2026-10-03): a stop from an autonomous driver other than `ros`
+        -- the brain -- zeroes the wheels and spares the goal. While a goal
+        holds the robot the brain cannot drive (3.23), so its stop can only
+        be a loser's teardown: `MissionRunner` stops the robot on its way
+        out of a mission the goal preempted, and that stop used to cancel
+        the very goal that won."""
         state["last_command_at"] = time.monotonic()
-        return {"executed": True, "result": robot.stop(),
-                "driver": (x_driver or "").strip() or DRIVER_UNKNOWN}
+        driver = (x_driver or "").strip() or DRIVER_UNKNOWN
+        result = robot.stop()
+        spares_goal = driver != DRIVER_ROS and driver_priority(driver) == DRIVER_AUTONOMOUS
+        if hasattr(world_model, "cancel_goal") and not spares_goal:
+            with goal_stop_lock:
+                goal_stop["gen"] += 1
+                goal_stop["hold"] = True
+                gen = goal_stop["gen"]
+            threading.Thread(target=_end_goal_after_stop, args=(gen,), daemon=True,
+                             name="stop-end-goal").start()
+        return {"executed": True, "result": result, "driver": driver}
+
+    def _end_goal_after_stop(gen: int):
+        """Make the stop's "the goal is ended" true, not merely attempted
+        (spec review 3, V2). The goal lives in nav2, not in the bridge, so a
+        cancel that fails, or that reaches a goal nav2 has not yet accepted,
+        leaves it able to drive. So: cancel, then re-read the goal and
+        re-send the cancel every GOAL_STOP_POLL_S until nav2 reports it
+        neither pending nor active, holding `ros` wheel commands at zero the
+        whole time and for GOAL_STOP_SETTLE_S after. A newer stop or a new
+        goal supersedes this loop (the generation), so there is one at a
+        time and a person's next goal is never cancelled by it."""
+        settled_at = None
+        warned = False
+        while True:
+            try:
+                with goal_stop_lock:
+                    if goal_stop["gen"] != gen:
+                        return
+                    goal = (world_model.get_goal() or {}).get("goal") if settled_at is None else None
+                    if settled_at is None and goal and goal.get("state") in ("pending", "active"):
+                        world_model.cancel_goal()
+                    elif settled_at is None:
+                        settled_at = time.monotonic()
+                    elif time.monotonic() - settled_at >= GOAL_STOP_SETTLE_S:
+                        goal_stop["hold"] = False
+                        return
+            except Exception as e:  # noqa: BLE001 -- keep holding, keep trying
+                settled_at = None
+                if not warned:
+                    logger.warning(f"stop: could not end the nav2 goal yet, retrying: {e}")
+                    warned = True
+            time.sleep(GOAL_STOP_POLL_S)
 
     @app.get(prefix + "/distance", dependencies=[Depends(require_secret)])
     def distance():
@@ -690,11 +806,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     def wheels():
         """Per-wheel position, velocity and encoder count -- phase R2.
 
-        What `picar_sim_hardware`'s `read()` will poll at R4. Read-only on
-        purpose: `POST /wheels` -- a standing velocity command, the first way
-        to move the robot without a verb -- needs its safety semantics
-        decided before it exists (`PLAN-ros-alignment.md` 3.7). A backend
-        with no encoders answers `usable: False`.
+        What `picar_sim_hardware`'s `read()` polls (R4). Its writing half is
+        `POST /wheels` below (R2b). A backend with no encoders answers
+        `usable: False`; one with wheels it cannot measure yet adds
+        `awaiting_feedback: true` (handoff 2a).
         """
         return robot.get_wheel_state()
 
@@ -795,13 +910,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     def sim_objects():
         """Every object in the simulated house, movers marked, and the sim
         clock. Ground truth, like `/world/truth`: no decision may read it."""
-        grid = _sim_grid()
-        movers = {m.cell for m in grid.movers}
-        return {
-            "sim_time_s": round(grid.sim_time, 3),
-            "objects": [{"x": x, "y": y, "name": name, "mover": (x, y) in movers}
-                        for (x, y), name in sorted(grid.objects.items())],
-        }
+        return _sim_grid().describe_objects()
 
     class MoveObjectRequest(BaseModel):
         src: List[int]
@@ -835,26 +944,59 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         return world_model
 
     @app.post(prefix + "/world/goal", dependencies=[Depends(require_secret)])
-    def world_goal_set(req: GoalRequest):
+    def world_goal_set(req: GoalRequest, x_driver: str = Header(default="")):
         """A place to go, in the house frame. nav2 plans and drives; its
         commands still pass collision_monitor and robot/safety.py (3.15).
 
         3.23: a goal is an AUTONOMOUS driver (`ros`), arbitrated like one --
         refused while the brain (or anyone who outranks it) holds the robot,
-        so it never reaches nav2 to interleave with a mission."""
+        so it never reaches nav2 to interleave with a mission.
+
+        Handoff 3b (decided 2026-10-05): a goal that NAMES a person (the
+        twin's tap sends `x-driver: twin-dpad`) is that person driving, ranked
+        as one -- it takes the robot from the brain, whose next command is
+        refused `preempted`, exactly as a D-pad press does. A goal naming no
+        one keeps 3.23's rank: scripts and the nav suites post those."""
         world = _goals()
-        refused = arbitrate(DRIVER_ROS, time.monotonic())
-        if refused:
-            return {"accepted": False, **refused}
-        return world.set_goal(req.x_m, req.y_m)
+        now = time.monotonic()
+        person = (x_driver or "").strip()
+        if person and driver_priority(person) == DRIVER_MANUAL:
+            refused = arbitrate(person, now)
+            if refused:
+                return {"accepted": False, **refused}
+            state["driver"], state["driver_at"] = person, now
+        else:
+            refused = arbitrate(DRIVER_ROS, now)
+            if refused:
+                return {"accepted": False, **refused}
+        # A person re-sending a goal after a stop: it supersedes the stop's
+        # ending loop, which must never cancel this new goal.
+        with goal_stop_lock:
+            goal_stop["gen"] += 1
+            goal_stop["hold"] = False
+            try:
+                return world.set_goal(req.x_m, req.y_m)
+            except httpx.HTTPError as e:
+                # Handoff 4d: refused by name, not a 500.
+                return {"accepted": False, "reason": "ros_unavailable",
+                        "detail": f"the ROS bridge did not take the goal: {e}"}
+
+    def _bridge_call(fn):
+        """A goal read or cancel against a bridge that is down answers 503
+        `ros_unavailable`, not a 500 (handoff 4d)."""
+        try:
+            return fn()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=503,
+                                detail=f"ros_unavailable: the ROS bridge did not answer: {e}")
 
     @app.get(prefix + "/world/goal", dependencies=[Depends(require_secret)])
     def world_goal_get():
-        return _goals().get_goal()
+        return _bridge_call(_goals().get_goal)
 
     @app.delete(prefix + "/world/goal", dependencies=[Depends(require_secret)])
     def world_goal_cancel():
-        return _goals().cancel_goal()
+        return _bridge_call(_goals().cancel_goal)
 
     @app.get(prefix + "/world/error", dependencies=[Depends(require_secret)])
     def world_error():
@@ -971,9 +1113,22 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                       "wheel_posts_from_ros": state["wheel_posts"] if by_velocity else None,
                       # 3.24 G3: whether ROS is alive, and so whether a person's
                       # verbs are running on the direct fallback.
-                      "ros_up": ros_up(time.monotonic()) if by_velocity else None},
+                      "ros_up": ros_up(time.monotonic()) if by_velocity else None,
+                      # Which half of ROS is down (spec review 3, V9): the
+                      # bridge, or the actuator plugin's posts.
+                      "bridge_up": (robot.bridge_up() if by_velocity
+                                    and hasattr(robot, "bridge_up") else None),
+                      "ros_post_age_s": (round(time.monotonic() - state["last_ros_post_at"], 3)
+                                         if by_velocity and state["last_ros_post_at"] is not None
+                                         else None)},
             "watchdog_timeout_s": watchdog_timeout,
             "wheel_loop": {**state["wheel_loop"], "period_s": WHEEL_LOOP_INTERVAL_S},
+            # 3.34: the motor board's link -- frame age, frames, reboots --
+            # for a body that has one; None otherwise. Description only
+            # (control/health.py): a quiet board is a fact about the car, not
+            # about the release.
+            "motor_board": (robot.feedback_status()
+                            if callable(getattr(robot, "feedback_status", None)) else None),
             # The single source of truth for the safety threshold this
             # server actually enforces -- see web-twin/index.html's
             # renderWatchdog(), which reads this into state.minDistanceCm
@@ -984,11 +1139,18 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # it (PLAN-sim-hardening.md definition of done, item 10).
             "min_distance_cm": min_distance,
             "mode": mode,
-            # Which house the simulator built (SIM_MAP), so a live test can
-            # ask the SERVER what it is standing in rather than trusting its
-            # own environment -- the SLAM lap once ran its starter-house
-            # route inside the user's house. None off the simulator.
-            "sim_map": (os.environ.get("SIM_MAP") or "starter_house") if mode == "sim" else None,
+            # Which house the simulator built, so a live test can ask the
+            # SERVER what it is standing in rather than trusting its own
+            # environment -- the SLAM lap once ran its starter-house route
+            # inside the user's house. Read off the world the factory built
+            # (sim/maps/__init__.py names it), so it is right for every body
+            # standing in a sim house -- `mode: hardware` with the fake motor
+            # board included. It used to re-read SIM_MAP only when
+            # `mode == "sim"`, so under the fake board it was None and the
+            # live suites SKIPPED: 3.33's G4 would have "passed" on five runs
+            # of skips (docs-review/SPEC-REVIEW.md, finding 2). None when no
+            # sim house stands behind the robot.
+            "sim_map": getattr(getattr(robot, "world", None), "map_name", None),
             # Phase M5. Which build answered, for anyone reading a health
             # report rather than a log. Same content as the start-up line.
             "identity": ident,

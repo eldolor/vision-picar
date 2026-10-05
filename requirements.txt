@@ -34,3 +34,13 @@ boto3
 # resource nor property, with nothing in describe-events or list-hook-results.
 # cfn-lint found it in one run. Tests skip without it, as with Playwright.
 cfn-lint
+
+# Imported by the suite (tests/test_hailo_compile_loop.py and others). It was
+# only ever present as a side effect of other installs; a fresh Python 3.10
+# environment (PLAN-ros-alignment.md 3.33's pre-board check) failed without it.
+numpy
+
+# Imported by tests/test_serverless_routes.py through service/vision_analyze's
+# vision_core.py. Missing here, a fresh environment errored on those tests
+# (3.33's Python 3.10 check, 2026-10-02).
+pillow-heif

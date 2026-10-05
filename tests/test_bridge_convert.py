@@ -88,3 +88,41 @@ def test_pitch_from_a_pure_y_rotation():
 
 def test_the_module_imports_no_ros():
     assert "rclpy" not in sys.modules
+
+
+# ---------- 3.36: the anchor from truth and odometry at one instant ----------
+
+def _house_pose_after(start, odom):
+    """The CONSUMER's map -- world/ros_world.py's own anchor and conversion,
+    not a copy -- from an odometry pose to the house, for a session whose
+    start truth is `start`."""
+    from world.ros_world import RosWorld, _ros_to_ours
+    w = RosWorld("http://unused", truth=object())     # a sim: it anchors on start_truth
+    w._ensure_session({"session": "s", "map": {}, "start_truth": start})
+    x, y, h = _ros_to_ours(odom["x_m"], odom["y_m"], odom["yaw_rad"])
+    hx, hy, hh = w._apply(x, y, h)
+    return {"x_m": hx, "y_m": hy, "heading_deg": hh}
+
+
+def test_the_anchor_is_recovered_after_the_robot_has_moved():
+    """Whatever the robot did since odometry zero, truth and odometry at one
+    instant give back the house pose of odometry zero exactly."""
+    from picar_bridge.convert import odometry_zero_in_house
+    for start in ({"x_m": 1.95, "y_m": 1.35, "heading_deg": 90.0},
+                  {"x_m": 2.05, "y_m": 0.93, "heading_deg": 72.8},
+                  {"x_m": -3.0, "y_m": 7.5, "heading_deg": 301.0}):
+        for odom in ({"x_m": 0.0, "y_m": 0.0, "yaw_rad": 0.0},
+                     {"x_m": 0.42, "y_m": -0.31, "yaw_rad": 0.33},
+                     {"x_m": -1.7, "y_m": 2.2, "yaw_rad": -2.9}):
+            truth = _house_pose_after(start, odom)
+            got = odometry_zero_in_house(truth, odom)
+            assert math.isclose(got["x_m"], start["x_m"], abs_tol=1e-9), (start, odom, got)
+            assert math.isclose(got["y_m"], start["y_m"], abs_tol=1e-9), (start, odom, got)
+            dh = (got["heading_deg"] - start["heading_deg"] + 180) % 360 - 180
+            assert abs(dh) < 1e-9, (start, odom, got)
+
+
+def test_at_odometry_zero_the_anchor_is_the_truth():
+    from picar_bridge.convert import odometry_zero_in_house
+    truth = {"x_m": 1.95, "y_m": 1.35, "heading_deg": 90.0}
+    assert odometry_zero_in_house(truth, {"x_m": 0.0, "y_m": 0.0, "yaw_rad": 0.0}) == truth

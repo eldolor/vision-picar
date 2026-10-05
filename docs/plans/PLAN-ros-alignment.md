@@ -3336,19 +3336,19 @@ nav2 + `slam_toolbox`:
 **Stopped 2026-10-02 on a SLAM fault, not a search fault.** The recorded
 batch on `106cd6d` was stopped after three rooms: in the furnished home
 `slam_toolbox` closed loops to the wrong place (1.6-3.2 m, never recovered,
-odometry exact), so goals went to points outside the house. That is 3.34.
+odometry exact), so goals went to points outside the house. That is 3.38.
 The rooms' numbers from that batch are not results.
 
 **Open, in order:**
 
-1. **3.34 must be decided first** (below): its candidate D stops the jumps
+1. **3.38 must be decided first** (below): its candidate D stops the jumps
    but two criteria are short.
 2. **Criteria 1, 2, 4 and 6 on one recorded revision** -- the full batch,
    `python -m tests.demo_explore rooms|absent|door|rule` (about 7 hours
-   unattended), on the branch's head once 3.34 settles. Nothing from the
+   unattended), on the branch's head once 3.38 settles. Nothing from the
    earlier batches counts: every one ran on a revision since changed.
 3. **Coverage.** Exploration covered 32-94% of the reachable floor in
-   20 min across 3.34's runs, most of the low ones stuck in the living room
+   20 min across 3.38's runs, most of the low ones stuck in the living room
    on the wedge loop now fixed. Criterion 2 needs 95%; unmeasured since the
    fix.
 
@@ -3471,7 +3471,742 @@ golden image is unchanged. Full suite 1555 passed; one real-time serial test
 (`test_settle_pass` stock forward) failed once under parallel load and
 passes 6 of 6 alone.
 
-### 3.34 SLAM that stays put in the furnished home (2026-10-02): criteria, written before measuring
+### 3.33 The Jetson before the Rover: bring-up, its two risks, and G4 (2026-10-02): plan and criteria, written before starting
+
+**Decided by the user 2026-10-02:** open the Jetson now ("definitely open
+the Jetson this evening") rather than keep it boxed until the Rover
+arrives. The reason that decides it: Amazon's return window closes ~Oct 30
+and the Rover may arrive as late as Nov 11, so waiting could mean learning
+the board fails a risk after it can no longer go back. Opened now, both of
+`JETSON-BOM.md` section 7's open risks are settled while it is still
+returnable. **Keep the box and all packaging, and modify nothing on the
+board,** so a return stays clean.
+
+**G4 does not need the Rover.** As written (3.24) it is the stack on the
+car's own computer against `SIM_MOTOR_BOARD=fake` -- the real motor-board
+code over a pty -- so this weekend can close it.
+
+**What is needed first** (`JETSON-BOM.md` section 1; confirm each is in
+hand): the stock 19 V adapter (every firmware step runs on it, never a
+battery), a microSD of 64 GB or more (or the NVMe), a DisplayPort monitor
+and USB keyboard for the firmware check, and network for the board.
+
+**The steps, in order** (each a stop point -- a failure is recorded and
+decided on, not worked around):
+
+1. **Firmware check** (`HARDWARE-BOM.md` 5.1): Esc at the splash, read the
+   UEFI version. Older than 36.0 means NVIDIA's JetPack 6 update path first,
+   on the stock adapter.
+2. **JetPack 6.2.1** (Ubuntu 22.04), so the Humble container stays as it is
+   (`JETSON-BOM.md` section 7: JetPack 7 would mean moving to Jazzy).
+   Record `nvpmodel -q`; set **15 W** (the user's choice, 2026-10-01).
+3. **Risk 1: a working torch.** NVIDIA's torch wheel for this JetPack in the
+   project's venv; `torch.cuda.is_available()`; then the shipped pipeline
+   (`brain/perceive.py`, `yoloe-11s-seg` + CLIP) on one corpus frame with
+   both models on `cuda`.
+4. **Risk 2: latency on the board.** The tier's per-frame time on the
+   pinned corpus, split into GPU model time and CPU image handling, at 15 W
+   and at 25 W (MAXN SUPER only on the stock adapter). This is the number
+   section 1.1's perception trigger reads; P26
+   (`PLAN-onboard-perception.md`) is measured here too.
+5. **The project on the board.** Clone from GitHub (`dev` pushed first),
+   `.venv`, the offline suite, then Docker with the NVIDIA runtime and the
+   ROS image built natively (`docker build -t vision-picar-ros service/slam`).
+6. **G4.** Robot server (`SIM_MAP=scaled_house`, `ROBOT_DRIVE=ros`,
+   `WORLD_MODE=ros`, `ROBOT_MODE=hardware`, `SIM_MOTOR_BOARD=fake`), brain
+   and container on the Jetson; the live chain and nav suites.
+7. **Headroom.** The whole stack at once -- SLAM, nav2, the safety loop at
+   20 Hz and the perception tier on frames -- watched for the safety loop's
+   lateness, memory and temperature.
+
+**Acceptance criteria:**
+
+1. **Firmware and OS:** the board boots JetPack 6.2.1, power mode recorded.
+2. **torch works on the GPU:** `torch.cuda.is_available()` is true and the
+   shipped pipeline returns the same verdict on a corpus frame as the
+   laptop (same detection status, CLIP probability within 0.01). **Both
+   networks on `cuda`** (added 2026-10-02): `tools/jetson/setup.sh`
+   asserts both since 2026-10-03 (`docs-review/SPEC-REVIEW.md` fix 9). It
+   reads the detector's device the way `bench_perception.py` does.
+3. **Latency recorded:** per-frame GPU and CPU times over at least 50
+   corpus frames, at 15 W and 25 W. **Budget: 250 ms a frame (4 Hz) at
+   15 W -- confirmed by the user 2026-10-02.** Over it, section 1.1's
+   trigger is live and P26 is the first fix.
+4. **The suite passes** on the board from its `.venv` (the offline suite;
+   live and UI tests may skip, and each skip is listed).
+5. **G4:** the live chain and nav suites pass **5 consecutive runs** on the
+   Jetson (3.24's gate, unchanged). **A skip is not a pass** (added
+   2026-10-02): a run counts only if pytest's summary shows every test in
+   both suites PASSED and none skipped. Found by the spec review
+   (`docs-review/SPEC-REVIEW.md` finding 2): with step 6's configuration
+   `/health` reported `sim_map: null`, both suites skipped on their
+   house check, and five runs of skips would have read as the gate met.
+   Fixed the same day -- `sim_map` now names the house the factory built,
+   fake motor board included (`tests/test_health_sim_map.py`) -- and the
+   rule stays, because a suite that skips for any other reason (a secret
+   unset, a container not up) fails the same way.
+6. **Headroom, with everything running:** the robot server's wheel loop
+   reports **0 late ticks** at 20 Hz over a 10-minute nav2 run with the
+   tier processing frames (the `/health` `wheel_loop` readout, 3.18);
+   at least **1 GB** of memory free; no thermal throttling
+   (`tegrastats`).
+7. **Reversible:** the box and packaging kept, nothing on the board
+   modified, until the user decides to keep it.
+
+**If a risk fails:** torch with no working wheel for JetPack 6.2.1, or
+latency far over budget with P26 unable to close it, is the decision point
+the return window exists for -- recorded here and taken to the user before
+Oct 30.
+
+**Prepared before the board, 2026-10-02** (the procedure is
+`tools/jetson/README.md`):
+
+* **Python 3.10 is a constraint, found first.** JetPack 6 ships Python
+  3.10 and NVIDIA's CUDA builds of torch exist only for cp310; the
+  laptop's `.venv` is 3.13. The whole project compiles under 3.10, and the
+  offline suite was run under 3.10 on Arm Linux in Docker before the board
+  existed: **1436 passed, 0 failed**; 5 errors, none about the Python
+  version -- 3 browser tests (Playwright installed, its browser not: they
+  error rather than skip) and 2 that import the cloud vision service, which
+  needs `pillow-heif`.
+* **torch:** 2.8.0 + torchvision 0.23.0 from the Jetson AI Lab index
+  (`pypi.jetson-ai-lab.io/jp6/cu126`; the `.dev` domain is gone), plus
+  `libcusolver-12-6` -- the combination NVIDIA's forum reports working on
+  6.2.1. A plain `pip install torch` gets a CPU build on aarch64, and
+  PyTorch's own cu126 wheels fail there ("no kernel image is available").
+  `tools/jetson/setup.sh` installs it, pins it with a constraints file so
+  no requirement can swap it for a CPU build, and checks the shipped
+  pipeline lands on `cuda`.
+* **`numpy` was missing from `requirements.txt`** -- a test imports it, and
+  the laptop only had it as a side effect of other installs; a fresh
+  machine (the 3.10 run) failed at collection. Added.
+* **The latency bench:** `tools/jetson/bench_perception.py` times the
+  shipped pipeline per frame and splits it -- Ultralytics' own
+  preprocess / inference / postprocess for YOLOE, CLIP's encoder
+  (synchronised) against the rest of its scoring -- over 60 pinned frames
+  (+3 warm-up) from 20 walks and 7 targets (`bench_frames.json`, names
+  only), so the laptop and the board time the same frames.
+* **Access:** a dedicated SSH key on the Mac and a `picar-jetson` host
+  entry (user `picar`). The repo is private, so code reaches the board by
+  `git push` over SSH, never with GitHub credentials on the robot.
+* **The image:** `jetson-orin-nano-devkit-super-SD-image_JP6.2.1.zip`,
+  downloaded and checked against the server's size (11,725,610,175 bytes;
+  its one file, `sd-blob.img`, is 24 GB). 6.2.2 is an `apt upgrade` from
+  there, optional.
+
+**Results so far (2026-10-04, on the board, microSD, Wi-Fi, stock 19 V
+adapter).**
+
+1. **Firmware and OS -- met.** UEFI firmware 36.4.4 (read over SSH from
+   `/sys/class/dmi/id/bios_version`, not at the splash); L4T R36.4.4 =
+   JetPack 6.2.1, Ubuntu 22.04.5. Power mode out of the box **25W** (id 1);
+   set to **15W** (id 0). Two set-up facts: the Mac cannot resolve
+   `picar-jetson.local` on this network (Google mesh), so the SSH entry
+   points at 192.168.86.26 -- a DHCP reservation is still to make; and
+   `picar` has passwordless sudo (`/etc/sudoers.d/picar-nopasswd`, the
+   user's decision, so the session can run it; delete the file to undo).
+2. **torch on the GPU -- met, after one fix.** torch 2.8.0 on `cuda`
+   ("Orin"). **Found: the Jetson AI Lab wheel is built against NumPy 1.x**
+   and pip installed 2.2.6, so every detector call failed with "Numpy is
+   not available" -- and `setup.sh` still printed "on cuda" for both,
+   because a detector that raised keeps its device. Fixed in `setup.sh`
+   (pins `numpy<2`, pip then takes opencv-python 4.11; asserts the
+   perception is not `unavailable`) and in `bench_perception.py` (refuses to
+   report times if any frame was). Parity on all 63 pinned frames against
+   the laptop (detector CPU, CLIP MPS): **status agrees 63/63** (6 detected,
+   57 absent), CLIP probability within **0.0002** on all 6 scored (bar
+   0.01), 0 unavailable.
+3. **Latency -- met, well within budget.** 60 frames after 3 warm-up, both
+   networks on `cuda`, 0 unavailable:
+
+   | power | total median / p90 | model (GPU) | handling (CPU) | detector inference | CLIP a crop |
+   |---|---|---|---|---|---|
+   | **15W** | **60.6 / 109.9 ms** | 44.4 / 72.4 | 18.6 / 38.1 | 40.5 | 43.0 |
+   | 25W | 64.2 / 120.4 ms | 43.6 / 79.1 | 19.9 / 41.4 | 43.3 | 47.0 |
+
+   Budget 250 ms at 15W: the p90 uses 44% of it. **25W bought nothing**
+   (25W caps the CPU LOWER than 15W -- 1.344 against 1.498 GHz, see 5 below -- trading CPU clock for GPU), so 15W costs the
+   tier no latency. Against the laptop's 119 ms default and 36 ms all-GPU:
+   the board sits between them. P26 is not needed to meet the budget.
+   Records: `bench-15w.json`, `bench-25w.json` on the board.
+4. **The suite -- met.** From the board's `.venv` (Python 3.10.12), with
+   Playwright's Chromium installed: **1728 passed, 0 failed, 56 skipped,
+   3 xfailed in 73.6 min** (the laptop's single-thread Python is ~4x
+   faster; the three slowest tests, mission sweeps, took ~12 min each).
+   Every skip names a missing live stack, ROS image or firmware checkout:
+   `test_ros_chain_live` 13 and `test_nav_live` 5 (no stack -- G4 runs
+   them), `test_urdf` 17 (no bridge / no image), `test_slam_live` 3,
+   `test_brain_view_live` 5 and `test_http_rate_live` 2 (no Docker stack
+   and secret), `test_startup_race` 1, `test_firmware_fork` 2
+   (`PICAR_FIRMWARE_SRC` unset), `test_robot_contract` 6 (a backend with no
+   odometry, allowed), `test_perceive` 1 and `test_ros_containment` 1 (both
+   by design). None is about the board.
+5. **G4 -- see "G4 after 3.36" below; run 1 failed, stopped and taken to the user.** The ROS
+   image built natively in ~15 min (2.58 GB). Run 1 (15W, README section 4
+   exactly, 18 collected, 0 skipped): **3 failed, 15 passed in 12.9 min.**
+   - chain 1: `/odom` read 0.000 m while truth moved 0.114 m (bar 0.02);
+   - chain 6: silence inside ROS stopped the wheels in **0.636 s** (bar 0.5);
+   - nav: **2 of 6 goals** succeeded (bar 5), the others timing out at
+     ~120 s with nav2 logging "Failed to make progress", "Control loop
+     missed its desired rate of 20 Hz" and a local-costmap TF timeout.
+
+   **What the data says the cause is:** the robot server process -- which
+   in G4's configuration also runs the simulator (the scan ray casting and
+   `sim/fake_esp32.py`'s board loop) -- sat at **98% of one core**, and its
+   wheel loop ran **1192 of 6017 ticks late (20%), worst 0.206 s against a
+   0.05 s period**. A 15 s py-spy profile: the fake board's loop and
+   `HardwareRobot`'s reader thread ~22% of samples each, `get_scan` ->
+   `cast_ray` ~16-17%. The whole board was not loaded (load average ~2.5 of
+   6 cores); one Python process, under its GIL, was. 3.17 predicted this
+   ("the robot server's 20-34 ms p99 tail is the SIMULATOR ... re-measure
+   on the Jetson"). Not yet established: that the failures go away when that
+   process keeps up -- this is the hypothesis the data supports, not a
+   result.
+
+   **CPU clocks by mode (from `/etc/nvpmodel.conf`):** 15W caps the A78
+   cores at **1.498 GHz**, 25W at **1.344 GHz** (lower -- which also
+   explains why 25W bought perception nothing), MAXN SUPER uncapped
+   (~1.73 GHz, at most ~15% more). Criterion 6 (0 late ticks) would fail
+   today for the same reason.
+
+   **Diagnostic run at MAXN SUPER (user's choice, not a G4 run -- G4 is
+   judged at 15W): 2 failed, 16 passed in 13.1 min.** The silence-stop test
+   now passed; nav reached **3 of 6** goals (bar 5); the wheel loop was
+   still late on **926 of 6027 ticks (15%)**, worst 0.191 s, and the
+   container logged **1986** failed `POST /wheels` to the robot server.
+   ~15% more CPU clock moved lateness from 20% to 15% and one test across
+   the line: the process is short by much more than a clock bump, which is
+   the case for 3.36. The `/odom` test failed identically at both clocks
+   (0.115 m truth, 0.000 m odom) -- most likely the same overload starving
+   the wheel plugin's reads, but not established; 3.36's G4 run settles it.
+   Board returned to 15W.
+
+   **G4 after 3.36** (the split simulator, the bridge's two fixes, the aged
+   clearance; 15W): settled -- the `/odom` failure was the bridge's starved
+   subscription, not the overload. On the **stock** board firmware the
+   first all-green run came at `abf1237`: **18 passed** twice in a row, then
+   a run failed two turns (-42.2 for -45, 87.1 for 90 against +/-2 deg) --
+   3.25's stock-firmware turn scatter, not 3.36 (see 3.36's results). The
+   user chose (2026-10-05) to judge G4 on the **fork** firmware
+   (`SIM_BOARD_FIRMWARE=fork`, 3.28-3.29), the firmware the Rover will be
+   flashed with: **G4 MET -- 5 consecutive runs, each `18 passed`, 0
+   skipped, 0 failed** (`abf1237`, 2026-10-05, 7.8 min a run; `/health`
+   confirmed fork firmware each run). Wheel loop late on 2-4 of ~5370
+   moving ticks a run (worst 0.148 s); robot server 42-47% of one core;
+   physics 8%, sensor programs 19-23% and 46-55%. SLAM at the end of run 5:
+   0.73 cm and 0.025 deg from the truth (odometry alone 0.31 cm, 0.05 deg).
+   On stock firmware G4 is not met: the +/-2 deg turn test fails about one
+   run in three (3.25).
+6. **Headroom -- met after 3.37** (first run short on two of three, taken to the user). 10 minutes
+   (21:14:46-21:25:01, after the mapping lap) of nav2 goals round the
+   scaled house with the perception tier running continuously on real
+   frames on the GPU (`bench_perception` in a loop, its own process), the
+   split simulator, SLAM and the 20 Hz loop, 15W:
+   - nav2 **29/29** goals succeeded, 9-11 cm from each;
+   - wheel loop late on **8 of 11 270** moving ticks (0.07%), worst 0.208 s
+     -- **bar 0**;
+   - **MemAvailable min 711 MB** (tegrastats' used/total: 817 MB free) --
+     **bar 1 GB**;
+   - max **53 C** against a 70 C passive trip, no throttling -- met;
+   - perception under that load: median 67-68 ms, p90 124-131 ms a frame
+     (60.6 / 109.9 alone) -- still within 250.
+
+   Two things inflated the memory number, both since measured: the load
+   was `bench_perception` in a loop, which **builds one pipeline per target
+   -- seven detector + CLIP copies -- and was restarted five times** (a
+   mission has one target, one pipeline, loaded once; the "second copy in
+   the brain" first suspected was wrong: the brain ran `frontier` and loaded
+   nothing); and the Ubuntu desktop was running.
+
+   **Rerun (2026-10-05, the user's go-ahead):** desktop off for the window
+   (`systemctl isolate multi-user.target`, restored after), the tier as a
+   mission carries it -- ONE pipeline, loaded once, real frames at 4 Hz --
+   and lateness sampled every 5 s. MemAvailable min **4144 MB**; 52 C; nav
+   29/29; perception median 83 ms, p90 140 ms (one 3.2 s first frame, the
+   GPU warming). Still **5 late ticks**, about every 76 s -- profiled as the
+   robot server's generation-2 garbage collections and fixed in 3.37.
+
+   **Met with 3.37 (`89a4eab`):** **0 late ticks in 14 289** moving ticks
+   (mapping lap included), worst period 0.065 s against 0.05; MemAvailable
+   min **4253 MB**; max 52.0 C against a 70 C passive trip; nav 29/29;
+   perception median 83 ms, p90 141 ms.
+
+### 3.34 A body that cannot measure its wheels does not drive them, and a move that fell short is not a move (2026-10-03): criteria, written before building
+
+**Found 2026-10-03** while adding the car body's failure modes to
+`docs/body/ARCHITECTURE.md`; asked for by the user ("go ahead", on gaps 1
+and 3 of the four that write-up found).
+
+**Gap 1 -- stale feedback reads as a stationary robot.** `HardwareRobot`
+reports its wheels and odometry `usable` whenever ANY frame has ever
+arrived. If the link drops or the board goes quiet, both freeze and still
+claim to be measurements. Today's consequences: a verb closed on the
+encoders sees no progress and drives on until its period cap (about 3x its
+expected time plus 1 s); the wheel loop keeps re-sending the standing
+command, which feeds the board's heartbeat; and a lost port makes
+`stop()` raise. Only the board's 1.5 s heartbeat stops the wheels, and only
+on a dropped link, not on a board that hears commands but stops reporting.
+
+Simply answering `unusable` is not enough, and would be unsafe: the safety
+layer reads usable wheels as "this body really moves" (the blind-reverse
+rule), and passes wheel commands unvetted from a body without them. So the
+rule is enforced AT THE BODY: **no fresh feedback, no wheel motion.**
+
+**Gap 3 -- a move that fell short looks complete.** A wall-clock verb that
+ends `timeout` (or `stalled`) returns `stopped_short` in its result, and
+nothing in `brain/` or `control/` reads it, so a FORWARD stuck on a rug is
+recorded as executed and never counts toward `stuck_after`.
+
+**Acceptance criteria** (against `sim/fake_esp32.py`; the feedback window
+`FEEDBACK_STALE_S` is 0.25 s, five of the board's 50 ms feedback intervals,
+and below both the server's 1 s watchdog and the board's 1.5 s heartbeat):
+
+1. **Silence is unusable.** With the board still accepting commands but no
+   longer reporting, `get_wheel_state()` and `get_odometry()` answer
+   `usable: false` within 0.35 s of the last frame.
+2. **The host stops the wheels.** A standing non-zero command when feedback
+   goes stale is zeroed by the body itself: the fake board's setpoint is
+   zero within 0.4 s of the last frame (the heartbeat alone takes 1.5 s,
+   and never fires while commands keep arriving).
+3. **Motion is refused while stale; a stop never is.** A non-zero
+   `set_wheel_velocity()` raises `WheelFeedbackLost` and sends zero; a zero
+   command, and `stop()`, always succeed, including after the serial port
+   has gone (they used to raise `OSError`).
+4. **A verb in progress ends promptly.** A FORWARD whose feedback stops
+   mid-move ends within 0.5 s of the last frame with the wheels zeroed,
+   against several seconds before.
+5. **Recovery is clean.** When frames resume, readings are usable again,
+   odometry has moved by no more than one odometer unit across the gap,
+   and motion is accepted.
+6. **The robot server names it.** Under `mode: hardware`, `/action` and
+   `/wheels` answer `executed: false, reason: "no_feedback"` while stale
+   (not HTTP 500); `RemoteRobot` raises a transport error, so a mission
+   ends `failed` naming `no_feedback`; `/health` describes the board link
+   (frame age, frames, reboots) without making it a verdict (M5).
+7. **A short move is not a move.** A verb that ends `timeout` or `stalled`
+   reaches the agent as `executed: false` with the reason, so five stalled
+   FORWARDs end a mission `blocked`. A verb that ends `clamped` (the
+   safety layer slowing it to the line) stays executed, as today.
+8. **No regression.** The pinned frontier trace and every sweep-backed test
+   pass unchanged; the full suite passes.
+
+Each of 1-7 is confirmed red against the code before the change.
+
+**Results (2026-10-03).** Built as criteria 1-7 describe;
+`tests/test_wheel_feedback.py` (15 tests) was run first against the old
+code with only the new names added: 13 red, and the failures were the
+behaviour this entry describes (readings frozen and `usable`; `stop()`
+raising `OSError` on a dead port; a verb with no feedback still running
+after 5 s; five stalled FORWARDs ending `max_steps`). The two that passed
+were the window's bounds and "`clamped` stays executed", which already
+held. Measured over 20 runs each against the fake board:
+
+| Criterion | Bar | Median | Worst |
+|---|---|---|---|
+| 1. readings unusable after the last frame | 0.35 s | 0.252 s | 0.253 s |
+| 2. standing command zeroed by the body | 0.4 s | 0.320 s | 0.330 s |
+| 4. a verb in progress ends | 0.5 s | 0.290 s | 0.307 s |
+
+Criterion 4's verb (two moves at speed 30, 3.3 s expected) had a cap of
+about 11 s before. Criteria 3, 5, 6 and 7 pass as stated. Five runs of the
+file back to back: 15/15 each.
+
+**Where the rule lives, and why.** In `HardwareRobot`, not
+`robot/safety.py`: the safety layer reads usable wheels as "this body
+really moves" (the blind-reverse rule) and passes wheel commands unvetted
+from a body without them, so a body that only answered "unusable" would
+have driven unvetted. The shared verb loop gained `ended: "no_feedback"`;
+the safety layer turns it into `WheelFeedbackLost` after stopping the body,
+and so does the settle pass. The rule also closes the "before the first
+frame" gap the body and safety specs carried: commands were vetted against
+no wheels then, and are refused now.
+
+**A third consumer, found while building: the ROS plugin.**
+`picar_sim_hardware`'s `read()` returned ERROR on `usable: false`, and
+ros2_control deactivates a component for good on ERROR -- so a quarter
+second of silence from the board would have killed the car's ROS chain
+until a container restart. `read()` now treats it as an unreachable server
+(retry, zero velocity, hold position); `on_activate()` checks for wheels
+itself, so a body without any still fails at start-up. Measured against a
+stub robot server that flipped `usable: false` for 2 s: the previous image
+went `unconfigured` and posted nothing for the 3 s after; the new one
+stayed `active` and posted 61 times. With the stub answering "no wheels"
+from the start, the new plugin read once, posted nothing and did not
+activate.
+
+**Not in scope, still open:** stall detection on the wall clock (gap 2: a
+snagged wheel is still pushed until the verb's cap, though the mission now
+counts it as a move not made) and the skid-steer effective track (gap 4).
+Both need numbers from the car.
+
+### 3.35 Stall detection on the wall clock, and one place for the skid-steer track (2026-10-03): criteria, written before building
+
+Gaps 2 and 4 of the car body's failure modes (`docs/body/ARCHITECTURE.md`),
+done as far as they can be without the car: the user asked for "whatever
+you need to do without a robot car". Each needs one number measured on the
+Rover; until then the number is a flagged placeholder and only the
+mechanism is judged.
+
+**Gap 2 -- a snagged wheel is pushed until the verb's cap.** On a
+wall-clock plan (the real board), `carry_out_verb()` has no stall rule: a
+wheel that stops turning while commanded drives on to `3 x expected + 1 s`.
+The ROS path already ends a verb after `STALL_S` (0.6 s) with no encoder
+progress (`robot/ros_drive.py`). Direct mode adopts the same rule and the
+same number, moved to `robot/interface.py` as `VERB_STALL_S` so there is one
+copy. 0.6 s is a placeholder for the car: the speed loop's low-speed
+deadband (stick-slip on slow pivots and settle passes) is unmeasured.
+
+**Gap 4 -- the effective skid-steer track has no home.** Direct-mode turns,
+the odometry heading and `diff_drive_controller` all use the geometric
+0.172 m. Skid steer turns less than that predicts. The correction is one
+dimensionless factor, `TRACK_SCRUB` (effective / geometric track), which is
+a property of the REAL chassis: the simulator and the fake board's sim
+body do not scrub, so it must never reach them. It is configuration, not a
+constant: `hardware.track_scrub` in `config/robot.yaml` (env `TRACK_SCRUB`)
+for the robot server, and env `TRACK_SCRUB` for the ROS container's launch,
+which sets `wheel_separation_multiplier`. Default 1.0 everywhere, flagged
+`[PLACEHOLDER]` until the car is measured.
+
+**Acceptance criteria:**
+
+1. **A stalled wall-clock verb ends `stalled`.** A verb whose encoders stop
+   advancing while commanded ends `stalled` within `VERB_STALL_S` + 0.2 s
+   of its last progress, wheels zeroed -- on a deterministic test double,
+   and on the fake board with a pivot blocked by furniture the body cannot
+   see (no sensors, so nothing vets the turn).
+2. **A clear verb never stalls.** Every existing verb, settle and sweep
+   test passes unchanged, and clear fake-board FORWARD and turn verbs end
+   `complete`.
+3. **One number.** `robot/ros_drive.py` uses `VERB_STALL_S`; no second
+   stall constant exists.
+4. **The scrub reaches every direct-mode use.** With `track_scrub` s,
+   `HardwareRobot` commands a pivot's wheels for the effective track
+   (0.172 x s), derives heading from it, and publishes it as
+   `track_width_m`, so the safety layer and the verb loop convert with the
+   same number.
+5. **Never in the simulator.** `SIM_MOTOR_BOARD=fake` builds the body with
+   a scrub of 1.0 whatever the setting, and says so in `/health`; a
+   fake-board turn is as accurate with `TRACK_SCRUB=1.6` set as without.
+6. **The container takes the same setting.** With `TRACK_SCRUB` set, the
+   running `diff_drive_controller` reports that
+   `wheel_separation_multiplier`; unset, 1.0. Checked live.
+7. **The defaults cannot drift.** The wall linter registers the scrub as a
+   concept on both sides (config default, code default, launch default all
+   equal), raising `MAX_DUPLICATES` 11 -> 12 with this reason.
+8. **No regression.** Full suite passes; the live ROS chain suite passes
+   against the robot server on the fake board and a container built from
+   this commit (also the end-to-end check owed by 3.34).
+
+Criteria 1, 4, 5 and 6 are confirmed red before the change.
+
+**Results (2026-10-03).** All eight met. `tests/test_stall_and_scrub.py`
+(11 tests) was run against the code with only `VERB_STALL_S` added: 8 red,
+the two stall tests ending `timeout` as described. The three that passed
+were the clear verbs (criterion 2), which already held.
+
+* **Criterion 1.** The test double snagged 0.3 s into a 1.5 s verb ends
+  `stalled` inside the bar. The pivot blocked by furniture on the fake
+  board (no sensors, so nothing vets the turn), over 10 runs: jammed at
+  11.1-13.3 deg, ended `stalled` after a median 0.84 s (worst 0.88 s), where
+  it used to run to `timeout`, about 5 s.
+* **Criterion 3.** `robot/ros_drive.py`'s `STALL_S` is gone; both paths read
+  `VERB_STALL_S`.
+* **Criteria 4-5.** With a scrub of 1.6 the pivot's wheel speed, the
+  published `track_width_m` and the odometry heading all move by 1.6; the
+  factory builds the fake board at 1.0 with `TRACK_SCRUB=1.6` set, and a
+  fake-board 90-degree turn lands within 3 degrees.
+* **Criterion 6, live.** The image built from this tree: `ros2 param get
+  /diff_drive_controller wheel_separation_multiplier` reads 1.0 unset and
+  1.6 with `TRACK_SCRUB=1.6`. The previous image reads 1.0 with it set.
+* **Criterion 7.** The wall linter's twelfth concept agrees; setting
+  `controllers.yaml` to 1.6 turns it red.
+* **Criterion 8, and 3.34's end-to-end check.** `tests/test_ros_chain_live.py`
+  13/13 against a robot server on the fake board under `drive: ros`
+  (`mode: hardware`, so 3.34's feedback rule in the path) and a container
+  built from this tree, on their own ports and ROS domain.
+
+**Still owed by the car:** the two values -- the stall window (0.6 s, the
+board's low-speed deadband decides it) and the scrub (1.0).
+
+### 3.36 The simulated body in its own process, so G4 measures the robot server and not the simulator (2026-10-04): plan and criteria, written before building
+
+**Why.** 3.33's G4 failed on the Jetson (3 of 18 at 15W, 2 of 18 at MAXN
+SUPER) with the robot server at 98% of one core and its 20 Hz wheel loop
+late on 15-20% of ticks. Under `SIM_MOTOR_BOARD=fake` that one process runs
+three things: the robot server proper (routes, `robot/safety.py`, the wheel
+loop, `HardwareRobot`'s serial reader), **and** the simulated body
+(`MockRobot` on a `GridWorld`, its ray-cast scan and depth grid), **and**
+the fake board (`sim/fake_esp32.py`'s ~100 Hz loop, which steps the body and
+collides it). A 15 s profile put the fake board's loop and `HardwareRobot`'s
+reader at ~22% of samples each and the scan casting at ~16-17%, all under
+one GIL. On the car the second and third do not exist: the board is a real
+ESP32 on a serial port and the sensors are real devices. So today's G4
+judges the simulator's cost on a slow CPU and charges it to the robot
+server -- it cannot say whether the code the car will run keeps up.
+(Decided by the user 2026-10-04: "do option 1 then plan option 2".)
+
+**The change.** A **sim body process** (working name `sim/body_server.py`)
+owns the `GridWorld`, the `MockRobot` body, the movers and the `FakeEsp32`.
+It opens the fake board's pty and serves the body's sensors and the
+sim-only truth over HTTP on 127.0.0.1. The robot server, under
+`SIM_MOTOR_BOARD=fake` with `SIM_BODY_URL` set, does what it does on the
+car: `HardwareRobot` opens the pty path **as a serial device** (a pty works
+across processes, which is why the fake was built on one), and its
+`sensors` become a thin HTTP client to the body process instead of an
+in-process `MockRobot`. Everything that is the robot server's on the car --
+the wheel loop, the safety vet, arbitration, the serial reader -- stays
+where it is and is now the only thing in that process.
+
+Design points to settle while building, each recorded in the results:
+
+* **Where the client lives.** `robot/` may not import `control/`, so not
+  `RemoteRobot`; a sensors-only client in `sim/` (it is sim plumbing) that
+  the factory imports only on the fake path.
+* **The safety vet reads the scan every wheel-loop period.** Over HTTP that
+  is a localhost round trip per tick; 3.17 measured a bare app over a
+  Docker hop at p99 1.6-4 ms at 200 Hz, inside the 50 ms period. The client
+  may cache the last scan for at most one period if a round trip per tick
+  proves too costly -- judged by criterion 4, never assumed.
+* **Truth and sim-only routes** (`/world/truth`, `/sim/objects`, the
+  `RosWorld` start anchor) read the body process, so the world model's
+  truth source becomes the same client.
+* **Who starts it.** `service/tunnel/run.sh` starts the body process before
+  the robot server when `SIM_MOTOR_BOARD=fake`; `restart.sh` checks its
+  revision like the other two.
+* **The in-process path stays** for the unit suite and the laptop
+  (`SIM_BODY_URL` unset), so nothing that passes today has to change. Two
+  ways of building the same fake body is a duplicate the wall linter should
+  not need to register: the body process builds it through the SAME factory
+  function the in-process path uses.
+
+**Acceptance criteria:**
+
+1. **The robot server runs no simulation.** With `SIM_BODY_URL` set, the
+   robot server process has not imported `sim.fake_esp32`, `sim.grid_world`
+   or `sim.renderer` (checked in a subprocess via `sys.modules`, as
+   `tests/test_brain_server.py` checks the brain).
+2. **Same body, same answers.** On the laptop, `tests/test_fake_esp32.py`,
+   `tests/test_robot_contract.py`'s fake-board backend and
+   `tests/test_ros_chain_live.py` pass with the body out of process; the
+   ground-truth safety sweep `tests/footprint_sweep.py` (3.18's bars: 0
+   under 18 cm of travel-to-contact, 0 contacts) holds through the process
+   boundary.
+3. **No new latency in the stop.** The live silence-stop test (wheels zero
+   within 0.5 s) and 3.34's stale-feedback stop (median <= 0.35 s after the
+   last frame) pass with the body out of process, on the laptop and the
+   Jetson.
+4. **The robot server keeps up on the Jetson at 15W.** Over a full G4 run:
+   wheel loop late ticks **<= 1%** of moving ticks (target 0 -- criterion 6
+   of 3.33 still demands 0 under full load) and the robot server process
+   under **50% of one core**. Recorded alongside the body process's own CPU,
+   so the simulator's cost stays visible rather than disappearing.
+5. **G4.** 3.33 criterion 5 on the Jetson at 15W: 5 consecutive runs of the
+   live chain and nav suites, each `18 passed`, 0 skipped, 0 failed.
+6. **No regression.** The full suite passes on the laptop and the board;
+   the wall linter's budgets are unchanged or raised with a reason.
+
+Criteria 1, 3 and 4 are confirmed red against today's code first (1 by the
+import check, 4 from 3.33's run: 20% late, 98% of a core).
+
+**If criterion 4 fails with the body out of process,** the robot server's
+own code is too slow for this CPU at 15W -- a real finding about the car,
+not the rig -- and the next step is a profile of what is left, taken to the
+user before anything is tuned.
+
+**Estimate:** about half a day to build and verify on the laptop, plus the
+Jetson runs (~15 min each).
+
+**First build, first Jetson run (2026-10-04) -- worse, and why.** Built as
+above (`sim/body_server.py`, `sim/body_client.py`, `SIM_BODY_URL`;
+criteria 1-3 met on the laptop, `tests/test_sim_body_process.py` 8 tests,
+contract suite +1 backend). G4 on the Jetson at 15W: **8 failed, 10 passed**
+(verbs overshooting 2-8 cm, a brain forward leaking past teleop, the wall
+stop at 19.3 cm, nav 0 of 6). The robot server averaged 48% of a core and
+the body process 83%, but the wheel loop counted only **193 moving ticks in
+12 min** (6017 before). Cause: `vet_wheel_velocity()` reads the scan
+**inside `motion_lock`**, and the scan is now an HTTP round trip to a body
+process that is itself near one core -- so the lock is held across a slow
+read, the wheel loop skips every tick it finds the lock taken, and `/wheels`
+posts queue behind it (a py-spy profile showed request threads parked on
+the lock). The split moved the work; it did not let it run in parallel.
+
+**Amended by the user, 2026-10-04:** *"Split the components into separate
+Python programs so that these could fully utilize all available CPU
+cores"* -- and the in-process fallback is withdrawn: *"Add to the plan split
+into multiple programs for the laptop test suite as well."*
+
+**Revised design:**
+
+1. **Physics and sensing in different programs.** `sim/body_server.py`
+   keeps the truth: the GridWorld, the body's kinematics and collision, the
+   movers, furniture moves and the fake board's loop. It publishes a state
+   snapshot (pose, pan, sim clock, an objects version and the objects) to
+   shared memory every board loop, under a sequence counter so a reader
+   never sees a torn write. A **sensor program** (`sim/sensor_server.py`)
+   holds a replica of the house's static layout, rebuilds its objects when
+   the version changes, and casts the scan, the depth grid, the distance
+   and the camera frame from the latest snapshot -- run as **several worker
+   processes**, so rendering and ray casting spread over the free cores
+   instead of queueing on one GIL.
+2. **No sensor read inside `motion_lock`.** The robot server's sensors
+   client keeps the latest scan and depth grid from a background thread
+   (polling at the lidar's own rate, 20 Hz) and the vet reads that copy.
+   This is also the car's shape: a lidar driver delivers scans
+   asynchronously, and nothing on the car can make a scan arrive on demand.
+   **A copy older than `SENSOR_STALE_S` answers `usable: false`** -- the
+   existing fail-safe path (a blind path vetoes forward), never a stale
+   clearance read as fresh. The bound is a criterion, not a tuning knob.
+3. **One way to run the fake board, laptop and board alike.** The
+   in-process `SIM_MOTOR_BOARD=fake` path is removed: every fake-board
+   robot -- `run.sh`, the live suites, and the unit tests that build one
+   (the contract suite's `hardware` backend, `tests/test_fake_esp32.py`'s
+   host side, the 3.25-3.35 board suites) -- runs against the split
+   programs. Tests that test the SIMULATOR itself (`MockRobot`, the
+   renderer, the sweeps) keep building it in process: that is the code
+   under test, not a stand-in for a device. To keep the suite's time
+   bounded, the test fixture starts the programs once per module and
+   resets the body between tests through a sim-only `POST /sim/reset`.
+
+**Criteria, amended** (1-6 above still stand; these are added):
+
+7. **The body is shared by more than one core.** On the Jetson over a G4
+   run: no single simulator process above 80% of one core, the sensor
+   workers' load spread over at least two processes, and the robot server
+   under 50% (criterion 4, unchanged).
+8. **Safety never reads a stale scan as fresh.** A scan or depth copy older
+   than `SENSOR_STALE_S` (proposed 0.15 s -- three wheel-loop periods; the
+   real lidar's own period is 0.1 s) is `usable: false`; killing the sensor
+   program makes forward motion stop within the 0.5 s silence bar. The
+   ground-truth stopping sweep (3.18: 0 under 18 cm of travel-to-contact,
+   0 contacts) is re-run with the vet fed copies of this age, so the cost
+   of a one-period-old scan is MEASURED, not assumed to be zero.
+9. **No `motion_lock` holder blocks on a socket.** Asserted in a test: the
+   vet's sensor reads never touch the network.
+10. **The laptop suite runs the split.** No code path builds `FakeEsp32`
+    in the robot server's process (a test asserts the factory refuses it);
+    the full suite's wall time on the laptop is recorded before and after.
+
+**Estimate, revised:** one to two days, then the Jetson runs.
+
+**Results (2026-10-04/05).** Built as the revised design says: three
+programs (`sim/body_server.py` physics + board, `sim/sensor_server.py` x2,
+`sim/body_state.py` the snapshot) and `sim/body_client.py`'s polled safety
+bundle. Two design points settled while building: the sensor load is split
+across **separate programs on separate ports**, not uvicorn workers on one
+socket (workers sharing a listening socket did not share its load -- one of
+three took 61% of a core, two idled; the first program serves the 20 Hz
+safety stream, the last ROS's full scans and frames); and a stale reading is
+**aged**, not only bounded: `SafetyController._aged()` takes `v x age` off
+any clearance from a reading the robot reports as `sensor_age_s()` old, so
+the look-ahead (3.24 G2) still stops AT the line. That is the car's shape
+too -- a lidar scan is 0-100 ms old when read. `/sim/reset` was not needed
+(each test starts fresh programs; ~1-2 s each).
+
+1. **No simulation in the robot server -- met.** With the URLs set it
+   imports none of `sim.fake_esp32`, `sim.grid_world`, `sim.renderer`,
+   `sim.mock_robot` (it imported all four in process).
+2. **Same body, same answers -- met.** The contract suite's
+   `hardware_remote_body` backend 23/23; the scan crossing the boundary
+   equals the body's own at 240 sweep starts in three houses (the 3.18
+   sweep itself places an in-process body thousands of times, so the
+   boundary is tested on what crosses it, and live by G4's stopping tests).
+3. **No new latency in the stop -- met.** Physics killed: wheels zeroed
+   within 0.45 s (3.34's rule). Sensors killed: the bundle reads unusable
+   within `SENSOR_STALE_S` + one poll and forward is vetoed. Live silence
+   stop through ROS passes on the Jetson.
+4. **The robot server keeps up at 15W -- met.** Over G4 runs: wheel loop
+   late on **2-4 of ~5300-7000 moving ticks (0.04-0.07%)**, worst 0.13 s
+   (was 1192/6017, 20%); robot server **45-47%** of one core (was 98%).
+   The simulator's cost, kept visible: physics 8%, sensor programs 23% and
+   55%.
+5. **G4** -- see 3.33 item 5.
+6. **No regression -- met on the laptop.** Full suite **1752 passed, 0
+   failed** (57 skipped, 3 xfailed) before the aging change; the safety
+   suites (77) and the 3.36 file after it.
+7. **More than one core -- met** by construction (two sensor programs);
+   no simulator process above 56%.
+8. **Stale is never fresh -- met, and measured.** Ground truth, 2880 runs
+   (3.18's sweep fed readings N periods old):
+
+   | reading age | blind to age | aged (`_aged`) |
+   |---|---|---|
+   | 0 | 19.7 cm | -- |
+   | 50 ms | 19.2 cm | 19.7 cm |
+   | 150 ms (the bound) | 18.2 cm | 19.0 cm |
+
+   worst travel-to-contact, 0 under 18 cm and 0 contacts in every row;
+   pinned at the bound, and the pin fails at 0.4 s (63/432 under 18 cm).
+   The first lagged sweep reported 446 runs under 18 cm -- a harness bug
+   (periods with no motion were counted as moves once the early stop was
+   removed), fixed before any number was used.
+9. **No socket under `motion_lock` -- met**: the vet runs 60 times with
+   every network call made to raise.
+10. **The laptop suite runs the split -- met.** The factory refuses an
+    in-process fake board; the six test files that built one start the
+    programs. Wall time **1545 s before, 1659 s after** (both runs shared
+    the CPU with other work, so +7% is an upper bound, not a measurement).
+
+**Found on the way, both in the ROS bridge, both older than 3.36 and both
+invisible on a laptop** (they are why the chain suite's first test had
+failed in every Jetson run, at both power modes, with or without the split):
+
+* **The scan poll starved `/odom`.** A blocking HTTP read in a timer in the
+  node's default mutually exclusive callback group: on the Jetson the poll
+  took about one period, the timer was always due, rclpy serves due timers
+  first, and odometry published at 20 Hz went unread (`odom_age_s` 24-79
+  s). nav2's odom TF went stale with it. Fixed with its own callback group;
+  the live chain test asserts the bridge hears `/odom` (red on the old
+  image: 79 s).
+* **The start-truth anchor assumed a robot at rest.** It was read on the
+  first *successful* scan poll, and again by each restarted container --
+  the fallback test (3.24 G3) kills it while a person drives. On the
+  Jetson both happened after motion, anchoring SLAM's frame ~20 deg and
+  ~45 cm off, so house-frame goals "succeeded" 0.6-1.75 m away. Now
+  `convert.odometry_zero_in_house(truth, odom)` composes the anchor from
+  the truth and the odometry read at one instant, round-trip tested
+  through `world/ros_world.py`'s own conversion; the live suites wait for
+  it before moving. After the fix: SLAM within 0.95-1.2 cm and 0.03-0.7
+  deg of the truth at the end of a run.
+
+Also measured: the sweep's 3.18 bars hold on the stock firmware, but the
+live **turn** test (+/-2 deg) fails about one Jetson run in three on stock
+(-42.2 for -45, 87.1 for 90) -- 3.25's recorded stock-firmware scatter,
+worse under the Jetson's timing jitter, not 3.36. The user chose to judge G4
+on the fork firmware (2026-10-05); see 3.33 item 5.
+
+### 3.37 The robot server's full garbage collections, frozen out of the wheel loop (2026-10-05): criteria, written before building
+
+**Why.** 3.33's headroom rerun (desktop off, one perception pipeline at
+4 Hz -- see 3.33 item 6) still saw 5 late wheel-loop ticks in 10 minutes,
+about every 76 s. A diagnostic run of the unchanged robot server under a
+`gc.callbacks` logger found a **generation-2 collection every 70-85 s
+lasting 55-92 ms**, and the run's late tick one second after a 78 ms one;
+a tick is late past 0.1 s, so a pause that size crosses it only sometimes.
+The same run with `gc.freeze()` 15 s after start (68 313 start-up objects
+moved out of the collector's reach) had **no collection over 20 ms and 0
+late ticks** in 10 minutes. The user had asked for the cause to be
+profiled before anything was tuned (2026-10-05).
+
+**The change.** `robot/server.py`'s lifespan collects and freezes once its
+start-up is done, and unfreezes at shutdown -- the suite starts the app
+hundreds of times in one process, and a freeze that outlived its app would
+keep every later-garbage object alive for the rest of the run.
+
+**Acceptance criteria:**
+
+1. **Frozen while serving, released after.** Inside a running app
+   `gc.get_freeze_count()` > 0; after its shutdown it is back to what it was.
+2. **Headroom (3.33 criterion 6) on the Jetson at 15W**, run as 3.33's
+   rerun was: **0 late ticks** over the 10-minute window, MemAvailable
+   >= 1 GB, no throttling.
+3. **No regression.** The full suite on the laptop; G4's chain and nav
+   suites once on the Jetson.
+
+**Results (2026-10-05).** Criterion 1 met (`tests/test_gc_freeze.py`).
+Criterion 2 **met**: 0 late ticks in 14 289, worst 0.065 s, MemAvailable
+4253 MB, 52 C (3.33 item 6 has the run). Criterion 3 **met**: G4 on the Jetson (fork firmware) **18 passed**, 0 late ticks in 5328, worst 0.068 s, robot server 49% of a core; the laptop suite 1755 passed, 57 skipped, 1 failed and 1 xpassed -- both the stock-firmware turn scatter of 3.25 (`test_odometry_heading_..[hardware]`, measured 6/8 on the unchanged code, and `test_5_a_clear_turn_lands_on_its_angle`, a non-strict xfail for the same cause), not this change.
+
+### 3.38 SLAM that stays put in the furnished home (2026-10-02): criteria, written before measuring
 
 **Why.** 3.31's recorded batch stopped on it. In the furnished home, with
 odometry exact (error under 1 mm -- no drift was configured), SLAM's pose

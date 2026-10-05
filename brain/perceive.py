@@ -123,7 +123,8 @@ CROP_SOURCES = (CROP_LABEL_GATE, CROP_LOW_CONFIDENCE, CROP_SOFT_GATE,
                 CROP_FLOOR_MASK, CROP_LIDAR_CLUSTER)
 
 # Which of 4.2's two reachable paths to take. "auto" is 4.2's own rule --
-# the target's COCO word picks the path -- and stays the default.
+# the target's COCO word picks the path. It WAS the default; the default is
+# now `low_confidence` (DEFAULT_CROP_PATH below, P23).
 #
 # The override exists because the first VALID rig walk (2026-09-07,
 # blue-bottle, camera at floor height, target on the floor) measured the

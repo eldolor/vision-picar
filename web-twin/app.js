@@ -710,7 +710,9 @@
     var scale = canvas.width / grid.width;
     var x = grid.origin_x_m + (px / scale) * grid.resolution_m;
     var y = grid.origin_y_m + (py / scale) * grid.resolution_m;
-    apiPost("/world/goal", {x_m: x, y_m: y}).then(function (r) {
+    // A person's tap (handoff 3b): named as the D-pad is, so it outranks a
+    // running brain mission the way a D-pad press does.
+    apiPost("/world/goal", {x_m: x, y_m: y}, {"x-driver": "twin-dpad"}).then(function (r) {
       if (r && r.accepted === false) {
         showToast("Could not send the goal: " + (r.reason || r.error || "refused"), "error");
       } else {
@@ -1620,6 +1622,33 @@
         corroboration && corroboration.verdict === "unclear" ? "alert" : null);
     }
 
+    // Spec review 3, fix 9: arrival, from status.arrival. The lidar judges
+    // distance and the cloud confirms identity; a refusal is the state an
+    // operator most needs, because without it the mission's end reads as
+    // an obstacle.
+    const arrival = status.arrival;
+    if (!arrival) {
+      setBrainText("brain-tel-arrival", null);
+    } else {
+      const range = typeof arrival.range_m === "number"
+        ? arrival.range_m.toFixed(2) + " m" : null;
+      const identity = arrival.identity || {};
+      let text, cls = null;
+      if (arrival.state === "arrived") {
+        text = "arrived" + (range ? " at " + range : "")
+          + (identity.confirmed ? " \u00b7 identity confirmed by the cloud" : "");
+        cls = "safe";
+      } else if (arrival.state === "refused") {
+        text = "refused" + (range ? " at " + range : "") + " \u00b7 "
+          + (identity.reason || arrival.reason || "identity not confirmed");
+        cls = "alert";
+      } else {
+        text = arrival.state.replace("_", " ") + (range ? " (" + range + ")" : "")
+          + (arrival.reason ? " \u00b7 " + arrival.reason : "");
+      }
+      setBrainText("brain-tel-arrival", text, cls);
+    }
+
     // Phase C. The pacing rule, and the distance to the next look. Reads
     // "frames" on every teleop walk, because a phone on a wheeled rig has
     // no encoders -- and that has to be legible rather than inferred from
@@ -2004,7 +2033,8 @@
 
   function tieredCostSentence() {
     const tail = " A paid <code>/navigate</code> call goes out only on a "
-      + "trigger: mission start, a candidate sighting, or a cold search.";
+      + "trigger (mission start, a candidate sighting, a cold search, or "
+      + "staleness) and once at arrival to confirm the target.";
     // R1 / 1.12: against the simulator nothing runs a detector on a
     // raycaster render -- the simulator reports what its own geometry shows,
     // and the mission's Models line will read "sim ground truth". Saying

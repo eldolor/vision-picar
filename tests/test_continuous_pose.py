@@ -139,7 +139,10 @@ def test_a_turn_that_is_not_a_quarter_turn_really_turns_that_far():
     assert robot.world.heading_deg == pytest.approx(45.0)
     robot.turn_left(10)
     assert robot.world.heading_deg == pytest.approx(35.0)
-    assert robot.get_odometry()["heading_deg"] == pytest.approx(35.0)
+    # Odometry is turn-since-start, clockwise-positive (handoff 2d): 55
+    # degrees of left turns from the start reads 305. It used to equal the
+    # world's compass bearing here, which the car's board cannot know.
+    assert robot.get_odometry()["heading_deg"] == pytest.approx(305.0)
 
 
 def test_driving_at_a_non_cardinal_heading_lands_off_the_grid_lines():

@@ -1,7 +1,7 @@
 """
 python -m tests.demo_slam_home [n] [--slam path/to/slam.yaml] [--drift L,R] [--limit S] [--tour 1]
 
-PLAN-ros-alignment.md 3.34's instrument: does slam_toolbox keep the robot
+PLAN-ros-alignment.md 3.38's instrument: does slam_toolbox keep the robot
 where it is in the furnished home? Each run is a fresh stack (tests/
 demo_explore.stack) and one `explore` mission for a target that is not in
 the house -- the workload that broke SLAM in 3.31's batch: long, wandering,

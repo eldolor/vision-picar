@@ -18,6 +18,7 @@ Both hand back a *fresh* world per test (MockRobot state lives in the
 server process/app instance), so mission outcomes are reproducible.
 """
 
+import os
 import socket
 import subprocess
 import sys
@@ -267,3 +268,117 @@ def mock_world_for(robot):
             f"{robot!r} has no GridWorld to build a world model on. "
             "Only the grid-world backend can -- see world/factory.py.")
     return MockWorld(grid.world)
+
+
+# ---------- the split simulator (PLAN-ros-alignment.md 3.36) ----------
+
+class SimPrograms:
+    """sim/body_server.py and sim/sensor_server.py, started as real programs
+    the way service/tunnel/run.sh starts them. `env()` is what a robot
+    server needs to use them; `kill_body()` / `kill_sensors()` let a test
+    take one away."""
+
+    def __init__(self, sensor_programs: int = 2, **env_extra):
+        self.shm = f"picar_test_{os.getpid()}_{free_port()}"
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("APP_SHARED_SECRET", "SIM_BODY_URL", "SIM_SENSORS_URL")}
+        env.update({"SIM_MAP": "starter_house", "SIM_BODY_SHM": self.shm})
+        env.update({k: str(v) for k, v in env_extra.items()})
+        self._env = env
+        body_port = free_port()
+        self.body_url = f"http://127.0.0.1:{body_port}"
+        self.body = self._start("sim.body_server:app", body_port)
+        self._wait(self.body, self.body_url)
+        self.sensors, urls = [], []
+        for _ in range(sensor_programs):
+            port = free_port()
+            proc = self._start("sim.sensor_server:app", port)
+            self.sensors.append(proc)
+            urls.append(f"http://127.0.0.1:{port}")
+            self._wait(proc, urls[-1])
+        self.sensor_urls = urls
+        self.sensors_url = ",".join(urls)
+
+    def _start(self, app, port, *extra):
+        return subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", app, "--host", "127.0.0.1", "--port", str(port),
+             "--log-level", "warning", *extra], cwd=REPO_ROOT, env=self._env,
+            # Its own process group: `--workers` forks children that a kill
+            # of the supervisor alone would leave serving.
+            start_new_session=True)
+
+    def _wait(self, proc, url):
+        deadline = time.monotonic() + SERVER_START_TIMEOUT_S
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                self.close()
+                pytest.fail(f"{url}: simulator program exited early ({proc.returncode})")
+            try:
+                if httpx.get(f"{url}/health", timeout=0.5).status_code == 200:
+                    return
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.1)
+        self.close()
+        pytest.fail(f"{url}: simulator program not healthy in time")
+
+    def env(self) -> dict:
+        return {"ROBOT_MODE": "hardware", "SIM_MOTOR_BOARD": "fake",
+                "SIM_BODY_URL": self.body_url, "SIM_SENSORS_URL": self.sensors_url,
+                "SIM_BODY_SHM": self.shm}
+
+    def apply(self, monkeypatch) -> "SimPrograms":
+        for k, v in self.env().items():
+            monkeypatch.setenv(k, v)
+        return self
+
+    @staticmethod
+    def _stop(proc, kill=False):
+        import signal
+        if proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL if kill else signal.SIGTERM)
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    def freeze_body(self):
+        """SIGSTOP physics: the board stops streaming as a hung board does,
+        the sensors keep answering from the last state it published."""
+        import signal
+        os.killpg(self.body.pid, signal.SIGSTOP)
+
+    def kill_body(self):
+        self._stop(self.body, kill=True)
+
+    def kill_sensors(self):
+        for p in self.sensors:
+            self._stop(p, kill=True)
+
+    def close(self):
+        import signal
+        for p in [*getattr(self, "sensors", []), getattr(self, "body", None)]:
+            if p is not None:
+                try:
+                    os.killpg(p.pid, signal.SIGCONT)      # a frozen program cannot stop
+                except ProcessLookupError:
+                    pass
+                self._stop(p)
+
+
+@pytest.fixture
+def sim_programs():
+    """A factory: `sim_programs(SIM_MAP="scaled_house", ...)` starts the two
+    simulator programs with those env vars; all are stopped at teardown."""
+    started = []
+
+    def start(**env):
+        programs = SimPrograms(**env)
+        started.append(programs)
+        return programs
+
+    yield start
+    for p in started:
+        p.close()

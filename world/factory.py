@@ -11,13 +11,13 @@ keeps "swap in a real mapper" a config change rather than a rewrite.
 
 Backends, as they arrive:
 
-    none   -> NullWorld (world/interface.py). No mapper. TODAY'S DEFAULT,
-              and the honest description of every deployment that exists
-              -- nothing in this project can build a map yet.
+    none   -> NullWorld (world/interface.py). No mapper. The CODE default
+              when no `world:` block is given; config/robot.yaml ships
+              `sim`, and a body with no grid (teleop, replay) wants this.
     sim    -> sim/mock_world.py (N1/N3). The grid world's own walls as an
               occupancy grid, so the twin can draw a map with no hardware.
-    ros    -> world/ros_world.py (N6). An HTTP client of the SLAM
-              container. The only backend ROS is allowed to reach, and it
+    ros    -> world/ros_world.py (R5/R6, built; off by default --
+              WORLD_MODE=ros). An HTTP client of the SLAM container. The only backend ROS is allowed to reach, and it
               reaches it over HTTP like everything else -- see
               PLAN-mapping.md's containment rule.
 """
@@ -87,6 +87,12 @@ def get_world(
                 "hardware robot with no mapper -- both /world routes "
                 "then answer `usable: false`)."
             )
+        if callable(getattr(grid, "get_truth", None)):
+            raise ValueError(
+                "world mode 'sim' maps the house by casting over its grid, and "
+                "this robot's house is in another process (SIM_BODY_URL, "
+                "PLAN-ros-alignment.md 3.36). Use WORLD_MODE=ros, or unset "
+                "SIM_BODY_URL to keep the body in this process.")
         return MockWorld(grid)
 
     if mode == "ros":
@@ -99,7 +105,11 @@ def get_world(
 
         grid = getattr(robot, "world", None)
         truth = None
-        if grid is not None:
+        if grid is not None and callable(getattr(grid, "get_truth", None)):
+            # 3.36: the house is in sim/body_server.py's process, which
+            # serves the truth itself (sim/body_client.py's RemoteGrid).
+            truth = grid
+        elif grid is not None:
             from sim.mock_world import MockWorld
             truth = MockWorld(grid)
         url = (os.environ.get("ROS_BRIDGE_URL")

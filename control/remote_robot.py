@@ -218,6 +218,11 @@ class RemoteRobot(RobotInterface):
                 # drives on the fallback), which MissionRunner makes of any
                 # transport failure: `failed`, with this reason.
                 raise RobotTransportError(f"ros_unavailable: {detail}")
+            if body.get("reason") == "no_feedback":
+                # 3.34: the robot cannot measure its wheels and will not move
+                # them. Same answer as a dead drive chain: the end of the
+                # mission, `failed`, naming why -- not a veto to turn from.
+                raise RobotTransportError(f"no_feedback: {detail}")
             raise SafetyViolation(detail)
         return body.get("result", {})
 

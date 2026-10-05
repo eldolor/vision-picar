@@ -64,10 +64,14 @@ def probe(targets, recordings="recordings", sample=DEFAULT_SAMPLE,
         hits, peak = 0, 0.0
         for f in chosen:
             r = pipeline.perceive(frame_dict(Path(f)))
-            if r.best:
-                peak = max(peak, float(r.best.probability))
-                if r.best.probability >= gate:
-                    hits += 1
+            # Over EVERY candidate, not `r.best` (handoff 4h): `best` is set
+            # only on a DETECTED frame, P >= the pipeline's own 0.8, so a
+            # prompt grounding at P 0.6 read as "inert" and a --gate below
+            # 0.8 could never count a hit.
+            top = max((float(c.probability) for c in r.candidates), default=0.0)
+            peak = max(peak, top)
+            if top >= gate:
+                hits += 1
         rate = hits / len(chosen)
         coco = coco_class_for(t)
         if coco:

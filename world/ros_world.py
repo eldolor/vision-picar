@@ -238,10 +238,17 @@ class RosWorld(WorldInterface):
         return {"accepted": r.status_code == 200, **r.json()}
 
     def cancel_goal(self) -> dict:
-        return self._http.delete("/goal").json()
+        # Raises on an error status (a 401, a 5xx) rather than returning its
+        # body as an answer: the stop's goal-ending loop retries on a raise,
+        # and a refused cancel must not read as one that happened.
+        r = self._http.delete("/goal")
+        r.raise_for_status()
+        return r.json()
 
     def get_goal(self) -> dict:
-        reply = self._http.get("/goal").json()
+        r = self._http.get("/goal")
+        r.raise_for_status()
+        reply = r.json()
         if reply.get("session") != self._session or not reply.get("goal"):
             return {"goal": None, "plan": []}
         g = dict(reply["goal"])

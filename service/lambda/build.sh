@@ -19,6 +19,18 @@
 set -euo pipefail
 
 BUCKET="${1:?usage: build.sh <deployment-bucket> [region]}"
+
+# Both secrets, before anything is built (handoff 4i). The deploy command
+# printed at the end expands them, and an empty one deploys that function
+# with NO auth. The secrets files define VISION_SECRET and WALKS_SECRET;
+# export these from them (docs/engineering/operations/ENGINEERING.md).
+for name in VISION_SHARED_SECRET WALKS_SHARED_SECRET; do
+  if [ -z "${!name:-}" ]; then
+    echo "STOP: $name is empty -- the printed deploy command would deploy with NO auth." >&2
+    echo "  export VISION_SHARED_SECRET=\"\$VISION_SECRET\" WALKS_SHARED_SECRET=\"\$WALKS_SECRET\"" >&2
+    exit 2
+  fi
+done
 REGION="${2:-us-east-2}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD="$ROOT/.build/lambda"
@@ -78,5 +90,6 @@ echo "      LambdaCodeBucket=$BUCKET \\"
 echo "      VisionCodeKey=lambda/vision-$STAMP.zip \\"
 echo "      WalksCodeKey=lambda/walks-$STAMP.zip \\"
 echo "      VisionSharedSecret=\"\$VISION_SHARED_SECRET\" \\"
-echo "      WalksSharedSecret=\"\$WALKS_SHARED_SECRET\""
-echo "  (Pass both secrets: empty means the functions run with NO auth.)"
+echo "      WalksSharedSecret=\"\$WALKS_SHARED_SECRET\" \\"
+echo "      ReplayVisionUrl=\"<this stack's SiteUrl, e.g. https://dXXXX.cloudfront.net>\""
+echo "  (Both secrets were set when this ran; paste it in the same shell.)"

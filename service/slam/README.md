@@ -109,7 +109,21 @@ Prerequisites: Docker Desktop running; the repo's `.venv` set up
 `LOCAL_SECRET` (mode 600, never in the repo -- `service/tunnel/run.sh`
 reads it and refuses to start without it).
 
-**Order matters: the robot server first, then the container.**
+**Order: the robot server first, then the container.** The plugin's
+`on_activate()` reads `/wheels` once and refuses to come up on a body with
+NO wheels (`usable: false` with no `awaiting_feedback` -- a phone walk, a
+replay). An *unreachable* server is retried. `HardwareRobot` (the car, or
+`SIM_MOTOR_BOARD=fake`) answers `usable: false, awaiting_feedback: true`
+until the board's first `T:1001` frame, and since 2026-10-03 (handoff 2a)
+the plugin activates on that and waits: a container started before the
+board's first frame drives once frames arrive (measured: started 29 s before
+it, then a 45-degree LEFT through ROS landed within 40-50 degrees;
+`tests/test_startup_race.py`). Step 2b's wait is no longer required; it
+still shortens the first verb's wait. **Once active, "no wheels" is retried,
+not fatal** (since
+`PLAN-ros-alignment.md` 3.34): a robot server restarted under the container,
+or a motor board that goes quiet for a moment, is ridden out the same way
+as an unreachable server.
 
 ```bash
 # 1. Build (long the first time: tf2 and slam_toolbox compile from source)
@@ -120,9 +134,12 @@ docker build -t vision-picar-ros service/slam
 #    Add WORLD_MODE=ros for SLAM/nav2 (R5/R6), SIM_MAP to pick the house.
 ROBOT_DRIVE=ros WORLD_MODE=ros SIM_MAP=scaled_house bash service/tunnel/restart.sh
 
+# 2b. Optional since handoff 2a: wait until the robot server reports wheels.
+set -a; source ~/.vision-picar-local-secrets; set +a
+until curl -s -H "x-app-secret: $LOCAL_SECRET" localhost:8000/wheels | grep -q '"usable": *true'; do sleep 0.5; done
+
 # 3. The container. The secret must be EXPORTED in this shell -- a bare
 #    `-e APP_SHARED_SECRET` forwards an empty value if it is not.
-set -a; source ~/.vision-picar-local-secrets; set +a
 export APP_SHARED_SECRET="$LOCAL_SECRET"
 docker run -d --name picar-ros --restart unless-stopped \
   -p 8090:8090 -p 127.0.0.1:8765:8765 \
@@ -153,6 +170,18 @@ Notes on those choices:
 * **Odometry drift** (to watch loop closure fix it, R5): add
   `SIM_ODOM_DRIFT=1.0,1.03` (left,right encoder scale -- "right encoder 3%
   long") to step 2. The yaml equivalent is `sim.odom_drift`.
+* **Over the fake motor board** (G4's configuration): add
+  `ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake` to step 2. Since
+  `PLAN-ros-alignment.md` 3.36 `run.sh` then starts the simulated body as
+  its own programs before the robot server -- `sim/body_server.py` (physics
+  and the board's pty) on :8002, `sim/sensor_server.py` on :8003 and :8004
+  -- and `restart.sh` frees those ports too and checks the body program's
+  revision. `WORLD_MODE=ros` (or `none`) is required there: `sim` is
+  refused with a remote body.
+* **Start truth.** The bridge records where the robot stood at odometry
+  zero within 30 s of start (a thread of its own; troubleshooting row
+  below). The live chain and nav suites wait up to 35 s for it before they
+  move the robot.
 * **Back to normal:** `docker rm -f picar-ros` and a plain
   `bash service/tunnel/restart.sh` (which returns to `drive: direct`).
 
@@ -181,6 +210,7 @@ network you do not own. Starting this and the robot server at boot is
 | Variable | Default | Read by |
 |---|---|---|
 | `ROBOT_URL` | `http://host.docker.internal:8000` | bridge, `picar_sim_hardware` (via the xacro arg) |
+| `TRACK_SCRUB` | `1.0` | the launch file: `diff_drive_controller`'s `wheel_separation_multiplier` (skid steer's effective/geometric track, `PLAN-ros-alignment.md` 3.35). Leave unset in the simulator; on the car set it to the measured value here AND for the robot server |
 | `BRAIN_URL` | `http://host.docker.internal:8001/brain` (`""` = off) | bridge (`brain_view`) |
 | `APP_SHARED_SECRET` | empty (= no header sent, bridge accepts anything) | bridge (both directions), `picar_sim_hardware` |
 | `BRIDGE_PORT` | `8090` | bridge |
@@ -200,10 +230,12 @@ From the host:
 curl -s localhost:8090/health | python -m json.tool   # no secret needed
 ```
 
-Healthy: `"ok": true`, `odom_age_s` and `scan_age_s` under ~0.2,
-`scans_published` climbing, `brain_error` null (or the brain view off).
-`odom_age_s: null` means the controllers never came up; `scan_age_s: null`
-means the bridge cannot read the robot server's `/scan`.
+Healthy: the bridge answers at all (its `ok` is always `true`, so it is not
+a signal), `odom_age_s` and `scan_age_s` under ~0.2, `scans_published`
+climbing, `brain_error` null (or the brain view off), and the robot
+server's `/health` shows `drive.ros_up: true`. `odom_age_s: null` means the
+controllers never came up; `scan_age_s: null` means the bridge cannot read
+the robot server's `/scan`.
 
 Inside the container (`docker exec` bypasses the entrypoint, so go through
 it to get the ROS environment):
@@ -232,12 +264,20 @@ visible, including the brain's; nothing can be published.
 | You see | It means |
 |---|---|
 | Container log: `POST /wheels to ... failed (N in a row) -- still trying` | The robot server is down, unreachable (Linux without host networking), or rejecting the secret (401) -- check `APP_SHARED_SECRET` was exported before `docker run`. The wheels are stopped meanwhile by the robot server's watchdog. |
-| Container log: `the robot server reports no wheels (usable: false)` | The robot server is not in a mode with wheels (`drive: direct` still, or a teleop/replay backend). Restart it with `ROBOT_DRIVE=ros`. |
-| Robot server refuses `/action` with reason `ros_unavailable` | `drive: ros` and the bridge did not accept the twist. Usually the container is not up -- but ALSO what you get when the `/action` had no `x-driver` header or came from a teleop driver: the bridge maps only `twin-dpad`, `brain` and `ros` onto twist_mux inputs, answers 400 `unknown driver`, and the robot server reports that as unreachable (by code reading; a known gap). Check `curl localhost:8090/health` first. |
+| Container log: `the robot server reports no wheels (usable: false)` | `GET /wheels` answered `usable: false`. `/wheels` answers in either drive mode and `MockRobot` always has wheels, so this is NOT a sign of `drive: direct` (check `drive.mode` in the robot server's `/health` for that). The real causes: a body with no wheels (teleop or replay), or (before 2026-10-03, or a robot server older than that) `HardwareRobot` before the board's first `T:1001` frame. Since handoff 2a a board not yet reporting answers `awaiting_feedback: true` and the plugin activates and waits. The plugin is then not activated: fix the cause, then `docker rm -f picar-ros` and run step 3 again. Mid-run the log reads `GET /wheels (no fresh wheel feedback) ... still trying` instead, and the plugin recovers by itself when the board reports again (3.34). |
+| `odom_age_s: null` from the start; `ros2 control list_hardware_components` does not show `picar` active; the robot server's `drive.ros_up` never turns true | Deactivated at START-UP: `on_activate()` read "no wheels", so the controllers never came up. |
+| Controllers read `active` in `list_controllers`, but nothing moves; the robot server's `drive.ros_up` turns `false` while the container is up, with `drive.ros_post_age_s` climbing past 0.5 (the plugin's posts have stopped), so autonomy is refused `ros_unavailable` | Deactivated MID-RUN. Since 3.34 `read()` no longer returns ERROR on "no wheels", so this should not happen; an image built before 3.34 does it on a robot server restart under `HardwareRobot`. Rebuild the image; a container restart recovers it meanwhile. |
+| The robot moves again after Stop, during a nav2 goal | Not expected since 2026-10-03: a person's stop holds nav2's wheel commands at zero until nav2 reports the goal over. Check who stopped: the brain's stop (`x-driver: brain`) spares a goal by design. Otherwise look for the robot server's log line `stop: could not end the nav2 goal yet, retrying` (the bridge is not answering -- the hold stays on) and for `GET /world/goal` still reading `active`. |
+| `drive.ros_up` is `false` with `drive.bridge_up` `false` and `drive.ros_post_age_s` small | The BRIDGE failed (a refused connection, a timeout or a 5xx on a send) while the plugin still posts. A person drives on the direct fallback; autonomy is refused, and the plugin's `/wheels` posts are answered `ros_unavailable` and move nothing. It clears by itself at the bridge's first answer to the server's background `/health` probe. Check `curl localhost:8090/health`; restart the container only if that fails. |
+| Robot server refuses `/action` with reason `ros_unavailable` | `drive: ros` and the bridge did not accept the twist. Usually the container is not up, or the bridge is down (row above) -- but ALSO what you get when the `/action` had no `x-driver` header or came from a teleop driver: the bridge maps only `twin-dpad`, `brain` and `ros` onto twist_mux inputs and answers 400 `unknown driver` (a known gap). That 400 does not mark ROS down: `drive.bridge_up` stays `true`. Check `curl localhost:8090/health` first. |
 | nav2 log: `Transform data too old` and the robot never moves | `map -> odom` is stale: the image was built without the pinned slam_toolbox (`restamp_tf`). Rebuild. |
 | nav2 "reaches" every goal in ~0.08 s | TF listeners frozen -- the tf2 deadlock, or Fast DDS instead of Cyclone. Check `echo $RMW_IMPLEMENTATION` in the container and that the image built tf2 from source. |
 | Goals abort "off the global costmap" | nav2 cannot plan into a room SLAM has never seen. Map first: `python -m tests.demo_slam_lap`, then goals. |
 | `/diagnostics` shows the brain STALE | `BRAIN_URL` prefix mismatch (section 3) or the brain is down. |
+| The robot server's `/world/pose` reads `usable: false` under `WORLD_MODE=ros` | The bridge is unreachable, or there is no `map -> base_footprint` transform yet. Check `curl localhost:8090/health`. |
+| The twin's SLAM error readout shows "0.0 cm" after driving | The world's anchor fell back to `first_contact`: the bridge has no `start_truth`. Either the image predates `start_truth` (rebuild it), or the bridge recorded none in its window: since `PLAN-ros-alignment.md` 3.36 a thread started with the node (`_record_start_truth()` in `bridge.py`) waits for the controllers' first `/odom`, then retries `/world/truth` for up to `START_TRUTH_WINDOW_S` (30 s) and logs `no start truth recorded in the first 30 s`. An answer of `usable: false` (hardware) also leaves it null. Restart the container. |
+| House-frame goals land consistently off by a rotation (~20 deg) for a whole session | An image older than 3.36, whose start truth was the truth at the first scan poll on the assumption the robot had not moved; a late read (a slow board, a container restarted while a person drove) broke that. Rebuild: the bridge now composes the house pose at odometry zero from truth and odometry read at one instant (`convert.odometry_zero_in_house()`). |
+| `odom_age_s` climbs to minutes while `ros2 topic hz /diff_drive_controller/odom` shows 20 Hz; nav2 goals stall (odom TF stale) | An image older than 3.36: the bridge's blocking scan poll shared the node's default callback group and starved the `/odom` subscription. The poll now has its own `MutuallyExclusiveCallbackGroup`. Rebuild. `tests/test_ros_chain_live.py`'s first test fails on it. |
 
 ---
 

@@ -125,3 +125,24 @@ def test_boto3_is_not_bundled():
     that is usually older than the one AWS ships."""
     for name in ("requirements-vision.txt", "requirements-walks.txt"):
         assert "boto3" not in listed(LAMBDA / name)
+
+
+# ---------- handoff 4i: no deploy command without both secrets ----------
+# build.sh printed a deploy command expanding $VISION_SHARED_SECRET and
+# $WALKS_SHARED_SECRET; the secrets files define VISION_SECRET and
+# WALKS_SECRET, so pasted as printed it deployed with NO auth.
+
+def test_build_refuses_to_start_without_both_secrets():
+    import os
+    import subprocess
+
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("VISION_SHARED_SECRET", "WALKS_SHARED_SECRET")}
+    env["VISION_SHARED_SECRET"] = "set"
+    # Missing WALKS_SHARED_SECRET: it must stop before pip, zip or aws run.
+    r = subprocess.run(["bash", str(LAMBDA / "build.sh"), "no-such-bucket"],
+                       env=env, capture_output=True, text=True, timeout=30)
+    assert r.returncode != 0
+    assert "WALKS_SHARED_SECRET" in r.stderr + r.stdout
+    assert "==> vision" not in r.stdout, "it started building before checking"
+    assert "aws cloudformation deploy" not in r.stdout

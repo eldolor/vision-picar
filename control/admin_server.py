@@ -87,7 +87,7 @@ from control.brain_config import load_brain_config
 from control.metrics_routes import register_metrics_routes
 from control.recording_routes import mount_recording_routes
 from control import walk_eval, walk_replay
-from control.walk_store import WalkStoreError, walk_store_from_config
+from control.walk_store import METRICS_PREFIX, WalkStoreError, walk_store_from_config
 
 logger = logging.getLogger("admin_server")
 
@@ -387,7 +387,10 @@ def create_app(config_path=None, store=None) -> FastAPI:
         Path.resolve() collapses `..` and an S3 key does not."""
         if not WALK_NAME.match(walk):
             raise HTTPException(status_code=400, detail="Bad walk name.")
-        if not store.walk_exists(walk):
+        # A day of mission metrics shares the store but is not a walk
+        # (handoff 4c): it must not be readable, replayable or DELETABLE
+        # through a walk route.
+        if walk.startswith(METRICS_PREFIX) or not store.walk_exists(walk):
             raise HTTPException(status_code=404, detail="No such walk.")
         return walk
 

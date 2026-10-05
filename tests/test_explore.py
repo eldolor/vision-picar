@@ -329,7 +329,7 @@ def test_a_sighting_that_always_wedges_runs_out_of_tries():
 
 
 def test_a_place_that_wedges_the_robot_again_runs_out_of_tries():
-    """3.34's acceptance run: one goal, wedged against an armchair, sent
+    """3.38's acceptance run: one goal, wedged against an armchair, sent
     eleven times -- a wedge was never held against the place."""
     from brain.frontier import RETRY_LIMIT
     grid = build_world("scaled_house")

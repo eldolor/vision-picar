@@ -36,6 +36,7 @@ from robot.interface import (
     DEPTH_COLS_DEFAULT,
     RobotInterface,
     VERB_PERIOD_S,
+    WheelFeedbackLost,
     carry_out_verb,
     ZONE_RANGE,
     ZONE_UNUSABLE,
@@ -43,17 +44,11 @@ from robot.interface import (
 
 logger = logging.getLogger("safety")
 
-# Only FORWARD triggers the pre-move distance re-check below. Correct today
-# because every current backend either pivots in place (MockRobot's grid
-# turns hit nothing) or doesn't move at all (ReplayRobot/TeleopRobot log-only
-# acks) -- so a turn can never collide. It will be WRONG once
-# robot/hardware_robot.py exists: a real PiCar-X's LEFT/RIGHT is Ackermann
-# steering plus forward motion, an arc that consumes real space ahead, with
-# no obstacle check at all as written. HARDWARE-READINESS.md section 5.2
-# has the full reasoning. Nothing in simulation can ever surface the need
-# for this, which is exactly why it's easy to forget -- flip this to
-# {"FORWARD", "LEFT", "RIGHT"} as part of writing hardware_robot.py, not
-# after the first collision.
+# The actions the forward pre-move check below applies to. Turns are not in
+# it because the chassis is differential drive (the PiCar-X's Ackermann arc
+# was retired, PLAN-onboard-perception.md 1.1): a turn pivots in place, and
+# what it can still hit -- a corner swinging into furniture -- is vetted by
+# pivot_scale() (3.19), reverse by reverse_clearance() (3.18).
 FORWARD_ACTIONS = {"FORWARD"}
 # R2b: checked against the lidar's REAR beams, by the user's decision
 # (PLAN-ros-alignment.md 3.10). Every way of backing up -- /action REVERSE
@@ -462,11 +457,11 @@ class SafetyController:
         The beams within the same half-angle as the forward path cone
         (`PATH_HALF_ANGLE_DEG`) either side of dead astern, nearest return,
         minus `LIDAR_TO_REAR_BUMPER_CM`. A beam with no return is clear. A
-        backend with no usable scan answers `(None, "no_rear_sensor")` and
-        the reverse proceeds -- today's behaviour, because refusing every
-        reverse on a lidar-less backend would make it undrivable rather than
-        safe. With a lidar fitted, this is what stands between a reverse
-        and whatever is behind.
+        backend with no usable scan answers `(None, "no_rear_sensor")`;
+        `reverse_clearance()` then refuses the reverse if the body has
+        wheels to move (2026-10-02) and lets it through if it has none. With
+        a lidar fitted, this is what stands between a reverse and whatever
+        is behind.
         """
         scan = self._scan() if scan is None else scan
         if not scan or not scan.get("usable"):
@@ -609,13 +604,64 @@ class SafetyController:
         cone, corridor = self.path_clearance(), self.footprint_clearance(+1)
         if cone[1] == "depth_grid_facing_away" and corridor[1] == "no_scan":
             return 0.0, "path_not_observed"
-        return self._nearer(cone, corridor)
+        return self._aged(self._nearer(cone, corridor), +1)
 
     def reverse_clearance(self) -> Tuple[Optional[float], str]:
         """What a reverse is vetted against: the rear cone and the swept
-        corridor astern, in series, off one scan."""
+        corridor astern, in series, off one scan.
+
+        **If nothing can see astern and the body really moves, the answer is
+        0.0** (decided by the user 2026-10-02, docs-review/SPEC-REVIEW.md
+        finding 3): FORWARD's rule from 3.18 part 2, applied to backing up.
+        "Really moves" means its wheel encoders report -- the real car
+        before its lidar driver lands, which until now reversed blind. A
+        body with no wheels to read (a phone walk, a replay, a test double)
+        keeps the old answer, `(None, "no_rear_sensor")`: its REVERSE moves
+        nothing, or moves a person who can see. Turns stay allowed blind --
+        they are how a robot turns away from something."""
         scan = self._scan()
-        return self._nearer(self.rear_clearance(scan), self.footprint_clearance(-1, scan))
+        if not (scan and scan.get("usable")) and self._has_wheels():
+            return 0.0, "astern_not_observed"
+        return self._aged(self._nearer(self.rear_clearance(scan),
+                                       self.footprint_clearance(-1, scan)), -1)
+
+    def _aged(self, result: Tuple[Optional[float], str], direction: int
+              ) -> Tuple[Optional[float], str]:
+        """A reading taken `sensor_age_s()` ago, less the way covered since
+        (3.36). The look-ahead (3.24 G2) stops a move AT the line only if the
+        clearance is the clearance NOW; a lidar scan is 0-100 ms old when it
+        is read on the car, and the split simulator's bundle up to
+        `SENSOR_STALE_S`. Moving toward the obstacle at v for that long ate
+        v x age of it. A robot that cannot say how old its readings are
+        (every in-process backend: they read on demand) is unchanged."""
+        clearance, source = result
+        age_of = getattr(self.robot, "sensor_age_s", None)
+        if clearance is None or clearance <= 0 or age_of is None:
+            return result
+        age = age_of()
+        if not age:
+            return result
+        try:
+            w = self.robot.get_wheel_state()
+        except Exception:  # noqa: BLE001 -- no speed to age by
+            return result
+        if not w.get("usable"):
+            return result
+        v = (w["left"]["velocity_rad_s"] + w["right"]["velocity_rad_s"]) / 2.0 * w["wheel_radius_m"]
+        toward = max(0.0, direction * v)
+        if toward == 0:
+            return result
+        return (max(0.0, round(clearance - toward * age * 100.0, 1)),
+                f"{source}, aged {age * 1000:.0f} ms")
+
+    def _has_wheels(self) -> bool:
+        get_wheel_state = getattr(self.robot, "get_wheel_state", None)
+        if get_wheel_state is None:
+            return False
+        try:
+            return bool(get_wheel_state().get("usable"))
+        except Exception:  # noqa: BLE001 -- a body that cannot say has none to vet
+            return False
 
 
     def vet_wheel_velocity(self, left_rad_s: float, right_rad_s: float):
@@ -737,6 +783,12 @@ class SafetyController:
         period -- 3.22. Returns the backend's result; raises SafetyViolation
         if the verb achieved (almost) nothing because the way was shut."""
         outcome = self.run_verb(plan)
+        if outcome["ended"] == "no_feedback":
+            # 3.34: not a veto -- the next move cannot be closed either.
+            self.robot.stop()
+            msg = f"{action} ended: {outcome['reason']}"
+            logger.warning(msg)
+            raise WheelFeedbackLost(msg)
         straight = plan["kind"] == "straight"
         done, least = outcome["done"], (VERB_MIN_MOVE_M if straight else VERB_MIN_TURN_DEG)
         if outcome["ended"] == "clamped" and done < least:
@@ -809,6 +861,9 @@ class SafetyController:
         straight = plan["kind"] == "straight"
         tol = SETTLE_TOLERANCE_M if straight else SETTLE_TOLERANCE_DEG
         w = self.robot.get_wheel_state()
+        if not w.get("usable"):
+            return {"done": outcome["done"], "ended": "no_feedback",
+                    "reason": "the wheels stopped being measured before settling"}
         r, track = w["wheel_radius_m"], w["track_width_m"]
         wheel = (SETTLE_LINEAR_M_S / r if straight
                  else SETTLE_TURN_RAD_S * track / 2.0 / r)
@@ -818,6 +873,10 @@ class SafetyController:
             if getattr(self.robot, "stop_count", 0) != stops0:
                 ended, reason = "stopped", "stop() was called while settling"
                 break
+            if not self.robot.get_wheel_state().get("usable"):
+                # 3.34: nothing left to settle against.
+                return {"done": outcome["done"], "ended": "no_feedback",
+                        "reason": "the wheels stopped being measured while settling"}
             err = plan["target"] - self._progress(plan, start)
             if abs(err) <= tol:
                 break
@@ -831,9 +890,14 @@ class SafetyController:
             if fix["ended"] == "stopped":
                 ended, reason = "stopped", fix["reason"]
                 break
+            if fix["ended"] == "no_feedback":
+                return {"done": outcome["done"], "ended": "no_feedback", "reason": fix["reason"]}
             if fix["ended"] == "clamped":
                 reason = f"settle refused: {fix['reason']}"
                 break
+        if not self.robot.get_wheel_state().get("usable"):
+            return {"done": outcome["done"], "ended": "no_feedback",
+                    "reason": "the wheels stopped being measured while settling"}
         return {"done": self._progress(plan, start), "ended": ended, "reason": reason}
 
     def _dispatch(self, action: str, **kwargs) -> dict:

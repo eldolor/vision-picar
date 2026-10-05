@@ -14,20 +14,23 @@ person would ask a colleague. It plugs into `MissionRunner`'s existing
 `vision_fn(frame) -> scene` seam, so nothing in `control/` learns that
 perception got a new tier -- 2.6's first invariant, kept.
 
-## The three triggers this can actually fire
+## The triggers this can actually fire
 
-2.4 lists seven. Four of them belong to a reactive tier that holds and
+2.4 lists seven. Three of them belong to a reactive tier that holds and
 executes a goal (C6) and to a planner that issues one (C8), neither of
-which exists, so firing them here would be theatre. The three that are
-real without either:
+which exists, so firing them here would be theatre. The four that are
+real without either -- the three below, and `staleness` (added 2026-09-07,
+see `DEFAULT_STALE_AFTER`) -- plus one paid call that is not a trigger:
+`arrival_confirmation`, the identity check at arrival (handoff 1a,
+`confirm_arrival()`).
 
 | Trigger | When | Why it is honest here |
 |---|---|---|
-| `mission_start` | first frame | 2.5: the one genuinely blocking call |
+| `mission_start` | first frame | 2.5: blocking only under a synchronous tier; under `async_cloud` the one blocking call is the arrival confirmation |
 | `candidate_sighting` | perception says `detected` | 2.4's *"the one that does real work"* -- on-board proposes, the cloud confirms identity and **reachability** |
 | `cold_search` | `absent` for `cold_search_after` consecutive frames | 2.4's inverse: the cloud proposes, on-board tracks. Without it a target outside COCO's 80 never fires anything and the robot can drive past it indefinitely |
 
-`goal_achieved`, `goal_impossible`, `room_change` and `staleness` are
+`goal_achieved`, `goal_impossible` and `room_change` are
 deliberately absent. They are listed in `UNAVAILABLE_TRIGGERS` so the gap
 is legible rather than looking like an oversight.
 
@@ -85,6 +88,10 @@ logger = logging.getLogger("tiered")
 TRIGGER_START = "mission_start"
 TRIGGER_CANDIDATE = "candidate_sighting"
 TRIGGER_COLD_SEARCH = "cold_search"
+# Handoff 2026-10-02 1a: not a trigger the policy fires on its own, but a
+# paid call all the same, so it is counted beside them. `brain/agent.py`
+# asks for it once per arrival, through `confirm_arrival()`.
+TRIGGER_ARRIVAL = "arrival_confirmation"
 
 # 2.4's other four. Named, not implemented -- each needs a tier that does
 # not exist yet, and a trigger that cannot fire is worse than one that is
@@ -215,12 +222,16 @@ TURN_ACTIONS = ("LEFT", "RIGHT")
 # bearing to steer on. No mode, nothing to get stuck in.
 #
 # **The risk is a local false positive steering at the wrong object.**
-# Bounded rather than eliminated: the existing P>=0.8 gate and two-frame
-# hysteresis have to pass first, and the cloud still owns identity, so a
-# wrong lock-on is corrected at the next paid call. On this corpus the
-# local tier reads 26% and 68% at zero false positives on the basket
-# walks, so it WILL sometimes steer at a handbag. That is recoverable.
-# Not steering at all is not.
+# Bounded only by the P>=0.8 gate: ONE frame that passes it steers. The
+# two-frame hysteresis gates the cloud triggers, not steering, and under
+# `async_cloud` a landed cloud answer never overrides a local sighting, so a
+# wrong lock-on is not corrected by the next paid call either. On this
+# corpus the local tier reads 26% and 68% at zero false positives on the
+# basket walks, so it WILL sometimes steer at a handbag. That is
+# recoverable; what must not happen is ending `found` there, and that is
+# guarded at ARRIVAL instead (handoff 2026-10-02 1a): `confirm_arrival()`
+# puts the arrival frame to the cloud, and without its yes there is no
+# `found`. Not steering at all is not recoverable.
 DEFAULT_STEER_ON_SIGHT = True
 
 # P25 / P7c item 2 -- dead-reckon the bearing to a sighting the detector is
@@ -727,6 +738,53 @@ class TieredVision:
         self._last_cloud_scene = scene
         return self._annotate(scene, perception, trigger)
 
+    # -- 1a: the cloud confirms identity at arrival -----------------------
+
+    def confirm_arrival(self, frame: dict) -> dict:
+        """One paid, synchronous cloud call on the ARRIVAL frame: is the
+        target in it? (Handoff 2026-10-02 1a, decided by the user.)
+
+        `brain/arrival.py` decides DISTANCE from the lidar; this decides
+        IDENTITY, which is the cloud's question by 1.11's split. Only an
+        explicit `target_visible: true` confirms -- a scene that does not
+        say, or a call cap already spent, is a refusal, because the cost of
+        a missed `found` is a few more steps and the cost of a wrong one is
+        the mission. Synchronous even under `async_cloud`: the mission is
+        about to end on the answer, so there is nothing to hold meanwhile.
+        A failure raises, and the runner counts it against B3.2's budget.
+        """
+        if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
+            return {"confirmed": False, "cloud_called": False,
+                    "reason": "call cap reached -- identity not confirmed",
+                    "stats": self.stats.as_dict()}
+        # One call in flight at a time, this one included (spec review 3,
+        # fix 8): under `async_cloud` a trigger call may still be out. Wait
+        # for it and apply it first -- the confirmation already blocks the
+        # tick, and the runner's per-call timeout bounds the whole wait.
+        fut = self._inflight
+        if fut is not None:
+            try:
+                fut.result()
+            except BaseException:  # noqa: BLE001 -- _collect_inflight holds it
+                pass
+            self._collect_inflight()
+        self.stats.cloud_calls += 1
+        self.stats.triggers[TRIGGER_ARRIVAL] = self.stats.triggers.get(TRIGGER_ARRIVAL, 0) + 1
+        started = time.perf_counter()
+        try:
+            scene = self.cloud_vision_fn(frame) or {}
+        finally:
+            self.stats.record("cloud_ms", (time.perf_counter() - started) * 1000)
+        nav = scene.get("_navigate") or {}
+        confirmed = nav.get("target_visible") is True
+        return {"confirmed": confirmed, "cloud_called": True,
+                "reason": ("the cloud sees the target in the arrival frame" if confirmed
+                           else "the cloud does not see the target in the arrival frame"),
+                "cloud_reasoning": nav.get("reasoning"),
+                # The frame's `_tier` snapshot was taken before this call; the
+                # agent refreshes it from here so status and metrics count it.
+                "stats": self.stats.as_dict()}
+
     # -- Phase A: dispatch, collect, and hold the goal --------------------
 
     def _dispatch(self, frame: dict, trigger: str) -> None:
@@ -828,10 +886,9 @@ class TieredVision:
     def _held_direction(self) -> Optional[str]:
         """The last direction the cloud gave, if there is one.
 
-        2.5's *"the reactive tier always holds a current goal"*. Used only
-        while a call is in flight: on an ordinary free frame the stand-in
-        keeps its scan, because holding a goal indefinitely with nothing
-        confirming it is a different design and an unmeasured one.
+        2.5's *"the reactive tier always holds a current goal"*. Used while
+        a call is in flight and, under `hold_goal` (shipped `true`), on
+        every free frame -- see `_local_scene()`.
         """
         if not self._last_cloud_scene:
             return None

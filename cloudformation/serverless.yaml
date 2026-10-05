@@ -69,6 +69,15 @@ Parameters:
       x-app-secret required by the vision function. EMPTY MEANS NO AUTH --
       require_secret() is a no-op when APP_SHARED_SECRET is unset, which
       leaves /navigate publicly callable and billable. Always pass one.
+  ReplayVisionUrl:
+    Type: String
+    Default: ""
+    Description: >
+      Where the walks function's replay asks /navigate -- this stack's own
+      SiteUrl (its CloudFront address). A parameter, not a reference: the
+      gateway already depends on the walks function, so pointing the
+      function back at the gateway would be a circular dependency. Empty
+      leaves replay answering "no vision service configured" (handoff 3c).
   WalksSharedSecret:
     Type: String
     Default: ""
@@ -84,6 +93,7 @@ Conditions:
   HasEnvLabel: !Not [!Equals [!Ref EnvLabel, ""]]
   HasVisionSecret: !Not [!Equals [!Ref VisionSharedSecret, ""]]
   HasWalksSecret: !Not [!Equals [!Ref WalksSharedSecret, ""]]
+  HasReplayVisionUrl: !Not [!Equals [!Ref ReplayVisionUrl, ""]]
 
 Resources:
 
@@ -208,6 +218,11 @@ Resources:
           RECORDING_PREFIX: recordings
           APP_SHARED_SECRET: !If [HasWalksSecret, !Ref WalksSharedSecret, !Ref "AWS::NoValue"]
           ENV_LABEL: !If [HasEnvLabel, !Ref EnvLabel, !Ref "AWS::NoValue"]
+          # Replay re-asks /navigate (handoff 3c). BOTH are needed: with only
+          # the URL, control/admin_server.py falls back to APP_SHARED_SECRET
+          # -- the WALKS secret -- and the vision function answers 401.
+          VISION_URL: !If [HasReplayVisionUrl, !Ref ReplayVisionUrl, !Ref "AWS::NoValue"]
+          VISION_SHARED_SECRET: !If [HasVisionSecret, !Ref VisionSharedSecret, !Ref "AWS::NoValue"]
 
   # ------------------------------------------------------------ api gateway
 

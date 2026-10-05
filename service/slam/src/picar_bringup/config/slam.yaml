@@ -58,7 +58,7 @@ slam_toolbox:
     correlation_search_space_dimension: 0.5
     correlation_search_space_resolution: 0.01
     correlation_search_space_smear_deviation: 0.1
-    # 3.34: how far ONE loop closure may move the robot -- a 2 m window, so at
+    # 3.38: how far ONE loop closure may move the robot -- a 2 m window, so at
     # most 1 m each way (was 8 m: up to 4 m). In the furnished home every one
     # of three runs on 8 m closed a loop to the wrong place, 1.6-2.5 m off,
     # and never recovered (odometry within 8 cm throughout). Closing a loop

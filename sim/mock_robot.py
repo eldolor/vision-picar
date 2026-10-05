@@ -152,6 +152,11 @@ class MockRobot(RobotInterface):
         # R0 integrates a wheel velocity and a wheel radius is in metres;
         # a cell count would have to be un-rounded to get back here.
         self._path_m = 0.0
+        # Odometry heading is degrees turned since START, clockwise-positive
+        # (handoff 2d): the same convention as the car's board, which knows
+        # how far it has turned and not which way is north. The compass
+        # bearing is the WORLD's answer (get_pose()), not the body's.
+        self._heading0 = self.world.heading_deg
         # Phase R0: the standing wheel command, and the integrated wheel
         # positions the encoders are read off. Two separate things on
         # purpose -- `ros2_control` writes the first and reads the second,
@@ -188,12 +193,9 @@ class MockRobot(RobotInterface):
     # `write()` sets wheel velocity commands and whose `read()` returns wheel
     # positions, which is the shape of the three methods below.
     #
-    # These are NOT on `RobotInterface`, and not yet. R2 is where `/wheels`
-    # becomes a route and where promoting them to the interface (with an
-    # honest "this backend has no wheels to report" default, as
-    # `get_depth_grid()` and `get_odometry()` both carry) belongs. Until a
-    # consumer exists, adding an abstraction is adding a second thing to
-    # keep in step.
+    # On `RobotInterface` since R2, with an honest "this backend has no
+    # wheels to report" default, as `get_depth_grid()` and `get_odometry()`
+    # both carry; served as GET/POST `/wheels`.
 
     def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
         """Command both wheels, in rad/s. Positive is forward on both.
@@ -713,7 +715,7 @@ class MockRobot(RobotInterface):
         return {
             "usable": True,
             "distance_m": round(self._path_m, 4),
-            "heading_deg": round(self.world.heading_deg, 4),
+            "heading_deg": round((self.world.heading_deg - self._heading0) % 360.0, 4) % 360.0,
         }
 
     def get_distance(self) -> float:

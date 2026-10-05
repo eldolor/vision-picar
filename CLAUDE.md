@@ -18,7 +18,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Confirm everything still works (about 1420 passed, 51 skipped as of 2026-09-28, with a browser
+# Confirm everything still works (about 1720 passed, 55 skipped as of 2026-10-03, with a browser
 # installed -- see below; fewer without, as the parity and UI tests skip)
 pytest tests/ -v
 
@@ -111,6 +111,22 @@ succeeds through it exercises the path the car will use). **Changed
 phase done only when someone had watched it on a phone; the user replaced
 that with a data-driven definition of done.
 
+**The third, for the documentation (2026-10-02, decided by the user):
+every component has an ARCHITECTURE spec and an ENGINEERING spec, kept
+apart** -- `docs/decisions/0001-architecture-vs-engineering-specs.md`.
+Architecture (`docs/<domain>/ARCHITECTURE.md`) says WHAT and WHY --
+boundaries, decisions with the alternatives rejected, contracts, failure
+modes -- and stays true if the code is rewritten. Engineering
+(`docs/engineering/<domain>/ENGINEERING.md`) says HOW -- modules,
+signatures, config keys, thresholds, procedures, tests -- names its parent
+architecture spec, and **changes in the same commit as the code it
+describes**. The test: if a competent engineer could build it more than one
+reasonable way and the document does not care which, it is architecture.
+`docs/README.md` is the index and reading path; `tools/spec_lint.py`
+(run by `tests/test_spec_lint.py`) enforces the mechanical rules, and
+`docs/SPEC_REVIEW_PROMPT.md` (`/spec-review`) the judgement ones. The
+`PLAN-*.md` documents stay as the dated history the specs cite.
+
 ---
 
 ## 3. Current status (what's actually built vs. what's still planned)
@@ -143,7 +159,7 @@ the original build plan phases, reordered simulation-first):
 | M2 | A depth grid on `RobotInterface`, and in the sim | Done (2026-09-03), not deployed -- `get_depth_grid()` with an honest all-unusable default, `MockRobot` synthesising it from `renderer.cast_ray()`, `GET /depth`, `RemoteRobot` over it, a depth strip under the twin's FPV canvas, and `_HaltGate` added to the conformance suite as a fifth backend. Nothing in `brain/` reads it yet: M3 is the consumer. See `PLAN-microduck-transplants.md`. |
 | M3 | The tri-state zone, and a centre-zone veto | Done (2026-09-03), not deployed -- `SafetyController.path_clearance()` reduces the middle half of the grid's columns to one number and compares it to `min_distance_cm`, exactly as it compared `get_distance()` before. A failed zone never enters the comparison in either direction; a wholly blind path falls back to the scalar and keeps its `0.0`-on-dropout stop. `GET /depth` publishes the reduction so the twin never recomputes it. |
 | M4 | Refusals are state, manual preempts autonomous | Done (2026-09-03), not deployed -- `robot/server.py` arbitrates `/action` by a decided order (`stop > twin-dpad > brain > twin-local-brain`, `AGENT-HARNESS.md` 4.1) instead of letting the last writer win, every refusal carries a machine-readable `reason`, `RemoteRobot` raises `Preempted` rather than `SafetyViolation`, and a preempted mission ends `preempted` with the robot stopped. |
-| M5 | One health command | Done (2026-09-03), not deployed -- `python -m control.health` (and a Settings health line) asks both halves and exits non-zero when either is unhealthy or unreachable. Verdict inputs are reachability, the robot watchdog loop's own poll freshness, and a running mission's tick liveness; everything else is description and never changes the exit code. Both servers now log an identity line at start-up. |
+| M5 | One health command | Done (2026-09-03), not deployed -- `python -m control.health` (and a Settings health line) asks both halves and exits non-zero when either is unhealthy or unreachable. Verdict inputs are reachability, the robot watchdog loop's own poll freshness, a running mission's tick liveness, and (since 2026-10-03, handoff 4e) ROS being up under `drive: ros`; everything else is description and never changes the exit code. Both servers now log an identity line at start-up. |
 | -- | On-car perception + the hardware chain (`PLAN-onboard-perception.md`) | **Superseded on the board 2026-09-19: it is a Jetson Orin Nano Super, not a Pi + Hailo -- see section 3b.** The rest of this row is the 2026-09-03..06 record. **DESIGN SETTLED 2026-09-03, DETECTOR REVISED 2026-09-04, NOTHING BUILT.** Started as "what could run on the car itself" after reading Microduck and ended up rewriting the hardware plan. Decided: a **differential-drive chassis** rather than the PiCar-X's Ackermann (which **retires S6** and makes `grid_world.py`'s pivot assumption correct); a **lidar** used first as a 360-degree clearance ring and only later as SLAM behind an HTTP wall; a **Hailo-8L in M.2 module form, with a Camera Module 3** for on-board detection (the AI HAT+ until 4.9 settled on the module, 2026-09-06) -- chosen on 2026-09-04 over the IMX500 AI Camera (its nano-only ceiling is silicon, and it cannot be fed a recorded frame) and over a Jetson (the right board for arbitrary Hugging Face models, ruled out for now on cost, power and the camera stack; its section 4 has the three-way comparison and the conditions for re-opening it); and a **tiered architecture** where the VLM becomes an event-triggered deliberation tier -- which is what finally gives `brain/planner.py` a job. Also settles the goal vocabulary, stop conditions, arbitration and what the sim can test. **Revised 2026-09-06 on three counts** (its 4.8, 4.9 and 1.14): the Jetson was re-checked against what delivery-robot fleets actually run and against a July 2026 NVIDIA repricing that put the Orin Nano Super at $399-480, so Pi-plus-Hailo stands more firmly than before; the part is now a **Hailo-8L in M.2 module form**, because the module survives a Jetson pivot and shares the one PCIe lane with the NVMe, and because the 10H's measured 5.89 tok/s makes a local VLM slower than the cloud call it would replace; and **motion becomes continuous rather than discrete** (1.14); a fourth revision the same day settled the models rather than the parts (4.3.1 the 8L's measured benchmarks, 4.2 the open-vocabulary crop path and the standing-height caveat, 2.8 one mission walked end to end), which makes the tiered architecture mandatory instead of an optimisation, puts the accelerator on the first order, and makes two shipped numbers wrong -- `watchdog_timeout_s: 1.0` and the fixed `min_distance_cm: 20.0`, which is a stopping distance good for only ~0.45 m/s. Its C1-C9 phasing (extended from five 2026-09-06, after walking 2.8's mission against the repo) needs no hardware. **A second series, P1-P4 (its 4.10), is the perception harness: P1 and P2 are BUILT (`brain/perceive.py`, `brain/tiered.py`) and run the real YOLO + CLIP + Opus 4.5 chain against real photographs with no robot and no accelerator -- the twin cannot test the *detector*, by 1.12's design, but a phone on a wheeled rig can. **P2 became startable from the twin on 2026-09-07** (`policy: "tiered"`, and 6.3's four readouts on the Remote brain panel) -- see the row below.** Bill of materials **~$565-628** (2026-09-16: pan-only ST3215 servo, and the 10H option at +$60; was ~$555-620) (3.6, recomputed 2026-09-06 -- the earlier ~$498/~$581 priced the bundled motor driver rather than the recommended Waveshare board, bought an M.2 module with no carrier, and had no servo rail). **Read it before buying anything**, and note its section 5: `HARDWARE-READINESS.md` is now partly wrong. The one thing it asks for *before* hardware day is the Hailo compile loop (its 1.10 item 1): without it the Hailo is a fixed-function part and the IMX500 was cheaper. |
 | -- | **The first valid Stage 0 walk** (`blue-bottle-20260907-142454`) | Recorded 2026-09-07 -- 33 frames, camera at floor height on a wheeled rig, target **on the floor**. The re-recording 1.16 #10 has demanded since 2026-09-02, and the first walk not disqualified by its own viewpoint. Two findings, both in `PLAN-onboard-perception.md` 4.10: **(a)** the CLIP threshold is measured -- true positives band +0.025..+0.038, non-target frames top out at +0.004, so **0.02 separates them perfectly and the shipped 0.05 detects none of them** (`brain.perception_match_margin`, then 0.02 in config -- **since superseded: config sets 0.0 and the gate is `perception_match_probability` 0.8**; the module default is deliberately unchanged because the old corpus had handbags at +0.039 against "red backpack", so one threshold does not serve both targets); **(b) 4.2's label gate is losing 11 of 18 true positives** -- at close range YOLO relabels the bottle as a `vase` (once `refrigerator`), so the gate discards exactly the frames where the target fills the view. Forcing the open-vocabulary path recovers 18/18 with zero false positives. `brain.perception_crop_path` makes that measurable; the default stays `auto` until two more walks say otherwise. The full chain ran on it: `found`, **6 paid calls over 31 frames, 1 per 5.17**. |
 | P2 (twin) | `policy: "tiered"`, and the readouts that make the architecture watchable -- on the Sim tab **and on the phone walk**, which is the one that matters | Done (2026-09-07), not deployed -- the brain has been deployed nowhere since 2026-09-05 and these models run *in the brain process*, so this is a local two-uvicorn feature by construction. The Remote brain panel's policy picker gains **Tiered**; `control/brain_server.py` wraps `brain/navigate.py`'s cloud `vision_fn` in `brain/tiered.py`'s `TieredVision` and **validates at mission start** -- `ultralytics`/`torch` stay an optional install (`requirements-perception.txt`) and a missing one is a 400 naming the pip command, never a B3.2 vision failure discovered three ticks in. `GET /health` publishes `perception_available` so the panel warns before Start. Four readouts (`PLAN-onboard-perception.md` 6.3): the tri-state, the CLIP **margin** (not the similarity), the detector and encoder by name, and the deliberation counter as **calls and frames** -- 6.3's "single number that makes the whole architecture watchable", comparable to 6.1's measured 4-6x. The mission log names the paid steps `[cloud: <trigger>]`. The detector's *boxes* are deliberately absent: over the twin's FPV they would be boxes on a raycaster render, which 1.12 forbids. **Guide -> Robot view -> "Drive via brain" also carries the policy now** (it hardcoded `policy: "vision"` before), which is the only path where YOLO and CLIP get real pixels -- the Sim tab's tiered mission exercises the loop and never the detector, by 1.12's design. **Run end to end the same day, YOLO -> CLIP -> Opus 4.5** (`python -m tests.demo_replay_mission <walk> "<target>" --policy tiered`, which is new): on `red-backpack-opus-4-5-20260829-214849`, outcome `found`, **4 paid calls over 18 steps -- 1 per 3.5 distinct frames**, all three implementable triggers fired, nothing tuned. That puts 2.4's cost claim inside 6.1's measured 4-6x band *live* for the first time. Three findings in `PLAN-onboard-perception.md` 4.10: `DEFAULT_MATCH_MARGIN` (0.05) is ~2x too high and **has not been changed** -- the corpus is the invalid one and the negative column overlaps on handbags; **the target STRING is a bigger lever than the walk** (`"red backpack"` 13% detected, `"blue bottle"` 0%, bare `"bottle"` 0% -- a colour+noun is worth ~5x the margin of the bare noun); and two defects the run surfaced, both fixed -- `bearing_deg` had never once been a number (no backend publishes `image_width`; the width is now read off the image) and a detected target logged as `not_visible`. |
@@ -157,7 +173,7 @@ the original build plan phases, reordered simulation-first):
 | Solid objects | Objects are obstacles to everything that senses or moves | Done on data (2026-09-26) -- `PLAN-ros-alignment.md` 3.9, decided by the user ("objects must be treated as solid to emulate the real world"). Collision, `get_distance()`, the depth grid, the lidar scan and `MockWorld`'s map all treat an object's cell as an obstacle (`renderer.cast_ray(..., solid=)`); the camera still draws objects as billboards, so the golden image is unchanged. The starter house's sofa moved from the robot's start cell to (1, 1). The robot now stops in front of the backpack, never on it; no measurable cost to arrival |
 | R2 (read-only) | `GET /wheels`, `GET /scan`, `GET /world/truth` | Done on data (2026-09-25) -- `PLAN-ros-alignment.md` 3.6. `RobotInterface.get_wheel_state()` / `get_scan()` and `WorldInterface.get_truth()`, each with an honest `usable: false` default, implemented by `MockRobot` / `MockWorld`, served by `robot/server.py`, read by `RemoteRobot` / `RemoteWorld`. **The scan is at `/scan`, not the plan's `/world/scan`**: it is the robot's own reading, so BODY state by section 2's rule. Every beam equals `renderer.cast_ray()`; truth equals the pose in the sim until R5 parts them. `tests/test_r2_routes.py` |
 | R2b | `POST /wheels` -- a standing wheel-velocity command, the first way to move without a verb | Done on data (2026-09-26), not deployed -- `PLAN-ros-alignment.md` 3.10, six criteria written first, all met and each confirmed red against a mutation. `robot/server.py` runs a 20 Hz control loop that re-vets the standing command through `SafetyController.vet_wheel_velocity()` every period: it zeroes forward speed below `min_distance_cm` (stops at 19.5 cm; 0.0 cm without the clamp) and **never clamps rotation**, so a robot facing a wall can pivot away. **Reverse is now checked against the scan's rear beams on every path, D-pad REVERSE included** (user decision). A new driver `ros` ranks with the brain, below the D-pad, and **the autonomous rank is now exclusive while held** -- before this the server let equal ranks interleave. A backend without wheels refuses with `unsupported`. `tests/test_wheels_command.py` |
-| P7e (first half) | Arrival recognised: a mission that reaches its target ends `found` | Done on data (2026-09-26), not deployed -- `PLAN-ros-alignment.md` 3.11, decided by the user as the rule the CAR runs, not a sim-only stand-in. `brain/arrival.py`, applied in `MissionAgent._review_scene()` between perception and decision: the target detected, within the 3-degree steering band, and **the lidar** (`get_scan()`, median of five beams at the bearing -- never the detector's distance) within 0.40 m, two frames running; then `STOP`, `target_reached`, `found`. Refuses to judge with no scan (teleop, replay), a panned camera, or no local perception (rule-based, cloud-only vision). 69/69 arrivals end `found` at perfect detection and 676/678 at 90% and 80%, none beyond 0.386 m; **0/69 without it** -- every one used to end `blocked` or `max_steps`. The first version read the NEAREST beam and declared `found` 95 cm out against a door jamb; criterion 2 caught it. `status.arrival` carries the range and streak. The other half of P7e (the steer-over-hold precedence on a held cloud `STOP`) no longer matters on this path and is left alone. `tests/test_arrival.py` |
+| P7e (first half) | Arrival recognised: a mission that reaches its target ends `found` | Done on data (2026-09-26), not deployed -- `PLAN-ros-alignment.md` 3.11, decided by the user as the rule the CAR runs, not a sim-only stand-in. `brain/arrival.py`, applied in `MissionAgent._review_scene()` between perception and decision: the target detected, within the 3-degree steering band, and **the lidar** (`get_scan()`, median of five beams at the bearing -- never the detector's distance) within 0.40 m, two frames running; then `STOP`, `target_reached`, `found` -- since 2026-10-02 only once a cloud call on the arrival frame confirms the target (handoff 1a). Refuses to judge with no scan (teleop, replay), a panned camera, or no local perception (rule-based, cloud-only vision). 69/69 arrivals end `found` at perfect detection and 676/678 at 90% and 80%, none beyond 0.386 m; **0/69 without it** -- every one used to end `blocked` or `max_steps`. The first version read the NEAREST beam and declared `found` 95 cm out against a door jamb; criterion 2 caught it. `status.arrival` carries the range and streak. The other half of P7e (the steer-over-hold precedence on a held cloud `STOP`) no longer matters on this path and is left alone. `tests/test_arrival.py` |
 | R3 | The URDF and TF tree, in the first ROS container | Done on data, one criterion FAILED and recorded (2026-09-26), not deployed -- `PLAN-ros-alignment.md` 3.12. `service/slam/` now holds ROS 2 **Humble** (JetPack 6 is Ubuntu 22.04) in one container; `picar_description`'s xacro puts every dimension in one block, `[BOM]` or flagged `[PLACEHOLDER]`. `check_urdf` passes; wheel radius and separation are one number across the xacro, `controllers.yaml` and `sim/mock_robot.py` (always-run test); 15 tf2 lookups match numpy FK within 1 mm / 0.1 deg. **Criterion 4 failed:** "pan + in-frame bearing" is 4.6 deg out at 1 m with the pan axis 8 cm ahead of `base_link` -- but within 0.75 deg when the camera is centred and the target inside the steering band, which is all the tier and `brain/arrival.py` use. Pinned as a strict xfail. **Nothing may treat a panned bearing as body-relative** until it is composed through TF with a range, or the pan axis moves over the rotation centre. The sim renders from the robot's centre, so it cannot show this error. `tests/test_urdf.py` (live half skips without a container) |
 | R4 | `picar_sim_hardware`, `twist_mux`, and ONE writer to the wheels | Done on data (2026-09-26), not deployed, **off by default** -- `PLAN-ros-alignment.md` 3.13, all eight criteria met. Under `drive: ros` (`ROBOT_DRIVE=ros`), `robot/ros_drive.py` turns each `/action` verb into twists closed on the wheel encoders and sends them to the container's bridge (`picar_bridge`, HTTP :8090) -> `twist_mux` (teleop 100 > brain 50) -> `diff_drive_controller` -> `picar_sim_hardware` (C++, `hardware_interface::SystemInterface`) -> `POST /wheels`, which then accepts only driver `ros`. M4's `/action` arbitration is unchanged, so a D-pad tap still ends a mission `preempted`. Verbs land within 4.4 mm / 0.64 deg live; a tiered mission ended `found` in 7 steps with every move through ROS. **Two things learned:** a proportional verb ramp over the chain's 40-150 ms of jitter overshot a 45-degree turn to 59-74 degrees until retuned with a signed settle pass; and the plugin returning ERROR on a robot-server restart silently deactivated it for good -- it now keeps trying. The default stays `direct`, so the twin never depends on Docker. `tests/test_ros_drive.py` (always), `tests/test_ros_chain_live.py` (skips without the stack) |
 | R5 | `slam_toolbox`, and the error only a sim can measure | Done on data (2026-09-26), not deployed, **off by default**, criteria 2 and 3 FAILED on their tight bars and recorded -- `PLAN-ros-alignment.md` 3.14, eighteen laps. `world/ros_world.py` (`WORLD_MODE=ros`) is the `WorldInterface` over SLAM, converting ROS's frame on its own side of the wall and anchoring SLAM's frame to the house with the truth at the session's START (sim-only). `GET /world/error` and the twin's map (truth ghost + "SLAM error ... · odometry alone ...") show it. With the right encoder 3% long, **odometry ends up to 99 cm / 54 deg off while SLAM ends within 1-4.5 cm**, and SLAM's map is the house on every lap (96-100% of occupied cells within 10 cm of a true surface). Failed: at-rest position within 5 cm without drift on 2 of 9 laps (4.0-8.2 cm; cause not established), heading within 3 deg with drift on 4 of 9. Two things learned: errors sampled WHILE MOVING measure the pose's ~150 ms latency, not SLAM; and anchoring at first contact read "0.0 cm" on the twin after the robot had driven. `sim.odom_drift` / `SIM_ODOM_DRIFT` make encoders misreport. `tests/test_ros_world.py`, `tests/test_slam_live.py`, `tests/demo_slam_lap.py` |
@@ -176,6 +192,10 @@ the original build plan phases, reordered simulation-first):
 | 3.29 | A settle pass for direct-mode verbs | Done on data (2026-10-01), not deployed -- `PLAN-ros-alignment.md` 3.29. `SafetyController.run_verb()`: after a real board's verb (`plan["settle"]`, set by `HardwareRobot` only while the fork's keys arrive), wait 0.15 s, read the signed error, and correct it at 0.1 rad/s / 2 cm/s through `run_verb()` itself -- vetted as a move, ended by `stop()`, at most three passes. **Fork turns: 120/120 within +/-1 deg, worst 0.84** (3.25 stock: 60/120, worst 4.7), +0.16 s a turn; straights worst 0.13 cm. As first built on 1 mm odometers it reached only 110/120 -- the estimate at rest was the limit -- and the user chose 0.1 mm units. Stock never settles (it chased a 1.5-deg estimate for +0.57 s). The sim's verbs never take this path |
 | 3.30 | Things that move, in the sim: movable furniture and people/pets | Done on data (2026-10-01), not deployed, **off by default** (`SIM_MOVERS=<scenario>`) -- `PLAN-ros-alignment.md` 3.30, criteria written first. `GridWorld.move_object()` and `sim/movers.py`'s `Mover`: solid objects that hop a closed path on a sim clock (advanced by `MockRobot.step()` and the server's idle wheel-loop ticks), never hopping CLOSER to the robot than 20 cm beyond its turning circle. `objects` is replaced, never mutated, because the scan is read on another thread. `GET /sim/objects`, `POST /sim/objects/move` (sim-only, 501 elsewhere). Ground truth: 2021 runs with a person crossing, 0 under 18 cm / 0 contacts / 0 inside (clamp off: 1522 failures); nav2 6/6 twice with a person in the hallway. **Findings:** the first keep-out rule deadlocked a waiting person against a waiting robot (amended); `robot/safety.py`, not `collision_monitor`, held the robot off the person; the rule-based search ends `blocked` on a person who would have moved (`found` in 41 s without one). `tests/test_movers.py`, `tests/test_mover_safety.py`, `python -m tests.demo_mover_sweep`, `python -m tests.demo_mover_mission` |
 | 3.32 | Arrival an edge cannot fake; detections that respect occlusion | Done on data (2026-10-01) -- `PLAN-ros-alignment.md` 3.32. **Found first: in-process missions never used the guarded verbs** -- `MissionRunner`'s `_HaltGate` did not forward `verb_plan()` / `verb_done()` / `stop_count`, so turns ran with no pivot vetting and forwards were checked once; six of twenty furnished-home missions turned a corner into furniture, none once fixed (closest 1.30 cm). The deployed path was never affected (the robot server guards its own verbs); the 3.31 frontier-search branch carries the same fix. `tests/test_mission_guarded_verbs.py`. Then: `brain/arrival.py` refuses a window whose returns spread > 10 cm or mix hits with misses (`ARRIVAL_EDGE_M`): a mission had stopped 37 cm from a door jamb and declared `found` 1.1 m short. The sim's detections now report the bearing of the VISIBLE part of an object (`renderer.visible_bearing`, nine rays) and nothing when it is hidden; the picture is unchanged. R1's sweeps moved to the **scaled house** (user's decision; the starter house's 30 cm door is too narrow for the Rover once bearings are honest), and the ground-truth arrival bar is now 3.11's 0.40 m of the target's face (`ARRIVED_CELLS` 1.83; it was 1.05 -- bumper 4 cm off, past the stop line). 3.11's sweeps: 0 false arrivals, found 100% / 100% / 98.3% of arrivals |
+| Review fixes | The 2026-10-02 decisions and both spec reviews' fix lists | Done on data (2026-10-02/03) -- `docs/handoffs/HANDOFF-2026-10-02-spec-review.md`, `docs-review/SPEC-REVIEW-3.md` §9. **A person's stop ends a nav2 goal** (held until nav2 reports it over; the brain's stop spares one); **a failed send to the bridge marks ROS down** (transport errors and 5xx only; ROS's wheel posts then move nothing); **the cloud confirms identity at arrival** (one counted call, never overlapping another; a refusal is shown on the twin's Arrival row); the wheel plugin waits for the board's first frame instead of refusing for good; odometry heading is turn-since-start on every backend; `RosDriveRobot` is in the contract suite; `/navigate`'s flags are coerced in the service; metrics days are not walks; health judges ROS under `drive: ros` |
+| 3.33 | The Jetson before the Rover: bring-up, its two risks, G4 | **Planned 2026-10-02, criteria written, not started** -- `PLAN-ros-alignment.md` 3.33. Firmware check, JetPack 6.2.1 at 15 W, torch on the GPU with the shipped pipeline, per-frame latency split GPU/CPU at 15 and 25 W (budget 250 ms a frame at 15 W, confirmed by the user 2026-10-02), the suite and the ROS image on the board, G4 (5 consecutive live runs against the fake motor board), and headroom (0 late safety-loop ticks under full load, >= 1 GB free). P26 (`PLAN-onboard-perception.md`) moves the tier's image handling off the CPU -- decode once per frame (it decodes the JPEG again for every crop today), batch the crops, resize on the GPU -- measured on the board |
+| 3.34 | No fresh feedback, no wheel motion; a short move is not a move | Done on data (2026-10-03), not deployed -- `PLAN-ros-alignment.md` 3.34, from the car body's failure modes (`docs/body/ARCHITECTURE.md`). `HardwareRobot` with no motor-board frame for `FEEDBACK_STALE_S` (0.25 s) answers wheels and odometry unusable, zeroes a standing command itself (median 0.32 s after the last frame, where only the 1.5 s board heartbeat acted before, and never while commands kept arriving), refuses motion with `WheelFeedbackLost`, and never raises on a stop -- a dead port included. A verb losing feedback ends in ~0.3 s (its cap was ~11 s); the server answers `no_feedback`, a mission ends `failed`, `/health` gains `motor_board` (description, not verdict). The rule is the BODY's because the safety layer reads usable wheels as "this body really moves". A verb ending `timeout`/`stalled` now reaches the mission as not executed, so five end it `blocked`. **Found on the way:** `picar_sim_hardware`'s `read()` returned ERROR on "no wheels", which ros2_control answers by deactivating for good -- now retried like an unreachable server (live against a stub: old image `unconfigured`, new one stays `active`). Open: stall detection on the wall clock and the skid-steer track (gaps 2 and 4) need the car. `tests/test_wheel_feedback.py` |
+| 3.35 | Stall detection on the wall clock; one setting for the skid-steer track | Done on data (2026-10-03), not deployed -- `PLAN-ros-alignment.md` 3.35, the half of the body's gaps 2 and 4 that needs no car. A real-board verb with no encoder progress for `VERB_STALL_S` (0.6 s, now shared with `robot/ros_drive.py`) ends `stalled`: a pivot jammed on furniture on the fake board stops in a median 0.84 s, where it ran ~5 s to `timeout`. `track_scrub` (`hardware.track_scrub` / `TRACK_SCRUB`, 1.0) is skid steer's effective/geometric track: direct-mode pivots, the odometry heading and the published `track_width_m` use it, the ROS launch sets `wheel_separation_multiplier` from the same env var (live: 1.6 in, 1.6 read back), and the fake board is always built at 1.0 because its sim body does not scrub. Wall linter: 12 concepts. Live chain 13/13 on the fake board under `drive: ros`. **Both values are `[PLACEHOLDER]` until the Rover is measured.** `tests/test_stall_and_scrub.py` |
 | 7, 8, 10, 11 | Pi setup, physical assembly, real camera streaming, hardware swap-in | Blocked on buying hardware -- by design, per the simulation-first plan. Nothing to do here yet. **The chassis is no longer a PiCar-X** -- see the row above. |
 | extra | Web-based digital twin | Done and deployed. **Since 2026-09-05 the page is static on S3 + CloudFront** (`service/static/sync.sh`) and the robot server runs locally behind `service/tunnel/`; the ECS/NLB/ALB arrangement below was deleted. Was: `web-twin/index.html` + `robot/server.py` on ECS Fargate, `service/twin/`, `cloudformation/twin.yaml`) -- reachable from a phone on any network, sharing the vision service's NLB/ALB on port 80 via path-based routing (a ListenerRule matching the twin's exact route set). Verified end-to-end from an actual phone on cellular data, not just curl. |
 | extra | Cloud photo-analysis endpoint | Done and deployed -- **since 2026-09-05 as a Lambda behind API Gateway and CloudFront** (`cloudformation/serverless.yaml`, `service/lambda/`); the ECS/NLB/ALB below were deleted. Was: `service/vision_analyze/` on ECS Fargate, behind an NLB -> internal ALB, calling Amazon Bedrock for vision inference). Was originally built on Lambda + API Gateway; both were deleted after an account-level restriction made them permanently unreachable publicly -- see README.md's "History: why not Lambda?" |
@@ -189,6 +209,16 @@ Hailo/Jetson reversals, the handoffs -- is in
 `docs/archive/CLAUDE-history-2026-09.md`, verbatim. What is still true and
 still load-bearing:
 
+* **The Jetson bring-up: `HANDOFF-2026-10-03-jetson.md`** -- the user's
+  desk steps first (write the card, firmware check, first boot, SSH key),
+  then what the session runs over SSH (3.33 steps 2-7), and the parts on
+  order.
+* **Open work from the spec reviews: `docs/handoffs/HANDOFF-2026-10-02-spec-review.md`**
+  and `docs-review/SPEC-REVIEW-3.md` §7/§9. Built 2026-10-02/03: the four
+  decisions (1a-1d), the hardware-path fixes 2a-2e, 4b-4k, 5a-5c, and review
+  3's fixes 1-6 and 8-10. Still open: section 3's decisions (3a-3c), review
+  3's fix 7 (the arrival confirmation has never met the real cloud) and fix
+  11 (whether a person's verb cancels a goal).
 * **Latest session handoffs: `HANDOFF-2026-09-30-ros-gates.md`** -- the 3.18-3.20
   safety fixes, 3.24's G1-G3 met, and the next task (the Rover's numbers in
   the sim) -- **and `HANDOFF-2026-09-30.md`** -- the robot base.
@@ -208,9 +238,14 @@ still load-bearing:
   -- not the General Driver + RPLidar C1 + IMX219 of the 2026-09-19 build,
   which `HARDWARE-BOM.md` still describes. The software assumes JetPack 6.x /
   Ubuntu 22.04 / ROS 2 Humble. **The dev kit ARRIVED 2026-09-30**
-  (Amazon, $399, ordered 09-27) and is kept UNOPENED until the Rover
-  arrives, by the user's decision -- Amazon's return window closes ~Oct 30,
-  possibly before the Rover (Oct 19 - Nov 11). **It will run at 15 W to
+  (Amazon, $399, ordered 09-27). **The user is opening it 2026-10-02**
+  (reversing the 09-30 "unopened until the Rover"), so its two open risks
+  -- a working torch wheel, and latency on the board -- are settled inside
+  Amazon's return window (~Oct 30), which may close before the Rover
+  (Oct 19 - Nov 11) arrives. Plan and criteria: `PLAN-ros-alignment.md`
+  3.33, which also closes G4 without the Rover (G4 runs against the fake
+  motor board); keep the box and modify nothing until the user decides to
+  keep it. **It will run at 15 W to
   start** (user, 2026-10-01), which makes the separate Jetson battery
   conditional on the arrival stress test (`JETSON-BOM.md` 9.5). It is `JETSON-BOM.md` section 1's
   "buy regardless" line. **The chassis was ORDERED 2026-09-30** -- the
@@ -357,11 +392,14 @@ vision-picar/
 │   │                           answer "would a Jetson buy anything" off the
 │   │                           robot, which 4.11 left open. None can run on
 │   │                           a Hailo -- that is the point
-│   ├── arrival.py            P7e's first half: `found` when the target is
-│   │                           in the steering band and the LIDAR (never the
-│   │                           detector) reads it within 0.40 m, two frames
-│   │                           running. Refuses to judge with no scan
-│   │                           (PLAN-ros-alignment.md 3.11)
+│   ├── arrival.py            P7e's first half: the target in the steering
+│   │                           band and the LIDAR (never the detector)
+│   │                           reading it within 0.40 m, two frames running
+│   │                           -- and then one cloud call on the arrival
+│   │                           frame must confirm it is the target
+│   │                           (handoff 1a; the call is made by
+│   │                           brain/agent.py). Refuses to judge with no
+│   │                           scan (PLAN-ros-alignment.md 3.11)
 │   └── planner.py             NOT YET BUILT -- room-level planning over
 │                               MissionMemory.as_context(); see gap table above
 │
@@ -396,6 +434,17 @@ vision-picar/
 │   │                           a path on the sim clock (SIM_MOVERS=<scenario>)
 │   ├── fake_esp32.py          R7: the ESP32 driver board's firmware, on a pty,
 │   │                           turning a sim body's wheels (SIM_MOTOR_BOARD=fake)
+│   ├── body_server.py         3.36: under SIM_MOTOR_BOARD=fake the sim body
+│   │                           is NOT in the robot server's process. This
+│   │                           program holds physics, the house and the fake
+│   │                           board (:8002 from run.sh)
+│   ├── body_state.py          its state, published to shared memory every
+│   │                           5 ms (sequence + CRC32)
+│   ├── sensor_server.py       casts scan/depth/frame from that state; run.sh
+│   │                           starts two (:8003 safety stream, :8004 ROS)
+│   ├── body_client.py         the robot server's side (SIM_BODY_URL,
+│   │                           SIM_SENSORS_URL): a polled safety bundle that
+│   │                           reads unusable after 0.15 s
 │   └── maps/                  SIM_MAP picks one (sim/maps/__init__.py):
 │       ├── starter_house.py   the original, 30 cm doors -- too narrow for nav2
 │       ├── scaled_house.py    R6: real proportions, 90 cm doors
@@ -443,7 +492,10 @@ vision-picar/
 │   │                           ZERO rate with a 0.000 peak means the prompt
 │   │                           is INERT -- the detector never grounds it,
 │   │                           which looks like specificity and is worth
-│   │                           nothing to a falsifier
+│   │                           nothing to a falsifier. (Peaks recorded
+│   │                           before 2026-10-03 were over detected frames
+│   │                           only -- handoff 4h; re-probe before trusting
+│   │                           an old "inert".)
 │   ├── label_assist.py       proposes labels.candidate.json so a recorded
 │   │                           walk becomes scorable -- NEVER labels.json,
 │   │                           and `adjudicated` stays empty because that
@@ -522,11 +574,11 @@ vision-picar/
 ├── config/robot.yaml         mode (sim/hardware), safety thresholds, CORS origins,
 │                            and the `brain:` block (robot_url, failsafe budgets)
 │
-├── tests/                    ~1450 tests (`pytest --collect-only` for today's
+├── tests/                    ~1775 tests (`pytest --collect-only` for today's
 │                              count), 93% line coverage of brain/,
 │                              control/, robot/ and sim/ (incl. test_robot_contract.py's
 │                              backend-agnostic conformance suite [S1+S2+M2],
-│                              six backends,
+│                              eight backends,
 │                              test_sensors.py [S5],
 │                              test_depth_veto.py [M3],
 │                              test_authority.py [M4],
@@ -636,120 +688,121 @@ vision-picar/
 ├── .gitignore
 ├── README.md                  full build-plan-referenced documentation
 ├── CLAUDE.md                  this file -- session orientation
-├── docs/archive/CLAUDE-history-2026-09.md
-│                              the dated narrative moved out of this file
-│                              2026-09-28, verbatim (P-series, Hailo/Jetson
-│                              reversals, Stage 0 findings on the deleted corpus)
-├── docs-review/REPORT.md       the 2026-09-27 documentation review: scores,
-│                              verified mismatches, and the fix list
-├── FEATURES.md                 every UI feature (all tabs), how each
-│                               one works end-to-end, and the AWS topology
-│                               it runs against -- start here for "how does
-│                               X work" questions about the app itself
+├── docs/                      everything written that is not code. Start at
+│   │                          docs/ARCHITECTURE.md (the whole system on one
+│   │                          page), then docs/README.md (the index). Files
+│   │                          are cited by NAME across the repo and every
+│   │                          name is unique, so search for the name
+│   ├── ARCHITECTURE.md        the system overview: five processes, four walls
+│   ├── <domain>/ARCHITECTURE.md   the specifications (decision 0001): the
+│   ├── engineering/<domain>/      what and why, and the how. decisions/ the
+│   │                              records, templates/ for new ones,
+│   │                              SPEC_REVIEW_PROMPT.md the review;
+│   │                              tools/spec_lint.py lints them in the suite
+│   ├── archive/CLAUDE-history-2026-09.md
+│   │                          the dated narrative moved out of this file
+│   │                          2026-09-28, verbatim (P-series, Hailo/Jetson
+│   │                          reversals, Stage 0 findings on the deleted corpus)
+│   │
+│   ├── guides/                explainers (moved from the repo root 2026-10-03)
+│   │   ├── FEATURES.md        every UI feature (all tabs), how each one works
+│   │   │                       end-to-end, and the AWS topology it runs
+│   │   │                       against -- start here for "how does X work"
+│   │   │                       questions about the app itself (+ .html copy)
+│   │   ├── INTRODUCTION.md    project introduction (+ a hand-built .html copy,
+│   │   │                       out of sync)
+│   │   └── AGENT-HARNESS.md   how control/ works: the tick, the seams, the
+│   │                           failsafes, the invariants, and where the LLM
+│   │                           policy plugs in (BUILT -- read before editing
+│   │                           control/)
+│   │
+│   ├── plans/                 the dated plans: criteria first, then results
+│   │   ├── PLAN-ros-alignment.md      **the governing plan since 2026-09-25**
+│   │   │                       -- ROS 2 adopted properly (nav2,
+│   │   │                       slam_toolbox, ros2_control, twist_mux),
+│   │   │                       R0-R7 and 3.17-3.33 built on data.
+│   │   │                       Supersedes parts of PLAN-mapping.md
+│   │   ├── PLAN-onboard-perception.md  what runs on the car itself -- and the
+│   │   │                       hardware chain that question turned out to be
+│   │   │                       hiding. Supersedes parts of
+│   │   │                       HARDWARE-READINESS.md and retires most of S6;
+│   │   │                       its section 5 says exactly what
+│   │   ├── PLAN-mapping.md    map the house while searching it. N1 BUILT; N6
+│   │   │                       became R5+R6; superseded in part by
+│   │   │                       PLAN-ros-alignment.md. ROS 2 enters as ONE
+│   │   │                       service behind an HTTP wall ((b+)), never
+│   │   │                       near brain/ or RobotInterface. Its section 2
+│   │   │                       lists what is already decided
+│   │   ├── PLAN-sim-hardening.md  how the sim diverges from hardware, phased
+│   │   │                       fixes, definition of done before a hardware
+│   │   │                       swap (S1-S5 BUILT, S6 RETIRED except its
+│   │   │                       continuous-pose half, built as R0; S7 PROPOSED)
+│   │   ├── PLAN-microduck-transplants.md  twelve designs borrowed from Pollen
+│   │   │                       Robotics' Microduck -- a depth sensor, refusal
+│   │   │                       reasons, driver arbitration, a health verdict
+│   │   │                       and a rollback. M1-M5 BUILT, M6-M12 proposed
+│   │   ├── PLAN-brain-relocation.md  moving the autonomy loop onto the car
+│   │   │                       (B0-B4 BUILT, B5 needs the board)
+│   │   ├── PLAN-teleop-robot.md  a live phone walk driving the real
+│   │   │                       MissionRunner mission, closed loop -- T1-T4
+│   │   │                       (BUILT); see the T1-T4 status-table row above
+│   │   ├── PLAN-guarded-verbs.md  direct-mode moves re-checked while they
+│   │   │                       drive (BUILT 2026-09-28; criteria and
+│   │   │                       results in PLAN-ros-alignment.md 3.22)
+│   │   ├── PLAN-ar-guidance.md  the Guide tab: spec, redesign, changelog (BUILT)
+│   │   └── PLAN-aws-cost-redesign.md  the ~$159/month of fixed AWS cost and
+│   │                           the rebuild that removed ~$110 of it. ALL
+│   │                           DONE: walks on S3, VPC and ECS torn down
+│   │                           2026-09-05, serverless the only deployment.
+│   │                           Read section 1 before quoting any cost number
+│   │                           and section 6 before trusting the design --
+│   │                           its central assumption is still untested
+│   │
+│   ├── hardware/              what to buy, and what the real robot changes.
+│   │   │                       JETSON-BOM.md is the one to read
+│   │   ├── JETSON-BOM.md      **what to buy** (recommended build,
+│   │   │                       2026-09-17), doubling as a brief for a
+│   │   │                       ready-made-kit search; section 9 is the robot
+│   │   │                       base record. Carries the constraints that
+│   │   │                       disqualify most kits -- 3S power above the
+│   │   │                       Jetson's 9V floor, differential drive,
+│   │   │                       quadrature encoders, a serial motor controller
+│   │   ├── HARDWARE-BOM.md    the Jetson BOM as PRICED, 2026-09-17 -- exact
+│   │   │                       part numbers, vendor plan, bring-up order,
+│   │   │                       power budget, and the ESP32 driver board's
+│   │   │                       JSON protocol. Researched by Claude Cowork;
+│   │   │                       filed verbatim under an editor's note. Read
+│   │   │                       its note first (corrections 5-6, 2026-09-27:
+│   │   │                       the motor protocol and JetPack)
+│   │   ├── HARDWARE-READINESS.md  what the real robot changes: verb-to-motor
+│   │   │                       path, pre-flight checklist, where the brain
+│   │   │                       lives
+│   │   ├── BOM-COMPARISON.md  Pi 5 + Hailo-8L vs Jetson Orin Nano Super,
+│   │   │                       verified retailer prices, like for like.
+│   │   │                       **Price from here, never from 3.6** -- 3.6's
+│   │   │                       Pi 5 line reads $80 against $175. The decision
+│   │   │                       is made (Jetson, 2026-09-19); this is the
+│   │   │                       price record
+│   │   ├── PI-VS-JETSON.md    the "what if the Pi instead" walkthrough
+│   │   │                       (2026-09-30): price, gains, losses, and the
+│   │   │                       one test that could change the answer
+│   │   ├── GUIDE-robot-base.md  **a learning guide**: wheel encoder to ROS 2
+│   │   │                       node, closed loop vs "reports to the host",
+│   │   │                       vendor drivers, firmware openness, powering a
+│   │   │                       Jetson from a robot battery, reading a kit
+│   │   │                       listing -- read before buying a robot base
+│   │   └── BOM.md             SUPERSEDED -- the 2026-09-12 Jetson build, on
+│   │                           estimates. Right argument, wrong prices
+│   │
+│   ├── evaluations/           one-off measurement write-ups: the edge
+│   │                          perception bench, the 2026-09-22 navigate-model
+│   │                          evaluation (evaluations/ at the repo root holds
+│   │                          the RAW records -- a different thing)
+│   └── handoffs/              HANDOFF-<date>.md session handoffs; the newest
+│                              names the open work
 │
-│   -- planning / explainer docs (no code; read before hardware work) --
-├── INTRODUCTION.md            project introduction
-├── AGENT-HARNESS.md           how control/ works: the tick, the seams, the
-│                               failsafes, the invariants, and where the LLM
-│                               policy plugs in (BUILT -- read before editing
-│                               control/)
-├── PLAN-ar-guidance.md        the Guide tab: spec, redesign, changelog (BUILT)
-├── PLAN-sim-hardening.md      how the sim diverges from hardware, phased fixes,
-│                               definition of done before a hardware swap
-│                               (S1-S5 BUILT, S6 RETIRED except its
-│                               continuous-pose half, un-retired 2026-09-06
-│                               by PLAN-onboard-perception.md 1.14;
-│                               S7 PROPOSED)
-├── HARDWARE-READINESS.md      what the real robot changes: verb-to-motor path,
-│                               pre-flight checklist, where the brain lives.
-│                               Rewritten 2026-09-04 for the chosen hardware
-├── PLAN-brain-relocation.md   moving the autonomy loop onto the Pi (B0-B4 BUILT,
-│                               B5 needs the Pi)
-├── PLAN-teleop-robot.md       a live phone walk driving the real MissionRunner
-│                               mission, closed loop -- T1-T4 (BUILT); see the
-│                               T1-T4 status-table row above
-├── PLAN-ros-alignment.md      **the governing plan since 2026-09-25** -- ROS 2
-│                               adopted properly (nav2, slam_toolbox,
-│                               ros2_control, twist_mux), R0-R7 and 3.17-3.23
-│                               built on data. Supersedes parts of
-│                               PLAN-mapping.md
-├── PLAN-mapping.md            map the house while searching it. N1 BUILT;
-│                               N6 became R5+R6; superseded in part by
-│                               PLAN-ros-alignment.md. N1-N7. Mapping being the point is the
-│                               stated trigger in PLAN-onboard-perception
-│                               3.3, so ROS 2 enters the project as ONE
-│                               service behind an HTTP wall ((b+)), never
-│                               near brain/ or RobotInterface. N1-N4 need
-│                               no hardware. Its section 2 lists what is
-│                               already decided (1.5, 1.6, 3.4) and must
-│                               be implemented rather than re-argued
-├── PLAN-microduck-transplants.md
-│                               twelve designs borrowed from Pollen Robotics'
-│                               Microduck -- a depth sensor instead of asking
-│                               the model how far, plus refusal reasons, driver
-│                               arbitration, a health verdict and a rollback.
-│                               M1-M5 BUILT (2026-09-03, not deployed), M6-M12
-│                               proposed; seven need no hardware
-├── BOM-COMPARISON.md          Pi 5 + Hailo-8L vs Jetson Orin Nano Super,
-│                               like for like at 2026-09-17 prices. The
-│                               delta is ~$86 and has been stable across
-│                               four passes. Read section 4 before quoting
-│                               it: the Pi's accelerator line is the only
-│                               Hailo form still in stock, and it costs the
-│                               NVMe. **The decision is made (Jetson,
-│                               2026-09-19)**; this is the price record
-├── HARDWARE-BOM.md            the Jetson BOM as PRICED, 2026-09-17 -- exact
-│                               part numbers, vendor plan, bring-up order,
-│                               power budget, and the ESP32 driver board's
-│                               JSON protocol (which is RobotInterface's
-│                               shape on the hardware side). Researched by
-│                               Claude Cowork; filed verbatim under an
-│                               editor's note listing four corrections.
-│                               Read its note first (corrections 5-6,
-│                               2026-09-27: the motor protocol and JetPack)
-├── PLAN-onboard-perception.md  what runs on the car itself -- and the hardware
-│                               chain that question turned out to be hiding.
-│                               DESIGN SETTLED, NOTHING BUILT. Supersedes parts
-│                               of HARDWARE-READINESS.md and retires most of S6;
-│                               its section 5 says exactly what. Read it before
-│                               any hardware purchase -- the chassis is no
-│                               longer a PiCar-X
-│
-│   -- bill of materials. JETSON-BOM.md is the one to read --
-├── GUIDE-robot-base.md    **a learning guide**: the four layers from wheel
-│                           encoder to ROS 2 node, closed loop vs "reports
-│                           to the host", reading a vendor driver, firmware
-│                           openness, powering a Jetson from a robot battery,
-│                           chassis geometry, lidar and depth cameras, and
-│                           reading a kit listing. Written from the 2026-09
-│                           chassis search -- read before buying a robot base
-├── JETSON-BOM.md          **what to buy** (recommended build, 2026-09-17),
-│                           doubling as a brief for a ready-made-kit
-│                           search. Carries the constraints that
-│                           disqualify most kits -- 3S power above the
-│                           Jetson's 9V floor, differential drive,
-│                           quadrature encoders, and a serial motor
-│                           controller rather than a Pi HAT
-├── BOM-COMPARISON.md      verified retailer prices, Pi vs Jetson, like
-│                           for like. **Price from here, never from 3.6**
-│                           -- 3.6's Pi 5 line reads $80 against $175
-├── PI-VS-JETSON.md        the "what if the Pi instead" walkthrough
-│                           (2026-09-30): price, gains, losses, and the
-│                           one test (YOLOE on a Hailo-8L at INT8) that
-│                           could change the answer
-├── HARDWARE-BOM.md        part numbers, vendors, wiring and bring-up
-│                           order (Cowork's research + editor's note)
-├── BOM.md                 SUPERSEDED -- the 2026-09-12 Jetson build, on
-│                           estimates. Right argument, wrong prices
-└── PLAN-aws-cost-redesign.md  the ~$159/month of fixed AWS cost, where it
-                                comes from, and the rebuild that removes
-                                ~$110 of it. ALL DONE: walks on S3, the VPC
-                                and ECS stacks torn down 2026-09-05, and the
-                                serverless stack is the only deployment.
-                                Read section 1 before quoting any cost
-                                number and section 6 before trusting the
-                                design -- its central assumption is still
-                                untested
+└── docs-review/REPORT.md       the 2026-09-27 documentation review: scores,
+                               verified mismatches, and the fix list
 ```
 
 ---
@@ -892,7 +945,7 @@ is built too. What is left in this stage is the demo that spends real
 money -- see **Done when** below.
 
 - **S1 -- pin the contract -- BUILT.** `tests/test_robot_contract.py`:
-  a backend-agnostic conformance suite (36 tests when written; six
+  a backend-agnostic conformance suite (36 tests when written; eight
   backends now -- `BACKENDS` in the file) parameterized over all
   four `RobotInterface` backends that existed then (`MockRobot`,
   `RemoteRobot`, `ReplayRobot`, `TeleopRobot`), asserting return shapes,

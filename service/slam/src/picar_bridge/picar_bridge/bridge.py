@@ -62,6 +62,7 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Point, PoseStamped, Twist
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -82,6 +83,10 @@ DRIVER_TOPICS = {
     "ros": "cmd_vel/nav",
 }
 SCAN_HZ = 10.0
+# How long the start-truth thread tries (3.36): the controllers' first
+# odometry, then one answer from the robot. Generous for a slow board; the
+# anchor no longer assumes the robot is at rest, so waiting costs nothing.
+START_TRUTH_WINDOW_S = 30.0
 PAN_HZ = 20.0
 # The brain ticks at ~4 Hz; a status twice a second is enough to follow it
 # and cheap enough to leave on.
@@ -124,7 +129,8 @@ class Bridge(Node):
         # without reading the truth at any later moment. NEVER published
         # into ROS: nothing on this side may navigate by it.
         self.start_truth = None
-        self.start_truth_tried = False
+        threading.Thread(target=self._record_start_truth, daemon=True,
+                         name="start-truth").start()
         self.last_map = None
         self.map_version = 0
         # slam_toolbox publishes /map latched (transient local).
@@ -142,7 +148,15 @@ class Bridge(Node):
         self.create_subscription(Twist, "/diff_drive_controller/cmd_vel_unstamped",
                                  self._on_applied, 10)
         self._reset_stats()
-        self.create_timer(1.0 / SCAN_HZ, self._poll_scan)
+        # Its own callback group (PLAN-ros-alignment.md 3.36): the poll is a
+        # BLOCKING HTTP read, and in the node's default (mutually exclusive)
+        # group it starved every subscription -- on the Jetson a full scan
+        # takes about one timer period, the timer is then always due, and
+        # rclpy serves due timers before subscriptions: /odom went unread for
+        # minutes, nav2's odom TF went stale, every goal stalled. Here the
+        # poll holds one executor thread and the rest keep running.
+        self.create_timer(1.0 / SCAN_HZ, self._poll_scan,
+                          callback_group=MutuallyExclusiveCallbackGroup())
         self.create_timer(1.0 / PAN_HZ, self._publish_pan)
         # ---- the brain, for ROS tools ----
         self.brain_url = os.environ.get("BRAIN_URL", "http://host.docker.internal:8001/brain").rstrip("/")
@@ -285,6 +299,10 @@ class Bridge(Node):
             if record is not self.goal:          # superseded while pending
                 handle.cancel_goal_async()
                 return
+            if record.get("cancel_reason"):      # cancelled while pending (spec review 3, V2)
+                handle.cancel_goal_async()
+                record["state"] = "canceled"
+                return
             self.goal_handle = handle
             record["state"] = "active"
         handle.get_result_async().add_done_callback(lambda f: self._on_result(f, record))
@@ -308,7 +326,10 @@ class Bridge(Node):
         if handle is not None:
             handle.cancel_goal_async()
             return True
-        return False
+        # A pending goal has no handle yet; the cancel_reason set above makes
+        # _on_goal_response() cancel it the moment nav2 accepts it.
+        return bool(self.goal and self.goal.get("cancel_reason")
+                    and self.goal["state"] == "pending")
 
     def goal_state(self):
         with self.lock:
@@ -365,22 +386,39 @@ class Bridge(Node):
         return self.robot_http.get_json(path)
 
     def _record_start_truth(self):
-        """First time the robot answers: the robot has not moved yet (the
-        controllers came up with this container), so its truth now is its
-        truth at odometry zero."""
-        self.start_truth_tried = True
-        try:
-            t = self._robot_get("/world/truth")
-        except Exception:  # noqa: BLE001 -- a pre-R2 robot, or hardware
-            return
-        if t.get("usable"):
-            self.start_truth = {k: t[k] for k in ("x_m", "y_m", "heading_deg")}
+        """Where the robot stood in the house at odometry zero (R5), for
+        world/ros_world.py to lay SLAM's frame on. Its own thread (3.36).
+
+        Composed from the truth and the odometry read at ONE instant
+        (`convert.odometry_zero_in_house`), never assumed from a robot at
+        rest: on the Jetson it was read seconds after start -- once after the
+        chain suite had begun driving, and after every container restart in
+        the fallback test, while a person drove -- and each time it anchored
+        SLAM's frame ~20 deg off for the session."""
+        deadline = time.time() + START_TRUTH_WINDOW_S
+        while rclpy.ok() and time.time() < deadline:
+            with self.lock:
+                have_odom = self.last_odom is not None
+            if not have_odom:                        # the controllers are not up yet
+                time.sleep(0.05)
+                continue
+            try:
+                t = self._robot_get("/world/truth")
+            except Exception:  # noqa: BLE001 -- busy: try again
+                time.sleep(0.2)
+                continue
+            if t.get("usable"):
+                with self.lock:
+                    odom = dict(self.last_odom)
+                    self.start_truth = convert.odometry_zero_in_house(t, odom)
+            return                                  # answered: usable, or hardware
+        self.get_logger().error("no start truth recorded in the first "
+                                f"{START_TRUTH_WINDOW_S:.0f} s; house-frame goals and "
+                                "/world/error are unanchored this session")
 
     def _poll_scan(self):
         try:
             s = self._robot_get("/scan")
-            if not self.start_truth_tried:
-                self._record_start_truth()
         except Exception as e:  # noqa: BLE001 -- keep polling; say why once in a while
             self.get_logger().warn(f"scan poll failed: {e}", throttle_duration_sec=5.0)
             return

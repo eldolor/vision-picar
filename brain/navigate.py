@@ -47,8 +47,8 @@ treating a sim result as a statement about real rooms.
 
 ## Room-level step memory
 
-A photograph carries no room label -- `AGENT-HARNESS.md` section 12's "no
-room memory" gap. `vision_fn_for()` closes it without breaking the
+A photograph carries no room label -- the "no room memory" gap this closes
+(`docs/guides/AGENT-HARNESS.md` section 10). `vision_fn_for()` closes it without breaking the
 `vision_fn(frame) -> scene` single-argument contract every other seam in
 the harness relies on: the callable it returns also carries a
 `set_searched_rooms(rooms)` attribute, which `control/mission_runner.py`'s

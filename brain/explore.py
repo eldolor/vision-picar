@@ -380,7 +380,7 @@ class ExploreAgent(MissionAgent):
                 pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M:
             # It never left: the robot is wedged, not the place unreachable.
             # Do not hold it against the place -- once. A place that wedges
-            # it AGAIN is one the robot cannot leave for: 3.34's acceptance
+            # it AGAIN is one the robot cannot leave for: 3.38's acceptance
             # run sent one living-room goal eleven times, each wedged against
             # an armchair, until the mission's time ran out.
             again = any(math.hypot(target[0] - wx, target[1] - wy) < self.retry.radius_m
