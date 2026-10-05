@@ -181,20 +181,58 @@ def starts(house, n, seed=0):
     return out
 
 
-def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0):
+class _Lagged:
+    """3.36 criterion 8: the vet fed readings `lag` wheel-loop periods old,
+    as the split simulator's robot server reads a bundle up to
+    SENSOR_STALE_S old. Everything else is the live robot."""
+
+    def __init__(self, robot, lag):
+        self._robot, self._lag, self._history = robot, lag, []
+
+    def record(self, hint):
+        self._history.append((hint, self._robot.get_scan(max_range_m=hint),
+                              self._robot.get_depth_grid(), self._robot.get_distance()))
+        del self._history[:-(self._lag + 1)]
+
+    def _old(self):
+        return self._history[0]
+
+    def get_scan(self, max_range_m=None):
+        hint, scan, _, _ = self._old()
+        return scan if max_range_m == hint else self._robot.get_scan(max_range_m=max_range_m)
+
+    def get_depth_grid(self):
+        return self._old()[2]
+
+    def get_distance(self):
+        return self._old()[3]
+
+    def __getattr__(self, name):
+        return getattr(self._robot, name)
+
+
+def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0):
     """One standing command through the wheel loop's two calls. Returns a
-    dict of the truth it met."""
+    dict of the truth it met. `lag` > 0 vets on readings that many periods
+    old (3.36); the truth is always now."""
     world = build_world(house)
     world.x, world.y, world.theta = x, y, math.radians(heading_deg)
     world.pan = pan   # 3.18 part 2: the camera, left where a mission left it
     robot = MockRobot(world, render=False)
-    safety = SafetyController(robot, 20.0)
+    sensed = _Lagged(robot, lag) if lag else robot
+    safety = SafetyController(sensed, 20.0)
+    hint = None
+    if lag:
+        from robot.safety import FOOTPRINT_LENGTH_M, SAFETY_SCAN_RANGE_M
+        hint = max(SAFETY_SCAN_RANGE_M, FOOTPRINT_LENGTH_M / 2 + 1.5 * 20.0 / 100.0)
     w = direction * SPEED_M_S / WHEEL_RADIUS_M
     T0, G0, _ = truth(world, direction)
     worst_T_after_move, min_G, max_P = math.inf, G0, 0.0
     x0, y0 = world.x, world.y
     for _ in range(int(RUN_S / PERIOD_S)):
         left, right = w, w
+        if lag:
+            sensed.record(hint)
         if clamp:
             left, right, _reason = safety.vet_wheel_velocity(w, w)
         robot.set_wheel_velocity(left, right)
@@ -206,20 +244,25 @@ def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0):
             # Stopped -- and the house is static and the command identical,
             # so every later period would be this one again. Deterministic,
             # which is what makes ending here exact rather than a sample.
-            break
+            # Not with lagged readings: a stale reading may let the robot
+            # move again a period later, so it runs on, and a period with
+            # no motion is simply not a move (3.36).
+            if not lag:
+                break
+            continue
         worst_T_after_move = min(worst_T_after_move, T)
     return {"house": house, "x": x, "y": y, "heading": heading_deg, "dir": direction, "pan": pan,
             "T0": T0, "G0": G0, "T_after_move": worst_T_after_move, "min_G": min_G,
             "max_P": max_P, "travel": math.hypot(world.x - x0, world.y - y0) * CELL_CM}
 
 
-def sweep(houses, starts_per_house, seed=0, clamp=True, directions=(+1, -1), pan=0.0):
+def sweep(houses, starts_per_house, seed=0, clamp=True, directions=(+1, -1), pan=0.0, lag=0):
     out = []
     for house in houses:
         for x, y in starts(house, starts_per_house, seed):
             for h in range(HEADINGS):
                 for d in directions:
-                    out.append(run(house, x, y, h * 15, d, clamp, pan))
+                    out.append(run(house, x, y, h * 15, d, clamp, pan, lag))
     return out
 
 

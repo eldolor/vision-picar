@@ -78,20 +78,22 @@ def test_hardware_mode_without_a_port_refuses_clearly(tmp_path, monkeypatch):
     assert "ROBOT_SERIAL" in str(e.value)
 
 
-def test_hardware_mode_runs_against_the_fake_board(tmp_path, monkeypatch):
+def test_hardware_mode_runs_against_the_fake_board(tmp_path, monkeypatch, sim_programs):
     from robot.factory import get_robot
     from robot.hardware_robot import HardwareRobot
 
-    monkeypatch.setenv("SIM_MOTOR_BOARD", "fake")
+    sim_programs().apply(monkeypatch)            # 3.36: the split simulator
+    monkeypatch.delenv("ROBOT_MODE", raising=False)
     path = tmp_path / "robot.yaml"
     path.write_text("mode: hardware\n")
     robot = get_robot(str(path))
     try:
         assert isinstance(robot, HardwareRobot)
         assert robot.world is not None, "the sim body's world, for the truth"
+        assert robot.world.get_truth()["usable"]
     finally:
         robot.close()
-        robot.fake_board.close()
+        robot.sensors.close()
 
 
 def test_an_unknown_mode_names_itself(tmp_path):

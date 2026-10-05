@@ -192,10 +192,11 @@ def test_the_scrub_scales_the_odometry_heading():
 
 # ---- criterion 5: never in the simulator -------------------------------------
 
-def test_the_fake_board_ignores_a_scrub_setting(monkeypatch):
-    monkeypatch.setenv("ROBOT_MODE", "hardware")
-    monkeypatch.setenv("SIM_MOTOR_BOARD", "fake")
-    monkeypatch.setenv("SIM_MAP", "scaled_house")
+def test_the_fake_board_ignores_a_scrub_setting(monkeypatch, sim_programs):
+    import httpx
+    # 3.36: the fake board's body runs as the split simulator's programs;
+    # TRACK_SCRUB is set for both, as run.sh would pass it to both.
+    programs = sim_programs(SIM_MAP="scaled_house", TRACK_SCRUB="1.6").apply(monkeypatch)
     monkeypatch.setenv("TRACK_SCRUB", "1.6")
     monkeypatch.delenv("ROBOT_DRIVE", raising=False)
     from robot.factory import get_robot
@@ -203,15 +204,17 @@ def test_the_fake_board_ignores_a_scrub_setting(monkeypatch):
     try:
         assert robot.track_scrub == 1.0
         assert _wait(lambda: robot.get_wheel_state()["usable"])
-        heading0 = robot.sensors.world.theta
+        def heading():
+            return httpx.get(f"{programs.body_url}/truth").json()["heading_deg"]
+        heading0 = heading()
         out = SafetyController(robot).run_verb(robot.verb_plan("RIGHT", angle=90))
         assert out["ended"] == "complete"
         time.sleep(0.2)
-        turned = math.degrees(robot.sensors.world.theta - heading0)
+        turned = (heading() - heading0 + 180) % 360 - 180
         assert abs(abs(turned) - 90) <= 3, turned
     finally:
         robot.close()
-        robot.fake_board.close()
+        robot.sensors.close()
 
 
 def test_a_real_board_reads_the_scrub_setting(monkeypatch):

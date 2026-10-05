@@ -100,16 +100,17 @@ def test_live_a_container_started_first_drives_once_frames_arrive():
 # here in the handoff's own terms: refused before the first frame, vetted as
 # usual after it.
 
-def test_a_wheel_command_before_the_first_frame_is_refused_and_after_it_vetted(monkeypatch):
+def test_a_wheel_command_before_the_first_frame_is_refused_and_after_it_vetted(monkeypatch, sim_programs):
     from fastapi.testclient import TestClient
 
     import robot.server as server
 
     monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
     monkeypatch.setenv("ROBOT_MODE", "hardware")
-    monkeypatch.setenv("SIM_MOTOR_BOARD", "fake")
+    # 3.36: the board (and its silent start) is in the physics program.
+    sim_programs(SIM_MAP="scaled_house", SIM_BOARD_SILENT_S="1.0").apply(monkeypatch)
     monkeypatch.setenv("SIM_MAP", "scaled_house")
-    monkeypatch.setenv("SIM_BOARD_SILENT_S", "1.0")
+    monkeypatch.setenv("WORLD_MODE", "none")
     with TestClient(server.create_app()) as client:
         cmd = {"left_rad_s": 3.0, "right_rad_s": 3.0}
         hdr = {"x-driver": "twin-dpad"}

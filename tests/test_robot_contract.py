@@ -147,14 +147,14 @@ def robot(request, tmp_path):
         board.close()
 
     elif kind == "hardware_remote_body":
-        # 3.36: the same backend with its body, sensors and board in
-        # sim/body_server.py's process -- the robot server's G4 shape.
+        # 3.36: the same backend with its body, sensors and board in the
+        # split simulator's programs -- the robot server's G4 shape.
         from robot.hardware_robot import HardwareRobot
         from sim.body_client import SimBodyClient
-        from tests.test_sim_body_process import _start_body, _stop
+        from tests.conftest import SimPrograms
 
-        proc, url = _start_body()
-        client = SimBodyClient(url)
+        programs = SimPrograms()
+        client = SimBodyClient(programs.body_url, programs.sensors_url)
         bot = HardwareRobot(client.board_path, sensors=client)
         import time as _time
         deadline = _time.monotonic() + 2
@@ -163,7 +163,7 @@ def robot(request, tmp_path):
         yield bot
         bot.close()
         client.close()
-        _stop(proc)
+        programs.close()
 
     elif kind == "ros_drive":
         # R4's wrapper over a sim body, its bridge a fake twist_mux +

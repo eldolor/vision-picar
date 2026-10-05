@@ -20,14 +20,18 @@ import robot.server as server
 
 @pytest.mark.parametrize("mode, env, expected", [
     ("sim", {}, "scaled_house"),
-    ("hardware", {"SIM_MOTOR_BOARD": "fake"}, "scaled_house"),   # G4's configuration
+    # G4's configuration; since 3.36 the fake board's body is the split
+    # simulator's (its programs started by the `sim_programs` fixture).
+    ("hardware", {"SIM_MOTOR_BOARD": "fake", "WORLD_MODE": "none"}, "scaled_house"),
     ("teleop", {"WORLD_MODE": "none"}, None),                    # no sim house behind it
 ])
-def test_sim_map_names_the_house_that_was_built(monkeypatch, mode, env, expected):
+def test_sim_map_names_the_house_that_was_built(monkeypatch, sim_programs, mode, env, expected):
     monkeypatch.setenv("SIM_MAP", "scaled_house")
-    monkeypatch.setenv("ROBOT_MODE", mode)
-    for k in ("SIM_MOTOR_BOARD", "WORLD_MODE", "ROBOT_DRIVE"):
+    for k in ("SIM_MOTOR_BOARD", "WORLD_MODE", "ROBOT_DRIVE", "SIM_BODY_URL", "SIM_SENSORS_URL"):
         monkeypatch.delenv(k, raising=False)
+    if env.get("SIM_MOTOR_BOARD") == "fake":
+        sim_programs(SIM_MAP="scaled_house").apply(monkeypatch)
+    monkeypatch.setenv("ROBOT_MODE", mode)
     for k, v in env.items():
         monkeypatch.setenv(k, v)
     with TestClient(server.create_app()) as client:

@@ -80,14 +80,24 @@ pids=()
 cleanup() { for pid in "${pids[@]:-}"; do kill "$pid" 2>/dev/null || true; done; }
 trap cleanup EXIT INT TERM
 
-# 3.36: with SIM_BODY_URL set (and SIM_MOTOR_BOARD=fake), the simulated
-# body, its sensors and the fake board run in their own process, started
-# first -- the robot server waits for it, then opens the board's pty.
-if [ -n "${SIM_BODY_URL:-}" ]; then
+# 3.36: under SIM_MOTOR_BOARD=fake the simulated body runs as its own
+# programs, started first -- physics + the fake board (sim/body_server.py)
+# and the sensors (sim/sensor_server.py, SIM_SENSOR_WORKERS processes, so
+# ray casting and rendering use the free cores). The robot server waits for
+# both, then opens the board's pty as a serial device.
+if [ "${SIM_MOTOR_BOARD:-}" = "fake" ]; then
+  export SIM_BODY_URL="${SIM_BODY_URL:-http://127.0.0.1:8002}"
+  export SIM_SENSORS_URL="${SIM_SENSORS_URL:-http://127.0.0.1:8003}"
+  export SIM_BODY_SHM="${SIM_BODY_SHM:-picar_sim_body}"
   body_port="${SIM_BODY_URL##*:}"; body_port="${body_port%%/*}"
+  sensor_port="${SIM_SENSORS_URL##*:}"; sensor_port="${sensor_port%%/*}"
   python -m uvicorn sim.body_server:app --port "$body_port" --host 127.0.0.1 --log-level warning &
   pids+=($!)
-  echo "  body   $SIM_BODY_URL   (sim body + fake board, own process)"
+  python -m uvicorn sim.sensor_server:app --port "$sensor_port" --host 127.0.0.1 \
+    --workers "${SIM_SENSOR_WORKERS:-3}" --log-level warning &
+  pids+=($!)
+  echo "  body    $SIM_BODY_URL   (physics + fake board)"
+  echo "  sensors $SIM_SENSORS_URL   (${SIM_SENSOR_WORKERS:-3} workers)"
 fi
 python -m uvicorn robot.server:app --port 8000 --host 127.0.0.1 --log-level warning &
 pids+=($!)

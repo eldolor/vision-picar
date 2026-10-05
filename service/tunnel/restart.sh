@@ -24,10 +24,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 LOG="${TUNNEL_LOG:-$HOME/.vision-picar-tunnel.log}"
 PORTS="8000 8001 8080"
-# 3.36: the sim body process, when there is one, is stopped and checked too.
-if [ -n "${SIM_BODY_URL:-}" ]; then
-  BODY_PORT="${SIM_BODY_URL##*:}"; BODY_PORT="${BODY_PORT%%/*}"
-  PORTS="$PORTS $BODY_PORT"
+# 3.36: the simulator's two programs, under SIM_MOTOR_BOARD=fake, are
+# stopped too (run.sh's default ports unless SIM_BODY_URL/SIM_SENSORS_URL say).
+if [ "${SIM_MOTOR_BOARD:-}" = "fake" ]; then
+  SIM_BODY_URL="${SIM_BODY_URL:-http://127.0.0.1:8002}"
+  SIM_SENSORS_URL="${SIM_SENSORS_URL:-http://127.0.0.1:8003}"
+  for u in "$SIM_BODY_URL" "$SIM_SENSORS_URL"; do
+    p="${u##*:}"; PORTS="$PORTS ${p%%/*}"
+  done
 fi
 EXPECT="$(git rev-parse --short HEAD)"
 
@@ -73,7 +77,7 @@ robot=""; brain=""; body="$EXPECT"
 for _ in $(seq 1 40); do
   robot="$(revision http://127.0.0.1:8000/health)"
   brain="$(revision http://127.0.0.1:8001/brain/health)"
-  [ -n "${SIM_BODY_URL:-}" ] && body="$(revision "$SIM_BODY_URL/health")"
+  [ "${SIM_MOTOR_BOARD:-}" = "fake" ] && body="$(revision "$SIM_BODY_URL/health")"
   [ "$robot" = "$EXPECT" ] && [ "$brain" = "$EXPECT" ] && [ "$body" = "$EXPECT" ] && break
   sleep 0.5
 done

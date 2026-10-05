@@ -144,22 +144,28 @@ def _backend(config: dict) -> RobotInterface:
         from robot.hardware_robot import HardwareRobot
 
         if os.environ.get("SIM_MOTOR_BOARD") == "fake":
+            # 3.36: the fake board, its simulated body and the body's sensors
+            # run as their own programs -- sim/body_server.py (physics, the
+            # board, the truth) and sim/sensor_server.py (the sensors, several
+            # workers) -- and NEVER in this process: the robot server opens
+            # the board's pty as a serial device and reads the sensors over
+            # HTTP, which is what it does on the car. service/tunnel/run.sh
+            # starts them; tests/conftest.py's `sim_programs` does in tests.
             # track_scrub 1.0 whatever the setting: the sim body does not
             # scrub, so the car's correction would make it turn wrong (3.35).
             body_url = os.environ.get("SIM_BODY_URL")
-            if body_url:
-                # 3.36: the body, its sensors and the board run in
-                # sim/body_server.py's process. This process opens the
-                # board's pty as a serial device and reads the sensors over
-                # HTTP -- what it does on the car, with no simulator in it.
-                from sim.body_client import SimBodyClient
+            sensors_url = os.environ.get("SIM_SENSORS_URL")
+            if not (body_url and sensors_url):
+                raise ValueError(
+                    "SIM_MOTOR_BOARD=fake runs the simulated body as separate programs "
+                    "(PLAN-ros-alignment.md 3.36): set SIM_BODY_URL and SIM_SENSORS_URL "
+                    "and start sim/body_server.py and sim/sensor_server.py -- "
+                    "service/tunnel/run.sh does all of it")
+            from sim.body_client import SimBodyClient
 
-                sensors = SimBodyClient(body_url, secret=os.environ.get("APP_SHARED_SECRET", ""))
-                return HardwareRobot(sensors.board_path, sensors=sensors, track_scrub=1.0)
-            body, board = build_fake_body(config)
-            robot = HardwareRobot(board.path, sensors=body, track_scrub=1.0)
-            robot.fake_board = board          # kept alive with the robot
-            return robot
+            sensors = SimBodyClient(body_url, sensors_url,
+                                    secret=os.environ.get("APP_SHARED_SECRET", ""))
+            return HardwareRobot(sensors.board_path, sensors=sensors, track_scrub=1.0)
         port = os.environ.get("ROBOT_SERIAL") or (config.get("hardware") or {}).get("serial_port")
         if not port:
             raise ValueError("mode: hardware needs ROBOT_SERIAL (or hardware.serial_port) "

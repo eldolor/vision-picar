@@ -104,12 +104,14 @@ def test_criterion_3_a_stop_mid_verb_zeroes_the_wheels_and_they_stay_zero(hardwa
 
 
 @pytest.fixture
-def hardware_server(monkeypatch):
+def hardware_server(monkeypatch, sim_programs):
     """The robot server in `mode: hardware` over the fake board -- the real
     route a /stop takes, which is not the same as calling `stop()`."""
     monkeypatch.setenv("ROBOT_MODE", "hardware")
-    monkeypatch.setenv("SIM_MOTOR_BOARD", "fake")
+    # 3.36: the fake board's body runs as the split simulator's programs.
+    programs = sim_programs(SIM_MAP="scaled_house").apply(monkeypatch)
     monkeypatch.setenv("SIM_MAP", "scaled_house")
+    monkeypatch.setenv("WORLD_MODE", "none")
     monkeypatch.delenv("ROBOT_DRIVE", raising=False)
     import robot.server as server
     with TestClient(server.create_app()) as c:
@@ -138,12 +140,14 @@ def test_criterion_3_a_stop_over_http_ends_a_hardware_verb(hardware_server):
     assert later - at_stop < 0.01, f"it kept moving after the stop: {at_stop:.3f} -> {later:.3f} m"
 
 
-def test_criterion_3_the_watchdog_does_not_cut_a_verb_it_outlasts(monkeypatch):
+def test_criterion_3_the_watchdog_does_not_cut_a_verb_it_outlasts(monkeypatch, sim_programs):
     """A verb longer than `watchdog_timeout_s` (1 s) is a busy brain, not a
     silent one. Two cells at 0.3 m/s is ~2 s; it must cover them."""
     monkeypatch.setenv("ROBOT_MODE", "hardware")
-    monkeypatch.setenv("SIM_MOTOR_BOARD", "fake")
+    # 3.36: the fake board's body runs as the split simulator's programs.
+    programs = sim_programs(SIM_MAP="scaled_house").apply(monkeypatch)
     monkeypatch.setenv("SIM_MAP", "scaled_house")
+    monkeypatch.setenv("WORLD_MODE", "none")
     monkeypatch.delenv("ROBOT_DRIVE", raising=False)
     import robot.server as server
     with TestClient(server.create_app()) as c:

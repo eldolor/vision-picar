@@ -195,10 +195,11 @@ def test_readings_and_motion_return_when_frames_resume(car):
 # ---- criterion 6: the robot server names it --------------------------------
 
 @pytest.fixture
-def car_server(monkeypatch):
-    monkeypatch.setenv("ROBOT_MODE", "hardware")
-    monkeypatch.setenv("SIM_MOTOR_BOARD", "fake")
+def car_server(monkeypatch, sim_programs):
+    # 3.36: the fake board's body runs as the split simulator's programs.
+    programs = sim_programs(SIM_MAP="scaled_house").apply(monkeypatch)
     monkeypatch.setenv("SIM_MAP", "scaled_house")
+    monkeypatch.setenv("WORLD_MODE", "none")
     monkeypatch.delenv("ROBOT_DRIVE", raising=False)
     monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
     import robot.server as server
@@ -207,16 +208,19 @@ def car_server(monkeypatch):
     monkeypatch.setattr(server, "get_robot", lambda *a: built.setdefault("r", real(*a)))
     app = server.create_app()
     robot = built["r"]
+    robot.programs = programs
     with TestClient(app) as client:
         assert _wait(lambda: robot.get_wheel_state()["usable"]), "no first frame"
         yield client, robot
     robot.close()
-    robot.fake_board.close()
+    robot.sensors.close()
 
 
-def _board_of(robot):
-    # The factory keeps the fake board beside the robot it built.
-    return robot.fake_board
+def _silence_board_of(robot):
+    """The board is in the physics program (3.36): freeze it, as a hung
+    board goes silent; return the time of its last frame."""
+    robot.programs.freeze_body()
+    return time.monotonic()
 
 
 def test_server_answers_no_feedback_and_describes_the_link(car_server):
@@ -224,7 +228,7 @@ def test_server_answers_no_feedback_and_describes_the_link(car_server):
     health = client.get("/health").json()
     assert health["motor_board"]["fresh"] is True
     assert health["motor_board"]["frames"] > 0
-    _silence(_board_of(robot))
+    _silence_board_of(robot)
     assert _wait(lambda: not robot.get_wheel_state()["usable"], timeout=1.0)
     r = client.post("/action", json={"action": "FORWARD"}, headers={"x-driver": "brain"})
     assert r.status_code == 200, r.text
@@ -245,7 +249,7 @@ def test_server_answers_no_feedback_and_describes_the_link(car_server):
 def test_remote_body_raises_a_transport_error_on_no_feedback(car_server):
     client, robot = car_server
     remote = RemoteRobot("http://testserver", client=client)
-    _silence(_board_of(robot))
+    _silence_board_of(robot)
     assert _wait(lambda: not robot.get_wheel_state()["usable"], timeout=1.0)
     with pytest.raises(RobotTransportError, match="no_feedback"):
         remote.drive_forward()
