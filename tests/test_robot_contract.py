@@ -157,8 +157,13 @@ def robot(request, tmp_path):
         client = SimBodyClient(programs.body_url, programs.sensors_url)
         bot = HardwareRobot(client.board_path, sensors=client)
         import time as _time
-        deadline = _time.monotonic() + 2
-        while bot.frames == 0 and _time.monotonic() < deadline:
+        deadline = _time.monotonic() + 5
+        # The board's first frame AND the sensors' first bundle: until it
+        # lands the client honestly answers "cannot see", and a test that
+        # read the grid before it and the scalar after saw two instants
+        # (found on the Jetson, 2026-10-05).
+        while ((bot.frames == 0 or client.bundle_age_s() is None)
+               and _time.monotonic() < deadline):
             _time.sleep(0.01)
         yield bot
         bot.close()
