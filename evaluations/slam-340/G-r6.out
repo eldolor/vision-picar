@@ -1,0 +1,11 @@
+refusals during the mapping lap {}
+{"goal": "hallway, north", "state": "succeeded", "seconds": 13.4, "end_error_m": 0.103, "min_clearance_m": 0.253, "min_clearance_static_m": 0.253, "min_clearance_mover_m": null, "plan_points": 95, "wheels_stopped": true}
+{"goal": "kitchen, through its door", "state": "succeeded", "seconds": 14.1, "end_error_m": 0.103, "min_clearance_m": 0.223, "min_clearance_static_m": 0.223, "min_clearance_mover_m": null, "plan_points": 91, "wheels_stopped": true}
+{"goal": "hallway, south", "state": "succeeded", "seconds": 22.0, "end_error_m": 0.087, "min_clearance_m": 0.199, "min_clearance_static_m": 0.199, "min_clearance_mover_m": null, "plan_points": 147, "wheels_stopped": true}
+{"goal": "bedroom, through its door", "state": "succeeded", "seconds": 14.7, "end_error_m": 0.08, "min_clearance_m": 0.22, "min_clearance_static_m": 0.22, "min_clearance_mover_m": null, "plan_points": 98, "wheels_stopped": true}
+{"goal": "study, across the hallway", "state": "succeeded", "seconds": 25.9, "end_error_m": 0.122, "min_clearance_m": 0.427, "min_clearance_static_m": 0.427, "min_clearance_mover_m": null, "plan_points": 176, "wheels_stopped": true}
+{"goal": "back to the start", "state": "succeeded", "seconds": 30.0, "end_error_m": 0.081, "min_clearance_m": 0.19, "min_clearance_static_m": 0.19, "min_clearance_mover_m": null, "plan_points": 192, "wheels_stopped": true}
+nav stats {"applied": 2444, "reversals": 13, "metres": 19.92555850115447, "monitor_stops": 0, "monitor_slows": 0, "since": 1791330642.1142638}
+unreachable {"state": "aborted", "seconds": 17.8, "end_error_m": 2.187, "min_clearance_m": 0.8, "min_clearance_static_m": 0.8, "min_clearance_mover_m": null, "plan_points": 0, "wheels_stopped": true}
+preempt {"tap_executed": true, "seconds_from_tap_sent_to_canceled": 0.043, "states_seen": {"active": 0.005, "canceled": 0.043}}
+robot/safety.py refusals by reason {}

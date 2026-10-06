@@ -198,6 +198,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | twist_mux `timeout` / `priority` | 0.25 s; teleop 100, brain 50, nav 50 | s, -- | `twist_mux.yaml` | The order mirrors `DRIVER_PRIORITY` (wall duplicate). |
 | `resolution` | 0.05 | m | `slam.yaml` | -- |
 | `max_laser_range` | 12.0 | m | `slam.yaml` | The 12 m the sim's scan reaches (`LIDAR_RANGE_M`; wall duplicate). At 4.2 m, SLAM mapped almost nothing in a 16 m house. |
+| `correlation_search_space_smear_deviation` | 0.03 | m | `slam.yaml` | The scan matcher's blur before scoring. At 0.1 m (until 3.40) long-range returns barely constrained heading and the furnished home's map bent 2.5-6 deg; at 0.03 m two tours stayed within 4.2 cm with every room's walls true |
 | `restamp_tf`, `transform_publish_period`, `map_update_interval` | true, 0.05 s, 1.0 s | -- | `slam.yaml` | `restamp_tf` stops `map -> odom` going stale while the robot is at rest (3.15). |
 | `footprint` / `FootprintApproach.points` | +/-0.1265 x +/-0.1155 | m | `nav2.yaml` | Half the chassis outline; the outline itself is in the [platform engineering spec](../platform/ENGINEERING.md). A wall duplicate with `robot/safety.py`. |
 | `inflation_radius`, `cost_scaling_factor` | 0.12, 8.0 | m, -- | `nav2.yaml` | Kept small for doors. |

@@ -4567,6 +4567,24 @@ criteria 1-4 (4 as amended: config plus the committed capture stamp).
   14 rooms**; tour 8 of 9 (the dining room, 3.21's known NavFn/RPP
   mismatch); coverage 93%. One key -- the matcher's blur.
 
+**Closed 2026-10-06 -- candidate G ACCEPTED, all four criteria met.**
+`correlation_search_space_smear_deviation` 0.10 -> 0.03 m in `slam.yaml`,
+on the capture-stamp bridge (`ed7ece9`). Raw records `evaluations/slam-340/G-*`.
+
+| criterion | bar | result |
+|---|---|---|
+| 1. the bend is gone (2 runs) | east <= 0.20 m, final <= 0.10 m, 0 jumps, east maps >= 90% | **0.042 / 0.028 m**, final 0.007 / 0.003 m, 0 jumps, kitchen / breakfast / family / garage **100%** both runs (every room 100%); tours 8/9 and 8/9 (the dining room) |
+| 2. still corrects drift (3% right encoder) | max <= 0.30 m, final <= 0.15 m, odometry worse | max **0.06 m**, final 0.006 m, 0 jumps, map 100%; odometry alone **12.9 m** off; tour 7/9 |
+| 3. no regression | R5 1-4.5 cm with drift; R6 6/6; exploring 0 jumps | R5 with drift final **1.6 / 0.8 cm** (odometry 8.8 cm), without 1.25 cm, maps 100% (12 blocked moves each, the 30 cm doors, as in 3.38); R6 **6/6**, 8.0-12.2 cm, nearest 19 cm, unreachable aborted 17.8 s stopped, tap 0.043 s, 0 safety refusals; 0 jumps in all five home runs |
+| 4. one change | `slam.yaml` (+ the capture stamp, as amended) | one key, commented with these runs; ROS engineering spec updated |
+
+**3.39 criterion 2 is met by the same runs** (two explore-then-tour runs in
+the furnished home, SLAM final <= 0.10 m, 0 jumps). The east-side goals all
+succeeded in G's runs except one garage-hall abort under drift. The image
+must be rebuilt from this branch (`docker build -t vision-picar-ros
+service/slam`) for `:latest` to carry G and the capture stamp; the runs used
+the tag `vision-picar-ros:stamp` with G mounted.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
