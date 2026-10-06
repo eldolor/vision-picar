@@ -65,6 +65,17 @@ drove the long family-room -> kitchen route: run 1 0.16 -> 0.60 m at
 So scan matching pulls the pose away in the open family room / kitchen.
 Not the den door.
 
+**What "SLAM error" measures.** `/world/error` compares SLAM's pose (in
+SLAM's map, converted to the house frame through the start anchor) with the
+simulator's TRUE pose. It is a POSE error; it cannot tell a robot misplaced
+on a good map from a map that itself bent or rotated in the open rooms --
+both read the same, and both move house-frame goals. **Cheap first check:**
+score SLAM's map against the house's true walls during/after a drifting run
+(`tests/demo_slam_lap.score_map(R)` does this for R5; it scored 96-100% of
+occupied cells within 10 cm there). A good map with a bad pose points at
+scan matching / localisation; a warped map points at the map's own
+construction (node spacing, closures).
+
 **Not established -- the next session's first job.** Candidate causes, each
 testable by one explore-then-tour run (~25 min each):
 
