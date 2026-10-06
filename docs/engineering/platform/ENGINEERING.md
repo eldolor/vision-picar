@@ -324,8 +324,6 @@ and are not repeated here. These are the implementation gaps:
 - **The lidar's +90 degree yaw is not modelled** in the xacro or the sim.
 - **Every `[CAD]` value is unmeasured**, and three geometry values are
   still `[PLACEHOLDER]`.
-- **`JETSON-BOM.md` section 1 still lists an IMX219 as "buy regardless"**,
-  although the kit brings two cameras.
 - **On-board latency is measured only for the shipped YOLOE + CLIP
   pipeline** (60.6 / 109.9 ms median / p90 at 15 W, 3.33). The ~205 ms
   Orin figure in `PI-VS-JETSON.md` was projected for OWLv2 and was never

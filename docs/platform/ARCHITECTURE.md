@@ -253,9 +253,9 @@ the headroom run passed on it by 2026-10-05; the user kept the board on
 
 ## Open questions
 
-- **Which camera feeds perception.** `JETSON-BOM.md` section 1 still lists
-  an IMX219 CSI camera as "buy regardless"; the Rover kit brings a pan-tilt
-  camera and a depth camera. `GUIDE-robot-base.md` section 8 says to decide
+- **Which camera feeds perception.** The Rover kit brings a pan-tilt 5 MP
+  camera and an OAK-D Lite depth camera (`JETSON-BOM.md` section 1); the
+  IMX219 of the 2026-09-17 plan was never bought. `GUIDE-robot-base.md` section 8 says to decide
   by recording walks through the candidate and scoring them. Owner: the
   user, on data.
 - **Depth below the lidar's plane.** A floor band from the depth camera is
