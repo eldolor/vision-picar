@@ -4492,6 +4492,22 @@ beside it).
   scan stamp changes, `slam.yaml` stays D, and R6's scaled-house goals 6/6
   with no frozen costmap** (the deadlock that capture stamps once caused).
 
+**Step 1 measured 2026-10-06 -- the skew is real: 21 ms effective, over the
+15 ms bar.** `evaluations/slam-340/skew_test.py` (instrumented bridge, image
+tag `vision-picar-ros:skew`, built from a scratch copy; raw rows in
+`skew-test.json`): 853 scans, 571 taken while turning in place at 0.5 and
+1.0 rad/s, both directions. At rest every scan is filed where it was taken
+(median 0.00001 deg). While turning, most are exact, but at least one scan in ten is filed
+**one whole 50 ms wheel-loop step behind**: 2.90 deg at 1 rad/s, 1.45 deg at
+0.5 rad/s, always lagging the turn. The newest odom transform the bridge
+stamps with is a median 19 ms older than the scan's capture. A lagging pose
+errs in the direction of the turn, so across many turns the error grows
+with the left/right imbalance -- the bend's signature.
+
+(A first reading of -5 ms was the instrument's: it took the turn rate over
+6 ms of a truth series that updates in 50 ms steps, so it saw most turning
+scans as at rest. Re-read with the rate over neighbouring scans.)
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.

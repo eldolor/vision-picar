@@ -96,7 +96,7 @@ def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None):
                     "-p", f"127.0.0.1:{BRIDGE}:8090", "-e", "ROS_DOMAIN_ID=73",
                     "-e", f"ROBOT_URL=http://host.docker.internal:{ROBOT}",
                     "-e", f"BRAIN_URL=http://host.docker.internal:{BRAIN}",
-                    "vision-picar-ros:latest", "ros2", "launch", "picar_bringup",
+                    os.environ.get("ROS_IMAGE", "vision-picar-ros:latest"), "ros2", "launch", "picar_bringup",
                     "picar.launch.py"], capture_output=True, check=True)
     robot = httpx.Client(base_url=f"http://127.0.0.1:{ROBOT}", timeout=30)
     deadline = time.time() + 120
