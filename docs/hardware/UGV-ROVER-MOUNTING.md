@@ -104,3 +104,42 @@ ROS2 variant.
     Body (spec):    253 x 231 x 289 mm
     Deck callouts:  252.4, 243.18, 159.96, 156.22, 132.59, 120.88,
                     93.74, 86, 58, 54, 45.61, 37.6, 37
+
+## 7. Waveshare's assembly video for the Acce model (added 2026-10-06)
+
+Source: Waveshare's installation video for the UGV Rover **Acce** model
+(the kit sold without a Jetson), `https://youtu.be/R0-QG33DznY`. Read from
+its transcript; the user watched it and judged the Jetson on screen to look
+like the NVIDIA Developer Kit we own.
+
+**The Jetson is structural.** 1:11-1:33: the copper pillars that hold up the
+top expansion component come off, the Jetson is set on silver M2.5*8
+pillars, and the same copper pillars are screwed back on ABOVE the Jetson to
+carry the expansion component -- which holds the D500 lidar (M2.5*8
+countersunk) and the OAK-D Lite (M4*6). So the Jetson's four holes carry
+the lidar and camera. If they do not match the deck, an adapter plate must
+carry the top plate too, not just the Jetson.
+
+**Evidence on the fit now conflicts, and the calipers (section 4) decide:**
+
+- For the Developer Kit fitting as-is: this is the video for the model sold
+  WITHOUT a Jetson, whose buyers mostly own NVIDIA's kit, and the user says
+  the board on screen looks like ours.
+- Against: the CAD (section 1) models the IO-BASE; and the video ATTACHES a
+  wireless card and antennas (1:01-1:20). NVIDIA's Developer Kit is
+  believed to ship with its card already fitted -- check ours, and whether
+  the Rover's box holds a separate card. A card in the box points to
+  Waveshare's own carrier.
+
+**Also settled by the video:**
+
+- **Serial route: the 40-pin header.** 1:35, a "double row cable from the
+  Jetson Nano adapter" carries host-to-board communication -> expect
+  `/dev/ttyTHS1`. Check the ribbon reaches the Developer Kit's header.
+- **USB:** the D500 plugs into a port on the driver board (1:37), not the
+  Jetson; the driver board, the USB camera and the OAK-D Lite take three
+  USB-A ports on the Jetson (1:47). The Developer Kit has four.
+- **Power:** the DC5525 lead into the Jetson's barrel jack (1:41).
+- **Battery bay:** four M3*6 hex socket cap screws on the chassis. After
+  fitting the cells, the UPS stays off until the 12.6 V charger is plugged
+  in; then the power button works (2:55).

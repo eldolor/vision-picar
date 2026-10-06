@@ -244,7 +244,11 @@ build wins on parts we have already verified.
   UART and power leads reach the devkit's 40-pin header and barrel jack,
   and a re-measure of the URDF's `[CAD]` heights (`laser_z`, `pan_z`,
   `camera_up`) if longer standoffs lift the upper deck. **Not a reason to
-  return the Rover.** Owner: the user, with calipers, on the devkit already
+  return the Rover.** *(Same day: Waveshare's assembly video for the
+  Acce model shows a Jetson the user judges to look like ours, which makes
+  a direct fit likelier; it also shows the Jetson's holes carry the top
+  plate, so an adapter would carry the lidar and camera too --
+  `UGV-ROVER-MOUNTING.md` section 7.)* Owner: the user, with calipers, on the devkit already
   on the desk. **Due before the Rover's earliest arrival (Oct 19); hard
   stop, its Amazon return window (30 days from delivery, Nov 18 at the
   earliest).** Asked Waveshare support 2026-10-06 (ticket 257511).
@@ -465,7 +469,9 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
   only in an emergency, since it will not age with the others. On arrival:
   inspect the wraps (no tears near the + end, no dents), match the holder's
   polarity, and charge fully on the kit's 12.6 V charger before the first
-  drive. There is no meter check: once the Jetson is connected, the pack
+  drive. **The UPS stays off after the cells go in until the charger is
+  plugged in** -- that is what wakes it; then the power button works
+  (Waveshare's Acce assembly video, `UGV-ROVER-MOUNTING.md` section 7). There is no meter check: once the Jetson is connected, the pack
   voltage is the `v` field of `T:1001` (~12.6 V full, charge below ~10.5 V).
 * **Within the 30-day return window, on arrival:** a stress test at the
   power mode in use (15 W to start) with the motors running and the input
@@ -473,7 +479,9 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
   over a measured metre, and the safety sweep against the real lidar. Also
   read the ESP32 module's shield (expected: ESP32-WROOM-32, the original
   ESP32, inferred from the firmware's pin map) and note which serial route
-  the kit wires -- expected the 40-pin header's UART, `/dev/ttyTHS1`, which
+  the kit wires -- expected the 40-pin header's UART, `/dev/ttyTHS1` (Waveshare's
+  assembly video wires a double-row cable to the header; check it reaches
+  the Developer Kit's), which
   both of Waveshare's Jetson nodes open (USB through a bridge chip would be
   `/dev/ttyUSB0`) -- for `ROBOT_SERIAL`. Why both matter:
   `GUIDE-robot-base.md` section 1, "Layer 2 on the UGV Rover".
