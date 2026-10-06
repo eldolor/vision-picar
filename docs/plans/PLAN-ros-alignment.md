@@ -4448,6 +4448,36 @@ because a 0.43 m closure step passed it on 2026-10-05.
 4. **One file changes:** `service/slam/src/picar_bringup/config/slam.yaml`,
    each changed key commented with the run that justified it.
 
+**Results 2026-10-06 -- no candidate passes; the cause is NOT a slam.yaml
+setting.** Each run: furnished home, fresh stack, 900 s explore then the
+nine-goal tour, judged by `evaluations/slam-340/judge.py` (raw records
+beside it).
+
+| run | change from D | east max | map: kitchen / breakfast / family / garage | verdict |
+|---|---|---|---|---|
+| E run 1 | `scan_buffer_size` 10 -> 60 (~3 m of context) | 0.52 m | 77 / 76 / 88 / 76% | FAIL; run 2 not made (could not pass) |
+| F run 1 | `angle_variance_penalty` 1.0 -> 0.005, `minimum_angle_penalty` 0.9 -> 0.5 | -- | -- | VOID: wedged against living-room furniture at t=549 s and never moved (safety refused ~23 000 pivots; SLAM within 0.10 m) |
+| F run 2 | same | **1.05 m** | 53 / 19 / 53 / 39% | FAIL, worse than D: +6.3 deg at the same foyer spot |
+| A2 (diagnostic) | `do_loop_closing: false` | 0.30 m (0.48 overall) | 59 / 45 / 63 / -- | heading drifts -1.7 -> -3.5 deg through the living room and foyer WITHOUT closures |
+
+* **Not the scan-matcher's context (E), not its heading prior (F), not
+  loop closures (A2).** A 200x stronger pull toward odometry heading changed
+  nothing, and the drift is there with closures off. With exact odometry and
+  geometric scans, a matcher that ignores a strong odometry prior and still
+  rotates points at the scans and odometry DISAGREEING, not at the matcher.
+* **Suspected (not established): scan/odometry time skew.**
+  `picar_bridge._poll_scan()` stamps each scan with the newest odom TF time,
+  not when it was cast (R6's workaround for the tf2 deadlock, since fixed
+  upstream and built into the image). During a turn a scan is filed at a
+  heading the robot no longer has -- 50 ms at 1 rad/s is 2.9 deg -- and the
+  error accumulates with the turning imbalance, which fits a sign that
+  changes between runs and a bend collected where the robot turns.
+* Heading samples TAKEN WHILE TURNING are latency, not SLAM (R5's lesson;
+  +/-5 deg swings at 0.01 m position error); only the error that persists
+  into straight driving counts.
+* Two of four runs today wedged against furniture (F run 1, A2's tour) --
+  3.31's open problem, separate from SLAM.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
