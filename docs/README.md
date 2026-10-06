@@ -86,7 +86,7 @@ name, and every name is unique, so a search for a name still finds it.
 | [guides/](guides/) | Explainers: `INTRODUCTION.md`, `FEATURES.md` (every UI feature end to end), `AGENT-HARNESS.md` (how `control/` works) |
 | [evaluations/](evaluations/) | Write-ups of one-off measurements: the edge perception bench and the 2026-09-22 navigate-model evaluation |
 | [handoffs/](handoffs/) | Session handoffs, dated; the newest says what is open |
-| [archive/](archive/) | Older material moved out of `CLAUDE.md`, verbatim: `CLAUDE-history-2026-09.md` (the dated reversals) and `CLAUDE-2026-10-06.md` (the whole file before its 2026-10-06 rewrite) |
+| [archive/](archive/) | Older material moved out of `CLAUDE.md`, verbatim: `CLAUDE-history-2026-09.md` (the dated reversals) `CLAUDE-2026-10-06.md` (the whole file before its 2026-10-06 rewrite), and the 2026-10-06 copies of `JETSON-BOM.md` and the root README's build journal |
 
 ## Decisions
 
