@@ -4478,6 +4478,20 @@ beside it).
 * Two of four runs today wedged against furniture (F run 1, A2's tour) --
   3.31's open problem, separate from SLAM.
 
+**Amended 2026-10-06, confirmed by the user, before measuring:**
+
+* **Step 1 -- measure the skew first.** An instrumented bridge under its own
+  image tag (the shared `vision-picar-ros:latest` untouched) records, per
+  scan, its capture time and the odom pose it is filed with; the sim's truth
+  is sampled alongside. While turning in place at 1.0 rad/s both ways, the
+  heading the scan is filed at minus the heading it was taken at, regressed
+  on the turn rate, gives the EFFECTIVE skew. **Under 15 ms, the hypothesis
+  is dead and the work stops.**
+* **Step 2 -- only if it is real:** stamp scans with their capture time.
+  Criteria 1-3 stand as written; **criterion 4 becomes: only the bridge's
+  scan stamp changes, `slam.yaml` stays D, and R6's scaled-house goals 6/6
+  with no frozen costmap** (the deadlock that capture stamps once caused).
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
