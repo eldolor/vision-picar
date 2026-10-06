@@ -4243,8 +4243,8 @@ confirmed by the user):**
 4. **One file changes:** `service/slam/src/picar_bringup/config/slam.yaml`,
    each changed key commented with the run that justified it.
 
-**Results 2026-10-02 -- NOT closed: criterion 0 met, 1 FAILED (4/6), 2
-incomplete (1/2), 3 not run.** Every run: furnished home, fresh stack, 20 min
+**Results 2026-10-02 -- criterion 0 met, 1 FAILED (4/6), 2 incomplete (1/2),
+3 not run (closed 2026-10-05, below).** Every run: furnished home, fresh stack, 20 min
 `explore` for an absent target, error sampled at 1 Hz (raw series in each
 run's `slam_home_<t>.json` in the session scratchpad, not kept).
 
@@ -4272,10 +4272,32 @@ run's `slam_home_<t>.json` in the session scratchpad, not kept).
   original config. Not yet known whether D or the tour's start-up timing
   causes it: run one tour on the original config as the control.
 
-**Next:** the control tour; then either tune how far scan matching may
-leave odometry (the den door), measured against the drift runs too, or
-record criterion 1 as failed and accept D for having removed the jumps --
-the user's call.
+**Closed 2026-10-05 -- D ACCEPTED (the user, on the recommendation), with
+criterion 1 recorded as FAILED.** Taken over from the session that opened
+this section; measured on the merged branch (dev's bridge fixes included),
+one image, the Mac:
+
+* **The control tour clears D of the tour regression.** The nine-goal home
+  tour on the ORIGINAL `slam.yaml` (8 m window) and on D gave the SAME goal
+  results in the same order -- rejected, aborted x4, active, succeeded x3 --
+  with SLAM within 3.6 / 4.6 cm of the truth throughout and no jumps in
+  either. The east-side failures are not D's and not SLAM's; they are a
+  separate regression since 3.21's 8/9 (see "Open" below).
+* **Criterion 3 met.** R5's starter-house lap with the right encoder 3%
+  long: SLAM final **2.9 and 3.8 cm** (R5's recorded 1-4.5 cm; odometry
+  alone 8.8 cm); without drift 2.7 cm. R6's scaled-house goals **6/6 twice**,
+  8.6-12.8 cm from each goal, never nearer than 16.8 cm to a surface, the
+  unreachable goal aborted in 18.6-18.8 s with the wheels stopped, a tap
+  cancelling in 0.04 s. (Each drift lap had 12 verbs refused -- the starter
+  house's 30 cm doors against the UGV chassis, known since 3.21.)
+* **Criterion 1 FAILED, 4/6, accepted as such:** both failures began at the
+  den's 0.6 m door, which is PROVISIONAL geometry inferred from the
+  appraisal sketch; correct it before re-judging.
+* **Criterion 2 left at 1/2** (the third run was stopped on 2026-10-02 and
+  not re-run).
+
+**Open, handed on:** the home tour's rejected/aborted goals, common to both
+configs -- next to diagnose, from nav2's own log.
 
 ## 4. Honest residue -- what the twin cannot tell you
 
