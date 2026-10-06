@@ -4299,6 +4299,46 @@ one image, the Mac:
 **Open, handed on:** the home tour's rejected/aborted goals, common to both
 configs -- next to diagnose, from nav2's own log.
 
+### 3.39 The home tour reaches the east of the house (2026-10-05): criteria, written before measuring
+
+**Why.** 3.38's control showed the nine-goal home tour failing the same
+goals on both SLAM configs, so it is neither SLAM nor D. nav2's own log
+(`tour_diag`, 2026-10-05): goal 1 **rejected** 0.5 s after the stack
+reported up (nav2 not yet accepting goals -- the instrument's timing); the
+four east-side goals (kitchen, garage hall, laundry, garage) **aborted with
+the robot never moving**, `planner_server`: "GridBased: failed to create
+plan" -- no path at all from the start to the east, while the living room,
+den and foyer succeed at 9.6-11.7 cm; the dining room aborted 1.0 m short
+(3.21's NavFn-circle vs RPP-rectangle mismatch). SLAM within 5 cm
+throughout; `allow_unknown`, `track_unknown_space` and the 12 m lidar are
+unchanged since 3.21's 8/9. A size-blind check (`tests/test_home_map.py`
+connects 30 cm cells, not the chassis) cannot see a passage too tight for
+the UGV chassis (since 3.21) plus inflation.
+
+**Decided by the user 2026-10-05:** the furnished home is a realistic
+TEST house, not a replica -- "The rover will run in different homes." So a
+blocker in its PROVISIONAL (inferred) interior is fixed by making the house
+realistic (standard interior doors, walkable furniture gaps), not by
+shrinking nav2's margins to fit it. The measured outside walls stand.
+
+**Acceptance criteria:**
+
+1. **The blocker is measured, not guessed**: on nav2's own global costmap at
+   the start pose, the region the planner can reach is computed and the
+   passage(s) separating the start from the east side are named, with their
+   width, before anything changes.
+2. **The tour reaches the east**: two fresh home tours, each with all four
+   east-side goals `succeeded` and at least 8 of 9 overall (the dining
+   room's known mismatch may be the ninth); SLAM 0 jumps, final error
+   <= 0.10 m.
+3. **No goal lost to timing**: the instrument sends the first goal only
+   once nav2 accepts goals; no `rejected` in either tour.
+4. **Size-aware, so it cannot recur silently**: a test that every room's
+   tour goal is reachable on the true layout for the UGV's inscribed radius
+   (11.55 cm) -- confirmed red on today's layout first.
+5. **No regression**: `tests/test_home_map.py` (its appraisal tests pin the
+   outside), R6's scaled-house goals 6/6 once.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
