@@ -4105,6 +4105,129 @@ keep every later-garbage object alive for the rest of the run.
 Criterion 2 **met**: 0 late ticks in 14 289, worst 0.065 s, MemAvailable
 4253 MB, 52 C (3.33 item 6 has the run). Criterion 3 **met**: G4 on the Jetson (fork firmware) **18 passed**, 0 late ticks in 5328, worst 0.068 s, robot server 49% of a core; the laptop suite 1755 passed, 57 skipped, 1 failed and 1 xpassed -- both the stock-firmware turn scatter of 3.25 (`test_odometry_heading_..[hardware]`, measured 6/8 on the unchanged code, and `test_5_a_clear_turn_lands_on_its_angle`, a non-strict xfail for the same cause), not this change.
 
+### 3.41 NVIDIA's GPU packages on the Jetson, judged against what we run (2026-10-06): plan and criteria, written before measuring -- NOT started
+
+**Asked by the user 2026-10-06:** with the Jetson in hand, evaluate Isaac
+ROS's image pipeline + TensorRT inference, NITROS, cuVSLAM and nvblox, and
+adopt any of them that measures better than what the project runs today.
+That includes moving perception inside ROS if the GPU path wins. 1.1's rule
+still holds whatever the result: **the brain, `robot/safety.py` and the
+phone stay outside.**
+
+**What changed since 1.1 and 6.11 were written:**
+
+* **1.1's perception trigger has not fired.** It was "the Jetson measures
+  the tier over budget". 3.33 measured it **under** budget: 60.6 ms median
+  and 109.9 ms p90 at 15 W, against 250 ms. CPU image handling was 18.6 ms,
+  not P7b's projected 229 ms. So this phase is optional. It asks whether a
+  GPU path is *better* -- faster, lighter or more accurate -- not whether
+  one is needed.
+* **The version that fits the board is Isaac ROS 3.2, not 4.4/4.5.**
+  6.11's "4.4/4.5 last on JetPack 6 / Humble" was unverified, and it is
+  wrong. The release notes
+  (`nvidia-isaac-ros.github.io/releases`, read 2026-10-06) say:
+  * 3.2 (2024-12-10): JetPack 6.1, Ubuntu 22.04, CUDA 12.6.
+  * 4.0 (2025-10-24): JetPack 7.0, Ubuntu 24.04, CUDA 13, Thor.
+  * 4.6 (2026-08-18): "Added support for Jetson Orin" on JetPack 7.2.
+  * 5.0 (2026-09-21): ROS 2 Lyrical, JetPack 7.2.
+
+  3.2 shares the board's CUDA 12.6 and L4T 36.4 family (JetPack 6.2.1).
+  That pairing is expected to work, not yet verified. Anything newer
+  needs a JetPack 7.2 migration, which stays its own phase (6.11).
+* **NITROS is not a choice of its own.** It is how Isaac nodes pass GPU
+  buffers between each other without copies, so it is measured as part of
+  arm C below, never alone. 5.0 replaces it with `rosidl::Buffer`, so
+  anything built on NITROS is ported, not upgraded, at a migration.
+
+#### Part A -- perception on the GPU (the board alone; no Rover needed)
+
+Three arms on the same 60 pinned frames (`tools/jetson/bench_frames.json`),
+on the Jetson at 15 W, timed by one harness (`bench_perception.py`,
+extended):
+
+| arm | where it runs | what changes |
+|---|---|---|
+| **A, today** | brain process, torch | nothing: 3.33's numbers re-run on the NVMe as the control |
+| **B, TensorRT outside ROS** | brain process | YOLOE (target text baked in with `set_classes`) and CLIP's image encoder exported to TensorRT engines; decode and resize on the GPU (P26) |
+| **C, Isaac ROS inside ROS** | an Isaac ROS 3.2 container on the board | `isaac_ros_image_pipeline` (resize) -> `isaac_ros_tensor_rt` with the same engines as B, over NITROS; per-frame results published to a topic the bench reads |
+
+Arm B is the fair rival to C, because it is the same GPU win without moving
+the wall. C can only be adopted if it beats B.
+
+**Acceptance criteria (written before measuring):**
+
+1. **Same answers.** On all 63 frames, B and C agree with A on detection
+   status (63/63), and CLIP probability is within 0.01 on every scored frame.
+   An arm that fails this is out, whatever its speed.
+2. **Faster or lighter, measured end to end.** Per-frame latency runs from
+   the JPEG bytes in to the verdict out, transport included. Each arm
+   reports median and p90, GPU and CPU time, peak resident memory, and
+   board power from `tegrastats`.
+   * **B is adopted** if its p90 is at least **30% below A's**, or its peak
+     memory at least **500 MB below**, with criterion 1 met.
+   * **C is adopted** only if it beats **B** by the same margins.
+   * Below those margins, the simpler arm wins.
+3. **The target changes per mission.** YOLOE's text prompt is baked into
+   its engine, so a new target means a new export. Record the time and disk
+   cost per target. **Bar: under 60 s**, or a cache that makes a repeat
+   target instant. An arm over the bar fails, because a mission cannot wait
+   minutes to start.
+4. **No cost to safety.** 3.33's headroom run with the winning arm in the
+   loop: **0 late ticks** at 20 Hz over 10 minutes, MemAvailable >= 1 GB,
+   no throttling. These are 3.37's bars, unchanged.
+5. **The suite still passes on the laptop.** The laptop has no TensorRT, so
+   torch stays the fallback there. `tests/test_ros_containment.py` passes:
+   if C wins, its nodes live in `service/`, never `brain/`.
+
+**If C wins**, 1.1's planned move goes ahead with its own criteria: camera
+driver, detector and CLIP scoring inside ROS, publishing
+`detected` / `absent` / `unavailable` per frame. The match gate, the cloud
+triggers, corroboration, arrival and the cloud call stay in the brain.
+
+#### Part B -- cuVSLAM and nvblox (need the OAK-D Lite, so the Rover)
+
+Neither can be judged in this simulator. Its camera draws flat-shaded
+walls with no texture, so a visual SLAM would track nothing, and its world
+is one lidar slice high. Judging them on sim frames would test the
+renderer, not the package. Two things can be done before the Rover arrives:
+
+* **Installability.** Isaac ROS 3.2's `isaac_ros_visual_slam` and
+  `isaac_ros_nvblox` run on the board against NVIDIA's own sample rosbags
+  (the r2b dataset). Record GPU, CPU and memory with our stack running
+  beside them, against 3.37's bars. This proves they fit on the board; it
+  says nothing about accuracy in a house.
+* **Sensor check.** Confirm this OAK-D Lite revision carries the BMI270
+  IMU. cuVSLAM's visual-inertial mode needs it; without it, cuVSLAM runs
+  on stereo alone.
+
+On the car, criteria to be confirmed once the Rover is running:
+
+* **cuVSLAM, judged against `slam_toolbox` (and 6.10's gyro).** It runs
+  beside `slam_toolbox` and drives nothing at first.
+  * **Heading:** 6.10's turn test (15, 45 and 90 degrees against a
+    measured reference). Adopt cuVSLAM's heading if it lands within
+    +/- 1 deg where encoder heading misses +/- 2.
+  * **Closure:** a taped closed loop through the furnished rooms, start
+    and end marked. End error at least **50% lower** than `slam_toolbox`
+    alone, with no new jumps (3.38's definition).
+  * **What adoption means:** cuVSLAM supplies odometry to `slam_toolbox`
+    (`odom -> base_footprint`). It does not replace the lidar map that
+    nav2 plans on, which keeps 3.15's nav results valid.
+* **nvblox:** obstacles above or below the lidar plane (chair crossbars,
+  table aprons, a shoe) reach nav2's costmap.
+  * **Adopt if:** on a fixed course with 10 such objects, nav2 routes
+    around **at least 8** that the lidar-only costmap drives into.
+  * **And no false walls:** the furnished tour still succeeds at 3.21's
+    rate.
+  * **Safety is not its job:** nvblox sits on nav2's side of the collars.
+    6.8's floor band in `robot/safety.py` stays the stop, by 1.1's rule
+    that a sensor feeding a veto stays outside ROS.
+
+**Order:** Part A now, on the board, when the user confirms these bars.
+Part B's installability check when the board is free; the rest on arrival.
+Every arm runs in its own container or image tag, so `vision-picar-ros`
+and G4's configuration stay untouched.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
@@ -4464,8 +4587,10 @@ job, on a phone.
      veto stays outside ROS.
      Either lives in `service/slam/`, behind the HTTP wall, so
      `tests/test_ros_containment.py` is unaffected.
-   * **Check before migrating:** the release notes put Isaac ROS 4.4/4.5
-     as the last on JetPack 6 / Humble (read, not verified). If an older
+   * **Check before migrating:** ~~the release notes put Isaac ROS 4.4/4.5
+     as the last on JetPack 6 / Humble (read, not verified).~~ **Corrected
+     2026-10-06 (3.41): 3.2 is the last on JetPack 6 / Humble; 4.0 moved to
+     JetPack 7, and Orin support returned only in 4.6 on JetPack 7.2.** If an older
      cuVSLAM or nvblox runs there, (a) and (b) can be measured with no
      migration at all. A move to JetPack 7.2 / Lyrical would be its own
      phase, with criteria, and would re-prove R3-R7 and G1-G4 -- the

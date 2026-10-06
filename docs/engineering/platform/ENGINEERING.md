@@ -12,9 +12,10 @@ How the hardware is specified, described in code and brought up today. The
 what and the why are in the [architecture spec](../../platform/ARCHITECTURE.md).
 This document is true only until the hardware or its description changes.
 
-**Much of this is PLANNED.** On 2026-10-02 the Jetson is in hand and its
-bring-up (`PLAN-ros-alignment.md` 3.33) is starting. The Rover is ordered
-and not delivered. Every item below is tagged:
+**Much of this is PLANNED.** On 2026-10-06 the Jetson is in hand, brought
+up and kept: `PLAN-ros-alignment.md` 3.33's criteria are met on the board
+(both risks, the suite, G4, headroom). The Rover is ordered and not
+delivered. Every item below is tagged:
 
 - **[built]** exists in the repo and is tested;
 - **[in hand]** the part has arrived;
@@ -40,7 +41,7 @@ specified by the motor-board domain (docs/engineering/motor-board/ENGINEERING.md
 
 | Item | Part | Status | Source of record |
 |---|---|---|---|
-| Compute | NVIDIA Jetson Orin Nano Super Developer Kit, 945-13766-0000-000, $399 (Amazon, ordered 2026-09-27) | [in hand] since 2026-09-30, return window to about Oct 30 | `JETSON-BOM.md` section 1, `CLAUDE.md` section 3b |
+| Compute | NVIDIA Jetson Orin Nano Super Developer Kit, 945-13766-0000-000, $399 (Amazon, ordered 2026-09-27) | [in hand] since 2026-09-30; opened 2026-10-02, KEPT 2026-10-05 (the return window no longer applies). JetPack 6.2.1 (L4T R36.4.4, UEFI 36.4.4), at 15 W | `JETSON-BOM.md` section 1, `CLAUDE.md` section 3b |
 | Chassis kit | Waveshare UGV Rover PT Jetson Orin ROS2 Kit Acce, SKU 29227, ~$730 delivered (Amazon) | [planned] ordered 2026-09-30, expected Oct 19 - Nov 11, 30-day return. Bought on Amazon rather than from Waveshare direct, whose returns were reported as 15 days, shipped to China [U] (`JETSON-BOM.md` 9.7, a search not re-checked): too short for the on-arrival checks | `JETSON-BOM.md` 9.1, 9.7 |
 | Motor board | Waveshare "ROS Driver for Robots" (ESP32, closed loop), firmware `ugv_base_ros` | [planned] with the kit | `JETSON-BOM.md` 9.3, motor-board domain |
 | Lidar | D500 (LDROBOT STL-19P), 360 degrees, 12 m, 10 Hz | [planned] with the kit | `PLAN-ros-alignment.md` 3.21 |
@@ -48,14 +49,15 @@ specified by the motor-board domain (docs/engineering/motor-board/ENGINEERING.md
 | Pan-tilt camera | the kit's pan-tilt module | [planned] with the kit | 3.26 |
 | IMU | ICM-20948 on the motor board | [planned] with the kit | 3.21, 3.26 |
 | Jetson battery | e.g. Wheeltec E351S 3S 5100 mAh plus a fused 5.5 x 2.1 to 5.5 x 2.5 mm cable, ~$100-110 | [planned] CONDITIONAL on the arrival stress test | `JETSON-BOM.md` 9.5 |
-| microSD | 128 GB A2 | needed for JetPack 6.2.1 | `tools/jetson/README.md` |
+| microSD | 128 GB A2 | [in hand]; the first boot device, the fallback since 2026-10-05 | `tools/jetson/README.md` |
+| NVMe | SanDisk Optimus 5100 500 GB, M.2 2280 | [in hand]; the boot device since 2026-10-05 | `JETSON-BOM.md` 9.1 |
 
 **Files in the repo that describe or serve the platform:**
 
 | File | What it does |
 |---|---|
 | `tools/jetson/README.md` | The bring-up procedure for 3.33, with every command. **Canonical**: Procedures below links to it and adds only expected outputs and pass rules |
-| `tools/jetson/setup.sh` | Run on the Jetson: checks L4T R36, prints the power mode, installs the Python 3.10 venv, the CUDA torch and the project requirements pinned against torch, then builds the shipped pipeline. It ASSERTS only that CLIP's scorer is on `cuda`; it prints the detector's weights but not its device (see Known gaps) [built, not yet run on the board] |
+| `tools/jetson/setup.sh` | Run on the Jetson: checks L4T R36, prints the power mode, installs the Python 3.10 venv, the CUDA torch and the project requirements pinned against torch, pins `numpy<2` (the Jetson AI Lab torch wheel is built against NumPy 1.x), then runs the shipped pipeline once and ASSERTS that it ran (not `unavailable`) with both the detector and CLIP on `cuda` [built, run on the board 2026-10-04] |
 | `tools/jetson/bench_perception.py` | Times the shipped perception pipeline per frame, split into GPU and CPU work [built] |
 | `tools/jetson/bench_frames.json` | The 60 pinned frames (+3 warm-up) from 20 walks and 7 targets, so laptop and board time the same frames |
 | `service/slam/src/picar_description/urdf/picar.urdf.xacro` | The robot description. Every dimension sits in one block, tagged `[BOM]`, `[CAD]` or `[PLACEHOLDER]` |
@@ -74,9 +76,9 @@ Physical and host-side interfaces. Device names are expected, not seen.
 | Motor board serial | Which device, how it is named (a udev symlink, never enumeration order) and `ROBOT_SERIAL` are owned by the motor-board spec (docs/engineering/motor-board/ENGINEERING.md). Which route the kit wires is an arrival check | [planned] |
 | Lidar serial | LD19 protocol at 230400 baud, read by the robot process. Opened by a udev symlink (name to be chosen), never by enumeration order such as `ttyACM0`, the same rule as the motor board's | [planned]; protocol inferred from `ldlidar` |
 | Serial permissions | Service user in `dialout`; udev rules for stable names (the motor board's in motor-board ENG §Procedures, docs/engineering/motor-board/ENGINEERING.md; B5 in operations) | [planned] |
-| SSH | `Host picar-jetson` -> `picar@picar-jetson.local`, key `~/.ssh/id_ed25519_jetson` | [built] on the Mac |
-| Code delivery | The Mac pushes over SSH to a non-bare repo on the board (`receive.denyCurrentBranch updateInstead`, a `jetson` remote on the Mac). No GitHub credentials on the robot. One-time setup and the push command: `tools/jetson/README.md` section 2 | [planned] |
-| Power mode | `sudo nvpmodel -q` / `sudo nvpmodel -m <id>`; ids from `/etc/nvpmodel.conf` | [planned] |
+| SSH | `Host picar-jetson`, user `picar`, key `~/.ssh/id_ed25519_jetson`. `picar-jetson.local` does not resolve from the Mac on this network, so the entry points at the board's LAN address (a DHCP reservation is still to make, 3.33) | [built] on the Mac |
+| Code delivery | The Mac pushes over SSH to a non-bare repo on the board (`receive.denyCurrentBranch updateInstead`, a `jetson` remote on the Mac). No GitHub credentials on the robot. One-time setup and the push command: `tools/jetson/README.md` section 2 | [built], used for 3.33 |
+| Power mode | `sudo nvpmodel -q` / `sudo nvpmodel -m <id>`; ids from `/etc/nvpmodel.conf`. On this board 15 W is id 0; it shipped in 25 W (id 1) | [built], set to 15 W 2026-10-04 |
 
 **Bench output** (`tools/jetson/bench_perception.py`). Per frame (`rows` in
 the `--out` JSON): `total_ms`, `model_ms`, `handling_ms`, `det_pre_ms`,
@@ -152,10 +154,10 @@ unless tagged):
 
 | Parameter | Value | Where | Why |
 |---|---|---|---|
-| Power mode | 15 W | `nvpmodel` | User, 2026-10-01. NVIDIA rates ~40 TOPS at 15 W against ~67 at 25 W |
-| Perception budget | 250 ms a frame (4 Hz) at 15 W | 3.33 criterion 3 | Confirmed by the user 2026-10-02 |
-| Safety-loop headroom | 0 late ticks at 20 Hz over a 10-minute nav2 run | 3.33 criterion 6, `/health` `wheel_loop` | Safety must not depend on load |
-| Free memory under full load | at least 1 GB | 3.33 criterion 6 | |
+| Power mode | 15 W | `nvpmodel` | User, 2026-10-01. NVIDIA rates ~40 TOPS at 15 W against ~67 at 25 W, but 25 W caps the CPU lower (1.344 against 1.498 GHz) and bought perception nothing on the board (3.33) |
+| Perception budget | 250 ms a frame (4 Hz) at 15 W | 3.33 criterion 3 | Confirmed by the user 2026-10-02. Measured on the board 2026-10-04: median 60.6 ms, p90 109.9 ms (GPU 44.4, CPU handling 18.6) |
+| Safety-loop headroom | 0 late ticks at 20 Hz over a 10-minute nav2 run | 3.33 criterion 6, `/health` `wheel_loop` | Safety must not depend on load. Met with 3.37: 0 late in 14,289 moving ticks |
+| Free memory under full load | at least 1 GB | 3.33 criterion 6 | Met with 3.37: MemAvailable min 4253 MB; max 52 C, no throttling |
 | JetPack | 6.2.1 (L4T R36, Ubuntu 22.04); 6.2.2 optional via `apt upgrade` | `tools/jetson/setup.sh` checks `R36` | Matches the Humble container |
 | Devkit firmware | UEFI 36.0 or newer | `HARDWARE-BOM.md` 5.1 | Older cannot boot JetPack 6 |
 | Python on the board | 3.10 | `tools/jetson/setup.sh` | NVIDIA's CUDA torch exists only for cp310 |
@@ -243,8 +245,8 @@ SIM_MAP=scaled_house .venv/bin/python -m pytest tests/test_ros_chain_live.py tes
 ```
 
 The container line is `service/slam/README.md`'s Linux form (host
-networking, because `run.sh` binds the servers to 127.0.0.1; that form is
-not yet exercised on a board). `restart.sh` reports `OK: robot and brain
+networking, because `run.sh` binds the servers to 127.0.0.1; G4 ran exactly
+this form on the board, met 2026-10-05 on the fork firmware). `restart.sh` reports `OK: robot and brain
 both running <rev>` only once both answer with the checkout's revision.
 Expected from pytest: `18 passed`, and the `-rs` summary lists no skips.
 `tools/jetson/README.md` section 4 carries the same list and commands;
@@ -303,7 +305,7 @@ chain suite's first test fails if the bridge has not heard `/odom` within
 | Python 3.10 suite in Docker on Arm Linux | 1436 passed, 0 failed, 5 errors (3 browser tests without a browser, 2 needing `pillow-heif`) | recorded 2026-10-02 |
 | Laptop bench (M1 MacBook Air), defaults | 119 / 156 ms median / p90; detector inference 108 ms; CLIP 31 ms a crop | recorded 2026-10-02 |
 | Laptop bench, both models on MPS | 36 / 66 ms; detector 22 ms | recorded 2026-10-02 |
-| 3.33 criteria 1-7 on the Jetson | Firmware and OS, torch on GPU, latency at 15 W and 25 W, suite, G4, headroom, reversibility | [planned] not run |
+| 3.33 criteria 1-7 on the Jetson | Firmware and OS (UEFI 36.4.4, JetPack 6.2.1); torch 2.8.0 on GPU, parity 63/63; latency 60.6 / 109.9 ms median / p90 at 15 W, 64.2 / 120.4 at 25 W; suite 1728 passed, 0 failed, 56 skipped; G4 met on the fork firmware (3.36); headroom met with 3.37; reversibility moot, the board was kept 2026-10-05 | recorded 2026-10-04/05 |
 
 ## Known gaps
 
@@ -319,22 +321,15 @@ and are not repeated here. These are the implementation gaps:
   simulator has no fake lidar on a pty yet (`PLAN-ros-alignment.md`
   section 6, question 5). What the safety layer then refuses is canonical
   in the safety spec's Known gaps (docs/engineering/safety/ENGINEERING.md).
-- **`tools/jetson/setup.sh` asserts only CLIP's device.** It prints the
-  detector's weights but never asserts the detector runs on `cuda`, so risk
-  1 could close with YOLOE on the CPU inside the return window (the same
-  gap is in 3.33 criterion 2). Until the script asserts it, read the
-  bench's `devices:` line (Procedures step 5) as the check.
-- **`tools/jetson/README.md` section 4 lacks G4's requirements** (a brain
-  under `/brain`, `SIM_MAP` in pytest's environment, the `/wheels` wait,
-  the `picar-ros` name). Procedures above has the full set; the README's
-  owner is to bring it in line.
 - **The lidar's +90 degree yaw is not modelled** in the xacro or the sim.
 - **Every `[CAD]` value is unmeasured**, and three geometry values are
   still `[PLACEHOLDER]`.
 - **`JETSON-BOM.md` section 1 still lists an IMX219 as "buy regardless"**,
   although the kit brings two cameras.
-- **No on-board latency number exists yet.** The ~205 ms Orin figure in
-  `PI-VS-JETSON.md` was projected for OWLv2, not measured for YOLOE.
+- **On-board latency is measured only for the shipped YOLOE + CLIP
+  pipeline** (60.6 / 109.9 ms median / p90 at 15 W, 3.33). The ~205 ms
+  Orin figure in `PI-VS-JETSON.md` was projected for OWLv2 and was never
+  measured on the board.
 - **`HARDWARE-READINESS.md` and `HARDWARE-BOM.md` describe the 2026-09-19
   build** (General Driver board, IMX219, a single pan servo). The Rover kit
   replaced those parts. Use `JETSON-BOM.md` section 9 for the kit.

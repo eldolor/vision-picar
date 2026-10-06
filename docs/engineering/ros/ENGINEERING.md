@@ -165,7 +165,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 
 | Key or constant | Default | Unit | Where read | Why this value |
 |---|---|---|---|---|
-| `drive.mode` / `ROBOT_DRIVE` | `direct` | -- | `robot/factory.py` | `ros` becomes the car's default only after G4 (3.24). |
+| `drive.mode` / `ROBOT_DRIVE` | `direct` | -- | `robot/factory.py` | `ros` becomes the car's default only after G4 (3.24); G4 is met (3.33). |
 | `ROS_BRIDGE_URL` env | unset | URL | `robot/factory.py` and `world/factory.py` | Overrides both keys below. Set this, not a yaml key, to move the bridge: it is the only setting both factories read. |
 | `drive.bridge_url` | `http://127.0.0.1:8090` (shipped yaml and code default) | URL | `robot/factory.py` only | Where verbs go. |
 | `world.bridge_url` | not in the shipped yaml; code default `http://127.0.0.1:8090` | URL | `world/factory.py` only | Where `RosWorld` reads map, pose and goals. Setting `drive.bridge_url` alone sends verbs and world reads to different bridges. |
@@ -264,7 +264,9 @@ Checklist for a change:
 
 ## Known gaps
 
-- **G4 is not closed** (3.33). Since 2026-10-02 `/health`'s `sim_map`
+- **G4 is met only on the fork firmware** (3.33, 2026-10-05: 5 consecutive
+  runs of `18 passed` on the Jetson); on the stock firmware the +/-2 deg
+  turn test fails about one run in three (3.25). Since 2026-10-02 `/health`'s `sim_map`
   names the house actually built, under `ROBOT_MODE=hardware
   SIM_MOTOR_BOARD=fake` too, so the chain and nav2 suites run there instead
   of skipping. A skip is still not a pass. Since 3.36 that configuration
@@ -311,5 +313,7 @@ Checklist for a change:
   starter house, but the parameters are judged on `scaled_house`.
 - **The D500 lidar is not modelled.** It is mounted yawed +90 degrees, and
   the sim's scan has zero ahead. A hardware-day item (3.27).
-- **The Linux/Jetson run has not been exercised.** With `--network host`,
-  Foxglove listens on every interface.
+- **The Linux/Jetson run is exercised only against the fake motor board.**
+  G4 ran it on the Jetson with `--network host` (`PLAN-ros-alignment.md`
+  3.33, met 2026-10-05); with host networking Foxglove listens on every
+  interface.

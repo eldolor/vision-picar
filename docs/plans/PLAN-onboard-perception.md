@@ -6910,7 +6910,9 @@ What is still NOT measured is **latency on the board** -- P7b's honest
 projection for fp16 OWLv2 is ~205 ms/frame (4.9 Hz), against the 8L's
 reactive tier at 92 FPS, and 1.14's continuous motion assumed the fast
 one. That is now the open question, and it is a rhythm question rather
-than an accuracy one.
+than an accuracy one. *(Measured 2026-10-04 on the board, for the shipped
+YOLOE + CLIP rather than OWLv2: median 60.6 ms, p90 109.9 ms a frame at
+15 W -- `PLAN-ros-alignment.md` 3.33.)*
 
 ##### Three things the Jetson BOM settles for the Pi build regardless
 
@@ -8262,6 +8264,9 @@ not pick MPS by itself): median **36 ms** a frame (p90 66), the detector
 **22 ms** -- a fifth of its CPU time -- and handling 14 ms. On a GPU the
 handling becomes a larger SHARE (~40%) of a much smaller total, which is
 P26's argument in a new form; on the Jetson that share is what decides it.
+*(Measured 2026-10-04 on the board at 15 W: median 60.6 ms, p90 109.9 ms a
+frame, GPU 44.4 ms and CPU handling 18.6 ms, against the 250 ms budget -- so
+P26 is not needed to meet it; `PLAN-ros-alignment.md` 3.33.)*
 
 #### P9: composing YOLO-World instead of replacing with it -- **MEASURED 2026-09-13**
 

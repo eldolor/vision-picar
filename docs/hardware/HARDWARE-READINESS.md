@@ -199,7 +199,10 @@ The genuinely unbuyable-around items -- coasting distance against
 `min_distance_cm`, and lidar behaviour on real surfaces -- are in
 `PLAN-sim-hardening.md` section 7. Before ordering, the open items are
 `PLAN-onboard-perception.md` 3.8's five seller questions and 1.10's
-ordering-time checks; none blocks anything else.
+ordering-time checks; none blocks anything else. (**Moot 2026-10-05:** those
+were the Pi-era items. The Jetson is bought, brought up and kept, with its
+two risks closed on the board, and the Rover is ordered --
+`PLAN-ros-alignment.md` 3.33, `JETSON-BOM.md` section 9.)
 
 ---
 

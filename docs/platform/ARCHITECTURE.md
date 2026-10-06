@@ -94,7 +94,10 @@ About twice the power draw. Two bring-up risks the Pi did not have: a
 working CUDA torch for the installed JetPack, and a devkit firmware update
 (one public report of a bricked unit). In return: any PyTorch or Hugging
 Face model runs with a pip install, there is an NVMe slot, and there are six
-CPU cores plus a GPU for ROS and perception.
+CPU cores plus a GPU for ROS and perception. Both risks were settled on the
+board on 2026-10-04 -- JetPack 6 booted with no firmware update, torch on
+the GPU -- and the user kept it on 2026-10-05 (`PLAN-ros-alignment.md`
+3.33).
 
 ### Chassis: the Waveshare UGV Rover kit
 
@@ -217,6 +220,10 @@ nothing on the board is modified until the user decides to keep it.
 **Alternative rejected.** Keeping it boxed until the Rover arrives, which
 could be after the return window closes.
 
+**Outcome.** Both risks closed on the board on 2026-10-04, and gate G4 and
+the headroom run passed on it by 2026-10-05; the user kept the board on
+2026-10-05, so the return window no longer applies.
+
 ## Contracts
 
 | Between | Direction | Category | Ownership |
@@ -235,7 +242,7 @@ could be after the return window closes.
 | The host stops commanding (process dies, link drops) | Robot server watchdog first; motor board heartbeat if the server itself is gone | Wheels stop within one watchdog period while the server is alive. The board's own heartbeat is set longer than that period, as a backstop |
 | Pack voltage sags under motor peaks | 15 W start; stress test with logged input voltage on arrival | Buy the separate Jetson pack if any sag is seen; never move to 25 W without it |
 | Pack runs flat | Software cutoff (planned) | Clean shutdown before the Jetson's 9 V floor. Not built: until it is, watch the pack |
-| No working CUDA torch for the JetPack, or a model silently falling back to the CPU | Stop the bring-up at the torch check, which must show every network of the shipped pipeline on the GPU | Decided with the user before the return window closes |
+| No working CUDA torch for the JetPack, or a model silently falling back to the CPU | Stop the bring-up at the torch check, which must show every network of the shipped pipeline on the GPU | Met on the board 2026-10-04 (3.33); the setup script now asserts it, so a JetPack upgrade that breaks it stops at the same check |
 | Perception too slow on the board | Measure on the pinned frames | Budget: 250 ms a frame at 15 W (user, 2026-10-02). Over it, move image handling off the CPU first |
 | Everything at once overloads the board | A headroom run with the whole stack loaded | 0 late safety-loop ticks over 10 minutes, at least 1 GB free, no thermal throttling |
 | A CAD offset is wrong on the real car | Measure every CAD value on arrival | The lidar offset is measured before the safety sweep runs on the car |
@@ -257,5 +264,7 @@ could be after the return window closes.
 - **Skid-steer slip and the effective track.** Measured on the car (R8).
 - **The battery cutoff.** Required, not designed: thresholds, the voltage
   source on the board, and a readout on the twin.
-- **The 15 W result.** Whether 15 W meets the 250 ms budget, and whether the
-  kit's supply holds, are both measured in 3.33 and on arrival.
+- **The 15 W result.** Half answered: 15 W meets the 250 ms budget with
+  room to spare (3.33, measured on the board 2026-10-04). Whether the kit's
+  supply holds at 15 W with the motors working is measured on the Rover's
+  arrival.

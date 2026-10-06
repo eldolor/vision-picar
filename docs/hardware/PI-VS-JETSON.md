@@ -6,6 +6,12 @@ https://claude.ai/code/artifact/3e73c6a1-a25d-46c8-ac7e-8f04b66133c5
 
 > The decision is **made** (Jetson, 2026-09-19, `CLAUDE.md` section 3b). This
 > file answers "what if we went the Pi way instead" and does not re-open it.
+>
+> **Since 2026-10-05 the Jetson is opened, measured and KEPT**
+> (`PLAN-ros-alignment.md` 3.33): torch on the GPU, the shipped perception
+> at a median 60.6 ms / p90 109.9 ms a frame at 15 W. The timing advice and
+> the projected latencies below are as of 2026-09-30; dated notes mark what
+> the board has since answered.
 
 **Recommendation: stay with the Jetson Orin Nano Super.** A Raspberry Pi 5 +
 Hailo-8L saves roughly $86-250. What it costs is the detector the project
@@ -93,7 +99,7 @@ what price, has not been checked.
 | Power on the Rover | ~10-15 W, probably fits the kit's supply | up to 25 W, needs a second battery |
 | Storage | SD card only | NVMe available |
 | ROS container | should run as-is (arm64 Docker) | what the software already assumes |
-| Availability | only the soldered AI HAT+ in stock | in hand, unopened |
+| Availability | only the soldered AI HAT+ in stock | in hand; opened 2026-10-02, kept 2026-10-05 |
 
 ## What would change the answer
 
@@ -112,6 +118,8 @@ decision to re-open it.
 **Timing:** the Jetson arrived 2026-09-30 and is still unopened, so it can be
 returned until about Oct 30. The Rover (Jetson kit) was ordered the evening
 of 2026-09-30. Run the test before the Jetson box is opened.
+*(Moot 2026-10-05: the box was opened 2026-10-02 to settle its risks while
+returnable, and the user kept the board on 2026-10-05.)*
 
 ## Jetson power modes
 
@@ -122,7 +130,9 @@ The Orin Nano Super has four modes: **7 W, 15 W, 25 W and MAXN SUPER**
 (uncapped, can exceed 25 W). You switch with `sudo nvpmodel -m <id>`
 (`GUIDE-robot-base.md`). The clock figures below are recalled rather than
 checked on a board. Confirm them against `/etc/nvpmodel.conf` once the box is
-opened.
+opened. *(Confirmed 2026-10-04 from the board's `/etc/nvpmodel.conf`: 15 W
+caps the CPU at 1.498 GHz, 25 W at **1.344 GHz -- lower than 15 W**, and MAXN
+SUPER is uncapped, ~1.73 GHz. `PLAN-ros-alignment.md` 3.33.)*
 
 | Mode | CPU | GPU | Memory bandwidth | AI rating |
 |---|---|---|---|---|
@@ -139,12 +149,17 @@ measurements.
 |---|---|---|---|
 | Safety: lidar veto, 20 Hz wheel loop, watchdog | tiny CPU load | no change | probably fine, but it now competes for 4 slow cores |
 | Seeing the target: YOLOE + CLIP | mostly CPU (image resizing), partly GPU | ~1.3-1.5x slower (about 3-4 frames/s) | ~2-2.5x slower (about 2 frames/s) |
-| Mapping and goals: slam_toolbox + nav2 | CPU, 0.5-1.5 cores (never measured on the board) | fine | at risk: nav2's control loop may miss deadlines |
+| Mapping and goals: slam_toolbox + nav2 | CPU, 0.5-1.5 cores (never measured on the board) | fine (2026-10-05: 29/29 nav2 goals at 15 W with perception running, 3.33) | at risk: nav2's control loop may miss deadlines |
 | Thinking: the Opus call on triggers | the cloud (~3.6 s per call) | no change | no change |
 
 The baseline for "seeing the target" is the best current Orin guess of ~205 ms
 per frame (`PLAN-onboard-perception.md` P7b/P7d). That was projected for
 OWLv2 and not yet remeasured for YOLOE, and most of it is CPU image resizing.
+*(Measured 2026-10-04 on the board, the shipped YOLOE + CLIP pipeline: median
+60.6 ms, p90 109.9 ms a frame at 15 W -- GPU 44.4 ms, CPU handling 18.6 ms --
+and 64.2 / 120.4 ms at 25 W, so 15 W costs nothing here. The table's
+slowdown estimates and the resizing cost are superseded by that;
+`PLAN-ros-alignment.md` 3.33.)*
 
 **What this means for the project:**
 
@@ -171,7 +186,8 @@ OWLv2 and not yet remeasured for YOLOE, and most of it is CPU image resizing.
 
 Step up to 25 W or MAXN SUPER only when a measurement shows perception is the
 bottleneck. Fix the image resizing first (P7b); it is the biggest cost at every
-power level. Treat 7 W as a battery-saver, not an operating mode for
+power level. *(2026-10-04: on the board it is not -- CPU handling is ~19 ms of
+a 61 ms frame, and 25 W bought nothing.)* Treat 7 W as a battery-saver, not an operating mode for
 autonomy.
 
 **Before buying the separate Jetson battery** (`JETSON-BOM.md` 9.5, still to

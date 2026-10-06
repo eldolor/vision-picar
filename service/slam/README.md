@@ -185,7 +185,11 @@ Notes on those choices:
 * **Back to normal:** `docker rm -f picar-ros` and a plain
   `bash service/tunnel/restart.sh` (which returns to `drive: direct`).
 
-### On the car (Linux / Jetson) -- NOT yet exercised
+### On the car (Linux / Jetson)
+
+Exercised on the Jetson for G4 (`PLAN-ros-alignment.md` 3.33, met
+2026-10-05): the image builds natively on the board in ~15 min, and the
+line below is the one G4 ran (`tools/jetson/README.md` has the whole run).
 
 `host.docker.internal` does not exist on Linux, and `run.sh` binds the
 robot server to `127.0.0.1`, which a bridge-networked container cannot
@@ -315,6 +319,8 @@ it must match the robot server's (`curl localhost:8000/health` reports
 * `picar_sim_hardware` has no unit tests.
 * `robot_localization` is named in `PLAN-ros-alignment.md` section 0 but not
   installed or launched; odometry is `diff_drive_controller`'s alone.
-* The Linux/Jetson run above has not been exercised.
+* The Linux/Jetson run above has run only against the fake motor board
+  (G4, 3.33), not the Rover's. With `--network host`, Foxglove listens on
+  every interface.
 * `nav2.yaml` / `slam.yaml` header comments reason from the starter house;
   the parameters are judged on `scaled_house` now.

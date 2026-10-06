@@ -231,7 +231,10 @@ the verb vocabulary never enters ROS.
 - **G3, a real fallback.**
 - **G4, the same suites on the Jetson.**
 
-G1-G3 are met. G4 waits on the board.
+All four are met: G1-G3 in the simulator (2026-09-30), G4 on the Jetson
+(2026-10-05, 3.33) -- judged on the fork firmware the Rover will be
+flashed with; on the stock firmware the turn test fails about one run in
+three (3.25).
 
 **Rejected:** dropping the direct drive mode. The direct mode is kept, but
 narrowed to two jobs:
@@ -320,10 +323,6 @@ the wheels, one that skips arbitration (3.17).
 All open questions here come from `PLAN-ros-alignment.md` section 6, except
 where noted.
 
-- **G4, on the Jetson, not yet run.** Its bar: the image builds natively,
-  and the chain and nav2 suites pass five consecutive runs against the fake
-  motor board (3.24, 3.33). A skipped suite is not a pass. It waits on the
-  board.
 - **Every person, not just the D-pad, under the ROS drive mode** (D6;
   `docs-review/REPORT.md` V10). Either give every manual-rank driver a
   multiplexer input, or narrow D6 for good. The user decides.

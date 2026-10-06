@@ -202,7 +202,9 @@ are recall and latency. Do not re-open the Hailo path or fund a compile run.
 fix is moving image handling off the CPU (P26), then TensorRT. P26 is built
 only if the board's own GPU/CPU split says the handling matters; its
 acceptance bar is a plan criterion (`PLAN-onboard-perception.md` P26), not a
-commitment of this spec.
+commitment of this spec. **Measured 2026-10-04:** the shipped pipeline is
+well inside the budget on the board at 15 W (3.33), so P26 is not needed to
+meet it.
 
 ### Measure against people, at a matched cost
 

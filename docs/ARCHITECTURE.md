@@ -69,8 +69,8 @@ flowchart LR
 ROS is **off by default in the simulator**: the twin works without Docker,
 and the robot server then runs verbs straight through `robot/safety.py` to
 the body ("direct" drive). On the car, ROS drive is to become the default
-once its four gates pass (`PLAN-ros-alignment.md` 3.24; three are met, the
-fourth needs the Jetson). Direct drive stays as the car's fallback if ROS
+once its four gates pass (`PLAN-ros-alignment.md` 3.24; all four are met,
+the fourth on the Jetson against the fake motor board, 2026-10-05). Direct drive stays as the car's fallback if ROS
 dies, and on the fallback only a person may drive.
 
 ## The four walls

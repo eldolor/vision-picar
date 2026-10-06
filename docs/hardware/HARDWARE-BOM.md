@@ -66,6 +66,8 @@ Four corrections and one caution, from the repo it is meant to serve:
    Humble, which is what 3.3's (b+) path assumed. **Confirm a working
    torch wheel for whichever JetPack before committing an SD card to it** --
    and prefer the one that has one today over the newer one.
+   *(Closed 2026-10-04 on the board: JetPack 6.2.1, torch 2.8.0 on `cuda`,
+   with `numpy<2` pinned -- `PLAN-ros-alignment.md` 3.33.)*
 
 **Caution:** section 6's software voltage cutoff is not a note, it is a feature
 this repo does not have. Reading the INA219 at >=1 Hz, warning at 10.5V,
@@ -381,6 +383,10 @@ B6, B7, A5 and A9 are estimates. B3b and B8 are excluded (B8 adds about $10.88 w
 3. If older than 36.0, follow NVIDIA's **JetPack 6.x Update Path**: write JetPack 5.1.3 to a 64GB+ microSD and boot; let it schedule the firmware update and reboot; install the QSPI updater with apt; reboot; then swap in the target JetPack image.
 4. **Run every firmware step on the stock 19V adapter, never the battery.** NVIDIA: "Do not remove power while a firmware update is in progress."
 5. Do this inside Micro Center's 30-day return window.
+
+*(Done 2026-10-04 on our devkit, bought on Amazon rather than Micro Center:
+JetPack 6.2.1 booted from the SD image with no update path, and the UEFI
+reads 36.4.4. The board was kept 2026-10-05 -- `PLAN-ros-alignment.md` 3.33.)*
 
 ### 5.2 Order of operations `[R]`
 1. Meter the stock adapter's polarity, then build the battery barrel pigtail to match.

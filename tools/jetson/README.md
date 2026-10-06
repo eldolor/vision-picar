@@ -120,8 +120,9 @@ SIM_MAP=scaled_house .venv/bin/python -m pytest tests/test_ros_chain_live.py tes
 `restart.sh` prints `OK: robot and brain both running <rev>` only once both
 answer with the checkout's revision. The container line is
 `service/slam/README.md`'s Linux form: host networking, because `run.sh`
-binds the servers to 127.0.0.1. **It has not yet run on a board**, so the
-first run here is also its first test. The authority for this list is
+binds the servers to 127.0.0.1. It ran on the board for G4: met
+2026-10-05 on the fork firmware, 5 consecutive runs of 18 passed
+(`PLAN-ros-alignment.md` 3.33). The authority for this list is
 `docs/engineering/platform/ENGINEERING.md`; if the two disagree, fix both.
 
 With `SIM_MOTOR_BOARD=fake`, `run.sh` starts the simulated body as its own

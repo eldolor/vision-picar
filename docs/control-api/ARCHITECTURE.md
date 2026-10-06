@@ -218,8 +218,10 @@ Restarting the server is the reset.
 - **CPU sharing with sensor drivers.** The lidar driver is decided to live
   in this process (`PLAN-ros-alignment.md` 6, question 5). Today the
   simulator's own ray casting, sharing this process, already dominates the
-  HTTP tail at the control rate (3.17). Measure on the Jetson (3.33) before
-  adding a serial reader.
+  HTTP tail at the control rate (3.17). On the Jetson that was confirmed and
+  fixed: the simulated body now runs as separate programs (3.36), and with
+  the full stack loaded the control loop ran no late ticks (3.33, 3.37). A
+  real serial reader's share is still to be measured on the car.
 - **Manual drivers other than the D-pad under ROS drive** are refused,
   because the ROS bridge has an input only for the D-pad
   (`docs-review/REPORT.md` V10). Owned by [safety](../safety/ARCHITECTURE.md)

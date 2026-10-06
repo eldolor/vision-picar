@@ -347,6 +347,7 @@ are commitments, not tuning.
   (`docs-review/SPEC-REVIEW.md` fix-list 6). Owner: the user. Where in the
   code: the [engineering spec](../engineering/safety/ENGINEERING.md),
   Known gaps.
-- **G4 on the Jetson.** Safety-loop timing under full perception load
-  (`PLAN-ros-alignment.md` 3.33) is unmeasured. Zero late safety ticks is
-  the written bar.
+- **Safety-loop timing on the car.** Answered on the Jetson against the
+  fake motor board: zero late safety ticks under full perception, SLAM and
+  nav2 load (`PLAN-ros-alignment.md` 3.33, met with 3.37). Still open with
+  the real lidar driver and motor board in the process.

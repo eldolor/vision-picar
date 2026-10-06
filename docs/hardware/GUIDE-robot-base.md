@@ -381,7 +381,10 @@ The Orin Nano Super offers **7 W, 15 W, 25 W and MAXN SUPER**. MAXN SUPER is
 releases -- read `/etc/nvpmodel.conf` on the board. 15 W costs roughly 40%
 of the AI throughput (NVIDIA rates ~40 TOPS at 15 W against ~67 at 25 W)
 `[I]`: a working fallback, not a free fix, and a good way to **test for
-brownouts** -- run at 15 W, then step up.
+brownouts** -- run at 15 W, then step up. *(On our board, 2026-10-04: the
+shipped perception was no slower at 15 W than at 25 W -- 60.6 against
+64.2 ms median a frame -- because 25 W caps the CPU lower;
+`PLAN-ros-alignment.md` 3.33.)*
 
 ### Budgeting a robot's power
 

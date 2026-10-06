@@ -362,4 +362,6 @@ order; record the table in the plan entry.
 - **The fixed 20 cm floor** is a stopping distance for about 0.45 m/s
   (`PLAN-onboard-perception.md`); a ROS verb peaks at 0.6 m/s and relies on
   the look-ahead.
-- **Late safety ticks on the Jetson** are unmeasured (3.33).
+- **Late safety ticks on the Jetson** are measured only against the fake
+  motor board: 0 in 14,289 under full load (3.33, with 3.37). With the real
+  lidar driver and serial board in the process they are unmeasured.

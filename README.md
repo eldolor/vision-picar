@@ -5,11 +5,13 @@ the decision-making is built and proven against a simulator before any
 hardware is bought. For a non-technical introduction read [`INTRODUCTION.md`](docs/guides/INTRODUCTION.md);
 for orientation in the code read `CLAUDE.md`.
 
-**Where things stand (2026-10-02).** The compute board has arrived and the
-chassis is on order; nothing has run on real hardware yet.
+**Where things stand (2026-10-06).** The compute board is up and kept; the
+chassis is on order. The whole stack has run on the Jetson against the fake
+motor board; nothing has driven real wheels yet.
 
 - **Hardware (bought):** an NVIDIA **Jetson Orin Nano Super** (arrived
-  2026-09-30, to run at 15 W to start) on a **Waveshare UGV Rover** (ordered
+  2026-09-30, opened 2026-10-02, kept 2026-10-05; JetPack 6.2.1 at 15 W,
+  booting from an NVMe) on a **Waveshare UGV Rover** (ordered
   2026-09-30, ~$730, due Oct 19 - Nov 11). The Rover is differential drive
   (it pivots in place) and brings its own **ROS Driver** ESP32 board (closed
   loop, encoder odometry to the host, 660 pulses/rev), a **D500 lidar**, an
@@ -18,11 +20,14 @@ chassis is on order; nothing has run on real hardware yet.
   The Raspberry Pi 5 + Hailo-8L plan, and the RPLidar C1 / IMX219 / General
   Driver build of 2026-09-19, are history. Record in `JETSON-BOM.md`
   section 9; concepts in `GUIDE-robot-base.md`.
-- **Next: the Jetson before the Rover** (`PLAN-ros-alignment.md` 3.33). It
-  gets opened while it is still returnable: firmware check, JetPack 6.2.1,
-  torch on the GPU, the perception tier's latency (budget 250 ms a frame at
-  15 W), and gate G4 -- the whole stack on the board against the fake motor
-  board.
+- **The Jetson before the Rover -- done** (`PLAN-ros-alignment.md` 3.33,
+  2026-10-04/05): torch 2.8.0 on the GPU; the perception tier at a median
+  60.6 ms, p90 109.9 ms a frame at 15 W (budget 250 ms); the offline suite
+  1728 passed, 0 failed on the board; gate G4 -- the whole stack on the
+  board against the fake motor board -- met, 5 runs in a row; and headroom
+  under full load (0 late wheel-loop ticks in 14,289, 4.25 GB free, 52 C).
+  **Next:** the Rover, and a caliper check that the devkit bolts onto its
+  deck (`UGV-ROVER-MOUNTING.md`).
 - **ROS 2 Humble, in one container** (`service/slam/`): the URDF,
   `ros2_control`, `slam_toolbox` and nav2 run there and nowhere else. The
   rest of the project talks to it over HTTP; a test fails if anything
@@ -44,7 +49,8 @@ chassis is on order; nothing has run on real hardware yet.
   direct-mode turns settle within +/-1 degree.
 - **`drive: ros` is to become the car's default**: gates G1-G3 are met in
   the sim (a reliable live chain, the same safety bars as direct mode, and
-  a fallback where only a person drives if ROS dies); G4 needs the Jetson.
+  a fallback where only a person drives if ROS dies); G4 was met on the
+  Jetson 2026-10-05, on the fork firmware (3.33).
 - **Every component has two specs** under `docs/` -- an architecture spec
   (what and why) and an engineering spec (how, today) -- checked by
   `tools/spec_lint.py` in the test suite.

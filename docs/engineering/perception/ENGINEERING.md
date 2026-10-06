@@ -269,10 +269,13 @@ commit.
 
 ## Known gaps
 
-- **No Jetson numbers yet.** 3.33's latency criterion (GPU/CPU split at 15 W
-  and 25 W, 250 ms budget) and torch-on-CUDA parity are unmeasured. P26
-  (decode once, batch crops, resize on GPU) is specified and not built;
-  `ClipScorer.score()` decodes the whole JPEG again for every crop.
+- **Jetson numbers exist only for the shipped pipeline** (3.33, 2026-10-04,
+  60 pinned frames): at 15 W median 60.6 ms, p90 109.9 ms a frame (GPU 44.4,
+  CPU handling 18.6); at 25 W 64.2 / 120.4 ms. Torch-on-CUDA parity with
+  the laptop: status 63/63, CLIP probability within 0.0002. P26 (decode
+  once, batch crops, resize on GPU) is specified and not built, and not
+  needed for the budget; `ClipScorer.score()` still decodes the whole JPEG
+  again for every crop.
 - **`hfov_deg` is 66.0, the Camera Module 3's field of view.** The Rover
   carries an OAK-D Lite; its field of view is not measured or configured, so
   every real-pixel bearing on the car will be scaled wrong until it is. Tilt

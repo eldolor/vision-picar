@@ -14,8 +14,17 @@ showed OWLv2 compiles to **no** Hailo. The price gap is **~$86**
 > window at search time), 30-day return to a US address. The Hiwonder
 > ROSOrin ordered 09-29 was cancelled (it sends no encoder data to the
 > Jetson and cannot power it at 25 W). **Still to buy: the separate Jetson
-> battery and its fused cable (9.5).** Section 9 has the record;
+> battery and its fused cable (9.5)** -- conditional since 2026-10-01 on a
+> 15 W stress test with the motors. Section 9 has the record;
 > `GUIDE-robot-base.md` explains the concepts.
+
+> **Jetson status 2026-10-06: in hand and KEPT.** Arrived 2026-09-30,
+> opened 2026-10-02, kept by the user 2026-10-05. JetPack 6.2.1 (L4T
+> R36.4.4, UEFI 36.4.4), Ubuntu 22.04, 15 W; boots from the NVMe since
+> 2026-10-05 (microSD the fallback). Both of section 7's board risks are
+> closed and G4 and the headroom run are met on it (`PLAN-ros-alignment.md`
+> 3.33). What remains open is the devkit's fit on the Rover's deck
+> (section 7, last item).
 
 > **Status 2026-09-28.** The board decision **closed 2026-09-19 for the
 > Jetson**, and the Hailo path is not being pursued (`CLAUDE.md` section 3).
@@ -209,7 +218,9 @@ build wins on parts we have already verified.
 
 ## 7. Open risks a kit does not remove
 
-*(Two until 2026-10-06; the third, mechanical fit, is at the end.)*
+*(Two until 2026-10-06; the third, mechanical fit, is at the end. The
+first two were CLOSED on the board 2026-10-04, `PLAN-ros-alignment.md`
+3.33; the fit is the one still open.)*
 
 - **JetPack 6 vs 7.** The board's entire value rests on running OWLv2 in
   PyTorch, which needs a working `torch` + `transformers` wheel for the
@@ -220,6 +231,10 @@ build wins on parts we have already verified.
   JetPack 7 would mean moving that container to Jazzy. Treat 6.2.1 as the
   working choice unless the torch-wheel check fails on it. The detector is
   now `yoloe-11s-seg`, not OWLv2, but it still needs torch.)*
+  **CLOSED 2026-10-04:** JetPack 6.2.1; torch 2.8.0 on `cuda` from the
+  Jetson AI Lab index, which needs `numpy<2` (pinned in
+  `tools/jetson/setup.sh`). The shipped pipeline agrees with the laptop on
+  63/63 pinned frames (3.33).
 - **Latency is unmeasured.** OWLv2 is projected at roughly **5 Hz** on this
   board (fp16; INT8 destroys it — P7d), against the Hailo path's 92 FPS.
   That may mean a fast cheap detector for obstacle reaction alongside
@@ -231,6 +246,10 @@ build wins on parts we have already verified.
   (P22-P24) -- so OWLv2's 5 Hz is no longer the number to worry about. What
   stays true is that latency ON THE BOARD is unmeasured; P7b found CPU
   preprocessing, not the model, was the projected bottleneck.)*
+  **CLOSED 2026-10-04, measured on the board:** the shipped pipeline at
+  15 W, median **60.6 ms**, p90 **109.9 ms** a frame (GPU 44.4, CPU
+  handling 18.6) against a 250 ms budget; 25 W bought nothing. CPU
+  handling is ~19 ms, not P7b's projected 229 ms (3.33).
 - **The Developer Kit's fit in the Rover -- CONFIRMED from vendor CAD
   2026-10-06.** Waveshare's own STEP assembly for the kit contains
   `JETSON-ORIN-IO-BASE-PCB-240202` with a bare Orin SO-DIMM module and
@@ -366,6 +385,9 @@ in `GUIDE-robot-base.md`**; this section is the record.
 | 10-02 | **Ordered for the Jetson bring-up** (`PLAN-ros-alignment.md` 3.33): a 128 GB A2 / U3 / V30 microSD card and a USB-C card reader for the Mac. |
 | 10-03 | **ORDERED: the NVMe** -- **SanDisk Optimus 5100 500 GB, SDSP51500GAN** (the renamed WD Blue SN5100), M.2 2280, PCIe 4.0, QLC, **$110 + tax** on Amazon, free 30-day return. It runs at Gen 3 x4 in the Jetson's slot (~3.5 GB/s, far above the robot's needs). |
 | 10-03 | **ORDERED: the Rover's cells** -- 4x Molicel P26A 18650 (flat-top, unprotected, 2600 mAh, 35 A), IMR Batteries, **$34 with shipping**, expected Oct 7-9. Three go in the pack, one is a spare (9.5). |
+| 10-02 | **Jetson opened** for the bring-up before the Rover (`PLAN-ros-alignment.md` 3.33). |
+| 10-04 | **Both board risks closed on the board** (section 7): torch 2.8.0 on `cuda`; perception median 60.6 ms, p90 109.9 ms a frame at 15 W against 250 ms. Offline suite 1728 passed, 0 failed. |
+| 10-05 | **Jetson KEPT** by the user. Boots from the NVMe (microSD the fallback). G4 met on the fork firmware; headroom met with 3.37 (3.33). |
 | 10-06 | Waveshare's published CAD read (`UGV-ROVER-MOUNTING.md`): the kit is modelled around Waveshare's JETSON-ORIN-IO-BASE carrier with a bare module, **not** the NVIDIA Developer Kit we own. Fit unconfirmed; caliper check owed before Oct 19 (section 7). Mounting question emailed to Waveshare support, ticket 257511. |
 
 ### 9.2 Everything evaluated
@@ -447,7 +469,9 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
   it sags, or before ever moving to 25 W. Perception is slower at 15 W
   (NVIDIA: ~40 TOPS against ~67), by an amount to be measured on the board
   -- P7b found preprocessing, not the model, dominates, so it may be less
-  than that ratio.
+  than that ratio. *(Measured 2026-10-04: it is not slower -- median
+  60.6 ms at 15 W against 64.2 ms at 25 W, because 25 W caps the CPU lower;
+  `PLAN-ros-alignment.md` 3.33.)*
 * *(Conditional, see above)* Buy a **separate Jetson battery** (e.g. Wheeltec E351S, 3S 5100 mAh with a
   protection board and charger, ~EUR 85) and a **fused male 5.5 x 2.1 to male
   5.5 x 2.5 mm cable** (~5 A fuse) -- a cable, not an "adapter", because the

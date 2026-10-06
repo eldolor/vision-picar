@@ -17,6 +17,10 @@
 >   (`BOM-COMPARISON.md`, 2026-09-17), not the $320-430 in section 7.
 > - **"Proven on a phone before it is put on a car" was retired 2026-09-25**
 >   for a data-driven definition of done (CLAUDE.md section 7).
+> - **Latency on the board was measured 2026-10-04** (`PLAN-ros-alignment.md`
+>   3.33): the shipped YOLOE + CLIP pipeline at 15 W, median 60.6 ms, p90
+>   109.9 ms a frame (GPU 44.4, CPU handling 18.6). P7b's projected "36 ms
+>   detecting and 229 ms resizing" below does not describe the board.
 
 **Phases P1-P7, 2026-09-07 -> 2026-09-12.** Eleven configurations scored on all
 eight adjudicated rig walks, one toolchain experiment that overturned the

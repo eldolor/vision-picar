@@ -6,7 +6,7 @@ A small robot car you can send to find something. Not by giving it a map or a
 route — by letting it look at the room, the way you would, and work out where to
 go next.
 
-- A small robot car on an NVIDIA Jetson Orin Nano Super (Jetson and robot base ordered, 2026-09)
+- A small robot car on an NVIDIA Jetson Orin Nano Super (the Jetson in hand and kept, 2026-10-05; the robot base on order)
 - Claude vision models on AWS Bedrock
 - Simulation built first, hardware next
 
