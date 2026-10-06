@@ -100,38 +100,43 @@ def main():
         h, r = at(cap)
         if h is not None:
             rows.append((cap, yaw, h, r, ros_stamp, recv))
-    best = None
-    for sign in (1, -1):                                  # compass is clockwise, ROS is CCW
-        h0 = rows[0][2]
-        y0 = rows[0][1]
-        m = [wrap((y - y0) - sign * (h - h0)) for _, y, h, _, _, _ in rows]
-        rest = [abs(mi) for mi, row in zip(m, rows) if abs(row[3]) < 0.02]
-        score = sorted(rest)[len(rest) // 2] if rest else 9
-        if best is None or score < best[0]:
-            best = (score, sign, m)
-    _, sign, m = best
-    # remove the constant (start-anchor) offset with the at-rest median
-    rest_m = sorted(mi for mi, row in zip(m, rows) if abs(row[3]) < 0.02)
+    # Odometry is exact and CCW; the truth compass is clockwise. Remove the
+    # start-anchor offset with the at-rest median, and take the turn rate over
+    # NEIGHBOURING SCANS (~0.4 s): the sim's truth moves in 50 ms steps, so a
+    # rate over a few ms of it reads zero mid-turn (the first reading's -5 ms).
+    hs, prev = [], None
+    for r in rows:
+        h = r[2] if prev is None else prev + wrap(r[2] - prev)
+        hs.append(h)
+        prev = h
+    m = [wrap((r[1] - rows[0][1]) + (h - hs[0])) for r, h in zip(rows, hs)]
+    pts = []
+    for i in range(2, len(rows) - 2):
+        dt = rows[i + 2][0] - rows[i - 2][0]
+        if 0 < dt <= 0.6:
+            pts.append((-(hs[i + 2] - hs[i - 2]) / dt, m[i]))
+    rest_m = sorted(x for r, x in pts if abs(r) < 0.02)
     off = rest_m[len(rest_m) // 2]
-    m = [mi - off for mi in m]
-    rate_turning = [(sign * row[3], mi) for mi, row in zip(m, rows) if abs(row[3]) > 0.2]
-    sxx = sum(r * r for r, _ in rate_turning)
-    sxy = sum(r * mi for r, mi in rate_turning)
-    slope = sxy / sxx if sxx else float("nan")
+    pts = [(r, x - off) for r, x in pts]
+    turn = [(r, x) for r, x in pts if abs(r) > 0.3]
+    rest = sorted(abs(x) for r, x in pts if abs(r) < 0.02)
+    sxx = sum(r * r for r, _ in turn)
+    slope = sum(r * x for r, x in turn) / sxx if sxx else float("nan")
+    lag = sorted(math.degrees(x) * (1 if r > 0 else -1) for r, x in turn if 0.7 <= abs(r) < 1.3)
     raw = sorted(row[4] - row[0] for row in rows)          # ROS stamp - capture (two clocks)
-    out = {"scans": len(rows), "turning_scans": len(rate_turning),
+    out = {"scans": len(rows), "turning_scans": len(turn),
            "effective_skew_ms": round(slope * 1000, 1),
-           "mismatch_deg_at_1rad_s": round(math.degrees(slope), 2),
-           "rest_mismatch_deg_p95": round(math.degrees(sorted(abs(mi) for mi, row in zip(m, rows)
-                                                              if abs(row[3]) < 0.02)[int(0.95 * len(rest_m))]), 2),
-           "turning_mismatch_deg_p50_p95": [round(math.degrees(sorted(abs(mi) for _, mi in rate_turning)[k]), 2)
-                                            for k in (len(rate_turning) // 2, int(0.95 * len(rate_turning)))],
+           "rest_mismatch_deg_p50_p95": [round(math.degrees(rest[len(rest) // 2]), 3),
+                                         round(math.degrees(rest[int(0.95 * len(rest))]), 3)],
+           "at_1rad_s_signed_deg_p10_p50_p90": [round(lag[k], 2) for k in
+                                                (len(lag) // 10, len(lag) // 2, 9 * len(lag) // 10)] if lag else None,
+           "share_of_1rad_s_scans_off_by_over_1deg": round(sum(abs(x) > 1 for x in lag) / max(len(lag), 1), 3),
            "raw_stamp_minus_capture_ms_p5_p50_p95": [round(raw[int(q * (len(raw) - 1))] * 1000, 1)
                                                      for q in (0.05, 0.5, 0.95)],
            "truth_samples": len(truth)}
     print(json.dumps(out))
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "skew-test.json"), "w") as f:
-        json.dump({**out, "rows": rows, "mismatch": m}, f)
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.environ.get("SKEW_OUT", "skew-test.json")), "w") as f:
+        json.dump({**out, "rows": rows}, f)
 
 
 if __name__ == "__main__":

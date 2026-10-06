@@ -4508,6 +4508,29 @@ with the left/right imbalance -- the bend's signature.
 6 ms of a truth series that updates in 50 ms steps, so it saw most turning
 scans as at rest. Re-read with the rate over neighbouring scans.)
 
+**Step 2 measured 2026-10-06 -- the capture stamp fixes the pairing, NOT
+the bend. Criterion 1 FAILED (0 of 2); stopped and taken to the user.** The
+bridge stamps each scan with its capture time (image tag
+`vision-picar-ros:stamp`; source change left uncommitted pending the
+user's call):
+
+| | newest-odom stamp (D) | capture stamp |
+|---|---|---|
+| effective skew (`skew_test.py`, `skew-test-after.json`) | 21.4 ms | **7.1 ms** |
+| scans at 1 rad/s filed > 1 deg off | 41% | **11%** |
+| R6 scaled-house goals (deadlock check) | 6/6 (3.38) | **6/6**, 7.5-12.9 cm, unreachable aborted 18.1 s, tap 0.045 s |
+| criterion 1 run 1 | -- | east max 0.38 m, final 0.37 m; maps kitchen 60 / breakfast 52 / family 84 / garage 17% |
+| criterion 1 run 2 | -- | east max 0.33 m, final 0.01 m; 50 / 25 / 56 / 45% |
+
+Two-thirds of the pairing error is gone and the 2-3 deg heading error still
+appears in the living room and foyer, so the skew was at most a minor part.
+**Nothing tried in 3.40 (scan context, heading prior, closures, stamp)
+moves the bend materially.** Not established: what in slam_toolbox's
+scan matching rotates the map here. The remaining remedies are the ones
+3.39's context names -- an IMU heading fused with odometry
+(`robot_localization`; the Rover reports `gz`), or localising on a saved
+map -- both larger than a parameter, so the user decides.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
