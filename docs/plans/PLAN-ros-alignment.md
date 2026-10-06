@@ -4531,6 +4531,18 @@ scan matching rotates the map here. The remaining remedies are the ones
 (`robot_localization`; the Rover reports `gz`), or localising on a saved
 map -- both larger than a parameter, so the user decides.
 
+**Diagnostic 2026-10-06 -- SCAN MATCHING bends the map.** D with
+`use_scan_matching: false` (capture stamps; `evaluations/slam-340/nomatch.json`):
+east max **0.046 m**, final 0.02 m, 0 jumps, the whole map 99.9% within
+10 cm of a true surface (kitchen, breakfast, family room 100%, garage 98.5%),
+coverage 92%. On the same house every scan-matching run bent 2-6 deg. With
+exact odometry that is the expected control, not a fix: the car's odometry
+is not exact, and without scan matching only loop closures correct it.
+Established: slam_toolbox's scan matcher, not the closures, the stamps or
+the house, rotates the map here. Not established: why -- the sim's scans are
+exact geometry, so the matcher is choosing a rotated optimum among this
+house's repeated furniture-leg patterns.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
