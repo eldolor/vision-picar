@@ -4599,3 +4599,47 @@ job, on a phone.
    * **Trigger:** the Rover's arrival checks. If 10's turn test fails, or
      the car's lidar visibly misses obstacles that 8's floor band does not
      cover, try (a) or (b) on the current stack first.
+12. **Leaving Humble before its EOL: when, to what, and in which order?
+   (raised 2026-10-06; the user agreed to plan it, not to start it.)**
+   ROS 2 Humble reaches end of life in **May 2027** and Ubuntu 22.04's
+   standard support ends in **April 2027** (ESM runs to ~2032). JetPack
+   6.2.1 and CUDA 12.6 have no published end of life; NVIDIA supports
+   6.2.x as the Orin line. The dates come from memory, not a lookup:
+   check REP-2000 and NVIDIA's Jetson roadmap before scheduling against
+   them. EOL means no more patches, not a stack that stops working, and the
+   robot is indoors on a home LAN, so this is not urgent.
+   * **Not during hardware bring-up.** G1-G4, 3.33's headroom and every
+     R-phase were measured on Humble + JetPack 6.2.1. A distro change under
+     the Rover's arrival checks would make every failure ambiguous between
+     the car and the upgrade. Those results are the baseline the car is
+     judged against.
+   * **Two upgrades, not one, because of the containment rule.** ROS lives
+     only in `service/slam/` (`tests/test_ros_containment.py`), so:
+     (a) **The ROS distro is a container rebuild.** A 24.04 userspace runs
+     on the 22.04 host, and nav2 / `slam_toolbox` need no CUDA. Nothing in
+     `brain/`, `control/`, `robot/` or `world/` changes. Check whether the
+     target distro's packages make the two source builds unnecessary (the
+     tf2 deadlock fix from the 0.25.24 tag, R6; `slam_toolbox`'s
+     `restamp_tf` from a pinned commit). Do not assume they do.
+     (b) **JetPack 6 -> 7.2 touches the host:** the torch wheel and its
+     `numpy<2` pin, perception latency, 3.33's headroom, and the NVMe boot.
+     Gated on JetPack 7.2 supporting the Orin Nano Super by name (11 found
+     the Isaac ROS table lists "Jetson Orin" but not the Nano).
+   * **The target distro: Jazzy or Lyrical, decided with 11.** Jazzy (LTS,
+     May 2029) is the conservative step. Lyrical is what Isaac ROS 5
+     requires, so choose it only if 11's cuVSLAM / nvblox tests on the
+     current stack show something worth migrating for. Doing (a) to Jazzy
+     and then again to Lyrical would cost the re-proof twice.
+   * **Criteria, written now so the data decides:** the same bars the
+     current stack met, on the board, through the real mission path. These
+     are G1 (live chain 20/20), G2 (3.18/3.19's ground-truth sweeps: 0
+     under 18 cm, 0 contacts, 0 close pivots touching), G3 (fallback ends a
+     mission `failed` within ~2 s of ROS dying; a person still drives), G4
+     (5 consecutive runs of 18 on the fork firmware), R5's SLAM error and
+     map precision, R6's nav2 goals (6/6 twice, scaled house), and for (b)
+     3.33's perception latency (p90 within 10% of 109.9 ms at 15 W) and
+     headroom (0 late wheel-loop ticks under nav2 + perception + SLAM).
+     Any miss means the upgrade does not ship; Humble stays.
+   * **Target: Q1 2027**, after the car's first data-driven phases close,
+     so (a) lands with margin before May 2027. If (b) is not ready then,
+     (a) goes alone.
