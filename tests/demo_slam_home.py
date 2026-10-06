@@ -1,5 +1,6 @@
 """
 python -m tests.demo_slam_home [n] [--slam path/to/slam.yaml] [--drift L,R] [--limit S] [--tour 1]
+    [--explore-first S]   # 3.39: explore (an absent target) for up to S s, then tour
 
 PLAN-ros-alignment.md 3.38's instrument: does slam_toolbox keep the robot
 where it is in the furnished home? Each run is a fresh stack (tests/
@@ -30,7 +31,7 @@ HOUSE = "home_first_floor"
 JUMP_M = 0.5
 
 
-def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False):
+def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False, explore_first_s=0):
     robot = dx.stack(HOUSE, slam_yaml=slam_yaml, odom_drift=drift)
     brain = httpx.Client(base_url=f"http://127.0.0.1:{dx.BRAIN}", timeout=60)
     if not tour:
@@ -59,8 +60,30 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False):
         import os
         os.environ.update(SIM_MAP=HOUSE, PICAR_ROBOT_URL=f"http://127.0.0.1:{dx.ROBOT}")
         from tests import demo_nav_goals as ng
-        goals = [ng.run_goal(robot, x, y)["state"] for _name, x, y in ng.HOME_GOALS]
-        status = {"outcome": "tour", "step": goals}
+        # 3.39: map before navigating. At the start nav2's costmap holds only
+        # what SLAM has seen from the start pose, and the east of the house is
+        # not on it -- a goal there cannot be planned to. Explore first (an
+        # absent target, so the mission ends "searched" or at the cap), then
+        # tour the mapped house.
+        explore = None
+        if explore_first_s:
+            r = brain.post("/mission/start", json={"target_object": "purple elephant",
+                                                   "policy": "explore", "max_steps": max_steps})
+            t_ex = time.time()
+            while time.time() - t_ex < explore_first_s:
+                st = brain.get("/mission/status").json()
+                if not st.get("running") and st.get("outcome") not in (None, "idle", "running"):
+                    break
+                time.sleep(2)
+            st = brain.get("/mission/status").json()
+            if st.get("running"):
+                brain.post("/mission/stop")
+            explore = {"outcome": st.get("outcome"), "seconds": round(time.time() - t_ex)}
+            time.sleep(2)
+        goals = [ng.run_goal(robot, x, y) for _name, x, y in ng.HOME_GOALS]
+        status = {"outcome": "tour", "explore": explore,
+                  "step": [g["state"] for g in goals],
+                  "end_error_m": [g.get("end_error_m") for g in goals]}
     while not tour and time.time() - t0 < limit_s:
         status = brain.get("/mission/status").json()
         tail = status.get("log_tail") or []
@@ -82,6 +105,7 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False):
              if b[0] - a[0] <= 2.0 and b[1] - a[1] > JUMP_M]
     out = {"slam": slam_yaml or "image", "drift": drift, "outcome": status.get("outcome"),
            "seconds": round(time.time() - t0), "steps": status.get("step"),
+           "explore": status.get("explore"), "goal_errors_m": status.get("end_error_m"),
            "coverage": dx.coverage(robot, HOUSE), "samples": len(samples),
            "max_error_m": round(max((s[1] for s in samples), default=0), 3),
            "max_heading_error_deg": round(max((abs(s[2]) for s in samples), default=0), 1),
@@ -100,7 +124,8 @@ def main():
     opt = dict(zip(args[::2], args[1::2]))
     for _ in range(n):
         print(json.dumps(run(opt.get("--slam"), opt.get("--drift", ""),
-                             int(opt.get("--limit", 1200)), tour=opt.get("--tour") == "1")),
+                             int(opt.get("--limit", 1200)), tour=opt.get("--tour") == "1",
+                             explore_first_s=int(opt.get("--explore-first", 0)))),
               flush=True)
     dx._kill_ports()
 

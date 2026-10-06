@@ -139,10 +139,21 @@ def clearance_m(x, y, movers=(), static=True):
     return best
 
 
+REJECTED_RETRY_S = 30.0   # 3.39: nav2 rejects goals while it is still activating
+
+
 def run_goal(robot, x, y, timeout_s=120.0):
-    r = robot.post("/world/goal", json={"x_m": x, "y_m": y}).json()
-    if not r.get("accepted"):
-        return {"state": "not_sent", "reply": r}
+    first_sent = time.time()
+    while True:
+        r = robot.post("/world/goal", json={"x_m": x, "y_m": y}).json()
+        if not r.get("accepted"):
+            return {"state": "not_sent", "reply": r}
+        time.sleep(1.0)
+        g = robot.get("/world/goal").json()
+        if ((g.get("goal") or {}).get("state") != "rejected"
+                or time.time() - first_sent > REJECTED_RETRY_S):
+            break
+        time.sleep(2.0)                  # still activating: send it again
     t0, state, min_clear, path_len = time.time(), "pending", 9.9, 0
     min_static, min_mover = 9.9, 9.9
     while time.time() - t0 < timeout_s:

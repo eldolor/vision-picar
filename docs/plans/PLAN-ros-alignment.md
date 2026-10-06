@@ -4339,6 +4339,46 @@ shrinking nav2's margins to fit it. The measured outside walls stand.
 5. **No regression**: `tests/test_home_map.py` (its appraisal tests pin the
    outside), R6's scaled-house goals 6/6 once.
 
+**Criterion 1 -- measured 2026-10-05, and it is not a passage.** nav2's
+global costmap at the start pose (dumped from `/global_costmap/costmap`)
+is **156 x 188 cells at 5 cm, 7.8 x 9.4 m** -- what SLAM has seen from the
+start. Converted through the session's anchor, the kitchen (6.83, -8.77),
+garage hall, laundry, garage and the den all lie **off the costmap**; a
+planner cannot plan to a point it has no cell for, which is
+`planner_server`'s "failed to create plan" with the robot never moving.
+The den succeeded later only because the robot had by then mapped it. The
+tour sends goals into rooms nobody has seen -- R6's own lesson ("map before
+navigating", 3.15), which the home tour's "maps as it goes" skipped.
+
+**Amended accordingly (before building):** the fix is the instrument, not
+nav2 and not the house. A robot in a new home cannot know where the kitchen
+is until it has explored; that is 3.31's explorer. So the home tour first
+runs an `explore` mission for an absent target until it reports searched
+(cap 15 min), then tours, retrying a goal nav2 `rejected` for up to 30 s
+(nav2 still activating). Criterion 4 is withdrawn -- there is no tight
+passage to pin -- and criterion 2's runs include the explore phase.
+
+**Results so far (2026-10-05) -- criterion 2 NOT met; stopped and taken to
+the user.** Two fresh runs, `python -m tests.demo_slam_home 2 --tour 1
+--explore-first 900`, candidate D:
+
+| run | explore (cap 900 s) | tour goals | end error of goals | SLAM max / final |
+|---|---|---|---|---|
+| 1 | still running, coverage **94%** | 6 succeeded, 2 timed out, 1 aborted | 0.08-0.88 m | 0.86 / 0.01 m |
+| 2 | still running, coverage 76% | 2 succeeded, 2 timed out, 5 aborted | 0.16-12.6 m | 0.57 / 0.55 m |
+
+Exploring first does what it was for -- the east of the house is mapped and
+reached (run 1). What fails now is SLAM, and WHERE it fails is the finding:
+**through all 15 minutes of exploration SLAM stayed within 0.15 m** (no jump
+by 3.38's definition); the error grew only in the tour, within ~20 s, as
+nav2 drove the long family-room -> kitchen route (run 1: 0.16 -> 0.60 m at
+(8.7, 2.1), 0.77 m in the kitchen; run 2: 0.15 -> 0.45 m, family room -> hall
+-> kitchen), heading 3-5 deg off, **odometry exact throughout (0.01-0.03
+m)** -- scan matching pulling the pose away in the open family room and
+kitchen. Not the den door. Not established: whether speed, the open room's
+geometry, or D's narrower closure window (which also limits how far a
+correct closure can pull the pose back) is the cause.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
