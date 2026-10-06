@@ -4556,6 +4556,17 @@ criteria 1-4 (4 as amended: config plus the committed capture stamp).
   constrain heading. One run on criterion 1; if it passes, the second run and
   criterion 2's drift run.
 
+**Results so far (2026-10-06):**
+
+* **Option 1 FAILED, as expected** (`nomatch-drift.json`): with scan matching
+  off SLAM follows the drifting odometry -- 17.7 m off, all nine tour goals
+  aborted. Off is not usable with real odometry.
+* **Candidate G, criterion 1 run 1: PASS** (`G-run1.json`): east max
+  **0.042 m** (D: 0.45-0.86), max anywhere 0.067 m, final 0.007 m, 0 jumps;
+  SLAM's map **100% of occupied cells within 10 cm of a true surface in all
+  14 rooms**; tour 8 of 9 (the dining room, 3.21's known NavFn/RPP
+  mismatch); coverage 93%. One key -- the matcher's blur.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
