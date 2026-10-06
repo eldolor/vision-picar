@@ -1,0 +1,80 @@
+# slam_toolbox, online async -- PLAN-ros-alignment.md R5 (3.14).
+#
+# The house is small (starter house: 3.6 x 2.7 m of rooms at 0.30 m per
+# grid cell) and the sim's scan is geometric, so the settings lean toward
+# matching often and cheaply rather than toward a large noisy space.
+slam_toolbox:
+  ros__parameters:
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_footprint
+    scan_topic: /scan
+    mode: mapping
+
+    debug_logging: false
+    throttle_scans: 1
+    transform_publish_period: 0.05
+    # R6: stamp map -> odom with NOW, not with the last PROCESSED scan's time.
+    # slam_toolbox processes a scan only after the robot has moved, so a
+    # robot at rest published an ever-older transform; nav2's controller then
+    # refused it ("Transform data too old"), the robot could not move, and no
+    # scan was ever processed again -- a deadlock that failed four goals in a
+    # row on the first R6 run, 95 s stale by the end.
+    restamp_tf: true
+    map_update_interval: 1.0
+    resolution: 0.05
+    # The RPLidar C1's 12 m, which the sim's scan now matches (it was the
+    # camera's 4.2 m); beyond it a beam reads +inf -- "no return", never an
+    # obstacle.
+    max_laser_range: 12.0
+    minimum_time_interval: 0.1
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0
+    stack_size_to_use: 40000000
+    enable_interactive_mode: false
+
+    use_scan_matching: true
+    use_scan_barycenter: true
+    minimum_travel_distance: 0.05
+    minimum_travel_heading: 0.05
+    scan_buffer_size: 10
+    scan_buffer_maximum_scan_distance: 10.0
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+    loop_search_maximum_distance: 3.0
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.03   # 3.40 candidate G: sharper match score (was 0.1)
+    # 3.38: how far ONE loop closure may move the robot -- a 2 m window, so at
+    # most 1 m each way (was 8 m: up to 4 m). In the furnished home every one
+    # of three runs on 8 m closed a loop to the wrong place, 1.6-2.5 m off,
+    # and never recovered (odometry within 8 cm throughout). Closing a loop
+    # here corrects drift of centimetres; a metre of it is not a correction.
+    # Tightening WHEN a closure is accepted instead did not hold: a 40-node
+    # chain at response 0.6 still jumped 2.5 m, and 20 cm nodes stopped the
+    # jumps but tracked 13 cm worse.
+    loop_search_space_dimension: 2.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.0
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true

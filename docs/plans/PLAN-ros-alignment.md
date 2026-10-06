@@ -4543,6 +4543,19 @@ the house, rotates the map here. Not established: why -- the sim's scans are
 exact geometry, so the matcher is choosing a rotated optimum among this
 house's repeated furniture-leg patterns.
 
+**Continued 2026-10-06 (user: "go ahead"), written before measuring.** Same
+criteria 1-4 (4 as amended: config plus the committed capture stamp).
+
+* **Option 1 -- scan matching off, with drift:** criterion 2's run
+  (`--drift 1.0,1.03`). Expected to FAIL: only loop closures would correct
+  the drift. A pass makes it a candidate for the sim only.
+* **Option 2, candidate G -- a sharper match score:**
+  `correlation_search_space_smear_deviation` 0.10 -> 0.03 m (Karto's own
+  default). Each scan point is blurred 10 cm before scoring; at 6 m a 1 deg
+  rotation moves a point 10 cm, so the open rooms' long-range returns barely
+  constrain heading. One run on criterion 1; if it passes, the second run and
+  criterion 2's drift run.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
