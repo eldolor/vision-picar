@@ -73,7 +73,7 @@ teleop:
 # 3.35). The serial port comes from ROBOT_SERIAL (or a `serial_port:` key
 # here).
 hardware:
-  # Skid steer's effective track over the geometric 0.172 m: the wheels
+  # Skid steer's effective track over the firmware's 0.172 m (CAD geometric: 0.1745 m): the wheels
   # scrub on every turn, so the body turns less than the geometric track
   # predicts. Direct-mode turns, the odometry heading and the ROS
   # controller's wheel_separation_multiplier all take this one number. Env

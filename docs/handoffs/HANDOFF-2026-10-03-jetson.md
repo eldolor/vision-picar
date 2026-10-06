@@ -81,14 +81,21 @@ section 1's step 4 is done. The plan and its acceptance criteria are
 9. **Fit three cells.** Match the holder's + and − markings, then charge
    fully on the kit's 12.6 V charger before the first drive. The fourth
    cell is a spare.
-10. **Mounting.** Check whether the Rover's deck takes the NVIDIA Developer
-    Kit's carrier board (about 100 x 79 mm, four corner holes) or expects
-    Waveshare's own carrier. This is still unverified (`JETSON-BOM.md`
-    lines ~134-137). Two options:
-    - Ask Waveshare first, in ticket 257427: *"Does SKU 29227 mount the
-      NVIDIA Orin Nano Super Developer Kit directly?"* Waveshare is on
-      holiday until Oct 7.
-    - A printed adapter plate is the fallback.
+10. **Mounting -- DO THIS NOW, not on arrival (updated 2026-10-06).**
+    Waveshare's own CAD shows the Rover is modelled around its
+    JETSON-ORIN-IO-BASE carrier with a bare module, not the NVIDIA Developer
+    Kit we own (`UGV-ROVER-MOUNTING.md`; risk in `JETSON-BOM.md` section 7).
+    The devkit is on the desk, so measure it before the Rover comes:
+    - **Calipers on the devkit's four corner holes**, centre to centre and
+      the hole diameter. Compare against **86.00 x 58.00 mm** first, then
+      86.00 x 23.61 mm (`UGV-ROVER-MOUNTING.md` section 4 says why the outer
+      86 x 81.61 rectangle cannot be the devkit's). **Due before Oct 19**;
+      hard stop, the Rover's Amazon return window.
+    - Asked Waveshare support 2026-10-06 in ticket **257511** (not 257427,
+      as this item first said): whether the plate takes the devkit, its hole
+      pattern, height clearance and port access.
+    - Fallback: an adapter plate (`JETSON-BOM.md` 9.5), and check the kit's
+      UART and power leads reach the devkit's 40-pin header and barrel jack.
 11. **The arrival checks** in `JETSON-BOM.md` 9.5. The session runs them;
     the user plugs things in:
     - a stress test at 15 W with the motors working;

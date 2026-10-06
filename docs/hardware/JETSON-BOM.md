@@ -136,10 +136,15 @@ majority of hobby robot kits on the market.**
    its protocol must be documented or open. **A Raspberry Pi HAT is not
    usable** — the Jetson's header is different. Kits whose controller is a
    Pi HAT, or whose firmware is closed with no serial API, are out.
-5. **Deck space for the Jetson devkit** — roughly 100 × 90 mm footprint,
-   ~35 mm tall with its cooler, plus clearance for a barrel plug and a
-   fan. *Verify the exact devkit dimensions against the kit's deck before
-   buying.*
+5. **Deck space and a mounting pattern for the Jetson devkit** — roughly
+   100 × 90 mm footprint, ~35 mm tall with its cooler, plus clearance for a
+   barrel plug and a fan. *Verify the exact devkit dimensions against the
+   kit's deck before buying.* **Space is not fit (added 2026-10-06):** a kit
+   sold "for Jetson Orin" may be modelled around the vendor's own carrier
+   with a bare module, not NVIDIA's Developer Kit -- the UGV Rover is
+   (`UGV-ROVER-MOUNTING.md`, from Waveshare's CAD). Ask for the deck's hole
+   pattern, whether the Developer Kit bolts on as-is, and whether the kit's
+   UART and power leads reach the devkit's 40-pin header and barrel jack.
 6. **A flat upper deck for a 360° lidar** with unobstructed 360° view at
    its scan plane, or a lidar already mounted that way.
 
@@ -202,7 +207,9 @@ build wins on parts we have already verified.
 
 ---
 
-## 7. Two open risks a kit does not remove
+## 7. Open risks a kit does not remove
+
+*(Two until 2026-10-06; the third, mechanical fit, is at the end.)*
 
 - **JetPack 6 vs 7.** The board's entire value rests on running OWLv2 in
   PyTorch, which needs a working `torch` + `transformers` wheel for the
@@ -224,6 +231,23 @@ build wins on parts we have already verified.
   (P22-P24) -- so OWLv2's 5 Hz is no longer the number to worry about. What
   stays true is that latency ON THE BOARD is unmeasured; P7b found CPU
   preprocessing, not the model, was the projected bottleneck.)*
+- **The Developer Kit's fit in the Rover -- CONFIRMED from vendor CAD
+  2026-10-06.** Waveshare's own STEP assembly for the kit contains
+  `JETSON-ORIN-IO-BASE-PCB-240202` with a bare Orin SO-DIMM module and
+  Waveshare's PWM fan: the chassis is modelled around Waveshare's carrier
+  (90.5 × 103.0 mm), not NVIDIA's Developer Kit (100 × 79 mm), which is
+  what we own. Whether the Developer Kit bolts to the deck is
+  **unverified**: NVIDIA publishes no hole pattern, and the kit's 79 mm
+  width rules out the deck's outer 86 × 81.61 mm rectangle, leaving the
+  86 × 58.00 and 86 × 23.61 sub-spans (`UGV-ROVER-MOUNTING.md` section 4).
+  **If it does not fit:** an adapter plate (9.5), a check that the kit's
+  UART and power leads reach the devkit's 40-pin header and barrel jack,
+  and a re-measure of the URDF's `[CAD]` heights (`laser_z`, `pan_z`,
+  `camera_up`) if longer standoffs lift the upper deck. **Not a reason to
+  return the Rover.** Owner: the user, with calipers, on the devkit already
+  on the desk. **Due before the Rover's earliest arrival (Oct 19); hard
+  stop, its Amazon return window (30 days from delivery, Nov 18 at the
+  earliest).** Asked Waveshare support 2026-10-06 (ticket 257511).
 
 ---
 
@@ -259,8 +283,11 @@ Self-contained on purpose — the assistant has no access to this repo.
 >    documented or open protocol.** A Raspberry Pi HAT is not usable — the
 >    Jetson's header is different. Closed firmware with no serial API is
 >    out.
-> 5. **Deck space for the Jetson devkit** — roughly 100 × 90 mm, about
->    35 mm tall with its cooler, plus clearance for a barrel plug.
+> 5. **Deck space and a mounting pattern for the Jetson devkit** — roughly
+>    100 × 90 mm, about 35 mm tall with its cooler, plus clearance for a
+>    barrel plug. Say whether the NVIDIA Developer Kit bolts on as-is or the
+>    kit expects the vendor's own carrier with a bare module, and give the
+>    deck's hole pattern.
 > 6. **A flat upper deck with an unobstructed 360° view** for a lidar, or a
 >    360° lidar already mounted that way.
 >
@@ -335,6 +362,7 @@ in `GUIDE-robot-base.md`**; this section is the record.
 | 10-02 | **Ordered for the Jetson bring-up** (`PLAN-ros-alignment.md` 3.33): a 128 GB A2 / U3 / V30 microSD card and a USB-C card reader for the Mac. |
 | 10-03 | **ORDERED: the NVMe** -- **SanDisk Optimus 5100 500 GB, SDSP51500GAN** (the renamed WD Blue SN5100), M.2 2280, PCIe 4.0, QLC, **$110 + tax** on Amazon, free 30-day return. It runs at Gen 3 x4 in the Jetson's slot (~3.5 GB/s, far above the robot's needs). |
 | 10-03 | **ORDERED: the Rover's cells** -- 4x Molicel P26A 18650 (flat-top, unprotected, 2600 mAh, 35 A), IMR Batteries, **$34 with shipping**, expected Oct 7-9. Three go in the pack, one is a spare (9.5). |
+| 10-06 | Waveshare's published CAD read (`UGV-ROVER-MOUNTING.md`): the kit is modelled around Waveshare's JETSON-ORIN-IO-BASE carrier with a bare module, **not** the NVIDIA Developer Kit we own. Fit unconfirmed; caliper check owed before Oct 19 (section 7). Mounting question emailed to Waveshare support, ticket 257511. |
 
 ### 9.2 Everything evaluated
 
@@ -391,7 +419,7 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
 * Lidar: D500 from the China warehouse; Amazon stock mixes D500 and MS200.
   A charger is included.
 
-### 9.4 Two things this section corrects
+### 9.4 Three things this section corrects
 
 * **The ROSOrin's "four encoders" were never usable by the Jetson.** It was
   recommended on 09-29 partly for them, before its driver source was read.
@@ -399,6 +427,10 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
   "reports to the host" are different claims.
 * **"Sold with an Orin Nano Super fitted" did not mean "powers it at 25 W".**
   Hiwonder says it doesn't. Get power claims in writing.
+* **"Jetson Orin kit" did not mean "takes the Developer Kit".** Waveshare's
+  STEP assembly models its own JETSON-ORIN-IO-BASE carrier with a bare
+  SO-DIMM module (`UGV-ROVER-MOUNTING.md` section 1, read 2026-10-06). Fit is
+  unconfirmed until measured (section 7).
 
 ### 9.5 Now that the Rover is ordered (2026-09-30)
 
@@ -419,6 +451,13 @@ PDF), RobotShop, Generation Robots, DFRobot, Seeed (web search).
   lead** so the two supplies are never joined. Mount the pack on a
   Picatinny rail clamp or a printed tray. ~$100-110 extra. **Not yet
   ordered.**
+* *(Conditional on the caliper check, section 7)* **An adapter plate and
+  hardware** for the Developer Kit: 3 mm acrylic or printed PETG, drilled to
+  the deck array (`UGV-ROVER-MOUNTING.md` section 2) on one side and the
+  devkit's holes on the other; an M3 nylon standoff/screw/nut kit, plus M2.5
+  if the devkit's holes are M2.5. Longer standoffs only if the devkit stands
+  taller than the IO-BASE stack -- and then re-measure the URDF's `laser_z`,
+  `pan_z` and `camera_up`. ~$15-40 `[E]`. **Not yet ordered.**
 * **The Rover ships without cells** (Waveshare's wiki): it takes **3x 18650,
   >= 2200 mAh, >= 4C, flat-top, unprotected**, in series (3S). **Ordered
   2026-10-03:** 4x Molicel P26A from IMR Batteries (9.1). Install three
