@@ -66,9 +66,10 @@ def _listeners(port):
                           capture_output=True, text=True).stdout.split()
 
 
-def stack(house, movers="", slam_yaml=None, odom_drift=""):
+def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None):
     """A fresh robot server, brain and ROS container. `slam_yaml` mounts
-    another slam_toolbox config over the image's (it is symlink-installed);
+    another slam_toolbox config over the image's (it is symlink-installed),
+    and `nav_yaml` another nav2 config;
     `odom_drift` is SIM_ODOM_DRIFT ("left,right")."""
     _kill_ports()
     env = {k: v for k, v in os.environ.items()
@@ -89,6 +90,8 @@ def stack(house, movers="", slam_yaml=None, odom_drift=""):
             raise RuntimeError(f"port {port} is not served by this run's own server")
     mount = (["-v", f"{os.path.abspath(slam_yaml)}:/ws/src/picar_bringup/config/slam.yaml:ro"]
              if slam_yaml else [])
+    if nav_yaml:
+        mount += ["-v", f"{os.path.abspath(nav_yaml)}:/ws/src/picar_bringup/config/nav2.yaml:ro"]
     subprocess.run(["docker", "run", "-d", "--name", CONTAINER, *mount,
                     "-p", f"127.0.0.1:{BRIDGE}:8090", "-e", "ROS_DOMAIN_ID=73",
                     "-e", f"ROBOT_URL=http://host.docker.internal:{ROBOT}",

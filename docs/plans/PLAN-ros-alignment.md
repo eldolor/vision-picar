@@ -4393,6 +4393,61 @@ flatters every odometry-leaning fix, so each is judged with
 fusion is the likely durable fix on the car. The same text is in the
 Claude Doc "ROS 2 for vision-picar" (section 7) and `docs/ros/ARCHITECTURE.md`.
 
+**Isolated 2026-10-06 -- neither D's window nor speed; the map BENDS at
+the foyer.** One explore-then-tour run per hypothesis
+(`tests/demo_slam_home.py`, which now also scores SLAM's map against the
+true house per room; raw records `evaluations/slam-339/explore-tour-*.json`):
+
+| run | explore max | tour max | final | jumps |
+|---|---|---|---|---|
+| D, full speed (10-05, x2) | <= 0.15 m | 0.57, 0.86 m | 0.55, 0.01 m | 0 |
+| ORIGINAL slam.yaml (8 m window) | **1.55 m jump at 364 s** | 5.18 m | 5.18 m | 2 |
+| D, tour at 0.10 m/s and 0.5 rad/s (set live after exploring) | 0.10 m | 0.45 m | 0.01 m | 0 |
+
+* **D is not the cause** -- without it 3.38's false closures return while
+  exploring. **Speed is not the cause** -- half speed, same shape.
+* **In all three D runs a 2.5-5 deg heading error is acquired at the same
+  place**, the foyer at about (5.1, 7.9) beside the staircase, where the
+  robot turns into the family room and hall: within ~3 s, odometry exact.
+  Position error then grows with distance from the foyer (3.3 deg x 9.4 m =
+  0.54 m, observed 0.55) and returns to ~0 whenever the robot is back in the
+  foyer. 10-05's run 1 got it as a 0.43 m one-second STEP (a closure, under
+  the 0.5 m jump bar); run 2 and the slow run gradually, in a turn.
+* **The map is bent, not the robot lost:** at the slow run's end 100% of the
+  living room's and 99% of the foyer's occupied cells lie within 10 cm of a
+  true surface, against kitchen 53%, breakfast 54%, garage 39%. The east wing
+  was built a few degrees rotated -- in the slow run during the tour itself.
+* A pivot-in-place test at the start pose (`pivot_test.py`, 1.0 and 0.5
+  rad/s) read exactly 0.000 every time: SLAM never moved map -> odom for pure
+  rotation, so it is **inconclusive**, not a pass.
+
+**Suspected mechanism (not established):** nodes every 5 cm / 0.05 rad and a
+10-scan running buffer give the scan matcher ~0.5 m of context; turning into
+unseen rooms, most of a scan falls on space it has never seen and there is
+almost nothing old to hold the heading.
+
+### 3.40 The east wing is built straight (2026-10-06): criteria, written before building
+
+Confirmed by the user 2026-10-06. The fix is the scan matcher's context
+(running-buffer size and/or node spacing), falling back to its angle
+penalty; `tests/demo_slam_home.py`'s jump bar drops 0.5 -> 0.3 m first,
+because a 0.43 m closure step passed it on 2026-10-05.
+
+1. **The bend is gone:** two fresh explore-then-tour runs (`--tour 1
+   --explore-first 900`) on the new config, SLAM error **<= 0.20 m** at every
+   sample in the east rooms, final **<= 0.10 m**, **0 jumps**; the map's
+   kitchen, breakfast, family room and garage each **>= 90%** of occupied
+   cells within 10 cm of a true surface.
+2. **It still corrects drift:** the same run with the right encoder 3% long
+   (`--drift 1.0,1.03`): max **<= 0.30 m**, final **<= 0.15 m**, odometry
+   alone measurably worse -- the sim's exact odometry flatters any change
+   that trusts odometry more.
+3. **No regression:** R5's starter-house laps within 1-4.5 cm with drift;
+   R6's scaled-house goals 6/6; exploring shows none of 3.38's false
+   closures (0 jumps).
+4. **One file changes:** `service/slam/src/picar_bringup/config/slam.yaml`,
+   each changed key commented with the run that justified it.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
