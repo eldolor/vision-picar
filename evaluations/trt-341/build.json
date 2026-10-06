@@ -1,0 +1,61 @@
+{
+ "timing_cache_existed": false,
+ "clip": {
+  "model": "RN50",
+  "cached": false,
+  "build_s": 187.3,
+  "path": "/home/picar/.cache/vision-picar/trt/clip-RN50-visual.engine"
+ },
+ "yoloe": [
+  {
+   "target": "a white phone charger cable",
+   "cached": false,
+   "onnx_s": 52.7,
+   "build_s": 585.5,
+   "path": "/home/picar/.cache/vision-picar/trt/yoloe-81941066584c.engine"
+  },
+  {
+   "target": "blue bottle",
+   "cached": false,
+   "onnx_s": 9.5,
+   "build_s": 23.8,
+   "path": "/home/picar/.cache/vision-picar/trt/yoloe-219136fe9a0b.engine"
+  },
+  {
+   "target": "blue and yellow running shoes",
+   "cached": false,
+   "onnx_s": 9.9,
+   "build_s": 23.4,
+   "path": "/home/picar/.cache/vision-picar/trt/yoloe-12dab6edc1c0.engine"
+  },
+  {
+   "target": "Grey backpack",
+   "cached": false,
+   "onnx_s": 9.0,
+   "build_s": 23.5,
+   "path": "/home/picar/.cache/vision-picar/trt/yoloe-77ddb242c81e.engine"
+  },
+  {
+   "target": "burgundy backpack",
+   "cached": false,
+   "onnx_s": 10.2,
+   "build_s": 24.0,
+   "path": "/home/picar/.cache/vision-picar/trt/yoloe-8ee573ad6eac.engine"
+  },
+  {
+   "target": "red backpack",
+   "cached": false,
+   "onnx_s": 10.5,
+   "build_s": 24.0,
+   "path": "/home/picar/.cache/vision-picar/trt/yoloe-4dc40d044777.engine"
+  },
+  {
+   "target": "woven laundry basket",
+   "cached": false,
+   "onnx_s": 9.9,
+   "build_s": 24.0,
+   "path": "/home/picar/.cache/vision-picar/trt/yoloe-b7767c9768ea.engine"
+  }
+ ],
+ "cache_hit_load_s": 0.0
+}

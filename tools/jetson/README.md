@@ -52,6 +52,23 @@ cd vision-picar && bash tools/jetson/setup.sh     # torch on cuda -- risk 1
 python -m tools.jetson.bench_perception --recordings recordings --out bench-15w.json   # risk 2
 ```
 
+`bench_trt.py` is 3.41 Part A: the same frames on TensorRT engines (arms
+B1, B2) against torch (arm A). Run `build` first. Engines live in
+`~/.cache/vision-picar/trt`, and a warm timing cache makes a new target
+about 33 s. The venv needs the system TensorRT bindings linked in, plus
+`onnx`/`onnxslim`:
+
+```bash
+SP=.venv/lib/python3.10/site-packages
+for d in tensorrt tensorrt-10.3.0.dist-info tensorrt_lean tensorrt_dispatch; do
+  ln -s /usr/lib/python3.10/dist-packages/$d $SP/$d; done
+.venv/bin/pip install "onnx>=1.12,<1.18" "onnxslim>=0.1.71" -c /tmp/jetson-constraints.txt
+python -m tools.jetson.bench_trt build --recordings recordings --out build.json
+python -m tools.jetson.bench_trt run B1 --recordings recordings --out b1.json
+```
+
+Results: `evaluations/trt-341/`.
+
 `setup.sh` runs the pipeline once on a blank frame and asserts that BOTH
 networks ran on `cuda`. It should end with
 `detector crops:yoloe-11s-seg.pt on cuda | CLIP on cuda`. The detector picks
