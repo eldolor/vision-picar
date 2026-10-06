@@ -2,7 +2,7 @@
 kind: engineering
 domain: ros
 status: current
-verified: 2026-10-04
+verified: 2026-10-06
 parent: docs/ros/ARCHITECTURE.md
 ---
 
@@ -298,7 +298,18 @@ Checklist for a change:
   `picar_hardware` (R7) "is the same class against the ESP32". 3.16 decided
   that plugin will not be written.
 - **`robot_localization` is not installed.** Odometry comes from
-  diff_drive_controller alone.
+  diff_drive_controller alone. It is the standard remedy for the gap below:
+  an EKF fusing wheel odometry with the board's gyro (`gz` in the `T:1001`
+  frame, unused today) for a steadier heading.
+- **SLAM drifts in the furnished home's open rooms** (3.39, open). With
+  `loop_search_space_dimension: 2.0` (3.38's candidate D) there are no
+  false-closure jumps, but in `tests/demo_slam_home.py --tour 1
+  --explore-first 900` SLAM drifted 0.45-0.86 m during the family-room ->
+  kitchen leg (within 0.15 m through 15 min of exploring; odometry within
+  3 cm). Records: `evaluations/slam-339/`. Candidates, judged with and
+  without `SIM_ODOM_DRIFT=1.0,1.03`: `slam.yaml`'s scan-matcher search and
+  travel thresholds, nav2's `desired_linear_vel`, IMU fusion (above),
+  `slam_toolbox` localisation mode on a saved map, visual/depth SLAM.
 - **Closed 2026-10-05 (handoff 3a): every person drives under `drive:
   ros`.** `teleop-operator`, unnamed callers and the `teleop` driver used to
   post their own names, get 400 `unknown driver`, and be refused

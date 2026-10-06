@@ -4379,6 +4379,20 @@ kitchen. Not the den door. Not established: whether speed, the open room's
 geometry, or D's narrower closure window (which also limits how far a
 correct closure can pull the pose back) is the cause.
 
+**Context (added 2026-10-06).** This is the common indoor-SLAM failure,
+not a defect peculiar to this stack: a low 2D lidar sees furniture legs as
+repeated dot patterns (perceptual aliasing), an open room offers little
+else, and SLAM's odometry-versus-scan balance decides which way it errs.
+The usual remedies, roughly by cost: tune `slam_toolbox` for such rooms;
+fuse an IMU (`robot_localization`; the Rover's board reports `gz`);
+localise on a saved map instead of mapping continuously (question 6);
+visual or depth SLAM (RTAB-Map, ORB-SLAM, Isaac ROS cuVSLAM -- the Rover
+carries an OAK-D Lite and the Jetson a GPU). The sim's exact odometry
+flatters every odometry-leaning fix, so each is judged with
+`SIM_ODOM_DRIFT` too. Expectation, not a result: tuning helps the sim; IMU
+fusion is the likely durable fix on the car. The same text is in the
+Claude Doc "ROS 2 for vision-picar" (section 7) and `docs/ros/ARCHITECTURE.md`.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
