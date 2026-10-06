@@ -135,9 +135,17 @@ passes it on to `/diff_drive_controller/cmd_vel_unstamped`.
 (transient local), `/plan`, `/cmd_vel_mux` and
 `/diff_drive_controller/cmd_vel_unstamped`.
 
-**Scan stamps.** Each scan is stamped with the newest
-`odom -> base_footprint` transform time, so it can never arrive ahead of TF
-(3.15).
+**Scan stamps.** Each scan is stamped with its capture time, the robot
+server's `stamp_unix`, so slam_toolbox pairs it with the odometry of that
+moment (3.40). Stamped with the newest `odom -> base_footprint` time instead
+(3.15's choice), a scan was filed a median 19 ms early, and 41% of scans
+taken at 1 rad/s were more than 1 deg off. With capture stamps that is 11%,
+and the effective skew falls from 21 ms to 7 ms (`evaluations/slam-340/skew_test.py`).
+A capture stamp runs a few ms ahead of the newest odom, so tf2 filters wait
+for it. That wait once deadlocked Humble's packaged tf2, and the pinned
+0.25.24 fixes it; R6's goals ran 6/6 on capture stamps. The newest odom time
+is the fallback when a scan has no `stamp_unix`, or when the two clocks
+differ by 0.5 s or more.
 
 **TF tree.**
 

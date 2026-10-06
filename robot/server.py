@@ -821,10 +821,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         `RobotInterface.get_scan()`. A backend with no lidar answers
         `usable: False`.
 
-        `stamp_unix` is when the scan was TAKEN (R5). The bridge does NOT use
-        it for the ROS stamp any more -- see picar_bridge's _poll_scan() for
-        how a capture stamp froze nav2's costmaps in R6 -- but it is the
-        honest capture time and costs nothing to serve."""
+        `stamp_unix` is when the scan was TAKEN (R5). The bridge stamps the
+        ROS scan with it (PLAN-ros-alignment.md 3.40), so SLAM pairs the scan
+        with the odometry of that moment -- see picar_bridge's _poll_scan()."""
         stamp = time.time()
         return {**robot.get_scan(max_range_m=max_range_m), "stamp_unix": stamp}
 
