@@ -128,19 +128,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   `HANDOFF-2026-10-07-lidar-and-speed.md` before changing the stop
   distance. It covers the double-counted delay, the sim scan-hint trap
   and the lidar-timed sweep.
-* **SLAM in the furnished home: fixed, merged** (3.38-3.40, `frontier-search`
-  merged into `dev` 2026-10-06). The map bent 2.5-6 deg in the open rooms
-  because slam_toolbox's scan matcher blurred each point 10 cm before
-  scoring (`correlation_search_space_smear_deviation` 0.10 -> 0.03 m: two
-  tours within 4.2 cm, every room's walls 100% true). Scans are also stamped
-  with their capture time now (skew 21 -> 7 ms).
-* **Exploring stalls in corners** (3.43, open). Explore sends goals into
-  corners the lidar cannot see into and the robot spends ~2 min failing
-  there. The escape now tries both turn directions (59% -> 71.5% of wedged
-  poses freed); nav2 inflation 0.35 m shortened stalls but was not adopted.
-  Many traps exist only because a reverse needs 20 cm whatever its speed --
-  which is 3.44 / 6.9's speed-scaled clearance. 3.31's frontier-search batch
-  waits on this.
+* **SLAM bends the map in the furnished home's open rooms**
+  (3.39-3.40, on branch `frontier-search`, not merged). It is not a
+  `slam.yaml` setting and not a timestamp skew. The next remedy is the
+  user's choice: a simulated gyro with wheel slip, or saved-map
+  localisation. 3.31's frontier-search batch waits on it. Handoff:
+  `HANDOFF-2026-10-06-slam-drift.md` on that branch.
 * **Isaac ROS evaluation (3.41).** Isaac ROS 3.2 is the last release for
   JetPack 6 / Humble.
   * **Part A, measured 2026-10-06: TensorRT not adopted; torch stays.**
@@ -202,25 +195,21 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   `control/perception_eval.py` is the scorer; do not rewrite it in a
   scratchpad.
 * **Parallel sessions** share this repo and the Jetson. Each manages its
-  own commits. Live ROS stacks for another session may own :8000/:8090.
-  Use :8100/:8101/:8190 with `ROS_DOMAIN_ID=73` for your own.
-* **One branch per plan section** (the user, 2026-10-07), so parallel
-  sessions never edit the same section on the same branch:
-  * Before starting work on a `PLAN-*.md` section, create a branch for it
-    from the latest `origin/dev`, in its own worktree:
-    `git fetch origin && git worktree add -b plan/<section>-<slug>
-    .claude/worktrees/plan-<section> origin/dev`, for example
-    `plan/3.44-speed-clearance`.
-  * **The branch name reserves the section number.** Worktrees share one
-    `.git`, so every session sees every branch. Before choosing a NEW
-    number, take the highest of the plan on `origin/dev` and
-    `git branch -a --list '*plan/*'`, plus one, and create the branch
-    straight away. (Two sessions both wrote a 3.42 on 2026-10-06/07.)
-  * Work on one section per branch. A new section gets a new branch, even
-    when it grows out of the current one.
-  * Merging into `dev` and pushing still need the user's go-ahead. Fetch
-    and rebase on `origin/dev` first; on a plan conflict, keep both
-    sections in number order.
+  own commits. **Read `docs/guides/PARALLEL-SESSIONS.md` before working on
+  the plan** (the user, 2026-10-07). In short:
+  * One branch and worktree per plan section:
+    `python tools/plan_section.py new <slug> "<title>"` reserves the next
+    number.
+  * Each section is its own file in `docs/plans/ros-alignment/`.
+  * Your own ports, ROS domain, container and image:
+    `eval "$(python tools/plan_section.py env)"`. Never rebuild
+    `vision-picar-ros:latest` from a branch.
+  * `overlap` before editing a shared file.
+  * `ready` (rebase check + full suite) before asking to push to `dev`; a
+    pre-push hook enforces it.
+  * One heavy live run at a time (a lock in `tests/demo_explore.stack()`).
+  * CLAUDE.md section 3b and other shared status are updated at merge, not
+    on a branch.
 
 ---
 

@@ -1,6 +1,13 @@
 # Handoff 2026-10-07 -- speed-dependent clearance (PLAN 3.44), half built
 
-For a fresh session continuing 3.44. Read, in order:
+For a fresh session continuing 3.44. **First read
+`docs/guides/PARALLEL-SESSIONS.md`**: other sessions now work on the plan at
+the same time. This section's file is
+`docs/plans/ros-alignment/3.44-speed-clearance.md` (3.43's is
+`3.43-explore-wedge.md`), and its own ports, ROS domain, container and image
+come from `eval "$(python tools/plan_section.py env)"` -- use those, never
+the shared defaults. Run `python tools/plan_section.py overlap` before editing
+`robot/safety.py`. Read, in order:
 `docs/plans/PLAN-ros-alignment.md` **3.43** (the explore wedge) and **3.44**
 (this work, confirmed by the user 2026-10-07), then
 `HANDOFF-2026-10-07-lidar-and-speed.md` section 2 (what the lidar driver
@@ -80,12 +87,13 @@ has not been run on the WIP.
 ## 6. Instruments and stacks
 
 - `python -m tests.escape_sweep 200` (in-process, ~10 min).
-- Live runs: `ROS_IMAGE=vision-picar-ros:latest` (rebuilt 2026-10-06 with
-  3.40's SLAM fix and capture stamps), `python -m tests.demo_slam_home 1
+- Live runs: first `eval "$(python tools/plan_section.py env)"` (ports
+  9440-9445, ROS domain 44, container `picar-ros-344`, image
+  `vision-picar-ros:plan-3.44` -- build it from this branch), then `python -m tests.demo_slam_home 1
   --tour 1 --explore-first 900`, judged by `evaluations/slam-343/parked.py`;
   `evaluations/slam-340/with_stack.py` wraps R5/R6 instruments (env
-  `SLAM_YAML`, `NAV_YAML`). Ports 8100/8101/8190, `ROS_DOMAIN_ID=73`; another
-  session's `picar-ros` container may be running -- leave it alone.
+  `SLAM_YAML`, `NAV_YAML`). A heavy run takes the machine-wide lock and waits
+  for another session's to finish; other sessions' containers are theirs.
 
 ## 7. Open, outside 3.44
 

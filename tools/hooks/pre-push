@@ -1,0 +1,21 @@
+#!/bin/sh
+# The merge gate (docs/guides/PARALLEL-SESSIONS.md, rule 6). A push to `dev`
+# must name a commit that `python tools/plan_section.py ready` passed: rebased
+# on origin/dev, plan index fresh, full suite green. Installed for every
+# worktree by `git config core.hooksPath tools/hooks`.
+# Override (the user's call, never a session's): PICAR_SKIP_GATE=1 git push ...
+gate="$(git rev-parse --git-common-dir)/plan-gate"
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$remote_ref" = "refs/heads/dev" ] || continue
+  [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+  if [ "${PICAR_SKIP_GATE:-}" = "1" ]; then
+    echo "pre-push: merge gate SKIPPED for $local_sha (PICAR_SKIP_GATE=1)" >&2
+    continue
+  fi
+  if [ ! -f "$gate/$local_sha" ]; then
+    echo "pre-push: refusing to push $local_sha to dev -- no recorded pass." >&2
+    echo "  Run: python tools/plan_section.py ready   (rebase check + full suite)" >&2
+    exit 1
+  fi
+done
+exit 0
