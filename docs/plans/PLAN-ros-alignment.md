@@ -5105,6 +5105,27 @@ The other 14 are escapable but not within `MAX_ESCAPES`; not pursued.
 Criterion 5: `test_an_escape_turn_refused_on_one_side_tries_the_other`,
 red on the old escape.
 
+**Part (b) measured 2026-10-06 -- criterion 2 FAILED (1 of 3 runs over),
+criterion 3 met; not adopted.** Candidate `evaluations/slam-342/nav2-inflate.yaml`
+(`inflation_radius` 0.12 -> 0.35 m, `cost_scaling_factor` 8 -> 5, both
+costmaps), on the rebuilt `:latest` image; judged by
+`evaluations/slam-342/parked.py`:
+
+| run | longest parked (bar < 120 s) | where | tour | SLAM east max / final |
+|---|---|---|---|---|
+| today's config, 3 runs (G1, G2, F1) | 187, 147, **996** s | foyer, living room | 8, 8, 0 / 9 | -- |
+| inflate 1 | 116 s | living room: the corner of the north wall, west wall and sofa end | 8 / 9 | 0.052 / 0.005 m |
+| inflate 2 | 112 s | the same corner | 8 / 9 | 0.050 / 0.004 m |
+| inflate 3 | **123 s** | foyer: where a wall stub meets the south wall | 8 / 9 | 0.031 / 0.008 m |
+
+R6 with it: **6/6**, 9-10 cm from each goal, nearest surface **36-43 cm**
+(today's config 19-25 cm), unreachable aborted in 18 s stopped, tap 0.05 s.
+Inflation shortens the stalls but does not end them, and they now recur
+at the SAME two corners: explore sends goals into corners the lidar cannot
+see into, and the robot spends ~2 min failing and escaping there. That is a
+goal-choice problem in `brain/explore.py`, not nav2's. `nav2.yaml` is
+unchanged; the next step is the user's call.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
