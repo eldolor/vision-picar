@@ -1,5 +1,7 @@
 # Handoff 2026-10-07 -- speed-dependent clearance (PLAN 3.44), half built
 
+> **Superseded** by `HANDOFF-2026-10-07-3.44-speed-clearance.md` (3.44 measured).
+
 For a fresh session continuing 3.44. **First read
 `docs/guides/PARALLEL-SESSIONS.md`**: other sessions now work on the plan at
 the same time. This section's file is
