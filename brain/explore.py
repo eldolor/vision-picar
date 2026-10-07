@@ -70,6 +70,9 @@ LOOK_AROUND = ("LOOK_LEFT", "LOOK_RIGHT", "LOOK_CENTER")
 STUCK_MOVED_M = 0.15
 # Escapes tried before a search may conclude, while boxed in.
 MAX_ESCAPES = 3
+# An escape's turn sizes, each tried on the roomier side and then the other,
+# until the pivot guard lets one through (3.42).
+OPEN_ANGLES = (90, 45, 20, 10, 5)
 # "Boxed in": fewer reachable stopping places than this around the robot.
 BOXED_CELLS = 40
 # The robot server's refusal when the mission's OWN goal still holds the
@@ -417,22 +420,42 @@ class ExploreAgent(MissionAgent):
     def _do_pending(self):
         item = self._pending.pop(0)
         if isinstance(item, tuple) and item[0] == "OPEN":
-            # Turn a quarter towards whichever side the lidar finds more room.
-            try:
-                scan = self.robot.get_scan()
-            except Exception:  # noqa: BLE001
-                scan = {}
-            side = "RIGHT"
-            if scan.get("usable"):
-                start, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
-                def room(lo, hi):
-                    return sum(min(r if r is not None else 12.0, 3.0)
-                               for i, r in enumerate(scan["ranges_m"])
-                               if lo <= start + i * inc <= hi)
-                side = "LEFT" if room(-120, -30) > room(30, 120) else "RIGHT"
-            out = self._verb(side, angle=90)
+            # Turn towards whichever side the lidar finds more room: a
+            # quarter first. 3.42: if the pivot guard refuses it, the next
+            # ticks try the OTHER side, then 45 and 20 degrees each way --
+            # 2026-10-06's wedged runs asked for the same refused side every
+            # time while the other was free (escape_sweep: 59% freed).
+            attempts = item[1] if len(item) > 1 else None
+            if attempts is None:
+                try:
+                    scan = self.robot.get_scan()
+                except Exception:  # noqa: BLE001
+                    scan = {}
+                side = "RIGHT"
+                if scan.get("usable"):
+                    start, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
+                    def room(lo, hi):
+                        return sum(min(r if r is not None else 12.0, 3.0)
+                                   for i, r in enumerate(scan["ranges_m"])
+                                   if lo <= start + i * inc <= hi)
+                    side = "LEFT" if room(-120, -30) > room(30, 120) else "RIGHT"
+                other = "LEFT" if side == "RIGHT" else "RIGHT"
+                attempts = [(s, a) for a in OPEN_ANGLES for s in (side, other)]
+            turned = item[2] if len(item) > 2 else 0
+            side, angle = attempts[0]
+            out = self._verb(side, angle=angle)
             if out[0] == "WAIT":
-                self._requeue(side, item)
+                self._requeue(side, ("OPEN", attempts, turned))
+            elif not out[1]:
+                if len(attempts) > 1:
+                    self._pending.insert(0, ("OPEN", attempts[1:], turned))
+            elif self._still_wedged() and turned + angle < 360:
+                # A turn went through but the robot still cannot drive
+                # either way: keep turning the same way, smaller if need be,
+                # before swinging back (alternating rocked it in place).
+                other = "LEFT" if side == "RIGHT" else "RIGHT"
+                self._pending.insert(0, ("OPEN", [(side, a) for a in OPEN_ANGLES]
+                                         + [(other, a) for a in OPEN_ANGLES], turned + angle))
             return out
         if isinstance(item, tuple) and item[0] == "FACE":
             pose = self._pose()
@@ -457,6 +480,17 @@ class ExploreAgent(MissionAgent):
                 self._pending = [p for p in self._pending if p is not item]
             return out
         return self._verb(item)
+
+    def _still_wedged(self) -> bool:
+        """Forward AND reverse both refused by the safety layer's own
+        clearances -- the robot cannot drive out either way (3.42)."""
+        try:
+            f, _ = self.safety.forward_clearance()
+            b, _ = self.safety.reverse_clearance()
+        except Exception:  # noqa: BLE001 -- unknown: do not keep turning on a guess
+            return False
+        lim = self.safety.min_distance_cm
+        return f is not None and f <= lim and b is not None and b <= lim
 
     def _requeue(self, action: str, item) -> None:
         """After a move waited: put the composite step back, once."""

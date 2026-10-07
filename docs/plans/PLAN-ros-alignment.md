@@ -5047,11 +5047,13 @@ within 1.2 cm), 5 549 forwards and 335 reverses, and **not one RIGHT**:
 nav2's rotate-to-heading and spin recovery chose left every time, and the
 brain's escape (`brain/explore.py`: REVERSE, then a quarter turn toward the
 lidar's roomier side) tried LEFT twice and never the other way.
-Reconstructed in process with the real `SafetyController` at both spots,
-every 5 deg of heading: forward and reverse are both refused at 120 of 144
-headings; at **84 of those one turn direction is free** (the escape never
-tries it), and at **36 all four moves are refused** -- a true trap, which
-no escape can leave without loosening `robot/safety.py`. The traps come from
+Live, it really was boxed in: forward refused at 18-19.8 cm, reverse at
+19.3-19.4 cm, a corner within 1.1-1.2 cm on a left pivot. Rebuilt in process
+at the recorded spot, the chassis sits **0.3-5.4 cm from the side table at
+every heading** -- the planner had driven it against furniture. (A first
+rebuild, since withdrawn, set the pose in metres where the grid takes cells
+and reported 84 escapable and 36 trapped headings at the wrong place; a 1 Hz
+position is also too coarse to rebuild the exact live pose.) The traps come from
 the planner: nav2's `inflation_radius` is **0.12 m**, barely past the
 chassis' 11.55 cm inscribed radius (kept small for the starter house's 30 cm
 doors, R6), so paths hug furniture within a centimetre or two.
@@ -5063,11 +5065,14 @@ the room (both costmaps; lethal footprint unchanged).
 
 **Criteria:**
 
-1. **The escape uses the free turn:** at the two reconstructed spots, of
-   the 84 headings where forward and reverse are refused and one turn is
-   free, the escape reaches a pose where FORWARD or REVERSE is allowed in
-   **>= 95%**, within `MAX_ESCAPES`, **0 contacts** on ground truth. Measured
-   on today's code first (expected well under that).
+1. **The escape uses the free turn** *(amended before measuring: the
+   exact live pose cannot be rebuilt)*: `tests/escape_sweep.py` samples
+   poses anywhere in the furnished home within 5 cm of furniture (ground
+   truth), keeping those where forward and reverse are refused and one turn
+   direction is free, until 200. The escape reaches a pose where FORWARD or
+   REVERSE is allowed in **>= 95%**, within `MAX_ESCAPES`, **0 contacts** on
+   ground truth. Poses where all four are refused are counted, not judged.
+   Measured on today's code first.
 2. **No parking in traps, live:** three fresh furnished-home explore-then-tour
    runs (`demo_slam_home --tour 1 --explore-first 900`): **no run in which
    the robot stays within 5 cm for 120 s or more** while its mission or goal
@@ -5079,6 +5084,26 @@ the room (both costmaps; lethal footprint unchanged).
    brain and in `nav2.yaml`, each changed key commented with its run.
 5. **Pinned:** a test that the escape tries the other side when its first
    turn is refused, confirmed red on today's code.
+
+**Part (a) measured 2026-10-06 -- criterion 1 FAILED as written (71.5%,
+bar 95%); criterion 5 met.** `tests/escape_sweep.py`, 200 wedged poses
+within 5 cm of furniture (73 more were all-four-refused traps, not judged):
+
+| escape | freed | contacts |
+|---|---|---|
+| before (one side, quarter turns) | 118/200 = 59% | 0 |
+| other side, then 45 / 20 / 10 / 5 deg; keep turning while still wedged (`OPEN_ANGLES`, `_still_wedged()`) | **143/200 = 71.5%** | 0 (closest 0.06 cm) |
+
+Why the bar cannot be met by an escape: of the 57 still wedged, **43 can be
+left by NO sequence of allowed moves** -- pivoting 5 deg at a time through
+the real safety layer, each way, the guard allows a median 10 deg of
+rotation and no heading in that arc permits a straight move. "One turn is
+free" did not mean "escapable"; those 43 are traps the classification
+missed, so the reachable ceiling was ~78.5%. Leaving them needs a looser
+`robot/safety.py` (criterion 4 forbids it) or never driving in -- part (b).
+The other 14 are escapable but not within `MAX_ESCAPES`; not pursued.
+Criterion 5: `test_an_escape_turn_refused_on_one_side_tries_the_other`,
+red on the old escape.
 
 ## 4. Honest residue -- what the twin cannot tell you
 

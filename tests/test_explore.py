@@ -344,3 +344,27 @@ def test_a_place_that_wedges_the_robot_again_runs_out_of_tries():
     worst = max(sum(math.hypot(a[0] - b[0], a[1] - b[1]) < agent.retry.radius_m for b in sent)
                 for a in sent)
     assert worst <= 1 + RETRY_LIMIT, worst
+
+
+def test_an_escape_turn_refused_on_one_side_tries_the_other():
+    """3.42: 2026-10-06's wedged runs asked for the same refused side every
+    time while the other was free. The escape now tries the other way."""
+    from robot.safety import SafetyViolation
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="x"),
+                         navigator=FakeNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid))
+    asked = []
+
+    def guard(action, **kw):
+        asked.append(action)
+        if action == "RIGHT":
+            raise SafetyViolation("turn right clamped: a corner would come within 1.2cm")
+        return {"executed": action}
+    agent.safety.check_and_execute = guard
+    agent.robot.get_scan = lambda: {"usable": False}       # no scan: RIGHT is tried first
+    agent._pending = [("OPEN",)]
+    agent._do_pending()
+    agent._do_pending()
+    assert asked == ["RIGHT", "LEFT"]
