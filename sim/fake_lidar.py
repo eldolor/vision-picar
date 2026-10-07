@@ -34,6 +34,7 @@ import argparse
 import math
 import os
 import random
+import struct
 import time
 import tty
 from typing import Callable, List, Optional
@@ -180,7 +181,10 @@ def main(argv=None) -> int:
     emitter = None
     try:
         while True:
-            snap = reader.read()
+            try:
+                snap = reader.read()
+            except (ValueError, struct.error):   # a torn read: try again next tick
+                snap = None
             if snap is not None:
                 if snap["house"] != house:
                     world, house = build_world(snap["house"]), snap["house"]

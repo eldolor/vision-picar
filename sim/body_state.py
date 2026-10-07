@@ -125,7 +125,10 @@ class StateReader:
         buf = self.shm.buf
         for _ in range(retries):
             seq1, n = _HEAD.unpack_from(buf, 0)
-            if seq1 == 0 or seq1 % 2 or n + _HEAD.size + _CRC.size > SIZE:
+            # n too short to hold the pose is a torn header: an empty payload
+            # even "passes" the CRC (crc32(b"") is 0), and unpacking it raised
+            # in sim/fake_lidar.py's loop on the Jetson (3.42).
+            if seq1 == 0 or seq1 % 2 or n < _POSE.size or n + _HEAD.size + _CRC.size > SIZE:
                 time.sleep(0.0002)
                 continue
             raw = bytes(buf[_HEAD.size:_HEAD.size + n + _CRC.size])
