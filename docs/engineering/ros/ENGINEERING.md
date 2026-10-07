@@ -2,7 +2,7 @@
 kind: engineering
 domain: ros
 status: current
-verified: 2026-10-04
+verified: 2026-10-06
 parent: docs/ros/ARCHITECTURE.md
 ---
 
@@ -135,9 +135,17 @@ passes it on to `/diff_drive_controller/cmd_vel_unstamped`.
 (transient local), `/plan`, `/cmd_vel_mux` and
 `/diff_drive_controller/cmd_vel_unstamped`.
 
-**Scan stamps.** Each scan is stamped with the newest
-`odom -> base_footprint` transform time, so it can never arrive ahead of TF
-(3.15).
+**Scan stamps.** Each scan is stamped with its capture time, the robot
+server's `stamp_unix`, so slam_toolbox pairs it with the odometry of that
+moment (3.40). Stamped with the newest `odom -> base_footprint` time instead
+(3.15's choice), a scan was filed a median 19 ms early, and 41% of scans
+taken at 1 rad/s were more than 1 deg off. With capture stamps that is 11%,
+and the effective skew falls from 21 ms to 7 ms (`evaluations/slam-340/skew_test.py`).
+A capture stamp runs a few ms ahead of the newest odom, so tf2 filters wait
+for it. That wait once deadlocked Humble's packaged tf2, and the pinned
+0.25.24 fixes it; R6's goals ran 6/6 on capture stamps. The newest odom time
+is the fallback when a scan has no `stamp_unix`, or when the two clocks
+differ by 0.5 s or more.
 
 **TF tree.**
 
@@ -190,6 +198,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | twist_mux `timeout` / `priority` | 0.25 s; teleop 100, brain 50, nav 50 | s, -- | `twist_mux.yaml` | The order mirrors `DRIVER_PRIORITY` (wall duplicate). |
 | `resolution` | 0.05 | m | `slam.yaml` | -- |
 | `max_laser_range` | 12.0 | m | `slam.yaml` | The 12 m the sim's scan reaches (`LIDAR_RANGE_M`; wall duplicate). At 4.2 m, SLAM mapped almost nothing in a 16 m house. |
+| `correlation_search_space_smear_deviation` | 0.03 | m | `slam.yaml` | The scan matcher's blur before scoring. At 0.1 m (until 3.40) long-range returns barely constrained heading and the furnished home's map bent 2.5-6 deg; at 0.03 m two tours stayed within 4.2 cm with every room's walls true |
 | `restamp_tf`, `transform_publish_period`, `map_update_interval` | true, 0.05 s, 1.0 s | -- | `slam.yaml` | `restamp_tf` stops `map -> odom` going stale while the robot is at rest (3.15). |
 | `footprint` / `FootprintApproach.points` | +/-0.1265 x +/-0.1155 | m | `nav2.yaml` | Half the chassis outline; the outline itself is in the [platform engineering spec](../platform/ENGINEERING.md). A wall duplicate with `robot/safety.py`. |
 | `inflation_radius`, `cost_scaling_factor` | 0.12, 8.0 | m, -- | `nav2.yaml` | Kept small for doors. |
@@ -300,7 +309,18 @@ Checklist for a change:
   `picar_hardware` (R7) "is the same class against the ESP32". 3.16 decided
   that plugin will not be written.
 - **`robot_localization` is not installed.** Odometry comes from
-  diff_drive_controller alone.
+  diff_drive_controller alone. It is the standard remedy for the gap below:
+  an EKF fusing wheel odometry with the board's gyro (`gz` in the `T:1001`
+  frame, unused today) for a steadier heading.
+- **SLAM drifts in the furnished home's open rooms** (3.39, open). With
+  `loop_search_space_dimension: 2.0` (3.38's candidate D) there are no
+  false-closure jumps, but in `tests/demo_slam_home.py --tour 1
+  --explore-first 900` SLAM drifted 0.45-0.86 m during the family-room ->
+  kitchen leg (within 0.15 m through 15 min of exploring; odometry within
+  3 cm). Records: `evaluations/slam-339/`. Candidates, judged with and
+  without `SIM_ODOM_DRIFT=1.0,1.03`: `slam.yaml`'s scan-matcher search and
+  travel thresholds, nav2's `desired_linear_vel`, IMU fusion (above),
+  `slam_toolbox` localisation mode on a saved map, visual/depth SLAM.
 - **Closed 2026-10-05 (handoff 3a): every person drives under `drive:
   ros`.** `teleop-operator`, unnamed callers and the `teleop` driver used to
   post their own names, get 400 `unknown driver`, and be refused

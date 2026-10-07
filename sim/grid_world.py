@@ -383,7 +383,7 @@ class GridWorld:
         objects = dict(self.objects)
         objects[mover.cell] = mover.name
         self.objects = objects
-        mover.next_hop_at = self.sim_time + mover.hop_s
+        mover.next_hop_at = self.sim_time + mover.start_s + mover.hop_s
         self.movers.append(mover)
 
     def advance_time(self, dt: float) -> None:
@@ -392,7 +392,7 @@ class GridWorld:
         keep-out around the robot, waits and tries again at its next hop."""
         self.sim_time += dt
         for mover in self.movers:
-            while mover.next_hop_at <= self.sim_time + 1e-9:
+            while not mover.done and mover.next_hop_at <= self.sim_time + 1e-9:
                 mover.next_hop_at += mover.hop_s
                 self._hop(mover)
 

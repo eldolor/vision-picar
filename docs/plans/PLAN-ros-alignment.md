@@ -3213,6 +3213,145 @@ the keep-out rule was amended mid-phase; both rules' runs are recorded.**
   in 41 s alone. Section 6 item 6's frontier retry is the same lesson:
   a blocked path may be blocked only for now.
 
+### 3.31 A search that uses the map: frontiers, and retrying what is blocked (2026-10-01): criteria, written before building
+
+Section 6 item 6's frontier search with its retry rule, chosen by the user
+as the next build ("frontier search + retry"). Why it matters: the user's
+first mission in their furnished house drove into the dining room and
+ended `blocked` after 14 steps without seeing the kitchen, and 3.30 showed
+the same search giving up on a person who would have moved (`blocked`
+after 315 s; `found` in 41 s without them).
+
+**The design, to be read against the criteria:**
+
+* **A new mission policy, `explore`, in the brain** (not ROS's
+  `explore_lite`), so perception, arrival and the cloud call stay in one
+  place. Each decision: read SLAM's map (`GET /world/map`) and pose, find
+  frontier cells (seen floor next to unknown), group them, pick one by
+  distance and size, send it to nav2 (`POST /world/goal`), and keep
+  perception running. On a sighting, a goal toward the target, and 3.11's
+  arrival rule ends the mission `found`. When no reachable frontier is left
+  and every set-aside one has had its last retry, the mission ends with a
+  new outcome, **`searched`** -- "looked everywhere it could reach, not
+  there" -- which is not `blocked`.
+* **The brain reaches nav2 through a `Navigator`, not `WorldInterface`**
+  *(amended before building)*: `WorldInterface`'s contract says a world
+  model "is never asked to drive" (`tests/test_world_contract.py`), and a
+  goal is a drive command. So the brain declares the three calls it needs
+  (`set_goal` / `get_goal` / `cancel_goal`) as a Protocol, the way
+  `brain/perceive.py` declares its detector, and `control/` implements it
+  over the existing `/world/goal` routes. No ROS in the brain; 3.23's
+  arbitration is unchanged (a goal is an autonomous driver, so the
+  `explore` policy never sends an `/action` while a goal is live).
+* **One clock, injected.** Cooldowns and goal timeouts read a clock and
+  never block a tick (the brain server's hung-tick deadline is 30 s). The
+  default is wall time; in-process sweeps pass the sim's own clock, so a
+  person keeps walking while the robot waits.
+* **Retry, not drop.** A frontier nav2 aborts on is set aside for a
+  cooldown (starting value 30 s), or less if the map changes near it, and
+  dropped after **K = 3** failures at different times.
+* **The stuck detector shares the rule.** R1b's five refused FORWARDs no
+  longer end a mission at once: the mission backs off and retries on the
+  same cooldown, and ends `blocked` only after K failures. A wall still
+  ends it; a person who moves does not.
+* **No paid call to choose frontiers in v1.** Nearest-and-largest scoring
+  only; the cloud's "a backpack is likelier in a bedroom" is a later
+  option, measured against this one.
+
+**Criteria (confirmed by the user 2026-10-01, numbers as written):**
+
+1. **It finds things in a house it has not mapped.** Furnished home
+   (`home_first_floor`), from the foyer, empty map, the backpack moved to
+   each of the 12 rooms in turn: **`found` in every room nav2 can plan
+   into** (3.21's tour reached 8 of 9 goals; a room nav2 cannot enter is
+   reported, not counted), median time and distance recorded.
+2. **An absent target ends `searched`, never `blocked`,** with at least
+   95% of the reachable floor seen (ground truth: cells reachable by the
+   chassis, 3.21's fit check), in a bounded time.
+3. **A blocked doorway is retried.** A mover standing in the only doorway
+   to the target's room for 60 s, then leaving: `found`. A truly
+   unreachable frontier (the dining-room chair gap) costs at most K
+   attempts and does not stall the mission.
+4. **The stuck detector no longer gives up on a person.** 3.30's
+   `hallway_crossing` mission with the rule-based policy: `found` (was
+   `blocked`). R1b's door-jamb starts still end `blocked`, within their
+   old 8-11 steps plus at most K cooldowns. *(Read before measuring: the
+   refused FORWARDs and the back-off inside each retry are steps too, so
+   the step bound is the old 15 plus (K - 1) x (`stuck_after` + 1).)*
+5. **Safety unchanged.** No change to `robot/safety.py`; the 3.18, 3.19
+   and 3.30 ground-truth sweeps pass as they are; over every mission run
+   for 1-4, 0 contacts and 0 samples inside a mover on ground truth.
+6. **The deployed path.** One `explore` mission through the brain's HTTP
+   API on the live ROS stack, furnished home: `found`.
+
+**Status 2026-10-02 -- IN PROGRESS, not closed.** Built on branch
+`frontier-search` (not merged): `brain/frontier.py`, `brain/explore.py`,
+`control/remote_navigator.py`, the `explore` policy and `searched` outcome,
+the shared retry rule in `MissionRunner`, and `tests/demo_explore.py`, the
+live instrument. Measured so far, all live through the brain's HTTP API on
+nav2 + `slam_toolbox`:
+
+| | result |
+|---|---|
+| 3. a person in the kitchen door for 60 s (scaled house) | **met** -- `found` in 613 s, 8 goals failed and were retried until the door cleared, 0 contacts |
+| 4. the rule-based policy, a person crossing the hallway | **FAILED as written** -- still `blocked` after 3 retries (358 s, 24 m); its last refusals were in the living room, not at the person. In process the same policy livelocked in a bedroom corner (turns reset the refusal count), a limit of the rule-based agent, which is not extended |
+| 1. the backpack in each room of the furnished home | **not yet met** -- one revision found the breakfast room and the den, others did not; outcomes vary run to run on the same code (SLAM and nav2 timing). Found every time in the scaled house (a smoke run: 465 s, 11 m) |
+| 2, 6 | not yet run on a final revision |
+| 5. safety | met on every run so far: 0 contacts on ground truth, closest 1.1-1.8 cm (3.18's bar is 1 cm) |
+
+**Found and fixed on the way** (each confirmed red first):
+
+* **Every in-process mission since 3.22 drove its verbs unguarded.** The
+  mission's `_HaltGate` hid `verb_plan()`, so a FORWARD was vetted once and
+  drove the whole cell -- 2.3 cm from a person. The deployed path was never
+  affected (the robot server guards every verb). Fixed; the reactive
+  missions' arrival bar was re-derived from the safety line (1.05 -> 1.76
+  cells), since 1.05 was only reachable unguarded.
+* **The sim camera saw through solid objects.** Now another object on the
+  line hides one, as a wall does (golden image unchanged).
+* Frontier and search defects only the live house showed: one 27 m frontier
+  put every goal on the robot; revisited unclearable frontiers; pans spent
+  the step budget; a vanished frontier kept a mission waiting for ever; a
+  goal timeout that crashed; a 0.6 m door read as a wall.
+
+**Fixed since (2026-10-02), each confirmed red first:**
+
+* **Wedged in furniture** -- a goal that fails without the robot moving now
+  backs out instead of failing the place, and a search never ends
+  `searched` while the robot is boxed in. **Then a second defect behind it:**
+  one living-room goal was sent eleven times, each wedged against an
+  armchair, until the mission's time ran out -- a wedge was never held
+  against the place. A place that wedges the robot a SECOND time now counts
+  as a failed try (`deaa179`).
+* **A move refused by the mission's own nav2 goal ended the mission
+  `preempted`** (3.23 refuses autonomous `/action` while a goal is live, and
+  the mission's own goal was that goal). The mission now cancels its goal
+  first and waits on that refusal; a person taking over still ends it.
+* **A sighting was forgotten once out of view.** The den run saw the
+  backpack, lost the approach to an escape, and spent the rest of its half
+  hour in the garage. The search now goes back to where the target was last
+  seen, under the same retry rule as a place.
+* **The jamb false arrival** was closed by 3.32 (edge refusal), on dev.
+
+**Stopped 2026-10-02 on a SLAM fault, not a search fault.** The recorded
+batch on `106cd6d` was stopped after three rooms: in the furnished home
+`slam_toolbox` closed loops to the wrong place (1.6-3.2 m, never recovered,
+odometry exact), so goals went to points outside the house. That is 3.38.
+The rooms' numbers from that batch are not results.
+
+**Open, in order:**
+
+1. **3.38 must be decided first** (below): its candidate D stops the jumps
+   but two criteria are short.
+2. **Criteria 1, 2, 4 and 6 on one recorded revision** -- the full batch,
+   `python -m tests.demo_explore rooms|absent|door|rule` (about 7 hours
+   unattended), on the branch's head once 3.38 settles. Nothing from the
+   earlier batches counts: every one ran on a revision since changed.
+3. **Coverage.** Exploration covered 32-94% of the reachable floor in
+   20 min across 3.38's runs, most of the low ones stuck in the living room
+   on the wedge loop now fixed. Criterion 2 needs 95%; unmeasured since the
+   fix.
+
 ### 3.32 Arrival that an edge cannot fake, and detections that respect occlusion (2026-10-01): criteria, written before building
 
 **Background -- found 2026-10-01: in-process missions never used the
@@ -4105,6 +4244,385 @@ keep every later-garbage object alive for the rest of the run.
 Criterion 2 **met**: 0 late ticks in 14 289, worst 0.065 s, MemAvailable
 4253 MB, 52 C (3.33 item 6 has the run). Criterion 3 **met**: G4 on the Jetson (fork firmware) **18 passed**, 0 late ticks in 5328, worst 0.068 s, robot server 49% of a core; the laptop suite 1755 passed, 57 skipped, 1 failed and 1 xpassed -- both the stock-firmware turn scatter of 3.25 (`test_odometry_heading_..[hardware]`, measured 6/8 on the unchanged code, and `test_5_a_clear_turn_lands_on_its_angle`, a non-strict xfail for the same cause), not this change.
 
+### 3.38 SLAM that stays put in the furnished home (2026-10-02): criteria, written before measuring
+
+**Why.** 3.31's recorded batch stopped on it. In the furnished home, with
+odometry exact (error under 1 mm -- no drift was configured), SLAM's pose
+jumped **3.16 m and 26 degrees between two 10 s samples** in the living room
+and stayed ~3 m wrong; the den run on the same revision sent goals to
+x = -3.5 m, outside the house. Search cannot be judged on a map that moves
+under the robot. Signature: a step change with odometry exact, inside
+`loop_search_maximum_distance` (3.0 m) -- a false loop closure or a scan
+match to the wrong place among repeated chair and table legs. Not yet
+established which.
+
+**Instrument.** `python -m tests.demo_slam_home N [--slam yaml] [--drift L,R]`:
+a fresh stack per run, one `explore` mission for a target that is not in the
+house (the workload that failed), `/world/error` sampled at 1 Hz. A **jump**
+is the error growing by more than 0.5 m between samples at most 2 s apart.
+A candidate config is mounted over the image's (`--symlink-install`), so
+nothing is rebuilt until one wins.
+
+**Criteria (thresholds written before any candidate is measured; not yet
+confirmed by the user):**
+
+0. **The baseline reproduces it**, or the diagnosis is wrong: on the image's
+   `slam.yaml`, at least one of three runs shows a jump. If none does, widen
+   the sample before changing anything.
+1. **No jumps, no drift configured:** six runs, **0 jumps**, maximum SLAM
+   error **<= 0.30 m** at every sample, final error at rest **<= 0.10 m**.
+2. **SLAM still corrects drift:** with R5's 3%-long right encoder
+   (`--drift 1.0,1.03`), three runs, **0 jumps**, maximum **<= 0.30 m**,
+   final at rest **<= 0.15 m** -- and odometry alone measurably worse, or the
+   runs did not test correction.
+3. **Nothing earlier regresses:** R5's starter-house laps
+   (`tests/demo_slam_lap.py`) end within R5's recorded 1-4.5 cm with drift,
+   and R6's scaled-house goals stay 6/6 (`tests/demo_nav_goals.py`).
+4. **One file changes:** `service/slam/src/picar_bringup/config/slam.yaml`,
+   each changed key commented with the run that justified it.
+
+**Results 2026-10-02 -- criterion 0 met, 1 FAILED (4/6), 2 incomplete (1/2),
+3 not run (closed 2026-10-05, below).** Every run: furnished home, fresh stack, 20 min
+`explore` for an absent target, error sampled at 1 Hz (raw series in each
+run's `slam_home_<t>.json` in the session scratchpad, not kept).
+
+| config | runs | jumps | max error | final error | verdict |
+|---|---|---|---|---|---|
+| image (original) | 3 | **3/3** (1.6-2.1 m at 230-296 s) | 2.4-12.5 m | 2.4-9.0 m | criterion 0 met: reproduced |
+| A: `do_loop_closing: false` (diagnostic) | 3 | 0 | 0.08-0.39 m | 0.06-0.36 m | the jumps ARE loop closures; scan matching alone drifts ~0.4 m |
+| B: nodes 20 cm / 0.2 rad, closures within 2 m at response 0.6 | 3 + 3 | 0 | 0.04-0.24 m | 0.02-0.13 m | stopped the jumps, tracked worse: 2 of 3 acceptance runs ended 0.13 m (bar 0.10) -- abandoned |
+| C: chain 40 nodes, response 0.6, within 2 m | 2 | **1** (2.48 m at 241 s, the living-room entrance) | 5.2 m | 3.6 m | rejected: tightening WHEN a closure is accepted does not stop it |
+| **D: `loop_search_space_dimension` 8 -> 2 m** (a closure may move the robot at most 1 m) | 3 trial + 6 acceptance | **0 of 9** | 0.09-0.43 m | 0.005-0.43 m | **committed** (`4a36d0f`); see criteria below |
+| D, right encoder 3% long | 2 of 3 | 0 | 0.15, 0.46 m | 0.03, 0.27 m | odometry alone 10.6-11.9 m off |
+
+* **Criterion 1 FAILED, 4 of 6.** The two failures (final 0.43 and 0.19 m)
+  both began as the robot went through the den's 0.6 m door into a room it
+  had not seen, and were never corrected (it stayed in the den). The den
+  door is PROVISIONAL (inferred from the appraisal sketch). Both nav2 tours
+  passed the same door at 3-4 cm, so it is not every time.
+* **Criterion 2 incomplete: 1 of 2** (the third run was stopped). SLAM
+  corrects ~11 m of odometry error to 0.03-0.27 m; the 0.27 m run fails the
+  0.15 m bar.
+* **Criterion 3 not run** (R5 laps, R6 goals) -- stopped before it.
+* **A tour regression to check before accepting D:** R6's nine-goal home
+  tour (`--tour 1`) failed the five east-side goals on D in both runs
+  (first `rejected`, then `aborted`), where 3.21 reached 8 of 9 on the
+  original config. Not yet known whether D or the tour's start-up timing
+  causes it: run one tour on the original config as the control.
+
+**Closed 2026-10-05 -- D ACCEPTED (the user, on the recommendation), with
+criterion 1 recorded as FAILED.** Taken over from the session that opened
+this section; measured on the merged branch (dev's bridge fixes included),
+one image, the Mac:
+
+* **The control tour clears D of the tour regression.** The nine-goal home
+  tour on the ORIGINAL `slam.yaml` (8 m window) and on D gave the SAME goal
+  results in the same order -- rejected, aborted x4, active, succeeded x3 --
+  with SLAM within 3.6 / 4.6 cm of the truth throughout and no jumps in
+  either. The east-side failures are not D's and not SLAM's; they are a
+  separate regression since 3.21's 8/9 (see "Open" below).
+* **Criterion 3 met.** R5's starter-house lap with the right encoder 3%
+  long: SLAM final **2.9 and 3.8 cm** (R5's recorded 1-4.5 cm; odometry
+  alone 8.8 cm); without drift 2.7 cm. R6's scaled-house goals **6/6 twice**,
+  8.6-12.8 cm from each goal, never nearer than 16.8 cm to a surface, the
+  unreachable goal aborted in 18.6-18.8 s with the wheels stopped, a tap
+  cancelling in 0.04 s. (Each drift lap had 12 verbs refused -- the starter
+  house's 30 cm doors against the UGV chassis, known since 3.21.)
+* **Criterion 1 FAILED, 4/6, accepted as such:** both failures began at the
+  den's 0.6 m door, which is PROVISIONAL geometry inferred from the
+  appraisal sketch; correct it before re-judging.
+* **Criterion 2 left at 1/2** (the third run was stopped on 2026-10-02 and
+  not re-run).
+
+**Open, handed on:** the home tour's rejected/aborted goals, common to both
+configs -- next to diagnose, from nav2's own log.
+
+### 3.39 The home tour reaches the east of the house (2026-10-05): criteria, written before measuring
+
+**Why.** 3.38's control showed the nine-goal home tour failing the same
+goals on both SLAM configs, so it is neither SLAM nor D. nav2's own log
+(`tour_diag`, 2026-10-05): goal 1 **rejected** 0.5 s after the stack
+reported up (nav2 not yet accepting goals -- the instrument's timing); the
+four east-side goals (kitchen, garage hall, laundry, garage) **aborted with
+the robot never moving**, `planner_server`: "GridBased: failed to create
+plan" -- no path at all from the start to the east, while the living room,
+den and foyer succeed at 9.6-11.7 cm; the dining room aborted 1.0 m short
+(3.21's NavFn-circle vs RPP-rectangle mismatch). SLAM within 5 cm
+throughout; `allow_unknown`, `track_unknown_space` and the 12 m lidar are
+unchanged since 3.21's 8/9. A size-blind check (`tests/test_home_map.py`
+connects 30 cm cells, not the chassis) cannot see a passage too tight for
+the UGV chassis (since 3.21) plus inflation.
+
+**Decided by the user 2026-10-05:** the furnished home is a realistic
+TEST house, not a replica -- "The rover will run in different homes." So a
+blocker in its PROVISIONAL (inferred) interior is fixed by making the house
+realistic (standard interior doors, walkable furniture gaps), not by
+shrinking nav2's margins to fit it. The measured outside walls stand.
+
+**Acceptance criteria:**
+
+1. **The blocker is measured, not guessed**: on nav2's own global costmap at
+   the start pose, the region the planner can reach is computed and the
+   passage(s) separating the start from the east side are named, with their
+   width, before anything changes.
+2. **The tour reaches the east**: two fresh home tours, each with all four
+   east-side goals `succeeded` and at least 8 of 9 overall (the dining
+   room's known mismatch may be the ninth); SLAM 0 jumps, final error
+   <= 0.10 m.
+3. **No goal lost to timing**: the instrument sends the first goal only
+   once nav2 accepts goals; no `rejected` in either tour.
+4. **Size-aware, so it cannot recur silently**: a test that every room's
+   tour goal is reachable on the true layout for the UGV's inscribed radius
+   (11.55 cm) -- confirmed red on today's layout first.
+5. **No regression**: `tests/test_home_map.py` (its appraisal tests pin the
+   outside), R6's scaled-house goals 6/6 once.
+
+**Criterion 1 -- measured 2026-10-05, and it is not a passage.** nav2's
+global costmap at the start pose (dumped from `/global_costmap/costmap`)
+is **156 x 188 cells at 5 cm, 7.8 x 9.4 m** -- what SLAM has seen from the
+start. Converted through the session's anchor, the kitchen (6.83, -8.77),
+garage hall, laundry, garage and the den all lie **off the costmap**; a
+planner cannot plan to a point it has no cell for, which is
+`planner_server`'s "failed to create plan" with the robot never moving.
+The den succeeded later only because the robot had by then mapped it. The
+tour sends goals into rooms nobody has seen -- R6's own lesson ("map before
+navigating", 3.15), which the home tour's "maps as it goes" skipped.
+
+**Amended accordingly (before building):** the fix is the instrument, not
+nav2 and not the house. A robot in a new home cannot know where the kitchen
+is until it has explored; that is 3.31's explorer. So the home tour first
+runs an `explore` mission for an absent target until it reports searched
+(cap 15 min), then tours, retrying a goal nav2 `rejected` for up to 30 s
+(nav2 still activating). Criterion 4 is withdrawn -- there is no tight
+passage to pin -- and criterion 2's runs include the explore phase.
+
+**Results so far (2026-10-05) -- criterion 2 NOT met; stopped and taken to
+the user.** Two fresh runs, `python -m tests.demo_slam_home 2 --tour 1
+--explore-first 900`, candidate D:
+
+| run | explore (cap 900 s) | tour goals | end error of goals | SLAM max / final |
+|---|---|---|---|---|
+| 1 | still running, coverage **94%** | 6 succeeded, 2 timed out, 1 aborted | 0.08-0.88 m | 0.86 / 0.01 m |
+| 2 | still running, coverage 76% | 2 succeeded, 2 timed out, 5 aborted | 0.16-12.6 m | 0.57 / 0.55 m |
+
+Exploring first does what it was for -- the east of the house is mapped and
+reached (run 1). What fails now is SLAM, and WHERE it fails is the finding:
+**through all 15 minutes of exploration SLAM stayed within 0.15 m** (no jump
+by 3.38's definition); the error grew only in the tour, within ~20 s, as
+nav2 drove the long family-room -> kitchen route (run 1: 0.16 -> 0.60 m at
+(8.7, 2.1), 0.77 m in the kitchen; run 2: 0.15 -> 0.45 m, family room -> hall
+-> kitchen), heading 3-5 deg off, **odometry exact throughout (0.01-0.03
+m)** -- scan matching pulling the pose away in the open family room and
+kitchen. Not the den door. Not established: whether speed, the open room's
+geometry, or D's narrower closure window (which also limits how far a
+correct closure can pull the pose back) is the cause.
+
+**Context (added 2026-10-06).** This is the common indoor-SLAM failure,
+not a defect peculiar to this stack: a low 2D lidar sees furniture legs as
+repeated dot patterns (perceptual aliasing), an open room offers little
+else, and SLAM's odometry-versus-scan balance decides which way it errs.
+The usual remedies, roughly by cost: tune `slam_toolbox` for such rooms;
+fuse an IMU (`robot_localization`; the Rover's board reports `gz`);
+localise on a saved map instead of mapping continuously (question 6);
+visual or depth SLAM (RTAB-Map, ORB-SLAM, Isaac ROS cuVSLAM -- the Rover
+carries an OAK-D Lite and the Jetson a GPU). The sim's exact odometry
+flatters every odometry-leaning fix, so each is judged with
+`SIM_ODOM_DRIFT` too. Expectation, not a result: tuning helps the sim; IMU
+fusion is the likely durable fix on the car. The same text is in the
+Claude Doc "ROS 2 for vision-picar" (section 7) and `docs/ros/ARCHITECTURE.md`.
+
+**Isolated 2026-10-06 -- neither D's window nor speed; the map BENDS at
+the foyer.** One explore-then-tour run per hypothesis
+(`tests/demo_slam_home.py`, which now also scores SLAM's map against the
+true house per room; raw records `evaluations/slam-339/explore-tour-*.json`):
+
+| run | explore max | tour max | final | jumps |
+|---|---|---|---|---|
+| D, full speed (10-05, x2) | <= 0.15 m | 0.57, 0.86 m | 0.55, 0.01 m | 0 |
+| ORIGINAL slam.yaml (8 m window) | **1.55 m jump at 364 s** | 5.18 m | 5.18 m | 2 |
+| D, tour at 0.10 m/s and 0.5 rad/s (set live after exploring) | 0.10 m | 0.45 m | 0.01 m | 0 |
+
+* **D is not the cause** -- without it 3.38's false closures return while
+  exploring. **Speed is not the cause** -- half speed, same shape.
+* **In all three D runs a 2.5-5 deg heading error is acquired at the same
+  place**, the foyer at about (5.1, 7.9) beside the staircase, where the
+  robot turns into the family room and hall: within ~3 s, odometry exact.
+  Position error then grows with distance from the foyer (3.3 deg x 9.4 m =
+  0.54 m, observed 0.55) and returns to ~0 whenever the robot is back in the
+  foyer. 10-05's run 1 got it as a 0.43 m one-second STEP (a closure, under
+  the 0.5 m jump bar); run 2 and the slow run gradually, in a turn.
+* **The map is bent, not the robot lost:** at the slow run's end 100% of the
+  living room's and 99% of the foyer's occupied cells lie within 10 cm of a
+  true surface, against kitchen 53%, breakfast 54%, garage 39%. The east wing
+  was built a few degrees rotated -- in the slow run during the tour itself.
+* A pivot-in-place test at the start pose (`pivot_test.py`, 1.0 and 0.5
+  rad/s) read exactly 0.000 every time: SLAM never moved map -> odom for pure
+  rotation, so it is **inconclusive**, not a pass.
+
+**Suspected mechanism (not established):** nodes every 5 cm / 0.05 rad and a
+10-scan running buffer give the scan matcher ~0.5 m of context; turning into
+unseen rooms, most of a scan falls on space it has never seen and there is
+almost nothing old to hold the heading.
+
+### 3.40 The east wing is built straight (2026-10-06): criteria, written before building
+
+Confirmed by the user 2026-10-06. The fix is the scan matcher's context
+(running-buffer size and/or node spacing), falling back to its angle
+penalty; `tests/demo_slam_home.py`'s jump bar drops 0.5 -> 0.3 m first,
+because a 0.43 m closure step passed it on 2026-10-05.
+
+1. **The bend is gone:** two fresh explore-then-tour runs (`--tour 1
+   --explore-first 900`) on the new config, SLAM error **<= 0.20 m** at every
+   sample in the east rooms, final **<= 0.10 m**, **0 jumps**; the map's
+   kitchen, breakfast, family room and garage each **>= 90%** of occupied
+   cells within 10 cm of a true surface.
+2. **It still corrects drift:** the same run with the right encoder 3% long
+   (`--drift 1.0,1.03`): max **<= 0.30 m**, final **<= 0.15 m**, odometry
+   alone measurably worse -- the sim's exact odometry flatters any change
+   that trusts odometry more.
+3. **No regression:** R5's starter-house laps within 1-4.5 cm with drift;
+   R6's scaled-house goals 6/6; exploring shows none of 3.38's false
+   closures (0 jumps).
+4. **One file changes:** `service/slam/src/picar_bringup/config/slam.yaml`,
+   each changed key commented with the run that justified it.
+
+**Results 2026-10-06 -- no candidate passes; the cause is NOT a slam.yaml
+setting.** Each run: furnished home, fresh stack, 900 s explore then the
+nine-goal tour, judged by `evaluations/slam-340/judge.py` (raw records
+beside it).
+
+| run | change from D | east max | map: kitchen / breakfast / family / garage | verdict |
+|---|---|---|---|---|
+| E run 1 | `scan_buffer_size` 10 -> 60 (~3 m of context) | 0.52 m | 77 / 76 / 88 / 76% | FAIL; run 2 not made (could not pass) |
+| F run 1 | `angle_variance_penalty` 1.0 -> 0.005, `minimum_angle_penalty` 0.9 -> 0.5 | -- | -- | VOID: wedged against living-room furniture at t=549 s and never moved (safety refused ~23 000 pivots; SLAM within 0.10 m) |
+| F run 2 | same | **1.05 m** | 53 / 19 / 53 / 39% | FAIL, worse than D: +6.3 deg at the same foyer spot |
+| A2 (diagnostic) | `do_loop_closing: false` | 0.30 m (0.48 overall) | 59 / 45 / 63 / -- | heading drifts -1.7 -> -3.5 deg through the living room and foyer WITHOUT closures |
+
+* **Not the scan-matcher's context (E), not its heading prior (F), not
+  loop closures (A2).** A 200x stronger pull toward odometry heading changed
+  nothing, and the drift is there with closures off. With exact odometry and
+  geometric scans, a matcher that ignores a strong odometry prior and still
+  rotates points at the scans and odometry DISAGREEING, not at the matcher.
+* **Suspected (not established): scan/odometry time skew.**
+  `picar_bridge._poll_scan()` stamps each scan with the newest odom TF time,
+  not when it was cast (R6's workaround for the tf2 deadlock, since fixed
+  upstream and built into the image). During a turn a scan is filed at a
+  heading the robot no longer has -- 50 ms at 1 rad/s is 2.9 deg -- and the
+  error accumulates with the turning imbalance, which fits a sign that
+  changes between runs and a bend collected where the robot turns.
+* Heading samples TAKEN WHILE TURNING are latency, not SLAM (R5's lesson;
+  +/-5 deg swings at 0.01 m position error); only the error that persists
+  into straight driving counts.
+* Two of four runs today wedged against furniture (F run 1, A2's tour) --
+  3.31's open problem, separate from SLAM.
+
+**Amended 2026-10-06, confirmed by the user, before measuring:**
+
+* **Step 1 -- measure the skew first.** An instrumented bridge under its own
+  image tag (the shared `vision-picar-ros:latest` untouched) records, per
+  scan, its capture time and the odom pose it is filed with; the sim's truth
+  is sampled alongside. While turning in place at 1.0 rad/s both ways, the
+  heading the scan is filed at minus the heading it was taken at, regressed
+  on the turn rate, gives the EFFECTIVE skew. **Under 15 ms, the hypothesis
+  is dead and the work stops.**
+* **Step 2 -- only if it is real:** stamp scans with their capture time.
+  Criteria 1-3 stand as written; **criterion 4 becomes: only the bridge's
+  scan stamp changes, `slam.yaml` stays D, and R6's scaled-house goals 6/6
+  with no frozen costmap** (the deadlock that capture stamps once caused).
+
+**Step 1 measured 2026-10-06 -- the skew is real: 21 ms effective, over the
+15 ms bar.** `evaluations/slam-340/skew_test.py` (instrumented bridge, image
+tag `vision-picar-ros:skew`, built from a scratch copy; raw rows in
+`skew-test.json`): 853 scans, 571 taken while turning in place at 0.5 and
+1.0 rad/s, both directions. At rest every scan is filed where it was taken
+(median 0.00001 deg). While turning, most are exact, but at least one scan in ten is filed
+**one whole 50 ms wheel-loop step behind**: 2.90 deg at 1 rad/s, 1.45 deg at
+0.5 rad/s, always lagging the turn. The newest odom transform the bridge
+stamps with is a median 19 ms older than the scan's capture. A lagging pose
+errs in the direction of the turn, so across many turns the error grows
+with the left/right imbalance -- the bend's signature.
+
+(A first reading of -5 ms was the instrument's: it took the turn rate over
+6 ms of a truth series that updates in 50 ms steps, so it saw most turning
+scans as at rest. Re-read with the rate over neighbouring scans.)
+
+**Step 2 measured 2026-10-06 -- the capture stamp fixes the pairing, NOT
+the bend. Criterion 1 FAILED (0 of 2); stopped and taken to the user.** The
+bridge stamps each scan with its capture time (image tag
+`vision-picar-ros:stamp`; source change left uncommitted pending the
+user's call):
+
+| | newest-odom stamp (D) | capture stamp |
+|---|---|---|
+| effective skew (`skew_test.py`, `skew-test-after.json`) | 21.4 ms | **7.1 ms** |
+| scans at 1 rad/s filed > 1 deg off | 41% | **11%** |
+| R6 scaled-house goals (deadlock check) | 6/6 (3.38) | **6/6**, 7.5-12.9 cm, unreachable aborted 18.1 s, tap 0.045 s |
+| criterion 1 run 1 | -- | east max 0.38 m, final 0.37 m; maps kitchen 60 / breakfast 52 / family 84 / garage 17% |
+| criterion 1 run 2 | -- | east max 0.33 m, final 0.01 m; 50 / 25 / 56 / 45% |
+
+Two-thirds of the pairing error is gone and the 2-3 deg heading error still
+appears in the living room and foyer, so the skew was at most a minor part.
+**Nothing tried in 3.40 (scan context, heading prior, closures, stamp)
+moves the bend materially.** Not established: what in slam_toolbox's
+scan matching rotates the map here. The remaining remedies are the ones
+3.39's context names -- an IMU heading fused with odometry
+(`robot_localization`; the Rover reports `gz`), or localising on a saved
+map -- both larger than a parameter, so the user decides.
+
+**Diagnostic 2026-10-06 -- SCAN MATCHING bends the map.** D with
+`use_scan_matching: false` (capture stamps; `evaluations/slam-340/nomatch.json`):
+east max **0.046 m**, final 0.02 m, 0 jumps, the whole map 99.9% within
+10 cm of a true surface (kitchen, breakfast, family room 100%, garage 98.5%),
+coverage 92%. On the same house every scan-matching run bent 2-6 deg. With
+exact odometry that is the expected control, not a fix: the car's odometry
+is not exact, and without scan matching only loop closures correct it.
+Established: slam_toolbox's scan matcher, not the closures, the stamps or
+the house, rotates the map here. Not established: why -- the sim's scans are
+exact geometry, so the matcher is choosing a rotated optimum among this
+house's repeated furniture-leg patterns.
+
+**Continued 2026-10-06 (user: "go ahead"), written before measuring.** Same
+criteria 1-4 (4 as amended: config plus the committed capture stamp).
+
+* **Option 1 -- scan matching off, with drift:** criterion 2's run
+  (`--drift 1.0,1.03`). Expected to FAIL: only loop closures would correct
+  the drift. A pass makes it a candidate for the sim only.
+* **Option 2, candidate G -- a sharper match score:**
+  `correlation_search_space_smear_deviation` 0.10 -> 0.03 m (Karto's own
+  default). Each scan point is blurred 10 cm before scoring; at 6 m a 1 deg
+  rotation moves a point 10 cm, so the open rooms' long-range returns barely
+  constrain heading. One run on criterion 1; if it passes, the second run and
+  criterion 2's drift run.
+
+**Results so far (2026-10-06):**
+
+* **Option 1 FAILED, as expected** (`nomatch-drift.json`): with scan matching
+  off SLAM follows the drifting odometry -- 17.7 m off, all nine tour goals
+  aborted. Off is not usable with real odometry.
+* **Candidate G, criterion 1 run 1: PASS** (`G-run1.json`): east max
+  **0.042 m** (D: 0.45-0.86), max anywhere 0.067 m, final 0.007 m, 0 jumps;
+  SLAM's map **100% of occupied cells within 10 cm of a true surface in all
+  14 rooms**; tour 8 of 9 (the dining room, 3.21's known NavFn/RPP
+  mismatch); coverage 93%. One key -- the matcher's blur.
+
+**Closed 2026-10-06 -- candidate G ACCEPTED, all four criteria met.**
+`correlation_search_space_smear_deviation` 0.10 -> 0.03 m in `slam.yaml`,
+on the capture-stamp bridge (`ed7ece9`). Raw records `evaluations/slam-340/G-*`.
+
+| criterion | bar | result |
+|---|---|---|
+| 1. the bend is gone (2 runs) | east <= 0.20 m, final <= 0.10 m, 0 jumps, east maps >= 90% | **0.042 / 0.028 m**, final 0.007 / 0.003 m, 0 jumps, kitchen / breakfast / family / garage **100%** both runs (every room 100%); tours 8/9 and 8/9 (the dining room) |
+| 2. still corrects drift (3% right encoder) | max <= 0.30 m, final <= 0.15 m, odometry worse | max **0.06 m**, final 0.006 m, 0 jumps, map 100%; odometry alone **12.9 m** off; tour 7/9 |
+| 3. no regression | R5 1-4.5 cm with drift; R6 6/6; exploring 0 jumps | R5 with drift final **1.6 / 0.8 cm** (odometry 8.8 cm), without 1.25 cm, maps 100% (12 blocked moves each, the 30 cm doors, as in 3.38); R6 **6/6**, 8.0-12.2 cm, nearest 19 cm, unreachable aborted 17.8 s stopped, tap 0.043 s, 0 safety refusals; 0 jumps in all five home runs |
+| 4. one change | `slam.yaml` (+ the capture stamp, as amended) | one key, commented with these runs; ROS engineering spec updated |
+
+**3.39 criterion 2 is met by the same runs** (two explore-then-tour runs in
+the furnished home, SLAM final <= 0.10 m, 0 jumps). The east-side goals all
+succeeded in G's runs except one garage-hall abort under drift. The image
+must be rebuilt from this branch (`docker build -t vision-picar-ros
+service/slam`) for `:latest` to carry G and the capture stamp; the runs used
+the tag `vision-picar-ros:stamp` with G mounted.
+
 ### 3.41 NVIDIA's GPU packages on the Jetson, judged against what we run (2026-10-06): plan and criteria, written before measuring -- NOT started
 
 **Asked by the user 2026-10-06:** with the Jetson in hand, evaluate Isaac
@@ -4279,7 +4797,9 @@ job, on a phone.
 ## 6. Open questions
 
 1. **Rename `service/slam/` to `service/nav/`?** It now holds nav2 too. Touches
-   `tests/test_ros_containment.py`.
+   `tests/test_ros_containment.py`. **Dropped 2026-10-01** (closed by Claude,
+   delegated by the user): a rename churns every doc and a test for no
+   change in behaviour.
 2. **Does `brain/tiered.py` still steer, or only pick goals?** Under nav2 the
    tier's action output competes with nav2's controller. P25's steering rung,
    Phase G's hold and `safest_direction` become inputs to goal selection rather
@@ -4287,6 +4807,7 @@ job, on a phone.
    **Half-answered (2026-10-01 note):** 3.15 decided "the tier keeps
    steering by verbs for now". Question 6's frontier search reopens it,
    because it hands motion to nav2 goals. Settle it with question 6.
+   **Taken up as 3.31's `explore` policy**, which sends nav2 goals.
 3. **CLOSED -- decided in 3.15: the two collars run in SERIES**, nav2 ->
    `twist_mux` -> `collision_monitor` -> ... -> `robot/safety.py`, with
    `safety.py` the last word on every path. The question as raised:

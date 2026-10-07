@@ -49,7 +49,7 @@ slam_toolbox:
     link_match_minimum_response_fine: 0.1
     link_scan_maximum_distance: 1.5
     loop_search_maximum_distance: 3.0
-    do_loop_closing: true
+    do_loop_closing: false        # 3.40 DIAGNOSTIC A2: does the foyer bend come from closures?
     loop_match_minimum_chain_size: 10
     loop_match_maximum_variance_coarse: 3.0
     loop_match_minimum_response_coarse: 0.35
@@ -57,15 +57,7 @@ slam_toolbox:
 
     correlation_search_space_dimension: 0.5
     correlation_search_space_resolution: 0.01
-    # 3.40: how much the scan matcher blurs each point before scoring a fit
-    # (was 0.1 m). At 6 m a 1-degree rotation moves a point 10 cm, so a 10 cm
-    # blur let the open rooms' long-range returns rotate almost for free, and
-    # the furnished home's map bent 2.5-6 deg east of the foyer (0.45-0.86 m;
-    # kitchen 17-60% of walls true). At 0.03 m (Karto's own default): two
-    # tours 0.042 / 0.028 m, every room 100%; 3% encoder drift 0.06 m against
-    # 12.9 m for odometry alone; R5 laps 0.8-1.6 cm; R6 6/6. A longer buffer,
-    # a 200x heading prior, closures off and capture stamps did not move it.
-    correlation_search_space_smear_deviation: 0.03
+    correlation_search_space_smear_deviation: 0.1
     # 3.38: how far ONE loop closure may move the robot -- a 2 m window, so at
     # most 1 m each way (was 8 m: up to 4 m). In the furnished home every one
     # of three runs on 8 m closed a loop to the wrong place, 1.6-2.5 m off,

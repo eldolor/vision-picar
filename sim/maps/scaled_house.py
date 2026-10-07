@@ -98,4 +98,15 @@ MOVERS = {
     "hallway_crossing": lambda: [
         Mover("person", [(12, 4), (13, 4), (14, 4), (15, 4), (14, 4), (13, 4)], hop_s=1.0),
     ],
+    # 3.31, criterion 3: someone standing in the middle of the kitchen
+    # door -- the only way into the room with the backpack -- for 60 s, then
+    # walking into the kitchen and staying there. The door is three cells
+    # (0.9 m); with the middle one taken, neither gap beside it fits the
+    # chassis and nav2's inflation, so the kitchen is unreachable until
+    # they go. Into the kitchen, away from a robot waiting in the hallway,
+    # so the keep-out never makes them wait for it.
+    "kitchen_door_sitter": lambda: [
+        Mover("person", [(16, 4), (17, 4), (18, 4), (19, 4), (19, 3), (19, 2)],
+              hop_s=1.0, start_s=60.0, loop=False),
+    ],
 }

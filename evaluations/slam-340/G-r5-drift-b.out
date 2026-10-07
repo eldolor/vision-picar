@@ -1,0 +1,76 @@
+{
+ "at_rest": {
+  "slam_max_pos_m": 0.014,
+  "slam_max_head_deg": 2.172,
+  "slam_final": [
+   0.0077,
+   1.036
+  ],
+  "odom_max_pos_m": 0.1926,
+  "odom_final": [
+   0.0883,
+   -14.561
+  ]
+ },
+ "samples": 56,
+ "blocked_moves": 12,
+ "slam_max_pos_m": 0.0196,
+ "slam_final_pos_m": 0.0077,
+ "slam_max_head_deg": 3.348,
+ "slam_final_head_deg": 1.036,
+ "odom_final_pos_m": 0.0883,
+ "odom_max_pos_m": 0.1926,
+ "odom_final_head_deg": -14.561,
+ "largest_step_in_slam_error_m": 0.0098,
+ "truth_end": {
+  "usable": true,
+  "source": "sim",
+  "x_m": 1.8103634185284712,
+  "y_m": 0.6520947585295561,
+  "heading_deg": 84.477
+ },
+ "map": {
+  "occupied": 283,
+  "occupied_within_10cm": 283,
+  "precision": 1.0,
+  "free": 1899,
+  "free_inside_solid": 0,
+  "free_bad_rate": 0.0
+ },
+ "drive": {
+  "mode": "ros",
+  "verbs_through_ros": 16,
+  "wheel_posts_from_ros": 1163,
+  "ros_up": true,
+  "bridge_up": true,
+  "ros_post_age_s": 0.028
+ }
+}
+FORWARD       slam 0.005 m  -0.53 deg   odom 0.009 m  -2.92
+FORWARD       slam 0.011 m  -0.67 deg   odom 0.031 m  -5.86
+FORWARD       slam 0.010 m  -0.21 deg   odom 0.069 m  -8.81
+RIGHT     90  slam 0.011 m  +1.12 deg   odom 0.070 m  -7.48
+FORWARD       slam 0.011 m  +1.12 deg   odom 0.070 m  -7.48
+FORWARD       slam 0.011 m  +1.12 deg   odom 0.070 m  -7.48
+FORWARD       slam 0.011 m  +1.12 deg   odom 0.070 m  -7.48
+FORWARD       slam 0.011 m  +1.12 deg   odom 0.070 m  -7.48
+FORWARD       slam 0.011 m  +1.12 deg   odom 0.070 m  -7.48
+LEFT      90  slam 0.010 m  -0.21 deg   odom 0.069 m  -8.81
+FORWARD       slam 0.014 m  -0.35 deg   odom 0.122 m -11.74
+FORWARD       slam 0.013 m  -0.48 deg   odom 0.190 m -14.68
+RIGHT     90  slam 0.012 m  +0.84 deg   odom 0.191 m -13.35
+RIGHT     90  slam 0.014 m  +2.17 deg   odom 0.193 m -12.03
+FORWARD       slam 0.012 m  +0.24 deg   odom 0.124 m -14.96
+FORWARD       slam 0.011 m  +0.17 deg   odom 0.096 m -16.03
+RIGHT     90  slam 0.011 m  +1.50 deg   odom 0.095 m -14.70
+FORWARD       slam 0.009 m  -0.29 deg   odom 0.090 m -15.89
+FORWARD       slam 0.009 m  -0.29 deg   odom 0.090 m -15.89
+FORWARD       slam 0.009 m  -0.29 deg   odom 0.090 m -15.89
+FORWARD       slam 0.009 m  -0.29 deg   odom 0.090 m -15.89
+FORWARD       slam 0.009 m  -0.29 deg   odom 0.090 m -15.89
+LEFT      90  slam 0.007 m  -1.62 deg   odom 0.091 m -17.22
+FORWARD       slam 0.007 m  -1.62 deg   odom 0.091 m -17.22
+FORWARD       slam 0.007 m  -1.62 deg   odom 0.091 m -17.22
+FORWARD       slam 0.007 m  -1.62 deg   odom 0.091 m -17.22
+RIGHT     90  slam 0.009 m  -0.29 deg   odom 0.090 m -15.89
+RIGHT     90  slam 0.008 m  +1.04 deg   odom 0.088 m -14.56

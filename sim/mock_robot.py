@@ -301,6 +301,12 @@ class MockRobot(RobotInterface):
             **self.get_wheel_state(),
         }
 
+    def sim_clock(self) -> float:
+        """The simulator's own time, in seconds (3.31): what a mission's
+        cooldowns and timeouts are measured on in process, so waiting costs
+        no wall time and a person keeps walking while the robot waits."""
+        return self.world.sim_time
+
     def pass_time(self, dt: float) -> None:
         """Let `dt` elapse with the robot standing still (3.30): the robot
         server's wheel loop calls this on idle ticks, so a person keeps

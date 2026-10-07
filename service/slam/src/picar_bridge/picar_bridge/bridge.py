@@ -432,25 +432,34 @@ class Bridge(Node):
         # i.e. ours[(-j) mod n] when ours starts at -180 in 1-degree steps.
         start = s["angle_min_deg"]
         msg = LaserScan()
-        # Stamped with the NEWEST time the transform tree already covers
-        # (odom -> base_footprint), so a scan can never arrive ahead of TF.
-        # History, both measured in R6 (PLAN-ros-alignment.md 3.15):
-        #   * capture stamps (R5, the robot server's `stamp_unix`) are often a
-        #     few ms AHEAD of the newest odometry transform, so each costmap's
-        #     tf2 MessageFilter held the scan waiting -- and on Humble that
-        #     wait path deadlocked the costmaps' TF listeners within seconds.
-        #     Their robot pose froze at the start, the planner planned from
-        #     there, and the controller declared every goal "reached";
-        #   * arrival stamps made it rarer, not impossible: one scaled-house
-        #     run in two still froze.
-        # The newest odom stamp is at most one 20 Hz period old -- the age a
-        # real lidar driver's scans usually carry -- and it is transformable
-        # by construction.
+        # Stamped with when the scan was TAKEN (the robot server's
+        # `stamp_unix`), so SLAM pairs it with the odometry of that moment.
+        # PLAN-ros-alignment.md 3.40: stamped instead with the newest odom
+        # transform (below, now only the fallback), a scan was filed on
+        # average 21 ms -- up to one 50 ms wheel-loop step -- before it was
+        # taken; turning at 1 rad/s that is up to 2.9 deg of heading per scan,
+        # and the furnished home's map bent 2.5-6 deg across the open rooms.
+        # History (R6, 3.15): capture stamps run a few ms AHEAD of the newest
+        # odom transform, so tf2 MessageFilters hold the scan until odometry
+        # catches up -- and on Humble that wait path once deadlocked the
+        # costmaps' TF listeners. The image builds the upstream fix (tf2
+        # 0.25.24), and 3.40's criterion 4 re-checks R6's goals for it.
         try:
             tr = self.tf_buffer.lookup_transform("odom", "base_footprint", Time())
         except Exception:  # noqa: BLE001 -- no odometry yet: nothing to stamp against
             return
         msg.header.stamp = tr.header.stamp
+        cap = s.get("stamp_unix")
+        if isinstance(cap, (int, float)):
+            # Two clocks (the robot server's and this container's): use the
+            # capture time only while they agree to within half a second, or
+            # every scan would be filed in the future and dropped.
+            if abs(cap - self.get_clock().now().nanoseconds * 1e-9) < 0.5:
+                msg.header.stamp = Time(nanoseconds=int(cap * 1e9)).to_msg()
+            else:
+                self.get_logger().warn("scan capture time is >0.5 s off this clock; "
+                                       "stamping with the newest odometry instead",
+                                       throttle_duration_sec=10.0)
         msg.header.frame_id = "laser"
         msg.angle_min = math.radians(start)
         msg.angle_increment = math.radians(inc_deg)

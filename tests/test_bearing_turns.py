@@ -304,9 +304,13 @@ def _run_from(start, **runner_kw):
     robot = MockRobot(grid, render=False)
     tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
                         steer_on_sight=True, hold_goal=True)
+    # 3.31: a stuck mission backs off and waits out a cooldown before it is
+    # believed, so the sim's own clock runs the wait (not the wall's).
     runner = MissionRunner(robot, target_object=TARGET, max_steps=STEPS,
                            policy="tiered", vision_fn=tier,
-                           world=mock_world_for(robot), **runner_kw)
+                           world=mock_world_for(robot),
+                           clock=lambda: grid.sim_time, idle=robot.pass_time,
+                           **runner_kw)
     runner.start()
     while runner.tick():
         pass
@@ -318,13 +322,18 @@ def test_a_robot_pushing_into_a_door_jamb_ends_blocked_not_at_max_steps():
     backpack from a row whose straight line clips the door jamb, it said
     FORWARD into the jamb for its last 19 steps -- and paid for cloud calls
     doing it. Now it stops within a few refusals and says why."""
+    from brain.frontier import RETRY_LIMIT
     from control.mission_runner import BLOCKED, DEFAULT_STUCK_AFTER
 
     for start in JAMB_STARTS:
         status = _run_from(start)
         assert status["outcome"] == BLOCKED, (start, status["outcome"])
-        # Criterion 1 of PLAN-ros-alignment.md 3.4, measured 8-11 steps.
-        assert status["step"] <= 15, f"took {status['step']} steps to give up"
+        # Criterion 1 of PLAN-ros-alignment.md 3.4, measured 8-11 steps --
+        # plus, since 3.31, RETRY_LIMIT - 1 retries of a back-off and
+        # `stuck_after` refusals each (3.31 criterion 4, written first).
+        bound = 15 + (RETRY_LIMIT - 1) * (DEFAULT_STUCK_AFTER + 1)
+        assert status["step"] <= bound, f"took {status['step']} steps to give up"
+        assert status["stuck_episodes"] == RETRY_LIMIT
         assert "route planning" in status["log_tail"][-1]
         assert status["running"] is False
     assert DEFAULT_STUCK_AFTER == 5
