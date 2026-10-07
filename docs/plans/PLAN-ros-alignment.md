@@ -5126,55 +5126,70 @@ see into, and the robot spends ~2 min failing and escaping there. That is a
 goal-choice problem in `brain/explore.py`, not nav2's. `nav2.yaml` is
 unchanged; the next step is the user's call.
 
-### 3.44 A slow move needs less room than a fast one (2026-10-07): criteria, written before building -- NOT yet confirmed by the user
+### 3.44 The stop distance follows speed: less room for a creep, more for a fast move (2026-10-07): criteria, written before building -- NOT yet confirmed by the user
 
 **Why.** 3.43 left the robot stalling for ~2 min in corners, and its escape
 could free only 71.5% of wedged poses: 43 of the rest could be left by NO
-allowed move. The live record shows why. A reverse was refused with
-**19.3-19.4 cm** behind it, because `robot/safety.py` holds a reverse, like a
-forward, to `min_distance_cm` (20 cm) whatever its speed. 20 cm is a
-STOPPING distance for a moving robot (`PLAN-onboard-perception.md` 1.14: right
-for ~0.45 m/s); at a creep of 3 cm/s the robot stops within millimetres, so
-refusing a slow 5 cm reverse with 19 cm of room protects nothing.
+allowed move. The live record shows why: a reverse was refused with
+**19.3-19.4 cm** behind it, because `robot/safety.py` holds every straight
+move to `min_distance_cm` (20 cm) whatever its speed. 20 cm is a STOPPING
+distance; at a creep of 3 cm/s the robot stops within millimetres. This is
+the low end of open question 6.9 (speed set by clearance), whose high end --
+more room before nav2 may drive faster -- needs the same rule. Built here
+against 6.9's criteria and `HANDOFF-2026-10-07-lidar-and-speed.md`.
 
-**Decision to confirm (the user's):** the smaller margin applies only to a
-straight move ASKED at creep speed -- never to one the vet itself slowed
-(the wheel vet slows every approach as the 20 cm line nears; if slowed moves
-qualified, nav2 would creep every approach to 3 cm of furniture). Today only
-3.29's settle pass (2 cm/s) asks that slowly, and nav2's slowest commands are
-0.05-0.08 m/s. The brain's escape will ask for creep REVERSE / FORWARD of at
-most a few cm.
+**The rule (the user to confirm):**
 
-**Design.** `CREEP_M_S` = 0.03 m/s and `CREEP_MARGIN_CM` = 3.0 (the swept
-corridor's side margin, 3.18) in `robot/safety.py`. A translation asked at
-|v| <= `CREEP_M_S` may continue while its clearance (forward or reverse, the
-same two readings in series) stays above `CREEP_MARGIN_CM`, with the same
-one-period look-ahead; anything faster keeps `min_distance_cm`. Rotation is
-unchanged (3.19's 1.3 cm guard). Both paths: `vet_wheel_velocity()` (ROS and
-the wheel loop) and the verb path (`check_and_execute()` / `run_verb()`). The
-escape (3.43's `OPEN`) gains creep REVERSE then FORWARD steps.
+    required(v) = CREEP_MARGIN_CM                   if |v asked| <= CREEP_M_S
+                = max(min_distance_cm, stop(v))      otherwise
+    stop(v)     = CREEP_MARGIN_CM + 100 * (v * T_REACT + v^2 / (2 * DECEL))
 
-**Criteria (ground truth throughout -- never the readings the veto uses):**
+* **Today's driving is unchanged.** Above creep speed the bar never falls
+  below 20 cm; it only grows when `stop(v)` exceeds it (a faster nav2, 6.9).
+  A pure stopping formula would put today's 0.2 m/s at ~10 cm -- a loosening
+  nobody measured or decided, so it is not taken.
+* **Asked, not slowed.** The vet slows every approach as the line nears; a
+  command it slowed below `CREEP_M_S` keeps the full bar, or nav2 would
+  creep every approach to 3 cm.
+* **The lidar's delay is counted once.** `_aged()` already subtracts
+  v x `sensor_age_s()` (0.15-0.2 s measured, 3.42). `T_REACT` is the control
+  period plus the actuator path only (0.05 s + 0.10 s, the R4 chain's
+  measured 40-150 ms), never the scan age again. `DECEL` 0.5 m/s^2 is a
+  `[PLACEHOLDER]` until 6.9(d) measures stopping on the car.
+* **The scan hint grows with the bar.** `_scan()`'s range hint becomes
+  `half_length + 1.5 x required(v_max)`, or the simulator hides obstacles
+  the car would see (sim only, errs unsafe -- the handoff's item 3).
+* **Constants:** `CREEP_M_S` 0.03, `CREEP_MARGIN_CM` 3.0 (the swept
+  corridor's side margin, 3.18). Rotation unchanged (3.19, 3.42's aging).
+  Both paths: `vet_wheel_velocity()` and the verb path. 3.43's escape gains
+  creep REVERSE and FORWARD steps of a few cm.
 
-1. **Fast moves unchanged:** 3.18's footprint sweep (forward and reverse,
-   `tests/footprint_sweep.py`) and 3.19's pivot sweep pass their recorded
-   bars as they are: 0 runs under 18 cm of travel-to-contact at normal speed,
-   0 contacts, 0 pivots within 1 cm.
-2. **Creep never touches:** a new creep sweep -- creep forward and reverse
-   from 1440 starts within 25 cm of something, house by house -- **0 contacts
-   and 0 samples under 2 cm** of true gap; every creep stops above it.
-3. **A slowed move is not a creep move:** nav2's approach to a wall (R6's
-   instrument, scaled house) still stops at the 20 cm line: R6 goals 6/6 and
-   nearest surface no lower than today's 19 cm. Pinned by a test that a
-   command slowed below `CREEP_M_S` by the look-ahead is still refused at
-   `min_distance_cm`.
-4. **The escape frees what 3.43's could not:** `tests/escape_sweep.py`, the
-   200 wedged poses PLUS the all-four-refused traps judged too: **>= 95%**
-   freed, 0 contacts.
-5. **No stalls, live:** three furnished-home explore-then-tour runs, no
+**Criteria (ground truth throughout):**
+
+1. **Today's speeds unchanged:** 3.18's straight sweep and 3.19's pivot
+   sweep pass their bars **in both modes** -- instant (`fs.sweep`) and
+   lidar-timed (`fs.sweep(..., lidar=True)`, `fs.pivot_sweep(..., lidar=True)`):
+   0 under 18 cm of travel-to-contact, 0 contacts, 0 pivots within 1 cm.
+2. **Creep never touches:** a creep sweep, forward and reverse, 1440 starts
+   within 25 cm of something, both modes: **0 contacts, 0 samples under
+   2 cm** of true gap.
+3. **Slowed is not creep:** R6's goals 6/6, nearest surface no lower than
+   today's 19 cm; pinned by a test that a command the look-ahead slowed below
+   `CREEP_M_S` is still refused at 20 cm (red on a version that keys on the
+   slowed speed).
+4. **The bar grows above 20 cm:** at 0.4 and 0.5 m/s, 3.18's sweep in both
+   modes: 0 under 18 cm; and a test that the scan hint covers `required(v)`
+   at the top speed (red with today's fixed hint).
+5. **The escape frees what 3.43's could not:** `tests/escape_sweep.py`, the
+   200 wedged poses plus the all-four-refused traps: **>= 95%** freed,
+   0 contacts.
+6. **No stalls, live:** three furnished-home explore-then-tour runs, no
    stretch of >= 120 s parked, >= 8 of 9 tour goals, 3.40's SLAM bars hold.
-6. **Pinned and specified:** tests confirmed red on today's code; the safety
-   architecture and engineering specs change in the same commit.
+7. **Pinned and specified:** tests red on today's code; the safety
+   architecture and engineering specs in the same commit.
+
+Not in scope: raising nav2's speed (6.9 (a), (c), (d)) and 3.42's scan time
+stamp, which the handoff says to settle before any speed is raised.
 
 ## 4. Honest residue -- what the twin cannot tell you
 
