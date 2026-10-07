@@ -157,7 +157,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
 * **Before the Rover arrives:** check with calipers that the devkit's
   mounting holes match the Rover deck's 86 x 58 mm pattern
   (`UGV-ROVER-MOUNTING.md`); fallback is an adapter plate. Waveshare
-  ticket 257511 is open on the same question.
+  request 258472 (sent 2026-10-06) is open on the same question.
 * **On arrival** (`HARDWARE-READINESS.md` section 5;
   `PLAN-ros-alignment.md` 3.26):
   * Disable Waveshare's stock app and its ROS nodes, which would hold the

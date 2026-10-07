@@ -126,7 +126,8 @@ constraints still explain why the Rover was chosen:
 - **Owner and deadline.** The user, with calipers on the devkit already on
   the desk. Due before the Rover's earliest arrival (Oct 19); the hard stop
   is its return window, Nov 18 at the earliest. Waveshare support has the
-  question (ticket 257511, 2026-10-06).
+  question (sent 2026-10-06 on the 257511 thread; support logged it as
+  request 258472, unanswered as of 10-07).
 
 ---
 
@@ -148,8 +149,8 @@ this is the record.
 
 | date | event |
 |---|---|
-| 10-07 | Waveshare re-answered the 25 W question: still "not verified"; at 25 W use cells of 4C or above. Nothing changes: the Jetson runs at 15 W, and the P26A cells are ~13C (9.3, 9.5). |
-| 10-06 | Waveshare's CAD read: the kit is modelled around its own carrier, not the Developer Kit. Fit unconfirmed; caliper check owed before Oct 19 (section 7). Ticket 257511. |
+| 10-07 | Waveshare's Amazon seller account re-answered the 25 W question: still "not verified"; at 25 W use cells of 4C or above. Nothing changes: the Jetson runs at 15 W, and the P26A cells are ~13C (9.3, 9.5). |
+| 10-06 | Waveshare's CAD read: the kit is modelled around its own carrier, not the Developer Kit. Fit unconfirmed; caliper check owed before Oct 19 (section 7). Asked support: request 258472. |
 | 10-05 | **Jetson KEPT.** Boots from the NVMe. G4 met on the fork firmware; headroom met with 3.37. |
 | 10-04 | **Both board risks closed** (section 7). Offline suite 1728 passed, 0 failed, on the board. |
 | 10-03 | Ordered the NVMe and the Rover's cells (section 1). |
@@ -186,7 +187,7 @@ The full table, with ASINs and the retailers swept, is in the archive copy.
   pack".
 * The Jetson is fed directly from the UPS through a **DC5525** connector.
   25 W MAXN SUPER with all peripherals is **untested, not guaranteed**.
-* 2026-10-07, a follow-up reply: "It comes with the ROS Driver board. We
+* 2026-10-07, Waveshare's **Amazon seller** account (not support): "It comes with the ROS Driver board. We
   have not verified the situation you mentioned, but at **25W** power
   consumption, we recommend using a battery with a discharge rate of **4C or
   above**." This restates the 09-30 answers; 25 W is still unverified.
