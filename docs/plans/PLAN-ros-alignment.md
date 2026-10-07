@@ -518,6 +518,12 @@ job, on a phone.
    car, measured stopping distance at each speed band, against the
    formula, before the sim's bands are trusted.
 
+   **The speed-dependent stop is built (3.44, merged 2026-10-07):**
+   `required_clearance_cm()` keeps 20 cm up to ~0.39 m/s and grows above it
+   (25 cm at 0.4, 35.5 at 0.5), with criterion (b)'s sweep met at 0.4 and
+   0.5 m/s in both sensing modes. Still open here: (a), (c), and (d) --
+   `DECEL_M_S2` is a placeholder until stopping is measured on the car.
+
    **What 3.42 (the lidar driver) changes here (added 2026-10-07).** The
    detail is in `HANDOFF-2026-10-07-lidar-and-speed.md`.
    * **Count the lidar's delay once.** `_aged()` already subtracts

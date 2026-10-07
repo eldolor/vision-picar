@@ -124,21 +124,26 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
 
 ### 3b. Open work, in order
 
-* **Speed-scaled clearance** (6.9) meets the lidar driver (3.42): read
-  `HANDOFF-2026-10-07-lidar-and-speed.md` before changing the stop
-  distance. It covers the double-counted delay, the sim scan-hint trap
-  and the lidar-timed sweep.
 * **SLAM in the furnished home: fixed and merged** (3.38-3.40; branch
   `frontier-search` merged into `dev` 2026-10-06). The map bent 2.5-6 deg in
   the open rooms because slam_toolbox's scan matcher blurred each point
   10 cm before scoring (`correlation_search_space_smear_deviation`
   0.10 -> 0.03 m: two tours within 4.2 cm, every room's walls 100% true).
   Scans are also stamped with their capture time (skew 21 -> 7 ms).
-* **In progress on their own branches** (`git branch --list 'plan/*'`):
-  3.43 (exploring stalls in corners; the escape tries both turn
-  directions now) and 3.44 (the stop distance follows speed: 3 cm for a
-  creep, 20 cm or more above it), both on `plan/3.44-speed-clearance`.
-  3.31's frontier-search batch waits on them.
+* **Exploring still stalls in the furnished home** (3.43, 3.44; merged
+  2026-10-07 with criteria failed, the user's call). The stop distance now
+  follows the ASKED speed (3.44): 3 cm for a verb asked at a creep, 20 cm
+  up to ~0.39 m/s, more above (`required_clearance_cm()`; braking is a
+  `[PLACEHOLDER]`). It holds on ground truth everywhere and leaves nav2's
+  0.20 m/s at 20 cm. The escape tries both turns and creeps, freeing 62.6%
+  of wedged poses and traps (bar 95%); live runs still parked 134 / 105 /
+  1119 s. The stalls are nav2's recoveries in corners explore sends it
+  into, and 3.18's 3 cm corridor side margin, not the stopping distance.
+  Next step is the user's. Handoff: `HANDOFF-2026-10-07-3.44-speed-clearance.md`.
+  3.31's frontier-search batch waits on it.
+* **Raising nav2's speed** (6.9's high end) now has its speed-dependent
+  stop, but waits on measured braking (6.9 (d)) and 3.42's relayed-scan
+  time stamp; read `HANDOFF-2026-10-07-lidar-and-speed.md` first.
 * **Isaac ROS evaluation (3.41).** Isaac ROS 3.2 is the last release for
   JetPack 6 / Humble.
   * **Part A, measured 2026-10-06: TensorRT not adopted; torch stays.**
