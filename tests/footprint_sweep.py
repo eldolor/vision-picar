@@ -216,7 +216,99 @@ class _Lagged:
         return getattr(self._robot, name)
 
 
-def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0, age=True):
+class _LidarTimed:
+    """3.42 criterion 4: the vet sees what the CAR will -- the D500's scan
+    through `robot/lidar_ld19.py`, not the simulator's instantaneous one.
+    Every point is cast at its own instant (`sim/fake_lidar.py`'s
+    `Emitter`), from the pose interpolated across the wheel-loop period the
+    robot moved in, encoded as LD19 packets and decoded by the real driver;
+    the scan is 0-100 ms old when read and reports that age. Car-realistic
+    otherwise too (4c): no depth grid and no scalar sensor, so forward
+    safety rests on the lidar alone and the simulator's perfect grid cannot
+    hide a late scan."""
+
+    PREROLL_S = 0.25            # two revolutions at rest before the first vet
+
+    def __init__(self, robot):
+        from robot.lidar_ld19 import Ld19Scanner
+        from sim.fake_lidar import Emitter, world_caster
+
+        self._robot = robot
+        w = robot.world
+        self.t = 0.0
+        self._from = (0.0, (w.x, w.y, w.theta))
+        self._to = self._from
+        self.scanner = Ld19Scanner(clock=lambda: self.t)
+        self._thetas = [(0.0, w.theta)]
+        self._emitter = Emitter(world_caster(w, pose_at=self._pose_at), t0=0.0)
+        self._advance_to(self.PREROLL_S)
+
+    def _pose_at(self, t):
+        (t0, p0), (t1, p1) = self._from, self._to
+        if t1 <= t0:
+            return p1
+        f = min(1.0, max(0.0, (t - t0) / (t1 - t0)))
+        dth = (p1[2] - p0[2] + math.pi) % (2 * math.pi) - math.pi
+        return (p0[0] + f * (p1[0] - p0[0]), p0[1] + f * (p1[1] - p0[1]), p0[2] + f * dth)
+
+    def _advance_to(self, t):
+        # Each packet reaches the driver when its last point was measured,
+        # as over a serial line -- stamping a period's packets at its end
+        # made every point look up to a period younger than it was.
+        for t_pkt, pkt in self._emitter.due_timed(t):
+            self.t = t_pkt
+            self.scanner.feed(pkt, t_pkt)
+        self.t = t
+
+    def record(self, _hint=None):
+        """Called at the top of each wheel-loop period: the points taken
+        while the robot moved since the last call, from the poses it passed
+        through."""
+        w = self._robot.world
+        now = self._to[0] + (PERIOD_S if self._to[0] >= self.PREROLL_S else self.PREROLL_S)
+        self._from, self._to = self._to, (now, (w.x, w.y, w.theta))
+        self._thetas.append((now, w.theta))
+        del self._thetas[:-80]
+        self._advance_to(now)
+
+    def get_scan(self, max_range_m=None):
+        return self.scanner.get_scan(max_range_m)
+
+    def sensor_age_s(self):
+        return self.scanner.sensor_age_s()
+
+    def turn_since_scan(self):
+        """What `HardwareRobot.turn_since_scan()` answers from its encoders:
+        the body's CCW turn since the scan's oldest point (the grid's theta
+        grows clockwise, so negated)."""
+        t0 = self.scanner.scan_time()
+        if t0 is None:
+            return None
+        then = self._pose_at(t0)[2] if t0 >= self._from[0] else None
+        if then is None:
+            for (ta, a), (tb, b) in zip(self._thetas, self._thetas[1:]):
+                if ta <= t0 <= tb:
+                    d = (b - a + math.pi) % (2 * math.pi) - math.pi
+                    then = a + d * ((t0 - ta) / (tb - ta) if tb > ta else 0.0)
+                    break
+        if then is None:
+            return None
+        now = self._robot.world.theta
+        return -((now - then + math.pi) % (2 * math.pi) - math.pi)
+
+    def get_depth_grid(self):
+        from robot.interface import unusable_grid
+        return unusable_grid()
+
+    def get_distance(self):
+        return 0.0
+
+    def __getattr__(self, name):
+        return getattr(self._robot, name)
+
+
+def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0, age=True,
+        lidar=False):
     """One standing command through the wheel loop's two calls. Returns a
     dict of the truth it met. `lag` > 0 vets on readings that many periods
     old (3.36); the truth is always now."""
@@ -224,7 +316,7 @@ def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0, age=
     world.x, world.y, world.theta = x, y, math.radians(heading_deg)
     world.pan = pan   # 3.18 part 2: the camera, left where a mission left it
     robot = MockRobot(world, render=False)
-    sensed = _Lagged(robot, lag, age) if lag else robot
+    sensed = _LidarTimed(robot) if lidar else (_Lagged(robot, lag, age) if lag else robot)
     safety = SafetyController(sensed, 20.0)
     hint = None
     if lag:
@@ -236,7 +328,7 @@ def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0, age=
     x0, y0 = world.x, world.y
     for _ in range(int(RUN_S / PERIOD_S)):
         left, right = w, w
-        if lag:
+        if lag or lidar:
             sensed.record(hint)
         if clamp:
             left, right, _reason = safety.vet_wheel_velocity(w, w)
@@ -252,7 +344,7 @@ def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0, age=
             # Not with lagged readings: a stale reading may let the robot
             # move again a period later, so it runs on, and a period with
             # no motion is simply not a move (3.36).
-            if not lag:
+            if not (lag or lidar):
                 break
             continue
         worst_T_after_move = min(worst_T_after_move, T)
@@ -262,13 +354,13 @@ def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0, age=
 
 
 def sweep(houses, starts_per_house, seed=0, clamp=True, directions=(+1, -1), pan=0.0, lag=0,
-          age=True):
+          age=True, lidar=False):
     out = []
     for house in houses:
         for x, y in starts(house, starts_per_house, seed):
             for h in range(HEADINGS):
                 for d in directions:
-                    out.append(run(house, x, y, h * 15, d, clamp, pan, lag, age))
+                    out.append(run(house, x, y, h * 15, d, clamp, pan, lag, age, lidar))
     return out
 
 
@@ -341,12 +433,14 @@ def free_angle(world, direction):
     return FREE_ANGLE_CAP_DEG
 
 
-def pivot_run(house, x, y, theta, direction, clamp=True):
-    """A standing pivot through the wheel loop's two calls."""
+def pivot_run(house, x, y, theta, direction, clamp=True, lidar=False):
+    """A standing pivot through the wheel loop's two calls. `lidar`: the
+    vet reads the D500's timed scan (3.42), as `run()` does."""
     world = build_world(house)
     world.x, world.y, world.theta = x, y, theta
     robot = MockRobot(world, render=False)
-    safety = SafetyController(robot, 20.0)
+    sensed = _LidarTimed(robot) if lidar else robot
+    safety = SafetyController(sensed, 20.0)
     wheels = robot.get_wheel_state()
     w = direction * PIVOT_RAD_S * wheels["track_width_m"] / 2 / WHEEL_RADIUS_M
     G0 = truth(world)[1]
@@ -354,6 +448,8 @@ def pivot_run(house, x, y, theta, direction, clamp=True):
     min_G, max_P, turned = G0, 0.0, 0.0
     for _ in range(int(RUN_S / PERIOD_S)):
         left, right = -w, w
+        if lidar:
+            sensed.record()
         if clamp:
             left, right, _reason = safety.vet_wheel_velocity(-w, w)
         robot.set_wheel_velocity(left, right)
@@ -361,6 +457,8 @@ def pivot_run(house, x, y, theta, direction, clamp=True):
         robot.advance(PERIOD_S)
         d = abs((world.theta - th0 + math.pi) % (2 * math.pi) - math.pi)
         if d < 1e-9:
+            if lidar:
+                continue   # a later scan may free it, as with lagged readings
             break      # stopped; static world, identical command: stays stopped
         turned += math.degrees(d)
         _T, G, P = truth(world)
@@ -369,7 +467,7 @@ def pivot_run(house, x, y, theta, direction, clamp=True):
             "G0": G0, "min_G": min_G, "max_P": max_P, "turned": turned, "room": room}
 
 
-def pivot_sweep(houses, starts_per_house, seed=0, clamp=True):
-    return [pivot_run(h, x, y, th, d, clamp)
+def pivot_sweep(houses, starts_per_house, seed=0, clamp=True, lidar=False):
+    return [pivot_run(h, x, y, th, d, clamp, lidar)
             for h in houses for x, y, th in pivot_starts(h, starts_per_house, seed)
             for d in (+1, -1)]

@@ -20,6 +20,21 @@ def load_config(config_path: str | Path = _DEFAULT_CONFIG) -> dict:
         return yaml.safe_load(f)
 
 
+def _lidar(config: dict):
+    """3.42: the D500 on its serial device, read by the robot server. On the
+    car `ROBOT_LIDAR` (or `hardware.lidar_port`) is its udev name; in the
+    simulator `SIM_LIDAR=fake` and `service/tunnel/run.sh` points
+    `ROBOT_LIDAR` at `sim/fake_lidar.py`'s pty. None: no lidar driver, and
+    the scan stays whatever the body supplies (the sim's, or unusable)."""
+    port = os.environ.get("ROBOT_LIDAR") or (config.get("hardware") or {}).get("lidar_port")
+    if not port:
+        return None
+    from robot.lidar_ld19 import LIDAR_YAW_DEG, Ld19Lidar
+
+    yaw = float(os.environ.get("LIDAR_YAW_DEG", LIDAR_YAW_DEG))
+    return Ld19Lidar(port, yaw_deg=yaw)
+
+
 def _track_scrub(config: dict) -> float:
     """3.35: the real chassis' effective/geometric track ratio. TRACK_SCRUB
     wins over `hardware.track_scrub`; 1.0 (no correction) when neither is
@@ -165,11 +180,15 @@ def _backend(config: dict) -> RobotInterface:
 
             sensors = SimBodyClient(body_url, sensors_url,
                                     secret=os.environ.get("APP_SHARED_SECRET", ""))
-            return HardwareRobot(sensors.board_path, sensors=sensors, track_scrub=1.0)
+            lidar = _lidar(config)
+            return HardwareRobot(sensors.board_path, sensors=sensors, track_scrub=1.0,
+                                 **({"lidar": lidar} if lidar else {}))
         port = os.environ.get("ROBOT_SERIAL") or (config.get("hardware") or {}).get("serial_port")
         if not port:
             raise ValueError("mode: hardware needs ROBOT_SERIAL (or hardware.serial_port) "
                              "-- the ESP32 driver board's serial device")
-        return HardwareRobot(port, track_scrub=_track_scrub(config))
+        lidar = _lidar(config)
+        return HardwareRobot(port, track_scrub=_track_scrub(config),
+                             **({"lidar": lidar} if lidar else {}))
 
     raise ValueError(f"Unknown robot mode in config: {mode!r}")

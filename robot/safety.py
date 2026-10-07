@@ -93,6 +93,9 @@ FOOTPRINT_WIDTH_M = 0.231
 # compared with `min_distance_cm`. (Was 15.0 -- half the old sim's 30 cm
 # robot -- until 3.27 derived it from the chassis it describes.)
 LIDAR_TO_REAR_BUMPER_CM = FOOTPRINT_LENGTH_M * 50.0 + LIDAR_X_M * 100.0
+# 3.42: and to the front bumper -- the lidar is 4 cm ahead of the centre, so
+# the front edge is nearer to it than the rear.
+LIDAR_TO_FRONT_BUMPER_CM = FOOTPRINT_LENGTH_M * 50.0 - LIDAR_X_M * 100.0
 # Lateral room the corridor keeps beyond each side of the chassis. Returns
 # BESIDE the body (not ahead of the leading edge) never stop a straight
 # move -- a straight move cannot close on them, and treating them as
@@ -133,6 +136,7 @@ SAFETY_SCAN_RANGE_M = 0.6
 PIVOT_MARGIN_CM = 1.3
 PIVOT_LOOKAHEAD_S = 0.05         # one wheel-loop period; scales with the turn rate
 PIVOT_MIN_LOOKAHEAD_DEG = 1.0
+PIVOT_AGE_SAMPLES = 4           # 3.42: points checked across the turn a scan has missed
 
 # ---- guarded verbs (PLAN-ros-alignment.md 3.22, PLAN-guarded-verbs.md) ----
 #
@@ -411,8 +415,12 @@ class SafetyController:
            (3.18 part 2), so it has no opinion about the way ahead.
            Clearance is `None` here, and `forward_clearance()` refuses a
            FORWARD when nothing else -- the scan -- can see the path either.
-        3. **`distance_sensor`** -- there is no grid, or every path zone
-           was unusable. Falls back to `get_distance()`, which is exactly
+        2c. **`scan_path`** / **`scan_path_no_target`** -- the grid cannot
+           see the path but a lidar scan is usable (3.42): its beams within
+           the cone ahead, minus the lidar's distance to the front bumper,
+           the forward twin of `rear_clearance()`.
+        3. **`distance_sensor`** -- there is no grid (or every path zone
+           was unusable) and no usable scan. Falls back to `get_distance()`, which is exactly
            the pre-M3 veto: the scalar keeps its `0.0`-on-dropout collapse
            and so a fully blind grid still fails toward stop.
 
@@ -447,6 +455,21 @@ class SafetyController:
                 return self._to_bumper(min(measured)), "depth_grid"
             if path and not all(z.get("status") == ZONE_UNUSABLE for z in path):
                 return None, "depth_grid_no_target"
+
+        # 2c (3.42). The grid cannot see the path, but the lidar can: its
+        # beams within the cone ahead, as `rear_clearance()` reads astern.
+        # Without this a lidar-only car (the Rover until its depth camera
+        # has a driver) fell to the scalar, which HardwareRobot answers
+        # 0.0 with no sensor -- FORWARD refused forever.
+        scan = self._scan()
+        if scan and scan.get("usable"):
+            a0, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
+            ahead = [r for i, r in enumerate(scan["ranges_m"])
+                     if r is not None
+                     and abs((a0 + i * inc + 180.0) % 360.0 - 180.0) <= PATH_HALF_ANGLE_DEG]
+            if not ahead:
+                return None, "scan_path_no_target"
+            return max(0.0, round(min(ahead) * 100.0 - LIDAR_TO_FRONT_BUMPER_CM, 1)), "scan_path"
 
         return self._to_bumper(self.robot.get_distance()), "distance_sensor"
 
@@ -571,20 +594,63 @@ class SafetyController:
         if not exact and abs(d) < math.radians(PIVOT_MIN_LOOKAHEAD_DEG):
             d = math.copysign(math.radians(PIVOT_MIN_LOOKAHEAD_DEG), d)
         c, s = math.cos(-d), math.sin(-d)     # the world turns the other way
+        # 3.42: the turn the scan has missed. A real lidar's points are up
+        # to ~150 ms old and the body may have been turning since, so each
+        # point's bearing NOW lies on an arc between where the scan put it
+        # and that turn later. Check the look-ahead from across the arc.
+        missed = self._turn_since_scan()
+        arc = [missed * k / PIVOT_AGE_SAMPLES for k in range(PIVOT_AGE_SAMPLES + 1)] \
+            if missed else [0.0]
+        rots = [(math.cos(-a), math.sin(-a)) for a in arc]
 
         def dist(x, y):
             return math.hypot(max(abs(x) - hl, 0.0), max(abs(y) - hw, 0.0))
 
-        for x, y in scan_points_cm(scan):
-            now = dist(x, y)
-            if now > PIVOT_MARGIN_CM + 20.0:
-                continue
-            after = dist(c * x - s * y, s * x + c * y)
-            if after < PIVOT_MARGIN_CM and after < now - 1e-6:
-                side = "left" if omega_rad_s > 0 else "right"
-                return (f"turn {side} clamped: a corner would come within "
-                        f"{after:.1f}cm < {PIVOT_MARGIN_CM}cm (scan_footprint)")
+        for x0, y0 in scan_points_cm(scan):
+            for ca, sa in rots:
+                x, y = ca * x0 - sa * y0, sa * x0 + ca * y0
+                now = dist(x, y)
+                if now > PIVOT_MARGIN_CM + 20.0:
+                    continue
+                after = dist(c * x - s * y, s * x + c * y)
+                if after < PIVOT_MARGIN_CM and after < now - 1e-6:
+                    side = "left" if omega_rad_s > 0 else "right"
+                    return (f"turn {side} clamped: a corner would come within "
+                            f"{after:.1f}cm < {PIVOT_MARGIN_CM}cm (scan_footprint"
+                            + (f", aged {math.degrees(missed):.1f} deg)" if missed else ")"))
         return None
+
+    def _turn_since_scan(self) -> float:
+        """Radians the body has turned (CCW positive, REP-103) since the scan
+        was taken: the measured yaw rate times `sensor_age_s()` -- the
+        rotational twin of `_aged()` (3.42). 0.0 for a backend whose readings
+        have no age (every in-process one) or a body that is not turning.
+
+        A body that knows its own heading history (`turn_since_scan()`:
+        `HardwareRobot` with a lidar, from its encoders) answers that
+        directly, and its answer is used. Rate x age is the fallback: it
+        undercounts right after a turn slows, which is exactly when the
+        guard has started clamping."""
+        turn_of = getattr(self.robot, "turn_since_scan", None)
+        if callable(turn_of):
+            turned = turn_of()
+            if turned is not None:
+                return turned
+        age_of = getattr(self.robot, "sensor_age_s", None)
+        if age_of is None:
+            return 0.0
+        age = age_of()
+        if not age:
+            return 0.0
+        try:
+            w = self.robot.get_wheel_state()
+        except Exception:  # noqa: BLE001 -- no rate to age by
+            return 0.0
+        if not w.get("usable"):
+            return 0.0
+        yaw = ((w["right"]["velocity_rad_s"] - w["left"]["velocity_rad_s"])
+               * w["wheel_radius_m"] / w["track_width_m"])
+        return yaw * age
 
     @staticmethod
     def _nearer(*readings) -> Tuple[Optional[float], str]:

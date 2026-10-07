@@ -101,6 +101,16 @@ if [ "${SIM_MOTOR_BOARD:-}" = "fake" ]; then
     pids+=($!)
     echo "  sensors $u"
   done
+  # 3.42: SIM_LIDAR=fake -- the D500 faked on a pty (sim/fake_lidar.py), read
+  # by the robot server through the car's own driver (robot/lidar_ld19.py).
+  # ROBOT_LIDAR is the link, as the udev name is on the car.
+  if [ "${SIM_LIDAR:-}" = "fake" ]; then
+    export ROBOT_LIDAR="${ROBOT_LIDAR:-/tmp/picar-lidar-$(id -u)}"
+    python -m sim.fake_lidar --link "$ROBOT_LIDAR" &
+    pids+=($!)
+    for _ in $(seq 1 50); do [ -e "$ROBOT_LIDAR" ] && break; sleep 0.1; done
+    echo "  lidar   $ROBOT_LIDAR   (fake D500)"
+  fi
 fi
 python -m uvicorn robot.server:app --port 8000 --host 127.0.0.1 --log-level warning &
 pids+=($!)

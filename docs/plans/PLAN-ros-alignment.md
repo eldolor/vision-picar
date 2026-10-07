@@ -4932,6 +4932,54 @@ to the left. The yaw is one setting (`LIDAR_YAW_DEG`, `[CAD]`, to measure).
 
    If the bytes are not LD19's, only the decoding layer changes.
 
+**Amended 2026-10-06, before the sweep was run: a hardware-day blocker
+found while building.** On the car, with this driver and no depth-camera
+driver, `forward_clearance()` reads **0.0 forever**, so FORWARD is always
+refused. The corridor reads the lidar (291 cm clear on a test stub), but
+the cone's chain was grid, then the scalar `get_distance()`. With no other
+sensor, `HardwareRobot` answers that with 0.0. Reverse was unaffected,
+because `rear_clearance()` already reads the scan's rear beams.
+
+**Fix:** `path_clearance()` gains a step before the scalar. When the
+depth grid cannot see the path and a scan is usable, the cone reads the
+scan's beams within `PATH_HALF_ANGLE_DEG` of ahead, minus the lidar's
+distance to the front bumper. This mirrors `rear_clearance()`. In the
+simulator the grid always answers first, so in-process behaviour is
+unchanged.
+
+**Added criteria:**
+* **4b.** A lidar-only car (grid unusable, no scalar sensor) is allowed
+  FORWARD when clear, and is refused at the 20 cm line. This is pinned
+  against a stub, confirmed red without the fix.
+* **4c.** Criterion 4's sweep runs car-realistic: the depth grid
+  unusable, so forward safety rests on the lidar alone, and the
+  simulator's perfect grid cannot hide a late scan.
+
+**Criterion 4 measured 2026-10-06, before any fix.**
+* **Straight runs pass.** 0 of 432 under 18 cm, 0 contacts, and progress
+  97.7%. That is identical to the simulator's own scan with its depth
+  grid.
+* **Pivots FAIL: 105 of 120 come within 1 cm, worst 0.0 (contact).**
+* **The cause is isolated to timing.** The same 120 pivots with the
+  driver's binning, but a scan cast fresh each period (age 0), give **0**.
+  The guard (3.19) checks the next 50 ms of rotation against a scan it
+  treats as current. A real scan's points are up to ~150 ms old, and at
+  1 rad/s the robot has turned 6-9 degrees since.
+* **`_aged()` cannot catch it.** It discounts translation toward an
+  obstacle (3.36), never rotation.
+
+**Amended, before the fix was measured: age the rotation too.**
+* **The rule.** `pivot_blocked()` takes the body's measured yaw rate times
+  `sensor_age_s()` as the turn the scan has missed. It checks the
+  look-ahead from several rotations spread across that arc, because each
+  point's true bearing now lies somewhere on it. It refuses if any of
+  them closes inside the margin.
+* **What it leaves alone.** A robot at rest, a turn away from the
+  obstacle, and every backend whose readings have no age (all in-process
+  sims) see no change. So 3.19's pinned results must reproduce unchanged.
+* **Criterion 4's bars are unchanged:** 0 pivots within 1 cm, and the
+  straight runs still pass.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.

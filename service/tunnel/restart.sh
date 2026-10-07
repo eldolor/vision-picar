@@ -55,6 +55,10 @@ if [ -n "$old" ]; then
     for _ in $(seq 1 10); do [ -z "$(listeners)" ] && break; sleep 0.5; done
   fi
 fi
+# 3.42: a fake lidar holds no port, so a forced stop above can orphan it.
+if [ "${SIM_LIDAR:-}" = "fake" ]; then
+  pkill -f "sim.fake_lidar --link ${ROBOT_LIDAR:-/tmp/picar-lidar-$(id -u)}" 2>/dev/null || true
+fi
 if [ -n "$(listeners)" ]; then
   echo "FAILED: ports $PORTS are still held by: $(echo $(listeners)). Nothing was started." >&2
   exit 1

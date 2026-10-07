@@ -52,6 +52,7 @@ A zero command and `stop()` are never refused, and never raise on a dead
 port -- the board's heartbeat is what stops it then.
 """
 
+import collections
 import json
 import math
 import os
@@ -135,11 +136,19 @@ def _fork_keys(frame: dict):
 
 class HardwareRobot(RobotInterface):
     def __init__(self, port: str, sensors: Optional[RobotInterface] = None,
-                 baud: int = 115200, track_scrub: float = 1.0):
+                 baud: int = 115200, track_scrub: float = 1.0, lidar=None):
         if not track_scrub > 0:
             raise ValueError(f"track_scrub must be positive, got {track_scrub!r}")
         self.port = port
         self.sensors = sensors
+        # 3.42: the D500, read here rather than by ROS (`robot/lidar_ld19.py`):
+        # when present it is THE scan, for the safety layer and for ROS
+        # through the bridge alike. Without one the scan stays `sensors`'.
+        self.lidar = lidar
+        # 3.42: (monotonic time, CCW heading in radians) per board frame, so
+        # the turn since the lidar's scan was taken is the ENCODERS' answer,
+        # not a rate times an age (which undercounts right after a turn slows).
+        self._heading_hist = collections.deque(maxlen=60)    # 3 s at 20 Hz
         # 3.35: skid steer's EFFECTIVE track over the geometric one -- the
         # wheels scrub sideways on every turn, so the body turns less than
         # the geometric track predicts. A property of the real chassis
@@ -304,6 +313,7 @@ class HardwareRobot(RobotInterface):
                 if anchored:
                     self._anchor(odo, unit)
             after = self._travel_m()
+            self._heading_hist.append((now, (after[1] - after[0]) / self._track_m))
             # Path is the BODY's travel -- the wheels' average -- so a pivot
             # (wheels opposite) covers no ground, as MockRobot and
             # get_odometry()'s contract say.
@@ -602,7 +612,50 @@ class HardwareRobot(RobotInterface):
         return self.sensors.get_depth_grid() if self.sensors else unusable_grid()
 
     def get_scan(self, max_range_m=None) -> dict:
+        if self.lidar is not None:
+            return self.lidar.get_scan(max_range_m=max_range_m)
         return self.sensors.get_scan(max_range_m=max_range_m) if self.sensors else unusable_scan()
+
+    def sensor_age_s(self) -> Optional[float]:
+        """How old the readings the safety layer vets on are -- the OLDER of
+        the lidar's scan and the other sensors' bundle (3.36, 3.42): the vet
+        subtracts the travel since from every clearance, so the conservative
+        age is the larger one."""
+        ages = []
+        if self.lidar is not None:
+            ages.append(self.lidar.sensor_age_s())
+        age_of = getattr(self.sensors, "sensor_age_s", None) if self.sensors else None
+        if callable(age_of):
+            ages.append(age_of())
+        ages = [a for a in ages if a is not None]
+        return max(ages) if ages else None
+
+    def turn_since_scan(self) -> Optional[float]:
+        """Radians the body has turned (CCW positive, REP-103) since the
+        lidar's current scan began -- from the wheel encoders' heading
+        history, on the same monotonic clock the lidar stamps with. None with
+        no lidar, no fresh feedback, or a scan older than the history."""
+        if self.lidar is None:
+            return None
+        t0 = self.lidar.scan_time()
+        with self._lock:
+            if t0 is None or not self._fresh() or not self._heading_hist:
+                return None
+            hist = list(self._heading_hist)
+            travel = self._travel_now_m()
+        now_heading = (travel[1] - travel[0]) / self._track_m
+        if t0 < hist[0][0]:
+            return None
+        then = hist[-1][1]
+        for (ta, ha), (tb, hb) in zip(hist, hist[1:]):
+            if ta <= t0 <= tb:
+                then = ha + (hb - ha) * ((t0 - ta) / (tb - ta) if tb > ta else 0.0)
+                break
+        return now_heading - then
+
+    def lidar_status(self) -> Optional[dict]:
+        """The lidar link, for `/health` -- description, never a verdict."""
+        return self.lidar.status() if self.lidar is not None else None
 
     def close(self) -> None:
         try:
@@ -611,6 +664,8 @@ class HardwareRobot(RobotInterface):
             self._running = False
             self._reader_thread.join(timeout=1.0)
             os.close(self._fd)
+            if self.lidar is not None and hasattr(self.lidar, "close"):
+                self.lidar.close()
 
     def __getattr__(self, name):
         # The sim's body extras (`world`, for the world model's truth) when
