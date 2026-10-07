@@ -1,7 +1,7 @@
 """
 python -m tests.escape_sweep
 
-PLAN-ros-alignment.md 3.42 criterion 1: does the explore policy's escape get
+PLAN-ros-alignment.md 3.43 criterion 1: does the explore policy's escape get
 the robot out of where it got stuck on 2026-10-06?
 
 Poses are sampled anywhere in the furnished home with the chassis within
@@ -16,7 +16,7 @@ ground truth (`footprint_sweep.truth`'s chassis-to-cell gap), never on the
 readings the safety layer used.
 
 Headings where all four moves are refused are counted and reported, not
-judged: nothing can leave them without loosening robot/safety.py (3.42
+judged: nothing can leave them without loosening robot/safety.py (3.43
 part b keeps the planner out of them instead).
 """
 

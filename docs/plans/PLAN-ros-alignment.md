@@ -5037,7 +5037,7 @@ What each failure means:
 time (`/scan` carries the scan's age, and the bridge subtracts it), then
 re-run criterion 5 against the same bar.
 
-### 3.42 Exploring never parks the robot where it cannot leave (2026-10-06): criteria, written before building
+### 3.43 Exploring never parks the robot where it cannot leave (2026-10-06): criteria, written before building
 
 **Why.** Two of ten furnished-home runs on 2026-10-06 (`evaluations/slam-340/F-run1.json`,
 `A2-noclose.json`) stopped for good 17-21 cm from a west wall -- once beside
@@ -5106,10 +5106,10 @@ Criterion 5: `test_an_escape_turn_refused_on_one_side_tries_the_other`,
 red on the old escape.
 
 **Part (b) measured 2026-10-06 -- criterion 2 FAILED (1 of 3 runs over),
-criterion 3 met; not adopted.** Candidate `evaluations/slam-342/nav2-inflate.yaml`
+criterion 3 met; not adopted.** Candidate `evaluations/slam-343/nav2-inflate.yaml`
 (`inflation_radius` 0.12 -> 0.35 m, `cost_scaling_factor` 8 -> 5, both
 costmaps), on the rebuilt `:latest` image; judged by
-`evaluations/slam-342/parked.py`:
+`evaluations/slam-343/parked.py`:
 
 | run | longest parked (bar < 120 s) | where | tour | SLAM east max / final |
 |---|---|---|---|---|
@@ -5126,9 +5126,9 @@ see into, and the robot spends ~2 min failing and escaping there. That is a
 goal-choice problem in `brain/explore.py`, not nav2's. `nav2.yaml` is
 unchanged; the next step is the user's call.
 
-### 3.43 A slow move needs less room than a fast one (2026-10-07): criteria, written before building -- NOT yet confirmed by the user
+### 3.44 A slow move needs less room than a fast one (2026-10-07): criteria, written before building -- NOT yet confirmed by the user
 
-**Why.** 3.42 left the robot stalling for ~2 min in corners, and its escape
+**Why.** 3.43 left the robot stalling for ~2 min in corners, and its escape
 could free only 71.5% of wedged poses: 43 of the rest could be left by NO
 allowed move. The live record shows why. A reverse was refused with
 **19.3-19.4 cm** behind it, because `robot/safety.py` holds a reverse, like a
@@ -5152,7 +5152,7 @@ same two readings in series) stays above `CREEP_MARGIN_CM`, with the same
 one-period look-ahead; anything faster keeps `min_distance_cm`. Rotation is
 unchanged (3.19's 1.3 cm guard). Both paths: `vet_wheel_velocity()` (ROS and
 the wheel loop) and the verb path (`check_and_execute()` / `run_verb()`). The
-escape (3.42's `OPEN`) gains creep REVERSE then FORWARD steps.
+escape (3.43's `OPEN`) gains creep REVERSE then FORWARD steps.
 
 **Criteria (ground truth throughout -- never the readings the veto uses):**
 
@@ -5168,7 +5168,7 @@ escape (3.42's `OPEN`) gains creep REVERSE then FORWARD steps.
    nearest surface no lower than today's 19 cm. Pinned by a test that a
    command slowed below `CREEP_M_S` by the look-ahead is still refused at
    `min_distance_cm`.
-4. **The escape frees what 3.42's could not:** `tests/escape_sweep.py`, the
+4. **The escape frees what 3.43's could not:** `tests/escape_sweep.py`, the
    200 wedged poses PLUS the all-four-refused traps judged too: **>= 95%**
    freed, 0 contacts.
 5. **No stalls, live:** three furnished-home explore-then-tour runs, no

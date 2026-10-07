@@ -347,7 +347,7 @@ def test_a_place_that_wedges_the_robot_again_runs_out_of_tries():
 
 
 def test_an_escape_turn_refused_on_one_side_tries_the_other():
-    """3.42: 2026-10-06's wedged runs asked for the same refused side every
+    """3.43: 2026-10-06's wedged runs asked for the same refused side every
     time while the other was free. The escape now tries the other way."""
     from robot.safety import SafetyViolation
     grid = build_world("scaled_house")

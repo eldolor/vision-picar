@@ -1,7 +1,7 @@
 """
-python evaluations/slam-342/parked.py run.json [...]
+python evaluations/slam-343/parked.py run.json [...]
 
-PLAN-ros-alignment.md 3.42 criterion 2: the longest stretch a run's robot
+PLAN-ros-alignment.md 3.43 criterion 2: the longest stretch a run's robot
 stayed within 5 cm of one spot (ground truth, demo_slam_home's 1 Hz series),
 leaving out the last 15 s (the instrument's own wait at rest). Over 120 s
 fails. Also the tour's goals and 3.40's SLAM bars (judge.py).

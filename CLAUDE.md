@@ -128,12 +128,19 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   `HANDOFF-2026-10-07-lidar-and-speed.md` before changing the stop
   distance. It covers the double-counted delay, the sim scan-hint trap
   and the lidar-timed sweep.
-* **SLAM bends the map in the furnished home's open rooms**
-  (3.39-3.40, on branch `frontier-search`, not merged). It is not a
-  `slam.yaml` setting and not a timestamp skew. The next remedy is the
-  user's choice: a simulated gyro with wheel slip, or saved-map
-  localisation. 3.31's frontier-search batch waits on it. Handoff:
-  `HANDOFF-2026-10-06-slam-drift.md` on that branch.
+* **SLAM in the furnished home: fixed, merged** (3.38-3.40, `frontier-search`
+  merged into `dev` 2026-10-06). The map bent 2.5-6 deg in the open rooms
+  because slam_toolbox's scan matcher blurred each point 10 cm before
+  scoring (`correlation_search_space_smear_deviation` 0.10 -> 0.03 m: two
+  tours within 4.2 cm, every room's walls 100% true). Scans are also stamped
+  with their capture time now (skew 21 -> 7 ms).
+* **Exploring stalls in corners** (3.43, open). Explore sends goals into
+  corners the lidar cannot see into and the robot spends ~2 min failing
+  there. The escape now tries both turn directions (59% -> 71.5% of wedged
+  poses freed); nav2 inflation 0.35 m shortened stalls but was not adopted.
+  Many traps exist only because a reverse needs 20 cm whatever its speed --
+  which is 3.44 / 6.9's speed-scaled clearance. 3.31's frontier-search batch
+  waits on this.
 * **Isaac ROS evaluation (3.41).** Isaac ROS 3.2 is the last release for
   JetPack 6 / Humble.
   * **Part A, measured 2026-10-06: TensorRT not adopted; torch stays.**

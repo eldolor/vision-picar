@@ -71,7 +71,7 @@ STUCK_MOVED_M = 0.15
 # Escapes tried before a search may conclude, while boxed in.
 MAX_ESCAPES = 3
 # An escape's turn sizes, each tried on the roomier side and then the other,
-# until the pivot guard lets one through (3.42).
+# until the pivot guard lets one through (3.43).
 OPEN_ANGLES = (90, 45, 20, 10, 5)
 # "Boxed in": fewer reachable stopping places than this around the robot.
 BOXED_CELLS = 40
@@ -421,7 +421,7 @@ class ExploreAgent(MissionAgent):
         item = self._pending.pop(0)
         if isinstance(item, tuple) and item[0] == "OPEN":
             # Turn towards whichever side the lidar finds more room: a
-            # quarter first. 3.42: if the pivot guard refuses it, the next
+            # quarter first. 3.43: if the pivot guard refuses it, the next
             # ticks try the OTHER side, then 45 and 20 degrees each way --
             # 2026-10-06's wedged runs asked for the same refused side every
             # time while the other was free (escape_sweep: 59% freed).
@@ -483,7 +483,7 @@ class ExploreAgent(MissionAgent):
 
     def _still_wedged(self) -> bool:
         """Forward AND reverse both refused by the safety layer's own
-        clearances -- the robot cannot drive out either way (3.42)."""
+        clearances -- the robot cannot drive out either way (3.43)."""
         try:
             f, _ = self.safety.forward_clearance()
             b, _ = self.safety.reverse_clearance()

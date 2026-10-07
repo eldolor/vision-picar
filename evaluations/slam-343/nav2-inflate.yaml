@@ -89,8 +89,8 @@ local_costmap:
           inf_is_valid: true
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        inflation_radius: 0.35       # 3.42 candidate: past the 15.1 cm circumscribed radius (was 0.12)
-        cost_scaling_factor: 5.0     # 3.42 candidate (was 8.0)
+        inflation_radius: 0.35       # 3.43 candidate: past the 15.1 cm circumscribed radius (was 0.12)
+        cost_scaling_factor: 5.0     # 3.43 candidate (was 8.0)
       always_send_full_costmap: true
 
 global_costmap:
@@ -122,8 +122,8 @@ global_costmap:
           inf_is_valid: true
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        inflation_radius: 0.35       # 3.42 candidate: past the 15.1 cm circumscribed radius (was 0.12)
-        cost_scaling_factor: 5.0     # 3.42 candidate (was 8.0)
+        inflation_radius: 0.35       # 3.43 candidate: past the 15.1 cm circumscribed radius (was 0.12)
+        cost_scaling_factor: 5.0     # 3.43 candidate (was 8.0)
       always_send_full_costmap: true
 
 planner_server:
