@@ -129,10 +129,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   user's choice: a simulated gyro with wheel slip, or saved-map
   localisation. 3.31's frontier-search batch waits on it. Handoff:
   `HANDOFF-2026-10-06-slam-drift.md` on that branch.
-* **Isaac ROS evaluation (3.41, user go-ahead 2026-10-06).** Part A
-  (TensorRT perception on the Jetson, inside or outside ROS) is in
-  progress. Isaac ROS 3.2 is the last release for JetPack 6 / Humble.
-  Part B (cuVSLAM, nvblox) needs the Rover's camera.
+* **Isaac ROS evaluation (3.41).** Isaac ROS 3.2 is the last release for
+  JetPack 6 / Humble.
+  * **Part A, measured 2026-10-06: TensorRT not adopted; torch stays.**
+    The fp16 engines change CLIP probabilities by up to 0.052 (bar 0.01).
+    p90 is only 20-25% faster (bar 30%).
+  * **Isaac ROS inside ROS (arm C):** not built. It would run the same
+    engines; whether to try fp32 engines is the user's call.
+  * **Part B (cuVSLAM, nvblox)** needs the Rover's camera.
 * **Before the Rover arrives:** check with calipers that the devkit's
   mounting holes match the Rover deck's 86 x 58 mm pattern
   (`UGV-ROVER-MOUNTING.md`); fallback is an adapter plate. Waveshare

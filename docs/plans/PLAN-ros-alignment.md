@@ -4623,7 +4623,7 @@ must be rebuilt from this branch (`docker build -t vision-picar-ros
 service/slam`) for `:latest` to carry G and the capture stamp; the runs used
 the tag `vision-picar-ros:stamp` with G mounted.
 
-### 3.41 NVIDIA's GPU packages on the Jetson, judged against what we run (2026-10-06): plan and criteria, written before measuring -- NOT started
+### 3.41 NVIDIA's GPU packages on the Jetson, judged against what we run (2026-10-06): plan and criteria, written before measuring -- Part A measured (not adopted), Part B waits on the Rover
 
 **Asked by the user 2026-10-06:** with the Jetson in hand, evaluate Isaac
 ROS's image pipeline + TensorRT inference, NITROS, cuVSLAM and nvblox, and
@@ -4697,10 +4697,76 @@ the wall. C can only be adopted if it beats B.
    torch stays the fallback there. `tests/test_ros_containment.py` passes:
    if C wins, its nodes live in `service/`, never `brain/`.
 
+**Amended 2026-10-06, before any arm was measured (user's go-ahead the
+same day): C is built only if B leaves it room to win.** Arm C costs days
+(the Isaac ROS 3.2 container, a node that decodes YOLOE's segmentation
+head, a JPEG publisher), and C can only beat B on what Isaac moves off the
+CPU and between processes: image decode/resize and the copies NITROS
+avoids. The models are the SAME TensorRT engines in both. So after B is
+measured: if B's p90 minus its GPU model time is under **30% of B's p90**,
+then even a C that made every non-model millisecond vanish could not meet
+criterion 2's margin over B. C is then recorded as **"cannot win, not
+built"**, with B's breakdown as the evidence. Otherwise C is built and
+measured as written.
+
+**How A and B are measured** (`tools/jetson/bench_trt.py`): each arm runs
+in its own process, on the same 63 frames in the same order. Accuracy is
+judged per frame against arm A in the same run: status, and the best
+candidate's CLIP probability. Memory is the drop in MemAvailable from
+before the models load to the lowest point while they run. On the Jetson
+the GPU's memory is the system's, so this counts both. B is reported
+twice, so the gain is attributable: B1 uses TensorRT engines with today's
+CPU preprocessing; B2 adds decode-once and GPU resize for CLIP's crops
+(P26).
+
 **If C wins**, 1.1's planned move goes ahead with its own criteria: camera
 driver, detector and CLIP scoring inside ROS, publishing
 `detected` / `absent` / `unavailable` per frame. The match gate, the cloud
 triggers, corroboration, arrival and the cloud call stay in the brain.
+
+**Part A results (2026-10-06, Jetson at 15 W, NVMe; raw records in
+`evaluations/trt-341/`, pinned by `tests/test_bench_trt.py`).**
+
+**Neither TensorRT arm is adopted. Torch stays.** Both fail criterion 1,
+and both fall short of criterion 2.
+
+Same 60 frames after 3 warm-up, one arm per process:
+
+| arm | median / p90 ms | GPU model median | answers vs A | mission memory |
+|---|---|---|---|---|
+| **A, torch (control)** | **59.7 / 114.5** | 43.1 | -- | 1189 MB |
+| B1, TensorRT fp16 engines | 52.4 / 91.0 | 22.8 | status 60/60; probability off by up to **0.052**; one frame gains a crop | 1024 MB |
+| B2, B1 + GPU decode/resize (P26) | 52.5 / 86.4 | 22.8 | **status 59/60** (one absent -> detected at 0.40 -> 0.80); probability off by up to 0.41 | 1025 MB |
+
+* **The control reproduces 3.33** (60.6 / 109.9 ms then), so the harness
+  measures the same thing.
+* **Criterion 1 fails for both.**
+  * B1 changes only the engines and keeps A's exact CPU preprocessing, so
+    its drift is the fp16 engines' own. YOLOE fp16 moves box confidences
+    near the threshold, and CLIP fp16 moves scores by a few hundredths.
+    No gate decision changed on these frames, but the bar was 0.01.
+  * B2's bicubic resize on the GPU is not PIL's. It moved scores by up
+    to 0.41 and flipped one frame's verdict.
+* **Criterion 2 fails for both.**
+  * Latency: TensorRT halves the detector's GPU time (40 -> 23 ms). But it
+    adds CPU time (handling 18 -> 29 ms median), so p90 falls only 20.5%
+    (B1) and 24.5% (B2), against 30%.
+  * Memory, measured on the one-pipeline mission run: 165 MB lighter,
+    against 500. The 63-frame run, which loads one pipeline per target as
+    3.33's bench did, reads 706 MB lighter. A mission loads one pipeline,
+    so the mission number is the one judged.
+* **Criterion 3 is met with a timing cache.** A new target's YOLOE engine
+  took **32.5-34.5 s** (ONNX export plus TensorRT build) once the
+  board's first build (638 s, once per board and TensorRT version) had
+  filled the cache. A repeat target is a file load. CLIP's engine is built
+  once (187 s). Ultralytics' own export, which keeps no cache, took 587 s
+  for every target.
+* **Arm C (Isaac ROS).** The amendment's room test does not rule it out:
+  65% of B1's p90 is not GPU model time. But C would run the same fp16
+  engines, and B1 isolates exactly those engines failing criterion 1. So
+  C on fp16 engines is out by criterion 1 before it is built. C on fp32
+  engines would also need fp32 B as its rival. **Not built; taken to the
+  user.** The tier already runs at 46% of its p90 budget.
 
 #### Part B -- cuVSLAM and nvblox (need the OAK-D Lite, so the Rover)
 

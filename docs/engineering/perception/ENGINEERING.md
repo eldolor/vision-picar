@@ -275,7 +275,11 @@ commit.
   the laptop: status 63/63, CLIP probability within 0.0002. P26 (decode
   once, batch crops, resize on GPU) is specified and not built, and not
   needed for the budget; `ClipScorer.score()` still decodes the whole JPEG
-  again for every crop.
+  again for every crop. **TensorRT was measured and not adopted**
+  (`PLAN-ros-alignment.md` 3.41, `tools/jetson/bench_trt.py`):
+  * fp16 engines move CLIP probabilities by up to 0.052;
+  * a GPU resize flips one verdict;
+  * p90 falls only 20-25%.
 - **`hfov_deg` is 66.0, the Camera Module 3's field of view.** The Rover
   carries an OAK-D Lite; its field of view is not measured or configured, so
   every real-pixel bearing on the car will be scaled wrong until it is. Tilt
