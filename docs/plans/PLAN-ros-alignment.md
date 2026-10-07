@@ -5037,6 +5037,49 @@ What each failure means:
 time (`/scan` carries the scan's age, and the bridge subtracts it), then
 re-run criterion 5 against the same bar.
 
+### 3.42 Exploring never parks the robot where it cannot leave (2026-10-06): criteria, written before building
+
+**Why.** Two of ten furnished-home runs on 2026-10-06 (`evaluations/slam-340/F-run1.json`,
+`A2-noclose.json`) stopped for good 17-21 cm from a west wall -- once beside
+the living room's side table, once under the den's furniture -- and every
+later goal failed. The robot server refused 17 481 LEFT pivots (a corner
+within 1.2 cm), 5 549 forwards and 335 reverses, and **not one RIGHT**:
+nav2's rotate-to-heading and spin recovery chose left every time, and the
+brain's escape (`brain/explore.py`: REVERSE, then a quarter turn toward the
+lidar's roomier side) tried LEFT twice and never the other way.
+Reconstructed in process with the real `SafetyController` at both spots,
+every 5 deg of heading: forward and reverse are both refused at 120 of 144
+headings; at **84 of those one turn direction is free** (the escape never
+tries it), and at **36 all four moves are refused** -- a true trap, which
+no escape can leave without loosening `robot/safety.py`. The traps come from
+the planner: nav2's `inflation_radius` is **0.12 m**, barely past the
+chassis' 11.55 cm inscribed radius (kept small for the starter house's 30 cm
+doors, R6), so paths hug furniture within a centimetre or two.
+
+**The fix, two parts:** (a) the escape tries the other turn direction, then
+smaller turns, when its first choice is refused; (b) nav2's inflation band
+reaches past the 15.1 cm circumscribed radius so paths keep to the middle of
+the room (both costmaps; lethal footprint unchanged).
+
+**Criteria:**
+
+1. **The escape uses the free turn:** at the two reconstructed spots, of
+   the 84 headings where forward and reverse are refused and one turn is
+   free, the escape reaches a pose where FORWARD or REVERSE is allowed in
+   **>= 95%**, within `MAX_ESCAPES`, **0 contacts** on ground truth. Measured
+   on today's code first (expected well under that).
+2. **No parking in traps, live:** three fresh furnished-home explore-then-tour
+   runs (`demo_slam_home --tour 1 --explore-first 900`): **no run in which
+   the robot stays within 5 cm for 120 s or more** while its mission or goal
+   is live; each tour **>= 8 of 9** goals.
+3. **Nothing earlier regresses:** R6's scaled-house goals 6/6; 3.40's SLAM
+   bars hold in those three runs (east max <= 0.20 m, final <= 0.10 m,
+   0 jumps); `tests/test_explore.py` and the full suite pass.
+4. **Safety unchanged:** no change to `robot/safety.py`. The fix lives in the
+   brain and in `nav2.yaml`, each changed key commented with its run.
+5. **Pinned:** a test that the escape tries the other side when its first
+   turn is refused, confirmed red on today's code.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
