@@ -140,19 +140,54 @@ before you measure.
     then the robot and brain servers, then the container with
     `ROBOT_URL=http://host.docker.internal:8200`.
 * **The Jetson.**
-  * A separate worktree, `~/vp-342` (`dev`), shares the original
-    checkout's `.venv` and `recordings` by symlink. The original
-    `~/vision-picar` is untouched on `jetson-bringup`.
+  * Run from a temporary worktree of `dev`, sharing the original checkout's
+    `.venv` and `recordings` by symlink. **Removed at handoff**; the
+    original `~/vision-picar` was never touched (`jetson-bringup`,
+    `4064a99`).
   * The image is built natively as `vision-picar-ros:lidar`; `latest` is
     untouched.
   * G4 recipe as `tools/jetson/README.md` section 4, plus `SIM_LIDAR=fake`.
     **Name the container `picar-ros`**: the fallback test kills it by that
     name.
   * Result: 18/18, 0 late ticks in 10,070 moving ticks.
-  * The board is idle; nothing of 3.42's is left running.
 
 ## 4. Still open in 3.42 (not yours unless the user hands it over)
 
 * Criterion 5's time stamp fix (section 2, item 5), for the user to decide.
 * Criterion 7 on the car: real bytes decode, 10 Hz, a taped wall within
   2 cm, a box dead ahead at 0 +/- 2 degrees (verifies `LIDAR_YAW_DEG`).
+
+## 5. Session state at handoff (2026-10-07)
+
+**Everything is on `origin/dev`**; the working tree is clean.
+
+**Left running: nothing of this session's.**
+* The `picar-ros` container on the Mac is not this session's; it was left
+  alone.
+* The Jetson is idle on its original checkout. The untracked
+  `bench-15w.json` / `bench-25w.json` there are 3.33's, and predate this
+  session.
+
+**Kept on purpose:**
+* `vision-picar-ros:lidar` images on the Mac and the Jetson.
+* On the Jetson:
+  * 3.41's TensorRT engines and timing cache in `~/.cache/vision-picar/trt`
+    (382 MB);
+  * raw run logs in `~/trt-runs` (24 MB);
+  * the venv's symlinked TensorRT bindings and `onnx`/`onnxslim`
+    (`tools/jetson/README.md`).
+
+**What this session also did, on `dev`:**
+* the "ROS 2 for vision-picar" Claude Doc, rewritten;
+* 22 docs updated now that the Jetson is in hand;
+* CLAUDE.md, `JETSON-BOM.md` and `README.md` rewritten, with the originals
+  archived in `docs/archive/`;
+* 3.41 (TensorRT measured, not adopted; closed by the user; revisit only
+  if perception goes over budget on the car);
+* 3.42 (this handoff).
+
+**Waiting on the user:**
+* the scan time stamp fix (3.42 criterion 5);
+* 3.41 Part B (cuVSLAM, nvblox) on the Rover's arrival;
+* the caliper check of the devkit against the Rover's deck, before
+  Oct 19.
