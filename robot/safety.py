@@ -118,6 +118,45 @@ FOOTPRINT_SIDE_MARGIN_CM = 3.0
 # shares (3.17's second finding is about exactly that loop).
 SAFETY_SCAN_RANGE_M = 0.6
 
+# ---- the stop distance follows speed (PLAN-ros-alignment.md 3.44, 6.9) ----
+#
+# `min_distance_cm` (20 cm) is a STOPPING distance for a moving robot, and
+# until 3.44 it held every straight move whatever its speed -- so a robot
+# wedged with 19 cm behind it could not back out even at a crawl (3.43's
+# furnished-home stalls). Now a straight move needs
+#     CREEP_MARGIN_CM                       if ASKED at <= CREEP_M_S, and
+#     max(min_distance_cm, stop_distance)   otherwise,
+# so today's speeds keep exactly 20 cm (stop_distance is 10-17 cm up to
+# 0.3 m/s), a creep needs 3 cm, and a faster robot (6.9) needs more.
+# "Asked": a verb requested at creep speed (`check_and_execute(speed=)`), so
+# neither the vet's own slowing near the line nor a verb executor's ramp-down
+# ever earns the small margin -- nav2's twists never do.
+CREEP_M_S = 0.03
+CREEP_MARGIN_CM = 3.0       # the swept corridor's side margin (3.18)
+# Reaction time in the stopping distance: one control period (0.05 s) plus
+# the actuator path (R4's bridge -> controller -> wheels chain, 40-150 ms;
+# 0.10). NOT the sensor's age: `_aged()` already takes v x `sensor_age_s()`
+# off every clearance (the lidar's 0.15-0.2 s on the car), and counting it
+# twice would stop the robot further out than needed (the 2026-10-07 handoff).
+T_REACT_S = 0.15
+DECEL_M_S2 = 0.5            # [PLACEHOLDER] braking, until 6.9(d) measures it on the car
+MAX_LINEAR_M_S = 0.6        # the chassis cap (controllers.yaml), for the scan hint
+# A verb's `speed` 0-100 is a fraction of 2 moves of 0.30 m a second -- the
+# rule every backend's verbs share (`moves_for()`).
+VERB_FULL_SPEED_M_S = 2.0 * 0.30
+
+
+def stop_distance_cm(v_m_s: float) -> float:
+    """Clearance a straight move at `v_m_s` needs to stop short of contact,
+    sensor age excluded (`_aged()` owns that)."""
+    v = abs(v_m_s)
+    return CREEP_MARGIN_CM + 100.0 * (v * T_REACT_S + v * v / (2.0 * DECEL_M_S2))
+
+
+def verb_speed_m_s(speed) -> float:
+    """A straight verb's `speed` (0-100) as metres per second."""
+    return max(0.0, min(100.0, float(speed))) / 100.0 * VERB_FULL_SPEED_M_S
+
 # ---- pivots (PLAN-ros-alignment.md 3.19) ----
 #
 # A rectangle does not pivot within its own footprint: its corners sit
@@ -374,6 +413,21 @@ class SafetyController:
         self.robot = robot
         self.min_distance_cm = min_distance_cm
         self.sensor_to_bumper_cm = sensor_to_bumper_cm
+        # The straight verb in progress, as ASKED (3.44): its speed, and
+        # whether it was asked at creep speed. The wheel loop reads these on
+        # another thread; plain attribute reads, set before the verb runs.
+        self._asked_v_m_s: Optional[float] = None
+        self._creep_asked = False
+
+    def required_clearance_cm(self, v_m_s: Optional[float], creep: bool = False) -> float:
+        """The clearance a straight move at `v_m_s` must keep (3.44). `creep`
+        says it was ASKED that slowly; a move only slowed to it keeps the
+        full bar. Unknown speed: the full bar."""
+        if v_m_s is None:
+            return float(self.min_distance_cm)
+        if creep and abs(v_m_s) <= CREEP_M_S:
+            return CREEP_MARGIN_CM
+        return max(float(self.min_distance_cm), round(stop_distance_cm(v_m_s), 1))
 
     def _to_bumper(self, distance_cm: float) -> float:
         """A sensor-frame range as clearance ahead of the bumper.
@@ -507,8 +561,17 @@ class SafetyController:
         get_scan = getattr(self.robot, "get_scan", None)
         if get_scan is None:
             return None
-        return get_scan(max_range_m=max(SAFETY_SCAN_RANGE_M,
-                                        FOOTPRINT_LENGTH_M / 2 + 1.5 * self.min_distance_cm / 100.0))
+        # 3.44: the hint covers the largest clearance any speed can require.
+        # The simulator reports beams past the hint as None ("nothing there");
+        # a real lidar ignores it -- so a hint shorter than the bar would make
+        # the SIMULATOR blind where the car can see (the 2026-10-07 handoff).
+        return get_scan(max_range_m=max(SAFETY_SCAN_RANGE_M, self.scan_hint_m()))
+
+    def scan_hint_m(self) -> float:
+        """How far the safety scan must look: half the chassis plus 1.5x
+        the clearance the fastest straight move needs."""
+        need = self.required_clearance_cm(MAX_LINEAR_M_S)
+        return FOOTPRINT_LENGTH_M / 2 + 1.5 * need / 100.0
 
     def footprint_clearance(self, direction: int = 1, scan: Optional[dict] = None
                             ) -> Tuple[Optional[float], str]:
@@ -763,13 +826,16 @@ class SafetyController:
         if v != 0:
             clearance, source = self.forward_clearance() if v > 0 else self.reverse_clearance()
             way = "forward" if v > 0 else "reverse"
+            # 3.44: the bar follows the commanded speed; the creep margin
+            # only while a verb ASKED at creep speed is the one driving.
+            need = self.required_clearance_cm(v, creep=self._creep_asked)
             # AT the line is clamped too: no room left means the command is
             # refused, and a refusal is recorded -- slowing to zero is not a
             # silent "slow" (R2b's reverse test caught exactly that).
-            if clearance is not None and clearance <= self.min_distance_cm:
-                v, reason = 0.0, f"{way} clamped: {clearance}cm <= {self.min_distance_cm}cm ({source})"
+            if clearance is not None and clearance <= need:
+                v, reason = 0.0, f"{way} clamped: {clearance}cm <= {need:g}cm ({source})"
             elif clearance is not None:
-                room_m_s = (clearance - self.min_distance_cm) / 100.0 / VERB_PERIOD_S
+                room_m_s = (clearance - need) / 100.0 / VERB_PERIOD_S
                 if abs(v) > room_m_s:
                     v = math.copysign(room_m_s, v)
         scale, pivot = self.pivot_scale(omega)
@@ -787,24 +853,42 @@ class SafetyController:
         executing it. Returns the backend's result dict. Raises
         SafetyViolation if the action is blocked -- callers (the agent
         loop) should catch this and treat it as an implicit STOP.
+
+        A straight verb's `speed` sets the clearance it must keep (3.44):
+        asked at creep speed it needs `CREEP_MARGIN_CM`, otherwise
+        `required_clearance_cm()`. The asked speed is held for the verb's
+        whole run, so the wheel loop vets the ROS path's twists against the
+        same bar -- and cleared after, so nothing else inherits it.
         """
+        straight = action in FORWARD_ACTIONS or action in REVERSE_ACTIONS
+        if not straight:
+            return self._check_and_execute(action, None, **kwargs)
+        v = verb_speed_m_s(kwargs.get("speed", 50))
+        self._asked_v_m_s, self._creep_asked = v, v <= CREEP_M_S
+        try:
+            return self._check_and_execute(action, self.required_clearance_cm(v, v <= CREEP_M_S),
+                                           **kwargs)
+        finally:
+            self._asked_v_m_s, self._creep_asked = None, False
+
+    def _check_and_execute(self, action: str, need: Optional[float], **kwargs) -> dict:
         if action in FORWARD_ACTIONS:
             distance, source = self.forward_clearance()
-            if distance is not None and distance < self.min_distance_cm:
+            if distance is not None and distance < need:
                 self.robot.stop()
                 msg = (
                     f"Blocked {action}: distance={distance}cm < "
-                    f"min={self.min_distance_cm}cm ({source})"
+                    f"min={need:g}cm ({source})"
                 )
                 logger.warning(msg)
                 raise SafetyViolation(msg)
 
         if action in REVERSE_ACTIONS:
             distance, source = self.reverse_clearance()
-            if distance is not None and distance < self.min_distance_cm:
+            if distance is not None and distance < need:
                 self.robot.stop()
                 msg = (f"Blocked {action}: rear clearance={distance}cm < "
-                       f"min={self.min_distance_cm}cm ({source})")
+                       f"min={need:g}cm ({source})")
                 logger.warning(msg)
                 raise SafetyViolation(msg)
 
@@ -887,10 +971,11 @@ class SafetyController:
                                      else self.reverse_clearance())
                 if clearance is None:
                     return amount, None
-                room_m = (clearance - self.min_distance_cm) / 100.0
+                need = self.required_clearance_cm(self._asked_v_m_s, self._creep_asked)
+                room_m = (clearance - need) / 100.0
                 return max(0.0, room_m), (
                     f"{'forward' if forward else 'rear'} clearance {clearance}cm "
-                    f"reached min={float(self.min_distance_cm)}cm ({source})")
+                    f"reached min={float(need)}cm ({source})")
             omega = math.copysign(math.radians(amount) / PIVOT_LOOKAHEAD_S, 1.0 if ccw else -1.0)
             scale, why = self.pivot_scale(omega)
             return amount * scale, why

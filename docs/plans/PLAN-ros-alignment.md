@@ -5126,7 +5126,7 @@ see into, and the robot spends ~2 min failing and escaping there. That is a
 goal-choice problem in `brain/explore.py`, not nav2's. `nav2.yaml` is
 unchanged; the next step is the user's call.
 
-### 3.44 The stop distance follows speed: less room for a creep, more for a fast move (2026-10-07): criteria, written before building -- NOT yet confirmed by the user
+### 3.44 The stop distance follows speed: less room for a creep, more for a fast move (2026-10-07): criteria, written before building -- confirmed by the user 2026-10-07
 
 **Why.** 3.43 left the robot stalling for ~2 min in corners, and its escape
 could free only 71.5% of wedged poses: 43 of the rest could be left by NO
