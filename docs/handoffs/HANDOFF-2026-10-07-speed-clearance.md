@@ -9,7 +9,7 @@ means for this). CLAUDE.md section 7 is the definition of done.
 ## 1. Where the work lives
 
 - Worktree `/Users/anshugaind/vision-picar/.claude/worktrees/frontier-search`,
-  branch **`speed-clearance`** (renamed from `merge-into-dev` 2026-10-07) -- the user asked to stay on it. It is
+  branch **`plan/3.44-speed-clearance`** (renamed from `merge-into-dev`, 2026-10-07; it also carries 3.43, which predates the one-branch-per-section rule) -- the user asked to stay on it. It is
   `origin/dev` (`9832fe5`) plus local commits, **none pushed**:
   - 3.43 (explore wedge): criteria, part (a) the escape tries both sides
     (`brain/explore.py`, `tests/escape_sweep.py`, a pinning test), part (b)

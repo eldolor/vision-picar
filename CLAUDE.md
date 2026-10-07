@@ -204,6 +204,23 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
 * **Parallel sessions** share this repo and the Jetson. Each manages its
   own commits. Live ROS stacks for another session may own :8000/:8090.
   Use :8100/:8101/:8190 with `ROS_DOMAIN_ID=73` for your own.
+* **One branch per plan section** (the user, 2026-10-07), so parallel
+  sessions never edit the same section on the same branch:
+  * Before starting work on a `PLAN-*.md` section, create a branch for it
+    from the latest `origin/dev`, in its own worktree:
+    `git fetch origin && git worktree add -b plan/<section>-<slug>
+    .claude/worktrees/plan-<section> origin/dev`, for example
+    `plan/3.44-speed-clearance`.
+  * **The branch name reserves the section number.** Worktrees share one
+    `.git`, so every session sees every branch. Before choosing a NEW
+    number, take the highest of the plan on `origin/dev` and
+    `git branch -a --list '*plan/*'`, plus one, and create the branch
+    straight away. (Two sessions both wrote a 3.42 on 2026-10-06/07.)
+  * Work on one section per branch. A new section gets a new branch, even
+    when it grows out of the current one.
+  * Merging into `dev` and pushing still need the user's go-ahead. Fetch
+    and rebase on `origin/dev` first; on a plan conflict, keep both
+    sections in number order.
 
 ---
 
