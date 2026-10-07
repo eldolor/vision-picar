@@ -4839,6 +4839,99 @@ Part B's installability check when the board is free; the rest on arrival.
 Every arm runs in its own container or image tag, so `vision-picar-ros`
 and G4's configuration stay untouched.
 
+### 3.42 The D500 lidar, read by the robot server (2026-10-06): criteria, written before building
+
+**Asked by the user 2026-10-06**, after an evidence check on how often ROS
+stacks hang (the tf2 deadlock was an upstream regression hitting every
+distro, not a fluke). This implements the user's 2026-10-02 decision (6.5,
+1.1): **the lidar feeds the robot server directly**, so `robot/safety.py`
+and the person-drives fallback keep a scan when ROS is down. ROS still
+gets the scan through the bridge (`GET /scan`), exactly as it does from
+the simulator today.
+
+**The part.** The kit's D500 is LDROBOT's STL-19P: 360 degrees, 12 m,
+~10 Hz. Its byte protocol is taken from LDROBOT's published driver
+(`ldlidar_stl_ros2`, MIT; read 2026-10-06, `[V]` from source):
+* **Framing.** 47-byte packets: header `0x54`, then `0x2C` (12 points).
+* **Fields.** Speed in degrees per second, then a start angle and an end
+  angle in hundredths of a degree. Twelve points of `distance` (mm, 0 = no
+  return) and `intensity`. A timestamp in ms.
+* **Checksum.** CRC-8 over the first 46 bytes, by LDROBOT's own table.
+* **Direction.** Angles increase **clockwise** seen from above: LDROBOT's
+  ROS node reverses them for ROS. That matches this project's body angles.
+
+The D500 speaking this protocol at **230,400 baud** is inferred, not
+verified for this unit: Waveshare's `ldlidar` launches LD19 at 230,400,
+and the STL-19P is its sibling. It is checked by criterion 7 on day one.
+
+**Mounting.** Per Waveshare's CAD, the lidar sits 4.0 cm ahead of the
+rotation centre (`LIDAR_X_M`, already used everywhere), turned 90 degrees
+to the left. The yaw is one setting (`LIDAR_YAW_DEG`, `[CAD]`, to measure).
+
+**What is built:**
+* `robot/lidar_ld19.py`: the protocol, a stream parser, a revolution
+  assembler, 1-degree binning into `get_scan()`'s contract, and a
+  serial-port reader thread. It reports the scan's age (`sensor_age_s`),
+  so `SafetyController._aged()` (3.36) discounts the travel since the
+  oldest point.
+* `sim/fake_lidar.py`: the D500 on a pty. It casts every point at its own
+  instant from the simulated body's published state (3.36's shared
+  memory), so a moving robot's scan is skewed the way a real one is.
+* `HardwareRobot` takes the scan from the lidar when one is configured
+  (`ROBOT_LIDAR` = its serial device; `SIM_LIDAR=fake` in the simulator).
+  Otherwise it keeps today's source.
+
+**Acceptance criteria (written before building):**
+
+1. **Protocol.**
+   * Encode and decode round-trip.
+   * The CRC table is LDROBOT's: pinned by its checksum and the published
+     first and last entries.
+   * The parser resyncs after garbage, joins packets split across reads,
+     and drops and counts any packet whose CRC fails.
+   * Each test is confirmed red against a mutation: angle direction
+     flipped, mm read as cm, a CRC byte changed.
+2. **Fidelity through the serial path, robot at rest.**
+   * Setup: fake lidar on a pty -> `Ld19Lidar` -> `get_scan()`, against an
+     exact cast at the same pose; 3 houses x 10 poses.
+   * Beam error: at least **98%** of beams within **3 cm**, and **no beam
+     more than 3 cm farther than the truth**. Too far is the unsafe
+     direction; too near only stops early.
+   * Orientation: the nearest-obstacle bearing agrees within **2 degrees**.
+3. **Liveness.**
+   * **Silence:** no packets for 0.3 s -> the scan reads `usable: false`,
+     FORWARD and REVERSE are refused (turns allowed, as today with no
+     scan), and the scan is usable again within 0.3 s of packets
+     resuming.
+   * **A lossy line:** with 1% of bytes dropped and 1% corrupted, the scan
+     stays usable and criterion 2 holds.
+4. **Safety under real lidar timing, on ground truth** (3.18's method,
+   `tests/footprint_sweep.py`).
+   * Setup: the vet reads scans assembled from a MOVING robot at 10 Hz,
+     each point cast at its own instant, aged by `sensor_age_s`.
+   * **Straight runs:** 0 runs under 18 cm of travel-to-contact, 0
+     contacts, and progress at least 95%, on the sample
+     `tests/test_footprint_safety.py` pins.
+   * **Pivots (3.19):** 0 within 1 cm.
+   * **If this fails, that is the finding**: a real lidar's timing needs
+     margin the simulator never asked for. It is recorded, not tuned
+     away.
+5. **The live stack on the laptop** (`SIM_MOTOR_BOARD=fake`,
+   `SIM_LIDAR=fake`, `drive: ros`): the live chain and nav suites pass
+   once, and SLAM maps from the driver's scan through the bridge.
+6. **The Jetson:** G4's two suites pass once with `SIM_LIDAR=fake`. The
+   wheel loop has 0 late ticks over a 10-minute run with the driver in
+   it. The reader's CPU share is recorded.
+7. **On the car, deferred to arrival and recorded then:**
+   * a 30-second capture of the real D500 decodes with under 0.1% CRC
+     failures;
+   * the scan rate is 10 Hz +/- 10%;
+   * a taped wall reads within 2 cm;
+   * a box placed dead ahead reads at 0 +/- 2 degrees, which verifies
+     `LIDAR_YAW_DEG`.
+
+   If the bytes are not LD19's, only the decoding layer changes.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
