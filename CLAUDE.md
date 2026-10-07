@@ -134,8 +134,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   * **Part A, measured 2026-10-06: TensorRT not adopted; torch stays.**
     The fp16 engines change CLIP probabilities by up to 0.052 (bar 0.01).
     p90 is only 20-25% faster (bar 30%).
-  * **Isaac ROS inside ROS (arm C):** not built. It would run the same
-    engines; whether to try fp32 engines is the user's call.
+  * **Closed by the user the same day.** Revisit TensorRT or Isaac ROS
+    only if perception goes over its 250 ms budget on the car: a real
+    camera, a higher frame rate or a heavier model. 3.41 lists the order
+    to try things in.
   * **Part B (cuVSLAM, nvblox)** needs the Rover's camera.
 * **Before the Rover arrives:** check with calipers that the devkit's
   mounting holes match the Rover deck's 86 x 58 mm pattern

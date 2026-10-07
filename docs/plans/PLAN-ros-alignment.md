@@ -4623,7 +4623,7 @@ must be rebuilt from this branch (`docker build -t vision-picar-ros
 service/slam`) for `:latest` to carry G and the capture stamp; the runs used
 the tag `vision-picar-ros:stamp` with G mounted.
 
-### 3.41 NVIDIA's GPU packages on the Jetson, judged against what we run (2026-10-06): plan and criteria, written before measuring -- Part A measured (not adopted), Part B waits on the Rover
+### 3.41 NVIDIA's GPU packages on the Jetson, judged against what we run (2026-10-06): plan and criteria, written before measuring -- Part A CLOSED (not adopted; revisit only over budget), Part B waits on the Rover
 
 **Asked by the user 2026-10-06:** with the Jetson in hand, evaluate Isaac
 ROS's image pipeline + TensorRT inference, NITROS, cuVSLAM and nvblox, and
@@ -4767,6 +4767,33 @@ Same 60 frames after 3 warm-up, one arm per process:
   C on fp16 engines is out by criterion 1 before it is built. C on fp32
   engines would also need fp32 B as its rival. **Not built; taken to the
   user.** The tier already runs at 46% of its p90 budget.
+
+**Part A CLOSED 2026-10-06, decided by the user.** Torch stays. TensorRT
+is revisited **only when perception goes over its budget**: 250 ms a frame
+at p90, at 15 W, measured on the car through the real mission path. The
+likely causes are:
+
+* the car's real camera (resolution, decode cost, frame size);
+* a higher frame rate than today's ~4 Hz tier;
+* a heavier model replacing YOLOE-11s or CLIP RN50.
+
+Until one of those pushes it over, no further TensorRT or Isaac ROS
+perception work is planned. That includes the fp32 run, which was
+estimated, not measured. The estimate: probably within criterion 1, but
+only 5-15% faster at p90, against 30%.
+
+When the trigger fires, start here, in this order:
+
+1. **Judge fp16 on the whole labelled corpus**, not on per-frame parity:
+   recall at a fixed false-positive budget with `control/perception_eval.py`,
+   TensorRT against torch. If fp16 holds recall, criterion 1's 0.01
+   per-frame bar was the wrong test for adoption. Change it in a written
+   amendment before re-running.
+2. **Remove the ~11 ms of extra CPU handling** that the TensorRT path
+   added (18 -> 29 ms median). B1 lands near the 30% bar without it.
+3. **fp32 engines (TF32 off)**, only if fp16 fails step 1.
+4. **Isaac ROS (arm C)**, only if B is adopted and still leaves the frame
+   over budget.
 
 #### Part B -- cuVSLAM and nvblox (need the OAK-D Lite, so the Rover)
 
