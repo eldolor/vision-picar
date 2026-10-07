@@ -195,8 +195,21 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   `control/perception_eval.py` is the scorer; do not rewrite it in a
   scratchpad.
 * **Parallel sessions** share this repo and the Jetson. Each manages its
-  own commits. Live ROS stacks for another session may own :8000/:8090.
-  Use :8100/:8101/:8190 with `ROS_DOMAIN_ID=73` for your own.
+  own commits. **Read `docs/guides/PARALLEL-SESSIONS.md` before working on
+  the plan** (the user, 2026-10-07). In short:
+  * One branch and worktree per plan section:
+    `python tools/plan_section.py new <slug> "<title>"` reserves the next
+    number.
+  * Each section is its own file in `docs/plans/ros-alignment/`.
+  * Your own ports, ROS domain, container and image:
+    `eval "$(python tools/plan_section.py env)"`. Never rebuild
+    `vision-picar-ros:latest` from a branch.
+  * `overlap` before editing a shared file.
+  * `ready` (rebase check + full suite) before asking to push to `dev`; a
+    pre-push hook enforces it.
+  * One heavy live run at a time (a lock in `tests/demo_explore.stack()`).
+  * CLAUDE.md section 3b and other shared status are updated at merge, not
+    on a branch.
 
 ---
 

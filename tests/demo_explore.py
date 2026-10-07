@@ -33,8 +33,15 @@ from tests.footprint_sweep import CELL_CM, chassis, gap, penetration, square
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
-ROBOT, BRAIN, BRIDGE = 8100, 8101, 8190
-CONTAINER = "picar-ros-explore"
+# Everything a live stack can collide on comes from the environment, so
+# parallel sessions do not share it: `python tools/plan_section.py env`
+# prints a set derived from the branch's section number
+# (docs/guides/PARALLEL-SESSIONS.md). Unset, the old fixed values.
+ROBOT = int(os.environ.get("PICAR_ROBOT_PORT", 8100))
+BRAIN = int(os.environ.get("PICAR_BRAIN_PORT", 8101))
+BRIDGE = int(os.environ.get("PICAR_BRIDGE_PORT", 8190))
+CONTAINER = os.environ.get("PICAR_ROS_CONTAINER", "picar-ros-explore")
+ROS_DOMAIN = os.environ.get("ROS_DOMAIN_ID", "73")
 TARGET = "red backpack"
 MISSION_LIMIT_S = 1800
 LOGDIR = os.environ.get("EXPLORE_LOGDIR", "/tmp")
@@ -66,11 +73,43 @@ def _listeners(port):
                           capture_output=True, text=True).stdout.split()
 
 
+_HEAVY = None
+
+
+def heavy_lock():
+    """One heavy live run on this machine at a time, held until the process
+    exits (docs/guides/PARALLEL-SESSIONS.md, rule 7): parallel sessions
+    measuring timing -- late ticks, scan skew, nav2 smoothness -- on one
+    laptop would skew each other's numbers. The lock lives in the shared
+    .git, so every worktree sees it. PICAR_HEAVY_LOCK=0 skips it."""
+    global _HEAVY
+    if _HEAVY is not None or os.environ.get("PICAR_HEAVY_LOCK") == "0":
+        return
+    import fcntl
+    common = subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True,
+                            text=True, cwd=ROOT).stdout.strip() or "/tmp"
+    path = os.path.join(os.path.abspath(os.path.join(ROOT, common)), "heavy-run.lock")
+    f = open(path, "a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        f.seek(0)
+        print(f"waiting for the heavy-run lock ({path}): {f.read().strip() or 'held'}",
+              file=sys.stderr, flush=True)
+        fcntl.flock(f, fcntl.LOCK_EX)
+    f.seek(0)
+    f.truncate()
+    f.write(f"pid {os.getpid()} {' '.join(sys.argv)[:200]} since {time.ctime()}\n")
+    f.flush()
+    _HEAVY = f
+
+
 def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None):
     """A fresh robot server, brain and ROS container. `slam_yaml` mounts
     another slam_toolbox config over the image's (it is symlink-installed),
     and `nav_yaml` another nav2 config;
     `odom_drift` is SIM_ODOM_DRIFT ("left,right")."""
+    heavy_lock()
     _kill_ports()
     env = {k: v for k, v in os.environ.items()
            if k not in ("APP_SHARED_SECRET", "LOCAL_SECRET")}
@@ -93,7 +132,7 @@ def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None):
     if nav_yaml:
         mount += ["-v", f"{os.path.abspath(nav_yaml)}:/ws/src/picar_bringup/config/nav2.yaml:ro"]
     subprocess.run(["docker", "run", "-d", "--name", CONTAINER, *mount,
-                    "-p", f"127.0.0.1:{BRIDGE}:8090", "-e", "ROS_DOMAIN_ID=73",
+                    "-p", f"127.0.0.1:{BRIDGE}:8090", "-e", f"ROS_DOMAIN_ID={ROS_DOMAIN}",
                     "-e", f"ROBOT_URL=http://host.docker.internal:{ROBOT}",
                     "-e", f"BRAIN_URL=http://host.docker.internal:{BRAIN}",
                     os.environ.get("ROS_IMAGE", "vision-picar-ros:latest"), "ros2", "launch", "picar_bringup",

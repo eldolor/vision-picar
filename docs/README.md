@@ -81,9 +81,9 @@ name, and every name is unique, so a search for a name still finds it.
 
 | Folder | Holds |
 |---|---|
-| [plans/](plans/) | `PLAN-*.md`: each phase's criteria, results and corrections, dated. `PLAN-ros-alignment.md` is the governing plan |
+| [plans/](plans/) | `PLAN-*.md`: each phase's criteria, results and corrections, dated. `PLAN-ros-alignment.md` is the governing plan; its 3.N sections are one file each in `plans/ros-alignment/` |
 | [hardware/](hardware/) | What to buy and why: `JETSON-BOM.md` (the build), `HARDWARE-BOM.md` (parts, wiring, the board protocol), `HARDWARE-READINESS.md`, `BOM-COMPARISON.md` (verified prices), `PI-VS-JETSON.md`, `GUIDE-robot-base.md`, `UGV-ROVER-MOUNTING.md` (the Rover's deck hole pattern, from Waveshare's CAD), and the superseded `BOM.md` |
-| [guides/](guides/) | Explainers: `INTRODUCTION.md`, `FEATURES.md` (every UI feature end to end), `AGENT-HARNESS.md` (how `control/` works) |
+| [guides/](guides/) | Explainers: `INTRODUCTION.md`, `FEATURES.md` (every UI feature end to end), `AGENT-HARNESS.md` (how `control/` works), `PARALLEL-SESSIONS.md` (several sessions on the plan at once: one branch per section) |
 | [evaluations/](evaluations/) | Write-ups of one-off measurements: the edge perception bench and the 2026-09-22 navigate-model evaluation |
 | [handoffs/](handoffs/) | Session handoffs, dated; the newest says what is open |
 | [archive/](archive/) | Older material moved out of `CLAUDE.md`, verbatim: `CLAUDE-history-2026-09.md` (the dated reversals) `CLAUDE-2026-10-06.md` (the whole file before its 2026-10-06 rewrite), and the 2026-10-06 copies of `JETSON-BOM.md` and the root README's build journal |
