@@ -124,6 +124,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
 
 ### 3b. Open work, in order
 
+* **Speed-scaled clearance** (6.9) meets the lidar driver (3.42): read
+  `HANDOFF-2026-10-07-lidar-and-speed.md` before changing the stop
+  distance. It covers the double-counted delay, the sim scan-hint trap
+  and the lidar-timed sweep.
 * **SLAM bends the map in the furnished home's open rooms**
   (3.39-3.40, on branch `frontier-search`, not merged). It is not a
   `slam.yaml` setting and not a timestamp skew. The next remedy is the
