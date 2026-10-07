@@ -5126,6 +5126,56 @@ see into, and the robot spends ~2 min failing and escaping there. That is a
 goal-choice problem in `brain/explore.py`, not nav2's. `nav2.yaml` is
 unchanged; the next step is the user's call.
 
+### 3.43 A slow move needs less room than a fast one (2026-10-07): criteria, written before building -- NOT yet confirmed by the user
+
+**Why.** 3.42 left the robot stalling for ~2 min in corners, and its escape
+could free only 71.5% of wedged poses: 43 of the rest could be left by NO
+allowed move. The live record shows why. A reverse was refused with
+**19.3-19.4 cm** behind it, because `robot/safety.py` holds a reverse, like a
+forward, to `min_distance_cm` (20 cm) whatever its speed. 20 cm is a
+STOPPING distance for a moving robot (`PLAN-onboard-perception.md` 1.14: right
+for ~0.45 m/s); at a creep of 3 cm/s the robot stops within millimetres, so
+refusing a slow 5 cm reverse with 19 cm of room protects nothing.
+
+**Decision to confirm (the user's):** the smaller margin applies only to a
+straight move ASKED at creep speed -- never to one the vet itself slowed
+(the wheel vet slows every approach as the 20 cm line nears; if slowed moves
+qualified, nav2 would creep every approach to 3 cm of furniture). Today only
+3.29's settle pass (2 cm/s) asks that slowly, and nav2's slowest commands are
+0.05-0.08 m/s. The brain's escape will ask for creep REVERSE / FORWARD of at
+most a few cm.
+
+**Design.** `CREEP_M_S` = 0.03 m/s and `CREEP_MARGIN_CM` = 3.0 (the swept
+corridor's side margin, 3.18) in `robot/safety.py`. A translation asked at
+|v| <= `CREEP_M_S` may continue while its clearance (forward or reverse, the
+same two readings in series) stays above `CREEP_MARGIN_CM`, with the same
+one-period look-ahead; anything faster keeps `min_distance_cm`. Rotation is
+unchanged (3.19's 1.3 cm guard). Both paths: `vet_wheel_velocity()` (ROS and
+the wheel loop) and the verb path (`check_and_execute()` / `run_verb()`). The
+escape (3.42's `OPEN`) gains creep REVERSE then FORWARD steps.
+
+**Criteria (ground truth throughout -- never the readings the veto uses):**
+
+1. **Fast moves unchanged:** 3.18's footprint sweep (forward and reverse,
+   `tests/footprint_sweep.py`) and 3.19's pivot sweep pass their recorded
+   bars as they are: 0 runs under 18 cm of travel-to-contact at normal speed,
+   0 contacts, 0 pivots within 1 cm.
+2. **Creep never touches:** a new creep sweep -- creep forward and reverse
+   from 1440 starts within 25 cm of something, house by house -- **0 contacts
+   and 0 samples under 2 cm** of true gap; every creep stops above it.
+3. **A slowed move is not a creep move:** nav2's approach to a wall (R6's
+   instrument, scaled house) still stops at the 20 cm line: R6 goals 6/6 and
+   nearest surface no lower than today's 19 cm. Pinned by a test that a
+   command slowed below `CREEP_M_S` by the look-ahead is still refused at
+   `min_distance_cm`.
+4. **The escape frees what 3.42's could not:** `tests/escape_sweep.py`, the
+   200 wedged poses PLUS the all-four-refused traps judged too: **>= 95%**
+   freed, 0 contacts.
+5. **No stalls, live:** three furnished-home explore-then-tour runs, no
+   stretch of >= 120 s parked, >= 8 of 9 tour goals, 3.40's SLAM bars hold.
+6. **Pinned and specified:** tests confirmed red on today's code; the safety
+   architecture and engineering specs change in the same commit.
+
 ## 4. Honest residue -- what the twin cannot tell you
 
 All physical, all hardware-day, none a gap in this plan.
