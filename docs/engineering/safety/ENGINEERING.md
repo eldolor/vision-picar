@@ -29,7 +29,7 @@ changes it.
 
 | Motion | Path | Check |
 |---|---|---|
-| `/action` FORWARD | `check_and_execute()` | Pre-check `forward_clearance() < min_distance_cm` raises. Then, if the body has a `verb_plan()`, `run_verb()` re-vets every 50 ms period with look-ahead |
+| `/action` FORWARD | `check_and_execute()` | Pre-check `forward_clearance() < required_clearance_cm(v, creep)` raises, where `v` is the verb's `speed` as m/s (`verb_speed_m_s()`). Then, if the body has a `verb_plan()`, `run_verb()` re-vets every 50 ms period with look-ahead against the same bar |
 | `/action` REVERSE | same | `reverse_clearance()`, then `run_verb()`. Refused outright (`astern_not_observed`) on a body with wheels and no usable scan |
 | `/action` LEFT / RIGHT | same | No pre-check. `run_verb()` limits each step with `pivot_scale()` (only on bodies with a plan). With no usable scan, never limited |
 | `/action` LOOK_* / STOP | `_dispatch()` | None |
@@ -69,10 +69,25 @@ three-period-old readings: worst travel-to-contact 18.2 cm without it,
 is 0-100 ms old when it is read, which is the rule's reason beyond the
 sim.
 
-Comparison edges: the verb pre-check refuses at `< min_distance_cm`; the
-wheel vet clamps at `<= min_distance_cm` and otherwise limits speed to
-`(clearance - min) / 0.05 s`. `run_verb()`'s limit allows
-`clearance - min` metres, so it ends `clamped` at the line.
+Comparison edges: the verb pre-check refuses at `< need`; the wheel vet
+clamps at `<= need` and otherwise limits speed to `(clearance - need) /
+0.05 s`. `run_verb()`'s limit allows `clearance - need` metres, so it ends
+`clamped` at the line.
+
+**The bar, `need` (3.44):** `required_clearance_cm(v, creep)` is
+`CREEP_MARGIN_CM` (3 cm) when `creep` and `|v| <= CREEP_M_S` (0.03 m/s),
+else `max(min_distance_cm, stop_distance_cm(v))` with
+`stop_distance_cm(v) = 3 + 100 (|v| x 0.15 + v^2 / (2 x 0.5))` cm -- 20 cm
+up to about 0.39 m/s, 25 at 0.4, 35.5 at 0.5, 48 at 0.6. `v` unknown
+(None): `min_distance_cm`. `creep` is true only while a straight verb
+ASKED at creep speed runs: `check_and_execute()` sets `_asked_v_m_s` and
+`_creep_asked` through `_asking()` for the verb's whole run and clears them
+in `finally`. The server shares one `SafetyController` between `/action`
+and the wheel loop, so under ROS drive the twists of a creep verb are
+vetted at the creep bar while it runs; nav2's twists, which no verb asked,
+never are. The wheel vet computes `need` from the COMMANDED `v` before
+slowing it, and `run_verb()` from the asked speed, so the vet's own slowing
+never earns the creep margin.
 
 ### Driving without a lidar
 
@@ -103,7 +118,9 @@ astern does not reverse".
 
 | Method | Returns / raises |
 |---|---|
-| `check_and_execute(action, speed=, duration=, angle=)` | The body's result dict. Raises `SafetyViolation` on a veto, or when a guarded verb achieved under `VERB_MIN_MOVE_M` / `VERB_MIN_TURN_DEG`; `ValueError` on an unknown action |
+| `check_and_execute(action, speed=, duration=, angle=)` | The body's result dict. Raises `SafetyViolation` on a veto, or when a guarded verb achieved under `VERB_MIN_MOVE_M` / `VERB_MIN_TURN_DEG`; `ValueError` on an unknown action. A straight verb's `speed` (default 50) sets its bar (3.44) |
+| `required_clearance_cm(v_m_s, creep=False)` | The straight-move bar in cm, as above |
+| `scan_hint_m()` | The range the vet's scans ask for: half the chassis length plus 1.5 x the bar at `MAX_LINEAR_M_S` (about 0.85 m) |
 | `vet_wheel_velocity(left_rad_s, right_rad_s)` | `(left, right, reason)`. `reason` is None when only slowed. Pass-through if the body's wheels are unusable (`robot/safety.py:665`). A reverse component on a blind body with wheels is clamped to zero with `astern_not_observed` in the reason; rotation is untouched |
 | `run_verb(plan)` | `carry_out_verb()`'s `{"done", "ended", "reason"}`, after the settle pass when the plan asks for one |
 | `forward_clearance()`, `reverse_clearance()` (both aged), `path_clearance()`, `footprint_clearance(direction, scan)`, `rear_clearance(scan)`, `pivot_scale(omega, scan)`, `pivot_blocked(omega, scan, exact)` | See above |
@@ -209,7 +226,11 @@ unlogged, as `ros_unavailable` is), and `watchdog` (recorded in
 | `PIVOT_MARGIN_CM` | 1.3 | cm | `robot/safety.py` | 1.2 at 3.19. Raised after one guarded turn read 0.96 cm once the lidar moved 4 cm ahead (3.27). Moved after seeing data, as recorded |
 | `PIVOT_MIN_LOOKAHEAD_DEG` | 1.0 | deg | `robot/safety.py` | Minimum look-ahead for a slow turn |
 | `PIVOT_AGE_SAMPLES` | 4 | | `robot/safety.py` | Rotations checked across the turn a scan has missed (3.42) |
-| `SAFETY_SCAN_RANGE_M` | 0.6 | m | `robot/safety.py` | Scan hint. Effective `max(0.6, half-length + 1.5 x min_distance)`. Without it the sim cast 360 rays to 12 m, about 13 ms a period |
+| `SAFETY_SCAN_RANGE_M` | 0.6 | m | `robot/safety.py` | Scan hint floor. Effective `max(0.6, scan_hint_m())`, about 0.85 m since 3.44: the sim reports beams past the hint as nothing there, so a hint under the top speed's bar made the SIMULATOR blind where the car sees. A real lidar ignores it. Without a hint the sim cast 360 rays to 12 m, about 13 ms a period |
+| `CREEP_M_S` / `CREEP_MARGIN_CM` | 0.03 / 3.0 | m/s / cm | `robot/safety.py` | 3.44: a verb asked this slowly keeps only the corridor's side margin. 3.43's wedged robot stood 19.3 cm from what was behind it |
+| `T_REACT_S` | 0.15 | s | `robot/safety.py` | One control period plus the R4 actuator chain (40-150 ms). Excludes the sensor's age, which `_aged()` already subtracts |
+| `DECEL_M_S2` | 0.5 | m/s^2 | `robot/safety.py` | **[PLACEHOLDER]** braking, until 6.9(d) measures it on the car |
+| `MAX_LINEAR_M_S` / `VERB_FULL_SPEED_M_S` | 0.6 / 0.6 | m/s | `robot/safety.py` | The chassis cap (controllers.yaml), for the scan hint; a verb's speed 100 (`moves_for()`'s two 0.30 m moves a second) |
 | `CHASSIS_WIDTH_CM` / `PATH_REFERENCE_CM` | 16.5 / 30.0 | cm | `robot/safety.py` | Cone half-angle `PATH_HALF_ANGLE_DEG` = atan(8.25/30), about 15.4 deg. Errs narrow against the 23.1 cm Rover; the corridor covers the gap |
 | `PATH_FRACTION` | 0.5 | | `robot/safety.py` | Only for a grid with no `fov_deg`. Warns above 8 columns |
 | `VERB_MIN_MOVE_M` / `VERB_MIN_TURN_DEG` | 0.01 / 0.5 | m / deg | `robot/safety.py` | Under this, a verb is a refusal (3.22 decision 1) |
@@ -284,7 +305,8 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | `tests/test_pan_safety.py` (6) | 3.18 part 2: zones by body bearing; `path_not_observed` |
 | `tests/test_pivot_safety.py` (4) | 3.19: no contact from turning; turns with room complete |
 | `tests/test_lidar_safety.py` (4) | 3.42 criterion 4: the 3.18/3.19 samples with the vet reading the D500's timed scan (no depth grid): straight runs pass; pivots 0/120 within 1 cm with the rotation aged, and fail without it |
-| `tests/test_guarded_verbs.py` (8) | 3.22: verbs stop at the line; a stop ends a verb within 100 ms on the fake board |
+| `tests/test_guarded_verbs.py` (8) | 3.22: verbs stop at the line; a stop ends a verb within 100 ms on the fake board. 4a judges "clear" against each speed's own bar (3.44 amendment) |
+| `tests/test_speed_clearance.py` (15) | 3.44: today's speeds keep 20 cm; the creep margin only when asked; an unasked 0.02 m/s twist and a look-ahead-slowed verb stop at 20 cm; creep sweep samples (verb instant and lidar-timed, wheel loop) never within 2 cm, and the instrument fails with no margin; 0.4/0.5 m/s sweeps; the scan hint covers the top speed's bar |
 | `tests/test_mission_guarded_verbs.py` (3) | 3.32: in-process missions use guarded verbs through `_HaltGate` |
 | `tests/test_wheels_command.py` (8) | R2b's six criteria plus the zero-heartbeat rules |
 | `tests/test_ros_verb_safety.py` (7) | 3.24 G2: the same bars through the ROS path |
@@ -362,9 +384,14 @@ order; record the table in the plan entry.
   is refused `ros_unavailable`. That window is inside G3's 2 s bar. The
   bridge-failure rule (built 2026-10-02) shortens it: the first failed send
   marks ROS down, so only that one verb is refused.
-- **The fixed 20 cm floor** is a stopping distance for about 0.45 m/s
-  (`PLAN-onboard-perception.md`); a ROS verb peaks at 0.6 m/s and relies on
-  the look-ahead.
+- **`DECEL_M_S2` is a placeholder** (3.44). Above about 0.39 m/s the bar
+  is set by it, unmeasured; raising nav2's speed also waits on 3.42's
+  relayed-scan time stamp (6.9).
+- **A creep verb plans a whole 30 cm cell**, as every verb does
+  (`moves_for()`), so it crawls to the 3 cm line: up to 10 s at 3 cm/s,
+  the brain's HTTP timeout. The explore escape creeps only toward an end
+  the 20 cm bar already refuses (at most 17 cm, ~6 s). Whether the Rover's
+  board holds 0.75 rad/s wheels smoothly is a hardware-day check.
 - **Late safety ticks on the Jetson** are measured only against the fake
   motor board: 0 in 14,289 under full load (3.33, with 3.37). With the real
   lidar driver and serial board in the process they are unmeasured.

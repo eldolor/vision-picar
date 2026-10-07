@@ -51,8 +51,9 @@ def _truth(programs):
 
 
 def _vet_range():
-    from robot.safety import FOOTPRINT_LENGTH_M, SAFETY_SCAN_RANGE_M
-    return max(SAFETY_SCAN_RANGE_M, FOOTPRINT_LENGTH_M / 2 + 1.5 * 20.0 / 100.0)
+    # The vet's own hint, asked of the vet (3.44 made it follow speed).
+    from robot.safety import SAFETY_SCAN_RANGE_M, SafetyController
+    return max(SAFETY_SCAN_RANGE_M, SafetyController(None, 20.0).scan_hint_m())
 
 
 # ---------- criterion 1: the robot server runs no simulation ----------

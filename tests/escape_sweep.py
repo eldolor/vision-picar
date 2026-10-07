@@ -15,9 +15,9 @@ FREED = forward or reverse is allowed afterwards. Contacts are judged on
 ground truth (`footprint_sweep.truth`'s chassis-to-cell gap), never on the
 readings the safety layer used.
 
-Headings where all four moves are refused are counted and reported, not
-judged: nothing can leave them without loosening robot/safety.py (3.43
-part b keeps the planner out of them instead).
+Headings where all four moves are refused were counted, not judged, in
+3.43: nothing could leave them before 3.44's creep. 3.44 criterion 5
+judges both kinds together (`freed_share_all`).
 """
 
 import json
@@ -107,8 +107,7 @@ def sweep(n=N, seed=0):
             continue
         r = {"x_m": round(x, 3), "y_m": round(y, 3), "heading": round(h, 1), "kind": kind,
              "gap_cm": round(g, 2)}
-        if kind == "one_turn":
-            r.update(escape(x, y, h))
+        r.update(escape(x, y, h))
         rows.append(r)
     return rows
 
@@ -120,12 +119,17 @@ def summary(rows):
             "freed_share": round(sum(r["freed"] for r in one) / max(len(one), 1), 3),
             "contacts": sum(r["min_gap_cm"] <= 0.0 for r in one),
             "min_gap_cm": min((r["min_gap_cm"] for r in one), default=None),
-            "trap_headings": sum(r["kind"] == "trap" for r in rows)}
+            "trap_headings": sum(r["kind"] == "trap" for r in rows),
+            "traps_freed": sum(r["freed"] for r in rows if r["kind"] == "trap"),
+            # 3.44 criterion 5: the wedged poses and the traps, together.
+            "freed_share_all": round(sum(r["freed"] for r in rows) / max(len(rows), 1), 3),
+            "contacts_all": sum(r["min_gap_cm"] <= 0.0 for r in rows),
+            "min_gap_cm_all": min((r["min_gap_cm"] for r in rows), default=None)}
 
 
 if __name__ == "__main__":
     rows = sweep(int(sys.argv[1]) if len(sys.argv) > 1 else N)
     print(json.dumps(summary(rows)))
     for r in rows:
-        if r["kind"] == "one_turn" and not r["freed"]:
-            print(json.dumps({k: r[k] for k in ("x_m", "y_m", "heading", "moves")}))
+        if not r["freed"]:
+            print(json.dumps({k: r[k] for k in ("x_m", "y_m", "heading", "kind", "moves")}))

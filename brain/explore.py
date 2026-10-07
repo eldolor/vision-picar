@@ -73,6 +73,12 @@ MAX_ESCAPES = 3
 # An escape's turn sizes, each tried on the roomier side and then the other,
 # until the pivot guard lets one through (3.43).
 OPEN_ANGLES = (90, 45, 20, 10, 5)
+# 3.44: a verb asked this slowly (0-100; 0.03 m/s = robot.safety.CREEP_M_S)
+# needs only CREEP_MARGIN_CM (3 cm) of room, so a robot wedged at 19 cm can
+# still creep out. The escape creeps only toward an end the full bar
+# already refuses -- at most 17 cm to the 3 cm line, ~6 s, inside
+# RemoteRobot's 10 s request timeout (a creep verb plans a whole cell).
+CREEP_SPEED = 5
 # "Boxed in": fewer reachable stopping places than this around the robot.
 BOXED_CELLS = 40
 # The robot server's refusal when the mission's OWN goal still holds the
@@ -415,7 +421,7 @@ class ExploreAgent(MissionAgent):
 
     def _queue_escape(self) -> None:
         self.escapes += 1
-        self._pending = ["REVERSE", ("OPEN",)]
+        self._pending = ["REVERSE", ("CREEP",), ("OPEN",)]
 
     def _do_pending(self):
         item = self._pending.pop(0)
@@ -457,6 +463,19 @@ class ExploreAgent(MissionAgent):
                 self._pending.insert(0, ("OPEN", [(side, a) for a in OPEN_ANGLES]
                                          + [(other, a) for a in OPEN_ANGLES], turned + angle))
             return out
+        if isinstance(item, tuple) and item[0] == "CREEP":
+            # 3.44: still wedged after the reverse -- creep toward the
+            # roomier end (the other if that is refused), which frees the
+            # far end and changes what the corners can swing past.
+            ends = item[1] if len(item) > 1 else self._creep_ends()
+            if not ends:                 # the reverse freed it: on to the turn
+                return self._do_pending() if self._pending else ("WAIT", True, "not wedged")
+            out = self._verb(ends[0], speed=CREEP_SPEED)
+            if out[0] == "WAIT":
+                self._requeue(ends[0], ("CREEP", ends))
+            elif not out[1] and len(ends) > 1:
+                self._pending.insert(0, ("CREEP", ends[1:]))
+            return out
         if isinstance(item, tuple) and item[0] == "FACE":
             pose = self._pose()
             if not pose.get("usable"):
@@ -480,6 +499,19 @@ class ExploreAgent(MissionAgent):
                 self._pending = [p for p in self._pending if p is not item]
             return out
         return self._verb(item)
+
+    def _creep_ends(self) -> list:
+        """The straight moves the full bar refuses, roomier end first --
+        empty when either end is open, or a clearance is unknown."""
+        try:
+            f, _ = self.safety.forward_clearance()
+            b, _ = self.safety.reverse_clearance()
+        except Exception:  # noqa: BLE001 -- unknown: do not creep on a guess
+            return []
+        lim = self.safety.min_distance_cm
+        if f is None or b is None or f > lim or b > lim:
+            return []
+        return ["REVERSE", "FORWARD"] if b >= f else ["FORWARD", "REVERSE"]
 
     def _still_wedged(self) -> bool:
         """Forward AND reverse both refused by the safety layer's own

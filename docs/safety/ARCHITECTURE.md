@@ -284,6 +284,24 @@ needs no restart (decided by the user, `PLAN-ros-alignment.md` 3.24 G3).
 robot out of the way. **Rejected:** letting autonomy continue on the direct
 path, which would give one mission two sets of motion semantics.
 
+### The stopping distance follows the speed the move was asked at
+
+A straight move needs room to stop, and that room grows with speed. A move
+asked at a creep (3 cm/s) keeps a small margin, 3 cm. Any other move keeps
+the larger of the old 20 cm floor and its stopping distance, so today's
+speeds keep exactly 20 cm and a faster one keeps more
+(`PLAN-ros-alignment.md` 3.44). **The margin follows the speed ASKED, not
+the speed the vet slowed a move to:** every approach is slowed as the line
+nears, and keying on that would let every move creep to 3 cm. Only a verb
+can be asked at a creep; the ROS planner's twists always keep the full
+floor. **Rejected:** a fixed 20 cm for every speed, which left the robot
+wedged at 19 cm with no move allowed (3.43's furnished-home stalls) and is
+too little for a faster planner. **Rejected:** a pure stopping formula,
+which would cut today's speeds to about 10 cm, a loosening nobody measured.
+The sensor's age is counted once, where readings are aged, not again in
+the stopping distance. Braking is a placeholder until it is measured on the
+car.
+
 ### Judge safety on ground truth, never on the vet's own readings
 
 A sweep measures the chassis rectangle against the house's real geometry,
@@ -310,6 +328,8 @@ are commitments, not tuning.
 | Failure | Response | Target |
 |---|---|---|
 | A move toward an obstacle, any heading, any driver | Slowed, then stopped at the line | After every move, travel-to-contact no more than **2 cm** inside the stopping floor (**18.0 cm** at today's floor). The gap never falls below the smaller of its starting value and **1.0 cm** (3.18, 3.22, 3.24 G2) |
+| A move asked at a creep, toward something close | Allowed to the creep margin, then stopped | The true gap never falls below the smaller of its starting value and **2 cm**, on 1440 starts within 25 cm, on both the verb and the wheel-loop path, with an instantaneous and a lidar-timed scan (3.44) |
+| A faster move (0.4-0.5 m/s) | Stopped at its own, larger line | The 18 cm and 1.0 cm bars above hold, and the robot stops further out than at today's speeds (3.44) |
 | A pivot near furniture | A closing turn is slowed or stopped. A turn away proceeds | No corner within **1.0 cm**. At least 95% of turns with room complete (3.19) |
 | Camera panned away, no scan | Forward refused (path not observed) | A panned camera never stops the robot later than a centred one (3.18) |
 | Nothing sees astern, on a body that moves | Every reverse refused; turns allowed | The robot never backs into what it cannot see |
@@ -326,9 +346,10 @@ are commitments, not tuning.
 
 ## Open questions
 
-- **Speed-dependent stopping distance.** The stopping floor is a fixed
-  distance, which is sound only at the speeds verbs use today. ROS speed
-  zones wait on this (`PLAN-ros-alignment.md` 1.1, question 9). Owner: the
+- **Braking, and a faster planner.** The stopping distance now follows
+  speed (Decisions, 3.44), but its braking rate is a placeholder until it
+  is measured on the car, and raising the planner's speed also waits on
+  the relayed scan's time stamp (`PLAN-ros-alignment.md` 6.9). Owner: the
   user, on hardware data.
 - **Calibration on the real chassis.** The cone's chassis width, the
   sensor-to-bumper offset and the corridor's side margin are hardware-day

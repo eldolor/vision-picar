@@ -27,6 +27,7 @@ hardware path (M1), which is the argument for keeping it a number
 against a threshold rather than anything cleverer.
 """
 
+import contextlib
 import logging
 import math
 import time
@@ -799,7 +800,7 @@ class SafetyController:
 
         Decomposes the command into body velocity `v` and yaw rate `omega`
         with the chassis constants the robot publishes, zeroes `v` if it
-        points into less than `min_distance_cm` of clearance (ahead from
+        points into no more than `required_clearance_cm()` (3.44) of clearance (ahead from
         `forward_clearance()`, behind from `reverse_clearance()`), and
         recomposes. **Rotation is clamped only when it closes on something**
         (`pivot_blocked()`, 3.19): turning away is always allowed, which is
@@ -864,10 +865,18 @@ class SafetyController:
         if not straight:
             return self._check_and_execute(action, None, **kwargs)
         v = verb_speed_m_s(kwargs.get("speed", 50))
-        self._asked_v_m_s, self._creep_asked = v, v <= CREEP_M_S
-        try:
+        with self._asking(v):
             return self._check_and_execute(action, self.required_clearance_cm(v, v <= CREEP_M_S),
                                            **kwargs)
+
+    @contextlib.contextmanager
+    def _asking(self, v_m_s: float):
+        """Hold a straight verb's ASKED speed for its whole run (3.44), so
+        `run_verb()` and the wheel loop's `vet_wheel_velocity()` keep the bar
+        it was asked at -- and clear it after, so nothing else inherits it."""
+        self._asked_v_m_s, self._creep_asked = v_m_s, abs(v_m_s) <= CREEP_M_S
+        try:
+            yield
         finally:
             self._asked_v_m_s, self._creep_asked = None, False
 
@@ -955,8 +964,8 @@ class SafetyController:
         the clearances `vet_wheel_velocity()` reads -- the loop itself is
         `robot.interface.carry_out_verb()`; this supplies its limit.
 
-        **A translation looks ahead:** it may cover at most (clearance -
-        `min_distance_cm`) this period, so it stops AT the line rather than
+        **A translation looks ahead:** it may cover at most (clearance - the
+        bar it was asked at) this period, so it stops AT the line rather than
         one period past it (3 cm at a verb's 0.6 m/s). **A turn is checked
         step by step** with `pivot_scale()`, at a look-ahead equal to exactly
         the step it is about to make.

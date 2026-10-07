@@ -308,10 +308,11 @@ class _LidarTimed:
 
 
 def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0, age=True,
-        lidar=False):
+        lidar=False, speed_m_s=SPEED_M_S):
     """One standing command through the wheel loop's two calls. Returns a
     dict of the truth it met. `lag` > 0 vets on readings that many periods
-    old (3.36); the truth is always now."""
+    old (3.36); the truth is always now. `speed_m_s`: 3.44 criterion 4
+    drives faster than R2b's 0.1 m/s."""
     world = build_world(house)
     world.x, world.y, world.theta = x, y, math.radians(heading_deg)
     world.pan = pan   # 3.18 part 2: the camera, left where a mission left it
@@ -320,9 +321,12 @@ def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0, age=
     safety = SafetyController(sensed, 20.0)
     hint = None
     if lag:
-        from robot.safety import FOOTPRINT_LENGTH_M, SAFETY_SCAN_RANGE_M
-        hint = max(SAFETY_SCAN_RANGE_M, FOOTPRINT_LENGTH_M / 2 + 1.5 * 20.0 / 100.0)
-    w = direction * SPEED_M_S / WHEEL_RADIUS_M
+        # The hint the vet itself asks with: `_Lagged` serves its old scan
+        # only for that exact hint, so a copy that drifts from the vet's
+        # (3.44 grew it) silently hands the vet a LIVE scan.
+        from robot.safety import SAFETY_SCAN_RANGE_M
+        hint = max(SAFETY_SCAN_RANGE_M, safety.scan_hint_m())
+    w = direction * speed_m_s / WHEEL_RADIUS_M
     T0, G0, _ = truth(world, direction)
     worst_T_after_move, min_G, max_P = math.inf, G0, 0.0
     x0, y0 = world.x, world.y
@@ -354,13 +358,14 @@ def run(house, x, y, heading_deg, direction=+1, clamp=True, pan=0.0, lag=0, age=
 
 
 def sweep(houses, starts_per_house, seed=0, clamp=True, directions=(+1, -1), pan=0.0, lag=0,
-          age=True, lidar=False):
+          age=True, lidar=False, speed_m_s=SPEED_M_S):
     out = []
     for house in houses:
         for x, y in starts(house, starts_per_house, seed):
             for h in range(HEADINGS):
                 for d in directions:
-                    out.append(run(house, x, y, h * 15, d, clamp, pan, lag, age, lidar))
+                    out.append(run(house, x, y, h * 15, d, clamp, pan, lag, age, lidar,
+                                   speed_m_s))
     return out
 
 

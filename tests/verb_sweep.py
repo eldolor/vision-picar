@@ -22,7 +22,7 @@ still seen.
 import math
 import random
 
-from robot.safety import SafetyController, SafetyViolation
+from robot.safety import SafetyController, SafetyViolation, verb_speed_m_s
 from sim.maps import build_world
 from sim.mock_robot import MockRobot
 from tests import footprint_sweep as fs
@@ -47,8 +47,11 @@ G_BAR_CM = fs.G_BAR_CM        # 1, 2: no contact
 # while the look-ahead mutant reads 17.2.
 VETO_BAR_CM = 19.4
 # 4: verbs still mean what they meant, where there is room.
-FULL_MOVE_START_CM = fs.PROGRESS_START_CM   # T at start >= 60 cm ...
+FULL_MOVE_START_CM = fs.PROGRESS_START_CM   # T at start >= 60 cm at speed 50 ...
 FULL_MOVE_CM = 30.0                          # ... covers the whole cell ...
+# 3.44's amendment to 4a: "room" is the speed's own bar + the cell + the
+# slack 60 cm always left over 20 cm -- 60 cm at speed 50, 88 at speed 100.
+FULL_MOVE_SLACK_CM = FULL_MOVE_START_CM - 20.0 - FULL_MOVE_CM
 FULL_MOVE_TOL_CM = 0.1                       # ... to within 1 mm
 TURN_ROOM_SLACK_DEG = 10                     # turns with this much spare room ...
 TURN_TOL_DEG = 0.5                           # ... turn the whole angle
@@ -98,6 +101,7 @@ def straight_run(house, x, y, heading_deg, action="FORWARD", speed=50):
         if result.get("stopped_short") == "clamped":
             veto = (safety.forward_clearance() if direction > 0 else safety.reverse_clearance())[0]
         verbs.append({"T_before": T_before, "T_after": T_after, "veto_at_stop": veto,
+                      "speed": speed,
                       "moved": math.hypot(world.x - x0, world.y - y0) * fs.CELL_CM})
     return {"house": house, "x": x, "y": y, "heading": heading_deg, "action": action,
             "speed": speed, "T0": T0, "G0": G0, "verbs": verbs,
@@ -149,6 +153,13 @@ def turn_sweep(houses=HOUSES, starts_per_house=4, seed=0, angles=TURN_ANGLES):
             for h, x, y, th in poses for a in ("LEFT", "RIGHT") for ang in angles]
 
 
+def full_move_start_cm(speed) -> float:
+    """Truth's travel-to-contact from which a verb at `speed` has room for
+    the whole cell (3.44's amendment to 4a)."""
+    need = SafetyController(None, 20.0).required_clearance_cm(verb_speed_m_s(speed))
+    return need + FULL_MOVE_CM + FULL_MOVE_SLACK_CM
+
+
 def verdicts(straight, turns):
     """Criteria 1, 1b, 2 and 4 of 3.22: {name: (ok, detail)}."""
     all_verbs = [v for r in straight for v in r["verbs"]]
@@ -157,7 +168,7 @@ def verdicts(straight, turns):
     stops = [v["veto_at_stop"] for v in all_verbs if v["veto_at_stop"] is not None]
     c1b = [x for x in stops if x < VETO_BAR_CM]
     c2 = [r for r in turns if r["min_G"] < min(r["G0"], G_BAR_CM) - 1e-6]
-    eligible = [v for v in all_verbs if v["T_before"] >= FULL_MOVE_START_CM]
+    eligible = [v for v in all_verbs if v["T_before"] >= full_move_start_cm(v["speed"])]
     full = [v for v in eligible if abs(v["moved"] - FULL_MOVE_CM) <= FULL_MOVE_TOL_CM]
     t_elig = [r for r in turns if r["room"] >= r["angle"] + TURN_ROOM_SLACK_DEG]
     t_full = [r for r in t_elig if r["turned"] >= r["angle"] - TURN_TOL_DEG]
