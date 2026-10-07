@@ -115,6 +115,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
 | Perception | YOLOE-11s-seg crops, then CLIP RN50, gate P >= 0.8. On the Jetson at 15 W: median 61 ms, p90 110 ms a frame. | P22-P24, 3.33 |
 | Arrival | The target centred and the lidar under 0.40 m for two frames, then one cloud call confirms identity (3.11, 3.32, handoff 1a). | `brain/arrival.py` |
 | ROS stack | URDF/TF (R3, Rover CAD geometry since 3.27); `ros2_control` + `twist_mux` (R4); `slam_toolbox` (R5); nav2 + `collision_monitor` (R6). Off by default (`ROBOT_DRIVE=ros`, `WORLD_MODE=ros`). `drive: ros` gates G1-G4 all met (G4 on the Jetson, 2026-10-05). | `service/slam/README.md`, `docs/ros/` |
+| Lidar | `robot/lidar_ld19.py` reads the D500 (LD19 protocol) in the robot server, not ROS; `sim/fake_lidar.py` fakes it on a pty (`SIM_LIDAR=fake`). Ground-truth safety holds under its real timing after two fixes. On the Jetson: 18/18. Nav smoothness on the laptop sits at its bar (3.42) | `docs/plans/PLAN-ros-alignment.md` 3.42 |
 | Motor board | `robot/hardware_robot.py` over the ESP32's JSON serial protocol (R7). `sim/fake_esp32.py` copies the Rover's firmware from source (3.25). Our GPL-3.0 firmware fork adds 0.1 mm odometers and a timestamp; compiled, not flashed (3.28-3.29). | `firmware/`, `docs/motor-board/` |
 | Jetson | JetPack 6.2.1 on the NVMe, 15 W, kept 2026-10-05. The suite, G4 and headroom all pass there (0 late wheel-loop ticks in 14,289). | 3.33-3.37, `tools/jetson/README.md` |
 | Cloud | The twin and console are static on S3 + CloudFront. `/navigate` (Opus 4.5) and the walks API run on Lambda (`cloudformation/serverless.yaml`). The robot and brain run locally, reached through `service/tunnel/`. | `docs/cloud-vision/`, `docs/operations/` |
@@ -150,8 +151,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   * Confirm the serial route (expected `/dev/ttyTHS1`); dump the stock
     firmware; flash the fork after the return-window checks.
   * Set up udev names and `dialout`.
-  * Port the D500 lidar's protocol into the robot server (decided
-    2026-10-02), behind a fake lidar on a pty first.
+  * Verify the lidar driver on the real D500 (3.42 criterion 7): the
+    protocol and baud, the 10 Hz rate, a taped wall, and the mounting yaw.
   * Run a 15 W stress test with motors. It decides the separate Jetson
     battery (`JETSON-BOM.md` 9.5).
   * Measure every `[PLACEHOLDER]` in the xacro, including `track_scrub`.
@@ -207,6 +208,7 @@ robot/        the robot server and the body contract
   safety.py         SafetyController: the veto on every path (cone, swept corridor, pivots, verbs)
   server.py         FastAPI on :8000: /action arbitration, /wheels 20 Hz loop, watchdog, serves the twin
   hardware_robot.py R7: the ESP32 motor board over serial
+  lidar_ld19.py     3.42: the D500 lidar (LD19 protocol), read here so safety keeps a scan when ROS hangs
   ros_drive.py      R4: under drive: ros, verbs become twists through the ROS container
   identity.py       the start-up identity line both servers log (M5)
 world/        WorldInterface (pose, map), its factory, and ros_world.py (SLAM + nav2 goals)
@@ -225,6 +227,7 @@ sim/          the grid-world simulator
   replay_robot.py   a recorded walk as a body (open loop)
   teleop_robot.py   a live phone camera as a body (mode: teleop)
   fake_esp32.py     the Rover's motor-board firmware on a pty
+  fake_lidar.py     the D500 on a pty, every point cast at its own instant (3.42)
   body_server.py, sensor_server.py, body_state.py, body_client.py   the body in its own processes (3.36)
   maps/             starter_house, scaled_house, home_first_floor
 control/      the brain as a service; robot reachable only over HTTP

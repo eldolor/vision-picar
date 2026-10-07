@@ -4839,7 +4839,7 @@ Part B's installability check when the board is free; the rest on arrival.
 Every arm runs in its own container or image tag, so `vision-picar-ros`
 and G4's configuration stay untouched.
 
-### 3.42 The D500 lidar, read by the robot server (2026-10-06): criteria, written before building
+### 3.42 The D500 lidar, read by the robot server (2026-10-06): criteria, written before building -- BUILT; 2, 3b and 5 failed as written, 4 met after a fix
 
 **Asked by the user 2026-10-06**, after an evidence check on how often ROS
 stacks hang (the tf2 deadlock was an upstream regression hitting every
@@ -4979,6 +4979,63 @@ unchanged.
   sims) see no change. So 3.19's pinned results must reproduce unchanged.
 * **Criterion 4's bars are unchanged:** 0 pivots within 1 cm, and the
   straight runs still pass.
+
+**Results (2026-10-06).** Code: `robot/lidar_ld19.py`, `sim/fake_lidar.py`,
+`HardwareRobot(lidar=)`, `ROBOT_LIDAR` / `SIM_LIDAR=fake`. Tests:
+`tests/test_lidar_ld19.py`, `tests/test_lidar_safety.py`.
+
+| criterion | result |
+|---|---|
+| 1 protocol | **Met.** Round trip; LDROBOT's CRC table; resync, split reads, CRC drops counted |
+| 2 fidelity, robot at rest | **FAILED as written.** 97.9% of beams within 3 cm (bar 98%), 47 of 10,800 beams too far (bar 0), one of them nearer than 0.8 m (0.76) |
+| 3 liveness | Silence: **met** (unusable within 0.3 s, back within a revolution). Lossy line: **FAILED as written** -- see below |
+| 4 safety under lidar timing | **Met, after the pivot fix**: straight runs 0/432 under 18 cm, 0 contacts, progress 97.7%. Pivots 105/120 within 1 cm before the fix, **0/120** after it, and 24/24 with room still turned |
+| 4b lidar-only forward | **Met** (stub; red without the fix) |
+| 5 live stack, laptop | **Borderline, not met.** Chain suite **13/13**. Nav suite **1 of 3** runs with the lidar: two failed smoothness at 21 reversals per ~20 m (1.03-1.04/m, bar 1.0), against 2 of 2 passing without it |
+| 6 the Jetson | **Met.** G4's suites with `SIM_LIDAR=fake`: **18/18**; 0 late wheel-loop ticks in 10,070 moving ticks (~17 min), 0 CRC failures, 0 unusable revolutions. Robot server 44% of a core (3.36 measured 42-47% without the driver). The first board run failed two tests: one killed a container by the standard name, which mine did not have; the other read the veto at 19.2 cm against 19.4, and did not repeat |
+| 7 on the car | Deferred to the Rover's arrival |
+
+What each failure means:
+* **Criterion 2: the driver is exact; the gap is the lidar.** 10,800 of
+  10,800 beams are identical to binning the device's own points directly.
+  The D500 takes a point every 0.8 degrees, and the bar compared against a
+  ray through each bin's exact centre. An edge thinner than the spacing
+  falls between two points, which no driver can recover. Criterion 4
+  judges what that costs on ground truth.
+* **Criterion 3's lossy line.** 1% of bytes dropped plus 1% corrupted
+  destroys ~61% of the 47-byte packets, so the scan reads **unusable**.
+  That is the safe answer, but not the one the bar asked for. Measured
+  beside it (200 revolutions each):
+
+  | bytes lost | packets lost | revolutions usable |
+  |---|---|---|
+  | 0.06% | 2.6% | 100% |
+  | 0.2% | 8.5% | 99% |
+  | 0.6% | 24% | 39% |
+
+  A healthy USB link sits at the top of that table.
+* **Criterion 5: the lidar makes nav2 less smooth on the laptop.** The
+  likeliest cause, not established, is time stamps: the bridge stamps the
+  scan it relays to ROS as current, and a real scan is 50-150 ms old. That
+  is the same class of skew 3.40 measured at 21 ms.
+* **Docker-on-Mac trap.** The first live run failed 8 of 13 because two
+  ROS containers on one Docker network shared the default DDS domain and
+  crossed topics. The stack now runs on its own `ROS_DOMAIN_ID`.
+
+**Found and fixed on the way:**
+* **A lidar-only car could never drive forward** (amendment 4b): the cone
+  now reads the scan's forward beams.
+* **A lost packet's bins read as clear.** A bin with no data now carries
+  the previous revolution's value or its neighbours'. More than 18 such
+  bins and there is no scan.
+* **Rotation was never aged.** The pivot guard now takes the encoders' turn
+  since the scan.
+* **A torn read in `sim/body_state.py`.** A header with n=0 passed the CRC
+  (crc32 of empty is 0) and killed the fake lidar on the Jetson.
+
+**Next, for the user to decide:** stamp each relayed scan with its capture
+time (`/scan` carries the scan's age, and the bridge subtracts it), then
+re-run criterion 5 against the same bar.
 
 ## 4. Honest residue -- what the twin cannot tell you
 

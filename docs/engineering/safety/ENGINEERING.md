@@ -44,18 +44,19 @@ within range, never "unknown".
 
 | Method | Sources | Meaning |
 |---|---|---|
-| `path_clearance()` | `depth_grid_facing_away`, `depth_grid`, `depth_grid_no_target`, `distance_sensor` | The cone, tried in that order. A panned grid with no path zones left is no opinion (`None`); otherwise the nearest `ZONE_RANGE` in the path zones; otherwise, if any path zone answered, no target; otherwise (no grid, or every path zone unusable) the scalar `get_distance()`. Unusable zones are dropped. All values are bumper-relative (`sensor_to_bumper_cm` subtracted, floored at 0) |
+| `path_clearance()` | `depth_grid_facing_away`, `depth_grid`, `depth_grid_no_target`, `scan_path`, `scan_path_no_target`, `distance_sensor` | The cone, tried in that order. A panned grid with no path zones left is no opinion (`None`); otherwise the nearest `ZONE_RANGE` in the path zones; otherwise, if any path zone answered, no target; otherwise, with a usable scan, its beams within `PATH_HALF_ANGLE_DEG` of ahead minus `LIDAR_TO_FRONT_BUMPER_CM` (3.42: without it a lidar-only car fell to the scalar's 0.0 and could never drive forward); otherwise the scalar `get_distance()`. Unusable zones are dropped. All values are bumper-relative (`sensor_to_bumper_cm` subtracted, floored at 0) |
 | `footprint_clearance(+1 / -1)` | `scan_footprint`, `scan_footprint_no_target`, `no_scan` | Returns in the body frame within half-width + 3 cm of the centre-line and beyond the leading edge: distance past the edge. A return inside the outline reads 0.0 |
 | `rear_clearance()` | `scan_rear`, `scan_rear_no_target`, `no_rear_sensor` | Beams within `PATH_HALF_ANGLE_DEG` of astern, minus `LIDAR_TO_REAR_BUMPER_CM` |
 | `forward_clearance()` | the lesser of cone and corridor, or `path_not_observed` (0.0); then aged (below) | `path_not_observed` when the grid faces away and there is no scan |
 | `reverse_clearance()` | `astern_not_observed` (0.0), or the lesser of rear and corridor astern, off one scan; then aged (below) | `(0.0, "astern_not_observed")` when the scan is missing or unusable **and** `_has_wheels()` (the body's `get_wheel_state()` reports `usable: true`; a body without the method, or whose call raises, has none). Otherwise, with no scan, `(None, "no_rear_sensor")` and the reverse proceeds. The rule and its reasons: [architecture spec](../../safety/ARCHITECTURE.md), "A body that cannot see astern does not reverse" |
-| `pivot_blocked(omega)` / `pivot_scale(omega)` | reason string or None / `(fraction, reason)` | A return whose distance to the rectangle would end under `PIVOT_MARGIN_CM` **and** shrink. Binary search to 1/64 of the turn rate. No usable scan: never blocked |
+| `pivot_blocked(omega)` / `pivot_scale(omega)` | reason string or None / `(fraction, reason)` | A return whose distance to the rectangle would end under `PIVOT_MARGIN_CM` **and** shrink. Binary search to 1/64 of the turn rate. No usable scan: never blocked. **Aged rotation** (3.42): `_turn_since_scan()` is the turn the scan has missed -- the body's own answer (`turn_since_scan()`, `HardwareRobot` from its encoder heading history) or else yaw rate x `sensor_age_s()` -- and the check runs from `PIVOT_AGE_SAMPLES` + 1 rotations across that arc. Zero for a body whose readings have no age |
 
 **Aged readings** (`_aged(result, direction)`, `PLAN-ros-alignment.md`
 3.36). The look-ahead (3.24 G2) stops a move AT the line only if the
 clearance is the clearance now. A body that reports how old its readings
-are (`sensor_age_s()`; today only `sim/body_client.py`'s `SimBodyClient`,
-whose polled bundle is up to `SENSOR_STALE_S` 0.15 s old) has the way
+are (`sensor_age_s()`: `sim/body_client.py`'s `SimBodyClient`, whose
+polled bundle is up to `SENSOR_STALE_S` 0.15 s old, and since 3.42
+`HardwareRobot` with a lidar, whose scan is 0-150 ms old) has the way
 covered since subtracted: `clearance - max(0, direction x v) x age`, with
 `v` the mean wheel speed times `wheel_radius_m`, floored at 0.0 and
 rounded to 0.1 cm, and the source gains `, aged <n> ms`. It is skipped,
@@ -203,10 +204,11 @@ unlogged, as `ros_unavailable` is), and `watchdog` (recorded in
 | `WHEEL_LOOP_INTERVAL_S` / `VERB_PERIOD_S` / `PIVOT_LOOKAHEAD_S` | 0.05 | s | `robot/server.py`, `robot/interface.py`, `robot/safety.py` | nav2's controller rate. A tick over 0.1 s counts as late |
 | `ROS_SILENCE_S` | 0.5 | s | `robot/server.py` | Ten missed 20 Hz actuator posts = ROS down (3.24 G3) |
 | `GOAL_STOP_POLL_S`, `GOAL_STOP_SETTLE_S` | 0.25, 0.6 | s | `robot/server.py` | How often a stop re-reads and re-cancels a goal until nav2 reports it over, and how long `ros` wheel commands stay held after that. The settle is `STOP_HOLD_S`'s derivation: twist_mux's input timeout plus the controller's `cmd_vel_timeout` (they add) plus one plugin period |
-| `FOOTPRINT_LENGTH_M`, `FOOTPRINT_WIDTH_M`, `LIDAR_X_M`, `LIDAR_TO_REAR_BUMPER_CM` | see platform | m / cm | `robot/safety.py` (defined here; the footprint is imported by `sim/grid_world.py`, `LIDAR_X_M` is the sim's scan origin) | The chassis geometry every check places returns against. `LIDAR_TO_REAR_BUMPER_CM` is derived: half the length plus `LIDAR_X_M`. Values and sources: [platform engineering](../platform/ENGINEERING.md), the canonical table. Held equal to the xacro and nav2 by `tests/test_wall_linters.py` |
+| `FOOTPRINT_LENGTH_M`, `FOOTPRINT_WIDTH_M`, `LIDAR_X_M`, `LIDAR_TO_REAR_BUMPER_CM`, `LIDAR_TO_FRONT_BUMPER_CM` | see platform | m / cm | `robot/safety.py` (defined here; the footprint is imported by `sim/grid_world.py`, `LIDAR_X_M` is the sim's scan origin) | The chassis geometry every check places returns against. `LIDAR_TO_REAR_BUMPER_CM` is derived: half the length plus `LIDAR_X_M`; `LIDAR_TO_FRONT_BUMPER_CM` half the length minus it (3.42). Values and sources: [platform engineering](../platform/ENGINEERING.md), the canonical table. Held equal to the xacro and nav2 by `tests/test_wall_linters.py` |
 | `FOOTPRINT_SIDE_MARGIN_CM` | 3.0 | cm | `robot/safety.py` | Starter-house doors are 30 cm against a 23.1 cm chassis. 3 cm less the march's 1.5 cm over-read; larger refuses every door (`tests/chassis_fit.py`) |
 | `PIVOT_MARGIN_CM` | 1.3 | cm | `robot/safety.py` | 1.2 at 3.19. Raised after one guarded turn read 0.96 cm once the lidar moved 4 cm ahead (3.27). Moved after seeing data, as recorded |
 | `PIVOT_MIN_LOOKAHEAD_DEG` | 1.0 | deg | `robot/safety.py` | Minimum look-ahead for a slow turn |
+| `PIVOT_AGE_SAMPLES` | 4 | | `robot/safety.py` | Rotations checked across the turn a scan has missed (3.42) |
 | `SAFETY_SCAN_RANGE_M` | 0.6 | m | `robot/safety.py` | Scan hint. Effective `max(0.6, half-length + 1.5 x min_distance)`. Without it the sim cast 360 rays to 12 m, about 13 ms a period |
 | `CHASSIS_WIDTH_CM` / `PATH_REFERENCE_CM` | 16.5 / 30.0 | cm | `robot/safety.py` | Cone half-angle `PATH_HALF_ANGLE_DEG` = atan(8.25/30), about 15.4 deg. Errs narrow against the 23.1 cm Rover; the corridor covers the gap |
 | `PATH_FRACTION` | 0.5 | | `robot/safety.py` | Only for a grid with no `fov_deg`. Warns above 8 columns |
@@ -281,6 +283,7 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | `tests/test_footprint_safety.py` (12) | 3.18: seeded sample of the oblique-approach sweep over three houses. 3.36: the same bars hold on readings `SENSOR_STALE_S` old, and `_aged()` subtracts `v x age` closing and nothing moving away or with no age |
 | `tests/test_pan_safety.py` (6) | 3.18 part 2: zones by body bearing; `path_not_observed` |
 | `tests/test_pivot_safety.py` (4) | 3.19: no contact from turning; turns with room complete |
+| `tests/test_lidar_safety.py` (4) | 3.42 criterion 4: the 3.18/3.19 samples with the vet reading the D500's timed scan (no depth grid): straight runs pass; pivots 0/120 within 1 cm with the rotation aged, and fail without it |
 | `tests/test_guarded_verbs.py` (8) | 3.22: verbs stop at the line; a stop ends a verb within 100 ms on the fake board |
 | `tests/test_mission_guarded_verbs.py` (3) | 3.32: in-process missions use guarded verbs through `_HaltGate` |
 | `tests/test_wheels_command.py` (8) | R2b's six criteria plus the zero-heartbeat rules |
