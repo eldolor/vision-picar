@@ -5330,6 +5330,26 @@ job, on a phone.
    and the commanded-speed log shows the slow zones engaging; (d) on the
    car, measured stopping distance at each speed band, against the
    formula, before the sim's bands are trusted.
+
+   **What 3.42 (the lidar driver) changes here (added 2026-10-07).** The
+   detail is in `HANDOFF-2026-10-07-lidar-and-speed.md`.
+   * **Count the lidar's delay once.** `_aged()` already subtracts
+     `v x sensor_age_s()`; on the car that is the lidar's age. The stopping
+     formula's reaction time must leave that out, or the robot stops
+     further out than needed.
+   * **Build the bands on the measured scan age.** It was 0.15-0.2 s when
+     read, not 0.1 s: 7.5-10 cm at 0.5 m/s before any braking.
+   * **Grow the safety scan hint with the clearance.**
+     `SafetyController._scan()` asks for about 0.6 m today. The simulator
+     reports beams beyond the hint as None and a real lidar ignores it, so
+     a larger clearance with the old hint makes the simulator hide
+     obstacles. That errs unsafe, and in the sim only.
+   * **Criterion (b) is to be run on the lidar-timed sweep too**
+     (`fs.sweep(..., lidar=True)`, `fs.pivot_sweep(..., lidar=True)`: the
+     D500's timed scan, no depth grid). 3.42 measured it only at 0.1 m/s
+     and 1 rad/s.
+   * **Settle the scan time stamp before raising nav2's speed.** 3.42's
+     open time stamp item, decided by the user, matters more at speed.
 10. **Gyro-based heading: a phase, if turns on the car need better than
    about +/- 2 deg (raised 2026-10-01, from 3.25's failed turn criterion;
    for the user to decide).** Where turns stand without it: stock firmware,
