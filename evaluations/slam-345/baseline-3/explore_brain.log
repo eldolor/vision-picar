@@ -1,0 +1,302 @@
+1791428255.796 WARNING identity vision-picar brain server starting -- git=7cf0dd5 executable=/opt/anaconda3/bin/python config=(default)
+1791428261.662 INFO mission_runner mission started: Find the purple elephant. (max_steps=400)
+1791428261.857 INFO explore explore {"event": "goal_refused", "t": 342970.22, "kind": "frontier", "goal": [5.79, 11.79], "reason": "preempted", "pose": [5.25, 11.25, 0.0]}
+1791428261.860 INFO mission_runner waiting -- goal refused: preempted -- foyer, facing ?, free space clear, sees nothing of note
+1791428262.572 INFO explore explore {"event": "goal_refused", "t": 342970.94, "kind": "frontier", "goal": [5.79, 11.79], "reason": "preempted", "pose": [5.25, 11.25, 0.0]}
+1791428263.271 INFO explore explore {"event": "goal_sent", "t": 342971.64, "kind": "frontier", "goal": [5.79, 11.79], "rank": 0, "candidates": 19, "path_m": 0.78, "size_m": 1.45, "score": -0.67, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [5.25, 11.25, 0.0]}
+1791428263.286 INFO mission_runner step 0: GOAL (ok) -- goal sent (frontier) to (5.79, 11.79) -- foyer, facing ?, free space clear, sees nothing of note
+1791428263.658 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space clear, sees nothing of note
+1791428270.990 INFO explore explore {"event": "goal_ended", "t": 342979.36, "kind": "frontier", "state": "succeeded", "goal": [5.79, 11.79], "seconds": 7.8, "moved_m": 0.67, "pose": [5.73, 11.72, 138.4]}
+1791428270.998 INFO explore explore {"event": "verb", "t": 342979.37, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [5.73, 11.72, 138.4]}
+1791428271.001 INFO mission_runner step 1: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- foyer, facing ?, free space clear, sees nothing of note
+1791428271.409 INFO explore explore {"event": "verb", "t": 342979.78, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [5.73, 11.72, 138.4]}
+1791428271.411 INFO mission_runner step 1: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- foyer, facing ?, free space clear, sees nothing of note
+1791428271.759 INFO explore explore {"event": "verb", "t": 342980.13, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [5.73, 11.72, 138.4]}
+1791428271.761 INFO mission_runner step 1: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- foyer, facing ?, free space clear, sees nothing of note
+1791428272.197 INFO explore explore {"event": "goal_refused", "t": 342980.56, "kind": "frontier", "goal": [4.71, 12.65], "reason": "preempted", "pose": [5.73, 11.72, 138.4]}
+1791428272.199 INFO mission_runner waiting -- goal refused: preempted -- foyer, facing ?, free space clear, sees nothing of note
+1791428272.936 INFO explore explore {"event": "goal_sent", "t": 342981.3, "kind": "frontier", "goal": [4.71, 12.65], "rank": 0, "candidates": 32, "path_m": 1.39, "size_m": 0.3, "score": 1.09, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [5.73, 11.72, 138.4]}
+1791428272.939 INFO mission_runner step 1: GOAL (ok) -- goal sent (frontier) to (4.71, 12.65) -- foyer, facing ?, free space clear, sees nothing of note
+1791428273.264 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space clear, sees nothing of note
+1791428277.620 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space some, sees nothing of note
+1791428283.091 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space none, sees nothing of note
+1791428283.687 INFO explore explore {"event": "goal_ended", "t": 342992.06, "kind": "frontier", "state": "succeeded", "goal": [4.71, 12.65], "seconds": 10.9, "moved_m": 1.28, "pose": [4.78, 12.58, 224.4]}
+1791428283.694 INFO explore explore {"event": "verb", "t": 342992.06, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [4.78, 12.58, 224.4]}
+1791428283.697 INFO mission_runner step 2: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- foyer, facing ?, free space none, sees nothing of note
+1791428284.016 INFO explore explore {"event": "verb", "t": 342992.38, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [4.78, 12.58, 224.4]}
+1791428284.020 INFO mission_runner step 2: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- foyer, facing ?, free space none, sees nothing of note
+1791428284.363 INFO explore explore {"event": "verb", "t": 342992.73, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [4.78, 12.58, 224.4]}
+1791428284.365 INFO mission_runner step 2: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- foyer, facing ?, free space none, sees nothing of note
+1791428284.803 INFO explore explore {"event": "goal_refused", "t": 342993.17, "kind": "frontier", "goal": [4.16, 12.65], "reason": "preempted", "pose": [4.78, 12.58, 224.4]}
+1791428284.805 INFO mission_runner waiting -- goal refused: preempted -- foyer, facing ?, free space none, sees nothing of note
+1791428285.529 INFO explore explore {"event": "goal_sent", "t": 342993.9, "kind": "frontier", "goal": [4.16, 12.65], "rank": 0, "candidates": 42, "path_m": 0.7, "size_m": 0.55, "score": 0.15, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [4.78, 12.58, 224.4]}
+1791428285.532 INFO mission_runner step 2: GOAL (ok) -- goal sent (frontier) to (4.16, 12.65) -- foyer, facing ?, free space none, sees nothing of note
+1791428285.839 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space none, sees nothing of note
+1791428309.614 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space some, sees nothing of note
+1791428316.409 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space none, sees nothing of note
+1791428405.749 INFO explore explore {"event": "goal_ended", "t": 343114.12, "kind": "frontier", "state": "timeout", "goal": [4.16, 12.65], "seconds": 120.3, "moved_m": 0.02, "pose": [4.76, 12.58, 230.2]}
+1791428405.753 INFO explore explore {"event": "escape", "t": 343114.12, "why": "wedged", "n": 1, "goal": [4.16, 12.65], "again": false, "pose": [4.76, 12.58, 230.2]}
+1791428405.753 INFO explore frontier goal timeout without moving; backing out
+1791428405.762 INFO explore explore {"event": "verb", "t": 343114.13, "action": "REVERSE", "executed": false, "waited": true, "detail": "REVERSE waits: the mission's own goal still holds the robot", "pose": [4.76, 12.58, 230.2]}
+1791428405.764 INFO mission_runner waiting -- REVERSE waits: the mission's own goal still holds the robot -- foyer, facing ?, free space none, sees nothing of note
+1791428408.562 INFO explore explore {"event": "verb", "t": 343116.93, "action": "REVERSE", "executed": true, "waited": false, "detail": "{'action': 'reverse', 'speed': 50, 'duration': 0.5, 'via': 'ros', 'requested': -1, 'moved': -0.9917, 'moved_m': -0.2975}", "pose": [4.99, 12.39, 230.2]}
+1791428408.566 INFO mission_runner step 3: REVERSE (ok) -- {'action': 'reverse', 'speed': 50, 'duration': 0.5, 'via': 'ros', 'requested': -1, 'moved': -0.9917, 'moved_m': -0.2975} -- foyer, facing ?, free space none, sees nothing of note
+1791428412.130 INFO explore explore {"event": "verb", "t": 343120.5, "action": "RIGHT", "angle": 90, "executed": true, "waited": false, "detail": "{'action': 'turn_right', 'angle': 90, 'via': 'ros', 'turned_deg': 89.84}", "pose": [4.99, 12.39, 320.0]}
+1791428412.146 INFO mission_runner step 3: RIGHT (ok) -- {'action': 'turn_right', 'angle': 90, 'via': 'ros', 'turned_deg': 89.84} -- foyer, facing ?, free space some, sees nothing of note
+1791428412.656 INFO explore explore {"event": "goal_sent", "t": 343121.03, "kind": "frontier", "goal": [4.16, 12.6], "rank": 0, "candidates": 40, "path_m": 1.1, "size_m": 0.55, "score": 0.55, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [4.99, 12.39, 320.0]}
+1791428412.658 INFO mission_runner step 3: GOAL (ok) -- goal sent (frontier) to (4.16, 12.60) -- foyer, facing ?, free space some, sees nothing of note
+1791428413.002 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space some, sees nothing of note
+1791428416.128 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space none, sees nothing of note
+1791428488.163 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space some, sees nothing of note
+1791428493.135 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space none, sees nothing of note
+1791428532.815 INFO explore explore {"event": "goal_ended", "t": 343241.19, "kind": "frontier", "state": "timeout", "goal": [4.16, 12.6], "seconds": 120.3, "moved_m": 0.29, "pose": [4.78, 12.58, 229.6]}
+1791428532.819 INFO explore frontier goal timeout; set aside (failure 1)
+1791428532.953 INFO explore explore {"event": "goal_sent", "t": 343241.33, "kind": "frontier", "goal": [3.76, 10.9], "rank": 1, "candidates": 38, "path_m": 2.84, "size_m": 1.4, "score": 1.44, "skipped": {"reached twice": 0, "set aside": 1}, "pose": [4.78, 12.58, 229.6]}
+1791428532.955 INFO mission_runner step 4: GOAL (ok) -- goal sent (frontier) to (3.76, 10.90) -- foyer, facing ?, free space none, sees nothing of note
+1791428533.287 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space none, sees nothing of note
+1791428543.411 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space some, sees nothing of note
+1791428544.039 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space clear, sees nothing of note
+1791428554.592 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees armchair
+1791428555.848 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees armchair
+1791428557.810 INFO explore explore {"event": "goal_ended", "t": 343266.18, "kind": "frontier", "state": "succeeded", "goal": [3.76, 10.9], "seconds": 25.0, "moved_m": 1.93, "pose": [3.85, 10.88, 262.9]}
+1791428557.818 INFO explore explore {"event": "verb", "t": 343266.19, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [3.85, 10.88, 262.9]}
+1791428557.820 INFO mission_runner step 5: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- living room, facing ?, free space some, sees armchair
+1791428558.186 INFO explore explore {"event": "verb", "t": 343266.56, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [3.85, 10.88, 262.9]}
+1791428558.188 INFO mission_runner step 5: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- living room, facing ?, free space some, sees nothing of note
+1791428558.603 INFO explore explore {"event": "verb", "t": 343266.98, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [3.85, 10.88, 262.9]}
+1791428558.605 INFO mission_runner step 5: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- living room, facing ?, free space some, sees nothing of note
+1791428559.144 INFO explore explore {"event": "goal_refused", "t": 343267.52, "kind": "frontier", "goal": [3.36, 12.0], "reason": "preempted", "pose": [3.85, 10.88, 262.9]}
+1791428559.146 INFO mission_runner waiting -- goal refused: preempted -- living room, facing ?, free space some, sees armchair
+1791428559.988 INFO explore explore {"event": "goal_sent", "t": 343268.36, "kind": "frontier", "goal": [3.36, 12.0], "rank": 0, "candidates": 67, "path_m": 1.37, "size_m": 0.65, "score": 0.72, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [3.85, 10.88, 262.9]}
+1791428559.991 INFO mission_runner step 5: GOAL (ok) -- goal sent (frontier) to (3.36, 12.00) -- living room, facing ?, free space some, sees armchair
+1791428560.388 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees armchair
+1791428561.001 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428562.261 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees armchair
+1791428562.953 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees nothing of note
+1791428564.233 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428570.604 INFO explore explore {"event": "goal_ended", "t": 343278.98, "kind": "frontier", "state": "succeeded", "goal": [3.36, 12.0], "seconds": 10.8, "moved_m": 1.16, "pose": [3.45, 11.97, 255.4]}
+1791428570.611 INFO explore explore {"event": "verb", "t": 343278.99, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [3.45, 11.97, 255.4]}
+1791428570.614 INFO mission_runner step 6: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- living room, facing ?, free space some, sees nothing of note
+1791428570.970 INFO explore explore {"event": "verb", "t": 343279.35, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [3.45, 11.97, 255.4]}
+1791428570.972 INFO mission_runner step 6: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- living room, facing ?, free space some, sees nothing of note
+1791428571.378 INFO explore explore {"event": "verb", "t": 343279.75, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [3.45, 11.97, 255.4]}
+1791428571.380 INFO mission_runner step 6: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- living room, facing ?, free space some, sees armchair, armchair
+1791428571.920 INFO explore explore {"event": "goal_refused", "t": 343280.3, "kind": "frontier", "goal": [2.41, 11.6], "reason": "preempted", "pose": [3.45, 11.97, 255.4]}
+1791428571.923 INFO mission_runner waiting -- goal refused: preempted -- living room, facing ?, free space some, sees nothing of note
+1791428572.769 INFO explore explore {"event": "goal_sent", "t": 343281.14, "kind": "frontier", "goal": [2.41, 11.6], "rank": 0, "candidates": 60, "path_m": 1.22, "size_m": 0.9, "score": 0.32, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [3.45, 11.97, 255.4]}
+1791428572.771 INFO mission_runner step 6: GOAL (ok) -- goal sent (frontier) to (2.41, 11.60) -- living room, facing ?, free space some, sees nothing of note
+1791428573.133 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428573.807 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees nothing of note
+1791428580.383 INFO explore explore {"event": "goal_ended", "t": 343288.76, "kind": "frontier", "state": "succeeded", "goal": [2.41, 11.6], "seconds": 7.8, "moved_m": 1.04, "pose": [2.45, 11.68, 332.3]}
+1791428580.389 INFO explore explore {"event": "verb", "t": 343288.76, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [2.45, 11.68, 332.3]}
+1791428580.391 INFO mission_runner step 7: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- living room, facing ?, free space clear, sees nothing of note
+1791428580.757 INFO explore explore {"event": "verb", "t": 343289.13, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [2.45, 11.68, 332.3]}
+1791428580.759 INFO mission_runner step 7: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- living room, facing ?, free space clear, sees nothing of note
+1791428581.131 INFO explore explore {"event": "verb", "t": 343289.51, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [2.45, 11.68, 332.3]}
+1791428581.133 INFO mission_runner step 7: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- living room, facing ?, free space clear, sees armchair
+1791428581.686 INFO explore explore {"event": "goal_refused", "t": 343290.06, "kind": "frontier", "goal": [1.46, 9.95], "reason": "preempted", "pose": [2.45, 11.68, 332.3]}
+1791428581.689 INFO mission_runner waiting -- goal refused: preempted -- living room, facing ?, free space clear, sees nothing of note
+1791428582.532 INFO explore explore {"event": "goal_sent", "t": 343290.91, "kind": "frontier", "goal": [1.46, 9.95], "rank": 0, "candidates": 58, "path_m": 2.29, "size_m": 0.95, "score": 1.34, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [2.45, 11.68, 332.3]}
+1791428582.534 INFO mission_runner step 7: GOAL (ok) -- goal sent (frontier) to (1.46, 9.95) -- living room, facing ?, free space clear, sees nothing of note
+1791428582.901 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees nothing of note
+1791428584.206 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428584.854 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees nothing of note
+1791428585.524 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428586.163 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees coffee table
+1791428587.471 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428588.098 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees sofa
+1791428589.413 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees sofa, sofa
+1791428590.039 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees sofa
+1791428590.715 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428593.996 INFO explore explore {"event": "goal_ended", "t": 343302.37, "kind": "frontier", "state": "succeeded", "goal": [1.46, 9.95], "seconds": 11.7, "moved_m": 1.91, "pose": [1.48, 10.04, 350.5]}
+1791428594.003 INFO explore explore {"event": "verb", "t": 343302.38, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [1.48, 10.04, 350.5]}
+1791428594.005 INFO mission_runner step 8: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- living room, facing ?, free space some, sees nothing of note
+1791428594.400 INFO explore explore {"event": "verb", "t": 343302.78, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [1.48, 10.04, 350.5]}
+1791428594.402 INFO mission_runner step 8: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- living room, facing ?, free space some, sees sofa, sofa
+1791428594.792 INFO explore explore {"event": "verb", "t": 343303.17, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [1.48, 10.04, 350.5]}
+1791428594.794 INFO mission_runner step 8: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- living room, facing ?, free space some, sees coffee table, coffee table
+1791428595.334 INFO explore explore {"event": "goal_refused", "t": 343303.71, "kind": "frontier", "goal": [2.06, 8.7], "reason": "preempted", "pose": [1.48, 10.04, 350.5]}
+1791428595.336 INFO mission_runner waiting -- goal refused: preempted -- living room, facing ?, free space some, sees nothing of note
+1791428596.178 INFO explore explore {"event": "goal_sent", "t": 343304.55, "kind": "frontier", "goal": [2.06, 8.7], "rank": 0, "candidates": 57, "path_m": 1.95, "size_m": 0.8, "score": 1.15, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [1.48, 10.04, 350.5]}
+1791428596.181 INFO mission_runner step 8: GOAL (ok) -- goal sent (frontier) to (2.06, 8.70) -- living room, facing ?, free space some, sees nothing of note
+1791428596.573 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428597.210 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees nothing of note
+1791428603.142 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428605.158 INFO explore explore {"event": "goal_ended", "t": 343313.53, "kind": "frontier", "state": "succeeded", "goal": [2.06, 8.7], "seconds": 9.2, "moved_m": 1.4, "pose": [1.97, 8.73, 70.3]}
+1791428605.164 INFO explore explore {"event": "verb", "t": 343313.54, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [1.97, 8.73, 70.3]}
+1791428605.167 INFO mission_runner step 9: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- living room, facing ?, free space some, sees nothing of note
+1791428605.551 INFO explore explore {"event": "verb", "t": 343313.93, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [1.97, 8.73, 70.3]}
+1791428605.553 INFO mission_runner step 9: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- living room, facing ?, free space some, sees nothing of note
+1791428605.917 INFO explore explore {"event": "verb", "t": 343314.29, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [1.97, 8.73, 70.3]}
+1791428605.920 INFO mission_runner step 9: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- living room, facing ?, free space some, sees coffee table, coffee table
+1791428606.506 INFO explore explore {"event": "goal_refused", "t": 343314.88, "kind": "frontier", "goal": [0.61, 8.1], "reason": "preempted", "pose": [1.97, 8.73, 70.3]}
+1791428606.509 INFO mission_runner waiting -- goal refused: preempted -- living room, facing ?, free space some, sees nothing of note
+1791428607.322 INFO explore explore {"event": "goal_sent", "t": 343315.7, "kind": "frontier", "goal": [0.61, 8.1], "rank": 0, "candidates": 54, "path_m": 1.91, "size_m": 1.25, "score": 0.66, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [1.97, 8.73, 70.3]}
+1791428607.324 INFO mission_runner step 9: GOAL (ok) -- goal sent (frontier) to (0.61, 8.10) -- living room, facing ?, free space some, sees nothing of note
+1791428607.743 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428609.057 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees nothing of note
+1791428611.015 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees sofa
+1791428611.660 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees sofa
+1791428612.944 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees nothing of note
+1791428613.606 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428619.290 INFO explore explore {"event": "goal_ended", "t": 343327.67, "kind": "frontier", "state": "succeeded", "goal": [0.61, 8.1], "seconds": 12.1, "moved_m": 1.4, "pose": [0.7, 8.12, 280.1]}
+1791428619.295 INFO explore explore {"event": "verb", "t": 343327.67, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [0.7, 8.12, 280.1]}
+1791428619.298 INFO mission_runner step 10: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- living room, facing ?, free space some, sees nothing of note
+1791428619.702 INFO explore explore {"event": "verb", "t": 343328.08, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [0.7, 8.12, 280.1]}
+1791428619.705 INFO mission_runner step 10: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- living room, facing ?, free space some, sees sofa, sofa
+1791428620.085 INFO explore explore {"event": "verb", "t": 343328.46, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [0.7, 8.12, 280.1]}
+1791428620.087 INFO mission_runner step 10: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- living room, facing ?, free space some, sees nothing of note
+1791428620.634 INFO explore explore {"event": "goal_refused", "t": 343329.01, "kind": "frontier", "goal": [3.81, 7.7], "reason": "preempted", "pose": [0.7, 8.12, 280.1]}
+1791428620.636 INFO mission_runner waiting -- goal refused: preempted -- living room, facing ?, free space some, sees nothing of note
+1791428621.464 INFO explore explore {"event": "goal_sent", "t": 343329.84, "kind": "frontier", "goal": [3.81, 7.7], "rank": 0, "candidates": 53, "path_m": 4.86, "size_m": 0.9, "score": 3.96, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [0.7, 8.12, 280.1]}
+1791428621.466 INFO mission_runner step 10: GOAL (ok) -- goal sent (frontier) to (3.81, 7.70) -- living room, facing ?, free space some, sees nothing of note
+1791428621.825 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428628.358 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees nothing of note
+1791428631.004 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428633.001 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees armchair, coffee table
+1791428634.352 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees nothing of note
+1791428639.794 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428649.580 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees nothing of note
+1791428680.266 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428680.927 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair, armchair
+1791428684.815 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428687.405 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees nothing of note
+1791428689.294 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428689.935 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees nothing of note
+1791428741.829 INFO explore explore {"event": "goal_ended", "t": 343450.21, "kind": "frontier", "state": "timeout", "goal": [3.81, 7.7], "seconds": 120.6, "moved_m": 3.17, "pose": [3.86, 7.84, 342.3]}
+1791428741.832 INFO explore frontier goal timeout; set aside (failure 1)
+1791428742.003 INFO explore explore {"event": "goal_sent", "t": 343450.38, "kind": "frontier", "goal": [3.16, 7.73], "rank": 0, "candidates": 50, "path_m": 0.82, "size_m": 0.8, "score": 0.02, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [3.86, 7.84, 342.3]}
+1791428742.005 INFO mission_runner step 11: GOAL (ok) -- goal sent (frontier) to (3.16, 7.73) -- living room, facing ?, free space none, sees nothing of note
+1791428742.391 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees nothing of note
+1791428757.124 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428757.807 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair, armchair
+1791428759.106 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428760.434 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair, armchair
+1791428764.990 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428784.520 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair, armchair
+1791428785.837 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428786.496 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees nothing of note
+1791428787.126 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428787.794 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees nothing of note
+1791428798.659 INFO explore explore {"event": "goal_ended", "t": 343507.04, "kind": "frontier", "state": "aborted", "goal": [3.16, 7.73], "seconds": 56.8, "moved_m": 0.02, "pose": [3.84, 7.82, 311.3]}
+1791428798.663 INFO explore explore {"event": "escape", "t": 343507.04, "why": "wedged", "n": 2, "goal": [3.16, 7.73], "again": false, "pose": [3.84, 7.82, 311.3]}
+1791428798.663 INFO explore frontier goal aborted without moving; backing out
+1791428799.825 INFO explore explore {"event": "verb", "t": 343508.21, "action": "REVERSE", "executed": true, "waited": false, "detail": "{'action': 'reverse', 'speed': 50, 'duration': 0.5, 'via': 'ros', 'requested': -1, 'moved': -0.0952, 'moved_m': -0.0286}", "pose": [3.86, 7.84, 311.3]}
+1791428799.829 INFO mission_runner step 12: REVERSE (ok) -- {'action': 'reverse', 'speed': 50, 'duration': 0.5, 'via': 'ros', 'requested': -1, 'moved': -0.0952, 'moved_m': -0.0286} -- living room, facing ?, free space none, sees nothing of note
+1791428806.730 INFO explore explore {"event": "verb", "t": 343515.11, "action": "REVERSE", "speed": 5, "executed": true, "waited": false, "detail": "{'action': 'reverse', 'speed': 5, 'duration': 0.5, 'via': 'ros', 'requested': -1, 'moved': -0.5601, 'moved_m': -0.168}", "pose": [3.99, 7.95, 311.3]}
+1791428806.734 INFO mission_runner step 12: REVERSE (ok) -- {'action': 'reverse', 'speed': 5, 'duration': 0.5, 'via': 'ros', 'requested': -1, 'moved': -0.5601, 'moved_m': -0.168} -- living room, facing ?, free space none, sees nothing of note
+1791428810.292 INFO explore explore {"event": "verb", "t": 343518.67, "action": "LEFT", "angle": 90, "executed": true, "waited": false, "detail": "{'action': 'turn_left', 'angle': 90, 'via': 'ros', 'turned_deg': -89.9}", "pose": [3.99, 7.95, 221.4]}
+1791428810.309 INFO mission_runner step 12: LEFT (ok) -- {'action': 'turn_left', 'angle': 90, 'via': 'ros', 'turned_deg': -89.9} -- living room, facing ?, free space some, sees nothing of note
+1791428810.893 INFO explore explore {"event": "goal_sent", "t": 343519.28, "kind": "frontier", "goal": [3.16, 7.73], "rank": 0, "candidates": 50, "path_m": 1.02, "size_m": 0.8, "score": 0.22, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [3.99, 7.95, 221.4]}
+1791428810.896 INFO mission_runner step 12: GOAL (ok) -- goal sent (frontier) to (3.16, 7.73) -- living room, facing ?, free space some, sees armchair
+1791428811.284 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees armchair
+1791428811.942 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees armchair, armchair
+1791428813.235 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428813.902 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees nothing of note
+1791428814.553 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428815.822 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees nothing of note
+1791428827.989 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428829.287 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair, armchair
+1791428830.617 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428832.603 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair, armchair
+1791428836.509 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428855.414 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair, armchair
+1791428857.382 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees armchair
+1791428857.991 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees nothing of note
+1791428858.650 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees nothing of note
+1791428868.926 INFO explore explore {"event": "goal_ended", "t": 343577.31, "kind": "frontier", "state": "aborted", "goal": [3.16, 7.73], "seconds": 58.2, "moved_m": 0.19, "pose": [3.85, 7.83, 313.2]}
+1791428868.928 INFO explore frontier goal aborted; set aside (failure 1)
+1791428869.101 INFO explore explore {"event": "goal_sent", "t": 343577.48, "kind": "frontier", "goal": [4.21, 6.13], "rank": 1, "candidates": 50, "path_m": 5.19, "size_m": 1.45, "score": 3.74, "skipped": {"reached twice": 0, "set aside": 1}, "pose": [3.85, 7.83, 313.2]}
+1791428869.104 INFO mission_runner step 13: GOAL (ok) -- frontier goal aborted; set aside (failure 1); goal sent (frontier) to (4.21, 6.13) -- living room, facing ?, free space none, sees nothing of note
+1791428869.509 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees nothing of note
+1791428871.436 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428873.995 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair, armchair
+1791428877.930 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space none, sees armchair
+1791428879.243 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space some, sees armchair
+1791428879.920 INFO mission_runner waiting -- nav2 active: frontier -- living room, facing ?, free space clear, sees nothing of note
+1791428887.222 INFO mission_runner waiting -- nav2 active: frontier -- foyer, facing ?, free space clear, sees nothing of note
+1791428901.841 INFO mission_runner waiting -- nav2 active: frontier -- family room, facing ?, free space clear, sees nothing of note
+1791428905.030 INFO mission_runner waiting -- nav2 active: frontier -- family room, facing ?, free space some, sees nothing of note
+1791428906.951 INFO explore explore {"event": "goal_ended", "t": 343615.34, "kind": "frontier", "state": "succeeded", "goal": [4.21, 6.13], "seconds": 38.0, "moved_m": 1.68, "pose": [4.26, 6.2, 324.7]}
+1791428906.957 INFO explore explore {"event": "verb", "t": 343615.34, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [4.26, 6.2, 324.7]}
+1791428906.959 INFO mission_runner step 14: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- family room, facing ?, free space some, sees nothing of note
+1791428907.321 INFO explore explore {"event": "verb", "t": 343615.71, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [4.26, 6.2, 324.7]}
+1791428907.324 INFO mission_runner step 14: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- family room, facing ?, free space clear, sees nothing of note
+1791428907.754 INFO explore explore {"event": "verb", "t": 343616.14, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [4.26, 6.2, 324.7]}
+1791428907.761 INFO mission_runner step 14: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- family room, facing ?, free space clear, sees nothing of note
+1791428908.324 INFO explore explore {"event": "goal_refused", "t": 343616.71, "kind": "frontier", "goal": [3.33, 4.98], "reason": "preempted", "pose": [4.26, 6.2, 324.7]}
+1791428908.326 INFO mission_runner waiting -- goal refused: preempted -- family room, facing ?, free space some, sees nothing of note
+1791428909.198 INFO explore explore {"event": "goal_sent", "t": 343617.58, "kind": "frontier", "goal": [3.33, 4.98], "rank": 0, "candidates": 73, "path_m": 1.87, "size_m": 0.75, "score": 1.12, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [4.26, 6.2, 324.7]}
+1791428909.201 INFO mission_runner step 14: GOAL (ok) -- goal sent (frontier) to (3.33, 4.98) -- family room, facing ?, free space some, sees nothing of note
+1791428909.605 INFO mission_runner waiting -- nav2 active: frontier -- family room, facing ?, free space some, sees nothing of note
+1791428911.526 INFO mission_runner waiting -- nav2 active: frontier -- family room, facing ?, free space clear, sees nothing of note
+1791428912.151 INFO mission_runner waiting -- nav2 active: frontier -- hall, facing ?, free space some, sees nothing of note
+1791428915.441 INFO mission_runner waiting -- nav2 active: frontier -- hall, facing ?, free space clear, sees nothing of note
+1791428917.433 INFO mission_runner waiting -- nav2 active: frontier -- hall, facing ?, free space clear, sees bookcase
+1791428918.050 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space clear, sees bookcase
+1791428918.740 INFO explore explore {"event": "goal_ended", "t": 343627.12, "kind": "frontier", "state": "succeeded", "goal": [3.33, 4.98], "seconds": 9.8, "moved_m": 1.46, "pose": [3.34, 5.07, 353.7]}
+1791428918.745 INFO explore explore {"event": "verb", "t": 343627.13, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [3.34, 5.07, 353.7]}
+1791428918.748 INFO mission_runner step 15: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- den, facing ?, free space clear, sees nothing of note
+1791428919.103 INFO explore explore {"event": "verb", "t": 343627.49, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [3.34, 5.07, 353.7]}
+1791428919.106 INFO mission_runner step 15: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- den, facing ?, free space clear, sees nothing of note
+1791428919.515 INFO explore explore {"event": "verb", "t": 343627.9, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [3.34, 5.07, 353.7]}
+1791428919.518 INFO mission_runner step 15: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- den, facing ?, free space clear, sees nothing of note
+1791428920.100 INFO explore explore {"event": "goal_refused", "t": 343628.48, "kind": "frontier", "goal": [2.79, 4.83], "reason": "preempted", "pose": [3.34, 5.07, 353.7]}
+1791428920.103 INFO mission_runner waiting -- goal refused: preempted -- den, facing ?, free space clear, sees nothing of note
+1791428920.985 INFO explore explore {"event": "goal_sent", "t": 343629.37, "kind": "frontier", "goal": [2.79, 4.83], "rank": 0, "candidates": 63, "path_m": 0.78, "size_m": 0.25, "score": 0.53, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [3.34, 5.07, 353.7]}
+1791428920.987 INFO mission_runner step 15: GOAL (ok) -- goal sent (frontier) to (2.79, 4.83) -- den, facing ?, free space clear, sees nothing of note
+1791428921.398 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space clear, sees nothing of note
+1791428927.318 INFO explore explore {"event": "goal_ended", "t": 343635.7, "kind": "frontier", "state": "succeeded", "goal": [2.79, 4.83], "seconds": 6.6, "moved_m": 0.52, "pose": [2.87, 4.83, 277.3]}
+1791428927.325 INFO explore explore {"event": "verb", "t": 343635.71, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [2.87, 4.83, 277.3]}
+1791428927.327 INFO mission_runner step 16: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- den, facing ?, free space clear, sees nothing of note
+1791428927.724 INFO explore explore {"event": "verb", "t": 343636.11, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [2.87, 4.83, 277.3]}
+1791428927.726 INFO mission_runner step 16: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- den, facing ?, free space clear, sees nothing of note
+1791428928.104 INFO explore explore {"event": "verb", "t": 343636.49, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [2.87, 4.83, 277.3]}
+1791428928.107 INFO mission_runner step 16: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- den, facing ?, free space clear, sees nothing of note
+1791428928.694 INFO explore explore {"event": "goal_refused", "t": 343637.08, "kind": "frontier", "goal": [0.74, 3.63], "reason": "preempted", "pose": [2.87, 4.83, 277.3]}
+1791428928.696 INFO mission_runner waiting -- goal refused: preempted -- den, facing ?, free space clear, sees nothing of note
+1791428929.551 INFO explore explore {"event": "goal_sent", "t": 343637.94, "kind": "frontier", "goal": [0.74, 3.63], "rank": 0, "candidates": 56, "path_m": 2.76, "size_m": 0.85, "score": 1.91, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [2.87, 4.83, 277.3]}
+1791428929.554 INFO mission_runner step 16: GOAL (ok) -- goal sent (frontier) to (0.74, 3.63) -- den, facing ?, free space clear, sees nothing of note
+1791428929.897 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space clear, sees nothing of note
+1791428935.140 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space clear, sees desk chair
+1791428936.460 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space clear, sees nothing of note
+1791428938.391 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees nothing of note
+1791428940.295 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees desk
+1791428943.513 INFO explore explore {"event": "goal_ended", "t": 343651.9, "kind": "frontier", "state": "succeeded", "goal": [0.74, 3.63], "seconds": 14.2, "moved_m": 2.37, "pose": [0.79, 3.7, 325.0]}
+1791428943.520 INFO explore explore {"event": "verb", "t": 343651.91, "action": "LOOK_LEFT", "executed": true, "waited": false, "detail": "{'action': 'look_left', 'pan': -1}", "pose": [0.79, 3.7, 325.0]}
+1791428943.523 INFO mission_runner step 17: LOOK_LEFT (ok) -- {'action': 'look_left', 'pan': -1} -- den, facing ?, free space some, sees desk
+1791428943.899 INFO explore explore {"event": "verb", "t": 343652.28, "action": "LOOK_RIGHT", "executed": true, "waited": false, "detail": "{'action': 'look_right', 'pan': 1}", "pose": [0.79, 3.7, 325.0]}
+1791428943.901 INFO mission_runner step 17: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- den, facing ?, free space some, sees nothing of note
+1791428944.286 INFO explore explore {"event": "verb", "t": 343652.67, "action": "LOOK_CENTER", "executed": true, "waited": false, "detail": "{'action': 'look_center', 'pan': 0}", "pose": [0.79, 3.7, 325.0]}
+1791428944.288 INFO mission_runner step 17: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- den, facing ?, free space some, sees desk, desk chair, desk
+1791428944.891 INFO explore explore {"event": "goal_refused", "t": 343653.28, "kind": "frontier", "goal": [2.34, 2.33], "reason": "preempted", "pose": [0.79, 3.7, 325.0]}
+1791428944.893 INFO mission_runner waiting -- goal refused: preempted -- den, facing ?, free space some, sees desk
+1791428945.760 INFO explore explore {"event": "goal_sent", "t": 343654.15, "kind": "frontier", "goal": [2.34, 2.33], "rank": 0, "candidates": 55, "path_m": 3.11, "size_m": 0.25, "score": 2.86, "skipped": {"reached twice": 0, "set aside": 0}, "pose": [0.79, 3.7, 325.0]}
+1791428945.762 INFO mission_runner step 17: GOAL (ok) -- goal sent (frontier) to (2.34, 2.33) -- den, facing ?, free space some, sees desk
+1791428946.115 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees desk
+1791428947.420 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees desk, desk, desk
+1791428948.062 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees desk chair, desk chair
+1791428948.764 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space clear, sees nothing of note
+1791428956.874 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space clear, sees desk
+1791428957.538 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees desk
+1791428958.171 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space clear, sees nothing of note
+1791428961.500 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees nothing of note
+1791428965.314 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space none, sees nothing of note
+1791428995.438 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees nothing of note
+1791429003.822 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space none, sees nothing of note
+1791429064.910 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space none, sees desk
+1791429065.536 INFO explore explore {"event": "goal_ended", "t": 343773.92, "kind": "frontier", "state": "timeout", "goal": [2.34, 2.33], "seconds": 120.0, "moved_m": 2.01, "pose": [2.36, 2.45, 256.5]}
+1791429065.538 INFO explore frontier goal timeout; set aside (failure 1)
+1791429065.753 INFO explore explore {"event": "goal_sent", "t": 343774.13, "kind": "frontier", "goal": [0.54, 3.53], "rank": 1, "candidates": 55, "path_m": 3.31, "size_m": 0.5, "score": 2.81, "skipped": {"reached twice": 0, "set aside": 1}, "pose": [2.36, 2.45, 256.0]}
+1791429065.758 INFO mission_runner step 18: GOAL (ok) -- goal sent (frontier) to (0.54, 3.53) -- den, facing ?, free space none, sees desk, desk
+1791429066.117 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space none, sees desk, desk
+1791429068.742 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space none, sees desk
+1791429070.046 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees desk
+1791429070.732 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space clear, sees nothing of note
+1791429081.903 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees nothing of note
+1791429084.487 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees desk
+1791429085.710 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees nothing of note
+1791429087.670 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space none, sees nothing of note
+1791429151.099 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space some, sees nothing of note
+1791429153.681 INFO mission_runner waiting -- nav2 active: frontier -- den, facing ?, free space none, sees nothing of note
+1791429162.253 INFO mission_runner mission ended (stopped): mission loop cancelled

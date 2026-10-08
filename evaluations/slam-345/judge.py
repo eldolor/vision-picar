@@ -13,6 +13,7 @@ tour inherited a wedged robot (3.44's run 3: 0 of 9 goals).
 """
 
 import glob
+import gzip
 import json
 import math
 import os
@@ -86,8 +87,9 @@ def explore_events(run_dir):
 def refusals(run_dir, t_from, t_to):
     """Robot-server refusals in a window, by driver and reason."""
     c = Counter()
-    for p in glob.glob(os.path.join(run_dir or "", "explore_robot.log")):
-        for line in open(p, errors="replace"):
+    for p in glob.glob(os.path.join(run_dir or "", "explore_robot.log*")):
+        opener = gzip.open if p.endswith(".gz") else open
+        for line in opener(p, "rt", errors="replace"):
             m = re.match(r"(\d+\.\d+) WARNING server refused \((\w+)\) for (\S+): (\w+)", line)
             if m and t_from <= float(m.group(1)) <= t_to:
                 c[f"{m.group(3)} {m.group(4)} {m.group(2)}"] += 1
