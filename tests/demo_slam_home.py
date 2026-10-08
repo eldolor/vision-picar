@@ -34,6 +34,7 @@ from tests import demo_explore as dx
 HOUSE = "home_first_floor"
 JUMP_M = 0.3                 # 3.40: was 0.5; a 0.43 m closure step passed it (2026-10-05)
 CELL = 0.3
+MAP_EVERY_S = 20.0
 
 
 def score_map(robot, house=HOUSE):
@@ -107,13 +108,32 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False, explo
                 e = c.get("/world/error").json()
                 if e.get("usable"):
                     t = e.get("truth") or {}
+                    # [6] the true heading (3.45): 3.44 could not rebuild a
+                    # stall's pose without it.
                     samples.append((time.time(), e["position_error_m"], e["heading_error_deg"],
-                                    e["odom_position_error_m"], t.get("x_m"), t.get("y_m")))
+                                    e["odom_position_error_m"], t.get("x_m"), t.get("y_m"),
+                                    t.get("heading_deg")))
             except Exception:  # noqa: BLE001 -- a missed sample is a gap, not an end
                 pass
             stop.wait(1.0)
+    def mapper():
+        # 3.45: SLAM's map, pose and the truth every MAP_EVERY_S, so explore's
+        # goal choice can be replayed in process on the maps it really had
+        # (evaluations/slam-345). gzip JSON lines in the run's directory.
+        import gzip
+        c = httpx.Client(base_url=f"http://127.0.0.1:{dx.ROBOT}", timeout=10)
+        with gzip.open(f"{dx.RUN_DIR or dx.LOGDIR}/maps.jsonl.gz", "wt") as f:
+            while not stop.wait(MAP_EVERY_S):
+                try:
+                    f.write(json.dumps({"t": time.time(), "map": c.get("/world/map").json(),
+                                        "pose": c.get("/world/pose").json(),
+                                        "truth": c.get("/world/truth").json()}) + "\n")
+                except Exception:  # noqa: BLE001 -- a missed snapshot is a gap
+                    pass
     th = threading.Thread(target=sampler, daemon=True)
     th.start()
+    th_map = threading.Thread(target=mapper, daemon=True)
+    th_map.start()
     t0, status, full_log = time.time(), {}, []
 
     def keep_log(st):
@@ -184,6 +204,7 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False, explo
     time.sleep(3)                      # at rest: the error now is not latency
     stop.set()
     th.join()
+    th_map.join()
     final = robot.get("/world/error").json()
     jumps = [(round(b[0] - t0), round(b[1] - a[1], 2), round(b[2] - a[2], 1))
              for a, b in zip(samples, samples[1:])

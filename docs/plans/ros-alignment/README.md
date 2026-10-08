@@ -53,5 +53,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.42](3.42-the-d500-lidar-read-by-the.md) | The D500 lidar, read by the robot server (2026-10-06): criteria, written before building -- BUILT; 2, 3b and 5 failed as written, 4 met after a fix |
 | [3.43](3.43-explore-wedge.md) | Exploring never parks the robot where it cannot leave (2026-10-06): criteria, written before building |
 | [3.44](3.44-speed-clearance.md) | The stop distance follows speed: less room for a creep, more for a fast move (2026-10-07): criteria, written before building -- confirmed by the user 2026-10-07 |
-| [3.45](3.45-explore-goal-choice.md) | Explore never sends goals into corners it cannot leave |
+| [3.45](3.45-explore-goal-choice.md) | Explore never sends goals into corners it cannot leave (2026-10-07): criteria, written before building -- AWAITING the user's confirmation |
 <!-- /sections -->
