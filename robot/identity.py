@@ -100,6 +100,9 @@ def configure_logging() -> Optional[int]:
         setattr(handler, _HANDLER_MARK, True)
         root.addHandler(handler)
     root.setLevel(level)
+    # Every HTTP call the brain makes is an httpx INFO line: 12 800 of a
+    # run's 13 000 (3.45's baseline). Its warnings still come through.
+    logging.getLogger("httpx").setLevel(max(level, logging.WARNING))
     return level
 
 

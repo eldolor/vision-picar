@@ -143,7 +143,7 @@ Sensing reads never feed it.
 | `ROBOT_CONFIG_PATH` | unset | module `app` | Alternate `config/robot.yaml`; used by `tests/test_watchdog_integration.py` |
 | `ENV_LABEL` | `""` | `/health` | Environment banner in the twin |
 | `GIT_REVISION` | unset | `robot/identity.py` | Build revision in images without `.git` |
-| `PICAR_LOG_LEVEL` | unset (logging left as found) | `configure_logging()` in `robot/identity.py`, called by both `create_app`s | One stderr handler on the root logger at that level, lines `<epoch> <LEVEL> <logger> <message>`; `tests/demo_explore.stack()` sets INFO for the brain and WARNING for the robot server (3.45) |
+| `PICAR_LOG_LEVEL` | unset (logging left as found) | `configure_logging()` in `robot/identity.py`, called by both `create_app`s | One stderr handler on the root logger at that level, lines `<epoch> <LEVEL> <logger> <message>`, the `httpx` logger held at WARNING or above; `tests/demo_explore.stack()` sets INFO for the brain and WARNING for the robot server (3.45) |
 
 ## Procedures
 
