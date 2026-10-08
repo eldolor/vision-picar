@@ -37,7 +37,8 @@ def test_an_unreachable_brain_is_stale_not_ok():
 @pytest.mark.parametrize("outcome,level", [
     ("running", brain_view.OK), ("found", brain_view.OK), ("stopped", brain_view.OK),
     ("blocked", brain_view.WARN), ("preempted", brain_view.WARN),
-    ("max_steps", brain_view.WARN), ("failed", brain_view.ERROR)])
+    ("max_steps", brain_view.WARN), ("arrived_unconfirmed", brain_view.WARN),
+    ("failed", brain_view.ERROR)])
 def test_each_outcome_has_a_level(outcome, level):
     assert brain_view.diagnostic(_status(outcome=outcome))["level"] == level
 
@@ -49,7 +50,7 @@ def test_every_real_outcome_is_mapped():
     outcomes = {v for k, v in vars(mr).items()
                 if k.isupper() and isinstance(v, str) and k in (
                     "RUNNING", "IDLE", "FOUND", "ROOM_REACHED", "STOPPED", "MAX_STEPS",
-                    "FAILED", "PREEMPTED", "BLOCKED")}
+                    "FAILED", "PREEMPTED", "BLOCKED", "ARRIVED_UNCONFIRMED")}
     assert outcomes <= set(brain_view._OUTCOME_LEVEL), outcomes - set(brain_view._OUTCOME_LEVEL)
 
 

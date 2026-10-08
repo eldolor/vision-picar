@@ -31,10 +31,12 @@ OK, WARN, ERROR, STALE = 0, 1, 2, 3
 
 # Mission outcomes (control/mission_runner.py) and what each means to an
 # operator reading a diagnostics panel. `blocked`, `preempted` and
-# `max_steps` ended without failing but did not do the job.
+# `max_steps` ended without failing but did not do the job;
+# `arrived_unconfirmed` (3.47) reached something the cloud never checked.
 _OUTCOME_LEVEL = {
     "idle": OK, "running": OK, "found": OK, "room_reached": OK, "stopped": OK,
     "blocked": WARN, "preempted": WARN, "max_steps": WARN,
+    "arrived_unconfirmed": WARN,
     "failed": ERROR,
 }
 

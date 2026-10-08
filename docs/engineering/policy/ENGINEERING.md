@@ -74,7 +74,11 @@ and in `triggers["arrival_confirmation"]` (`TRIGGER_ARRIVAL`), and confirms
 only on `_navigate.target_visible is True`; at `max_calls` it refuses
 without calling. Not confirmed, or no confirmer on the policy: the readout
 becomes `refused`, the scene is not rewritten, and `_identity_refused`
-stops further calls until `observe()` stops returning `arrived`. The
+stops further calls until `observe()` stops returning `arrived`. A call
+that raises leaves `MissionAgent.unconfirmed_arrival` set to the readout
+(set before the call, cleared by any verdict or by a frame that is not
+`arrived`); the raise goes on to B3.2, and `MissionRunner` reads the field
+when the budget runs out to end `arrived_unconfirmed` (3.47). The
 readout carries the verdict under `identity`, and every later refused frame
 carries the refusing verdict too (`_refusal`), so the final status says why.
 Since spec review 3 (fixes 8-10): `confirm_arrival()` first waits for an

@@ -282,6 +282,10 @@ it is the only one a compromised or buggy brain cannot skip.
                                ├── max_steps      budget exhausted
                                ├── blocked        stuck_after FORWARDs in a
                                │                  row refused (R1b)
+                               ├── arrived_unconfirmed  vision budget
+                               │                  blown while parked at an
+                               │                  arrival the cloud never
+                               │                  answered (3.47)
                                ├── stopped        stop() -- an operator
                                ├── preempted      a higher-priority driver
                                                   took the robot (§4.1)
@@ -293,6 +297,10 @@ it is the only one a compromised or buggy brain cannot skip.
 mission was outranked. Filing a normal human intervention alongside a dead
 AWS link would make both harder to read, and would invite a retry where
 retrying is exactly wrong.
+
+**`arrived_unconfirmed` is neither `found` nor `failed`** (3.47): the
+robot is parked at what the local tier took for the target, and the cloud
+that must confirm identity never answered. A person should look.
 
 **`blocked` is not `failed` or `max_steps` either** (added 2026-09-25):
 nothing broke -- the collar did its job -- and the mission was no longer
@@ -523,7 +531,7 @@ Consequences worth knowing:
 | Field | Meaning |
 |---|---|
 | `running` | is a mission in flight |
-| `outcome` | `idle` / `running` / `found` / `room_reached` / `stopped` / `max_steps` / `blocked` / `preempted` / `failed` |
+| `outcome` | `idle` / `running` / `found` / `room_reached` / `stopped` / `max_steps` / `blocked` / `searched` / `arrived_unconfirmed` / `preempted` / `failed` |
 | `error` | why, when `outcome` is `failed`; `null` otherwise |
 | `policy`, `mission`, `target_object`, `target_room` | what was asked for |
 | `step`, `max_steps` | progress against the budget |

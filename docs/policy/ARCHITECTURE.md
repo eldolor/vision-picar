@@ -222,7 +222,13 @@ arbitration above splits steering:
   call budget is spent, the mission does not end `found`, and a refused
   arrival is not paid for again while the robot stays there. A call that
   FAILS is not an answer: it counts against the vision failure budget like
-  any cloud failure, and the arrival is asked again.
+  any cloud failure, and the arrival is asked again. If the budget runs
+  out while the arrival still holds, the mission ends `arrived_unconfirmed`
+  (3.47, chosen by the user 2026-10-07): the robot reached what the local
+  tier took for the target, and nothing checked what it is. It is never
+  `found`, because a local false positive looks exactly like it, and it is
+  not `failed`, because the robot did its part. A cloud that answers no is a
+  refusal and never ends there.
 - **Distance: the arrival rule only.** A cloud target-reached answer that
   lands under the asynchronous tier does not end a tiered mission. The
   lidar-judged arrival rule stays the only way a tiered mission ends `found`
@@ -302,6 +308,7 @@ the same frames, so it must never be copied onto the hardware backend.
 | Failure | Response | Target |
 |---|---|---|
 | Cloud call errors or hangs | raised to the mission's failure budget (an async failure on the next frame) | every blind step is counted, never swallowed |
+| Cloud unreachable at arrival | the identity confirmation raises into the same budget and is retried while the arrival holds; when the budget runs out the mission ends `arrived_unconfirmed` | an offline mission that reaches the target says so, and never says `found` (3.47: 24 / 24 offline arrivals, sync and async) |
 | Local perception unavailable (camera wedged, model error) | never a trigger, never advances the cold-search count, never read as absent | a dead camera never looks like an empty room |
 | Detector misses frames | trigger hysteresis, held goals, degree-counted spin guard | at 90% per-frame detection, at least 95% of missions arrive (3.6b's bar) |
 | Target directly on the straight line through a door jamb | refused forwards; the mission ends `blocked` | no policy spends its budget pushing into a wall; going around is nav2's job |

@@ -57,7 +57,10 @@ threads; where it and this file disagree, check the code.
    ([policy engineering](../policy/ENGINEERING.md), "Arrival"). A policy with
    no `confirm_arrival` never confirms, and its arrivals never end `found`.
 3. Exceptions: `MissionHalted` -> return False (stop landed mid-tick);
-   `VisionUnavailable` -> `_handle_vision_failure()`; `Preempted` -> finish
+   `VisionUnavailable` -> `_handle_vision_failure()` (on the budget's last
+   failure: `arrived_unconfirmed` if `agent.unconfirmed_arrival` is set, the
+   readout copied to `status.arrival` with state `unconfirmed`, else
+   `failed`); `Preempted` -> finish
    `preempted`; anything else -> finish `failed` ("step failed: ...").
 4. Under the lock: bump `ticks`, reset `vision_failures`, record the action,
    the turn counters, and copy `_tier`, `_perception` and `_arrival` off the

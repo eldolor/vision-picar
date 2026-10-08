@@ -131,6 +131,13 @@ DEFAULT_STUCK_AFTER = 5
 # about the house ("looked everywhere it could reach; not there"), and a
 # target that is absent should end here, never in a refusal.
 SEARCHED = "searched"
+# 3.47. The robot reached what the local tier took for the target (the lidar
+# arrival rule held) but the cloud never ANSWERED the identity question --
+# B3.2's budget ran out on an unreachable cloud. Not `found`: since handoff
+# 1a only a cloud yes makes `found`, and a local false positive looks exactly
+# like this. Not `failed`: the robot did its part and is parked at it. A
+# cloud that answers "no" is a refusal and never ends here.
+ARRIVED_UNCONFIRMED = "arrived_unconfirmed"
 
 
 class VisionUnavailable(RuntimeError):
@@ -869,6 +876,17 @@ class MissionRunner:
         self._safe_stop()
         self._log_line(f"vision failure {failures}/{budget}: {error}")
         if failures >= budget:
+            pending = getattr(self.agent, "unconfirmed_arrival", None)
+            if pending:
+                # 3.47. The car has been stopped on every failed tick, so the
+                # arrival the agent recorded is where the robot still is.
+                self._arrival = {**pending, "state": "unconfirmed",
+                                 "reason": f"arrived, but the cloud could not be asked: {error}"}
+                self._finish(ARRIVED_UNCONFIRMED, (
+                    f"arrived (lidar {pending.get('range_m')} m, streak "
+                    f"{pending.get('streak')}) but identity unconfirmed: vision "
+                    f"unavailable {failures} times in a row: {error}"))
+                return False
             self._finish(FAILED, f"vision unavailable {failures} times in a row: {error}")
             return False
         return self._running
