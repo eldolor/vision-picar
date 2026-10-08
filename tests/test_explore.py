@@ -413,3 +413,31 @@ def test_logging_is_configured_only_when_asked(monkeypatch):
     finally:
         root.handlers[:] = before
         root.setLevel(level)
+
+
+def test_a_frontier_goal_leaves_the_safety_layer_room_to_drive_away():
+    """3.45: on the SLAM map the furnished-home run really had 41 s in
+    (2026-10-07 baseline run 1, the foyer where four of six earlier runs
+    parked for up to 134 s), explore must not choose a goal the robot cannot
+    drive away from. Today's 0.22 m goal clearance chose (4.17, 12.6), inside
+    furniture on ground truth at every heading; the goal now keeps the
+    chassis' half-length plus the stopping distance from the map's walls,
+    and at every heading it can stand at, forward or reverse is allowed."""
+    import gzip
+    import json
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "evaluations", "slam-345"))
+    import goal_sweep as gs
+    path = os.path.join(os.path.dirname(__file__), "data", "explore_foyer_snapshot.json.gz")
+    with gzip.open(path, "rt") as f:
+        snap = json.load(f)
+    kind, (x, y) = gs.choose(snap)
+    ok, headings = gs.leavable(x, y)
+    assert kind == "frontier" and ok, ((round(x, 2), round(y, 2)), headings)
+
+
+def test_the_leave_clearance_is_the_half_length_plus_the_stopping_distance():
+    from brain.explore import leave_clearance_m
+    from robot.safety import FOOTPRINT_LENGTH_M
+    assert leave_clearance_m(20.0) == pytest.approx(FOOTPRINT_LENGTH_M / 2 + 0.20)

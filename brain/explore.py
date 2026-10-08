@@ -43,7 +43,7 @@ from brain.frontier import (RetryBook, camera_seen, find_frontiers, find_view_ga
                             known_near, reachable)
 from brain.memory import MissionMemory
 from robot.interface import Preempted, RobotInterface
-from robot.safety import SafetyViolation
+from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation
 
 logger = logging.getLogger("explore")
 
@@ -85,6 +85,23 @@ BOXED_CELLS = 40
 # The robot server's refusal when the mission's OWN goal still holds the
 # robot (3.23) -- not a person taking over. A move refused for this waits.
 OWN_GOAL_REFUSAL = "nav2 goal is active"
+
+
+def leave_clearance_m(min_distance_cm: float) -> float:
+    """3.45: the room a frontier or view goal keeps from anything occupied on
+    the map -- the chassis' half-length plus the safety layer's stopping
+    distance. Stood there, at ANY heading, the move straight ahead and the
+    one straight back each have the full bar, so the robot can always drive
+    away. 3.31's 0.22 m (`frontier.GOAL_CLEARANCE_M`) was sized to clear
+    nav2's 0.12 m inflation, not the 20 cm bar: on the furnished-home maps
+    explore really had, only 36% of the goals it chose could be left at
+    every heading on ground truth, and 0.30 m still only 52% (0.33 m rounds
+    up to the map's next 5 cm cell, 0.35 m: 98%). `evaluations/slam-345/goal_sweep.py`.
+    Approach points toward a seen target keep 0.22 m: they are judged by
+    the arrival rule, at the lidar's 0.40 m, not left again."""
+    return FOOTPRINT_LENGTH_M / 2 + min_distance_cm / 100.0
+
+
 # 3.45: decisions kept for a run's record (`events`), newest last.
 MAX_EVENTS = 5000
 
@@ -342,7 +359,8 @@ class ExploreAgent(MissionAgent):
         def known(x, y):
             return known_near(m, x, y, self.retry.radius_m)
 
-        frontiers = find_frontiers(m, pose["x_m"], pose["y_m"])
+        leave = leave_clearance_m(self.safety.min_distance_cm)
+        frontiers = find_frontiers(m, pose["x_m"], pose["y_m"], clearance_m=leave)
         skipped = {"reached twice": 0, "set aside": 0}
         for rank, f in enumerate(frontiers):
             if sum(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < self.retry.radius_m
@@ -356,7 +374,7 @@ class ExploreAgent(MissionAgent):
                                   skipped=dict(skipped))
             skipped["set aside"] += 1
         seen_cells = {self._to_cell(m, c) for c in self.seen}
-        for g in find_view_gaps(m, pose["x_m"], pose["y_m"], seen_cells):
+        for g in find_view_gaps(m, pose["x_m"], pose["y_m"], seen_cells, clearance_m=leave):
             if any(math.hypot(g.centre[0] - lx, g.centre[1] - ly) < self.retry.radius_m
                    for lx, ly in self._looked):
                 continue

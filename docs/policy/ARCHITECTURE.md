@@ -57,6 +57,7 @@ counters, arrival) are its outputs.
 | Constrained agent | the allowed action set, the capture -> scene -> decide -> vet -> execute step, a stuck-breaker | bypass the safety layer; trust a model's distance claim over a sensor |
 | Mission agent | recording every step into mission memory, arrival review, room backfill from the cloud's room guess, sighting poses from the world | read simulator state; import a world backend |
 | Frontier explorer | rule-based coverage: peek, prefer unvisited directions | grow; it is kept, not extended (`PLAN-sim-hardening.md` 2.2) |
+| Explore policy (`explore`) | a search over SLAM's map: frontier, view and approach goals sent to nav2, the retry rule, the escape when wedged | send a verb while a goal is live; choose a goal the robot could not drive away from (3.45) |
 | Vision agent | trusting the model's action unless the mission is complete | peek (a pan costs a real move and buys nothing a photograph lacks) |
 | Cloud vision step | one frame -> one cloud navigation answer -> the scene schema | retry; the mission's failure budget is the retry policy |
 | Tier (trigger discipline) | when to spend a cloud call, and what to do on free frames | become a planner or a reactive goal executor |
@@ -285,6 +286,28 @@ the obstacle is within one step, only on a backend with no distance sensor,
 and off by default. It exists to exercise the veto path on photograph-driven
 backends; models disagree on obstacle presence from about 0% to about 100% on
 the same frames, so it must never be copied onto the hardware backend.
+
+### Explore's goals are places the robot can drive away from
+
+**Decision (3.45, 2026-10-07).** A frontier or view goal keeps the chassis'
+half-length plus the safety layer's stopping distance from anything the map
+shows occupied. Stood there, at any heading, the straight move ahead and
+the one behind each have the full bar.
+
+**Why.** The safety layer, not nav2, decides whether the robot may move,
+and it is stricter than nav2's inflated costmap. A goal nav2 can reach but
+the safety layer will not let the robot leave is a trap: nav2 spends its
+120 s goal timeout pushing against refusals, which is the whole parked
+stall. On the furnished-home maps explore really had, the old 0.22 m
+clearance chose goals that could be left at every heading only 36% of the
+time on ground truth; 0.30 m reached 52%; the half-length plus 20 cm
+reached 98%.
+
+**What it costs.** Fewer stopping places in tight spots. A frontier is
+seen from where the robot stops, and the lidar sees 360 degrees, so a goal
+set back from a corner still clears it. Coverage is the progress check.
+Approach points toward a seen target keep the old clearance: the arrival
+rule judges them at the lidar's 0.40 m, and they are not left again.
 
 ## Contracts
 
