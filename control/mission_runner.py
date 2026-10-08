@@ -882,6 +882,12 @@ class MissionRunner:
                 # arrival the agent recorded is where the robot still is.
                 self._arrival = {**pending, "state": "unconfirmed",
                                  "reason": f"arrived, but the cloud could not be asked: {error}"}
+                # The held `_tier` is the last SUCCESSFUL tick's snapshot and
+                # predates the confirmations that raised; the policy's own
+                # counters include them.
+                stats = getattr(getattr(self.vision_fn, "stats", None), "as_dict", None)
+                if self._tier is not None and stats is not None:
+                    self._tier = {**self._tier, "stats": stats()}
                 self._finish(ARRIVED_UNCONFIRMED, (
                     f"arrived (lidar {pending.get('range_m')} m, streak "
                     f"{pending.get('streak')}) but identity unconfirmed: vision "

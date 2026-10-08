@@ -81,6 +81,10 @@ def test_1_2_an_unreachable_cloud_at_arrival_ends_arrived_unconfirmed(async_clou
         assert status["arrival"]["state"] == "unconfirmed", status["arrival"]
         assert status["error"] is None, "not a failure: the robot did its part"
         assert "identity unconfirmed" in status["log_tail"][-1]
+        # The status counts the confirmations that raised, not only the
+        # last successful tick's snapshot (found on the live run).
+        assert status["tier"]["stats"]["triggers"].get(TRIGGER_ARRIVAL, 0) >= 1, \
+            status["tier"]["stats"]["triggers"]
     assert outcomes.count(ARRIVED_UNCONFIRMED) == len(CLEAR_STARTS) == 12
     assert FOUND not in outcomes
 
