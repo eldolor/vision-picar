@@ -115,6 +115,14 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False, explo
     th = threading.Thread(target=sampler, daemon=True)
     th.start()
     t0, status, full_log = time.time(), {}, []
+
+    def keep_log(st):
+        # The status keeps the last 20 lines; keep every one seen, in order.
+        tail = st.get("log_tail") or []
+        k = len(tail)
+        while k and tail[:k] != full_log[-k:]:
+            k -= 1
+        full_log.extend(tail[k:])
     if tour:
         import os
         os.environ.update(SIM_MAP=HOUSE, PICAR_ROBOT_URL=f"http://127.0.0.1:{dx.ROBOT}")
@@ -131,14 +139,18 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False, explo
             t_ex = time.time()
             while time.time() - t_ex < explore_first_s:
                 st = brain.get("/mission/status").json()
+                keep_log(st)
                 if not st.get("running") and st.get("outcome") not in (None, "idle", "running"):
                     break
                 time.sleep(2)
             st = brain.get("/mission/status").json()
+            keep_log(st)
             if st.get("running"):
                 brain.post("/mission/stop")
             time.sleep(2)
             explore = {"outcome": st.get("outcome"), "seconds": round(time.time() - t_ex),
+                       "started_at": t_ex, "ended_at": time.time(),
+                       "counts": st.get("explore"),
                        "coverage": dx.coverage(robot, HOUSE), "map": score_map(robot),
                        "error": robot.get("/world/error").json().get("position_error_m")}
         speed = None
@@ -149,18 +161,21 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False, explo
             speed = [ros_param("FollowPath.desired_linear_vel"),
                      ros_param("FollowPath.rotate_to_heading_angular_vel")]
         t_tour = time.time()
-        goals = [ng.run_goal(robot, x, y, timeout_s=goal_timeout_s) for _name, x, y in ng.HOME_GOALS]
+        goals = []
+        for name, x, y in ng.HOME_GOALS:
+            # 3.45: when each goal ran, so a stall can be put in its phase and goal.
+            t_g = time.time()
+            goals.append({"name": name, "started_at": t_g,
+                          **ng.run_goal(robot, x, y, timeout_s=goal_timeout_s),
+                          "ended_at": time.time()})
         status = {"outcome": "tour", "explore": explore, "tour_speed": speed,
                   "tour_started_s": round(t_tour - t0),
                   "step": [g["state"] for g in goals],
-                  "end_error_m": [g.get("end_error_m") for g in goals]}
+                  "end_error_m": [g.get("end_error_m") for g in goals],
+                  "goals": goals, "tour_started_at": t_tour}
     while not tour and time.time() - t0 < limit_s:
         status = brain.get("/mission/status").json()
-        tail = status.get("log_tail") or []
-        k = len(tail)
-        while k and tail[:k] != full_log[-k:]:
-            k -= 1
-        full_log.extend(tail[k:])
+        keep_log(status)
         if not status.get("running") and status.get("outcome") not in (None, "idle", "running"):
             break
         time.sleep(2)
@@ -173,7 +188,8 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False, explo
     jumps = [(round(b[0] - t0), round(b[1] - a[1], 2), round(b[2] - a[2], 1))
              for a, b in zip(samples, samples[1:])
              if b[0] - a[0] <= 2.0 and b[1] - a[1] > JUMP_M]
-    out = {"slam": slam_yaml or "image", "nav": nav_yaml or "image", "drift": drift, "outcome": status.get("outcome"),
+    out = {"t0": t0, "run_dir": dx.RUN_DIR, "tour_started_at": status.get("tour_started_at"),
+           "goals": status.get("goals"), "slam": slam_yaml or "image", "nav": nav_yaml or "image", "drift": drift, "outcome": status.get("outcome"),
            "seconds": round(time.time() - t0), "steps": status.get("step"),
            "explore": status.get("explore"), "tour_speed": status.get("tour_speed"),
            "tour_started_s": status.get("tour_started_s"), "goal_states": status.get("step"),
@@ -185,7 +201,7 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False, explo
            "final_error_m": final.get("position_error_m"),
            "final_heading_error_deg": final.get("heading_error_deg"),
            "jumps": jumps, "map": score_map(robot)}
-    with open(f"{dx.LOGDIR}/slam_home_{int(t0)}.json", "w") as f:
+    with open(f"{dx.RUN_DIR or dx.LOGDIR}/slam_home_{int(t0)}.json", "w") as f:
         json.dump({**out, "series": samples, "full_log": full_log}, f)
     return out
 

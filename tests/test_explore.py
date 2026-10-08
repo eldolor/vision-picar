@@ -368,3 +368,48 @@ def test_an_escape_turn_refused_on_one_side_tries_the_other():
     agent._do_pending()
     agent._do_pending()
     assert asked == ["RIGHT", "LEFT"]
+
+
+def test_every_goal_its_end_and_the_escape_are_logged_as_events(caplog):
+    """3.45: a live run's brain log must say what explore chose before a
+    stall and whether its escape ran -- 3.44's runs could say neither."""
+    import json
+    import logging
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="purple elephant"),
+                         navigator=WedgedNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid))
+    with caplog.at_level(logging.INFO, logger="explore"):
+        for _ in range(3):
+            agent.step()
+    names = [e["event"] for e in agent.events]
+    assert names[:4] == ["goal_sent", "goal_ended", "escape", "verb"], names
+    sent, ended, escape, verb = agent.events[:4]
+    assert sent["kind"] == "frontier" and {"rank", "score", "path_m", "size_m"} <= set(sent)
+    assert ended["state"] == "aborted" and ended["moved_m"] is not None
+    assert escape["why"] == "wedged" and verb["action"] == "REVERSE"
+    logged = [json.loads(r.getMessage().split(" ", 1)[1]) for r in caplog.records
+              if r.getMessage().startswith("explore {")]
+    assert logged == agent.events[:len(logged)] and len(logged) >= 4
+
+
+def test_logging_is_configured_only_when_asked(monkeypatch):
+    """3.45: PICAR_LOG_LEVEL unset leaves logging as found (deployments and
+    the suite); set, one handler, however many apps are built."""
+    import logging
+    from robot.identity import configure_logging
+    root = logging.getLogger()
+    before, level = list(root.handlers), root.level
+    try:
+        monkeypatch.delenv("PICAR_LOG_LEVEL", raising=False)
+        assert configure_logging() is None and root.handlers == before
+        monkeypatch.setenv("PICAR_LOG_LEVEL", "info")
+        assert configure_logging() == logging.INFO and configure_logging() == logging.INFO
+        assert len(root.handlers) == len(before) + 1 and root.level == logging.INFO
+        monkeypatch.setenv("PICAR_LOG_LEVEL", "LOUD")
+        with pytest.raises(ValueError):
+            configure_logging()
+    finally:
+        root.handlers[:] = before
+        root.setLevel(level)

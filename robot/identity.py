@@ -73,6 +73,36 @@ def identity(service: str, config_path: Optional[str] = None) -> dict:
     }
 
 
+# PLAN 3.45: the brain's decisions are logged at INFO, and with no handler
+# configured Python prints only WARNING and above -- so a live run's brain
+# log held nothing but this module's line. Unset, logging is left exactly
+# as found (deployments and the suite); `tests/demo_explore.stack()` sets
+# it to INFO for every live run.
+LOG_LEVEL_ENV = "PICAR_LOG_LEVEL"
+_HANDLER_MARK = "_picar_handler"
+
+
+def configure_logging() -> Optional[int]:
+    """One stderr handler on the root logger at `PICAR_LOG_LEVEL`, with
+    epoch timestamps so a log lines up with a run's 1 Hz series. Returns
+    the level set, or None when the variable is unset. Idempotent: a test
+    that builds many apps still gets one handler."""
+    name = os.environ.get(LOG_LEVEL_ENV, "").strip().upper()
+    if not name:
+        return None
+    level = logging.getLevelName(name)
+    if not isinstance(level, int):
+        raise ValueError(f"{LOG_LEVEL_ENV}={name!r} is not a logging level")
+    root = logging.getLogger()
+    if not any(getattr(h, _HANDLER_MARK, False) for h in root.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(created).3f %(levelname)s %(name)s %(message)s"))
+        setattr(handler, _HANDLER_MARK, True)
+        root.addHandler(handler)
+    root.setLevel(level)
+    return level
+
+
 def log_identity(service: str, config_path: Optional[str] = None) -> dict:
     ident = identity(service, config_path)
     logger.warning(

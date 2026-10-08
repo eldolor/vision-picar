@@ -31,6 +31,7 @@ The brain reaches nav2 through a `Navigator` it declares here, not through
 `control/remote_navigator.py` implements it over `/world/goal`.
 """
 
+import json
 import logging
 import math
 import time
@@ -84,6 +85,8 @@ BOXED_CELLS = 40
 # The robot server's refusal when the mission's OWN goal still holds the
 # robot (3.23) -- not a person taking over. A move refused for this waits.
 OWN_GOAL_REFUSAL = "nav2 goal is active"
+# 3.45: decisions kept for a run's record (`events`), newest last.
+MAX_EVENTS = 5000
 
 
 class Navigator(Protocol):
@@ -150,6 +153,21 @@ class ExploreAgent(MissionAgent):
         self.goals_sent = 0
         self.goals_failed = 0
         self.last_event = ""
+        # 3.45: every goal, its end and every escape or pan, as structured
+        # records -- logged at INFO as `explore {json}` and kept here. 3.44's
+        # live runs could not say whether an escape ran, or what explore
+        # chose before a stall, because nothing reached the brain's log.
+        self.events: list = []
+
+    def _event(self, name: str, **fields) -> None:
+        pose = self._pose()
+        rec = {"event": name, "t": round(self.clock(), 2), **fields}
+        if pose.get("usable"):
+            rec["pose"] = [round(pose["x_m"], 2), round(pose["y_m"], 2),
+                           round(pose["heading_deg"], 1)]
+        self.events.append(rec)
+        del self.events[:-MAX_EVENTS]
+        logger.info("explore %s", json.dumps(rec, default=str))
 
     # ---------- one step ----------
 
@@ -228,19 +246,22 @@ class ExploreAgent(MissionAgent):
         g = (self.navigator.get_goal() or {}).get("goal") or {}
         return g.get("state")
 
-    def _send(self, x_m: float, y_m: float, kind: str, now: float):
+    def _send(self, x_m: float, y_m: float, kind: str, now: float, **info):
         reply = self.navigator.set_goal(x_m, y_m) or {}
         if not reply.get("accepted"):
             # Refused before nav2 saw it -- most often authority still held by
             # this mission's own last verb (it lapses on silence). Not a
             # failure of the place: wait and ask again.
             self.last_event = f"goal refused: {reply.get('reason')}"
+            self._event("goal_refused", kind=kind, goal=[round(x_m, 2), round(y_m, 2)],
+                        reason=reply.get("reason"))
             return "WAIT", False, self.last_event
         pose = self._pose()
         self._goal = {"x_m": x_m, "y_m": y_m, "kind": kind, "sent_at": now,
                       "from": (pose["x_m"], pose["y_m"]) if pose.get("usable") else None}
         self.goals_sent += 1
         self.last_event = f"goal sent ({kind}) to ({x_m:.2f}, {y_m:.2f})"
+        self._event("goal_sent", kind=kind, goal=[round(x_m, 2), round(y_m, 2)], **info)
         return "GOAL", True, self.last_event
 
     def _send_approach(self, tx: float, ty: float, now: float):
@@ -323,13 +344,16 @@ class ExploreAgent(MissionAgent):
 
         frontiers = find_frontiers(m, pose["x_m"], pose["y_m"])
         skipped = {"reached twice": 0, "set aside": 0}
-        for f in frontiers:
+        for rank, f in enumerate(frontiers):
             if sum(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < self.retry.radius_m
                    for rx, ry in self._reached) >= 2:
                 skipped["reached twice"] += 1
                 continue
             if self.retry.available(f.goal[0], f.goal[1], now, known):
-                return self._send(f.goal[0], f.goal[1], "frontier", now)
+                return self._send(f.goal[0], f.goal[1], "frontier", now, rank=rank,
+                                  candidates=len(frontiers), path_m=round(f.distance_m, 2),
+                                  size_m=round(f.size_m, 2), score=round(f.score, 2),
+                                  skipped=dict(skipped))
             skipped["set aside"] += 1
         seen_cells = {self._to_cell(m, c) for c in self.seen}
         for g in find_view_gaps(m, pose["x_m"], pose["y_m"], seen_cells):
@@ -343,7 +367,9 @@ class ExploreAgent(MissionAgent):
                    for vx, vy in self._view_goals):
                 continue
             if self.retry.available(g.goal[0], g.goal[1], now, known):
-                out = self._send(g.goal[0], g.goal[1], "view", now)
+                out = self._send(g.goal[0], g.goal[1], "view", now,
+                                 look_at=[round(g.centre[0], 2), round(g.centre[1], 2)],
+                                 area_m2=round(g.area_m2, 2), path_m=round(g.distance_m, 2))
                 if out[0] == "GOAL":
                     self._goal["look_at"] = g.centre
                     self._view_goals.append(g.goal)
@@ -351,7 +377,7 @@ class ExploreAgent(MissionAgent):
         steps, _start, _need = reachable(m, pose["x_m"], pose["y_m"])
         if len(steps) < BOXED_CELLS and self.escapes < MAX_ESCAPES:
             # Nowhere reachable to stop -- from HERE. Boxed in, not done.
-            self._queue_escape()
+            self._queue_escape("boxed", reachable_cells=len(steps))
             return self._do_pending()
         if self.retry.cooling(now):
             return "WAIT", True, (f"no frontier ready; retrying in "
@@ -360,10 +386,17 @@ class ExploreAgent(MissionAgent):
         self.last_event = (f"no reachable frontier left ({len(frontiers)} on the map: "
                            f"{skipped['reached twice']} reached twice, "
                            f"{skipped['set aside']} set aside or dropped)")
+        self._event("searched", frontiers=len(frontiers), skipped=skipped)
         return "STOP", True, self.last_event
 
     def _goal_ended(self, state: str, now: float) -> None:
         g, self._goal = self._goal, None
+        pose = self._pose()
+        moved = (round(math.hypot(pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]), 2)
+                 if g.get("from") and pose.get("usable") else None)
+        self._event("goal_ended", kind=g["kind"], state=state,
+                    goal=[round(g["x_m"], 2), round(g["y_m"], 2)],
+                    seconds=round(now - g["sent_at"], 1), moved_m=moved)
         if g.get("look_at"):
             # Looked for or not, a patch is visited once: an unseen corner
             # the camera cannot get a line to must not loop the search.
@@ -401,7 +434,8 @@ class ExploreAgent(MissionAgent):
                 # (An approach wedging at all counts: a sighting that wedges
                 # the robot every time must still run out of tries.)
                 self.retry.fail(target[0], target[1], now)
-            self._queue_escape()
+            self._queue_escape("wedged", goal=[round(g["x_m"], 2), round(g["y_m"], 2)],
+                               again=again)
             self.last_event = f"{g['kind']} goal {state} without moving; backing out"
             logger.info(self.last_event)
             return
@@ -419,8 +453,9 @@ class ExploreAgent(MissionAgent):
                 logger.warning("goal cancel failed", exc_info=True)
             self._goal = None
 
-    def _queue_escape(self) -> None:
+    def _queue_escape(self, why: str, **info) -> None:
         self.escapes += 1
+        self._event("escape", why=why, n=self.escapes, **info)
         self._pending = ["REVERSE", ("CREEP",), ("OPEN",)]
 
     def _do_pending(self):
@@ -567,14 +602,17 @@ class ExploreAgent(MissionAgent):
         except Exception:  # noqa: BLE001 -- best effort; the refusal path covers it
             pass
         try:
-            return action, True, self.safety.check_and_execute(action, **kwargs)
+            out = action, True, self.safety.check_and_execute(action, **kwargs)
         except SafetyViolation as exc:
-            return action, False, str(exc)
+            out = action, False, str(exc)
         except Preempted as exc:
             if OWN_GOAL_REFUSAL not in str(exc):
                 raise
             self._pending.insert(0, action)
-            return "WAIT", False, f"{action} waits: the mission's own goal still holds the robot"
+            out = "WAIT", False, f"{action} waits: the mission's own goal still holds the robot"
+        self._event("verb", action=action, **kwargs, executed=out[1],
+                    waited=out[0] == "WAIT", detail=str(out[2])[:160])
+        return out
 
     # ---------- perception ----------
 

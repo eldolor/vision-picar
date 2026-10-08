@@ -102,7 +102,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from robot.factory import get_robot, load_config
-from robot.identity import log_identity
+from robot.identity import configure_logging, log_identity
 from robot.interface import (
     DRIVER_AUTONOMOUS, DRIVER_MANUAL, DRIVER_UNKNOWN, WheelFeedbackLost, driver_priority)
 
@@ -192,6 +192,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     `app` below is what `uvicorn robot.server:app` actually serves."""
     # Phase M5. First line out of the process, before anything can fail in
     # a way that makes you wonder which build you are looking at.
+    configure_logging()                # PLAN 3.45: PICAR_LOG_LEVEL, unset = unchanged
     ident = log_identity("vision-picar robot server", config_path)
     config = load_config(config_path) if config_path else load_config()
     watchdog_timeout = config.get("safety", {}).get("watchdog_timeout_s", 1.0)

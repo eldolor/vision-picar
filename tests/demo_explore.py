@@ -45,12 +45,29 @@ ROS_DOMAIN = os.environ.get("ROS_DOMAIN_ID", "73")
 TARGET = "red backpack"
 MISSION_LIMIT_S = 1800
 LOGDIR = os.environ.get("EXPLORE_LOGDIR", "/tmp")
+# 3.45: each stack's robot, brain and ROS logs in a directory of their own.
+# They were overwritten at every new stack, so a batch of three kept only
+# the last run's -- and the brain's held nothing at INFO anyway.
+RUN_DIR = None
+
+
+def _new_run_dir():
+    global RUN_DIR
+    os.makedirs(LOGDIR, exist_ok=True)
+    base = os.path.join(LOGDIR, time.strftime("run-%Y%m%d-%H%M%S"))
+    RUN_DIR, n = base, 1
+    while os.path.exists(RUN_DIR):
+        n += 1
+        RUN_DIR = f"{base}-{n}"
+    os.makedirs(RUN_DIR)
+    return RUN_DIR
 
 
 def _kill_ports():
     # Keep nav2's own account of a run before the container goes.
     if subprocess.run(["docker", "inspect", CONTAINER], capture_output=True).returncode == 0:
-        with open(f"{LOGDIR}/explore_ros_{int(time.time())}.log", "w") as f:
+        where = RUN_DIR or LOGDIR          # the run that is ending, not the next
+        with open(f"{where}/explore_ros_{int(time.time())}.log", "w") as f:
             subprocess.run(["docker", "logs", CONTAINER], stdout=f, stderr=subprocess.STDOUT)
     # A server that outlives its run keeps answering on the port, and the
     # next run's own server then fails to bind: the 2026-10-02 breakfast run
@@ -111,18 +128,23 @@ def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None):
     `odom_drift` is SIM_ODOM_DRIFT ("left,right")."""
     heavy_lock()
     _kill_ports()
+    run_dir = _new_run_dir()
     env = {k: v for k, v in os.environ.items()
            if k not in ("APP_SHARED_SECRET", "LOCAL_SECRET")}
     env.update(SIM_MAP=house, SIM_MOVERS=movers, ROBOT_DRIVE="ros", WORLD_MODE="ros",
                SIM_ODOM_DRIFT=odom_drift,
-               ROS_BRIDGE_URL=f"http://127.0.0.1:{BRIDGE}")
+               ROS_BRIDGE_URL=f"http://127.0.0.1:{BRIDGE}",
+               # The robot server at WARNING (its refusals, now time-stamped):
+               # at INFO the sim logs every STOP, ten a second.
+               PICAR_LOG_LEVEL="WARNING")
     procs = [subprocess.Popen([PY, "-m", "uvicorn", "robot.server:app", "--port", str(ROBOT),
                       "--host", "127.0.0.1", "--log-level", "warning"], cwd=ROOT, env=env,
-                     stdout=open(f"{LOGDIR}/explore_robot.log", "w"), stderr=subprocess.STDOUT)]
-    benv = dict(env, ROBOT_URL=f"http://127.0.0.1:{ROBOT}")
+                     stdout=open(f"{run_dir}/explore_robot.log", "w"), stderr=subprocess.STDOUT)]
+    benv = dict(env, ROBOT_URL=f"http://127.0.0.1:{ROBOT}",
+                PICAR_LOG_LEVEL="INFO")       # every mission line and explore decision
     procs.append(subprocess.Popen([PY, "-m", "uvicorn", "control.brain_server:app", "--port", str(BRAIN),
                       "--host", "127.0.0.1", "--log-level", "warning"], cwd=ROOT, env=benv,
-                     stdout=open(f"{LOGDIR}/explore_brain.log", "w"), stderr=subprocess.STDOUT))
+                     stdout=open(f"{run_dir}/explore_brain.log", "w"), stderr=subprocess.STDOUT))
     time.sleep(4)
     for proc, port in zip(procs, (ROBOT, BRAIN)):
         if proc.poll() is not None or str(proc.pid) not in _listeners(port):
@@ -237,7 +259,7 @@ def run_mission(robot, house, policy="explore", target=TARGET, max_steps=200):
     else:
         brain.post("/mission/stop")
     tag = f"{policy}-{target}-{int(t0)}".replace(" ", "_")
-    with open(f"{LOGDIR}/explore_status_{tag}.json", "w") as f:
+    with open(f"{RUN_DIR or LOGDIR}/explore_status_{tag}.json", "w") as f:
         json.dump({**status, "full_log": full_log,
                    "final_map": robot.get("/world/map").json(),
                    "final_pose": robot.get("/world/pose").json()}, f)

@@ -24,6 +24,8 @@ file is true only until the code changes and is updated in the same commit.
 | `brain/arrival.py` | `ArrivalCheck.observe(scene, robot)`, `arrived_scene()`, the readout states (`REFUSED` is set by the agent, never here: this module makes no calls). |
 | `brain/goal_pose.py` | `OdomTracker` (integrates `get_odometry()` path length along heading), `GoalPose` (`sight()`, `bearing_from()`, `distance_from()`, `clear()`; `is_point`). |
 | `brain/memory.py` | `MissionMemory` (visited/searched rooms, `Sighting` with a map-frame pose, `ActionRecord`, `is_complete()`, `summary()`, `as_context()`). |
+| `brain/explore.py` | `ExploreAgent(MissionAgent)`, the `explore` policy over nav2 (3.31): frontier, view and approach goals through a `Navigator`, the retry rule, the wedged/boxed escape (`_queue_escape()`, `_do_pending()`: REVERSE, CREEP, OPEN). Since 3.45 every decision is a record in `agent.events` and an INFO line `explore {json}`: `goal_sent` (kind, goal, and for a frontier its `rank`, `candidates`, `path_m`, `size_m`, `score`, `skipped`), `goal_refused`, `goal_ended` (`state`, `seconds`, `moved_m`), `escape` (`why`: wedged or boxed), `verb` (action, `executed`, `waited`, the refusal), `searched`; each with the SLAM `pose`. |
+| `brain/frontier.py` | `find_frontiers()`, `reachable()`, `RetryBook`, `camera_seen()`, `find_view_gaps()`: pure functions over `get_map()`'s grid (3.31). |
 | `brain/rooms.py` | `ROOM_FEATURES`, `identify_room()`. Tested, but nothing in the mission path calls it: sim frames carry a room label and real frames take the cloud's `room_guess`. |
 
 **Which agent runs.** `control/mission_runner.py` builds `VisionAgent` for

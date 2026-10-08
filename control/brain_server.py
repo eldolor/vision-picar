@@ -102,7 +102,7 @@ from control.remote_robot import RemoteRobot
 from control.remote_navigator import RemoteNavigator
 from control.remote_world import RemoteWorld
 from control.walk_store import walk_store_from_config
-from robot.identity import git_revision, log_identity
+from robot.identity import configure_logging, git_revision, log_identity
 from robot.interface import RobotInterface
 from world.interface import NullWorld, WorldInterface
 
@@ -362,6 +362,7 @@ def create_app(
     module-level `app` below is what `uvicorn control.brain_server:app`
     serves."""
     # Phase M5, same reason as robot/server.py's: first line out.
+    configure_logging()                # PLAN 3.45: PICAR_LOG_LEVEL, unset = unchanged
     ident = log_identity("vision-picar brain server", config_path)
     config = load_brain_config(config_path)
     secret = os.environ.get("APP_SHARED_SECRET")

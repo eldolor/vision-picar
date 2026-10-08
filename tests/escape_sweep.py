@@ -75,7 +75,7 @@ def escape(x, y, heading_deg):
     min_gap = truth(grid)[1]
     moves = []
     for k in range(MAX_ESCAPES):
-        agent._queue_escape()
+        agent._queue_escape("sweep")
         guard = 0
         while agent._pending and guard < 80:
             guard += 1

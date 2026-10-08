@@ -57,7 +57,12 @@ user's own ngrok config, pointing at :8080.
 | `robot/identity.py` | `identity(service, config_path)` -> `{service, git_revision, executable, config_path}`; `log_identity()` logs it at WARNING. Revision from `GIT_REVISION`, else `git rev-parse --short HEAD`, else `unknown` |
 
 `robot/server.py` and `control/brain_server.py` each call `log_identity()`
-at start-up and publish the result as `identity` on `GET /health`.
+at start-up and publish the result as `identity` on `GET /health`. Before
+it, each calls `configure_logging()`: with `PICAR_LOG_LEVEL` set, one
+stderr handler on the root logger at that level with epoch time stamps;
+unset, nothing changes, and only WARNING and above reach stderr (Python's
+last-resort handler) -- which is why the brain's mission lines and
+explore's decisions were missing from every live run before 3.45.
 
 **Mission metrics:**
 
