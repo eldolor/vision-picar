@@ -226,7 +226,7 @@ def main(argv=None):
     ap.add_argument("--steps", type=int, default=MAX_STEPS)
     ap.add_argument("--clean", action="store_true", help="no injected detector errors")
     ap.add_argument("--seed", type=int, default=346,
-                    help="starts' seed: 346 is sweep 1; 3461 the fresh set for its amendment")
+                    help="starts' seed: 346 sweep 1; 3461 sweep 2 (amendment 1); 3462 sweep 3 (amendment 2)")
     args = ap.parse_args(argv)
     all_starts = starts(seed=args.seed)
     idx = range(MISSIONS)

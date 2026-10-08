@@ -40,7 +40,11 @@ never makes a new look.
 A MISS is the landmark inside the camera's field, within `MISS_RANGE_M`,
 not occluded (the scan at its bearing reaches at least its range minus
 `OCCLUSION_M`), on a frame the detector ran on, with no observation joining
-it. Detector confidence is NOT the increment: it is uncalibrated across
+it. **An isolated miss is forgiven** (3.46 amendment 2): it is held as
+pending and counts only when the next independent look also misses, and
+then both count; a hit in between clears it. One miss between hits is most
+often the detector dropping a box; an object that is really gone fails
+every look. Detector confidence is NOT the increment: it is uncalibrated across
 classes, the same reason the target gate thresholds `probability`.
 
 ## The class is a vote
@@ -209,6 +213,7 @@ class Landmark:
     last_step: Optional[int] = None
     _hit_pose: Optional[dict] = None
     _miss_pose: Optional[dict] = None
+    _pending_miss: bool = False
 
     @property
     def x(self) -> float:
@@ -307,6 +312,7 @@ class Inventory:
             if lm.id not in joined and _new_view(lm._hit_pose, pose):
                 lm.score = min(SCORE_CLAMP, lm.score + L_HIT)
                 lm.hits += 1
+                lm._pending_miss = False
                 lm.votes[label] += 1
                 lm._hit_pose = dict(pose)
             joined.add(lm.id)
@@ -348,9 +354,14 @@ class Inventory:
             if rng is not None and rng < dist - OCCLUSION_M:
                 continue                      # something in front of it
             if _new_view(lm._miss_pose, pose):
-                lm.score = max(-SCORE_CLAMP, lm.score + L_MISS)
-                lm.misses += 1
                 lm._miss_pose = dict(pose)
+                if not lm._pending_miss:
+                    lm._pending_miss = True        # forgiven unless the next look agrees
+                    continue
+                # Two looks in a row without it: both count.
+                lm.score = max(-SCORE_CLAMP, lm.score + 2 * L_MISS)
+                lm.misses += 2
+                lm._pending_miss = False
 
     # ---------- reading ----------
 

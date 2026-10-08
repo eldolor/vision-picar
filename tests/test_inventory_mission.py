@@ -5,7 +5,7 @@ tests/test_inventory_mission.py -- the object inventory on the mission path
 * Criterion 1: the search is identical with the inventory on and off --
   same actions, same outcome -- for the frontier and tiered policies in two
   houses. The inventory is recorded and reported only.
-* Criteria 3-5: sweep 2's numbers (`tests/inventory_sweep.py --seed 3461`)
+* Criteria 3-5: sweep 3's numbers (`tests/inventory_sweep.py --seed 3462`)
   pinned on a subset, so a regression fails the suite.
 * D: the pose and scan are read with the frame; a frame without
   detections costs nothing; nothing in the inventory can fail a mission;
@@ -79,12 +79,13 @@ def test_no_policy_is_handed_the_inventory():
 
 
 def test_criteria_3_to_5_hold_on_a_pinned_subset():
-    """Sweep 2's fresh missions 1-4 (seed 3461), as the sweep runs them.
-    The full sweep is `python -m tests.inventory_sweep --seed 3461`."""
-    starts = sweep.starts(seed=3461)
+    """Sweep 3's fresh missions 1-4 (seed 3462, amendment 2's judged set),
+    as the sweep runs them. The full sweep is
+    `python -m tests.inventory_sweep --seed 3462`."""
+    starts = sweep.starts(seed=3462)
     logging.disable(logging.WARNING)
     try:
-        runs = [sweep.run_one(starts[k], seed=3461 * 100 + k) for k in range(4)]
+        runs = [sweep.run_one(starts[k], seed=3462 * 100 + k) for k in range(4)]
     finally:
         logging.disable(logging.NOTSET)
     s = sweep.score(runs)

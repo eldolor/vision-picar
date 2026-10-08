@@ -169,7 +169,7 @@ them):
 
 | Name | Value | Meaning |
 |---|---|---|
-| `L_HIT`, `L_MISS` | +0.85, -0.4 | log-odds per independent hit / miss; one hit reads 0.70 |
+| `L_HIT`, `L_MISS` | +0.85, -0.4 | log-odds per independent hit / miss; one hit reads 0.70. An isolated miss is held pending and forgiven unless the next independent look also misses (3.46 amendment 2) |
 | `REPORT_BELIEF` | 0.8 | reported vs candidate: two hits and no miss |
 | `NEW_VIEW_M`, `NEW_VIEW_DEG` | 0.5 m, 30 deg | what makes a look independent; time alone never does |
 | `MERGE_M`, `RELABEL_M` | 0.5 m, 0.3 m | single linkage within a label; a different label this close is a vote |
@@ -280,7 +280,7 @@ and `budget 250 ms: WITHIN` or `OVER`. Recorded on the M1 MacBook Air,
 The Jetson numbers at 15 W and 25 W are not yet taken.
 
 **Measuring the inventory** (3.46): `python -m tests.inventory_sweep
---seed 3461` runs 20 frontier missions in `complex_house` with injected
+--seed 3462` (sweep 3, the current rule's judged set) runs 20 frontier missions in `complex_house` with injected
 detector errors and prints recall, placement, duplicates and precision;
 `--half 1|2`, `--clean`, `--steps`.
 
@@ -316,9 +316,11 @@ commit.
   prompt-free YOLOE pass on keyframes) is not built, so a real frame has
   no detections and `frame_detections()` returns None. Its criteria 2
   (Jetson budget) and 6 (labelled rig keyframes) are unmeasured.
-- **Inventory recall failed once.** 3.46 sweep 1's judged half read
-  89.4% (bar 90%): one miss takes a twice-seen object to 0.786. Sweep 2
-  met every bar on fresh missions; the rule is the user's call.
+- **Inventory precision costs of the forgiven miss.** 3.46 sweep 3
+  (fresh missions) met every bar (recall 96.6%, precision 97.2%); on
+  sweep 1's missions the same rule reads precision 91.7%: a 1:1 vote
+  reported under the wrong label, and one object placed on another's
+  surface.
 - **Loop closures are unmeasured for the inventory.** In process the pose
   is the truth; an observation is placed in the pose at capture and is
   not re-placed when SLAM corrects.

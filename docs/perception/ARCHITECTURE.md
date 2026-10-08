@@ -318,9 +318,10 @@ it is a list of what is in someone's home.
   anything but the target until an on-board detector that names
   everything exists (3.46 C, not built), so today the inventory fills only
   in the simulator.
-- **Does one miss weigh too much?** A thing seen twice and missed once
-  falls under the reporting bar; 3.46's first sweep failed recall on it.
-  Left to the user (the ROS plan's 3.46).
+- **Should a tied class vote be reported?** Since one miss is forgiven
+  (3.46 amendment 2, recall up), a landmark whose labels tie can be
+  reported under the wrong one; 3.46 records one such case. Unchanged
+  until it is judged on missions it has not seen.
 - **Its own process** (2.7: features, not frames) so a stalled detector
   degrades perception rather than the control loop -- proposed, not built
   (see "Perception runs in the brain process").

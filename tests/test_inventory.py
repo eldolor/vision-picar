@@ -86,14 +86,40 @@ def test_turning_alone_is_a_new_view():
     assert len(i.landmarks) == 1 and i.landmarks[0].hits == 2
 
 
-def test_looking_and_not_seeing_lowers_belief():
+def _seen_twice():
     i = Inventory()
-    i.observe([{"label": "mug", "bearing_deg": 0.0}], _pose(0, 0, 90), _scan({0: 2.0}))
-    i.observe([{"label": "mug", "bearing_deg": 0.0}], _pose(0.6, 0, 90), _scan({0: 1.4}))
+    i.observe([{"label": "mug", "bearing_deg": 0.0}], _pose(0, 0, 90), _scan({0: 2.5}))
+    i.observe([{"label": "mug", "bearing_deg": 0.0}], _pose(0.6, 0, 90), _scan({0: 1.9}))
+    return i
+
+
+def test_one_miss_between_hits_is_forgiven():
+    """Amendment 2: a detector that drops a box once must not sink a thing
+    seen twice under the reporting bar (sweep 1's recall failure)."""
+    i = _seen_twice()
     before = i.landmarks[0].belief
-    # From a third place, in view, nothing in front, not detected: a miss.
-    i.observe([], _pose(1.2, 0, 90), _scan({0: 0.8}))
-    assert i.landmarks[0].misses == 1 and i.landmarks[0].belief < before
+    i.observe([], _pose(1.2, 0, 90), _scan({0: 1.3}))
+    assert i.landmarks[0].misses == 0 and i.landmarks[0].belief == before
+    assert i.report()["reported"]
+
+
+def test_two_misses_in_a_row_both_count():
+    i = _seen_twice()
+    before = i.landmarks[0].score
+    i.observe([], _pose(0.6, 0.6, 90), _scan({0: 1.9}))
+    i.observe([], _pose(1.2, 0, 90), _scan({0: 1.3}))
+    lm = i.landmarks[0]
+    assert lm.misses == 2 and lm.score == pytest.approx(before + 2 * inv.L_MISS)
+
+
+def test_a_hit_clears_a_pending_miss():
+    i = _seen_twice()
+    i.observe([], _pose(1.2, 0, 90), _scan({0: 1.3}))                     # pending
+    i.observe([{"label": "mug", "bearing_deg": 0.0}], _pose(1.2, 0, 90),
+              _scan({0: 1.3}))                                             # a hit
+    i.observe([], _pose(0.6, 0.6, 90), _scan({0: 1.95}))                  # pending again
+    assert len(i.landmarks) == 1 and i.landmarks[0].hits == 3
+    assert i.landmarks[0].misses == 0
 
 
 def test_occluded_is_not_a_miss():
