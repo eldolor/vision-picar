@@ -54,4 +54,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.43](3.43-explore-wedge.md) | Exploring never parks the robot where it cannot leave (2026-10-06): criteria, written before building |
 | [3.44](3.44-speed-clearance.md) | The stop distance follows speed: less room for a creep, more for a fast move (2026-10-07): criteria, written before building -- confirmed by the user 2026-10-07 |
 | [3.46](3.46-object-inventory.md) | Object inventory: record every object seen during a search (2026-10-07): criteria, written before building -- confirmed by the user 2026-10-07 |
+| [3.47](3.47-offline-arrival.md) | An arrival the cloud could not check: arrived_unconfirmed |
 <!-- /sections -->
