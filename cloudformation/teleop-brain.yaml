@@ -204,9 +204,9 @@ Resources:
       Conditions:
         - Field: path-pattern
           Values:
-            - /teleop-brain/mission/start
-            - /teleop-brain/mission/stop
-            - /teleop-brain/mission/status
+            # /mission/* (start, stop, status, inventory): one value, since
+            # a rule allows at most five path patterns (3.46 added a route).
+            - /teleop-brain/mission/*
             - /teleop-brain/health
       Actions:
         - Type: forward

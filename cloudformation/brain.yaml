@@ -214,9 +214,9 @@ Resources:
       Conditions:
         - Field: path-pattern
           Values:
-            - /mission/start
-            - /mission/stop
-            - /mission/status
+            # /mission/* (start, stop, status, inventory): one value, since
+            # a rule allows at most five path patterns (3.46 added a route).
+            - /mission/*
             - /recording/frame
             # Marks a walk complete and records which model produced it.
             # Without this path the twin's finish call 404s at the ALB, the

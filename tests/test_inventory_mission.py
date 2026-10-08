@@ -166,7 +166,11 @@ def test_the_sink_gets_the_report_once_and_cannot_fail_the_mission():
     runner.stop()
     assert len(got) == 1 and got[0]["outcome"] == "max_steps"
     assert {"reported", "candidates", "counts", "map_id"} <= set(got[0])
-    assert any("inventory:" in line for line in runner.status()["log_tail"])
+    tail = runner.status()["log_tail"]
+    assert tail[-2].startswith("inventory:")
+    # The end line stays last: the twin and the failsafe tests read the end
+    # reason off log_tail[-1] (the first merge gate caught this).
+    assert tail[-1].startswith("mission ended")
 
     def boom(report):
         raise RuntimeError("s3 down")

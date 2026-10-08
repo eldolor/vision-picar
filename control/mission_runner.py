@@ -882,6 +882,10 @@ class MissionRunner:
             self._outcome = outcome
             if outcome == FAILED:
                 self._error = note
+            # 3.46: before the end line, which stays the log's last word --
+            # the twin and the tests read the end reason off log_tail[-1].
+            if self.inventory is not None:
+                self._log_line(self.inventory.summary())
             self._log_line(f"mission ended ({outcome}): {note}")
         # Outside the lock: this is an HTTP call when the robot is remote.
         self._safe_stop()
@@ -975,10 +979,7 @@ class MissionRunner:
         return report
 
     def _finish_inventory(self) -> None:
-        if self.inventory is None:
-            return
-        self._log_line(self.inventory.summary())
-        if self.inventory_sink is None:
+        if self.inventory is None or self.inventory_sink is None:
             return
         try:
             self.inventory_sink(self.inventory_report())
