@@ -203,6 +203,15 @@ DEFAULTS = {
     "recording_proxy_timeout_s": 10.0,
     "drill_vision_timeout_s": 2.0,
     "drill_tick_timeout_s": 3.0,
+    # 3.46: where a mission's object inventory goes when it ends
+    # (control/inventory_store.py). Always a local file under
+    # `inventory_dir`; also s3://<inventory_bucket>/<inventory_prefix>/
+    # <robot>/ when a bucket is set (decided by the user 2026-10-07). Empty
+    # by default so a checkout with no AWS uploads nothing; the bucket name
+    # is per deployment, so it arrives as INVENTORY_BUCKET.
+    "inventory_dir": "recordings/inventory",
+    "inventory_bucket": "",
+    "inventory_prefix": "inventory",
 }
 
 
@@ -255,6 +264,10 @@ def load_brain_config(config_path=None) -> dict:
         merged["recording_backend"] = os.environ["RECORDING_BACKEND"].strip().lower()
     if os.environ.get("RECORDING_BUCKET"):
         merged["recording_bucket"] = os.environ["RECORDING_BUCKET"]
+    if os.environ.get("INVENTORY_BUCKET"):
+        merged["inventory_bucket"] = os.environ["INVENTORY_BUCKET"]
+    if os.environ.get("INVENTORY_DIR"):
+        merged["inventory_dir"] = os.environ["INVENTORY_DIR"]
     # Same one-generic-image rule: where to ship metrics is a property of
     # the deployment, not of the config file baked into an artifact.
     if os.environ.get("METRICS_URL"):

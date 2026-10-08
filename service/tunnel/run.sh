@@ -55,6 +55,12 @@ export VISION_SHARED_SECRET="$VISION_SECRET"
 # never fail a mission; see control/metrics_client.py.
 export METRICS_URL="${METRICS_URL:-$VISION_URL}"
 export METRICS_SECRET="${WALKS_SECRET:-}"
+# 3.46: each mission's object inventory (labels and map positions, never an
+# image) is uploaded to the private recordings bucket, read from the
+# recordings stack's export. Unset (no AWS credentials) means local only.
+export INVENTORY_BUCKET="${INVENTORY_BUCKET:-$(aws cloudformation list-exports \
+  --query "Exports[?Name=='vision-picar-recordings-s3-BucketName'].Value" \
+  --output text 2>/dev/null || true)}"
 
 export ROBOT_MODE="${ROBOT_MODE:-sim}"
 # The world model must follow the body (N1). config/robot.yaml ships

@@ -698,6 +698,12 @@ class GridWorld:
         ]
         frame = {
             "room": self.room_at(self.robot_x, self.robot_y),
+            # Where the camera points relative to the body, clockwise -- the
+            # field a real frame carries (1.15.3) and `get_depth_grid()`
+            # already publishes. `detections` bearings are off the CAMERA
+            # axis, so without this a peek's detections read as if dead
+            # ahead of the body (3.46: the inventory placed them 90 deg off).
+            "pan_deg": round(math.degrees(self.pan * PAN_ANGLE_RAD), 4),
             # Close enough to count as FOUND -- the rule-based policy's
             # arrival test, see SIM_PERCEPTION_RANGE_CELLS.
             "objects_visible": [obj["name"] for obj in in_view

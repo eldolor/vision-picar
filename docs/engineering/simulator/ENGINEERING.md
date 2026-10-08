@@ -2,7 +2,7 @@
 kind: engineering
 domain: simulator
 status: current
-verified: 2026-10-04
+verified: 2026-10-08
 parent: docs/simulator/ARCHITECTURE.md
 ---
 
@@ -40,6 +40,7 @@ sensor reads queued behind the board loop. See "The split simulator" below.
 | `sim/maps/__init__.py` | `build_world(name)` and `build_movers(house, scenario)`: the only map registry. `build_world()` stamps the name it was given on the world it returns (`world.map_name`), which is how the server reports the house it built |
 | `sim/maps/starter_house.py` | 13 x 10 cells, 30 cm doors. Robot at cell (2, 2) facing east, backpack at (10, 7). The default house |
 | `sim/maps/scaled_house.py` | 27 x 14 cells, 90 cm doors (R6). Robot at (6, 4) facing east, backpack at (23, 5). The only house with a mover scenario (`hallway_crossing`) |
+| `sim/maps/complex_house.py` | 3.46's test house: 60 x 44 ft, a loop (living room - kitchen - hall), an L-shaped hall, three dead ends (study, closet, ensuite), an L-shaped bedroom, 33 pieces of furniture and 16 one-cell small things on the floor. Exposes `INSTANCES` (cells grouped by piece, so a table's four legs are one table) and `SMALL_NAMES` for scoring |
 | `sim/maps/home_first_floor.py` | The user's first floor, rasterised from feet (appraisal sketch, exterior measured, interior provisional), furnished with solid objects. Tables are four legs |
 
 Owned by other domains but built on this one: `sim/mock_world.py` (world),
@@ -139,7 +140,7 @@ follows is the sim-specific shape of each answer. The routes are served by
 | `get_scan(max_range_m=None)` | 360 beams, 1 degree apart, `angle_min_deg: -180`, clockwise-positive, zero dead ahead, cast from the **lidar** 4.0 cm ahead of centre along the **body** heading. `range_max_m: 12.0`. A beam with no return is `null`. With a range hint (the safety layer's short scan) the beams use `cast_ray_exact()` and stop at the hint |
 | `get_odometry()` | `usable: true`, `distance_m` (path length actually covered, reverse included), `heading_deg` (body, degrees turned since the robot was built, clockwise-positive, continuous; the compass bearing is `MockWorld.get_pose()`'s) |
 | `get_distance()` | Free cells ahead times 30.0 cm, exact. Through `DistanceSensorModel.read()` when noise is on; a dropout reads `0.0` (fail-safe: always trips the veto) |
-| `get_camera_frame()` | `room`, `objects_visible`, `detections`, `image_base64` (320 x 200 JPEG), `media_type: image/jpeg`, `metadata` |
+| `get_camera_frame()` | `room`, `pan_deg` (3.46; clockwise, as `get_depth_grid()` publishes it), `objects_visible`, `detections`, `image_base64` (320 x 200 JPEG), `media_type: image/jpeg`, `metadata` |
 | `GridWorld.move_object(src, dst)` | Raises `ValueError` when there is no object at `src`, for a mover, onto a cell that is not floor, onto another object, or inside the robot's turning circle |
 
 Sim-only routes on the robot server (501 on a backend with no house):
@@ -180,7 +181,7 @@ differs, both are given.
 
 | Key or constant | Default | Unit | Read in | Why that value |
 |---|---|---|---|---|
-| `SIM_MAP` (env) | `starter_house` | name | `robot/factory.py` (`_sim_world()`); the live suites and sweeps in `tests/` read it too | Most tests were measured in the starter house. `scaled_house` for nav2 and R1 sweeps; `home_first_floor` for the user's house |
+| `SIM_MAP` (env) | `starter_house` | name | `robot/factory.py` (`_sim_world()`); the live suites and sweeps in `tests/` read it too | Most tests were measured in the starter house. `scaled_house` for nav2 and R1 sweeps; `home_first_floor` for the furnished house; `complex_house` for 3.46's inventory sweep |
 | `SIM_MOVERS` (env) | unset | scenario name | `robot/factory.py` | Off means off (3.30 criterion 4). Only `scaled_house` defines one, `hallway_crossing` |
 | `SIM_ODOM_DRIFT` (env) | unset | `left,right` scales | `robot/factory.py` | Overrides the yaml, as `ROBOT_DRIVE` does |
 | `sim.realtime` | `false` | bool | `robot/factory.py` -> `MockRobot._settle()` | S4. On, a move sleeps its declared `duration` so the watchdog readout climbs mid-move. Off keeps the suite fast |

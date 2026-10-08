@@ -358,5 +358,12 @@ brain:
   # again. Written relative to the repo root; .gitignore'd.
   allow_recording: true
   recording_dir: recordings
+
+  # 3.46: every mission's object inventory (labels and map positions, no
+  # images) is written under inventory_dir, and uploaded to the private
+  # recordings bucket when INVENTORY_BUCKET is set in the environment --
+  # service/tunnel/run.sh sets it (decided by the user 2026-10-07).
+  inventory_dir: recordings/inventory
+  inventory_prefix: inventory
   drill_vision_timeout_s: 2.0 # shortened so a demo takes seconds, not a minute
   drill_tick_timeout_s: 3.0

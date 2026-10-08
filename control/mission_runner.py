@@ -50,6 +50,8 @@ from typing import Callable, Optional
 from brain.agent import ObjectSearchAgent
 from brain.explore import ExploreAgent
 from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
+from brain.inventory import MAX_RANGE_M as INVENTORY_RANGE_M
+from brain.inventory import DEFAULT_FOV_DEG, Inventory, frame_detections
 from brain.memory import MissionMemory
 from brain.vision_agent import VisionAgent
 from robot.interface import Preempted, RobotInterface
@@ -155,9 +157,14 @@ class _HaltGate(RobotInterface):
         "look_left", "look_right", "look_center", "set_wheel_velocity",
     )
 
-    def __init__(self, robot: RobotInterface, is_running: Callable[[], bool]):
+    def __init__(self, robot: RobotInterface, is_running: Callable[[], bool],
+                 on_frame: Optional[Callable[[dict], None]] = None):
         self._robot = robot
         self._is_running = is_running
+        # 3.46: called with every frame the agent takes, before the agent
+        # sees it -- so the inventory reads the pose and scan of the moment
+        # the frame was captured, not after the step's move.
+        self._on_frame = on_frame
 
     def _guard(self, name: str):
         if not self._is_running():
@@ -218,7 +225,10 @@ class _HaltGate(RobotInterface):
         return self._robot.stop()
 
     def get_camera_frame(self) -> dict:
-        return self._robot.get_camera_frame()
+        frame = self._robot.get_camera_frame()
+        if self._on_frame is not None:
+            self._on_frame(frame)
+        return frame
 
     def get_distance(self) -> float:
         return self._robot.get_distance()
@@ -321,6 +331,8 @@ class MissionRunner:
         idle: Optional[Callable[[float], None]] = None,
         retry_cooldown_s: float = RETRY_COOLDOWN_S,
         retry_limit: int = RETRY_LIMIT,
+        inventory: bool = True,
+        detections_fn: Optional[Callable[[dict], Optional[list]]] = None,
     ):
         if policy not in POLICIES:
             raise ValueError(f"Unknown policy: {policy!r}. Known: {', '.join(POLICIES)}")
@@ -380,6 +392,16 @@ class MissionRunner:
         self.metrics_secret = ""
         self.metrics_config: dict = {}
         self.git_revision = ""
+        # 3.46: every object the mission saw. Recorded and reported only --
+        # no policy is handed it. `detections_fn` turns a frame into
+        # `[{label, bearing_deg}]` or None (no detector ran); the default
+        # reads what the frame carries, which today only a sim frame does.
+        # `inventory_sink` is set by the brain server: called once with the
+        # report when the mission ends, never allowed to fail it.
+        self.inventory = Inventory() if inventory else None
+        self.detections_fn = detections_fn or frame_detections
+        self.inventory_sink: Optional[Callable[[dict], None]] = None
+        self._inventory_error_logged = False
         self.policy = policy
         self.max_steps = max_steps
         # None means "the agent's own sensor-built scene" -- resolved after
@@ -405,7 +427,8 @@ class MissionRunner:
                 raise ValueError("The explore policy needs a navigator -- nav2's goals "
                                  "(control/remote_navigator.py), PLAN-ros-alignment.md 3.31")
             extra = {"navigator": navigator, "clock": self.clock}
-        self._gated = _HaltGate(robot, self.is_running)
+        self._gated = _HaltGate(robot, self.is_running,
+                                on_frame=self._observe if self.inventory else None)
         self.agent = agent_class(
             self._gated,
             self.memory,
@@ -749,6 +772,9 @@ class MissionRunner:
                              "camera_seen_m2": round(len(self.agent.seen)
                                                      * (self.agent.seen_res or 0) ** 2, 2)}
                             if self.policy == "explore" else None),
+                # 3.46: counts only; the list is GET /mission/inventory.
+                "inventory": (self.inventory.counts()
+                              if self.inventory is not None else None),
                 "log_tail": self._log[-LOG_TAIL_LINES:],
             }
 
@@ -872,6 +898,7 @@ class MissionRunner:
                 closer()
             except Exception as e:  # noqa: BLE001
                 logger.warning("closing the vision policy failed: %s", e)
+        self._finish_inventory()
         # One metrics row per mission, on a daemon thread. Last, and
         # after the policy is closed, so the latency samples are complete.
         # It can never fail a mission -- control/metrics_client.py holds
@@ -916,6 +943,47 @@ class MissionRunner:
             # A failsafe that raises is not a failsafe.
             logger.error(f"could not stop the robot: {e}")
             self._log_line(f"WARNING: stop command failed: {e}")
+
+    def _observe(self, frame: dict) -> None:
+        """3.46: one frame into the inventory, with the pose and scan read
+        now. Two extra reads per frame, and only when the frame carries
+        detections. Any failure is logged once and never reaches the agent:
+        an inventory is a by-product of a search, never a reason it stops."""
+        try:
+            detections = self.detections_fn(frame)
+            if detections is None:
+                return
+            pose = self.world.get_pose()
+            scan = self.robot.get_scan(max_range_m=INVENTORY_RANGE_M + 0.5)
+            self.inventory.observe(
+                detections, pose, scan,
+                pan_deg=float(frame.get("pan_deg") or 0.0),
+                fov_deg=float(frame.get("fov_deg") or DEFAULT_FOV_DEG),
+                room=frame.get("room", "unknown"), step=self._ticks)
+        except Exception as e:  # noqa: BLE001
+            if not self._inventory_error_logged:
+                self._inventory_error_logged = True
+                logger.warning("inventory: frame not recorded: %s", e)
+
+    def inventory_report(self) -> Optional[dict]:
+        if self.inventory is None:
+            return None
+        with self._lock:
+            report = self.inventory.report()
+        report["mission"] = self.memory.mission
+        report["outcome"] = self._outcome
+        return report
+
+    def _finish_inventory(self) -> None:
+        if self.inventory is None:
+            return
+        self._log_line(self.inventory.summary())
+        if self.inventory_sink is None:
+            return
+        try:
+            self.inventory_sink(self.inventory_report())
+        except Exception as e:  # noqa: BLE001
+            logger.warning("inventory not saved: %s", e)
 
     def _log_line(self, line: str) -> None:
         self._log.append(line)

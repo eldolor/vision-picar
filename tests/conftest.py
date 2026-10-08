@@ -382,3 +382,20 @@ def sim_programs():
     yield start
     for p in started:
         p.close()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _inventory_never_leaves_the_suite(tmp_path_factory):
+    """3.46: every mission the brain server runs saves its object inventory.
+    In the suite that goes to a temporary directory, never the repo's
+    recordings/, and never to S3 -- even from a shell where run.sh's
+    INVENTORY_BUCKET is exported. Live servers the suite spawns inherit it."""
+    saved = {k: os.environ.get(k) for k in ("INVENTORY_DIR", "INVENTORY_BUCKET")}
+    os.environ["INVENTORY_DIR"] = str(tmp_path_factory.mktemp("inventory"))
+    os.environ["INVENTORY_BUCKET"] = ""
+    yield
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v

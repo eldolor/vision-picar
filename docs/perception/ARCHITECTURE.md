@@ -2,7 +2,7 @@
 kind: architecture
 domain: perception
 status: current
-verified: 2026-10-02
+verified: 2026-10-08
 ---
 
 # Perception -- architecture
@@ -11,7 +11,8 @@ The on-board perception tier answers one question per camera frame, locally
 and for free: **is the mission's target in this frame, and at what bearing?**
 It is what lets the tiered policy call the cloud only on events, what gives
 the robot a bearing to steer on, and what the arrival rule pairs with the
-lidar. It does not decide moves ([policy](../policy/ARCHITECTURE.md)) and it
+lidar. Since 3.46 it has a second, passive product: an **inventory** of
+every object a mission saw, and where. It does not decide moves ([policy](../policy/ARCHITECTURE.md)) and it
 is not meant to confirm identity -- the cloud model is, at arrival too (see
 "Detect, then verify"). Read this for why the tier
 is a detector plus a verifier with a three-state answer; read the
@@ -48,6 +49,11 @@ measured through the same pipeline the robot runs.
                                v
                      tiered policy, arrival rule, status
 
+  object inventory (3.46, recorded and reported only):
+    every frame's detections + the lidar + the map pose
+      -> placed observations -> landmarks with a belief and a class vote
+      -> the mission's report (local file, private bucket)
+
   measuring instruments (off the mission path):
     corpus scorer  - every labelled walk, against human labels
     target probe   - does a target string fire on unrelated frames?
@@ -62,6 +68,7 @@ measured through the same pipeline the robot runs.
 | Region-proposer seam | class-agnostic regions (a floor mask today; off) | replace the detector's boxes -- only add to them |
 | Pipeline | crop rule, gate, tri-state, bearing | load any model at import time; run on a raycaster render |
 | Frame-reported pipeline | the sim's stand-in, read from frame data | compute anything; claim a model ran |
+| Object inventory | every object a mission saw: placed by the lidar, fused into landmarks, weighted by independent looks | be read by any policy; place an object without a range; store an image |
 | Lab backends | candidates on equal footing (open-vocabulary detectors, a small VLM, SAM) | be imported by the shipped pipeline |
 | Corpus scorer, target probe, latency bench | measurement | feed the robot; the recordings domain owns the corpus itself |
 
@@ -237,12 +244,41 @@ without committing. **Rejected also, on 2026-10-02, as the guard on a wrong
 net-negative and unproven; the user chose a cloud identity check at arrival
 instead ([policy](../policy/ARCHITECTURE.md)).
 
+### Every object seen is kept, and nothing acts on it (3.46)
+
+A search walks most of a house and used to remember only its target. The
+inventory keeps the rest so a person can ask what the robot saw, and so a
+later search could start where a thing was last seen (not built: it needs
+a map that survives a restart, open question 6 of the ROS plan). It is
+**recorded and reported only**: no policy is handed it, and a test pins
+that a mission is move-for-move identical with it on and off. Three
+choices carry it:
+
+- **The detector points, the lidar measures** -- the rule the target has
+  followed since R1. A detection without a lidar range is never placed; a
+  monocular guess would drift confidently.
+- **Belief from independent looks.** Repetition raises belief only from a
+  new viewpoint, because a detector that errs on an image errs the same
+  way on the next one; counting frames would make a robot standing still
+  certain of its own mistake. Looking at a landmark's place and not seeing
+  it lowers belief. Only landmarks over a belief bar are reported; the
+  rest are kept as candidates.
+- **The class is a vote.** Repetition shows consistency, not correctness,
+  so a landmark keeps the labels it was given and is flagged disputed when
+  they disagree.
+
+It is uploaded to the project's private recordings store (decided by the
+user 2026-10-07) as labels and positions only -- never an image -- because
+it is a list of what is in someone's home.
+
 ## Contracts
 
 | With | Direction | Category | Ownership |
 |---|---|---|---|
 | Tiered policy ([policy](../policy/ARCHITECTURE.md)) | policy calls the pipeline once per frame | in-process: frame in, tri-state result out | perception owns what was seen; the policy owns what to do |
-| Arrival rule (policy) | reads the result's bearing and pan | in-process, via the scene | arrival refuses a panned bearing; perception only reports it. Holds on real frames only: a sim frame carries no pan, so the sim stand-in always reports pan 0 with a camera-relative bearing (harmless while no tiered policy pans) |
+| Arrival rule (policy) | reads the result's bearing and pan | in-process, via the scene | arrival refuses a panned bearing; perception only reports it. Holds on real frames only: sim frames carry the pan since 3.46, but the sim stand-in does not compose it and reports pan 0 with a camera-relative bearing (harmless while no tiered policy pans) |
+| Mission service ([mission](../mission/ARCHITECTURE.md)), inventory | feeds the inventory every frame, with the pose and scan of that moment; serves and stores the report | in-process; a report out at mission end | the mission owns when and where it is stored; nothing in the inventory can fail a mission |
+| World ([world](../world/ARCHITECTURE.md)) | supplies the map pose an observation is placed in | the pose and its map id | an observation from another map is refused, never mixed |
 | Mission service ([mission](../mission/ARCHITECTURE.md)) | builds the pipeline at mission start | in-process construction | a pipeline that cannot load is a start-time refusal, never a mid-mission vision failure |
 | Body ([body](../body/ARCHITECTURE.md)) | supplies the frame and its pan angle | frame dict | the body owns pixels and servo angles; perception never asks for more |
 | Simulator ([simulator](../simulator/ARCHITECTURE.md)) | supplies reported detections in sim frames | frame data | the simulator owns visibility geometry |
@@ -258,8 +294,11 @@ instead ([policy](../policy/ARCHITECTURE.md)).
 | Target the detector has no word for | open-vocabulary path; the vocabulary verdict says so; the cloud's cold search covers it | absence from a blind detector is never trusted as absence |
 | Close-range relabelling | crops are not gated on label | the frames where the target fills the view are kept |
 | Local false positive | each frame that passes the gate is a sighting. It may fire a cloud trigger. It steers the robot on that frame, because steering has no frame hysteresis. Near the object it can satisfy arrival. | for steering, the per-frame probability gate is the only bound today. For ending `found`, the arrival rule adds consecutive frames, a centred bearing, a lidar range within the radius and one surface -- all local. The cloud's identity does not override a local sighting. Before `found`, the cloud must confirm identity on the arrival frame. The target "a false positive never confirms a target" is **met** on the tiered arrival path (the cloud confirms identity at arrival; decided by the user 2026-10-02 and built the same day, owned by [policy](../policy/ARCHITECTURE.md)). A false positive can still steer the robot to the wrong object |
-| Camera panned | on real frames: pan is added to the bearing; tilt is not corrected; arrival refuses to judge. Sim frames carry no pan, so neither happens in the sim (harmless today: the cloud-driven policies never peek and a mission starts centred) | no panned bearing is treated as body-relative without composing it with range |
+| Camera panned | on real frames: pan is added to the bearing; tilt is not corrected; arrival refuses to judge. The sim stand-in does not compose the pan its frames carry, so neither happens in the target pipeline in the sim (harmless today: the cloud-driven policies never peek and a mission starts centred); the inventory does compose it | no panned bearing is treated as body-relative without composing it with range |
 | Over the latency budget on the board | P26, then TensorRT | 250 ms a frame at 15 W |
+| Inventory: no range, no pose, or another map | the observation is counted and not placed | no object placed without a lidar range in the current map |
+| Inventory: the detector errs (drops, wrong labels) | belief needs two independent looks; a wrong label is a minority vote | reported landmarks within 1 m of a real object of their class: 95% (3.46) |
+| Inventory: the upload fails | logged; the local file stands | never fails or delays the end of a mission |
 | A real camera mistaken for the sim | provenance read once; failure assumes a real camera | real frames never get synthetic detections |
 
 ## Open questions
@@ -275,6 +314,13 @@ instead ([policy](../policy/ARCHITECTURE.md)).
 - **INT8 on the Jetson** is unmeasured; TensorRT INT8 destroyed OWLv2 (P7d).
 - **Tilt correction** needs camera intrinsics nobody has measured, and the
   Rover's camera differs from the one the field of view was set for.
+- **The inventory on the car.** Real frames carry no detections of
+  anything but the target until an on-board detector that names
+  everything exists (3.46 C, not built), so today the inventory fills only
+  in the simulator.
+- **Does one miss weigh too much?** A thing seen twice and missed once
+  falls under the reporting bar; 3.46's first sweep failed recall on it.
+  Left to the user (the ROS plan's 3.46).
 - **Its own process** (2.7: features, not frames) so a stalled detector
   degrades perception rather than the control loop -- proposed, not built
   (see "Perception runs in the brain process").
