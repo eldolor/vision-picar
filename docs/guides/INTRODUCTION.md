@@ -1,324 +1,447 @@
 # Teaching a Car to Look
 
-**vision-picar — project introduction**
+**vision-picar: an introduction**
 
-A small robot car you can send to find something. Not by giving it a map or a
-route — by letting it look at the room, the way you would, and work out where to
-go next.
+A small robot you can ask to find something in your house. It looks around,
+works out where the thing might be, and drives there without bumping into
+anything.
 
-- A small robot car on an NVIDIA Jetson Orin Nano Super (the Jetson in hand and kept, 2026-10-05; the robot base on order)
-- Claude vision models on AWS Bedrock
-- Simulation built first, hardware next
-
-> A formatted version of this document, for presenting or sharing, is in
-> [`INTRODUCTION.html`](INTRODUCTION.html) — open it in any browser.
-
----
-
-## The intent: "Go find my red backpack."
-
-That sentence is the whole project. You say it, and a small camera-equipped car
-drives off into a real house and comes back having found the thing — around the
-sofa, through the doorway, past whatever is on the floor that day.
-
-What makes that hard is not the driving. It's that the car has never seen your
-house, has no floorplan, and doesn't know what your backpack looks like.
-Traditional robot navigation solves this by building a map first and then
-planning a route through it. This project takes the other road: **no map at
-all**. The car takes a photograph of whatever is in front of it, asks an AI
-vision model what it's looking at and which way the backpack is, and makes
-exactly one move. Then it does it again.
-
-It's a deliberately simple idea with a lot hiding inside it, which is why most of
-the work so far has gone into building somewhere safe to test it.
-
-### And that premise did not survive contact with the evidence
-
-**Added 2026-09-07.** The paragraph above is how this project started and it is
-no longer where it is going. Worth saying here rather than only in a planning
-document, because a reader who finds this page and stops will otherwise carry
-away a description of a different robot.
-
-Testing the loop against real photographs (the "Stage 0" gate in `CLAUDE.md`)
-established two things. Every vision model **identifies** a red backpack, so
-recognition was never the hard part. And no model can reliably say **how far
-away** anything is from a single photograph -- five different phrasings of the
-question were tried and measured, and the failure was the same each time,
-because a flat image genuinely does not contain that information. Asking harder
-was not going to work.
-
-So the plan changed, and `PLAN-onboard-perception.md` is where. The car gets a
-**lidar** -- a spinning laser that measures distance directly -- and the
-division of labour becomes: the camera says *what* and *which way*, the lidar
-says *how far*. Once the car can measure the room, building a map stops being
-something to avoid and becomes something it gets nearly for free. The intended
-destination is now a real navigation stack (ROS 2), kept behind a wall so it
-cannot swallow the rest of the system.
-
-**That is the opposite of "no map at all", and the reversal is the point.** The
-original premise was a reasonable bet that a language model's judgement could
-substitute for a sensor. It was tested rather than assumed, and it lost. The
-loop above still runs -- it is still one photograph, one decision, one move --
-but it now runs at three different speeds, with the slow, expensive, clever tier
-asked only when something interesting happens.
-
-The rest of this page describes the loop as built. Read
-`PLAN-onboard-perception.md` for where it is going.
-
----
-
-## The mechanism: one loop, about once a second
-
-Everything in this project — the simulation, the phone app, the car that doesn't
-exist yet — runs the same four-step loop. The only thing that changes between
-them is who or what performs the last step.
-
-```
-   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌ ─ ─ ─ ─ ─ ┐
-   │   LOOK   │ ─> │  THINK   │ ─> │  DECIDE  │ ─> │   MOVE     │
-   └──────────┘    └──────────┘    └──────────┘    └ ─ ─ ─ ─ ─ ┘
-        ▲                                                │
-        └────────────────────────────────────────────────┘
-          the world has changed slightly — look again
-```
-
-| Step | What happens |
+| | |
 |---|---|
-| **Look** | Take one photo of whatever is straight ahead. No map, no memory of the room's layout. |
-| **Think** | Send that photo to a vision model. It reads the scene and answers in plain terms: is the target visible, and where? |
-| **Decide** | Turn that answer into one small instruction — forward, left, right, stop. Never a whole route. |
-| **Move** | Something carries the instruction out. **This is the part that swaps** — and the reason the project works the way it does. |
+| **Simulator** | Working |
+| **Robot computer** (NVIDIA Jetson Orin Nano Super) | Bought and tested |
+| **Robot body** (Waveshare UGV Rover) | Ordered, arriving Oct 19 – Nov 11, 2026 |
+
+**How to read this page.** Each section starts in plain language. The
+**More detail** part under it says how it works and what was measured. A
+formatted version with expandable sections, for sharing:
+[Teaching a Car to Look](https://claude.ai/artifact/GKPq1hkSpEh8TAEG8Te63W).
+
+Contents: [The goal](#the-goal) · [How it looks for things](#how-it-looks-for-things)
+· [How it knows it has arrived](#how-it-knows-it-has-arrived)
+· [How it stays safe](#how-it-stays-safe) · [How it learns the house](#how-it-learns-the-house)
+· [Why it was built in a simulator first](#why-it-was-built-in-a-simulator-first)
+· [How "done" is decided](#how-done-is-decided) · [The hardware](#the-hardware)
+· [Where it stands](#where-it-stands) · [What is still hard](#what-is-still-hard)
+· [Words you will hear](#words-you-will-hear)
 
 ---
 
-## The trick: three bodies, one brain
+## The goal
 
-Because the last step is the only part that changes, you can unplug the body and
-put a different one in its place. The eyes and the brain stay exactly the same.
-That's what lets the project be tested long before any hardware is finished — and
-it's the thing worth understanding before you try the app.
+> **"Go find my red backpack."**
 
-| | **A simulated car** | **You, on foot** | **The real car** |
-|---|---|---|---|
-| **Status** | Working today | Working today | **Next phase** |
-| **Eyes** | A drawn first-person view of a make-believe house | Your phone's actual camera | The camera bolted to the car |
-| **Brain** | The vision model, called for real | The vision model, called for real | The vision model, called for real |
-| **Body** | A car that exists only as software | Your legs | Two wheel motors -- it steers by turning them at different speeds, so it can spin on the spot |
+You say that sentence. A small robot drives off into your house and finds the
+backpack. That is the whole project.
 
----
+It sounds simple. Three things make it hard:
 
-## Guide mode: when you use the app, you are the car
+- **It has never seen your house.** There is no floor plan to start from. The
+  robot has to explore.
+- **It has never seen your backpack.** It must recognise "a red backpack" from
+  the words alone.
+- **It must not hit anything.** Chair legs, door frames, the cat. A mistake on
+  wheels has consequences.
 
-The middle column above is the one people find surprising, so it's worth saying
-plainly. **Guide** — the tab that turns on your camera and points an arrow at
-what you're looking for — is not a separate consumer feature that happens to
-share some code. It is **the robot's first-person view**, handed to a human.
+### More detail: the idea it started with, and why that changed
 
-> Hold up the phone and you're standing in for the car. The camera is its camera.
-> The arrow on screen is the instruction it would have sent to its motors. Your
-> legs are the motors.
+The project began with a bold bet: no map at all. The robot would take one
+photo, ask an AI vision model which way the backpack was, make one move, and
+repeat.
 
-The chevron that swings left and right, the glow along the edge of the screen,
-the pulse that quickens as you close in, the outline that snaps around the object
-when you've arrived — all of that is one decision, rendered for eyes instead of
-wheels. The car will receive the same decision as `FORWARD` or `LEFT`.
+That bet was tested on real photos taken from a phone on a small wheeled cart
+at floor height. Two things came out of it.
 
-This is genuinely useful rather than a gimmick. Walking a room with Guide tells
-you, in about ninety seconds and with no hardware at all, whether the loop is
-good enough to drive something: whether the model keeps up when you turn, whether
-its sense of "close" matches yours, whether once-a-second is often enough to feel
-responsive. Every one of those questions has to be answered before a car is worth
-building, and every one of them is cheaper to answer on foot.
+- **Recognition was never the problem.** Every vision model tried could pick
+  out a red backpack.
+- **Distance was.** No model could reliably say how far away something was
+  from a single photo. Five different wordings of the question were measured
+  and all failed the same way. A flat photo does not contain that
+  information.
 
----
-
-## The discipline: the brain proposes, the body can refuse
-
-One rule shapes the whole codebase: **the AI is never allowed to drive
-directly.** Every instruction it produces passes through a safety layer that sits
-with the body, not the brain. If the distance sensor says there's something
-closer than 20 cm ahead, the move is vetoed and the wheels stop — whatever the
-model asked for, however confident it sounded.
-
-The same layer runs a watchdog: if the brain goes quiet for more than a second —
-crashed, disconnected, waiting on a slow network call — the motors stop on their
-own rather than continuing with the last thing they were told.
-
-This matters more than it might sound. A vision model can be confidently wrong
-about a glass door or a dark stair edge. Keeping the veto in the hardware means
-the worst case is a car that stops for no reason, not one that drives into
-something. It's also why the simulation and the real car will share this code
-unchanged — the safety rules were written once, tested in software, and are
-already the rules the hardware will run.
+So the robot gained a **lidar**, a spinning laser that measures distance
+directly. The camera now answers "what is it, and which way?" The lidar
+answers "how far?" Once the robot can measure a room, building a map becomes
+easy, so the project adopted a standard robot mapping and navigation toolkit
+(ROS 2). The original "no map" premise was tested, lost, and was replaced.
+`PLAN-onboard-perception.md` has the record.
 
 ---
 
-## Whose job is it to keep looking?
+## How it looks for things
 
-For most of this project the searching was done by something *watching* the car:
-a program on a laptop, or the phone app itself. That works, and it hides a
-problem. Close the browser tab and the searching stops — the car sits in the
-hallway waiting for an instruction that will never come. A robot that needs
-someone holding a phone for it is not really a robot.
+The robot looks in three layers. The cheap, fast ones run all the time. The
+expensive, clever one is asked only when it matters.
 
-So the loop moved onto the car. It is now a small program of its own, running
-alongside the one that turns the wheels, and it is the thing that keeps asking
-"what do I see, where do I go next?" The phone's job shrank to three buttons:
-**start**, **stop**, and **watch**. You can close the app mid-search, walk into
-another room, open it again — the car has kept going, and the app picks the
-story back up where it got to.
-
-The two programs stay separate on purpose, even though they run on the same
-machine. One is the *body*: wheels, sensor, safety veto. The other is the
-*mind*: what to do next. Keeping them apart is what lets the mind be moved —
-onto a laptop for development, onto the car for real use — by changing a single
-address, with no code change at all.
-
----
-
-## Three ways to stop, because there are three ways to fail
-
-The safety veto above catches "about to hit something." It cannot catch a car
-that has quietly stopped making sense. Three different failures need three
-different guards, and each one ends the same way — wheels stopped.
-
-| What goes wrong | What catches it |
+| Layer | What it does |
 |---|---|
-| A move starts the motors and then the program crashes before stopping them | The body's own **watchdog**: if no command arrives for a second, it stops the wheels itself |
-| The car goes blind — the vision service is down, or an answer never comes back | After three failed looks in a row, the search **ends rather than driving blind**. One bad answer is survivable; a pattern is not |
-| The searching program freezes — still running, but stuck | A **dead-man timer** notices the loop hasn't come back and stops the car |
+| **1. Spot** | A small AI model on the robot checks every camera frame for anything that might be the target. Free and fast. |
+| **2. Measure** | The lidar says how far away it is. |
+| **3. Ask** | A large AI model in the cloud is consulted only at key moments. Each question costs money and takes a second or two. |
 
-The second and third are the ones that matter most on a real floor, and neither
-can be triggered by pressing anything — you would have to unplug the internet at
-exactly the right moment. So the app has a **drill** setting: ask the car to
-break one thing on purpose, and watch the right guard catch it. Every drill can
-only ever end with the car stopped, which is the same thing the guards do
-unaided.
+Think of a person searching a room. You scan quickly without much thought. You
+stop and look carefully only when something catches your eye.
 
----
+### More detail: the models and when the cloud is called
 
-## The rule: decide it with numbers, then put it in the car
+**The on-board layer.** A detector (`YOLOE-11s`) proposes regions of the
+image. A second model (`CLIP`) scores how well each region matches the words
+of the target, such as "red backpack". A region counts as a sighting when that
+probability reaches 0.8 or more. This all runs on the robot's own computer, so
+it costs nothing per frame (`brain/perceive.py`).
 
-Everything above was built in a particular order, and it is worth stating as a
-rule rather than a habit:
+**When the cloud is asked.** The cloud model (Claude, on Amazon Bedrock) is
+called on a few triggers only: at the start of a mission, when the on-board
+layer first sights a likely candidate, and when the search has gone cold for a
+while. A sighting must hold for two frames in a row before it triggers a call,
+which stops one noisy frame from costing money (`brain/tiered.py`).
 
-> **A capability is finished when the numbers say so.** Before trying it, write
-> down what "working" means and the score it has to reach. Then run it the way
-> the car will run it -- many times, in the simulated house -- record what
-> happened, and keep a test that fails if it ever gets worse. Only then does it
-> go anywhere near the car.
+| Measure | Result |
+|---|---|
+| Frames where the target was visible and the on-board layer found it | 82% |
+| False alarms allowed when measuring that | 3 frames |
+| Size of the labelled photo set | 1,234 frames |
+| Time per frame on the robot's computer (median / slow 10%) | 61 / 110 ms |
+| Time budget per frame | 250 ms |
+| Cloud calls in one end-to-end test mission | 4 over 18 steps |
 
-Three reasons this is a rule.
-
-**Deciding the bar first keeps everyone honest.** A target chosen after seeing
-the results is a description, not a test.
-
-**One good run proves very little.** Watching a single search cross a room can
-hide the one start in ten that drives into a door frame. Hundreds of runs, each
-logged, do not.
-
-**Some failures cannot be provoked by hand.** That is not an excuse to leave
-them unverified; it is why the drills exist.
-
-Until 25 September 2026 the rule was different: a capability counted as
-finished when someone holding a phone had watched it work in the twin. That
-caught real bugs, and the twin is still how a person drives and watches the
-robot -- but watching is now a check on the page, not the finish line.
+A lesson from the photo tests: the target's wording matters a lot. "Red
+backpack" was detected far more often than a bare noun like "bottle", because
+the colour gives the matching model something specific to hold on to.
 
 ---
 
-## Where it stands: built backwards, on purpose
+## How it knows it has arrived
 
-The car was the last thing started, not the first. Everything above it — the
-contract the hardware will implement, the safety layer, the vision service, the
-decision loop, the app — was built and proven against a simulated house first.
-Swapping in real hardware is designed to be a configuration change -- the one
-new file it needed, the code that talks to the motor board, has now been
-written and tested against a software copy of that board.
+The robot declares "found" only when it can see the target straight ahead,
+the laser says it is close, and the cloud model agrees it is the right object.
 
-| Phase | Milestone | What it did |
+Each check guards against a different mistake. Seeing it guards against
+stopping at the wrong place. The laser guards against "close enough" guesses
+from a photo. The final question guards against a look-alike.
+
+### More detail: the exact arrival rule
+
+From `brain/arrival.py` (`PLAN-ros-alignment.md` 3.11 and 3.32):
+
+- The target is detected within 3 degrees of straight ahead.
+- The lidar, never the camera, reads the target within **0.40 m**. It takes
+  the median of five laser beams around that bearing.
+- Both hold for **two frames running**.
+- The beams must agree with each other. If they spread by more than 10 cm, or
+  mix hits with misses, the robot is probably looking at the edge of a door
+  frame, and it refuses to judge.
+- Then one cloud call on that frame must confirm the identity of the target.
+
+In simulated missions, 676 of 678 arrivals ended "found" when the detector
+missed 10–20% of frames on purpose. None were judged from more than 0.386 m
+away. Before this rule existed, every one of those missions ended "blocked" or
+ran out of steps.
+
+An early version used the single nearest laser beam. It declared "found" 95 cm
+away, against a door frame. The test written before the work caught it.
+
+---
+
+## How it stays safe
+
+The AI never drives the wheels directly. It suggests a move, and a separate
+safety layer on the robot can refuse it.
+
+If something is in the way, the move is refused, however confident the AI was.
+A vision model can be wrong about a glass door. The worst result of this
+design is a robot that stops when it did not need to.
+
+| Guard | What it does |
+|---|---|
+| **The safety veto** | Every move is checked against the laser before a wheel turns. |
+| **The watchdog** | If commands stop arriving for one second, the motors stop on their own. |
+| **Give up when blind** | If the AI fails to answer three times in a row, the search ends with the robot stopped. |
+| **A person wins** | Touch the controls on the phone and the robot obeys you, ending its own search. |
+
+### More detail: what the safety layer actually checks
+
+All of this lives in `robot/safety.py`.
+
+**Moving forward or backward.** A move is checked two ways, one after the
+other. First, a cone of depth readings along the direction of travel. Second,
+the full width of the robot's body swept along its path, tested against the
+360-degree laser scan. Forward speed drops to zero at 20 cm from an obstacle.
+
+**Turning.** A rectangular robot's corners stick out further than its sides
+(15.1 cm against 9.9 cm), so turning on the spot can swing a corner into
+furniture. A turn that would bring a corner within 1.3 cm of something is
+slowed or shortened. A turn away from an obstacle is never limited, so a robot
+against a wall can always turn free.
+
+**How it was tested.** Safety is judged against the simulator's ground truth,
+not against the sensor readings the safety layer itself uses.
+
+| Test | Runs | Bad outcomes |
 |---|---|---|
-| **00** | A house that isn't real | A grid-world with a living room, a hallway, a kitchen — and a red backpack somewhere in it. |
-| **01** | Teaching it to describe a room | Hand a photo to a vision model, get back a structured account of what's in it. |
-| **02–03** | Deciding, and refusing | The look–think–decide–move loop, wrapped in a safety layer that can overrule it. |
-| **04–06** | Searching rather than wandering | Remembering which rooms it has already been through, and preferring somewhere new. |
-| **09** | Splitting brain from body | Thinking happens on one machine, moving on another, with an HTTP link between them — exactly the split the real car needs. |
-| **10** | The digital twin, and Guide | A phone app that drives the simulation for real, plus the vision service in the cloud — and the first-person mode you can walk around with. |
-| **B** | The car stops needing a laptop | The search itself became a small program that runs on the car. The phone starts it and then only watches — close the app and the car carries on. Three separate ways for it to stop itself, and a way to test each one from the phone. |
-| **R0** | Moving like a real car | The simulated car stopped hopping between squares. It now drives and turns smoothly by spinning its two wheels, using the real chassis' measurements. |
-| **R1** | Aiming instead of dithering | Turns are sized to where the target actually is, a search sweeps the room without blind spots, and a mission that is stuck against a wall gives up instead of pushing. It also recognises when it has arrived. |
-| **R3–R4** | The standard robot toolkit | ROS 2, the toolkit most real robots use, now runs in one sealed-off box beside the project. The car's shape is described to it, and every wheel command can go through it -- with only one thing ever allowed to drive the wheels at a time. |
-| **R5** | Drawing the map as it drives | The car builds its own floor plan from the lidar while it moves. In tests with deliberately faulty wheel sensors, the wheels alone ended up to a metre off; the map kept the car within a few centimetres. |
-| **R6** | Driving to a spot on the map | Point at a place on the map and the car plans a route and drives there, keeping clear of walls. In a furnished copy of the owner's own house it reached eight of the nine rooms. |
-| **R7** | A pretend motor board | The code that will talk to the real motor board was written from that board's own source code and tested against a software copy of it -- so hardware day is a settings change. |
-| **11** | **Put it in the car — next** | Same brain, same safety rules, real motors and a real lidar. Say the object out loud; let it go and find it. |
+| Approaches at awkward angles | 5,760 | 0 contacts |
+| Turns started with furniture inside the turning circle | 360 | 0 within 1 cm |
+| A simulated person walking across the robot's path | 2,021 | 0 contacts |
+
+**Three separate failure guards.** Each guard catches a failure the others
+cannot see. The watchdog catches motors left running by a crashed program. The
+vision budget catches a cloud service that is down. A third timer catches a
+search program that is still running but stuck. Since none of these can be
+caused by pressing a button, the phone app has **drills** that break one thing
+on purpose so you can watch the right guard catch it (`control/drills.py`).
+
+**Who is driving.** The robot ranks its drivers: a stop beats a person, and a
+person beats any automated driver. Authority lapses after a second of silence,
+so there is no "release" step to forget.
 
 ---
 
-## Next phase: what actually gets hard
+## How it learns the house
 
-On paper the hardware swap is small: point the configuration at real hardware
-instead of the simulator. The one file that turns "drive forward" into motor
-commands is already written. Nothing in the thinking layer has to change — that
-was the point of building it this way.
+As it drives, the robot draws its own floor plan from the laser. It can then
+be sent to any spot on that map and plan its own route there.
 
-The honest difficulties are elsewhere, and they're all things a simulation is too
-kind about.
+Wheels alone are a poor guide. They slip and drift, and small errors pile up.
+The map lets the robot correct itself by recognising walls it has already
+seen.
 
-### A real room is not a grid
+### More detail: mapping and route planning
 
-The simulated house has tidy square cells and walls in known places. A real floor
-has chair legs, a rug edge, a cable, a cat. The lidar sees one flat slice of the
-room at its own height: it catches the chair legs and misses a cable on the
-floor or a table top above it.
+Mapping uses `slam_toolbox`. Route planning and driving to a goal use `nav2`.
+Both are standard parts of ROS 2, a toolkit most research and commercial
+robots use. They run in the container under `service/slam/`.
 
-### Looking costs money and time
-
-Every glance is a paid call to a vision model, and each one takes a moment to
-come back. A car moving while it waits is a car acting on a photo of where it
-used to be. Slower and cheaper, or faster and dearer — that trade has to be
-settled with a real chassis on a real floor.
-
-### Being wrong at speed
-
-In Guide, a bad instruction just means a person turns the wrong way and shrugs.
-On a car with momentum, the same mistake ends against a skirting board. The
-safety layer already exists for this; the next phase is where it stops being
-theoretical.
-
----
-
-## Plain terms: words you'll hear
-
-| Term | What it means |
+| Test | Result |
 |---|---|
-| **The car** | A small two-wheeled robot built around an NVIDIA Jetson Orin Nano Super, a small computer with a graphics chip that can run the target-spotting model on board: a camera that can pan left and right, and a spinning lidar that measures distance in every direction. The first plan used an off-the-shelf PiCar-X kit; it was swapped before purchase because that kit steers like a car and cannot turn on the spot. A later plan used a Raspberry Pi 5 with a separate AI chip; the Jetson replaced it in September 2026. |
-| **Vision model** | An AI model that accepts an image and a question about it, and answers in words. Here it's asked things like "is a red backpack visible, and roughly where in this frame?" |
-| **Digital twin** | A working stand-in for the real machine that you can drive and watch. Not a mock-up — it runs the same movement, sensing and safety code the car will. |
-| **Lidar** | A spinning laser rangefinder. It measures the distance to the nearest thing at every angle around the car, many times a second — a floor plan's worth of distances from one small puck. It sees one flat slice of the room: chair legs, not chair seats. |
-| **Safety veto** | The rule that lets the body overrule the brain. Every proposed move is checked against the distance reading before any wheel turns. |
-| **Watchdog** | A timer on the body's side. If no command arrives for about a second, it stops the motors without asking anyone. |
-| **Failsafe drill** | Deliberately breaking one thing to check the guard that should catch it. Available from the app, and only ever able to end with the car stopped. |
-| **ROS 2** | The Robot Operating System: a widely used toolkit for robot mapping and route-planning. Here it is kept in one sealed-off box, so the rest of the project never depends on it directly. |
-| **Grid-world** | The simulated house: rooms laid out on a coarse grid of squares, with doorways between them and objects placed in specific cells. |
+| Position error from wheel counts alone, one wheel sensor 3% wrong on purpose | up to 99 cm |
+| Position error with the map correcting it, same fault | 1–4.5 cm |
+| Drive-to-goal trials in a realistic house (90 cm doorways) | 6/6, twice |
+| Tour of a furnished model of the owner's home | 8 of 9 rooms |
+
+The one failed room was a dining room. The route planner treats the robot as a
+circle and found a gap between chairs that the driving controller, which knows
+the robot is a rectangle, refused to enter.
+
+The map is discovered, not handed over. The simulator casts the laser from
+wherever the robot stands, so rooms appear only once the robot has looked into
+them.
 
 ---
 
-## In short: a car that looks, then moves
+## Why it was built in a simulator first
 
-The destination is a small robot you can point at a room and give a sentence to.
-Everything built so far is the same loop wearing different bodies — a simulated
-car to prove the idea, a phone in your hand to feel it, and next, the car itself.
+Almost everything was built and tested against a simulated house before any
+robot was bought. The trick is that the robot's "body" can be swapped without
+changing its "brain".
 
-The loop now runs where the car will be, stops itself three different ways, and
-draws its own map as it goes. Every part of it has been measured, run after run,
-in the simulated house before any of it touches a motor. That last clause is the
-whole method.
+The brain only ever talks to a body through one fixed set of commands: move,
+turn, take a photo, read the laser. Anything that answers those commands can be
+the body.
 
----
+| Body | Status | What it is |
+|---|---|---|
+| A simulated robot | Working | A make-believe house in software, with walls, furniture and a backpack. |
+| You, with a phone | Working | Your phone's camera is the robot's eyes. You walk where the arrow points. |
+| A software motor board | Working | A copy of the real robot's motor controller, built from its source code. |
+| The real robot | Next | Same brain and safety rules, real wheels and laser. |
 
-*vision-picar — simulation-first build of a vision-driven robot car.
-The engineering reference for the searching loop itself is
+The phone mode deserves a word. When you use the app's **Guide** tab, you
+stand in for the robot. The arrow on screen is the move it would have made.
+Your legs are its wheels. This made it possible to test the idea on real rooms
+with no hardware at all.
+
+### More detail: the five programs and the rules between them
+
+The system is five cooperating programs (`docs/ARCHITECTURE.md`). A move
+travels down this chain:
+
+1. **Phone app** (`web-twin/`). Shows what the robot reports. Starts and stops
+   missions. Has a D-pad for driving by hand.
+2. **Brain** (`control/brain_server.py`). Decides what to do next. Runs the
+   mission and the AI calls. Reaches the robot only over the network.
+3. **Robot server** (`robot/server.py`). Decides who may drive, runs the
+   watchdog and the safety veto. The only program that touches the body.
+4. **ROS 2 container** (`service/slam/`). Turns moves into wheel speeds,
+   builds the map, plans routes. Sealed in its own box. Its wheel speeds go
+   back through the robot server and are vetted again.
+5. **Body.** The simulator today (`sim/mock_robot.py`), the motor board on the
+   real robot (`robot/hardware_robot.py`).
+
+Four rules, each enforced by an automated test:
+
+- **One interface for the body** (`robot/interface.py`). The brain and robot
+  server never know whether they drive the simulator or real motors. Eight
+  different bodies pass the same conformance tests.
+- **Body facts and world facts are kept apart** (`world/interface.py`). "How
+  far have my wheels turned" belongs to the body. "Where am I on the map"
+  belongs to the world. A map's position can jump when it corrects itself,
+  and wheel counts never should.
+- **ROS stays in its box.** Nothing outside the ROS container may use ROS.
+  Everything else talks to it over the network.
+- **Safety runs last.** ROS's own collision check runs first, then the robot
+  server's. Each can only slow or stop, never speed up.
+
+The result is that switching from the simulator to the real robot is a
+settings change. The code that talks to the real motor board already exists
+and passes the same tests against a software copy of the board. The
+engineering reference for the searching loop is
 [`AGENT-HARNESS.md`](AGENT-HARNESS.md).
-Phase 11 next: real hardware. See [`README.md`](../../README.md) for the engineering
-detail behind each phase.*
+
+---
+
+## How "done" is decided
+
+Before building anything, the goal and the passing score are written down.
+Then the feature is run hundreds of times the way the robot will run it, and
+the numbers decide.
+
+A target chosen after seeing the results is only a description. One good run
+proves little, since it can hide the one attempt in ten that drives into a
+door frame. Hundreds of logged runs do not hide it.
+
+### More detail: the rules, and what they have caught
+
+- Write the measure and the threshold down before measuring.
+- Measure through the real mission path, end to end. Never through a shortcut
+  that moves the robot by hand.
+- Record the numbers in the plan and pin them in an automated test, so a later
+  change that makes things worse fails the test suite.
+- Pair every "steady" measure with a "progress" measure. A robot spinning in
+  place has very steady steering and gets nowhere.
+
+Failures are recorded as failures. Several phases list a criterion that was
+missed, with the reason, instead of quietly moving the bar. The suite has
+about 1,700 automated tests, including ones that drive the phone app in a real
+browser at phone size.
+
+Until 25 September 2026 a feature counted as done when someone had watched it
+work on a phone. That caught real bugs, and watching still happens. It is no
+longer the finish line.
+
+---
+
+## The hardware
+
+The robot is two purchases: a small computer that runs the AI on board, and a
+robot base with wheels, a laser and a camera.
+
+| Part | Status | What it is |
+|---|---|---|
+| **NVIDIA Jetson Orin Nano Super** | Bought and tested | A palm-sized computer with a graphics chip. It runs the on-board AI well inside its time budget. |
+| **Waveshare UGV Rover** | Ordered, arriving Oct 19 – Nov 11 | A wheeled base that turns on the spot, with a laser scanner, a depth camera and a camera that pans and tilts. |
+
+### More detail: why these parts
+
+**Why a Jetson.** The cheaper plan was a Raspberry Pi 5 with a small AI
+accelerator. It lost on a measurement. The accelerator runs only models that
+can be converted for it, and the strongest detector tried could not be
+converted at any setting. That test cost $3.20 on a rented server and settled
+a $400 question. The Jetson runs ordinary AI models as they are.
+
+On the Jetson, at its 15-watt power setting, the on-board AI takes a median of
+61 ms per frame against a 250 ms budget. Its full test suite passes on the
+board, and the robot's control loop missed zero of 14,289 deadlines with
+mapping, route planning and the AI all running together.
+
+**Why the Rover.**
+
+- **It turns on the spot.** The first plan, a PiCar-X kit, steers like a car
+  and cannot pivot.
+- **It reports wheel turns to the computer.** Without that, the robot cannot
+  tell how far it has driven. A competing kit was cancelled when its maker
+  confirmed it does not send this data.
+- **Its motor board firmware is open source.** The project has a small patch
+  (`firmware/ugv_base_ros/`) that makes wheel readings finer and adds a
+  timestamp. It improved turn accuracy from 60 of 120 turns within 1 degree to
+  120 of 120 in simulation.
+
+**Still to check.** The Rover's mounting plate is designed for a different
+Jetson carrier board, so a caliper check of the mounting holes is due before
+it arrives. The fallback is an adapter plate. A separate battery for the
+Jetson may be needed, depending on a power test with the motors running.
+`docs/hardware/JETSON-BOM.md` has the record.
+
+---
+
+## Where it stands
+
+The software is built and measured in simulation. The robot computer is
+tested. The robot body is on its way.
+
+| When | Milestone |
+|---|---|
+| Aug 2026 | **A simulated house and a searching loop.** A brain that searches room by room, a safety layer that can overrule it, and a phone app to drive and watch. |
+| Aug–Sep 2026 | **Real photos, real rooms.** Phone walks at floor height showed the AI recognises targets but cannot judge distance. The plan gained a laser. |
+| Sep 2026 | **Seeing on board.** Fast on-board AI with the cloud model asked only at key moments. The Jetson chosen over the Pi. |
+| Sep 2026 | **A real robot toolkit.** Smooth driving, mapping and route planning with ROS 2. Arrival recognition. Safety tested on thousands of runs. |
+| Oct 2026 | **The Jetson in hand.** Everything runs on the robot's own computer, inside its time budgets. |
+| **Oct–Nov 2026 (now)** | **The robot body arrives.** Mount the computer, check the motors and sensors, measure the real chassis, then drive the same tests on a real floor. |
+| Early 2027 | **Software platform upgrade.** The current robot toolkit version stops getting updates in May 2027. The move to a newer one is planned for after the robot is driving. |
+
+### More detail: what hardware day involves
+
+- Check the mechanical fit of the Jetson on the Rover's deck.
+- Flash the patched motor board firmware after the arrival checks pass.
+- Measure the numbers the robot description still marks as placeholders, such
+  as how much the wheels skid when turning.
+- Run the power test with motors to decide whether the Jetson needs its own
+  battery.
+- Set the robot, brain and toolkit to start at boot, so a mission can be
+  started from a phone with no laptop involved.
+
+---
+
+## What is still hard
+
+A simulator is kinder than a real floor. These are the problems the project
+expects to meet, and the ones it already knows about.
+
+- **A laser sees one slice.** It catches chair legs and misses a cable on the
+  floor or a tabletop above it.
+- **Rendered rooms are not real ones.** The on-board AI is tested on real
+  photos. In the simulator, sightings are supplied directly, so the simulator
+  says nothing about how well the AI sees.
+- **Maps drift in open rooms.** In large furnished rooms the map can slide by
+  half a metre or more during a tour. This is being worked on now.
+- **Looking costs time.** A cloud answer takes a second or two. A robot moving
+  while it waits acts on an old photo.
+
+### More detail: known gaps in the numbers
+
+- **Turn accuracy on stock firmware.** Without the firmware patch, turns
+  scatter by 1.3–1.8 degrees because the motor board's readings have no
+  timestamp. The gyro or the map is the fix on the real robot.
+- **Placeholder chassis numbers.** The effective turning width of a skid-steer
+  robot and some sensor offsets can only be measured on the real robot.
+- **Phone walks cannot finish.** The arrival rule needs the laser. A phone has
+  none, so a phone walk never ends "found", and its outcome says nothing about
+  navigation.
+- **The arrival confirmation has not yet met the real cloud.** It is tested
+  against stand-ins only.
+- **Map drift.** In the furnished home model, 0.45–0.86 m of drift during
+  tours of open rooms is an open item.
+
+---
+
+## Words you will hear
+
+| Term | Meaning |
+|---|---|
+| **Lidar** | A spinning laser that measures the distance to the nearest thing in every direction, many times a second. |
+| **Vision model** | An AI that takes an image and a question and answers in words. "Is there a red backpack, and where?" |
+| **Detector** | A small, fast AI on the robot that only asks "is the thing here, and where in the picture?" |
+| **Simulator** | A make-believe house in software that the robot's brain drives exactly as it will drive the real robot. |
+| **Digital twin** | The phone app. It drives and shows the simulated robot today, and the real one later. |
+| **Safety veto** | The rule that lets the robot's body refuse a move the brain asked for. |
+| **Watchdog** | A timer that stops the motors if commands stop arriving for one second. |
+| **SLAM** | Mapping a place and working out where you are in it, at the same time. |
+| **ROS 2** | The Robot Operating System, a widely used toolkit for robot mapping, route planning and motor control. |
+| **Mission** | One search, from "go find it" to found, blocked, stopped or out of steps. |
+
+---
+
+*For the full engineering detail: `docs/ARCHITECTURE.md` (the whole system on
+one page), `docs/plans/PLAN-ros-alignment.md` (every phase, its criteria and
+its measured results), `docs/plans/PLAN-onboard-perception.md` (how the
+on-board AI was chosen), and `docs/hardware/JETSON-BOM.md` (what was bought,
+and why). Updated 7 October 2026.*
