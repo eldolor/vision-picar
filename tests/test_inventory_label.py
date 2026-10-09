@@ -157,3 +157,14 @@ def test_the_page_carries_only_object_boxes_and_records_the_sample(tmp_path, mon
     assert '"label": "chair"' in page and '"label": "wall"' not in page
     assert "correct" not in page          # the user answers blind
     assert json.loads((il.OUT / "sample.json").read_text()) == ["w/frame-0000.jpg"]
+
+
+def test_the_vlm_answer_is_parsed_scaled_and_deduplicated():
+    from tools.inventory_vlm import parse_boxes
+    cut = ('```json [ {"bbox_2d": [10, 20, 30, 40], "label": "Chair"}, '
+           '{"bbox_2d": [10, 20, 30, 40], "label": "chair"}, '
+           '{"bbox_2d": [1, 2, 3, 4], "label": "lamp"}, {"bbox_2d": [5,')
+    got = parse_boxes(cut, 2.0, 1.0)
+    assert [(b["label"], b["xyxy"], b["n"]) for b in got] == [
+        ("chair", [20.0, 20.0, 60.0, 40.0], 1), ("lamp", [2.0, 2.0, 6.0, 4.0], 2)]
+    assert parse_boxes("no objects found", 1, 1) == []
