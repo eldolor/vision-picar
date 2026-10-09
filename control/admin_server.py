@@ -562,6 +562,11 @@ def create_app(config_path=None, store=None) -> FastAPI:
             logger.warning("could not persist eval for %s: %s", walk_name, e)
         return result
 
+    def _marked(replay: dict) -> dict:
+        """A replay as sent to a client: `stale` when an older scorer wrote
+        it (3.64 E2), computed on the way out and never stored."""
+        return {**replay, "stale": replay.get("schema") != walk_eval.SCHEMA_VERSION}
+
     def _replay_summaries(walk_name: str) -> list:
         """The compact form the walk list shows -- never the per-frame diff,
         which is large and only wanted on one walk at a time."""
@@ -713,8 +718,9 @@ def create_app(config_path=None, store=None) -> FastAPI:
                 kept = store.read_json(walk_name, name)
             except (OSError, WalkStoreError):
                 kept = None
-            if (kept and kept.get("score") is not None
-                    and kept.get("schema") == walk_eval.SCHEMA_VERSION):
+            if kept and kept.get("score") is not None:
+                # Even an older scorer's: its per-frame answers were paid
+                # for and can be re-scored; an unusable attempt has none.
                 kept["last_unusable"] = {k: result[k] for k in
                                          ("replayed_at", "coverage", "frames", "errors")}
                 result = kept
@@ -722,7 +728,7 @@ def create_app(config_path=None, store=None) -> FastAPI:
             store.write_json(walk_name, name, result)
         except (OSError, WalkStoreError) as e:
             logger.warning("could not persist replay for %s: %s", walk_name, e)
-        return result
+        return _marked(result)
 
     @app.post("/recording/walks/{walk}/replay", dependencies=[Depends(require_secret)])
     async def replay_walk_route(walk: str, req: ReplayRequest):
@@ -780,7 +786,7 @@ def create_app(config_path=None, store=None) -> FastAPI:
         for name in store.list_names(walk, REPLAY_PREFIX, ".json"):
             r = store.read_json(walk, name)
             if r is not None:
-                out.append(r)
+                out.append(_marked(r))
         return {"walk": walk, "replays": out}
 
     @app.put("/recording/walks/{walk}/meta", dependencies=[Depends(require_secret)])

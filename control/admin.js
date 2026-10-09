@@ -52,6 +52,9 @@
         : (data.detail ? JSON.stringify(data.detail) : "");
       const err = new Error(detail || ("HTTP " + res.status));
       err.status = res.status;            // 3.64: a refusal is not a lost response
+      // Our own servers always say why (FastAPI's `detail`); a gateway's
+      // timeout page does not. Judged from the body, not the message text.
+      err.fromServer = data.detail != null;
       throw err;
     }
     return data;
@@ -502,7 +505,8 @@
     function noteKept(r) {
       if (r && r.score != null && r.last_unusable) {
         const pct = Math.round((r.last_unusable.coverage || 0) * 100);
-        showInlineError(replaySelect, "Only " + pct + "% of frames came back -- kept the earlier score");
+        showInlineError(replaySelect, "Only " + pct + "% of frames came back -- kept the earlier "
+          + (r.stale ? "(older scorer's) result" : "score"));
       }
     }
     replaySelect.onchange = async function () {
@@ -537,7 +541,7 @@
         // 502/503/504 with no detail of ours, is worth waiting out. A
         // refusal the server answered (401, 404, 503 "no vision service")
         // is shown at once -- it was polled for 15 minutes (3.64 review).
-        const lost = !e.status || (e.status >= 502 && e.status <= 504 && /^HTTP /.test(e.message));
+        const lost = !e.status || (e.status >= 502 && e.status <= 504 && !e.fromServer);
         const recovered = (before === null || !lost) ? null
           : await pollForReplay(w, modelId, promptVariant, before);
         if (recovered) {
@@ -620,6 +624,7 @@
       const rows = rs.slice().sort(function (a, b) {
         const an = a.score == null || a.stale, bn = b.score == null || b.stale;
         if (an !== bn) return an ? 1 : -1;
+        if (an) return 0;                 // absent or not comparable: no order
         return b.score - a.score;
       })
         .map(function (r) {

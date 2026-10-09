@@ -1416,6 +1416,14 @@
     if (state.brainSecret) headers["x-app-secret"] = state.brainSecret;
     return tunnelHeaders(state.brainUrl, headers);
   }
+  // FastAPI's `detail` as text: a 422's is a list, which once read
+  // "[object Object]" (3.64). Empty when the body said nothing -- a
+  // gateway's or a proxy's page, not one of our services.
+  function errorDetail(data) {
+    if (!data || data.detail == null) return "";
+    return typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+  }
+
   async function brainApi(method, path, body) {
     const res = await fetch(state.brainUrl + path, {
       method: method,
@@ -1424,10 +1432,9 @@
     });
     const data = await res.json().catch(function () { return {}; });
     if (!res.ok) {
-      // A FastAPI 422's detail is a list; never show "[object Object]".
-      const detail = typeof data.detail === "string" ? data.detail
-        : (data.detail ? JSON.stringify(data.detail) : "");
+      const detail = errorDetail(data);
       const err = new Error(detail || ("HTTP " + res.status));
+      err.fromServer = detail !== "";
       // Kept so a caller can tell "the brain answered with an error" from
       // "nothing answered" -- see brainGone().
       err.status = res.status;
@@ -2384,11 +2391,18 @@
           url + " answered HTTP " + e.status + said + ", but has no brain service "
           + "there. Check the address and any tunnel path prefix.");
         if (!silent) showToast("The brain address answered, but no brain service is there.", "err");
-      } else if (!brainGone(e)) {
-        // Anything else that answered came from the brain itself.
+      } else if (!brainGone(e) && e.fromServer) {
+        // Said why, as our services do: the brain itself answered.
         setConnStatus(statusEl, "err", "Not connected",
           "The brain at " + url + " answered with an error: HTTP " + e.status + said + ".");
         if (!silent) showToast("The brain service answered with an error.", "err");
+      } else if (!brainGone(e)) {
+        // An answer with no explanation -- and the brain's /health needs no
+        // secret -- is something in front of it: a proxy, a tunnel's policy.
+        setConnStatus(statusEl, "err", "Not connected",
+          url + " answered HTTP " + e.status + " without saying why -- most likely a "
+          + "proxy or tunnel in front of the brain, not the brain itself.");
+        if (!silent) showToast("Something in front of the brain service refused the request.", "err");
       } else {
         setConnStatus(statusEl, "err", "Not connected", silent
           ? url + " didn't respond. Tap Connect to retry."
@@ -3071,7 +3085,7 @@
     }).then(function (resp) {
       return resp.json().then(function (data) {
         if (!resp.ok) {
-          let message = data.detail || ("HTTP " + resp.status);
+          let message = errorDetail(data) || ("HTTP " + resp.status);
           // The one failure that is routinely misdiagnosed. A rejected
           // secret says nothing about *which* service rejected it, and
           // when the page and the service are different deployments the

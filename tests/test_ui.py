@@ -761,6 +761,14 @@ def test_a_brain_that_answers_500_is_not_called_the_wrong_address(browser, twin_
     assert not errors, errors
     assert "not as the brain" not in text and "Could not reach" not in text, text
     assert "500" in text and "boom" in text, text
+    # An answer with no explanation came from something in front of it.
+    page.route("**/edge-policy/health", lambda route: route.fulfill(
+        status=403, content_type="text/html", body="<html>Forbidden</html>"))
+    page.fill("#cfg-brain-url", twin_server + "/edge-policy")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(800)
+    text = " ".join(page.inner_text("#brain-connection-status").split())
+    assert "403" in text and "proxy or tunnel" in text, text
     page.context.close()
 
 
