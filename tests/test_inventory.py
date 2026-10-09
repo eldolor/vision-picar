@@ -177,6 +177,24 @@ def test_a_point_between_two_landmarks_bridges_them():
     assert lm.score == pytest.approx(inv.L_HIT)   # the larger, never the sum
 
 
+def test_a_merge_inside_one_frame_counts_that_look_once():
+    """3.47, found by review: one frame's first detection gives A its hit,
+    the second matches B and folds A into it. `_absorb` carries A's score
+    and hits over, so B taking the hit as well counted one look twice
+    (4 hits from 3 looks). Red without the `joined` hand-over in observe()."""
+    i = Inventory()
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0, 0, 0), _scan({0: 2.0}))
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0.8, 0, 0), _scan({0: 2.0}))
+    assert len(i.landmarks) == 2                  # B at x=0, A at x=0.8
+    # A new viewpoint for both: one detection lands by A, the next between
+    # them -- it matches B first and bridges A in.
+    i.observe([{"label": "sofa", "bearing_deg": 9.0}, {"label": "sofa", "bearing_deg": 0.0}],
+              _pose(0.4, 1.0, 0), _scan({9: 3.04, 0: 3.0}))
+    (lm,) = i.landmarks
+    assert lm.hits == 3 and lm.votes["sofa"] == 3
+    assert lm.score == pytest.approx(2 * inv.L_HIT)   # A's or B's one look, then this one
+
+
 def test_two_things_apart_are_two_landmarks():
     i = Inventory()
     i.observe([{"label": "mug", "bearing_deg": -20.0}, {"label": "shoe", "bearing_deg": 20.0}],

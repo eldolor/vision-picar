@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import socket
 from pathlib import Path
@@ -58,7 +59,11 @@ class InventoryStore:
         try:
             self.local_dir.mkdir(parents=True, exist_ok=True)
             path = self.local_dir / name
-            path.write_text(body)
+            # 3.47: write then rename, so a brain that exits mid-save (the
+            # save runs on a daemon thread) leaves no half-written file.
+            tmp = path.with_name(f".{name}.tmp")
+            tmp.write_text(body)
+            os.replace(tmp, path)
             out["local"] = str(path)
         except OSError as exc:
             out["errors"].append(f"local: {exc}")

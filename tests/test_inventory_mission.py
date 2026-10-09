@@ -185,6 +185,67 @@ def test_the_sink_gets_the_report_once_and_cannot_fail_the_mission():
     assert runner.status()["outcome"] == "max_steps"
 
 
+def _detecting_runner(max_steps=5):
+    """A mission whose every frame carries a detection, so `_observe` runs
+    on each tick."""
+    robot = MockRobot(build_world("scaled_house"), render=False)
+    return MissionRunner(robot, target_object="unicorn", max_steps=max_steps,
+                         policy="frontier", world=mock_world_for(robot),
+                         detections_fn=lambda f: [{"label": "mug", "bearing_deg": 0.0}])
+
+
+def test_the_inventory_is_changed_only_under_the_runner_lock():
+    """3.47, found by review: `_observe` runs on the tick thread while
+    status(), inventory_report() and _finish read under `_lock`. Writing
+    outside it let a reader see a landmark with no points yet
+    (ZeroDivisionError in summary()). Red without the `with self._lock`."""
+    runner = _detecting_runner()
+    calls, real = [], runner.inventory.observe
+
+    def checked(*a, **kw):
+        calls.append(runner._lock._is_owned())
+        return real(*a, **kw)
+    runner.inventory.observe = checked
+    runner.start()
+    while runner.tick():
+        pass
+    assert calls and all(calls)
+
+
+def test_a_frame_after_the_mission_ended_is_dropped():
+    """3.47: the report is saved when the mission ends; a frame from a tick
+    still in flight must not change it afterwards."""
+    runner = _detecting_runner()
+    saved = []
+    runner.inventory_sink = saved.append
+    runner.start()
+    while runner.tick():
+        pass
+    frames = runner.inventory.frames
+    runner._observe({"room": "hall"})
+    assert runner.inventory.frames == frames
+    assert runner.inventory_report()["counts"] == saved[0]["counts"]
+
+
+def test_a_failing_summary_still_stops_the_robot():
+    """3.47, found by review: summary() ran on the way to `_safe_stop()`,
+    so an exception there skipped the stop, the policy's close and the end
+    line. Red without the try around it."""
+    runner = _detecting_runner()
+    stops = []
+    real_stop = runner.robot.stop
+    runner.robot.stop = lambda: (stops.append(1), real_stop())[1]
+
+    def broken():
+        raise ZeroDivisionError("a landmark with no points")
+    runner.inventory.summary = broken
+    runner.start()
+    while runner.tick():
+        pass
+    assert stops
+    assert runner.status()["log_tail"][-1].startswith("mission ended")
+
+
 def test_status_carries_counts_not_the_list():
     runner, _ = _mission("complex_house", "frontier", True, _start("complex_house"))
     counts = runner.status()["inventory"]
@@ -228,6 +289,52 @@ def test_an_upload_failure_is_reported_not_raised(tmp_path):
     assert out["local"] and out["s3"] is None and "AccessDenied" in out["errors"][0]
 
 
+def test_a_save_cut_off_midway_leaves_the_last_good_file(tmp_path, monkeypatch):
+    """3.47, found by review: the save runs on a daemon thread, so a brain
+    exiting mid-write left a truncated JSON file. Written to a temporary
+    name and renamed, a cut-off write never touches the real one. Red with
+    a direct write_text()."""
+    from pathlib import Path
+    store = InventoryStore(str(tmp_path), client=_FakeS3())
+    store.save("m", {"reported": [1]})
+    real = Path.write_text
+
+    def cut_off(self, data, *a, **kw):
+        real(self, data[: len(data) // 2], *a, **kw)
+        raise OSError("process exited mid-write")
+    monkeypatch.setattr(Path, "write_text", cut_off)
+    out = store.save("m", {"reported": [2]})
+    assert out["local"] is None and out["errors"]
+    assert json.loads((tmp_path / "m.json").read_text()) == {"reported": [1]}
+
+
+def _bucket_from_run_sh(tmp_path, env_bucket):
+    """Run run.sh's own INVENTORY_BUCKET line, with a fake `aws` that
+    reports a bucket."""
+    import os
+    import re
+    import subprocess
+    from pathlib import Path
+    text = Path("service/tunnel/run.sh").read_text()
+    line = re.search(r'^export INVENTORY_BUCKET=.*?\)\}"$', text, re.M | re.S).group(0)
+    fake = tmp_path / "aws"
+    fake.write_text("#!/bin/sh\necho found-bucket\n")
+    fake.chmod(0o755)
+    env = {"PATH": f"{tmp_path}:{os.environ['PATH']}"}
+    if env_bucket is not None:
+        env["INVENTORY_BUCKET"] = env_bucket
+    return subprocess.run(["bash", "-c", line + '\nprintf "%s" "$INVENTORY_BUCKET"'],
+                          env=env, capture_output=True, text=True, check=True).stdout
+
+
+def test_run_sh_set_but_empty_bucket_means_local_only(tmp_path):
+    """3.47, found by review: `${VAR:-lookup}` treats an empty value as
+    unset, so `INVENTORY_BUCKET=` still uploaded. Red with `:-`."""
+    assert _bucket_from_run_sh(tmp_path, "") == ""
+    assert _bucket_from_run_sh(tmp_path, None) == "found-bucket"
+    assert _bucket_from_run_sh(tmp_path, "mine") == "mine"
+
+
 def test_the_store_reads_its_config(tmp_path):
     store = inventory_store_from_config({"inventory_dir": str(tmp_path),
                                          "inventory_bucket": "b", "inventory_prefix": "inv/"})
@@ -252,3 +359,27 @@ def test_the_brain_serves_the_inventory(monkeypatch, tmp_path):
         body = client.get("/mission/inventory").json()["inventory"]
         assert {"reported", "candidates", "counts", "mission", "outcome"} <= set(body)
         client.post("/mission/stop")
+
+
+def test_two_missions_in_one_second_get_their_own_file(monkeypatch):
+    """3.47, found by review: a mission id to the second plus the target
+    gave a quick restart the same file name and S3 key, so the second save
+    overwrote the first. Red with the old `%H%M%SZ` id."""
+    import time
+    from control import brain_server
+    from tests.conftest import RecordingRobot, fresh_mock_robot
+    ids = []
+
+    class Store:
+        def save(self, mission_id, report):
+            ids.append(mission_id)
+    monkeypatch.setattr(brain_server, "inventory_store_from_config", lambda config: Store())
+    app = create_app(robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        for _ in range(2):
+            client.post("/mission/start", json={"target_object": "unicorn", "max_steps": 50})
+            client.post("/mission/stop")
+        deadline = time.monotonic() + 5
+        while len(ids) < 2 and time.monotonic() < deadline:
+            time.sleep(0.02)
+    assert len(ids) == 2 and ids[0] != ids[1]

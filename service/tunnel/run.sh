@@ -57,8 +57,10 @@ export METRICS_URL="${METRICS_URL:-$VISION_URL}"
 export METRICS_SECRET="${WALKS_SECRET:-}"
 # 3.46: each mission's object inventory (labels and map positions, never an
 # image) is uploaded to the private recordings bucket, read from the
-# recordings stack's export. Unset (no AWS credentials) means local only.
-export INVENTORY_BUCKET="${INVENTORY_BUCKET:-$(aws cloudformation list-exports \
+# recordings stack's export. No AWS credentials means local only, and so
+# does `INVENTORY_BUCKET=` (set but empty): 3.47, `-` not `:-`, so an
+# empty value is kept instead of being looked up.
+export INVENTORY_BUCKET="${INVENTORY_BUCKET-$(aws cloudformation list-exports \
   --query "Exports[?Name=='vision-picar-recordings-s3-BucketName'].Value" \
   --output text 2>/dev/null || true)}"
 

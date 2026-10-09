@@ -308,7 +308,12 @@ class Inventory:
                 self.landmarks.append(lm)
             lm.points.append((x, y, label))
             lm.last_step = step
-            self._absorb(lm, label, x, y)
+            if self._absorb(lm, label, x, y) & joined:
+                # 3.47: a landmark that already took this frame's look was
+                # folded into `lm`, and `_absorb` carried its score and hits
+                # over. Counting the look again would raise belief from one
+                # frame twice.
+                joined.add(lm.id)
             if lm.id not in joined and _new_view(lm._hit_pose, pose):
                 lm.score = min(SCORE_CLAMP, lm.score + L_HIT)
                 lm.hits += 1
@@ -325,11 +330,13 @@ class Inventory:
         other = [lm for lm in self.landmarks if lm.near(x, y, RELABEL_M)]
         return other[0] if other else None
 
-    def _absorb(self, keep: Landmark, label: str, x: float, y: float) -> None:
+    def _absorb(self, keep: Landmark, label: str, x: float, y: float) -> set:
         """Complete the single linkage: a point within `MERGE_M` of other
         same-label landmarks bridges them into `keep`. The score is the
         larger one, never the sum -- two landmarks of one object may hold
-        the same look, so a merge must not raise belief by itself."""
+        the same look, so a merge must not raise belief by itself. Returns
+        the ids folded into `keep`."""
+        absorbed = set()
         for other in [lm for lm in self.landmarks
                       if lm is not keep and lm.label == label and lm.near(x, y, MERGE_M)]:
             keep.points.extend(other.points)
@@ -341,6 +348,8 @@ class Inventory:
                                            and other.first_step < keep.first_step):
                 keep.first_step, keep.room = other.first_step, other.room
             self.landmarks.remove(other)
+            absorbed.add(other.id)
+        return absorbed
 
     def _misses(self, pose, returns, pan_deg, fov_deg, joined) -> None:
         half = fov_deg / 2 - MISS_FOV_MARGIN_DEG

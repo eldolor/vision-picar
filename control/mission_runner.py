@@ -885,7 +885,13 @@ class MissionRunner:
             # 3.46: before the end line, which stays the log's last word --
             # the twin and the tests read the end reason off log_tail[-1].
             if self.inventory is not None:
-                self._log_line(self.inventory.summary())
+                # 3.47: nothing on the way to `_safe_stop()` may raise. A
+                # summary that failed here once skipped the stop, the
+                # policy's close and the end line.
+                try:
+                    self._log_line(self.inventory.summary())
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("inventory summary failed: %s", e)
             self._log_line(f"mission ended ({outcome}): {note}")
         # Outside the lock: this is an HTTP call when the robot is remote.
         self._safe_stop()
@@ -952,18 +958,28 @@ class MissionRunner:
         """3.46: one frame into the inventory, with the pose and scan read
         now. Two extra reads per frame, and only when the frame carries
         detections. Any failure is logged once and never reaches the agent:
-        an inventory is a by-product of a search, never a reason it stops."""
+        an inventory is a by-product of a search, never a reason it stops.
+
+        3.47: the update runs under `self._lock`, the lock every reader
+        (`status()`, `inventory_report()`, `_finish`) takes -- this runs on
+        the tick thread, and a read in the middle of `observe()` saw a
+        landmark with no points yet. The two reads stay outside the lock
+        (HTTP calls on a remote robot). A frame that lands after the
+        mission ended is dropped: the report has already been saved."""
         try:
             detections = self.detections_fn(frame)
             if detections is None:
                 return
             pose = self.world.get_pose()
             scan = self.robot.get_scan(max_range_m=INVENTORY_RANGE_M + 0.5)
-            self.inventory.observe(
-                detections, pose, scan,
-                pan_deg=float(frame.get("pan_deg") or 0.0),
-                fov_deg=float(frame.get("fov_deg") or DEFAULT_FOV_DEG),
-                room=frame.get("room", "unknown"), step=self._ticks)
+            with self._lock:
+                if not self._running and self._outcome != IDLE:
+                    return                    # ended: the report is saved
+                self.inventory.observe(
+                    detections, pose, scan,
+                    pan_deg=float(frame.get("pan_deg") or 0.0),
+                    fov_deg=float(frame.get("fov_deg") or DEFAULT_FOV_DEG),
+                    room=frame.get("room", "unknown"), step=self._ticks)
         except Exception as e:  # noqa: BLE001
             if not self._inventory_error_logged:
                 self._inventory_error_logged = True
