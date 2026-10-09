@@ -7,7 +7,8 @@ import math
 import pytest
 
 from tools.jetson.bench_identity_llama import (
-    PROMPT, decision_ms, p_localised, percentile)
+    PROMPT, compare_decisions, decision_ms, decision_reached, p_localised,
+    percentile, stream_chunks)
 
 
 def step(token, alts):
@@ -97,3 +98,79 @@ def test_the_prompt_is_the_a10g_rows_prompt():
 def test_percentile_is_nearest_rank():
     assert percentile(list(range(1, 11)), 90) == 9
     assert percentile([5.0], 90) == 5.0
+
+
+# ---------------------------------------------------------------------------
+# 3.58: stop at the decision.
+
+def _stopped(content):
+    """What `ask_until_decided` keeps: tokens up to the first prefix for
+    which the stopping rule holds, or everything if it never does."""
+    for k in range(1, len(content) + 1):
+        if decision_reached(content[:k]):
+            return content[:k]
+    return content
+
+
+REPLIES = {
+    "bare bracket then brace": [step("[", [("[", 1.0)]),
+                                step("{", [("{", 0.8), ("]", 0.2)]),
+                                step('"bbox', [('"bbox', 1.0)])],
+    "merged empty": [step("[]", [("[]", 0.7), ("[{", 0.3)]), step("\n", [("\n", 1.0)])],
+    "code fence then list": [step("```", [("```", 1.0)]), step("json", [("json", 1.0)]),
+                             step("\n", [("\n", 1.0)]),
+                             step(" [", [(" [", 0.9), ("[]", 0.1)]),
+                             step("]", [("]", 0.95), ("{", 0.05)]), step("\n```", [("\n```", 1.0)])],
+    "whitespace deferral (the smoke test's reply)": [
+        step("[\n", [("[\n", 0.9), ("[]\n", 0.09), ("[", 0.01)]),
+        step("\t", [("\t", 0.55), ("   ", 0.30), (" ", 0.14), ("]\n", 0.006), ('{"', 0.001)]),
+        step('{"', [('{"', 0.997), ("{\n", 0.0015)]),
+        step("bbox", [("bbox", 1.0)])],
+    "bare object": [step('{"', [('{"', 0.8), ("[]", 0.15), ("[", 0.05)]),
+                    step("bbox", [("bbox", 1.0)]), step('": [', [('": [', 1.0)])],
+    "never a list": [step("The", [("The", 1.0)]), step(" bottle", [(" bottle", 1.0)])],
+}
+
+
+@pytest.mark.parametrize("name", REPLIES)
+def test_stopping_at_the_decision_changes_no_score(name):
+    """3.58's stopping rule: on the same greedy stream, the score over the
+    stopped reply is the score over the full reply."""
+    content = REPLIES[name]
+    stopped = _stopped(content)
+    assert p_localised(stopped)[:2] == p_localised(content)[:2], name
+    if p_localised(content)[2] is not None:
+        # ...and it stops AT the deciding token, never later.
+        assert len(stopped) == p_localised(content)[2] + 1, (name, len(stopped))
+
+
+def test_a_bare_bracket_alone_has_not_decided():
+    assert not decision_reached([step("[", [("[", 1.0)])])
+    assert not decision_reached([step("[\n", [("[\n", 1.0)]), step("\t", [("\t", 1.0)])])
+    assert not decision_reached([step("```", [("```", 1.0)])])
+
+
+def test_stream_chunks_yields_each_token_entry_and_stops_at_done():
+    import json as _json
+    entry = {"token": "[", "logprob": -0.1, "top_logprobs": []}
+    lines = [b"data: " + _json.dumps({"choices": [{"delta": {"role": "assistant"}}]}).encode(),
+             b"",
+             b"data: " + _json.dumps({"choices": [{"delta": {"content": "["},
+                                                   "logprobs": {"content": [entry]}}]}).encode(),
+             b"data: [DONE]",
+             b"data: " + _json.dumps({"choices": [{"logprobs": {"content": [entry]}}]}).encode()]
+    assert list(stream_chunks(lines)) == [entry]
+
+
+def _rec(frame, score):
+    return {"walk": "w", "frame": frame, "score": score}
+
+
+def test_compare_decisions_counts_flips_and_the_largest_difference():
+    old = [_rec("a", 0.9), _rec("b", 0.1), _rec("c", 0.6), _rec("d", 0.2)]
+    new = [_rec("a", 0.92), _rec("b", 0.1), _rec("c", 0.4), _rec("d", None), _rec("e", 0.5)]
+    got = compare_decisions(new, old)
+    assert got["flips"] == ["w/c", "w/d"]       # c crossed the gate; d unanswered
+    assert got["missing"] == ["w/e"]
+    assert got["compared"] == 4
+    assert got["max_score_diff"] == pytest.approx(0.02)

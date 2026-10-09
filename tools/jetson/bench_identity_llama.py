@@ -27,6 +27,13 @@ box).
 starts to its lowest point during the run, sampled every second: on the
 Jetson's unified memory a process's RSS misses what CUDA holds, and
 `MemAvailable` is what the 3.25 GB bar was derived from (3.33 / 3.37).
+
+**`--stop-at-decision`** (3.58, `docs/plans/ros-alignment/3.58-local-
+identity-decision.md`): the reply is streamed and the client closes the
+connection -- llama-server then cancels the task -- at the first token after
+which `p_localised` has everything it reads (`decision_reached`). The
+record's `ms` is then the client-side time from before the image is read and
+encoded to the arrival of that token: all a deployment would wait for.
 """
 
 from __future__ import annotations
@@ -135,6 +142,51 @@ def p_localised(content: Sequence[dict]) -> tuple:
     return 0.0, False, None
 
 
+def decision_reached(content: Sequence[dict]) -> bool:
+    """3.58's stopping rule: has the reply so far given `p_localised`
+    everything it reads? True at a bare object (`{` before any list), at a
+    merged `[{` / `[]`, or -- after a bare `[` -- at the first token that is
+    not whitespace-only. `p_localised` reads nothing past that token, so on
+    the same greedy stream the score over the stopped reply equals the
+    score over the full one (pinned by a test)."""
+    for i, step in enumerate(content):
+        tok = step["token"].strip()
+        if tok.startswith("{"):
+            return True
+        if not tok.startswith("["):
+            continue
+        if tok != "[":
+            return True
+        return any(not _is_ws(s["token"]) for s in content[i + 1:])
+    return False
+
+
+def compare_decisions(new: Sequence[dict], old: Sequence[dict],
+                      gate: float = 0.5) -> dict:
+    """3.58 criterion S: the YES/NO decision per frame in two records
+    files, matched by walk/frame. A frame either side could not answer
+    (`score` None) counts as a mismatch -- it is not the same answer."""
+    def key(r):
+        return f"{r['walk']}/{r['frame']}"
+
+    def yes(r):
+        return r["score"] is not None and r["score"] >= gate
+
+    before = {key(r): r for r in old}
+    flips, missing, diffs = [], [], []
+    for r in new:
+        o = before.get(key(r))
+        if o is None:
+            missing.append(key(r))
+            continue
+        if r["score"] is None or o["score"] is None or yes(r) != yes(o):
+            flips.append(key(r))
+        else:
+            diffs.append(abs(r["score"] - o["score"]))
+    return {"compared": len(new) - len(missing), "flips": flips,
+            "missing": missing, "max_score_diff": max(diffs) if diffs else None}
+
+
 def decision_ms(timings: dict, decided_at) -> Optional[float]:
     """Prompt (image included) plus generation up to and including the
     deciding token, from llama-server's `timings`. Reported beside, never
@@ -196,6 +248,53 @@ def ask(base: str, jpeg: bytes, target: str) -> dict:  # pragma: no cover
     return _post(base + "/v1/chat/completions", body)
 
 
+def stream_chunks(lines):
+    """`data:` lines of a streamed chat completion -> the per-token logprob
+    entries, in order, as they arrive. Ends at `[DONE]`."""
+    for raw in lines:
+        line = raw.decode() if isinstance(raw, bytes) else raw
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            return
+        chunk = json.loads(data)
+        choice = (chunk.get("choices") or [{}])[0]
+        for entry in (choice.get("logprobs") or {}).get("content") or []:
+            yield entry
+
+
+def ask_until_decided(base: str, jpeg_path, target: str) -> dict:  # pragma: no cover
+    """One frame under the stopping rule. Times from before the image is
+    read and encoded to the arrival of the deciding token (or the end of
+    the reply, if it never decides), then closes the connection."""
+    t0 = time.perf_counter()
+    jpeg = Path(jpeg_path).read_bytes()
+    body = {
+        "stream": True,
+        "messages": [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {
+                "url": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()}},
+            {"type": "text", "text": PROMPT.format(target=target)}]}],
+        "max_tokens": MAX_TOKENS, "temperature": 0, "top_k": 1,
+        "logprobs": True, "top_logprobs": TOP_LOGPROBS,
+    }
+    req = urllib.request.Request(base + "/v1/chat/completions",
+                                 data=json.dumps(body).encode(),
+                                 headers={"content-type": "application/json"})
+    content, decided = [], False
+    with urllib.request.urlopen(req, timeout=120.0) as r:
+        for entry in stream_chunks(r):
+            content.append(entry)
+            if decision_reached(content):
+                decided = True
+                break
+    return {"content": content, "decided": decided,
+            "ms": (time.perf_counter() - t0) * 1000,
+            "reply": "".join(e["token"] for e in content)}
+
+
 def wait_ready(base: str, proc, timeout_s: float = 300.0):  # pragma: no cover
     end = time.monotonic() + timeout_s
     while time.monotonic() < end:
@@ -223,6 +322,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
     ap.add_argument("--port", type=int, default=9481)
     ap.add_argument("--ctx", type=int, default=4096)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--stop-at-decision", action="store_true",
+                    help="3.58: stream, and stop at the deciding token")
     args = ap.parse_args(argv)
 
     walks = load_corpus(Path(args.recordings), only=args.walk)
@@ -250,11 +351,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
         wait_ready(base, proc)
         load_s = time.monotonic() - t0
         for w, p, _, _ in frames[:WARMUP]:
-            ask(base, p.read_bytes(), w.target)
+            if args.stop_at_decision:
+                ask_until_decided(base, p, w.target)
+            else:
+                ask(base, p.read_bytes(), w.target)
         for w, p, vis, adj in frames:
             t = time.perf_counter()
             try:
-                out = ask(base, p.read_bytes(), w.target)
+                if args.stop_at_decision:
+                    got = ask_until_decided(base, p, w.target)
+                    out = {"choices": [{"logprobs": {"content": got["content"]},
+                                        "message": {"content": got["reply"]}}]}
+                else:
+                    out = ask(base, p.read_bytes(), w.target)
             except (urllib.error.URLError, OSError, ValueError) as e:
                 # One failed call is one unavailable frame -- a miss if the
                 # target was visible (score_at's rule) -- not a lost run.
@@ -265,7 +374,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
                                 "adjudicated": adj, "ms": 0.0})
                 print(f"{w.name}/{p.name} ERROR {e}", flush=True)
                 continue
-            took = (time.perf_counter() - t) * 1000
+            # Under the stopping rule `ms` is the client's time to the
+            # deciding token (image encoding included), not the whole call.
+            took = (got["ms"] if args.stop_at_decision
+                    else (time.perf_counter() - t) * 1000)
             choice = out["choices"][0]
             content = (choice.get("logprobs") or {}).get("content") or []
             score, parsed, decided = p_localised(content)
@@ -299,7 +411,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
                    "device": "jetson-orin-nano-super-15w", "runtime": "llama-server CUDA",
                    "prompt": PROMPT, "max_tokens": MAX_TOKENS,
                    "top_logprobs": TOP_LOGPROBS, "metric": "confidence",
-                   "cache_ram_mib": 0},
+                   "cache_ram_mib": 0, "stop_at_decision": bool(args.stop_at_decision)},
         "records": records,
         "latency_ms": {"n": len(ms), "p50": statistics.median(ms),
                        "p90": percentile(ms, 90), "max": max(ms)},
