@@ -57,4 +57,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.46](3.46-object-inventory.md) | Object inventory: record every object seen during a search (2026-10-07): criteria, written before building -- confirmed by the user 2026-10-07 |
 | [3.47](3.47-offline-arrival.md) | An arrival the cloud could not check: arrived_unconfirmed |
 | [3.50](3.50-map-persistence.md) | Saving and reloading the map: options for the user |
+| [3.51](3.51-clip-rooms.md) | Rooms from CLIP: an early read on the four rig walks |
 <!-- /sections -->
