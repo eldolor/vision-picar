@@ -130,6 +130,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   10 cm before scoring (`correlation_search_space_smear_deviation`
   0.10 -> 0.03 m: two tours within 4.2 cm, every room's walls 100% true).
   Scans are also stamped with their capture time (skew 21 -> 7 ms).
+* **Offline is a mode (3.49), merged 2026-10-09.** With every connection
+  refused: the robot server loads no cloud client, `frontier`/`explore`
+  still find, tiered ends `arrived_unconfirmed` at the target, `vision`
+  ends `failed` without moving, the twin loads nothing from the internet.
+  One criterion failed and is recorded (an async start closes 0.62 cells
+  less than with the network). `tests/test_offline_mode.py`.
 * **Offline arrival (3.47), merged 2026-10-09.** A tiered mission whose
   arrival holds but whose identity check cannot reach the cloud ends
   `arrived_unconfirmed` (not `found`, not `failed`). Only `CloudUnavailable`
