@@ -20,11 +20,15 @@ docker build -t "$ROS_IMAGE" service/slam    # only if you change service/slam
 # 3. Before touching a shared file, see who else is touching it.
 python tools/plan_section.py overlap
 
-# 4. When done: rebase, then the gate.
+# 4. Review every code commit (CLAUDE.md section 6), then record it; the
+#    push warns about code commits with no record (it never blocks).
+python tools/plan_section.py reviewed [--thermos]   # --thermos when it ran too
+
+# 5. When done: rebase, then the gate.
 git fetch origin && git rebase origin/dev
 python tools/plan_section.py ready           # fast tier; records a pass (optional:
                                              # the push runs the same check itself)
-# 5. Ask the user. Only then: git push origin HEAD:dev
+# 6. Ask the user. Only then: git push origin HEAD:dev
 ```
 
 Continuing an existing section: work in its worktree

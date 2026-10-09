@@ -528,6 +528,15 @@ project coherent. Their full narrative is in the archive copy.
   * the safety or motion path, who-drives arbitration, or the watchdogs;
   * retries, timeouts or paid cloud calls;
   * ALB routes or CloudFormation.
+- **Record it:** `python tools/plan_section.py reviewed [--thermos] [range]`
+  after the review (range defaults to what is not yet on `dev`). The push
+  gate WARNS -- never blocks -- about code commits with no recorded review,
+  or a risky path with no Thermos pass (`RISKY_PREFIXES`). Records are keyed
+  by each commit's patch-id, so they survive a rebase or a merge from
+  `dev`. Merge commits are not checked: code written while resolving a
+  conflict by hand gets no warning, so review it as part of the branch. Added
+  2026-10-09 after a session pushed three commits unreviewed; the user's
+  call: warn first, block only if warnings are pushed past.
 - **Why both:** measured on six commits, `/code-review` found 17 of 18
   real bugs and the bug pass 15. Together they found all 18. The file
   above has the numbers. A finding only one of them raised is a claim to

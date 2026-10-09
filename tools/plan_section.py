@@ -8,6 +8,8 @@ sessions never collide (docs/guides/PARALLEL-SESSIONS.md).
     python tools/plan_section.py overlap                files this branch shares with other plan/* branches
     python tools/plan_section.py ready [--full]         rebase check + fast tier (or the full suite); records a pass
     python tools/plan_section.py gate <base> <sha>      the pre-push hook's check: docs only -> spec lint, else fast tier
+    python tools/plan_section.py reviewed [--thermos] [range]   record that the code commits in range
+                                                        (default origin/dev..HEAD) were reviewed
     python tools/plan_section.py split                  one-time: PLAN-ros-alignment.md's 3.N sections -> files
 
 Sections live in `docs/plans/ros-alignment/<number>-<slug>.md`; the number is
@@ -339,13 +341,132 @@ def run_tests(root: str, full: bool) -> bool:
                           env=scrubbed_env()).returncode == 0
 
 
+# ---------- review records (CLAUDE.md section 6, "Code review") ----------
+#
+# The review rule was text only, and on 2026-10-09 one session pushed three
+# commits without the reviews it asks for. The gate now WARNS -- never
+# blocks (the user's choice: warn first, block only if warnings are pushed
+# past) -- about code commits with no recorded review. A record is keyed on
+# the commit's own patch-id, so a rebase or a merge from dev keeps it, and
+# it is self-reported: it says a session ran the review, not that it read
+# it. Paths below are where CLAUDE.md asks for the Thermos pass too.
+RISKY_PREFIXES = (
+    "robot/safety.py", "robot/server.py", "robot/ros_drive.py", "robot/hardware_robot.py",
+    "robot/lidar_ld19.py", "control/mission_runner.py", "control/brain_server.py",
+    "control/walk_store.py", "control/recording_routes.py", "control/walk_replay.py",
+    "control/walk_eval.py", "control/remote_", "brain/navigate.py", "brain/vision.py",
+    "brain/explore.py", "brain/inventory", "world/ros_world.py", "web-twin/app.js",
+    # Review of this list (2026-10-09): stored data, sidecars and paid calls
+    # it first missed.
+    "control/inventory_store.py", "control/reconfirm.py", "brain/tiered.py",
+    "brain/arrival.py", "control/perception_eval.py", "control/label_assist.py",
+    "control/admin_server.py", "control/metrics_",
+    "service/", "cloudformation/", "tools/hooks/", "tools/plan_section.py",
+)
+
+
+def risky(paths) -> bool:
+    return any(p.startswith(RISKY_PREFIXES) for p in paths)
+
+
+def commit_patch_id(sha: str, root: str) -> str:
+    # Plumbing, never `git show`: a user's color.ui=always or diff settings
+    # would change the text and leave patch-id with nothing (review, 2026-10-09).
+    diff = subprocess.run(["git", "diff-tree", "-p", "--no-color", "--no-ext-diff",
+                           "--root", sha], capture_output=True, cwd=root).stdout
+    out = subprocess.run(["git", "patch-id", "--stable"], input=diff,
+                         capture_output=True, cwd=root).stdout.decode().split()
+    return out[0] if out else ""
+
+
+def code_commits(rng: str, root: str) -> list:
+    """(sha, subject, files) for each non-merge commit in `rng` that is not
+    documentation only."""
+    out = []
+    for line in git("log", "--no-merges", "--format=%H %s", rng, cwd=root).splitlines():
+        sha, _, subject = line.partition(" ")
+        # Both sides of a rename: moving robot/safety.py away is still risky.
+        files = git("diff-tree", "--no-commit-id", "--name-only", "-r", "--no-renames",
+                    "--root", sha, cwd=root).splitlines()
+        if files and not docs_only(files):
+            out.append((sha, subject, files))
+    return out
+
+
+def review_record(pid: str) -> set:
+    path = os.path.join(gate_dir(), f"review-{pid}")
+    if not pid or not os.path.exists(path):
+        return set()
+    return {line.split()[0] for line in open(path) if line.strip()}
+
+
+def cmd_reviewed(args) -> None:
+    root = top()
+    thermos = "--thermos" in args
+    rest = [a for a in args if a != "--thermos"]
+    rng = rest[0] if rest else "origin/dev..HEAD"
+    if rng.startswith("-"):
+        raise SystemExit(f"not a commit or range: {rng!r}")
+    if ".." not in rng:
+        # One commit means that commit, not it and every ancestor (which
+        # `git log <sha>` would list, recording the whole history).
+        rng = f"{rng}^!"
+    commits = code_commits(rng, root)
+    if not commits:
+        raise SystemExit(f"no code commits in {rng}")
+    import time
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+    for sha, subject, _files in commits:
+        pid = commit_patch_id(sha, root)
+        if not pid:
+            raise SystemExit(f"no patch-id for {sha[:9]}; nothing recorded for it")
+        with open(os.path.join(gate_dir(), f"review-{pid}"), "a") as f:
+            f.write(f"code-review {stamp} {sha[:9]}\n")
+            if thermos:
+                f.write(f"thermos {stamp} {sha[:9]}\n")
+        print(f"recorded {'code-review + thermos' if thermos else 'code-review'}: "
+              f"{sha[:9]} {subject[:60]}")
+
+
+def review_warnings(base: str, sha: str, root: str) -> list:
+    """What the push carries without its recorded reviews. Never blocks."""
+    out = []
+    for c, subject, files in code_commits(f"{base}..{sha}", root):
+        have = review_record(commit_patch_id(c, root))
+        if "code-review" not in have:
+            out.append(f"{c[:9]} {subject[:60]} -- no /code-review recorded")
+        elif risky(files) and "thermos" not in have:
+            out.append(f"{c[:9]} {subject[:60]} -- touches a risky path; no Thermos pass recorded")
+    return out
+
+
+def warn_reviews(base: str, sha: str, root: str) -> None:
+    """Report, never block: every failure -- git's (raised as SystemExit),
+    or writing to a closed stderr -- is swallowed here."""
+    try:
+        missing = review_warnings(base, sha, root) if base else []
+        if missing:
+            print("pre-push: WARNING -- code commits without a recorded review "
+                  "(CLAUDE.md section 6; the push goes ahead):", file=sys.stderr)
+            for m in missing:
+                print(f"  {m}", file=sys.stderr)
+            print("  after reviewing: python tools/plan_section.py reviewed [--thermos] [range]",
+                  file=sys.stderr, flush=True)
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 -- see the docstring
+        try:
+            print(f"pre-push: review check skipped ({exc})", file=sys.stderr, flush=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def change_id(base: str, sha: str, root: str) -> str:
     """`git patch-id` of the change being pushed: the same diff gets the same
     id after a rebase that applied cleanly. Keying the pass on this, not on
     the commit, is what stops a 7-minute tier losing a race to every other
     session's push (2026-10-09: two in a row). The nightly full run still
     sees how changes combine."""
-    diff = subprocess.run(["git", "diff", base, sha], capture_output=True, cwd=root).stdout
+    diff = subprocess.run(["git", "diff", "--no-color", "--no-ext-diff", base, sha],
+                          capture_output=True, cwd=root).stdout
     out = subprocess.run(["git", "patch-id", "--stable"], input=diff,
                          capture_output=True, cwd=root).stdout.decode().split()
     return "change-" + out[0] if out else ""
@@ -360,6 +481,7 @@ def cmd_gate(base: str, sha: str) -> None:
     clean = scrubbed_env()
     os.environ.clear()
     os.environ.update(clean)
+    warn_reviews(base, sha, root)
     if os.path.exists(os.path.join(gate_dir(), sha)):
         return
     cid = change_id(base, sha, root) if base else ""
@@ -424,6 +546,8 @@ def main(argv):
         cmd_ready(full=args[:1] == ["--full"])
     elif cmd == "gate" and len(args) == 2:
         cmd_gate(*args)
+    elif cmd == "reviewed":
+        cmd_reviewed(args)
     elif cmd == "split":
         cmd_split()
     else:
