@@ -2,7 +2,7 @@
 kind: engineering
 domain: mission
 status: current
-verified: 2026-10-02
+verified: 2026-10-08
 parent: docs/mission/ARCHITECTURE.md
 ---
 
@@ -130,6 +130,7 @@ otherwise). CORS allows any origin.
 | `POST /mission/start` | `MissionStartRequest` (below) | `{"started": true, "status": {...}}` | 409 `"A mission is already running."`; 400 config or validation error with its message; 403 drill on a brain with drills off; 422 an unknown field or a bad type |
 | `POST /mission/stop` | none | `{"stopped": true, "status": {...}}` -- cancels the loop task, then `runner.stop()`; with no mission ever run, stops the robot anyway and returns the idle status | -- |
 | `GET /mission/status` | none | `MissionRunner.status()` plus `fault`; before any mission `{"running": false, "outcome": "idle", "step": 0, "log_tail": [], "fault": "none"}` | -- |
+| `GET /mission/inventory` | none | `{"inventory": null}` before any mission; else the current or last mission's object inventory (3.46; shape in the [perception engineering spec](../perception/ENGINEERING.md), "Inventory"). On mission end the report is also saved by `control/inventory_store.py` on a daemon thread | -- |
 | `GET /health` | none | liveness and configuration description; the verdict rules are the operations domain's | -- |
 | `POST /recording/frame`, `POST /recording/finish` | mounted from `control/recording_routes.py` | owned by the recordings domain | -- |
 
@@ -161,7 +162,7 @@ without a perception tier. `AGENT-HARNESS.md` section 8 describes each.
 
 ### In-process
 
-- `MissionRunner(robot, target_object=None, target_room=None, mission=None, max_steps=120, min_distance_cm=20.0, vision_proximity_veto=False, policy="frontier", vision_fn=None, vision_timeout_s=20.0, max_vision_failures=3, world=None, stuck_after=5)`;
+- `MissionRunner(robot, target_object=None, target_room=None, mission=None, max_steps=120, min_distance_cm=20.0, vision_proximity_veto=False, policy="frontier", vision_fn=None, vision_timeout_s=20.0, max_vision_failures=3, world=None, stuck_after=5, ..., inventory=True, detections_fn=None)` (3.46: the object inventory, recorded and reported only; `runner.inventory_sink` is set by the brain server like the metrics fields);
   `start()`, `tick() -> bool`, `stop(reason)`, `abort(reason)`,
   `is_running()`, `status()`. `start()` on a used runner raises.
 - `vision_fn(frame: dict) -> dict` -- the scene schema (policy domain).

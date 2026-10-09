@@ -2,7 +2,7 @@
 kind: engineering
 domain: perception
 status: current
-verified: 2026-10-02
+verified: 2026-10-08
 parent: docs/perception/ARCHITECTURE.md
 ---
 
@@ -24,6 +24,9 @@ every number here.
 | `brain/perceive_lab.py` | Candidates behind the same protocols: `GroundingDino`, `Owlv2`, `OmDetTurbo`, `LlmDet`, `YoloWorld`, `VlmDetector`, `SamProposer`, `OpenVocabPipeline`, a TensorRT OWLv2 loaded lazily from `tools/trt/trt_owlv2.py`; `pipeline_for_spec()` builds any of them from strings. Never imported by `brain/perceive.py`. |
 | `brain/tiered.py` | Calls `pipeline.perceive(frame)` once per frame; computes 1.11a's corroboration verdict (`corroboration_for()`) and publishes the `Vocabulary` verdict. Policy-side details are in [policy](../policy/ENGINEERING.md). |
 | `control/brain_server.py` | Builds the pipeline at mission start. The sequence is described once, in [mission](../mission/ENGINEERING.md) ("How a tiered mission is built"). `_perception_available()` answers health with `find_spec` for `ultralytics`, `open_clip`, `torch`. |
+| `brain/inventory.py` | 3.46's object inventory: `frame_detections()` (a sim frame's per-cell detections grouped into one per object), `scan_returns()` / `range_at()` (the scan moved to the body centre; nearest return within 2 deg), `Landmark`, `Inventory` (`observe()`, `report()`, `counts()`, `summary()`). Imports nothing but `robot.safety.LIDAR_X_M` |
+| `control/inventory_store.py` | `InventoryStore.save(mission_id, report)`: a local JSON file, plus `put_object` to S3 (SSE AES256) when a bucket is set; failures returned and logged, never raised. `inventory_store_from_config()` |
+| `control/mission_runner.py` (inventory) | `_HaltGate` calls `MissionRunner._observe(frame)` inside every `get_camera_frame()`; `_observe` reads `world.get_pose()` and `robot.get_scan(max_range_m=4.5)` only when `detections_fn(frame)` is not None. `_finish()` logs `summary()` and calls `inventory_sink(report)` |
 | `control/perception_eval.py` | P3's corpus scorer: `score` and `compare` subcommands. Reads each walk's `labels.json`; refuses a walk without one. |
 | `control/target_probe.py` | Pre-flight for a target string: firing rate and peak probability over a fixed random sample of existing frames. |
 | `tools/contact_sheet.py`, `tools/label_prepass.py` | Labelling aids for a walk's `labels.json`: contact sheets to adjudicate by eye, and a two-opinion pre-pass (OWLv2 against the shipped tier) that bounds what needs eyeballing. One-off evaluation helpers; the recordings domain owns `labels.json` itself |
@@ -81,10 +84,23 @@ of `{label, bearing_deg, distance_m}` written by `sim/grid_world.py`
 `unavailable`; no label containing the target -> `absent`; else `detected`,
 nearest first, `synthesised: true`, models named `sim ground truth`.
 `distance_m` is used only to order matches; arrival never reads it. Sim
-frames carry no `pan_deg`, and the `Perception` it builds leaves `pan_deg`
-at 0, while the bearings are already camera-relative (cast along
+frames carry `pan_deg` since 3.46 (the inventory composes it), but the
+`Perception` this builds leaves `pan_deg` at 0, while the bearings are camera-relative (cast along
 `GridWorld.view_angle()`). Arrival's panned-camera refusal therefore never
 fires in the sim (policy ENG, Known gaps).
+
+**Inventory** (3.46). `GET /mission/inventory` on the brain returns
+`{"inventory": null}` before any mission, else
+`{"inventory": {"reported": [...], "candidates": [...], "counts": {...},
+"params": {...}, "map_id", "mission", "outcome"}}`. A landmark is
+`{id, label, x_m, y_m, belief, reported, disputed, hits, misses, votes,
+room, first_step, last_step, points}` in the map frame of
+`WorldInterface.get_pose()` (x east, y south). `GET /mission/status` carries
+only `inventory: {frames, observations, unplaced, no_pose, landmarks,
+reported}`. `MissionRunner(..., inventory=True, detections_fn=None)`:
+`detections_fn(frame) -> [{label, bearing_deg}] | None`, bearings off the
+camera axis; None means the detector did not run on that frame, so no
+miss is inferred from it.
 
 **Health fields** (`GET /health` on the brain): `perception_available`,
 `perception_detector`, `perception_clip_model`,
@@ -146,6 +162,26 @@ above a 10% firing rate or a peak below 0.01 (labelled "inert", but see
 Known gaps for what that peak actually measures);
 `tools/jetson/bench_perception.py` `BUDGET_MS` 250, `DEFAULT_N` 60,
 `WARMUP` 3.
+
+**Inventory constants** (`brain/inventory.py`, all `[PLACEHOLDER]`s left
+at their first values because 3.46's tuning half met every bar with
+them):
+
+| Name | Value | Meaning |
+|---|---|---|
+| `L_HIT`, `L_MISS` | +0.85, -0.4 | log-odds per independent hit / miss; one hit reads 0.70. An isolated miss is held pending and forgiven unless the next independent look also misses (3.46 amendment 2) |
+| `REPORT_BELIEF` | 0.8 | reported vs candidate: two hits and no miss |
+| `NEW_VIEW_M`, `NEW_VIEW_DEG` | 0.5 m, 30 deg | what makes a look independent; time alone never does |
+| `MERGE_M`, `RELABEL_M` | 0.5 m, 0.3 m | single linkage within a label; a different label this close is a vote |
+| `RANGE_GATE_DEG`, `MAX_RANGE_M` | 2 deg, 4.0 m | lidar return taken for a bearing; beyond it, unplaced |
+| `MISS_RANGE_M`, `OCCLUSION_M` | 3.0 m, 0.3 m | a miss needs the place in view, near, and not behind something |
+| `GROUP_DEG` | 8 deg | same-label sim cells this close in bearing are one detection |
+
+Config keys (`brain:` block): `inventory_dir` (`recordings/inventory`),
+`inventory_bucket` (`""`; env `INVENTORY_BUCKET`, which
+`service/tunnel/run.sh` reads from the recordings stack's export),
+`inventory_prefix` (`inventory`). Objects land at
+`s3://<bucket>/<prefix>/<hostname>/<UTC time>-<target>.json`.
 
 ## Procedures
 
@@ -243,6 +279,11 @@ and `budget 250 ms: WITHIN` or `OVER`. Recorded on the M1 MacBook Air,
 60 frames with a crop; both on MPS, median 36 ms (p90 66), detector 22 ms.
 The Jetson numbers at 15 W and 25 W are not yet taken.
 
+**Measuring the inventory** (3.46): `python -m tests.inventory_sweep
+--seed 3462` (sweep 3, the current rule's judged set) runs 20 frontier missions in `complex_house` with injected
+detector errors and prints recall, placement, duplicates and precision;
+`--half 1|2`, `--clean`, `--steps`.
+
 ## Verification
 
 | Test file (count 2026-10-02) | What it pins |
@@ -253,6 +294,8 @@ The Jetson numbers at 15 W and 25 W are not yet taken.
 | `tests/test_target_probe.py` (2) | handoff 4h, fake pipeline: the probe's peak and its hits at `--gate` are taken over every candidate, so a prompt grounding below 0.8 is not called inert and a gate below 0.8 counts hits |
 | `tests/test_tiered.py` (92) | corroboration verdicts, a wedged camera is not a failure to corroborate, landed async verdicts shown once |
 | `tests/test_brain_server.py` | missing extras or bad weights refuse at start, health reports availability and the effective gate, a simulated robot loads no model, a real camera is never taken for the sim (the start-time probe frame) |
+| `tests/test_inventory.py` | placement and the compass convention, the lidar offset, one pose is one look (red on a per-frame count), misses need view + range + no occlusion, a skipped frame says nothing, a wrong label is a vote, single linkage and its bridge (red without it), another map's pose refused |
+| `tests/test_inventory_mission.py` | criterion 1 (identical actions with it on and off, frontier and tiered, three houses), no agent holds it, criteria 3-5 on four pinned sweep missions, the capture-time pose, no reads for a frame without detections, no inventory failure fails a mission, the sink, the store (local + S3 + failure), the route |
 | `tests/test_bearing_turns.py`, `tests/test_arrival.py` | the consumers, driven by `FrameReportedPipeline` (1.12) |
 
 No automated test loads a model; the concrete backends' model-touching
@@ -268,6 +311,19 @@ pinned frames; change `DEFAULT_DETECTOR` and the config comment in the same
 commit.
 
 ## Known gaps
+
+- **The inventory fills only in the simulator.** 3.46 C (a second,
+  prompt-free YOLOE pass on keyframes) is not built, so a real frame has
+  no detections and `frame_detections()` returns None. Its criteria 2
+  (Jetson budget) and 6 (labelled rig keyframes) are unmeasured.
+- **Inventory precision costs of the forgiven miss.** 3.46 sweep 3
+  (fresh missions) met every bar (recall 96.6%, precision 97.2%); on
+  sweep 1's missions the same rule reads precision 91.7%: a 1:1 vote
+  reported under the wrong label, and one object placed on another's
+  surface.
+- **Loop closures are unmeasured for the inventory.** In process the pose
+  is the truth; an observation is placed in the pose at capture and is
+  not re-placed when SLAM corrects.
 
 - **Jetson numbers exist only for the shipped pipeline** (3.33, 2026-10-04,
   60 pinned frames): at 15 W median 60.6 ms, p90 109.9 ms a frame (GPU 44.4,

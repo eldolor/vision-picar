@@ -74,6 +74,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from typing import Callable, Optional
 
@@ -88,6 +89,7 @@ from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
 from brain.tiered import tiered_vision_fn_for
 from control import drills
 from control.brain_config import load_brain_config
+from control.inventory_store import inventory_store_from_config
 from control.mission_runner import MissionRunner
 from control.recording_routes import (  # noqa: F401 -- re-exported, see above
     FRAME_SUFFIX,
@@ -504,6 +506,14 @@ def create_app(
         runner.metrics_secret = (config.get("metrics_secret")
                                  or os.environ.get("WALKS_SHARED_SECRET", ""))
         runner.git_revision = git_revision()
+        # 3.46: the object inventory goes to a local file and, when a bucket
+        # is configured, to S3 (decided by the user 2026-10-07) -- on a
+        # daemon thread, so an upload never holds up the end of a mission.
+        store = inventory_store_from_config(config)
+        mission_id = (time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+                      + "-" + (req.target_object or req.target_room or "mission"))
+        runner.inventory_sink = lambda report: threading.Thread(
+            target=store.save, args=(mission_id, report), daemon=True).start()
         # The knobs whose effect the dashboard exists to watch. A trend
         # line without the config that produced it is a set of numbers
         # with no cause attached.
@@ -648,6 +658,14 @@ def create_app(
         # No mission has ever run: stop the car anyway.
         await asyncio.to_thread(robot().stop)
         return {"stopped": True, "status": _idle_status()}
+
+    @app.get(prefix + "/mission/inventory", dependencies=[Depends(require_secret)])
+    async def mission_inventory():
+        """3.46: every object the current (or last) mission saw, and where.
+        `inventory: null` before any mission, or for a runner without one."""
+        runner = state["runner"]
+        report = getattr(runner, "inventory_report", None)
+        return {"inventory": report() if report is not None else None}
 
     @app.get(prefix + "/mission/status", dependencies=[Depends(require_secret)])
     async def mission_status():

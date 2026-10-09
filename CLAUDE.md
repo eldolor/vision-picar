@@ -109,7 +109,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
 
 | Area | State | Where to read |
 |---|---|---|
-| Simulator | Continuous pose and differential-drive kinematics (R0). Solid objects (3.9). People and pets that move (3.30, `SIM_MOVERS`). Three houses via `SIM_MAP`: `starter_house` (30 cm doors), `scaled_house` (90 cm doors; nav2 is judged here), `home_first_floor` (a realistic furnished test house, not a replica of the user's). Under `SIM_MOTOR_BOARD=fake` the body runs as its own programs (3.36). | `sim/`, R0, 3.30, 3.36 |
+| Simulator | Continuous pose and differential-drive kinematics (R0). Solid objects (3.9). People and pets that move (3.30, `SIM_MOVERS`). Four houses via `SIM_MAP`: `starter_house` (30 cm doors), `scaled_house` (90 cm doors; nav2 is judged here), `home_first_floor` (a realistic furnished test house, not a replica of the user's), `complex_house` (3.46: a loop, dead ends, 16 small things on the floor). Under `SIM_MOTOR_BOARD=fake` the body runs as its own programs (3.36). | `sim/`, R0, 3.30, 3.36 |
 | Robot server and safety | Arbitration by driver rank (M4). A depth-grid cone plus the chassis' swept corridor off the 360-degree scan (3.18), a pivot guard (3.19), guarded verbs (3.22), a settle pass (3.29), no motion without fresh wheel feedback (3.34) and stall detection (3.35). The watchdog is B3.1. | `robot/`, `docs/safety/` |
 | Brain service | `MissionRunner` behind `control/brain_server.py` on :8001. Three failsafes (B3). Policies: `frontier` (rule-based), `vision` (cloud per step) and `tiered` (local YOLOE + CLIP, cloud only on triggers). | `control/`, `AGENT-HARNESS.md` |
 | Perception | YOLOE-11s-seg crops, then CLIP RN50, gate P >= 0.8. On the Jetson at 15 W: median 61 ms, p90 110 ms a frame. | P22-P24, 3.33 |
@@ -130,6 +130,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   10 cm before scoring (`correlation_search_space_smear_deviation`
   0.10 -> 0.03 m: two tours within 4.2 cm, every room's walls 100% true).
   Scans are also stamped with their capture time (skew 21 -> 7 ms).
+* **Object inventory (3.46), merged 2026-10-08.** Every mission records
+  what it saw, placed by the lidar, weighted by looks from new viewpoints;
+  `GET /mission/inventory`, and uploaded to the recordings bucket under
+  `inventory/` (labels and positions only; the user's decision). Nothing
+  reads it. Sim criteria met on fresh missions (sweep 3: recall 96.6%,
+  precision 97.2%); sweep 1's recall failure is recorded. **Real frames
+  give it nothing yet:** phase C (a prompt-free detector) is not built.
+  `HANDOFF-2026-10-08-3.46-object-inventory.md`.
 * **Exploring still stalls in the furnished home** (3.43, 3.44; merged
   2026-10-07 with criteria failed, the user's call). The stop distance now
   follows the ASKED speed (3.44): 3 cm for a verb asked at a creep, 20 cm
@@ -446,6 +454,27 @@ project coherent. Their full narrative is in the archive copy.
     its branches.
 - **A timing test that has never run alongside its neighbours has not been
   run.** One passed alone three times and failed in the suite.
+
+**Code review** (user, 2026-10-09)
+
+- **Run `/code-review` on every code change** before it is committed or
+  merged.
+- **On a risky change, also run the Thermos bug pass** on the same target,
+  in parallel: `/thermos-bug-pass` runs it, and
+  `docs-review/THERMOS-BUG-PASS.md` is its rubric. A change is
+  risky if it touches any of:
+  * a loop that can be stopped, paused or restarted with calls in flight
+    (the twin's guidance loop, `MissionRunner`, `brain_server`);
+  * anything that writes recorded or stored data (recordings, eval and
+    replay sidecars, the inventory, maps, S3);
+  * the safety or motion path, who-drives arbitration, or the watchdogs;
+  * retries, timeouts or paid cloud calls;
+  * ALB routes or CloudFormation.
+- **Why both:** measured on six commits, `/code-review` found 17 of 18
+  real bugs and the bug pass 15. Together they found all 18. The file
+  above has the numbers. A finding only one of them raised is a claim to
+  verify, not an order. Thermos's code-quality pass is not used; it added
+  no bug and much noise.
 
 ---
 

@@ -6,8 +6,11 @@ venv/
 *.egg-info/
 .DS_Store
 
-# Claude Code session-local state, not project content
-.claude/
+# Claude Code: session-local state stays out (settings.local.json and the
+# like); the project's skills and shared settings are project content.
+.claude/*
+!.claude/skills/
+!.claude/settings.json
 
 # Never commit secrets
 .env

@@ -13,13 +13,15 @@ def build_world(name: str = "starter_house"):
         from sim.maps.scaled_house import build_scaled_world as build
     elif name == "home_first_floor":
         from sim.maps.home_first_floor import build_home_world as build
+    elif name == "complex_house":
+        from sim.maps.complex_house import build_complex_world as build
     else:
         build = None
     if build is not None:
         world = build()
         world.map_name = name
         return world
-    raise ValueError(f"unknown SIM_MAP {name!r} (starter_house | scaled_house | home_first_floor)")
+    raise ValueError(f"unknown SIM_MAP {name!r} (starter_house | scaled_house | home_first_floor | complex_house)")
 
 
 def build_movers(house: str, scenario: str):
