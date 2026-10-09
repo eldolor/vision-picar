@@ -581,12 +581,14 @@ def create_app(config_path=None, store=None) -> FastAPI:
         """The compact form the walk list shows -- never the full per-frame
         judge output, which is large and only wanted on one walk at a time."""
         ev = store.read_json(walk_name, EVAL_FILE_NAME)
-        if not ev or ev.get("schema") != walk_eval.SCHEMA_VERSION:
-            # 3.64 E2: an older scorer's card is not this scorer's score.
-            # Listed as unscored, so the console's auto-scorer re-scores it
-            # through GET /evaluation, which already refuses a stale one.
+        if not ev:
             return None
-        return {k: ev.get(k) for k in ("score", "verdict", "flags", "basis", "model_id")}
+        # 3.64 E2: an older scorer's card is not this scorer's score. Marked,
+        # not hidden: listing it as unscored would have the console's
+        # auto-scorer re-run the paid judge over the whole corpus after a
+        # schema bump. Re-score is the person's call; the summary skips it.
+        return {**{k: ev.get(k) for k in ("score", "verdict", "flags", "basis", "model_id")},
+                "stale": ev.get("schema") != walk_eval.SCHEMA_VERSION}
 
     @app.post("/recording/walks/{walk}/evaluate", dependencies=[Depends(require_secret)])
     async def evaluate_walk(walk: str, judge: bool = True):
@@ -711,7 +713,8 @@ def create_app(config_path=None, store=None) -> FastAPI:
                 kept = store.read_json(walk_name, name)
             except (OSError, WalkStoreError):
                 kept = None
-            if kept and kept.get("score") is not None:
+            if (kept and kept.get("score") is not None
+                    and kept.get("schema") == walk_eval.SCHEMA_VERSION):
                 kept["last_unusable"] = {k: result[k] for k in
                                          ("replayed_at", "coverage", "frames", "errors")}
                 result = kept

@@ -399,3 +399,54 @@ def test_a_kept_score_note_fits_a_phone(browser, admin_server):
     assert box["x"] + box["width"] <= PHONE["width"], box
     assert not errors, errors
     page.close()
+
+
+def test_a_replay_the_server_refused_says_so_at_once(browser, admin_server):
+    """3.64, found by both reviewers on C1: every failed POST was treated as
+    a lost response and polled for 15 minutes -- a 503 "no vision service"
+    sat on "Replaying..." that long before saying anything."""
+    model = MODELS["models"][2]["id"]
+    page, errors = open_console(browser, admin_server, viewport=PHONE)
+    page.route("**/replays", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps({"replays": []})))
+    page.route("**/replay", lambda r: r.fulfill(
+        status=503, content_type="application/json",
+        body=json.dumps({"detail": "No vision service configured."})))
+    page.locator(".replay-select").first.select_option(model + "|default")
+    sync_api.expect(page.locator(".inline-err").first).to_contain_text(
+        "No vision service configured", timeout=3000)
+    assert not errors, errors
+    page.close()
+
+
+def test_an_older_scorers_card_is_marked_and_not_rescored_by_itself(browser, admin_server):
+    """3.64 E2, after review: a stale scorecard is marked as an older
+    scorer's, and the page does not start a paid judge run for it."""
+    walks = json.loads(json.dumps(WALKS))
+    walks["walks"][0]["eval"]["stale"] = True
+    context = browser.new_context(viewport=PHONE)
+    context.add_init_script(
+        '(() => { try { localStorage.setItem("vp_admin_secret", "test"); } catch (e) {} })();')
+    page = context.new_page()
+    scored = []
+    page.route("**/recording/models", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps(MODELS)))
+    page.route("**/recording/walks", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps(walks)))
+    page.route("**/recording/summary", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps({"rows": []})))
+    page.route("**/stats", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps({"walks": 2})))
+
+    def evaluation(route):
+        scored.append(route.request.url)
+        route.fulfill(status=200, content_type="application/json", body=json.dumps({"score": 0}))
+    page.route("**/evaluation", evaluation)
+    page.goto(admin_server + "/admin", wait_until="networkidle")
+    page.wait_for_selector(".walk", timeout=10_000)
+    page.wait_for_timeout(500)
+    badge = page.locator(".walk").first.locator(".score-badge")
+    sync_api.expect(badge).to_contain_text("old scorer")
+    assert not [u for u in scored if walks["walks"][0]["walk"] in u], scored
+    page.close()
+    context.close()

@@ -316,6 +316,29 @@ def test_the_first_success_after_an_outage_resumes_the_normal_pace(browser, twin
         stub.close()
 
 
+def test_a_recovery_while_hidden_does_not_restart_the_loop(browser, twin_server):
+    """3.64, found by both reviewers on A7's fix: a call that succeeded after
+    an outage rescheduled the loop even with the page hidden, so a locked
+    phone kept making paid calls (and, under Drive via brain, robot steps)."""
+    fail = (0.05, "LEFT", 500)
+    stub = _Stub(plan={1: fail, 2: (2.0, "RIGHT")})
+    try:
+        page, errors = _start_robot_view(browser, twin_server, stub)
+        deadline = time.monotonic() + 10
+        while stub.total < 2 and time.monotonic() < deadline:
+            page.wait_for_timeout(100)
+        assert stub.total == 2, stub.total
+        page.evaluate(
+            "() => { Object.defineProperty(document, 'hidden', {configurable: true,"
+            " get: () => true}); document.dispatchEvent(new Event('visibilitychange')); }")
+        page.wait_for_timeout(4000)                  # call 2 succeeds meanwhile
+        assert not errors, errors
+        assert stub.total == 2, f"{stub.total - 2} call(s) made while the page was hidden"
+        page.context.close()
+    finally:
+        stub.close()
+
+
 # NOT COVERED HERE, and worth knowing about: drive-via-brain staying
 # serial. `guidanceStep` pins that mode to one call in flight because
 # MissionRunner advances one action at a time and its step budget and

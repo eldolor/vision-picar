@@ -47,7 +47,13 @@
     const res = await fetch(path, opts);
     if (res.status === 204) return null;
     const data = await res.json().catch(function () { return {}; });
-    if (!res.ok) throw new Error(data.detail || ("HTTP " + res.status));
+    if (!res.ok) {
+      const detail = typeof data.detail === "string" ? data.detail
+        : (data.detail ? JSON.stringify(data.detail) : "");
+      const err = new Error(detail || ("HTTP " + res.status));
+      err.status = res.status;            // 3.64: a refusal is not a lost response
+      throw err;
+    }
     return data;
   }
 
@@ -357,6 +363,12 @@
   // walks) and must never be mistaken for a human judgement.
   function scoreBadge(ev) {
     if (!ev || ev.score == null) return "";
+    if (ev.stale) {
+      // 3.64 E2: an older scorer's number, not comparable with today's;
+      // Re-score is the person's call (it can be a paid judge run).
+      return '<span class="score-badge stale" title="Scored by an older scorer -- Re-score to compare">' +
+        "old scorer</span>";
+    }
     const verdict = ev.verdict || "";
     const flags = (ev.flags || []).length ? " · " + ev.flags.join(", ") : "";
     return '<span class="score-badge ' + escapeHtml(verdict) + '" title="' +
@@ -521,7 +533,12 @@
       } catch (e) {
         // A lost response, not a failure: the server finishes the job and
         // writes its sidecar. Look for THIS request's result first.
-        const recovered = before === null ? null
+        // Only a response that never arrived, or the gateway's own
+        // 502/503/504 with no detail of ours, is worth waiting out. A
+        // refusal the server answered (401, 404, 503 "no vision service")
+        // is shown at once -- it was polled for 15 minutes (3.64 review).
+        const lost = !e.status || (e.status >= 502 && e.status <= 504 && /^HTTP /.test(e.message));
+        const recovered = (before === null || !lost) ? null
           : await pollForReplay(w, modelId, promptVariant, before);
         if (recovered) {
           renderReplays();
@@ -614,7 +631,7 @@
           // A replay that lost too many frames says nothing about the model,
           // so it gets no number to compare -- reporting one is exactly how
           // three timed-out prompt variants came to look equivalent.
-          if (r.stale) {
+          if (r.stale && r.score != null) {
             // 3.64 E2: scored by an older scorer, so not comparable.
             return head + "scored by an older scorer · replay it again</div>";
           }

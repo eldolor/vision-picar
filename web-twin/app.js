@@ -1424,7 +1424,10 @@
     });
     const data = await res.json().catch(function () { return {}; });
     if (!res.ok) {
-      const err = new Error(data.detail || ("HTTP " + res.status));
+      // A FastAPI 422's detail is a list; never show "[object Object]".
+      const detail = typeof data.detail === "string" ? data.detail
+        : (data.detail ? JSON.stringify(data.detail) : "");
+      const err = new Error(detail || ("HTTP " + res.status));
       // Kept so a caller can tell "the brain answered with an error" from
       // "nothing answered" -- see brainGone().
       err.status = res.status;
@@ -2373,13 +2376,19 @@
     } catch (e) {
       state.brainConnected = false;
       state.brainPerception = null;
-      if (!brainGone(e)) {
-        // 3.64 D7r: something answered -- most often a wrong tunnel prefix
-        // or path in the URL -- so "is it running?" points the wrong way.
+      const said = e.message && e.message !== "HTTP " + e.status ? " (" + e.message + ")" : "";
+      if (e.status === 404 || e.status === 405) {
+        // 3.64 D7r: no /health here -- most often a wrong tunnel prefix or
+        // path in the URL -- so "is it running?" points the wrong way.
         setConnStatus(statusEl, "err", "Not connected",
-          url + " answered HTTP " + e.status + " (" + e.message + "), but not as the "
-          + "brain service. Check the address and any tunnel path prefix.");
-        if (!silent) showToast("The brain address answered, but not as the brain service.", "err");
+          url + " answered HTTP " + e.status + said + ", but has no brain service "
+          + "there. Check the address and any tunnel path prefix.");
+        if (!silent) showToast("The brain address answered, but no brain service is there.", "err");
+      } else if (!brainGone(e)) {
+        // Anything else that answered came from the brain itself.
+        setConnStatus(statusEl, "err", "Not connected",
+          "The brain at " + url + " answered with an error: HTTP " + e.status + said + ".");
+        if (!silent) showToast("The brain service answered with an error.", "err");
       } else {
         setConnStatus(statusEl, "err", "Not connected", silent
           ? url + " didn't respond. Tap Connect to retry."
@@ -4164,6 +4173,11 @@
   // moment a call succeeds again (see guidanceErrorStreak reset above).
   function scheduleGuidanceNext(opts) {
     if (!state.guidanceRunning || state.guidancePaused) return;
+    // Hidden: the visibilitychange handler cleared the tick on purpose and
+    // reschedules on return. A call that lands meanwhile -- a success after
+    // an outage (3.64 A7) or a failure's backoff -- must not re-arm it, or a
+    // locked phone keeps making paid calls.
+    if (document.hidden) return;
     // With calls overlapping, more than one path can want to schedule the
     // next tick. `replace` is for the error path, which needs to push an
     // already-scheduled tick further out; without it a pending timer wins

@@ -131,9 +131,8 @@ def test_a_stale_schema_is_rescored_rather_than_served(client):
 
 def test_a_stale_schema_is_neither_listed_nor_summed(client):
     """3.64 E2: only the evaluation read rescored a stale scorecard. The walk
-    list showed its old score as current -- so the console's auto-scorer,
-    which scores only walks with NO eval, never refreshed it -- and the
-    per-model summary averaged it, replays included."""
+    list showed its old score as current, and the per-model summary
+    averaged it, replays included."""
     c, root = client
     walk_dir = make_walk(root, "walk-old", ["FORWARD"] * 4, model="m-old")
     stale = {"schema": admin_server.walk_eval.SCHEMA_VERSION - 1, "score": 999,
@@ -142,7 +141,9 @@ def test_a_stale_schema_is_neither_listed_nor_summed(client):
     (walk_dir / "replay-m-old.json").write_text(json.dumps(
         {**stale, "model_id": "m-old", "prompt_variant": "default"}))
     (row,) = [w for w in c.get("/recording/walks").json()["walks"] if w["walk"] == "walk-old"]
-    assert row["eval"] is None
+    # Listed, marked stale -- not auto-re-scored (a schema bump must not
+    # start paid judge runs over the corpus on the next page load).
+    assert row["eval"]["stale"] is True and row["eval"]["score"] == 999
     assert row["replays"][0]["stale"] is True
     assert c.get("/recording/summary").json()["rows"] == []
 
@@ -1374,3 +1375,15 @@ def test_an_unusable_replay_is_still_stored_when_there_is_nothing_to_keep(record
     c.post("/recording/walks/walk-first-bad/replay", json={})
     (stored,) = c.get("/recording/walks/walk-first-bad/replays").json()["replays"]
     assert stored["verdict"] == "unusable" and stored["score"] is None
+
+
+def test_an_older_scorers_replay_is_not_kept_over_an_unusable_one(recordings, monkeypatch):
+    """3.64, found by /code-review on C3: the kept record could be an older
+    scorer's, sent back as a current, comparable score."""
+    c, root = timing_out(recordings, monkeypatch, fails=8, total=10)
+    walk_dir = make_walk(root, "walk-old-replay", ["STOP"] * 10)
+    (walk_dir / "replay-_service_default_.json").write_text(json.dumps(
+        {"schema": admin_server.walk_eval.SCHEMA_VERSION - 1, "score": 71,
+         "model_id": "(service default)", "prompt_variant": "default", "replayed_at": 1.0}))
+    body = c.post("/recording/walks/walk-old-replay/replay", json={}).json()
+    assert body["score"] is None and "last_unusable" not in body

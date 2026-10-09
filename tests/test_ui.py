@@ -742,7 +742,25 @@ def test_a_brain_url_that_answers_404_is_not_called_unreachable(browser, twin_se
     text = " ".join(page.inner_text("#brain-connection-status").split())
     assert not errors, errors
     assert "Could not reach" not in text, text
-    assert "404" in text and "answered" in text, text
+    assert "404" in text and "answered" in text and "(HTTP 404)" not in text, text
+    page.context.close()
+
+
+def test_a_brain_that_answers_500_is_not_called_the_wrong_address(browser, twin_server):
+    """3.64, found by both reviewers on D7r: a 500 comes from the brain
+    itself, so "not as the brain service, check the address" sent people to
+    fix a right URL."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/broken-brain/health", lambda route: route.fulfill(
+        status=500, content_type="application/json", body='{"detail":"boom"}'))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/broken-brain")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(800)
+    text = " ".join(page.inner_text("#brain-connection-status").split())
+    assert not errors, errors
+    assert "not as the brain" not in text and "Could not reach" not in text, text
+    assert "500" in text and "boom" in text, text
     page.context.close()
 
 
