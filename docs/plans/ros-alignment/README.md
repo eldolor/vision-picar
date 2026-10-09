@@ -64,4 +64,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.54](3.54-clip-rooms-fewshot.md) | Rooms from CLIP, few-shot on the user's own rooms |
 | [3.55](3.55-inventory-review-fixes.md) | Inventory review fixes: the stop-path race, double-counted looks, mission-id collisions, a local-only mode |
 | [3.57](3.57-tour-goal-six.md) | The tour's dining-room goal stands on reachable floor (2026-10-09): criteria, written before building; measured: the point fixed, goal 6 still FAILED live |
+| [3.48](3.48-local-identity.md) | A local identity check: can a small VLM on the Jetson confirm arrival? |
 <!-- /sections -->
