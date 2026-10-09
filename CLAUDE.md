@@ -144,8 +144,11 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   arrival holds but whose identity check cannot reach the cloud ends
   `arrived_unconfirmed` (not `found`, not `failed`). Only `CloudUnavailable`
   from `brain/navigate.py` (transport error, 5xx, 408, 429) counts as
-  unreachable. Known limits in the section. Twin warn style and re-asking
-  the cloud when it returns: approved by the user, not built.
+  unreachable. Known limits in the section. Since 3.53 (merged and the twin
+  deployed 2026-10-09) the twin shows it as a warning, and the brain keeps
+  the arrival frame, probes the cloud's free `/health` (15 s, up to 600 s)
+  and asks once when it returns: `status.late_confirmation`, never `found`,
+  never a robot call.
 * **Object inventory (3.46), merged 2026-10-08.** Every mission records
   what it saw, placed by the lidar, weighted by looks from new viewpoints;
   `GET /mission/inventory`, and uploaded to the recordings bucket under
