@@ -64,7 +64,11 @@ def no_network(monkeypatch):
     and the ones its mission starts (B3.2 runs every vision step on a fresh
     `vision-call` thread; 3.49 review: a same-thread filter hid exactly the
     dials it was meant to catch)."""
-    before = {t.ident for t in threading.enumerate()} - {threading.get_ident()}
+    # (ident, name): an ident alone can be reused by a fresh `vision-call`
+    # thread once a pre-existing thread exits. Known limit: a leftover
+    # thread that STARTS a new thread during this test is blamed on it.
+    before = {(t.ident, t.name) for t in threading.enumerate()} - {
+        (threading.get_ident(), threading.current_thread().name)}
 
     class Attempts(list):
         def from_test(self):
@@ -78,7 +82,8 @@ def no_network(monkeypatch):
     attempts = Attempts()
 
     def refuse(*args, **kwargs):
-        attempts.append((threading.get_ident(), args[1:2] or kwargs.get("address")))
+        attempts.append(((threading.get_ident(), threading.current_thread().name),
+                         args[1:2] or kwargs.get("address")))
         raise OSError(101, "Network is unreachable")
 
     monkeypatch.setattr(socket.socket, "connect", refuse)
@@ -152,7 +157,7 @@ def _imported_names(rel, src):
         if isinstance(node, ast.Import):
             names += [a.name for a in node.names]
         elif isinstance(node, ast.ImportFrom):
-            base = package[:len(package) - node.level + 1] if node.level else []
+            base = package[:max(0, len(package) - node.level + 1)] if node.level else []
             module = ".".join(base + ([node.module] if node.module else []))
             names += [module] + [f"{module}.{a.name}" for a in node.names]
     return names
@@ -337,6 +342,15 @@ def test_review_health_answers_with_no_network(no_network):
     pinned here, not only by the live run (3.49 review)."""
     from fastapi.testclient import TestClient
     from control.brain_server import create_app
-    with TestClient(create_app()) as client:
+    robot = MockRobot(_build(), render=False)
+    app = create_app(robot_factory=lambda: robot,
+                     world_factory=lambda r: mock_world_for(r))
+    with TestClient(app) as client:
+        started = client.post("/mission/start",
+                              json={"target_object": TARGET, "policy": "frontier",
+                                    "max_steps": 5})
+        assert started.status_code == 200, started.text
         r = client.get("/health")
+        client.post("/mission/stop")
     assert r.status_code == 200, r.text
+    assert not no_network.from_test(), "the brain dialled out while offline"
