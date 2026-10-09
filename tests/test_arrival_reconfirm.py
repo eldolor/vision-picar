@@ -365,6 +365,8 @@ def test_review_a_final_record_and_its_stored_row_agree(monkeypatch):
     time.sleep(0.2)
     status_count = runner.status()["late_confirmation"]["paid_calls"]
     assert shipped[-1]["stats"]["late_confirmation"]["paid_calls"] == status_count
+    # Sixth review: and both say what happened -- no call was made.
+    assert status_count == 0, runner.status()["late_confirmation"]
 
 
 def test_6_metrics_row_is_resent_not_added(monkeypatch):

@@ -153,8 +153,8 @@ ends on its own and `runner.late_confirmation_pending()`,
    same locked step as the check, so a cancel that lands while the call is
    out ships a record that includes it, and when that call returns the row
    is sent again with counters that include it; a cap refusal (decided
-   locally, no I/O) takes the count back, unless the record is already
-   final and shipped; `_tier.stats` is refreshed from the policy afterwards. A raise
+   locally, no I/O) takes the count back, on a final record too, and that
+   record is re-sent; `_tier.stats` is refreshed from the policy afterwards. A raise
    is retried on a 200 no sooner than `reconfirm_window_s / 2` later (capped
    inside the window; a window that runs out after a failed call ends
    `failed`, not `expired`)
@@ -174,7 +174,9 @@ and `finished_at`, so the same stored object). The re-sent row's counters
 come from the policy at that moment (so they include the late call), and it
 is sent only after every earlier send of the key has finished (the
 original's `_metrics_thread`, then any earlier late row's
-`_late_ship_thread`). A `POST /mission/start` whose
+`_late_ship_thread`). Each late row is built, chained and queued in one
+locked step from the record as it is then, so a row queued later is never
+staler than one queued before it. A `POST /mission/start` whose
 runner was built (a refused start changes nothing) bumps
 `state["generation"]` and calls `cancel_reconfirm()`, which records
 `dropped` before setting the cancel flag, so `late_ask()` refuses from that

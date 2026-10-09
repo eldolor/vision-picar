@@ -1104,14 +1104,15 @@ class MissionRunner:
             reship = None
             with self._lock:
                 final = self._late is not None and self._late["state"] != "waiting"
-                if uncount and self._late is not None and not final:
+                if uncount and self._late is not None:
                     self._late = {**self._late,
                                   "paid_calls": max(0, self._late.get("paid_calls", 1) - 1)}
                 if stats is not None and self._tier is not None:
                     self._tier = {**self._tier, "stats": stats}
-                if final and not uncount:
+                if final:
                     # A cancel shipped the record while this call was out:
-                    # send it again now that the counters include the call.
+                    # send it again, with the call counted (or taken back)
+                    # and counters that include it.
                     reship = dict(self._late)
             if reship is not None:
                 self._ship_late_metrics(reship)
@@ -1127,21 +1128,25 @@ class MissionRunner:
             return
         try:
             from control.metrics_client import ship_run
-            stats = {**(row.get("stats") or {}), **(self._policy_stats() or {})}
-            stats["late_confirmation"] = {k: late.get(k) for k in
-                                          ("state", "probes", "paid_calls", "reason")}
-            late_row = {**row, "stats": stats}
-            # Every earlier send of this key lands first: the original row,
-            # then any earlier late row (a cancel's, before the call returned).
-            before = [t for t in (self._metrics_thread, self._late_ship_thread)
-                      if t is not None]
 
-            def send():
+            def send(before, late_row):
                 for t in before:
                     t.join(timeout=60)
                 ship_run(self.metrics_url, late_row, secret=self.metrics_secret)
-            t = threading.Thread(target=send, name="metrics-late", daemon=True)
-            self._late_ship_thread = t
+            # Built, chained and queued in ONE locked step, from the record
+            # and counters as they are at that moment: a row queued later is
+            # always at least as fresh as every row queued before it, and
+            # lands after them (the original row, then earlier late rows).
+            with self._lock:
+                current = self._late or late
+                stats = {**(row.get("stats") or {}), **(self._policy_stats() or {})}
+                stats["late_confirmation"] = {k: current.get(k) for k in
+                                              ("state", "probes", "paid_calls", "reason")}
+                before = [t for t in (self._metrics_thread, self._late_ship_thread)
+                          if t is not None]
+                t = threading.Thread(target=send, args=(before, {**row, "stats": stats}),
+                                     name="metrics-late", daemon=True)
+                self._late_ship_thread = t
             t.start()
         except Exception as e:  # noqa: BLE001
             logger.warning("late metrics row not built: %s", e)

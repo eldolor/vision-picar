@@ -2047,16 +2047,37 @@
       if (!l) { if (++nullPolls > 1) stopLateWatch(); return; }
       if (l.state === "waiting") return;
       stopLateWatch();
-      renderBrainStatus(s);
-      if (driveViaBrainActive()) {
-        const result = missionStatusToRobotResult(s);
-        renderRobotStatus(result, false);
-        renderRobotTelemetry(result);
-        announceRobot(result);
-      }
-      showToast("Late identity check: " + lateWords(s) + ".",
-        l.state === "confirmed" ? "ok" : "warn");
+      showLateVerdict(s);
     }, LATE_POLL_MS);
+  }
+
+  // A final late verdict, drawn once: the panel, the Guide HUD when it is
+  // the one driving, and a toast.
+  let lateShownAt = null;
+  function showLateVerdict(s) {
+    // The verdict's own time is its identity: one already shown (by the
+    // watch, before a refused start) is not toasted again.
+    if (s.late_confirmation.at != null && s.late_confirmation.at === lateShownAt) return;
+    lateShownAt = s.late_confirmation.at;
+    renderBrainStatus(s);
+    if (driveViaBrainActive()) {
+      const result = missionStatusToRobotResult(s);
+      renderRobotStatus(result, false);
+      renderRobotTelemetry(result);
+      announceRobot(result);
+    }
+    showToast("Late identity check: " + lateWords(s) + ".",
+      s.late_confirmation.state === "confirmed" ? "ok" : "warn");
+  }
+
+  // After a refused Drive-via-brain start: the brain kept the last
+  // mission's check, and it may have finished while the start was out --
+  // shown now if so, watched again if not.
+  function resumeLateConfirmation(s) {
+    const l = s && s.late_confirmation;
+    if (!s || s.running || s.outcome !== "arrived_unconfirmed" || !l) return;
+    if (l.state === "waiting") watchLateConfirmation(s);
+    else showLateVerdict(s);
   }
 
   function startBrainPolling() {
@@ -4380,7 +4401,7 @@
         // A refused start leaves the last mission's late check running on
         // the brain (3.53, amendment 1), so watch it again from a fresh
         // status rather than leave its verdict unseen.
-        brainApi("GET", "/mission/status").then(watchLateConfirmation, function () {});
+        brainApi("GET", "/mission/status").then(resumeLateConfirmation, function () {});
         return;
       }
     }
