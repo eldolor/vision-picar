@@ -60,12 +60,15 @@ def no_network(monkeypatch):
     The patch is process-wide, so threads other tests left running (a live
     server's poller, a metrics sender) are refused and recorded too; each
     attempt carries its thread, and `attempts.from_test()` keeps the ones
-    made by this test's own thread -- where an in-process mission ticks."""
-    test_thread = threading.get_ident()
+    made by threads that did NOT exist before this test -- this test's own,
+    and the ones its mission starts (B3.2 runs every vision step on a fresh
+    `vision-call` thread; 3.49 review: a same-thread filter hid exactly the
+    dials it was meant to catch)."""
+    before = {t.ident for t in threading.enumerate()} - {threading.get_ident()}
 
     class Attempts(list):
         def from_test(self):
-            return [a for t, a in self if t == test_thread]
+            return [a for t, a in self if t not in before]
 
         def to_cloud(self):
             """Attempts at DEAD_URL, from any thread (the async tier dials
@@ -139,6 +142,22 @@ def _forbidden(name):
         name == m or name.startswith(m + ".") for m in FORBIDDEN_MODULES)
 
 
+def _imported_names(rel, src):
+    """Every module a file can bind by importing: `import a.b`, the module
+    of `from a import b` AND `a.b` (it may be a submodule), with relative
+    imports resolved against the file's package (3.49 review)."""
+    package = list(Path(rel).with_suffix("").parts[:-1])
+    names = []
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            names += [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            base = package[:len(package) - node.level + 1] if node.level else []
+            module = ".".join(base + ([node.module] if node.module else []))
+            names += [module] + [f"{module}.{a.name}" for a in node.names]
+    return names
+
+
 def test_1_the_robot_server_loads_no_cloud_client():
     """By mechanism, as tests/test_brain_server.py does for the brain: a
     subprocess builds the robot server and lists `sys.modules`, so an
@@ -157,10 +176,9 @@ def test_1_and_no_module_under_robot_names_one():
     load at start (a lazy import inside a function)."""
     offenders = []
     for path in sorted((REPO / "robot").rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text())):
-            names = ([a.name for a in node.names] if isinstance(node, ast.Import)
-                     else [node.module or ""] if isinstance(node, ast.ImportFrom) else [])
-            offenders += [f"{path.relative_to(REPO)}: {n}" for n in names if _forbidden(n)]
+        rel = path.relative_to(REPO)
+        offenders += [f"{rel}: {n}" for n in _imported_names(rel, path.read_text())
+                      if _forbidden(n)]
     assert not offenders, offenders
 
 
@@ -173,6 +191,7 @@ def test_2a_the_cloudless_policies_still_find(no_network, policy, steps):
     assert r["outcome"] == FOUND, r
     assert r["steps"] <= steps, r          # no slower than with the network
     assert not no_network.from_test(), "a cloudless policy dialled out"
+    assert not no_network.to_cloud(), "a cloudless policy dialled the cloud"
 
 
 @pytest.mark.parametrize("async_cloud", [False, True], ids=["sync", "async"])
@@ -300,3 +319,24 @@ def test_5_the_pattern_catches_what_it_is_for():
     for fine in ('<input placeholder="http://192.168.1.x:8000">',
                  '<a href="http://localhost:8000/">', "fetch('http://127.0.0.1:8000/health')"):
         assert not EXTERNAL.search(fine), fine
+
+
+def test_review_the_import_check_sees_names_and_relative_imports():
+    """The helper the check above uses, on imports it must flag (3.49
+    review: `from brain import navigate` and relative forms got through)."""
+    planted = {"robot/a.py": "from brain import navigate\n",
+               "robot/sub/b.py": "def lazy():\n    from ...brain import navigate\n",
+               "robot/c.py": "from . import safety\n"}
+    flagged = [rel for rel, src in planted.items()
+               if any(_forbidden(n) for n in _imported_names(rel, src))]
+    assert flagged == ["robot/a.py", "robot/sub/b.py"], flagged
+
+
+def test_review_health_answers_with_no_network(no_network):
+    """The spec lists the brain's /health among what keeps working offline;
+    pinned here, not only by the live run (3.49 review)."""
+    from fastapi.testclient import TestClient
+    from control.brain_server import create_app
+    with TestClient(create_app()) as client:
+        r = client.get("/health")
+    assert r.status_code == 200, r.text

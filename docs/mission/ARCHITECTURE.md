@@ -205,7 +205,8 @@ each frame on a best-effort basis for the same reason.
 **Decision** (3.49, asked by the user 2026-10-09). With the cloud
 unreachable -- Wi-Fi down, the tunnel gone, a refused or hanging connection
 -- these keep working, each pinned by a test with every socket connect
-refused:
+refused (mission start with an unreachable model allow-list is pinned only
+by 3.49's live run, criterion 7):
 
 - the safety veto and the watchdog: the robot server imports no cloud
   client;
