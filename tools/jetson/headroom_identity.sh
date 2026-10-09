@@ -93,6 +93,10 @@ while os.path.exists(flag):
         except Exception as e:  # noqa: BLE001
             r = {"state": f"error {type(e).__name__}"}
         n += 1; ok += r["state"] == "succeeded"
+        if r["state"] == "not_sent" or r["state"].startswith("error"):
+            # A refused or failed request returns at once; pause so a dead
+            # server never turns the nav load into a tight request loop.
+            time.sleep(5)
         err = r.get("end_error_m")
         print(f"{time.strftime('%T')} {name}: {r['state']} "
               f"{'' if err is None else f'{err:.2f} m'}", flush=True)
