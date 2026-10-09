@@ -35,6 +35,8 @@ OK, WARN, ERROR, STALE = 0, 1, 2, 3
 # `arrived_unconfirmed` (3.47) reached something the cloud never checked.
 _OUTCOME_LEVEL = {
     "idle": OK, "running": OK, "found": OK, "room_reached": OK, "stopped": OK,
+    # 3.31: looked everywhere it could reach; a finding, not a fault.
+    "searched": OK,
     "blocked": WARN, "preempted": WARN, "max_steps": WARN,
     "arrived_unconfirmed": WARN,
     "failed": ERROR,
@@ -54,7 +56,12 @@ def diagnostic(status, error=None):
     if status.get("running"):
         message = f"running, step {status.get('step')}/{status.get('max_steps')}"
     else:
-        message = outcome + (f": {status['error']}" if status.get("error") else "")
+        # `error` is set only for `failed`; an arrival the cloud never
+        # checked (3.47) carries its reason on the arrival readout instead.
+        why = status.get("error") or (
+            (status.get("arrival") or {}).get("reason")
+            if outcome == "arrived_unconfirmed" else None)
+        message = outcome + (f": {why}" if why else "")
     tier = status.get("tier") or {}
     stats = tier.get("stats") or {}
     arrival = status.get("arrival") or {}

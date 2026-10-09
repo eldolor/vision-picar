@@ -47,11 +47,26 @@ def test_every_real_outcome_is_mapped():
     """A new outcome added to the runner must be given a level on purpose,
     not fall through to WARN unnoticed."""
     import control.mission_runner as mr
-    outcomes = {v for k, v in vars(mr).items()
-                if k.isupper() and isinstance(v, str) and k in (
-                    "RUNNING", "IDLE", "FOUND", "ROOM_REACHED", "STOPPED", "MAX_STEPS",
-                    "FAILED", "PREEMPTED", "BLOCKED", "ARRIVED_UNCONFIRMED")}
+    # Read off the runner's own finishes, not a hand list (3.47's review: a
+    # hand list had already let `searched` through): every outcome is a
+    # constant that `_finish(...)` is called with, plus idle and running.
+    import inspect
+    import re
+    src = inspect.getsource(mr)
+    names = set(re.findall(r"_finish\(([A-Z_]+)", src))
+    names |= set(re.findall(r"_finish\([A-Z_]+ if [^,]+ else ([A-Z_]+)", src))
+    names |= {"IDLE", "RUNNING"}
+    outcomes = {getattr(mr, n) for n in names}
+    assert {"found", "room_reached", "searched", "arrived_unconfirmed", "failed"} <= outcomes, outcomes
     assert outcomes <= set(brain_view._OUTCOME_LEVEL), outcomes - set(brain_view._OUTCOME_LEVEL)
+
+
+def test_an_unconfirmed_arrival_says_why():
+    d = brain_view.diagnostic(_status(
+        outcome="arrived_unconfirmed", error=None,
+        arrival={"state": "unconfirmed", "reason": "arrived, but the cloud could not be asked: x"}))
+    assert d["level"] == brain_view.WARN
+    assert "could not be asked" in d["message"], d["message"]
 
 
 def test_a_running_mission_says_its_step_and_carries_the_numbers():

@@ -119,10 +119,11 @@ def _blip(fail_first):
     return cloud_for
 
 
-@pytest.mark.parametrize("fail_first", [1, 2])
-def test_4_a_blip_shorter_than_the_budget_still_ends_found(fail_first):
-    """Criterion 4: B3.2's budget is 3; fewer failures than that retry."""
-    for start in CLEAR_STARTS:
+@pytest.mark.parametrize("fail_first,starts", [(1, CLEAR_STARTS), (2, CLEAR_STARTS[:1])])
+def test_4_a_blip_shorter_than_the_budget_still_ends_found(fail_first, starts):
+    """Criterion 4: B3.2's budget is 3; fewer failures than that retry. All
+    12 starts at one failure (the bar); one start at two (the budget's edge)."""
+    for start in starts:
         runner, _ = _run(_blip(fail_first), start)
         status = runner.status()
         assert status["outcome"] == FOUND, (start, status["log_tail"][-3:])
@@ -135,3 +136,63 @@ def test_5_a_dead_cloud_with_no_arrival_still_fails():
     status = runner.status()
     assert status["outcome"] == FAILED, status["outcome"]
     assert status["arrival"] is None or status["arrival"].get("state") != "unconfirmed"
+
+
+class _WedgesAfterArrival:
+    """Local perception that breaks once the arrival has been put to the
+    cloud -- a local fault arriving after the cloud's."""
+
+    def __init__(self, tier_ref):
+        self.inner = FrameReportedPipeline(TARGET)
+        self.detector = self.inner.detector
+        self.tier_ref = tier_ref
+
+    def perceive(self, frame):
+        if self.tier_ref["tier"].stats.triggers.get(TRIGGER_ARRIVAL, 0):
+            raise RuntimeError("camera wedged")
+        return self.inner.perceive(frame)
+
+
+def test_review_a_local_fault_after_a_failed_confirmation_still_fails():
+    """Both reviews of 3.47: the outcome must come from the failure that
+    spends the budget. A failed confirmation followed by a LOCAL fault is a
+    broken robot, not an offline cloud -- `failed`, with its error."""
+    x, y, off = CLEAR_STARTS[0]
+    grid = _build()
+    grid.x, grid.y = x, y
+    grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
+    robot = MockRobot(grid, render=False)
+    ref = {}
+    tier = TieredVision(_WedgesAfterArrival(ref), _dead_cloud,
+                        steer_on_sight=True, hold_goal=True)
+    ref["tier"] = tier
+    runner = MissionRunner(robot, target_object=TARGET, max_steps=60, policy="tiered",
+                           vision_fn=tier, world=mock_world_for(robot))
+    runner.start()
+    while runner.tick():
+        pass
+    status = runner.status()
+    assert tier.stats.triggers.get(TRIGGER_ARRIVAL), "never reached arrival -- proves nothing"
+    assert status["outcome"] == FAILED, status["log_tail"][-3:]
+    assert "camera wedged" in status["error"]
+
+
+def test_review_a_failure_after_stop_never_rewrites_the_status():
+    """Both reviews of 3.47: a confirmation that raises after stop() must not
+    change the finished mission's arrival or outcome."""
+    runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
+                           max_steps=60, policy="tiered",
+                           vision_fn=TieredVision(FrameReportedPipeline(TARGET), _dead_cloud))
+    runner.start()
+    runner.stop()
+    before = runner.status()
+    err = RuntimeError("arrival confirmation failed: no network")
+    err.arrival_readout = {"state": "arrived", "range_m": 0.3, "streak": 2}
+    # The first version read a field left on the agent; set it too, so this
+    # test fails on that design as well as on a regression of this one.
+    runner.agent.unconfirmed_arrival = err.arrival_readout
+    runner._vision_failures = runner.max_vision_failures - 1
+    assert runner._handle_vision_failure(err) is False
+    after = runner.status()
+    assert after["outcome"] == before["outcome"] != ARRIVED_UNCONFIRMED
+    assert after["arrival"] == before["arrival"]

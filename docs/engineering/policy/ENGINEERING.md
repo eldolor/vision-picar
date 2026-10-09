@@ -75,10 +75,11 @@ only on `_navigate.target_visible is True`; at `max_calls` it refuses
 without calling. Not confirmed, or no confirmer on the policy: the readout
 becomes `refused`, the scene is not rewritten, and `_identity_refused`
 stops further calls until `observe()` stops returning `arrived`. A call
-that raises leaves `MissionAgent.unconfirmed_arrival` set to the readout
-(set before the call, cleared by any verdict or by a frame that is not
-`arrived`); the raise goes on to B3.2, and `MissionRunner` reads the field
-when the budget runs out to end `arrived_unconfirmed` (3.47). The
+that raises gets the readout attached as `arrival_readout` and goes on to
+B3.2; nothing is left on the agent. `TieredVision._ask_cloud()` is the one
+path to the cloud, and marks a failure `cloud_call = True`, so the runner
+can tell an unreachable cloud from a local fault and end
+`arrived_unconfirmed` only for the former (3.47; mission engineering). The
 readout carries the verdict under `identity`, and every later refused frame
 carries the refusing verdict too (`_refusal`), so the final status says why.
 Since spec review 3 (fixes 8-10): `confirm_arrival()` first waits for an

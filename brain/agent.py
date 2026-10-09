@@ -370,13 +370,6 @@ class MissionAgent(ConstrainedAgent):
         # mission's final status still says why (spec review 3, fix 9).
         self._refusal: Optional[dict] = None
         self._confirmed_this_frame = False
-        # 3.47: an arrival the lidar rule holds whose confirmation got no
-        # ANSWER (the call raised -- the cloud unreachable, not saying no).
-        # Kept across the failed ticks, on which the runner has stopped the
-        # car, and cleared the moment the rule stops holding or a verdict
-        # lands. MissionRunner reads it when B3.2's budget runs out, to end
-        # `arrived_unconfirmed` rather than `failed`. Never makes `found`.
-        self.unconfirmed_arrival: Optional[dict] = None
 
     def _confirm_identity(self, readout: dict, frame: dict) -> dict:
         """Returns the readout; sets `self._confirmed_this_frame` when this
@@ -386,12 +379,18 @@ class MissionAgent(ConstrainedAgent):
                     "reason": "the cloud did not confirm this arrival; not asking again "
                               "until the arrival ends"}
         confirm = self.arrival_confirm_fn or getattr(self.vision_fn, "confirm_arrival", None)
-        # Set before the call so a raise leaves it set; a verdict clears it.
-        self.unconfirmed_arrival = readout
-        verdict = (confirm(frame) if confirm is not None
-                   else {"confirmed": False, "cloud_called": False,
-                         "reason": "no cloud on this policy to confirm identity"})
-        self.unconfirmed_arrival = None
+        try:
+            verdict = (confirm(frame) if confirm is not None
+                       else {"confirmed": False, "cloud_called": False,
+                             "reason": "no cloud on this policy to confirm identity"})
+        except Exception as e:
+            # 3.47: the confirmation got no ANSWER (the cloud unreachable,
+            # not saying no). The error carries THIS frame's readout, so if it
+            # is the failure that spends B3.2's budget, MissionRunner can end
+            # `arrived_unconfirmed` on an arrival judged this tick -- and on
+            # no other failure. Never makes `found`.
+            e.arrival_readout = readout
+            raise
         self._confirmed_this_frame = bool(verdict.get("cloud_called"))
         readout = {**readout, "identity": verdict}
         if verdict.get("confirmed"):
@@ -413,7 +412,6 @@ class MissionAgent(ConstrainedAgent):
         else:
             self._identity_refused = False
             self._refusal = None
-            self.unconfirmed_arrival = None
         if readout["state"] == ARRIVED:
             scene = arrived_scene(scene, self.memory.target_object, readout)
         else:

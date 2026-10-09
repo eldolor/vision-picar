@@ -465,6 +465,7 @@ class MissionRunner:
         self._started_at = None
         self._error: Optional[str] = None
         self._vision_failures = 0
+        self._failed_arrival: Optional[dict] = None
         self._last_action: Optional[str] = None
         # R1's readout (PLAN-ros-alignment.md). How many turns the mission
         # has made, how many REVERSED the one before (LEFT straight after
@@ -576,6 +577,7 @@ class MissionRunner:
             self._last_tick_at = time.monotonic()
             self._ticks += 1
             self._vision_failures = 0
+            self._failed_arrival = None
             self._last_action = result.action
             self._last_reasoning = self._describe(result)
             if self.policy == "explore":
@@ -869,30 +871,43 @@ class MissionRunner:
             raise VisionUnavailable(f"arrival confirmation failed: {e}") from e
 
     def _handle_vision_failure(self, error: Exception) -> bool:
+        # 3.47. An arrival confirmation that raised carries THIS tick's
+        # arrival readout (brain/agent.py). Held for the current run of
+        # failures only -- a tick that succeeds clears it with the count --
+        # and no move executes on a failed tick, so it is where the robot is.
+        readout = getattr(error, "arrival_readout", None)
+        cloud = readout is not None or getattr(error.__cause__, "cloud_call", False)
         with self._lock:
             self._vision_failures += 1
             failures, budget = self._vision_failures, self.max_vision_failures
+            if readout is not None:
+                self._failed_arrival = readout
+            pending = self._failed_arrival
         # Stop the car on every blind step, not only on the last one.
         self._safe_stop()
         self._log_line(f"vision failure {failures}/{budget}: {error}")
-        if failures >= budget:
-            pending = getattr(self.agent, "unconfirmed_arrival", None)
-            if pending:
-                # 3.47. The car has been stopped on every failed tick, so the
-                # arrival the agent recorded is where the robot still is.
+        # `arrived_unconfirmed` only when this run of failures includes an
+        # arrival whose confirmation raised AND the failure that spends the
+        # budget is the cloud's (brain/tiered.py marks its own calls). A local
+        # fault, or a timeout nothing can attribute, still ends `failed`.
+        if failures >= budget and pending and cloud:
+            stats = getattr(getattr(self.vision_fn, "stats", None), "as_dict", None)
+            with self._lock:
+                if not self._running:
+                    return False  # stop()/abort() won; never rewrite its status
                 self._arrival = {**pending, "state": "unconfirmed",
                                  "reason": f"arrived, but the cloud could not be asked: {error}"}
                 # The held `_tier` is the last SUCCESSFUL tick's snapshot and
                 # predates the confirmations that raised; the policy's own
                 # counters include them.
-                stats = getattr(getattr(self.vision_fn, "stats", None), "as_dict", None)
                 if self._tier is not None and stats is not None:
                     self._tier = {**self._tier, "stats": stats()}
-                self._finish(ARRIVED_UNCONFIRMED, (
+            self._finish(ARRIVED_UNCONFIRMED, (
                     f"arrived (lidar {pending.get('range_m')} m, streak "
                     f"{pending.get('streak')}) but identity unconfirmed: vision "
                     f"unavailable {failures} times in a row: {error}"))
-                return False
+            return False
+        if failures >= budget:
             self._finish(FAILED, f"vision unavailable {failures} times in a row: {error}")
             return False
         return self._running
