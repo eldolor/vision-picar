@@ -455,6 +455,26 @@ project coherent. Their full narrative is in the archive copy.
 - **A timing test that has never run alongside its neighbours has not been
   run.** One passed alone three times and failed in the suite.
 
+**Code review** (user, 2026-10-09)
+
+- **Run `/code-review` on every code change** before it is committed or
+  merged.
+- **On a risky change, also run the Thermos bug pass** on the same target,
+  in parallel: `docs-review/THERMOS-BUG-PASS.md` says how. A change is
+  risky if it touches any of:
+  * a loop that can be stopped, paused or restarted with calls in flight
+    (the twin's guidance loop, `MissionRunner`, `brain_server`);
+  * anything that writes recorded or stored data (recordings, eval and
+    replay sidecars, the inventory, maps, S3);
+  * the safety or motion path, who-drives arbitration, or the watchdogs;
+  * retries, timeouts or paid cloud calls;
+  * ALB routes or CloudFormation.
+- **Why both:** measured on six commits, `/code-review` found 17 of 18
+  real bugs and the bug pass 15. Together they found all 18. The file
+  above has the numbers. A finding only one of them raised is a claim to
+  verify, not an order. Thermos's code-quality pass is not used; it added
+  no bug and much noise.
+
 ---
 
 ## 7. Data first, then the car
