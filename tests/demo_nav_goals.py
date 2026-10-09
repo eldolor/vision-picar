@@ -62,9 +62,9 @@ HOME_GOALS = [(name, *_home_m(x, y)) for name, x, y in [
     ("garage hall",             41.7, 22.5),
     ("laundry",                 44.8, 22.0),
     ("garage, beside the car",  45.0, 36.0),
-    # 3.55: was (31.0, 30.0), where the chassis overlaps the dining furniture
+    # 3.57: was (31.0, 30.0), where the chassis overlaps the dining furniture
     # and nav2 could never plan to it; moved 0.20 m west by rule
-    # (evaluations/slam-355/pick_goal6.py), 0.348 m from every true surface.
+    # (evaluations/slam-357/pick_goal6.py), 0.348 m from every true surface.
     ("dining room",             30.34, 30.0),
     ("living room",              6.0, 36.5),
     ("den",                      7.5, 12.5),

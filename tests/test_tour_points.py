@@ -1,5 +1,5 @@
 """
-tests/test_tour_points.py -- PLAN-ros-alignment.md 3.55 criterion 1.
+tests/test_tour_points.py -- PLAN-ros-alignment.md 3.57 criterion 1.
 
 Every point of the furnished-home tour (tests/demo_nav_goals.HOME_GOALS) must
 be somewhere the robot can stand and leave, on ground truth: the chassis

@@ -178,12 +178,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   **The tour now fails on its own:** 4 / 8 / 4 of 9. Goal 6's point lies
   inside the dining furniture and can never succeed, and nav2 wedges itself
   near the garage door on its own costmap while truth is free. **Goal 6
-  moved (3.55, merged 2026-10-09 with its live criterion failed):** its
+  moved (3.57, merged 2026-10-09 with its live criterion failed):** its
   point is now reachable and pinned (`tests/test_tour_points.py`), but it
   still fails 0/3 leaving the garage beside the car, where nav2's path
   keeps the robot against the safety bar. Next: re-test 3.43's nav2
   inflation candidate (0.12 -> 0.35 m) against the garage exit (the
-  user's choice). Every tour count before 3.55 is "of 8 reachable goals". Live runs now keep
+  user's choice). Every tour count before 3.57 is "of 8 reachable goals". Live runs now keep
   per-run logs with explore's decisions (`PICAR_LOG_LEVEL`,
   `evaluations/slam-345/`). Handoff:
   `HANDOFF-2026-10-07-3.45-explore-goal-choice.md`. 3.31's frontier-search

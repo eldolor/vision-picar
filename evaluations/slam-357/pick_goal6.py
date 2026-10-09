@@ -1,7 +1,7 @@
 """
-python evaluations/slam-355/pick_goal6.py
+python evaluations/slam-357/pick_goal6.py
 
-PLAN-ros-alignment.md 3.55 criterion 2: the tour's new dining-room point, by
+PLAN-ros-alignment.md 3.57 criterion 2: the tour's new dining-room point, by
 rule, not by hand. Candidates on a 5 cm grid within 1.0 m of the old point
 (31.0, 30.0) ft; eligible when inside the dining room's cells, the chassis
 overlaps nothing on ground truth at any heading (every 10 deg), and at every
