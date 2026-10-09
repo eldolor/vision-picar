@@ -237,7 +237,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
         [str(Path(args.server).expanduser()), "-m", str(Path(args.model).expanduser()),
          "--mmproj", str(Path(args.mmproj).expanduser()), "-ngl", "99",
          "-c", str(args.ctx), "--port", str(args.port), "--host", "127.0.0.1",
-         "-np", "1", "--no-webui"], stdout=log, stderr=subprocess.STDOUT)
+         "-np", "1", "--no-webui",
+         # Amendment 3: no host-RAM prompt cache. Its 8 GiB default caches
+         # every frame's image prompt -- never reused, since no two frames
+         # match -- in the Jetson's unified memory until the OOM killer
+         # takes the server (it did, on four of five first runs).
+         "--cache-ram", "0"], stdout=log, stderr=subprocess.STDOUT)
     records, ms, noparse, replies, to_decision = [], [], 0, {}, []
     errors, object_replies = 0, 0
     try:
@@ -293,7 +298,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
                    "mmproj": Path(args.mmproj).name, "llama_cpp": commit,
                    "device": "jetson-orin-nano-super-15w", "runtime": "llama-server CUDA",
                    "prompt": PROMPT, "max_tokens": MAX_TOKENS,
-                   "top_logprobs": TOP_LOGPROBS, "metric": "confidence"},
+                   "top_logprobs": TOP_LOGPROBS, "metric": "confidence",
+                   "cache_ram_mib": 0},
         "records": records,
         "latency_ms": {"n": len(ms), "p50": statistics.median(ms),
                        "p90": percentile(ms, 90), "max": max(ms)},
