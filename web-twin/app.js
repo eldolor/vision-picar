@@ -1495,6 +1495,15 @@
     return { text: "unreachable" + (cloud.since ? " since " + at(cloud.since) : ""), cls: "warn" };
   }
 
+  // The Cloud row alone, from any status that carries `cloud` (the panel
+  // poll, the late-check watcher, a Stop's answer). A status without the
+  // field (an older brain) leaves the row as it was rather than blanking it.
+  function renderCloudRow(status) {
+    if (!status || !("cloud" in status)) return;
+    const cloud = cloudWords(status.cloud);
+    setBrainText("brain-tel-cloud", cloud.text, cloud.cls);
+  }
+
   function renderBrainStatus(status) {
     const outcome = status.outcome || "idle";
     const late = outcome === "arrived_unconfirmed" ? lateWords(status) : "";
@@ -1526,8 +1535,7 @@
     setBrainText("brain-tel-why",
       status.error || (unconfirmed ? unconfirmedText(status) : status.last_reasoning),
       status.error ? "alert" : unconfirmed ? "warn" : null);
-    const cloud = cloudWords(status.cloud);
-    setBrainText("brain-tel-cloud", cloud.text, cloud.cls);
+    renderCloudRow(status);
     renderTierReadouts(status);
 
     // The mission log comes from the brain, so it is rewritten wholesale
@@ -2066,6 +2074,10 @@
       finally { inFlight = false; }
       if (token !== lateWatchToken) return;  // stopped or replaced while in flight
       errors = 0;
+      // 3.56 follow-up: the panel poll has stopped with the mission, and this
+      // is the only status the page still reads -- keep the Cloud row honest
+      // ("reachable" when /health returns, "last seen ..." as it ages).
+      renderCloudRow(s);
       if (s.running || s.outcome !== "arrived_unconfirmed") { stopLateWatch(); return; }
       const l = s.late_confirmation;
       if (!l) { if (++nullPolls > 1) stopLateWatch(); return; }
@@ -3227,6 +3239,14 @@
         "<div><b>VF</b>" + String(mission.vision_failures || 0) +
         (mission.vision_failures ? '<span class="v-alert"> !</span>' : "") + "</div>"
       : "";
+    // 3.56 follow-up (the user): the cloud row on the Guide HUD too, in the
+    // panel's own words (cloudWords: unknown, stale "last seen ...", live).
+    const cw = mission && ("cloud" in mission) ? cloudWords(mission.cloud) : null;
+    const cloudRow = cw && cw.text
+      ? '<div id="robot-tel-cloud"><b>CLD</b><span class="' +
+        (cw.cls === "safe" ? "v-safe" : cw.cls === "warn" ? "v-warn" : "") + '">' +
+        escapeHtml(cw.text) + "</span></div>"
+      : "";
     el.innerHTML =
       "<div><b>TGT</b>" + escapeHtml(state.guidanceTarget || "--") + "</div>" +
       "<div><b>ACT</b>" + escapeHtml(result.action || "--") + "</div>" +
@@ -3234,7 +3254,7 @@
       "<div><b>OBS</b>" + obs + "</div>" +
       "<div><b>SEQ</b>" + String(state.guidanceCallCount).padStart(3, "0") +
         "/" + String(guidanceCallCap()).padStart(3, "0") + "</div>" +
-      brainRow + reached;
+      brainRow + cloudRow + reached;
     document.getElementById("robot-obstacle")
       .classList.toggle("visible", result.obstacle_ahead === true);
   }

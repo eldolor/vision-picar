@@ -232,7 +232,9 @@ a probe that raises is `unreachable`. `GET /mission/status` and the start
 response carry `cloud: {state, since, checked_at, age_s, probes, probe_s}`
 (`age_s` measured on the brain's clock, and `probe_s` the interval of whichever prober last answered, so the twin can tell an old answer
 from a current one without comparing clocks; `state`
-is `unknown` before the first probe), or `cloud: null` with no watch. It is
+is `unknown` before the first probe), or `cloud: null` with no watch; so
+does `POST /mission/stop`'s status (with a runner or idle), the last one the
+twin draws before its poll stops. It is
 not in `/health` (M5) and nothing reads it but the twin.
 
 ## Interfaces

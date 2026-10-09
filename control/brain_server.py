@@ -779,13 +779,15 @@ def create_app(
             if claimed and state["reconfirm"] is _CLAIMED:
                 state["reconfirm"] = None
 
+        # 3.56 follow-up: the Stop's answer is the last status the twin draws
+        # (its poll stops), so it carries `cloud` like every other status.
         if runner is not None:
             await asyncio.to_thread(runner.stop)
-            return {"stopped": True, "status": runner.status()}
+            return {"stopped": True, "status": {**runner.status(), "cloud": cloud_status()}}
 
         # No mission has ever run: stop the car anyway.
         await asyncio.to_thread(robot().stop)
-        return {"stopped": True, "status": _idle_status()}
+        return {"stopped": True, "status": {**_idle_status(), "cloud": cloud_status()}}
 
     @app.get(prefix + "/mission/inventory", dependencies=[Depends(require_secret)])
     async def mission_inventory():

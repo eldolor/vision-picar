@@ -3522,3 +3522,90 @@ def test_the_panel_says_whether_the_cloud_is_reachable(browser, twin_server):
     sync_api.expect(cloud).not_to_contain_text("reachable", timeout=5000)
     assert not errors, errors
     page.close()
+
+
+def test_the_cloud_row_keeps_moving_while_a_parked_arrival_waits(browser, twin_server):
+    """Thermos on merged 3.56: once the mission parked `arrived_unconfirmed`
+    the panel poll stopped, and the late-check watcher drew nothing while it
+    waited -- so the page that watched never saw the cloud come back. Every
+    watcher poll now redraws the Cloud row."""
+    current = {"body": tiered_status()}
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(current["body"])))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+
+    down = {"state": "unreachable", "since": 1760000000, "checked_at": 1760000000,
+            "age_s": 1, "probes": 1, "probe_s": 15}
+    current["body"] = {**unconfirmed_status("waiting"), "cloud": down}
+    cloud = page.locator("#brain-tel-cloud")
+    sync_api.expect(cloud).to_contain_text("unreachable since", timeout=5000)
+    # Still waiting -- only the watcher reads status now -- and /health is back.
+    current["body"] = {**unconfirmed_status("waiting"), "cloud": {
+        **down, "state": "reachable", "since": 1760000020, "checked_at": 1760000020}}
+    sync_api.expect(cloud).to_have_text("reachable", timeout=8000)
+    sync_api.expect(cloud).to_have_class("val safe")
+    assert not errors, errors
+    page.close()
+
+
+def test_the_guide_tab_shows_the_cloud_row_too(browser, twin_server):
+    """3.56 follow-up, asked by the user: Drive via brain shows `status.cloud`
+    on the Guide HUD in the panel's own words -- live in colour, an old
+    answer as 'last seen', uncoloured."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    current = {"body": {**tiered_status(), "cloud": {
+        "state": "unreachable", "since": 1760000000, "checked_at": 1760000000,
+        "age_s": 2, "probes": 2, "probe_s": 15}}}
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json({"started": True, "status": {"running": True}})))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(current["body"])))
+
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")
+
+    row = page.locator("#robot-tel-cloud")
+    sync_api.expect(row).to_contain_text("unreachable since", timeout=15000)
+    assert page.locator("#robot-tel-cloud .v-warn").count() == 1
+    current["body"] = {**tiered_status(), "cloud": {
+        "state": "reachable", "since": 1760000060, "checked_at": 1760000060,
+        "age_s": 3600, "probes": 5, "probe_s": 15}}
+    sync_api.expect(row).to_contain_text("last seen reachable at", timeout=10000)
+    assert page.locator("#robot-tel-cloud .v-safe").count() == 0, "an old answer read as live"
+    assert not errors, errors
+    context.close()

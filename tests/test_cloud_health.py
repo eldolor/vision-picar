@@ -700,6 +700,61 @@ def test_review_probe_s_is_the_pace_of_whoever_last_probed():
     assert watch.snapshot()["probe_s"] == 5
 
 
+def test_followup_two_collectors_take_a_landed_call_once():
+    """Thermos on merged 3.56: an abandoned wait_inflight() thread and the
+    tick thread can collect at once. The landed answer (here a failure) is
+    owned by exactly one of them -- B3.2 counts it once."""
+    from concurrent.futures import Future
+    import brain.tiered as bt
+
+    class SlowDone(Future):
+        """`done()` takes a moment, so both collectors are inside the check
+        together -- the window the race needs, made reliable."""
+
+        def done(self):
+            time.sleep(0.02)
+            return super().done()
+
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud, async_cloud=True)
+    fut = SlowDone()
+    fut.set_exception(CloudUnavailable("ConnectError: refused"))
+    tier._inflight, tier._inflight_trigger = fut, "staleness"
+    start = threading.Barrier(2)
+    taken = []
+
+    def collect():
+        start.wait()
+        tier._collect_inflight()
+
+    orig = bt.logger.warning
+    bt.logger.warning = lambda *a, **k: taken.append(a)
+    try:
+        threads = [threading.Thread(target=collect) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        bt.logger.warning = orig
+    assert len(taken) == 1, f"the failure was taken {len(taken)} times"
+    assert tier._inflight is None
+
+
+def test_followup_a_stop_answers_with_the_cloud_row(tmp_path, monkeypatch):
+    """Thermos on merged 3.56: /mission/stop's status is the last one the
+    twin draws, and it carried no `cloud`, blanking the row."""
+    spies = []
+    app, _ = _app(tmp_path, monkeypatch, _tiered_factory(_quiet_cloud, spies),
+                  probe_s=0.02, health=lambda: False)
+    with TestClient(app) as client:
+        idle = client.post("/mission/stop").json()
+        assert "cloud" in idle["status"], idle
+        client.post("/mission/start", json={"target_object": TARGET, "policy": "tiered"})
+        time.sleep(0.1)
+        stopped = client.post("/mission/stop").json()
+    assert stopped["status"]["cloud"]["state"] in ("unreachable", "unknown"), stopped["status"]
+
+
 def test_10_a_confirmation_deadline_never_outlasts_b32():
     runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
                            policy="tiered", vision_fn=lambda f: {},

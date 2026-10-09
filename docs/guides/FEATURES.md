@@ -540,6 +540,9 @@ change what frame 13 shows in a replay; here, it can).
    checked, the telemetry shows `STA UNCONFIRMED` and `LATE <state>` in
    yellow, and when the brain's late check lands (it asks once the cloud is
    back) the caption, telemetry and a toast say what the cloud answered.
+   **`CLD`** (3.56, asked by the user): the same Cloud line as the Remote
+   brain panel -- `unreachable since ...` in yellow, `reachable` in green,
+   `last seen ... at ...` uncoloured when the answer is old.
 
 **Stop** -> `POST {brainUrl}/mission/stop` (fire-and-forget, since
 `stopGuidance()` isn't async), which stops both the mission loop and the

@@ -627,6 +627,7 @@ class TieredVision:
         self.spin_guard_after = max(0, int(spin_guard_after))
         self._consecutive_turn_deg = 0.0
         self._executor = None
+        self._collect_lock = threading.Lock()
         self._inflight = None
         self._inflight_trigger: Optional[str] = None
         self._inflight_perception: Optional[Perception] = None
@@ -849,12 +850,19 @@ class TieredVision:
             self.stats.record("cloud_ms", (time.perf_counter() - started) * 1000)
 
     def _collect_inflight(self) -> None:
-        """Apply a landed answer, or note that it failed. Never waits."""
-        fut = self._inflight
-        if fut is None or not fut.done():
-            return
-        self._inflight = None
-        trigger, self._inflight_trigger = self._inflight_trigger, None
+        """Apply a landed answer, or note that it failed. Never waits.
+
+        The take is atomic (3.56 follow-up): a `wait_inflight()` thread the
+        runner abandoned at its deadline can call this at the same moment as
+        the tick thread, and only one of them may own the landed call --
+        else an answer is applied twice, or one failure counted twice."""
+        with self._collect_lock:
+            fut = self._inflight
+            if fut is None or not fut.done():
+                return
+            self._inflight = None
+            trigger, self._inflight_trigger = self._inflight_trigger, None
+            perception, self._inflight_perception = self._inflight_perception, None
         try:
             scene = fut.result()
         except BaseException as exc:  # noqa: BLE001
@@ -877,9 +885,8 @@ class TieredVision:
         # The annotated scene itself is not returned: the decision for this
         # frame belongs to this frame's pixels, and what carries forward is
         # the goal, not the whole answer.
-        if self._inflight_perception is not None:
-            annotated = self._annotate(scene, self._inflight_perception,
-                                       trigger or "")
+        if perception is not None:
+            annotated = self._annotate(scene, perception, trigger or "")
             verdict = (annotated.get("_tier") or {}).get("corroboration")
             if verdict:
                 # Marked `landed_late`, and carrying the trigger it belongs
@@ -888,15 +895,15 @@ class TieredVision:
                 self._landed_corroboration = {**verdict,
                                               "landed_late": True,
                                               "for_trigger": trigger}
-        self._inflight_perception = None
 
     def reset_epoch(self) -> None:
         """Invalidate anything in flight. Called when a mission ends, so a
         late answer cannot be applied to a robot that has stopped."""
         self._epoch += 1
-        self._inflight = None
-        self._inflight_trigger = None
-        self._inflight_perception = None
+        with self._collect_lock:
+            self._inflight = None
+            self._inflight_trigger = None
+            self._inflight_perception = None
         self._landed_corroboration = None
         self._pending_error = None
 
