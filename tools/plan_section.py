@@ -6,7 +6,8 @@ sessions never collide (docs/guides/PARALLEL-SESSIONS.md).
     python tools/plan_section.py env [3.N]              this branch's ports, ROS domain, container, image, logs
     python tools/plan_section.py index                  regenerate the section index
     python tools/plan_section.py overlap                files this branch shares with other plan/* branches
-    python tools/plan_section.py ready                  rebase check + full suite; records a pass for the push gate
+    python tools/plan_section.py ready [--full]         rebase check + fast tier (or the full suite); records a pass
+    python tools/plan_section.py gate <base> <sha>      the pre-push hook's check: docs only -> spec lint, else fast tier
     python tools/plan_section.py split                  one-time: PLAN-ros-alignment.md's 3.N sections -> files
 
 Sections live in `docs/plans/ros-alignment/<number>-<slug>.md`; the number is
@@ -261,7 +262,71 @@ def gate_dir() -> str:
     return d
 
 
-def cmd_ready() -> None:
+# The push gate runs a FAST tier, not the full suite (user, 2026-10-09: a
+# 40-minute run on every push was too heavy, and a pass named one commit, so
+# every rebase onto another session's push started it over). Left out, and
+# run nightly by tools/nightly_suite.sh and by `ready --full`:
+#   * the real-browser and live-stack tests -- slow and timing-sensitive;
+#   * the measurement SWEEPS -- hundreds of simulated missions or runs that
+#     pin a phase's acceptance numbers. Timed 2026-10-09, these files held
+#     ~45 of the 51 minutes. Their quick neighbours (test_depth_veto,
+#     test_pivot_safety, test_authority, test_failsafes, the contracts) stay.
+SLOW_FILES = [
+    "test_arrival.py", "test_bearing_turns.py", "test_firmware_fork.py",
+    "test_footprint_safety.py", "test_guarded_verbs.py", "test_inventory_mission.py",
+    "test_lidar_safety.py", "test_pan_safety.py", "test_ros_driver_board.py",
+    "test_ros_verb_safety.py", "test_settle_pass.py", "test_speed_clearance.py",
+    "test_startup_race.py", "test_wheel_feedback.py",
+]
+SLOW_TESTS = [
+    "--ignore-glob=tests/test_ui*.py",
+    "--ignore=tests/test_frame_source.py",
+    "--ignore-glob=tests/*_live.py",
+    *[f"--ignore=tests/{f}" for f in SLOW_FILES],
+]
+
+
+def docs_only(paths) -> bool:
+    """A change no test reads: prose, specs and the plan. The spec lint
+    still runs on it."""
+    return bool(paths) and all(
+        p.endswith(".md") or p.startswith(("docs/", "docs-review/")) for p in paths)
+
+
+def venv_python(root: str) -> str:
+    py = os.path.join(os.path.dirname(git("rev-parse", "--git-common-dir", cwd=root)), ".venv", "bin", "python")
+    return py if os.path.exists(py) else sys.executable
+
+
+def run_tests(root: str, full: bool) -> bool:
+    args = [] if full else SLOW_TESTS
+    return subprocess.run([venv_python(root), "-m", "pytest", "tests/", "-q",
+                           "-p", "no:cacheprovider", *args], cwd=root).returncode == 0
+
+
+def cmd_gate(base: str, sha: str) -> None:
+    """Called by tools/hooks/pre-push for a push of `sha` to dev."""
+    root = top()
+    if os.path.exists(os.path.join(gate_dir(), sha)):
+        return
+    files = git("diff", "--name-only", base, sha, cwd=root).splitlines() if base else []
+    if docs_only(files):
+        print("pre-push: docs only -- running the spec lint", flush=True)
+        if subprocess.run([venv_python(root), "-m", "pytest", "tests/test_spec_lint.py",
+                           "-q", "-p", "no:cacheprovider"], cwd=root).returncode:
+            raise SystemExit("pre-push: spec lint failed")
+        return
+    if sha != git("rev-parse", "HEAD", cwd=root) or git(
+            "status", "--porcelain", "--untracked-files=no", cwd=root):
+        raise SystemExit("pre-push: the fast tier runs on the working tree, so push "
+                         "HEAD with everything committed (or run `ready` first)")
+    print(f"pre-push: running the fast tier on {sha[:9]} ...", flush=True)
+    if not run_tests(root, full=False):
+        raise SystemExit("pre-push: fast tier failed")
+    open(os.path.join(gate_dir(), sha), "w").write("passed fast\n")
+
+
+def cmd_ready(full: bool = False) -> None:
     root = top()
     git("fetch", "-q", "origin", cwd=root)
     if subprocess.run(["git", "merge-base", "--is-ancestor", "origin/dev", "HEAD"], cwd=root).returncode:
@@ -275,13 +340,11 @@ def cmd_ready() -> None:
         raise SystemExit(f"{INDEX} is stale: commit the regenerated index")
     if git("status", "--porcelain", "--untracked-files=no", cwd=root):
         raise SystemExit("uncommitted changes: commit first, so the pass names a commit")
-    py = os.path.join(os.path.dirname(git("rev-parse", "--git-common-dir", cwd=root)), ".venv", "bin", "python")
-    py = py if os.path.exists(py) else sys.executable
     sha = git("rev-parse", "HEAD", cwd=root)
-    print(f"running the full suite on {sha[:9]} ...", flush=True)
-    if subprocess.run([py, "-m", "pytest", "tests/", "-q", "-p", "no:cacheprovider"], cwd=root).returncode:
+    print(f"running the {'full suite' if full else 'fast tier'} on {sha[:9]} ...", flush=True)
+    if not run_tests(root, full):
         raise SystemExit("suite failed: no pass recorded")
-    open(os.path.join(gate_dir(), sha), "w").write("passed\n")
+    open(os.path.join(gate_dir(), sha), "w").write("passed full\n" if full else "passed fast\n")
     print(f"recorded a pass for {sha[:9]}; a push of this commit to dev may go ahead")
 
 
@@ -298,7 +361,9 @@ def main(argv):
     elif cmd == "overlap":
         cmd_overlap()
     elif cmd == "ready":
-        cmd_ready()
+        cmd_ready(full=args[:1] == ["--full"])
+    elif cmd == "gate" and len(args) == 2:
+        cmd_gate(*args)
     elif cmd == "split":
         cmd_split()
     else:

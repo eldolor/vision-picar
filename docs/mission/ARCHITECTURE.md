@@ -166,8 +166,9 @@ to start over a failed validation call would turn one into the other.
 ### Outcomes say what happened, not just that it stopped
 
 **Decision.** A mission ends in exactly one of: found, room_reached,
-max_steps, blocked, stopped, preempted, failed. The first outcome wins and
-later stops cannot rewrite it. Two are deliberately not "failed":
+max_steps, blocked, searched, arrived_unconfirmed, stopped, preempted,
+failed. The first outcome wins and later stops cannot rewrite it. Three are
+deliberately not "failed":
 
 - **preempted** -- a person took the robot. Filing a normal intervention
   beside a dead cloud link would invite a retry where retrying is wrong.
@@ -175,6 +176,11 @@ later stops cannot rewrite it. Two are deliberately not "failed":
   layer kept refusing (R1b, `PLAN-ros-alignment.md` 3.4). Nothing broke;
   going around is route planning, and nav2 reports an unreachable goal the
   same way.
+- **arrived_unconfirmed** -- the vision budget ran out while the robot was
+  parked at an arrival whose identity the cloud never answered (3.47). Not
+  "found" either: only a cloud yes makes "found"
+  ([policy](../policy/ARCHITECTURE.md), "The cloud confirms identity at
+  arrival").
 
 ### A mission starts with the camera centred
 
@@ -227,7 +233,7 @@ tools, a tool runner belongs inside the vision function, below the runner.
 
 | Failure | What the component does | Target |
 |---|---|---|
-| A vision call errors or hangs | stops the robot on that step and counts it; a success resets the count | every blind step stops the car; a short run of consecutive failures ends the mission **failed** with the robot stopped |
+| A vision call errors or hangs | stops the robot on that step and counts it; a success resets the count | every blind step stops the car; a short run of consecutive failures ends the mission **failed** with the robot stopped, or **arrived_unconfirmed** if the run is an arrival's identity check that never got an answer |
 | A tick never returns | the service abandons the tick thread, stops the robot and ends the mission | a stuck loop ends **failed** within one tick deadline, robot stopped, while status and health keep answering |
 | The brain process dies mid-move | nothing here can act | the robot's watchdog stops the motors within one watchdog period (safety domain) |
 | Stop lands while a tick is in flight | the halt gate refuses that tick's move or pan | after a mission ends, no further movement command from it reaches the robot |

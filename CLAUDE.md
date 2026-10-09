@@ -113,7 +113,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
 | Robot server and safety | Arbitration by driver rank (M4). A depth-grid cone plus the chassis' swept corridor off the 360-degree scan (3.18), a pivot guard (3.19), guarded verbs (3.22), a settle pass (3.29), no motion without fresh wheel feedback (3.34) and stall detection (3.35). The watchdog is B3.1. | `robot/`, `docs/safety/` |
 | Brain service | `MissionRunner` behind `control/brain_server.py` on :8001. Three failsafes (B3). Policies: `frontier` (rule-based), `vision` (cloud per step) and `tiered` (local YOLOE + CLIP, cloud only on triggers). | `control/`, `AGENT-HARNESS.md` |
 | Perception | YOLOE-11s-seg crops, then CLIP RN50, gate P >= 0.8. On the Jetson at 15 W: median 61 ms, p90 110 ms a frame. | P22-P24, 3.33 |
-| Arrival | The target centred and the lidar under 0.40 m for two frames, then one cloud call confirms identity (3.11, 3.32, handoff 1a). | `brain/arrival.py` |
+| Arrival | The target centred and the lidar under 0.40 m for two frames, then one cloud call confirms identity (3.11, 3.32, handoff 1a). Cloud unreachable at arrival: `arrived_unconfirmed`, never `found` (3.47). | `brain/arrival.py` |
 | ROS stack | URDF/TF (R3, Rover CAD geometry since 3.27); `ros2_control` + `twist_mux` (R4); `slam_toolbox` (R5); nav2 + `collision_monitor` (R6). Off by default (`ROBOT_DRIVE=ros`, `WORLD_MODE=ros`). `drive: ros` gates G1-G4 all met (G4 on the Jetson, 2026-10-05). | `service/slam/README.md`, `docs/ros/` |
 | Lidar | `robot/lidar_ld19.py` reads the D500 (LD19 protocol) in the robot server, not ROS; `sim/fake_lidar.py` fakes it on a pty (`SIM_LIDAR=fake`). Ground-truth safety holds under its real timing after two fixes. On the Jetson: 18/18. Nav smoothness on the laptop sits at its bar (3.42) | `docs/plans/PLAN-ros-alignment.md` 3.42 |
 | Motor board | `robot/hardware_robot.py` over the ESP32's JSON serial protocol (R7). `sim/fake_esp32.py` copies the Rover's firmware from source (3.25). Our GPL-3.0 firmware fork adds 0.1 mm odometers and a timestamp; compiled, not flashed (3.28-3.29). | `firmware/`, `docs/motor-board/` |
@@ -130,6 +130,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   10 cm before scoring (`correlation_search_space_smear_deviation`
   0.10 -> 0.03 m: two tours within 4.2 cm, every room's walls 100% true).
   Scans are also stamped with their capture time (skew 21 -> 7 ms).
+* **Offline arrival (3.47), merged 2026-10-09.** A tiered mission whose
+  arrival holds but whose identity check cannot reach the cloud ends
+  `arrived_unconfirmed` (not `found`, not `failed`). Only `CloudUnavailable`
+  from `brain/navigate.py` (transport error, 5xx, 408, 429) counts as
+  unreachable. Known limits in the section. Twin warn style and re-asking
+  the cloud when it returns: approved by the user, not built.
 * **Object inventory (3.46), merged 2026-10-08.** Every mission records
   what it saw, placed by the lidar, weighted by looks from new viewpoints;
   `GET /mission/inventory`, and uploaded to the recordings bucket under

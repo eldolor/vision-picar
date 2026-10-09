@@ -76,7 +76,11 @@ and in `triggers["arrival_confirmation"]` (`TRIGGER_ARRIVAL`), and confirms
 only on `_navigate.target_visible is True`; at `max_calls` it refuses
 without calling. Not confirmed, or no confirmer on the policy: the readout
 becomes `refused`, the scene is not rewritten, and `_identity_refused`
-stops further calls until `observe()` stops returning `arrived`. The
+stops further calls until `observe()` stops returning `arrived`. A call
+that raises gets the readout attached as `arrival_readout` and goes on to
+B3.2; nothing is left on the agent. Whether the failure was the cloud being
+unreachable is decided by `brain/navigate.py`'s `CloudUnavailable`, not
+here (3.47; mission engineering). The
 readout carries the verdict under `identity`, and every later refused frame
 carries the refusing verdict too (`_refusal`), so the final status says why.
 Since spec review 3 (fixes 8-10): `confirm_arrival()` first waits for an

@@ -379,9 +379,22 @@ class MissionAgent(ConstrainedAgent):
                     "reason": "the cloud did not confirm this arrival; not asking again "
                               "until the arrival ends"}
         confirm = self.arrival_confirm_fn or getattr(self.vision_fn, "confirm_arrival", None)
-        verdict = (confirm(frame) if confirm is not None
-                   else {"confirmed": False, "cloud_called": False,
-                         "reason": "no cloud on this policy to confirm identity"})
+        try:
+            verdict = (confirm(frame) if confirm is not None
+                       else {"confirmed": False, "cloud_called": False,
+                             "reason": "no cloud on this policy to confirm identity"})
+        except Exception as e:
+            # 3.47: the confirmation got no ANSWER (the cloud unreachable,
+            # not saying no). The error carries THIS frame's readout, so if it
+            # is the failure that spends B3.2's budget, MissionRunner can end
+            # `arrived_unconfirmed` on an arrival judged this tick -- and on
+            # no other failure. Never makes `found`.
+            try:
+                e.arrival_readout = readout
+            except AttributeError:  # an exception type that takes no attributes
+                logger.warning("arrival readout lost: %s takes no attributes; "
+                               "an outage here will end `failed`", type(e).__name__)
+            raise
         self._confirmed_this_frame = bool(verdict.get("cloud_called"))
         readout = {**readout, "identity": verdict}
         if verdict.get("confirmed"):

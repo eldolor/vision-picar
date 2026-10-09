@@ -57,7 +57,24 @@ threads; where it and this file disagree, check the code.
    ([policy engineering](../policy/ENGINEERING.md), "Arrival"). A policy with
    no `confirm_arrival` never confirms, and its arrivals never end `found`.
 3. Exceptions: `MissionHalted` -> return False (stop landed mid-tick);
-   `VisionUnavailable` -> `_handle_vision_failure()`; `Preempted` -> finish
+   `VisionUnavailable` -> `_handle_vision_failure()`. An arrival
+   confirmation that raised carries that tick's readout as
+   `arrival_readout` (set by the agent); the runner holds it in
+   `_failed_arrival` for the current run of failures, cleared with the count
+   by a tick that succeeds. On the budget's last failure the mission ends
+   `arrived_unconfirmed` if `_failed_arrival` is set AND that last failure
+   has `CloudUnavailable` (`brain/navigate.py`: a transport error, a 5xx, a
+   408 or a 429, raised where the HTTP call is made) in its chain of
+   explicit causes (`_caused_by()`, `__cause__` only). A readout is kept
+   only when its confirmation itself failed that way; a confirmation that
+   times out is attributed to the cloud, a trigger call that times out is
+   not. The "vision failure" line is logged under the lock. `_finish()` then sets
+   `status.arrival` to the readout with state `unconfirmed`, and refreshes
+   `_tier.stats` from the policy's own counters (`_policy_stats()`, read
+   outside the lock, never raising), in the same locked step as the outcome.
+   A failure that lands after `stop()`/`abort()` returns at once: not
+   counted, not logged, nothing written. Otherwise `failed`; `Preempted` ->
+   finish
    `preempted`; anything else -> finish `failed` ("step failed: ...").
 4. Under the lock: bump `ticks`, reset `vision_failures`, record the action,
    the turn counters, and copy `_tier`, `_perception` and `_arrival` off the

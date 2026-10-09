@@ -436,16 +436,22 @@ def test_odometry_heading_starts_at_zero_and_turns_clockwise_positive(robot):
     report its compass bearing (90 facing east at start) while the car's
     board reported turn-since-start, so the same reading meant different
     things on the two bodies. A RIGHT is clockwise, and a whole number of
-    degrees on every backend that measures one."""
+    degrees on every backend that measures one.
+
+    This pins the CONVENTION, not turn accuracy: a wrong sign reads 270
+    where 90 is expected. The band is 3.25's measured one for a single turn
+    on the stock board (6 degrees; sd 1.3-1.8, worst 4.2 in 120), which
+    `test_ros_driver_board.py` owns. At 2 degrees this failed about one
+    full-suite run in two on the `hardware` backend (2026-10-08)."""
     odo = robot.get_odometry()
     if not odo["usable"]:
         pytest.skip("backend reports no odometry, which this suite allows")
     assert odo["heading_deg"] == pytest.approx(0.0, abs=0.5), odo
     robot.turn_right(90)
-    assert robot.get_odometry()["heading_deg"] == pytest.approx(90.0, abs=2.0)
+    assert robot.get_odometry()["heading_deg"] == pytest.approx(90.0, abs=6.0)
     robot.turn_left(90)
     robot.turn_left(90)
-    assert robot.get_odometry()["heading_deg"] == pytest.approx(270.0, abs=2.0)
+    assert robot.get_odometry()["heading_deg"] == pytest.approx(270.0, abs=6.0)
 
 
 def test_turning_in_place_moves_the_heading_and_not_the_distance(robot):

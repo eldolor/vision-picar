@@ -53,6 +53,7 @@ from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
 from brain.inventory import MAX_RANGE_M as INVENTORY_RANGE_M
 from brain.inventory import DEFAULT_FOV_DEG, Inventory, frame_detections
 from brain.memory import MissionMemory
+from brain.navigate import CloudUnavailable
 from brain.vision_agent import VisionAgent
 from robot.interface import Preempted, RobotInterface
 from robot.safety import SafetyViolation
@@ -131,6 +132,27 @@ DEFAULT_STUCK_AFTER = 5
 # about the house ("looked everywhere it could reach; not there"), and a
 # target that is absent should end here, never in a refusal.
 SEARCHED = "searched"
+# 3.47. The robot reached what the local tier took for the target (the lidar
+# arrival rule held) but the cloud never ANSWERED the identity question --
+# B3.2's budget ran out on an unreachable cloud. Not `found`: since handoff
+# 1a only a cloud yes makes `found`, and a local false positive looks exactly
+# like this. Not `failed`: the robot did its part and is parked at it. A
+# cloud that answers "no" is a refusal and never ends here.
+ARRIVED_UNCONFIRMED = "arrived_unconfirmed"
+
+
+def _caused_by(error: BaseException, kind: type) -> bool:
+    """Is `kind` anywhere in the chain of EXPLICIT causes (`raise ... from`)?
+    A wrapper added between the HTTP call and the runner changes nothing.
+    `__context__` is not followed: a local error raised while a cloud error
+    was being handled is not the cloud's."""
+    seen = set()
+    while error is not None and id(error) not in seen:
+        if isinstance(error, kind):
+            return True
+        seen.add(id(error))
+        error = error.__cause__
+    return False
 
 
 class VisionUnavailable(RuntimeError):
@@ -458,6 +480,7 @@ class MissionRunner:
         self._started_at = None
         self._error: Optional[str] = None
         self._vision_failures = 0
+        self._failed_arrival: Optional[dict] = None
         self._last_action: Optional[str] = None
         # R1's readout (PLAN-ros-alignment.md). How many turns the mission
         # has made, how many REVERSED the one before (LEFT straight after
@@ -569,6 +592,7 @@ class MissionRunner:
             self._last_tick_at = time.monotonic()
             self._ticks += 1
             self._vision_failures = 0
+            self._failed_arrival = None
             self._last_action = result.action
             self._last_reasoning = self._describe(result)
             if self.policy == "explore":
@@ -856,30 +880,90 @@ class MissionRunner:
         try:
             return call_with_timeout(confirm, frame, timeout_s=self.vision_timeout_s)
         except TimeoutError as e:
-            raise VisionUnavailable(
-                f"arrival confirmation timed out after {self.vision_timeout_s}s") from e
+            # The confirmation waits only on cloud calls (brain/tiered.py
+            # confirm_arrival), so its hang is the cloud's (3.47).
+            msg = f"arrival confirmation timed out after {self.vision_timeout_s}s"
+            raise VisionUnavailable(msg) from CloudUnavailable(msg)
         except Exception as e:  # noqa: BLE001
             raise VisionUnavailable(f"arrival confirmation failed: {e}") from e
 
     def _handle_vision_failure(self, error: Exception) -> bool:
+        cloud = _caused_by(error, CloudUnavailable)
         with self._lock:
-            self._vision_failures += 1
-            failures, budget = self._vision_failures, self.max_vision_failures
+            running = self._running
+            if running:
+                self._vision_failures += 1
+                failures, budget = self._vision_failures, self.max_vision_failures
+                # 3.47. An arrival confirmation that raised carries THIS
+                # tick's arrival readout (brain/agent.py); kept only when it
+                # failed because the cloud was unreachable, and only for the
+                # current run of failures -- a tick that succeeds clears it
+                # with the count. No move executes on a failed tick, so it is
+                # where the robot is.
+                readout = getattr(error, "arrival_readout", None)
+                if readout is not None:
+                    # A confirmation that failed on OUR side (a 401) drops
+                    # any readout held from earlier in the run.
+                    self._failed_arrival = readout if cloud else None
+                pending = self._failed_arrival
+                # Logged under the lock (the RLock _finish takes), so a
+                # stop() can never put its end line before this one.
+                self._log_line(f"vision failure {failures}/{budget}: {error}")
+        if not running:
+            # stop()/abort() already ended it and stopped the car. A late
+            # failure does nothing at all: not counted, not logged, and no
+            # stop -- this runner no longer owns the robot, and the server
+            # refuses nobody's stop, so one now would halt a person at the
+            # D-pad or the next mission (3.47, third review).
+            return False
         # Stop the car on every blind step, not only on the last one.
         self._safe_stop()
-        self._log_line(f"vision failure {failures}/{budget}: {error}")
-        if failures >= budget:
-            self._finish(FAILED, f"vision unavailable {failures} times in a row: {error}")
+        if failures < budget:
+            return self._running
+        # `arrived_unconfirmed` only when this run of failures includes an
+        # arrival whose confirmation raised AND the failure that spends the
+        # budget is the cloud being unreachable (brain/navigate.py raises
+        # CloudUnavailable where the HTTP call is made). A local fault, or a
+        # timeout nothing attributes to the cloud, still ends `failed`.
+        if pending is not None and cloud:
+            self._finish(ARRIVED_UNCONFIRMED, (
+                f"arrived (lidar {pending.get('range_m')} m, streak "
+                f"{pending.get('streak')}) but identity unconfirmed: vision "
+                f"unavailable {failures} times in a row: {error}"),
+                arrival={**pending, "state": "unconfirmed",
+                         "reason": f"arrived, but the cloud could not be asked: {error}"},
+                tier_stats=self._policy_stats())
             return False
-        return self._running
+        self._finish(FAILED, f"vision unavailable {failures} times in a row: {error}")
+        return False
 
-    def _finish(self, outcome: str, note: str) -> None:
+    def _policy_stats(self) -> Optional[dict]:
+        """The policy's own counters, or None. The held `_tier` is the last
+        SUCCESSFUL tick's snapshot and predates the calls that raised. Read
+        outside the runner's lock, and never allowed to fail a finish."""
+        as_dict = getattr(getattr(self.vision_fn, "stats", None), "as_dict", None)
+        if as_dict is None:
+            return None
+        try:
+            return as_dict()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("reading the policy's stats failed: %s", e)
+            return None
+
+    def _finish(self, outcome: str, note: str, arrival: Optional[dict] = None,
+                tier_stats: Optional[dict] = None) -> None:
         with self._lock:
             already_done = not self._running and self._outcome != IDLE
             if already_done:
                 return
             self._running = False
             self._outcome = outcome
+            # 3.47: set with the outcome, in the same locked step, so a
+            # stop() that wins the race never finds them rewritten.
+            if arrival is not None:
+                self._arrival = arrival
+            if tier_stats is not None and self._tier is not None:
+                self._tier = {**self._tier, "stats": tier_stats}
             if outcome == FAILED:
                 self._error = note
             # 3.46: before the end line, which stays the log's last word --
