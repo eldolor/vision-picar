@@ -901,8 +901,14 @@ class TieredVision:
         self._pending_error = None
 
     def close(self) -> None:
-        """Release the worker thread. Safe to call more than once."""
+        """Release the worker thread. Safe to call more than once.
+
+        3.56: also drops the arrival confirmation's short-deadline client.
+        It exists for the arrival TICK, with a robot waiting; once the mission
+        has ended (MissionRunner closes the policy in `_finish`), 3.53's late
+        check asks through the triggers' client and B3.2's full deadline."""
         self.reset_epoch()
+        self.confirm_vision_fn = None
         if self._executor is not None:
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None

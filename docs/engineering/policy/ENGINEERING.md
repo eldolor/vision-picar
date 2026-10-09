@@ -74,7 +74,9 @@ without a runner the agent falls back to `vision_fn.confirm_arrival`.
 cloud (even under `async_cloud`) -- through `confirm_vision_fn` when one was
 given (3.56: the brain's second client, built with the confirmation's
 shorter HTTP deadline), else the triggers' `cloud_vision_fn`, resolved at
-call time; `set_searched_rooms()` reaches both clients, and
+call time; `close()` drops `confirm_vision_fn`, so 3.53's late check (which
+only runs after the runner has closed the policy) asks on the triggers'
+client and B3.2's full deadline; `set_searched_rooms()` reaches both clients, and
 `wait_inflight()` drains an async call still out so the runner can do that
 on B3.2's timeout before the confirmation's own clock starts -- counts it in `cloud_calls`
 and in `triggers["arrival_confirmation"]` (`TRIGGER_ARRIVAL`), and confirms

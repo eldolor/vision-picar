@@ -3507,6 +3507,14 @@ def test_the_panel_says_whether_the_cloud_is_reachable(browser, twin_server):
     sync_api.expect(cloud).to_have_text("reachable", timeout=5000)
     sync_api.expect(cloud).to_have_class("val safe")
 
+    # An hour-old answer (nothing probes between cloud missions) is not a
+    # live green "reachable" (3.56 review): when it was last seen, uncoloured.
+    current["body"] = {**tiered_status(), "cloud": {
+        "state": "reachable", "since": 1760000060, "checked_at": 1760000060,
+        "age_s": 3600, "probes": 5, "probe_s": 15}}
+    sync_api.expect(cloud).to_contain_text("last seen reachable at", timeout=5000)
+    sync_api.expect(cloud).to_have_class("val")
+
     # A brain that predates 3.56 sends no `cloud`: a dash, never "reachable".
     body = dict(tiered_status())
     body.pop("cloud", None)

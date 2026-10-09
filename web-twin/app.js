@@ -1480,14 +1480,19 @@
   // 3.56: the brain's `status.cloud` in words. Null when the brain has no
   // vision service configured, or predates 3.56 -- shown as a dash, never
   // as "reachable".
+  // An answer older than two probe intervals (plus slack) is not current:
+  // nothing probes between cloud missions. Shown as when it was last seen,
+  // uncoloured, never as a live "reachable". `age_s` is the brain's own
+  // measure, so the phone's clock never enters it.
   function cloudWords(cloud) {
     if (!cloud || !cloud.state) return { text: null, cls: null };
+    if (cloud.state === "unknown") return { text: "unknown (not checked yet)", cls: null };
+    const at = (t) => (t ? new Date(t * 1000).toLocaleString([], {
+      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "");
+    const stale = cloud.age_s != null && cloud.age_s > 2 * (cloud.probe_s || 15) + 5;
+    if (stale) return { text: "last seen " + cloud.state + " at " + at(cloud.checked_at), cls: null };
     if (cloud.state === "reachable") return { text: "reachable", cls: "safe" };
-    if (cloud.state === "unreachable") {
-      const since = cloud.since ? " since " + new Date(cloud.since * 1000).toLocaleTimeString() : "";
-      return { text: "unreachable" + since, cls: "warn" };
-    }
-    return { text: "unknown (not checked yet)", cls: null };
+    return { text: "unreachable" + (cloud.since ? " since " + at(cloud.since) : ""), cls: "warn" };
   }
 
   function renderBrainStatus(status) {

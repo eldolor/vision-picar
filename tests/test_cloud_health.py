@@ -645,6 +645,51 @@ def test_review_a_spent_cap_refuses_without_waiting_for_a_call_still_out():
     assert verdict["cloud_called"] is False and "cap" in verdict["reason"], verdict
 
 
+def test_review_the_late_check_uses_the_patient_client():
+    """/code-review on e583fb5: 3.53's late check went through the 8 s
+    confirmation client. A cloud slower than 8 s but under B3.2's 20 s must
+    still be confirmed late; the arrival tick keeps the short client."""
+    used = []
+    cloud = SwitchableCloud()
+
+    def short(frame):
+        used.append("short")
+        return cloud(frame)
+
+    def patient(frame):
+        used.append("patient")
+        return cloud(frame)
+
+    grid = _placed()
+    robot = MockRobot(grid, render=False)
+    tier = TieredVision(FrameReportedPipeline(TARGET), patient, steer_on_sight=True,
+                        hold_goal=True, confirm_vision_fn=short)
+    runner = MissionRunner(robot, target_object=TARGET, max_steps=60, policy="tiered",
+                           vision_fn=tier, world=mock_world_for(robot))
+    runner.start()
+    while runner.tick():
+        pass
+    assert runner.status()["outcome"] == ARRIVED_UNCONFIRMED
+    assert "short" in used, "the arrival tick never used the short client"
+    used.clear()
+    cloud.up = True
+    verdict = runner.late_ask()
+    assert used == ["patient"], used
+    assert verdict["confirmed"] is True, verdict
+
+
+def test_review_an_old_answer_carries_its_age():
+    """/code-review on e583fb5: nothing probes between cloud missions, so the
+    snapshot says how old its answer is, on the brain's own clock."""
+    t = {"now": 1000.0}
+    watch = CloudWatch(lambda: True, interval_s=15, active=lambda: False,
+                       wall=lambda: t["now"])
+    assert watch.snapshot()["age_s"] is None
+    watch.record(True)
+    t["now"] = 4600.0
+    assert watch.snapshot()["age_s"] == 3600.0
+
+
 def test_10_a_confirmation_deadline_never_outlasts_b32():
     runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
                            policy="tiered", vision_fn=lambda f: {},

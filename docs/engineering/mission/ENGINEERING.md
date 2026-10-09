@@ -229,7 +229,9 @@ its own probe in `cloud_watch.recording()`, so 3.53's late check feeds the
 same record while no mission runs. `record(up)` sets `reachable` or
 `unreachable`, moving `since` (wall-clock epoch seconds) only on a change;
 a probe that raises is `unreachable`. `GET /mission/status` and the start
-response carry `cloud: {state, since, checked_at, probes, probe_s}` (`state`
+response carry `cloud: {state, since, checked_at, age_s, probes, probe_s}`
+(`age_s` measured on the brain's clock, so the twin can tell an old answer
+from a current one without comparing clocks; `state`
 is `unknown` before the first probe), or `cloud: null` with no watch. It is
 not in `/health` (M5) and nothing reads it but the twin.
 

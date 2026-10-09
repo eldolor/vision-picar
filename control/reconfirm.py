@@ -216,10 +216,15 @@ class CloudWatch:
         return recorded
 
     def snapshot(self) -> dict:
+        """`age_s` is measured on the brain's own clock, so a reader never
+        compares the brain's epoch against its own (a phone's clock drifts)
+        to decide whether the answer is current. Nothing probes between
+        cloud missions, so an old answer stays here; `age_s` says how old."""
         with self._lock:
+            age = None if self._checked_at is None else max(0.0, self.wall() - self._checked_at)
             return {"state": self._state, "since": self._since,
-                    "checked_at": self._checked_at, "probes": self._probes,
-                    "probe_s": self.interval_s}
+                    "checked_at": self._checked_at, "age_s": age,
+                    "probes": self._probes, "probe_s": self.interval_s}
 
     def start(self) -> "CloudWatch":
         """Idempotent: one thread per watch, started on the first mission."""
