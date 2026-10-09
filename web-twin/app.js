@@ -2009,7 +2009,13 @@
   // then shows the verdict on the panel and, if it is the one driving, the
   // Guide tab. One watcher at a time; a new mission ends it.
   const LATE_POLL_MS = 3000;
+  // A watch is identified by its token, not its timer: an answer that lands
+  // after the watch was stopped -- or replaced by a new mission's -- must
+  // draw nothing (3.53, review).
+  let lateWatchToken = 0;
+  const LATE_MAX_ERRORS = 5;
   function stopLateWatch() {
+    lateWatchToken++;
     if (state.lateWatchTimerId) clearInterval(state.lateWatchTimerId);
     state.lateWatchTimerId = null;
   }
@@ -2017,18 +2023,25 @@
     stopLateWatch();
     const late = status && status.late_confirmation;
     if (status.outcome !== "arrived_unconfirmed" || (late && late.state !== "waiting")) return;
+    const token = lateWatchToken;
     // `late_confirmation` is null for a moment at the ending (the brain
     // starts its check just after), and for good when the check is off.
     // One poll of grace, then a null means off and the watch ends.
     let nullPolls = 0;
+    let errors = 0;  // a dead brain is not polled forever
     let inFlight = false;  // a slow tunnel must not double the toast
     state.lateWatchTimerId = setInterval(async function () {
       if (inFlight) return;
       inFlight = true;
       let s;
-      try { s = await brainApi("GET", "/mission/status"); } catch (e) { return; }
+      try { s = await brainApi("GET", "/mission/status"); }
+      catch (e) {
+        if (token === lateWatchToken && ++errors >= LATE_MAX_ERRORS) stopLateWatch();
+        return;
+      }
       finally { inFlight = false; }
-      if (!state.lateWatchTimerId) return;  // stopped while in flight
+      if (token !== lateWatchToken) return;  // stopped or replaced while in flight
+      errors = 0;
       if (s.running || s.outcome !== "arrived_unconfirmed") { stopLateWatch(); return; }
       const l = s.late_confirmation;
       if (!l) { if (++nullPolls > 1) stopLateWatch(); return; }
@@ -4338,6 +4351,9 @@
         stopGuidance();
         return;
       }
+      // A new mission: the last one's late-check watch must never draw
+      // its verdict over this session (3.53, review).
+      stopLateWatch();
       try {
         // The model picker applies here too, not just to a one-off
         // /navigate call: the brain binds it into the mission's vision_fn,

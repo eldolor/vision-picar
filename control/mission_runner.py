@@ -487,6 +487,7 @@ class MissionRunner:
         self._arrival_frame: Optional[dict] = None
         self._late: Optional[dict] = None
         self._metrics_row: Optional[dict] = None
+        self._metrics_thread: Optional[threading.Thread] = None
         # Set as _finish's LAST act -- after the policy is closed and the
         # metrics row built -- so a late check never starts beside them.
         self.finished = threading.Event()
@@ -1024,7 +1025,9 @@ class MissionRunner:
             # Kept so a late confirmation (3.53) can re-send THIS row: the
             # same run_id and finished_at, so the same stored object.
             self._metrics_row = row
-            ship_run_async(self.metrics_url, row, secret=self.metrics_secret)
+            # Kept so the late row can wait for this one to land first.
+            self._metrics_thread = ship_run_async(self.metrics_url, row,
+                                                  secret=self.metrics_secret)
         except Exception as e:  # noqa: BLE001
             logger.warning("metrics row not built: %s", e)
 
@@ -1080,35 +1083,52 @@ class MissionRunner:
             if late["state"] != "waiting":
                 return None
             frame = self._arrival_frame
-        confirm = getattr(self.vision_fn, "confirm_arrival", None)
-        if confirm is None or frame is None:
-            return {"confirmed": False, "cloud_called": False,
-                    "reason": "no confirmer or no arrival frame"}
-        went_out = True
+            confirm = getattr(self.vision_fn, "confirm_arrival", None)
+            if confirm is None or frame is None:
+                return {"confirmed": False, "cloud_called": False,
+                        "reason": "no confirmer or no arrival frame"}
+            # Counted HERE, in the same locked step as the check: from now
+            # on the call is committed, so a cancel that lands while it is
+            # out ships a record (and metrics row) that already includes it.
+            self._late = {**late, "paid_calls": late.get("paid_calls", 0) + 1}
+        uncount = False
         try:
             verdict = call_with_timeout(confirm, frame, timeout_s=self.vision_timeout_s)
-            went_out = bool(verdict.get("cloud_called"))
+            # A cap refusal made no call; take back the count (the policy
+            # decides that locally, before any I/O).
+            uncount = not verdict.get("cloud_called")
             return verdict
         finally:
             stats = self._policy_stats()
             with self._lock:
-                if self._late is not None and went_out:
+                if uncount and self._late is not None:
                     self._late = {**self._late,
-                                  "paid_calls": self._late.get("paid_calls", 0) + 1}
+                                  "paid_calls": max(0, self._late.get("paid_calls", 1) - 1)}
                 if stats is not None and self._tier is not None:
                     self._tier = {**self._tier, "stats": stats}
 
     def _ship_late_metrics(self, late: dict) -> None:
+        """Re-send the mission's own row (same run_id, so the same stored
+        object) with the late verdict. Its counters come from the policy NOW,
+        so the late call's cloud_calls and cloud_ms are in them; and it is
+        sent only after the original row's ship has finished -- both write
+        one key, and a late row landing first would be overwritten."""
         row = self._metrics_row
         if not self.metrics_url or row is None:
             return
         try:
-            from control.metrics_client import ship_run_async
-            stats = dict(row.get("stats") or {})
+            from control.metrics_client import ship_run
+            stats = {**(row.get("stats") or {}), **(self._policy_stats() or {})}
             stats["late_confirmation"] = {k: late.get(k) for k in
                                           ("state", "probes", "paid_calls", "reason")}
-            ship_run_async(self.metrics_url, {**row, "stats": stats},
-                           secret=self.metrics_secret)
+            late_row = {**row, "stats": stats}
+            first = self._metrics_thread
+
+            def send():
+                if first is not None:
+                    first.join(timeout=60)
+                ship_run(self.metrics_url, late_row, secret=self.metrics_secret)
+            threading.Thread(target=send, name="metrics-late", daemon=True).start()
         except Exception as e:  # noqa: BLE001
             logger.warning("late metrics row not built: %s", e)
 

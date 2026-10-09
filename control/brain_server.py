@@ -547,11 +547,18 @@ def create_app(
         "reconfirm": None, "generation": 0,
     }
 
+    # A Stop that will start the late check itself holds the slot with this
+    # across its awaits, so a second Stop cannot start another beside it,
+    # and a Start in between (which empties the slot) is seen afterwards.
+    _CLAIMED = object()
+
     def start_reconfirm(runner: MissionRunner, generation: int) -> None:
         """3.53: after an `arrived_unconfirmed` ending, ask again once the
         cloud is back. Free /health probes, one paid call; never the robot."""
         if generation != state["generation"]:
             return  # a start or stop came in while this loop was finishing
+        if state["reconfirm"] is not None:
+            return  # one is running, or a Stop has claimed the slot
         pending = getattr(runner, "late_confirmation_pending", None)
         # Off unless BOTH are positive: a 0 probe interval would spin.
         if not (config["reconfirm_window_s"] > 0 and config["reconfirm_probe_s"] > 0
@@ -565,7 +572,7 @@ def create_app(
 
     def cancel_reconfirm(reason: str) -> None:
         rc, state["reconfirm"] = state["reconfirm"], None
-        if rc is not None:
+        if rc is not None and rc is not _CLAIMED:
             rc.cancel(reason)
 
     def robot() -> RobotInterface:
@@ -694,6 +701,14 @@ def create_app(
             # even if the in-flight tick ended the mission first.
             if runner is not None:
                 runner.operator_stopped = True
+        # Decided BEFORE the first await, and the slot claimed: a second
+        # Stop sees it taken, and a Start meanwhile (which bumps the
+        # generation and empties the slot) is noticed below.
+        generation = state["generation"]
+        claimed = (ended_already and state["reconfirm"] is None
+                   and not getattr(runner, "operator_stopped", False))
+        if claimed:
+            state["reconfirm"] = _CLAIMED
         if task is not None and not task.done():
             task.cancel()
             try:
@@ -701,14 +716,15 @@ def create_app(
             except asyncio.CancelledError:
                 pass
         state["task"] = None
-        if (ended_already and state["reconfirm"] is None
-                and not getattr(runner, "operator_stopped", False)):
+        if claimed:
             # The tick thread may still be inside _finish (closing the
             # policy, building the metrics row); wait for its last act.
             finished = getattr(runner, "finished", None)
             if finished is not None:
                 await asyncio.to_thread(finished.wait, 5.0)
-            start_reconfirm(runner, state["generation"])
+            if state["reconfirm"] is _CLAIMED:
+                state["reconfirm"] = None
+                start_reconfirm(runner, generation)  # a no-op if a Start came in
 
         if runner is not None:
             await asyncio.to_thread(runner.stop)

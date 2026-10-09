@@ -253,12 +253,95 @@ def test_only_an_unconfirmed_arrival_records_anything():
     assert runner.status()["late_confirmation"] is None
 
 
+def _metrics_runner(cloud):
+    x, y, off = CLEAR_STARTS[0]
+    grid = _build()
+    grid.x, grid.y = x, y
+    grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
+    robot = MockRobot(grid, render=False)
+    runner = MissionRunner(robot, target_object=TARGET, max_steps=60, policy="tiered",
+                           vision_fn=TieredVision(FrameReportedPipeline(TARGET), cloud,
+                                                  steer_on_sight=True, hold_goal=True,
+                                                  async_cloud=True),
+                           world=mock_world_for(robot))
+    runner.metrics_url = "http://metrics.invalid"
+    return runner
+
+
+def _wait_for(pred, timeout=5):
+    deadline = time.time() + timeout
+    while not pred():
+        assert time.time() < deadline
+        time.sleep(0.02)
+
+
+def test_review_the_late_row_lands_after_the_original_and_counts_the_late_call(monkeypatch):
+    """Coordinator's Thermos pass, finding 3: both rows write one key, so the
+    late one must land second even when the original's ship is slow; and its
+    stats must include the late call (cloud_calls), not the frozen row's."""
+    import threading
+    import control.metrics_client as mc
+    landed = []
+
+    def slow_async(url, row, **k):
+        def go():
+            time.sleep(0.5)
+            landed.append(("original", row))
+        t = threading.Thread(target=go, daemon=True)
+        t.start()
+        return t
+    monkeypatch.setattr(mc, "ship_run_async", slow_async)
+    monkeypatch.setattr(mc, "ship_run", lambda url, row, **k: landed.append(("late", row)))
+    cloud = SwitchableCloud()
+    runner = _metrics_runner(cloud)
+    runner.start()
+    while runner.tick():
+        pass
+
+    def probe():
+        cloud.up = True
+        return True
+    FakeClockReconfirmer(runner, probe, interval_s=15, window_s=600).run()
+    _wait_for(lambda: len(landed) == 2)
+    assert [k for k, _ in landed] == ["original", "late"], landed
+    original, late = landed[0][1], landed[1][1]
+    assert late["stats"]["cloud_calls"] == original["stats"]["cloud_calls"] + 1
+
+
+def test_review_a_cancel_while_the_call_is_out_ships_the_call(monkeypatch):
+    """Coordinator's Thermos pass, finding 2: a cancel that lands while the
+    paid call is out ships the `dropped` record -- and that record must
+    already count the call, or the stored metrics understate the spend."""
+    import control.metrics_client as mc
+    shipped = []
+    monkeypatch.setattr(mc, "ship_run_async", lambda url, row, **k: None)
+    monkeypatch.setattr(mc, "ship_run", lambda url, row, **k: shipped.append(row))
+    cloud = SwitchableCloud()
+    runner = _metrics_runner(cloud)
+    runner.start()
+    while runner.tick():
+        pass
+    rc = FakeClockReconfirmer(runner, lambda: True, interval_s=15, window_s=600)
+    real = runner.vision_fn.confirm_arrival
+
+    def cancelled_while_out(frame):
+        rc.cancel("a new mission started")  # lands with the call committed
+        cloud.up = True
+        return real(frame)
+    runner.vision_fn.confirm_arrival = cancelled_while_out
+    rc.run()
+    _wait_for(lambda: shipped)
+    assert shipped[0]["stats"]["late_confirmation"]["state"] == "dropped"
+    assert shipped[0]["stats"]["late_confirmation"]["paid_calls"] == 1, shipped[0]
+
+
 def test_6_metrics_row_is_resent_not_added(monkeypatch):
     """Criterion 6: the late verdict re-sends the mission's own row (same
     run_id and finished_at) with stats.late_confirmation."""
     sent = []
     import control.metrics_client as mc
     monkeypatch.setattr(mc, "ship_run_async", lambda url, row, **k: sent.append(row))
+    monkeypatch.setattr(mc, "ship_run", lambda url, row, **k: sent.append(row))
     cloud = SwitchableCloud()
     x, y, off = CLEAR_STARTS[0]
     grid = _build()
@@ -280,7 +363,7 @@ def test_6_metrics_row_is_resent_not_added(monkeypatch):
         cloud.up = True
         return True
     FakeClockReconfirmer(runner, probe, interval_s=15, window_s=600).run()
-    assert len(sent) == 2, sent
+    _wait_for(lambda: len(sent) == 2)
     first, second = sent
     assert second["run_id"] == first["run_id"]
     assert second["finished_at"] == first["finished_at"]
@@ -416,6 +499,90 @@ def test_review_a_later_stop_never_starts_a_check_an_earlier_stop_forbade(reconf
         time.sleep(0.5)
         assert cloud.calls_while_up == 0
         assert runners[0].status()["late_confirmation"] is None
+
+
+def _count_reconfirmers(monkeypatch):
+    import control.brain_server as bs
+    made = []
+
+    class Counting(Reconfirmer):
+        def __init__(self, runner, *a, **k):
+            made.append(runner)
+            super().__init__(runner, *a, **k)
+    monkeypatch.setattr(bs, "Reconfirmer", Counting)
+    return made
+
+
+async def _ended_over_asgi(client):
+    await client.post("/mission/start", json={"target_object": TARGET, "policy": "tiered"})
+    import asyncio
+    for _ in range(2400):
+        status = (await client.get("/mission/status")).json()
+        if not status["running"]:
+            assert status["outcome"] == ARRIVED_UNCONFIRMED
+            return
+        await asyncio.sleep(0.05)
+    pytest.fail("mission did not end")
+
+
+@pytest.mark.parametrize("reconfirm_app", [1.0], indirect=True)
+def test_review_two_stops_at_once_start_one_check(reconfirm_app, monkeypatch):
+    """Coordinator's Thermos pass, finding 1a: two Stops inside the loop's
+    post-tick sleep both saw an empty slot and both started a check -- the
+    first orphaned, both able to pay at once. The slot is claimed before
+    the first await."""
+    import asyncio
+    import httpx
+    made = _count_reconfirmers(monkeypatch)
+    app, cloud, runners = reconfirm_app
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://brain") as client:
+            await _ended_over_asgi(client)
+            await asyncio.gather(client.post("/mission/stop"), client.post("/mission/stop"))
+            cloud.up = True
+            await asyncio.sleep(0.5)
+    asyncio.run(go())
+    assert len(made) == 1, f"{len(made)} late checks started"
+    assert cloud.calls_while_up == 1
+
+
+@pytest.mark.parametrize("reconfirm_app", [1.0], indirect=True)
+def test_review_a_start_during_a_stop_never_checks_the_old_mission(reconfirm_app, monkeypatch):
+    """Coordinator's Thermos pass, finding 1b: a Start that lands while a
+    Stop is awaiting must leave the Stop unable to start a check for the
+    OLD runner, which would pay while the new mission drives. The Stop
+    reads the generation at entry."""
+    import asyncio
+    import httpx
+    made = _count_reconfirmers(monkeypatch)
+    app, cloud, runners = reconfirm_app
+
+    class SlowFinished:
+        def wait(self, timeout=None):
+            time.sleep(1.0)  # the Stop is parked here while the Start runs
+            return True
+
+        def is_set(self):
+            return True
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://brain") as client:
+            await _ended_over_asgi(client)
+            runners[0].finished = SlowFinished()
+
+            async def start_later():
+                await asyncio.sleep(0.3)
+                return await client.post("/mission/start",
+                                         json={"target_object": TARGET, "policy": "tiered"})
+            stop, start = await asyncio.gather(client.post("/mission/stop"), start_later())
+            assert start.status_code == 200, start.text
+            await asyncio.sleep(0.5)
+            await client.post("/mission/stop")
+    asyncio.run(go())
+    assert runners[0] not in made, "a late check was started for the old mission"
 
 
 def test_4_amended_a_refused_start_leaves_it(reconfirm_app):
