@@ -1,11 +1,11 @@
 """3.46 criterion 6: does a detector that names everything name things right?
 
-    python -m control.inventory_label vocab              # once: which of the 4,585 names are objects
-    python -m control.inventory_label detect             # the detector over every walk (free, CPU)
-    python -m control.inventory_label judge --limit 5    # the cloud judge; prints the cost so far
-    python -m control.inventory_label judge              # every frame, stops at --budget dollars
-    python -m control.inventory_label sample             # the user's 150 frames, as a local page
-    python -m control.inventory_label score [--human F]  # threshold, precision, agreement
+    python -m tools.inventory_label vocab              # once: which of the 4,585 names are objects
+    python -m tools.inventory_label detect             # the detector over every walk (free, CPU)
+    python -m tools.inventory_label judge --limit 5    # the cloud judge; prints the cost so far
+    python -m tools.inventory_label judge              # every frame, stops at --budget dollars
+    python -m tools.inventory_label sample             # the user's 150 frames, as a local page
+    python -m tools.inventory_label score [--human F]  # threshold, precision, agreement
 
 The method is `PLAN-ros-alignment.md` 3.46 amendment 3, written before any
 run. In short:
@@ -501,7 +501,7 @@ def cmd_score(args) -> None:
 
 
 def main(argv=None) -> None:
-    ap = argparse.ArgumentParser(prog="python -m control.inventory_label")
+    ap = argparse.ArgumentParser(prog="python -m tools.inventory_label")
     sub = ap.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("vocab")
     v.add_argument("--budget", type=float, default=5.0)

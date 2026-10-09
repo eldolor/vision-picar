@@ -1,5 +1,5 @@
 """
-tests/test_inventory_label.py -- control/inventory_label.py's logic (3.46
+tests/test_inventory_label.py -- tools/inventory_label.py's logic (3.46
 amendment 3), on fakes: no model, no cloud call, no recordings.
 """
 import json
@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from control import inventory_label as il
+from tools import inventory_label as il
 
 
 def _det(*boxes):
