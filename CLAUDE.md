@@ -130,12 +130,25 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   10 cm before scoring (`correlation_search_space_smear_deviation`
   0.10 -> 0.03 m: two tours within 4.2 cm, every room's walls 100% true).
   Scans are also stamped with their capture time (skew 21 -> 7 ms).
+* **Rooms from CLIP (3.51, 3.54), merged 2026-10-09.** Zero-shot fails
+  (67%); few-shot on the user's own rooms meets accuracy on three rooms
+  (81%, within 1.1 points of the cloud) but not laptop-CPU cost. Not wired
+  in; the rest of the house is unrecorded.
+* **Offline is a mode (3.49), merged 2026-10-09.** With every connection
+  refused: the robot server loads no cloud client, `frontier`/`explore`
+  still find, tiered ends `arrived_unconfirmed` at the target, `vision`
+  ends `failed` without moving, the twin loads nothing from the internet.
+  One criterion failed and is recorded (an async start closes 0.62 cells
+  less than with the network). `tests/test_offline_mode.py`.
 * **Offline arrival (3.47), merged 2026-10-09.** A tiered mission whose
   arrival holds but whose identity check cannot reach the cloud ends
   `arrived_unconfirmed` (not `found`, not `failed`). Only `CloudUnavailable`
   from `brain/navigate.py` (transport error, 5xx, 408, 429) counts as
-  unreachable. Known limits in the section. Twin warn style and re-asking
-  the cloud when it returns: approved by the user, not built.
+  unreachable. Known limits in the section. Since 3.53 (merged and the twin
+  deployed 2026-10-09) the twin shows it as a warning, and the brain keeps
+  the arrival frame, probes the cloud's free `/health` (15 s, up to 600 s)
+  and asks once when it returns: `status.late_confirmation`, never `found`,
+  never a robot call.
 * **Object inventory (3.46), merged 2026-10-08.** Every mission records
   what it saw, placed by the lidar, weighted by looks from new viewpoints;
   `GET /mission/inventory`, and uploaded to the recordings bucket under

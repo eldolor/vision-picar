@@ -68,3 +68,35 @@ def test_the_fast_tier_leaves_out_only_the_slow_files():
                  "test_authority.py", "test_spec_lint.py", "test_ros_containment.py"):
         assert kept not in left_out
     assert set(ps.SLOW_FILES) <= set(tests)
+
+
+def test_a_clean_rebase_keeps_the_change_id(tmp_path):
+    """The gate keys a pass on the change, so a rebase onto another
+    session's push does not rerun the tier; a different change does."""
+    import subprocess as sp
+
+    def g(*a):
+        return sp.run(["git", *a], cwd=tmp_path, check=True, capture_output=True,
+                      text=True).stdout.strip()
+
+    g("init", "-q", "-b", "main")
+    g("config", "user.email", "t@example.com")
+    g("config", "user.name", "t")
+    (tmp_path / "a.txt").write_text("a\n")
+    (tmp_path / "b.txt").write_text("b\n")
+    g("add", "."); g("commit", "-qm", "base")
+    base = g("rev-parse", "HEAD")
+    g("checkout", "-qb", "mine")
+    (tmp_path / "a.txt").write_text("a\nmine\n")
+    g("commit", "-qam", "mine")
+    before = ps.change_id(base, g("rev-parse", "HEAD"), str(tmp_path))
+    g("checkout", "-q", "main")
+    (tmp_path / "b.txt").write_text("b\ntheirs\n")
+    g("commit", "-qam", "theirs")
+    theirs = g("rev-parse", "HEAD")
+    g("checkout", "-q", "mine"); g("rebase", "-q", "main")
+    after = ps.change_id(theirs, g("rev-parse", "HEAD"), str(tmp_path))
+    assert before and before == after
+    (tmp_path / "a.txt").write_text("a\nmine, edited\n")
+    g("commit", "-qam", "edit")
+    assert ps.change_id(theirs, g("rev-parse", "HEAD"), str(tmp_path)) != before

@@ -324,6 +324,13 @@ brain:
   vision_timeout_s: 20.0
   max_vision_failures: 3
 
+  # 3.53 -- a mission that ended `arrived_unconfirmed` (the cloud was down
+  # at arrival) asks again once the cloud is back: a free /health probe this
+  # often, for at most this long, then ONE paid call on the arrival frame.
+  # The answer is recorded beside the outcome, never instead of it. 0 = off.
+  reconfirm_probe_s: 15.0
+  reconfirm_window_s: 600.0
+
   # Replaying a recorded walk, which is NOT a mission and wants a longer
   # deadline: nothing is driving, and replay is the burstiest caller here
   # (several frames at once against one vision task, on the slowest model

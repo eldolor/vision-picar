@@ -304,10 +304,26 @@ def run_tests(root: str, full: bool) -> bool:
                            "-p", "no:cacheprovider", *args], cwd=root).returncode == 0
 
 
+def change_id(base: str, sha: str, root: str) -> str:
+    """`git patch-id` of the change being pushed: the same diff gets the same
+    id after a rebase that applied cleanly. Keying the pass on this, not on
+    the commit, is what stops a 7-minute tier losing a race to every other
+    session's push (2026-10-09: two in a row). The nightly full run still
+    sees how changes combine."""
+    diff = subprocess.run(["git", "diff", base, sha], capture_output=True, cwd=root).stdout
+    out = subprocess.run(["git", "patch-id", "--stable"], input=diff,
+                         capture_output=True, cwd=root).stdout.decode().split()
+    return "change-" + out[0] if out else ""
+
+
 def cmd_gate(base: str, sha: str) -> None:
     """Called by tools/hooks/pre-push for a push of `sha` to dev."""
     root = top()
     if os.path.exists(os.path.join(gate_dir(), sha)):
+        return
+    cid = change_id(base, sha, root) if base else ""
+    if cid and os.path.exists(os.path.join(gate_dir(), cid)):
+        print("pre-push: this change already passed the fast tier before a rebase", flush=True)
         return
     files = git("diff", "--name-only", base, sha, cwd=root).splitlines() if base else []
     if docs_only(files):
@@ -323,7 +339,9 @@ def cmd_gate(base: str, sha: str) -> None:
     print(f"pre-push: running the fast tier on {sha[:9]} ...", flush=True)
     if not run_tests(root, full=False):
         raise SystemExit("pre-push: fast tier failed")
-    open(os.path.join(gate_dir(), sha), "w").write("passed fast\n")
+    for key in (sha, cid):
+        if key:
+            open(os.path.join(gate_dir(), key), "w").write("passed fast\n")
 
 
 def cmd_ready(full: bool = False) -> None:

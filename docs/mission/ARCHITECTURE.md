@@ -182,6 +182,27 @@ deliberately not "failed":
   ([policy](../policy/ARCHITECTURE.md), "The cloud confirms identity at
   arrival").
 
+### An unconfirmed arrival is asked again when the cloud is back
+
+**Decision** (3.53, approved by the user 2026-10-09). After an
+`arrived_unconfirmed` ending the brain keeps the frame the arrival was
+judged on, probes the cloud's free health route, and when it answers asks
+the identity question ONCE, recording the answer beside the outcome
+(`late_confirmation`), never instead of it. The outcome is not rewritten:
+the first outcome wins, and a late yes is evidence for a person to read,
+not a `found` the mission earned on its own terms. It is bounded (a probe
+every 15 s for ten minutes, two paid attempts at most), it never moves or
+stops the robot (the mission is over; a stop now would halt whoever drives
+next), a new mission drops it, and a brain restart loses it. A Stop after
+the ending does not drop it: it moves nothing, and the phone sends Stop on
+every close.
+
+**Rejected:** rewriting the outcome to `found` on a late yes (breaks "first
+outcome wins", and the robot may have been moved since); keeping the
+mission running until the cloud answers (holds the robot and the mission
+slot for an unbounded time); probing with a paid `/navigate` call (a free
+route exists).
+
 ### A mission starts with the camera centred
 
 **Decision.** The first tick centres the camera through the halt gate,
@@ -199,6 +220,35 @@ mission proceeds without a map (the frontier policy falls back to its
 right-hand rule). If the body cannot answer, the step fails and the mission
 ends **failed** with the robot stopped. Odometry for pacing is attached to
 each frame on a best-effort basis for the same reason.
+
+### Offline is a mode, not a failure
+
+**Decision** (3.49, asked by the user 2026-10-09). With the cloud
+unreachable -- Wi-Fi down, the tunnel gone, a refused or hanging connection
+-- these keep working, each pinned by a test with every socket connect
+refused (mission start with an unreachable model allow-list is pinned only
+by 3.49's live run, criterion 7):
+
+- the safety veto and the watchdog: the robot server imports no cloud
+  client;
+- the tiered policy's local search, steering and arrival, ending
+  **arrived_unconfirmed** at the target rather than **found** or **failed**;
+- the twin, served by the robot server on the LAN, loading nothing from the
+  internet;
+- mission start (an unreachable model allow-list is tolerated) and
+  `/health`.
+
+On the car, offline means the tiered policy: `frontier` and `explore` never
+call the cloud, but their vision step is the rule-based one, which reads the
+simulator. The `vision` policy is cloud-only and ends **failed** at once.
+
+**Rejected.** Falling back to the rule-based explorer when the cloud drops
+(`PLAN-onboard-perception.md` 2.5): on the car it has no detector, and the
+tiered policy already searches without the cloud.
+
+**Trade-off.** Offline, no mission ends **found**: identity is the cloud's
+question. A hanging cloud costs up to the failure budget times the vision
+timeout of parked time at arrival (60 s at the shipped 20 s).
 
 ### Fault drills exercise the real guards
 
@@ -253,11 +303,11 @@ tools, a tool runner belongs inside the vision function, below the runner.
   home moved from a Pi to the Jetson on 2026-09-19. Decided by the user on
   hardware day; settled when a mission starts from a phone after a reboot with
   no laptop on the network.
-- **Degraded mode when the cloud is unreachable.**
-  `PLAN-onboard-perception.md` 2.5 proposes falling back to the rule-based
-  explorer instead of ending the mission; today a blown vision budget ends it
-  **failed**. Needs a user decision, and data from a mission run with the link
-  cut.
+- **Degraded mode when the cloud is unreachable** is decided for the
+  tiered policy (see "Offline is a mode, not a failure"). Still open: whether
+  status should say "cloud unreachable" before a mission fails or parks, and
+  whether a parked **arrived_unconfirmed** robot re-asks the cloud when the
+  link returns.
 - **Mission persistence.** A brain restart loses the mission. Worth revisiting
   only if a field run shows restarts happen.
 - **Chaos and soak (S7).** Added latency, dropped requests and a 1000-step run

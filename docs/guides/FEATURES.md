@@ -534,6 +534,12 @@ change what frame 13 shows in a replay; here, it can).
    failed, max_steps, a live stall, a live vision-failure budget hit --
    surfaces through the exact same error path a lost `/navigate`
    connection would, and stops the tick loop the same way arrival does.
+   **Except `arrived_unconfirmed`** (3.53): the robot stopped at what the
+   local tier took for the target and the cloud could not confirm it. That
+   is an outcome, not a lost link -- the caption says what was and was not
+   checked, the telemetry shows `STA UNCONFIRMED` and `LATE <state>` in
+   yellow, and when the brain's late check lands (it asks once the cloud is
+   back) the caption, telemetry and a toast say what the cloud answered.
 
 **Stop** -> `POST {brainUrl}/mission/stop` (fire-and-forget, since
 `stopGuidance()` isn't async), which stops both the mission loop and the
@@ -656,7 +662,10 @@ finished map at mission start; N1's discovered map replaced it.)
   robot stopped.
 - **Telemetry** -- outcome, step, last action, vision failures, rooms, the
   model's (or tier's) reason, the robot watchdog, who is driving, the last
-  refusal. Three R-phase additions:
+  refusal. An `arrived_unconfirmed` ending (3.47) shows in yellow with a
+  warning toast that says the identity was not checked, then the late
+  check's state (`will ask again when the cloud is back`, then what the
+  cloud said, 3.53). Three R-phase additions:
   - **Last action names a sized turn** -- `LEFT 23°` is a correction onto a
     measured bearing (R1); a bare `LEFT` is a turn nothing sized.
   - **Turns** -- `98 of 120 steps, 0 reversed the one before`, and **SPINNING

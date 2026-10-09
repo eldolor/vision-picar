@@ -21,6 +21,7 @@ threads; where it and this file disagree, check the code.
 |---|---|
 | `control/brain_server.py` | FastAPI app (`create_app()`, module-level `app`). One mission slot in a `state` dict, the asyncio `mission_loop()` that runs `runner.tick` on a worker thread under B3.3's deadline, start-time validation, the policy wiring (`vision_fn_for`, `_tiered_vision_fn`), and the health route. |
 | `control/mission_runner.py` | `MissionRunner` (lifecycle, outcomes, status, B3.2), `_HaltGate` (a `RobotInterface` wrapper), `call_with_timeout()` (daemon-thread timeout), the outcome constants and `POLICIES`. |
+| `control/reconfirm.py` | 3.53: `Reconfirmer` (one late identity check for one finished runner, on a daemon thread: free `GET <vision_url>/health` probes, then ONE paid `runner.late_ask()`; bounded by `reconfirm_window_s` and two paid attempts; `cancel(reason)` records `dropped`) and `health_probe()`. Never touches the robot. |
 | `control/brain_config.py` | `load_brain_config()`: reads only the `brain:` block of `config/robot.yaml`, merges it over `DEFAULTS`, applies env overrides, and raises `ValueError` on an unknown key. Deliberately does not import `robot/factory.py`. |
 | `control/drills.py` | `FAULTS`, `apply()` (folds a fault into the runner kwargs), `TickHangRunner`, the stand-in vision functions. |
 | `control/remote_robot.py` | `RemoteRobot`, the body client; sends `x-driver: brain` (`DEFAULT_DRIVER`). Owned by the body domain; listed because the brain builds it. |
@@ -132,7 +133,71 @@ is a refusal and never a B3.2 vision failure three ticks in.
 Every terminal path is `_finish(outcome, note)`: set not-running (closing the
 gate), record the outcome (first one wins), `_safe_stop()` (logs, never
 raises), `vision_fn.close()` if present, then ship one metrics row if
-`metrics_url` is set.
+`metrics_url` is set (kept as `_metrics_row`).
+
+### Asking again after `arrived_unconfirmed` (3.53)
+
+The failed confirmation's error also carries the frame (`arrival_frame`,
+set by the agent beside `arrival_readout`); the runner holds it with the
+readout and `_finish()` keeps it as `_arrival_frame`. When `mission_loop()`
+ends on its own and `runner.late_confirmation_pending()`,
+`start_reconfirm()` starts a `Reconfirmer` (`control/reconfirm.py`):
+
+1. `late_update(state="waiting")`; then, every `reconfirm_probe_s` until
+   `reconfirm_window_s` has passed, one `GET <vision_url>/health` (free; the
+   vision service's existing route, timeout `min(3, reconfirm_probe_s)`).
+2. On a 200, `runner.late_ask()`: it returns None without calling if the
+   record is already final (checked under the lock), else the policy's
+   `confirm_arrival(frame)` on the stored frame under
+   `call_with_timeout(vision_timeout_s)`. `paid_calls` is counted in the
+   same locked step as the check, so a cancel that lands while the call is
+   out ships a record that includes it, and when that call returns the row
+   is sent again with counters that include it; a cap refusal (decided
+   locally, no I/O) takes the count back, on a final record too, and that
+   record is re-sent; `_tier.stats` is refreshed from the policy afterwards. A raise
+   is retried on a 200 no sooner than `reconfirm_window_s / 2` later (capped
+   inside the window; a window that runs out after a failed call ends
+   `failed`, not `expired`)
+   (`/health` is shallow: it answers while Bedrock is down, so only a paid
+   call sees that outage), at most two paid attempts, then `failed`; a
+   `TimeoutError` ends it `failed` at once, because that call is still in
+   flight on its abandoned thread and a second beside it would break "one
+   call at a time". Not `_guarded_confirm()`, which maps the timeout away.
+3. The verdict becomes `confirmed`, `refused` or `not_asked` (no call made:
+   the policy's cap). The window running out is `expired`.
+
+`late_update()` merges under the lock and never overwrites a final state
+(the first answer wins, like the outcome); it returns None on a runner that
+did not end `arrived_unconfirmed` with a frame. A final state logs one line
+and re-sends `_metrics_row` with `stats.late_confirmation` (same `run_id`
+and `finished_at`, so the same stored object). The re-sent row's counters
+come from the policy at that moment (so they include the late call), and it
+is sent only after every earlier send of the key has finished (the
+original's `_metrics_thread`, then any earlier late row's
+`_late_ship_thread`). Each late row is built, chained and queued in one
+locked step from the record as it is then, so a row queued later is never
+staler than one queued before it. A `POST /mission/start` whose
+runner was built (a refused start changes nothing) bumps
+`state["generation"]` and calls `cancel_reconfirm()`, which records
+`dropped` before setting the cancel flag, so `late_ask()` refuses from that
+moment. `POST /mission/stop` decides on the runner: it bumps the generation
+only when the runner is still running; when the mission had already ended
+it leaves a waiting check alone, and starts it itself if the loop was
+cancelled in its post-tick sleep before it could. That Stop reads the
+generation and claims the slot (`state["reconfirm"] = _CLAIMED`) before its
+first await, so a second Stop cannot start another check beside it and a
+Start meanwhile (which empties the slot and bumps the generation) leaves it
+unable to start one for the old runner; `start_reconfirm()` also refuses
+while the slot is held, and a claim still held when the handler raises is
+released in a `finally`. It starts the check after waiting for
+`runner.finished` (set as `_finish`'s last act, which
+`late_confirmation_pending()` also requires). A Stop that lands while the
+runner is running marks it `operator_stopped`, and no later Stop starts a
+check for it (the Guide tab sends Stop on every close; amendment 1). `mission_loop()` starts
+a check only if its generation is still current. Both
+`reconfirm_probe_s` and `reconfirm_window_s` must be positive, or it is
+off. The outcome is never rewritten, `memory.found` stays false, and
+nothing on this path calls the robot.
 
 ## Interfaces
 
@@ -169,13 +234,18 @@ otherwise). CORS allows any origin.
 `target_room`, `step`, `max_steps`, `found`, `room_reached`, `complete`,
 `last_action`, `turns` (`count`, `reversals`, `last_turn_deg`, `share`,
 `spinning`), `last_reasoning`, `rooms_visited`, `rooms_searched`,
-`vision_failures`, `tier`, `perception`, `arrival`, `last_frame_seq`,
-`ticks`, `seconds_since_last_tick`, `tick_rate_hz`, `sighting`, `log_tail`
-(last `LOG_TAIL_LINES` = 20). `tier`/`perception` are null under any policy
-without a perception tier. `AGENT-HARNESS.md` section 8 describes each.
+`vision_failures`, `tier`, `perception`, `arrival`, `late_confirmation`,
+`last_frame_seq`, `ticks`, `seconds_since_last_tick`, `tick_rate_hz`,
+`sighting`, `log_tail` (last `LOG_TAIL_LINES` = 20). `tier`/`perception`
+are null under any policy without a perception tier. `late_confirmation`
+(3.53) is null except after an `arrived_unconfirmed` ending: `{state,
+probes, paid_calls, reason, at, confirmed?}`, `state` one of `waiting`,
+`confirmed`, `refused`, `failed`, `not_asked`, `expired`, `dropped`.
+`AGENT-HARNESS.md` section 8 describes each.
 
 **Outcome strings:** `idle`, `running`, `found`, `room_reached`, `stopped`,
-`max_steps`, `blocked`, `preempted`, `failed`.
+`max_steps`, `blocked`, `searched`, `arrived_unconfirmed`, `preempted`,
+`failed`.
 
 ### In-process
 
@@ -209,6 +279,8 @@ The `brain:` block of `config/robot.yaml`, read by
 | `request_timeout_s` | 10.0 | 10.0 | s | robot and world clients, allow-list check | |
 | `vision_timeout_s` | 20.0 | 20.0 | s | B3.2 per-call timeout | |
 | `max_vision_failures` | 3 | 3 | calls | B3.2 budget | B3 plan's suggestion; three abandoned threads at most |
+| `reconfirm_probe_s` | 15.0 | 15.0 | s | `start_reconfirm` | 3.53: one free `/health` probe this often after an `arrived_unconfirmed` ending |
+| `reconfirm_window_s` | 600.0 | 600.0 | s | `start_reconfirm` | 3.53: give up (`expired`) after this; 0 turns the late check off. Worst case 41 probes and 2 paid calls per arrival |
 | `tick_timeout_s` | 30.0 | 30.0 | s | B3.3 dead-man | must stay above `teleop.stall_timeout_s` (15 s) so the specific teleop error fires first. **Not** above two `vision_timeout_s` (40 s): under a SYNCHRONOUS tier a tick that judges an arrival holds the vision call and the confirmation, each up to 20 s, so a slow pair is ended by B3.3 as "loop hung" rather than counted by B3.2. The shipped asynchronous tier has only the confirmation in the tick (review 3, fix 18; left as is, recorded) |
 | `tick_interval_s` | 0.25 | 0.0 | s | `mission_loop` | pacing so a sim mission is watchable; 0 in code so tests stay fast; can be 0 on hardware |
 | `allow_drills` | true | true | -- | `drills.apply` | off for any brain reachable beyond the LAN |
@@ -319,8 +391,10 @@ tests/test_mission_guarded_verbs.py -q`.
 | `tests/test_camera_centred_start.py` (11) | 3.20's four criteria: centred first decision under `frontier` and `vision` (tiered is not parametrised), no step or vision call spent, centred start unchanged against `tests/data/frontier_trace_centred.json`, a refused centring ends the mission like any refused move |
 | `tests/test_mission_guarded_verbs.py` (3) | 3.32: a mission's verbs go through the safety layer's guarded plan; the gate forwards plan and stop count; a finished mission refuses a plan |
 | `tests/test_bearing_turns.py` | `blocked` after `stuck_after` refusals, never on an arrival, switchable off, reset by progress |
+| `tests/test_arrival_reconfirm.py` (26) | 3.53: once the cloud is back, exactly one paid call on all 12 clear starts for a cloud that sees the target and one that does not; the outcome unchanged; no robot method called; free and bounded probing (`expired`); two paid attempts, half a window apart, then `failed`, and a server-side outage that clears in the window `confirmed`; a cancel never pays, also when it lands between the probe and the call; a cap refusal counts no paid call; a hung call is never doubled; only an unconfirmed arrival records anything; the metrics row re-sent, not added; through `brain_server`, a new mission drops it, a refused start and a Stop after the ending (also one in the loop's last sleep) do not; the brain's own loop asks |
 | `tests/test_robot_contract.py` | `_HaltGate` passes the body conformance suite as a backend |
 | `tests/test_remote_robot.py` | an identical action sequence and step count in-process, over ASGI and over a live socket |
+| `tests/test_offline_mode.py` (11) | 3.49, with every socket connect refused and the real HTTP cloud client: the robot server loads no cloud client (a subprocess's `sys.modules`, and every file under `robot/`); `frontier`/`explore` still `found`; tiered (sync, async) searches from out of sight and ends `arrived_unconfirmed` at the target; `vision` fails without moving; no offline tiered run `failed`; a hanging cloud parks for at most budget x timeout + 1 s; the twin references no external host |
 
 **Checklist for a change here:** a new movement method on `RobotInterface`
 must be added to `_HaltGate.MOVEMENT`; a new sensing method must be passed
@@ -336,7 +410,12 @@ the yaml, or the walks Lambda fails at cold start.
   `DEFAULT_MIN_DISTANCE_CM` in `control/mission_runner.py` say 20.0, and the
   yaml's own comment says "NOT 30.0". Any config file without the key gets 30.
 - **The cloud-unreachable degraded mode** (`PLAN-onboard-perception.md` 2.5)
-  is not built: a blown vision budget ends the mission `failed`.
+  is built only at arrival: an outage there ends `arrived_unconfirmed`
+  (3.47) and is asked again when the cloud returns (3.53). Anywhere else a
+  blown vision budget ends the mission `failed`.
+- **The late check lives in memory** (3.53): a brain restart loses it, and
+  the mission's metrics row then keeps `arrived_unconfirmed` with no late
+  verdict.
 - **No mission persistence** across a brain restart, one mission per brain,
   `MissionMemory` per mission (`AGENT-HARNESS.md` section 12).
 - **No boot units (B5)** on the Jetson.

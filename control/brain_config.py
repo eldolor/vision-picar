@@ -160,6 +160,12 @@ DEFAULTS = {
     # B3.2 -- the AWS link failsafe.
     "vision_timeout_s": 20.0,
     "max_vision_failures": 3,
+    # 3.53 -- after an `arrived_unconfirmed` ending, probe the vision
+    # service's free /health this often, for at most this long, and ask the
+    # identity question once when it answers (control/reconfirm.py). A
+    # window of 0 turns it off.
+    "reconfirm_probe_s": 15.0,
+    "reconfirm_window_s": 600.0,
     # Replaying a recorded walk (control/walk_replay.py) is a different
     # question from a live mission's vision call, and it wants a different
     # deadline. A mission is impatient on purpose -- there is a robot

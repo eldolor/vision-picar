@@ -2003,6 +2003,628 @@ def test_a_mission_that_ENDS_says_so_instead_of_sitting_on_deciding(browser, twi
     context.close()
 
 
+# ---------- 3.53: arrived, unconfirmed ----------
+
+def unconfirmed_status(late_state="waiting"):
+    """What the runner sends after 3.47's `arrived_unconfirmed` ending, with
+    3.53's late confirmation in `late_state`."""
+    ended = dict(tiered_status(running=False))
+    ended.update({
+        "outcome": "arrived_unconfirmed", "error": None,
+        "arrival": {"state": "unconfirmed", "range_m": 0.355, "bearing_deg": 1.2,
+                    "streak": 3, "reason": "arrived, but the cloud could not be asked"},
+        "late_confirmation": {"state": late_state, "probes": 3, "paid_calls":
+                              0 if late_state == "waiting" else 1},
+        "log_tail": ["mission ended (arrived_unconfirmed): arrived (lidar 0.355 m)"],
+    })
+    return ended
+
+
+def test_an_unconfirmed_arrival_is_a_warning_not_an_error_and_the_late_answer_lands(
+        browser, twin_server):
+    """3.53 (approved by the user 2026-10-09). The Remote brain panel showed
+    `arrived_unconfirmed` uncoloured, with a red error toast that said only
+    the outcome's name. It is a warning: yellow, a toast that says what was
+    and was not checked -- and when the brain's late check lands, the panel
+    and a toast say what the cloud answered."""
+    current = {"body": tiered_status()}  # running, so the panel polls
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(current["body"])))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+
+    current["body"] = unconfirmed_status("waiting")
+    outcome = page.locator("#brain-tel-outcome")
+    sync_api.expect(outcome).to_contain_text("arrived_unconfirmed", timeout=5000)
+    sync_api.expect(outcome).to_have_class("val warn")
+    sync_api.expect(outcome).to_contain_text("will ask again when the cloud is back")
+    sync_api.expect(page.locator("#brain-tel-why")).to_contain_text("identity is unconfirmed")
+    toast = page.locator(".toast.warn")
+    sync_api.expect(toast).to_contain_text("identity is unconfirmed")
+    assert page.locator(".toast.err").count() == 0, "an unconfirmed arrival read as an error"
+
+    current["body"] = unconfirmed_status("confirmed")
+    sync_api.expect(outcome).to_contain_text("asked later: the cloud sees it", timeout=8000)
+    sync_api.expect(outcome).to_have_class("val warn")  # the outcome is unchanged
+    sync_api.expect(page.locator(".toast.ok")).to_contain_text("Late identity check")
+    assert not errors, errors
+    page.close()
+
+
+def test_a_page_that_connects_after_the_ending_still_sees_the_late_answer(
+        browser, twin_server):
+    """3.53, from the self-review: a phone that connects (or reconnects)
+    after the mission ended never saw the transition, and its panel stayed
+    on "will ask again" for good."""
+    current = {"body": unconfirmed_status("waiting")}
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(current["body"])))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+    outcome = page.locator("#brain-tel-outcome")
+    sync_api.expect(outcome).to_contain_text("will ask again")
+    current["body"] = unconfirmed_status("refused")
+    sync_api.expect(outcome).to_contain_text("the cloud says it is not the target",
+                                             timeout=8000)
+    assert not errors, errors
+    page.close()
+
+
+def test_the_late_watch_stops_on_a_guide_start(browser, twin_server):
+    """Coordinator's Thermos pass, finding 4 (a): starting Drive via brain
+    must end the panel's watch for the previous mission, or a GET of its
+    that was in flight lands that mission's verdict and toast over the new
+    session."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    current = {"body": tiered_status(), "hold": False}
+    held = []
+
+    def status(route):
+        if current["hold"] and not held:
+            held.append(route)  # the watcher's GET, answered after the start
+            return
+        route.fulfill(status=200, content_type="application/json",
+                      body=_json(current["body"]))
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json({"started": True, "status": {"running": True}})))
+    page.route("**/brain-stub/mission/status", status)
+
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+    current["body"] = unconfirmed_status("waiting")  # the panel's watch starts
+    sync_api.expect(page.locator(".toast.warn")).to_have_count(1, timeout=5000)
+
+    # Hold the watcher's next GET in flight, start a new Guide session, then
+    # answer that GET with the OLD mission's verdict. No late toast may show.
+    current["hold"] = True
+    deadline = time.time() + 8
+    while not held:
+        assert time.time() < deadline, "the watcher never polled"
+        page.wait_for_timeout(100)
+    current["hold"] = False
+    current["body"] = tiered_status()  # what the new session sees
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")
+    page.wait_for_timeout(1000)
+    held[0].fulfill(status=200, content_type="application/json",
+                    body=_json(unconfirmed_status("confirmed")))
+    page.wait_for_timeout(1500)
+    assert page.locator(".toast", has_text="Late identity check").count() == 0
+    assert not errors, errors
+    context.close()
+
+
+def test_a_refused_guide_start_keeps_watching_the_old_check(browser, twin_server):
+    """Fifth review: a Drive-via-brain start the brain refuses leaves the
+    last mission's late check running there (amendment 1); the page must
+    keep watching it, or its verdict is reached and never shown."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    current = {"body": tiered_status()}
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", lambda route: route.fulfill(
+        status=400, content_type="application/json",
+        body=_json({"detail": "The tiered policy cannot start"})))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(current["body"])))
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+    current["body"] = unconfirmed_status("waiting")
+    sync_api.expect(page.locator(".toast.warn")).to_have_count(1, timeout=5000)
+
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")  # refused with a 400
+    page.wait_for_timeout(1500)
+    current["body"] = unconfirmed_status("confirmed")
+    sync_api.expect(page.locator(".toast", has_text="Late identity check")).to_have_count(
+        1, timeout=8000)
+    assert not errors, errors
+    context.close()
+
+
+def test_a_verdict_that_lands_during_a_refused_guide_start_is_shown(browser, twin_server):
+    """Sixth review: the old check finishes while the (refused) start is
+    out; the fresh status already holds the final verdict, which must be
+    shown -- not handed to a watch that only watches a waiting check."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    current = {"body": tiered_status()}
+
+    def refuse_start(route):
+        # The old check finishes while the start is out.
+        current["body"] = unconfirmed_status("confirmed")
+        route.fulfill(status=400, content_type="application/json",
+                      body=_json({"detail": "The tiered policy cannot start"}))
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", refuse_start)
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(current["body"])))
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+    current["body"] = unconfirmed_status("waiting")
+    sync_api.expect(page.locator(".toast.warn")).to_have_count(1, timeout=5000)
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")
+    sync_api.expect(page.locator(".toast", has_text="Late identity check")).to_have_count(
+        1, timeout=5000)
+    assert not errors, errors
+    context.close()
+
+
+def test_a_refused_start_never_toasts_a_verdict_this_page_was_not_waiting_on(
+        browser, twin_server):
+    """Seventh review: a page that loads after the old check already
+    finished (`confirmed` an hour ago) must not pop it as news when its
+    first Drive-via-brain start is refused."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", lambda route: route.fulfill(
+        status=400, content_type="application/json",
+        body=_json({"detail": "The tiered policy cannot start"})))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json(unconfirmed_status("confirmed"))))  # final before this page loaded
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "blue shoes")
+    page.click("#btn-guidance")  # refused
+    page.wait_for_timeout(2500)
+    assert page.locator(".toast", has_text="Late identity check").count() == 0
+    assert not errors, errors
+    context.close()
+
+
+def test_a_stale_resume_never_draws_over_a_newer_guide_start(browser, twin_server):
+    """Coordinator's second Thermos pass, finding 1: a refused start's
+    resume GET still in flight when the person taps Start again must draw
+    nothing when it lands -- not the old verdict over the new session."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    current = {"body": tiered_status(), "hold": False, "starts": 0}
+    held = []
+
+    def status(route):
+        if current["hold"] and not held:
+            held.append(route)  # the resume GET, answered after Start #2
+            return
+        route.fulfill(status=200, content_type="application/json",
+                      body=_json(current["body"]))
+
+    def start(route):
+        current["starts"] += 1
+        if current["starts"] == 1:
+            current["hold"] = True  # the next status GET is the resume's
+            route.fulfill(status=400, content_type="application/json",
+                          body=_json({"detail": "The tiered policy cannot start"}))
+        else:
+            current["body"] = tiered_status()  # the new mission, running
+            route.fulfill(status=200, content_type="application/json",
+                          body=_json({"started": True, "status": {"running": True}}))
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", start)
+    page.route("**/brain-stub/mission/status", status)
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+    current["body"] = unconfirmed_status("waiting")
+    sync_api.expect(page.locator(".toast.warn")).to_have_count(1, timeout=5000)
+
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")  # Start #1: refused; its resume GET is held
+    deadline = time.time() + 8
+    while not held:
+        assert time.time() < deadline, "the resume never asked"
+        page.wait_for_timeout(100)
+    current["hold"] = False
+    page.click("#btn-guidance")  # Start #2: accepted
+    page.wait_for_timeout(1000)
+    held[0].fulfill(status=200, content_type="application/json",
+                    body=_json(unconfirmed_status("confirmed")))
+    page.wait_for_timeout(1500)
+    assert page.locator(".toast", has_text="Late identity check").count() == 0
+    assert not errors, errors
+    context.close()
+
+
+def test_two_refused_starts_in_a_row_still_watch_the_old_check(browser, twin_server):
+    """Ninth review: Start #1 refused, its resume still in flight, Start #2
+    refused too (the usual cause refuses every attempt). The pending resume
+    must count as watching, so Start #2's own resume takes the job over --
+    or the old check is never watched or shown."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    current = {"body": tiered_status(), "hold": False, "starts": 0}
+    held = []
+
+    def status(route):
+        if current["hold"] and not held:
+            held.append(route)  # Start #1's resume, answered last
+            return
+        route.fulfill(status=200, content_type="application/json",
+                      body=_json(current["body"]))
+
+    def start(route):
+        current["starts"] += 1
+        if current["starts"] == 1:
+            current["hold"] = True
+        route.fulfill(status=400, content_type="application/json",
+                      body=_json({"detail": "The tiered policy cannot start"}))
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", start)
+    page.route("**/brain-stub/mission/status", status)
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+    current["body"] = unconfirmed_status("waiting")
+    sync_api.expect(page.locator(".toast.warn")).to_have_count(1, timeout=5000)
+
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")  # Start #1: refused; resume held
+    deadline = time.time() + 8
+    while not held:
+        assert time.time() < deadline, "the resume never asked"
+        page.wait_for_timeout(100)
+    current["hold"] = False
+    page.click("#btn-guidance")  # Start #2: refused as well
+    page.wait_for_timeout(1500)
+    current["body"] = unconfirmed_status("confirmed")
+    sync_api.expect(page.locator(".toast", has_text="Late identity check")).to_have_count(
+        1, timeout=8000)
+    held[0].fulfill(status=200, content_type="application/json",
+                    body=_json(unconfirmed_status("confirmed")))
+    page.wait_for_timeout(1000)
+    assert page.locator(".toast", has_text="Late identity check").count() == 1
+    assert not errors, errors
+    context.close()
+
+
+def test_a_resume_made_stale_by_a_reconnect_owes_nothing_later(browser, twin_server):
+    """Tenth review: a refused start's resume made stale by something other
+    than a Guide start -- here a brain reconnect -- must not leave a claim
+    behind, or a much later refused start toasts an old, final verdict."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    current = {"body": tiered_status(), "hold": False, "starts": 0}
+    held = []
+
+    def status(route):
+        if current["hold"] and not held:
+            held.append(route)
+            return
+        route.fulfill(status=200, content_type="application/json",
+                      body=_json(current["body"]))
+
+    def start(route):
+        current["starts"] += 1
+        if current["starts"] == 1:
+            current["hold"] = True
+        route.fulfill(status=400, content_type="application/json",
+                      body=_json({"detail": "The tiered policy cannot start"}))
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", start)
+    page.route("**/brain-stub/mission/status", status)
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+    current["body"] = unconfirmed_status("waiting")
+    sync_api.expect(page.locator(".toast.warn")).to_have_count(1, timeout=5000)
+
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")  # refused; its resume is held
+    deadline = time.time() + 8
+    while not held:
+        assert time.time() < deadline, "the resume never asked"
+        page.wait_for_timeout(100)
+    current["hold"] = False
+    # The check finishes, then a reconnect (not a Guide start) makes the
+    # held resume stale.
+    current["body"] = unconfirmed_status("confirmed")
+    page.click("#btn-settings")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(800)
+    held[0].fulfill(status=200, content_type="application/json",
+                    body=_json(unconfirmed_status("confirmed")))
+    page.wait_for_timeout(500)
+    before = page.locator(".toast", has_text="Late identity check").count()
+    # Much later, a refused start: nothing was being watched.
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.click("#btn-guidance")
+    page.wait_for_timeout(2500)
+    assert page.locator(".toast", has_text="Late identity check").count() == before
+    assert not errors, errors
+    context.close()
+
+
+def test_the_late_watch_stops_on_a_dead_brain(browser, twin_server):
+    """Coordinator's Thermos pass, finding 4 (b): a watch whose brain only
+    errors stops after LATE_MAX_ERRORS polls, not every 3 s forever."""
+    current = {"body": tiered_status(), "fail": False}
+    status_calls = []
+
+    def status(route):
+        status_calls.append(1)
+        if current["fail"]:
+            route.fulfill(status=500, content_type="application/json", body=_json({}))
+        else:
+            route.fulfill(status=200, content_type="application/json",
+                          body=_json(current["body"]))
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/brain-stub/mission/status", status)
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+    current["body"] = unconfirmed_status("waiting")
+    sync_api.expect(page.locator(".toast.warn")).to_have_count(1, timeout=5000)
+    current["fail"] = True
+    page.wait_for_timeout(3000 * 6 + 1000)  # past LATE_MAX_ERRORS (5) polls
+    before = len(status_calls)
+    page.wait_for_timeout(7000)
+    assert len(status_calls) == before, (
+        f"{len(status_calls) - before} status polls after the watch should have stopped")
+    page.close()
+
+
+def test_on_the_guide_tab_an_unconfirmed_arrival_is_an_outcome_not_a_lost_link(
+        browser, twin_server):
+    """3.53: Drive via brain rendered `arrived_unconfirmed` through the
+    error branch -- an `ERR LINK` telemetry block, as if the brain had been
+    lost. It is an outcome, said as one, in the warning colour."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json({"started": True, "status": {"running": True}})))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(unconfirmed_status())))
+
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")
+
+    caption = page.locator("#guide-caption-text")
+    sync_api.expect(caption).to_contain_text("identity is unconfirmed", timeout=15000)
+    # And it STAYS: a tick scheduled before the end paused the run used to
+    # fire anyway and reset the caption to "Deciding..." (3.53's screenshot).
+    page.wait_for_timeout(4000)
+    assert "identity is unconfirmed" in caption.inner_text(), caption.inner_text()
+    telemetry = page.locator("#robot-telemetry")
+    sync_api.expect(telemetry).to_contain_text("UNCONFIRMED")
+    assert "LINK" not in telemetry.inner_text(), telemetry.inner_text()
+    assert page.locator("#robot-telemetry .v-warn").count() >= 1
+    assert not errors, errors
+    context.close()
+
+
 # ---------- reaching a tunnelled robot or brain (ngrok) ----------
 #
 # The brain cannot be deployed -- policy "tiered" loads YOLO and CLIP into
