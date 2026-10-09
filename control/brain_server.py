@@ -643,6 +643,9 @@ def create_app(
         return state["world"]
 
     app = FastAPI(title="vision-picar brain server")
+    # 3.61: the process's mission state, readable by tests and diagnostics
+    # (which task is the live loop). Nothing outside this module writes it.
+    app.state.brain_state = state
 
     @app.on_event("shutdown")
     def _stop_cloud_watch():
@@ -762,7 +765,11 @@ def create_app(
                     await task
                 except asyncio.CancelledError:
                     pass
-            state["task"] = None
+            # 3.61: only the task this Stop awaited. A Start that landed
+            # during the await installed its own loop; erasing it would leave
+            # that mission running with no task a later Stop could cancel.
+            if state["task"] is task:
+                state["task"] = None
             if claimed:
                 # The tick thread may still be inside _finish (closing the
                 # policy, building the metrics row); wait for its last act.

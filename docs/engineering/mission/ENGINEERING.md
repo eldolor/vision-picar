@@ -208,7 +208,13 @@ first await, so a second Stop cannot start another check beside it and a
 Start meanwhile (which empties the slot and bumps the generation) leaves it
 unable to start one for the old runner; `start_reconfirm()` also refuses
 while the slot is held, and a claim still held when the handler raises is
-released in a `finally`. It starts the check after waiting for
+released in a `finally`. After awaiting the old loop it clears
+`state["task"]` only if that is still the task it awaited (3.61): a Start
+during the await installed its own loop, which a later Stop must still be
+able to cancel. Its closing `runner.stop()` is on the runner it captured,
+which a Start can only follow once finished, so `_finish` returns without a
+robot stop -- nothing reaches the new driver. `app.state.brain_state`
+exposes this state, read-only, for tests. It starts the check after waiting for
 `runner.finished` (set as `_finish`'s last act, which
 `late_confirmation_pending()` also requires). A Stop that lands while the
 runner is running marks it `operator_stopped`, and no later Stop starts a
