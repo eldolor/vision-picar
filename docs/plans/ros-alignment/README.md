@@ -64,6 +64,6 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.53](3.53-arrival-reconfirm.md) | Arrived, unconfirmed: a warning in the twin, and asking again when the cloud returns |
 | [3.54](3.54-clip-rooms-fewshot.md) | Rooms from CLIP, few-shot on the user's own rooms |
 | [3.55](3.55-inventory-review-fixes.md) | Inventory review fixes: the stop-path race, double-counted looks, mission-id collisions, a local-only mode |
-| [3.57](3.57-tour-goal-six.md) | The tour's dining-room goal stands on reachable floor (2026-10-09): criteria, written before building; measured: the point fixed, goal 6 still FAILED live |
 | [3.56](3.56-cloud-health.md) | The operator sees the cloud: reachable status, and a shorter wait at arrival |
+| [3.57](3.57-tour-goal-six.md) | The tour's dining-room goal stands on reachable floor (2026-10-09): criteria, written before building; measured: the point fixed, goal 6 still FAILED live |
 <!-- /sections -->
