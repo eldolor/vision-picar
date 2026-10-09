@@ -1495,11 +1495,12 @@
     return { text: "unreachable" + (cloud.since ? " since " + at(cloud.since) : ""), cls: "warn" };
   }
 
-  // The Cloud row alone, from any status that carries `cloud` (the panel
-  // poll, the late-check watcher, a Stop's answer). A status without the
-  // field (an older brain) leaves the row as it was rather than blanking it.
+  // The Cloud row alone, from any status (the panel poll, the late-check
+  // watcher, a Stop's answer -- the brain sends `cloud` on all three). A
+  // status without the field is a brain that predates 3.56: a dash, never
+  // "reachable".
   function renderCloudRow(status) {
-    if (!status || !("cloud" in status)) return;
+    if (!status) return;
     const cloud = cloudWords(status.cloud);
     setBrainText("brain-tel-cloud", cloud.text, cloud.cls);
   }

@@ -628,6 +628,10 @@ class TieredVision:
         self._consecutive_turn_deg = 0.0
         self._executor = None
         self._collect_lock = threading.Lock()
+        # 3.56 follow-up: the last call taken by a collector, and the one the
+        # runner charged to B3.2 when its wait timed out (never re-counted).
+        self._last_taken = None
+        self._charged = None
         self._inflight = None
         self._inflight_trigger: Optional[str] = None
         self._inflight_perception: Optional[Perception] = None
@@ -765,13 +769,17 @@ class TieredVision:
 
     def abandon_inflight(self) -> None:
         """The runner gave up waiting for the call still out and has charged
-        it to B3.2 already (3.56 follow-up). Forget it, under the collect
-        lock, so whatever it later returns -- an answer or a failure -- is
-        never collected: one call, one count."""
+        it to B3.2 already (3.56 follow-up). Mark it charged -- it stays in
+        `_inflight`, so the one-call gate stays closed while it runs -- and
+        its failure, whenever it lands, is never held for the next tick.
+
+        If the abandoned wait already collected it (the call failed in the
+        moment between the timeout and this), its error is dropped here: in
+        this tick `__call__` has already raised anything collected before
+        it, so a pending error now can only be that call's."""
         with self._collect_lock:
-            self._inflight = None
-            self._inflight_trigger = None
-            self._inflight_perception = None
+            self._charged = self._inflight or self._last_taken
+            self._pending_error = None
 
     # -- 1a: the cloud confirms identity at arrival -----------------------
 
@@ -871,6 +879,7 @@ class TieredVision:
             if fut is None or not fut.done():
                 return
             self._inflight = None
+            self._last_taken = fut
             trigger, self._inflight_trigger = self._inflight_trigger, None
             perception, self._inflight_perception = self._inflight_perception, None
         try:
@@ -879,9 +888,13 @@ class TieredVision:
             # Held, not raised here: this runs before perception, and a
             # failure surfaced mid-frame would skip the local tier's work
             # for that frame. Raised at the top of the NEXT call, where
-            # B3.2's budget sees it as it always did.
+            # B3.2's budget sees it as it always did -- unless the runner
+            # already charged this call when its wait timed out
+            # (`abandon_inflight`). Decided under the lock, against it.
             logger.warning("async cloud call failed: %s", exc)
-            self._pending_error = exc
+            with self._collect_lock:
+                if fut is not self._charged:
+                    self._pending_error = exc
             return
         if scene is None:
             # Superseded: the mission ended or reset while this was out.

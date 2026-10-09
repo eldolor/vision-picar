@@ -754,10 +754,40 @@ def test_followup_a_call_charged_at_the_wait_is_not_charged_again():
                            vision_timeout_s=0.2, arrival_confirm_timeout_s=0.1)
     with pytest.raises(VisionUnavailable):
         runner._guarded_confirm({})               # the wait times out: count 1
+    # Second review: the gate stays closed while the charged call runs --
+    # no second call is dispatched beside it.
+    assert tier._inflight is fut, "the one-call gate was reopened"
     fut.set_exception(CloudUnavailable("ConnectError: refused"))
     time.sleep(0.2)                               # the abandoned wait collects now
     tier._collect_inflight()                      # and so does the next tick
     assert tier._pending_error is None, "the same call would be counted twice"
+    assert tier._inflight is None
+
+
+def test_followup_a_failure_collected_before_the_abandon_is_dropped():
+    """Second review: the call fails in the moment between the runner's
+    timeout and abandon_inflight(), and the abandoned wait collects it
+    first. abandon_inflight() drops that pending error -- one count."""
+    from concurrent.futures import Future
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud, async_cloud=True)
+    fut = Future()
+    tier._inflight, tier._inflight_trigger = fut, "staleness"
+    fut.set_exception(CloudUnavailable("ConnectError: refused"))
+    tier._collect_inflight()                      # the abandoned wait got there first
+    assert tier._pending_error is not None
+    tier.abandon_inflight()                       # then the runner's charge lands
+    assert tier._pending_error is None
+
+
+def test_followup_a_failure_that_was_not_charged_is_still_counted():
+    """The guard must not swallow ordinary async failures."""
+    from concurrent.futures import Future
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud, async_cloud=True)
+    fut = Future()
+    tier._inflight, tier._inflight_trigger = fut, "staleness"
+    fut.set_exception(CloudUnavailable("ConnectError: refused"))
+    tier._collect_inflight()
+    assert isinstance(tier._pending_error, CloudUnavailable)
 
 
 def test_followup_a_stop_answers_with_the_cloud_row(tmp_path, monkeypatch):
