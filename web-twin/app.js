@@ -4376,7 +4376,9 @@
       // its verdict over this session (3.53, review). Whether one WAS
       // watching decides what a refused start resumes: only a check this
       // page was waiting on, never a verdict that finished long before.
-      const wasWatchingLate = !!state.lateWatchTimerId;
+      // A resume still in flight counts too: it is about to become a
+      // watch, and this start's own resume takes the job over if refused.
+      const wasWatchingLate = !!state.lateWatchTimerId || state.lateResumePending;
       stopLateWatch();
       try {
         // The model picker applies here too, not just to a one-off
@@ -4408,12 +4410,20 @@
           // Tied to this moment's watch token: a newer Guide start (which
           // stops the watch, bumping it) makes this answer stale on landing.
           const resumeToken = lateWatchToken;
+          state.lateResumePending = true;
           brainApi("GET", "/mission/status").then(function (s) {
-            if (resumeToken === lateWatchToken) resumeLateConfirmation(s);
-          }, function () {});
+            if (resumeToken !== lateWatchToken) return;  // a newer start owns it
+            state.lateResumePending = false;
+            resumeLateConfirmation(s);
+          }, function () {
+            if (resumeToken === lateWatchToken) state.lateResumePending = false;
+          });
         }
         return;
       }
+      // Started: the brain has dropped the last mission's check, so no
+      // resume is owed any more.
+      state.lateResumePending = false;
     }
 
     // A brain deployment that explicitly disables recording (e.g. the
