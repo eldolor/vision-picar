@@ -2032,7 +2032,15 @@ def _headers_for(page, url_state):
 
     page.route("**/health", capture)
     page.evaluate(url_state)
-    page.wait_for_timeout(900)
+    # Wait for the first /health poll rather than a fixed 900 ms: under a
+    # loaded full-suite run the poll sometimes landed after that, and the
+    # tunnel test then failed on an empty dict (2026-10-08). Requiring a
+    # request also stops the "header absent" test passing on no request.
+    for _ in range(100):
+        if seen:
+            break
+        page.wait_for_timeout(100)
+    assert seen, "no /health request within 10 s"
     return seen
 
 

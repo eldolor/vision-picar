@@ -22,7 +22,8 @@ python tools/plan_section.py overlap
 
 # 4. When done: rebase, then the gate.
 git fetch origin && git rebase origin/dev
-python tools/plan_section.py ready           # full suite; records a pass
+python tools/plan_section.py ready           # fast tier; records a pass (optional:
+                                             # the push runs the same check itself)
 # 5. Ask the user. Only then: git push origin HEAD:dev
 ```
 
@@ -69,13 +70,26 @@ Continuing an existing section: work in its worktree
    can succeed and still be wrong: `robot/safety.py` changed on two
    branches at once on 2026-10-06/07. Coordinate through the user, or
    sequence the work.
-6. **The merge gate.** `ready` checks the branch is rebased on
-   `origin/dev`, the index is fresh, section numbers are unique and the
-   tree is committed. It then runs the full suite and records a pass for
-   that commit. The pre-push hook (`tools/hooks/pre-push`, installed by
-   `git config core.hooksPath tools/hooks`) refuses a push to `dev` without
-   one. Pushing still needs the user's go-ahead. Only the user overrides
-   the gate (`PICAR_SKIP_GATE=1`).
+6. **The merge gate: fast on push, full at night.** A push to `dev` runs
+   `tools/hooks/pre-push` (installed by `git config core.hooksPath
+   tools/hooks`), which calls `plan_section.py gate`. A push that changes
+   only docs (`docs/`, `docs-review/`, any `.md`) runs the spec lint and
+   nothing else. Any other push runs the **fast tier**: the whole suite
+   except the real-browser tests (`test_ui*.py`, `test_frame_source.py`),
+   the live-stack ones (`*_live.py`) and the measurement sweeps
+   (`SLOW_FILES` in `tools/plan_section.py`, which held ~45 of the full
+   run's 51 minutes), unless `ready` already recorded a pass for that
+   commit. A new sweep that runs hundreds of missions belongs on that
+   list. The **full suite** runs once a night on the latest
+   `origin/dev` (`tools/nightly_suite.sh`, installed with `--install`;
+   result in `~/Library/Logs/vision-picar/nightly-latest.txt`) and with
+   `ready --full` before merging a section that changes the twin or the
+   ROS stack. It reports; it never blocks a push. Pushing still needs the
+   user's go-ahead. Only the user overrides the gate (`PICAR_SKIP_GATE=1`).
+   *Why:* the gate first ran the full suite, about 40 minutes, on every
+   push, and a pass named one commit, so each rebase onto another
+   session's push started it over; two timing-sensitive tests then failed
+   one run in two. The user called that too heavy (2026-10-09).
 7. **One heavy run at a time.** `tests/demo_explore.stack()` takes a lock
    (`.git/heavy-run.lock`) held until the run's process exits; a second
    heavy run waits and prints who holds it. *Why:* late ticks, scan skew
