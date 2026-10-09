@@ -69,4 +69,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.60](3.60-inventory-accuracy.md) | Inventory accuracy: the seven open review findings, verified, then fixed or recorded |
 | [3.61](3.61-stop-task-race.md) | Stop never forgets a mission a concurrent Start began |
 | [3.64](3.64-older-review-bugs.md) | Older review bugs: the ten still live on `dev`, fixed |
+| [3.58](3.58-local-identity-decision.md) | Qwen2.5-VL-3B at the decision: latency and memory with the robot stack running |
 <!-- /sections -->
