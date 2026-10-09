@@ -138,17 +138,22 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   precision 97.2%); sweep 1's recall failure is recorded. **Real frames
   give it nothing yet:** phase C (a prompt-free detector) is not built.
   `HANDOFF-2026-10-08-3.46-object-inventory.md`.
-* **Exploring still stalls in the furnished home** (3.43, 3.44; merged
-  2026-10-07 with criteria failed, the user's call). The stop distance now
-  follows the ASKED speed (3.44): 3 cm for a verb asked at a creep, 20 cm
-  up to ~0.39 m/s, more above (`required_clearance_cm()`; braking is a
-  `[PLACEHOLDER]`). It holds on ground truth everywhere and leaves nav2's
-  0.20 m/s at 20 cm. The escape tries both turns and creeps, freeing 62.6%
-  of wedged poses and traps (bar 95%); live runs still parked 134 / 105 /
-  1119 s. The stalls are nav2's recoveries in corners explore sends it
-  into, and 3.18's 3 cm corridor side margin, not the stopping distance.
-  Next step is the user's. Handoff: `HANDOFF-2026-10-07-3.44-speed-clearance.md`.
-  3.31's frontier-search batch waits on it.
+* **Explore's corner stalls: fixed** (3.45, merged 2026-10-09 with the
+  tour criterion failed, the user's call; 3.43/3.44 before it). Frontier and
+  view goals now keep the chassis' half-length plus the 20 cm stop
+  (0.3265 m) from the map's walls, where 0.22 m let nav2 reach goals the
+  safety layer would not let the robot leave. On recorded maps the goals
+  explore chooses are 95.5% leavable on ground truth (was 24%). Live:
+  parked 99 / 93 / 88 s (bar < 120 s; was 119 / 197 / 152), coverage median
+  0.88 (was 0.55). 3.44's speed-dependent stop and creep escape stay.
+  **The tour now fails on its own:** 4 / 8 / 4 of 9. Goal 6's point lies
+  inside the dining furniture and can never succeed, and nav2 wedges itself
+  near the garage door on its own costmap while truth is free. Next: move
+  goal 6 (instrument only), then the garage wedge. Live runs now keep
+  per-run logs with explore's decisions (`PICAR_LOG_LEVEL`,
+  `evaluations/slam-345/`). Handoff:
+  `HANDOFF-2026-10-07-3.45-explore-goal-choice.md`. 3.31's frontier-search
+  batch is unblocked.
 * **Raising nav2's speed** (6.9's high end) now has its speed-dependent
   stop, but waits on measured braking (6.9 (d)) and 3.42's relayed-scan
   time stamp; read `HANDOFF-2026-10-07-lidar-and-speed.md` first.

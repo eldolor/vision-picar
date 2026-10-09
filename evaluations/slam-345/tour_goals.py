@@ -71,8 +71,9 @@ def report(path):
         s = [r for r in d["series"] if a <= r[0] <= b and r[4] is not None]
         moved = round(math.hypot(s[-1][4] - s[0][4], s[-1][5] - s[0][5]), 2) if s else None
         gx, gy = xy[g["name"]]
-        out.append({"goal": k + 1, "name": g["name"], "state": g["state"], "seconds": g["seconds"],
-                    "end_error_m": g["end_error_m"], "moved_m": moved,
+        out.append({"goal": k + 1, "name": g["name"], "state": g["state"],
+                    "seconds": g.get("seconds"), "end_error_m": g.get("end_error_m"),
+                    "reply": g.get("reply"), "moved_m": moved,
                     "inherited": k == 0 and moved is not None and moved < 0.05,
                     "goal_point_gap_cm": surface_cm(gx, gy),
                     "nav2": nav2_lines(run_dir, a, b)[:14], "refused": refusals(run_dir, a, b)})

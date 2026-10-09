@@ -176,8 +176,8 @@ class ExploreAgent(MissionAgent):
         # chose before a stall, because nothing reached the brain's log.
         self.events: list = []
 
-    def _event(self, name: str, **fields) -> None:
-        pose = self._pose()
+    def _event(self, name: str, pose: Optional[dict] = None, **fields) -> None:
+        pose = pose if pose is not None else self._pose()
         rec = {"event": name, "t": round(self.clock(), 2), **fields}
         if pose.get("usable"):
             rec["pose"] = [round(pose["x_m"], 2), round(pose["y_m"], 2),
@@ -392,7 +392,11 @@ class ExploreAgent(MissionAgent):
                     self._goal["look_at"] = g.centre
                     self._view_goals.append(g.goal)
                 return out
-        steps, _start, _need = reachable(m, pose["x_m"], pose["y_m"])
+        # "Boxed in" is counted at the clearance goals need (3.45 review):
+        # counted at 0.22 m, a nook with room for nav2 but none to leave by
+        # found no goal, yet read as roomy -- and ended the search `searched`
+        # without backing out.
+        steps, _start, _need = reachable(m, pose["x_m"], pose["y_m"], clearance_m=leave)
         if len(steps) < BOXED_CELLS and self.escapes < MAX_ESCAPES:
             # Nowhere reachable to stop -- from HERE. Boxed in, not done.
             self._queue_escape("boxed", reachable_cells=len(steps))
@@ -412,7 +416,7 @@ class ExploreAgent(MissionAgent):
         pose = self._pose()
         moved = (round(math.hypot(pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]), 2)
                  if g.get("from") and pose.get("usable") else None)
-        self._event("goal_ended", kind=g["kind"], state=state,
+        self._event("goal_ended", pose=pose, kind=g["kind"], state=state,
                     goal=[round(g["x_m"], 2), round(g["y_m"], 2)],
                     seconds=round(now - g["sent_at"], 1), moved_m=moved)
         if g.get("look_at"):
@@ -435,7 +439,6 @@ class ExploreAgent(MissionAgent):
             return
         target = g.get("target") or (g["x_m"], g["y_m"])
         self.goals_failed += 1
-        pose = self._pose()
         if g.get("from") and pose.get("usable") and math.hypot(
                 pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M:
             # It never left: the robot is wedged, not the place unreachable.

@@ -408,8 +408,7 @@ def test_logging_is_configured_only_when_asked(monkeypatch):
         assert configure_logging() == logging.INFO and configure_logging() == logging.INFO
         assert len(root.handlers) == len(before) + 1 and root.level == logging.INFO
         monkeypatch.setenv("PICAR_LOG_LEVEL", "LOUD")
-        with pytest.raises(ValueError):
-            configure_logging()
+        assert configure_logging() is None    # a typo warns; it never stops a server
     finally:
         root.handlers[:] = before
         root.setLevel(level)
@@ -424,11 +423,14 @@ def test_a_frontier_goal_leaves_the_safety_layer_room_to_drive_away():
     chassis' half-length plus the stopping distance from the map's walls,
     and at every heading it can stand at, forward or reverse is allowed."""
     import gzip
+    import importlib.util
     import json
     import os
-    import sys
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "evaluations", "slam-345"))
-    import goal_sweep as gs
+    here = os.path.dirname(__file__)
+    spec = importlib.util.spec_from_file_location(
+        "slam345_goal_sweep", os.path.join(here, "..", "evaluations", "slam-345", "goal_sweep.py"))
+    gs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gs)          # by path: no lasting sys.path entry
     path = os.path.join(os.path.dirname(__file__), "data", "explore_foyer_snapshot.json.gz")
     with gzip.open(path, "rt") as f:
         snap = json.load(f)
@@ -441,3 +443,37 @@ def test_the_leave_clearance_is_the_half_length_plus_the_stopping_distance():
     from brain.explore import leave_clearance_m
     from robot.safety import FOOTPRINT_LENGTH_M
     assert leave_clearance_m(20.0) == pytest.approx(FOOTPRINT_LENGTH_M / 2 + 0.20)
+
+
+def test_a_nook_with_no_leavable_goal_backs_out_before_ending_searched():
+    """3.45 review: goals need the leave clearance (0.35 m on a 5 cm map),
+    so "boxed in" must be counted at it too. A 0.55 m corridor whose open
+    end is unknown has room for nav2 (0.22 m) but nowhere to stop and leave
+    by: counted at 0.22 m it read as roomy, and the mission ended
+    `searched` with the corridor's end unexplored."""
+    from world.interface import CELL_FREE, CELL_OCCUPIED, CELL_UNKNOWN
+    w, h, res = 40, 80, 0.05
+    cells = [CELL_UNKNOWN] * (w * h)
+    for y in range(9, 70):
+        for x in range(13, 26):
+            wall = x in (13, 25) or y == 9
+            cells[y * w + x] = CELL_OCCUPIED if wall else CELL_FREE
+    m = {"usable": True, "map_id": "nook", "resolution_m": res, "width": w, "height": h,
+         "origin_x_m": 0.0, "origin_y_m": 0.0, "cells": cells}
+    pose = {"usable": True, "map_id": "nook", "x_m": 19.5 * res, "y_m": 20.5 * res,
+            "heading_deg": 0.0}
+
+    class Nook:
+        def get_map(self):
+            return m
+
+        def get_pose(self):
+            return pose
+
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="purple elephant"),
+                         navigator=FakeNav(robot), clock=lambda: 0.0, world=Nook())
+    action, _ok, detail = agent._next_frontier(0.0)
+    assert not agent.searched and action != "STOP", detail
+    assert [e["why"] for e in agent.events if e["event"] == "escape"] == ["boxed"]

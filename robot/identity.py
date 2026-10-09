@@ -85,14 +85,18 @@ _HANDLER_MARK = "_picar_handler"
 def configure_logging() -> Optional[int]:
     """One stderr handler on the root logger at `PICAR_LOG_LEVEL`, with
     epoch timestamps so a log lines up with a run's 1 Hz series. Returns
-    the level set, or None when the variable is unset. Idempotent: a test
+    the level set, or None when the variable is unset or not a level. Idempotent: a test
     that builds many apps still gets one handler."""
     name = os.environ.get(LOG_LEVEL_ENV, "").strip().upper()
     if not name:
         return None
     level = logging.getLevelName(name)
     if not isinstance(level, int):
-        raise ValueError(f"{LOG_LEVEL_ENV}={name!r} is not a logging level")
+        # Never fatal: a typo here must not keep the robot server (and its
+        # watchdog) from starting (3.45 review).
+        logger.warning("%s=%r is not a logging level; logging left as found",
+                       LOG_LEVEL_ENV, name)
+        return None
     root = logging.getLogger()
     if not any(getattr(h, _HANDLER_MARK, False) for h in root.handlers):
         handler = logging.StreamHandler()
