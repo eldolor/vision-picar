@@ -562,10 +562,15 @@ def create_app(config_path=None, store=None) -> FastAPI:
             logger.warning("could not persist eval for %s: %s", walk_name, e)
         return result
 
+    def _stale(record: dict) -> bool:
+        """Written by an older scorer, so not comparable (3.64 E2): the one
+        rule for scorecards and replays alike."""
+        return record.get("schema") != walk_eval.SCHEMA_VERSION
+
     def _marked(replay: dict) -> dict:
-        """A replay as sent to a client: `stale` when an older scorer wrote
-        it (3.64 E2), computed on the way out and never stored."""
-        return {**replay, "stale": replay.get("schema") != walk_eval.SCHEMA_VERSION}
+        """A replay as sent to a client, `stale` computed on the way out and
+        never stored."""
+        return {**replay, "stale": _stale(replay)}
 
     def _replay_summaries(walk_name: str) -> list:
         """The compact form the walk list shows -- never the per-frame diff,
@@ -579,7 +584,7 @@ def create_app(config_path=None, store=None) -> FastAPI:
                            ("model_id", "prompt_variant", "score", "verdict", "flags",
                             "agreement", "errors", "coverage")},
                         # 3.64 E2: scored by an older scorer; replay it again.
-                        "stale": r.get("schema") != walk_eval.SCHEMA_VERSION})
+                        "stale": _stale(r)})
         return out
 
     def _eval_summary(walk_name: str) -> Optional[dict]:
@@ -593,7 +598,7 @@ def create_app(config_path=None, store=None) -> FastAPI:
         # auto-scorer re-run the paid judge over the whole corpus after a
         # schema bump. Re-score is the person's call; the summary skips it.
         return {**{k: ev.get(k) for k in ("score", "verdict", "flags", "basis", "model_id")},
-                "stale": ev.get("schema") != walk_eval.SCHEMA_VERSION}
+                "stale": _stale(ev)}
 
     @app.post("/recording/walks/{walk}/evaluate", dependencies=[Depends(require_secret)])
     async def evaluate_walk(walk: str, judge: bool = True):
@@ -719,8 +724,9 @@ def create_app(config_path=None, store=None) -> FastAPI:
             except (OSError, WalkStoreError):
                 kept = None
             if kept and kept.get("score") is not None:
-                # Even an older scorer's: its per-frame answers were paid
-                # for and can be re-scored; an unusable attempt has none.
+                # Even an older scorer's: its per-frame answers were paid for
+                # and are the only record of them. Nothing re-scores a stored
+                # replay today; it stays marked stale until replayed.
                 kept["last_unusable"] = {k: result[k] for k in
                                          ("replayed_at", "coverage", "frames", "errors")}
                 result = kept
@@ -853,7 +859,7 @@ def create_app(config_path=None, store=None) -> FastAPI:
         def add(model_id, prompt_variant, ev, source):
             if not ev or ev.get("score") is None:
                 return
-            if ev.get("schema") != walk_eval.SCHEMA_VERSION:
+            if _stale(ev):
                 return                  # 3.64 E2: an older scorer's number
             key = (model_id or "(unknown)", prompt_variant or "default", source)
             row = acc.setdefault(key, {

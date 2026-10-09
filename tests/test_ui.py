@@ -747,9 +747,9 @@ def test_a_brain_url_that_answers_404_is_not_called_unreachable(browser, twin_se
 
 
 def test_a_brain_that_answers_500_is_not_called_the_wrong_address(browser, twin_server):
-    """3.64, found by both reviewers on D7r: a 500 comes from the brain
-    itself, so "not as the brain service, check the address" sent people to
-    fix a right URL."""
+    """3.64, found by both reviewers on D7r: "not as the brain service, check
+    the address" fired for a 500 too, sending people to fix a right URL. Only
+    a 404/405 says no brain is there; anything else says what came back."""
     page, errors = open_twin(browser, twin_server)
     page.route("**/broken-brain/health", lambda route: route.fulfill(
         status=500, content_type="application/json", body='{"detail":"boom"}'))
@@ -759,7 +759,7 @@ def test_a_brain_that_answers_500_is_not_called_the_wrong_address(browser, twin_
     page.wait_for_timeout(800)
     text = " ".join(page.inner_text("#brain-connection-status").split())
     assert not errors, errors
-    assert "not as the brain" not in text and "Could not reach" not in text, text
+    assert "has no brain service" not in text and "Could not reach" not in text, text
     assert "500" in text and "boom" in text, text
     # An answer with no explanation came from something in front of it.
     page.route("**/edge-policy/health", lambda route: route.fulfill(
@@ -768,7 +768,7 @@ def test_a_brain_that_answers_500_is_not_called_the_wrong_address(browser, twin_
     page.click("#btn-brain-connect")
     page.wait_for_timeout(800)
     text = " ".join(page.inner_text("#brain-connection-status").split())
-    assert "403" in text and "proxy or tunnel" in text, text
+    assert "403" in text and "proxy or tunnel" in text and "Could not reach" not in text, text
     page.context.close()
 
 

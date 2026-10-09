@@ -48,13 +48,14 @@
     if (res.status === 204) return null;
     const data = await res.json().catch(function () { return {}; });
     if (!res.ok) {
-      const detail = typeof data.detail === "string" ? data.detail
-        : (data.detail ? JSON.stringify(data.detail) : "");
+      // FastAPI's `detail` as text (a 422's is a list; 3.64).
+      const detail = data.detail == null ? ""
+        : (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail));
       const err = new Error(detail || ("HTTP " + res.status));
       err.status = res.status;            // 3.64: a refusal is not a lost response
-      // Our own servers always say why (FastAPI's `detail`); a gateway's
-      // timeout page does not. Judged from the body, not the message text.
-      err.fromServer = data.detail != null;
+      // Our own servers always say why; a gateway's timeout page does not.
+      // Judged from the body, not the message text.
+      err.fromServer = detail !== "";
       throw err;
     }
     return data;
@@ -622,10 +623,11 @@
       // Unscored replays last, whatever their frame count: they are not a
       // worse result, they are an absent one.
       const rows = rs.slice().sort(function (a, b) {
-        const an = a.score == null || a.stale, bn = b.score == null || b.stale;
-        if (an !== bn) return an ? 1 : -1;
-        if (an) return 0;                 // absent or not comparable: no order
-        return b.score - a.score;
+        // Comparable scores first, best first; then an older scorer's (not
+        // comparable, so in storage order); then the unscored.
+        function rank(r) { return r.score == null ? 2 : (r.stale ? 1 : 0); }
+        if (rank(a) !== rank(b)) return rank(a) - rank(b);
+        return rank(a) === 0 ? b.score - a.score : 0;
       })
         .map(function (r) {
           const agree = r.agreement == null ? "--" : Math.round(r.agreement * 100) + "%";

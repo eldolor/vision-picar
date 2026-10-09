@@ -358,6 +358,13 @@
   // new frame -- is the phone still capturing?") ended up presented as
   // "check the server is running, on the same network, and that CORS
   // permits this origin", three things that were all true at the time.
+  // FastAPI's `detail` as text: a 422's is a list, which once read
+  // "[object Object]" (3.64). Every error path in this page goes through it.
+  function errorDetail(data) {
+    if (!data || data.detail == null) return "";
+    return typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+  }
+
   function apiError(res, detail) {
     const err = new Error(detail || ("HTTP " + res.status));
     err.status = res.status;
@@ -371,12 +378,12 @@
                                          extraHeaders || {})),
       body: JSON.stringify(body || {}),
     });
-    if (!res.ok) throw apiError(res, (await res.json().catch(() => ({}))).detail);
+    if (!res.ok) throw apiError(res, errorDetail(await res.json().catch(() => ({}))));
     return res.json();
   }
   async function apiGet(path) {
     const res = await fetch(state.serverUrl + path, { headers: authHeaders() });
-    if (!res.ok) throw apiError(res, (await res.json().catch(() => ({}))).detail);
+    if (!res.ok) throw apiError(res, errorDetail(await res.json().catch(() => ({}))));
     return res.json();
   }
 
@@ -1416,14 +1423,6 @@
     if (state.brainSecret) headers["x-app-secret"] = state.brainSecret;
     return tunnelHeaders(state.brainUrl, headers);
   }
-  // FastAPI's `detail` as text: a 422's is a list, which once read
-  // "[object Object]" (3.64). Empty when the body said nothing -- a
-  // gateway's or a proxy's page, not one of our services.
-  function errorDetail(data) {
-    if (!data || data.detail == null) return "";
-    return typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
-  }
-
   async function brainApi(method, path, body) {
     const res = await fetch(state.brainUrl + path, {
       method: method,
@@ -1434,7 +1433,6 @@
     if (!res.ok) {
       const detail = errorDetail(data);
       const err = new Error(detail || ("HTTP " + res.status));
-      err.fromServer = detail !== "";
       // Kept so a caller can tell "the brain answered with an error" from
       // "nothing answered" -- see brainGone().
       err.status = res.status;
@@ -2391,18 +2389,14 @@
           url + " answered HTTP " + e.status + said + ", but has no brain service "
           + "there. Check the address and any tunnel path prefix.");
         if (!silent) showToast("The brain address answered, but no brain service is there.", "err");
-      } else if (!brainGone(e) && e.fromServer) {
-        // Said why, as our services do: the brain itself answered.
-        setConnStatus(statusEl, "err", "Not connected",
-          "The brain at " + url + " answered with an error: HTTP " + e.status + said + ".");
-        if (!silent) showToast("The brain service answered with an error.", "err");
       } else if (!brainGone(e)) {
-        // An answer with no explanation -- and the brain's /health needs no
-        // secret -- is something in front of it: a proxy, a tunnel's policy.
+        // Something answered, and which thing cannot be told from here: the
+        // brain itself, or a proxy or tunnel in front of it (two review
+        // rounds tried to guess). Say what came back and where to look.
         setConnStatus(statusEl, "err", "Not connected",
-          url + " answered HTTP " + e.status + " without saying why -- most likely a "
-          + "proxy or tunnel in front of the brain, not the brain itself.");
-        if (!silent) showToast("Something in front of the brain service refused the request.", "err");
+          url + " answered HTTP " + e.status + said + ". Check the brain's log, and "
+          + "any proxy or tunnel in front of it.");
+        if (!silent) showToast("The brain address answered with an error.", "err");
       } else {
         setConnStatus(statusEl, "err", "Not connected", silent
           ? url + " didn't respond. Tap Connect to retry."
