@@ -763,6 +763,16 @@ class TieredVision:
                 pass
             self._collect_inflight()
 
+    def abandon_inflight(self) -> None:
+        """The runner gave up waiting for the call still out and has charged
+        it to B3.2 already (3.56 follow-up). Forget it, under the collect
+        lock, so whatever it later returns -- an answer or a failure -- is
+        never collected: one call, one count."""
+        with self._collect_lock:
+            self._inflight = None
+            self._inflight_trigger = None
+            self._inflight_perception = None
+
     # -- 1a: the cloud confirms identity at arrival -----------------------
 
     def confirm_arrival(self, frame: dict) -> dict:

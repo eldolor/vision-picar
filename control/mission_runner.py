@@ -947,6 +947,11 @@ class MissionRunner:
             try:
                 call_with_timeout(settle, timeout_s=left("waiting for an earlier cloud call"))
             except TimeoutError as e:
+                # Charged to B3.2 here, so the policy forgets that call:
+                # its late failure must not be counted a second time.
+                abandon = getattr(self.vision_fn, "abandon_inflight", None)
+                if abandon is not None:
+                    abandon()
                 msg = f"an earlier cloud call outlived {self.vision_timeout_s:g}s"
                 raise VisionUnavailable(msg) from CloudUnavailable(msg)
         prev = self._confirm_thread

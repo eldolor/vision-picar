@@ -740,6 +740,26 @@ def test_followup_two_collectors_take_a_landed_call_once():
     assert tier._inflight is None
 
 
+def test_followup_a_call_charged_at_the_wait_is_not_charged_again():
+    """/code-review on the follow-up: the runner's wait for a trigger call
+    still out timed out and B3.2 counted it; when that call later failed,
+    it was collected and counted again. One call, one count."""
+    from concurrent.futures import Future
+    from control.mission_runner import VisionUnavailable
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud, async_cloud=True)
+    fut = Future()
+    tier._inflight, tier._inflight_trigger = fut, "staleness"
+    runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
+                           policy="tiered", vision_fn=tier,
+                           vision_timeout_s=0.2, arrival_confirm_timeout_s=0.1)
+    with pytest.raises(VisionUnavailable):
+        runner._guarded_confirm({})               # the wait times out: count 1
+    fut.set_exception(CloudUnavailable("ConnectError: refused"))
+    time.sleep(0.2)                               # the abandoned wait collects now
+    tier._collect_inflight()                      # and so does the next tick
+    assert tier._pending_error is None, "the same call would be counted twice"
+
+
 def test_followup_a_stop_answers_with_the_cloud_row(tmp_path, monkeypatch):
     """Thermos on merged 3.56: /mission/stop's status is the last one the
     twin draws, and it carried no `cloud`, blanking the row."""

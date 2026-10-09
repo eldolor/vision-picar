@@ -94,7 +94,9 @@ Since spec review 3 (fixes 8-10): `confirm_arrival()` first waits for an
 async call still in flight and applies it (`_collect_inflight()`, whose take
 of the landed call -- future, trigger, perception -- is one step under
 `_collect_lock` since 3.56's follow-up, so a `wait_inflight()` thread the
-runner abandoned and the tick thread can never both apply one answer), so one
+runner abandoned and the tick thread can never both apply one answer; and
+when the runner's wait times out it calls `abandon_inflight()`, so a call
+B3.2 already counted is never collected and counted again), so one
 call is in flight at a time; it returns the tier's `stats` after the call,
 and on the frame that asked, the agent's `_label_confirmation()` sets the
 scene's `_tier` to `cloud_called: true`, `trigger: "arrival_confirmation"`
