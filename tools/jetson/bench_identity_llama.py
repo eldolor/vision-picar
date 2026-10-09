@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import math
 import statistics
@@ -260,6 +261,9 @@ def stream_chunks(lines):
         if data == "[DONE]":
             return
         chunk = json.loads(data)
+        if "error" in chunk:
+            # A mid-stream error is a failed call, not an empty reply.
+            raise ValueError(f"stream error: {chunk['error']}")
         choice = (chunk.get("choices") or [{}])[0]
         for entry in (choice.get("logprobs") or {}).get("content") or []:
             yield entry
@@ -364,7 +368,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
                                         "message": {"content": got["reply"]}}]}
                 else:
                     out = ask(base, p.read_bytes(), w.target)
-            except (urllib.error.URLError, OSError, ValueError) as e:
+            # HTTPException: a stream cut mid-chunk (IncompleteRead) -- the
+            # server dying mid-reply is what the loaded window probes for.
+            except (urllib.error.URLError, OSError, ValueError,
+                    http.client.HTTPException) as e:
                 # One failed call is one unavailable frame -- a miss if the
                 # target was visible (score_at's rule) -- not a lost run.
                 errors += 1

@@ -162,6 +162,12 @@ def test_stream_chunks_yields_each_token_entry_and_stops_at_done():
     assert list(stream_chunks(lines)) == [entry]
 
 
+def test_a_mid_stream_error_is_a_failed_call_not_an_empty_reply():
+    lines = [b'data: {"error": {"code": 500, "message": "out of memory"}}']
+    with pytest.raises(ValueError):
+        list(stream_chunks(lines))
+
+
 def _rec(frame, score):
     return {"walk": "w", "frame": frame, "score": score}
 
