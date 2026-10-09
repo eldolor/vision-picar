@@ -4405,7 +4405,12 @@
         // the brain (3.53, amendment 1), so watch it again from a fresh
         // status rather than leave its verdict unseen.
         if (wasWatchingLate) {
-          brainApi("GET", "/mission/status").then(resumeLateConfirmation, function () {});
+          // Tied to this moment's watch token: a newer Guide start (which
+          // stops the watch, bumping it) makes this answer stale on landing.
+          const resumeToken = lateWatchToken;
+          brainApi("GET", "/mission/status").then(function (s) {
+            if (resumeToken === lateWatchToken) resumeLateConfirmation(s);
+          }, function () {});
         }
         return;
       }

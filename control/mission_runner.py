@@ -958,8 +958,10 @@ class MissionRunner:
 
     def _policy_stats(self) -> Optional[dict]:
         """The policy's own counters, or None. The held `_tier` is the last
-        SUCCESSFUL tick's snapshot and predates the calls that raised. Read
-        outside the runner's lock, and never allowed to fail a finish."""
+        SUCCESSFUL tick's snapshot and predates the calls that raised. Never
+        allowed to fail a finish. Safe under the runner's lock (an RLock;
+        the policy's `as_dict()` takes none), where `_ship_late_metrics()`
+        calls it so a row and its counters are read in one step."""
         as_dict = getattr(getattr(self.vision_fn, "stats", None), "as_dict", None)
         if as_dict is None:
             return None

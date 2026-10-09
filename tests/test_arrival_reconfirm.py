@@ -619,6 +619,31 @@ def test_review_a_start_during_a_stop_never_checks_the_old_mission(reconfirm_app
     assert runners[0] not in made, "a late check was started for the old mission"
 
 
+@pytest.mark.parametrize("reconfirm_app", [1.0], indirect=True)
+def test_review_a_stop_that_raises_releases_its_claim(reconfirm_app):
+    """Coordinator's second Thermos pass, finding 2: a Stop that raises
+    after claiming the slot must release it, or that runner's check can
+    never start (the next Stop sees the slot taken)."""
+    app, cloud, runners = reconfirm_app
+
+    class Raising:
+        def wait(self, timeout=None):
+            raise RuntimeError("wait failed")
+
+        def is_set(self):
+            return True
+    with TestClient(app, raise_server_exceptions=False) as client:
+        client.post("/mission/start", json={"target_object": TARGET, "policy": "tiered"})
+        assert _wait_outcome(client, timeout=120)["outcome"] == ARRIVED_UNCONFIRMED
+        real = runners[0].finished
+        runners[0].finished = Raising()
+        assert client.post("/mission/stop").status_code == 500
+        runners[0].finished = real
+        client.post("/mission/stop")  # the slot is free again: this one starts it
+        cloud.up = True
+        assert _final(runners[0])["state"] == "confirmed"
+
+
 def test_4_amended_a_refused_start_leaves_it(reconfirm_app):
     """From review: a start refused with 400 must not drop the old check."""
     app, cloud, runners = reconfirm_app

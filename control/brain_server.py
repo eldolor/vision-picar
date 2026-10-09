@@ -709,22 +709,29 @@ def create_app(
                    and not getattr(runner, "operator_stopped", False))
         if claimed:
             state["reconfirm"] = _CLAIMED
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-        state["task"] = None
-        if claimed:
-            # The tick thread may still be inside _finish (closing the
-            # policy, building the metrics row); wait for its last act.
-            finished = getattr(runner, "finished", None)
-            if finished is not None:
-                await asyncio.to_thread(finished.wait, 5.0)
-            if state["reconfirm"] is _CLAIMED:
+        try:
+            if task is not None and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            state["task"] = None
+            if claimed:
+                # The tick thread may still be inside _finish (closing the
+                # policy, building the metrics row); wait for its last act.
+                finished = getattr(runner, "finished", None)
+                if finished is not None:
+                    await asyncio.to_thread(finished.wait, 5.0)
+                if state["reconfirm"] is _CLAIMED:
+                    state["reconfirm"] = None
+                    start_reconfirm(runner, generation)  # a no-op if a Start came in
+        finally:
+            # Whatever raised above (the awaited task, the wait), a claim
+            # still held is released, or no check could start until the
+            # next Start.
+            if claimed and state["reconfirm"] is _CLAIMED:
                 state["reconfirm"] = None
-                start_reconfirm(runner, generation)  # a no-op if a Start came in
 
         if runner is not None:
             await asyncio.to_thread(runner.stop)

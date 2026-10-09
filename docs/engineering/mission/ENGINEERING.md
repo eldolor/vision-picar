@@ -188,7 +188,8 @@ generation and claims the slot (`state["reconfirm"] = _CLAIMED`) before its
 first await, so a second Stop cannot start another check beside it and a
 Start meanwhile (which empties the slot and bumps the generation) leaves it
 unable to start one for the old runner; `start_reconfirm()` also refuses
-while the slot is held. It starts the check after waiting for
+while the slot is held, and a claim still held when the handler raises is
+released in a `finally`. It starts the check after waiting for
 `runner.finished` (set as `_finish`'s last act, which
 `late_confirmation_pending()` also requires). A Stop that lands while the
 runner is running marks it `operator_stopped`, and no later Stop starts a
@@ -390,7 +391,7 @@ tests/test_mission_guarded_verbs.py -q`.
 | `tests/test_camera_centred_start.py` (11) | 3.20's four criteria: centred first decision under `frontier` and `vision` (tiered is not parametrised), no step or vision call spent, centred start unchanged against `tests/data/frontier_trace_centred.json`, a refused centring ends the mission like any refused move |
 | `tests/test_mission_guarded_verbs.py` (3) | 3.32: a mission's verbs go through the safety layer's guarded plan; the gate forwards plan and stop count; a finished mission refuses a plan |
 | `tests/test_bearing_turns.py` | `blocked` after `stuck_after` refusals, never on an arrival, switchable off, reset by progress |
-| `tests/test_arrival_reconfirm.py` (25) | 3.53: once the cloud is back, exactly one paid call on all 12 clear starts for a cloud that sees the target and one that does not; the outcome unchanged; no robot method called; free and bounded probing (`expired`); two paid attempts, half a window apart, then `failed`, and a server-side outage that clears in the window `confirmed`; a cancel never pays, also when it lands between the probe and the call; a cap refusal counts no paid call; a hung call is never doubled; only an unconfirmed arrival records anything; the metrics row re-sent, not added; through `brain_server`, a new mission drops it, a refused start and a Stop after the ending (also one in the loop's last sleep) do not; the brain's own loop asks |
+| `tests/test_arrival_reconfirm.py` (26) | 3.53: once the cloud is back, exactly one paid call on all 12 clear starts for a cloud that sees the target and one that does not; the outcome unchanged; no robot method called; free and bounded probing (`expired`); two paid attempts, half a window apart, then `failed`, and a server-side outage that clears in the window `confirmed`; a cancel never pays, also when it lands between the probe and the call; a cap refusal counts no paid call; a hung call is never doubled; only an unconfirmed arrival records anything; the metrics row re-sent, not added; through `brain_server`, a new mission drops it, a refused start and a Stop after the ending (also one in the loop's last sleep) do not; the brain's own loop asks |
 | `tests/test_robot_contract.py` | `_HaltGate` passes the body conformance suite as a backend |
 | `tests/test_remote_robot.py` | an identical action sequence and step count in-process, over ASGI and over a live socket |
 | `tests/test_offline_mode.py` (11) | 3.49, with every socket connect refused and the real HTTP cloud client: the robot server loads no cloud client (a subprocess's `sys.modules`, and every file under `robot/`); `frontier`/`explore` still `found`; tiered (sync, async) searches from out of sight and ends `arrived_unconfirmed` at the target; `vision` fails without moving; no offline tiered run `failed`; a hanging cloud parks for at most budget x timeout + 1 s; the twin references no external host |
