@@ -4373,7 +4373,10 @@
         return;
       }
       // A new mission: the last one's late-check watch must never draw
-      // its verdict over this session (3.53, review).
+      // its verdict over this session (3.53, review). Whether one WAS
+      // watching decides what a refused start resumes: only a check this
+      // page was waiting on, never a verdict that finished long before.
+      const wasWatchingLate = !!state.lateWatchTimerId;
       stopLateWatch();
       try {
         // The model picker applies here too, not just to a one-off
@@ -4401,7 +4404,9 @@
         // A refused start leaves the last mission's late check running on
         // the brain (3.53, amendment 1), so watch it again from a fresh
         // status rather than leave its verdict unseen.
-        brainApi("GET", "/mission/status").then(resumeLateConfirmation, function () {});
+        if (wasWatchingLate) {
+          brainApi("GET", "/mission/status").then(resumeLateConfirmation, function () {});
+        }
         return;
       }
     }

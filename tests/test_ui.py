@@ -2258,6 +2258,53 @@ def test_a_verdict_that_lands_during_a_refused_guide_start_is_shown(browser, twi
     context.close()
 
 
+def test_a_refused_start_never_toasts_a_verdict_this_page_was_not_waiting_on(
+        browser, twin_server):
+    """Seventh review: a page that loads after the old check already
+    finished (`confirmed` an hour ago) must not pop it as news when its
+    first Drive-via-brain start is refused."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", lambda route: route.fulfill(
+        status=400, content_type="application/json",
+        body=_json({"detail": "The tiered policy cannot start"})))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json(unconfirmed_status("confirmed"))))  # final before this page loaded
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "blue shoes")
+    page.click("#btn-guidance")  # refused
+    page.wait_for_timeout(2500)
+    assert page.locator(".toast", has_text="Late identity check").count() == 0
+    assert not errors, errors
+    context.close()
+
+
 def test_the_late_watch_stops_on_a_dead_brain(browser, twin_server):
     """Coordinator's Thermos pass, finding 4 (b): a watch whose brain only
     errors stops after LATE_MAX_ERRORS polls, not every 3 s forever."""
