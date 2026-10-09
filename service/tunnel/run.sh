@@ -57,10 +57,23 @@ export METRICS_URL="${METRICS_URL:-$VISION_URL}"
 export METRICS_SECRET="${WALKS_SECRET:-}"
 # 3.46: each mission's object inventory (labels and map positions, never an
 # image) is uploaded to the private recordings bucket, read from the
-# recordings stack's export. Unset (no AWS credentials) means local only.
-export INVENTORY_BUCKET="${INVENTORY_BUCKET:-$(aws cloudformation list-exports \
-  --query "Exports[?Name=='vision-picar-recordings-s3-BucketName'].Value" \
-  --output text 2>/dev/null || true)}"
+# recordings stack's export. 3.55: `INVENTORY_BUCKET=` (set but empty)
+# means local only and is never looked up. A failed lookup leaves the
+# variable UNSET, not empty, so the brain falls back to config/robot.yaml
+# rather than reading a failed lookup as the opt-out.
+# --- inventory bucket (tests/test_inventory_mission.py runs this block) ---
+if [ -z "${INVENTORY_BUCKET+set}" ]; then
+  _bucket="$(aws cloudformation list-exports \
+    --query "Exports[?Name=='vision-picar-recordings-s3-BucketName'].Value" \
+    --output text 2>/dev/null || true)"
+  if [ -n "$_bucket" ] && [ "$_bucket" != "None" ]; then
+    export INVENTORY_BUCKET="$_bucket"
+  fi
+  unset _bucket
+else
+  export INVENTORY_BUCKET
+fi
+# --- end inventory bucket ---
 
 export ROBOT_MODE="${ROBOT_MODE:-sim}"
 # The world model must follow the body (N1). config/robot.yaml ships

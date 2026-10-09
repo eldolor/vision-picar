@@ -24,6 +24,11 @@ python -m playwright install chromium     # once: the UI tests SKIP without a br
 
 * **Trust `pytest` from `.venv`.** The system Anaconda Python has an older
   FastAPI and disagrees about a few tests.
+* **In a Claude Code cloud session, `.claude/hooks/session-start.sh` does
+  all of this at start-up** (cloud only): `.venv`, `requirements.txt`, a
+  Playwright that can launch the image's preinstalled Chromium (the newest
+  one may not, and `playwright install` is not allowed there), and the
+  `tools/hooks` push gate.
 * **The UI tests (`tests/test_ui*.py`, `tests/test_frame_source.py`) drive
   the real twin in a real browser at a 390 px phone viewport.** They exist
   because the UI is where bugs escaped: two shipped on 2026-08-29 and were
