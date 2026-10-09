@@ -79,8 +79,9 @@ Continuing an existing section: work in its worktree
    the live-stack ones (`*_live.py`) and the measurement sweeps
    (`SLOW_FILES` in `tools/plan_section.py`, which held ~45 of the full
    run's 51 minutes), unless `ready` already recorded a pass for that
-   commit. A new sweep that runs hundreds of missions belongs on that
-   list. The **full suite** runs once a night on the latest
+   commit. A pass is recorded for the CHANGE (`git patch-id`), so a clean
+   rebase onto another session's push does not rerun the tier. A new
+   sweep that runs hundreds of missions belongs on that list. The **full suite** runs once a night on the latest
    `origin/dev` (`tools/nightly_suite.sh`, installed with `--install`;
    result in `~/Library/Logs/vision-picar/nightly-latest.txt`) and with
    `ready --full` before merging a section that changes the twin or the
