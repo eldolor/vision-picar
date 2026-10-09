@@ -994,10 +994,10 @@ class MissionRunner:
     def inventory_report(self) -> Optional[dict]:
         if self.inventory is None:
             return None
-        with self._lock:
+        with self._lock:      # 3.47: the list and the outcome from one moment
             report = self.inventory.report()
-        report["mission"] = self.memory.mission
-        report["outcome"] = self._outcome
+            report["mission"] = self.memory.mission
+            report["outcome"] = self._outcome
         return report
 
     def _finish_inventory(self) -> None:

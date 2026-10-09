@@ -2075,11 +2075,17 @@ def test_a_plain_host_is_left_alone(browser, twin_server):
     protocol -- and adding it everywhere would put a CORS preflight on the
     twice-a-second health poll of every LAN and localhost setup."""
     page, errors = open_twin(browser, twin_server)
+    # A LAN robot of its own, played by the local server: on the page's own
+    # origin its poll and the env banner's /health would be one URL, and
+    # the helper could judge the banner's request instead.
+    lan = "http://picar.lan:8000"
+    page.route(lan + "/**", lambda route: route.fulfill(
+        response=route.fetch(url=route.request.url.replace(lan, twin_server))))
     page.click("#btn-settings")
-    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-server-url", lan)
     page.click("#btn-connect")
     page.click('.tab-btn[data-tab="sim"]')
-    headers = _headers_for(page, "() => {}", twin_server)
+    headers = _headers_for(page, "() => {}", lan)
 
     assert "ngrok-skip-browser-warning" not in headers, sorted(headers)
     assert not errors, errors

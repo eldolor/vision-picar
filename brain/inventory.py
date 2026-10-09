@@ -289,7 +289,8 @@ class Inventory:
             return
         self.frames += 1
         returns = scan_returns(scan)
-        joined = set()
+        joined = set()      # seen in this frame (no miss for these)
+        counted = set()     # took this frame's look (3.47)
         for d in detections:
             label = str(d.get("label", "")).strip().lower()
             if not label or d.get("bearing_deg") is None:
@@ -312,29 +313,38 @@ class Inventory:
             else:
                 lm.points.append((x, y, label))
             lm.last_step = step
-            own_look = lm.id not in joined and _new_view(lm._hit_pose, pose)
-            own_score = lm.score
-            if self._absorb(lm, label, x, y) & joined:
-                # 3.47: a landmark that already took this frame's look was
-                # folded into `lm`, and `_absorb` carried its score and hits
-                # over. The merged object gets this look ONCE: never a
-                # second hit (raising belief from one frame twice), but not
-                # lost either when `lm` had the larger score and this was a
-                # new viewpoint for it -- max(score) alone would drop it.
-                if own_look:
-                    lm.score = max(lm.score, min(SCORE_CLAMP, own_score + L_HIT))
-                # The look is `lm`'s last viewpoint, and it was seen.
-                joined.add(lm.id)
-                lm._hit_pose = dict(pose)
-                lm._pending_miss = False
-            if lm.id not in joined and _new_view(lm._hit_pose, pose):
-                lm.score = min(SCORE_CLAMP, lm.score + L_HIT)
-                lm.hits += 1
-                lm._pending_miss = False
-                lm.votes[label] += 1
-                lm._hit_pose = dict(pose)
+            self._count_look(lm, label, x, y, pose, joined, counted)
             joined.add(lm.id)
         self._misses(pose, returns, pan_deg, fov_deg, joined)
+
+    def _count_look(self, lm: Landmark, label: str, x: float, y: float, pose: dict,
+                    joined: set, counted: set) -> None:
+        """This frame's look at `lm`, after the point (x, y) was added to it
+        and any landmarks it now bridges are folded in (`_absorb`).
+
+        3.47: the merged object gets the look ONCE. Each landmark taking
+        part deserves its own score, plus one look if this pose is a new
+        view for it and it has not already been counted this frame; the
+        merged score is the largest of those. Never a second look from one
+        frame (one landmark may already hold it), and never a lost one
+        (the landmark that deserved it may be the one folded in) -- in
+        whichever order the merge happens. With nothing to merge this is
+        the plain rule: a new viewpoint is one hit."""
+        parts = [lm] + [o for o in self.landmarks
+                        if o is not lm and o.label == label and o.near(x, y, MERGE_M)]
+        already = any(o.id in counted for o in parts)
+        fresh = [o for o in parts if o.id not in joined and _new_view(o._hit_pose, pose)]
+        deserved = max(min(SCORE_CLAMP, o.score + L_HIT) if o in fresh else o.score
+                       for o in parts)
+        self._absorb(lm, label, x, y)
+        lm.score = deserved
+        if fresh and not already:
+            lm.hits += 1
+            lm.votes[label] += 1
+        if fresh or already:
+            counted.add(lm.id)
+            lm._hit_pose = dict(pose)
+            lm._pending_miss = False
 
     def _match(self, label: str, x: float, y: float) -> Optional[Landmark]:
         same = [lm for lm in self.landmarks if lm.label == label and lm.near(x, y, MERGE_M)]

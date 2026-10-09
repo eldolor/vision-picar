@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import socket
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -54,6 +55,21 @@ def _fsync_dir(path: Path) -> None:
         os.close(fd)
 
 
+STALE_TMP_S = 3600
+
+
+def _sweep_stale_tmp(directory: Path) -> None:
+    """A save cut off by a crash or a power loss leaves `.<name>.tmp`
+    behind (no handler runs), and mission ids are unique, so nothing ever
+    overwrites it. Remove those older than an hour -- never a fresh one,
+    which may be another mission's save in progress on its own thread."""
+    cutoff = time.time() - STALE_TMP_S
+    for tmp in directory.glob(".*.json.tmp"):
+        with contextlib.suppress(OSError):
+            if tmp.stat().st_mtime < cutoff:
+                tmp.unlink()
+
+
 def _slug(text: str) -> str:
     return _SAFE.sub("-", str(text).lower()).strip("-")[:60] or "x"
 
@@ -79,6 +95,7 @@ class InventoryStore:
         out = {"local": None, "s3": None, "errors": []}
         try:
             self.local_dir.mkdir(parents=True, exist_ok=True)
+            _sweep_stale_tmp(self.local_dir)
             path = self.local_dir / name
             # 3.47: write then rename, so a brain that exits mid-save (the
             # save runs on a daemon thread) leaves no half-written file.

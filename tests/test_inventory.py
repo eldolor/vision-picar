@@ -219,6 +219,28 @@ def test_a_merge_never_loses_the_bigger_landmarks_own_look():
     assert lm.score == pytest.approx(min(inv.SCORE_CLAMP, before + inv.L_HIT))
 
 
+def test_a_merge_counts_the_look_once_in_the_other_order_too():
+    """3.47, found by the Thermos pass on the third round: with the OLDER,
+    smaller landmark A first in the list, a detection hits A, the next one
+    bridges B (larger, a new view from here) into A -- and B's look was
+    lost (merged 2L instead of 3L). Each landmark's due is computed before
+    the merge now, whichever survives it."""
+    i = Inventory()
+    # A at (0, -2): one look. B at (0.8, -2): two looks, created after A.
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0, 0, 0), _scan({0: 2.0}))
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0.8, 0, 0), _scan({0: 2.0}))
+    i.observe([{"label": "sofa", "bearing_deg": -17.0}], _pose(1.4, 0, 0), _scan({-17: 2.09}))
+    a, b = i.landmarks
+    assert (a.score, b.score) == pytest.approx((inv.L_HIT, 2 * inv.L_HIT))
+    # A new spot for both: the first detection lands by A only, the second
+    # between them, matching A (first in the list) and bridging B in.
+    i.observe([{"label": "sofa", "bearing_deg": -9.0}, {"label": "sofa", "bearing_deg": 0.0}],
+              _pose(0.4, 1.0, 0), _scan({-9: 3.04, 0: 3.0}))
+    (lm,) = i.landmarks
+    assert lm.score == pytest.approx(3 * inv.L_HIT)    # B's two looks and this one
+    assert lm.hits == 4 and lm.votes["sofa"] == 4      # 1 + 2 before, this frame once
+
+
 def test_two_things_apart_are_two_landmarks():
     i = Inventory()
     i.observe([{"label": "mug", "bearing_deg": -20.0}, {"label": "shoe", "bearing_deg": 20.0}],

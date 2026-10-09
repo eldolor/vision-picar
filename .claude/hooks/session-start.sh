@@ -10,14 +10,33 @@ fi
 
 cd "$CLAUDE_PROJECT_DIR"
 
-# 1. The venv CLAUDE.md section 1 prescribes ("trust pytest from .venv").
+# Nothing below may stop the steps after it: a failed pip install (PyPI
+# unreachable through the proxy) must not also lose the push gate or the
+# venv on PATH. Each step warns and carries on.
+warn() { echo "session-start: $*" >&2; }
+
+# 1. The repo's machine setup (docs/guides/PARALLEL-SESSIONS.md): the
+#    pre-push gate on dev, and rerere for replayed conflict resolutions.
+#    First, because it needs nothing from the network.
+git config core.hooksPath tools/hooks || warn "could not set core.hooksPath"
+git config rerere.enabled true || true
+git config rerere.autoupdate true || true
+
+# 2. Every command in the session uses the venv.
+if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+  echo "export VIRTUAL_ENV=\"$CLAUDE_PROJECT_DIR/.venv\"" >> "$CLAUDE_ENV_FILE"
+  echo "export PATH=\"$CLAUDE_PROJECT_DIR/.venv/bin:\$PATH\"" >> "$CLAUDE_ENV_FILE"
+fi
+
+# 3. The venv CLAUDE.md section 1 prescribes ("trust pytest from .venv").
 #    pip install is idempotent and benefits from the cached container.
 if [ ! -x .venv/bin/python ]; then
-  python3 -m venv .venv
+  python3 -m venv .venv || { warn "could not create .venv"; exit 0; }
 fi
-.venv/bin/pip install -q --disable-pip-version-check -r requirements.txt
+.venv/bin/pip install -q --disable-pip-version-check -r requirements.txt \
+  || warn "pip install -r requirements.txt failed; tests may not run"
 
-# 2. The UI tests drive a real Chromium. The cloud image preinstalls one
+# 4. The UI tests drive a real Chromium. The cloud image preinstalls one
 #    under $PLAYWRIGHT_BROWSERS_PATH and forbids `playwright install`.
 #    requirements.txt leaves Playwright unpinned (pytest-playwright pulls
 #    the newest), and the newest may expect a newer browser build -- then
@@ -34,21 +53,8 @@ with sync_playwright() as p:
 PY
 }
 if ! can_launch; then
-  .venv/bin/pip install -q --disable-pip-version-check "playwright==1.56.0"
-  if ! can_launch; then
-    echo "session-start: no Playwright here can launch the installed Chromium;" \
-         "the UI tests will error" >&2
-  fi
+  .venv/bin/pip install -q --disable-pip-version-check "playwright==1.56.0" \
+    || warn "could not install playwright 1.56.0"
+  can_launch || warn "no Playwright here can launch the installed Chromium; the UI tests will error"
 fi
-
-# 3. The repo's machine setup (docs/guides/PARALLEL-SESSIONS.md): the
-#    pre-push gate on dev, and rerere for replayed conflict resolutions.
-git config core.hooksPath tools/hooks
-git config rerere.enabled true
-git config rerere.autoupdate true
-
-# 4. Every command in the session uses the venv.
-if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-  echo "export VIRTUAL_ENV=\"$CLAUDE_PROJECT_DIR/.venv\"" >> "$CLAUDE_ENV_FILE"
-  echo "export PATH=\"$CLAUDE_PROJECT_DIR/.venv/bin:\$PATH\"" >> "$CLAUDE_ENV_FILE"
-fi
+exit 0

@@ -308,6 +308,21 @@ def test_a_save_cut_off_midway_leaves_the_last_good_file(tmp_path, monkeypatch):
     assert [f.name for f in tmp_path.iterdir()] == ["m.json"]
 
 
+def test_a_crash_leftover_is_swept_but_a_save_in_progress_is_not(tmp_path):
+    """3.47, found by review: a save cut off by a crash or power loss runs
+    no handler, so its `.tmp` stayed for good. A stale one is removed on
+    the next save; a fresh one may be another thread's save in progress."""
+    import os
+    import time
+    stale, fresh = tmp_path / ".old-mission.json.tmp", tmp_path / ".busy-mission.json.tmp"
+    stale.write_text("{")
+    fresh.write_text("{")
+    hour_ago = time.time() - 2 * 3600
+    os.utime(stale, (hour_ago, hour_ago))
+    InventoryStore(str(tmp_path), client=_FakeS3()).save("m", {})
+    assert not stale.exists() and fresh.exists()
+
+
 def _bucket_from_run_sh(tmp_path, env_bucket, aws="echo found-bucket"):
     """Run run.sh's own inventory-bucket block with a fake `aws`. Returns
     what the brain would inherit: the exported value, or None if unset."""
@@ -324,9 +339,15 @@ def _bucket_from_run_sh(tmp_path, env_bucket, aws="echo found-bucket"):
     env = {"PATH": f"{tmp_path}:{os.environ['PATH']}"}
     if env_bucket is not None:
         env["INVENTORY_BUCKET"] = env_bucket
-    out = subprocess.run(["bash", "-c", block + "\nprintenv INVENTORY_BUCKET"],
+    # The sentinel proves the block ran to the end: a block that crashed
+    # must not read as "left unset".
+    out = subprocess.run(["bash", "-c", block + "\necho BLOCK-RAN\nprintenv INVENTORY_BUCKET"],
                          env=env, capture_output=True, text=True)
-    return out.stdout.rstrip("\n") if out.returncode == 0 else None
+    lines = out.stdout.split("\n")
+    # ...and ran clean: a malformed test makes bash print an error and take
+    # the other branch, which would otherwise pass as "left unset".
+    assert lines[0] == "BLOCK-RAN" and not out.stderr, (out.stdout, out.stderr)
+    return lines[1] if out.returncode == 0 else None
 
 
 def test_run_sh_set_but_empty_bucket_means_local_only(tmp_path):
@@ -396,10 +417,8 @@ def test_two_missions_in_one_second_get_their_own_file(monkeypatch):
     from control import brain_server
     from tests.conftest import RecordingRobot, fresh_mock_robot
     ids = []
-    # Both starts inside one second, whatever the machine's speed: a frozen
-    # clock for the id (old and new formats), microseconds still ticking.
-    frozen = time.struct_time((2026, 10, 9, 1, 2, 3, 4, 282, 0))
-    monkeypatch.setattr(brain_server.time, "gmtime", lambda *a: frozen)
+    # Both starts inside one second, whatever the machine's speed: the id's
+    # clock is frozen at one second, microseconds still ticking.
     ticks = iter(range(1, 1000))
 
     class FrozenClock(real_datetime):
