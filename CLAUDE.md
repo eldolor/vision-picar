@@ -135,6 +135,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   10 cm before scoring (`correlation_search_space_smear_deviation`
   0.10 -> 0.03 m: two tours within 4.2 cm, every room's walls 100% true).
   Scans are also stamped with their capture time (skew 21 -> 7 ms).
+* **Local identity check (3.48), merged 2026-10-09.** Five small VLMs on
+  the Jetson at 15 W (llama.cpp): Qwen2.5-VL-3B Q4 meets accuracy (97.1%
+  precision, 0/34 teal bin; the cloud 67.9%) but fails latency (5.58 s p90
+  for the full reply, 2.84 s to its decision) and memory (3.48 GB vs 3.25);
+  Cosmos-Reason2, Qwen3-VL and LFM2 confabulate; no Nemotron VL fits. Not
+  built.
 * **Rooms from CLIP (3.51, 3.54), merged 2026-10-09.** Zero-shot fails
   (67%); few-shot on the user's own rooms meets accuracy on three rooms
   (81%, within 1.1 points of the cloud) but not laptop-CPU cost. Not wired
