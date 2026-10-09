@@ -294,18 +294,18 @@ def test_a_save_cut_off_midway_leaves_the_last_good_file(tmp_path, monkeypatch):
     exiting mid-write left a truncated JSON file. Written to a temporary
     name and renamed, a cut-off write never touches the real one. Red with
     a direct write_text()."""
-    from pathlib import Path
+    from control import inventory_store
     store = InventoryStore(str(tmp_path), client=_FakeS3())
     store.save("m", {"reported": [1]})
-    real = Path.write_text
 
-    def cut_off(self, data, *a, **kw):
-        real(self, data[: len(data) // 2], *a, **kw)
-        raise OSError("process exited mid-write")
-    monkeypatch.setattr(Path, "write_text", cut_off)
+    def cut_off(fd):
+        raise OSError("power lost before the write reached the disk")
+    monkeypatch.setattr(inventory_store.os, "fsync", cut_off)
     out = store.save("m", {"reported": [2]})
     assert out["local"] is None and out["errors"]
     assert json.loads((tmp_path / "m.json").read_text()) == {"reported": [1]}
+    # ...and no partial temporary file left behind.
+    assert [f.name for f in tmp_path.iterdir()] == ["m.json"]
 
 
 def _bucket_from_run_sh(tmp_path, env_bucket):
@@ -315,7 +315,7 @@ def _bucket_from_run_sh(tmp_path, env_bucket):
     import re
     import subprocess
     from pathlib import Path
-    text = Path("service/tunnel/run.sh").read_text()
+    text = (Path(__file__).resolve().parents[1] / "service/tunnel/run.sh").read_text()
     line = re.search(r'^export INVENTORY_BUCKET=.*?\)\}"$', text, re.M | re.S).group(0)
     fake = tmp_path / "aws"
     fake.write_text("#!/bin/sh\necho found-bucket\n")
@@ -347,6 +347,20 @@ def test_the_bucket_comes_from_the_environment(monkeypatch):
     assert load_brain_config()["inventory_bucket"] == "from-env"
 
 
+def test_an_empty_bucket_variable_overrides_the_yaml(monkeypatch, tmp_path):
+    """3.47, found by review: `INVENTORY_BUCKET=` (the local-only opt-out)
+    was ignored as if unset, so a bucket in config/robot.yaml still won.
+    Red with `if os.environ.get(...)`."""
+    import yaml
+    from control.brain_config import load_brain_config
+    cfg = tmp_path / "robot.yaml"
+    cfg.write_text(yaml.safe_dump({"brain": {"inventory_bucket": "yaml-bucket"}}))
+    monkeypatch.setenv("INVENTORY_BUCKET", "")
+    assert load_brain_config(str(cfg))["inventory_bucket"] == ""
+    monkeypatch.delenv("INVENTORY_BUCKET")
+    assert load_brain_config(str(cfg))["inventory_bucket"] == "yaml-bucket"
+
+
 # ---------- the route ----------
 
 def test_the_brain_serves_the_inventory(monkeypatch, tmp_path):
@@ -366,9 +380,21 @@ def test_two_missions_in_one_second_get_their_own_file(monkeypatch):
     gave a quick restart the same file name and S3 key, so the second save
     overwrote the first. Red with the old `%H%M%SZ` id."""
     import time
+    from datetime import datetime as real_datetime
     from control import brain_server
     from tests.conftest import RecordingRobot, fresh_mock_robot
     ids = []
+    # Both starts inside one second, whatever the machine's speed: a frozen
+    # clock for the id (old and new formats), microseconds still ticking.
+    frozen = time.struct_time((2026, 10, 9, 1, 2, 3, 4, 282, 0))
+    monkeypatch.setattr(brain_server.time, "gmtime", lambda *a: frozen)
+    ticks = iter(range(1, 1000))
+
+    class FrozenClock(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return real_datetime(2026, 10, 9, 1, 2, 3, next(ticks), tzinfo=tz)
+    monkeypatch.setattr(brain_server, "datetime", FrozenClock)
 
     class Store:
         def save(self, mission_id, report):

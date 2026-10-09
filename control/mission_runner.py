@@ -875,8 +875,7 @@ class MissionRunner:
 
     def _finish(self, outcome: str, note: str) -> None:
         with self._lock:
-            already_done = not self._running and self._outcome != IDLE
-            if already_done:
+            if self._ended():
                 return
             self._running = False
             self._outcome = outcome
@@ -946,6 +945,13 @@ class MissionRunner:
         elapsed = time.monotonic() - self._started_at
         return round(self._ticks / elapsed, 3) if elapsed > 0 else None
 
+    def _ended(self) -> bool:
+        """The mission has finished: stopped, with an outcome recorded. Not
+        true before `start()` (outcome still IDLE). `_finish` and `_observe`
+        share this one rule, so a frame is dropped exactly when the report
+        it would change has already been saved."""
+        return not self._running and self._outcome != IDLE
+
     def _safe_stop(self) -> None:
         try:
             self.robot.stop()
@@ -968,13 +974,13 @@ class MissionRunner:
         mission ended is dropped: the report has already been saved."""
         try:
             detections = self.detections_fn(frame)
-            if detections is None:
-                return
+            if detections is None or self._ended():
+                return                        # no reads for a frame that will be dropped
             pose = self.world.get_pose()
             scan = self.robot.get_scan(max_range_m=INVENTORY_RANGE_M + 0.5)
             with self._lock:
-                if not self._running and self._outcome != IDLE:
-                    return                    # ended: the report is saved
+                if self._ended():
+                    return                    # ended meanwhile: the report is saved
                 self.inventory.observe(
                     detections, pose, scan,
                     pan_deg=float(frame.get("pan_deg") or 0.0),

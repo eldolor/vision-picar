@@ -303,17 +303,24 @@ class Inventory:
             x, y = _place(pose, bearing, rng)
             lm = self._match(label, x, y)
             if lm is None:
-                lm = Landmark(id=self._next_id, room=room, first_step=step)
+                # 3.47: never in the list without a point -- a reader
+                # (summary()) once met one between these two lines.
+                lm = Landmark(id=self._next_id, room=room, first_step=step,
+                              points=[(x, y, label)])
                 self._next_id += 1
                 self.landmarks.append(lm)
-            lm.points.append((x, y, label))
+            else:
+                lm.points.append((x, y, label))
             lm.last_step = step
             if self._absorb(lm, label, x, y) & joined:
                 # 3.47: a landmark that already took this frame's look was
                 # folded into `lm`, and `_absorb` carried its score and hits
                 # over. Counting the look again would raise belief from one
-                # frame twice.
+                # frame twice -- and so would counting it next frame, so
+                # this look is `lm`'s last viewpoint, and it was seen.
                 joined.add(lm.id)
+                lm._hit_pose = dict(pose)
+                lm._pending_miss = False
             if lm.id not in joined and _new_view(lm._hit_pose, pose):
                 lm.score = min(SCORE_CLAMP, lm.score + L_HIT)
                 lm.hits += 1

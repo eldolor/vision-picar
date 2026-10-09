@@ -62,8 +62,18 @@ class InventoryStore:
             # 3.47: write then rename, so a brain that exits mid-save (the
             # save runs on a daemon thread) leaves no half-written file.
             tmp = path.with_name(f".{name}.tmp")
-            tmp.write_text(body)
-            os.replace(tmp, path)
+            try:
+                with open(tmp, "w") as f:
+                    f.write(body)
+                    f.flush()
+                    # Durable, not only atomic: the Jetson can lose power
+                    # seconds after a mission, and a rename to a new name
+                    # can then surface as an empty file.
+                    os.fsync(f.fileno())
+                os.replace(tmp, path)
+            except BaseException:
+                tmp.unlink(missing_ok=True)
+                raise
             out["local"] = str(path)
         except OSError as exc:
             out["errors"].append(f"local: {exc}")

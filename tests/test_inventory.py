@@ -193,6 +193,10 @@ def test_a_merge_inside_one_frame_counts_that_look_once():
     (lm,) = i.landmarks
     assert lm.hits == 3 and lm.votes["sofa"] == 3
     assert lm.score == pytest.approx(2 * inv.L_HIT)   # A's or B's one look, then this one
+    # ...and the merged landmark remembers this frame as its last viewpoint,
+    # so the same look from the same spot next frame counts nothing.
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0.4, 1.0, 0), _scan({0: 3.0}))
+    assert i.landmarks[0].hits == 3
 
 
 def test_two_things_apart_are_two_landmarks():
