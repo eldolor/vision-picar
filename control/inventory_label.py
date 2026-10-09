@@ -62,6 +62,11 @@ MAX_BOXES = 20              # the most confident object boxes per frame
 SAMPLE_N = 150
 SAMPLE_SEED = 3460
 TARGET_JUDGE_PRECISION = 0.75
+# Amendment 4: configuration F keeps only names the reference finds
+# reliable on the frames OUTSIDE the user's sample.
+RELIABLE_MIN_BOXES = 30
+RELIABLE_MIN_PRECISION = 0.80
+EXTRA_BOXES = 100           # other boxes on the page, to measure the judge
 
 
 # ---------------------------------------------------------------- frames
@@ -220,7 +225,9 @@ Answer with only JSON:
 {{"boxes": {{"1": "correct", "2": "wrong", ...}}, "missed": ["name", ...]}}"""
 
 
-def draw(path: Path, boxes: list) -> bytes:
+def draw(path: Path, boxes: list, width: Optional[int] = None) -> bytes:
+    """The frame with numbered boxes. The judge gets full size; the user's
+    page gets `width` px, so 150 frames stay a page a phone can open."""
     from PIL import Image, ImageDraw
     img = Image.open(path).convert("RGB")
     d = ImageDraw.Draw(img)
@@ -229,8 +236,29 @@ def draw(path: Path, boxes: list) -> bytes:
         d.rectangle([x1, y1, x2, y2], outline=(255, 40, 40), width=3)
         d.rectangle([x1, y1, x1 + 22, y1 + 16], fill=(255, 40, 40))
         d.text((x1 + 4, y1 + 2), str(b["n"]), fill=(255, 255, 255))
+    if width and img.width > width:
+        img = img.resize((width, round(img.height * width / img.width)))
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=88)
+    img.save(buf, format="JPEG", quality=88 if not width else 80)
+    return buf.getvalue()
+
+
+def crop(path: Path, box: dict, margin: float = 0.25, width: int = 320) -> bytes:
+    """One box with a margin of context and its outline, for the user's
+    page: a numbered box on a full phone-width frame is unreadable when
+    boxes overlap, so each answer gets its own picture."""
+    from PIL import Image, ImageDraw
+    img = Image.open(path).convert("RGB")
+    x1, y1, x2, y2 = box["xyxy"]
+    mx, my = (x2 - x1) * margin, (y2 - y1) * margin
+    cx1, cy1 = max(0, x1 - mx), max(0, y1 - my)
+    cx2, cy2 = min(img.width, x2 + mx), min(img.height, y2 + my)
+    ImageDraw.Draw(img).rectangle([x1, y1, x2, y2], outline=(255, 40, 40), width=4)
+    part = img.crop((int(cx1), int(cy1), int(cx2), int(cy2)))
+    if part.width > width:
+        part = part.resize((width, max(1, round(part.height * width / part.width))))
+    buf = io.BytesIO()
+    part.save(buf, format="JPEG", quality=80)
     return buf.getvalue()
 
 
@@ -307,22 +335,60 @@ def sample_ids(judged: dict, n: int = SAMPLE_N, seed: int = SAMPLE_SEED) -> list
     return sorted(out)
 
 
+def reliable_labels(dets: dict, vocab: dict, judged: dict, sample: set) -> set:
+    """Configuration F (amendment 4): names with at least
+    `RELIABLE_MIN_BOXES` judged boxes and judge precision at least
+    `RELIABLE_MIN_PRECISION`, counted ONLY on frames outside the sample."""
+    per: dict = {}
+    for fid, j in judged.items():
+        if fid in sample:
+            continue
+        for b in object_boxes(dets[fid], vocab):
+            ok = _correct(j["verdicts"].get(str(b["n"])))
+            if ok is None:
+                continue
+            a, n = per.get(b["label"], (0, 0))
+            per[b["label"]] = (a + ok, n + 1)
+    return {l for l, (a, n) in per.items()
+            if n >= RELIABLE_MIN_BOXES and a / n >= RELIABLE_MIN_PRECISION}
+
+
+def page_boxes(dets: dict, vocab: dict, ids: list, keep: set,
+               extra: int = EXTRA_BOXES, seed: int = SAMPLE_SEED) -> dict:
+    """Per sampled frame, the boxes the user answers: every box F keeps,
+    plus `extra` other object boxes drawn at random across the sample."""
+    shown = {fid: [b for b in object_boxes(dets[fid], vocab) if b["label"] in keep]
+             for fid in ids}
+    others = [(fid, b) for fid in ids for b in object_boxes(dets[fid], vocab)
+              if b["label"] not in keep]
+    for fid, b in random.Random(seed).sample(others, min(extra, len(others))):
+        shown[fid].append(b)
+    return {fid: sorted(bs, key=lambda b: b["n"]) for fid, bs in shown.items()}
+
+
 def cmd_sample(args) -> None:
     vocab = load_vocab()
     dets = json.loads((OUT / "detections.json").read_text())
     judged = json.loads((OUT / "judge.json").read_text())
     ids = sample_ids(judged)
+    keep = reliable_labels(dets, vocab, judged, set(ids))
+    shown = page_boxes(dets, vocab, ids, keep)
     items = []
     for fid in ids:
-        boxes = object_boxes(dets[fid], vocab)
+        boxes = shown[fid]
+        if not boxes:
+            continue                       # nothing to answer on this frame
         items.append({"id": fid, "img": base64.standard_b64encode(
-            draw(ROOT / fid, boxes)).decode(),
-            "boxes": [{"n": b["n"], "label": b["label"],
-                       "judge": judged[fid]["verdicts"].get(str(b["n"]))} for b in boxes]})
+            draw(ROOT / fid, boxes, width=480)).decode(),
+            "boxes": [{"n": b["n"], "label": b["label"], "crop": base64.standard_b64encode(
+                crop(ROOT / fid, b)).decode()} for b in boxes]})
     (OUT / "sample.json").write_text(json.dumps(ids))
+    (OUT / "reliable_labels.json").write_text(json.dumps(sorted(keep)))
     page = OUT / "adjudicate.html"
     page.write_text(_PAGE.replace("__DATA__", json.dumps(items)))
-    print(f"{len(ids)} frames -> {page}")
+    print(f"{len(items)} of {len(ids)} frames have boxes to answer, "
+          f"{sum(len(b) for b in shown.values())} boxes "
+          f"({len(keep)} reliable names) -> {page}")
 
 
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">
@@ -330,10 +396,12 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <title>Inventory labels</title><style>
 body{font:15px system-ui;margin:0 auto;max-width:900px;padding:16px;background:#fafafa;color:#111}
 .f{background:#fff;border:1px solid #ddd;border-radius:8px;margin:16px 0;padding:12px}
-img{width:100%;border-radius:4px}.row{display:flex;gap:8px;align-items:center;margin:4px 0}
-.row span{flex:1}button{padding:6px 12px;border:1px solid #888;border-radius:6px;background:#fff}
+img{width:100%;border-radius:4px}.ctx{opacity:.85}
+.row{display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap}
+.row img{width:160px;max-height:160px;object-fit:contain;background:#eee}
+.row span{flex:1;min-width:120px}button{padding:6px 12px;border:1px solid #888;border-radius:6px;background:#fff}
 button.on{background:#111;color:#fff}#bar{position:sticky;top:0;background:#fafafa;padding:8px 0}
-</style></head><body><div id="bar"><b>Is each label right for what is in its box?</b>
+</style></head><body><div id="bar"><b>Is each label right for what is in its red box?</b>
 <span id="count"></span> <button onclick="save()">Download answers</button></div>
 <div id="list"></div><script>
 const items=__DATA__;let ans={};try{ans=JSON.parse(localStorage.getItem('inv-ans')||'{}')}catch(e){}
@@ -341,10 +409,10 @@ function key(f,n){return f+'#'+n}
 function set(f,n,v){ans[key(f,n)]=v;try{localStorage.setItem('inv-ans',JSON.stringify(ans))}catch(e){};draw()}
 function draw(){const L=document.getElementById('list');L.innerHTML='';let done=0,total=0;
 for(const it of items){const d=document.createElement('div');d.className='f';
-d.innerHTML='<div>'+it.id+'</div><img src="data:image/jpeg;base64,'+it.img+'">';
+d.innerHTML='<div>'+it.id+'</div><img class="ctx" src="data:image/jpeg;base64,'+it.img+'">';
 for(const b of it.boxes){total++;const v=ans[key(it.id,b.n)];if(v)done++;
 const r=document.createElement('div');r.className='row';
-r.innerHTML='<span>'+b.n+': <b>'+b.label+'</b></span>';
+r.innerHTML='<img src="data:image/jpeg;base64,'+b.crop+'"><span>Is this a <b>'+b.label+'</b>?</span>';
 for(const o of ['right','wrong']){const x=document.createElement('button');x.textContent=o;
 if(v===o)x.className='on';x.onclick=()=>set(it.id,b.n,o);r.appendChild(x)}d.appendChild(r)}
 L.appendChild(d)}document.getElementById('count').textContent=done+' / '+total+' answered'}
@@ -392,28 +460,43 @@ def cmd_score(args) -> None:
     c = choose_threshold(tune)
     p_all, n_all = precision_at(tune, JUDGE_FLOOR)
     p_c, n_c = precision_at(tune, c) if c is not None else (float("nan"), 0)
+    keep = reliable_labels(dets, vocab, judged, sample)
+    tune_f = []
+    for fid, j in judged.items():
+        if fid in sample:
+            continue
+        for b in object_boxes(dets[fid], vocab):
+            if b["label"] in keep:
+                tune_f.append((b["conf"], _correct(j["verdicts"].get(str(b["n"])))))
+    c_f = choose_threshold(tune_f)
+    p_f, n_f = precision_at(tune_f, c_f) if c_f is not None else (float("nan"), 0)
     report = {"frames_judged": len(judged), "tuning_boxes": len(tune),
-              "judge_precision_at_floor": round(p_all, 3),
-              "threshold": c, "judge_precision_at_threshold": round(p_c, 3),
-              "boxes_at_threshold": n_c}
+              "every_name": {"judge_precision_at_floor": round(p_all, 3), "threshold": c,
+                             "judge_precision_at_threshold": round(p_c, 3),
+                             "boxes_at_threshold": n_c},
+              "F": {"names": sorted(keep), "threshold": c_f,
+                    "judge_precision": round(p_f, 3), "boxes": n_f}}
     if args.human:
         human = json.loads(Path(args.human).read_text())
-        rows, agree, both = [], 0, 0
+        rows_f, agree, both, answered = [], 0, 0, 0
         for fid in sorted(sample):
             for b in object_boxes(dets[fid], vocab):
                 h = _correct(human.get(f"{fid}#{b['n']}"))
-                jv = _correct(judged[fid]["verdicts"].get(str(b["n"])))
                 if h is None:
                     continue
-                rows.append((b["conf"], h))
+                answered += 1
+                jv = _correct(judged[fid]["verdicts"].get(str(b["n"])))
                 if jv is not None:
                     both += 1
                     agree += (h == jv)
-        p_h, n_h = precision_at(rows, c) if c is not None else (float("nan"), 0)
-        report.update({"human_boxes": len(rows),
-                       "criterion_6_precision": round(p_h, 3), "criterion_6_boxes": n_h,
+                if b["label"] in keep:
+                    rows_f.append((b["conf"], h))
+        p_h, n_h = precision_at(rows_f, c_f) if c_f is not None else (float("nan"), 0)
+        report.update({"user_answers": answered,
+                       "criterion_6_precision_F": round(p_h, 3), "criterion_6_boxes": n_h,
                        "criterion_6_met": bool(p_h >= 0.70),
-                       "judge_agrees_with_user": round(agree / both, 3) if both else None})
+                       "judge_agrees_with_user": round(agree / both, 3) if both else None,
+                       "judge_agreement_boxes": both})
     print(json.dumps(report, indent=1))
 
 
