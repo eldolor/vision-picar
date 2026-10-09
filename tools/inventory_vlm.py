@@ -77,7 +77,47 @@ def _loads_ok(s: str) -> bool:
         return False
 
 
+def _paths(tag: str):
+    suffix = f"_{tag}" if tag else ""
+    return OUT / f"vlm_boxes{suffix}.json", OUT / f"vlm_judge{suffix}.json"
+
+
+def name_llama(fid: str, url: str) -> dict:
+    """Amendment 7: a GGUF model behind llama.cpp's server. Qwen3.5 answers
+    on a 0-1000 scale, so boxes are scaled by the frame's size / 1000."""
+    import base64
+    import urllib.request
+
+    from PIL import Image
+    path = ROOT / fid
+    w, h = Image.open(path).size
+    img = base64.b64encode(path.read_bytes()).decode()
+    body = {"messages": [{"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + img}},
+        {"type": "text", "text": PROMPT}]}],
+        "temperature": 0, "max_tokens": 500, "repeat_penalty": 1.05,
+        "chat_template_kwargs": {"enable_thinking": False}}
+    req = urllib.request.Request(url + "/v1/chat/completions", json.dumps(body).encode(),
+                                 {"Content-Type": "application/json"})
+    text = json.load(urllib.request.urlopen(req, timeout=300))["choices"][0]["message"]["content"]
+    return {"boxes": parse_boxes(text, w / 1000, h / 1000), "raw": text[:2000]}
+
+
 def cmd_name(args) -> None:
+    out_path, _ = _paths(args.tag)
+    if args.backend == "llama":
+        done = json.loads(out_path.read_text()) if out_path.exists() else {}
+        todo = [f for f in frame_set() if f not in done]
+        t0 = time.perf_counter()
+        for k, fid in enumerate(todo, 1):
+            done[fid] = name_llama(fid, args.url)
+            if k % 10 == 0 or k == len(todo):
+                out_path.write_text(json.dumps(done))
+                rate = (time.perf_counter() - t0) / k
+                print(f"{len(done)} frames, {rate:.1f} s each, "
+                      f"~{rate * (len(todo) - k) / 60:.0f} min left", file=sys.stderr)
+        print(f"{len(done)} frames -> {out_path}")
+        return
     import torch
     from PIL import Image
     from transformers import AutoModelForImageTextToText, AutoProcessor
@@ -85,7 +125,6 @@ def cmd_name(args) -> None:
     proc = AutoProcessor.from_pretrained(MODEL, max_pixels=MAX_PIXELS)
     model = AutoModelForImageTextToText.from_pretrained(
         MODEL, dtype=torch.bfloat16).to("mps" if torch.backends.mps.is_available() else "cpu").eval()
-    out_path = OUT / "vlm_boxes.json"
     done = json.loads(out_path.read_text()) if out_path.exists() else {}
     todo = [f for f in frame_set() if f not in done]
     t0 = time.perf_counter()
@@ -111,8 +150,8 @@ def cmd_name(args) -> None:
 
 
 def cmd_judge(args) -> None:
-    vlm = json.loads((OUT / "vlm_boxes.json").read_text())
-    out_path = OUT / "vlm_judge.json"
+    boxes_path, out_path = _paths(args.tag)
+    vlm = json.loads(boxes_path.read_text())
     done = json.loads(out_path.read_text()) if out_path.exists() else {}
     client, spend = _client(), Spend(args.budget)
     for fid in sorted(vlm):
@@ -129,8 +168,9 @@ def cmd_judge(args) -> None:
 
 
 def cmd_score(args) -> None:
-    vlm = json.loads((OUT / "vlm_boxes.json").read_text())
-    judged = json.loads((OUT / "vlm_judge.json").read_text())
+    boxes_path, judge_path = _paths(args.tag)
+    vlm = json.loads(boxes_path.read_text())
+    judged = json.loads(judge_path.read_text())
     sample = set(json.loads((OUT / "sample.json").read_text()))
     tune = [f for f in vlm if f not in sample]
     rows, empty = [], 0
@@ -153,10 +193,15 @@ def cmd_score(args) -> None:
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="python -m tools.inventory_vlm")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("name")
+    n = sub.add_parser("name")
+    n.add_argument("--backend", choices=("transformers", "llama"), default="transformers")
+    n.add_argument("--url", default="http://localhost:9467")
     j = sub.add_parser("judge")
     j.add_argument("--budget", type=float, default=15.0)
-    sub.add_parser("score")
+    sc = sub.add_parser("score")
+    for p in (n, j, sc):
+        p.add_argument("--tag", default="", help="'' = Qwen2.5-VL-3B (amendment 6); "
+                                                 "'qwen35' = Qwen3.5-4B IQ3_XXS (amendment 7)")
     args = ap.parse_args(argv)
     {"name": cmd_name, "judge": cmd_judge, "score": cmd_score}[args.cmd](args)
 
