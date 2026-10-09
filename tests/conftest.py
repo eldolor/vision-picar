@@ -31,6 +31,16 @@ import pytest
 from robot.interface import RobotInterface
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# A suite run from a git hook (tools/hooks/pre-push) inherits GIT_DIR and
+# friends, and a test that runs git in a scratch directory would then act on
+# this repository instead -- it re-initialised one on 2026-10-09. One list,
+# tools/plan_section.py's.
+sys.path.insert(0, str(REPO_ROOT / "tools"))
+from plan_section import repo_local_git_vars  # noqa: E402
+
+for _var in repo_local_git_vars():
+    os.environ.pop(_var, None)
 SERVER_START_TIMEOUT_S = 30.0
 ASGI_BASE_URL = "http://robot.test"
 
