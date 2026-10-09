@@ -91,6 +91,7 @@ from control import drills
 from control.brain_config import load_brain_config
 from control.inventory_store import inventory_store_from_config
 from control.mission_runner import MissionRunner
+from control.reconfirm import Reconfirmer, health_probe
 from control.recording_routes import (  # noqa: F401 -- re-exported, see above
     FRAME_SUFFIX,
     MAX_FRAME_BYTES,
@@ -539,7 +540,33 @@ def create_app(
     state: dict = {
         "robot": None, "world": None, "runner": None, "task": None,
         "fault": drills.NONE, "tick_timeout_s": config["tick_timeout_s"],
+        # 3.53: the late confirmation of the last mission, if one is waiting,
+        # and a generation bumped by every start and stop, so a mission loop
+        # that resumes after one of them cannot start a late check for a
+        # mission that is no longer the current one.
+        "reconfirm": None, "generation": 0,
     }
+
+    def start_reconfirm(runner: MissionRunner, generation: int) -> None:
+        """3.53: after an `arrived_unconfirmed` ending, ask again once the
+        cloud is back. Free /health probes, one paid call; never the robot."""
+        if generation != state["generation"]:
+            return  # a start or stop came in while this loop was finishing
+        pending = getattr(runner, "late_confirmation_pending", None)
+        # Off unless BOTH are positive: a 0 probe interval would spin.
+        if not (config["reconfirm_window_s"] > 0 and config["reconfirm_probe_s"] > 0
+                and config["vision_url"] and pending is not None and pending()):
+            return
+        probe = health_probe(config["vision_url"], vision_secret,
+                             timeout_s=min(3.0, config["reconfirm_probe_s"]))
+        state["reconfirm"] = Reconfirmer(
+            runner, probe, interval_s=config["reconfirm_probe_s"],
+            window_s=config["reconfirm_window_s"]).start()
+
+    def cancel_reconfirm(reason: str) -> None:
+        rc, state["reconfirm"] = state["reconfirm"], None
+        if rc is not None:
+            rc.cancel(reason)
 
     def robot() -> RobotInterface:
         if state["robot"] is None:
@@ -585,7 +612,7 @@ def create_app(
         allow_headers=["*"],
     )
 
-    async def mission_loop(runner: MissionRunner):
+    async def mission_loop(runner: MissionRunner, generation: int = 0):
         """Drives tick() off the event loop, with B3.3's dead-man on it."""
         try:
             while runner.is_running():
@@ -603,6 +630,10 @@ def create_app(
                     break
                 if config["tick_interval_s"]:
                     await asyncio.sleep(config["tick_interval_s"])
+            # Ended on its own (not cancelled): 3.53's late confirmation, if
+            # the ending was `arrived_unconfirmed`. Its own thread; it never
+            # holds this loop or touches the robot.
+            start_reconfirm(runner, generation)
         except asyncio.CancelledError:
             # Synchronous on purpose: awaiting inside a cancellation
             # handler is how a stop gets silently skipped. One localhost
@@ -617,7 +648,6 @@ def create_app(
             # Reject rather than race -- two loops driving one robot is
             # exactly the failure this service exists to prevent.
             raise HTTPException(status_code=409, detail="A mission is already running.")
-
         try:
             # Off the event loop: building a vision runner now makes a
             # blocking GET to the vision service to validate model_id, and a
@@ -631,10 +661,16 @@ def create_app(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+        # 3.53: a new mission drops the last one's late confirmation -- only
+        # once it really exists (a refused start leaves the check alone) and
+        # before it can move -- and the generation bump stops an old loop
+        # still finishing from starting one for itself.
+        state["generation"] += 1
+        cancel_reconfirm("a new mission started")
         runner.start()
         state["fault"] = req.fault or drills.NONE
         state["runner"] = runner
-        state["task"] = asyncio.create_task(mission_loop(runner))
+        state["task"] = asyncio.create_task(mission_loop(runner, state["generation"]))
         return {"started": True, "status": runner.status()}
 
     @app.post(prefix + "/mission/stop", dependencies=[Depends(require_secret)])
@@ -643,6 +679,21 @@ def create_app(
         thinking is not stopping the robot."""
         runner = state["runner"]
         task = state["task"]
+        # 3.53: a Stop that ENDS a running mission means no late check for
+        # it -- the bump stops its loop starting one. A Stop after the
+        # mission had already ended leaves the check alone: the Guide tab
+        # sends one on every close, and the check never moves the robot.
+        # Decided on the RUNNER, not the task: a loop can still be in its
+        # post-tick sleep after the mission ended, and cancelling it there
+        # skips the loop's own start_reconfirm -- so it is started here.
+        ended_already = runner is not None and not runner.is_running()
+        if not ended_already:
+            state["generation"] += 1
+            # Remembered on the runner itself: a LATER Stop (the Guide tab
+            # sends one on close) must not start a check this Stop forbade,
+            # even if the in-flight tick ended the mission first.
+            if runner is not None:
+                runner.operator_stopped = True
         if task is not None and not task.done():
             task.cancel()
             try:
@@ -650,6 +701,14 @@ def create_app(
             except asyncio.CancelledError:
                 pass
         state["task"] = None
+        if (ended_already and state["reconfirm"] is None
+                and not getattr(runner, "operator_stopped", False)):
+            # The tick thread may still be inside _finish (closing the
+            # policy, building the metrics row); wait for its last act.
+            finished = getattr(runner, "finished", None)
+            if finished is not None:
+                await asyncio.to_thread(finished.wait, 5.0)
+            start_reconfirm(runner, state["generation"])
 
         if runner is not None:
             await asyncio.to_thread(runner.stop)

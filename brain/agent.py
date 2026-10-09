@@ -391,6 +391,9 @@ class MissionAgent(ConstrainedAgent):
             # no other failure. Never makes `found`.
             try:
                 e.arrival_readout = readout
+                # 3.53: the frame it was judged on, so the question can be
+                # put again, to the same pixels, once the cloud is back.
+                e.arrival_frame = frame
             except AttributeError:  # an exception type that takes no attributes
                 logger.warning("arrival readout lost: %s takes no attributes; "
                                "an outage here will end `failed`", type(e).__name__)

@@ -49,6 +49,10 @@
     --accent-safe-ink: #06231A;
     --accent-alert: #FF6B35;
     --accent-alert-ink: #2A0D02;
+    /* 3.53: neither success nor failure -- the robot did its part and a
+       check it needed could not be made (an arrival the cloud never
+       confirmed). Yellow, distinct from the alert orange. */
+    --accent-warn: #F2C94C;
     --text: #E8ECEF;
     /* Was #6B7480, which is 3.4:1 on --surface -- under AA for the 11-13px
        text this token is used for almost everywhere (hints, telemetry
@@ -169,6 +173,7 @@
   .telemetry .full { grid-column: 1 / -1; }
   .telemetry .safe { color: var(--accent-safe); }
   .telemetry .alert { color: var(--accent-alert); }
+  .telemetry .warn { color: var(--accent-warn); }
 
   .section-label {
     font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
@@ -396,6 +401,7 @@
   .toast-icon svg { width: 100%; height: 100%; }
   .toast.ok .toast-icon { color: var(--accent-safe); }
   .toast.err .toast-icon { color: var(--accent-alert); }
+  .toast.warn .toast-icon { color: var(--accent-warn); }
   @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } }
   @keyframes toast-out { to { opacity: 0; transform: translateY(8px); } }
 
@@ -808,6 +814,7 @@
   .robot-telemetry b { color: rgba(255,255,255,0.5); font-weight: 400; margin-right: 7px; }
   .robot-telemetry .v-alert { color: var(--accent-alert); }
   .robot-telemetry .v-safe  { color: var(--accent-safe); }
+  .robot-telemetry .v-warn  { color: var(--accent-warn); }
 
   .robot-obstacle {
     position: absolute; left: 14px; right: 14px; bottom: 96px;

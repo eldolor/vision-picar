@@ -282,7 +282,7 @@
 
   // Transient confirmations for actions whose outcome would otherwise only
   // appear as rewritten text in a panel the user may not be looking at.
-  const TOAST_ICON = { ok: "target", err: "warning", info: "clock" };
+  const TOAST_ICON = { ok: "target", err: "warning", warn: "warning", info: "clock" };
   function showToast(message, kind) {
     const stack = document.getElementById("toast-stack");
     if (!stack) return;
@@ -294,7 +294,7 @@
     setTimeout(function () {
       el.classList.add("leaving");
       setTimeout(function () { el.remove(); }, 220);
-    }, kind === "err" ? 5200 : 3200);
+    }, kind === "err" || kind === "warn" ? 5200 : 3200);
   }
 
   // Buttons keep their label but gain a spinner and stop accepting input
@@ -1445,12 +1445,44 @@
   const BRAIN_OUTCOME_CLASS = {
     found: "safe", room_reached: "safe", failed: "alert", stopped: "alert",
     blocked: "alert",
+    // 3.53: neither -- the robot reached what it took for the target and
+    // the cloud that must confirm identity could not be asked.
+    arrived_unconfirmed: "warn",
   };
+
+  // 3.53: what the late identity check (asked once the cloud is back) has
+  // said so far, in words. "" when there is none.
+  const LATE_WORDS = {
+    waiting: "will ask again when the cloud is back",
+    confirmed: "asked later: the cloud sees it",
+    refused: "asked later: the cloud says it is not the target",
+    failed: "asked later: the cloud did not answer",
+    not_asked: "not asked later: the call budget was spent",
+    expired: "the cloud did not come back in time",
+    dropped: "not asked later: a new mission or Stop came first",
+  };
+  function lateWords(status) {
+    const late = status && status.late_confirmation;
+    return late ? (LATE_WORDS[late.state] || late.state) : "";
+  }
+
+  // The sentence for an `arrived_unconfirmed` ending: what was checked
+  // (the lidar arrival) and what was not (identity), then the late check.
+  function unconfirmedText(status) {
+    const late = lateWords(status);
+    return "Stopped at what looks like " + (status.target_object || "the target")
+      + " (lidar " + ((status.arrival && status.arrival.range_m) != null
+        ? status.arrival.range_m + " m" : "range unknown")
+      + "), but its identity is unconfirmed: the cloud could not be reached."
+      + (late ? " " + late.charAt(0).toUpperCase() + late.slice(1) + "." : "");
+  }
 
   function renderBrainStatus(status) {
     const outcome = status.outcome || "idle";
+    const late = outcome === "arrived_unconfirmed" ? lateWords(status) : "";
     setBrainText("brain-tel-outcome",
-      outcome + (status.fault && status.fault !== "none" ? " (" + status.fault + " drill)" : ""),
+      outcome + (status.fault && status.fault !== "none" ? " (" + status.fault + " drill)" : "")
+        + (late ? " — " + late : ""),
       BRAIN_OUTCOME_CLASS[outcome]);
     setBrainText("brain-tel-step",
       status.step == null ? null : status.step + (status.max_steps ? " / " + status.max_steps : ""));
@@ -1472,8 +1504,10 @@
       status.vision_failures ? "alert" : null);
     setBrainText("brain-tel-rooms",
       (status.rooms_searched && status.rooms_searched.length) ? status.rooms_searched.join(", ") : null);
-    setBrainText("brain-tel-why", status.error || status.last_reasoning,
-      status.error ? "alert" : null);
+    const unconfirmed = status.outcome === "arrived_unconfirmed";
+    setBrainText("brain-tel-why",
+      status.error || (unconfirmed ? unconfirmedText(status) : status.last_reasoning),
+      status.error ? "alert" : unconfirmed ? "warn" : null);
     renderTierReadouts(status);
 
     // The mission log comes from the brain, so it is rewritten wholesale
@@ -1954,14 +1988,67 @@
 
     if (wasRunning && !status.running) {
       const ok = status.outcome === "found" || status.outcome === "room_reached";
-      showToast("Mission " + status.outcome + (status.error ? ": " + status.error : ""),
-        ok ? "ok" : "err");
+      if (status.outcome === "arrived_unconfirmed") {
+        showToast("Mission arrived_unconfirmed: " + unconfirmedText(status), "warn");
+      } else {
+        showToast("Mission " + status.outcome + (status.error ? ": " + status.error : ""),
+          ok ? "ok" : "err");
+      }
       stopBrainPolling();
+      watchLateConfirmation(status);
+    } else if (!status.running && !state.lateWatchTimerId) {
+      // A page that connects (or reconnects) after the ending never saw
+      // the transition; a late check still waiting is watched all the same.
+      watchLateConfirmation(status);
     }
+  }
+
+  // 3.53: after an `arrived_unconfirmed` ending the brain asks again once
+  // the cloud is back (control/reconfirm.py). The mission poll has stopped,
+  // so this watches only `late_confirmation`, slowly, until it is final,
+  // then shows the verdict on the panel and, if it is the one driving, the
+  // Guide tab. One watcher at a time; a new mission ends it.
+  const LATE_POLL_MS = 3000;
+  function stopLateWatch() {
+    if (state.lateWatchTimerId) clearInterval(state.lateWatchTimerId);
+    state.lateWatchTimerId = null;
+  }
+  function watchLateConfirmation(status) {
+    stopLateWatch();
+    const late = status && status.late_confirmation;
+    if (status.outcome !== "arrived_unconfirmed" || (late && late.state !== "waiting")) return;
+    // `late_confirmation` is null for a moment at the ending (the brain
+    // starts its check just after), and for good when the check is off.
+    // One poll of grace, then a null means off and the watch ends.
+    let nullPolls = 0;
+    let inFlight = false;  // a slow tunnel must not double the toast
+    state.lateWatchTimerId = setInterval(async function () {
+      if (inFlight) return;
+      inFlight = true;
+      let s;
+      try { s = await brainApi("GET", "/mission/status"); } catch (e) { return; }
+      finally { inFlight = false; }
+      if (!state.lateWatchTimerId) return;  // stopped while in flight
+      if (s.running || s.outcome !== "arrived_unconfirmed") { stopLateWatch(); return; }
+      const l = s.late_confirmation;
+      if (!l) { if (++nullPolls > 1) stopLateWatch(); return; }
+      if (l.state === "waiting") return;
+      stopLateWatch();
+      renderBrainStatus(s);
+      if (driveViaBrainActive()) {
+        const result = missionStatusToRobotResult(s);
+        renderRobotStatus(result, false);
+        renderRobotTelemetry(result);
+        announceRobot(result);
+      }
+      showToast("Late identity check: " + lateWords(s) + ".",
+        l.state === "confirmed" ? "ok" : "warn");
+    }, LATE_POLL_MS);
   }
 
   function startBrainPolling() {
     stopBrainPolling();
+    stopLateWatch();
     state.brainPollTimerId = setInterval(pollBrainOnce, BRAIN_POLL_MS);
     pollBrainOnce();
   }
@@ -2940,6 +3027,14 @@
   // renderRobotTelemetry.
   function missionStatusToRobotResult(status) {
     const arrived = status.outcome === "found" || status.outcome === "room_reached";
+    if (status.outcome === "arrived_unconfirmed") {
+      // 3.53: an outcome, not a lost link. No `action` -- nothing decided a
+      // move, and a recorded walk files it like an error frame (action
+      // null), so walk_eval's counts do not change.
+      return { action: null, unconfirmed: true, reasoning: unconfirmedText(status),
+               target_reached: false, target_visible: null, target_direction: null,
+               obstacle_ahead: false, _missionStatus: status };
+    }
     if (!status.running && !arrived) {
       // Mission ended without finding the target (stopped/failed/max_steps).
       // Reported as an error so the existing error branches (caption,
@@ -2977,6 +3072,7 @@
       // stop mechanism; "Resume searching" starts a fresh call loop, not a
       // fresh mission, so this stays a dead end until Stop/Start.
       pauseGuidanceSearch();
+      watchLateConfirmation(status);
     }
     return missionStatusToRobotResult(status);
   }
@@ -3057,7 +3153,15 @@
     const obs = mission ? "N/A" : result.obstacle_ahead
       ? '<span class="v-alert">BLOCKED</span>' : '<span class="v-safe">CLEAR</span>';
     const reached = result.target_reached === true
-      ? '<div><b>STA</b><span class="v-safe">REACHED</span></div>' : "";
+      ? '<div><b>STA</b><span class="v-safe">REACHED</span></div>'
+      : result.unconfirmed
+        ? '<div><b>STA</b><span class="v-warn">UNCONFIRMED</span></div>' +
+          (mission && mission.late_confirmation
+            ? '<div><b>LATE</b><span class="' +
+              (mission.late_confirmation.state === "confirmed" ? "v-safe" : "v-warn") + '">' +
+              escapeHtml(String(mission.late_confirmation.state).toUpperCase()) + "</span></div>"
+            : "")
+        : "";
     // Fields /navigate never had: MissionRunner's own outcome and the B3.2
     // failure count, so a live failsafe firing is visible here too.
     const brainRow = mission
@@ -3388,6 +3492,7 @@
     if (analyzing && !result) { iconEl.innerHTML = ICON.clock; textEl.textContent = "Deciding…"; return; }
     if (!result) { iconEl.innerHTML = ICON.search; textEl.textContent = "Not running."; return; }
     if (result.error) { iconEl.innerHTML = ICON.warning; textEl.textContent = result.error; return; }
+    if (result.unconfirmed) { iconEl.innerHTML = ICON.warning; textEl.textContent = result.reasoning; return; }
     if (result.target_reached === true) {
       iconEl.innerHTML = ICON.target;
       textEl.textContent = "Reached " + (state.guidanceTarget || "the target") +
@@ -3405,11 +3510,15 @@
   // itself continuously.
   let robotLastAnnouncedAction = null;
   function announceRobot(result) {
-    const key = result.error ? "error" : (result.target_reached === true ? "reached" : (result.action || "?"));
+    const key = result.error ? "error"
+      : result.unconfirmed
+        ? "unconfirmed|" + ((result._missionStatus.late_confirmation || {}).state || "")
+        : (result.target_reached === true ? "reached" : (result.action || "?"));
     if (key === robotLastAnnouncedAction) return;
     robotLastAnnouncedAction = key;
     const msg = result.error
       ? "Decision unavailable. " + (result.error || "")
+      : result.unconfirmed ? result.reasoning
       : key === "reached"
         ? "Reached " + (state.guidanceTarget || "the target") + ". Search paused."
         : key + ". " + (result.reasoning || "");
@@ -3791,6 +3900,13 @@
 
   async function guidanceStep() {
     if (!state.guidanceRunning) return;
+    // A tick scheduled at dispatch (below) can fire after the run paused --
+    // on arrival, on a mission that ended, at the call cap. It used to
+    // dispatch anyway: one more call, a caption reset to "Deciding...", and
+    // an answer the paused-at-dispatch guard then dropped, so the HUD sat on
+    // "Deciding..." over the reason the run had stopped (found by 3.53's
+    // screenshot). resumeGuidanceSearch() clears the pause before calling.
+    if (state.guidancePaused) return;
     // Drive-via-brain runs a real MissionRunner mission, which is strictly
     // one action at a time -- the step budget and the failsafes are built
     // on that. Overlapping calls there would have the brain deciding from
@@ -3832,20 +3948,14 @@
     // Which WALK this frame belongs to, captured in the same synchronous
     // block as its seq. Compared on return -- see recordWalkFrame().
     const recEpoch = state.recordEpoch;
-    // Whether the run was ALREADY paused when this call was dispatched.
-    //
-    // The guard below drops any answer that arrives into a paused run,
-    // which is right for a person tapping pause -- and was wrong for the
-    // one case that matters most: `driveViaBrainStep()` itself calls
-    // pauseGuidanceSearch() when it sees the mission has ended, so the
-    // terminal answer was dropped by the very pause it had just caused.
-    // The caption stayed on the "Deciding..." set below, forever, and the
-    // single most important fact -- the mission ended, and why -- was the
-    // one thing the HUD refused to show. Observed on a real rig walk,
-    // 2026-09-12, reported as "it eventually got stuck at deciding".
-    //
-    // So: a pause that began DURING this call still gets one final render.
-    const wasPausedAtDispatch = state.guidancePaused;
+    // A pause that begins DURING this call still gets one final render.
+    // `driveViaBrainStep()` itself pauses the run when it sees the mission
+    // has ended, and a guard that dropped answers landing in a paused run
+    // once dropped that terminal answer by the very pause it had caused:
+    // the caption stayed on "Deciding..." over the reason the mission ended
+    // (a real rig walk, 2026-09-12, "it eventually got stuck at deciding").
+    // Nothing is dispatched while paused (the early return above, 3.53), so
+    // that guard is gone rather than kept for a case that cannot happen.
     state.guidanceInFlight++;
     // Budget is reserved at dispatch, not on success. A call that is sent
     // has been paid for whether or not its answer is fresh enough to
@@ -3885,7 +3995,6 @@
       // (latency varies per call, so seq 7 can land after seq 9) or for a
       // walk that has since been paused or stopped.
       if (!state.guidanceRunning) return;
-      if (state.guidancePaused && wasPausedAtDispatch) return;
       if (seq <= state.guidanceLastRenderedSeq) return;
       state.guidanceLastRenderedSeq = seq;
 

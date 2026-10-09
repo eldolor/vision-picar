@@ -481,6 +481,15 @@ class MissionRunner:
         self._error: Optional[str] = None
         self._vision_failures = 0
         self._failed_arrival: Optional[dict] = None
+        # 3.53: the frame that arrival was judged on, held with it, and kept
+        # by _finish for a late confirmation (control/reconfirm.py).
+        self._failed_arrival_frame: Optional[dict] = None
+        self._arrival_frame: Optional[dict] = None
+        self._late: Optional[dict] = None
+        self._metrics_row: Optional[dict] = None
+        # Set as _finish's LAST act -- after the policy is closed and the
+        # metrics row built -- so a late check never starts beside them.
+        self.finished = threading.Event()
         self._last_action: Optional[str] = None
         # R1's readout (PLAN-ros-alignment.md). How many turns the mission
         # has made, how many REVERSED the one before (LEFT straight after
@@ -593,6 +602,7 @@ class MissionRunner:
             self._ticks += 1
             self._vision_failures = 0
             self._failed_arrival = None
+            self._failed_arrival_frame = None
             self._last_action = result.action
             self._last_reasoning = self._describe(result)
             if self.policy == "explore":
@@ -770,6 +780,10 @@ class MissionRunner:
                 "tier": self._tier,
                 "perception": self._perception,
                 "arrival": self._arrival,
+                # 3.53: the cloud's answer to the identity question asked
+                # AFTER an `arrived_unconfirmed` ending, once it was back.
+                # Beside the outcome, never instead of it. None otherwise.
+                "late_confirmation": dict(self._late) if self._late else None,
                 # The teleop frame id the last decision was made on, so a
                 # recorded walk can align decisions to pixels exactly instead
                 # of by wall-clock coincidence. None for a backend that does
@@ -905,7 +919,10 @@ class MissionRunner:
                     # A confirmation that failed on OUR side (a 401) drops
                     # any readout held from earlier in the run.
                     self._failed_arrival = readout if cloud else None
+                    self._failed_arrival_frame = (
+                        getattr(error, "arrival_frame", None) if cloud else None)
                 pending = self._failed_arrival
+                pending_frame = self._failed_arrival_frame
                 # Logged under the lock (the RLock _finish takes), so a
                 # stop() can never put its end line before this one.
                 self._log_line(f"vision failure {failures}/{budget}: {error}")
@@ -932,7 +949,7 @@ class MissionRunner:
                 f"unavailable {failures} times in a row: {error}"),
                 arrival={**pending, "state": "unconfirmed",
                          "reason": f"arrived, but the cloud could not be asked: {error}"},
-                tier_stats=self._policy_stats())
+                tier_stats=self._policy_stats(), arrival_frame=pending_frame)
             return False
         self._finish(FAILED, f"vision unavailable {failures} times in a row: {error}")
         return False
@@ -951,7 +968,8 @@ class MissionRunner:
             return None
 
     def _finish(self, outcome: str, note: str, arrival: Optional[dict] = None,
-                tier_stats: Optional[dict] = None) -> None:
+                tier_stats: Optional[dict] = None,
+                arrival_frame: Optional[dict] = None) -> None:
         with self._lock:
             already_done = not self._running and self._outcome != IDLE
             if already_done:
@@ -964,6 +982,8 @@ class MissionRunner:
                 self._arrival = arrival
             if tier_stats is not None and self._tier is not None:
                 self._tier = {**self._tier, "stats": tier_stats}
+            if arrival_frame is not None:
+                self._arrival_frame = arrival_frame
             if outcome == FAILED:
                 self._error = note
             # 3.46: before the end line, which stays the log's last word --
@@ -992,19 +1012,105 @@ class MissionRunner:
         # It can never fail a mission -- control/metrics_client.py holds
         # that rule, the same one the odometry read above follows.
         self._ship_metrics()
+        self.finished.set()
 
     def _ship_metrics(self) -> None:
         if not self.metrics_url:
             return
         try:
             from control.metrics_client import row_for, ship_run_async
-            ship_run_async(self.metrics_url,
-                           row_for(self.status(),
-                                   git_revision=self.git_revision,
-                                   config=self.metrics_config),
-                           secret=self.metrics_secret)
+            row = row_for(self.status(), git_revision=self.git_revision,
+                          config=self.metrics_config)
+            # Kept so a late confirmation (3.53) can re-send THIS row: the
+            # same run_id and finished_at, so the same stored object.
+            self._metrics_row = row
+            ship_run_async(self.metrics_url, row, secret=self.metrics_secret)
         except Exception as e:  # noqa: BLE001
             logger.warning("metrics row not built: %s", e)
+
+    # ---------- 3.53: asking again once the cloud is back ----------
+    #
+    # Driven by control/reconfirm.py after an `arrived_unconfirmed` ending.
+    # Nothing here touches the robot: the mission is over and _finish has
+    # stopped the car; a stop from here would halt whoever drives next.
+
+    def late_confirmation_pending(self) -> bool:
+        """An `arrived_unconfirmed` ending, fully finished, with a frame to
+        ask about and no final late answer yet."""
+        with self._lock:
+            return (self.finished.is_set()
+                    and self._outcome == ARRIVED_UNCONFIRMED
+                    and self._arrival_frame is not None
+                    and (self._late is None or self._late["state"] == "waiting"))
+
+    def late_update(self, **fields) -> Optional[dict]:
+        """Merge `fields` into `late_confirmation`. A final state is never
+        overwritten -- the first answer wins, as the outcome does. A runner
+        that did not end `arrived_unconfirmed` with a frame has nothing to
+        record and returns None."""
+        with self._lock:
+            if self._outcome != ARRIVED_UNCONFIRMED or self._arrival_frame is None:
+                return None
+            late = self._late or {"state": "waiting", "probes": 0, "paid_calls": 0}
+            if late["state"] != "waiting":
+                return dict(late)
+            self._late = {**late, **fields, "at": time.time()}
+            snapshot = dict(self._late)
+            if snapshot["state"] != "waiting":
+                self._log_line(f"late confirmation ({snapshot['state']}): "
+                               f"{snapshot.get('reason', '')}")
+        if snapshot["state"] != "waiting":
+            self._ship_late_metrics(snapshot)
+        return snapshot
+
+    def late_ask(self) -> Optional[dict]:
+        """At most ONE paid call: the policy's `confirm_arrival` on the
+        stored arrival frame, under B3.2's timeout. Returns None without
+        calling once the record is final (a cancel landed first). `paid_calls`
+        counts a call that went out -- one that raised, or a verdict with
+        `cloud_called` -- never a cap refusal that made none. A TimeoutError
+        is raised as is: the call is still in flight on its abandoned thread.
+
+        Not `_guarded_confirm()`: that maps a timeout to VisionUnavailable
+        for B3.2's budget, and the late path has no budget -- it needs to
+        know a call is still outstanding, so it never sends a second one
+        beside it (tiered.py: one call in flight at a time)."""
+        with self._lock:
+            late = self._late or {"state": "waiting"}
+            if late["state"] != "waiting":
+                return None
+            frame = self._arrival_frame
+        confirm = getattr(self.vision_fn, "confirm_arrival", None)
+        if confirm is None or frame is None:
+            return {"confirmed": False, "cloud_called": False,
+                    "reason": "no confirmer or no arrival frame"}
+        went_out = True
+        try:
+            verdict = call_with_timeout(confirm, frame, timeout_s=self.vision_timeout_s)
+            went_out = bool(verdict.get("cloud_called"))
+            return verdict
+        finally:
+            stats = self._policy_stats()
+            with self._lock:
+                if self._late is not None and went_out:
+                    self._late = {**self._late,
+                                  "paid_calls": self._late.get("paid_calls", 0) + 1}
+                if stats is not None and self._tier is not None:
+                    self._tier = {**self._tier, "stats": stats}
+
+    def _ship_late_metrics(self, late: dict) -> None:
+        row = self._metrics_row
+        if not self.metrics_url or row is None:
+            return
+        try:
+            from control.metrics_client import ship_run_async
+            stats = dict(row.get("stats") or {})
+            stats["late_confirmation"] = {k: late.get(k) for k in
+                                          ("state", "probes", "paid_calls", "reason")}
+            ship_run_async(self.metrics_url, {**row, "stats": stats},
+                           secret=self.metrics_secret)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("late metrics row not built: %s", e)
 
     def _tick_rate_hz(self):
         """Ticks per second since the mission started -- phase M5.

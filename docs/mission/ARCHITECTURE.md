@@ -182,6 +182,27 @@ deliberately not "failed":
   ([policy](../policy/ARCHITECTURE.md), "The cloud confirms identity at
   arrival").
 
+### An unconfirmed arrival is asked again when the cloud is back
+
+**Decision** (3.53, approved by the user 2026-10-09). After an
+`arrived_unconfirmed` ending the brain keeps the frame the arrival was
+judged on, probes the cloud's free health route, and when it answers asks
+the identity question ONCE, recording the answer beside the outcome
+(`late_confirmation`), never instead of it. The outcome is not rewritten:
+the first outcome wins, and a late yes is evidence for a person to read,
+not a `found` the mission earned on its own terms. It is bounded (a probe
+every 15 s for ten minutes, two paid attempts at most), it never moves or
+stops the robot (the mission is over; a stop now would halt whoever drives
+next), a new mission drops it, and a brain restart loses it. A Stop after
+the ending does not drop it: it moves nothing, and the phone sends Stop on
+every close.
+
+**Rejected:** rewriting the outcome to `found` on a late yes (breaks "first
+outcome wins", and the robot may have been moved since); keeping the
+mission running until the cloud answers (holds the robot and the mission
+slot for an unbounded time); probing with a paid `/navigate` call (a free
+route exists).
+
 ### A mission starts with the camera centred
 
 **Decision.** The first tick centres the camera through the halt gate,
