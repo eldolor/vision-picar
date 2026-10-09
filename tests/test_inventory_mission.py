@@ -308,6 +308,22 @@ def test_a_save_cut_off_midway_leaves_the_last_good_file(tmp_path, monkeypatch):
     assert [f.name for f in tmp_path.iterdir()] == ["m.json"]
 
 
+def test_a_save_in_progress_is_never_swept_even_if_it_looks_old(tmp_path, monkeypatch):
+    """3.47, found by review: a clock jumping forward at boot could make a
+    live save's `.tmp` look an hour old to another thread's sweep. This
+    process's in-flight saves are skipped by name, whatever their age."""
+    import os
+    import time
+    from control import inventory_store
+    live = tmp_path / ".live-mission.json.tmp"
+    live.write_text("{")
+    old = time.time() - 2 * 3600
+    os.utime(live, (old, old))
+    monkeypatch.setattr(inventory_store, "_IN_FLIGHT", {str(live)})
+    InventoryStore(str(tmp_path), client=_FakeS3()).save("m", {})
+    assert live.exists()
+
+
 def test_a_crash_leftover_is_swept_but_a_save_in_progress_is_not(tmp_path):
     """3.47, found by review: a save cut off by a crash or power loss runs
     no handler, so its `.tmp` stayed for good. A stale one is removed on
@@ -411,7 +427,9 @@ def test_the_brain_serves_the_inventory(monkeypatch, tmp_path):
 def test_two_missions_in_one_second_get_their_own_file(monkeypatch):
     """3.47, found by review: a mission id to the second plus the target
     gave a quick restart the same file name and S3 key, so the second save
-    overwrote the first. Red with the old `%H%M%SZ` id."""
+    overwrote the first. Red with the old `%H%M%SZ` id whenever the two
+    starts fall in one second (nearly always; not guaranteed, since the
+    old id read `time.gmtime()`, which this test does not freeze)."""
     import time
     from datetime import datetime as real_datetime
     from control import brain_server

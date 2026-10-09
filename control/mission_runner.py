@@ -975,7 +975,7 @@ class MissionRunner:
         try:
             detections = self.detections_fn(frame)
             if detections is None or self._ended():
-                return                        # no reads for a frame that will be dropped
+                return                        # no reads once the mission has ended
             pose = self.world.get_pose()
             scan = self.robot.get_scan(max_range_m=INVENTORY_RANGE_M + 0.5)
             with self._lock:

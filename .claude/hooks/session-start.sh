@@ -22,17 +22,19 @@ git config core.hooksPath tools/hooks || warn "could not set core.hooksPath"
 git config rerere.enabled true || true
 git config rerere.autoupdate true || true
 
-# 2. Every command in the session uses the venv.
+# 2. The venv CLAUDE.md section 1 prescribes ("trust pytest from .venv"),
+#    and every command in the session uses it -- only once it exists.
+if [ ! -x .venv/bin/python ]; then
+  python3 -m venv .venv || { warn "could not create .venv"; exit 0; }
+fi
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   echo "export VIRTUAL_ENV=\"$CLAUDE_PROJECT_DIR/.venv\"" >> "$CLAUDE_ENV_FILE"
   echo "export PATH=\"$CLAUDE_PROJECT_DIR/.venv/bin:\$PATH\"" >> "$CLAUDE_ENV_FILE"
 fi
 
-# 3. The venv CLAUDE.md section 1 prescribes ("trust pytest from .venv").
-#    pip install is idempotent and benefits from the cached container.
-if [ ! -x .venv/bin/python ]; then
-  python3 -m venv .venv || { warn "could not create .venv"; exit 0; }
-fi
+# 3. The requirements. pip install is idempotent and benefits from the
+#    cached container. (The hook runs on startup, resume and clear, not
+#    on every compaction: .claude/settings.json's matcher.)
 .venv/bin/pip install -q --disable-pip-version-check -r requirements.txt \
   || warn "pip install -r requirements.txt failed; tests may not run"
 

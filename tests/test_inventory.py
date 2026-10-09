@@ -241,6 +241,21 @@ def test_a_merge_counts_the_look_once_in_the_other_order_too():
     assert lm.hits == 4 and lm.votes["sofa"] == 4      # 1 + 2 before, this frame once
 
 
+def test_one_frame_is_one_hit_and_one_vote_even_when_it_bridges_itself():
+    """3.47, found by the Thermos pass on the fourth round: two detections
+    of one object, placed 0.7 m apart, each became a landmark and took a
+    hit; a third between them bridged the two, and `_absorb` summed their
+    hits and votes -- two looks from one frame (and only in some detection
+    orders). The score was already right."""
+    for order in ([-10.0, 10.0, 0.0], [0.0, -10.0, 10.0], [10.0, 0.0, -10.0]):
+        i = Inventory()
+        i.observe([{"label": "stool", "bearing_deg": b} for b in order], _pose(0, 0, 0),
+                  _scan({-10: 2.03, 10: 2.03, 0: 2.0}))
+        (lm,) = i.landmarks
+        assert (lm.hits, dict(lm.votes)) == (1, {"stool": 1}), order
+        assert lm.score == pytest.approx(inv.L_HIT), order
+
+
 def test_two_things_apart_are_two_landmarks():
     i = Inventory()
     i.observe([{"label": "mug", "bearing_deg": -20.0}, {"label": "shoe", "bearing_deg": 20.0}],

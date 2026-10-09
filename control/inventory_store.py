@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import socket
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -56,18 +57,26 @@ def _fsync_dir(path: Path) -> None:
 
 
 STALE_TMP_S = 3600
+_IN_FLIGHT: set = set()          # paths of this process's saves being written now
+_IN_FLIGHT_LOCK = threading.Lock()
 
 
 def _sweep_stale_tmp(directory: Path) -> None:
     """A save cut off by a crash or a power loss leaves `.<name>.tmp`
     behind (no handler runs), and mission ids are unique, so nothing ever
-    overwrites it. Remove those older than an hour -- never a fresh one,
-    which may be another mission's save in progress on its own thread."""
-    cutoff = time.time() - STALE_TMP_S
-    for tmp in directory.glob(".*.json.tmp"):
-        with contextlib.suppress(OSError):
-            if tmp.stat().st_mtime < cutoff:
-                tmp.unlink()
+    overwrites it. Remove those over an hour old -- never one of this
+    process's saves in progress (named, so a clock jump at boot cannot
+    make a live one look old). Best effort: a sweep never fails a save."""
+    with contextlib.suppress(OSError):
+        cutoff = time.time() - STALE_TMP_S
+        with _IN_FLIGHT_LOCK:
+            busy = set(_IN_FLIGHT)
+        for tmp in directory.glob(".*.json.tmp"):
+            if str(tmp) in busy:
+                continue
+            with contextlib.suppress(OSError):
+                if tmp.stat().st_mtime < cutoff:
+                    tmp.unlink()
 
 
 def _slug(text: str) -> str:
@@ -100,6 +109,8 @@ class InventoryStore:
             # 3.47: write then rename, so a brain that exits mid-save (the
             # save runs on a daemon thread) leaves no half-written file.
             tmp = path.with_name(f".{name}.tmp")
+            with _IN_FLIGHT_LOCK:
+                _IN_FLIGHT.add(str(tmp))
             try:
                 with open(tmp, "w") as f:
                     f.write(body)
@@ -114,6 +125,9 @@ class InventoryStore:
                 with contextlib.suppress(OSError):   # never hide the real error
                     tmp.unlink(missing_ok=True)
                 raise
+            finally:
+                with _IN_FLIGHT_LOCK:
+                    _IN_FLIGHT.discard(str(tmp))
             out["local"] = str(path)
         except OSError as exc:
             out["errors"].append(f"local: {exc}")
