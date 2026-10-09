@@ -293,7 +293,7 @@ probes, paid_calls, reason, at, confirmed?}`, `state` one of `waiting`,
 
 ### In-process
 
-- `MissionRunner(robot, target_object=None, target_room=None, mission=None, max_steps=120, min_distance_cm=20.0, vision_proximity_veto=False, policy="frontier", vision_fn=None, vision_timeout_s=20.0, max_vision_failures=3, world=None, stuck_after=5, ..., inventory=True, detections_fn=None)` (3.46: the object inventory, recorded and reported only; `runner.inventory_sink` is set by the brain server like the metrics fields);
+- `MissionRunner(robot, target_object=None, target_room=None, mission=None, max_steps=120, min_distance_cm=20.0, policy="frontier", vision_fn=None, vision_timeout_s=20.0, max_vision_failures=3, world=None, stuck_after=5, ..., inventory=True, detections_fn=None)` (3.46: the object inventory, recorded and reported only; `runner.inventory_sink` is set by the brain server like the metrics fields);
   `start()`, `tick() -> bool`, `stop(reason)`, `abort(reason)`,
   `is_running()`, `status()`. `start()` on a used runner raises.
 - `vision_fn(frame: dict) -> dict` -- the scene schema (policy domain).

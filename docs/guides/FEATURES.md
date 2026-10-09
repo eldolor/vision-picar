@@ -855,38 +855,15 @@ is why `control/drills.py`'s fault picker exists in the Sim tab -- and
 why the live phone walk in section 1.2.c is the closest thing to
 provoking them for real without a drill.
 
-### 5.1 The vision proximity veto -- built, off, and staying off
+### 5.1 The vision proximity veto -- deleted
 
-`brain/agent.py` can also stop a `FORWARD` that the *model* says would hit
-something, using the `distance_estimate` field from section 1.2.a. It is
-**disabled by default** (`vision_proximity_veto`, on both
-`ConstrainedAgent` and `MissionRunner`) and three conditions must all hold
-before it can fire: it is explicitly enabled; the backend genuinely has no
-distance sensor (`get_distance()` returns `robot/interface.py`'s
-`NO_SENSOR_CM`, as `ReplayRobot` and `TeleopRobot` do -- a photograph has
-no depth in it); and the model actually said `within_one_step`, never
-`"unknown"`.
-
-**It is not a safety layer and must not be mistaken for one.**
-`robot/safety.py` is, and its docstring is explicit that it never trusts
-the AI's own claims about distance -- which is why this lives in `brain/`
-instead. If a real reading exists it wins; a model's guess must never
-override or pre-empt a measurement.
-
-**What it is for:** on `ReplayRobot` and `TeleopRobot` the safety veto is
-dead code, so a whole Robot-view walk says nothing about collision
-avoidance. This makes that path execute against real pixels, which nothing
-else does before hardware exists.
-
-**Why it ships off:** measured over 80 frames from five recorded walks,
-`within_one_step` comes back on 60% of them. Wired on, that would block
-roughly three FORWARDs in five and reproduce the never-FORWARD stall the
-3x3 prompt matrix already found. **Do not copy this into
-`robot/hardware_robot.py`** -- on the car the lidar is the obstacle
-sensor, and on identical frames one model reports `obstacle_ahead` ~100%
-of the time and another ~0%.
-
----
+`brain/agent.py` once had a `vision_proximity_veto` that stopped a
+`FORWARD` when the model's `distance_estimate` said `within_one_step`, on
+a backend with no distance sensor. Nothing outside the tests could turn
+it on, and the model's distance claims are uncalibrated, so it was
+deleted (`PLAN-ros-alignment.md` 3.64, the user, 2026-10-09). The lidar is
+the obstacle sensor; on `ReplayRobot` and `TeleopRobot` nothing stops a
+`FORWARD` but the person driving.
 
 ## 6. Deployment -- what runs in AWS, and what runs on a laptop
 

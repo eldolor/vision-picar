@@ -353,7 +353,6 @@ class MissionRunner:
         mission: Optional[str] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
         min_distance_cm: float = DEFAULT_MIN_DISTANCE_CM,
-        vision_proximity_veto: bool = False,
         policy: str = "frontier",
         vision_fn: Optional[Callable[[dict], dict]] = None,
         vision_timeout_s: float = DEFAULT_VISION_TIMEOUT_S,
@@ -477,11 +476,6 @@ class MissionRunner:
             # Handoff 2026-10-02 1a: identity at arrival, under the same
             # B3.2 timeout and failure budget as every other cloud call.
             arrival_confirm_fn=self._guarded_confirm,
-            # Only reaches the vision policy: the rule-based one runs
-            # against MockRobot, which has a real distance reading, so the
-            # veto would return immediately anyway. Passing it either way
-            # would just be a flag that cannot fire.
-            vision_proximity_veto=vision_proximity_veto and policy in VISION_POLICIES,
             world=self.world,
         )
         if self.vision_fn is None:

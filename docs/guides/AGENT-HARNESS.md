@@ -665,36 +665,13 @@ re-check before every `FORWARD` (`get_distance()` when this was written;
 the path cone and footprint corridor since M3/3.18, §3 step 6), which is the point: the
 camera answers *what* and *which way*, a distance sensor answers *how far*.
 
-### The proximity veto seam -- off by default
+### The proximity veto seam -- deleted
 
-`MissionRunner.start()` and `ConstrainedAgent` both take
-`vision_proximity_veto` (default `False`). When on, a `FORWARD` is refused
-if the model's `distance_estimate` says `within_one_step` *and* the
-backend has no distance sensor -- `get_distance()` returning
-`robot/interface.py`'s `NO_SENSOR_CM`, which is what `ReplayRobot` and
-`TeleopRobot` answer because a photograph has no depth in it. The runner
-only forwards the flag when `policy == "vision"`: the rule-based policy
-runs against `MockRobot`, which has a real reading, so the veto would
-return immediately anyway and passing it either way would just be a flag
-that cannot fire.
-
-Three things not to get wrong about this seam:
-
-1. **It is not a failsafe and does not belong in §6's list.** The three
-   failsafes catch a robot that is moving when nothing is watching; this
-   catches a move the model itself predicted would collide, on a backend
-   where `robot/safety.py`'s veto is dead code. `robot/safety.py` remains
-   the only thing that vetoes a move on any backend with a sensor, and it
-   never trusts the model's claims about distance -- which is why this
-   lives in `brain/`.
-2. **A measurement always wins.** If a real reading exists the veto
-   returns before looking at the model's opinion.
-3. **It ships off, and the reason is measured, not cautious.**
-   `within_one_step` comes back on 60% of real walk frames, so enabling it
-   would block roughly three FORWARDs in five -- the same never-FORWARD
-   stall the 3x3 prompt matrix already found. See `CLAUDE.md`'s Stage 0
-   notes before turning it on, and do not carry it onto the car: there
-   the lidar is the obstacle sensor.
+`MissionRunner` and `ConstrainedAgent` once took `vision_proximity_veto`,
+which refused a `FORWARD` when the model said `within_one_step` on a
+backend with no distance sensor. `brain_server` never passed it, so it
+could not fire outside the tests; it was deleted in 3.64 (the user,
+2026-10-09). `robot/safety.py` is the only thing that vetoes a move.
 
 ### Running it
 

@@ -17,7 +17,7 @@ file is true only until the code changes and is updated in the same commit.
 
 | File | What it does |
 |---|---|
-| `brain/agent.py` | `ConstrainedAgent` (allowed actions, `step()`, `sensed_scene()`, the stuck-breaker, the optional proximity veto), `MissionAgent` (memory, arrival review in `_review_scene()`, room backfill, world pose, frontier preference in `decide()`), `ObjectSearchAgent` (look-around on first entering a room), `StepResult`. |
+| `brain/agent.py` | `ConstrainedAgent` (allowed actions, `step()`, `sensed_scene()`, the stuck-breaker), `MissionAgent` (memory, arrival review in `_review_scene()`, room backfill, world pose, frontier preference in `decide()`), `ObjectSearchAgent` (look-around on first entering a room), `StepResult`. |
 | `brain/vision_agent.py` | `VisionAgent(MissionAgent)`: `decide()` skips the frontier logic and calls `ConstrainedAgent.decide()` on the model's `safest_direction`. |
 | `brain/navigate.py` | `navigate_scene()` (one POST to `{vision_url}/navigate`), `to_scene()` (pure mapping), `vision_fn_for()` (binds target, URL, secret, model, wording; carries `set_searched_rooms`). |
 | `brain/tiered.py` | `TieredVision` (a callable `vision_fn`), `TierStats`, `corroboration_for()`, `turn_for()`, `tiered_vision_fn_for()`. Trigger policy, free-frame stand-in with its precedence ladder, async dispatch with an epoch, sized turns, spin guard. |
@@ -36,7 +36,7 @@ described once, in [mission](../mission/ENGINEERING.md) ("How a tiered
 mission is built").
 
 **One `ConstrainedAgent.step()`:** `get_camera_frame()` -> `vision_fn(frame)`
--> `_review_scene()` (arrival) -> `decide()` -> proximity veto (if enabled)
+-> `_review_scene()` (arrival) -> `decide()`
 -> `self.safety.check_and_execute(action, angle=turn_deg)` (a
 `robot/safety.py` `SafetyController` over the gated body; `SafetyViolation`
 means not executed) -> `StepResult` appended to `history`.
@@ -155,7 +155,7 @@ runner: `usable`, `distance_m`, `heading_deg`).
 `TieredVision(pipeline, cloud_vision_fn, *, consecutive_frames=2, cold_search_after=6, cold_search_after_cm=None, stale_after=8, max_calls=None, corroboration_bar=0.5, oov_cold_search_after=None, async_cloud=False, hold_goal=True, steer_on_sight=True, spin_guard_after=8, hold_bearing=False, hold_bearing_max_m=1.0)`
 with `close()`, `reset_epoch()`, `set_searched_rooms()`, `confirm_arrival(frame) -> {confirmed, cloud_called, reason, cloud_reasoning, stats}`;
 `ArrivalCheck(radius_m=0.40, centre_deg=3.0, frames=2)`;
-`MissionAgent(robot, memory, side_clearance_cm=30.0, world=None, arrival_confirm_fn=None, min_distance_cm=20.0, vision_fn=None, max_consecutive_stops=3, vision_proximity_veto=False)`.
+`MissionAgent(robot, memory, side_clearance_cm=30.0, world=None, arrival_confirm_fn=None, min_distance_cm=20.0, vision_fn=None, max_consecutive_stops=3)`.
 
 ## Parameters and configuration
 
@@ -292,7 +292,7 @@ alert colour.
 | `tests/test_arrival_confirmation.py` (9) | Handoff 2026-10-02 1a, scaled house, cloud faked: the right object ends `found` after one `arrival_confirmation` call; a cloud that disagrees refuses the arrival (ends `blocked`, at most 2 confirmation calls); a false-positive run (absent, absent, detected...) cannot end `found` and the same run with an agreeing cloud does; the call is counted; at the call cap it refuses without calling. Spec review 3: under `async_cloud` the confirmation never overlaps a trigger call (peak concurrency 1 with a 0.2 s cloud); a `found` mission's `status.tier.stats` counts it; the paid step is logged `[cloud: arrival_confirmation]`; a refused mission's final `status.arrival` keeps `identity` and its end line does not say "obstructed" |
 | `tests/test_refused_turn_loop.py` (3) | Handoff 5a, starter house: a refused turn is never chosen again from the same spot (was 130 times); with the world the active-search demo finds the backpack in 61 steps (the reference trace); with no world the boxed-in fallback runs instead of a refused LEFT alternating with STOP |
 | `tests/test_tiered.py` (92) | triggers and hysteresis, call cap, staleness floor, async dispatch and epoch drop, an async failure reaching B3.2, landed verdicts shown once, local bearing beats a stale cloud goal, spin guard never overrides a sighting, timing on the worker |
-| `tests/test_vision_policy.py` (46) | visible is not found; absent `obstacle_ahead` is `unknown`; room guess backfill and `searched_rooms`; the policy does not peek; replay missions; proximity veto off by default and never over a real sensor |
+| `tests/test_vision_policy.py` (39) | visible is not found; absent `obstacle_ahead` is `unknown`; room guess backfill and `searched_rooms`; the policy does not peek; replay missions |
 | `tests/test_agent.py`, `tests/test_mission_agent.py`, `tests/test_object_search.py` | constrained loop, frontier preference, look-around scan |
 | `tests/test_goal_pose.py` (12), `tests/test_memory.py` (9), `tests/test_rooms.py` (7) | anchoring under rotation, honesty without range; memory completion; room matching |
 
@@ -317,9 +317,6 @@ threshold counted in steps.
   nothing.
 - `tier_hold_bearing` is off; a 1-in-3 detector closes only ~1.6 cells and
   needs a range-anchored goal pose (R1, R1b).
-- The vision proximity veto cannot be turned on from the brain service
-  (`control/brain_server.py` never passes it); only a direct `MissionRunner`
-  can.
 - **Tiered phone walks end `max_steps` when they arrive** (P7e), by design:
   arrival needs the lidar, and a landed cloud `target_reached` is never
   applied ([architecture spec](../../policy/ARCHITECTURE.md), "The cloud
