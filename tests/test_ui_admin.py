@@ -325,3 +325,55 @@ def test_the_summary_panel_stays_hidden_with_nothing_to_compare(browser, admin_s
     page, _ = open_console(browser, admin_server, summary={"rows": []})
     sync_api.expect(page.locator("#summary-panel")).to_be_hidden()
     page.close()
+
+
+# ---------- 3.64 C1: a replay that outlives its response ----------
+
+
+def test_a_timed_out_replay_waits_for_the_new_result_not_the_old_one(browser, admin_server):
+    """3.64 C1: the POST outlives API Gateway's 30 s and the console polls
+    for the result -- but it took the first stored replay of that model, so
+    a re-replay showed the OLD result as the new one. It must wait for a
+    record stamped after the request."""
+    walks = json.loads(json.dumps(WALKS))
+    model = MODELS["models"][1]["id"]
+    old = {"model_id": model, "prompt_variant": "default", "score": 81,
+           "verdict": "good", "replayed_at": 1788000100.0, "agreement": 0.9}
+    new = {**old, "score": 34, "verdict": "poor", "replayed_at": 1788000900.0}
+    walks["walks"][0]["replays"] = [old]
+    context = browser.new_context(viewport=PHONE)
+    context.add_init_script(
+        '(() => { try { localStorage.setItem("vp_admin_secret", "test"); } catch (e) {} '
+        'window.ADMIN_REPLAY_POLL_MS = 100; })();')
+    page = context.new_page()
+    page.route("**/recording/models", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps(MODELS)))
+    page.route("**/recording/walks", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps(walks)))
+    page.route("**/recording/summary", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps({"rows": []})))
+    page.route("**/stats", lambda r: r.fulfill(
+        status=200, content_type="application/json",
+        body=json.dumps({"walks": 2, "frames": 53, "bytes": 3_384_000})))
+    page.route("**/evaluation", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps({"score": 0})))
+    page.route("**/replay", lambda r: r.fulfill(
+        status=504, content_type="application/json", body='{"message":"Gateway Timeout"}'))
+    lists = {"n": 0}
+
+    def replays(route):
+        lists["n"] += 1
+        # The old record for the snapshot and the first polls; the new one
+        # only after the work finishes.
+        body = {"replays": [new if lists["n"] > 3 else old]}
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+    page.route("**/replays", replays)
+    page.goto(admin_server + "/admin", wait_until="networkidle")
+    page.wait_for_selector(".walk", timeout=10_000)
+
+    page.locator(".replay-select").first.select_option(model + "|default")
+    replay_text = page.locator(".walk").first.locator(".walk-eval").nth(1)
+    sync_api.expect(replay_text).to_contain_text("score 34", timeout=10_000)
+    assert lists["n"] > 3
+    page.close()
+    context.close()

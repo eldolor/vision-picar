@@ -77,10 +77,19 @@ def guidance_reply(**overrides):
 # ---------- health ----------
 
 
-def test_health(client):
+def test_health(client, monkeypatch):
+    monkeypatch.delenv("ENV_LABEL", raising=False)
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    assert resp.json() == {"status": "ok", "env_label": ""}
+
+
+def test_health_names_the_environment(client, monkeypatch):
+    """3.64 B1: behind CloudFront `/health` routes HERE, so the twin's and
+    the console's environment banners ask this service which deployment
+    they are in. It answered only "ok", and staging looked like prod."""
+    monkeypatch.setenv("ENV_LABEL", " staging ")
+    assert client.get("/health").json()["env_label"] == "staging"
 
 
 # ---------- /analyze ----------

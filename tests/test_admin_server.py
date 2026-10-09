@@ -129,6 +129,24 @@ def test_a_stale_schema_is_rescored_rather_than_served(client):
     assert c.get("/recording/walks/walk-d/evaluation").json()["score"] != 999
 
 
+def test_a_stale_schema_is_neither_listed_nor_summed(client):
+    """3.64 E2: only the evaluation read rescored a stale scorecard. The walk
+    list showed its old score as current -- so the console's auto-scorer,
+    which scores only walks with NO eval, never refreshed it -- and the
+    per-model summary averaged it, replays included."""
+    c, root = client
+    walk_dir = make_walk(root, "walk-old", ["FORWARD"] * 4, model="m-old")
+    stale = {"schema": admin_server.walk_eval.SCHEMA_VERSION - 1, "score": 999,
+             "verdict": "good", "flags": [], "metrics": {}}
+    (walk_dir / "eval.json").write_text(json.dumps(stale))
+    (walk_dir / "replay-m-old.json").write_text(json.dumps(
+        {**stale, "model_id": "m-old", "prompt_variant": "default"}))
+    (row,) = [w for w in c.get("/recording/walks").json()["walks"] if w["walk"] == "walk-old"]
+    assert row["eval"] is None
+    assert row["replays"][0]["stale"] is True
+    assert c.get("/recording/summary").json()["rows"] == []
+
+
 # ---------- the model a walk was recorded with ----------
 
 
@@ -1326,3 +1344,33 @@ def test_a_day_of_metrics_is_neither_listed_nor_deletable_as_a_walk(client):
     assert "metrics-2026-10-03" not in names
     assert c.delete("/recording/walks/metrics-2026-10-03").status_code == 404
     assert (day / "run-1.json").exists(), "a day of mission metrics was deleted"
+
+
+def test_an_unusable_replay_never_replaces_a_scored_one(recordings, monkeypatch):
+    """3.64 C3: one file per (model, prompt), and an unusable replay (score
+    None) was written over a scored one -- a throttled re-run erased the
+    comparison it was meant to add to. The scored record stays, and says
+    when a later attempt came back incomplete, so the console can tell."""
+    c, root = timing_out(recordings, monkeypatch, fails=0, total=10)
+    make_walk(root, "walk-keep", ["STOP"] * 10)
+    first = c.post("/recording/walks/walk-keep/replay", json={}).json()
+    assert isinstance(first["score"], int)
+
+    def down(*a, **kw):
+        raise RuntimeError("ThrottlingException")
+    monkeypatch.setattr(admin_server, "post_navigate", down)
+    second = c.post("/recording/walks/walk-keep/replay", json={}).json()
+
+    (stored,) = c.get("/recording/walks/walk-keep/replays").json()["replays"]
+    assert stored["score"] == first["score"]
+    assert stored["replayed_at"] == first["replayed_at"]
+    assert stored["last_unusable"]["coverage"] == 0.0
+    assert second["score"] == first["score"] and second["last_unusable"]
+
+
+def test_an_unusable_replay_is_still_stored_when_there_is_nothing_to_keep(recordings, monkeypatch):
+    c, root = timing_out(recordings, monkeypatch, fails=8, total=10)
+    make_walk(root, "walk-first-bad", ["STOP"] * 10)
+    c.post("/recording/walks/walk-first-bad/replay", json={})
+    (stored,) = c.get("/recording/walks/walk-first-bad/replays").json()["replays"]
+    assert stored["verdict"] == "unusable" and stored["score"] is None

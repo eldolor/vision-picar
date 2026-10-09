@@ -570,16 +570,21 @@ def create_app(config_path=None, store=None) -> FastAPI:
             r = store.read_json(walk_name, name)
             if r is None:
                 continue
-            out.append({k: r.get(k) for k in
-                        ("model_id", "prompt_variant", "score", "verdict", "flags",
-                         "agreement", "errors", "coverage")})
+            out.append({**{k: r.get(k) for k in
+                           ("model_id", "prompt_variant", "score", "verdict", "flags",
+                            "agreement", "errors", "coverage")},
+                        # 3.64 E2: scored by an older scorer; replay it again.
+                        "stale": r.get("schema") != walk_eval.SCHEMA_VERSION})
         return out
 
     def _eval_summary(walk_name: str) -> Optional[dict]:
         """The compact form the walk list shows -- never the full per-frame
         judge output, which is large and only wanted on one walk at a time."""
         ev = store.read_json(walk_name, EVAL_FILE_NAME)
-        if not ev:
+        if not ev or ev.get("schema") != walk_eval.SCHEMA_VERSION:
+            # 3.64 E2: an older scorer's card is not this scorer's score.
+            # Listed as unscored, so the console's auto-scorer re-scores it
+            # through GET /evaluation, which already refuses a stale one.
             return None
         return {k: ev.get(k) for k in ("score", "verdict", "flags", "basis", "model_id")}
 
@@ -696,9 +701,22 @@ def create_app(config_path=None, store=None) -> FastAPI:
             "collisions": collisions,
             "diff": out["diff"],
         }
+        name = _replay_file(result["model_id"], prompt_variant)
+        if not usable:
+            # 3.64 C3: one file per (model, prompt), so an unusable attempt
+            # would erase a scored replay -- the comparison it was meant to
+            # add to. The scored record is kept and notes the attempt, which
+            # is also how the console knows this request has come back.
+            try:
+                kept = store.read_json(walk_name, name)
+            except (OSError, WalkStoreError):
+                kept = None
+            if kept and kept.get("score") is not None:
+                kept["last_unusable"] = {k: result[k] for k in
+                                         ("replayed_at", "coverage", "frames", "errors")}
+                result = kept
         try:
-            store.write_json(walk_name,
-                             _replay_file(result["model_id"], prompt_variant), result)
+            store.write_json(walk_name, name, result)
         except (OSError, WalkStoreError) as e:
             logger.warning("could not persist replay for %s: %s", walk_name, e)
         return result
@@ -826,6 +844,8 @@ def create_app(config_path=None, store=None) -> FastAPI:
         def add(model_id, prompt_variant, ev, source):
             if not ev or ev.get("score") is None:
                 return
+            if ev.get("schema") != walk_eval.SCHEMA_VERSION:
+                return                  # 3.64 E2: an older scorer's number
             key = (model_id or "(unknown)", prompt_variant or "default", source)
             row = acc.setdefault(key, {
                 "model_id": key[0], "prompt_variant": key[1], "source": source,

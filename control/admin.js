@@ -181,29 +181,49 @@
     }
   }
 
-  // Look for a replay the server may have finished after our request timed
-  // out. Cheap: a couple of polls of an endpoint that just reads sidecars.
-  async function pollForReplay(w, modelId, promptVariant, tries) {
-    tries = tries || 6;
+  // A replay outlives its HTTP response: API Gateway gives up at 30 s, the
+  // walks Lambda runs up to 900 s and writes its sidecar when done. So a
+  // lost response is not a failure; look for the result. 3.64 C1: only a
+  // record NEWER than the one stored before the request counts -- matching
+  // on model and prompt alone took an earlier replay for this one. Stamps
+  // are the server's own (`replayed_at`), never this browser's clock.
+  const REPLAY_POLL_MS = window.ADMIN_REPLAY_POLL_MS || 10000;
+  const REPLAY_POLL_FOR_MS = 900000;
+
+  function sameReplay(r, modelId, promptVariant) {
+    return r.model_id === modelId &&
+      (r.prompt_variant || "default") === (promptVariant || "default");
+  }
+
+  // "stamp" of the stored replay for this model and prompt: when it was
+  // last written, by a scored result or an unusable attempt kept beside it.
+  function replayStamp(r) {
+    if (!r) return "none";
+    return String(r.replayed_at) + "|" +
+      String(r.last_unusable ? r.last_unusable.replayed_at : "");
+  }
+
+  async function storedReplay(w, modelId, promptVariant) {
+    const data = await api("GET", "/recording/walks/" + encodeURIComponent(w.walk) + "/replays");
+    return (data.replays || []).find(function (r) { return sameReplay(r, modelId, promptVariant); });
+  }
+
+  async function pollForReplay(w, modelId, promptVariant, before) {
+    const tries = Math.ceil(REPLAY_POLL_FOR_MS / REPLAY_POLL_MS);
     for (let i = 0; i < tries; i++) {
-      await new Promise(function (r) { setTimeout(r, 5000); });
+      await new Promise(function (r) { setTimeout(r, REPLAY_POLL_MS); });
       try {
-        const data = await api("GET", "/recording/walks/" + encodeURIComponent(w.walk) + "/replays");
-        const hit = (data.replays || []).find(function (r) {
-          return r.model_id === modelId &&
-            (r.prompt_variant || "default") === (promptVariant || "default");
-        });
-        if (hit) {
+        const hit = await storedReplay(w, modelId, promptVariant);
+        if (hit && replayStamp(hit) !== before) {
           w.replays = (w.replays || []).filter(function (x) {
-            return !(x.model_id === modelId &&
-              (x.prompt_variant || "default") === (promptVariant || "default"));
+            return !sameReplay(x, modelId, promptVariant);
           });
           w.replays.push(hit);
-          return true;
+          return hit;
         }
       } catch (err) { /* keep waiting */ }
     }
-    return false;
+    return null;
   }
 
   function applyFilterSort() {
@@ -465,6 +485,14 @@
         replaySelect.appendChild(opt);
       }
     }
+    // 3.64 C3: an unusable attempt does not replace a scored replay; the
+    // server keeps the score and notes the attempt, and this says so.
+    function noteKept(r) {
+      if (r && r.score != null && r.last_unusable) {
+        const pct = Math.round((r.last_unusable.coverage || 0) * 100);
+        showInlineError(replaySelect, "Only " + pct + "% of frames came back -- kept the earlier score");
+      }
+    }
     replaySelect.onchange = async function () {
       if (!replaySelect.value) return;
       const parts = replaySelect.value.split("|");
@@ -473,6 +501,13 @@
       replaySelect.disabled = true;
       const was = replaySelect.options[replaySelect.selectedIndex].textContent;
       replaySelect.options[replaySelect.selectedIndex].textContent = "Replaying…";
+      // What is stored now, so a result that lands after a lost response
+      // can be told from an older one (3.64 C1). If even this read fails,
+      // no older record can be told apart, so nothing is recovered.
+      let before = null;
+      try {
+        before = replayStamp(await storedReplay(w, modelId, promptVariant));
+      } catch (err) { before = null; }
       try {
         const r = await api("POST", "/recording/walks/" + encodeURIComponent(w.walk) + "/replay",
           { model_id: modelId, prompt_variant: promptVariant });
@@ -482,14 +517,16 @@
         w.replays.push(r);
         renderReplays();
         loadSummary();
+        noteKept(r);
       } catch (e) {
-        // A long walk can outrun the load balancer's 60s idle timeout even
-        // though the server finishes the job and writes its sidecar -- so a
-        // timeout is not a failure, it is a lost response. Go and look for
-        // the result before reporting anything.
-        const recovered = await pollForReplay(w, modelId, promptVariant);
+        // A lost response, not a failure: the server finishes the job and
+        // writes its sidecar. Look for THIS request's result first.
+        const recovered = before === null ? null
+          : await pollForReplay(w, modelId, promptVariant, before);
         if (recovered) {
           renderReplays();
+          loadSummary();
+          noteKept(recovered);
         } else {
           showInlineError(replaySelect, "Replay failed: " + e.message);
         }
@@ -564,7 +601,8 @@
       // Unscored replays last, whatever their frame count: they are not a
       // worse result, they are an absent one.
       const rows = rs.slice().sort(function (a, b) {
-        if ((a.score == null) !== (b.score == null)) return a.score == null ? 1 : -1;
+        const an = a.score == null || a.stale, bn = b.score == null || b.stale;
+        if (an !== bn) return an ? 1 : -1;
         return b.score - a.score;
       })
         .map(function (r) {
@@ -576,6 +614,10 @@
           // A replay that lost too many frames says nothing about the model,
           // so it gets no number to compare -- reporting one is exactly how
           // three timed-out prompt variants came to look equivalent.
+          if (r.stale) {
+            // 3.64 E2: scored by an older scorer, so not comparable.
+            return head + "scored by an older scorer · replay it again</div>";
+          }
           if (r.score == null) {
             const got = r.coverage == null ? "" :
               " -- only " + Math.round(r.coverage * 100) + "% of frames came back";

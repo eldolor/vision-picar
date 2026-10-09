@@ -204,7 +204,10 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health():
-        return {"status": "ok"}
+        # env_label: which deployment this is (3.64 B1). Behind CloudFront
+        # "/health" routes here, so this is what the twin's and the console's
+        # environment banners read. A label, not a credential; empty in prod.
+        return {"status": "ok", "env_label": os.environ.get("ENV_LABEL", "").strip()}
 
     @app.post("/analyze")
     async def analyze(request: Request):
