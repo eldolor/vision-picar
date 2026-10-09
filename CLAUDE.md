@@ -135,6 +135,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   10 cm before scoring (`correlation_search_space_smear_deviation`
   0.10 -> 0.03 m: two tours within 4.2 cm, every room's walls 100% true).
   Scans are also stamped with their capture time (skew 21 -> 7 ms).
+* **The operator sees the cloud (3.56), merged 2026-10-09.** `status.cloud`
+  from the free `/health` while a cloud mission runs, shown on the twin's
+  panel; the arrival confirmation has its own 8 s deadline
+  (`arrival_confirm_timeout_s`), so a hanging cloud parks in ~25 s.
 * **Local identity check (3.48), merged 2026-10-09.** Five small VLMs on
   the Jetson at 15 W (llama.cpp): Qwen2.5-VL-3B Q4 meets accuracy (97.1%
   precision, 0/34 teal bin; the cloud 67.9%) but fails latency (5.58 s p90
