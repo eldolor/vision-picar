@@ -2017,13 +2017,18 @@ def test_a_mission_that_ENDS_says_so_instead_of_sitting_on_deciding(browser, twi
 # twice-a-second /health poll behind the watchdog readout.
 
 
-def _headers_for(page, url_state):
+def _headers_for(page, url_state, base):
     """What the page would send to a given robot/brain URL. Read through a
     real request rather than by calling internals -- app.js is one IIFE with
     no test hooks, and the header only matters if it reaches the wire."""
     seen = {}
 
     def capture(route):
+        # Only the configured server's poll: any other /health on the page
+        # (the env banner's own, say) would be judged in its place.
+        if not route.request.url.startswith(base):
+            route.fallback()
+            return
         seen.update({k.lower(): v for k, v in route.request.headers.items()})
         route.fulfill(status=200, content_type="application/json",
                       body=_json({"status": "ok", "mode": "sim",
@@ -2032,7 +2037,14 @@ def _headers_for(page, url_state):
 
     page.route("**/health", capture)
     page.evaluate(url_state)
-    page.wait_for_timeout(900)
+    # Wait for the request itself, not a fixed 900 ms: under a loaded full
+    # suite the next poll could land after a fixed window, and the caller
+    # then judged an empty capture -- red half the time on the ngrok test,
+    # and vacuously green on the plain-host one.
+    deadline = time.monotonic() + 5.0
+    while not seen and time.monotonic() < deadline:
+        page.wait_for_timeout(50)
+    assert seen, "the page sent no /health request within 5 s"
     return seen
 
 
@@ -2041,11 +2053,17 @@ def test_a_tunnelled_robot_gets_the_interstitial_bypass(browser, twin_server):
     the request succeeds, the body is an HTML page, and the only symptom is
     a JSON parse error."""
     page, errors = open_twin(browser, twin_server)
+    tunnel = "https://salami-turbulent-engorge.ngrok-free.dev"
+    # The tunnel is played by the local server, so Connect succeeds offline.
+    # Against the real host this passed only when the internet answered:
+    # no connection, no health poll, nothing to capture (half the runs).
+    page.route(tunnel + "/**", lambda route: route.fulfill(
+        response=route.fetch(url=route.request.url.replace(tunnel, twin_server))))
     page.click("#btn-settings")
-    page.fill("#cfg-server-url", "https://salami-turbulent-engorge.ngrok-free.dev")
+    page.fill("#cfg-server-url", tunnel)
     page.click("#btn-connect")
     page.click('.tab-btn[data-tab="sim"]')
-    headers = _headers_for(page, "() => {}")
+    headers = _headers_for(page, "() => {}", tunnel)
 
     assert headers.get("ngrok-skip-browser-warning") == "1", sorted(headers)
     assert not errors, errors
@@ -2061,7 +2079,7 @@ def test_a_plain_host_is_left_alone(browser, twin_server):
     page.fill("#cfg-server-url", twin_server)
     page.click("#btn-connect")
     page.click('.tab-btn[data-tab="sim"]')
-    headers = _headers_for(page, "() => {}")
+    headers = _headers_for(page, "() => {}", twin_server)
 
     assert "ngrok-skip-browser-warning" not in headers, sorted(headers)
     assert not errors, errors

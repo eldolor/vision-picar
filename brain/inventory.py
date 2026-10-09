@@ -312,12 +312,18 @@ class Inventory:
             else:
                 lm.points.append((x, y, label))
             lm.last_step = step
+            own_look = lm.id not in joined and _new_view(lm._hit_pose, pose)
+            own_score = lm.score
             if self._absorb(lm, label, x, y) & joined:
                 # 3.47: a landmark that already took this frame's look was
                 # folded into `lm`, and `_absorb` carried its score and hits
-                # over. Counting the look again would raise belief from one
-                # frame twice -- and so would counting it next frame, so
-                # this look is `lm`'s last viewpoint, and it was seen.
+                # over. The merged object gets this look ONCE: never a
+                # second hit (raising belief from one frame twice), but not
+                # lost either when `lm` had the larger score and this was a
+                # new viewpoint for it -- max(score) alone would drop it.
+                if own_look:
+                    lm.score = max(lm.score, min(SCORE_CLAMP, own_score + L_HIT))
+                # The look is `lm`'s last viewpoint, and it was seen.
                 joined.add(lm.id)
                 lm._hit_pose = dict(pose)
                 lm._pending_miss = False

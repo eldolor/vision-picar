@@ -199,6 +199,26 @@ def test_a_merge_inside_one_frame_counts_that_look_once():
     assert i.landmarks[0].hits == 3
 
 
+def test_a_merge_never_loses_the_bigger_landmarks_own_look():
+    """3.47, found by the review of the fixes: when `lm` had the larger
+    score and this frame was a new view for it, the merge's max() kept
+    `lm`'s old score, so the look was lost. The merged object gets this
+    look once -- neither twice nor not at all."""
+    i = Inventory()
+    # B at (0, -2), seen from two viewpoints 0.6 m apart: two looks.
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0, 0, 0), _scan({0: 2.0}))
+    i.observe([{"label": "sofa", "bearing_deg": 17.0}], _pose(-0.6, 0, 0), _scan({17: 2.09}))
+    (b,) = i.landmarks
+    before = b.score
+    assert before == pytest.approx(2 * inv.L_HIT)
+    # One frame from a new spot: the first detection starts A (0.8 m off,
+    # unlinked); the second lands between them and bridges A into B.
+    i.observe([{"label": "sofa", "bearing_deg": 9.0}, {"label": "sofa", "bearing_deg": 0.0}],
+              _pose(0.4, 1.0, 0), _scan({9: 3.04, 0: 3.0}))
+    (lm,) = i.landmarks
+    assert lm.score == pytest.approx(min(inv.SCORE_CLAMP, before + inv.L_HIT))
+
+
 def test_two_things_apart_are_two_landmarks():
     i = Inventory()
     i.observe([{"label": "mug", "bearing_deg": -20.0}, {"label": "shoe", "bearing_deg": 20.0}],

@@ -300,7 +300,7 @@ def test_a_save_cut_off_midway_leaves_the_last_good_file(tmp_path, monkeypatch):
 
     def cut_off(fd):
         raise OSError("power lost before the write reached the disk")
-    monkeypatch.setattr(inventory_store.os, "fsync", cut_off)
+    monkeypatch.setattr(inventory_store, "_fsync", cut_off)
     out = store.save("m", {"reported": [2]})
     assert out["local"] is None and out["errors"]
     assert json.loads((tmp_path / "m.json").read_text()) == {"reported": [1]}
@@ -308,23 +308,25 @@ def test_a_save_cut_off_midway_leaves_the_last_good_file(tmp_path, monkeypatch):
     assert [f.name for f in tmp_path.iterdir()] == ["m.json"]
 
 
-def _bucket_from_run_sh(tmp_path, env_bucket):
-    """Run run.sh's own INVENTORY_BUCKET line, with a fake `aws` that
-    reports a bucket."""
+def _bucket_from_run_sh(tmp_path, env_bucket, aws="echo found-bucket"):
+    """Run run.sh's own inventory-bucket block with a fake `aws`. Returns
+    what the brain would inherit: the exported value, or None if unset."""
     import os
     import re
     import subprocess
     from pathlib import Path
     text = (Path(__file__).resolve().parents[1] / "service/tunnel/run.sh").read_text()
-    line = re.search(r'^export INVENTORY_BUCKET=.*?\)\}"$', text, re.M | re.S).group(0)
+    block = re.search(r"^# --- inventory bucket.*?^# --- end inventory bucket ---$",
+                      text, re.M | re.S).group(0)
     fake = tmp_path / "aws"
-    fake.write_text("#!/bin/sh\necho found-bucket\n")
+    fake.write_text(f"#!/bin/sh\n{aws}\n")
     fake.chmod(0o755)
     env = {"PATH": f"{tmp_path}:{os.environ['PATH']}"}
     if env_bucket is not None:
         env["INVENTORY_BUCKET"] = env_bucket
-    return subprocess.run(["bash", "-c", line + '\nprintf "%s" "$INVENTORY_BUCKET"'],
-                          env=env, capture_output=True, text=True, check=True).stdout
+    out = subprocess.run(["bash", "-c", block + "\nprintenv INVENTORY_BUCKET"],
+                         env=env, capture_output=True, text=True)
+    return out.stdout.rstrip("\n") if out.returncode == 0 else None
 
 
 def test_run_sh_set_but_empty_bucket_means_local_only(tmp_path):
@@ -333,6 +335,16 @@ def test_run_sh_set_but_empty_bucket_means_local_only(tmp_path):
     assert _bucket_from_run_sh(tmp_path, "") == ""
     assert _bucket_from_run_sh(tmp_path, None) == "found-bucket"
     assert _bucket_from_run_sh(tmp_path, "mine") == "mine"
+
+
+def test_run_sh_a_failed_lookup_is_not_the_opt_out(tmp_path):
+    """3.47, found by the review of the fixes: a failed or empty lookup
+    exported an empty INVENTORY_BUCKET, which the brain now reads as the
+    local-only opt-out -- silently overriding a bucket in the yaml. It must
+    leave the variable unset instead."""
+    assert _bucket_from_run_sh(tmp_path, None, aws="exit 255") is None
+    assert _bucket_from_run_sh(tmp_path, None, aws="true") is None
+    assert _bucket_from_run_sh(tmp_path, None, aws="echo None") is None
 
 
 def test_the_store_reads_its_config(tmp_path):

@@ -24,8 +24,8 @@ every number here.
 | `brain/perceive_lab.py` | Candidates behind the same protocols: `GroundingDino`, `Owlv2`, `OmDetTurbo`, `LlmDet`, `YoloWorld`, `VlmDetector`, `SamProposer`, `OpenVocabPipeline`, a TensorRT OWLv2 loaded lazily from `tools/trt/trt_owlv2.py`; `pipeline_for_spec()` builds any of them from strings. Never imported by `brain/perceive.py`. |
 | `brain/tiered.py` | Calls `pipeline.perceive(frame)` once per frame; computes 1.11a's corroboration verdict (`corroboration_for()`) and publishes the `Vocabulary` verdict. Policy-side details are in [policy](../policy/ENGINEERING.md). |
 | `control/brain_server.py` | Builds the pipeline at mission start. The sequence is described once, in [mission](../mission/ENGINEERING.md) ("How a tiered mission is built"). `_perception_available()` answers health with `find_spec` for `ultralytics`, `open_clip`, `torch`. |
-| `brain/inventory.py` | 3.46's object inventory: `frame_detections()` (a sim frame's per-cell detections grouped into one per object), `scan_returns()` / `range_at()` (the scan moved to the body centre; nearest return within 2 deg), `Landmark`, `Inventory` (`observe()`, `report()`, `counts()`, `summary()`). A merge inside one frame never counts that frame's look twice, now or on the next frame from the same spot, and a landmark joins the list only with its first point (3.47). Imports nothing but `robot.safety.LIDAR_X_M` |
-| `control/inventory_store.py` | `InventoryStore.save(mission_id, report)`: a local JSON file (written to a temporary name, fsynced, then renamed, so a cut-off save leaves the last good file and no temporary one; 3.47), plus `put_object` to S3 (SSE AES256) when a bucket is set; failures returned and logged, never raised. `inventory_store_from_config()` |
+| `brain/inventory.py` | 3.46's object inventory: `frame_detections()` (a sim frame's per-cell detections grouped into one per object), `scan_returns()` / `range_at()` (the scan moved to the body centre; nearest return within 2 deg), `Landmark`, `Inventory` (`observe()`, `report()`, `counts()`, `summary()`). A merge inside one frame counts that frame's look once -- never twice, never lost when the surviving landmark had the larger score, and not again on the next frame from the same spot -- and a landmark joins the list only with its first point (3.47). Imports nothing but `robot.safety.LIDAR_X_M` |
+| `control/inventory_store.py` | `InventoryStore.save(mission_id, report)`: a local JSON file (written to a temporary name, fsynced, renamed, then the directory fsynced, so a cut-off save leaves the last good file and no temporary one; 3.47), plus `put_object` to S3 (SSE AES256) when a bucket is set; failures returned and logged, never raised. `inventory_store_from_config()` |
 | `control/mission_runner.py` (inventory) | `_HaltGate` calls `MissionRunner._observe(frame)` inside every `get_camera_frame()`; `_observe` reads `world.get_pose()` and `robot.get_scan(max_range_m=4.5)` only when `detections_fn(frame)` is not None, then updates the inventory under `MissionRunner._lock` (the lock every reader takes) and drops a frame that lands after the mission ended, before its reads (`_ended()`, the rule `_finish` uses; 3.47). `_finish()` logs `summary()`, which may not raise on the way to the stop, and calls `inventory_sink(report)` |
 | `control/perception_eval.py` | P3's corpus scorer: `score` and `compare` subcommands. Reads each walk's `labels.json`; refuses a walk without one. |
 | `control/target_probe.py` | Pre-flight for a target string: firing rate and peak probability over a fixed random sample of existing frames. |
@@ -180,8 +180,9 @@ them):
 Config keys (`brain:` block): `inventory_dir` (`recordings/inventory`),
 `inventory_bucket` (`""`; env `INVENTORY_BUCKET`, which
 `service/tunnel/run.sh` reads from the recordings stack's export unless
-it is set; `INVENTORY_BUCKET=` (empty) means local only and overrides
-a bucket in the yaml, 3.47),
+it is set, and leaves it unset if the lookup fails;
+`INVENTORY_BUCKET=` (empty) means local only and overrides a bucket in
+the yaml, 3.47),
 `inventory_prefix` (`inventory`). Objects land at
 `s3://<bucket>/<prefix>/<hostname>/<UTC time to the microsecond>-<target>.json`
 (to the second before 3.47, when two quick missions shared a key).
