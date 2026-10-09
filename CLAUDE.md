@@ -130,6 +130,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   10 cm before scoring (`correlation_search_space_smear_deviation`
   0.10 -> 0.03 m: two tours within 4.2 cm, every room's walls 100% true).
   Scans are also stamped with their capture time (skew 21 -> 7 ms).
+* **Rooms from CLIP (3.51, 3.54), merged 2026-10-09.** Zero-shot fails
+  (67%); few-shot on the user's own rooms meets accuracy on three rooms
+  (81%, within 1.1 points of the cloud) but not laptop-CPU cost. Not wired
+  in; the rest of the house is unrecorded.
 * **Offline is a mode (3.49), merged 2026-10-09.** With every connection
   refused: the robot server loads no cloud client, `frontier`/`explore`
   still find, tiered ends `arrived_unconfirmed` at the target, `vision`
