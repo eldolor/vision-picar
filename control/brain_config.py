@@ -291,13 +291,17 @@ def load_brain_config(config_path=None) -> dict:
     if os.environ.get("RECORDING_PREFIX"):
         merged["recording_prefix"] = os.environ["RECORDING_PREFIX"]
 
-    # 3.56. A confirmation deadline longer than B3.2's would be clamped to it
-    # anyway (MissionRunner.confirm_timeout_s); refusing it here says so.
+    # 3.56. A confirmation deadline longer than B3.2's is clamped to it
+    # (MissionRunner.confirm_timeout_s). Refused only when SET that way: a
+    # deployment that lowers vision_timeout_s alone keeps loading -- the
+    # walks Lambda reads this file at cold start -- and gets the clamp.
     confirm_s = float(merged["arrival_confirm_timeout_s"])
-    if not 0 < confirm_s <= float(merged["vision_timeout_s"]):
+    if confirm_s <= 0:
+        raise ValueError(f"brain.arrival_confirm_timeout_s must be > 0; got {confirm_s}")
+    if "arrival_confirm_timeout_s" in brain and confirm_s > float(merged["vision_timeout_s"]):
         raise ValueError(
-            f"brain.arrival_confirm_timeout_s must be > 0 and <= vision_timeout_s "
-            f"({merged['vision_timeout_s']}); got {confirm_s}")
+            f"brain.arrival_confirm_timeout_s ({confirm_s}) must be <= vision_timeout_s "
+            f"({merged['vision_timeout_s']})")
     if float(merged["cloud_probe_s"]) < 0:
         raise ValueError(f"brain.cloud_probe_s must be >= 0 (0 = off); "
                          f"got {merged['cloud_probe_s']}")

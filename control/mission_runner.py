@@ -924,14 +924,29 @@ class MissionRunner:
         if confirm is None:
             return {"confirmed": False, "cloud_called": False,
                     "reason": "this policy has no cloud to confirm identity"}
+        # 3.56: an async trigger call still out is waited for first, on
+        # B3.2's own timeout (it has the triggers' 20 s deadline); only then
+        # does the confirmation's shorter clock start. A healthy but slow
+        # trigger is never charged to the confirmation.
+        settle = getattr(self.vision_fn, "wait_inflight", None)
+        if settle is not None:
+            try:
+                call_with_timeout(settle, timeout_s=self.vision_timeout_s)
+            except TimeoutError as e:
+                msg = f"an earlier cloud call outlived {self.vision_timeout_s:g}s"
+                raise VisionUnavailable(msg) from CloudUnavailable(msg)
+        guard = self.confirm_guard_s()
         prev = self._confirm_thread
         if prev is not None and prev.is_alive():
             # 3.56: the last confirmation outlived its guard and is still
-            # out. Another call beside it would break "one call in flight";
-            # it is the same unreachable cloud, so it fails as the cloud's.
-            msg = "the previous arrival confirmation is still in flight"
-            raise VisionUnavailable(msg) from CloudUnavailable(msg)
-        guard = self.confirm_guard_s()
+            # out. Another call beside it would break "one call in flight".
+            # Wait for it (one guard, as long as a call may take) so the
+            # budget is spent at the cloud's pace, not the tick's; still out
+            # after that, it is the same unreachable cloud.
+            prev.join(guard)
+            if prev.is_alive():
+                msg = "the previous arrival confirmation is still in flight"
+                raise VisionUnavailable(msg) from CloudUnavailable(msg)
         try:
             return call_with_timeout(confirm, frame, timeout_s=guard,
                                      on_start=self._set_confirm_thread)
@@ -1126,6 +1141,14 @@ class MissionRunner:
         for B3.2's budget, and the late path has no budget -- it needs to
         know a call is still outstanding, so it never sends a second one
         beside it (tiered.py: one call in flight at a time)."""
+        # 3.56: the mission's last arrival confirmation may have outlived its
+        # guard and still be out. Wait for it (B3.2's timeout, this call's
+        # own); still out, it counts as this call hanging -- nothing sent.
+        prev = self._confirm_thread
+        if prev is not None and prev.is_alive():
+            prev.join(self.vision_timeout_s)
+            if prev.is_alive():
+                raise TimeoutError("an earlier arrival confirmation is still in flight")
         with self._lock:
             late = self._late or {"state": "waiting"}
             if late["state"] != "waiting":
@@ -1141,7 +1164,8 @@ class MissionRunner:
             self._late = {**late, "paid_calls": late.get("paid_calls", 0) + 1}
         uncount = False
         try:
-            verdict = call_with_timeout(confirm, frame, timeout_s=self.vision_timeout_s)
+            verdict = call_with_timeout(confirm, frame, timeout_s=self.vision_timeout_s,
+                                        on_start=self._set_confirm_thread)
             # A cap refusal made no call; take back the count (the policy
             # decides that locally, before any I/O).
             uncount = not verdict.get("cloud_called")

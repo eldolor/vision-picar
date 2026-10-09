@@ -472,6 +472,119 @@ def test_10_bad_values_are_refused(tmp_path, brain):
         _load(tmp_path, **brain)
 
 
+def test_10_lowering_only_the_vision_timeout_still_loads_and_clamps(tmp_path):
+    """Self-review: a deployment that lowers vision_timeout_s alone must
+    keep loading (the walks Lambda reads this file at cold start)."""
+    config = _load(tmp_path, vision_timeout_s=5.0)
+    assert config["arrival_confirm_timeout_s"] == 8.0
+    runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
+                           policy="tiered", vision_fn=lambda f: {},
+                           vision_timeout_s=config["vision_timeout_s"],
+                           arrival_confirm_timeout_s=config["arrival_confirm_timeout_s"])
+    assert runner.confirm_timeout_s() == 5.0
+
+
+def test_9_the_backstop_waits_for_the_call_in_flight_before_giving_up():
+    """Self-review: the next confirmation waits for one still in flight (up
+    to one guard) rather than failing on the next tick; if that call ends
+    meanwhile, a fresh one goes out -- still one at a time."""
+    release = threading.Event()
+    live = {"n": 0, "peak": 0, "calls": 0}
+
+    class Policy:
+        def confirm_arrival(self, frame):
+            live["n"] += 1
+            live["calls"] += 1
+            live["peak"] = max(live["peak"], live["n"])
+            try:
+                if live["calls"] == 1:
+                    release.wait(5)
+                return {"confirmed": True, "cloud_called": True}
+            finally:
+                live["n"] -= 1
+
+    runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
+                           policy="tiered", vision_fn=lambda f: {},
+                           arrival_confirm_timeout_s=0.2, vision_timeout_s=1.0)
+    runner.vision_fn = Policy()
+    from control.mission_runner import VisionUnavailable
+    with pytest.raises(VisionUnavailable):
+        runner._guarded_confirm({})                 # the guard (0.25 s) fires
+    threading.Timer(0.1, release.set).start()       # the call ends while we wait
+    assert runner._guarded_confirm({})["confirmed"] is True
+    assert live["calls"] == 2 and live["peak"] == 1, live
+
+
+def test_review_a_slow_async_trigger_is_not_charged_to_the_confirmation():
+    """/code-review on 3062488: under the shipped async tier the confirmation
+    first waits for a trigger call still out, on the triggers' deadline. A
+    healthy but slow trigger (0.5 s) ahead of a quick confirmation (0.2 s)
+    must not trip the confirmation's 0.3 s deadline."""
+    grid = _placed()
+    robot = MockRobot(grid, render=False)
+    holder = {}
+    tier = TieredVision(FrameReportedPipeline(TARGET), lambda f: holder["t"](f),
+                        steer_on_sight=True, hold_goal=True, async_cloud=True,
+                        stale_after=1, confirm_vision_fn=lambda f: holder["c"](f))
+    holder["t"] = HttpLike(0.5, 2.0)
+    holder["c"] = HttpLike(0.2, 0.3)
+    runner = MissionRunner(robot, target_object=TARGET, max_steps=60, policy="tiered",
+                           vision_fn=tier, world=mock_world_for(robot),
+                           vision_timeout_s=2.0, arrival_confirm_timeout_s=0.3)
+    runner.start()
+    while runner.tick():
+        pass
+    status = runner.status()
+    assert tier.stats.triggers.get(TRIGGER_ARRIVAL), "never reached arrival -- proves nothing"
+    assert status["outcome"] == FOUND, status["log_tail"][-3:]
+    assert not any("vision failure" in line for line in status["log_tail"]), status["log_tail"]
+
+
+def test_review_the_late_check_never_sends_beside_a_confirmation_still_out():
+    """/code-review on 3062488: 3.53's late_ask() ignored a confirmation
+    still in flight. Now it waits (B3.2's timeout) and, still out, raises
+    TimeoutError -- the Reconfirmer's "hung" -- with nothing sent."""
+    from tests.test_arrival_reconfirm import _ended_unconfirmed
+    cloud = SwitchableCloud()
+    runner, _, _ = _ended_unconfirmed(cloud, CLEAR_STARTS[0])
+    cloud.up = True
+    release = threading.Event()
+    out = threading.Thread(target=release.wait, args=(5,), daemon=True)
+    out.start()
+    runner._confirm_thread = out
+    runner.vision_timeout_s = 0.1
+    before = cloud.calls
+    try:
+        with pytest.raises(TimeoutError):
+            runner.late_ask()
+    finally:
+        release.set()
+    assert cloud.calls == before, "a second confirmation went out beside the first"
+    late = runner.status().get("late_confirmation") or {}
+    assert late.get("paid_calls", 0) == 0, late
+
+
+def test_review_the_searched_rooms_reach_the_confirmation_client():
+    """/code-review on 3062488: the confirmation's own client never got the
+    searched rooms its /navigate call used to carry."""
+    got = {}
+
+    class Client:
+        def __init__(self, name):
+            self.name = name
+
+        def __call__(self, frame):
+            return {}
+
+        def set_searched_rooms(self, rooms):
+            got[self.name] = list(rooms)
+
+    tier = TieredVision(FrameReportedPipeline(TARGET), Client("triggers"),
+                        confirm_vision_fn=Client("confirm"))
+    tier.set_searched_rooms(["kitchen", "hallway"])
+    assert got == {"triggers": ["kitchen", "hallway"], "confirm": ["kitchen", "hallway"]}
+
+
 def test_10_a_confirmation_deadline_never_outlasts_b32():
     runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
                            policy="tiered", vision_fn=lambda f: {},

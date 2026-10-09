@@ -744,6 +744,21 @@ class TieredVision:
         self._last_cloud_scene = scene
         return self._annotate(scene, perception, trigger)
 
+    def wait_inflight(self) -> None:
+        """Wait for an async trigger call still out, and apply it. 3.56:
+        MissionRunner calls this BEFORE the arrival confirmation's own (shorter)
+        deadline starts, under B3.2's timeout -- the trigger's call has the
+        triggers' deadline, and a healthy but slow one must not be charged to
+        the confirmation. `confirm_arrival()` keeps the same wait for callers
+        that do not do this first."""
+        fut = self._inflight
+        if fut is not None:
+            try:
+                fut.result()
+            except BaseException:  # noqa: BLE001 -- _collect_inflight holds it
+                pass
+            self._collect_inflight()
+
     # -- 1a: the cloud confirms identity at arrival -----------------------
 
     def confirm_arrival(self, frame: dict) -> dict:
@@ -1341,9 +1356,13 @@ class TieredVision:
         """`MissionRunner._guarded_vision()` calls this when present. Pass
         it through so room-level step memory (S2b) keeps working -- it is
         the cloud call's business, not perception's."""
-        setter = getattr(self.cloud_vision_fn, "set_searched_rooms", None)
-        if setter is not None:
-            setter(rooms)
+        for fn in {id(f): f for f in (self.cloud_vision_fn, self.confirm_vision_fn)
+                   if f is not None}.values():
+            # 3.56: the confirmation's own client too -- its /navigate call
+            # carried the searched rooms before it had a client of its own.
+            setter = getattr(fn, "set_searched_rooms", None)
+            if setter is not None:
+                setter(rooms)
 
 
 def tiered_vision_fn_for(target: str, cloud_vision_fn: Callable[[dict], dict],
