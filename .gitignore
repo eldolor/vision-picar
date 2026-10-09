@@ -11,6 +11,7 @@ venv/
 .claude/*
 !.claude/skills/
 !.claude/settings.json
+!.claude/hooks/
 
 # Never commit secrets
 .env

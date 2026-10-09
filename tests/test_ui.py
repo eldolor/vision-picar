@@ -2639,13 +2639,18 @@ def test_on_the_guide_tab_an_unconfirmed_arrival_is_an_outcome_not_a_lost_link(
 # twice-a-second /health poll behind the watchdog readout.
 
 
-def _headers_for(page, url_state):
+def _headers_for(page, url_state, base):
     """What the page would send to a given robot/brain URL. Read through a
     real request rather than by calling internals -- app.js is one IIFE with
     no test hooks, and the header only matters if it reaches the wire."""
     seen = {}
 
     def capture(route):
+        # Only the configured server's poll: any other /health on the page
+        # (the env banner's own, say) would be judged in its place.
+        if not route.request.url.startswith(base):
+            route.fallback()
+            return
         seen.update({k.lower(): v for k, v in route.request.headers.items()})
         route.fulfill(status=200, content_type="application/json",
                       body=_json({"status": "ok", "mode": "sim",
@@ -2671,11 +2676,17 @@ def test_a_tunnelled_robot_gets_the_interstitial_bypass(browser, twin_server):
     the request succeeds, the body is an HTML page, and the only symptom is
     a JSON parse error."""
     page, errors = open_twin(browser, twin_server)
+    tunnel = "https://salami-turbulent-engorge.ngrok-free.dev"
+    # The tunnel is played by the local server, so Connect succeeds offline.
+    # Against the real host this passed only when the internet answered:
+    # no connection, no health poll, nothing to capture (half the runs).
+    page.route(tunnel + "/**", lambda route: route.fulfill(
+        response=route.fetch(url=route.request.url.replace(tunnel, twin_server))))
     page.click("#btn-settings")
-    page.fill("#cfg-server-url", "https://salami-turbulent-engorge.ngrok-free.dev")
+    page.fill("#cfg-server-url", tunnel)
     page.click("#btn-connect")
     page.click('.tab-btn[data-tab="sim"]')
-    headers = _headers_for(page, "() => {}")
+    headers = _headers_for(page, "() => {}", tunnel)
 
     assert headers.get("ngrok-skip-browser-warning") == "1", sorted(headers)
     assert not errors, errors
@@ -2687,11 +2698,17 @@ def test_a_plain_host_is_left_alone(browser, twin_server):
     protocol -- and adding it everywhere would put a CORS preflight on the
     twice-a-second health poll of every LAN and localhost setup."""
     page, errors = open_twin(browser, twin_server)
+    # A LAN robot of its own, played by the local server: on the page's own
+    # origin its poll and the env banner's /health would be one URL, and
+    # the helper could judge the banner's request instead.
+    lan = "http://picar.lan:8000"
+    page.route(lan + "/**", lambda route: route.fulfill(
+        response=route.fetch(url=route.request.url.replace(lan, twin_server))))
     page.click("#btn-settings")
-    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-server-url", lan)
     page.click("#btn-connect")
     page.click('.tab-btn[data-tab="sim"]')
-    headers = _headers_for(page, "() => {}")
+    headers = _headers_for(page, "() => {}", lan)
 
     assert "ngrok-skip-browser-warning" not in headers, sorted(headers)
     assert not errors, errors

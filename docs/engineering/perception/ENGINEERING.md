@@ -24,10 +24,10 @@ every number here.
 | `brain/perceive_lab.py` | Candidates behind the same protocols: `GroundingDino`, `Owlv2`, `OmDetTurbo`, `LlmDet`, `YoloWorld`, `VlmDetector`, `SamProposer`, `OpenVocabPipeline`, a TensorRT OWLv2 loaded lazily from `tools/trt/trt_owlv2.py`; `pipeline_for_spec()` builds any of them from strings. Never imported by `brain/perceive.py`. |
 | `brain/tiered.py` | Calls `pipeline.perceive(frame)` once per frame; computes 1.11a's corroboration verdict (`corroboration_for()`) and publishes the `Vocabulary` verdict. Policy-side details are in [policy](../policy/ENGINEERING.md). |
 | `control/brain_server.py` | Builds the pipeline at mission start. The sequence is described once, in [mission](../mission/ENGINEERING.md) ("How a tiered mission is built"). `_perception_available()` answers health with `find_spec` for `ultralytics`, `open_clip`, `torch`. |
-| `brain/inventory.py` | 3.46's object inventory: `frame_detections()` (a sim frame's per-cell detections grouped into one per object), `scan_returns()` / `range_at()` (the scan moved to the body centre; nearest return within 2 deg), `Landmark`, `Inventory` (`observe()`, `report()`, `counts()`, `summary()`). Imports nothing but `robot.safety.LIDAR_X_M` |
+| `brain/inventory.py` | 3.46's object inventory: `frame_detections()` (a sim frame's per-cell detections grouped into one per object), `scan_returns()` / `range_at()` (the scan moved to the body centre; nearest return within 2 deg), `Landmark`, `Inventory` (`observe()`, `report()`, `counts()`, `summary()`). A merge inside one frame counts that frame's look once, in either merge order (`_count_look()`: each landmark taking part is due its score plus one look if this is a new view for it and it was not already counted; the merged score is the largest due, and a frame leaves one hit and one vote however its landmarks merge within that frame; landmarks counted in one frame and joined in a LATER one still sum their hits and votes, 3.46's rule, open in 3.48) -- never twice, never lost, and not again on the next frame from the same spot -- and a landmark joins the list only with its first point (3.55). Imports nothing but `robot.safety.LIDAR_X_M` |
 | `tools/inventory_label.py` | 3.46 criterion 6 (amendment 3): `vocab` (the judge model sorts YOLOE-pf's 4,585 names into objects or not, once), `detect` (YOLOE-pf over every walk), `judge` (Claude Opus 5.5 on Bedrock, us-east-1, judges each numbered box; resumable, stops at `--budget`), `sample` (150 seeded frames on a local page the user answers blind), `score`. Writes only under recordings/inventory_eval (git-ignored); never touches a walk's `labels.json`. `RECORDINGS_DIR` and `INVENTORY_PF_WEIGHTS` point a worktree at the main checkout |
-| `control/inventory_store.py` | `InventoryStore.save(mission_id, report)`: a local JSON file, plus `put_object` to S3 (SSE AES256) when a bucket is set; failures returned and logged, never raised. `inventory_store_from_config()` |
-| `control/mission_runner.py` (inventory) | `_HaltGate` calls `MissionRunner._observe(frame)` inside every `get_camera_frame()`; `_observe` reads `world.get_pose()` and `robot.get_scan(max_range_m=4.5)` only when `detections_fn(frame)` is not None. `_finish()` logs `summary()` and calls `inventory_sink(report)` |
+| `control/inventory_store.py` | `InventoryStore.save(mission_id, report)`: a local JSON file (written to a temporary name, fsynced, renamed, then the directory fsynced, so a cut-off save leaves the last good file; a crash's leftover `.tmp` is swept by the next save once an hour old, never this process's saves in progress; 3.55), plus `put_object` to S3 (SSE AES256) when a bucket is set; failures returned and logged, never raised. `inventory_store_from_config()` |
+| `control/mission_runner.py` (inventory) | `_HaltGate` calls `MissionRunner._observe(frame)` inside every `get_camera_frame()`; `_observe` reads `world.get_pose()` and `robot.get_scan(max_range_m=4.5)` only when `detections_fn(frame)` is not None, then updates the inventory under `MissionRunner._lock` (the lock every reader takes) and drops a frame that lands after the mission ended, before its reads (`_ended()`, the rule `_finish` uses; 3.55). `_finish()` logs `summary()`, which may not raise on the way to the stop, and calls `inventory_sink(report)` |
 | `control/perception_eval.py` | P3's corpus scorer: `score` and `compare` subcommands. Reads each walk's `labels.json`; refuses a walk without one. |
 | `control/target_probe.py` | Pre-flight for a target string: firing rate and peak probability over a fixed random sample of existing frames. |
 | `tools/contact_sheet.py`, `tools/label_prepass.py` | Labelling aids for a walk's `labels.json`: contact sheets to adjudicate by eye, and a two-opinion pre-pass (OWLv2 against the shipped tier) that bounds what needs eyeballing. One-off evaluation helpers; the recordings domain owns `labels.json` itself |
@@ -182,9 +182,13 @@ them):
 
 Config keys (`brain:` block): `inventory_dir` (`recordings/inventory`),
 `inventory_bucket` (`""`; env `INVENTORY_BUCKET`, which
-`service/tunnel/run.sh` reads from the recordings stack's export),
+`service/tunnel/run.sh` reads from the recordings stack's export unless
+it is set, and leaves it unset if the lookup fails;
+`INVENTORY_BUCKET=` (empty) means local only and overrides a bucket in
+the yaml, 3.55),
 `inventory_prefix` (`inventory`). Objects land at
-`s3://<bucket>/<prefix>/<hostname>/<UTC time>-<target>.json`.
+`s3://<bucket>/<prefix>/<hostname>/<UTC time to the microsecond>-<target>.json`
+(to the second before 3.55, when two quick missions shared a key).
 
 ## Procedures
 
@@ -297,8 +301,8 @@ detector errors and prints recall, placement, duplicates and precision;
 | `tests/test_target_probe.py` (2) | handoff 4h, fake pipeline: the probe's peak and its hits at `--gate` are taken over every candidate, so a prompt grounding below 0.8 is not called inert and a gate below 0.8 counts hits |
 | `tests/test_tiered.py` (92) | corroboration verdicts, a wedged camera is not a failure to corroborate, landed async verdicts shown once |
 | `tests/test_brain_server.py` | missing extras or bad weights refuse at start, health reports availability and the effective gate, a simulated robot loads no model, a real camera is never taken for the sim (the start-time probe frame) |
-| `tests/test_inventory.py` | placement and the compass convention, the lidar offset, one pose is one look (red on a per-frame count), misses need view + range + no occlusion, a skipped frame says nothing, a wrong label is a vote, single linkage and its bridge (red without it), another map's pose refused |
-| `tests/test_inventory_mission.py` | criterion 1 (identical actions with it on and off, frontier and tiered, three houses), no agent holds it, criteria 3-5 on four pinned sweep missions, the capture-time pose, no reads for a frame without detections, no inventory failure fails a mission, the sink, the store (local + S3 + failure), the route |
+| `tests/test_inventory.py` | placement and the compass convention, the lidar offset, one pose is one look (red on a per-frame count), misses need view + range + no occlusion, a skipped frame says nothing, a wrong label is a vote, single linkage and its bridge (red without it), a merge inside one frame counts its look once (3.55, red without it), another map's pose refused |
+| `tests/test_inventory_mission.py` | criterion 1 (identical actions with it on and off, frontier and tiered, three houses), no agent holds it, criteria 3-5 on four pinned sweep missions, the capture-time pose, no reads for a frame without detections, no inventory failure fails a mission, the sink, the store (local + S3 + failure), the route; 3.55, each red without its fix: inventory writes under the runner lock, no frame after the end, a failing summary still stops the robot, a cut-off save keeps the last good file, `INVENTORY_BUCKET=` is local only, two missions in one second get two files |
 | `tests/test_bearing_turns.py`, `tests/test_arrival.py` | the consumers, driven by `FrameReportedPipeline` (1.12) |
 
 No automated test loads a model; the concrete backends' model-touching

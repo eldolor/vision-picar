@@ -298,10 +298,45 @@ def venv_python(root: str) -> str:
     return py if os.path.exists(py) else sys.executable
 
 
+# Git exports its repository-local variables (GIT_DIR and friends) to a
+# hook, and every git command a child runs then acts on THIS repository,
+# whatever its cwd. The pre-push hook runs the suite, and a test that builds
+# a scratch repo in tmp_path (test_plan_section.py) re-initialised this one
+# on 2026-10-09: core.bare=true, a "t" identity, a "base" commit on the
+# branch being pushed, a stray branch. The list is git's own
+# (`git rev-parse --local-env-vars`), less GIT_CONFIG_COUNT: with
+# GIT_CONFIG_KEY_n/VALUE_n it carries config the environment itself
+# injects (the cloud git proxy's), not a pointer to a repository.
+_LOCAL_GIT_VARS_FALLBACK = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS",
+    "GIT_OBJECT_DIRECTORY", "GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE", "GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE", "GIT_PREFIX", "GIT_SHALLOW_FILE", "GIT_COMMON_DIR",
+)
+_KEEP_GIT_VARS = {"GIT_CONFIG_COUNT"}
+
+
+def repo_local_git_vars() -> tuple:
+    try:
+        out = subprocess.run(["git", "rev-parse", "--local-env-vars"], cwd="/",
+                             capture_output=True, text=True, timeout=10).stdout.split()
+    except (OSError, subprocess.SubprocessError):
+        out = []
+    return tuple(v for v in (out or _LOCAL_GIT_VARS_FALLBACK) if v not in _KEEP_GIT_VARS)
+
+
+def scrubbed_env() -> dict:
+    """This process's environment, minus the variables that would point a
+    child's git commands at this repository."""
+    drop = set(repo_local_git_vars())
+    return {k: v for k, v in os.environ.items() if k not in drop}
+
+
 def run_tests(root: str, full: bool) -> bool:
     args = [] if full else SLOW_TESTS
     return subprocess.run([venv_python(root), "-m", "pytest", "tests/", "-q",
-                           "-p", "no:cacheprovider", *args], cwd=root).returncode == 0
+                           "-p", "no:cacheprovider", *args], cwd=root,
+                          env=scrubbed_env()).returncode == 0
 
 
 def change_id(base: str, sha: str, root: str) -> str:
@@ -319,6 +354,12 @@ def change_id(base: str, sha: str, root: str) -> str:
 def cmd_gate(base: str, sha: str) -> None:
     """Called by tools/hooks/pre-push for a push of `sha` to dev."""
     root = top()
+    # Once, where the hook's GIT_DIR enters: every child from here on (the
+    # spec lint, the fast tier, anything added later) inherits a clean
+    # environment. Our own git calls below pass cwd=root, so need none.
+    clean = scrubbed_env()
+    os.environ.clear()
+    os.environ.update(clean)
     if os.path.exists(os.path.join(gate_dir(), sha)):
         return
     cid = change_id(base, sha, root) if base else ""
@@ -329,7 +370,8 @@ def cmd_gate(base: str, sha: str) -> None:
     if docs_only(files):
         print("pre-push: docs only -- running the spec lint", flush=True)
         if subprocess.run([venv_python(root), "-m", "pytest", "tests/test_spec_lint.py",
-                           "-q", "-p", "no:cacheprovider"], cwd=root).returncode:
+                           "-q", "-p", "no:cacheprovider"], cwd=root,
+                          env=scrubbed_env()).returncode:
             raise SystemExit("pre-push: spec lint failed")
         return
     if sha != git("rev-parse", "HEAD", cwd=root) or git(

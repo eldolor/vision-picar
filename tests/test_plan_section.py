@@ -107,3 +107,42 @@ def test_a_clean_rebase_keeps_the_change_id(tmp_path, monkeypatch):
     (tmp_path / "a.txt").write_text("a\nmine, edited\n")
     g("commit", "-qam", "edit")
     assert ps.change_id(theirs, g("rev-parse", "HEAD"), str(tmp_path)) != before
+
+
+def test_a_scratch_repo_never_touches_the_repo_a_hook_points_at(tmp_path, monkeypatch):
+    """2026-10-09: the pre-push hook exports GIT_DIR, the gate ran the suite,
+    and test_a_clean_rebase_keeps_the_change_id's scratch `git init` re-
+    initialised the real repository (a "t" identity, a "base" commit on the
+    branch being pushed, a stray branch). With GIT_DIR pointing at a
+    sentinel repo, a git child given scrubbed_env() must leave it alone.
+    Red with the environment passed through as it is."""
+    import subprocess as sp
+    sentinel = tmp_path / "sentinel"
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    sp.run(["git", "init", "-q", "-b", "work", str(sentinel)], check=True)
+    monkeypatch.setenv("GIT_DIR", str(sentinel / ".git"))
+    monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'core.bare'='true'")
+    env = ps.scrubbed_env()
+    assert "GIT_DIR" not in env and "GIT_CONFIG_PARAMETERS" not in env
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=scratch, check=True, env=env)
+    sp.run(["git", "config", "user.name", "t"], cwd=scratch, check=True, env=env)
+    sp.run(["git", "checkout", "-qb", "mine"], cwd=scratch, check=True, env=env)
+    monkeypatch.delenv("GIT_DIR")
+    monkeypatch.delenv("GIT_CONFIG_PARAMETERS")
+
+    def sentinel_git(*a):
+        return sp.run(["git", "-C", str(sentinel), *a], capture_output=True,
+                      text=True).stdout.strip()
+    assert sentinel_git("config", "--local", "--get", "user.name") == ""
+    assert sentinel_git("for-each-ref", "--format=%(refname:short)", "refs/heads") == ""
+    assert sentinel_git("symbolic-ref", "HEAD") == "refs/heads/work"
+    assert (scratch / ".git").is_dir()
+
+
+def test_the_scrub_keeps_the_environment_s_own_git_config():
+    """The cloud git proxy injects config via GIT_CONFIG_COUNT/KEY_n/VALUE_n
+    and needs GIT_SSL_CAINFO; scrubbing them would break every git call."""
+    drop = set(ps.repo_local_git_vars())
+    assert "GIT_DIR" in drop and "GIT_WORK_TREE" in drop and "GIT_INDEX_FILE" in drop
+    assert "GIT_CONFIG_COUNT" not in drop and "GIT_SSL_CAINFO" not in drop
