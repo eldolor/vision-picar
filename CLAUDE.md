@@ -460,7 +460,8 @@ project coherent. Their full narrative is in the archive copy.
 - **Run `/code-review` on every code change** before it is committed or
   merged.
 - **On a risky change, also run the Thermos bug pass** on the same target,
-  in parallel: `docs-review/THERMOS-BUG-PASS.md` says how. A change is
+  in parallel: `/thermos-bug-pass` runs it, and
+  `docs-review/THERMOS-BUG-PASS.md` is its rubric. A change is
   risky if it touches any of:
   * a loop that can be stopped, paused or restarted with calls in flight
     (the twin's guidance loop, `MissionRunner`, `brain_server`);
