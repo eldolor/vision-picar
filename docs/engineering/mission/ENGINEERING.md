@@ -63,12 +63,17 @@ threads; where it and this file disagree, check the code.
    that HTTP timeout, so a hang ends in httpx as `CloudUnavailable`. The
    runner's guard, `confirm_guard_s()`, sits a quarter of the deadline (at
    most 2 s) above it as a backstop; `call_with_timeout(on_start=...)` hands
-   back the thread. Before that clock starts, the policy's `wait_inflight()`
-   (if it has one) drains an async trigger call still out, under
-   `vision_timeout_s` -- its own deadline -- so a slow but healthy trigger is
-   never charged to the confirmation. If the last confirmation's thread is
-   still alive, the next waits for it up to one guard, then (still out)
-   starts no call and fails from `CloudUnavailable`. `late_ask()` (3.53)
+   back the thread. The whole step shares ONE deadline, `vision_timeout_s`
+   from its start, as before 3.56, so the arrival tick stays inside B3.3's
+   tick deadline: first the policy's `wait_inflight()` (if it has one)
+   drains an async trigger call still out, so a slow but healthy trigger is
+   never charged to the confirmation's own clock (with the call cap spent it
+   returns at once and `confirm_arrival()` refuses locally); then, if the
+   last confirmation's thread is still alive, the next waits for it up to
+   one guard, and still out starts no call and fails from
+   `CloudUnavailable`; then the call, its guard cut to what is left. Each
+   wait draws on what is left, and none is ever passed a zero timeout
+   (which `call_with_timeout` would run unbounded). `late_ask()` (3.53)
    honours the same thread: it waits up to `vision_timeout_s`, then raises
    `TimeoutError` with nothing sent, and registers its own call's thread.
 3. Exceptions: `MissionHalted` -> return False (stop landed mid-tick);

@@ -924,29 +924,42 @@ class MissionRunner:
         if confirm is None:
             return {"confirmed": False, "cloud_called": False,
                     "reason": "this policy has no cloud to confirm identity"}
-        # 3.56: an async trigger call still out is waited for first, on
-        # B3.2's own timeout (it has the triggers' 20 s deadline); only then
-        # does the confirmation's shorter clock start. A healthy but slow
-        # trigger is never charged to the confirmation.
+        # 3.56: the whole step -- waiting for calls still out, then the call
+        # -- shares ONE deadline, B3.2's `vision_timeout_s`, as it did before
+        # the confirmation had a deadline of its own. The arrival tick stays
+        # bounded, so B3.3's tick deadline never aborts a mission that B3.2
+        # should have counted.
+        deadline = time.monotonic() + self.vision_timeout_s
+
+        def left(what: str) -> float:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                # call_with_timeout(0) would run unbounded; never pass it.
+                msg = f"{what}: no time left of {self.vision_timeout_s:g}s"
+                raise VisionUnavailable(msg) from CloudUnavailable(msg)
+            return remaining
+
+        # An async trigger call still out is waited for first (its deadline
+        # is the triggers'); only then does the confirmation's own, shorter
+        # clock start, so a healthy but slow trigger is never charged to it.
         settle = getattr(self.vision_fn, "wait_inflight", None)
         if settle is not None:
             try:
-                call_with_timeout(settle, timeout_s=self.vision_timeout_s)
+                call_with_timeout(settle, timeout_s=left("waiting for an earlier cloud call"))
             except TimeoutError as e:
                 msg = f"an earlier cloud call outlived {self.vision_timeout_s:g}s"
                 raise VisionUnavailable(msg) from CloudUnavailable(msg)
-        guard = self.confirm_guard_s()
         prev = self._confirm_thread
         if prev is not None and prev.is_alive():
-            # 3.56: the last confirmation outlived its guard and is still
-            # out. Another call beside it would break "one call in flight".
-            # Wait for it (one guard, as long as a call may take) so the
-            # budget is spent at the cloud's pace, not the tick's; still out
-            # after that, it is the same unreachable cloud.
-            prev.join(guard)
+            # The last confirmation outlived its guard and is still out.
+            # Another call beside it would break "one call in flight". Wait
+            # for it (up to one guard) so the budget is spent at the cloud's
+            # pace, not the tick's; still out, it is the same unreachable cloud.
+            prev.join(min(self.confirm_guard_s(), left("waiting for a confirmation still out")))
             if prev.is_alive():
                 msg = "the previous arrival confirmation is still in flight"
                 raise VisionUnavailable(msg) from CloudUnavailable(msg)
+        guard = min(self.confirm_guard_s(), left("the arrival confirmation"))
         try:
             return call_with_timeout(confirm, frame, timeout_s=guard,
                                      on_start=self._set_confirm_thread)

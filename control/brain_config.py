@@ -166,7 +166,7 @@ DEFAULTS = {
     # window of 0 turns it off.
     "reconfirm_probe_s": 15.0,
     "reconfirm_window_s": 600.0,
-    # 3.56 -- the arrival confirmation's own deadline (<= vision_timeout_s),
+    # 3.56 -- the arrival confirmation's own deadline (clamped to vision_timeout_s),
     # and how often the brain looks at the vision service's free /health
     # while a cloud-policy mission runs, for `status.cloud` (0 = off).
     "arrival_confirm_timeout_s": 8.0,
@@ -292,16 +292,12 @@ def load_brain_config(config_path=None) -> dict:
         merged["recording_prefix"] = os.environ["RECORDING_PREFIX"]
 
     # 3.56. A confirmation deadline longer than B3.2's is clamped to it
-    # (MissionRunner.confirm_timeout_s). Refused only when SET that way: a
-    # deployment that lowers vision_timeout_s alone keeps loading -- the
-    # walks Lambda reads this file at cold start -- and gets the clamp.
+    # (MissionRunner.confirm_timeout_s), never refused: config/robot.yaml
+    # sets this key, so a refusal would make a deployment that lowers only
+    # vision_timeout_s fail at load -- the walks Lambda's cold start.
     confirm_s = float(merged["arrival_confirm_timeout_s"])
     if confirm_s <= 0:
         raise ValueError(f"brain.arrival_confirm_timeout_s must be > 0; got {confirm_s}")
-    if "arrival_confirm_timeout_s" in brain and confirm_s > float(merged["vision_timeout_s"]):
-        raise ValueError(
-            f"brain.arrival_confirm_timeout_s ({confirm_s}) must be <= vision_timeout_s "
-            f"({merged['vision_timeout_s']})")
     if float(merged["cloud_probe_s"]) < 0:
         raise ValueError(f"brain.cloud_probe_s must be >= 0 (0 = off); "
                          f"got {merged['cloud_probe_s']}")

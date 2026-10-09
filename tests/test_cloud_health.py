@@ -464,7 +464,6 @@ def test_10_the_yaml_and_the_defaults_agree():
 @pytest.mark.parametrize("brain", [
     {"arrival_confirm_timeout_s": 0},
     {"arrival_confirm_timeout_s": -1},
-    {"arrival_confirm_timeout_s": 25.0, "vision_timeout_s": 20.0},
     {"cloud_probe_s": -1},
 ])
 def test_10_bad_values_are_refused(tmp_path, brain):
@@ -472,10 +471,18 @@ def test_10_bad_values_are_refused(tmp_path, brain):
         _load(tmp_path, **brain)
 
 
-def test_10_lowering_only_the_vision_timeout_still_loads_and_clamps(tmp_path):
-    """Self-review: a deployment that lowers vision_timeout_s alone must
-    keep loading (the walks Lambda reads this file at cold start)."""
-    config = _load(tmp_path, vision_timeout_s=5.0)
+def test_10_lowering_only_the_vision_timeout_in_the_shipped_yaml_still_loads(tmp_path):
+    """Amendment 2 (/code-review on 6c9934d): the SHIPPED yaml sets
+    arrival_confirm_timeout_s, so the check must be made against it, not a
+    stripped file. A deployment that lowers only vision_timeout_s loads (the
+    walks Lambda reads this file at cold start) and is clamped."""
+    from control.brain_config import _DEFAULT_CONFIG
+    shipped = yaml.safe_load(open(_DEFAULT_CONFIG))
+    assert "arrival_confirm_timeout_s" in shipped["brain"], "the trap this guards is gone"
+    shipped["brain"]["vision_timeout_s"] = 5.0
+    path = tmp_path / "robot.yaml"
+    path.write_text(yaml.safe_dump(shipped))
+    config = load_brain_config(str(path))
     assert config["arrival_confirm_timeout_s"] == 8.0
     runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
                            policy="tiered", vision_fn=lambda f: {},
@@ -583,6 +590,59 @@ def test_review_the_searched_rooms_reach_the_confirmation_client():
                         confirm_vision_fn=Client("confirm"))
     tier.set_searched_rooms(["kitchen", "hallway"])
     assert got == {"triggers": ["kitchen", "hallway"], "confirm": ["kitchen", "hallway"]}
+
+
+@pytest.mark.parametrize("prev_out", [False, True], ids=["fresh", "one-still-out"])
+def test_13_the_arrival_tick_stays_within_b32s_deadline(prev_out):
+    """Amendment 2 (/code-review on 6c9934d): the in-flight wait, the
+    backstop join and the call share one deadline, vision_timeout_s, so the
+    step can never outlast B3.3's tick deadline. The trigger still out ends
+    just inside B3.2's deadline (0.9 of 1.0 s); everything after it hangs."""
+    hang = threading.Event()
+
+    class Policy:
+        def wait_inflight(self):
+            time.sleep(0.9)
+
+        def confirm_arrival(self, frame):
+            hang.wait(5)
+            return {"confirmed": True, "cloud_called": True}
+
+    runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
+                           policy="tiered", vision_fn=lambda f: {},
+                           vision_timeout_s=1.0, arrival_confirm_timeout_s=0.8)
+    runner.vision_fn = Policy()
+    if prev_out:
+        out = threading.Thread(target=hang.wait, args=(5,), daemon=True)
+        out.start()
+        runner._confirm_thread = out
+    from control.mission_runner import VisionUnavailable, _caused_by
+    began = time.monotonic()
+    try:
+        with pytest.raises(VisionUnavailable) as err:
+            runner._guarded_confirm({})
+    finally:
+        hang.set()
+    took = time.monotonic() - began
+    assert took <= 1.0 + 0.5, took
+    assert _caused_by(err.value, CloudUnavailable)
+
+
+def test_review_a_spent_cap_refuses_without_waiting_for_a_call_still_out():
+    """/code-review on 6c9934d: with the call cap spent, a slow trigger still
+    out must not turn the free local refusal into a cloud failure."""
+    from concurrent.futures import Future
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud, max_calls=1,
+                        async_cloud=True)
+    tier.stats.cloud_calls = 1
+    tier._inflight = Future()                 # never completes
+    runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
+                           policy="tiered", vision_fn=tier,
+                           vision_timeout_s=1.0, arrival_confirm_timeout_s=0.8)
+    began = time.monotonic()
+    verdict = runner._guarded_confirm({})
+    assert time.monotonic() - began < 0.5
+    assert verdict["cloud_called"] is False and "cap" in verdict["reason"], verdict
 
 
 def test_10_a_confirmation_deadline_never_outlasts_b32():

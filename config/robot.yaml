@@ -331,7 +331,7 @@ brain:
   reconfirm_probe_s: 15.0
   reconfirm_window_s: 600.0
 
-  # 3.56 -- the arrival confirmation's own deadline, at most
+  # 3.56 -- the arrival confirmation's own deadline, clamped to
   # vision_timeout_s: above the slowest cloud call recorded (6.78 s of 98),
   # so a hanging cloud parks the robot at its target in ~25 s, not a minute.
   arrival_confirm_timeout_s: 8.0

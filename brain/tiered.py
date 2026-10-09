@@ -750,7 +750,10 @@ class TieredVision:
         deadline starts, under B3.2's timeout -- the trigger's call has the
         triggers' deadline, and a healthy but slow one must not be charged to
         the confirmation. `confirm_arrival()` keeps the same wait for callers
-        that do not do this first."""
+        that do not do this first. With the call cap already spent there is
+        nothing to wait for: `confirm_arrival()` refuses locally at once."""
+        if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
+            return
         fut = self._inflight
         if fut is not None:
             try:
