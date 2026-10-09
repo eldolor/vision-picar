@@ -70,10 +70,17 @@ def test_the_fast_tier_leaves_out_only_the_slow_files():
     assert set(ps.SLOW_FILES) <= set(tests)
 
 
-def test_a_clean_rebase_keeps_the_change_id(tmp_path):
+def test_a_clean_rebase_keeps_the_change_id(tmp_path, monkeypatch):
     """The gate keys a pass on the change, so a rebase onto another
     session's push does not rerun the tier; a different change does."""
     import subprocess as sp
+
+    # The pre-push hook runs this suite with git's GIT_DIR (and friends) set.
+    # Inherited, every `git` below -- config, commit, checkout -- acts on the
+    # REAL repository, not tmp_path: on 2026-10-09 it set the repo's identity
+    # to "t", moved a plan branch and created `main`/`mine` there.
+    for k in [k for k in os.environ if k.startswith("GIT_")]:
+        monkeypatch.delenv(k)
 
     def g(*a):
         return sp.run(["git", *a], cwd=tmp_path, check=True, capture_output=True,
