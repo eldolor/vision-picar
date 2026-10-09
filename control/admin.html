@@ -35,6 +35,10 @@
   .status { color: #8b92a0; margin-left: 4px; }
   .status.ok { color: #6fd08c; }
   .status.err { color: #ff8080; }
+  /* 3.64: an inline note takes its own line in a wrapping row and wraps
+     inside it, rather than running past a phone's edge at its full width.
+     Two classes, to outrank the phone layout's `.walk-actions > *`. */
+  .status.inline-err { flex: 1 1 100%; min-width: 0; margin-left: 0; overflow-wrap: anywhere; }
   .stats { color: #8b92a0; font-size: 12px; }
   .toolbar { justify-content: space-between; margin-bottom: 12px; }
   .toolbar input[type=text] { flex: 1; min-width: 160px; }

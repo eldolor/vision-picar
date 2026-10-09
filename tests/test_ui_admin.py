@@ -377,3 +377,25 @@ def test_a_timed_out_replay_waits_for_the_new_result_not_the_old_one(browser, ad
     assert lists["n"] > 3
     page.close()
     context.close()
+
+
+def test_a_kept_score_note_fits_a_phone(browser, admin_server):
+    """3.64 C3's note, found by its phone screenshot: "Only 20% of frames
+    came back -- kept the earlier score" ran past the right edge at 390 px."""
+    walks = json.loads(json.dumps(WALKS))
+    model = MODELS["models"][2]["id"]
+    kept = {"model_id": model, "prompt_variant": "default", "score": 55, "verdict": "mixed",
+            "agreement": 0.7, "replayed_at": 1.0,
+            "last_unusable": {"replayed_at": 2.0, "coverage": 0.2, "frames": 10, "errors": 8}}
+    page, errors = open_console(browser, admin_server, walks=walks, viewport=PHONE)
+    page.route("**/replays", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps({"replays": []})))
+    page.route("**/replay", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps(kept)))
+    page.locator(".replay-select").first.select_option(model + "|default")
+    note = page.locator(".inline-err").first
+    sync_api.expect(note).to_contain_text("kept the earlier score")
+    box = note.bounding_box()
+    assert box["x"] + box["width"] <= PHONE["width"], box
+    assert not errors, errors
+    page.close()

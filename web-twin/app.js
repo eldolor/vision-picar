@@ -408,7 +408,15 @@
     try { return new URL(raw.trim()).host; } catch (e) { return null; }
   }
 
+  // 3.64 B2: the values init derives FROM this page's own host (the brain
+  // on :8001, vision on the bare hostname). They are this deployment by
+  // construction, whatever their port; only a value someone saved or
+  // typed can point at another one.
+  const derivedEndpoints = {};
+
   function hostDiffersFromPage(id) {
+    const el = document.getElementById(id);
+    if (el && derivedEndpoints[id] && el.value.trim() === derivedEndpoints[id]) return false;
     const host = fieldHost(id);
     // file:// has no meaningful origin to compare against, and localhost
     // dev routinely splits the twin (:8000) from the service (:8080).
@@ -2365,10 +2373,19 @@
     } catch (e) {
       state.brainConnected = false;
       state.brainPerception = null;
-      setConnStatus(statusEl, "err", "Not connected", silent
-        ? url + " didn't respond. Tap Connect to retry."
-        : "Could not reach " + url + " (" + e.message + "). Is control/brain_server.py running?");
-      if (!silent) showToast("Couldn't reach the brain service.", "err");
+      if (!brainGone(e)) {
+        // 3.64 D7r: something answered -- most often a wrong tunnel prefix
+        // or path in the URL -- so "is it running?" points the wrong way.
+        setConnStatus(statusEl, "err", "Not connected",
+          url + " answered HTTP " + e.status + " (" + e.message + "), but not as the "
+          + "brain service. Check the address and any tunnel path prefix.");
+        if (!silent) showToast("The brain address answered, but not as the brain service.", "err");
+      } else {
+        setConnStatus(statusEl, "err", "Not connected", silent
+          ? url + " didn't respond. Tap Connect to retry."
+          : "Could not reach " + url + " (" + e.message + "). Is control/brain_server.py running?");
+        if (!silent) showToast("Couldn't reach the brain service.", "err");
+      }
     } finally {
       state.brainConnecting = false;
       setButtonBusy(btn, false);
@@ -4059,7 +4076,12 @@
       // no longer the current one -- not the error streak, not the frame
       // recorder, not the overlay. See `epoch` above.
       if (epoch !== state.guidanceEpoch) return;
+      // 3.64 A7: the pending tick was timed at dispatch from the error
+      // streak (up to 30 s); the first success after an outage replaces it
+      // with the normal throttle instead of sitting out the backoff.
+      const recovered = state.guidanceErrorStreak > 0;
       state.guidanceErrorStreak = 0;
+      if (recovered) scheduleGuidanceNext({ replace: true });
 
       // The frame and the answer it got belong together regardless of
       // arrival order, so a recorded walk keeps every pair -- including
@@ -4129,7 +4151,10 @@
       // announce once rather than on every retry.
       (isRobot ? announceRobot : announceGuidance)({ error: e.message });
     } finally {
-      state.guidanceInFlight--;
+      // 3.64 A2: only this run's calls count against this run's cap. Stop
+      // zeroes the count and bumps the epoch, so a call from before it
+      // must not take the new run's count below zero.
+      if (epoch === state.guidanceEpoch) state.guidanceInFlight--;
     }
   }
 
@@ -4631,7 +4656,11 @@
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) {
       if (state.guidanceTimerId) { clearTimeout(state.guidanceTimerId); state.guidanceTimerId = null; }
-    } else if (state.guidanceRunning && !state.guidanceTimerId && !state.guidanceInFlight) {
+    } else if (state.guidanceRunning && !state.guidanceTimerId) {
+      // 3.64 A4: not only when nothing is in flight. Hiding cleared the
+      // tick and a success never schedules one, so coming back mid-call
+      // stopped the loop for good. guidanceStep() itself waits out the
+      // in-flight cap.
       scheduleGuidanceNext();
       // The wake lock itself is auto-released by the browser on
       // backgrounding (spec behavior, not a bug) -- re-request it now that
@@ -4848,12 +4877,14 @@
     cfgUrlEl.value = isLocalHost
       ? location.protocol + "//" + location.hostname + ":8080"
       : location.protocol + "//" + location.hostname;
+    derivedEndpoints["cfg-url"] = cfgUrlEl.value;
 
     // Same convention for the brain: it runs alongside the robot server on
     // :8001 (PLAN-brain-relocation.md's topology), so the page it is served
     // by knows where to look. Only a starting point -- the brain is
     // optional, and it may be on another machine entirely.
     cfgBrainUrlEl.value = location.protocol + "//" + location.hostname + ":8001";
+    derivedEndpoints["cfg-brain-url"] = cfgBrainUrlEl.value;
   }
 
   const savedServerUrl = prefGet(PREF.serverUrl);

@@ -41,7 +41,7 @@ route requires header `x-app-secret`. `GET /health` and
 
 | Method, path | Request | 200 response | Errors |
 |---|---|---|---|
-| `GET /health` | none | `{"status": "ok"}` (no `env_label`) | none |
+| `GET /health` | none | `{"status": "ok", "env_label": <ENV_LABEL, stripped; "" when unset>}` (3.64: behind CloudFront this is what the twin's and the console's banners read) | none |
 | `POST /analyze` | `image_base64`, `media_type` (default `image/jpeg`) | `obstacles_ahead[]`, `free_space`, `doorway_visible`, `important_objects[]`, `safest_direction`, `room_guess` (from `identify_room`) | 400 bad JSON, missing `image_base64`, or base64 that cannot be decoded at all (decoding is non-strict, and the bytes are never checked to be an image: non-image bytes go to Bedrock and come back 502); 401 secret; 413 over 5 MB; 502 model failure. A body that is valid JSON but not an object (a list, a string) raises `TypeError` in `_decode_image()` and is a 500, not a 400. |
 | `POST /describe` | same as `/analyze` | `summary`, `room_type`, `objects[]` | same as `/analyze` |
 | `GET /navigate/models` | none | `default`, `models[{id,label}]`, `default_prompt`, `prompts[]` (sorted) | none |
@@ -355,10 +355,6 @@ template parameter agree; a live reply echoes the expected `model_id` and
   frames the view as the robot's. `vision_core.py`'s frames it as a photo
   taken by the owner and asks for specific object names. The schema is
   the same.
-- **`/health` reports no `env_label`,** although the template sets
-  `ENV_LABEL` on the function. The twin's environment banner asks this
-  `/health` when it is served from CloudFront, so the banner can never
-  show on the deployed twin (see the twin domain).
 - **The arrival coercion has no direct test.** No test feeds
   `_parse_navigate_json()` a string `"true"`, or `target_reached: true`
   with `target_visible: false`. The rule is pinned only by reading.

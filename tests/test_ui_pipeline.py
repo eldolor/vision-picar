@@ -67,13 +67,15 @@ class _Stub:
     """A vision service that is slow on purpose and counts overlap.
 
     `plan` optionally maps a 1-based call ordinal to (delay, action), so a
-    test can make an early call land *after* a later one.
+    test can make an early call land *after* a later one, or to (delay,
+    action, status) to make it fail. `times` holds each call's arrival.
     """
 
     def __init__(self, plan=None):
         self.lock = threading.Lock()
         self.now = self.peak = self.total = 0
         self.plan = plan or {}
+        self.times = []
         stub = self
 
         class H(BaseHTTPRequestHandler):
@@ -112,11 +114,15 @@ class _Stub:
                     stub.total += 1
                     stub.peak = max(stub.peak, stub.now)
                     ordinal = stub.total
-                delay, action = stub.plan.get(ordinal, (LATENCY_S, "RIGHT"))
+                    stub.times.append(time.monotonic())
+                delay, action, *status = stub.plan.get(ordinal, (LATENCY_S, "RIGHT"))
                 time.sleep(delay)
                 with stub.lock:
                     stub.now -= 1
-                self._send(_nav(action))
+                if status and status[0] != 200:
+                    self._send({"detail": "stub failure"}, status[0])
+                else:
+                    self._send(_nav(action))
 
             def log_message(self, *a):
                 pass
@@ -238,6 +244,73 @@ def test_concurrency_is_capped(browser, twin_server):
         page.wait_for_timeout(7000)
         assert not errors, errors
         assert stub.peak <= 2, f"exceeded the in-flight cap: peak={stub.peak}"
+        page.context.close()
+    finally:
+        stub.close()
+
+
+# ---------- 3.64: stopping, hiding and recovering with calls in flight ----------
+
+
+def test_a_restart_keeps_the_cap_after_stopping_mid_call(browser, twin_server):
+    """3.64 A2: Stop zeroed the in-flight count while calls were out; each
+    one's `finally` then took it below zero, so the next run let two MORE
+    calls fly than the cap (and a negative count reads as truthy)."""
+    stub = _Stub(plan={1: (3.0, "LEFT"), 2: (3.0, "LEFT")})
+    try:
+        page, errors = _start_robot_view(browser, twin_server, stub)
+        assert stub.now == 2
+        page.click("#btn-guidance-close")           # Stop, both calls out
+        page.wait_for_timeout(3500)                 # ...and both land
+        with stub.lock:
+            stub.peak = stub.now
+        page.click("#btn-guidance")                 # Start again
+        page.wait_for_timeout(6000)
+        assert not errors, errors
+        assert stub.peak <= 2, f"the cap was exceeded after a restart: peak={stub.peak}"
+        page.context.close()
+    finally:
+        stub.close()
+
+
+def test_coming_back_to_the_page_mid_call_keeps_the_loop_going(browser, twin_server):
+    """3.64 A4: hiding the page clears the next tick; coming back did not
+    reschedule while a call was in flight, and a success never schedules,
+    so the loop stopped for good -- Robot view sat on its last answer."""
+    stub = _Stub(plan={1: (2.5, "LEFT"), 2: (2.5, "LEFT")})
+    try:
+        page, errors = _start_robot_view(browser, twin_server, stub)
+        assert stub.now >= 1
+        page.evaluate(
+            "() => { Object.defineProperty(document, 'hidden', {configurable: true,"
+            " get: () => !!window.__hidden});"
+            " window.__hidden = true; document.dispatchEvent(new Event('visibilitychange'));"
+            " window.__hidden = false; document.dispatchEvent(new Event('visibilitychange')); }")
+        before = stub.total
+        page.wait_for_timeout(5000)
+        assert not errors, errors
+        assert stub.total > before + 1, (
+            f"no call after coming back ({stub.total} total) -- the loop stopped")
+        page.context.close()
+    finally:
+        stub.close()
+
+
+def test_the_first_success_after_an_outage_resumes_the_normal_pace(browser, twin_server):
+    """3.64 A7: the next tick's delay is set at dispatch from the error
+    streak, so after three failures the first good answer was followed by
+    the 4 s backoff anyway. A success must bring back the 0.5 s throttle."""
+    fail = (0.05, "LEFT", 500)
+    stub = _Stub(plan={1: fail, 2: fail, 3: fail, 4: (1.2, "RIGHT")})
+    try:
+        page, errors = _start_robot_view(browser, twin_server, stub)
+        page.wait_for_timeout(12000)
+        assert not errors, errors
+        assert len(stub.times) >= 5, f"only {len(stub.times)} calls"
+        gap = stub.times[4] - stub.times[3]
+        assert gap < 2.5, (
+            f"{gap:.1f} s from the first good call to the next -- the backoff "
+            "outlived the outage")
         page.context.close()
     finally:
         stub.close()

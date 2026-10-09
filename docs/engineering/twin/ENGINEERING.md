@@ -86,7 +86,8 @@ other status means a brain answered.
 | `GET /health` | Settings connection check, plus a same-origin comparison |
 
 The page also fetches a relative `GET <page dir>/health` for the
-environment banner (`env_label`).
+environment banner (`env_label`). Deployed, that is the vision service's
+`/health`, which returns `env_label` since 3.64.
 
 **Magic-link query parameters:** `secret` (vision), `robotSecret`,
 `brainSecret`, `visionUrl`, `serverUrl`, `brainUrl`. They are read once
@@ -123,10 +124,10 @@ shared with the tunnel proxy").
 | Constant | Value | Unit | Where | Why |
 |---|---|---|---|---|
 | `GUIDANCE_THROTTLE_MS`, `ROBOT_THROTTLE_MS` | 500 | ms | Guide loop | Gap between dispatches |
-| `GUIDANCE_MAX_IN_FLIGHT` | 2 (1 under Drive via brain) | calls | `guidanceStep()` | At 8 concurrent replay workers Bedrock throttled 10 of 22 frames; a mission must decide from the current frame. `guidanceStep()` also returns at once while the run is paused (3.53): a tick scheduled before the pause used to dispatch anyway and reset the caption to "Deciding..." |
+| `GUIDANCE_MAX_IN_FLIGHT` | 2 (1 under Drive via brain) | calls | `guidanceStep()` | At 8 concurrent replay workers Bedrock throttled 10 of 22 frames; a mission must decide from the current frame. `guidanceStep()` also returns at once while the run is paused (3.53): a tick scheduled before the pause used to dispatch anyway and reset the caption to "Deciding...". Stop zeroes the count and bumps `guidanceEpoch`; a call from an earlier epoch never decrements it (3.64), and coming back to a hidden page reschedules even with calls in flight |
 | `LATE_POLL_MS` | 3000 | ms | `watchLateConfirmation()` | The brain probes the cloud every 15 s (3.53); slower than the mission poll on purpose |
 | `--accent-warn` | `#F2C94C` | colour | `.warn`, `.v-warn`, `.toast.warn` | 3.53: neither success nor failure -- `arrived_unconfirmed` |
-| Error backoff | `min(30000, base * 2^streak)` | ms | Guide loop | Replaces the scheduled tick rather than adding to it |
+| Error backoff | `min(30000, base * 2^streak)` | ms | Guide loop | Replaces the scheduled tick rather than adding to it; the first success after failures replaces it back with the base throttle (3.64) |
 | `GUIDANCE_MAX_CALLS`, `ROBOT_MAX_CALLS` | 120 | calls / session | Guide loop | Caps a forgotten tab's spend; reserved at dispatch |
 | `CAPTURE_MAX_DIM` | 1280 | px, long edge | capture | 960 never engaged on a 640 px stream. The recorder saves the same bytes. |
 | `GUIDANCE_STILL_SKIP_DEG_PER_SEC` / `GUIDANCE_MAX_CONSECUTIVE_SKIPS` | 3 / 3 | deg/s / ticks | capture | Skip a paid call while the phone is still |
@@ -206,11 +207,11 @@ neighbours.
 
 | Test | Collected | What it pins |
 |---|---|---|
-| `tests/test_ui.py` | 128 | At `PHONE = 390x844`: the Cloud row on the Guide HUD (`CLD`, live and stale) and on the panel while a parked arrival waits; the panel's Cloud row -- unknown, `unreachable since` in the warn colour, `reachable` in the safe colour, an hour-old answer as `last seen ... at` uncoloured (by the brain's `age_s`), and never "reachable" from a brain that sends no `cloud` (3.56); `arrived_unconfirmed` as a warning on the panel (class, toast, the late answer landing, also on a page that connects after the ending; the watch stopped by a Guide start and by a dead brain, and resumed after a refused one) and on the Guide tab (an outcome, not `ERR LINK`, and the caption holds past the next tick) (3.53); the page loads with no script error; the model picker populates and is readable; endpoint notices; secret and reachability errors; recording refuses without a brain; no double walk on a double tap; the env banner; the policy pickers and hints for vision and tiered; the depth strip (zones, path, blind and unmeasurable states, the missing route); the turn step sent and remembered; driver and refusal readouts; the health line (ok, unhealthy, a robot against a wall still ok); spin and sized turns; brain auto-reconnect; tier readouts and "not enforced" corroboration; the Arrival row (a refusal in the alert colour with the cloud's reason, an arrival with its range and the cloud's confirmation, nothing before a judgement, readable at 390 px); the cloud check's cross-origin diagnosis; the ngrok header only to tunnel hosts; odometry; the pacing row; the map at server size, unknown cells, the SLAM ghost, tap-to-goal only on SLAM |
-| `tests/test_ui_pipeline.py` | 5 | Against a real threaded stub: calls overlap, concurrency is capped, an overtaken answer is not drawn, overlapping frames get distinct sequence numbers, a previous session's answer never reaches the next |
+| `tests/test_ui.py` | 130 | At `PHONE = 390x844`: the Cloud row on the Guide HUD (`CLD`, live and stale) and on the panel while a parked arrival waits; the panel's Cloud row -- unknown, `unreachable since` in the warn colour, `reachable` in the safe colour, an hour-old answer as `last seen ... at` uncoloured (by the brain's `age_s`), and never "reachable" from a brain that sends no `cloud` (3.56); `arrived_unconfirmed` as a warning on the panel (class, toast, the late answer landing, also on a page that connects after the ending; the watch stopped by a Guide start and by a dead brain, and resumed after a refused one) and on the Guide tab (an outcome, not `ERR LINK`, and the caption holds past the next tick) (3.53); the page loads with no script error; the model picker populates and is readable; endpoint notices; secret and reachability errors; recording refuses without a brain; no double walk on a double tap; the env banner; the policy pickers and hints for vision and tiered; the depth strip (zones, path, blind and unmeasurable states, the missing route); the turn step sent and remembered; driver and refusal readouts; the health line (ok, unhealthy, a robot against a wall still ok); spin and sized turns; brain auto-reconnect; tier readouts and "not enforced" corroboration; the Arrival row (a refusal in the alert colour with the cloud's reason, an arrival with its range and the cloud's confirmation, nothing before a judgement, readable at 390 px); the cloud check's cross-origin diagnosis; the ngrok header only to tunnel hosts; odometry; the pacing row; the map at server size, unknown cells, the SLAM ghost, tap-to-goal only on SLAM; 3.64: no endpoint notice for a default derived from this page, a brain URL that answers 404 is not called unreachable |
+| `tests/test_ui_pipeline.py` | 8 | Against a real threaded stub: calls overlap, concurrency is capped, an overtaken answer is not drawn, overlapping frames get distinct sequence numbers, a previous session's answer never reaches the next; 3.64: the cap holds after Stop mid-call, coming back to the page mid-call keeps the loop going, the first success after an outage resumes the normal pace |
 | `tests/test_frame_source.py` | 3 | The readout says `server` for a real frame, and `none` (with nothing drawn) for a frame with no pixels |
 | `tests/test_static_assets.py` | 10 | Every file both pages and the manifest reference is published; keys mirror paths; `admin` stays extensionless; pages and scripts are no-cache; `sync.sh` reads the same manifest |
-| `tests/test_ui_admin.py` | 11 | The admin console at phone width (recordings domain) |
+| `tests/test_ui_admin.py` | 12 | The admin console at phone width (recordings domain) |
 
 The UI tests skip without Chromium. A green run without a browser has
 tested nothing here.
@@ -256,5 +257,8 @@ with a browser; a phone-size screenshot is part of the evidence
   cross-origin page.
 - **The endpoint mismatch notice is suppressed whenever the page's own
   host is `localhost` or `127.0.0.1`** (`hostDiffersFromPage()`), so a
-  locally loaded page pointed at another deployment gets no notice.
+  locally loaded page pointed at another deployment gets no notice. It is
+  also suppressed for a field still holding the default init derived from
+  this page's host (`derivedEndpoints`: the brain on `:8001`, vision on
+  the bare hostname; 3.64).
 - **The S1 contract button is not built.**

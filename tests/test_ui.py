@@ -477,6 +477,29 @@ def test_the_notice_names_both_hosts_when_they_differ(browser, twin_server):
     page.context.close()
 
 
+def test_no_notice_for_the_defaults_this_page_derived_itself(browser, twin_server):
+    """3.64 B2: with nothing saved, the brain field defaults to this page's
+    host on :8001 (and vision to its host with no port) -- derived FROM
+    this deployment -- yet the host-with-port comparison flagged them as
+    another deployment on every page not served from localhost."""
+    port = twin_server.rsplit(":", 1)[1]
+    context = browser.new_context(viewport=PHONE)
+    page = context.new_page()
+    page.goto(f"http://vision-picar.test:{port}/", wait_until="networkidle")
+    page.wait_for_timeout(800)
+    page.click("#btn-settings")
+    page.wait_for_timeout(300)
+    assert page.input_value("#cfg-brain-url") == "http://vision-picar.test:8001"
+    assert page.locator("#cfg-brain-url-mismatch").is_hidden()
+    assert page.locator("#cfg-url-mismatch").is_hidden()
+    # A value the person typed is still judged.
+    page.fill("#cfg-brain-url", "https://elsewhere.test")
+    page.dispatch_event("#cfg-brain-url", "change")
+    page.wait_for_timeout(200)
+    assert page.locator("#cfg-brain-url-mismatch").is_visible()
+    context.close()
+
+
 def test_the_notice_does_not_fire_for_local_development(browser, twin_server):
     """localhost routinely splits the twin (:8000) from the vision service
     (:8080). Flagging that would make the notice noise on the one setup
@@ -703,6 +726,24 @@ def test_double_tapping_start_does_not_begin_two_walks(browser, twin_server):
         "renames the first under its own loop, which is what makes frames "
         "unattributable")
     context.close()
+
+
+def test_a_brain_url_that_answers_404_is_not_called_unreachable(browser, twin_server):
+    """3.64 D7r: a wrong tunnel prefix reaches SOMETHING, which answers 404;
+    "Could not reach ... Is brain_server.py running?" sent people to restart
+    a brain that was fine. Say it answered, and what to check."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/wrong-prefix/health", lambda route: route.fulfill(
+        status=404, content_type="application/json", body='{"detail":"Not Found"}'))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/wrong-prefix")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(800)
+    text = " ".join(page.inner_text("#brain-connection-status").split())
+    assert not errors, errors
+    assert "Could not reach" not in text, text
+    assert "404" in text and "answered" in text, text
+    page.context.close()
 
 
 # ---------- the environment banner ----------
