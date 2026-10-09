@@ -147,7 +147,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   precision, 0/34 teal bin; the cloud 67.9%) but fails latency (5.58 s p90
   for the full reply, 2.84 s to its decision) and memory (3.48 GB vs 3.25);
   Cosmos-Reason2, Qwen3-VL and LFM2 confabulate; no Nemotron VL fits. Not
-  built.
+  built. 3.58: stopping at the deciding token changes no answer, but with
+  the robot stack running it fails latency (3.64 s p90, bar 3.6) and memory
+  (`MemAvailable` minimum 296 MB, bar 1 GB); not recommended. Open for the
+  user: close it, or try loading the model only at arrival.
 * **Rooms from CLIP (3.51, 3.54), merged 2026-10-09.** Zero-shot fails
   (67%); few-shot on the user's own rooms meets accuracy on three rooms
   (81%, within 1.1 points of the cloud) but not laptop-CPU cost. Not wired
