@@ -35,14 +35,19 @@ only from a viewpoint `NEW_VIEW_M` / `NEW_VIEW_DEG` away from the last one
 that counted for that landmark. Ten frames from one pose are one look: a
 detector that errs on an image errs the same way on the next, so counting
 frames would make a stationary robot certain of its own mistake. Time alone
-never makes a new look.
+never makes a new look. Looks are kept by the frame that made them (3.60), so
+a landmark never holds more hits than frames that saw it, however its parts
+were merged.
 
 A MISS is the landmark inside the camera's field, within `MISS_RANGE_M`,
 not occluded (the scan at its bearing reaches at least its range minus
-`OCCLUSION_M`), on a frame the detector ran on, with no observation joining
-it. **An isolated miss is forgiven** (3.46 amendment 2): it is held as
-pending and counts only when the next independent look also misses, and
-then both count; a hit in between clears it. One miss between hits is most
+`OCCLUSION_M`), on a frame the detector ran on and the lidar returned
+anything on (3.60), with no observation joining it and no detection of its
+label within `GROUP_DEG` of its bearing left unplaced for want of any
+return there (3.60; a return beyond `MAX_RANGE_M` spares nothing). **An isolated miss is
+forgiven** (3.46 amendment 2): it is held as pending and counts only when
+the next independent look also misses, and then both count; any sighting
+in between clears it, from a new viewpoint or not (3.60). One miss between hits is most
 often the detector dropping a box; an object that is really gone fails
 every look. Detector confidence is NOT the increment: it is uncalibrated across
 classes, the same reason the target gate thresholds `probability`.
@@ -86,7 +91,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
-from robot.safety import LIDAR_X_M
+from brain.goal_pose import _wrap
+from robot.safety import scan_points_cm
 
 # Every number below is a `[PLACEHOLDER]` set on the first half of 3.46's
 # simulator sweep and judged on the second half.
@@ -143,32 +149,25 @@ def frame_detections(frame: dict) -> Optional[list]:
     return out
 
 
-def _wrap(deg: float) -> float:
-    d = (deg + 180.0) % 360.0 - 180.0
-    return 180.0 if d == -180.0 else d
-
-
 def _sigmoid(x: float) -> float:
     return 1.0 / (1.0 + math.exp(-x))
 
 
 def scan_returns(scan: dict) -> list:
     """The scan as (bearing_deg, range_m) from the BODY CENTRE, the frame a
-    camera bearing is in. The lidar sits `LIDAR_X_M` ahead of the centre, so
-    each beam is moved back before it is compared with a camera bearing."""
+    camera bearing is in. The lidar's offset is applied by
+    `robot.safety.scan_points_cm`, the one place a scan is moved off the
+    lidar (3.60: this held its own copy)."""
     if not scan or not scan.get("usable"):
         return []
-    a0 = float(scan.get("angle_min_deg", -180.0))
-    step = float(scan.get("angle_increment_deg", 1.0))
-    out = []
-    for i, r in enumerate(scan.get("ranges_m") or []):
-        if r is None:
-            continue
-        a = math.radians(a0 + i * step)
-        fwd = LIDAR_X_M + r * math.cos(a)
-        right = r * math.sin(a)
-        out.append((math.degrees(math.atan2(right, fwd)), math.hypot(fwd, right)))
-    return out
+    # The contract's fields, defaulted as this function always did, so a
+    # short scan reads as no returns rather than raising.
+    scan = {"angle_min_deg": float(scan.get("angle_min_deg", -180.0)),
+            "angle_increment_deg": float(scan.get("angle_increment_deg", 1.0)),
+            "ranges_m": scan.get("ranges_m") or []}
+    # scan_points_cm is x ahead, y LEFT; a bearing is clockwise.
+    return [(math.degrees(math.atan2(-y, x)), math.hypot(x, y) / 100.0)
+            for x, y in scan_points_cm(scan)]
 
 
 def range_at(returns: list, bearing_deg: float,
@@ -206,14 +205,28 @@ class Landmark:
     room: str
     first_step: Optional[int]
     points: list = field(default_factory=list)       # (x, y, label)
-    votes: Counter = field(default_factory=Counter)
     score: float = 0.0
-    hits: int = 0
-    misses: int = 0
     last_step: Optional[int] = None
+    # 3.60: looks are kept by the frame that made them, so a merge can union
+    # them -- a frame two parts both counted is still one look.
+    _looks: dict = field(default_factory=dict)        # frame -> the label it voted
+    _missed: set = field(default_factory=set)         # frames that counted a miss
     _hit_pose: Optional[dict] = None
     _miss_pose: Optional[dict] = None
-    _pending_miss: bool = False
+    _miss_frame: Optional[int] = None                 # when _miss_pose was taken
+    _pending_miss: Optional[int] = None               # the frame of a forgiven miss
+
+    @property
+    def hits(self) -> int:
+        return len(self._looks)
+
+    @property
+    def misses(self) -> int:
+        return len(self._missed)
+
+    @property
+    def votes(self) -> Counter:
+        return Counter(self._looks.values())
 
     @property
     def x(self) -> float:
@@ -290,7 +303,7 @@ class Inventory:
         self.frames += 1
         returns = scan_returns(scan)
         joined = set()      # seen in this frame (no miss for these)
-        counted = {}        # took this frame's look: id -> the label it voted (3.55)
+        unplaced = []       # (label, body bearing) seen but with no range
         for d in detections:
             label = str(d.get("label", "")).strip().lower()
             if not label or d.get("bearing_deg") is None:
@@ -300,6 +313,10 @@ class Inventory:
             rng = range_at(returns, bearing)
             if rng is None or rng > MAX_RANGE_M:
                 self.unplaced += 1
+                if rng is None:
+                    # Seen, with nothing to range it by: spares a miss. A far
+                    # return is not that -- the lidar saw past (3.60).
+                    unplaced.append((label, bearing))
                 continue
             x, y = _place(pose, bearing, rng)
             lm = self._match(label, x, y)
@@ -313,47 +330,41 @@ class Inventory:
             else:
                 lm.points.append((x, y, label))
             lm.last_step = step
-            self._count_look(lm, label, x, y, pose, joined, counted)
+            self._count_look(lm, label, x, y, pose, joined)
+            # 3.60: seen again, from anywhere, so the last miss was the
+            # detector dropping it -- not only when this look counted.
+            lm._pending_miss = None
             joined.add(lm.id)
-        self._misses(pose, returns, pan_deg, fov_deg, joined)
+        if returns:
+            # 3.60: no scan, no miss. Without one nothing seen could be
+            # placed (so nothing joined) and nothing can be found occluded.
+            self._misses(pose, returns, pan_deg, fov_deg, joined, unplaced)
 
     def _count_look(self, lm: Landmark, label: str, x: float, y: float, pose: dict,
-                    joined: set, counted: dict) -> None:
+                    joined: set) -> None:
         """This frame's look at `lm`, after the point (x, y) was added to it;
         folds in any landmarks the point now bridges (`_absorb`).
 
-        3.55: the merged object gets ONE look from this frame, in whichever
-        order the merge happens. Each landmark taking part is due its score,
-        plus one look if this pose is a new view for it and it was not
-        already counted this frame; the merged score is the largest due.
-        Its hits and votes keep one look from this frame too: when two of
-        the landmarks were each counted this frame (two detections of one
-        object, placed apart, then bridged), the second one's hit and vote
-        are taken back. With nothing to merge this is the plain rule: a
-        new viewpoint is one hit."""
+        The merged object gets ONE look from this frame, in whichever order
+        the merge happens (3.55). Each landmark taking part is due its
+        score, plus one look if this pose is a new view for it and it was
+        not already seen this frame; the merged score is the largest due.
+        Hits and votes are a look per frame by construction (3.60): looks
+        are keyed by frame, and a merge unions them. With nothing to merge
+        this is the plain rule: a new viewpoint is one hit."""
+        frame = self.frames
         others = [o for o in self.landmarks
                   if o is not lm and o.label == label and o.near(x, y, MERGE_M)]
         parts = [lm] + others
-        voted = [counted[o.id] for o in parts if o.id in counted]
         fresh = [o for o in parts if o.id not in joined and _new_view(o._hit_pose, pose)]
         deserved = max(min(SCORE_CLAMP, o.score + L_HIT) if o in fresh else o.score
                        for o in parts)
         self._absorb(lm, others)
         lm.score = deserved
-        for extra in voted[1:]:            # one look per frame, not one per part
-            lm.hits -= 1
-            lm.votes[extra] -= 1
-            if lm.votes[extra] <= 0:
-                del lm.votes[extra]
-        if voted:
-            counted[lm.id] = voted[0]
-        elif fresh:
-            lm.hits += 1
-            lm.votes[label] += 1
-            counted[lm.id] = label
-        if lm.id in counted:
+        if fresh and frame not in lm._looks:
+            lm._looks[frame] = label
+        if frame in lm._looks:
             lm._hit_pose = dict(pose)
-            lm._pending_miss = False
 
     def _match(self, label: str, x: float, y: float) -> Optional[Landmark]:
         same = [lm for lm in self.landmarks if lm.label == label and lm.near(x, y, MERGE_M)]
@@ -367,19 +378,27 @@ class Inventory:
         point within `MERGE_M` of them bridges to `keep` (found once, by
         `_count_look`) -- are folded into `keep`. The score is the larger
         one, never the sum -- two landmarks of one object may hold the same
-        look, so a merge must not raise belief by itself."""
+        look, so a merge must not raise belief by itself. Looks and misses
+        are unions by frame, and the viewpoints are whichever part's are
+        newest (3.60: the absorbed part's were dropped)."""
         for other in others:
             keep.points.extend(other.points)
-            keep.votes.update(other.votes)
+            if other._looks and max(other._looks) > max(keep._looks, default=0):
+                keep._hit_pose = other._hit_pose
+            for frame, voted in other._looks.items():
+                keep._looks.setdefault(frame, voted)
+            keep._missed |= other._missed
+            keep._missed -= keep._looks.keys()   # a frame that saw a part did not miss it
             keep.score = max(keep.score, other.score)
-            keep.hits += other.hits
-            keep.misses += other.misses
+            if other._miss_frame is not None and (keep._miss_frame is None
+                                                  or other._miss_frame > keep._miss_frame):
+                keep._miss_pose, keep._miss_frame = other._miss_pose, other._miss_frame
             if keep.first_step is None or (other.first_step is not None
                                            and other.first_step < keep.first_step):
                 keep.first_step, keep.room = other.first_step, other.room
             self.landmarks.remove(other)
 
-    def _misses(self, pose, returns, pan_deg, fov_deg, joined) -> None:
+    def _misses(self, pose, returns, pan_deg, fov_deg, joined, unplaced=()) -> None:
         half = fov_deg / 2 - MISS_FOV_MARGIN_DEG
         for lm in self.landmarks:
             if lm.id in joined:
@@ -387,18 +406,21 @@ class Inventory:
             bearing, dist = _bearing_to(pose, lm.x, lm.y)
             if abs(_wrap(bearing - pan_deg)) > half or not 0.3 <= dist <= MISS_RANGE_M:
                 continue
+            if any(label == lm.label and abs(_wrap(b - bearing)) <= GROUP_DEG
+                   for label, b in unplaced):
+                continue                      # seen there, just not ranged (3.60)
             rng = range_at(returns, bearing)
             if rng is not None and rng < dist - OCCLUSION_M:
                 continue                      # something in front of it
             if _new_view(lm._miss_pose, pose):
-                lm._miss_pose = dict(pose)
-                if not lm._pending_miss:
-                    lm._pending_miss = True        # forgiven unless the next look agrees
+                lm._miss_pose, lm._miss_frame = dict(pose), self.frames
+                if lm._pending_miss is None:
+                    lm._pending_miss = self.frames   # forgiven unless the next look agrees
                     continue
                 # Two looks in a row without it: both count.
                 lm.score = max(-SCORE_CLAMP, lm.score + 2 * L_MISS)
-                lm.misses += 2
-                lm._pending_miss = False
+                lm._missed |= {lm._pending_miss, self.frames}
+                lm._pending_miss = None
 
     # ---------- reading ----------
 

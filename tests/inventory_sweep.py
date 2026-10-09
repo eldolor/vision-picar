@@ -155,6 +155,30 @@ def _nearest_of_class(lm: dict) -> tuple:
     return min(cands, key=lambda t: t[1]) if cands else (None, float("inf"))
 
 
+class _LookCounter:
+    """3.60 criterion 4, measured from OUTSIDE the inventory: every point a
+    frame adds is tagged with that frame (by object identity -- `_absorb`
+    moves the same tuples between landmarks, so a tag survives a merge).
+    After each frame, a landmark holding more hits than distinct frames
+    among its points has counted a look twice. `violations` counts
+    landmark-frames in that state."""
+
+    def __init__(self, inventory):
+        self.inv, self.frame, self.frame_of, self.violations = inventory, 0, {}, 0
+        real = inventory.observe
+
+        def observe(*a, **kw):
+            real(*a, **kw)
+            self.frame += 1
+            for lm in self.inv.landmarks:
+                for pt in lm.points:
+                    self.frame_of.setdefault(id(pt), self.frame)
+            for lm in self.inv.landmarks:
+                if lm.hits > len({self.frame_of[id(pt)] for pt in lm.points}):
+                    self.violations += 1
+        inventory.observe = observe
+
+
 def run_one(start, *, noisy=True, seed=0, max_steps=MAX_STEPS, inventory=True) -> dict:
     (cx, cy), theta, room = start
     grid = build_world("complex_house")
@@ -164,12 +188,14 @@ def run_one(start, *, noisy=True, seed=0, max_steps=MAX_STEPS, inventory=True) -
     runner = MissionRunner(robot, target_object=ABSENT_TARGET, max_steps=max_steps,
                            policy="frontier", world=mock_world_for(robot),
                            inventory=inventory, detections_fn=det)
+    honesty = _LookCounter(runner.inventory) if inventory else None
     t0 = time.perf_counter()
     runner.start()
     while runner.tick():
         pass
     report = runner.inventory.report() if inventory else None
     return {"start_room": room, "report": report, "seen": det.seen,
+            "hits_over_frames": honesty.violations if honesty else None,
             "actions": [a.action for a in runner.memory.actions],
             "outcome": runner.status()["outcome"],
             "wall_s": time.perf_counter() - t0}
@@ -217,6 +243,8 @@ def score(runs: list) -> dict:
         "precision_all": all_ok / all_n if all_n else float("nan"),
         "reported": rep_n, "landmarks": all_n,
         "loop_closures": closures,   # in-process pose is truth: none can occur
+        # 3.60 criterion 4: landmark-frames holding more hits than frames.
+        "hits_over_frames": sum(r.get("hits_over_frames") or 0 for r in runs),
     }
 
 

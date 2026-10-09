@@ -305,3 +305,150 @@ def test_summary_names_what_was_reported():
     i.observe([{"label": "mug", "bearing_deg": 0.0}], _pose(0, 0, 90), _scan({0: 2.0}))
     i.observe([{"label": "mug", "bearing_deg": 0.0}], _pose(0.6, 0, 90), _scan({0: 1.4}))
     assert i.summary().startswith("inventory: 1 reported, 0 candidates from 2 frames -- mug")
+
+
+# ---------- 3.60: the seven open review claims, reproduced ----------
+
+def _two_stools_one_frame():
+    """Two detections of one stool, placed 0.7 m apart in ONE frame: two
+    landmarks, each counted on that frame (they do not bridge yet)."""
+    i = Inventory()
+    i.observe([{"label": "stool", "bearing_deg": -10.0}, {"label": "stool", "bearing_deg": 10.0}],
+              _pose(0, 0, 0), _scan({-10: 2.03, 10: 2.03}))
+    assert len(i.landmarks) == 2
+    return i
+
+
+def test_a_later_frame_join_keeps_one_look_per_frame():
+    """3.60 claim 1: landmarks counted separately on one frame and joined on
+    a LATER frame summed their hits and votes -- frame 1 counted twice
+    (hits 2 from one frame; 3.46 sweep at seed 3463: 2 such landmarks).
+    The joining frame is from the same spot, so it adds no look."""
+    i = _two_stools_one_frame()
+    i.observe([{"label": "stool", "bearing_deg": 0.0}], _pose(0, 0, 0), _scan({0: 2.0}))
+    (lm,) = i.landmarks
+    assert (lm.hits, dict(lm.votes)) == (1, {"stool": 1})
+    assert lm.score == pytest.approx(inv.L_HIT)
+
+
+def test_no_usable_scan_infers_no_miss():
+    """3.60 claim 2: with no scan there is no occlusion test and no
+    placement, so nothing seen can join -- every landmark in view took a
+    miss. A frame without a scan says nothing about what is there."""
+    for scan in ({"usable": False}, _scan()):
+        i = _seen_twice()
+        for x in (1.2, 1.8):                       # two new views in a row
+            i.observe([{"label": "mug", "bearing_deg": 0.0}], _pose(x, 0, 90), scan)
+        assert i.landmarks[0].misses == 0, scan.get("usable")
+
+
+def test_seen_without_a_range_is_not_a_miss():
+    """3.60, found by /code-review on claim 2's fix: a usable scan with no
+    return at the mug's bearing left the detection unplaced, and the mug
+    took a miss for a frame that saw it."""
+    i = _seen_twice()
+    for x in (1.2, 1.8):
+        i.observe([{"label": "mug", "bearing_deg": 0.0}], _pose(x, 0, 90), _scan({90: 1.0}))
+    assert i.landmarks[0].misses == 0
+
+
+def test_a_far_detection_does_not_spare_a_miss_the_lidar_proves():
+    """3.60, found by the Thermos bug pass on the fix above: a chair 4.5 m
+    behind where a chair WAS (beyond `MAX_RANGE_M`, so unplaced) spared the
+    gone one, though the lidar saw straight through its spot."""
+    i = Inventory()
+    i.observe([{"label": "chair", "bearing_deg": 0.0}], _pose(0, 0, 90), _scan({0: 2.5}))
+    i.observe([{"label": "chair", "bearing_deg": 0.0}], _pose(0.6, 0, 90), _scan({0: 1.9}))
+    for x in (1.2, 1.8):                            # gone; another chair far behind
+        i.observe([{"label": "chair", "bearing_deg": 0.0}], _pose(x, 0, 90),
+                  _scan({0: 4.5 + 2.5 - x}))
+    assert i.landmarks[0].misses == 2
+
+
+def test_a_short_scan_reads_as_no_returns():
+    """3.60: `scan_returns` keeps its defaults on a scan missing fields."""
+    assert scan_returns({"usable": True, "ranges_m": None}) == []
+    assert range_at(scan_returns({"usable": True, "ranges_m": [2.0] * 360}), 0.0) is not None
+
+
+def test_a_resighting_from_near_the_last_hit_clears_a_pending_miss():
+    """3.60 claim 3: the pending miss was cleared only by a COUNTED hit, so
+    seeing it again from near the last hit's spot left it pending and the
+    next miss counted both. Seen in between is not gone."""
+    i = _seen_twice()                              # last hit at (0.6, 0)
+    i.observe([], _pose(1.2, 0, 90), _scan({0: 1.3}))               # pending
+    i.observe([{"label": "mug", "bearing_deg": 0.0}], _pose(0.7, 0, 90),
+              _scan({0: 1.8}))                     # seen; not a new view
+    i.observe([], _pose(0.6, 0.6, 90), _scan({0: 1.95}))            # one miss
+    assert i.landmarks[0].misses == 0
+
+
+def _see(i, pose, points, label="bed"):
+    """Detect `label` at each map point from `pose`, with the scan's returns
+    put where those points are."""
+    seen = [inv._bearing_to(pose, x, y) for x, y in points]
+    i.observe([{"label": label, "bearing_deg": b} for b, _ in seen], pose,
+              _scan({round(b): r for b, r in seen}))
+
+
+def test_a_later_frame_join_keeps_the_newest_view():
+    """3.60 claim 5: `_absorb` kept the surviving landmark's own last
+    viewpoint and dropped the absorbed one's. A was last seen from (0, 0),
+    B from (0.4, 0); once they are one object, (0.55, 0) is 0.15 m from
+    that object's last look and is not a new one -- it was counted, judged
+    against A's spot alone."""
+    i = Inventory()
+    _see(i, _pose(0, 0, 0), [(0.0, -2.0)])              # A
+    _see(i, _pose(0.4, 0, 0), [(0.8, -2.0)])            # B, 0.8 m off: apart
+    assert len(i.landmarks) == 2
+    _see(i, _pose(0.2, 0, 0), [(0.4, -2.0)])            # bridges; new to neither
+    (lm,) = i.landmarks
+    assert lm.hits == 2
+    _see(i, _pose(0.55, 0, 0), [(0.4, -2.0)])
+    assert i.landmarks[0].hits == 2
+
+
+def test_a_later_frame_join_keeps_the_newest_miss_view():
+    """3.60 claim 5, the miss half: the merged landmark keeps the part's
+    NEWER miss viewpoint. A was last missed from (-0.6, 0.6), B later from
+    (1.4, 0.6); a miss from (1.5, 0.6) is no new look at the merged object."""
+    i = Inventory()
+    _see(i, _pose(0, 0, 0), [(0.0, -2.0)])                   # A
+    _see(i, _pose(0.8, 0, 0), [(0.8, -2.0)])                 # B; A missed (pending)
+    i.observe([], _pose(-0.6, 0.6, 0), _scan({0: 3.0}))     # A missed again: counted; B out of view
+    i.observe([], _pose(1.4, 0.6, 0), _scan({0: 3.0}))      # B missed (pending); A out of view
+    a, b = i.landmarks
+    assert (a.misses, b.misses) == (2, 0) and a._miss_frame < b._miss_frame
+    _see(i, _pose(0.4, 0.1, 0), [(0.4, -2.0)])               # bridges; new to neither
+    (lm,) = i.landmarks
+    assert lm._miss_pose["x_m"] == 1.4
+    lm._pending_miss = lm._miss_frame                        # as if one miss were held
+    misses = lm.misses
+    i.observe([], _pose(1.5, 0.6, 0), _scan({0: 3.0}))
+    assert i.landmarks[0].misses == misses
+
+
+def test_a_merge_never_counts_one_frame_as_hit_and_miss():
+    """3.60, found by /code-review: A's miss counted on the frame that
+    started B; once they are one object, that frame saw it."""
+    i = Inventory()
+    _see(i, _pose(0, 0, 0), [(0.0, -2.0)])                   # A
+    i.observe([], _pose(-0.6, 0, 0), _scan({0: 3.0}))       # A missed: pending
+    _see(i, _pose(0.8, 0, 0), [(0.8, -2.0)])                 # B; A's miss counted
+    a, b = i.landmarks
+    assert a.misses == 2
+    _see(i, _pose(0.4, 0.05, 0), [(0.4, -2.0)])              # bridges
+    (lm,) = i.landmarks
+    assert not (lm._missed & lm._looks.keys()) and lm.misses == 1
+
+def test_the_nearest_return_in_the_gate_places_it():
+    """3.60 claim 4, a DESIGN verdict pinned: the inventory places by the
+    NEAREST return within the gate, where arrival takes the median. Here a
+    jamb 1 deg off the bearing wins over the object behind it. On seed
+    3463 the median raised recall (93.5 -> 95.7%) but cost precision
+    (97.1 -> 95.7%) and duplicates (1.08 -> 1.17), so nearest stays."""
+    i = Inventory()
+    i.observe([{"label": "mug", "bearing_deg": 0.0}], _pose(), _scan({0: 2.0, 1: 0.6, -1: 2.0}))
+    assert range_at(scan_returns(_scan({0: 2.0, 1: 0.6, -1: 2.0})), 0.0) == pytest.approx(0.6, abs=1e-6)
+    (lm,) = i.landmarks
+    assert math.hypot(lm.x, lm.y) == pytest.approx(0.6, abs=0.01)

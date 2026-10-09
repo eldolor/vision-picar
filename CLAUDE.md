@@ -177,9 +177,15 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   `HANDOFF-2026-10-08-3.46-object-inventory.md`. **Review fixes (3.55),
   merged 2026-10-09:** a stop that could skip the stop command, one look
   counted twice on an in-frame merge, mission ids sharing a file,
-  `INVENTORY_BUCKET=` (empty) is now local only, durable saves. Open: a
-  later-frame join still sums hits and votes (3.46's `_absorb` rule), and
-  six `/code-review`-only findings, both listed in the 3.55 section.
+  `INVENTORY_BUCKET=` (empty) is now local only, durable saves.
+  **Accuracy (3.60), merged 2026-10-09:** 3.55's seven open claims
+  verified -- five fixed (looks and misses kept by frame, so a merge never
+  counts a frame twice; no miss without a scan or for a label seen there
+  without a range; any sighting clears a pending miss; a merge keeps the
+  newest viewpoints; the lidar offset in one place), placement by the
+  nearest return kept on data (the median traded precision and duplicates
+  for recall), the per-frame reads kept by design. Seed 3463: every 3.46
+  bar met before and after; landmarks with more hits than frames 2 -> 0.
 * **Explore's corner stalls: fixed** (3.45, merged 2026-10-09 with the
   tour criterion failed, the user's call; 3.43/3.44 before it). Frontier and
   view goals now keep the chassis' half-length plus the 20 cm stop
