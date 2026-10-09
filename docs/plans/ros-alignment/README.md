@@ -56,6 +56,7 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.45](3.45-explore-goal-choice.md) | Explore never sends goals into corners it cannot leave (2026-10-07): criteria, written before building -- confirmed by the user 2026-10-07; measured: explore met, the tour FAILED |
 | [3.46](3.46-object-inventory.md) | Object inventory: record every object seen during a search (2026-10-07): criteria, written before building -- confirmed by the user 2026-10-07 |
 | [3.47](3.47-offline-arrival.md) | An arrival the cloud could not check: arrived_unconfirmed |
+| [3.49](3.49-offline-mode.md) | Offline is a mode: what a mission must do with no network |
 | [3.50](3.50-map-persistence.md) | Saving and reloading the map: options for the user |
 | [3.51](3.51-clip-rooms.md) | Rooms from CLIP: an early read on the four rig walks |
 | [3.52](3.52-privacy.md) | Privacy: what leaves the house, and blurring people before the cloud |
