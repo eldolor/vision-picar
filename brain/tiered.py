@@ -729,7 +729,7 @@ class TieredVision:
                                      dispatched=trigger)
 
         _t0 = time.perf_counter()
-        scene = self._ask_cloud(frame)
+        scene = self.cloud_vision_fn(frame)
         self.stats.record("cloud_ms", (time.perf_counter() - _t0) * 1000)
         # The goal the stand-in holds on later free frames. Set on BOTH
         # paths: it lived only in _collect_inflight() at first, so a
@@ -737,16 +737,6 @@ class TieredVision:
         # scanning -- the exact behaviour Phase F exists to remove.
         self._last_cloud_scene = scene
         return self._annotate(scene, perception, trigger)
-
-    def _ask_cloud(self, frame: dict):
-        """Every cloud call goes through here. A failure is marked
-        `cloud_call = True` (3.47), so the runner can tell an unreachable
-        cloud from a local fault once both have become VisionUnavailable."""
-        try:
-            return self.cloud_vision_fn(frame)
-        except Exception as e:
-            e.cloud_call = True
-            raise
 
     # -- 1a: the cloud confirms identity at arrival -----------------------
 
@@ -782,7 +772,7 @@ class TieredVision:
         self.stats.triggers[TRIGGER_ARRIVAL] = self.stats.triggers.get(TRIGGER_ARRIVAL, 0) + 1
         started = time.perf_counter()
         try:
-            scene = self._ask_cloud(frame) or {}
+            scene = self.cloud_vision_fn(frame) or {}
         finally:
             self.stats.record("cloud_ms", (time.perf_counter() - started) * 1000)
         nav = scene.get("_navigate") or {}
@@ -830,7 +820,7 @@ class TieredVision:
         # first one.
         started = time.perf_counter()
         try:
-            return self._ask_cloud(frame)
+            return self.cloud_vision_fn(frame)
         finally:
             self.stats.record("cloud_ms", (time.perf_counter() - started) * 1000)
 

@@ -78,6 +78,14 @@ DEFAULT_TIMEOUT_S = 60.0
 ACTIONS = {"FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP"}
 
 
+class CloudUnavailable(RuntimeError):
+    """The cloud could not be reached or failed on its side: a transport
+    error (connection refused, DNS, a timeout) or a 5xx. Raised only here,
+    where the HTTP call is made, so a caller can tell an outage from a local
+    fault (3.47: an arrival the cloud could not check). A 4xx -- a wrong
+    secret, a bad request -- is our fault and stays a plain RuntimeError."""
+
+
 class FrameHasNoImage(ValueError):
     """The backend returned a frame with no pixels in it. A vision policy
     has nothing to look at -- see this module's docstring."""
@@ -138,7 +146,12 @@ def navigate_scene(
     url = vision_url.rstrip("/") + "/navigate"
     http = client or httpx.Client(timeout=timeout_s)
     try:
-        response = http.post(url, headers=headers, json=body, timeout=timeout_s)
+        try:
+            response = http.post(url, headers=headers, json=body, timeout=timeout_s)
+        except httpx.TransportError as e:
+            raise CloudUnavailable(f"{type(e).__name__}: {e}") from e
+        if response.status_code >= 500:
+            raise CloudUnavailable(f"HTTP {response.status_code}: {response.text[:200]}")
         if response.status_code != 200:
             raise RuntimeError(f"HTTP {response.status_code}: {response.text[:200]}")
         result = response.json()

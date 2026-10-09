@@ -389,7 +389,10 @@ class MissionAgent(ConstrainedAgent):
             # is the failure that spends B3.2's budget, MissionRunner can end
             # `arrived_unconfirmed` on an arrival judged this tick -- and on
             # no other failure. Never makes `found`.
-            e.arrival_readout = readout
+            try:
+                e.arrival_readout = readout
+            except AttributeError:  # an exception type that takes no attributes
+                pass
             raise
         self._confirmed_this_frame = bool(verdict.get("cloud_called"))
         readout = {**readout, "identity": verdict}

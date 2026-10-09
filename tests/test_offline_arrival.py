@@ -21,6 +21,7 @@ import math
 
 import pytest
 
+from brain.navigate import CloudUnavailable
 from brain.perceive import FrameReportedPipeline
 from brain.tiered import TRIGGER_ARRIVAL, TieredVision
 from control.mission_runner import (
@@ -40,7 +41,8 @@ def _quiet_logs():
 
 
 def _dead_cloud(frame):
-    raise ConnectionError("no network")
+    # What brain/navigate.py raises when the HTTP call cannot get through.
+    raise CloudUnavailable("ConnectError: no network")
 
 
 def _run(cloud_for, start, async_cloud=False, max_calls=None, policy="tiered"):
@@ -113,17 +115,16 @@ def _blip(fail_first):
     def cloud_for(tier):
         def cloud(frame):
             if 0 < tier.stats.triggers.get(TRIGGER_ARRIVAL, 0) <= fail_first:
-                raise ConnectionError("dropped")
+                raise CloudUnavailable("ConnectError: dropped")
             return _quiet_cloud(frame)
         return cloud
     return cloud_for
 
 
-@pytest.mark.parametrize("fail_first,starts", [(1, CLEAR_STARTS), (2, CLEAR_STARTS[:1])])
-def test_4_a_blip_shorter_than_the_budget_still_ends_found(fail_first, starts):
-    """Criterion 4: B3.2's budget is 3; fewer failures than that retry. All
-    12 starts at one failure (the bar); one start at two (the budget's edge)."""
-    for start in starts:
+@pytest.mark.parametrize("fail_first", [1, 2])
+def test_4_a_blip_shorter_than_the_budget_still_ends_found(fail_first):
+    """Criterion 4: B3.2's budget is 3; fewer failures than that retry."""
+    for start in CLEAR_STARTS:
         runner, _ = _run(_blip(fail_first), start)
         status = runner.status()
         assert status["outcome"] == FOUND, (start, status["log_tail"][-3:])
@@ -188,11 +189,48 @@ def test_review_a_failure_after_stop_never_rewrites_the_status():
     before = runner.status()
     err = RuntimeError("arrival confirmation failed: no network")
     err.arrival_readout = {"state": "arrived", "range_m": 0.3, "streak": 2}
-    # The first version read a field left on the agent; set it too, so this
-    # test fails on that design as well as on a regression of this one.
-    runner.agent.unconfirmed_arrival = err.arrival_readout
     runner._vision_failures = runner.max_vision_failures - 1
     assert runner._handle_vision_failure(err) is False
     after = runner.status()
     assert after["outcome"] == before["outcome"] != ARRIVED_UNCONFIRMED
     assert after["arrival"] == before["arrival"]
+
+
+def test_review_a_local_error_inside_the_cloud_call_is_not_an_outage():
+    """Second review of 3.47: only brain/navigate.py's CloudUnavailable (a
+    transport error or a 5xx) is an outage. A local error raised inside the
+    cloud function -- a frame with no image -- after a failed confirmation
+    ends `failed`."""
+    def cloud_for(tier):
+        def cloud(frame):
+            if tier.stats.triggers.get(TRIGGER_ARRIVAL, 0) == 1:
+                raise CloudUnavailable("ConnectError: no network")
+            if tier.stats.triggers.get(TRIGGER_ARRIVAL, 0) > 1:
+                raise ValueError("frame has no image")
+            return _quiet_cloud(frame)
+        return cloud
+    runner, _ = _run(cloud_for, CLEAR_STARTS[0])
+    status = runner.status()
+    assert status["outcome"] == FAILED, status["log_tail"][-3:]
+    assert "no image" in status["error"]
+
+
+def test_review_navigate_raises_cloud_unavailable_only_for_outages():
+    import httpx
+    from brain.navigate import navigate_scene
+    frame = {"image_base64": "aGk=", "metadata": {}}
+
+    def client(handler):
+        return httpx.Client(transport=httpx.MockTransport(handler))
+
+    def refused(request):
+        raise httpx.ConnectError("refused", request=request)
+    with pytest.raises(CloudUnavailable):
+        navigate_scene(frame, TARGET, "http://cloud", client=client(refused))
+    with pytest.raises(CloudUnavailable):
+        navigate_scene(frame, TARGET, "http://cloud",
+                       client=client(lambda r: httpx.Response(503, text="down")))
+    with pytest.raises(RuntimeError) as bad_secret:
+        navigate_scene(frame, TARGET, "http://cloud",
+                       client=client(lambda r: httpx.Response(401, text="no")))
+    assert not isinstance(bad_secret.value, CloudUnavailable)

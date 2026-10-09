@@ -62,14 +62,17 @@ threads; where it and this file disagree, check the code.
    `arrival_readout` (set by the agent); the runner holds it in
    `_failed_arrival` for the current run of failures, cleared with the count
    by a tick that succeeds. On the budget's last failure the mission ends
-   `arrived_unconfirmed` if `_failed_arrival` is set AND that last failure is
-   the cloud's (it carries `arrival_readout`, or its cause is marked
-   `cloud_call` by `TieredVision._ask_cloud()`); `status.arrival` becomes the
-   readout with state `unconfirmed`, and `_tier.stats` is refreshed from the
-   policy's own counters, because the held `_tier` predates the calls that
-   raised. Both writes happen under the lock and only while the mission is
-   running, so a failure landing after `stop()` changes nothing. Otherwise
-   `failed`; `Preempted` -> finish
+   `arrived_unconfirmed` if `_failed_arrival` is set AND that last failure
+   has `CloudUnavailable` (`brain/navigate.py`: a transport error or a 5xx,
+   raised where the HTTP call is made) anywhere in its cause chain
+   (`_caused_by()`); a confirmation that times out is attributed to the
+   cloud, a trigger call that times out is not. `_finish()` then sets
+   `status.arrival` to the readout with state `unconfirmed`, and refreshes
+   `_tier.stats` from the policy's own counters (`_policy_stats()`, read
+   outside the lock, never raising), in the same locked step as the outcome.
+   A failure that lands after `stop()`/`abort()` returns at once: not
+   counted, not logged, nothing written. Otherwise `failed`; `Preempted` ->
+   finish
    `preempted`; anything else -> finish `failed` ("step failed: ...").
 4. Under the lock: bump `ticks`, reset `vision_failures`, record the action,
    the turn counters, and copy `_tier`, `_perception` and `_arrival` off the
