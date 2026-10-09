@@ -230,7 +230,7 @@ same record while no mission runs. `record(up)` sets `reachable` or
 `unreachable`, moving `since` (wall-clock epoch seconds) only on a change;
 a probe that raises is `unreachable`. `GET /mission/status` and the start
 response carry `cloud: {state, since, checked_at, age_s, probes, probe_s}`
-(`age_s` measured on the brain's clock, so the twin can tell an old answer
+(`age_s` measured on the brain's clock, and `probe_s` the interval of whichever prober last answered, so the twin can tell an old answer
 from a current one without comparing clocks; `state`
 is `unknown` before the first probe), or `cloud: null` with no watch. It is
 not in `/health` (M5) and nothing reads it but the twin.

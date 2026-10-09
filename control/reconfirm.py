@@ -191,11 +191,15 @@ class CloudWatch:
         self._since: Optional[float] = None
         self._checked_at: Optional[float] = None
         self._probes = 0
+        self._last_interval_s: Optional[float] = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
-    def record(self, up: bool) -> None:
-        """One probe's answer. `since` moves only on a transition."""
+    def record(self, up: bool, interval_s: Optional[float] = None) -> None:
+        """One probe's answer. `since` moves only on a transition.
+        `interval_s` is how often the prober that sent it looks (3.53's late
+        check has its own), published as `probe_s` so a reader judges the
+        answer's age against the prober actually running."""
         state = REACHABLE if up else UNREACHABLE
         now = self.wall()
         with self._lock:
@@ -203,15 +207,18 @@ class CloudWatch:
                 self._state, self._since = state, now
             self._checked_at = now
             self._probes += 1
+            self._last_interval_s = interval_s or self.interval_s
 
-    def recording(self, probe: Callable[[], bool]) -> Callable[[], bool]:
-        """`probe`, with each answer recorded here (3.53's late check)."""
+    def recording(self, probe: Callable[[], bool],
+                  interval_s: Optional[float] = None) -> Callable[[], bool]:
+        """`probe`, with each answer recorded here (3.53's late check, which
+        passes its own interval)."""
         def recorded() -> bool:
             try:
                 up = bool(probe())
             except Exception:  # noqa: BLE001 -- a probe that raises is "down"
                 up = False
-            self.record(up)
+            self.record(up, interval_s)
             return up
         return recorded
 
@@ -224,7 +231,8 @@ class CloudWatch:
             age = None if self._checked_at is None else max(0.0, self.wall() - self._checked_at)
             return {"state": self._state, "since": self._since,
                     "checked_at": self._checked_at, "age_s": age,
-                    "probes": self._probes, "probe_s": self.interval_s}
+                    "probes": self._probes,
+                    "probe_s": self._last_interval_s or self.interval_s}
 
     def start(self) -> "CloudWatch":
         """Idempotent: one thread per watch, started on the first mission."""

@@ -603,7 +603,8 @@ def create_app(
         probe = health_probe(config["vision_url"], vision_secret,
                              timeout_s=min(3.0, config["reconfirm_probe_s"]))
         if cloud_watch is not None:
-            probe = cloud_watch.recording(probe)  # 3.56: status.cloud keeps moving
+            # 3.56: status.cloud keeps moving, aged against this prober's pace
+            probe = cloud_watch.recording(probe, config["reconfirm_probe_s"])
         state["reconfirm"] = Reconfirmer(
             runner, probe, interval_s=config["reconfirm_probe_s"],
             window_s=config["reconfirm_window_s"]).start()

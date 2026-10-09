@@ -690,6 +690,16 @@ def test_review_an_old_answer_carries_its_age():
     assert watch.snapshot()["age_s"] == 3600.0
 
 
+def test_review_probe_s_is_the_pace_of_whoever_last_probed():
+    """/code-review on 402b025: after a mission parks only 3.53's late check
+    probes, at its own interval; the twin ages answers against it."""
+    watch = CloudWatch(lambda: True, interval_s=5, active=lambda: False)
+    watch.recording(lambda: True, 15)()
+    assert watch.snapshot()["probe_s"] == 15
+    watch.recording(lambda: True)()
+    assert watch.snapshot()["probe_s"] == 5
+
+
 def test_10_a_confirmation_deadline_never_outlasts_b32():
     runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
                            policy="tiered", vision_fn=lambda f: {},
