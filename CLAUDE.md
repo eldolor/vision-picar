@@ -161,7 +161,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   reads it. Sim criteria met on fresh missions (sweep 3: recall 96.6%,
   precision 97.2%); sweep 1's recall failure is recorded. **Real frames
   give it nothing yet:** phase C (a prompt-free detector) is not built.
-  `HANDOFF-2026-10-08-3.46-object-inventory.md`.
+  `HANDOFF-2026-10-08-3.46-object-inventory.md`. **Review fixes (3.55),
+  merged 2026-10-09:** a stop that could skip the stop command, one look
+  counted twice on an in-frame merge, mission ids sharing a file,
+  `INVENTORY_BUCKET=` (empty) is now local only, durable saves. Open: a
+  later-frame join still sums hits and votes (3.46's `_absorb` rule), and
+  six `/code-review`-only findings, both listed in the 3.55 section.
 * **Explore's corner stalls: fixed** (3.45, merged 2026-10-09 with the
   tour criterion failed, the user's call; 3.43/3.44 before it). Frontier and
   view goals now keep the chassis' half-length plus the 20 cm stop
