@@ -96,16 +96,20 @@ def test_a_stop_never_forgets_the_task_a_concurrent_start_began(reconfirm_app):
             seen["task_after_stop"] = brain["task"]
             seen["stops_from_first"] = seen["spy"].stops
             # Criterion 2: a later Stop reaches the new loop.
-            steps_before = (await client.get("/mission/status")).json()["step"]
+            before = (await client.get("/mission/status")).json()
+            seen["running_before"] = before["running"]
+            seen["steps_before"] = before["step"]
             second = await client.post("/mission/stop")
             assert second.status_code == 200
-            seen["steps_before"] = steps_before
             seen["outcome"] = runners[1].status()["outcome"]
     asyncio.run(go())
 
     new_task = seen["new_task"]
     assert new_task is not None
     assert seen["task_after_stop"] is new_task, "the Stop erased the new mission's loop task"
-    assert new_task.done(), "the second Stop never reached the new loop"
+    # Criterion 2, pinned in full (review): the new mission was running and
+    # had ticked; the second Stop cancelled ITS loop and ended it `stopped`.
+    assert seen["running_before"] and seen["steps_before"] > 0, seen
+    assert new_task.cancelled(), "the second Stop never cancelled the new loop"
+    assert seen["outcome"] == "stopped", seen["outcome"]
     assert seen["stops_from_first"] == 0, "the first Stop sent a stop to the new driver"
-    assert seen["outcome"] in ("stopped", "arrived_unconfirmed", "found"), seen["outcome"]
