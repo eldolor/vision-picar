@@ -76,6 +76,7 @@ import os
 import re
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
 import httpx
@@ -511,7 +512,9 @@ def create_app(
         # is configured, to S3 (decided by the user 2026-10-07) -- on a
         # daemon thread, so an upload never holds up the end of a mission.
         store = inventory_store_from_config(config)
-        mission_id = (time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        # 3.55: microseconds, so two missions for one target started in the
+        # same second do not share a file name and S3 key.
+        mission_id = (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
                       + "-" + (req.target_object or req.target_room or "mission"))
         runner.inventory_sink = lambda report: threading.Thread(
             target=store.save, args=(mission_id, report), daemon=True).start()

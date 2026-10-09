@@ -20,16 +20,63 @@ the robot is already stopped either way.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import os
 import re
 import socket
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 _SAFE = re.compile(r"[^a-z0-9._-]+")
+
+
+def _fsync(fd: int) -> None:
+    """`os.fsync`, named here so a test can fail it for this module only."""
+    os.fsync(fd)
+
+
+def _fsync_dir(path: Path) -> None:
+    """Make a rename in `path` durable. Best effort: not every platform can
+    open a directory for fsync, and the file itself is already on disk."""
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        _fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+STALE_TMP_S = 3600
+_IN_FLIGHT: set = set()          # paths of this process's saves being written now
+_IN_FLIGHT_LOCK = threading.Lock()
+
+
+def _sweep_stale_tmp(directory: Path) -> None:
+    """A save cut off by a crash or a power loss leaves `.<name>.tmp`
+    behind (no handler runs), and mission ids are unique, so nothing ever
+    overwrites it. Remove those over an hour old -- never one of this
+    process's saves in progress (named, so a clock jump at boot cannot
+    make a live one look old). Best effort: a sweep never fails a save."""
+    with contextlib.suppress(OSError):
+        cutoff = time.time() - STALE_TMP_S
+        with _IN_FLIGHT_LOCK:
+            busy = set(_IN_FLIGHT)
+        for tmp in directory.glob(".*.json.tmp"):
+            if str(tmp) in busy:
+                continue
+            with contextlib.suppress(OSError):
+                if tmp.stat().st_mtime < cutoff:
+                    tmp.unlink()
 
 
 def _slug(text: str) -> str:
@@ -57,8 +104,30 @@ class InventoryStore:
         out = {"local": None, "s3": None, "errors": []}
         try:
             self.local_dir.mkdir(parents=True, exist_ok=True)
+            _sweep_stale_tmp(self.local_dir)
             path = self.local_dir / name
-            path.write_text(body)
+            # 3.55: write then rename, so a brain that exits mid-save (the
+            # save runs on a daemon thread) leaves no half-written file.
+            tmp = path.with_name(f".{name}.tmp")
+            with _IN_FLIGHT_LOCK:
+                _IN_FLIGHT.add(str(tmp))
+            try:
+                with open(tmp, "w") as f:
+                    f.write(body)
+                    f.flush()
+                    # Durable, not only atomic: the Jetson can lose power
+                    # seconds after a mission, and a rename to a new name
+                    # can then surface as an empty file.
+                    _fsync(f.fileno())
+                os.replace(tmp, path)
+                _fsync_dir(self.local_dir)    # ...and the rename itself
+            except BaseException:
+                with contextlib.suppress(OSError):   # never hide the real error
+                    tmp.unlink(missing_ok=True)
+                raise
+            finally:
+                with _IN_FLIGHT_LOCK:
+                    _IN_FLIGHT.discard(str(tmp))
             out["local"] = str(path)
         except OSError as exc:
             out["errors"].append(f"local: {exc}")

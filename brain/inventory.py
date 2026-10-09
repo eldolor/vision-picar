@@ -289,7 +289,8 @@ class Inventory:
             return
         self.frames += 1
         returns = scan_returns(scan)
-        joined = set()
+        joined = set()      # seen in this frame (no miss for these)
+        counted = {}        # took this frame's look: id -> the label it voted (3.55)
         for d in detections:
             label = str(d.get("label", "")).strip().lower()
             if not label or d.get("bearing_deg") is None:
@@ -303,20 +304,56 @@ class Inventory:
             x, y = _place(pose, bearing, rng)
             lm = self._match(label, x, y)
             if lm is None:
-                lm = Landmark(id=self._next_id, room=room, first_step=step)
+                # 3.55: never in the list without a point -- a reader
+                # (summary()) once met one between these two lines.
+                lm = Landmark(id=self._next_id, room=room, first_step=step,
+                              points=[(x, y, label)])
                 self._next_id += 1
                 self.landmarks.append(lm)
-            lm.points.append((x, y, label))
+            else:
+                lm.points.append((x, y, label))
             lm.last_step = step
-            self._absorb(lm, label, x, y)
-            if lm.id not in joined and _new_view(lm._hit_pose, pose):
-                lm.score = min(SCORE_CLAMP, lm.score + L_HIT)
-                lm.hits += 1
-                lm._pending_miss = False
-                lm.votes[label] += 1
-                lm._hit_pose = dict(pose)
+            self._count_look(lm, label, x, y, pose, joined, counted)
             joined.add(lm.id)
         self._misses(pose, returns, pan_deg, fov_deg, joined)
+
+    def _count_look(self, lm: Landmark, label: str, x: float, y: float, pose: dict,
+                    joined: set, counted: dict) -> None:
+        """This frame's look at `lm`, after the point (x, y) was added to it;
+        folds in any landmarks the point now bridges (`_absorb`).
+
+        3.55: the merged object gets ONE look from this frame, in whichever
+        order the merge happens. Each landmark taking part is due its score,
+        plus one look if this pose is a new view for it and it was not
+        already counted this frame; the merged score is the largest due.
+        Its hits and votes keep one look from this frame too: when two of
+        the landmarks were each counted this frame (two detections of one
+        object, placed apart, then bridged), the second one's hit and vote
+        are taken back. With nothing to merge this is the plain rule: a
+        new viewpoint is one hit."""
+        others = [o for o in self.landmarks
+                  if o is not lm and o.label == label and o.near(x, y, MERGE_M)]
+        parts = [lm] + others
+        voted = [counted[o.id] for o in parts if o.id in counted]
+        fresh = [o for o in parts if o.id not in joined and _new_view(o._hit_pose, pose)]
+        deserved = max(min(SCORE_CLAMP, o.score + L_HIT) if o in fresh else o.score
+                       for o in parts)
+        self._absorb(lm, others)
+        lm.score = deserved
+        for extra in voted[1:]:            # one look per frame, not one per part
+            lm.hits -= 1
+            lm.votes[extra] -= 1
+            if lm.votes[extra] <= 0:
+                del lm.votes[extra]
+        if voted:
+            counted[lm.id] = voted[0]
+        elif fresh:
+            lm.hits += 1
+            lm.votes[label] += 1
+            counted[lm.id] = label
+        if lm.id in counted:
+            lm._hit_pose = dict(pose)
+            lm._pending_miss = False
 
     def _match(self, label: str, x: float, y: float) -> Optional[Landmark]:
         same = [lm for lm in self.landmarks if lm.label == label and lm.near(x, y, MERGE_M)]
@@ -325,13 +362,13 @@ class Inventory:
         other = [lm for lm in self.landmarks if lm.near(x, y, RELABEL_M)]
         return other[0] if other else None
 
-    def _absorb(self, keep: Landmark, label: str, x: float, y: float) -> None:
-        """Complete the single linkage: a point within `MERGE_M` of other
-        same-label landmarks bridges them into `keep`. The score is the
-        larger one, never the sum -- two landmarks of one object may hold
-        the same look, so a merge must not raise belief by itself."""
-        for other in [lm for lm in self.landmarks
-                      if lm is not keep and lm.label == label and lm.near(x, y, MERGE_M)]:
+    def _absorb(self, keep: Landmark, others: list) -> None:
+        """Complete the single linkage: `others` -- same-label landmarks a
+        point within `MERGE_M` of them bridges to `keep` (found once, by
+        `_count_look`) -- are folded into `keep`. The score is the larger
+        one, never the sum -- two landmarks of one object may hold the same
+        look, so a merge must not raise belief by itself."""
+        for other in others:
             keep.points.extend(other.points)
             keep.votes.update(other.votes)
             keep.score = max(keep.score, other.score)

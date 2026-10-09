@@ -177,6 +177,85 @@ def test_a_point_between_two_landmarks_bridges_them():
     assert lm.score == pytest.approx(inv.L_HIT)   # the larger, never the sum
 
 
+def test_a_merge_inside_one_frame_counts_that_look_once():
+    """3.55, found by review: one frame's first detection gives A its hit,
+    the second matches B and folds A into it. `_absorb` carries A's score
+    and hits over, so B taking the hit as well counted one look twice
+    (4 hits from 3 looks). Red without the `joined` hand-over in observe()."""
+    i = Inventory()
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0, 0, 0), _scan({0: 2.0}))
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0.8, 0, 0), _scan({0: 2.0}))
+    assert len(i.landmarks) == 2                  # B at x=0, A at x=0.8
+    # A new viewpoint for both: one detection lands by A, the next between
+    # them -- it matches B first and bridges A in.
+    i.observe([{"label": "sofa", "bearing_deg": 9.0}, {"label": "sofa", "bearing_deg": 0.0}],
+              _pose(0.4, 1.0, 0), _scan({9: 3.04, 0: 3.0}))
+    (lm,) = i.landmarks
+    assert lm.hits == 3 and lm.votes["sofa"] == 3
+    assert lm.score == pytest.approx(2 * inv.L_HIT)   # A's or B's one look, then this one
+    # ...and the merged landmark remembers this frame as its last viewpoint,
+    # so the same look from the same spot next frame counts nothing.
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0.4, 1.0, 0), _scan({0: 3.0}))
+    assert i.landmarks[0].hits == 3
+
+
+def test_a_merge_never_loses_the_bigger_landmarks_own_look():
+    """3.55, found by the review of the fixes: when `lm` had the larger
+    score and this frame was a new view for it, the merge's max() kept
+    `lm`'s old score, so the look was lost. The merged object gets this
+    look once -- neither twice nor not at all."""
+    i = Inventory()
+    # B at (0, -2), seen from two viewpoints 0.6 m apart: two looks.
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0, 0, 0), _scan({0: 2.0}))
+    i.observe([{"label": "sofa", "bearing_deg": 17.0}], _pose(-0.6, 0, 0), _scan({17: 2.09}))
+    (b,) = i.landmarks
+    before = b.score
+    assert before == pytest.approx(2 * inv.L_HIT)
+    # One frame from a new spot: the first detection starts A (0.8 m off,
+    # unlinked); the second lands between them and bridges A into B.
+    i.observe([{"label": "sofa", "bearing_deg": 9.0}, {"label": "sofa", "bearing_deg": 0.0}],
+              _pose(0.4, 1.0, 0), _scan({9: 3.04, 0: 3.0}))
+    (lm,) = i.landmarks
+    assert lm.score == pytest.approx(min(inv.SCORE_CLAMP, before + inv.L_HIT))
+
+
+def test_a_merge_counts_the_look_once_in_the_other_order_too():
+    """3.55, found by the Thermos pass on the third round: with the OLDER,
+    smaller landmark A first in the list, a detection hits A, the next one
+    bridges B (larger, a new view from here) into A -- and B's look was
+    lost (merged 2L instead of 3L). Each landmark's due is computed before
+    the merge now, whichever survives it."""
+    i = Inventory()
+    # A at (0, -2): one look. B at (0.8, -2): two looks, created after A.
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0, 0, 0), _scan({0: 2.0}))
+    i.observe([{"label": "sofa", "bearing_deg": 0.0}], _pose(0.8, 0, 0), _scan({0: 2.0}))
+    i.observe([{"label": "sofa", "bearing_deg": -17.0}], _pose(1.4, 0, 0), _scan({-17: 2.09}))
+    a, b = i.landmarks
+    assert (a.score, b.score) == pytest.approx((inv.L_HIT, 2 * inv.L_HIT))
+    # A new spot for both: the first detection lands by A only, the second
+    # between them, matching A (first in the list) and bridging B in.
+    i.observe([{"label": "sofa", "bearing_deg": -9.0}, {"label": "sofa", "bearing_deg": 0.0}],
+              _pose(0.4, 1.0, 0), _scan({-9: 3.04, 0: 3.0}))
+    (lm,) = i.landmarks
+    assert lm.score == pytest.approx(3 * inv.L_HIT)    # B's two looks and this one
+    assert lm.hits == 4 and lm.votes["sofa"] == 4      # 1 + 2 before, this frame once
+
+
+def test_one_frame_is_one_hit_and_one_vote_even_when_it_bridges_itself():
+    """3.55, found by the Thermos pass on the fourth round: two detections
+    of one object, placed 0.7 m apart, each became a landmark and took a
+    hit; a third between them bridged the two, and `_absorb` summed their
+    hits and votes -- two looks from one frame (and only in some detection
+    orders). The score was already right."""
+    for order in ([-10.0, 10.0, 0.0], [0.0, -10.0, 10.0], [10.0, 0.0, -10.0]):
+        i = Inventory()
+        i.observe([{"label": "stool", "bearing_deg": b} for b in order], _pose(0, 0, 0),
+                  _scan({-10: 2.03, 10: 2.03, 0: 2.0}))
+        (lm,) = i.landmarks
+        assert (lm.hits, dict(lm.votes)) == (1, {"stool": 1}), order
+        assert lm.score == pytest.approx(inv.L_HIT), order
+
+
 def test_two_things_apart_are_two_landmarks():
     i = Inventory()
     i.observe([{"label": "mug", "bearing_deg": -20.0}, {"label": "shoe", "bearing_deg": 20.0}],

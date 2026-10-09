@@ -270,8 +270,11 @@ def load_brain_config(config_path=None) -> dict:
         merged["recording_backend"] = os.environ["RECORDING_BACKEND"].strip().lower()
     if os.environ.get("RECORDING_BUCKET"):
         merged["recording_bucket"] = os.environ["RECORDING_BUCKET"]
-    if os.environ.get("INVENTORY_BUCKET"):
-        merged["inventory_bucket"] = os.environ["INVENTORY_BUCKET"]
+    # 3.55: set-but-empty means "no bucket" (local only), not "unset":
+    # the opt-out is what keeps a list of what is in the house off S3, so
+    # it must win over a bucket in config/robot.yaml too.
+    if "INVENTORY_BUCKET" in os.environ:
+        merged["inventory_bucket"] = os.environ["INVENTORY_BUCKET"].strip()
     if os.environ.get("INVENTORY_DIR"):
         merged["inventory_dir"] = os.environ["INVENTORY_DIR"]
     # Same one-generic-image rule: where to ship metrics is a property of
