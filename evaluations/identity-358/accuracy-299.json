@@ -1,0 +1,44 @@
+[
+ {
+  "name": "cloud (us.anthropic.claude-opus-4-5-20251101-v1:0)",
+  "gate": 0.5,
+  "frames": 299,
+  "visible": 74,
+  "tp": 72,
+  "fp": 34,
+  "precision": 0.6792452830188679,
+  "recall": 0.972972972972973,
+  "yes_on_confabulations": 34,
+  "confabulation_frames": 34,
+  "recall_at_0fp_fitted": 0.0,
+  "separable_at_0fp": true
+ },
+ {
+  "name": "qwen25-q4-stopped-loaded",
+  "gate": 0.5,
+  "frames": 299,
+  "visible": 74,
+  "tp": 66,
+  "fp": 2,
+  "precision": 0.9705882352941176,
+  "recall": 0.8918918918918919,
+  "yes_on_confabulations": 0,
+  "confabulation_frames": 34,
+  "recall_at_0fp_fitted": 0.05405405405405406,
+  "separable_at_0fp": true
+ },
+ {
+  "name": "qwen25-q4-stopped-idle",
+  "gate": 0.5,
+  "frames": 299,
+  "visible": 74,
+  "tp": 66,
+  "fp": 2,
+  "precision": 0.9705882352941176,
+  "recall": 0.8918918918918919,
+  "yes_on_confabulations": 0,
+  "confabulation_frames": 34,
+  "recall_at_0fp_fitted": 0.05405405405405406,
+  "separable_at_0fp": true
+ }
+]

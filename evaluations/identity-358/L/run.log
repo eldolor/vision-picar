@@ -1,0 +1,11 @@
+== desktop: inactive
+== run L 16:59:12 rev c21f41d image vision-picar-ros:plan-3.58 NV Power Mode: 15W
+== MemAvailable before anything: 5964 MB
+OK: robot and brain both running c21f41d (log: /home/picar/.vision-picar-tunnel.log)
+WARNING: ngrok is not running -- the deployed twin cannot reach this machine. Start it with: ngrok start picar
+== stack up 16:59:20
+== mapped 17:02:06; MemAvailable with the stack: 5542 MB
+== window start 17:02:23; wheel (moving late max_dt): 2880 0 0.0627
+== window end 17:19:06 bench exit 0; wheel: 20392 0 0.0685
+== summary: {"window_s": 982, "mem_available_min_mb": 296, "mem_samples": 976, "oom_events": 0, "wheel_moving_ticks": 17512, "wheel_late_ticks": 0, "wheel_max_dt_since_start_s": 0.0685, "perception_frames": 3977, "perception_p90_ms": 182, "nav": "goals 47/47 succeeded", "max_temp_c": 59.906, "throttle_lines": 0}
+== torn down; desktop: active
