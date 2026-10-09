@@ -21,6 +21,7 @@ import re
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -39,7 +40,8 @@ from tests.test_explore import FakeNav
 
 REPO = Path(__file__).resolve().parent.parent
 # A port nothing listens on; with the network fixture nothing is dialled anyway.
-DEAD_URL = "http://127.0.0.1:9"
+DEAD_PORT = 9
+DEAD_URL = f"http://127.0.0.1:{DEAD_PORT}"
 
 
 @pytest.fixture(autouse=True)
@@ -53,11 +55,27 @@ def _quiet_logs():
 def no_network(monkeypatch):
     """Every outbound connection is refused, the way a dropped Wi-Fi link
     refuses it. Counts the attempts, so a test can show the cloud was
-    really dialled and really refused."""
-    attempts = []
+    really dialled and really refused.
+
+    The patch is process-wide, so threads other tests left running (a live
+    server's poller, a metrics sender) are refused and recorded too; each
+    attempt carries its thread, and `attempts.from_test()` keeps the ones
+    made by this test's own thread -- where an in-process mission ticks."""
+    test_thread = threading.get_ident()
+
+    class Attempts(list):
+        def from_test(self):
+            return [a for t, a in self if t == test_thread]
+
+        def to_cloud(self):
+            """Attempts at DEAD_URL, from any thread (the async tier dials
+            from its worker)."""
+            return [a for t, a in self if a and tuple(a[0])[-1:] == (DEAD_PORT,)]
+
+    attempts = Attempts()
 
     def refuse(*args, **kwargs):
-        attempts.append(args[1:2] or kwargs.get("address"))
+        attempts.append((threading.get_ident(), args[1:2] or kwargs.get("address")))
         raise OSError(101, "Network is unreachable")
 
     monkeypatch.setattr(socket.socket, "connect", refuse)
@@ -154,7 +172,7 @@ def test_2a_the_cloudless_policies_still_find(no_network, policy, steps):
     _, r = _mission(policy, max_steps=200, render=False)
     assert r["outcome"] == FOUND, r
     assert r["steps"] <= steps, r          # no slower than with the network
-    assert not no_network, "a cloudless policy dialled out"
+    assert not no_network.from_test(), "a cloudless policy dialled out"
 
 
 @pytest.mark.parametrize("async_cloud", [False, True], ids=["sync", "async"])
@@ -162,7 +180,7 @@ def test_2b_tiered_searches_and_arrives_offline(no_network, async_cloud):
     """From the default start the backpack is out of sight: the local tier
     searches, steers and arrives with every cloud call refused."""
     runner, r = _mission("tiered", async_cloud=async_cloud, max_steps=120)
-    assert no_network, "the cloud was never dialled -- the test proves nothing"
+    assert no_network.to_cloud(), "the cloud was never dialled -- the test proves nothing"
     assert r["outcome"] == ARRIVED_UNCONFIRMED, (r, runner.status()["log_tail"][-3:])
     assert r["end"] <= ARRIVED_CELLS, r
     assert r["closed"] >= 15.0 and r["steps"] <= 90, r      # baseline 15.35 in 83
@@ -171,7 +189,7 @@ def test_2b_tiered_searches_and_arrives_offline(no_network, async_cloud):
 
 def test_2c_the_vision_policy_fails_at_once_without_moving(no_network):
     runner, r = _mission("vision")
-    assert no_network
+    assert no_network.to_cloud(), "the cloud was never dialled"
     assert r["outcome"] == FAILED and abs(r["closed"]) < 1e-9, r
     assert "vision unavailable" in runner.status()["error"]
 
