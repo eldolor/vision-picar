@@ -121,13 +121,51 @@ def cmd_verify(args) -> None:
         print("  no p_label gate reaches 75% on the judge")
 
 
+def cmd_relabel_pilot(args) -> None:
+    """RELABEL on a few tuning frames: each box under CLIP's top name,
+    judged by the same judge. A pilot to decide whether the full judge run
+    (~$33) is worth spending -- recorded as a pilot, not a measurement."""
+    import random
+
+    from tools.inventory_label import Spend, _client, judge_one
+    vocab = load_vocab()
+    dets = json.loads((OUT / "detections.json").read_text())
+    judged = json.loads((OUT / "judge.json").read_text())
+    clip = json.loads((OUT / "clip.json").read_text())
+    sample = set(json.loads((OUT / "sample.json").read_text()))
+    pool = sorted(f for f in judged if f not in sample and f in clip)
+    frames = random.Random(args.seed).sample(pool, args.frames)
+    client, spend = _client(), Spend(args.budget)
+    rows = []
+    for fid in frames:
+        boxes = []
+        for b in object_boxes(dets[fid], vocab):
+            c = clip[fid].get(str(b["n"]))
+            if c:
+                boxes.append({**b, "label": c["top"][0][0], "p": c["top"][0][1]})
+        if not boxes or spend.over():
+            continue
+        got = judge_one(client, ROOT / fid, boxes, spend)
+        rows += [(b["p"], _correct(got["verdicts"].get(str(b["n"])))) for b in boxes]
+    rows = [(p, ok) for p, ok in rows if ok is not None]
+    print(f"{len(rows)} relabelled boxes on {len(frames)} frames; {spend.line()}")
+    for g in (0.0, 0.1, 0.2, 0.3, 0.5):
+        p, n = precision_at(rows, g)
+        print(f"  CLIP top-name probability >= {g}: precision {p:.1%} over {n} boxes")
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="python -m tools.inventory_clip")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("score")
     sub.add_parser("verify")
+    rp = sub.add_parser("relabel-pilot")
+    rp.add_argument("--frames", type=int, default=50)
+    rp.add_argument("--seed", type=int, default=3465)
+    rp.add_argument("--budget", type=float, default=3.0)
     args = ap.parse_args(argv)
-    {"score": cmd_score, "verify": cmd_verify}[args.cmd](args)
+    {"score": cmd_score, "verify": cmd_verify,
+     "relabel-pilot": cmd_relabel_pilot}[args.cmd](args)
 
 
 if __name__ == "__main__":
