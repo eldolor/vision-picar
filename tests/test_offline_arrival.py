@@ -193,7 +193,13 @@ def test_review_a_failure_after_stop_never_rewrites_the_status():
         err = e
     err.arrival_readout = {"state": "arrived", "range_m": 0.3, "streak": 2}
     runner._vision_failures = runner.max_vision_failures - 1
+    stops = []
+    runner.robot.stop = lambda *a, **k: stops.append(1)
     assert runner._handle_vision_failure(err) is False
+    # This runner no longer owns the robot: a stop now would halt whoever
+    # took it over (the third review caught one added in ed542d9).
+    assert stops == [], "a finished runner sent a stop"
+    assert runner._vision_failures == runner.max_vision_failures - 1
     after = runner.status()
     assert after["outcome"] == before["outcome"] != ARRIVED_UNCONFIRMED
     assert after["arrival"] == before["arrival"]
@@ -227,11 +233,13 @@ def _failure(message, cause=None, readout=None):
         return e
 
 
-@pytest.mark.parametrize("first,outcome", [
-    (RuntimeError("HTTP 401: bad secret"), FAILED),           # our fault: not kept
-    (CloudUnavailable("ConnectError: refused"), ARRIVED_UNCONFIRMED),
+@pytest.mark.parametrize("confirmations,outcome", [
+    ([RuntimeError("HTTP 401: bad secret")], FAILED),           # our fault: not kept
+    ([CloudUnavailable("ConnectError: refused")], ARRIVED_UNCONFIRMED),
+    # a later confirmation that is our fault drops the one held before it
+    ([CloudUnavailable("ConnectError: refused"), RuntimeError("HTTP 401: rotated")], FAILED),
 ])
-def test_review_only_a_confirmation_the_cloud_failed_is_kept(first, outcome):
+def test_review_only_a_confirmation_the_cloud_failed_is_kept(confirmations, outcome):
     """Third review: a confirmation that failed on OUR side (a 401), followed
     by outage errors from trigger calls, is not an arrival the cloud could
     not check -- `failed`. The same run with the confirmation itself an
@@ -241,8 +249,9 @@ def test_review_only_a_confirmation_the_cloud_failed_is_kept(first, outcome):
                            vision_fn=TieredVision(FrameReportedPipeline(TARGET), _dead_cloud))
     runner.start()
     readout = {"state": "arrived", "range_m": 0.3, "streak": 2}
-    runner._handle_vision_failure(_failure("arrival confirmation failed", first, readout))
-    for _ in range(runner.max_vision_failures - 1):
+    for cause in confirmations:
+        runner._handle_vision_failure(_failure("arrival confirmation failed", cause, readout))
+    for _ in range(runner.max_vision_failures - len(confirmations)):
         runner._handle_vision_failure(
             _failure("vision call failed", CloudUnavailable("ConnectError: refused")))
     assert runner.status()["outcome"] == outcome

@@ -901,18 +901,23 @@ class MissionRunner:
                 # with the count. No move executes on a failed tick, so it is
                 # where the robot is.
                 readout = getattr(error, "arrival_readout", None)
-                if readout is not None and cloud:
-                    self._failed_arrival = readout
+                if readout is not None:
+                    # A confirmation that failed on OUR side (a 401) drops
+                    # any readout held from earlier in the run.
+                    self._failed_arrival = readout if cloud else None
                 pending = self._failed_arrival
                 # Logged under the lock (the RLock _finish takes), so a
                 # stop() can never put its end line before this one.
                 self._log_line(f"vision failure {failures}/{budget}: {error}")
-        # Stop the car on every blind step, not only on the last one -- and
-        # on a late one after stop()/abort(), which must not count, log or
-        # touch the status, but costs nothing to stop again.
-        self._safe_stop()
         if not running:
+            # stop()/abort() already ended it and stopped the car. A late
+            # failure does nothing at all: not counted, not logged, and no
+            # stop -- this runner no longer owns the robot, and the server
+            # refuses nobody's stop, so one now would halt a person at the
+            # D-pad or the next mission (3.47, third review).
             return False
+        # Stop the car on every blind step, not only on the last one.
+        self._safe_stop()
         if failures < budget:
             return self._running
         # `arrived_unconfirmed` only when this run of failures includes an
