@@ -91,8 +91,8 @@ from brain.tiered import tiered_vision_fn_for
 from control import drills
 from control.brain_config import load_brain_config
 from control.inventory_store import inventory_store_from_config
-from control.mission_runner import MissionRunner
-from control.reconfirm import Reconfirmer, health_probe
+from control.mission_runner import VISION_POLICIES, MissionRunner
+from control.reconfirm import CloudWatch, Reconfirmer, health_probe
 from control.recording_routes import (  # noqa: F401 -- re-exported, see above
     FRAME_SUFFIX,
     MAX_FRAME_BYTES,
@@ -275,7 +275,7 @@ def _frames_are_simulated(robot: RobotInterface) -> bool:
 
 
 def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
-                      simulated: bool = False):
+                      simulated: bool = False, confirm_vision_fn=None):
     """Wrap the cloud vision_fn in brain/tiered.py's trigger discipline.
 
     **This is where the optional heavy dependencies are actually loaded**,
@@ -313,6 +313,8 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
         # corroboration block. It changes no decision; it puts a number on
         # the panel and in the walk so the next walks measure it.
         "corroboration_bar": config["tier_corroboration_bar"],
+        # 3.56: the arrival confirmation's own client (None: the triggers').
+        "confirm_vision_fn": confirm_vision_fn,
     }
     if simulated:
         # 1.12, built at last (PLAN-ros-alignment.md R1): the simulator
@@ -461,8 +463,21 @@ def create_app(
                 prompt_variant=prompt_variant,
             )
             if req.policy == "tiered":
+                # 3.56: the arrival confirmation gets its own client, whose
+                # HTTP deadline is the confirmation's, so a hang ends in
+                # httpx (CloudUnavailable) rather than an abandoned thread.
+                confirm_fn = vision_fn_for(
+                    req.target_object,
+                    vision_url=config["vision_url"],
+                    secret=vision_secret,
+                    timeout_s=min(config["arrival_confirm_timeout_s"],
+                                  config["vision_timeout_s"]),
+                    model_id=model_id,
+                    prompt_variant=prompt_variant,
+                )
                 vision_fn = _tiered_vision_fn(req.target_object, vision_fn, config,
-                                              simulated=_frames_are_simulated(robot))
+                                              simulated=_frames_are_simulated(robot),
+                                              confirm_vision_fn=confirm_fn)
 
         navigator = None
         if req.policy == "explore":
@@ -491,6 +506,7 @@ def create_app(
             policy=req.policy,
             vision_fn=vision_fn,
             vision_timeout_s=config["vision_timeout_s"],
+            arrival_confirm_timeout_s=config["arrival_confirm_timeout_s"],
             max_vision_failures=config["max_vision_failures"],
         )
         if navigator is not None:
@@ -550,6 +566,23 @@ def create_app(
         "reconfirm": None, "generation": 0,
     }
 
+    # 3.56: `status.cloud`. Probes the vision service's free /health only
+    # while a cloud-policy mission runs; 3.53's late check records into it
+    # afterwards, so one thing probes at a time. Never the robot, never B3.2.
+    def _cloud_mission_running() -> bool:
+        r = state["runner"]
+        return bool(r is not None and r.is_running()
+                    and getattr(r, "policy", None) in VISION_POLICIES)
+
+    cloud_watch = (
+        CloudWatch(health_probe(config["vision_url"], vision_secret,
+                                timeout_s=min(3.0, config["cloud_probe_s"])),
+                   interval_s=config["cloud_probe_s"], active=_cloud_mission_running)
+        if config["vision_url"] and config["cloud_probe_s"] > 0 else None)
+
+    def cloud_status() -> Optional[dict]:
+        return cloud_watch.snapshot() if cloud_watch is not None else None
+
     # A Stop that will start the late check itself holds the slot with this
     # across its awaits, so a second Stop cannot start another beside it,
     # and a Start in between (which empties the slot) is seen afterwards.
@@ -569,6 +602,8 @@ def create_app(
             return
         probe = health_probe(config["vision_url"], vision_secret,
                              timeout_s=min(3.0, config["reconfirm_probe_s"]))
+        if cloud_watch is not None:
+            probe = cloud_watch.recording(probe)  # 3.56: status.cloud keeps moving
         state["reconfirm"] = Reconfirmer(
             runner, probe, interval_s=config["reconfirm_probe_s"],
             window_s=config["reconfirm_window_s"]).start()
@@ -607,6 +642,11 @@ def create_app(
         return state["world"]
 
     app = FastAPI(title="vision-picar brain server")
+
+    @app.on_event("shutdown")
+    def _stop_cloud_watch():
+        if cloud_watch is not None:
+            cloud_watch.stop()
 
     # See module docstring. "" (the default) reproduces every route exactly
     # as before this existed.
@@ -681,7 +721,9 @@ def create_app(
         state["fault"] = req.fault or drills.NONE
         state["runner"] = runner
         state["task"] = asyncio.create_task(mission_loop(runner, state["generation"]))
-        return {"started": True, "status": runner.status()}
+        if cloud_watch is not None and req.policy in VISION_POLICIES:
+            cloud_watch.start()  # idempotent; probes only while such a mission runs
+        return {"started": True, "status": {**runner.status(), "cloud": cloud_status()}}
 
     @app.post(prefix + "/mission/stop", dependencies=[Depends(require_secret)])
     async def stop_mission():
@@ -756,11 +798,11 @@ def create_app(
     async def mission_status():
         runner = state["runner"]
         if runner is None:
-            return _idle_status()
+            return {**_idle_status(), "cloud": cloud_status()}
         # `fault` belongs to the request, not the mission -- the runner has
         # no idea it is a drill, which is the point of running the same
         # class either way.
-        return {**runner.status(), "fault": state["fault"]}
+        return {**runner.status(), "fault": state["fault"], "cloud": cloud_status()}
 
     async def _proxy_recording(route: str, req: BaseModel) -> dict:
         # The routes this forwards touch no robot/runner state at all --

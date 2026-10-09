@@ -83,6 +83,15 @@ DEFAULT_MIN_DISTANCE_CM = 20.0
 # back down -- see PLAN-sim-hardening.md's cost note in S2b.
 DEFAULT_MAX_STEPS = 120
 DEFAULT_VISION_TIMEOUT_S = 20.0
+# 3.56. The arrival confirmation's own deadline (the user's choice, "~8 s"):
+# above the slowest cloud call ever recorded (6.78 s of 98), so a hanging
+# cloud parks a robot at its target in about 25 s, not a minute. Never longer
+# than `vision_timeout_s`.
+DEFAULT_ARRIVAL_CONFIRM_TIMEOUT_S = 8.0
+# The runner's guard sits this far above the confirmation's own HTTP deadline,
+# so httpx ends a hang first (as CloudUnavailable) and an abandoned thread is
+# the rare backstop: a quarter of the deadline, at most 2 s.
+CONFIRM_GUARD_GRACE_MAX_S = 2.0
 DEFAULT_MAX_VISION_FAILURES = 3
 
 LOG_TAIL_LINES = 20
@@ -290,7 +299,8 @@ class _HaltGate(RobotInterface):
         return self._robot.advance(dt)
 
 
-def call_with_timeout(fn: Callable, *args, timeout_s: Optional[float] = None):
+def call_with_timeout(fn: Callable, *args, timeout_s: Optional[float] = None,
+                      on_start: Optional[Callable[[threading.Thread], None]] = None):
     """Run `fn(*args)`, raising TimeoutError if it outlasts `timeout_s`.
 
     The call runs on a daemon thread that is abandoned on timeout -- a
@@ -312,6 +322,8 @@ def call_with_timeout(fn: Callable, *args, timeout_s: Optional[float] = None):
 
     thread = threading.Thread(target=run, daemon=True, name="vision-call")
     thread.start()
+    if on_start is not None:
+        on_start(thread)  # 3.56: a caller that must not start a second call beside it
     thread.join(timeout_s)
     if thread.is_alive():
         raise TimeoutError(f"call exceeded {timeout_s}s")
@@ -345,6 +357,7 @@ class MissionRunner:
         policy: str = "frontier",
         vision_fn: Optional[Callable[[dict], dict]] = None,
         vision_timeout_s: float = DEFAULT_VISION_TIMEOUT_S,
+        arrival_confirm_timeout_s: float = DEFAULT_ARRIVAL_CONFIRM_TIMEOUT_S,
         max_vision_failures: int = DEFAULT_MAX_VISION_FAILURES,
         world: Optional[WorldInterface] = None,
         stuck_after: Optional[int] = DEFAULT_STUCK_AFTER,
@@ -431,6 +444,10 @@ class MissionRunner:
         # SafetyController (`ConstrainedAgent.sensed_scene()`).
         self.vision_fn = vision_fn
         self.vision_timeout_s = vision_timeout_s
+        self.arrival_confirm_timeout_s = arrival_confirm_timeout_s
+        # 3.56: the confirmation thread last started, so a backstop timeout
+        # never puts a second call to the cloud beside one still in flight.
+        self._confirm_thread: Optional[threading.Thread] = None
         self.max_vision_failures = max_vision_failures
 
         self.memory = MissionMemory(
@@ -885,6 +902,20 @@ class MissionRunner:
         except Exception as e:  # noqa: BLE001
             raise VisionUnavailable(f"vision call failed: {e}") from e
 
+    def confirm_timeout_s(self) -> float:
+        """3.56: the arrival confirmation's own deadline, never longer than
+        B3.2's (a drill's shortened `vision_timeout_s` shortens it too). The
+        brain builds the confirmation's HTTP client with this deadline."""
+        return min(self.arrival_confirm_timeout_s, self.vision_timeout_s)
+
+    def confirm_guard_s(self) -> float:
+        """The runner's backstop above `confirm_timeout_s()`."""
+        t = self.confirm_timeout_s()
+        return t + min(CONFIRM_GUARD_GRACE_MAX_S, 0.25 * t)
+
+    def _set_confirm_thread(self, thread: threading.Thread) -> None:
+        self._confirm_thread = thread
+
     def _guarded_confirm(self, frame: dict) -> dict:
         """The policy's `confirm_arrival` (brain/tiered.py), wrapped in
         B3.2's timeout like `_guarded_vision`. A policy without one cannot
@@ -893,12 +924,21 @@ class MissionRunner:
         if confirm is None:
             return {"confirmed": False, "cloud_called": False,
                     "reason": "this policy has no cloud to confirm identity"}
+        prev = self._confirm_thread
+        if prev is not None and prev.is_alive():
+            # 3.56: the last confirmation outlived its guard and is still
+            # out. Another call beside it would break "one call in flight";
+            # it is the same unreachable cloud, so it fails as the cloud's.
+            msg = "the previous arrival confirmation is still in flight"
+            raise VisionUnavailable(msg) from CloudUnavailable(msg)
+        guard = self.confirm_guard_s()
         try:
-            return call_with_timeout(confirm, frame, timeout_s=self.vision_timeout_s)
+            return call_with_timeout(confirm, frame, timeout_s=guard,
+                                     on_start=self._set_confirm_thread)
         except TimeoutError as e:
             # The confirmation waits only on cloud calls (brain/tiered.py
             # confirm_arrival), so its hang is the cloud's (3.47).
-            msg = f"arrival confirmation timed out after {self.vision_timeout_s}s"
+            msg = f"arrival confirmation timed out after {guard:g}s"
             raise VisionUnavailable(msg) from CloudUnavailable(msg)
         except Exception as e:  # noqa: BLE001
             raise VisionUnavailable(f"arrival confirmation failed: {e}") from e

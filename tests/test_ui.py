@@ -3469,3 +3469,48 @@ def test_a_sim_map_is_not_tappable(browser, twin_server):
     assert "tap the map" not in page.locator("#map-readout").text_content()
     assert not errors, errors
     page.close()
+
+
+# ---------- 3.56: is the cloud reachable? ----------
+
+def test_the_panel_says_whether_the_cloud_is_reachable(browser, twin_server):
+    """3.56 (approved by the user 2026-10-09). Nothing told the operator the
+    cloud was down until a mission parked. The Remote brain panel now reads
+    the brain's `status.cloud`: unknown before the first look, reachable,
+    or unreachable since a time, in the warning colour."""
+    current = {"body": {**tiered_status(), "cloud": {
+        "state": "unknown", "since": None, "checked_at": None, "probes": 0, "probe_s": 15}}}
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(current["body"])))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+
+    cloud = page.locator("#brain-tel-cloud")
+    sync_api.expect(cloud).to_contain_text("unknown", timeout=5000)
+    assert "reachable" not in cloud.inner_text(), "unknown read as reachable"
+
+    current["body"] = {**tiered_status(), "cloud": {
+        "state": "unreachable", "since": 1760000000, "checked_at": 1760000030,
+        "probes": 3, "probe_s": 15}}
+    sync_api.expect(cloud).to_contain_text("unreachable since", timeout=5000)
+    sync_api.expect(cloud).to_have_class("val warn")
+
+    current["body"] = {**tiered_status(), "cloud": {
+        "state": "reachable", "since": 1760000060, "checked_at": 1760000060,
+        "probes": 5, "probe_s": 15}}
+    sync_api.expect(cloud).to_have_text("reachable", timeout=5000)
+    sync_api.expect(cloud).to_have_class("val safe")
+
+    # A brain that predates 3.56 sends no `cloud`: a dash, never "reachable".
+    body = dict(tiered_status())
+    body.pop("cloud", None)
+    current["body"] = body
+    sync_api.expect(cloud).not_to_contain_text("reachable", timeout=5000)
+    assert not errors, errors
+    page.close()

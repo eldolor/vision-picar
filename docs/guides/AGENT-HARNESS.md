@@ -542,6 +542,7 @@ Consequences worth knowing:
 | `sighting` | step, object, room, position -- when found |
 | `log_tail` | the last 20 log lines |
 | `fault` | which drill, or `none` (added by the server, not the runner) |
+| `cloud` | 3.56: `{state, since, checked_at, probes, probe_s}` -- whether the vision service answers its free `/health` (`unknown` / `reachable` / `unreachable`); `null` without a vision service. Added by the server; a description, never a failsafe |
 | `tier` | `policy: "tiered"` only -- whether the last step called out and on which trigger, the loaded models by name, and the counters (`frames`, `cloud_calls`, `frames_per_call`). Copied straight off the scene's `_tier`, never computed here |
 | `perception` | `policy: "tiered"` only -- the last frame's tri-state, CLIP margin, matched label and bearing, off the scene's `_perception` |
 | `turns` | R1's readout: `count`, `reversals`, `last_turn_deg` (`null` for a default quarter turn), `share` (turns as a fraction of steps) and `spinning` |

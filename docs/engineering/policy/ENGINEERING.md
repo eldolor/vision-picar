@@ -71,7 +71,10 @@ frame)`, which asks `arrival_confirm_fn(frame)` -- `MissionRunner` passes
 `vision_timeout_s`, a failure raising `VisionUnavailable` into the budget;
 without a runner the agent falls back to `vision_fn.confirm_arrival`.
 `TieredVision.confirm_arrival(frame)` makes one synchronous call to the
-cloud `vision_fn` (even under `async_cloud`), counts it in `cloud_calls`
+cloud (even under `async_cloud`) -- through `confirm_vision_fn` when one was
+given (3.56: the brain's second client, built with the confirmation's
+shorter HTTP deadline), else the triggers' `cloud_vision_fn`, resolved at
+call time -- counts it in `cloud_calls`
 and in `triggers["arrival_confirmation"]` (`TRIGGER_ARRIVAL`), and confirms
 only on `_navigate.target_visible is True`; at `max_calls` it refuses
 without calling. Not confirmed, or no confirmer on the policy: the readout

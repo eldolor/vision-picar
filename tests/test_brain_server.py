@@ -1039,9 +1039,11 @@ def capture_tiered(monkeypatch, wrapped=None):
 
     seen = {}
 
-    def fake_tiered(target, cloud_vision_fn, config, simulated=False):
+    def fake_tiered(target, cloud_vision_fn, config, simulated=False,
+                    confirm_vision_fn=None):
         seen["target"] = target
         seen["cloud_vision_fn"] = cloud_vision_fn
+        seen["confirm_vision_fn"] = confirm_vision_fn  # 3.56
         seen["config"] = config
         seen["simulated"] = simulated
         return wrapped or (lambda frame: {})

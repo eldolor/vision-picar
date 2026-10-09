@@ -166,6 +166,11 @@ DEFAULTS = {
     # window of 0 turns it off.
     "reconfirm_probe_s": 15.0,
     "reconfirm_window_s": 600.0,
+    # 3.56 -- the arrival confirmation's own deadline (<= vision_timeout_s),
+    # and how often the brain looks at the vision service's free /health
+    # while a cloud-policy mission runs, for `status.cloud` (0 = off).
+    "arrival_confirm_timeout_s": 8.0,
+    "cloud_probe_s": 15.0,
     # Replaying a recorded walk (control/walk_replay.py) is a different
     # question from a live mission's vision call, and it wants a different
     # deadline. A mission is impatient on purpose -- there is a robot
@@ -285,5 +290,16 @@ def load_brain_config(config_path=None) -> dict:
         merged["metrics_secret"] = os.environ["METRICS_SECRET"].strip()
     if os.environ.get("RECORDING_PREFIX"):
         merged["recording_prefix"] = os.environ["RECORDING_PREFIX"]
+
+    # 3.56. A confirmation deadline longer than B3.2's would be clamped to it
+    # anyway (MissionRunner.confirm_timeout_s); refusing it here says so.
+    confirm_s = float(merged["arrival_confirm_timeout_s"])
+    if not 0 < confirm_s <= float(merged["vision_timeout_s"]):
+        raise ValueError(
+            f"brain.arrival_confirm_timeout_s must be > 0 and <= vision_timeout_s "
+            f"({merged['vision_timeout_s']}); got {confirm_s}")
+    if float(merged["cloud_probe_s"]) < 0:
+        raise ValueError(f"brain.cloud_probe_s must be >= 0 (0 = off); "
+                         f"got {merged['cloud_probe_s']}")
 
     return merged

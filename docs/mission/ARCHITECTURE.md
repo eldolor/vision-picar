@@ -247,8 +247,20 @@ simulator. The `vision` policy is cloud-only and ends **failed** at once.
 tiered policy already searches without the cloud.
 
 **Trade-off.** Offline, no mission ends **found**: identity is the cloud's
-question. A hanging cloud costs up to the failure budget times the vision
-timeout of parked time at arrival (60 s at the shipped 20 s).
+question. A hanging cloud costs up to the failure budget times the
+confirmation's deadline of parked time at arrival: about 25 s at the 8 s
+`arrival_confirm_timeout_s` (3.56, the user's choice), down from 60 s when
+the confirmation shared the 20 s vision timeout. 8 s sits above the slowest
+cloud call recorded (6.78 s of 98); a slower but live cloud costs a retry,
+never a wrong **found**.
+
+**The operator sees the cloud** (3.56, asked by the user 2026-10-09). While
+a mission that uses the cloud runs, the brain looks at the vision service's
+free `/health` and reports `status.cloud`: unknown, reachable, or
+unreachable since a time; the twin shows it. One thing probes at a time
+(after a mission parks, 3.53's late check does), it never touches the robot
+and it is not a failsafe -- B3.2 still decides. "Reachable" means the
+service answers; Bedrock behind it can still fail.
 
 ### Fault drills exercise the real guards
 

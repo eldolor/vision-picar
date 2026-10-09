@@ -1477,6 +1477,19 @@
       + (late ? " " + late.charAt(0).toUpperCase() + late.slice(1) + "." : "");
   }
 
+  // 3.56: the brain's `status.cloud` in words. Null when the brain has no
+  // vision service configured, or predates 3.56 -- shown as a dash, never
+  // as "reachable".
+  function cloudWords(cloud) {
+    if (!cloud || !cloud.state) return { text: null, cls: null };
+    if (cloud.state === "reachable") return { text: "reachable", cls: "safe" };
+    if (cloud.state === "unreachable") {
+      const since = cloud.since ? " since " + new Date(cloud.since * 1000).toLocaleTimeString() : "";
+      return { text: "unreachable" + since, cls: "warn" };
+    }
+    return { text: "unknown (not checked yet)", cls: null };
+  }
+
   function renderBrainStatus(status) {
     const outcome = status.outcome || "idle";
     const late = outcome === "arrived_unconfirmed" ? lateWords(status) : "";
@@ -1508,6 +1521,8 @@
     setBrainText("brain-tel-why",
       status.error || (unconfirmed ? unconfirmedText(status) : status.last_reasoning),
       status.error ? "alert" : unconfirmed ? "warn" : null);
+    const cloud = cloudWords(status.cloud);
+    setBrainText("brain-tel-cloud", cloud.text, cloud.cls);
     renderTierReadouts(status);
 
     // The mission log comes from the brain, so it is rewritten wholesale

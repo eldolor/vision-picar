@@ -665,7 +665,11 @@ finished map at mission start; N1's discovered map replaced it.)
   refusal. An `arrived_unconfirmed` ending (3.47) shows in yellow with a
   warning toast that says the identity was not checked, then the late
   check's state (`will ask again when the cloud is back`, then what the
-  cloud said, 3.53). Three R-phase additions:
+  cloud said, 3.53). **Cloud** (3.56): whether the vision service answers
+  its `/health` -- `unknown (not checked yet)`, `reachable` in green, or
+  `unreachable since 9:02:11 AM` in yellow; looked at every 15 s while a
+  cloud mission runs, a dash for a brain without a vision service. Three
+  R-phase additions:
   - **Last action names a sized turn** -- `LEFT 23°` is a correction onto a
     measured bearing (R1); a bare `LEFT` is a turn nothing sized.
   - **Turns** -- `98 of 120 steps, 0 reversed the one before`, and **SPINNING

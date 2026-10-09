@@ -21,7 +21,7 @@ threads; where it and this file disagree, check the code.
 |---|---|
 | `control/brain_server.py` | FastAPI app (`create_app()`, module-level `app`). One mission slot in a `state` dict, the asyncio `mission_loop()` that runs `runner.tick` on a worker thread under B3.3's deadline, start-time validation, the policy wiring (`vision_fn_for`, `_tiered_vision_fn`), and the health route. |
 | `control/mission_runner.py` | `MissionRunner` (lifecycle, outcomes, status, B3.2), `_HaltGate` (a `RobotInterface` wrapper), `call_with_timeout()` (daemon-thread timeout), the outcome constants and `POLICIES`. |
-| `control/reconfirm.py` | 3.53: `Reconfirmer` (one late identity check for one finished runner, on a daemon thread: free `GET <vision_url>/health` probes, then ONE paid `runner.late_ask()`; bounded by `reconfirm_window_s` and two paid attempts; `cancel(reason)` records `dropped`) and `health_probe()`. Never touches the robot. |
+| `control/reconfirm.py` | 3.53: `Reconfirmer` (one late identity check for one finished runner, on a daemon thread: free `GET <vision_url>/health` probes, then ONE paid `runner.late_ask()`; bounded by `reconfirm_window_s` and two paid attempts; `cancel(reason)` records `dropped`) and `health_probe()`. 3.56: `CloudWatch` (`status.cloud`: `unknown` / `reachable` / `unreachable` since a time, from the same free probe, only while a cloud-policy mission runs). Never touches the robot. |
 | `control/brain_config.py` | `load_brain_config()`: reads only the `brain:` block of `config/robot.yaml`, merges it over `DEFAULTS`, applies env overrides, and raises `ValueError` on an unknown key. Deliberately does not import `robot/factory.py`. |
 | `control/drills.py` | `FAULTS`, `apply()` (folds a fault into the runner kwargs), `TickHangRunner`, the stand-in vision functions. |
 | `control/remote_robot.py` | `RemoteRobot`, the body client; sends `x-driver: brain` (`DEFAULT_DRIVER`). Owned by the body domain; listed because the brain builds it. |
@@ -54,9 +54,17 @@ threads; where it and this file disagree, check the code.
    call in `call_with_timeout(..., vision_timeout_s)`, converting any error to
    `VisionUnavailable`. On an arrival the agent makes a second guarded call,
    `_guarded_confirm()` -- the policy's `confirm_arrival(frame)` under the same
-   timeout and error mapping, so it counts against the same B3.2 budget
+   error mapping, so it counts against the same B3.2 budget
    ([policy engineering](../policy/ENGINEERING.md), "Arrival"). A policy with
    no `confirm_arrival` never confirms, and its arrivals never end `found`.
+   Since 3.56 the confirmation has its own deadline,
+   `confirm_timeout_s()` = min(`arrival_confirm_timeout_s` (8 s),
+   `vision_timeout_s`); the brain builds the tier's `confirm_vision_fn` with
+   that HTTP timeout, so a hang ends in httpx as `CloudUnavailable`. The
+   runner's guard, `confirm_guard_s()`, sits a quarter of the deadline (at
+   most 2 s) above it as a backstop; `call_with_timeout(on_start=...)` hands
+   back the thread, and if the last confirmation's thread is still alive
+   the next one starts no call and fails at once, from `CloudUnavailable`.
 3. Exceptions: `MissionHalted` -> return False (stop landed mid-tick);
    `VisionUnavailable` -> `_handle_vision_failure()`. An arrival
    confirmation that raised carries that tick's readout as
@@ -198,6 +206,21 @@ a check only if its generation is still current. Both
 `reconfirm_probe_s` and `reconfirm_window_s` must be positive, or it is
 off. The outcome is never rewritten, `memory.found` stays false, and
 nothing on this path calls the robot.
+
+**`status.cloud` (3.56).** `create_app()` builds one `CloudWatch`
+(`control/reconfirm.py`) when `vision_url` is set and `cloud_probe_s` > 0,
+probing with `health_probe()` (timeout `min(3, cloud_probe_s)`). Its daemon
+thread, started by the first `vision`/`tiered` start (idempotent) and
+stopped on app shutdown, probes immediately and then every `cloud_probe_s`
+while `state["runner"]` is running a `vision`/`tiered` mission, and
+otherwise waits in 0.5 s steps without probing. `start_reconfirm()` wraps
+its own probe in `cloud_watch.recording()`, so 3.53's late check feeds the
+same record while no mission runs. `record(up)` sets `reachable` or
+`unreachable`, moving `since` (wall-clock epoch seconds) only on a change;
+a probe that raises is `unreachable`. `GET /mission/status` and the start
+response carry `cloud: {state, since, checked_at, probes, probe_s}` (`state`
+is `unknown` before the first probe), or `cloud: null` with no watch. It is
+not in `/health` (M5) and nothing reads it but the twin.
 
 ## Interfaces
 

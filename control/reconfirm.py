@@ -158,3 +158,87 @@ def _state_for(verdict: dict) -> dict:
                 "reason": verdict.get("reason") or "the cloud sees the target"}
     return {"state": "refused", "confirmed": False,
             "reason": verdict.get("reason") or "the cloud does not see the target"}
+
+
+# -- 3.56: is the cloud reachable right now? ----------------------------------
+
+UNKNOWN, REACHABLE, UNREACHABLE = "unknown", "reachable", "unreachable"
+
+
+class CloudWatch:
+    """What the operator sees as `status.cloud` (3.56).
+
+    One per brain process. Its thread probes the vision service's free
+    `/health` every `interval_s`, but ONLY while `active()` says a mission
+    that uses the cloud is running; otherwise it sleeps and probes nothing.
+    3.53's late check probes while no mission runs, and records into the
+    same watch through `recording()`, so there is one prober at a time and
+    the status keeps moving after a mission parks.
+
+    A description, never a failsafe: it does not touch the robot and does
+    not feed B3.2's budget. "Reachable" means the service answers /health;
+    Bedrock behind it can still fail.
+    """
+
+    def __init__(self, probe: Callable[[], bool], *, interval_s: float,
+                 active: Callable[[], bool], wall: Callable[[], float] = time.time):
+        self.probe = probe
+        self.interval_s = interval_s
+        self.active = active
+        self.wall = wall
+        self._lock = threading.Lock()
+        self._state = UNKNOWN
+        self._since: Optional[float] = None
+        self._checked_at: Optional[float] = None
+        self._probes = 0
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def record(self, up: bool) -> None:
+        """One probe's answer. `since` moves only on a transition."""
+        state = REACHABLE if up else UNREACHABLE
+        now = self.wall()
+        with self._lock:
+            if state != self._state:
+                self._state, self._since = state, now
+            self._checked_at = now
+            self._probes += 1
+
+    def recording(self, probe: Callable[[], bool]) -> Callable[[], bool]:
+        """`probe`, with each answer recorded here (3.53's late check)."""
+        def recorded() -> bool:
+            try:
+                up = bool(probe())
+            except Exception:  # noqa: BLE001 -- a probe that raises is "down"
+                up = False
+            self.record(up)
+            return up
+        return recorded
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return {"state": self._state, "since": self._since,
+                    "checked_at": self._checked_at, "probes": self._probes,
+                    "probe_s": self.interval_s}
+
+    def start(self) -> "CloudWatch":
+        """Idempotent: one thread per watch, started on the first mission."""
+        if self._thread is None or not self._thread.is_alive():
+            self._thread = threading.Thread(target=self._run, name="cloud-watch",
+                                            daemon=True)
+            self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _run(self) -> None:
+        # Probe as soon as a cloud mission is active, then every interval
+        # while it stays active, so `unknown` lasts at most one probe.
+        while not self._stop.is_set():
+            if self.active():
+                self.recording(self.probe)()
+                if self._stop.wait(self.interval_s):
+                    return
+            elif self._stop.wait(min(0.5, self.interval_s)):
+                return

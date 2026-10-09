@@ -532,9 +532,15 @@ class TieredVision:
         spin_guard_after: int = DEFAULT_SPIN_GUARD_AFTER,
         hold_bearing: bool = DEFAULT_HOLD_BEARING,
         hold_bearing_max_m: float = DEFAULT_HOLD_BEARING_MAX_M,
+        confirm_vision_fn: Optional[Callable[[dict], dict]] = None,
     ):
         self.pipeline = pipeline
         self.cloud_vision_fn = cloud_vision_fn
+        # 3.56: the arrival confirmation's own client, built with the
+        # confirmation's shorter deadline so a hang ends in httpx (as
+        # CloudUnavailable) rather than in an abandoned thread. None: the
+        # triggers' client, resolved at call time.
+        self.confirm_vision_fn = confirm_vision_fn
         self.consecutive_frames = max(1, int(consecutive_frames))
         self.cold_search_after = max(1, int(cold_search_after))
         # The distance rule, and the state it needs. `_odometry_at_call` is
@@ -772,7 +778,7 @@ class TieredVision:
         self.stats.triggers[TRIGGER_ARRIVAL] = self.stats.triggers.get(TRIGGER_ARRIVAL, 0) + 1
         started = time.perf_counter()
         try:
-            scene = self.cloud_vision_fn(frame) or {}
+            scene = (self.confirm_vision_fn or self.cloud_vision_fn)(frame) or {}
         finally:
             self.stats.record("cloud_ms", (time.perf_counter() - started) * 1000)
         nav = scene.get("_navigate") or {}
