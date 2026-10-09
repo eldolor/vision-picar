@@ -138,7 +138,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
 * **The operator sees the cloud (3.56), merged 2026-10-09.** `status.cloud`
   from the free `/health` while a cloud mission runs, shown on the twin's
   panel; the arrival confirmation has its own 8 s deadline
-  (`arrival_confirm_timeout_s`), so a hanging cloud parks in ~25 s.
+  (`arrival_confirm_timeout_s`), so a hanging cloud parks in ~25 s. The
+  Guide HUD shows it too (`CLD`). Re-check the 8 s once 500+ real calls
+  exist (the user, 2026-10-09). 3.61: Stop clears the brain's task slot
+  only if it is still the task it awaited.
 * **Local identity check (3.48), merged 2026-10-09.** Five small VLMs on
   the Jetson at 15 W (llama.cpp): Qwen2.5-VL-3B Q4 meets accuracy (97.1%
   precision, 0/34 teal bin; the cloud 67.9%) but fails latency (5.58 s p90
