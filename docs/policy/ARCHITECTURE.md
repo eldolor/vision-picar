@@ -135,6 +135,38 @@ do not exist and are named as unavailable rather than faked.
 **Scope of the hysteresis.** It gates *when the cloud is called*, and nothing
 else. It does not gate steering: the next decision makes that explicit.
 
+### Privacy is a reason for the trigger discipline
+
+**Decision** (the user, 2026-10-09; `PLAN-ros-alignment.md` 3.52). The robot
+photographs the inside of a home, so **every frame that does not go to the
+cloud is a frame of the house that never leaves it.** That is a reason for
+the event-driven tier in its own right, beside cost and latency: a change that
+sends more frames out (a new trigger, a lower staleness floor, a per-step
+policy on the car) has to argue against it, not only against the bill.
+
+What leaves the house today, traced to the code:
+
+| What | Where it goes | When |
+|---|---|---|
+| A camera frame, the target string, searched rooms | the cloud `/navigate` route (Bedrock), from `brain/navigate.py` | tiered: only on a trigger (mission start, candidate sighting, cold search, staleness, arrival confirmation); the `vision` policy: every step |
+| A phone frame | `/navigate` or `/guidance`, straight from the twin's Guide tab | every guidance step |
+| Recorded walk frames and answers | the brain's walk store: local disk, or the private recordings bucket when `recording_backend` is `s3` | only while a walk is being recorded |
+| The object inventory (3.46): labels and positions, no pixels | the recordings bucket under `inventory/`, when `INVENTORY_BUCKET` is set | at mission end |
+| A metrics row: outcome, counts, timings, config; no pixels | the metrics route, when `metrics_url` is set | at mission end |
+
+Nothing else sends pixels. `brain/vision.py`'s direct Anthropic call is
+reached only from a manual test.
+
+**Rejected, for now: blurring people before a frame leaves.** Measured in
+3.52 on the shipped detectors and failed: at floor height the people the
+corpus holds (one person lying on a sofa, 3-6 m off) were found on at most 7
+of 43 frames, while the "person" boxes landed on furniture on 21% of
+person-free frames, once squarely on the search target, which the blur then
+hid from the cloud. A blur that misses people and erases targets protects
+nothing and breaks the search. Revisit with a corpus of people as a floor
+robot sees them and a detector that finds them; the section names the walk
+that would close the gap.
+
 ### Arbitration split by question, and whoever sees the target steers
 
 **Decision** (1.11, and Phase G of 2026-09-12). Identity belongs to the cloud
