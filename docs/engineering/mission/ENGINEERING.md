@@ -151,8 +151,10 @@ ends on its own and `runner.late_confirmation_pending()`,
    `confirm_arrival(frame)` on the stored frame under
    `call_with_timeout(vision_timeout_s)`. `paid_calls` is counted in the
    same locked step as the check, so a cancel that lands while the call is
-   out ships a record that includes it; a cap refusal (decided locally, no
-   I/O) takes the count back; `_tier.stats` is refreshed from the policy afterwards. A raise
+   out ships a record that includes it, and when that call returns the row
+   is sent again with counters that include it; a cap refusal (decided
+   locally, no I/O) takes the count back, unless the record is already
+   final and shipped; `_tier.stats` is refreshed from the policy afterwards. A raise
    is retried on a 200 no sooner than `reconfirm_window_s / 2` later (capped
    inside the window; a window that runs out after a failed call ends
    `failed`, not `expired`)
@@ -170,8 +172,9 @@ did not end `arrived_unconfirmed` with a frame. A final state logs one line
 and re-sends `_metrics_row` with `stats.late_confirmation` (same `run_id`
 and `finished_at`, so the same stored object). The re-sent row's counters
 come from the policy at that moment (so they include the late call), and it
-is sent only after the original row's ship thread (`_metrics_thread`) has
-finished: both write one key. A `POST /mission/start` whose
+is sent only after every earlier send of the key has finished (the
+original's `_metrics_thread`, then any earlier late row's
+`_late_ship_thread`). A `POST /mission/start` whose
 runner was built (a refused start changes nothing) bumps
 `state["generation"]` and calls `cancel_reconfirm()`, which records
 `dropped` before setting the cancel flag, so `late_ask()` refuses from that
@@ -385,7 +388,7 @@ tests/test_mission_guarded_verbs.py -q`.
 | `tests/test_camera_centred_start.py` (11) | 3.20's four criteria: centred first decision under `frontier` and `vision` (tiered is not parametrised), no step or vision call spent, centred start unchanged against `tests/data/frontier_trace_centred.json`, a refused centring ends the mission like any refused move |
 | `tests/test_mission_guarded_verbs.py` (3) | 3.32: a mission's verbs go through the safety layer's guarded plan; the gate forwards plan and stop count; a finished mission refuses a plan |
 | `tests/test_bearing_turns.py` | `blocked` after `stuck_after` refusals, never on an arrival, switchable off, reset by progress |
-| `tests/test_arrival_reconfirm.py` (24) | 3.53: once the cloud is back, exactly one paid call on all 12 clear starts for a cloud that sees the target and one that does not; the outcome unchanged; no robot method called; free and bounded probing (`expired`); two paid attempts, half a window apart, then `failed`, and a server-side outage that clears in the window `confirmed`; a cancel never pays, also when it lands between the probe and the call; a cap refusal counts no paid call; a hung call is never doubled; only an unconfirmed arrival records anything; the metrics row re-sent, not added; through `brain_server`, a new mission drops it, a refused start and a Stop after the ending (also one in the loop's last sleep) do not; the brain's own loop asks |
+| `tests/test_arrival_reconfirm.py` (25) | 3.53: once the cloud is back, exactly one paid call on all 12 clear starts for a cloud that sees the target and one that does not; the outcome unchanged; no robot method called; free and bounded probing (`expired`); two paid attempts, half a window apart, then `failed`, and a server-side outage that clears in the window `confirmed`; a cancel never pays, also when it lands between the probe and the call; a cap refusal counts no paid call; a hung call is never doubled; only an unconfirmed arrival records anything; the metrics row re-sent, not added; through `brain_server`, a new mission drops it, a refused start and a Stop after the ending (also one in the loop's last sleep) do not; the brain's own loop asks |
 | `tests/test_robot_contract.py` | `_HaltGate` passes the body conformance suite as a backend |
 | `tests/test_remote_robot.py` | an identical action sequence and step count in-process, over ASGI and over a live socket |
 | `tests/test_offline_mode.py` (11) | 3.49, with every socket connect refused and the real HTTP cloud client: the robot server loads no cloud client (a subprocess's `sys.modules`, and every file under `robot/`); `frontier`/`explore` still `found`; tiered (sync, async) searches from out of sight and ends `arrived_unconfirmed` at the target; `vision` fails without moving; no offline tiered run `failed`; a hanging cloud parks for at most budget x timeout + 1 s; the twin references no external host |

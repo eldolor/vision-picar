@@ -313,8 +313,8 @@ def test_review_a_cancel_while_the_call_is_out_ships_the_call(monkeypatch):
     paid call is out ships the `dropped` record -- and that record must
     already count the call, or the stored metrics understate the spend."""
     import control.metrics_client as mc
-    shipped = []
-    monkeypatch.setattr(mc, "ship_run_async", lambda url, row, **k: None)
+    original, shipped = [], []
+    monkeypatch.setattr(mc, "ship_run_async", lambda url, row, **k: original.append(row))
     monkeypatch.setattr(mc, "ship_run", lambda url, row, **k: shipped.append(row))
     cloud = SwitchableCloud()
     runner = _metrics_runner(cloud)
@@ -330,9 +330,41 @@ def test_review_a_cancel_while_the_call_is_out_ships_the_call(monkeypatch):
         return real(frame)
     runner.vision_fn.confirm_arrival = cancelled_while_out
     rc.run()
+    _wait_for(lambda: len(shipped) == 2)
+    first, last = shipped
+    assert first["stats"]["late_confirmation"]["state"] == "dropped"
+    assert first["stats"]["late_confirmation"]["paid_calls"] == 1, first
+    # Re-sent once the call returned (fifth review): its counters include it.
+    assert last["stats"]["late_confirmation"]["paid_calls"] == 1
+    assert last["stats"]["cloud_calls"] == original[0]["stats"]["cloud_calls"] + 1, last
+
+
+def test_review_a_final_record_and_its_stored_row_agree(monkeypatch):
+    """Fifth review: at the cap, with a cancel landing while confirm_arrival
+    runs, the take-back must not rewrite the final `dropped` record after
+    its row was shipped -- the status and the stored row must agree."""
+    import control.metrics_client as mc
+    shipped = []
+    monkeypatch.setattr(mc, "ship_run_async", lambda url, row, **k: None)
+    monkeypatch.setattr(mc, "ship_run", lambda url, row, **k: shipped.append(row))
+    cloud = SwitchableCloud()
+    runner = _metrics_runner(cloud)
+    runner.start()
+    while runner.tick():
+        pass
+    runner.vision_fn.max_calls = 0  # the cap: confirm_arrival makes no call
+    rc = FakeClockReconfirmer(runner, lambda: True, interval_s=15, window_s=600)
+    real = runner.vision_fn.confirm_arrival
+
+    def cancelled_while_out(frame):
+        rc.cancel("a new mission started")
+        return real(frame)
+    runner.vision_fn.confirm_arrival = cancelled_while_out
+    rc.run()
     _wait_for(lambda: shipped)
-    assert shipped[0]["stats"]["late_confirmation"]["state"] == "dropped"
-    assert shipped[0]["stats"]["late_confirmation"]["paid_calls"] == 1, shipped[0]
+    time.sleep(0.2)
+    status_count = runner.status()["late_confirmation"]["paid_calls"]
+    assert shipped[-1]["stats"]["late_confirmation"]["paid_calls"] == status_count
 
 
 def test_6_metrics_row_is_resent_not_added(monkeypatch):

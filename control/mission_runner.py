@@ -488,6 +488,7 @@ class MissionRunner:
         self._late: Optional[dict] = None
         self._metrics_row: Optional[dict] = None
         self._metrics_thread: Optional[threading.Thread] = None
+        self._late_ship_thread: Optional[threading.Thread] = None
         # Set as _finish's LAST act -- after the policy is closed and the
         # metrics row built -- so a late check never starts beside them.
         self.finished = threading.Event()
@@ -1100,12 +1101,20 @@ class MissionRunner:
             return verdict
         finally:
             stats = self._policy_stats()
+            reship = None
             with self._lock:
-                if uncount and self._late is not None:
+                final = self._late is not None and self._late["state"] != "waiting"
+                if uncount and self._late is not None and not final:
                     self._late = {**self._late,
                                   "paid_calls": max(0, self._late.get("paid_calls", 1) - 1)}
                 if stats is not None and self._tier is not None:
                     self._tier = {**self._tier, "stats": stats}
+                if final and not uncount:
+                    # A cancel shipped the record while this call was out:
+                    # send it again now that the counters include the call.
+                    reship = dict(self._late)
+            if reship is not None:
+                self._ship_late_metrics(reship)
 
     def _ship_late_metrics(self, late: dict) -> None:
         """Re-send the mission's own row (same run_id, so the same stored
@@ -1122,13 +1131,18 @@ class MissionRunner:
             stats["late_confirmation"] = {k: late.get(k) for k in
                                           ("state", "probes", "paid_calls", "reason")}
             late_row = {**row, "stats": stats}
-            first = self._metrics_thread
+            # Every earlier send of this key lands first: the original row,
+            # then any earlier late row (a cancel's, before the call returned).
+            before = [t for t in (self._metrics_thread, self._late_ship_thread)
+                      if t is not None]
 
             def send():
-                if first is not None:
-                    first.join(timeout=60)
+                for t in before:
+                    t.join(timeout=60)
                 ship_run(self.metrics_url, late_row, secret=self.metrics_secret)
-            threading.Thread(target=send, name="metrics-late", daemon=True).start()
+            t = threading.Thread(target=send, name="metrics-late", daemon=True)
+            self._late_ship_thread = t
+            t.start()
         except Exception as e:  # noqa: BLE001
             logger.warning("late metrics row not built: %s", e)
 

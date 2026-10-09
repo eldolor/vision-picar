@@ -4377,6 +4377,10 @@
         showGuideStartError("Could not start the brain-driven mission: " + e.message);
         state.guidanceViaBrain = false;
         stopGuidance();
+        // A refused start leaves the last mission's late check running on
+        // the brain (3.53, amendment 1), so watch it again from a fresh
+        // status rather than leave its verdict unseen.
+        brainApi("GET", "/mission/status").then(watchLateConfirmation, function () {});
         return;
       }
     }
