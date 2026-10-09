@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from brain.navigate import vision_fn_for
+from brain.navigate import CloudUnavailable, vision_fn_for
 from brain.perceive import FrameReportedPipeline
 from brain.tiered import TieredVision
 from control.mission_runner import (
@@ -234,7 +234,7 @@ def test_4_a_hanging_cloud_parks_for_a_bounded_time():
     first_confirm = []
 
     def dead(frame):
-        raise ConnectionError("refused")
+        raise CloudUnavailable("ConnectError: refused")  # as brain/navigate.py raises
 
     def hung_for(tier):
         # Stamp the moment the robot first asks, BEFORE confirm_arrival waits
@@ -251,7 +251,7 @@ def test_4_a_hanging_cloud_parks_for_a_bounded_time():
             # Just past the timeout, so an abandoned call does not outlive
             # this test by much.
             time.sleep(1.5 * timeout)
-            raise ConnectionError("no answer")
+            raise CloudUnavailable("ReadTimeout: no answer")
         return hung
 
     _, refused = _mission("tiered", start=CLEAR_STARTS[0], async_cloud=True, cloud=dead,
