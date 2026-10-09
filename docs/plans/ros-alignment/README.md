@@ -66,8 +66,8 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.55](3.55-inventory-review-fixes.md) | Inventory review fixes: the stop-path race, double-counted looks, mission-id collisions, a local-only mode |
 | [3.56](3.56-cloud-health.md) | The operator sees the cloud: reachable status, and a shorter wait at arrival |
 | [3.57](3.57-tour-goal-six.md) | The tour's dining-room goal stands on reachable floor (2026-10-09): criteria, written before building; measured: the point fixed, goal 6 still FAILED live |
+| [3.58](3.58-local-identity-decision.md) | Qwen2.5-VL-3B at the decision: latency and memory with the robot stack running |
 | [3.60](3.60-inventory-accuracy.md) | Inventory accuracy: the seven open review findings, verified, then fixed or recorded |
 | [3.61](3.61-stop-task-race.md) | Stop never forgets a mission a concurrent Start began |
 | [3.64](3.64-older-review-bugs.md) | Older review bugs: the ten still live on `dev`, fixed |
-| [3.58](3.58-local-identity-decision.md) | Qwen2.5-VL-3B at the decision: latency and memory with the robot stack running |
 <!-- /sections -->
