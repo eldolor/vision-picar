@@ -60,6 +60,6 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.50](3.50-map-persistence.md) | Saving and reloading the map: options for the user |
 | [3.51](3.51-clip-rooms.md) | Rooms from CLIP: an early read on the four rig walks |
 | [3.52](3.52-privacy.md) | Privacy: what leaves the house, and blurring people before the cloud |
-| [3.54](3.54-clip-rooms-fewshot.md) | Rooms from CLIP, few-shot on the user's own rooms |
 | [3.53](3.53-arrival-reconfirm.md) | Arrived, unconfirmed: a warning in the twin, and asking again when the cloud returns |
+| [3.54](3.54-clip-rooms-fewshot.md) | Rooms from CLIP, few-shot on the user's own rooms |
 <!-- /sections -->
