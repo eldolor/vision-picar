@@ -200,6 +200,34 @@ right-hand rule). If the body cannot answer, the step fails and the mission
 ends **failed** with the robot stopped. Odometry for pacing is attached to
 each frame on a best-effort basis for the same reason.
 
+### Offline is a mode, not a failure
+
+**Decision** (3.49, asked by the user 2026-10-09). With the cloud
+unreachable -- Wi-Fi down, the tunnel gone, a refused or hanging connection
+-- these keep working, each pinned by a test with every socket connect
+refused:
+
+- the safety veto and the watchdog: the robot server imports no cloud
+  client;
+- the tiered policy's local search, steering and arrival, ending
+  **arrived_unconfirmed** at the target rather than **found** or **failed**;
+- the twin, served by the robot server on the LAN, loading nothing from the
+  internet;
+- mission start (an unreachable model allow-list is tolerated) and
+  `/health`.
+
+On the car, offline means the tiered policy: `frontier` and `explore` never
+call the cloud, but their vision step is the rule-based one, which reads the
+simulator. The `vision` policy is cloud-only and ends **failed** at once.
+
+**Rejected.** Falling back to the rule-based explorer when the cloud drops
+(`PLAN-onboard-perception.md` 2.5): on the car it has no detector, and the
+tiered policy already searches without the cloud.
+
+**Trade-off.** Offline, no mission ends **found**: identity is the cloud's
+question. A hanging cloud costs up to the failure budget times the vision
+timeout of parked time at arrival (60 s at the shipped 20 s).
+
 ### Fault drills exercise the real guards
 
 **Decision.** A mission may be started with one named fault (vision errors,
@@ -253,11 +281,11 @@ tools, a tool runner belongs inside the vision function, below the runner.
   home moved from a Pi to the Jetson on 2026-09-19. Decided by the user on
   hardware day; settled when a mission starts from a phone after a reboot with
   no laptop on the network.
-- **Degraded mode when the cloud is unreachable.**
-  `PLAN-onboard-perception.md` 2.5 proposes falling back to the rule-based
-  explorer instead of ending the mission; today a blown vision budget ends it
-  **failed**. Needs a user decision, and data from a mission run with the link
-  cut.
+- **Degraded mode when the cloud is unreachable** is decided for the
+  tiered policy (see "Offline is a mode, not a failure"). Still open: whether
+  status should say "cloud unreachable" before a mission fails or parks, and
+  whether a parked **arrived_unconfirmed** robot re-asks the cloud when the
+  link returns.
 - **Mission persistence.** A brain restart loses the mission. Worth revisiting
   only if a field run shows restarts happen.
 - **Chaos and soak (S7).** Added latency, dropped requests and a 1000-step run
