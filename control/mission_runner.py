@@ -142,14 +142,16 @@ ARRIVED_UNCONFIRMED = "arrived_unconfirmed"
 
 
 def _caused_by(error: BaseException, kind: type) -> bool:
-    """Is `kind` anywhere in the chain of causes? Walks the whole chain, so
-    a wrapper added between the HTTP call and the runner changes nothing."""
+    """Is `kind` anywhere in the chain of EXPLICIT causes (`raise ... from`)?
+    A wrapper added between the HTTP call and the runner changes nothing.
+    `__context__` is not followed: a local error raised while a cloud error
+    was being handled is not the cloud's."""
     seen = set()
     while error is not None and id(error) not in seen:
         if isinstance(error, kind):
             return True
         seen.add(id(error))
-        error = error.__cause__ or error.__context__
+        error = error.__cause__
     return False
 
 
@@ -886,25 +888,31 @@ class MissionRunner:
             raise VisionUnavailable(f"arrival confirmation failed: {e}") from e
 
     def _handle_vision_failure(self, error: Exception) -> bool:
+        cloud = _caused_by(error, CloudUnavailable)
         with self._lock:
-            if not self._running:
-                # stop()/abort() already ended it; a late failure must not
-                # count, log after the end line, or touch the status.
-                return False
-            self._vision_failures += 1
-            failures, budget = self._vision_failures, self.max_vision_failures
-            # 3.47. An arrival confirmation that raised carries THIS tick's
-            # arrival readout (brain/agent.py). Held for the current run of
-            # failures only -- a tick that succeeds clears it with the count
-            # -- and no move executes on a failed tick, so it is where the
-            # robot is.
-            readout = getattr(error, "arrival_readout", None)
-            if readout is not None:
-                self._failed_arrival = readout
-            pending = self._failed_arrival
-        # Stop the car on every blind step, not only on the last one.
+            running = self._running
+            if running:
+                self._vision_failures += 1
+                failures, budget = self._vision_failures, self.max_vision_failures
+                # 3.47. An arrival confirmation that raised carries THIS
+                # tick's arrival readout (brain/agent.py); kept only when it
+                # failed because the cloud was unreachable, and only for the
+                # current run of failures -- a tick that succeeds clears it
+                # with the count. No move executes on a failed tick, so it is
+                # where the robot is.
+                readout = getattr(error, "arrival_readout", None)
+                if readout is not None and cloud:
+                    self._failed_arrival = readout
+                pending = self._failed_arrival
+                # Logged under the lock (the RLock _finish takes), so a
+                # stop() can never put its end line before this one.
+                self._log_line(f"vision failure {failures}/{budget}: {error}")
+        # Stop the car on every blind step, not only on the last one -- and
+        # on a late one after stop()/abort(), which must not count, log or
+        # touch the status, but costs nothing to stop again.
         self._safe_stop()
-        self._log_line(f"vision failure {failures}/{budget}: {error}")
+        if not running:
+            return False
         if failures < budget:
             return self._running
         # `arrived_unconfirmed` only when this run of failures includes an
@@ -912,7 +920,7 @@ class MissionRunner:
         # budget is the cloud being unreachable (brain/navigate.py raises
         # CloudUnavailable where the HTTP call is made). A local fault, or a
         # timeout nothing attributes to the cloud, still ends `failed`.
-        if pending is not None and _caused_by(error, CloudUnavailable):
+        if pending is not None and cloud:
             self._finish(ARRIVED_UNCONFIRMED, (
                 f"arrived (lidar {pending.get('range_m')} m, streak "
                 f"{pending.get('streak')}) but identity unconfirmed: vision "

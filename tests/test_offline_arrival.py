@@ -187,13 +187,65 @@ def test_review_a_failure_after_stop_never_rewrites_the_status():
     runner.start()
     runner.stop()
     before = runner.status()
-    err = RuntimeError("arrival confirmation failed: no network")
+    try:
+        raise RuntimeError("arrival confirmation failed") from CloudUnavailable("no network")
+    except RuntimeError as e:
+        err = e
     err.arrival_readout = {"state": "arrived", "range_m": 0.3, "streak": 2}
     runner._vision_failures = runner.max_vision_failures - 1
     assert runner._handle_vision_failure(err) is False
     after = runner.status()
     assert after["outcome"] == before["outcome"] != ARRIVED_UNCONFIRMED
     assert after["arrival"] == before["arrival"]
+    assert after["log_tail"][-1] == before["log_tail"][-1], "a line after the end line"
+
+
+def test_review_finish_writes_the_arrival_with_the_outcome_or_not_at_all():
+    """Third review: the arrival and stats are set inside `_finish`'s locked
+    step, so a stop() that won the race leaves them untouched."""
+    runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
+                           max_steps=60, policy="tiered",
+                           vision_fn=TieredVision(FrameReportedPipeline(TARGET), _dead_cloud))
+    runner.start()
+    runner.stop()
+    before = runner.status()["arrival"]
+    runner._finish(ARRIVED_UNCONFIRMED, "late", arrival={"state": "unconfirmed"},
+                   tier_stats={"cloud_calls": 99})
+    status = runner.status()
+    assert status["outcome"] != ARRIVED_UNCONFIRMED
+    assert status["arrival"] == before
+
+
+def _failure(message, cause=None, readout=None):
+    try:
+        if cause is None:
+            raise RuntimeError(message)
+        raise RuntimeError(message) from cause
+    except RuntimeError as e:
+        if readout is not None:
+            e.arrival_readout = readout
+        return e
+
+
+@pytest.mark.parametrize("first,outcome", [
+    (RuntimeError("HTTP 401: bad secret"), FAILED),           # our fault: not kept
+    (CloudUnavailable("ConnectError: refused"), ARRIVED_UNCONFIRMED),
+])
+def test_review_only_a_confirmation_the_cloud_failed_is_kept(first, outcome):
+    """Third review: a confirmation that failed on OUR side (a 401), followed
+    by outage errors from trigger calls, is not an arrival the cloud could
+    not check -- `failed`. The same run with the confirmation itself an
+    outage ends `arrived_unconfirmed`."""
+    runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
+                           max_steps=60, policy="tiered",
+                           vision_fn=TieredVision(FrameReportedPipeline(TARGET), _dead_cloud))
+    runner.start()
+    readout = {"state": "arrived", "range_m": 0.3, "streak": 2}
+    runner._handle_vision_failure(_failure("arrival confirmation failed", first, readout))
+    for _ in range(runner.max_vision_failures - 1):
+        runner._handle_vision_failure(
+            _failure("vision call failed", CloudUnavailable("ConnectError: refused")))
+    assert runner.status()["outcome"] == outcome
 
 
 def test_review_a_local_error_inside_the_cloud_call_is_not_an_outage():
@@ -227,9 +279,10 @@ def test_review_navigate_raises_cloud_unavailable_only_for_outages():
         raise httpx.ConnectError("refused", request=request)
     with pytest.raises(CloudUnavailable):
         navigate_scene(frame, TARGET, "http://cloud", client=client(refused))
-    with pytest.raises(CloudUnavailable):
-        navigate_scene(frame, TARGET, "http://cloud",
-                       client=client(lambda r: httpx.Response(503, text="down")))
+    for code in (503, 502, 429, 408):
+        with pytest.raises(CloudUnavailable):
+            navigate_scene(frame, TARGET, "http://cloud",
+                           client=client(lambda r, c=code: httpx.Response(c, text="down")))
     with pytest.raises(RuntimeError) as bad_secret:
         navigate_scene(frame, TARGET, "http://cloud",
                        client=client(lambda r: httpx.Response(401, text="no")))

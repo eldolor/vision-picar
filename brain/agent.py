@@ -392,7 +392,8 @@ class MissionAgent(ConstrainedAgent):
             try:
                 e.arrival_readout = readout
             except AttributeError:  # an exception type that takes no attributes
-                pass
+                logger.warning("arrival readout lost: %s takes no attributes; "
+                               "an outage here will end `failed`", type(e).__name__)
             raise
         self._confirmed_this_frame = bool(verdict.get("cloud_called"))
         readout = {**readout, "identity": verdict}

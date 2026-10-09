@@ -80,10 +80,14 @@ ACTIONS = {"FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP"}
 
 class CloudUnavailable(RuntimeError):
     """The cloud could not be reached or failed on its side: a transport
-    error (connection refused, DNS, a timeout) or a 5xx. Raised only here,
-    where the HTTP call is made, so a caller can tell an outage from a local
-    fault (3.47: an arrival the cloud could not check). A 4xx -- a wrong
-    secret, a bad request -- is our fault and stays a plain RuntimeError."""
+    error (connection refused, DNS, a timeout), a 5xx, a 408 or a 429
+    (throttled). Raised only here, where the HTTP call is made, so a caller
+    can tell an outage from a local fault (3.47: an arrival the cloud could
+    not check). Any other 4xx -- a wrong secret, a bad request -- is our
+    fault and stays a plain RuntimeError. Known limit: the vision service
+    answers 502 for every error it catches, a Bedrock misconfiguration
+    included, so that reads as unavailable too; the reason carries the
+    status and the body."""
 
 
 class FrameHasNoImage(ValueError):
@@ -150,7 +154,7 @@ def navigate_scene(
             response = http.post(url, headers=headers, json=body, timeout=timeout_s)
         except httpx.TransportError as e:
             raise CloudUnavailable(f"{type(e).__name__}: {e}") from e
-        if response.status_code >= 500:
+        if response.status_code >= 500 or response.status_code in (408, 429):
             raise CloudUnavailable(f"HTTP {response.status_code}: {response.text[:200]}")
         if response.status_code != 200:
             raise RuntimeError(f"HTTP {response.status_code}: {response.text[:200]}")

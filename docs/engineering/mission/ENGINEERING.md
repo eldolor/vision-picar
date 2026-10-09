@@ -63,10 +63,12 @@ threads; where it and this file disagree, check the code.
    `_failed_arrival` for the current run of failures, cleared with the count
    by a tick that succeeds. On the budget's last failure the mission ends
    `arrived_unconfirmed` if `_failed_arrival` is set AND that last failure
-   has `CloudUnavailable` (`brain/navigate.py`: a transport error or a 5xx,
-   raised where the HTTP call is made) anywhere in its cause chain
-   (`_caused_by()`); a confirmation that times out is attributed to the
-   cloud, a trigger call that times out is not. `_finish()` then sets
+   has `CloudUnavailable` (`brain/navigate.py`: a transport error, a 5xx, a
+   408 or a 429, raised where the HTTP call is made) in its chain of
+   explicit causes (`_caused_by()`, `__cause__` only). A readout is kept
+   only when its confirmation itself failed that way; a confirmation that
+   times out is attributed to the cloud, a trigger call that times out is
+   not. The "vision failure" line is logged under the lock. `_finish()` then sets
    `status.arrival` to the readout with state `unconfirmed`, and refreshes
    `_tier.stats` from the policy's own counters (`_policy_stats()`, read
    outside the lock, never raising), in the same locked step as the outcome.
