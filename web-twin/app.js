@@ -2016,6 +2016,10 @@
   const LATE_MAX_ERRORS = 5;
   function stopLateWatch() {
     lateWatchToken++;
+    // Whatever bumps the token also ends any pending resume's claim; a
+    // Guide start reads the flag before calling this, and re-sets it if
+    // its own resume takes over (tenth review).
+    state.lateResumePending = false;
     if (state.lateWatchTimerId) clearInterval(state.lateWatchTimerId);
     state.lateWatchTimerId = null;
   }
@@ -4421,9 +4425,6 @@
         }
         return;
       }
-      // Started: the brain has dropped the last mission's check, so no
-      // resume is owed any more.
-      state.lateResumePending = false;
     }
 
     // A brain deployment that explicitly disables recording (e.g. the
