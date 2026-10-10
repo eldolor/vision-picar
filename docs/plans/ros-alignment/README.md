@@ -77,4 +77,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.71](3.71-jetson-services.md) | The robot server, brain and tunnel as Jetson services |
 | [3.72](3.72-random-house.md) | A randomizer button: the robot server picks one of the 100 ProcTHOR houses |
 | [3.73](3.73-mujoco-slip-braking.md) | MuJoCo: fit the Rover's slip and braking, and carry them into our simulator |
+| [3.65](3.65-rl-in-the-brain.md) | Reinforcement learning inside the brain: three narrow decisions, not the whole brain |
 <!-- /sections -->
