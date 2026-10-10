@@ -36,6 +36,14 @@ PROMPT = (
     "such as \"office chair\", \"backpack\", \"sneaker\", \"chest of drawers\", \"suitcase\", "
     "\"lamp\". Each object once. Skip walls, floors, ceilings and carpet. "
     "Output JSON: [{\"bbox_2d\": [x1, y1, x2, y2], \"label\": \"name\"}]")
+# Amendment 10: PROMPT with every object word taken out (no example names,
+# no category list), which led amendment 9's labels.
+PROMPT_PLAIN = (
+    "Find EVERY separate object in this photo -- anything that sits somewhere -- and give "
+    "each one a specific everyday name. Each object once. Skip walls, floors, ceilings and "
+    "carpet. "
+    "Output JSON: [{\"bbox_2d\": [x1, y1, x2, y2], \"label\": \"name\"}]")
+PROMPTS = {"examples": PROMPT, "plain": PROMPT_PLAIN}
 
 
 def frame_set() -> list:
@@ -123,9 +131,9 @@ class LiteRTNamer:
     greedy, 500 new tokens, repetition penalty 1.05, thinking off. Gemma
     answers [y1, x1, y2, x2] on 0-1000."""
 
-    def __init__(self, model: str, device: str):
+    def __init__(self, model: str, device: str, prompt: str = PROMPT):
         import litert_lm
-        self.lm = litert_lm
+        self.lm, self.prompt = litert_lm, prompt
         backend = litert_lm.Backend.GPU() if device == "gpu" else litert_lm.Backend.CPU()
         self.engine = litert_lm.Engine(model, backend=backend, vision_backend=backend,
                                        max_num_images=1)
@@ -140,7 +148,7 @@ class LiteRTNamer:
                 thinking_config=lm.ThinkingConfig(enable_thinking=False),
                 max_output_tokens=500) as conv:
             msg = conv.send_message(
-                lm.Contents.of(lm.Content.ImageFile(absolute_path=str(path.resolve())), PROMPT),
+                lm.Contents.of(lm.Content.ImageFile(absolute_path=str(path.resolve())), self.prompt),
                 repetition_penalty_config=lm.RepetitionPenaltyConfig(repetition_penalty=1.05))
         text = message_text(msg)
         return {"boxes": parse_boxes(text, w / 1000, h / 1000, order="yxyx"), "raw": text[:2000]}
@@ -164,6 +172,8 @@ def _rss_mb() -> tuple:
 
 
 def cmd_name(args) -> None:
+    if args.prompt != "examples" and args.backend != "litert":
+        sys.exit("--prompt is wired to the litert backend only")
     out_path, _ = _paths(args.tag)
     frames = json.loads(open(args.frames).read()) if args.frames else frame_set()
     if args.limit > 0:
@@ -171,13 +181,15 @@ def cmd_name(args) -> None:
     if args.backend == "litert":
         if not args.tag or not args.model:
             sys.exit("--backend litert needs --tag and --model (the default tag is amendment 6's file)")
-        run = {"model": os.path.basename(args.model), "device": args.device}
+        run = {"model": os.path.basename(args.model), "device": args.device, "prompt": args.prompt}
         done = json.loads(out_path.read_text()) if out_path.exists() else {}
-        other = {(r.get("model"), r.get("device")) for r in done.values()} - {(run["model"], run["device"])}
+        # amendment 9's records carry no "prompt": they were all "examples"
+        key = lambda r: (r.get("model"), r.get("device"), r.get("prompt", "examples"))  # noqa: E731
+        other = {key(r) for r in done.values()} - {key(run)}
         if other:
             sys.exit(f"{out_path} holds another run's frames {sorted(map(str, other))}; use a new --tag")
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        namer = LiteRTNamer(args.model, args.device)
+        namer = LiteRTNamer(args.model, args.device, PROMPTS[args.prompt])
         todo = [f for f in frames if f not in done]
         print(f"loaded {args.model} on {args.device}; rss/hwm MB {_rss_mb()}", file=sys.stderr)
         t0, errors = time.perf_counter(), 0
@@ -255,6 +267,13 @@ def cmd_judge(args) -> None:
     if skip - set(vlm):  # sample.json redrawn since `name`: the split would be wrong
         raise SystemExit(f"{len(skip - set(vlm))} sample frames are not in {boxes_path.name}; "
                          "sample.json changed since these frames were named")
+    if args.frames:  # amendment 10's pilot: these frames only
+        only = set(json.loads(open(args.frames).read()))
+        if only - set(vlm):
+            raise SystemExit(f"{len(only - set(vlm))} --frames are not in {boxes_path.name}")
+        if only & set(json.loads((OUT / "sample.json").read_text())):
+            raise SystemExit("--frames holds some of the user's 150; a pilot is tuning frames only")
+        skip |= set(vlm) - only
     client, spend = _client(), Spend(args.budget)
     for fid in sorted(vlm):
         if fid in done or fid in skip or not vlm[fid]["boxes"] or spend.over():
@@ -269,12 +288,23 @@ def cmd_judge(args) -> None:
     print(f"{len(done)} frames judged; {spend.line()}")
 
 
+def wilson_upper(p: float, n: int, z: float = 1.96) -> float:
+    """The 95% Wilson upper bound of a proportion: amendment 10's continue rule."""
+    if n == 0:
+        return 1.0
+    centre = p + z * z / (2 * n)
+    margin = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return (centre + margin) / (1 + z * z / n)
+
+
 def cmd_score(args) -> None:
     boxes_path, judge_path = _paths(args.tag)
     vlm = json.loads(boxes_path.read_text())
     judged = json.loads(judge_path.read_text())
     sample = set(json.loads((OUT / "sample.json").read_text()))
     tune = [f for f in vlm if f not in sample]
+    if args.frames:  # amendment 10's pilot: score these frames only
+        tune = [f for f in tune if f in set(json.loads(open(args.frames).read()))]
     rows, empty = [], 0
     for fid in tune:
         if not vlm[fid]["boxes"]:
@@ -289,7 +319,8 @@ def cmd_score(args) -> None:
     print(json.dumps({"tuning_frames": len(tune), "frames_with_no_boxes": empty,
                       "judged_boxes": n, "judge_precision": round(p, 3),
                       "right_boxes_a_frame": round(right / len(tune), 2),
-                      "earns_the_users_page": bool(p >= 0.75)}, indent=1))
+                      "earns_the_users_page": bool(p >= 0.75) and not args.frames,
+                      "pilot_upper_95": round(wilson_upper(p, n), 3)}, indent=1))
 
 
 def main(argv=None) -> None:
@@ -300,6 +331,8 @@ def main(argv=None) -> None:
     n.add_argument("--url", default="http://localhost:9467")
     n.add_argument("--model", help="litert: the .litertlm file")
     n.add_argument("--device", choices=("gpu", "cpu"), default="gpu", help="litert backend")
+    n.add_argument("--prompt", choices=tuple(PROMPTS), default="examples",
+                   help="litert: 'plain' = amendment 10's prompt with no object words")
     n.add_argument("--frames", help="a JSON list of frame ids instead of frame_set() "
                                     "(the Jetson has no judge.json)")
     n.add_argument("--limit", type=int, default=0, help="first N frames only (feasibility)")
@@ -307,7 +340,9 @@ def main(argv=None) -> None:
     j.add_argument("--budget", type=float, default=15.0)
     j.add_argument("--tuning-only", action="store_true",
                    help="judge the 300 tuning frames, not the user's 150")
+    j.add_argument("--frames", help="a JSON list: judge only these frames (amendment 10's pilot)")
     sc = sub.add_parser("score")
+    sc.add_argument("--frames", help="a JSON list: score only these tuning frames (a pilot)")
     for p in (n, j, sc):
         p.add_argument("--tag", default="", help="'' = Qwen2.5-VL-3B (amendment 6); "
                                                  "'qwen35' = Qwen3.5-4B IQ3_XXS (amendment 7); "

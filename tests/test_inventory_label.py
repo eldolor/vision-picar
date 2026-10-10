@@ -245,3 +245,71 @@ def test_judge_tuning_only_refuses_a_redrawn_sample(tmp_path, monkeypatch):
     monkeypatch.setattr(v, "_client", lambda: pytest.fail("no client before the check"))
     with pytest.raises(SystemExit, match="sample.json changed"):
         v.main(["judge", "--tag", "g", "--tuning-only"])
+
+
+def test_judge_frames_judges_only_the_pilot_and_never_the_users_150(tmp_path, monkeypatch):
+    from tools import inventory_vlm as v
+    monkeypatch.setattr(v, "OUT", tmp_path)
+    box = [{"label": "chair", "xyxy": [0, 0, 1, 1], "n": 1}]
+    (tmp_path / "vlm_boxes_g.json").write_text(json.dumps(
+        {"a.jpg": {"boxes": box}, "b.jpg": {"boxes": box}, "user.jpg": {"boxes": box}}))
+    (tmp_path / "sample.json").write_text('["user.jpg"]')
+    asked = []
+    monkeypatch.setattr(v, "_client", lambda: None)
+    monkeypatch.setattr(v, "judge_one", lambda c, path, boxes, spend: asked.append(path.name) or {})
+    pilot = tmp_path / "pilot.json"
+    pilot.write_text('["a.jpg"]')
+    v.main(["judge", "--tag", "g", "--frames", str(pilot)])
+    assert asked == ["a.jpg"]
+    pilot.write_text('["b.jpg", "user.jpg"]')
+    with pytest.raises(SystemExit, match="user's 150"):
+        v.main(["judge", "--tag", "g", "--frames", str(pilot)])
+    assert asked == ["a.jpg"]
+
+
+def test_the_plain_prompt_names_no_object():
+    from tools import inventory_vlm as v
+    for word in ("office chair", "backpack", "sneaker", "drawers", "suitcase", "lamp",
+                 "furniture", "bags", "shoes", "boxes", "devices", "decorations"):
+        assert word not in v.PROMPT_PLAIN
+
+
+def test_litert_refuses_to_mix_prompts_in_one_file(tmp_path, monkeypatch):
+    from tools import inventory_vlm as v
+    monkeypatch.setattr(v, "OUT", tmp_path)
+    (tmp_path / "vlm_boxes_g.json").write_text(  # amendment 9's records name no prompt
+        '{"f.jpg": {"boxes": [], "raw": "", "model": "x.litertlm", "device": "gpu"}}')
+    frames = tmp_path / "frames.json"
+    frames.write_text('["f.jpg"]')
+    with pytest.raises(SystemExit, match="another run"):
+        v.main(["name", "--backend", "litert", "--frames", str(frames), "--model", "x.litertlm",
+                "--tag", "g", "--prompt", "plain"])
+
+
+def test_score_frames_scores_only_the_pilot_and_never_earns_the_page(tmp_path, monkeypatch, capsys):
+    from tools import inventory_vlm as v
+    monkeypatch.setattr(v, "OUT", tmp_path)
+    box = [{"label": "chair", "xyxy": [0, 0, 1, 1], "n": 1}]
+    (tmp_path / "vlm_boxes_g.json").write_text(json.dumps(
+        {f"{i}.jpg": {"boxes": box} for i in range(10)}))
+    (tmp_path / "vlm_judge_g.json").write_text(json.dumps(
+        {"0.jpg": {"verdicts": {"1": "correct"}}, "1.jpg": {"verdicts": {"1": "correct"}}}))
+    (tmp_path / "sample.json").write_text("[]")
+    pilot = tmp_path / "pilot.json"
+    pilot.write_text('["0.jpg", "1.jpg"]')
+    v.main(["score", "--tag", "g", "--frames", str(pilot)])
+    got = json.loads(capsys.readouterr().out)
+    assert got["tuning_frames"] == 2 and got["right_boxes_a_frame"] == 1.0
+    assert got["earns_the_users_page"] is False
+
+
+def test_wilson_upper_bound():
+    from tools import inventory_vlm as v
+    assert abs(v.wilson_upper(0.41, 100) - 0.508) < 0.005
+    assert v.wilson_upper(0.0, 0) == 1.0
+
+
+def test_prompt_plain_is_refused_outside_litert():
+    from tools import inventory_vlm as v
+    with pytest.raises(SystemExit, match="litert backend only"):
+        v.main(["name", "--backend", "llama", "--tag", "x", "--prompt", "plain"])
