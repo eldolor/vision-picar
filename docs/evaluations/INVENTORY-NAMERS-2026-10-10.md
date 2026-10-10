@@ -148,3 +148,22 @@ fits beside the running robot (E2B) is the weakest.
   parked, with nav2, SLAM and the perception loop stopped (~2 GB more
   free). That could hold E4B, Qwen3.5-4B at 4-bit or more, or a larger
   Qwen. It is an architecture change and waits for the user's decision.
+
+## A different job: searching for one named object (amendment 11, 2026-10-10)
+
+The search tier's job, not the inventory's: find one described object.
+Measured free against the walks' human labels, on six walks (one per
+target, 685 frames, 313 with the target), on the Jetson GPU.
+
+| | target frames found | false alarms | ms a frame |
+|---|---|---|---|
+| YOLOE + CLIP (shipped, gate 0.8) | 80.8% | 0 | 69 |
+| Gemma 4 E2B | 98.4% | 72 | ~5,000 |
+
+Gemma finds almost every sighting but says yes too readily: 45 of its
+false alarms are a teal bin it calls the "blue bottle". That is the bin
+that fooled the cloud model too. YOLOE + CLIP never fires on it. The
+pre-set rule (Gemma +10 points at matched false alarms) is not met, and
+the shipped tier stays. **For naming everything, the vision models beat
+YOLOE + CLIP; for finding one named thing, YOLOE + CLIP is the better
+tool.**
