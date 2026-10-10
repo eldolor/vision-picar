@@ -88,7 +88,10 @@ def frame_id(path: Path) -> str:
 
 def _client():
     from anthropic import AnthropicBedrockMantle
-    return AnthropicBedrockMantle(aws_region=JUDGE_REGION)
+    # Overloaded (529) answers come in bursts: on 2026-10-09 every one of a
+    # 450-frame run failed with the SDK's default 2 retries. More retries,
+    # with the SDK's own backoff, ride a burst out.
+    return AnthropicBedrockMantle(aws_region=JUDGE_REGION, max_retries=8)
 
 
 class Spend:
