@@ -189,7 +189,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   nearest return kept on data (the median traded precision and duplicates
   for recall), the per-frame reads kept by design. Seed 3463: every 3.46
   bar met before and after; landmarks with more hits than frames 2 -> 0.
-* **Older review bugs (3.64), merged 2026-10-09, NOT deployed.** Ten bugs
+* **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,
   A7); replays that showed an old result or erased a scored one (C1, C3);
@@ -197,7 +197,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   the environment banner (`/health` on the vision service now returns
   `env_label`, B1); a false host notice (B2); brain errors worded by what
   came back (D7r); the vision proximity veto deleted (F1, the user's
-  call). Needs the twin, console, vision and walks deploys.
+  call). Twin, console, vision and walks Lambdas deployed and verified
+  2026-10-10 (3.64 criterion 5).
 * **Explore's corner stalls: fixed** (3.45, merged 2026-10-09 with the
   tour criterion failed, the user's call; 3.43/3.44 before it). Frontier and
   view goals now keep the chassis' half-length plus the 20 cm stop
