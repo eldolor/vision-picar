@@ -1,0 +1,15 @@
+== gemma4e2b 10:18:18 rev 4064a99 NV Power Mode: 15W desktop inactive
+OK: robot and brain both running 4064a99 (log: /home/picar/.vision-picar-tunnel.log)
+WARNING: ngrok is not running -- the deployed twin cannot reach this machine. Start it with: ngrok start picar
+== stack up and mapped 10:21:13; wheel_loop (moving late) 2923 0
+== namer start 10:22:43
+== namer stopped 10:34:46
+== nav: goals 48/48 succeeded
+== wheel_loop now: 22040 0 0.0701 (baseline 2923 0)
+== baseline MemAvailable 4699 MB; min during namer 1966 MB; drop 2733 MB
+== namer peak VmHWM 922 MB; resident = max(drop, VmHWM) = 2733.416666666667 MB (bar 3328 MB = 3.25 GB); floor 1 GB held
+== frames under the stack: 77; median 9.3 s, p90 12.7 s
+== temperature max 58.2 C; throttling lines 0
+== perception median 108 ms p90 186 ms over 3916 frames
+== stack stopped; ports still held: 0
+== desktop restored: active
