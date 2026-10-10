@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
 import random
 import re
 import sys
@@ -43,10 +45,12 @@ def frame_set() -> list:
     return sorted(random.Random(TUNING_SEED).sample(rest, TUNING_FRAMES)) + sorted(sample)
 
 
-def parse_boxes(text: str, scale_x: float, scale_y: float) -> list:
+def parse_boxes(text: str, scale_x: float, scale_y: float, order: str = "xyxy") -> list:
     """The model's JSON, in the RESIZED image's pixels, back to the frame's.
     Identical repeated boxes are dropped (the model sometimes repeats one).
-    Anything unparseable is skipped, never guessed."""
+    Anything unparseable is skipped, never guessed. `order` "yxyx" reads
+    Gemma's [y1, x1, y2, x2] (amendment 9); either key, `bbox_2d` or Gemma's
+    own `box_2d`, is read."""
     m = re.search(r"\[.*\]", text, re.S)
     try:
         items = json.loads(m.group(0)) if m else []
@@ -56,14 +60,23 @@ def parse_boxes(text: str, scale_x: float, scale_y: float) -> list:
         items = [json.loads(o) for o in re.findall(r"\{[^{}]*\}", text) if _loads_ok(o)]
     out, seen = [], set()
     for it in items:
-        box, label = it.get("bbox_2d"), str(it.get("label", "")).strip().lower()
+        if not isinstance(it, dict):
+            continue
+        box = it.get("bbox_2d") or it.get("box_2d")
+        label = str(it.get("label", "")).strip().lower()
         if not label or not isinstance(box, list) or len(box) != 4:
+            continue
+        try:
+            a, b, c, d = (float(v) for v in box)
+        except (TypeError, ValueError):
+            continue
+        if not all(math.isfinite(v) for v in (a, b, c, d)):
             continue
         key = (label, tuple(box))
         if key in seen:
             continue
         seen.add(key)
-        x1, y1, x2, y2 = (float(v) for v in box)
+        x1, y1, x2, y2 = (b, a, d, c) if order == "yxyx" else (a, b, c, d)
         out.append({"label": label, "xyxy": [round(x1 * scale_x, 1), round(y1 * scale_y, 1),
                                              round(x2 * scale_x, 1), round(y2 * scale_y, 1)]})
     return [{**b, "n": i + 1} for i, b in enumerate(out)]
@@ -103,11 +116,93 @@ def name_llama(fid: str, url: str) -> dict:
     return {"boxes": parse_boxes(text, w / 1000, h / 1000), "raw": text[:2000]}
 
 
+class LiteRTNamer:
+    """Amendment 9: Gemma 4 under Google's LiteRT-LM (`litert-lm-api`), run on
+    the Jetson in its own venv. One engine, a fresh conversation a frame;
+    greedy, 500 new tokens, repetition penalty 1.05, thinking off. Gemma
+    answers [y1, x1, y2, x2] on 0-1000."""
+
+    def __init__(self, model: str, device: str):
+        import litert_lm
+        self.lm = litert_lm
+        backend = litert_lm.Backend.GPU() if device == "gpu" else litert_lm.Backend.CPU()
+        self.engine = litert_lm.Engine(model, backend=backend, vision_backend=backend,
+                                       max_num_images=1)
+
+    def __call__(self, fid: str) -> dict:
+        from PIL import Image
+        lm, path = self.lm, ROOT / fid
+        with Image.open(path) as im:
+            w, h = im.size
+        with self.engine.create_conversation(
+                sampler_config=lm.SamplerConfig(top_k=1),
+                thinking_config=lm.ThinkingConfig(enable_thinking=False),
+                max_output_tokens=500) as conv:
+            msg = conv.send_message(
+                lm.Contents.of(lm.Content.ImageFile(absolute_path=str(path.resolve())), PROMPT),
+                repetition_penalty_config=lm.RepetitionPenaltyConfig(repetition_penalty=1.05))
+        text = message_text(msg)
+        return {"boxes": parse_boxes(text, w / 1000, h / 1000, order="yxyx"), "raw": text[:2000]}
+
+
+def message_text(msg) -> str:
+    """The text parts of a LiteRT-LM reply, joined."""
+    return "".join(getattr(c, "text", "") or "" for c in msg.contents)
+
+
+def _rss_mb() -> tuple:
+    """This process's (VmRSS, VmHWM) in MB, for amendment 9's memory record."""
+    vals = {}
+    if not os.path.exists("/proc/self/status"):  # not Linux: nothing to record
+        return None, None
+    with open("/proc/self/status") as f:
+        for line in f:
+            if line.startswith(("VmRSS:", "VmHWM:")):
+                vals[line.split(":")[0]] = int(line.split()[1]) // 1024
+    return vals.get("VmRSS"), vals.get("VmHWM")
+
+
 def cmd_name(args) -> None:
     out_path, _ = _paths(args.tag)
+    frames = json.loads(open(args.frames).read()) if args.frames else frame_set()
+    if args.limit > 0:
+        frames = frames[:args.limit]
+    if args.backend == "litert":
+        if not args.tag or not args.model:
+            sys.exit("--backend litert needs --tag and --model (the default tag is amendment 6's file)")
+        run = {"model": os.path.basename(args.model), "device": args.device}
+        done = json.loads(out_path.read_text()) if out_path.exists() else {}
+        other = {(r.get("model"), r.get("device")) for r in done.values()} - {(run["model"], run["device"])}
+        if other:
+            sys.exit(f"{out_path} holds another run's frames {sorted(map(str, other))}; use a new --tag")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        namer = LiteRTNamer(args.model, args.device)
+        todo = [f for f in frames if f not in done]
+        print(f"loaded {args.model} on {args.device}; rss/hwm MB {_rss_mb()}", file=sys.stderr)
+        t0, errors = time.perf_counter(), 0
+        for k, fid in enumerate(todo, 1):
+            t = time.perf_counter()
+            try:
+                r = namer(fid)
+            except Exception as exc:  # noqa: BLE001 -- not saved, so a resume retries it
+                errors += 1
+                print(f"{fid}: {exc}", file=sys.stderr)
+                continue
+            r["s"] = round(time.perf_counter() - t, 2)
+            done[fid] = {**r, **run}
+            print(f"{time.strftime('%T')} {fid} {r['s']} s {len(r['boxes'])} boxes "
+                  f"rss/hwm MB {_rss_mb()}", file=sys.stderr, flush=True)
+            if k % 10 == 0 or k == len(todo):
+                out_path.write_text(json.dumps(done))
+                rate = (time.perf_counter() - t0) / k
+                print(f"{len(done)} frames, {rate:.1f} s each, "
+                      f"~{rate * (len(todo) - k) / 60:.0f} min left", file=sys.stderr)
+        out_path.write_text(json.dumps(done))
+        print(f"{len(done)} frames -> {out_path}; {errors} failed calls (not saved)")
+        return
     if args.backend == "llama":
         done = json.loads(out_path.read_text()) if out_path.exists() else {}
-        todo = [f for f in frame_set() if f not in done]
+        todo = [f for f in frames if f not in done]
         t0 = time.perf_counter()
         for k, fid in enumerate(todo, 1):
             done[fid] = name_llama(fid, args.url)
@@ -126,7 +221,7 @@ def cmd_name(args) -> None:
     model = AutoModelForImageTextToText.from_pretrained(
         MODEL, dtype=torch.bfloat16).to("mps" if torch.backends.mps.is_available() else "cpu").eval()
     done = json.loads(out_path.read_text()) if out_path.exists() else {}
-    todo = [f for f in frame_set() if f not in done]
+    todo = [f for f in frames if f not in done]
     t0 = time.perf_counter()
     for k, fid in enumerate(todo, 1):
         img = Image.open(ROOT / fid).convert("RGB")
@@ -194,14 +289,20 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="python -m tools.inventory_vlm")
     sub = ap.add_subparsers(dest="cmd", required=True)
     n = sub.add_parser("name")
-    n.add_argument("--backend", choices=("transformers", "llama"), default="transformers")
+    n.add_argument("--backend", choices=("transformers", "llama", "litert"), default="transformers")
     n.add_argument("--url", default="http://localhost:9467")
+    n.add_argument("--model", help="litert: the .litertlm file")
+    n.add_argument("--device", choices=("gpu", "cpu"), default="gpu", help="litert backend")
+    n.add_argument("--frames", help="a JSON list of frame ids instead of frame_set() "
+                                    "(the Jetson has no judge.json)")
+    n.add_argument("--limit", type=int, default=0, help="first N frames only (feasibility)")
     j = sub.add_parser("judge")
     j.add_argument("--budget", type=float, default=15.0)
     sc = sub.add_parser("score")
     for p in (n, j, sc):
         p.add_argument("--tag", default="", help="'' = Qwen2.5-VL-3B (amendment 6); "
-                                                 "'qwen35' = Qwen3.5-4B IQ3_XXS (amendment 7)")
+                                                 "'qwen35' = Qwen3.5-4B IQ3_XXS (amendment 7); "
+                                                 "'gemma4e2b' / 'gemma4e4b' = LiteRT-LM (amendment 9)")
     args = ap.parse_args(argv)
     {"name": cmd_name, "judge": cmd_judge, "score": cmd_score}[args.cmd](args)
 

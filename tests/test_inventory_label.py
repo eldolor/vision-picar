@@ -168,3 +168,54 @@ def test_the_vlm_answer_is_parsed_scaled_and_deduplicated():
     assert [(b["label"], b["xyxy"], b["n"]) for b in got] == [
         ("chair", [20.0, 20.0, 60.0, 40.0], 1), ("lamp", [2.0, 2.0, 6.0, 4.0], 2)]
     assert parse_boxes("no objects found", 1, 1) == []
+
+
+def test_gemma_boxes_are_read_rows_first_on_0_1000():
+    """Amendment 9: Gemma answers [y1, x1, y2, x2] under `box_2d`; a 640x480
+    frame's box at rows 500-1000, columns 0-250 is its lower-left quarter-ish."""
+    from tools.inventory_vlm import parse_boxes
+    text = '```json\n[{"box_2d": [500, 0, 1000, 250], "label": "Sneaker"}]\n```'
+    got = parse_boxes(text, 640 / 1000, 480 / 1000, order="yxyx")
+    assert got == [{"label": "sneaker", "xyxy": [0.0, 240.0, 160.0, 480.0], "n": 1}]
+    # The default order is unchanged for Qwen's answers.
+    assert parse_boxes(text, 1, 1)[0]["xyxy"] == [500.0, 0.0, 1000.0, 250.0]
+
+
+def test_a_malformed_item_is_skipped_not_guessed():
+    from tools.inventory_vlm import parse_boxes
+    text = ('[{"box_2d": [1, 2, "x", 4], "label": "a"}, "stray", '
+            '{"box_2d": [10, 20, 30, 40], "label": "b"}]')
+    got = parse_boxes(text, 1, 1, order="yxyx")
+    assert [b["label"] for b in got] == ["b"] and got[0]["n"] == 1
+
+
+def test_litert_reply_text_joins_the_text_parts():
+    from types import SimpleNamespace as NS
+
+    from tools.inventory_vlm import message_text
+    msg = NS(contents=[NS(text="[{"), NS(image="ignored"), NS(text='"a": 1}]'), NS(text=None)])
+    assert message_text(msg) == '[{"a": 1}]'
+
+
+def test_a_null_or_non_finite_box_is_skipped():
+    from tools.inventory_vlm import parse_boxes
+    text = ('[{"bbox_2d": null, "box_2d": [10, 20, 30, 40], "label": "a"}, '
+            '{"box_2d": [NaN, 2, 3, 4], "label": "b"}]')
+    got = parse_boxes(text, 1, 1, order="yxyx")
+    assert [(b["label"], b["xyxy"]) for b in got] == [("a", [20.0, 10.0, 40.0, 30.0])]
+
+
+def test_litert_refuses_to_resume_into_another_runs_file(tmp_path, monkeypatch):
+    import pytest
+
+    from tools import inventory_vlm as v
+    monkeypatch.setattr(v, "OUT", tmp_path)
+    (tmp_path / "vlm_boxes_g.json").write_text(
+        '{"f.jpg": {"boxes": [], "raw": "", "model": "x.litertlm", "device": "cpu"}}')
+    frames = tmp_path / "frames.json"
+    frames.write_text('["f.jpg"]')
+    base = ["name", "--backend", "litert", "--frames", str(frames)]
+    with pytest.raises(SystemExit, match="needs --tag"):
+        v.main(base + ["--model", "x.litertlm"])
+    with pytest.raises(SystemExit, match="another run"):
+        v.main(base + ["--model", "x.litertlm", "--device", "gpu", "--tag", "g"])
