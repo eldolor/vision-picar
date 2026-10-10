@@ -42,8 +42,13 @@ the inventory remembers.
 | CLIP RN50 confirming YOLOE | 54.6% (when it agrees) | -- | yes | failed |
 | CLIP RN50 renaming (50-frame pilot) | 12.0% | -- | yes | failed |
 | Qwen2.5-VL-3B, full precision | 58.9% | 1.56 | no (7.5 GB) | failed; primed by the prompt's examples |
-| **Qwen3.5-4B, 3-bit (IQ3_XXS)** | **pending** (judge resumed 2026-10-10) | -- | 2.91 GB of files; to measure on the Jetson | the lead |
+| Qwen3.5-4B, 3-bit (IQ3_XXS) | **64.1%** (909 boxes; 72.4% even if every unjudged box were right) | 2.52 | 2.91 GB of files; not measured on the Jetson | failed |
 | InternVL3.5-2B, 4-bit | not judged | -- | 1.92 GB | cancelled by the user before judging |
+
+**Qwen3.5-4B's judging** reached 361 of 450 frames (231 of the 300 tuning
+frames) before Bedrock's overload errors stopped it, for about $4 in all
+(an estimate). It was not resumed: the 273 unjudged boxes could lift
+precision to 72.4% at most, still under the 75% bar.
 
 ## The three small models side by side (8 frames, by eye, no cloud calls)
 
@@ -87,14 +92,18 @@ vision encoder), because the tables dominate the size.
 * A second GPU runtime (Vulkan) beside CUDA's YOLOE and CLIP is an
   unmeasured risk on a small board.
 
-## Decision (the user's, 2026-10-09)
+## Decision (the user's, 2026-10-09), and where it stands (2026-10-10)
 
 If Qwen3.5-4B is acceptable, it is the inventory's namer; other models
-wait. Gemma is the backup: its names are the best of the three, but it
+wait. **It is not acceptable: 64.1% against the 75% bar.** No VLM namer
+has passed, so the inventory on the real car still has no namer;
+configuration F (YOLOE limited to 11 reliable names, 90.5% but 0.6 right
+objects a frame) still waits on the user's 150-frame check. Gemma is the backup: its names are the best of the three, but it
 needs its box convention understood and a runtime that fits the Jetson
 before it can be measured fairly. A free hands-on test of LiteRT-LM on the
-Jetson (5 frames with images, memory measured) is the next step only if
-Qwen fails.
+Jetson (5 frames with images, memory measured) was to be the next step
+if Qwen failed; it has, so that test is now open (free, no cloud calls).
+A prompt without example names, on fresh frames, is the other next step.
 
 ## Sources
 
