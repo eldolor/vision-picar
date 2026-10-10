@@ -44,7 +44,8 @@ the inventory remembers.
 | Qwen2.5-VL-3B, full precision | 58.9% | 1.56 | no (7.5 GB) | failed; primed by the prompt's examples |
 | Qwen3.5-4B, 3-bit (IQ3_XXS) | **64.1%** (909 boxes; 72.4% even if every unjudged box were right) | 2.52 | 2.91 GB of files; not measured on the Jetson | failed |
 | Gemma 4 E2B, LiteRT-LM GPU (amendment 9) | **41.0%** (625 boxes; 48.0% even if every unjudged box were right) | 0.85 | **yes: 2.67 GB measured under the robot stack** | failed; "office chair" 4 of 73 right |
-| Gemma 4 E4B, LiteRT-LM GPU (amendment 9) | not judged | -- | **no: 4.07 GB under the stack** | failed on memory |
+| Gemma 4 E2B, prompt with no object words (amendment 10, 40-frame pilot) | **60.0%** (110 boxes; 95% upper bound 68.7%) | 1.65 | yes (as above) | failed the continue rule |
+| Gemma 4 E4B, prompt with no object words (amendment 10, 40-frame pilot) | **63.5%** (148 boxes; 95% upper bound 70.8%) | 2.35 | **no: 4.07 GB under the stack** (amendment 9) | failed on memory and the continue rule |
 | InternVL3.5-2B, 4-bit | not judged | -- | 1.92 GB | cancelled by the user before judging |
 
 **Qwen3.5-4B's judging** reached 361 of 450 frames (231 of the 300 tuning
@@ -128,3 +129,22 @@ VLM namer.
   (full-res/ and web/).
 * Builds: bartowski/google_gemma-4-E2B-it-GGUF, bartowski/google_gemma-4-E4B-it-GGUF,
   bartowski/Qwen_Qwen3.5-4B-GGUF (Hugging Face)
+
+**Update, 2026-10-10 (amendment 10).** With every object word taken out
+of the prompt (no example names, no category list), labels taken from the
+prompt fell from 47% to 2%. On the 29 frames judged under both prompts,
+E2B rose from 42.7% to 54.4% right. On the 40-frame pilot, E2B scored
+60.0% and E4B 63.5%. Neither 95% upper bound reaches 75%, so neither went
+on to the full 300 (pilot grading ~$0.75, an estimate). **Where it
+stands:** every small VLM tried lands at 60-64% at best, and the one that
+fits beside the running robot (E2B) is the weakest.
+
+* **No runtime makes Qwen fit like Gemma.** LiteRT-LM can keep Gemma's
+  per-layer embedding tables on disk, because each token reads only a few
+  rows. Qwen is dense: every weight is read for every token, so mapping it
+  from disk (which llama.cpp already does) saves nothing. TensorRT-LLM
+  and MLC are faster, not smaller.
+* **The one idea left that changes the budget is naming after a mission**,
+  parked, with nav2, SLAM and the perception loop stopped (~2 GB more
+  free). That could hold E4B, Qwen3.5-4B at 4-bit or more, or a larger
+  Qwen. It is an architecture change and waits for the user's decision.
