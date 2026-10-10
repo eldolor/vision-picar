@@ -2,6 +2,7 @@
 
     python -m tools.inventory_vlm name           # the VLM over the frames (~19 s each, resumable)
     python -m tools.inventory_vlm judge          # the same judge over its boxes (~$5)
+                                                 # (--tuning-only: not the user's 150)
     python -m tools.inventory_vlm score          # precision and right boxes a frame, tuning frames
 
 3.48 found Qwen2.5-VL-3B the one small VLM accurate enough to confirm a
@@ -248,9 +249,15 @@ def cmd_judge(args) -> None:
     boxes_path, out_path = _paths(args.tag)
     vlm = json.loads(boxes_path.read_text())
     done = json.loads(out_path.read_text()) if out_path.exists() else {}
+    # --tuning-only: the user's 150 are judged only once the tuning frames
+    # have earned them (amendment 9), so a first run leaves them untouched.
+    skip = set(json.loads((OUT / "sample.json").read_text())) if args.tuning_only else set()
+    if skip - set(vlm):  # sample.json redrawn since `name`: the split would be wrong
+        raise SystemExit(f"{len(skip - set(vlm))} sample frames are not in {boxes_path.name}; "
+                         "sample.json changed since these frames were named")
     client, spend = _client(), Spend(args.budget)
     for fid in sorted(vlm):
-        if fid in done or not vlm[fid]["boxes"] or spend.over():
+        if fid in done or fid in skip or not vlm[fid]["boxes"] or spend.over():
             continue
         try:
             done[fid] = judge_one(client, ROOT / fid, vlm[fid]["boxes"], spend)
@@ -298,6 +305,8 @@ def main(argv=None) -> None:
     n.add_argument("--limit", type=int, default=0, help="first N frames only (feasibility)")
     j = sub.add_parser("judge")
     j.add_argument("--budget", type=float, default=15.0)
+    j.add_argument("--tuning-only", action="store_true",
+                   help="judge the 300 tuning frames, not the user's 150")
     sc = sub.add_parser("score")
     for p in (n, j, sc):
         p.add_argument("--tag", default="", help="'' = Qwen2.5-VL-3B (amendment 6); "

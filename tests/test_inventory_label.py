@@ -219,3 +219,29 @@ def test_litert_refuses_to_resume_into_another_runs_file(tmp_path, monkeypatch):
         v.main(base + ["--model", "x.litertlm"])
     with pytest.raises(SystemExit, match="another run"):
         v.main(base + ["--model", "x.litertlm", "--device", "gpu", "--tag", "g"])
+
+
+def test_judge_tuning_only_leaves_the_users_sample_unjudged(tmp_path, monkeypatch):
+    from tools import inventory_vlm as v
+    monkeypatch.setattr(v, "OUT", tmp_path)
+    box = [{"label": "chair", "xyxy": [0, 0, 1, 1], "n": 1}]
+    (tmp_path / "vlm_boxes_g.json").write_text(json.dumps(
+        {"tune.jpg": {"boxes": box}, "user.jpg": {"boxes": box}, "none.jpg": {"boxes": []}}))
+    (tmp_path / "sample.json").write_text('["user.jpg"]')
+    asked = []
+    monkeypatch.setattr(v, "_client", lambda: None)
+    monkeypatch.setattr(v, "judge_one", lambda c, path, boxes, spend: asked.append(path.name) or {})
+    v.main(["judge", "--tag", "g", "--tuning-only"])
+    assert asked == ["tune.jpg"]
+    v.main(["judge", "--tag", "g"])  # the second run resumes and adds only the user's frame
+    assert asked == ["tune.jpg", "user.jpg"]
+
+
+def test_judge_tuning_only_refuses_a_redrawn_sample(tmp_path, monkeypatch):
+    from tools import inventory_vlm as v
+    monkeypatch.setattr(v, "OUT", tmp_path)
+    (tmp_path / "vlm_boxes_g.json").write_text('{"tune.jpg": {"boxes": []}}')
+    (tmp_path / "sample.json").write_text('["other.jpg"]')
+    monkeypatch.setattr(v, "_client", lambda: pytest.fail("no client before the check"))
+    with pytest.raises(SystemExit, match="sample.json changed"):
+        v.main(["judge", "--tag", "g", "--tuning-only"])
