@@ -43,6 +43,8 @@ the inventory remembers.
 | CLIP RN50 renaming (50-frame pilot) | 12.0% | -- | yes | failed |
 | Qwen2.5-VL-3B, full precision | 58.9% | 1.56 | no (7.5 GB) | failed; primed by the prompt's examples |
 | Qwen3.5-4B, 3-bit (IQ3_XXS) | **64.1%** (909 boxes; 72.4% even if every unjudged box were right) | 2.52 | 2.91 GB of files; not measured on the Jetson | failed |
+| Gemma 4 E2B, LiteRT-LM GPU (amendment 9) | **41.0%** (625 boxes; 48.0% even if every unjudged box were right) | 0.85 | **yes: 2.67 GB measured under the robot stack** | failed; "office chair" 4 of 73 right |
+| Gemma 4 E4B, LiteRT-LM GPU (amendment 9) | not judged | -- | **no: 4.07 GB under the stack** | failed on memory |
 | InternVL3.5-2B, 4-bit | not judged | -- | 1.92 GB | cancelled by the user before judging |
 
 **Qwen3.5-4B's judging** reached 361 of 450 frames (231 of the 300 tuning
@@ -104,6 +106,15 @@ before it can be measured fairly. A free hands-on test of LiteRT-LM on the
 Jetson (5 frames with images, memory measured) was to be the next step
 if Qwen failed; it has, so that test is now open (free, no cloud calls).
 A prompt without example names, on fresh frames, is the other next step.
+
+**Update, 2026-10-10 (amendment 9).** The LiteRT-LM test ran on all 450
+frames, on the Jetson's GPU, with the robot stack up. E2B fits (2.67 GB,
+no effect on the wheel loop, nav2 or perception; 8 s a frame) but the
+judge found only 41.0% of its names right, under Qwen3.5-4B's 64.1%. The
+by-eye comparison above, on 8 frames, did not hold up at scale. E4B does
+not fit (the board fell to 474 MB free). Both copy the prompt's example
+names heavily, so a prompt without them is now the next step for every
+VLM namer.
 
 ## Sources
 
