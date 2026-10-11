@@ -179,7 +179,7 @@ CLIP rule. Free; no cloud calls.
 |---|---|---|
 | Lookup: top match shows the target | 6 of 6 | 5 of 5 |
 | Lookup: top-5 matches that show it | 25 of 30 | 23 of 25 |
-| Lookup time (laptop CPU) | 7-10 ms | 13-15 ms |
+| Lookup time (laptop CPU) | 7-10 ms | 13-15 ms (12.6 at least) |
 | Frames with the target found, memory vs live search | 84.3% vs 80.8% (13 vs 0 false alarms) | 64.0% vs 77.5% (11 vs 5 false alarms) |
 
 **Looking up works:** the right object comes first for all 11 targets,
