@@ -176,7 +176,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   `inventory/` (labels and positions only; the user's decision). Nothing
   reads it. Sim criteria met on fresh missions (sweep 3: recall 96.6%,
   precision 97.2%); sweep 1's recall failure is recorded. **Real frames
-  give it nothing yet:** phase C (a prompt-free detector) is not built.
+  give it nothing yet:** phase C (a namer for camera frames) was
+  **closed by the user 2026-10-10** after amendments 4-13: no namer
+  reaches the 75% judge bar (YOLOE prompt-free 30%, Qwen3.5-4B 64%, Gemma
+  4 E2B 60% and fits beside the stack, E4B 63.5% and does not). Lookup by
+  appearance (stored CLIP embeddings, matched to the user's words) put
+  the right object first on 11 of 11 targets but failed per-frame recall
+  on held-out walks (64% vs live 78%). Reopen on the Rover's own frames;
+  `docs/evaluations/INVENTORY-NAMERS-2026-10-10.md`.
   `HANDOFF-2026-10-08-3.46-object-inventory.md`. **Review fixes (3.55),
   merged 2026-10-09:** a stop that could skip the stop command, one look
   counted twice on an in-frame merge, mission ids sharing a file,
