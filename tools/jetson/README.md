@@ -158,3 +158,52 @@ processing frames. It passes when all three hold:
 * 0 late ticks on the wheel loop (`/health`'s `wheel_loop`);
 * at least 1 GB of memory free;
 * no thermal throttling in `tegrastats`.
+
+## 5. The robot server, brain and tunnel as services (3.71)
+
+Since 2026-10-11 the Jetson, not the laptop, serves the deployed twin: two
+systemd units start the stack at boot and restart it when it stops.
+
+| Unit | Runs | Log |
+|---|---|---|
+| `picar-stack` | `service/tunnel/run.sh` (robot :8000, brain :8001, proxy :8080), sim mode | `~/.vision-picar-tunnel.log` |
+| `picar-ngrok` | `ngrok start picar` -> the public URL | `~/.vision-picar-ngrok.log` |
+
+They run from a **service worktree**, `~/vision-picar-service` (its
+`.venv` is a link to `~/vision-picar/.venv`), so the bench checkout in
+`~/vision-picar` is never moved under them.
+
+**Once:**
+
+```bash
+# on the Mac: the code, the secrets the twin already holds, the tunnel config
+git push jetson origin/dev:refs/heads/dev
+scp -p ~/.vision-picar-local-secrets ~/.vision-picar-serverless-secrets picar-jetson:
+scp ~/Library/Application\ Support/ngrok/ngrok.yml picar-jetson:.config/ngrok/ngrok.yml
+# on the Jetson
+cd ~/vision-picar && git worktree add --detach ~/vision-picar-service dev
+ln -s ~/vision-picar/.venv ~/vision-picar-service/.venv
+curl -sSLo /tmp/ngrok.tgz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz
+sudo tar -xzf /tmp/ngrok.tgz -C /usr/local/bin
+cd ~/vision-picar-service && bash tools/jetson/install_services.sh
+```
+
+**The secret must be the Mac's.** The twin's Settings hold the Mac's
+`LOCAL_SECRET`; a Jetson with its own file answers "Secret rejected"
+(2026-10-11).
+
+**One tunnel at a time.** ngrok's free plan gives one domain to one
+running agent: stop ngrok on the Mac (`pkill -x ngrok`) before the
+Jetson's starts, or one of them fails with ERR_NGROK_334.
+
+**Update to a new `dev`:**
+
+```bash
+git push jetson origin/dev:refs/heads/dev                     # on the Mac
+ssh picar-jetson 'cd ~/vision-picar-service && git checkout -q --detach dev \
+  && .venv/bin/pip install -q -r requirements.txt && sudo systemctl restart picar-stack'
+curl -s https://<domain>/brain/health    # git_revision is the new commit
+```
+
+`run.sh` exits when any one of its servers does (3.71), so systemd restarts
+the whole set after a crash.

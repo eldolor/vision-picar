@@ -1,0 +1,15 @@
+[Unit]
+Description=ngrok tunnel to the vision-picar proxy (:8080)
+After=network-online.target picar-stack.service
+Wants=network-online.target
+
+[Service]
+User=picar
+ExecStart=/usr/local/bin/ngrok start picar --log=stdout
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/picar/.vision-picar-ngrok.log
+StandardError=append:/home/picar/.vision-picar-ngrok.log
+
+[Install]
+WantedBy=multi-user.target

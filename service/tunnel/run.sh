@@ -152,4 +152,17 @@ echo
 echo "Warm the perception models once before a rig walk -- the first tiered"
 echo "mission downloads yolo11s.pt (18MB) inside POST /mission/start:"
 echo "  python -c 'from brain.perceive import pipeline_for; pipeline_for(\"red backpack\")'"
-wait
+# 3.71: any one of them ending ends them all (the EXIT trap), so a crash is
+# seen. A bare `wait` waited on the others: under systemd the service stayed
+# "active" with the robot server dead, and was never restarted (measured on
+# the Jetson: 40 s, still down). Polled rather than `wait -n`, which the
+# Mac's bash 3.2 does not have.
+while :; do
+  for pid in "${pids[@]}"; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "process $pid ended; stopping the rest"
+      exit 1
+    fi
+  done
+  sleep 2
+done

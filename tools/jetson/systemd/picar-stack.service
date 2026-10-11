@@ -1,0 +1,18 @@
+[Unit]
+Description=vision-picar robot server, brain and proxy (service/tunnel/run.sh)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=picar
+WorkingDirectory=/home/picar/vision-picar-service
+ExecStart=/bin/bash service/tunnel/run.sh
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=20
+StandardOutput=append:/home/picar/.vision-picar-tunnel.log
+StandardError=append:/home/picar/.vision-picar-tunnel.log
+
+[Install]
+WantedBy=multi-user.target
