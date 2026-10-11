@@ -220,9 +220,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   moved (3.57, merged 2026-10-09 with its live criterion failed):** its
   point is now reachable and pinned (`tests/test_tour_points.py`), but it
   still fails 0/3 leaving the garage beside the car, where nav2's path
-  keeps the robot against the safety bar. Next: re-test 3.43's nav2
-  inflation candidate (0.12 -> 0.35 m) against the garage exit (the
-  user's choice). Every tour count before 3.57 is "of 8 reachable goals". Live runs now keep
+  keeps the robot against the safety bar. **The garage exit is not
+  solvable by nav2's parameters (3.67, records merged 2026-10-11;
+  `nav2.yaml` unchanged).** Inflation 0.35 m (A) keeps goal 6 at 0/3 --
+  the plan runs down a 30 cm slot beside the car to an unmapped wall --
+  but meets every other bar (tour 8/8/8, parked <= 99 s, coverage
+  0.93-0.95, R6 6/6). Footprint padding (B) and `allow_unknown: false`
+  (C) break other goals. Open for the user: adopt A with criterion 1
+  waived, or build a refusal-aware replan outside nav2. Every tour count before 3.57 is "of 8 reachable goals". Live runs now keep
   per-run logs with explore's decisions (`PICAR_LOG_LEVEL`,
   `evaluations/slam-345/`). Handoff:
   `HANDOFF-2026-10-07-3.45-explore-goal-choice.md`. 3.31's frontier-search
