@@ -24,8 +24,11 @@ for unit in picar-stack picar-ngrok; do
   sudo install -m 644 "$HERE/systemd/$unit.service" "/etc/systemd/system/$unit.service"
 done
 sudo systemctl daemon-reload
-sudo systemctl enable --now picar-stack.service picar-ngrok.service
+sudo systemctl enable picar-stack.service picar-ngrok.service
 sudo systemctl restart picar-stack.service picar-ngrok.service
-sleep 15
+for _ in $(seq 1 60); do
+  curl -sf -m 3 http://127.0.0.1:8080/brain/health >/dev/null && break
+  sleep 1
+done
 systemctl is-active picar-stack.service picar-ngrok.service
 curl -s -m 5 http://127.0.0.1:8080/brain/health | head -c 160; echo

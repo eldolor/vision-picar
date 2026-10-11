@@ -97,7 +97,10 @@ echo "robot mode: $ROBOT_MODE   world: $WORLD_MODE   vision: $VISION_URL"
 # a bare "Load failed" with nothing to point at.
 pids=()
 cleanup() { for pid in "${pids[@]:-}"; do kill "$pid" 2>/dev/null || true; done; }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# A requested stop (Ctrl-C, systemctl stop) ends the script at once and
+# cleanly: exit 0, so systemd does not mark the unit failed (3.71 review).
+trap 'cleanup; exit 0' INT TERM
 
 # 3.36: under SIM_MOTOR_BOARD=fake the simulated body runs as its own
 # programs, started first -- physics + the fake board (sim/body_server.py)

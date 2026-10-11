@@ -98,6 +98,15 @@ browser, they ERROR rather than skip (seen in the Python 3.10 run).
 
 ## 4. G4 and headroom
 
+**Stop the services first** (section 5): `picar-stack` holds :8000, :8001
+and :8080 from boot and restarts itself when killed, so it would race the
+bench's own stack for the ports.
+
+```bash
+sudo systemctl stop picar-stack picar-ngrok     # before the bench
+sudo systemctl start picar-stack picar-ngrok    # after
+```
+
 **G4 is 5 consecutive runs of the live chain and nav suites against the
 fake motor board, and a skip is not a pass.** A run counts only if pytest's
 summary reads `18 passed` (13 chain, 5 nav) with 0 skipped and 0 failed. Any
