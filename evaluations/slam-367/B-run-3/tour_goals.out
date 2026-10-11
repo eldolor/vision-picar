@@ -1,0 +1,172 @@
+run-20261010-233747
+{
+ "goal": 6,
+ "name": "dining room",
+ "state": "aborted",
+ "seconds": 86.7,
+ "end_error_m": 1.704,
+ "reply": null,
+ "moved_m": 6.42,
+ "inherited": false,
+ "goal_point_gap_cm": 18.1,
+ "nav2": [
+  [
+   -0.5,
+   "bt_navigator",
+   "Goal succeeded"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (0.04, -8.71) to (1.80, -4.30)"
+  ],
+  [
+   0.0,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   64.7,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   64.7,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   66.2,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   66.2,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   66.7,
+   "behavior_server",
+   "Running spin"
+  ],
+  [
+   66.7,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   66.7,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   73.8,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   73.8,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   74.2,
+   "behavior_server",
+   "Running backup"
+  ],
+  [
+   74.2,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ]
+ ],
+ "refused": {}
+}
+{
+ "goal": 7,
+ "name": "living room",
+ "state": "aborted",
+ "seconds": 60.1,
+ "end_error_m": 5.703,
+ "reply": null,
+ "moved_m": 0.43,
+ "inherited": false,
+ "goal_point_gap_cm": 39.9,
+ "nav2": [
+  [
+   -0.6,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   -0.6,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   -0.5,
+   "bt_navigator",
+   "Goal failed"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (1.98, -2.58) to (-0.18, 3.12)"
+  ],
+  [
+   0.0,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   6.8,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   12.2,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   12.5,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   12.8,
+   "behavior_server",
+   "Running backup"
+  ],
+  [
+   23.0,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   24.4,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   24.7,
+   "behavior_server",
+   "Running spin"
+  ],
+  [
+   30.6,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   33.2,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ]
+ ],
+ "refused": {
+  "ros reverse safety_distance": 227,
+  "ros forward safety_distance": 13
+ }
+}

@@ -1,0 +1,371 @@
+run-20261010-225112
+{
+ "goal": 5,
+ "name": "garage, beside the car",
+ "state": "aborted",
+ "seconds": 87.2,
+ "end_error_m": 4.299,
+ "reply": null,
+ "moved_m": 0.08,
+ "inherited": false,
+ "goal_point_gap_cm": Infinity,
+ "nav2": [
+  [
+   -0.5,
+   "bt_navigator",
+   "Goal succeeded"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (4.31, -8.64) to (-0.03, -8.77)"
+  ],
+  [
+   0.0,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   0.7,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   6.5,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   7.0,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   8.0,
+   "behavior_server",
+   "Running backup"
+  ],
+  [
+   8.9,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   9.7,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   10.4,
+   "behavior_server",
+   "Running spin"
+  ],
+  [
+   16.4,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   17.5,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   18.4,
+   "behavior_server",
+   "Running backup"
+  ],
+  [
+   19.9,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ]
+ ],
+ "refused": {}
+}
+{
+ "goal": 6,
+ "name": "dining room",
+ "state": "aborted",
+ "seconds": 49.3,
+ "end_error_m": 4.901,
+ "reply": null,
+ "moved_m": 0.0,
+ "inherited": false,
+ "goal_point_gap_cm": 18.1,
+ "nav2": [
+  [
+   -0.7,
+   "bt_navigator",
+   "Goal failed"
+  ],
+  [
+   -0.7,
+   "controller_server",
+   "Failed to make progress"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (4.32, -8.56) to (1.80, -4.30)"
+  ],
+  [
+   0.0,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.0,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   0.1,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.1,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   0.2,
+   "behavior_server",
+   "Running spin"
+  ],
+  [
+   15.2,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   15.2,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   15.6,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   15.6,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   15.7,
+   "behavior_server",
+   "Running backup"
+  ],
+  [
+   16.1,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ]
+ ],
+ "refused": {}
+}
+{
+ "goal": 7,
+ "name": "living room",
+ "state": "active",
+ "seconds": 120.7,
+ "end_error_m": 12.473,
+ "reply": null,
+ "moved_m": 0.0,
+ "inherited": false,
+ "goal_point_gap_cm": 39.9,
+ "nav2": [
+  [
+   -0.7,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   -0.7,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   -0.6,
+   "bt_navigator",
+   "Goal failed"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (4.32, -8.56) to (-0.18, 3.12)"
+  ],
+  [
+   0.0,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   15.0,
+   "controller_server",
+   "Failed to make progress"
+  ],
+  [
+   15.0,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   30.1,
+   "behavior_server",
+   "Running spin"
+  ],
+  [
+   30.1,
+   "controller_server",
+   "Failed to make progress"
+  ],
+  [
+   45.2,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   60.2,
+   "controller_server",
+   "Failed to make progress"
+  ],
+  [
+   60.2,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   75.3,
+   "behavior_server",
+   "Running backup"
+  ],
+  [
+   75.3,
+   "controller_server",
+   "Failed to make progress"
+  ]
+ ],
+ "refused": {}
+}
+{
+ "goal": 8,
+ "name": "den",
+ "state": "active",
+ "seconds": 120.6,
+ "end_error_m": 11.56,
+ "reply": null,
+ "moved_m": 0.0,
+ "inherited": false,
+ "goal_point_gap_cm": 64.9,
+ "nav2": [
+  [
+   -0.7,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (4.32, -8.56) to (7.13, 2.66)"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Received goal preemption request"
+  ],
+  [
+   14.3,
+   "controller_server",
+   "Failed to make progress"
+  ],
+  [
+   14.3,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   29.4,
+   "behavior_server",
+   "Running backup"
+  ],
+  [
+   29.4,
+   "controller_server",
+   "Failed to make progress"
+  ],
+  [
+   29.6,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   44.6,
+   "controller_server",
+   "Failed to make progress"
+  ],
+  [
+   44.6,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   59.7,
+   "behavior_server",
+   "Running spin"
+  ],
+  [
+   59.7,
+   "controller_server",
+   "Failed to make progress"
+  ],
+  [
+   74.8,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   89.8,
+   "controller_server",
+   "Failed to make progress"
+  ]
+ ],
+ "refused": {}
+}
+{
+ "goal": 9,
+ "name": "back to the foyer",
+ "state": "aborted",
+ "seconds": 13.2,
+ "end_error_m": 9.618,
+ "reply": null,
+ "moved_m": 0.0,
+ "inherited": false,
+ "goal_point_gap_cm": 51.5,
+ "nav2": [
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (4.32, -8.56) to (-0.03, 0.07)"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Received goal preemption request"
+  ],
+  [
+   13.6,
+   "bt_navigator",
+   "Goal failed"
+  ],
+  [
+   13.6,
+   "controller_server",
+   "Failed to make progress"
+  ]
+ ],
+ "refused": {}
+}
