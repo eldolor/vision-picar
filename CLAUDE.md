@@ -221,8 +221,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   point is now reachable and pinned (`tests/test_tour_points.py`), but it
   still fails 0/3 leaving the garage beside the car, where nav2's path
   keeps the robot against the safety bar. **The garage exit is not
-  solvable by nav2's parameters (3.67, records merged 2026-10-11;
-  `nav2.yaml` unchanged).** Inflation 0.35 m (A) keeps goal 6 at 0/3 --
+  solvable by nav2's parameters (3.67).** **Candidate A is adopted in
+  `nav2.yaml` (merged 2026-10-11, criterion 1 waived by the user;
+  rebuild `vision-picar-ros:latest` from `dev` before trusting a live
+  run).** Inflation 0.35 m (A) keeps goal 6 at 0/3 --
   the plan runs down a 30 cm slot beside the car to an unmapped wall --
   but meets every other bar (tour 8/8/8, parked <= 99 s, coverage
   0.93-0.95, R6 6/6). Footprint padding (B) and `allow_unknown: false`
@@ -231,8 +233,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   fails:** the robot server marks a keepout spot after 3 s of refused
   forward moves; it breaks the garage wedge (refusals 1,200 -> 130-194)
   but goal 6 still times out 0/3, run 2's tour is 7/9, one park is
-  123 s, and explore re-marks one spot up to 30 times. Open for the user:
-  adopt A with criterion 1 waived, or iterate on 3.68. Every tour count before 3.57 is "of 8 reachable goals". Live runs now keep
+  123 s, and explore re-marks one spot up to 30 times. Goal 6 stays
+  open. Every tour count before 3.57 is "of 8 reachable goals". Live runs now keep
   per-run logs with explore's decisions (`PICAR_LOG_LEVEL`,
   `evaluations/slam-345/`). Handoff:
   `HANDOFF-2026-10-07-3.45-explore-goal-choice.md`. 3.31's frontier-search
