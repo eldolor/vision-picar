@@ -608,3 +608,38 @@ def test_a_refused_glimpse_turn_never_fails_a_place_or_forgets_a_sighting():
         agent._do_pending()
     assert agent._last_seen == (6.9, 1.6)
     assert agent.retry.available(grid.x * CELL - 1.0, grid.y * CELL, grid.sim_time)
+
+
+def test_a_close_target_with_one_beam_past_it_keeps_its_range():
+    """3.69 review 3: 0.5 m ahead, four beams on it and one past it -- the
+    median is the target; dropping the sighting drove the robot away."""
+    agent, nav, grid = _kitchen_door(5)
+    scan = {"usable": True, "angle_min_deg": -180.0, "angle_increment_deg": 1.0,
+            "ranges_m": [2.0] * 360}
+    for i in range(178, 182):
+        scan["ranges_m"][i] = 0.5
+    agent.robot.get_scan = lambda: scan
+    tx, ty = agent._sighting({"detections": [{"label": "red backpack", "bearing_deg": 0.0}]})
+    assert math.hypot(tx - grid.x * CELL, ty - grid.y * CELL) == pytest.approx(0.5, abs=0.1)
+
+
+def test_a_glimpse_backs_off_at_most_once_from_one_place():
+    """3.69 review 3: each new glimpse from the same spot queued another
+    REVERSE, walking the robot backwards a step at a time."""
+    agent, grid = _agent_that_cannot_turn()
+    sent = []
+    real = agent.safety.check_and_execute
+
+    def spy(action, **kw):
+        sent.append(action)
+        if action == "REVERSE":
+            return {"action": action}             # backs off -- but does not move here
+        return real(action, **kw)
+    agent.safety.check_and_execute = spy
+    for _ in range(3):                            # three glimpses, one spot
+        agent._pending = [("FACE", (grid.x * CELL - 1.0, grid.y * CELL), 90, False, "glimpse")]
+        for _ in range(16):
+            if not agent._pending:
+                break
+            agent._do_pending()
+    assert sent.count("REVERSE") == 1

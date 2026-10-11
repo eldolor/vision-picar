@@ -156,6 +156,7 @@ class ExploreAgent(MissionAgent):
         self.seen: set = set()
         self._looked: list = []        # view-gap centres already visited
         self._backed_off: list = []    # targets a refused face has backed off from (3.69)
+        self._glimpse_backoffs: list = []   # where the robot stood when a glimpse did
         # Frontier goals already reached, with how often. A frontier still
         # there after the robot has stood at it TWICE cannot be cleared from
         # there -- the unknown under a table, behind a sofa -- and
@@ -589,12 +590,17 @@ class ExploreAgent(MissionAgent):
                 elif kind is None:
                     pass                          # an unseen patch: give up the look
                 elif kind == "glimpse":
-                    # Back off and turn once more; never a retry failure or a
-                    # forgotten sighting -- the point is made up, 1 m out.
-                    if backed:
+                    # Back off and turn once more -- once per place the robot
+                    # stands; never a retry failure or a forgotten sighting:
+                    # the point is made up, 1 m out.
+                    here = (pose["x_m"], pose["y_m"])
+                    again = any(math.hypot(here[0] - bx, here[1] - by) < APPROACH_MOVED_M
+                                for bx, by in self._glimpse_backoffs)
+                    if backed or again:
                         if "FORWARD" in self._pending:
                             self._pending.remove("FORWARD")
                     else:
+                        self._glimpse_backoffs.append(here)
                         self._pending[0:0] = ["REVERSE", ("FACE", (tx, ty), 90, True, kind),
                                               "FORWARD"]
                 elif backed or any(math.hypot(tx - bx, ty - by) < APPROACH_MOVED_M
@@ -750,15 +756,24 @@ class ExploreAgent(MissionAgent):
             # took the wall (house 125: 3.76 m for a backpack at 2.7). The
             # nearest return is short of the target, never past it, so the
             # approach only brings the robot closer to look again.
-            # Within the approach band, though, no range at all: the nearest
-            # may be a jamb at arm's length (read as "at the target", no
-            # approach sent) and the median the wall behind a target that
-            # IS that close (a goal past it). Another frame decides.
+            # Within the approach band, though: if the median is there too,
+            # most beams are on the near surface -- the target that close,
+            # one beam slipping past it -- so take the median. If only the
+            # nearest is, no range at all: it may be a jamb at arm's length
+            # (read as "at the target", no approach sent) and the median the
+            # wall behind. Another frame decides.
+            band = APPROACH_FAR_M + 0.1
             finite = [x for x in window if not math.isinf(x)]
             near = min(finite) if finite else None
-            if near is None or near <= APPROACH_FAR_M + 0.1:
+            middle = ArrivalCheck._range_at(scan, bearing)
+            if near is None:
                 return None
-            r = round(near, 4)
+            if near > band:
+                r = round(near, 4)
+            elif middle is not None and middle <= band:
+                r = middle
+            else:
+                return None
         else:
             r = ArrivalCheck._range_at(scan, bearing)
         pose = self._pose()
