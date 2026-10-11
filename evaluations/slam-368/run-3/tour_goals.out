@@ -1,0 +1,87 @@
+run-20261011-121456
+{
+ "goal": 6,
+ "name": "dining room",
+ "state": "active",
+ "seconds": 120.7,
+ "end_error_m": 1.422,
+ "reply": null,
+ "moved_m": 6.13,
+ "inherited": false,
+ "goal_point_gap_cm": 18.1,
+ "nav2": [
+  [
+   -0.5,
+   "bt_navigator",
+   "Goal succeeded"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (0.05, -8.71) to (1.80, -4.30)"
+  ],
+  [
+   0.0,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   30.1,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   30.5,
+   "behavior_server",
+   "Running backup"
+  ],
+  [
+   36.7,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   106.1,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   106.6,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   106.9,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   107.3,
+   "behavior_server",
+   "Running spin"
+  ],
+  [
+   110.0,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   119.3,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   121.7,
+   "bt_navigator",
+   "Begin navigating from current location (1.95, -2.88) to (-0.18, 3.12)"
+  ],
+  [
+   121.7,
+   "bt_navigator",
+   "Received goal preemption request"
+  ]
+ ],
+ "refused": {
+  "ros forward safety_distance": 130
+ }
+}

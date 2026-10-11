@@ -1,0 +1,106 @@
+run-20261011-115309
+{
+ "goal": 6,
+ "name": "dining room",
+ "state": "active",
+ "seconds": 120.6,
+ "end_error_m": 1.046,
+ "reply": null,
+ "moved_m": 4.4,
+ "inherited": false,
+ "goal_point_gap_cm": 18.1,
+ "nav2": [
+  [
+   -0.7,
+   "bt_navigator",
+   "Goal succeeded"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (0.04, -8.70) to (1.80, -4.30)"
+  ],
+  [
+   0.0,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   88.0,
+   "controller_server",
+   "Failed to make progress"
+  ],
+  [
+   88.0,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ],
+  [
+   110.9,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   110.9,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   115.4,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   115.4,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   116.9,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   116.9,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   123.2,
+   "bt_navigator",
+   "Begin navigating from current location (0.75, -4.31) to (7.13, 2.66)"
+  ],
+  [
+   123.2,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ]
+ ],
+ "refused": {
+  "ros forward safety_distance": 142
+ }
+}
+{
+ "goal": 7,
+ "name": "living room",
+ "state": "aborted",
+ "seconds": 0.5,
+ "end_error_m": 7.481,
+ "reply": null,
+ "moved_m": 0.0,
+ "inherited": false,
+ "goal_point_gap_cm": 39.9,
+ "nav2": [
+  [
+   1.6,
+   "bt_navigator",
+   "Begin navigating from current location (0.75, -4.31) to (7.13, 2.66)"
+  ],
+  [
+   1.6,
+   "controller_server",
+   "Received a goal, begin computing control effort."
+  ]
+ ],
+ "refused": {}
+}
