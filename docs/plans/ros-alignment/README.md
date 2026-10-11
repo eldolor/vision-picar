@@ -74,4 +74,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.67](3.67-garage-exit-inflation.md) | nav2's inflation against the garage exit (2026-10-11): candidate A adopted, criterion 1 waived by the user |
 | [3.68](3.68-refusal-replan.md) | Replan around a spot the safety layer keeps refusing (2026-10-11): built; FAILED (goal 6 0/3), not adopted |
 | [3.69](3.69-explore-misses.md) | Explore's misses in the imported houses |
+| [3.71](3.71-jetson-services.md) | The robot server, brain and tunnel as Jetson services |
 <!-- /sections -->
