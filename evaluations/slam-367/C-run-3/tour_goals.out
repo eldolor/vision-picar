@@ -1,0 +1,421 @@
+run-20261011-005021
+{
+ "goal": 2,
+ "name": "kitchen, by the island",
+ "state": "aborted",
+ "seconds": 18.2,
+ "end_error_m": 7.85,
+ "reply": null,
+ "moved_m": 0.31,
+ "inherited": false,
+ "goal_point_gap_cm": 21.2,
+ "nav2": [
+  [
+   -0.6,
+   "bt_navigator",
+   "Goal succeeded"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (5.36, -1.22) to (6.83, -8.77)"
+  ],
+  [
+   0.0,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.0,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (6.83, -8.77)"
+  ],
+  [
+   0.5,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.5,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (6.83, -8.77)"
+  ],
+  [
+   1.0,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   1.0,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (6.83, -8.77)"
+  ],
+  [
+   1.5,
+   "behavior_server",
+   "Running spin"
+  ],
+  [
+   1.5,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   1.5,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (6.83, -8.77)"
+  ],
+  [
+   3.2,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   3.2,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (6.83, -8.77)"
+  ],
+  [
+   3.5,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ]
+ ],
+ "refused": {}
+}
+{
+ "goal": 3,
+ "name": "garage hall",
+ "state": "aborted",
+ "seconds": 26.9,
+ "end_error_m": 6.789,
+ "reply": null,
+ "moved_m": 0.41,
+ "inherited": false,
+ "goal_point_gap_cm": 24.8,
+ "nav2": [
+  [
+   -1.0,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   -1.0,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (6.83, -8.77)"
+  ],
+  [
+   -0.7,
+   "bt_navigator",
+   "Goal failed"
+  ],
+  [
+   -0.7,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   -0.7,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (6.83, -8.77)"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (5.59, -1.02) to (4.09, -7.77)"
+  ],
+  [
+   0.0,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.0,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (4.09, -7.77)"
+  ],
+  [
+   0.3,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.3,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (4.09, -7.77)"
+  ],
+  [
+   5.3,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   5.3,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (4.09, -7.77)"
+  ],
+  [
+   5.8,
+   "behavior_server",
+   "Running backup"
+  ],
+  [
+   5.8,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ]
+ ],
+ "refused": {}
+}
+{
+ "goal": 4,
+ "name": "laundry",
+ "state": "aborted",
+ "seconds": 18.1,
+ "end_error_m": 7.58,
+ "reply": null,
+ "moved_m": 0.31,
+ "inherited": false,
+ "goal_point_gap_cm": 7.8,
+ "nav2": [
+  [
+   -0.9,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   -0.9,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (4.09, -7.77)"
+  ],
+  [
+   -0.6,
+   "bt_navigator",
+   "Goal failed"
+  ],
+  [
+   -0.6,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   -0.6,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (4.09, -7.77)"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (5.18, -1.06) to (4.24, -8.71)"
+  ],
+  [
+   0.0,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.0,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (4.24, -8.71)"
+  ],
+  [
+   0.4,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.4,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (4.24, -8.71)"
+  ],
+  [
+   0.9,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.9,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (4.24, -8.71)"
+  ],
+  [
+   1.4,
+   "behavior_server",
+   "Running spin"
+  ],
+  [
+   1.4,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ]
+ ],
+ "refused": {}
+}
+{
+ "goal": 5,
+ "name": "garage, beside the car",
+ "state": "aborted",
+ "seconds": 26.9,
+ "end_error_m": 9.546,
+ "reply": null,
+ "moved_m": 0.42,
+ "inherited": false,
+ "goal_point_gap_cm": Infinity,
+ "nav2": [
+  [
+   -1.0,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   -1.0,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (4.24, -8.71)"
+  ],
+  [
+   -0.7,
+   "bt_navigator",
+   "Goal failed"
+  ],
+  [
+   -0.7,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   -0.7,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (4.24, -8.71)"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (5.44, -1.22) to (-0.03, -8.77)"
+  ],
+  [
+   0.0,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.0,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (-0.03, -8.77)"
+  ],
+  [
+   0.3,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.3,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (-0.03, -8.77)"
+  ],
+  [
+   5.3,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   5.3,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (-0.03, -8.77)"
+  ],
+  [
+   5.8,
+   "behavior_server",
+   "Running backup"
+  ],
+  [
+   5.8,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ]
+ ],
+ "refused": {}
+}
+{
+ "goal": 6,
+ "name": "dining room",
+ "state": "aborted",
+ "seconds": 17.9,
+ "end_error_m": 4.634,
+ "reply": null,
+ "moved_m": 0.31,
+ "inherited": false,
+ "goal_point_gap_cm": 18.1,
+ "nav2": [
+  [
+   -0.9,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   -0.9,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (-0.03, -8.77)"
+  ],
+  [
+   -0.7,
+   "bt_navigator",
+   "Goal failed"
+  ],
+  [
+   -0.7,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   -0.7,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (-0.03, -8.77)"
+  ],
+  [
+   0.0,
+   "bt_navigator",
+   "Begin navigating from current location (5.29, -0.82) to (1.80, -4.30)"
+  ],
+  [
+   0.0,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.0,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   0.3,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.3,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   0.8,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ],
+  [
+   0.8,
+   "planner_server",
+   "Planning algorithm GridBased failed to generate a valid path to (1.80, -4.30)"
+  ],
+  [
+   1.3,
+   "behavior_server",
+   "Running spin"
+  ],
+  [
+   1.3,
+   "planner_server",
+   "GridBased: failed to create plan with tolerance 0.10."
+  ]
+ ],
+ "refused": {}
+}
