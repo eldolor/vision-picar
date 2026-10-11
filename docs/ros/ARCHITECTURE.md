@@ -156,8 +156,14 @@ server and nowhere else.
 underneath the robot server, and no hardware plugin is written
 (`PLAN-ros-alignment.md` 3.16). Hardware day becomes a configuration change.
 
-**Trade-off.** A wheel command goes plugin, HTTP, robot server, backend:
-about 40-150 ms of jitter (3.13). Every velocity that comes from ROS pays it.
+**Trade-off.** A wheel command goes plugin, HTTP, robot server, backend.
+The HTTP hop itself costs little: at 20 Hz with a mission running, p99
+33.8 ms and a worst of 63.8 ms, none near the 125 ms that would stop the
+wheels, and most of that tail is the simulator sharing the server's
+process (3.17). The whole chain, from a verb's twist to the wheels, carries
+40-150 ms of jittery delay (3.13); every velocity that comes from ROS pays
+it. Neither has been measured on the Jetson yet (3.33 skipped the live
+rate test).
 
 ### D5. Two collision guards in series, with the safety layer last
 
@@ -309,8 +315,8 @@ the wheels, one that skips arbitration (3.17).
 | The container dies | The plugin's posts stop. The robot server's watchdog stops the wheels; after a silence it counts ROS as down | A running mission ends `failed`, naming ROS, within 3 s. A person can drive within 2 s, vetted by the safety layer. Autonomy is refused (G3, measured 2.04 s and 0.36 s) |
 | The bridge dies while the plugin keeps posting | The first send that finds it dead (unreachable, or a server error) is refused as ROS-unavailable and marks ROS down, so the row above applies until the bridge answers again. The plugin's wheel commands are refused meanwhile, so a person on the fallback is the only writer. A bridge that answers with a client error is alive and marks nothing | Met (built 2026-10-02; the actuator's posts and client errors settled 2026-10-03, `docs-review/SPEC-REVIEW-3.md` V7-V8). The rule is [safety](../safety/ARCHITECTURE.md)'s ("When ROS dies, only a person drives") |
 | The container comes back | The plugin's posts resume | ROS counts as up again within 5 s of its first post, with no server restart (G3.4) |
-| The robot server restarts | While the server is unreachable the plugin keeps retrying and reports the outage; it does not declare a hardware error for that, because ros2_control would then deactivate it for good. If the restarted server answers "no wheels" before its body reports them, which the car's backend does until the board's first feedback, the plugin takes that as a hardware error (next row) | The ROS chain recovers by itself, but only when the restarted server reports wheels at its first answer (the simulator does). On the car's backend it is not met: see Open questions. UNCONFIRMED, by reading |
-| The robot server reports no wheels | The plugin reports a hardware error, and ROS's control framework deactivates it until the container restarts | It fails loudly in the container's log. Not met: the controllers can still read "active" while commanding nothing, and it does not recover by itself (open questions) |
+| The robot server restarts | While the server is unreachable, or answers "no wheels" because the car's backend has no fresh board feedback yet, the plugin treats it as an outage: zero velocity, position held, keep retrying. It never declares a hardware error for either, because ros2_control would then deactivate it for good | The ROS chain recovers by itself at the first answer with wheels. Met (3.34; measured against a stub server wheel-less for 2 s: still active, back at 20 Hz within 3 s) |
+| The robot server reports no wheels | At start-up, the plugin refuses to activate only for a body with no wheels at all (a phone walk, a replay). The car's backend before its first board frame says `awaiting_feedback`, and the plugin activates and waits. Once active, "no wheels" is an outage (row above) | A body that cannot drive fails loudly at start-up; a board that is merely late does not. Met (handoff 2a, 2026-10-03; live with the fake board silent for 30 s, the plugin activated, recovered at the first frame, and a LEFT 45 through ROS landed in 40-50 degrees, `tests/test_startup_race.py`) |
 | The bridge is unreachable or hangs during a stop | The robot server stops the robot directly, without waiting on ROS | A stop never waits on the container, and the stopped verb's commands still in flight inside ROS cannot undo it. A person's stop ends a nav2 goal too, off the stop's own path: the robot server keeps cancelling, and holds the actuator's wheel commands at zero, until nav2 reports the goal over -- through a hung or failed cancel, and a goal nav2 had not yet accepted (the bridge cancels it on acceptance). Met (D6; [safety](../safety/ARCHITECTURE.md) "Who drives"; completed 2026-10-03). The bridge's acceptance-time cancel is unverified live |
 | The bridge is unreachable or hangs during a verb | The verb waits out its client timeout, then the robot server stops the robot directly and refuses the verb by name | Refused by name, robot stopped. Only the stop avoids the wait |
 | An obstacle near the chassis | The collision monitor slows or stops, then the safety layer re-vets | Stops at or beyond the safety layer's line on every path (R4: at least 19.4 cm; G2: travel-to-contact at least 18 cm after every move, no contact) |
@@ -327,13 +333,6 @@ where noted.
 - **Every person, not just the D-pad, under the ROS drive mode** (D6;
   `docs-review/REPORT.md` V10). Either give every manual-rank driver a
   multiplexer input, or narrow D6 for good. The user decides.
-- **Start-up order and the actuator's "no wheels" error.** The plugin treats
-  a robot server that answers "no wheels" as a hardware error, and on the
-  car's backend that is what the server says until the board's first
-  feedback frame. A container started too early, or one running when the
-  robot server restarts, is then deactivated for good. The runbook orders
-  the start-up today; nothing orders a server restart. Whether the plugin
-  should treat "no wheels yet" like an unreachable server is open.
 - **Sighting geometry inside ROS.** A route would turn a camera bearing plus
   the lidar's range into a point on the map, composed through the transform
   tree. It is decided in principle (1.1), has no criteria yet, and would
