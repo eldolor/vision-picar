@@ -71,4 +71,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.61](3.61-stop-task-race.md) | Stop never forgets a mission a concurrent Start began |
 | [3.64](3.64-older-review-bugs.md) | Older review bugs: the ten still live on `dev`, fixed |
 | [3.67](3.67-garage-exit-inflation.md) | nav2's inflation against the garage exit |
+| [3.66](3.66-procthor-houses.md) | ProcTHOR floor plans as simulator houses |
 <!-- /sections -->
