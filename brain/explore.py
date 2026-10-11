@@ -242,7 +242,7 @@ class ExploreAgent(MissionAgent):
                        for p in self._pending)
         glimpse = self._glimpse(frame) if self._goal is None and not escaping else None
         if glimpse is not None:
-            self._pending = ["LOOK_CENTER", ("FACE", glimpse, 90, False, True)]
+            self._pending = ["LOOK_CENTER", ("FACE", glimpse, 90, False, "glimpse")]
             self._event("glimpse", toward=[round(glimpse[0], 2), round(glimpse[1], 2)])
 
         # A look queued after an arrival goes first: no goal is live then.
@@ -557,12 +557,13 @@ class ExploreAgent(MissionAgent):
             if not pose.get("usable"):
                 return "WAIT", False, "no pose to turn from"
             tx, ty = item[1]
-            # ("FACE", point, cap, backed, target): the cap a refusal set,
-            # whether this turn comes after backing off, and whether the
-            # point is the TARGET (not an unseen patch or a glimpse).
+            # ("FACE", point, cap, backed, kind): the cap a refusal set,
+            # whether this turn comes after backing off, and what the point
+            # is -- True: the TARGET's place; "glimpse": only a direction to
+            # it (1 m out, not where it is); absent: an unseen patch.
             cap = item[2] if len(item) > 2 else 90
             backed = len(item) > 3 and item[3]
-            is_target = len(item) > 4 and item[4]
+            kind = item[4] if len(item) > 4 else None
             want = math.degrees(math.atan2(tx - pose["x_m"], -(ty - pose["y_m"])))
             turn = (want - pose["heading_deg"] + 180.0) % 360.0 - 180.0
             if abs(turn) < 5:
@@ -584,9 +585,18 @@ class ExploreAgent(MissionAgent):
                 self._pending = [p for p in self._pending if p is not item]
                 tried = min(cap, abs(turn))
                 if tried > FACE_MIN_TURN_DEG:
-                    self._pending.insert(0, ("FACE", (tx, ty), tried / 2, backed, is_target))
-                elif not is_target:
+                    self._pending.insert(0, ("FACE", (tx, ty), tried / 2, backed, kind))
+                elif kind is None:
                     pass                          # an unseen patch: give up the look
+                elif kind == "glimpse":
+                    # Back off and turn once more; never a retry failure or a
+                    # forgotten sighting -- the point is made up, 1 m out.
+                    if backed:
+                        if "FORWARD" in self._pending:
+                            self._pending.remove("FORWARD")
+                    else:
+                        self._pending[0:0] = ["REVERSE", ("FACE", (tx, ty), 90, True, kind),
+                                              "FORWARD"]
                 elif backed or any(math.hypot(tx - bx, ty - by) < APPROACH_MOVED_M
                                    for bx, by in self._backed_off):
                     # The turn after backing off failed too: the forward
@@ -740,12 +750,15 @@ class ExploreAgent(MissionAgent):
             # took the wall (house 125: 3.76 m for a backpack at 2.7). The
             # nearest return is short of the target, never past it, so the
             # approach only brings the robot closer to look again.
-            # Only beyond the approach band, though: a jamb's return at arm's
-            # length would read as "at the target" and no approach be sent.
+            # Within the approach band, though, no range at all: the nearest
+            # may be a jamb at arm's length (read as "at the target", no
+            # approach sent) and the median the wall behind a target that
+            # IS that close (a goal past it). Another frame decides.
             finite = [x for x in window if not math.isinf(x)]
             near = min(finite) if finite else None
-            r = (round(near, 4) if near is not None and near > APPROACH_FAR_M + 0.1
-                 else ArrivalCheck._range_at(scan, bearing))
+            if near is None or near <= APPROACH_FAR_M + 0.1:
+                return None
+            r = round(near, 4)
         else:
             r = ArrivalCheck._range_at(scan, bearing)
         pose = self._pose()

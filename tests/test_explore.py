@@ -577,9 +577,11 @@ def test_a_backed_off_turn_that_fails_again_does_not_drive_forward_blind():
     assert "REVERSE" in sent and "FORWARD" not in sent
 
 
-def test_an_edge_return_at_arms_length_does_not_read_as_at_the_target():
-    """3.69 review: at an edge the nearest return is taken only beyond the
-    approach band -- a jamb 0.3 m off would otherwise say "already there"."""
+def test_an_edge_return_at_arms_length_gives_no_range():
+    """3.69 reviews: at an edge with the nearest return inside the approach
+    band, neither reading can be trusted -- the nearest may be a jamb (read
+    as "already there"), the median the wall behind a target that close (a
+    goal past it). No sighting; another frame decides."""
     agent, nav, grid = _kitchen_door(5)
     scan = {"usable": True, "angle_min_deg": -180.0, "angle_increment_deg": 1.0,
             "ranges_m": [2.0] * 360}
@@ -587,6 +589,22 @@ def test_an_edge_return_at_arms_length_does_not_read_as_at_the_target():
     for i in range(178, 183):                       # beams -2..+2 deg
         scan["ranges_m"][i] = 0.3 if i == 178 else 2.0
     agent.robot.get_scan = lambda: scan
+    assert agent._sighting({"detections": hits}) is None
+    scan["ranges_m"][178] = 1.2                     # beyond the band: the nearest
     tx, ty = agent._sighting({"detections": hits})
-    d = math.hypot(tx - grid.x * CELL, ty - grid.y * CELL)
-    assert d > 1.5
+    assert math.hypot(tx - grid.x * CELL, ty - grid.y * CELL) == pytest.approx(1.2, abs=0.1)
+
+
+def test_a_refused_glimpse_turn_never_fails_a_place_or_forgets_a_sighting():
+    """3.69 review 2: a glimpse's point is a direction 1 m out, not where the
+    target is -- a refusal may back off, but must not put a made-up point in
+    the retry book or drop a real sighting."""
+    agent, grid = _agent_that_cannot_turn()
+    agent._last_seen = (6.9, 1.6)
+    agent._pending = [("FACE", (grid.x * CELL - 1.0, grid.y * CELL), 90, False, "glimpse")]
+    for _ in range(16):
+        if not agent._pending:
+            break
+        agent._do_pending()
+    assert agent._last_seen == (6.9, 1.6)
+    assert agent.retry.available(grid.x * CELL - 1.0, grid.y * CELL, grid.sim_time)
