@@ -1,0 +1,566 @@
+[
+ {
+  "target": "a white phone charger cable",
+  "walk": "a-white-phone-charger-ca-20260921-203355",
+  "crops": 8420,
+  "lookup_ms": 9.93,
+  "top": [
+   {
+    "rank": 1,
+    "p": 0.9999,
+    "walk": "a-white-phone-charger-ca-20260921-203355",
+    "frame": "frame-0031.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "hula hoop",
+    "xyxy": [
+     491.2,
+     150.0,
+     793.3,
+     266.4
+    ],
+    "crop": "a_white_phone_charger_cable-1.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 2,
+    "p": 0.9999,
+    "walk": "a-white-phone-charger-ca-20260921-203355",
+    "frame": "frame-0029.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "hula hoop",
+    "xyxy": [
+     523.8,
+     178.5,
+     791.0,
+     284.1
+    ],
+    "crop": "a_white_phone_charger_cable-2.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 3,
+    "p": 0.9999,
+    "walk": "a-white-phone-charger-ca-20260921-203355",
+    "frame": "frame-0026.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "hula hoop",
+    "xyxy": [
+     578.0,
+     228.0,
+     823.6,
+     332.3
+    ],
+    "crop": "a_white_phone_charger_cable-3.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 4,
+    "p": 0.9999,
+    "walk": "a-white-phone-charger-ca-20260921-203355",
+    "frame": "frame-0040.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "battle rope",
+    "xyxy": [
+     490.4,
+     176.2,
+     822.4,
+     397.9
+    ],
+    "crop": "a_white_phone_charger_cable-4.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 5,
+    "p": 0.9998,
+    "walk": "a-white-phone-charger-ca-20260921-203355",
+    "frame": "frame-0050.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "battle rope",
+    "xyxy": [
+     24.5,
+     269.6,
+     1253.6,
+     718.2
+    ],
+    "crop": "a_white_phone_charger_cable-5.jpg",
+    "by_eye_shows_target": true
+   }
+  ]
+ },
+ {
+  "target": "blue and yellow running shoes",
+  "walk": "blue-shoes-20260908-210511",
+  "crops": 8420,
+  "lookup_ms": 7.41,
+  "top": [
+   {
+    "rank": 1,
+    "p": 1.0,
+    "walk": "blue-shoes-20260908-210511",
+    "frame": "frame-0041.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "footwear",
+    "xyxy": [
+     324.1,
+     133.0,
+     661.7,
+     472.1
+    ],
+    "crop": "blue_and_yellow_running_shoes-1.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 2,
+    "p": 0.9999,
+    "walk": "woven-laundry-basket-20260913-115703",
+    "frame": "frame-0166.jpg",
+    "own_walk": false,
+    "labelled_visible": null,
+    "yoloe_label": "footwear",
+    "xyxy": [
+     718.6,
+     152.5,
+     1168.7,
+     458.8
+    ],
+    "crop": "blue_and_yellow_running_shoes-2.jpg",
+    "by_eye_shows_target": true,
+    "by_eye_note": "same shoes, another walk"
+   },
+   {
+    "rank": 3,
+    "p": 0.9999,
+    "walk": "woven-laundry-basket-20260913-115703",
+    "frame": "frame-0169.jpg",
+    "own_walk": false,
+    "labelled_visible": null,
+    "yoloe_label": "shoe",
+    "xyxy": [
+     1003.3,
+     132.6,
+     1149.1,
+     440.1
+    ],
+    "crop": "blue_and_yellow_running_shoes-3.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 4,
+    "p": 0.9999,
+    "walk": "woven-laundry-basket-20260913-115703",
+    "frame": "frame-0165.jpg",
+    "own_walk": false,
+    "labelled_visible": null,
+    "yoloe_label": "footwear",
+    "xyxy": [
+     705.4,
+     141.5,
+     1144.8,
+     437.9
+    ],
+    "crop": "blue_and_yellow_running_shoes-4.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 5,
+    "p": 0.9999,
+    "walk": "woven-laundry-basket-20260913-115703",
+    "frame": "frame-0168.jpg",
+    "own_walk": false,
+    "labelled_visible": null,
+    "yoloe_label": "canvas",
+    "xyxy": [
+     695.3,
+     0.0,
+     1224.1,
+     438.1
+    ],
+    "crop": "blue_and_yellow_running_shoes-5.jpg",
+    "by_eye_shows_target": true
+   }
+  ]
+ },
+ {
+  "target": "blue bottle",
+  "walk": "blue-bottle-20260907-185007",
+  "crops": 8420,
+  "lookup_ms": 7.98,
+  "top": [
+   {
+    "rank": 1,
+    "p": 0.9082,
+    "walk": "blue-bottle-20260907-185007",
+    "frame": "frame-0209.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "bottle cap",
+    "xyxy": [
+     326.5,
+     109.9,
+     356.1,
+     138.7
+    ],
+    "crop": "blue_bottle-1.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 2,
+    "p": 0.888,
+    "walk": "blue-bottle-20260907-185007",
+    "frame": "frame-0105.jpg",
+    "own_walk": true,
+    "labelled_visible": false,
+    "yoloe_label": "hassock",
+    "xyxy": [
+     486.4,
+     105.8,
+     578.7,
+     231.1
+    ],
+    "crop": "blue_bottle-2.jpg",
+    "by_eye_shows_target": false,
+    "by_eye_note": "teal side table"
+   },
+   {
+    "rank": 3,
+    "p": 0.8759,
+    "walk": "blue-bottle-20260907-185007",
+    "frame": "frame-0124.jpg",
+    "own_walk": true,
+    "labelled_visible": false,
+    "yoloe_label": "statue",
+    "xyxy": [
+     212.5,
+     7.8,
+     251.1,
+     63.0
+    ],
+    "crop": "blue_bottle-3.jpg",
+    "by_eye_shows_target": false,
+    "by_eye_note": "statue"
+   },
+   {
+    "rank": 4,
+    "p": 0.8676,
+    "walk": "blue-bottle-20260907-185007",
+    "frame": "frame-0127.jpg",
+    "own_walk": true,
+    "labelled_visible": false,
+    "yoloe_label": "nativity scene",
+    "xyxy": [
+     153.8,
+     0.0,
+     209.5,
+     55.6
+    ],
+    "crop": "blue_bottle-4.jpg",
+    "by_eye_shows_target": false,
+    "by_eye_note": "statue"
+   },
+   {
+    "rank": 5,
+    "p": 0.8634,
+    "walk": "blue-shoes-20260908-210511",
+    "frame": "frame-0008.jpg",
+    "own_walk": false,
+    "labelled_visible": null,
+    "yoloe_label": "sunshade",
+    "xyxy": [
+     201.0,
+     0.0,
+     327.2,
+     197.9
+    ],
+    "crop": "blue_bottle-5.jpg",
+    "by_eye_shows_target": false,
+    "by_eye_note": "exercise bench"
+   }
+  ]
+ },
+ {
+  "target": "Grey backpack",
+  "walk": "grey-backpack-20260921-203748",
+  "crops": 8420,
+  "lookup_ms": 7.69,
+  "top": [
+   {
+    "rank": 1,
+    "p": 0.9997,
+    "walk": "grey-backpack-20260921-203748",
+    "frame": "frame-0067.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "backpack",
+    "xyxy": [
+     632.9,
+     7.1,
+     1223.9,
+     689.7
+    ],
+    "crop": "Grey_backpack-1.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 2,
+    "p": 0.9995,
+    "walk": "grey-backpack-20260921-203748",
+    "frame": "frame-0043.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "bag",
+    "xyxy": [
+     0.0,
+     1.4,
+     1097.5,
+     708.8
+    ],
+    "crop": "Grey_backpack-2.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 3,
+    "p": 0.9995,
+    "walk": "grey-backpack-20260921-203748",
+    "frame": "frame-0041.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "luggage",
+    "xyxy": [
+     1.2,
+     1.4,
+     838.3,
+     718.4
+    ],
+    "crop": "Grey_backpack-3.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 4,
+    "p": 0.9994,
+    "walk": "grey-backpack-20260921-203748",
+    "frame": "frame-0037.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "sleeping bag",
+    "xyxy": [
+     601.0,
+     6.6,
+     1280.0,
+     712.6
+    ],
+    "crop": "Grey_backpack-4.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 5,
+    "p": 0.9993,
+    "walk": "grey-backpack-20260921-203748",
+    "frame": "frame-0028.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "mountaineering bag",
+    "xyxy": [
+     322.2,
+     39.2,
+     1140.4,
+     503.4
+    ],
+    "crop": "Grey_backpack-5.jpg",
+    "by_eye_shows_target": true
+   }
+  ]
+ },
+ {
+  "target": "burgundy backpack",
+  "walk": "red-backpack-20260907-144856",
+  "crops": 8420,
+  "lookup_ms": 6.94,
+  "top": [
+   {
+    "rank": 1,
+    "p": 1.0,
+    "walk": "red-backpack-20260907-144856",
+    "frame": "frame-0030.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "mountaineering bag",
+    "xyxy": [
+     275.6,
+     151.4,
+     556.3,
+     285.0
+    ],
+    "crop": "burgundy_backpack-1.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 2,
+    "p": 1.0,
+    "walk": "red-backpack-20260907-144856",
+    "frame": "frame-0031.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "cape",
+    "xyxy": [
+     201.8,
+     122.4,
+     513.6,
+     273.9
+    ],
+    "crop": "burgundy_backpack-2.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 3,
+    "p": 1.0,
+    "walk": "red-backpack-20260907-144856",
+    "frame": "frame-0028.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "mountaineering bag",
+    "xyxy": [
+     383.6,
+     178.7,
+     590.1,
+     268.8
+    ],
+    "crop": "burgundy_backpack-3.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 4,
+    "p": 0.9999,
+    "walk": "red-backpack-20260907-144856",
+    "frame": "frame-0032.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "saddlebag",
+    "xyxy": [
+     371.1,
+     126.6,
+     534.8,
+     310.9
+    ],
+    "crop": "burgundy_backpack-4.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 5,
+    "p": 0.9999,
+    "walk": "red-backpack-20260907-144856",
+    "frame": "frame-0033.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "mountaineering bag",
+    "xyxy": [
+     0.0,
+     115.6,
+     425.8,
+     350.1
+    ],
+    "crop": "burgundy_backpack-5.jpg",
+    "by_eye_shows_target": true
+   }
+  ]
+ },
+ {
+  "target": "woven laundry basket",
+  "walk": "woven-laundry-basket-20260913-115703",
+  "crops": 8420,
+  "lookup_ms": 7.87,
+  "top": [
+   {
+    "rank": 1,
+    "p": 0.9997,
+    "walk": "woven-laundry-basket-20260913-115703",
+    "frame": "frame-0137.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "hassock",
+    "xyxy": [
+     410.9,
+     207.9,
+     652.6,
+     472.5
+    ],
+    "crop": "woven_laundry_basket-1.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 2,
+    "p": 0.9995,
+    "walk": "blue-bottle-20260907-185007",
+    "frame": "frame-0208.jpg",
+    "own_walk": false,
+    "labelled_visible": null,
+    "yoloe_label": "shelf",
+    "xyxy": [
+     88.2,
+     21.8,
+     213.0,
+     246.0
+    ],
+    "crop": "woven_laundry_basket-2.jpg",
+    "by_eye_shows_target": false,
+    "by_eye_note": "wicker storage baskets on a shelf, not the laundry basket"
+   },
+   {
+    "rank": 3,
+    "p": 0.9995,
+    "walk": "woven-laundry-basket-20260913-115703",
+    "frame": "frame-0156.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "hassock",
+    "xyxy": [
+     261.0,
+     153.3,
+     601.6,
+     531.5
+    ],
+    "crop": "woven_laundry_basket-3.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 4,
+    "p": 0.9994,
+    "walk": "woven-laundry-basket-20260913-115703",
+    "frame": "frame-0143.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "hassock",
+    "xyxy": [
+     894.1,
+     198.3,
+     1161.0,
+     473.1
+    ],
+    "crop": "woven_laundry_basket-4.jpg",
+    "by_eye_shows_target": true
+   },
+   {
+    "rank": 5,
+    "p": 0.9994,
+    "walk": "woven-laundry-basket-20260913-115703",
+    "frame": "frame-0012.jpg",
+    "own_walk": true,
+    "labelled_visible": true,
+    "yoloe_label": "hassock",
+    "xyxy": [
+     842.3,
+     339.9,
+     917.8,
+     415.8
+    ],
+    "crop": "woven_laundry_basket-5.jpg",
+    "by_eye_shows_target": true
+   }
+  ]
+ }
+]
