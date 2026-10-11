@@ -1108,7 +1108,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         if movers:
             for mover in build_movers(name, movers):
                 grid.add_mover(mover)
-        if not motion_lock.acquire(blocking=False):
+        # A short wait, not none: the idle wheel loop takes the lock every
+        # 50 ms, and a click landing on its tick is not "moving" (review 3).
+        if not motion_lock.acquire(timeout=0.5):
             raise HTTPException(status_code=409, detail={
                 "reason": "driving", "detail": "the robot is moving; try again once it stops"})
         try:

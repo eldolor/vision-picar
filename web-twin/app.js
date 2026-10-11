@@ -657,7 +657,9 @@
       if (now - state.lastMapFetchAt >= MAP_FETCH_INTERVAL_MS) {
         state.lastMapFetchAt = now;
         var map = await apiGet("/world/map");
-        if (stale()) return;
+        // Stale: give the fetch slot back, or the fresh refresh right after
+        // a swap skips its map fetch and the panel stays blank (review 3).
+        if (stale()) { state.lastMapFetchAt = 0; return; }
         state.lastMap = map;
       }
     } catch (e) {
