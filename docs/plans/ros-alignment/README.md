@@ -72,4 +72,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.64](3.64-older-review-bugs.md) | Older review bugs: the ten still live on `dev`, fixed |
 | [3.66](3.66-procthor-houses.md) | ProcTHOR floor plans as simulator houses (2026-10-10): built; criterion 5b FAILED (84 of 100, bar 90) |
 | [3.67](3.67-garage-exit-inflation.md) | nav2's inflation against the garage exit |
+| [3.68](3.68-refusal-replan.md) | Replan around a spot the safety layer keeps refusing |
 <!-- /sections -->
