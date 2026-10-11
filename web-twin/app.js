@@ -1044,6 +1044,48 @@
     ].forEach(function (id) {
       document.getElementById(id).disabled = !enabled;
     });
+    updateHouseButton();
+  }
+
+  // 3.72: "Random house" -- the robot server puts the sim robot in one of
+  // the 100 ProcTHOR houses, in place. Off while a brain mission runs (the
+  // server refuses only while a driver holds the robot, and a mission
+  // between moves holds nothing) and while a swap is in flight.
+  function updateHouseButton() {
+    const btn = document.getElementById("btn-random-house");
+    if (btn) btn.disabled = !state.connected || state.brainMissionRunning || !!state.houseBusy;
+  }
+
+  function showHouse(name) {
+    const el = document.getElementById("house-readout");
+    if (el) el.textContent = name ? "house: " + name : "house: not reported by this server";
+  }
+
+  async function loadHouseName() {
+    try { showHouse((await apiGet("/health")).sim_map); } catch (e) { /* keep the last */ }
+  }
+
+  async function randomHouse() {
+    state.houseBusy = true;
+    updateHouseButton();
+    try {
+      const r = await apiPost("/sim/house/random", {});
+      showHouse(r.sim_map);
+      // A new house is a new map: drop the old one and fetch at once.
+      state.lastMap = null;
+      state.lastPose = null;
+      state.lastMapFetchAt = 0;
+      // The map, depth and camera are re-read with a frame, and nothing
+      // fetches one while nobody drives -- so fetch it here, or the page
+      // keeps drawing the old house.
+      render(await fetchFrame());
+      showToast("Now in " + r.sim_map + ".", "ok");
+    } catch (e) {
+      showToast("House not changed: " + (e.message || e), "err");
+    } finally {
+      state.houseBusy = false;
+      updateHouseButton();
+    }
   }
 
   // The header status answers "can I use what I'm looking at?", which is a
@@ -1126,6 +1168,7 @@
       const frame = await fetchFrame();
       state.connected = true;
       setControlsEnabled(true);
+      loadHouseName();
       startWatchdogPolling();
       setConnStatus(statusEl, "ok", "Connected", url);
       prefSet(PREF.serverUrl, url);
@@ -1386,6 +1429,7 @@
   document.getElementById("btn-look-left").onclick = function () { manualAction("LOOK_LEFT"); };
   document.getElementById("btn-look-right").onclick = function () { manualAction("LOOK_RIGHT"); };
   document.getElementById("btn-look-center").onclick = function () { manualAction("LOOK_CENTER"); };
+  document.getElementById("btn-random-house").onclick = randomHouse;
   document.querySelectorAll(".turn-step-btn").forEach(function (btn) {
     btn.onclick = function () { setTurnStep(Number(btn.dataset.turnDeg)); };
   });
@@ -2156,6 +2200,7 @@
     document.getElementById("brain-fault").disabled = state.brainMissionRunning;
     document.getElementById("brain-target").disabled = state.brainMissionRunning;
     document.getElementById("brain-policy").disabled = state.brainMissionRunning;
+    updateHouseButton();
     if (hint) {
       hint.style.display = state.brainConnected ? "none" : "";
       // Say WHY Start is greyed. A configured brain that stopped answering

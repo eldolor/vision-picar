@@ -745,6 +745,17 @@ goal is refused with `accepted: false` and reason `preempted`, and the twin
 shows that reason in an error toast rather than "Sending the robot there".
 A world with no nav2 answers 501, and the map is simply not tappable.
 
+**Random house** (3.72). Under the map, a "Random house" button and a
+`house:` readout. One tap and the robot server puts the simulated robot in a
+random one of the 100 ProcTHOR houses the search sweeps use (3.66, 3.69) --
+in place, without a restart -- at that house's start, with the map unknown
+again; the page redraws it at once and toasts "Now in procthor:val:N". The
+button is off until the robot server is connected and while a brain mission
+runs. The server refuses (and changes nothing) while anyone drives, and
+under anything but the plain simulator: a real robot, a phone, a replay,
+`drive: ros`. Run as a service on the Jetson, the starting house is still
+`SIM_MAP`'s (unset: `starter_house`).
+
 R2's `/wheels`, `/scan` and `/world/truth` are served but not drawn; they
 exist for the ROS nodes (R4) and for `/world/error` (R5).
 

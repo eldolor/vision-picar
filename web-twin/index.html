@@ -510,6 +510,7 @@
   /* N1. Sized like the FPV canvas above it so the two read as one
      instrument: what the robot sees, and where it has been. */
   .map-wrap { display: flex; flex-direction: column; align-items: center; margin-top: 6px; }
+  .house-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
   #world-map.tappable { cursor: crosshair; touch-action: manipulation; }
   #world-map {
     border-radius: 8px;
@@ -1569,6 +1570,12 @@
         <canvas id="world-map" role="img"
                 aria-label="Occupancy map of the house as discovered so far"></canvas>
         <div class="depth-readout" id="map-readout">map: not connected</div>
+        <!-- 3.72: a random one of the 100 ProcTHOR houses, swapped in on the
+             robot server in place -- no restart. Off while a mission runs. -->
+        <div class="house-row">
+          <button id="btn-random-house" type="button" disabled>Random house</button>
+          <span class="depth-readout" id="house-readout">house: not connected</span>
+        </div>
       </div>
       <div class="fpv-source" id="fpv-source">frame source: <span class="local">not connected</span></div>
     </div>

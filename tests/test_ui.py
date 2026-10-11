@@ -3676,3 +3676,56 @@ def test_the_guide_tab_shows_the_cloud_row_too(browser, twin_server):
     assert page.locator("#robot-tel-cloud .v-safe").count() == 0, "an old answer read as live"
     assert not errors, errors
     context.close()
+
+
+# ---------- 3.72: the "Random house" button ----------
+
+def test_random_house_swaps_the_house_on_the_page(browser, private_twin_server):
+    """The robot server puts the robot in another house and the page draws
+    it -- the server's process the same, the map the new house's size."""
+    page, errors = _connect_for_map(browser, private_twin_server)
+    page.wait_for_function(
+        "() => document.getElementById('house-readout').textContent.indexOf('house: ') === 0"
+        " && document.getElementById('house-readout').textContent !== 'house: not connected'",
+        timeout=5000)
+    before = page.locator("#house-readout").text_content()
+    size_before = page.evaluate(
+        "() => { const c = document.getElementById('world-map'); return [c.width, c.height]; }")
+    assert page.locator("#btn-random-house").is_enabled()
+    page.click("#btn-random-house")
+    page.wait_for_function(
+        "b => document.getElementById('house-readout').textContent !== b"
+        " && document.getElementById('house-readout').textContent.indexOf('procthor:val:') > 0",
+        arg=before, timeout=5000)
+    name = page.locator("#house-readout").text_content().split("house: ")[1]
+    health = httpx.get(f"{private_twin_server}/health").json()
+    assert health["sim_map"] == name
+    reported = httpx.get(f"{private_twin_server}/world/map").json()
+    page.wait_for_function(
+        "wh => { const c = document.getElementById('world-map');"
+        " return c.width % wh[0] === 0 && c.height % wh[1] === 0"
+        " && c.width / wh[0] === c.height / wh[1]; }",
+        arg=[reported["width"], reported["height"]], timeout=5000)
+    size_after = page.evaluate(
+        "() => { const c = document.getElementById('world-map'); return [c.width, c.height]; }")
+    assert size_after != size_before          # the starter house is not this shape
+    box = page.locator("#btn-random-house").bounding_box()
+    assert box and box["width"] >= 44 * 0.5 and box["x"] + box["width"] <= PHONE["width"]
+    page.screenshot(path=os.path.join(os.environ.get("UI_SHOTS", "/tmp"), "random-house-390.png"))
+    assert not errors, errors
+    page.close()
+
+
+def test_random_house_is_off_while_a_brain_mission_runs(browser, private_twin_server):
+    """The robot server can refuse only while a driver holds the robot; a
+    mission between moves holds nothing -- so the page turns the button off
+    while the brain says a mission runs."""
+    page, errors = open_with_brain(browser, private_twin_server, status=frontier_status())
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", private_twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_timeout(800)
+    assert page.locator("#btn-random-house").is_disabled()
+    assert not errors, errors
+    page.close()

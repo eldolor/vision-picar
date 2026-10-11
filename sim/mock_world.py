@@ -96,6 +96,14 @@ class MockWorld(WorldInterface):
         self._cells = [CELL_UNKNOWN] * (world.width * world.height)
         self._version = 0
 
+    def load_house(self, world: GridWorld) -> None:
+        """Map another house from nothing (3.72): every cell unknown again,
+        and a new `map_version`, so a client that skips unchanged maps
+        fetches this one."""
+        self.world = world
+        self._cells = [CELL_UNKNOWN] * (world.width * world.height)
+        self._version += 1
+
     # ---------- observation ----------
 
     def observe(self) -> int:

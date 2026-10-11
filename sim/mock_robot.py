@@ -182,6 +182,18 @@ class MockRobot(RobotInterface):
         # not just a simplification, and why closing it is opt-in.
         self.sensor = sensor
 
+    def load_house(self, world: GridWorld) -> None:
+        """Put this body in another house, at its start (3.72's randomizer):
+        the motors stopped, and odometry zeroed -- a new placement, as if
+        freshly switched on there. Only the robot server's sim-only route
+        calls it, never while anything drives."""
+        self.stop()
+        self.world = world
+        self._path_m = 0.0
+        self._heading0 = world.heading_deg
+        self._cmd_left_rad_s = self._cmd_right_rad_s = 0.0
+        self._left_rad = self._right_rad = 0.0
+
     # ---------- wheels: the primitive everything else is built on (R0) ----------
     #
     # `PLAN-ros-alignment.md` R0. Left/right wheel angular velocities rather

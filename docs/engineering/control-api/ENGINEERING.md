@@ -72,6 +72,7 @@ Actions: `FORWARD`, `REVERSE`, `LEFT`, `RIGHT`, `STOP`, `LOOK_LEFT`,
 | Route | Returns |
 |---|---|
 | `GET /world/pose`, `GET /world/map` | pass-through of `get_pose()` / `get_map()` |
+| `POST /sim/house/random` | 3.72: the plain in-process sim only -- puts the robot in a random one of the first `RANDOM_HOUSES` (100) usable ProcTHOR houses, in place (`MockRobot.load_house`, `MockWorld.load_house`: motors stopped, odometry zeroed, map unknown again); returns `sim_map`, `previous`. 409 `not_sim` under any other backend, 409 `driving` while a driver holds the robot or a verb runs; never a caller-supplied name. The one reset route, and narrow on purpose |
 | `GET /world/truth` | pass-through; `usable: false` off the sim. No decision may read it |
 | `GET /world/error` | `{"usable", "source", "position_error_m", "heading_error_deg", "odom_position_error_m", "odom_heading_error_deg", "truth"}` |
 | `POST /world/goal` | `{"x_m", "y_m"}` -> the world's `set_goal()`, or `{"accepted": false, "executed": false, "reason": "preempted", ...}`. Arbitrated as driver `ros` |

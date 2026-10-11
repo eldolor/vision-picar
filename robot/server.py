@@ -169,6 +169,9 @@ ROS_SILENCE_S = 0.5
 # controller's cmd_vel_timeout, which add, plus one plugin period).
 GOAL_STOP_POLL_S = 0.25
 GOAL_STOP_SETTLE_S = 0.6
+# 3.72: the "Random house" button picks among the first this-many usable
+# ProcTHOR houses -- the set 3.66 and 3.69 measure explore on.
+RANDOM_HOUSES = 100
 
 
 @contextmanager
@@ -1064,6 +1067,38 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         version moves.
         """
         return world_model.get_map()
+
+    @app.post(prefix + "/sim/house/random", dependencies=[Depends(require_secret)])
+    def sim_house_random():
+        """3.72: put the simulated robot in one of the 100 ProcTHOR houses the
+        sweeps measure on, picked at random -- in place, no restart (the
+        twin's "Random house" button). A reset, so kept narrow: the plain
+        in-process simulator only, never while anyone drives, never a name
+        from the caller. Every refusal changes nothing."""
+        from sim.mock_robot import MockRobot
+        from sim.mock_world import MockWorld
+        if not (type(robot) is MockRobot and isinstance(world_model, MockWorld)
+                and world_model.world is robot.world):
+            raise HTTPException(status_code=409, detail={
+                "reason": "not_sim",
+                "detail": "only the plain in-process simulator can change house"})
+        holder = authority_holder(time.monotonic())
+        if holder is not None or state["verb_active"]:
+            raise HTTPException(status_code=409, detail={
+                "reason": "driving",
+                "detail": f"{holder or 'a verb'} is driving; try again once it stops"})
+        import random
+        from sim.maps import build_world
+        from sim.maps.procthor import usable
+        current = robot.world.map_name
+        choices = [f"procthor:val:{i}" for i in usable()[:RANDOM_HOUSES]]
+        name = random.choice([c for c in choices if c != current])
+        grid = build_world(name)
+        robot.load_house(grid)
+        world_model.load_house(grid)
+        state["last_command_at"] = time.monotonic()
+        logger.info("sim house changed: %s -> %s", current, name)
+        return {"sim_map": name, "previous": current}
 
     @app.get(prefix + "/frame", dependencies=[Depends(require_secret)])
     def frame():
