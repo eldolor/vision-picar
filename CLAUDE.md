@@ -226,8 +226,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   the plan runs down a 30 cm slot beside the car to an unmapped wall --
   but meets every other bar (tour 8/8/8, parked <= 99 s, coverage
   0.93-0.95, R6 6/6). Footprint padding (B) and `allow_unknown: false`
-  (C) break other goals. Open for the user: adopt A with criterion 1
-  waived, or build a refusal-aware replan outside nav2. Every tour count before 3.57 is "of 8 reachable goals". Live runs now keep
+  (C) break other goals. **A refusal-aware replan (3.68, built, records
+  merged 2026-10-11, code left on `plan/3.68-refusal-replan`) also
+  fails:** the robot server marks a keepout spot after 3 s of refused
+  forward moves; it breaks the garage wedge (refusals 1,200 -> 130-194)
+  but goal 6 still times out 0/3, run 2's tour is 7/9, one park is
+  123 s, and explore re-marks one spot up to 30 times. Open for the user:
+  adopt A with criterion 1 waived, or iterate on 3.68. Every tour count before 3.57 is "of 8 reachable goals". Live runs now keep
   per-run logs with explore's decisions (`PICAR_LOG_LEVEL`,
   `evaluations/slam-345/`). Handoff:
   `HANDOFF-2026-10-07-3.45-explore-goal-choice.md`. 3.31's frontier-search
