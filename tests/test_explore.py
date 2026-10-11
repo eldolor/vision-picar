@@ -529,3 +529,64 @@ def test_the_imported_house_misses_are_found(house, fault):
     tests/test_procthor_sweep.py is the measurement; these name the fault)."""
     runner, nav, grid = _mission(house=f"procthor:val:{house}", max_steps=200)
     assert runner.status()["outcome"] == FOUND, (fault, runner.status()["log_tail"][-3:])
+
+
+def _agent_that_cannot_turn():
+    from robot.safety import SafetyViolation
+    agent, nav, grid = _kitchen_door(5)
+
+    def guard(action, **kw):
+        if action in ("LEFT", "RIGHT"):
+            raise SafetyViolation(f"Blocked {action}: a corner would come within 0.0cm")
+        return {"action": action}
+    agent.safety.check_and_execute = guard
+    return agent, grid
+
+
+def test_a_refused_turn_toward_an_unseen_patch_keeps_the_targets_sighting():
+    """3.69 review: only a turn toward the TARGET backs off and lets its
+    sighting go; a view goal's turn that is refused must not forget it."""
+    agent, grid = _agent_that_cannot_turn()
+    agent._last_seen = (6.9, 1.6)                        # the backpack
+    agent._pending = [("FACE", (grid.x * CELL - 2.0, grid.y * CELL))]   # a patch due west
+    for _ in range(8):
+        if not agent._pending:
+            break
+        agent._do_pending()
+    assert agent._last_seen == (6.9, 1.6)
+    assert "REVERSE" not in agent._pending and "FORWARD" not in agent._pending
+
+
+def test_a_backed_off_turn_that_fails_again_does_not_drive_forward_blind():
+    """3.69 review: REVERSE, the turn, then FORWARD to come in facing it --
+    if the turn is refused too, the FORWARD would go wherever it points."""
+    agent, grid = _agent_that_cannot_turn()
+    agent._last_seen = (grid.x * CELL - 0.6, grid.y * CELL)  # behind the robot's west side
+    agent._pending = [("FACE", agent._last_seen, 90, False, True)]   # toward the target
+    sent = []
+    real = agent.safety.check_and_execute
+
+    def spy(action, **kw):
+        sent.append(action)
+        return real(action, **kw)
+    agent.safety.check_and_execute = spy
+    for _ in range(12):
+        if not agent._pending:
+            break
+        agent._do_pending()
+    assert "REVERSE" in sent and "FORWARD" not in sent
+
+
+def test_an_edge_return_at_arms_length_does_not_read_as_at_the_target():
+    """3.69 review: at an edge the nearest return is taken only beyond the
+    approach band -- a jamb 0.3 m off would otherwise say "already there"."""
+    agent, nav, grid = _kitchen_door(5)
+    scan = {"usable": True, "angle_min_deg": -180.0, "angle_increment_deg": 1.0,
+            "ranges_m": [2.0] * 360}
+    hits = [{"label": "red backpack", "bearing_deg": 0.0}]
+    for i in range(178, 183):                       # beams -2..+2 deg
+        scan["ranges_m"][i] = 0.3 if i == 178 else 2.0
+    agent.robot.get_scan = lambda: scan
+    tx, ty = agent._sighting({"detections": hits})
+    d = math.hypot(tx - grid.x * CELL, ty - grid.y * CELL)
+    assert d > 1.5

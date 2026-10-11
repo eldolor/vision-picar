@@ -155,6 +155,7 @@ class ExploreAgent(MissionAgent):
         # origin moves.
         self.seen: set = set()
         self._looked: list = []        # view-gap centres already visited
+        self._backed_off: list = []    # targets a refused face has backed off from (3.69)
         # Frontier goals already reached, with how often. A frontier still
         # there after the robot has stood at it TWICE cannot be cleared from
         # there -- the unknown under a table, behind a sofa -- and
@@ -236,9 +237,12 @@ class ExploreAgent(MissionAgent):
         # 3.69 A: the target glimpsed on a pan cannot be approached (a
         # panned bearing is not a body bearing), so turn the BODY to where
         # it was and look again centred; the next frame decides.
-        glimpse = self._glimpse(frame) if self._goal is None else None
+        # Never over an escape still queued: a wedged robot backs out first.
+        escaping = any(p == "REVERSE" or (isinstance(p, tuple) and p[0] in ("OPEN", "CREEP"))
+                       for p in self._pending)
+        glimpse = self._glimpse(frame) if self._goal is None and not escaping else None
         if glimpse is not None:
-            self._pending = ["LOOK_CENTER", ("FACE", glimpse)]
+            self._pending = ["LOOK_CENTER", ("FACE", glimpse, 90, False, True)]
             self._event("glimpse", toward=[round(glimpse[0], 2), round(glimpse[1], 2)])
 
         # A look queued after an arrival goes first: no goal is live then.
@@ -332,7 +336,7 @@ class ExploreAgent(MissionAgent):
             # Here and not seeing it: look once, then let it go. A fresh
             # sighting brings it back.
             self._last_seen = None
-            self._pending = [("FACE", (tx, ty))]
+            self._pending = [("FACE", (tx, ty), 90, False, True)]
             return self._do_pending()
         out = self._send_approach(tx, ty, now)
         if out[0] == "GOAL":
@@ -448,7 +452,7 @@ class ExploreAgent(MissionAgent):
                 # nav2 takes no heading: turn to face what we came for. And if
                 # that still does not settle it, the next sighting may send
                 # another approach from here.
-                self._pending = [("FACE", g["target"])]
+                self._pending = [("FACE", g["target"], 90, False, True)]
                 self._approach = None
             elif g.get("look_at"):
                 self._pending = [("FACE", g.get("face") or g["look_at"])]
@@ -553,8 +557,12 @@ class ExploreAgent(MissionAgent):
             if not pose.get("usable"):
                 return "WAIT", False, "no pose to turn from"
             tx, ty = item[1]
+            # ("FACE", point, cap, backed, target): the cap a refusal set,
+            # whether this turn comes after backing off, and whether the
+            # point is the TARGET (not an unseen patch or a glimpse).
             cap = item[2] if len(item) > 2 else 90
             backed = len(item) > 3 and item[3]
+            is_target = len(item) > 4 and item[4]
             want = math.degrees(math.atan2(tx - pose["x_m"], -(ty - pose["y_m"])))
             turn = (want - pose["heading_deg"] + 180.0) % 360.0 - 180.0
             if abs(turn) < 5:
@@ -571,20 +579,35 @@ class ExploreAgent(MissionAgent):
             elif not out[1]:
                 # No room to turn here (3.19's pivot guard). 3.69 B: the
                 # target was often already inside the found radius, just not
-                # in view -- so try smaller turns, then back off once and try
-                # again, before giving up on this look.
+                # in view -- so try smaller turns, then (toward the target
+                # only, once per place) back off and try again.
                 self._pending = [p for p in self._pending if p is not item]
-                if cap > FACE_MIN_TURN_DEG:
-                    self._pending.insert(0, ("FACE", (tx, ty), cap / 2, backed))
-                elif not backed:
+                tried = min(cap, abs(turn))
+                if tried > FACE_MIN_TURN_DEG:
+                    self._pending.insert(0, ("FACE", (tx, ty), tried / 2, backed, is_target))
+                elif not is_target:
+                    pass                          # an unseen patch: give up the look
+                elif backed or any(math.hypot(tx - bx, ty - by) < APPROACH_MOVED_M
+                                   for bx, by in self._backed_off):
+                    # The turn after backing off failed too: the forward
+                    # queued to come back in facing it would go anywhere --
+                    # and the sighting counts a failure, so going back to it
+                    # runs out of tries (house 319 sat beside the backpack
+                    # turning, refused, until the tick cap).
+                    if "FORWARD" in self._pending:
+                        self._pending.remove("FORWARD")
+                    self.retry.fail(tx, ty, self.clock())
+                else:
                     # Back off, turn to it with the room that gives, and come
                     # back in facing it (the guarded verb stops at the bar):
                     # re-approaching would stand it where it cannot turn.
-                    self._pending[0:0] = ["REVERSE", ("FACE", (tx, ty), 90, True), "FORWARD"]
-                    # Once: if that does not show it, let the sighting go (a
-                    # fresh one brings it back) -- going back to it stood the
-                    # robot where it could not turn, again and again, until
-                    # the step budget ran out (house 36).
+                    self._backed_off.append((tx, ty))
+                    self._pending[0:0] = ["REVERSE", ("FACE", (tx, ty), 90, True, True),
+                                          "FORWARD"]
+                    # If that does not show it, let the sighting go (a fresh
+                    # one brings it back) -- going back to it stood the robot
+                    # where it could not turn, again and again, until the
+                    # step budget ran out (house 36).
                     self._last_seen = None
             return out
         return self._verb(item)
@@ -717,8 +740,12 @@ class ExploreAgent(MissionAgent):
             # took the wall (house 125: 3.76 m for a backpack at 2.7). The
             # nearest return is short of the target, never past it, so the
             # approach only brings the robot closer to look again.
+            # Only beyond the approach band, though: a jamb's return at arm's
+            # length would read as "at the target" and no approach be sent.
             finite = [x for x in window if not math.isinf(x)]
-            r = round(min(finite), 4) if finite else None
+            near = min(finite) if finite else None
+            r = (round(near, 4) if near is not None and near > APPROACH_FAR_M + 0.1
+                 else ArrivalCheck._range_at(scan, bearing))
         else:
             r = ArrivalCheck._range_at(scan, bearing)
         pose = self._pose()
