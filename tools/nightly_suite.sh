@@ -12,6 +12,12 @@
 # Install the schedule (03:00 daily, macOS) with:
 #   sh tools/nightly_suite.sh --install
 # Remove it with --uninstall.
+#
+# ProcessType Interactive: with no ProcessType, launchd throttles the job's
+# CPU and I/O, and the timing tests that drive the fake motor board and the
+# split sim body fail under it (2026-10-10/11: 5 and 8 failures that pass in
+# a terminal; `taskpolicy -b` reproduces all of them). Re-run --install
+# after changing the plist.
 set -u
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 common="$(git -C "$repo" rev-parse --git-common-dir)"
@@ -30,6 +36,7 @@ if [ "${1:-}" = "--install" ]; then
   <key>Label</key><string>$label</string>
   <key>ProgramArguments</key><array><string>/bin/sh</string><string>$main/tools/nightly_suite.sh</string></array>
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
+  <key>ProcessType</key><string>Interactive</string>
   <key>StandardOutPath</key><string>$logs/launchd.log</string>
   <key>StandardErrorPath</key><string>$logs/launchd.log</string>
 </dict></plist>
