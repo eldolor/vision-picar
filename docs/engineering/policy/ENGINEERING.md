@@ -216,6 +216,17 @@ decision, and its value and evidence are kept in one place,
 | `PASS_CLEARANCE_M` | 0.15 m | `brain/frontier.py` | room to pass through (the den's 0.6 m door) |
 | `GOAL_TIMEOUT_S` | 120 s | `brain/explore.py` | a goal nav2 never finishes is failed |
 | `MAX_ESCAPES` | 3 | `brain/explore.py` | escapes before a search may end while boxed in |
+| `FACE_MIN_TURN_DEG` | 10 deg | `brain/explore.py` | 3.69 B: a turn to face the target that the pivot guard refuses is retried at half the angle down to this; then REVERSE, face, a guarded FORWARD, once, and the remembered sighting is let go |
+| `LOOK_FROM_CANDIDATES` | 40 | `brain/frontier.py` | 3.69 D: places tried per unseen patch for one with a line of sight to it (facing its middle, else its nearest part); the old straight-line choice only if none has |
+
+**Explore's sighting rules (3.69).** A target detected on a PANNED frame is
+a direction, not a place: `_glimpse()` queues `LOOK_CENTER` and a turn of
+the body toward it, and the next centred frame decides (event `glimpse`).
+A centred sighting takes its range from the lidar window at the bearing --
+the median, unless the window is an edge (`ArrivalCheck._is_edge`: two
+surfaces), when it takes the nearest return, which is short of the target,
+never past it. A view goal (`ViewGap.face`) turns toward the part of the
+patch it was chosen to see.
 
 Arrival reads the scan in the body frame using `LIDAR_X_M` from
 `robot/safety.py`; its value is in the canonical chassis table,

@@ -363,6 +363,9 @@ CAMERA_FOV_DEG = 60.0
 CAMERA_RANGE_M = 3.0
 # An unseen patch smaller than this is a corner, not somewhere to go.
 MIN_GAP_M2 = 0.09
+# Places to look from tried per patch, best-ranked first, for a line of
+# sight to it (3.69 D).
+LOOK_FROM_CANDIDATES = 40
 
 
 def camera_seen(m: dict, x_m: float, y_m: float, view_deg: float,
@@ -399,6 +402,7 @@ class ViewGap:
     goal: tuple                # where to stand to look at it
     distance_m: float
     area_m2: float
+    face: Optional[tuple] = None   # (x_m, y_m) the part of it seen from `goal`
 
 
 def find_view_gaps(m: dict, x_m: float, y_m: float, seen: set,
@@ -422,16 +426,32 @@ def find_view_gaps(m: dict, x_m: float, y_m: float, seen: set,
         mx = sum(c[0] for c in group) / len(group)
         my = sum(c[1] for c in group) / len(group)
         want = look_from_m / res
-        best = None
-        for n, d in steps.items():
-            gap_d = math.hypot(n[0] - mx, n[1] - my)
-            key = abs(gap_d - want)
-            if best is None or key < best[0]:
-                best = (key, n)
-        if best is None:
+        ranked = sorted(steps, key=lambda n: abs(math.hypot(n[0] - mx, n[1] - my) - want))
+        if not ranked:
             continue
+        # 3.69 D: the place to look from must SEE the patch. Nearest the
+        # middle by straight line alone stood the robot behind a wall from
+        # the patch (houses 27, 108), the patch was marked looked at, and
+        # the target in it was never in a frame. So: the best-ranked place
+        # with a clear line to some of it -- facing its middle, as before,
+        # or else its nearest part; the old choice only if none has.
         cx, cy = _centre(m, (int(mx), int(my)))
-        out.append(ViewGap(centre=(cx, cy), goal=_centre(m, best[1]),
-                           distance_m=steps[best[1]] * res, area_m2=area))
+        best, face = ranked[0], None
+        cells = set(group)
+        for n in ranked[:LOOK_FROM_CANDIDATES]:
+            nx, ny = _centre(m, n)
+            q = min(group, key=lambda c: math.hypot(c[0] - n[0], c[1] - n[1]))
+            qx, qy = _centre(m, q)
+            hit = None
+            for fx, fy, f in ((cx, cy, None), (qx, qy, (qx, qy))):
+                view = math.degrees(math.atan2(fx - nx, -(fy - ny)))
+                if camera_seen(m, nx, ny, view) & cells:
+                    hit = (n, f)
+                    break
+            if hit:
+                best, face = hit
+                break
+        out.append(ViewGap(centre=(cx, cy), goal=_centre(m, best),
+                           distance_m=steps[best] * res, area_m2=area, face=face))
     out.sort(key=lambda g: g.distance_m - g.area_m2)
     return out

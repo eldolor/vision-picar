@@ -64,6 +64,9 @@ APPROACH_STANDOFF_M = 0.5
 APPROACH_NEAR_M, APPROACH_FAR_M = 0.35, 0.6
 # A sighting this far from the last approach point is a new one.
 APPROACH_MOVED_M = 0.5
+# 3.69 B: a turn to face the target that the pivot guard refuses is tried
+# again at half the angle, down to this, before the robot backs off.
+FACE_MIN_TURN_DEG = 10
 # Camera pans after a goal succeeds.
 LOOK_AROUND = ("LOOK_LEFT", "LOOK_RIGHT", "LOOK_CENTER")
 # A goal that fails with the robot no further than this from where it was
@@ -230,6 +233,14 @@ class ExploreAgent(MissionAgent):
                 except Exception:  # noqa: BLE001 -- best effort, as in _cancel()
                     logger.warning("goal cancel failed", exc_info=True)
 
+        # 3.69 A: the target glimpsed on a pan cannot be approached (a
+        # panned bearing is not a body bearing), so turn the BODY to where
+        # it was and look again centred; the next frame decides.
+        glimpse = self._glimpse(frame) if self._goal is None else None
+        if glimpse is not None:
+            self._pending = ["LOOK_CENTER", ("FACE", glimpse)]
+            self._event("glimpse", toward=[round(glimpse[0], 2), round(glimpse[1], 2)])
+
         # A look queued after an arrival goes first: no goal is live then.
         if self._pending and self._goal is None:
             return self._do_pending()
@@ -312,8 +323,12 @@ class ExploreAgent(MissionAgent):
         if not self.retry.available(tx, ty, now):
             return None
         pose = self._pose()
+        # "Here" is anywhere an approach could have stood it (3.69 B): a
+        # spot the approach left 0.6 m out, once more, sent the same goal
+        # again and again -- reached at once, never facing it -- until the
+        # step budget ran out.
         if pose.get("usable") and math.hypot(tx - pose["x_m"], ty - pose["y_m"]) \
-                <= APPROACH_STANDOFF_M + 0.05:
+                <= APPROACH_FAR_M + 0.1:
             # Here and not seeing it: look once, then let it go. A fresh
             # sighting brings it back.
             self._last_seen = None
@@ -390,6 +405,7 @@ class ExploreAgent(MissionAgent):
                                  area_m2=round(g.area_m2, 2), path_m=round(g.distance_m, 2))
                 if out[0] == "GOAL":
                     self._goal["look_at"] = g.centre
+                    self._goal["face"] = g.face
                     self._view_goals.append(g.goal)
                 return out
         # "Boxed in" is counted at the clearance goals need (3.45 review):
@@ -435,7 +451,7 @@ class ExploreAgent(MissionAgent):
                 self._pending = [("FACE", g["target"])]
                 self._approach = None
             elif g.get("look_at"):
-                self._pending = [("FACE", g["look_at"])]
+                self._pending = [("FACE", g.get("face") or g["look_at"])]
             return
         target = g.get("target") or (g["x_m"], g["y_m"])
         self.goals_failed += 1
@@ -537,22 +553,39 @@ class ExploreAgent(MissionAgent):
             if not pose.get("usable"):
                 return "WAIT", False, "no pose to turn from"
             tx, ty = item[1]
+            cap = item[2] if len(item) > 2 else 90
+            backed = len(item) > 3 and item[3]
             want = math.degrees(math.atan2(tx - pose["x_m"], -(ty - pose["y_m"])))
             turn = (want - pose["heading_deg"] + 180.0) % 360.0 - 180.0
             if abs(turn) < 5:
                 return "WAIT", True, "already facing it"
-            if abs(turn) > 90:
-                # A verb turns at most a quarter; queue the rest.
+            if abs(turn) > cap:
+                # A verb turns at most a quarter (or the cap a refusal set);
+                # queue the rest.
                 self._pending.insert(0, item)
-                turn = math.copysign(90, turn)
+                turn = math.copysign(cap, turn)
             action = "RIGHT" if turn > 0 else "LEFT"
             out = self._verb(action, angle=int(round(abs(turn))))
             if out[0] == "WAIT":
                 self._requeue(action, item)      # retry the look itself, not a bare turn
             elif not out[1]:
-                # No room to turn here (3.19's pivot guard). Give up on this
-                # look rather than ask again every step.
+                # No room to turn here (3.19's pivot guard). 3.69 B: the
+                # target was often already inside the found radius, just not
+                # in view -- so try smaller turns, then back off once and try
+                # again, before giving up on this look.
                 self._pending = [p for p in self._pending if p is not item]
+                if cap > FACE_MIN_TURN_DEG:
+                    self._pending.insert(0, ("FACE", (tx, ty), cap / 2, backed))
+                elif not backed:
+                    # Back off, turn to it with the room that gives, and come
+                    # back in facing it (the guarded verb stops at the bar):
+                    # re-approaching would stand it where it cannot turn.
+                    self._pending[0:0] = ["REVERSE", ("FACE", (tx, ty), 90, True), "FORWARD"]
+                    # Once: if that does not show it, let the sighting go (a
+                    # fresh one brings it back) -- going back to it stood the
+                    # robot where it could not turn, again and again, until
+                    # the step budget ran out (house 36).
+                    self._last_seen = None
             return out
         return self._verb(item)
 
@@ -637,6 +670,24 @@ class ExploreAgent(MissionAgent):
 
     # ---------- perception ----------
 
+    def _glimpse(self, frame: dict) -> Optional[tuple]:
+        """A point 1 m out along where a PANNED camera saw the target, in
+        the house frame -- a direction to turn the body to, never a place
+        to drive to (no range: the lidar does not look where the camera
+        pans). None if the camera is centred or the target is not in view,
+        or if this glimpse's turn is already queued."""
+        target = self.memory.target_object
+        hits = [d for d in frame.get("detections") or ()
+                if target and d.get("label") == target and d.get("bearing_deg") is not None]
+        if not hits or any(isinstance(p, tuple) and p[0] == "FACE" for p in self._pending):
+            return None
+        pan = (self.robot.get_depth_grid() or {}).get("pan_deg") or 0.0
+        pose = self._pose()
+        if abs(pan) <= 1.0 or not pose.get("usable"):
+            return None
+        a = math.radians(pose["heading_deg"] + pan + hits[0]["bearing_deg"])
+        return pose["x_m"] + math.sin(a), pose["y_m"] - math.cos(a)
+
     def _sighting(self, frame: dict) -> Optional[tuple]:
         """The target's position in the house frame, if the camera sees it
         dead ahead enough to approach: its bearing from the detection, its
@@ -659,7 +710,17 @@ class ExploreAgent(MissionAgent):
             return None
         if not scan.get("usable"):
             return None
-        r = ArrivalCheck._range_at(scan, bearing)
+        window = ArrivalCheck._window(scan, bearing)
+        if ArrivalCheck._is_edge(window):
+            # 3.69 C: returns that disagree are two surfaces -- something in
+            # front of the target and the wall behind it -- and the median
+            # took the wall (house 125: 3.76 m for a backpack at 2.7). The
+            # nearest return is short of the target, never past it, so the
+            # approach only brings the robot closer to look again.
+            finite = [x for x in window if not math.isinf(x)]
+            r = round(min(finite), 4) if finite else None
+        else:
+            r = ArrivalCheck._range_at(scan, bearing)
         pose = self._pose()
         if r is None or not pose.get("usable"):
             return None

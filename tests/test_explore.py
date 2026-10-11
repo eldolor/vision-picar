@@ -281,6 +281,7 @@ def _agent_that_saw_the_backpack_once(nav_cls):
         calls.append(1)
         return real(frame) if len(calls) == 1 else None
     agent._sighting = once
+    agent._glimpse = lambda frame: None     # nor on a pan (3.69)
     return agent, nav
 
 
@@ -477,3 +478,54 @@ def test_a_nook_with_no_leavable_goal_backs_out_before_ending_searched():
     action, _ok, detail = agent._next_frontier(0.0)
     assert not agent.searched and action != "STOP", detail
     assert [e["why"] for e in agent.events if e["event"] == "escape"] == ["boxed"]
+
+
+# ---------- 3.69: explore's misses in the imported houses ----------
+
+def _kitchen_door(theta_deg, pan=0):
+    grid = build_world("scaled_house")
+    grid.x, grid.y, grid.theta = 16.5, 4.5, math.radians(theta_deg)
+    grid.pan = pan
+    robot = MockRobot(grid, render=False)
+    nav = FakeNav(robot)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="red backpack"),
+                         navigator=nav, clock=lambda: grid.sim_time, world=MockWorld(grid))
+    return agent, nav, grid
+
+
+def test_a_target_seen_only_on_a_pan_turns_the_body_and_is_approached():
+    """3.66 class A (8 of 16 misses): the backpack in view only while the
+    camera looked left. A panned bearing cannot be approached, and nothing
+    turned the body to look again -- so the next decision was a frontier."""
+    agent, nav, grid = _kitchen_door(5 + 90, pan=-1)   # body south, camera east
+    assert any(d["label"] == "red backpack"
+               for d in agent.robot.get_camera_frame()["detections"])
+    first_goal = None
+    for _ in range(6):
+        r = agent.step()
+        if r.action == "GOAL":
+            first_goal = agent._goal["kind"]
+            break
+    assert first_goal == "approach"
+    assert grid.pan == 0
+
+
+@pytest.mark.parametrize("house, fault", [
+    # B: arrived inside the found radius, the turn to face it refused by
+    # the pivot guard; smaller turns, then back off and come in facing it.
+    (101, "face refused"),
+    (132, "face refused"),
+    # C: the lidar window at the sighting's bearing is two surfaces (1.97,
+    # 2.2, 3.76 m); the median took the wall behind the backpack.
+    (125, "edge range"),
+    # D: the view goal stood the robot behind a wall from the unseen patch.
+    (108, "look-from with no line of sight"),
+    # The back-off's guard: going back to a sighting it could not face from
+    # looped until the step budget ran out (found on dev; lost mid-fix).
+    (36, "back-off loop"),
+])
+def test_the_imported_house_misses_are_found(house, fault):
+    """3.69: one ProcTHOR house per 3.66 miss class (the 100-house sweep in
+    tests/test_procthor_sweep.py is the measurement; these name the fault)."""
+    runner, nav, grid = _mission(house=f"procthor:val:{house}", max_steps=200)
+    assert runner.status()["outcome"] == FOUND, (fault, runner.status()["log_tail"][-3:])
