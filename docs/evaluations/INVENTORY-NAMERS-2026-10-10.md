@@ -167,3 +167,25 @@ pre-set rule (Gemma +10 points at matched false alarms) is not met, and
 the shipped tier stays. **For naming everything, the vision models beat
 YOLOE + CLIP; for finding one named thing, YOLOE + CLIP is the better
 tool.**
+
+## Stepping back: remember what things look like, not their names (amendments 12-13)
+
+The inventory's job is "where did I last see X?", which needs no names.
+So every object the prompt-free YOLOE boxes is stored with its CLIP image
+embedding (4 KB), and a request is matched against them with the shipped
+CLIP rule. Free; no cloud calls.
+
+| | six tuning walks | 15 held-out walks |
+|---|---|---|
+| Lookup: top match shows the target | 6 of 6 | 5 of 5 |
+| Lookup: top-5 matches that show it | 25 of 30 | 23 of 25 |
+| Lookup time (laptop CPU) | 7-10 ms | 13-15 ms |
+| Frames with the target found, memory vs live search | 84.3% vs 80.8% (13 vs 0 false alarms) | 64.0% vs 77.5% (11 vs 5 false alarms) |
+
+**Looking up works:** the right object comes first for all 11 targets,
+and it found shoes and the laundry basket on walks recorded for other
+targets. **Recall per frame fails:** a memory is made before anyone asks,
+so it holds only what the prompt-free model boxed, and that model misses
+the bottle, basket and cable on many frames the target-prompted live
+search catches. Both amendments' pre-set rules required both halves, so
+nothing is built and phase C (a namer for the inventory) stops here.
