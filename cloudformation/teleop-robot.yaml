@@ -291,6 +291,8 @@ Resources:
           Values:
             - /teleop-robot/sim/objects
             - /teleop-robot/sim/objects/move
+            # 3.72's house swap; answers 409 here, reachable to be read.
+            - /teleop-robot/sim/house/random
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
