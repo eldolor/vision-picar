@@ -201,7 +201,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | `correlation_search_space_smear_deviation` | 0.03 | m | `slam.yaml` | The scan matcher's blur before scoring. At 0.1 m (until 3.40) long-range returns barely constrained heading and the furnished home's map bent 2.5-6 deg; at 0.03 m two tours stayed within 4.2 cm with every room's walls true |
 | `restamp_tf`, `transform_publish_period`, `map_update_interval` | true, 0.05 s, 1.0 s | -- | `slam.yaml` | `restamp_tf` stops `map -> odom` going stale while the robot is at rest (3.15). |
 | `footprint` / `FootprintApproach.points` | +/-0.1265 x +/-0.1155 | m | `nav2.yaml` | Half the chassis outline; the outline itself is in the [platform engineering spec](../platform/ENGINEERING.md). A wall duplicate with `robot/safety.py`. |
-| `inflation_radius`, `cost_scaling_factor` | 0.12, 8.0 | m, -- | `nav2.yaml` | Kept small for doors. |
+| `inflation_radius`, `cost_scaling_factor` | 0.35, 5.0 | m, -- | `nav2.yaml` | 3.67 candidate A, adopted 2026-10-11 (goal-6 criterion waived by the user): past the 15.1 cm circumscribed radius, so plans keep off surfaces; tour 8/8/8 (was 4/8/4), R6 6/6. Was 0.12, 8.0. |
 | Regulated Pure Pursuit `desired_linear_vel`, `lookahead_dist` | 0.20, 0.30 | m/s, m | `nav2.yaml` | The flat 0.2 m/s cap is what makes the safety layer's fixed 20 cm stop sound (`PLAN-ros-alignment.md` question 9, speed set by clearance). No recorded reason for the lookahead. |
 | `xy_goal_tolerance`, `yaw_goal_tolerance` | 0.10, 6.28 | m, rad | `nav2.yaml` | Position goals only. |
 | NavFn `allow_unknown`, `tolerance` | true, 0.10 | --, m | `nav2.yaml` | -- |

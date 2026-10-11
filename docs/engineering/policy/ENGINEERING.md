@@ -212,7 +212,7 @@ decision, and its value and evidence are kept in one place,
 | Name | Value | Where | Why |
 |---|---|---|---|
 | `leave_clearance_m(min_distance_cm)` | half of `FOOTPRINT_LENGTH_M` + `min_distance_cm` = 0.3265 m at 20 cm (7 map cells at 5 cm) | `brain/explore.py`, passed as `clearance_m` to `find_frontiers()` and `find_view_gaps()` | 3.45: room to drive away from the goal at any heading. `evaluations/slam-345/goal_sweep.py`: 36% of chosen goals leavable at 0.22 m, 52% at 0.30 m, 98% at this |
-| `GOAL_CLEARANCE_M` | 0.22 m | `brain/frontier.py` | 3.31's default: the half-diagonal plus a margin over nav2's 0.12 m inflation. Still used by approach points and the boxed-in check |
+| `GOAL_CLEARANCE_M` | 0.22 m | `brain/frontier.py` | 3.31's default: the half-diagonal plus a margin over nav2's 0.12 m inflation (0.35 m since 3.67). Still used by approach points and the boxed-in check |
 | `PASS_CLEARANCE_M` | 0.15 m | `brain/frontier.py` | room to pass through (the den's 0.6 m door) |
 | `GOAL_TIMEOUT_S` | 120 s | `brain/explore.py` | a goal nav2 never finishes is failed |
 | `MAX_ESCAPES` | 3 | `brain/explore.py` | escapes before a search may end while boxed in |

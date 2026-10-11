@@ -2,10 +2,11 @@
 #
 # Every size here is the CHASSIS (picar_description's xacro: the UGV Rover's
 # outer 0.253 x 0.231 m since 3.21; 0.228 x 0.198 before), not the sim's
-# point robot. The starter house's doors are one grid cell, 0.30 m: about
-# 3.5 cm of margin on each side, so inflation
-# is kept small on purpose -- a costmap tuned for real 80 cm doors would seal
-# every door in this house.
+# point robot. nav2 is judged on scaled_house (0.90 m doors) and the
+# furnished home; the starter house's 0.30 m doors cannot host it (R6).
+# Inflation is 0.35 m since 3.67 (candidate A, adopted 2026-10-11 by the
+# user with its goal-6 criterion waived): past the 15.1 cm circumscribed
+# radius, so plans keep off walls and furniture (tour 8/8/8, was 4/8/4).
 
 bt_navigator:
   ros__parameters:
@@ -89,8 +90,8 @@ local_costmap:
           inf_is_valid: true
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        inflation_radius: 0.12
-        cost_scaling_factor: 8.0
+        inflation_radius: 0.35       # 3.67 A (was 0.12)
+        cost_scaling_factor: 5.0     # 3.67 A (was 8.0)
       always_send_full_costmap: true
 
 global_costmap:
@@ -122,8 +123,8 @@ global_costmap:
           inf_is_valid: true
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        inflation_radius: 0.12
-        cost_scaling_factor: 8.0
+        inflation_radius: 0.35       # 3.67 A (was 0.12)
+        cost_scaling_factor: 5.0     # 3.67 A (was 8.0)
       always_send_full_costmap: true
 
 planner_server:
