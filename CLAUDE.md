@@ -114,7 +114,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
 
 | Area | State | Where to read |
 |---|---|---|
-| Simulator | Continuous pose and differential-drive kinematics (R0). Solid objects (3.9). People and pets that move (3.30, `SIM_MOVERS`). Four houses via `SIM_MAP`: `starter_house` (30 cm doors), `scaled_house` (90 cm doors; nav2 is judged here), `home_first_floor` (a realistic furnished test house, not a replica of the user's), `complex_house` (3.46: a loop, dead ends, 16 small things on the floor). Under `SIM_MOTOR_BOARD=fake` the body runs as its own programs (3.36). | `sim/`, R0, 3.30, 3.36 |
+| Simulator | Continuous pose and differential-drive kinematics (R0). Solid objects (3.9). People and pets that move (3.30, `SIM_MOVERS`). Four houses via `SIM_MAP`: `starter_house` (30 cm doors), `scaled_house` (90 cm doors; nav2 is judged here), `home_first_floor` (a realistic furnished test house, not a replica of the user's), `complex_house` (3.46: a loop, dead ends, 16 small things on the floor). Plus 1,000 imported floor plans: `SIM_MAP=procthor:val:<0-999>` (3.66, ProcTHOR-10K, offline). Under `SIM_MOTOR_BOARD=fake` the body runs as its own programs (3.36). | `sim/`, R0, 3.30, 3.36 |
 | Robot server and safety | Arbitration by driver rank (M4). A depth-grid cone plus the chassis' swept corridor off the 360-degree scan (3.18), a pivot guard (3.19), guarded verbs (3.22), a settle pass (3.29), no motion without fresh wheel feedback (3.34) and stall detection (3.35). The watchdog is B3.1. | `robot/`, `docs/safety/` |
 | Brain service | `MissionRunner` behind `control/brain_server.py` on :8001. Three failsafes (B3). Policies: `frontier` (rule-based), `vision` (cloud per step) and `tiered` (local YOLOE + CLIP, cloud only on triggers). | `control/`, `AGENT-HARNESS.md` |
 | Perception | YOLOE-11s-seg crops, then CLIP RN50, gate P >= 0.8. On the Jetson at 15 W: median 61 ms, p90 110 ms a frame. | P22-P24, 3.33 |
@@ -232,6 +232,15 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   `evaluations/slam-345/`). Handoff:
   `HANDOFF-2026-10-07-3.45-explore-goal-choice.md`. 3.31's frontier-search
   batch is unblocked.
+* **1,000 imported houses (3.66), merged 2026-10-11 with criterion 5b
+  failed.** ProcTHOR-10K's `val` floor plans load as `SIM_MAP=procthor:val:N`
+  (one simulator still: only the plan crosses over). Import checks all met
+  (topology 1000/1000, furniture 99.85%, usable 570/570). Explore finds the
+  target in 84 of the first 100 usable houses (bar 90; 84 pinned). The 16
+  misses are explore's, in four classes (panned sighting, approach ring,
+  lidar past the target, never seen). Open for the user: a section to fix
+  them. `docs/evaluations/PROCTHOR-HOUSES-2026-10-11.md`,
+  `HANDOFF-2026-10-11-3.66-procthor-houses.md`.
 * **Raising nav2's speed** (6.9's high end) now has its speed-dependent
   stop, but waits on measured braking (6.9 (d)) and 3.42's relayed-scan
   time stamp; read `HANDOFF-2026-10-07-lidar-and-speed.md` first.
