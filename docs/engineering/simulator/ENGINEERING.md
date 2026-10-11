@@ -41,6 +41,7 @@ sensor reads queued behind the board loop. See "The split simulator" below.
 | `sim/maps/starter_house.py` | 13 x 10 cells, 30 cm doors. Robot at cell (2, 2) facing east, backpack at (10, 7). The default house |
 | `sim/maps/scaled_house.py` | 27 x 14 cells, 90 cm doors (R6). Robot at (6, 4) facing east, backpack at (23, 5). The only house with a mover scenario (`hallway_crossing`) |
 | `sim/maps/complex_house.py` | 3.46's test house: 60 x 44 ft, a loop (living room - kitchen - hall), an L-shaped hall, three dead ends (study, closet, ensuite), an L-shaped bedroom, 33 pieces of furniture and 16 one-cell small things on the floor. Exposes `INSTANCES` (cells grouped by piece, so a table's four legs are one table) and `SMALL_NAMES` for scoring |
+| `sim/maps/procthor.py`, `sim/maps/procthor_data/` | 3.66: ProcTHOR-10K's 1,000 `val` houses (Apache-2.0, `LICENSE` beside the data) as `procthor:val:<index>`. `convert(index)` returns the world and what a judge needs (ProcTHOR's own room joins, source areas, object counts); `usable()` is the pinned list of houses with three or more rooms that the Rover reaches in full (`tests/chassis_fit.py`). The data is `val.json.gz`, written by `tools/procthor_import.py` from sha256-pinned sources; the suite never fetches |
 | `sim/maps/home_first_floor.py` | The user's first floor, rasterised from feet (appraisal sketch, exterior measured, interior provisional), furnished with solid objects. Tables are four legs |
 
 Owned by other domains but built on this one: `sim/mock_world.py` (world),
@@ -181,7 +182,7 @@ differs, both are given.
 
 | Key or constant | Default | Unit | Read in | Why that value |
 |---|---|---|---|---|
-| `SIM_MAP` (env) | `starter_house` | name | `robot/factory.py` (`_sim_world()`); the live suites and sweeps in `tests/` read it too | Most tests were measured in the starter house. `scaled_house` for nav2 and R1 sweeps; `home_first_floor` for the furnished house; `complex_house` for 3.46's inventory sweep |
+| `SIM_MAP` (env) | `starter_house` | name | `robot/factory.py` (`_sim_world()`); the live suites and sweeps in `tests/` read it too | Most tests were measured in the starter house. `scaled_house` for nav2 and R1 sweeps; `home_first_floor` for the furnished house; `complex_house` for 3.46's inventory sweep; `procthor:val:<0-999>` for sweeps across many generated houses (3.66) |
 | `SIM_MOVERS` (env) | unset | scenario name | `robot/factory.py` | Off means off (3.30 criterion 4). Only `scaled_house` defines one, `hallway_crossing` |
 | `SIM_ODOM_DRIFT` (env) | unset | `left,right` scales | `robot/factory.py` | Overrides the yaml, as `ROBOT_DRIVE` does |
 | `sim.realtime` | `false` | bool | `robot/factory.py` -> `MockRobot._settle()` | S4. On, a move sleeps its declared `duration` so the watchdog readout climbs mid-move. Off keeps the suite fast |
@@ -343,6 +344,8 @@ docstring. It renders the starter house from (5.5, 7.5) facing east to
 | `tests/test_footprint_safety.py`, `tests/test_pivot_safety.py` | 3.18 and 3.19 bars on ground truth, run through the sim's rectangle collision |
 | `tests/test_cad_geometry.py` | 3.27: the scan is cast from the lidar 4 cm ahead, judged on beam endpoints against the layout |
 | `tests/test_home_map.py` | The home's outline and garage still match the appraisal (1483.05 and 428.24 sq ft); every room is reachable around the furniture |
+| `tests/test_procthor_houses.py` | 3.66 criteria 1-4 and 6 on a fixed sample: topology, outline, furniture, the target's placement, determinism, build time, the pinned usable list, the importer's sha256 refusal |
+| `tests/test_procthor_sweep.py` | 3.66 criterion 5: `explore` over the first 100 usable houses (on `SLOW_FILES`; `python -m tests.procthor_sweep`) |
 | `tests/test_r2_routes.py` | R2: every scan beam equals the renderer's ray; truth equals the pose |
 | `tests/test_sim_body_process.py` | 3.36: the robot server's process imports no simulator module; readings follow the body across the boundary and equal what the body measured; furniture moves reach physics and sensors; the physics program dying stops the wheels; a dead sensor program blinds the vet in time; the vet never touches the network; safety stream and heavy reads are different programs; the factory refuses an in-process fake board |
 

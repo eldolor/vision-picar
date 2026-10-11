@@ -231,6 +231,24 @@ house's doors leave the UGV Rover too little margin
 (`PLAN-ros-alignment.md` 3.21, 3.24; the numbers are in the engineering
 spec).
 
+### Many houses come from ProcTHOR's floor plans, not a second simulator (3.66)
+
+**Decision.** ProcTHOR-10K's 1,000 `val` houses (AI2, Apache-2.0) are
+taken as floor plans only (rooms, walls, doors and what stands on the
+floor) and rasterised into the same `GridWorld`, selected by name like
+any other house. A sweep can run in hundreds of layouts
+nobody tuned a policy to.
+
+**Alternatives rejected.** Running AI2-THOR, Habitat or Gazebo itself:
+each is a second simulator to disagree with the first (the decision
+above). Drawing more houses by hand: each carries its author's habits, which is what the sweep is meant to escape.
+
+**Trade-off.** The houses are generated, not real: rooms are rectangles
+on a 2.1 m lattice, walls have no thickness in the source and are a cell
+thick here, and objects on surfaces are dropped. They widen the policy's
+test set; they are not a stand-in for the user's house or for real
+images.
+
 ### The renderer is Python, and it is the vision policy's real input (S2)
 
 **Decision.** The raycaster was ported from the twin's JavaScript into

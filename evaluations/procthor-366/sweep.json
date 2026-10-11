@@ -1,0 +1,1202 @@
+[
+ {
+  "index": 0,
+  "outcome": "searched",
+  "ticks": 146,
+  "capped": false,
+  "goals": 47,
+  "tail": [
+   "step 47: STOP (ok) -- no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped) -- bedroom 2, facing ?, free space clear, sees nothing of note",
+   "inventory: 40 reported, 17 candidates from 147 frames -- dining table x6, chair x4, bed x4, desk x3, garbage can x3, tv stand x2, counter top x2, house plant x2, sofa x2, dresser x2, dog bed, fridge, shelving unit, toilet, floor lamp, red backpack, baseball bat, box, plunger, sink",
+   "mission ended (searched): no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 2,
+  "outcome": "found",
+  "ticks": 79,
+  "capped": false,
+  "goals": 20,
+  "tail": [
+   "step 20: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 16 reported, 28 candidates from 80 frames -- chair x2, garbage can x2, sink x2, dining table x2, tv stand, dog bed, basketball, bed, house plant, plunger, sofa, toilet",
+   "mission ended (found): Bathroom, bathroom 2, bathroom 3, bedroom, bedroom 2, bedroom 3, living room 2, living room 3 searched. Found."
+  ]
+ },
+ {
+  "index": 3,
+  "outcome": "found",
+  "ticks": 10,
+  "capped": false,
+  "goals": 3,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack, bed",
+   "inventory: 3 reported, 9 candidates from 11 frames -- bed, desk, dresser",
+   "mission ended (found): Bedroom, bedroom 2 searched. Found."
+  ]
+ },
+ {
+  "index": 4,
+  "outcome": "found",
+  "ticks": 76,
+  "capped": false,
+  "goals": 20,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 21 reported, 7 candidates from 77 frames -- chair x3, dining table x3, box x2, bed x2, sofa x2, counter top, fridge, dresser, stool, basketball, house plant, red backpack, sink, toilet",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 5,
+  "outcome": "found",
+  "ticks": 40,
+  "capped": false,
+  "goals": 12,
+  "tail": [
+   "waiting -- at the target; looking -- living room, facing ?, free space some, sees red backpack",
+   "inventory: 10 reported, 8 candidates from 41 frames -- counter top x2, red backpack, dresser, house plant, plunger, bed, dining table, garbage bag, sink",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 9,
+  "outcome": "found",
+  "ticks": 98,
+  "capped": false,
+  "goals": 25,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space none, sees red backpack",
+   "inventory: 28 reported, 32 candidates from 99 frames -- chair x7, dining table x5, bed x3, box x2, garbage can x2, dog bed, floor lamp, house plant, arm chair, basketball, cart, dresser, red backpack, sofa",
+   "mission ended (found): Bathroom 3, bedroom 2, bedroom 3, bedroom 4, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 10,
+  "outcome": "found",
+  "ticks": 89,
+  "capped": false,
+  "goals": 28,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 30 reported, 11 candidates from 90 frames -- dining table x6, chair x4, dog bed x2, counter top x2, stool x2, sofa, fridge, garbage bag, red backpack, baseball bat, bed, cart, dresser, garbage can, house plant, plunger, sink, toilet, tv stand",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 11,
+  "outcome": "found",
+  "ticks": 154,
+  "capped": false,
+  "goals": 50,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 38 reported, 7 candidates from 155 frames -- dining table x8, chair x4, sofa x3, arm chair x3, desk x3, dresser x2, bed x2, garbage can x2, basketball, cart, dog bed, red backpack, shelving unit, tv stand, counter top, fridge, toilet, plunger, sink",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 12,
+  "outcome": "searched",
+  "ticks": 257,
+  "capped": false,
+  "goals": 80,
+  "tail": [
+   "step 80: STOP (ok) -- no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped) -- bedroom 2, facing ?, free space clear, sees nothing of note",
+   "inventory: 56 reported, 26 candidates from 258 frames -- dining table x11, bed x6, sofa x5, tv stand x4, chair x3, desk x3, side table x3, dresser x2, counter top x2, house plant x2, dog bed x2, plunger x2, sink x2, cart, box, garbage bag, basketball, boots, fridge, arm chair, laundry hamper, toilet",
+   "mission ended (searched): no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 13,
+  "outcome": "found",
+  "ticks": 30,
+  "capped": false,
+  "goals": 8,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 10 reported, 12 candidates from 31 frames -- dining table x4, bed, chair, dog bed, red backpack, safe, tv stand",
+   "mission ended (found): Bedroom, kitchen searched. Found."
+  ]
+ },
+ {
+  "index": 15,
+  "outcome": "found",
+  "ticks": 78,
+  "capped": false,
+  "goals": 20,
+  "tail": [
+   "step 20: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 15 reported, 22 candidates from 79 frames -- sofa x3, dining table x3, arm chair x2, dresser x2, floor lamp x2, chair x2, house plant",
+   "mission ended (found): Bedroom, living room, living room 2, living room 3 searched. Found."
+  ]
+ },
+ {
+  "index": 17,
+  "outcome": "found",
+  "ticks": 32,
+  "capped": false,
+  "goals": 9,
+  "tail": [
+   "step 8: GOAL (ok) -- goal sent (approach) to (7.65, 7.35) -- living room, facing ?, free space none, sees red backpack",
+   "inventory: 7 reported, 12 candidates from 33 frames -- chair x3, dining table, fridge, red backpack, shelving unit",
+   "mission ended (found): Kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 18,
+  "outcome": "found",
+  "ticks": 70,
+  "capped": false,
+  "goals": 18,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 18 reported, 17 candidates from 71 frames -- dining table x5, counter top x2, chair x2, sofa, tv stand, house plant, arm chair, dresser, floor lamp, garbage bag, red backpack, sink",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 21,
+  "outcome": "found",
+  "ticks": 78,
+  "capped": false,
+  "goals": 23,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 19 reported, 8 candidates from 79 frames -- dining table x3, sofa x2, counter top x2, floor lamp x2, house plant, tv stand, arm chair, bed, chair, fridge, plunger, red backpack, sink, toilet",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 26,
+  "outcome": "found",
+  "ticks": 50,
+  "capped": false,
+  "goals": 15,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 11 reported, 5 candidates from 51 frames -- sofa x2, ottoman, dresser, chair, counter top, dining table, fridge, garbage can, house plant, red backpack",
+   "mission ended (found): Bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 27,
+  "outcome": "searched",
+  "ticks": 33,
+  "capped": false,
+  "goals": 10,
+  "tail": [
+   "step 10: STOP (ok) -- no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped) -- living room, facing ?, free space some, sees nothing of note",
+   "inventory: 9 reported, 3 candidates from 34 frames -- chair x3, dining table x3, arm chair, counter top, tv stand",
+   "mission ended (searched): no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 32,
+  "outcome": "found",
+  "ticks": 313,
+  "capped": false,
+  "goals": 101,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom 2, facing ?, free space some, sees red backpack",
+   "inventory: 55 reported, 29 candidates from 314 frames -- dining table x7, arm chair x5, chair x5, sofa x4, tv stand x3, basketball x3, bed x3, dresser x3, sink x3, toilet x3, desk x2, plunger x2, garbage can x2, garbage bag, counter top, floor lamp, fridge, red backpack, stool, box, clothes dryer, house plant, laundry hamper",
+   "mission ended (found): Bathroom, bathroom 2, bathroom 3, bedroom, bedroom 2, bedroom 3, kitchen, living room, living room 2, living room 3 searched. Found."
+  ]
+ },
+ {
+  "index": 34,
+  "outcome": "found",
+  "ticks": 23,
+  "capped": false,
+  "goals": 6,
+  "tail": [
+   "step 6: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- living room, facing ?, free space some, sees red backpack",
+   "inventory: 3 reported, 11 candidates from 24 frames -- dining table, arm chair, floor lamp",
+   "mission ended (found): Kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 36,
+  "outcome": "found",
+  "ticks": 54,
+  "capped": false,
+  "goals": 14,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 13 reported, 20 candidates from 55 frames -- chair x3, bed x3, counter top x2, arm chair, dining table, floor lamp, sofa, toilet",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 37,
+  "outcome": "found",
+  "ticks": 152,
+  "capped": false,
+  "goals": 45,
+  "tail": [
+   "waiting -- at the target; looking -- living room, facing ?, free space some, sees red backpack",
+   "inventory: 30 reported, 29 candidates from 153 frames -- chair x5, bed x3, dining table x2, dresser x2, plunger x2, garbage can x2, side table x2, sofa x2, clothes dryer, sink, arm chair, floor lamp, red backpack, basketball, counter top, garbage bag, house plant, toilet",
+   "mission ended (found): Bathroom, bathroom 2, bedroom, bedroom 2, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 39,
+  "outcome": "found",
+  "ticks": 135,
+  "capped": false,
+  "goals": 45,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 37 reported, 8 candidates from 136 frames -- dining table x11, chair x4, garbage can x3, sofa x3, bed x2, dresser x2, counter top x2, side table x2, arm chair, plunger, red backpack, toilet, floor lamp, garbage bag, sink, tv stand",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 40,
+  "outcome": "found",
+  "ticks": 71,
+  "capped": false,
+  "goals": 18,
+  "tail": [
+   "step 18: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 12 reported, 20 candidates from 72 frames -- bed x3, chair x2, baseball bat, desk, red backpack, box, safe, sofa, tv stand",
+   "mission ended (found): Bedroom, bedroom 2, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 42,
+  "outcome": "found",
+  "ticks": 271,
+  "capped": false,
+  "goals": 80,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom 2, facing ?, free space some, sees red backpack",
+   "inventory: 52 reported, 23 candidates from 272 frames -- bed x6, chair x5, dresser x4, plunger x4, sink x4, toilet x4, dog bed x3, desk x3, dining table x2, baseball bat x2, sofa x2, cart x2, garbage can x2, tv stand x2, counter top, basketball, fridge, house plant, red backpack, side table, laundry hamper",
+   "mission ended (found): Bathroom, bathroom 2, bathroom 3, bathroom 4, bedroom, bedroom 2, bedroom 3, bedroom 4, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 43,
+  "outcome": "found",
+  "ticks": 66,
+  "capped": false,
+  "goals": 17,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 14 reported, 10 candidates from 67 frames -- dining table x3, chair x2, fridge, bed, box, counter top, garbage can, plunger, garbage bag, red backpack, side table",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 44,
+  "outcome": "searched",
+  "ticks": 241,
+  "capped": false,
+  "goals": 71,
+  "tail": [
+   "step 71: STOP (ok) -- no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped) -- bathroom 3, facing ?, free space clear, sees nothing of note",
+   "inventory: 61 reported, 28 candidates from 242 frames -- dining table x18, chair x11, sofa x4, tv stand x4, bed x3, sink x3, dresser x3, side table x3, toilet x2, garbage can x2, cart, counter top, baseball bat, box, fridge, plunger, red backpack, shelving unit",
+   "mission ended (searched): no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 45,
+  "outcome": "found",
+  "ticks": 7,
+  "capped": false,
+  "goals": 2,
+  "tail": [
+   "step 2: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- kitchen, facing ?, free space clear, sees red backpack",
+   "inventory: 0 reported, 9 candidates from 8 frames",
+   "mission ended (found): Bedroom, kitchen searched. Found."
+  ]
+ },
+ {
+  "index": 46,
+  "outcome": "found",
+  "ticks": 109,
+  "capped": false,
+  "goals": 35,
+  "tail": [
+   "step 34: GOAL (ok) -- goal sent (approach) to (10.05, 1.35) -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 30 reported, 9 candidates from 110 frames -- dining table x7, chair x3, side table x3, counter top x2, desk x2, floor lamp x2, bed x2, baseball bat, dresser, sink, fridge, garbage can, red backpack, basketball, house plant, plunger",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 50,
+  "outcome": "found",
+  "ticks": 26,
+  "capped": false,
+  "goals": 7,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom 2, facing ?, free space some, sees red backpack",
+   "inventory: 5 reported, 22 candidates from 27 frames -- dining table x2, chair, red backpack, sofa",
+   "mission ended (found): Bedroom 2, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 52,
+  "outcome": "found",
+  "ticks": 91,
+  "capped": false,
+  "goals": 26,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom 2, facing ?, free space some, sees red backpack",
+   "inventory: 22 reported, 13 candidates from 92 frames -- dining table x3, dresser x3, bed x3, garbage bag, sink, toilet, box, garbage can, coffee table, floor lamp, fridge, house plant, plunger, shelving unit, side table, sofa",
+   "mission ended (found): Bathroom, bedroom, bedroom 2, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 53,
+  "outcome": "found",
+  "ticks": 77,
+  "capped": false,
+  "goals": 24,
+  "tail": [
+   "waiting -- at the target; looking -- living room, facing ?, free space some, sees red backpack",
+   "inventory: 20 reported, 10 candidates from 78 frames -- dining table x3, dresser x3, arm chair x2, cart, fridge, bed, counter top, floor lamp, garbage bag, sink, toilet, chair, red backpack, shelving unit, side table",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 55,
+  "outcome": "found",
+  "ticks": 30,
+  "capped": false,
+  "goals": 8,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 4 reported, 11 candidates from 31 frames -- chair x2, arm chair, red backpack",
+   "mission ended (found): Bedroom, living room searched. Found."
+  ]
+ },
+ {
+  "index": 57,
+  "outcome": "found",
+  "ticks": 125,
+  "capped": false,
+  "goals": 37,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 24 reported, 18 candidates from 126 frames -- chair x7, dining table x5, counter top x3, dog bed, bed, fridge, red backpack, sink, boots, dresser, side table, sofa",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 58,
+  "outcome": "found",
+  "ticks": 82,
+  "capped": false,
+  "goals": 21,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 28 reported, 23 candidates from 83 frames -- bed x5, chair x4, dresser x3, dining table x3, dog bed x3, desk x2, baseball bat x2, basketball, box, fridge, red backpack, stool, tv stand",
+   "mission ended (found): Bedroom, bedroom 2, bedroom 3, kitchen, living room, living room 2 searched. Found."
+  ]
+ },
+ {
+  "index": 60,
+  "outcome": "found",
+  "ticks": 78,
+  "capped": false,
+  "goals": 20,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 15 reported, 11 candidates from 79 frames -- chair x6, dining table x2, sofa, arm chair, bed, coffee table, floor lamp, red backpack, toilet",
+   "mission ended (found): Bathroom, bedroom, living room searched. Found."
+  ]
+ },
+ {
+  "index": 61,
+  "outcome": "found",
+  "ticks": 162,
+  "capped": false,
+  "goals": 41,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 29 reported, 29 candidates from 163 frames -- dining table x7, chair x4, bed x4, basketball x2, counter top x2, dresser x2, sink x2, sofa, red backpack, side table, garbage bag, toilet, garbage can",
+   "mission ended (found): Bathroom, bathroom 2, bathroom 3, bathroom 4, bedroom, bedroom 2, bedroom 3, bedroom 4, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 63,
+  "outcome": "found",
+  "ticks": 34,
+  "capped": false,
+  "goals": 9,
+  "tail": [
+   "step 9: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 9 reported, 11 candidates from 35 frames -- chair x2, desk x2, dining table x2, bed, garbage can, sink",
+   "mission ended (found): Bathroom, bedroom, kitchen searched. Found."
+  ]
+ },
+ {
+  "index": 65,
+  "outcome": "found",
+  "ticks": 22,
+  "capped": false,
+  "goals": 6,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space none, sees red backpack",
+   "inventory: 5 reported, 12 candidates from 23 frames -- bed, counter top, dining table, fridge, red backpack",
+   "mission ended (found): Bedroom, kitchen searched. Found."
+  ]
+ },
+ {
+  "index": 67,
+  "outcome": "searched",
+  "ticks": 95,
+  "capped": false,
+  "goals": 31,
+  "tail": [
+   "step 31: STOP (ok) -- no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped) -- bedroom, facing ?, free space some, sees nothing of note",
+   "inventory: 20 reported, 10 candidates from 96 frames -- dining table x5, counter top x2, dresser x2, chair x2, baseball bat, sofa, basketball, plunger, sink, bed, box, floor lamp, toilet",
+   "mission ended (searched): no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 71,
+  "outcome": "found",
+  "ticks": 291,
+  "capped": false,
+  "goals": 87,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom 3, facing ?, free space some, sees red backpack",
+   "inventory: 60 reported, 37 candidates from 292 frames -- dining table x12, chair x7, bed x7, desk x4, sink x4, dresser x3, dog bed x2, arm chair x2, house plant x2, toilet x2, counter top x2, plunger x2, red backpack, shelving unit, side table, floor lamp, garbage can, baseball bat, basketball, fridge, laundry hamper, sofa, tv stand",
+   "mission ended (found): Bathroom, bathroom 2, bathroom 3, bathroom 4, bedroom, bedroom 2, bedroom 3, bedroom 4, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 72,
+  "outcome": "found",
+  "ticks": 55,
+  "capped": false,
+  "goals": 14,
+  "tail": [
+   "step 14: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- bathroom, facing ?, free space clear, sees red backpack",
+   "inventory: 8 reported, 17 candidates from 56 frames -- bed, box, arm chair, dresser, floor lamp, dining table, red backpack, stool",
+   "mission ended (found): Bathroom, bedroom, bedroom 2, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 73,
+  "outcome": "found",
+  "ticks": 22,
+  "capped": false,
+  "goals": 6,
+  "tail": [
+   "step 6: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- bedroom, facing ?, free space clear, sees red backpack",
+   "inventory: 6 reported, 10 candidates from 23 frames -- chair, floor lamp, fridge, garbage can, shelving unit, sofa",
+   "mission ended (found): Bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 75,
+  "outcome": "searched",
+  "ticks": 195,
+  "capped": false,
+  "goals": 63,
+  "tail": [
+   "step 63: STOP (ok) -- no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped) -- bedroom 2, facing ?, free space clear, sees nothing of note",
+   "inventory: 54 reported, 12 candidates from 196 frames -- chair x12, dining table x11, sofa x5, arm chair x4, bed x3, dresser x3, floor lamp x2, tv stand x2, counter top x2, baseball bat, cart, fridge, side table, garbage can, red backpack, shelving unit, house plant, sink, toilet",
+   "mission ended (searched): no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 77,
+  "outcome": "searched",
+  "ticks": 95,
+  "capped": false,
+  "goals": 29,
+  "tail": [
+   "step 29: STOP (ok) -- no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped) -- living room, facing ?, free space clear, sees nothing of note",
+   "inventory: 27 reported, 12 candidates from 96 frames -- dining table x8, bed x3, sofa x2, chair x2, sink x2, counter top x2, dresser, dog bed, garbage bag, shelving unit, toilet, fridge, garbage can, house plant",
+   "mission ended (searched): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 78,
+  "outcome": "found",
+  "ticks": 68,
+  "capped": false,
+  "goals": 17,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 19 reported, 20 candidates from 69 frames -- chair x7, dining table x3, counter top x2, arm chair x2, floor lamp x2, fridge, stool, dresser",
+   "mission ended (found): Bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 79,
+  "outcome": "found",
+  "ticks": 218,
+  "capped": false,
+  "goals": 54,
+  "tail": [
+   "step 54: RIGHT (ok) -- {'action': 'turn_right', 'angle': 11, 'heading': 'E', 'heading_deg': 127.08561677997491} -- bathroom 2, facing ?, free space none, sees red backpack",
+   "inventory: 52 reported, 47 candidates from 219 frames -- dining table x9, arm chair x5, bed x5, floor lamp x4, chair x4, dresser x4, sofa x3, tv stand x3, side table x3, dog bed x2, sink, garbage bag, toilet, box, cart, coffee table, desk, garbage can, plunger, safe",
+   "mission ended (found): Bathroom, bathroom 2, bedroom, bedroom 2, bedroom 3, kitchen, living room, living room 2 searched. Found."
+  ]
+ },
+ {
+  "index": 83,
+  "outcome": "found",
+  "ticks": 20,
+  "capped": false,
+  "goals": 6,
+  "tail": [
+   "step 5: GOAL (ok) -- goal sent (approach) to (11.55, 4.65) -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 2 reported, 7 candidates from 21 frames -- counter top, stool",
+   "mission ended (found): Kitchen searched. Found."
+  ]
+ },
+ {
+  "index": 85,
+  "outcome": "found",
+  "ticks": 101,
+  "capped": false,
+  "goals": 29,
+  "tail": [
+   "step 29: LEFT (ok) -- {'action': 'turn_left', 'angle': 18, 'heading': 'E', 'heading_deg': 72.00000000000006} -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 37 reported, 5 candidates from 102 frames -- dining table x8, chair x5, bed x3, desk x2, counter top x2, floor lamp x2, sofa x2, arm chair, box, cart, dresser, shelving unit, fridge, garbage can, house plant, plunger, red backpack, sink, stool, toilet",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 86,
+  "outcome": "found",
+  "ticks": 55,
+  "capped": false,
+  "goals": 14,
+  "tail": [
+   "step 14: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 14 reported, 19 candidates from 56 frames -- chair x4, dining table x3, counter top, tv stand, baseball bat, bed, box, cart, dresser",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 87,
+  "outcome": "found",
+  "ticks": 26,
+  "capped": false,
+  "goals": 7,
+  "tail": [
+   "step 7: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- bedroom 2, facing ?, free space some, sees red backpack",
+   "inventory: 5 reported, 18 candidates from 27 frames -- dining table, basketball, bed, dresser, red backpack",
+   "mission ended (found): Bathroom, bedroom, bedroom 2 searched. Found."
+  ]
+ },
+ {
+  "index": 88,
+  "outcome": "found",
+  "ticks": 38,
+  "capped": false,
+  "goals": 10,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 13 reported, 8 candidates from 39 frames -- sofa x2, chair x2, floor lamp, tv stand, shelving unit, counter top, dining table, garbage can, ottoman, red backpack, stool",
+   "mission ended (found): Kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 89,
+  "outcome": "found",
+  "ticks": 86,
+  "capped": false,
+  "goals": 23,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 23 reported, 14 candidates from 87 frames -- chair x6, dining table x4, house plant x2, desk x2, red backpack, dresser, bed, clothes dryer, fridge, garbage can, sink, toilet, tv stand",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 91,
+  "outcome": "found",
+  "ticks": 40,
+  "capped": false,
+  "goals": 10,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 12 reported, 12 candidates from 41 frames -- dining table x5, chair x3, stool, counter top, fridge, sofa",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 93,
+  "outcome": "found",
+  "ticks": 18,
+  "capped": false,
+  "goals": 5,
+  "tail": [
+   "waiting -- at the target; looking -- living room, facing ?, free space some, sees red backpack",
+   "inventory: 4 reported, 14 candidates from 19 frames -- chair, dog bed, house plant, red backpack",
+   "mission ended (found): Kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 94,
+  "outcome": "found",
+  "ticks": 50,
+  "capped": false,
+  "goals": 13,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 13 reported, 15 candidates from 51 frames -- sofa x3, dining table x2, side table x2, floor lamp, tv stand, chair, counter top, dresser, red backpack",
+   "mission ended (found): Bedroom, bedroom 2, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 96,
+  "outcome": "found",
+  "ticks": 14,
+  "capped": false,
+  "goals": 4,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 6 reported, 10 candidates from 15 frames -- chair x2, dining table, dog bed, house plant, red backpack",
+   "mission ended (found): Bathroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 97,
+  "outcome": "found",
+  "ticks": 110,
+  "capped": false,
+  "goals": 28,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 30 reported, 34 candidates from 111 frames -- dining table x5, chair x4, sofa x3, tv stand x3, garbage can x3, dresser x2, fridge, bed, counter top, dog bed, arm chair, basketball, house plant, plunger, red backpack, room decor",
+   "mission ended (found): Bathroom 2, bedroom, bedroom 2, bedroom 3, kitchen, living room, living room 2, living room 3 searched. Found."
+  ]
+ },
+ {
+  "index": 98,
+  "outcome": "searched",
+  "ticks": 197,
+  "capped": false,
+  "goals": 60,
+  "tail": [
+   "step 60: STOP (ok) -- no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped) -- living room, facing ?, free space some, sees nothing of note",
+   "inventory: 47 reported, 17 candidates from 198 frames -- chair x9, dining table x9, bed x6, counter top x3, side table x3, dresser x3, garbage can x2, sink x2, stool, arm chair, plunger, red backpack, sofa, tv stand, cart, floor lamp, fridge, toilet",
+   "mission ended (searched): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 100,
+  "outcome": "found",
+  "ticks": 93,
+  "capped": false,
+  "goals": 24,
+  "tail": [
+   "step 24: RIGHT (ok) -- {'action': 'turn_right', 'angle': 72, 'heading': 'N', 'heading_deg': 315.4349488229209} -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 21 reported, 13 candidates from 94 frames -- chair x4, dining table x3, bed x2, desk x2, counter top x2, dresser, sofa, washing machine, garbage can, plunger, red backpack, shelving unit, sink",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 101,
+  "outcome": "max_steps",
+  "ticks": 416,
+  "capped": false,
+  "goals": 200,
+  "tail": [
+   "step 199: GOAL (ok) -- back to the last sighting; goal sent (approach) to (8.25, 1.05) -- living room, facing ?, free space none, sees dresser",
+   "inventory: 9 reported, 21 candidates from 417 frames -- desk x2, sink, bed, chair, dining table, dresser, garbage can, toilet",
+   "mission ended (max_steps): step budget of 200 exhausted"
+  ]
+ },
+ {
+  "index": 102,
+  "outcome": "found",
+  "ticks": 95,
+  "capped": false,
+  "goals": 25,
+  "tail": [
+   "step 24: GOAL (ok) -- goal sent (approach) to (9.75, 7.95) -- bathroom, facing ?, free space clear, sees red backpack",
+   "inventory: 12 reported, 16 candidates from 96 frames -- chair x4, dining table x2, floor lamp, side table, bed, sink, toilet, tv stand",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 104,
+  "outcome": "found",
+  "ticks": 66,
+  "capped": false,
+  "goals": 17,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 12 reported, 25 candidates from 67 frames -- chair x2, bed x2, dining table x2, fridge, dresser, side table, box, counter top, red backpack",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 105,
+  "outcome": "found",
+  "ticks": 92,
+  "capped": false,
+  "goals": 23,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 18 reported, 23 candidates from 93 frames -- bed x3, dining table x2, shelving unit x2, dresser, cart, chair, fridge, red backpack, baseball bat, garbage can, house plant, plunger, sink, toilet",
+   "mission ended (found): Bathroom, bedroom, bedroom 2, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 107,
+  "outcome": "found",
+  "ticks": 58,
+  "capped": false,
+  "goals": 15,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 16 reported, 15 candidates from 59 frames -- dining table x5, chair x4, arm chair x2, sofa, dresser, floor lamp, red backpack, tv stand",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 108,
+  "outcome": "searched",
+  "ticks": 237,
+  "capped": false,
+  "goals": 75,
+  "tail": [
+   "step 75: STOP (ok) -- no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped) -- bedroom 4, facing ?, free space clear, sees nothing of note",
+   "inventory: 61 reported, 25 candidates from 238 frames -- dining table x15, bed x7, chair x7, dresser x4, toilet x4, garbage can x3, arm chair x3, sink x3, plunger x3, desk x2, sofa x2, tv stand x2, cart, counter top, stool, fridge, safe, side table",
+   "mission ended (searched): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 110,
+  "outcome": "found",
+  "ticks": 30,
+  "capped": false,
+  "goals": 8,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space none, sees red backpack",
+   "inventory: 8 reported, 11 candidates from 31 frames -- dining table x3, toilet, bed, garbage can, red backpack, vacuum cleaner",
+   "mission ended (found): Bathroom, bedroom, kitchen searched. Found."
+  ]
+ },
+ {
+  "index": 113,
+  "outcome": "found",
+  "ticks": 94,
+  "capped": false,
+  "goals": 24,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 19 reported, 21 candidates from 95 frames -- dresser x3, counter top x2, chair x2, dining table x2, bed x2, sofa, fridge, dog bed, garbage can, red backpack, box, stool, tv stand",
+   "mission ended (found): Bathroom, bedroom, bedroom 2, bedroom 3, kitchen, living room, living room 2 searched. Found."
+  ]
+ },
+ {
+  "index": 114,
+  "outcome": "found",
+  "ticks": 71,
+  "capped": false,
+  "goals": 18,
+  "tail": [
+   "step 18: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- bathroom, facing ?, free space clear, sees red backpack",
+   "inventory: 18 reported, 18 candidates from 72 frames -- chair x6, dining table x4, counter top x2, bed, box, dresser, red backpack, sink, toilet",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 115,
+  "outcome": "found",
+  "ticks": 158,
+  "capped": false,
+  "goals": 46,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 31 reported, 23 candidates from 159 frames -- chair x7, dining table x7, counter top x3, dresser x2, garbage can x2, red backpack, bed, plunger, sofa, tv stand, basketball, floor lamp, house plant, sink, washing machine",
+   "mission ended (found): Bathroom, bathroom 2, bedroom, bedroom 2, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 116,
+  "outcome": "found",
+  "ticks": 64,
+  "capped": false,
+  "goals": 17,
+  "tail": [
+   "step 16: GOAL (ok) -- goal sent (approach) to (3.45, 3.15) -- living room, facing ?, free space some, sees red backpack",
+   "inventory: 16 reported, 20 candidates from 65 frames -- chair x5, dining table x3, desk x2, garbage bag, bed, box, counter top, red backpack, sofa",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 119,
+  "outcome": "found",
+  "ticks": 130,
+  "capped": false,
+  "goals": 33,
+  "tail": [
+   "step 33: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- bedroom 2, facing ?, free space none, sees red backpack",
+   "inventory: 40 reported, 21 candidates from 131 frames -- dining table x7, dresser x6, chair x5, bed x4, box x3, sofa x3, tv stand x2, basketball x2, side table x2, garbage can, red backpack, sink, cart, stool, toilet",
+   "mission ended (found): Bathroom, bathroom 2, bedroom, bedroom 2, bedroom 3, kitchen, living room, living room 2 searched. Found."
+  ]
+ },
+ {
+  "index": 122,
+  "outcome": "found",
+  "ticks": 46,
+  "capped": false,
+  "goals": 12,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 7 reported, 7 candidates from 47 frames -- chair x2, arm chair, dining table, laundry hamper, red backpack, tv stand",
+   "mission ended (found): Bathroom, kitchen, living room 2 searched. Found."
+  ]
+ },
+ {
+  "index": 123,
+  "outcome": "found",
+  "ticks": 14,
+  "capped": false,
+  "goals": 4,
+  "tail": [
+   "step 4: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- bedroom, facing ?, free space clear, sees red backpack",
+   "inventory: 2 reported, 15 candidates from 15 frames -- chair x2",
+   "mission ended (found): Bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 125,
+  "outcome": "searched",
+  "ticks": 92,
+  "capped": false,
+  "goals": 33,
+  "tail": [
+   "step 33: STOP (ok) -- no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped) -- kitchen, facing ?, free space clear, sees nothing of note",
+   "inventory: 21 reported, 11 candidates from 93 frames -- dining table x4, box x2, chair x2, garbage bag, garbage can, side table, sofa, arm chair, floor lamp, fridge, counter top, laundry hamper, plunger, sink, toilet, vacuum cleaner",
+   "mission ended (searched): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 126,
+  "outcome": "found",
+  "ticks": 46,
+  "capped": false,
+  "goals": 12,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 4 reported, 20 candidates from 47 frames -- dining table x2, chair, red backpack",
+   "mission ended (found): Bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 132,
+  "outcome": "searched",
+  "ticks": 213,
+  "capped": false,
+  "goals": 70,
+  "tail": [
+   "step 70: STOP (ok) -- no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped) -- living room, facing ?, free space clear, sees nothing of note",
+   "inventory: 50 reported, 18 candidates from 214 frames -- dining table x9, bed x7, chair x6, sofa x3, tv stand x3, dresser x3, dog bed x2, plunger x2, toilet x2, arm chair x2, sink x2, side table x2, house plant, floor lamp, counter top, garbage can, baseball bat, desk, red backpack",
+   "mission ended (searched): no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 133,
+  "outcome": "found",
+  "ticks": 35,
+  "capped": false,
+  "goals": 9,
+  "tail": [
+   "step 9: LOOK_CENTER (ok) -- {'action': 'look_center', 'pan': 0} -- bedroom, facing ?, free space clear, sees red backpack",
+   "inventory: 9 reported, 19 candidates from 36 frames -- chair x3, dining table x2, bed, red backpack, dog bed, house plant",
+   "mission ended (found): Bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 135,
+  "outcome": "found",
+  "ticks": 42,
+  "capped": false,
+  "goals": 11,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 13 reported, 20 candidates from 43 frames -- dining table x5, chair x4, garbage bag, red backpack, box, garbage can",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 136,
+  "outcome": "searched",
+  "ticks": 118,
+  "capped": false,
+  "goals": 35,
+  "tail": [
+   "step 35: STOP (ok) -- no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped) -- kitchen, facing ?, free space clear, sees nothing of note",
+   "inventory: 21 reported, 10 candidates from 119 frames -- chair x3, counter top x2, garbage can x2, dining table x2, bed x2, garbage bag, sink, clothes dryer, toilet, fridge, plunger, tv stand, dresser, red backpack, side table",
+   "mission ended (searched): no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 137,
+  "outcome": "found",
+  "ticks": 66,
+  "capped": false,
+  "goals": 17,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 13 reported, 16 candidates from 67 frames -- dining table x2, chair, plunger, red backpack, counter top, dresser, fridge, garbage can, house plant, sink, sofa, toilet",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 139,
+  "outcome": "found",
+  "ticks": 257,
+  "capped": false,
+  "goals": 72,
+  "tail": [
+   "step 72: LEFT (ok) -- {'action': 'turn_left', 'angle': 61, 'heading': 'N', 'heading_deg': 33.76364169072566} -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 50 reported, 35 candidates from 258 frames -- chair x11, dining table x7, sofa x4, bed x3, dresser x3, toilet x3, basketball x2, tv stand x2, plunger x2, sink x2, arm chair, fridge, dog bed, floor lamp, garbage bag, garbage can, house plant, laundry hamper, red backpack, shelving unit, side table",
+   "mission ended (found): Bathroom, bathroom 2, bathroom 3, bathroom 4, bedroom, bedroom 2, bedroom 3, bedroom 4, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 140,
+  "outcome": "found",
+  "ticks": 42,
+  "capped": false,
+  "goals": 11,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 15 reported, 6 candidates from 43 frames -- dining table x3, chair x2, side table x2, counter top, garbage bag, floor lamp, house plant, basketball, fridge, red backpack, sofa",
+   "mission ended (found): Bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 144,
+  "outcome": "found",
+  "ticks": 76,
+  "capped": false,
+  "goals": 19,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 22 reported, 13 candidates from 77 frames -- dining table x7, chair x3, dog bed x3, bed, arm chair, counter top, dresser, floor lamp, garbage can, red backpack, sofa, tv stand",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 146,
+  "outcome": "found",
+  "ticks": 82,
+  "capped": false,
+  "goals": 21,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 18 reported, 15 candidates from 83 frames -- chair x3, bed x2, tv stand x2, desk x2, dining table x2, sofa, house plant, counter top, garbage can, red backpack, sink, toilet",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 149,
+  "outcome": "found",
+  "ticks": 78,
+  "capped": false,
+  "goals": 20,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 14 reported, 17 candidates from 79 frames -- dining table x3, sofa x3, chair x2, red backpack, fridge, garbage bag, sink, toilet, tv stand",
+   "mission ended (found): Bathroom, bedroom 3, kitchen, living room, living room 2 searched. Found."
+  ]
+ },
+ {
+  "index": 152,
+  "outcome": "found",
+  "ticks": 46,
+  "capped": false,
+  "goals": 12,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom 4, facing ?, free space some, sees red backpack",
+   "inventory: 7 reported, 21 candidates from 47 frames -- bed x2, chair x2, arm chair, dog bed, red backpack",
+   "mission ended (found): Bathroom 2, bedroom 2, bedroom 4 searched. Found."
+  ]
+ },
+ {
+  "index": 153,
+  "outcome": "found",
+  "ticks": 110,
+  "capped": false,
+  "goals": 28,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 29 reported, 37 candidates from 111 frames -- dining table x5, chair x4, dresser x3, bed x2, counter top x2, arm chair, fridge, house plant, red backpack, shelving unit, baseball bat, basketball, dog bed, garbage can, sink, sofa, toilet, tv stand",
+   "mission ended (found): Bathroom, bathroom 2, bedroom, bedroom 2, bedroom 4, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 155,
+  "outcome": "found",
+  "ticks": 40,
+  "capped": false,
+  "goals": 10,
+  "tail": [
+   "waiting -- at the target; looking -- living room, facing ?, free space some, sees red backpack",
+   "inventory: 6 reported, 21 candidates from 41 frames -- basketball, chair, counter top, dining table, dog bed, dresser",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 159,
+  "outcome": "found",
+  "ticks": 78,
+  "capped": false,
+  "goals": 21,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space some, sees red backpack",
+   "inventory: 15 reported, 9 candidates from 79 frames -- dining table x3, bed x2, chair x2, dresser x2, sofa x2, counter top, tv stand, fridge, red backpack",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 160,
+  "outcome": "found",
+  "ticks": 30,
+  "capped": false,
+  "goals": 8,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack, bed",
+   "inventory: 10 reported, 4 candidates from 31 frames -- chair x2, side table x2, bed, dining table, red backpack, basketball, dresser, sofa",
+   "mission ended (found): Bedroom, living room searched. Found."
+  ]
+ },
+ {
+  "index": 162,
+  "outcome": "found",
+  "ticks": 16,
+  "capped": false,
+  "goals": 5,
+  "tail": [
+   "step 4: GOAL (ok) -- goal sent (approach) to (7.65, 5.55) -- bedroom, facing ?, free space clear, sees red backpack",
+   "inventory: 3 reported, 15 candidates from 17 frames -- chair, counter top, desk",
+   "mission ended (found): Bedroom, kitchen searched. Found."
+  ]
+ },
+ {
+  "index": 164,
+  "outcome": "found",
+  "ticks": 42,
+  "capped": false,
+  "goals": 11,
+  "tail": [
+   "step 11: LOOK_RIGHT (ok) -- {'action': 'look_right', 'pan': 1} -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 7 reported, 13 candidates from 43 frames -- dining table x2, dresser, counter top, red backpack, sink, sofa",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 165,
+  "outcome": "max_steps",
+  "ticks": 475,
+  "capped": false,
+  "goals": 200,
+  "tail": [
+   "step 199: GOAL (ok) -- back to the last sighting; goal sent (approach) to (0.75, 8.25) -- bathroom, facing ?, free space none, sees nothing of note",
+   "inventory: 41 reported, 19 candidates from 476 frames -- chair x5, sofa x4, dining table x4, dresser x3, garbage can x3, arm chair x3, bed x3, dog bed x3, tv stand x2, counter top x2, garbage bag x2, cart, floor lamp, house plant, shelving unit, fridge, red backpack, sink",
+   "mission ended (max_steps): step budget of 200 exhausted"
+  ]
+ },
+ {
+  "index": 166,
+  "outcome": "found",
+  "ticks": 52,
+  "capped": false,
+  "goals": 13,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 16 reported, 13 candidates from 53 frames -- chair x5, dining table x3, box, boots, bed, dresser, counter top, fridge, garbage bag, vacuum cleaner",
+   "mission ended (found): Bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 167,
+  "outcome": "found",
+  "ticks": 14,
+  "capped": false,
+  "goals": 4,
+  "tail": [
+   "waiting -- at the target; looking -- bedroom, facing ?, free space some, sees red backpack",
+   "inventory: 4 reported, 9 candidates from 15 frames -- bed, dresser, garbage can, red backpack",
+   "mission ended (found): Bathroom, bedroom searched. Found."
+  ]
+ },
+ {
+  "index": 169,
+  "outcome": "searched",
+  "ticks": 104,
+  "capped": false,
+  "goals": 32,
+  "tail": [
+   "step 32: STOP (ok) -- no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped) -- kitchen, facing ?, free space clear, sees nothing of note",
+   "inventory: 20 reported, 10 candidates from 105 frames -- dining table x7, chair x3, counter top x2, bed x2, dresser, sofa, tv stand, garbage can, plunger, safe",
+   "mission ended (searched): no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 171,
+  "outcome": "found",
+  "ticks": 83,
+  "capped": false,
+  "goals": 23,
+  "tail": [
+   "waiting -- at the target; looking -- living room, facing ?, free space some, sees red backpack",
+   "inventory: 20 reported, 20 candidates from 84 frames -- dining table x4, chair x3, bed x2, desk x2, house plant x2, red backpack, dog bed, dresser, fridge, garbage can, safe, shelving unit",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 172,
+  "outcome": "found",
+  "ticks": 58,
+  "capped": false,
+  "goals": 15,
+  "tail": [
+   "waiting -- at the target; looking -- kitchen, facing ?, free space none, sees red backpack",
+   "inventory: 11 reported, 12 candidates from 59 frames -- bed x4, dresser x2, chair, dining table, house plant, red backpack, sink",
+   "mission ended (found): Bathroom, bedroom, bedroom 2, kitchen searched. Found."
+  ]
+ },
+ {
+  "index": 173,
+  "outcome": "searched",
+  "ticks": 86,
+  "capped": false,
+  "goals": 29,
+  "tail": [
+   "step 29: STOP (ok) -- no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped) -- bathroom, facing ?, free space clear, sees nothing of note",
+   "inventory: 25 reported, 14 candidates from 87 frames -- dining table x7, bed x2, garbage can x2, chair, red backpack, sofa, counter top, desk, dresser, shelving unit, baseball bat, coffee table, fridge, room decor, toilet, tv stand, washing machine",
+   "mission ended (searched): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+  ]
+ },
+ {
+  "index": 176,
+  "outcome": "found",
+  "ticks": 46,
+  "capped": false,
+  "goals": 12,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space none, sees red backpack",
+   "inventory: 6 reported, 18 candidates from 47 frames -- red backpack, sofa, dining table, garbage can, sink, tv stand",
+   "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+  ]
+ },
+ {
+  "index": 177,
+  "outcome": "found",
+  "ticks": 10,
+  "capped": false,
+  "goals": 3,
+  "tail": [
+   "waiting -- at the target; looking -- bathroom, facing ?, free space some, sees red backpack",
+   "inventory: 2 reported, 11 candidates from 11 frames -- red backpack, tv stand",
+   "mission ended (found): Bathroom, bedroom, kitchen searched. Found."
+  ]
+ }
+]

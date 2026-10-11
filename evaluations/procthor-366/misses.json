@@ -1,0 +1,160 @@
+[
+ {
+  "index": 0,
+  "outcome": "searched",
+  "sightings": [
+   {
+    "bearing": -29.9,
+    "true_range": 2.72,
+    "est_err_m": 1.73
+   }
+  ],
+  "closest_m": 0.6,
+  "target_cell_seen": false
+ },
+ {
+  "index": 12,
+  "outcome": "searched",
+  "sightings": [],
+  "closest_m": 0.42,
+  "target_cell_seen": false
+ },
+ {
+  "index": 27,
+  "outcome": "searched",
+  "sightings": [],
+  "closest_m": 2.18,
+  "target_cell_seen": false
+ },
+ {
+  "index": 44,
+  "outcome": "searched",
+  "sightings": [],
+  "closest_m": 1.53,
+  "target_cell_seen": false
+ },
+ {
+  "index": 67,
+  "outcome": "searched",
+  "sightings": [],
+  "closest_m": 0.67,
+  "target_cell_seen": false
+ },
+ {
+  "index": 75,
+  "outcome": "searched",
+  "sightings": [],
+  "closest_m": 0.67,
+  "target_cell_seen": false
+ },
+ {
+  "index": 77,
+  "outcome": "searched",
+  "sightings": [],
+  "closest_m": 1.2,
+  "target_cell_seen": false
+ },
+ {
+  "index": 98,
+  "outcome": "searched",
+  "sightings": [
+   {
+    "bearing": 13.7,
+    "true_range": 1.2,
+    "est_err_m": 0.14
+   }
+  ],
+  "closest_m": 0.67,
+  "target_cell_seen": false
+ },
+ {
+  "index": 101,
+  "outcome": "max_steps",
+  "sightings": [
+   {
+    "bearing": 26.49,
+    "true_range": 3.79,
+    "est_err_m": 0.13
+   }
+  ],
+  "closest_m": 0.67,
+  "target_cell_seen": false
+ },
+ {
+  "index": 108,
+  "outcome": "searched",
+  "sightings": [],
+  "closest_m": 0.67,
+  "target_cell_seen": false
+ },
+ {
+  "index": 125,
+  "outcome": "searched",
+  "sightings": [
+   {
+    "bearing": -3.4,
+    "true_range": 2.72,
+    "est_err_m": 1.06
+   }
+  ],
+  "closest_m": 0.6,
+  "target_cell_seen": false
+ },
+ {
+  "index": 132,
+  "outcome": "searched",
+  "sightings": [
+   {
+    "bearing": 16.8,
+    "true_range": 2.42,
+    "est_err_m": 0.15
+   },
+   {
+    "bearing": -29.87,
+    "true_range": 0.67,
+    "est_err_m": 2.26
+   }
+  ],
+  "closest_m": 0.6,
+  "target_cell_seen": false
+ },
+ {
+  "index": 136,
+  "outcome": "searched",
+  "sightings": [],
+  "closest_m": 1.5,
+  "target_cell_seen": false
+ },
+ {
+  "index": 165,
+  "outcome": "max_steps",
+  "sightings": [
+   {
+    "bearing": -29.34,
+    "true_range": 1.9,
+    "est_err_m": 0.2
+   },
+   {
+    "bearing": 15.66,
+    "true_range": 3.42,
+    "est_err_m": 0.14
+   }
+  ],
+  "closest_m": 0.67,
+  "target_cell_seen": false
+ },
+ {
+  "index": 169,
+  "outcome": "searched",
+  "sightings": [],
+  "closest_m": 1.34,
+  "target_cell_seen": false
+ },
+ {
+  "index": 173,
+  "outcome": "searched",
+  "sightings": [],
+  "closest_m": 0.85,
+  "target_cell_seen": false
+ }
+]
