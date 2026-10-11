@@ -3729,3 +3729,37 @@ def test_random_house_is_off_while_a_brain_mission_runs(browser, private_twin_se
     assert page.locator("#btn-random-house").is_disabled()
     assert not errors, errors
     page.close()
+
+
+def test_random_house_is_hidden_on_a_robot_that_is_not_simulated(browser, twin_server):
+    """3.72 review: on a real robot, a phone or a replay the button could only
+    ever be refused -- so it is not shown."""
+    page, errors = open_twin(browser, twin_server)
+    def health(route):
+        body = httpx.get(f"{twin_server}/health").json()
+        body.update(mode="teleop", sim_map=None)
+        route.fulfill(status=200, content_type="application/json", body=_json(body))
+    page.route("**/health", health)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_timeout(800)
+    assert page.locator("#btn-random-house").is_hidden()
+    assert not errors, errors
+    page.close()
+
+
+def test_a_refused_swap_reads_as_a_sentence(browser, twin_server):
+    """3.72 review: the 409's detail is {reason, detail}; the toast shows the
+    sentence, not the JSON."""
+    page, errors = _connect_for_map(browser, twin_server)
+    page.route("**/sim/house/random", lambda route: route.fulfill(
+        status=409, content_type="application/json",
+        body=_json({"detail": {"reason": "driving", "detail": "brain is driving; try again once it stops"}})))
+    page.wait_for_function("() => !document.getElementById('btn-random-house').disabled", timeout=5000)
+    page.click("#btn-random-house")
+    sync_api.expect(page.locator(".toast").last).to_contain_text(
+        "House not changed: brain is driving; try again once it stops")
+    assert "{" not in page.locator(".toast").last.text_content()
+    page.close()

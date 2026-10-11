@@ -98,3 +98,23 @@ def test_random_over_the_list_never_the_same_twice_running(client):
         seen.add(name)
         last = name
     assert len(seen) >= 80                                             # criterion 4
+
+
+def test_never_between_a_missions_moves(client):
+    """3.72 reviews (both): the brain's authority lapses within a second of
+    its last move -- a cloud step, an 8 s arrival confirmation -- so the
+    server also refuses for MISSION_QUIET_S after the brain last drove."""
+    import time
+    client.post("/action", json={"action": "LOOK_LEFT"}, headers={"x-driver": "brain"})
+    time.sleep(1.3)                                  # authority has lapsed
+    house = client.get("/health").json()["sim_map"]
+    r = client.post("/sim/house/random")
+    assert r.status_code == 409 and r.json()["detail"]["reason"] == "mission"
+    assert client.get("/health").json()["sim_map"] == house
+
+
+def test_a_person_driving_earlier_does_not_block_it(client):
+    import time
+    client.post("/action", json={"action": "LOOK_LEFT"}, headers={"x-driver": "twin-dpad"})
+    time.sleep(1.3)
+    assert client.post("/sim/house/random").status_code == 200

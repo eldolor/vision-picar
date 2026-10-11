@@ -46,6 +46,7 @@ right place before there was anything behind it.
 """
 
 import math
+import threading
 
 from sim import renderer
 from sim.grid_world import CELL_WALL, GridWorld
@@ -95,14 +96,19 @@ class MockWorld(WorldInterface):
         # Row-major, one entry per grid cell, all unknown until seen.
         self._cells = [CELL_UNKNOWN] * (world.width * world.height)
         self._version = 0
+        # 3.72: a house swap and a map read must not interleave -- a read
+        # between the swap's two assignments would index the old cells with
+        # the new width, or mark the new house from the old pose.
+        self._lock = threading.RLock()
 
     def load_house(self, world: GridWorld) -> None:
         """Map another house from nothing (3.72): every cell unknown again,
         and a new `map_version`, so a client that skips unchanged maps
         fetches this one."""
-        self.world = world
-        self._cells = [CELL_UNKNOWN] * (world.width * world.height)
-        self._version += 1
+        with self._lock:
+            self.world = world
+            self._cells = [CELL_UNKNOWN] * (world.width * world.height)
+            self._version += 1
 
     # ---------- observation ----------
 
@@ -119,6 +125,10 @@ class MockWorld(WorldInterface):
         wants to drive it directly -- and because a consumer that wants an
         explicitly-timed scan should not have to fake a read to get one.
         """
+        with self._lock:
+            return self._observe()
+
+    def _observe(self) -> int:
         px = self.world.x
         py = self.world.y
         changed = 0
@@ -210,19 +220,20 @@ class MockWorld(WorldInterface):
         empty house for a whole mission and look exactly like a broken
         mapper.
         """
-        self.observe()
-        return {
-            "usable": True,
-            "map_id": self.map_id,
-            "map_version": self._version,
-            "resolution_m": CELL_M,
-            "width": self.world.width,
-            "height": self.world.height,
-            # Origin is the grid's own (0, 0) corner, in metres. Not the
-            # robot's start: a map that recentred on wherever the robot
-            # began would invalidate every stored pose the moment a
-            # mission restarted somewhere else.
-            "origin_x_m": 0.0,
-            "origin_y_m": 0.0,
-            "cells": list(self._cells),
-        }
+        with self._lock:
+            self.observe()
+            return {
+                "usable": True,
+                "map_id": self.map_id,
+                "map_version": self._version,
+                "resolution_m": CELL_M,
+                "width": self.world.width,
+                "height": self.world.height,
+                # Origin is the grid's own (0, 0) corner, in metres. Not the
+                # robot's start: a map that recentred on wherever the robot
+                # began would invalidate every stored pose the moment a
+                # mission restarted somewhere else.
+                "origin_x_m": 0.0,
+                "origin_y_m": 0.0,
+                "cells": list(self._cells),
+            }

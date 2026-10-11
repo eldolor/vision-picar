@@ -172,6 +172,11 @@ GOAL_STOP_SETTLE_S = 0.6
 # 3.72: the "Random house" button picks among the first this-many usable
 # ProcTHOR houses -- the set 3.66 and 3.69 measure explore on.
 RANDOM_HOUSES = 100
+# ...and refuses for this long after the brain or nav2 last drove: a mission
+# between moves holds no authority (it lapses in watchdog_timeout_s) -- a
+# cloud step, an 8 s arrival confirmation -- yet must not wake in another
+# house (3.72 review).
+MISSION_QUIET_S = 30.0
 
 
 @contextmanager
@@ -248,6 +253,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         # driver who has since gone quiet.
         "driver": None,
         "driver_at": 0.0,
+        # 3.72: when the brain or nav2 last drove (not lapsing like
+        # `driver_at`), so a house swap can refuse a mission between moves.
+        "autonomous_at": None,
         "last_refusal": None,
         # 3.18 part 2: the wheel loop's own timing, while the wheels turn.
         # A vet covers the travel until the NEXT vet, so a late period is a
@@ -568,6 +576,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         state["last_command_at"] = now
         state["driver"] = driver
         state["driver_at"] = now
+        if driver_priority(driver) == DRIVER_AUTONOMOUS:
+            state["autonomous_at"] = now
         try:
             if by_velocity and not ros_up(now):
                 # 3.24 G3: the ROS stack is down. A PERSON drives on through
@@ -699,6 +709,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             state["last_command_at"] = now
             state["driver"] = driver
             state["driver_at"] = now
+            if driver_priority(driver) == DRIVER_AUTONOMOUS:
+                state["autonomous_at"] = now
         with motion_lock:
             left, right, reason = safety.vet_wheel_velocity(req.left_rad_s, req.right_rad_s)
             try:
@@ -1082,21 +1094,40 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             raise HTTPException(status_code=409, detail={
                 "reason": "not_sim",
                 "detail": "only the plain in-process simulator can change house"})
-        holder = authority_holder(time.monotonic())
-        if holder is not None or state["verb_active"]:
-            raise HTTPException(status_code=409, detail={
-                "reason": "driving",
-                "detail": f"{holder or 'a verb'} is driving; try again once it stops"})
         import random
-        from sim.maps import build_world
+        from sim.maps import build_movers, build_world
         from sim.maps.procthor import usable
         current = robot.world.map_name
         choices = [f"procthor:val:{i}" for i in usable()[:RANDOM_HOUSES]]
         name = random.choice([c for c in choices if c != current])
+        # Built before the lock (it takes a while); the check and the swap
+        # are under it, so no verb, wheel command or wheel-loop tick can
+        # land between "nobody drives" and the new house (3.72 review).
         grid = build_world(name)
-        robot.load_house(grid)
-        world_model.load_house(grid)
-        state["last_command_at"] = time.monotonic()
+        movers = os.environ.get("SIM_MOVERS")
+        if movers:
+            for mover in build_movers(name, movers):
+                grid.add_mover(mover)
+        if not motion_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail={
+                "reason": "driving", "detail": "the robot is moving; try again once it stops"})
+        try:
+            now = time.monotonic()
+            holder = authority_holder(now)
+            since = state["autonomous_at"]
+            if holder is not None or state["verb_active"]:
+                raise HTTPException(status_code=409, detail={
+                    "reason": "driving",
+                    "detail": f"{holder or 'a verb'} is driving; try again once it stops"})
+            if since is not None and now - since < MISSION_QUIET_S:
+                raise HTTPException(status_code=409, detail={
+                    "reason": "mission",
+                    "detail": (f"the brain drove {now - since:.0f} s ago -- a mission may be "
+                               f"running; try again once it ends")})
+            robot.load_house(grid)
+            world_model.load_house(grid)
+        finally:
+            motion_lock.release()
         logger.info("sim house changed: %s -> %s", current, name)
         return {"sim_map": name, "previous": current}
 

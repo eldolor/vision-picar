@@ -624,8 +624,14 @@
 
   async function refreshWorld() {
     if (state.worldUnsupported) return;
+    // 3.72: a fetch begun before a house swap must not draw the old house
+    // after it -- each result is kept only if no swap happened meanwhile.
+    var epoch = state.houseEpoch || 0;
+    function stale() { return (state.houseEpoch || 0) !== epoch; }
     try {
-      state.lastPose = await apiGet("/world/pose");
+      var pose = await apiGet("/world/pose");
+      if (stale()) return;
+      state.lastPose = pose;
       // R5: estimate against truth. Sim-only, and a server older than R5
       // has no such route -- that is not an error, just nothing to draw.
       if (!state.worldErrorUnsupported) {
@@ -650,7 +656,9 @@
       var now = Date.now();
       if (now - state.lastMapFetchAt >= MAP_FETCH_INTERVAL_MS) {
         state.lastMapFetchAt = now;
-        state.lastMap = await apiGet("/world/map");
+        var map = await apiGet("/world/map");
+        if (stale()) return;
+        state.lastMap = map;
       }
     } catch (e) {
       if (e.status === 404) {
@@ -1056,13 +1064,20 @@
     if (btn) btn.disabled = !state.connected || state.brainMissionRunning || !!state.houseBusy;
   }
 
-  function showHouse(name) {
+  function showHouse(name, simulated) {
+    const row = document.querySelector(".house-row");
     const el = document.getElementById("house-readout");
+    // Only a simulator has a house to change; on a real robot, a phone or a
+    // replay the row would only ever earn a refusal (3.72 review).
+    if (row) row.style.display = simulated ? "" : "none";
     if (el) el.textContent = name ? "house: " + name : "house: not reported by this server";
   }
 
   async function loadHouseName() {
-    try { showHouse((await apiGet("/health")).sim_map); } catch (e) { /* keep the last */ }
+    try {
+      const h = await apiGet("/health");
+      showHouse(h.sim_map, h.mode === "sim" && !!h.sim_map);
+    } catch (e) { /* keep the last */ }
   }
 
   async function randomHouse() {
@@ -1070,7 +1085,8 @@
     updateHouseButton();
     try {
       const r = await apiPost("/sim/house/random", {});
-      showHouse(r.sim_map);
+      state.houseEpoch = (state.houseEpoch || 0) + 1;
+      showHouse(r.sim_map, true);
       // A new house is a new map: drop the old one and fetch at once.
       state.lastMap = null;
       state.lastPose = null;
@@ -1081,7 +1097,10 @@
       render(await fetchFrame());
       showToast("Now in " + r.sim_map + ".", "ok");
     } catch (e) {
-      showToast("House not changed: " + (e.message || e), "err");
+      // A refusal's detail is {reason, detail}: show the sentence.
+      var msg = e.message || String(e);
+      try { var d = JSON.parse(msg); if (d && d.detail) msg = d.detail; } catch (_) { /* prose */ }
+      showToast("House not changed: " + msg, "err");
     } finally {
       state.houseBusy = false;
       updateHouseButton();
