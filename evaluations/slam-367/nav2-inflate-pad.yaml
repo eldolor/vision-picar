@@ -103,6 +103,7 @@ global_costmap:
       resolution: 0.05
       track_unknown_space: true
       footprint: "[[0.1265, 0.1155], [0.1265, -0.1155], [-0.1265, -0.1155], [-0.1265, 0.1155]]"
+      footprint_padding: 0.05     # 3.67 candidate B (nav2's default here was 0.01)
       plugins: [static_layer, obstacle_layer, inflation_layer]
       static_layer:
         plugin: nav2_costmap_2d::StaticLayer
