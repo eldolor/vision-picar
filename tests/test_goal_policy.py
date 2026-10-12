@@ -17,13 +17,15 @@ def _sets(nav):
     return [c for c in nav.calls if c[0] == "set"]
 
 
-def test_the_default_is_the_rule_and_changes_nothing():
+def test_the_default_is_the_rule_and_changes_nothing(monkeypatch):
+    monkeypatch.delenv("EXPLORE_GOAL_POLICY", raising=False)
     assert load_brain_config()["explore_goal_policy"] == "rule"
     runner, _nav, _grid = _mission()
     assert runner.agent.goal_policy is None
 
 
-def test_an_unknown_policy_name_is_refused(tmp_path):
+def test_an_unknown_policy_name_is_refused(tmp_path, monkeypatch):
+    monkeypatch.delenv("EXPLORE_GOAL_POLICY", raising=False)
     p = tmp_path / "robot.yaml"
     p.write_text("brain:\n  explore_goal_policy: clever\n")
     with pytest.raises(ValueError, match="explore_goal_policy"):

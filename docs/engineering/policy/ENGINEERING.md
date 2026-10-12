@@ -229,7 +229,8 @@ never past it. A view goal (`ViewGap.face`) turns toward the part of the
 patch it was chosen to see.
 
 **Explore's learned goal choice (3.65 phase 2).** `explore_goal_policy`
-(`brain:` block; `rule` | `learned` | `network`, default `rule`; validated by
+(`brain:` block; `rule` | `learned` | `network`, default `rule`; the
+`EXPLORE_GOAL_POLICY` environment variable overrides it for live runs; validated by
 `load_brain_config`) reaches `MissionRunner(explore_goal_policy=...)`, which
 gives `ExploreAgent` a `goal_policy` from `brain/goal_policy.goal_policy_for`
 (None for the rule). With one set, `_next_frontier` calls `_learned_goal`:
