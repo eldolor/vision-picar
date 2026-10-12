@@ -108,7 +108,11 @@ class LinearGoalPolicy:
         best_i, best_s = None, -math.inf
         for i, f in enumerate(candidates):
             s = self.score(f)
-            if s > best_s:
+            if not math.isfinite(s):
+                # A NaN never beats -inf: every candidate NaN would end the
+                # search `searched` with goals left. Rank it last instead.
+                s = -math.inf
+            if best_i is None or s > best_s:
                 best_i, best_s = i, s
         return best_i
 

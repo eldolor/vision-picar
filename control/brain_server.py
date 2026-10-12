@@ -546,6 +546,7 @@ def create_app(
                 "tier_spin_guard_after", "tier_consecutive_frames",
                 "perception_floor_mask", "perception_crop_path",
                 "navigate_model_id", "navigate_prompt_variant",
+                "explore_goal_policy",
             ) if k in config
         }
         return runner

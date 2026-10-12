@@ -116,9 +116,8 @@ def test_turn_is_measured_as_explores_face_turn_measures_it():
 
 
 def test_a_crashed_mission_never_scores_above_a_miss():
-    import sys
-    sys.path.insert(0, "evaluations/explore-365")
-    import harness
+    from tests.test_goal_policy_sweep import _harness
+    harness = _harness()
     worst_miss = -1 - harness.GOAL_COST * 200 - harness.METRE_COST * 2000
     assert -harness.CRASH_COST < worst_miss
 
@@ -146,3 +145,17 @@ def test_the_network_starts_as_the_linear_score():
         NetGoalPolicy(w, [layers[0], (np.zeros((1, 16)), np.zeros(1))])
     with pytest.raises(ValueError, match="layer 0"):   # bias the wrong length
         NetGoalPolicy(w, [(layers[0][0], np.zeros(31))] + layers[1:])
+
+
+def test_the_runner_loads_each_committed_policy():
+    """The wiring and the committed files, in the fast tier: MissionRunner
+    builds explore with each flag value, and a non-finite score is ranked
+    last rather than ending the choice."""
+    from brain.goal_policy import NetGoalPolicy
+    for name, kind in (("rule", type(None)), ("learned", LinearGoalPolicy),
+                       ("network", NetGoalPolicy)):
+        runner, _nav, _g = _mission(explore_goal_policy=name)
+        assert type(runner.agent.goal_policy) is kind
+    pol = LinearGoalPolicy([1.0] + [0.0] * 9)
+    assert pol.best([[float("nan")] + [0.0] * 9, [0.5] + [0.0] * 9]) == 1
+    assert pol.best([[float("nan")] + [0.0] * 9]) == 0

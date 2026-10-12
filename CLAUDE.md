@@ -266,6 +266,19 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   anyone drives and for 30 s after the brain last drove. Known limit: a
   mission started elsewhere that has not moved yet is not seen.
   `HANDOFF-2026-10-11-3.69-3.72.md`.
+* **Explore's next goal can be learned (3.65 phase 2), merged 2026-10-12;
+  default still `rule`.** `explore_goal_policy: rule | learned | network`
+  (env `EXPLORE_GOAL_POLICY`; `brain/goal_policy.py`). Only explore's
+  choice among the goals the rules already allow is learned; nothing else.
+  `learned` (10 weights, cross-entropy method) FAILED criterion 1 (-18%
+  median goals, bar 20%). `network` (linear + MLP 32x32, PPO, amendment 2)
+  met criteria 1-6: 196/200 test houses, median goals 11 -> 8 (-27%), live
+  3/3 found, 0 contacts, +4% time. Caveats: the median moved one step,
+  the mean only -12%; live in `home_first_floor` it sent more goals (27 vs
+  21). Open for the user: make `network` the default (re-pins 3.69's
+  ProcTHOR sweep, 99 -> 97; first time a goal choice on the Jetson with a
+  0.05 m SLAM map -- unmeasured, every candidate's features are a Python
+  scan). Trainers in `evaluations/explore-365/`.
 * **Raising nav2's speed** (6.9's high end) now has its speed-dependent
   stop, but waits on measured braking (6.9 (d)) and 3.42's relayed-scan
   time stamp; read `HANDOFF-2026-10-07-lidar-and-speed.md` first.
