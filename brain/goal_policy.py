@@ -130,8 +130,15 @@ class NetGoalPolicy(LinearGoalPolicy):
         super().__init__(weights)
         self.layers = [(np.asarray(W, dtype=float), np.asarray(b, dtype=float))
                        for W, b in layers]
-        if not self.layers or self.layers[0][0].shape[1] != len(FEATURES) \
-                or self.layers[-1][0].shape[0] != 1:
+        # Every shape checked at load, so a bad file fails here and never
+        # inside a live mission's first score().
+        width = len(FEATURES)
+        for i, (W, b) in enumerate(self.layers):
+            if W.ndim != 2 or W.shape[1] != width or b.shape != (W.shape[0],):
+                raise ValueError(f"network layer {i}: W {W.shape}, b {b.shape} "
+                                 f"do not take {width} inputs")
+            width = W.shape[0]
+        if not self.layers or width != 1:
             raise ValueError(f"the network must take {len(FEATURES)} features and give one score")
 
     def score(self, f: list) -> float:

@@ -132,3 +132,7 @@ def test_the_network_starts_as_the_linear_score():
     assert NetGoalPolicy(w, layers).score(f) != pytest.approx(lin.score(f))
     with pytest.raises(ValueError):
         NetGoalPolicy(w, [(np.zeros((1, 9)), np.zeros(1))])
+    with pytest.raises(ValueError, match="layer 1"):   # 32 out, then a layer taking 16
+        NetGoalPolicy(w, [layers[0], (np.zeros((1, 16)), np.zeros(1))])
+    with pytest.raises(ValueError, match="layer 0"):   # bias the wrong length
+        NetGoalPolicy(w, [(layers[0][0], np.zeros(31))] + layers[1:])
