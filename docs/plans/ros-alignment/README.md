@@ -70,6 +70,7 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.60](3.60-inventory-accuracy.md) | Inventory accuracy: the seven open review findings, verified, then fixed or recorded |
 | [3.61](3.61-stop-task-race.md) | Stop never forgets a mission a concurrent Start began |
 | [3.64](3.64-older-review-bugs.md) | Older review bugs: the ten still live on `dev`, fixed |
+| [3.65](3.65-rl-in-the-brain.md) | Reinforcement learning inside the brain: three narrow decisions, not the whole brain |
 | [3.66](3.66-procthor-houses.md) | ProcTHOR floor plans as simulator houses (2026-10-10): built; criterion 5b FAILED (84 of 100, bar 90) |
 | [3.67](3.67-garage-exit-inflation.md) | nav2's inflation against the garage exit (2026-10-11): candidate A adopted, criterion 1 waived by the user |
 | [3.68](3.68-refusal-replan.md) | Replan around a spot the safety layer keeps refusing (2026-10-11): built; FAILED (goal 6 0/3), not adopted |
@@ -77,6 +78,4 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.71](3.71-jetson-services.md) | The robot server, brain and tunnel as Jetson services |
 | [3.72](3.72-random-house.md) | A randomizer button: the robot server picks one of the 100 ProcTHOR houses |
 | [3.73](3.73-mujoco-slip-braking.md) | MuJoCo: fit the Rover's slip and braking, and carry them into our simulator |
-| [3.65](3.65-rl-in-the-brain.md) | Reinforcement learning inside the brain: three narrow decisions, not the whole brain |
-| [3.65](3.65-rl-in-the-brain.md) | Reinforcement learning inside the brain: three narrow decisions, not the whole brain (2026-10-09): phase 1's criteria written before building |
 <!-- /sections -->
