@@ -244,6 +244,66 @@ OBJECTS, INSTANCES = _objects(LAYOUT)
 SMALL_NAMES = frozenset(name for name, _, _ in SMALL_FT) | {TARGET_FT[1]}
 
 
+# 3.74: `complex_house_hazards` -- the same house with heights, so things
+# lie under the lidar's 12 cm plane, plus hazards on the routes the tour and
+# explore drive. Heights are typical, not measured; the point is that each
+# is under the plane. Of the 3.46 small things, the ones a real lidar would
+# miss are made low here; the tall ones (umbrella, water bottle standing,
+# trash can, laptop bag, guitar, laundry basket) and the target stay tall.
+HAZARDS_FT = [
+    ("cable", 35.0, 23.0),   # the hall's south side, between bath and bedroom 2
+    ("cable", 30.0, 6.0),    # the kitchen floor, on the loop
+    ("sock", 10.0, 10.0),    # the living room, mid-floor
+    ("sock", 50.0, 6.5),     # the dining room
+    ("shoe", 6.0, 30.0),     # by the start, in the entry room
+    ("toy", 36.0, 31.0),     # bedroom 2, on the way to the target
+]
+LOW_HEIGHTS_M = {
+    "cable": 0.01, "sock": 0.03, "shoe": 0.10, "toy": 0.05,
+    "shoes": 0.10, "slippers": 0.04, "keys": 0.02, "tv remote": 0.03,
+    "toy car": 0.06, "mug": 0.10, "pet bowl": 0.06, "towel": 0.02,
+    "headphones": 0.05, "book": 0.03,
+}
+
+
+def _with_hazards(objects):
+    objects = dict(objects)
+    for name, x, y in HAZARDS_FT:
+        cell = (int(_cells(x)), int(_cells(y)))
+        if LAYOUT[cell[1]][cell[0]] != "." or cell in objects:
+            raise ValueError(f"{name} at {x}, {y} ft lands on {objects.get(cell, 'a wall')}")
+        objects[cell] = name
+    return objects
+
+
+HAZARD_OBJECTS = _with_hazards(OBJECTS)
+
+
+def build_complex_hazards_world() -> GridWorld:
+    """`complex_house` with heights and hazards (3.74). The stand-in
+    detector is on when `SIM_HAZARD_RECALL` or `SIM_HAZARD_FP` is set
+    (`SIM_HAZARD_SEED`, default 0); otherwise detections are ground truth."""
+    import os
+    from sim.grid_world import LowObjectDetector
+
+    world = GridWorld(
+        layout=LAYOUT,
+        rooms=ROOMS,
+        objects=dict(HAZARD_OBJECTS),
+        robot_x=int(_cells(START_FT[0])),
+        robot_y=int(_cells(START_FT[1])),
+        heading=START_HEADING,
+        object_heights=LOW_HEIGHTS_M,
+    )
+    recall, fp = os.environ.get("SIM_HAZARD_RECALL"), os.environ.get("SIM_HAZARD_FP")
+    if recall is not None or fp is not None:
+        world.low_detector = LowObjectDetector(
+            recall=float(recall if recall is not None else 0.8),
+            false_positive=float(fp if fp is not None else 0.05),
+            seed=int(os.environ.get("SIM_HAZARD_SEED", "0")))
+    return world
+
+
 def build_complex_world() -> GridWorld:
     return GridWorld(
         layout=LAYOUT,

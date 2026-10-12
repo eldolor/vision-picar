@@ -107,7 +107,7 @@ def world_caster(world, yaw_deg: float = LIDAR_YAW_DEG,
         x, y, theta = pose_at(t) if pose_at else (world.x, world.y, world.theta)
         ox, oy = x + off * math.cos(theta), y + off * math.sin(theta)
         ray = theta + math.radians(angle_deg + yaw_deg)
-        d = renderer.cast_ray_exact(world.layout, ox, oy, ray, solid=world.solid_cells,
+        d = renderer.cast_ray_exact(world.layout, ox, oy, ray, solid=world.lidar_solid_cells,
                                     max_dist=max_cells)
         return 0 if d >= max_cells else int(round(d * DEFAULT_CELL_M * 1000))
 

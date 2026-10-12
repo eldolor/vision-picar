@@ -118,8 +118,9 @@ container instead drives this simulator through the same robot-server
 wheel route the car will use.
 
 **Trade-off.** It is fast, deterministic and in-process, so thousands of
-missions run in a sweep. Walls are axis-aligned, the world is 2D (every
-object fills the lidar's plane), and nothing has mass, friction or slip
+missions run in a sweep. Walls are axis-aligned, the world is 2D apart
+from one height per object (below or above the lidar's plane, 3.74), and
+nothing has mass, friction or slip
 (`PLAN-ros-alignment.md` section 4).
 
 ### One geometry for the picture, collision and every range
@@ -186,6 +187,25 @@ onto its target and then searched for it.
 
 **Trade-off.** No measurable cost to arrival. The 3.9 re-measurement read
 98.3% at both 90% and 80% detection, against 98.6% and 98.4% before.
+
+### Some objects are lower than the lidar (3.74)
+
+**Decision.** An object may carry a height. One lower than the lidar's
+plane stays solid to the body, so driving onto it is a contact, but the
+scan, the map built from it and the camera's level depth row do not see
+it. Only the depth camera's floor band does, a body-fixed near-field block
+with its own minimum range. A sock, a cable or a shoe is what a real
+lidar misses, and a floor band that could not fail in the sim would be
+untested. Heights go by label, so a moved object keeps its height. Only
+`complex_house_hazards` has any, so every other house senses exactly what
+it did before.
+
+**Alternative rejected.** Full 3D geometry. One threshold (above or below
+the plane) is all the safety question needs, and it keeps the raycaster.
+
+**Trade-off.** Elevation inside the band is not modelled: a 1 cm cable
+and a 10 cm shoe read the same, where a real depth camera may lose the
+cable in the floor. Part B's on-car criteria measure that.
 
 ### Realism is opt-in and off by default
 
@@ -296,10 +316,10 @@ note).
   could answer identity from its own geometry. The user decides; the policy
   domain owns the rule.
 
-- **Low obstacles.** The world is 2D, so every object fills the lidar's
-  plane. Testing a floor band from a depth camera needs objects with a
-  height (`PLAN-ros-alignment.md` section 6, question 8). The user decides
-  after the criteria there are confirmed.
+- **Low obstacles.** Answered by 3.74 part A (objects with a height, a
+  floor band in the sim's depth grid). Open: whether flat things (a cable)
+  should be invisible to the simulated band, as they may be to the real
+  one; decide on the car's numbers (3.74 B3).
 - **Wheel slip.** Not modelled, because the coefficient is unknown. It
   lands at R8 calibration on the car.
 - **Sim time vs ROS time.** The sim uses wall-clock pacing. A ROS clock

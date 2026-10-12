@@ -281,7 +281,7 @@ SLOW_FILES = [
     "test_arrival.py", "test_bearing_turns.py", "test_firmware_fork.py",
     "test_footprint_safety.py", "test_guarded_verbs.py", "test_inventory_mission.py",
     "test_lidar_safety.py", "test_pan_safety.py", "test_procthor_sweep.py", "test_ros_driver_board.py",
-    "test_ros_verb_safety.py", "test_settle_pass.py", "test_speed_clearance.py",
+    "test_ros_verb_safety.py", "test_settle_pass.py", "test_sim_fingerprint.py", "test_speed_clearance.py",
     "test_startup_race.py", "test_wheel_feedback.py",
 ]
 SLOW_TESTS = [

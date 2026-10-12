@@ -107,6 +107,21 @@ TRACK_WIDTH_M = 0.172
 # (LDROBOT STL-19P) alike, 12 m; the sim's scan casts this far.
 LIDAR_RANGE_M = 12.0
 
+# The OAK-D Lite's floor band (3.74, from section 6.8's vendor reading; `[V]`
+# Luxonis, `[CAD]` Waveshare's URDF -- measure both on the car). The camera
+# is fixed to the chassis and level, so the band is cast along the BODY, not
+# the pan-tilt. Its horizontal field is 73 deg. Its minimum depth is ~20 cm
+# at 400P with extended disparity, and the lens sits ~6 cm behind the front
+# edge, so nothing nearer than ~14 cm past the bumper can be measured: those
+# zones read UNUSABLE, never clear (M3). The 29 deg half-angle down from
+# ~10.2 cm sees a 5 cm object from ~9 cm, inside MinZ, so MinZ is the binding
+# limit and elevation is not modelled. Beyond 1.5 m the band reports nothing
+# (stereo on a grazing floor is the noisiest there is; it is a near-field
+# guard, not a map).
+FLOOR_BAND_FOV_DEG = 73.0
+FLOOR_BAND_MIN_CM = (0.20 - 0.06) * 100.0
+FLOOR_BAND_MAX_CM = 150.0
+
 WHEEL_MAX_RAD_S = (
     CELLS_PER_SECOND_AT_FULL_SPEED * DEFAULT_CELL_M / WHEEL_RADIUS_M
 )
@@ -594,12 +609,15 @@ class MockRobot(RobotInterface):
         base_angle = self.world.view_angle()
         px, py = self.world.x, self.world.y
 
+        # The level row sees what the lidar's plane sees: a camera looking
+        # level from above a sock does not range it (3.74).
+        level = self.world.lidar_solid_cells
         zones = []
         for i in range(cols):
             t = (i + 0.5) / cols
             angle = base_angle - renderer.FPV_FOV / 2 + renderer.FPV_FOV * t
             dist_cells = renderer.cast_ray(self.world.layout, px, py, angle,
-                                           solid=self.world.solid_cells)
+                                           solid=level)
             beyond_range = dist_cells >= renderer.FPV_MAX_DIST
             # cast_ray() overshoots: it marches in FPV_STEP increments and
             # returns the first step already inside the wall, so the true
@@ -644,7 +662,59 @@ class MockRobot(RobotInterface):
         # safety layer must know, or it reads a side wall as the way ahead.
         pan_deg = math.degrees(renderer.normalize_angle(base_angle - self.world.theta))
         return {"rows": 1, "cols": cols, "pan_deg": round(pan_deg, 4),
-                "fov_deg": math.degrees(renderer.FPV_FOV), "zones": zones}
+                "fov_deg": math.degrees(renderer.FPV_FOV), "zones": zones,
+                "floor": self._floor_band(cols, cell_cm)}
+
+    def _floor_sensor(self):
+        """S5's sensor model for the floor band, with its OWN random stream
+        (3.74 review). Drawing from the level row's would shift every later
+        level-row and scalar reading, so a seeded noisy run in a house with
+        no heights would stop repeating. Same settings, fixed seed."""
+        if getattr(self, "_floor_model", None) is None:
+            import dataclasses
+            import random
+            self._floor_model = dataclasses.replace(self.sensor, rng=random.Random(374))
+        return self._floor_model
+
+    def _floor_band(self, cols: int, cell_cm: float) -> dict:
+        """The depth camera's floor band (3.74 part A): per zone, the
+        nearest thing of ANY height -- a sock as much as a wall -- along the
+        body's heading, measured like the level row (from the robot's cell
+        edge, the march's overshoot taken off).
+
+        A separate block, not a second row of `zones`: it is another sensor
+        at another pose (body-fixed, 73 deg), and a row would claim the
+        level row's `pan_deg` and `fov_deg`. Its zones keep the tri-state:
+        nearer than `min_range_cm` is UNUSABLE (inside the stereo's MinZ),
+        nothing within `max_range_cm` is NO_TARGET, and S5's sensor model,
+        when configured, drops and perturbs each zone independently."""
+        fov = math.radians(FLOOR_BAND_FOV_DEG)
+        solid = self.world.solid_cells
+        px, py, theta = self.world.x, self.world.y, self.world.theta
+        max_cells = FLOOR_BAND_MAX_CM / cell_cm + renderer.FPV_STEP + ROBOT_HALF_CELL
+        zones = []
+        for i in range(cols):
+            angle = theta - fov / 2 + fov * (i + 0.5) / cols
+            dist_cells = renderer.cast_ray(self.world.layout, px, py, angle,
+                                           solid=solid, max_dist=max_cells)
+            clearance = max(0.0, dist_cells - renderer.FPV_STEP - ROBOT_HALF_CELL) * cell_cm
+            # A ray that reached its own horizon met nothing: that is not a
+            # range of exactly `max_range_cm`.
+            if dist_cells >= max_cells or clearance > FLOOR_BAND_MAX_CM:
+                zones.append({"status": interface.ZONE_NO_TARGET, "distance_cm": None})
+                continue
+            reading = clearance if self.sensor is None else self._floor_sensor().read_zone_cm(clearance)
+            if reading is not None and reading > FLOOR_BAND_MAX_CM:
+                # Noise may not carry a reading past the reach this block
+                # declares.
+                zones.append({"status": interface.ZONE_NO_TARGET, "distance_cm": None})
+            elif reading is None or reading < FLOOR_BAND_MIN_CM:
+                zones.append({"status": interface.ZONE_UNUSABLE, "distance_cm": None})
+            else:
+                zones.append({"status": interface.ZONE_RANGE, "distance_cm": round(reading, 1)})
+        return {"cols": cols, "fov_deg": FLOOR_BAND_FOV_DEG, "pan_deg": 0.0,
+                "min_range_cm": FLOOR_BAND_MIN_CM, "max_range_cm": FLOOR_BAND_MAX_CM,
+                "zones": zones}
 
     def get_scan(self, max_range_m: Optional[float] = None) -> dict:
         """A 360-degree scan cast from the robot's own position -- R2.
@@ -683,7 +753,8 @@ class MockRobot(RobotInterface):
         # ~5x cheaper, which matters at one scan per control period. The full
         # scan -- SLAM's -- keeps the march its map is pinned to.
         cast = renderer.cast_ray if max_range_m is None else renderer.cast_ray_exact
-        solid = self.world.solid_cells
+        # The lidar's plane only: a sock is under every beam (3.74).
+        solid = self.world.lidar_solid_cells
         # Cast from the LIDAR, not the centre: it sits `LIDAR_X_M` ahead of
         # the rotation centre on the Rover (3.27), which is where the URDF's
         # `laser` frame puts every beam SLAM and the safety layer read.

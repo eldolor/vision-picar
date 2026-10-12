@@ -15,6 +15,8 @@ def build_world(name: str = "starter_house"):
         from sim.maps.home_first_floor import build_home_world as build
     elif name == "complex_house":
         from sim.maps.complex_house import build_complex_world as build
+    elif name == "complex_house_hazards":
+        from sim.maps.complex_house import build_complex_hazards_world as build
     else:
         from sim.maps.procthor import build_procthor_world, houses, parse_name
         index = parse_name(name)
@@ -23,7 +25,7 @@ def build_world(name: str = "starter_house"):
         world = build()
         world.map_name = name
         return world
-    raise ValueError(f"unknown SIM_MAP {name!r} (starter_house | scaled_house | home_first_floor | complex_house | procthor:val:<0-999>)")
+    raise ValueError(f"unknown SIM_MAP {name!r} (starter_house | scaled_house | home_first_floor | complex_house | complex_house_hazards | procthor:val:<0-999>)")
 
 
 def build_movers(house: str, scenario: str):
@@ -33,7 +35,9 @@ def build_movers(house: str, scenario: str):
     import importlib
     from sim.maps.procthor import parse_name
     # Every ProcTHOR house is one module, and none has movers.
-    module = importlib.import_module("sim.maps." + ("procthor" if parse_name(house) is not None else house))
+    # A variant (3.74's `complex_house_hazards`) shares its house's movers.
+    base = house[:-len("_hazards")] if house.endswith("_hazards") else house
+    module = importlib.import_module("sim.maps." + ("procthor" if parse_name(house) is not None else base))
     scenarios = getattr(module, "MOVERS", {})
     if scenario not in scenarios:
         raise ValueError(f"unknown SIM_MOVERS {scenario!r} for {house} "

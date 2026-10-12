@@ -132,6 +132,9 @@ class MockWorld(WorldInterface):
         px = self.world.x
         py = self.world.y
         changed = 0
+        # What a lidar beam returns off (3.74): every object but those under
+        # its plane, which a SLAM map never shows.
+        solid = self.world.lidar_solid_cells
 
         for i in range(self.rays):
             angle = 2 * math.pi * i / self.rays
@@ -149,7 +152,7 @@ class MockWorld(WorldInterface):
                 # Objects are solid (3.9): a lidar beam returns off a
                 # backpack, and a SLAM map shows it as an obstacle.
                 wall = (self.world._cell(cx, cy) == CELL_WALL
-                        or (cx, cy) in self.world.objects)
+                        or (cx, cy) in solid)
                 changed += self._mark(cx, cy, CELL_OCCUPIED if wall else CELL_FREE)
                 if wall:
                     # A ray stops at the first wall. Everything behind it

@@ -180,6 +180,49 @@ TRAVEL_EPS = renderer.FPV_STEP
 # report something the picture hides.
 SIM_PERCEPTION_RANGE_CELLS = 3.0
 
+# The lidar's scan plane above the floor, in metres: the xacro's `laser_z`
+# (0.080 m above `base_link`, 0.120 m off the floor, from Waveshare's CAD,
+# 3.27). An object lower than this is under every beam (3.74). Measure it
+# on the car with the rest of the xacro's `[CAD]` values.
+LIDAR_Z_M = 0.120
+
+
+class LowObjectDetector:
+    """A stand-in for the hazard detector (3.74 part A): the sim's
+    detections are ground truth (1.12), and a real detector is not. For
+    objects under the lidar's plane only, each sighting survives with
+    probability `recall`, and each frame carries one spurious low-object
+    detection with probability `false_positive` -- at a random bearing in
+    the field and 0.5-1.5 m out, labelled like a real hazard, because a
+    false box looks like a true one. Seeded, so a sweep repeats.
+
+    The rates are C1's measurement once it exists (3.74); until then 0.8
+    and 0.05, the plan's stated placeholder."""
+
+    def __init__(self, recall: float = 0.8, false_positive: float = 0.05,
+                 labels=("cable", "sock", "shoe", "toy"), seed: int = 0):
+        import random
+        self.recall, self.false_positive = float(recall), float(false_positive)
+        self.labels = tuple(labels)
+        self._rng = random.Random(seed)
+        self.missed = self.spurious = 0
+
+    def keep(self) -> bool:
+        if self._rng.random() < self.recall:
+            return True
+        self.missed += 1
+        return False
+
+    def spurious_detection(self, fov_rad: float):
+        """One false box for this frame, or None."""
+        if self._rng.random() >= self.false_positive:
+            return None
+        self.spurious += 1
+        half = math.degrees(fov_rad) / 2
+        return {"label": self._rng.choice(self.labels),
+                "bearing_deg": round(self._rng.uniform(-half, half), 2),
+                "distance_m": round(self._rng.uniform(0.5, 1.5), 3)}
+
 
 def _nearest_cardinal(angle_rad: float) -> Heading:
     """The cardinal `Heading` closest to a `theta`.
@@ -218,10 +261,18 @@ class GridWorld:
         y: float = None,
         theta: float = None,
         movers: list = None,
+        object_heights: dict = None,
     ):
         self.layout = layout
         self.rooms = rooms
         self.objects = {} if objects is None else objects
+        # 3.74: label -> height in metres, for the objects that have one.
+        # By LABEL, not by cell, so `move_object()` and the split sim's
+        # shared state (which carries cells and labels) need not know.
+        # A label with no height is tall, as every object was before.
+        self.object_heights = dict(object_heights or {})
+        # 3.74: a `LowObjectDetector`, or None for ground truth (the default).
+        self.low_detector = None
         # 3.30: the sim's own clock, in seconds, advanced by whoever lets
         # time pass (`MockRobot.step()`, the robot server's idle ticks).
         # Nothing reads it but the movers, so a world without movers is
@@ -319,6 +370,36 @@ class GridWorld:
         stops a robot and returns a lidar beam; until then the robot drove
         onto it and lost it under its own footprint."""
         return frozenset(self.objects)
+
+    @property
+    def low_cells(self) -> frozenset:
+        """Cells holding an object lower than the lidar's plane (3.74): a
+        shoe, a sock, a cable. Solid to the body -- driving onto one is a
+        contact -- but under every beam, so the scan, the map built from it
+        and the camera's level row do not see it. Only the depth camera's
+        floor band (`MockRobot.get_depth_grid()["floor"]`) does."""
+        heights = self.object_heights
+        if not heights:
+            return frozenset()
+        # Cached against the dict itself: `objects` is replaced, never
+        # mutated (3.30), so the same dict means the same cells. The fake
+        # lidar asks once per beam, 4,500 times a second (3.74 review).
+        objects = self.objects
+        cached = getattr(self, "_low_cache", None)
+        if cached is None or cached[0] is not objects:
+            low = frozenset(cell for cell, name in objects.items()
+                            if heights.get(name, math.inf) < LIDAR_Z_M)
+            cached = self._low_cache = (objects, low, frozenset(objects) - low)
+        return cached[1]
+
+    @property
+    def lidar_solid_cells(self) -> frozenset:
+        """`solid_cells` less `low_cells`: what a beam in the lidar's plane
+        can hit (3.74). The same set as `solid_cells` in a house with no
+        heights, which is every house but `complex_house_hazards`."""
+        if not self.low_cells:
+            return self.solid_cells
+        return self._low_cache[2]
 
     # ---------- things that move (PLAN-ros-alignment.md 3.30) ----------
     #
@@ -648,7 +729,7 @@ class GridWorld:
         returns exactly the free-cell count the old walk did.
         """
         raw = renderer.cast_ray(self.layout, self.x, self.y, self.view_angle(),
-                                solid=self.solid_cells)
+                                solid=self.lidar_solid_cells)
         free = raw - renderer.FPV_STEP - ROBOT_HALF_CELL
         dist = max(0, min(int(max_range), int(round(free))))
         view_deg = math.degrees(self.view_angle() + math.pi / 2) % 360.0
@@ -738,13 +819,20 @@ class GridWorld:
         the bearing of the half that shows; one wholly behind it is not."""
         out = []
         view = self.view_angle()
+        # A low object hides nothing behind it from a camera above it (3.74).
+        low = self.low_cells
         for cell, name in self.objects.items():
             dist = math.hypot(cell[0] + 0.5 - self.x, cell[1] + 0.5 - self.y)
             if not ROBOT_HALF_CELL < dist <= renderer.FPV_MAX_DIST:
                 continue
-            others = {c for c in self.objects if c != cell}
+            others = {c for c in self.objects if c != cell and c not in low}
             b = renderer.visible_bearing(self.layout, self.x, self.y, view, cell, solid=others)
-            if b is not None:
+            if b is not None and (self.low_detector is None or cell not in low
+                                  or self.low_detector.keep()):
                 out.append((dist, {"label": name, "bearing_deg": round(math.degrees(b), 2),
                                    "distance_m": round(dist * 0.30, 3)}))
+        if self.low_detector is not None:
+            extra = self.low_detector.spurious_detection(renderer.FPV_FOV)
+            if extra is not None:
+                out.append((extra["distance_m"] / 0.30, extra))
         return [d for _, d in sorted(out, key=lambda t: t[0])]
