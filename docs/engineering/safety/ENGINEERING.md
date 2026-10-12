@@ -33,8 +33,8 @@ changes it.
 | `/action` REVERSE | same | `reverse_clearance()`, then `run_verb()`. Refused outright (`astern_not_observed`) on a body with wheels and no usable scan |
 | `/action` LEFT / RIGHT | same | No pre-check. `run_verb()` limits each step with `pivot_scale()` (only on bodies with a plan). With no usable scan, never limited |
 | `/action` LOOK_* / STOP | `_dispatch()` | None |
-| `POST /wheels` (direct drive) | `vet_wheel_velocity()` on receipt, then every `wheel_loop()` tick | Forward/reverse look-ahead and clamp; rotation scaled by `pivot_scale()`. Its own early return passes a command through while the body's wheel state is unusable; on `HardwareRobot` the body then refuses it (`no_feedback`, 3.34), so nothing reaches the board unvetted |
-| ROS drive: verbs | `check_and_execute()` -> `RosDriveRobot` (no plan) | The pre-check, then the actuator's `/wheels` posts are vetted on receipt and every tick. `_refuse_if_nothing_achieved()` turns a verb that covered under 1 cm / 0.5 deg into a `SafetyViolation` |
+| `POST /wheels` (direct drive) | `vet_wheel_velocity()` on receipt, then every `wheel_loop()` tick | Forward/reverse look-ahead and clamp; rotation scaled by `pivot_scale()`. Its own early return passes a command through while the body's wheel state is unusable; on `HardwareRobot` the body then refuses it (`no_feedback`, 3.34), so nothing reaches the board unvetted. A tick reads `stop_count` before the command and skips its write, or zeroes after it, if a `/stop` (which never takes `motion_lock`) landed in between (3.76 A2) |
+| ROS drive: verbs | `check_and_execute()` -> `RosDriveRobot` (no plan) | The pre-check, then the actuator's `/wheels` posts are vetted on receipt and every tick. `_refuse_if_nothing_achieved()` turns a verb that covered under 1 cm / 0.5 deg into a `SafetyViolation`, except one `RosDriveRobot` marks `superseded` (cut off by a newer verb or a stop, 3.76 T1): `/action` answers that one `preempted` when another driver now holds the robot, else as done |
 | ROS drive, ROS down: a person's verbs | `fallback_safety.check_and_execute()` on the wrapped body | Exactly direct drive's path |
 
 ### Clearance sources
@@ -135,8 +135,12 @@ brain was deleted 2026-09-25).
 1. If `driver` is autonomous and not `ros`, and the world reports a nav2 goal
    `pending` or `active`: refuse `preempted`. An unreadable bridge counts as
    no goal.
-2. If nobody holds the robot (`now - driver_at > watchdog_timeout_s`), or
-   the holder is `driver`: allow.
+2. If nobody holds the robot, or the holder is `driver`: allow. The holder
+   is `driver` while any `/action` verb is being carried out
+   (`state["verbs_running"]`, every drive path, 3.76 A1), else `driver`
+   until `watchdog_timeout_s` after `driver_at`. A verb's end re-stamps
+   `driver_at` if its driver still holds the robot, so a verb longer than
+   the timeout never lapses mid-run.
 3. Lower rank than the holder: refuse `preempted`.
 4. Both autonomous: refuse `preempted`.
 5. Otherwise allow (equal manual rank, or a higher rank taking over).
@@ -159,7 +163,8 @@ watchdog.
 brain), which spares the goal -- bumps `goal_stop["gen"]`, sets
 `goal_stop["hold"]`, and starts a daemon thread `_end_goal_after_stop(gen)`
 (`stop-end-goal`) when the world has `cancel_goal` (`RosWorld`). Every
-`GOAL_STOP_POLL_S` the thread, under `goal_stop_lock`, reads
+`GOAL_STOP_POLL_S` the thread, under `goal_stop_lock` (held across the
+bridge calls), reads
 `world_model.get_goal()` and re-sends `cancel_goal()` (`DELETE /goal`)
 while the goal is `pending` or `active`; once it is neither it waits
 `GOAL_STOP_SETTLE_S` and clears the hold. An exception (bridge down,
@@ -168,7 +173,10 @@ a non-zero `/wheels` from `ros` is treated as zero: under ROS drive it is
 applied as zero; under direct drive it takes the zero-command branch. A
 newer stop or an accepted `POST /world/goal` bumps the generation, so one
 loop runs at a time and never cancels a new goal (the goal route sets it
-under the same lock). A verb allowed through on the ROS drive path clears
+under the same lock). `goal_stop`'s two fields have their own lock,
+`goal_gen_lock`, never held across a bridge call; `/stop` takes only that
+one, so it answers at once while the bridge hangs (3.76 A8). The loop
+clears the hold only if its generation is still current. A verb allowed through on the ROS drive path clears
 the hold, as it lifts `RosDriveRobot`'s own stop hold; the loop keeps
 cancelling. The `/action` STOP verb and the watchdog do none of this; they
 call `robot.stop()`.
@@ -313,6 +321,7 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | `tests/test_mover_safety.py` (3) | 3.30: a crossing person |
 | `tests/test_blind_reverse.py` (5) | 2026-10-02: `HardwareRobot` over the fake board with no sensors refuses a REVERSE verb without moving and clamps a standing reverse to zero; a standing turn (`vet_wheel_velocity()`) passes; a teleop body still reverses; a body with a scan is judged by it. Not pinned: a turn VERB, and a settle pass astern (Known gaps) |
 | `tests/test_authority.py` (13) | M4: ranks, lapse, stop claims nothing, reasons on the wire, preemption ends a mission |
+| `tests/test_review_376a.py` (5) | 3.76 batch A: a verb longer than the watchdog keeps its driver's authority; the wheel loop never writes over a stop; lost feedback under ROS drive is `no_feedback` and stops the robot; a second stop answers while the bridge hangs; a person taking over a ROS verb is not stopped by it, and the cut-off verb reads `preempted` |
 | `tests/test_goal_arbitration.py` (9) | 3.23: a goal is an autonomous driver |
 | `tests/test_stop_cancels_goal.py` (13) | Handoff 2026-10-02 1b: with an active goal and a fake nav2 that drives while it holds one, the wheels are still at zero `STOP_HOLD_S` + 0.1 s after `/stop`; a new goal can be set afterwards; a hung cancel costs the stop nothing. Spec review 3 V1: the brain's `/stop` spares the goal, and a mission preempted by a goal (`MissionRunner` over `RemoteRobot`) ends `preempted` with the goal still active; a person's stop still ends it. V2, nav2 ticking at 20 Hz from the moment of the stop: zero wheels while a 0.3 s cancel is in flight, through a failing cancel (retried once the bridge returns), and for a goal accepted after the stop; a new goal drives again |
 | `tests/test_ros_fallback.py` (10) | 3.24 G3, all four criteria; handoff 1d: a dead bridge behind a live plugin reads `drive.ros_up` false, a person's verb runs direct, an autonomous one is refused `ros_unavailable`, and ROS is back once the bridge answers. Spec review 3 V8-V9: with the bridge down and the plugin alive, the plugin's non-zero `/wheels` post is answered `ros_unavailable` and moves nothing, and `/health` names which half is down |
@@ -354,7 +363,9 @@ order; record the table in the plan entry.
   backend that reports unusable wheels and still moves would reopen it.
 - **The verb that finds the bridge dead is refused, a person's too.** The
   first failed `RosDriveRobot._send()` raises inside the verb, which
-  `/action` refuses `ros_unavailable` after stopping the robot directly; it
+  `/action` refuses `ros_unavailable` after stopping the robot directly
+  (`WheelFeedbackLost`, also a `RuntimeError`, is refused `no_feedback`
+  instead, after the same direct stop: 3.76 A5); it
   is not retried on the direct path, because some of it may already have
   gone through ROS. Only the next verb sees `ros_up()` false and falls back.
 - **A dead `twist_mux` or `diff_drive_controller` behind a live bridge**

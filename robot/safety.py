@@ -921,6 +921,10 @@ class SafetyController:
         `blocked` on both paths. `robot.ros_drive` reports what it covered
         (`moved_m`, `turned_deg`); it cannot know why it stopped, so the
         verdict is made here, beside the direct one."""
+        if result.get("superseded"):
+            # 3.76 T1: cut off by a newer verb or a stop, not held by the
+            # wheels; a stop() here would cut off that newer verb too.
+            return
         straight = action in ("FORWARD", "REVERSE")
         if straight and "moved_m" in result:
             got, least, unit = abs(result["moved_m"]), VERB_MIN_MOVE_M, "cm"

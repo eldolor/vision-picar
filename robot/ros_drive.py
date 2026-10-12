@@ -312,7 +312,8 @@ class RosDriveRobot(RobotInterface):
         v = max(1, min(100, speed)) / 100.0 * MOVES_PER_SECOND_AT_FULL_SPEED * MOVE_M
         moved = self._run(gen, moves * MOVE_M, v, MIN_LINEAR_M_S,
                           LINEAR_TOLERANCE_M, travelled, linear=True, gain=LINEAR_GAIN_PER_S)
-        return {"requested": moves, "moved": round(moved / MOVE_M, 4), "moved_m": round(moved, 4)}
+        return {"requested": moves, "moved": round(moved / MOVE_M, 4), "moved_m": round(moved, 4),
+                **self._cut_off(gen)}
 
     def _turn(self, degrees_right: float) -> dict:
         if degrees_right == 0:
@@ -329,7 +330,13 @@ class RosDriveRobot(RobotInterface):
         turned = self._run(gen, -math.radians(degrees_right), TURN_RATE_RAD_S,
                            MIN_ANGULAR_RAD_S, ANGULAR_TOLERANCE_RAD, turned_ccw, linear=False,
                            gain=ANGULAR_GAIN_PER_S)
-        return {"turned_deg": round(-math.degrees(turned), 2)}
+        return {"turned_deg": round(-math.degrees(turned), 2), **self._cut_off(gen)}
+
+    def _cut_off(self, gen: int) -> dict:
+        """3.76 T1: a verb a newer verb or a stop cut off says so, so it is
+        not judged as one the wheels failed to carry out -- that verdict's
+        stop() would cut off the newer verb in turn."""
+        return {"superseded": True} if self._superseded(gen) else {}
 
     def drive_forward(self, speed: int = 50, duration: float = 0.5) -> dict:
         return {"action": "drive_forward", "speed": speed, "duration": duration,

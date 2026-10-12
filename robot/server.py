@@ -238,6 +238,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     state = {
         # True while a direct-mode verb is being carried out (3.22).
         "verb_active": False,
+        # 3.76 A1: verbs being carried out on any path. While one runs, the
+        # robot is held by whoever last won arbitration, however long the verb.
+        "verbs_running": 0,
         "last_command_at": time.monotonic(),
         "wheel_posts": 0,
         # 3.24 G3: when the actuator plugin last posted /wheels -- ROS's pulse.
@@ -284,6 +287,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         this server already has rather than inventing a second lifetime,
         and it means no explicit release call exists to be forgotten.
         """
+        if state["verbs_running"]:
+            # 3.76 A1: a verb in progress is its driver still driving. A 90
+            # degree turn is 1.3 s on the car; stamped only at its start, the
+            # claim lapsed mid-turn and the brain queued behind a person.
+            return state["driver"]
         if now - state["driver_at"] > watchdog_timeout:
             return None
         return state["driver"]
@@ -421,7 +429,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # A stop ending a nav2 goal (see _end_goal_after_stop): the generation,
     # and whether nav2's wheel commands are held at zero meanwhile.
     goal_stop = {"gen": 0, "hold": False}
+    # Serialises the bridge calls that start or end a goal: held ACROSS them.
     goal_stop_lock = threading.Lock()
+    # Guards `goal_stop` itself and is never held across a bridge call, so
+    # /stop takes only this one and never waits on the bridge (3.76 A8).
+    goal_gen_lock = threading.Lock()
+    verbs_lock = threading.Lock()       # guards state["verbs_running"] (3.76 A1)
 
     async def wheel_loop():
         """Vet and (in the sim) integrate a standing wheel command -- R2b.
@@ -447,6 +460,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 continue
             try:
                 with _held(motion_lock):
+                    # 3.76 A2: before the command is read, so a stop landing
+                    # anywhere after it is seen below.
+                    stops0 = getattr(robot, "stop_count", 0)
                     w = robot.get_wheel_state()
                     if not w.get("usable"):
                         continue
@@ -464,10 +480,19 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     wl["late_ticks"] += dt > 2 * WHEEL_LOOP_INTERVAL_S
                     wl["max_dt_s"] = round(max(wl["max_dt_s"], dt), 4)
                     new_left, new_right, reason = safety.vet_wheel_velocity(left, right)
+                    if getattr(robot, "stop_count", 0) != stops0:
+                        # 3.76 A2: /stop does not take motion_lock, so one can
+                        # land during the vet; writing the vetted command back
+                        # would undo it (the race carry_out_verb guards, 2c).
+                        continue
                     if (new_left, new_right) != (left, right):
                         # Clamped, or only SLOWED near the line (3.24 G2's look-
                         # ahead): either way the vetted speeds are what drive.
                         robot.set_wheel_velocity(new_left, new_right)
+                        if getattr(robot, "stop_count", 0) != stops0:
+                            # ...or between that check and this write.
+                            robot.set_wheel_velocity(0.0, 0.0)
+                            continue
                     if reason:
                         last_ref = state["last_refusal"]
                         if not (last_ref and last_ref["reason"] == "safety_distance"
@@ -578,6 +603,25 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         state["driver_at"] = now
         if driver_priority(driver) == DRIVER_AUTONOMOUS:
             state["autonomous_at"] = now
+        with verb_running(driver):
+            return _carry_out(req, driver, now)
+
+    @contextmanager
+    def verb_running(driver: str):
+        """Hold the robot for `driver` while its verb runs (3.76 A1), and
+        restart its lapse clock at the verb's END: the end is the driver's
+        last word, not its start."""
+        with verbs_lock:     # threadpool threads: a lost update would never lapse
+            state["verbs_running"] += 1
+        try:
+            yield
+        finally:
+            with verbs_lock:
+                state["verbs_running"] -= 1
+            if state["driver"] == driver:
+                state["driver_at"] = time.monotonic()
+
+    def _carry_out(req: ActionRequest, driver: str, now: float):
         try:
             if by_velocity and not ros_up(now):
                 # 3.24 G3: the ROS stack is down. A PERSON drives on through
@@ -617,6 +661,21 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                         result = safety.check_and_execute(
                             req.action, speed=req.speed, duration=req.duration, angle=req.angle
                         )
+                    if (isinstance(result, dict) and result.get("superseded")
+                            and state["driver"] != driver):
+                        # 3.76 T1: cut off by another driver's verb -- the
+                        # take-over drive: direct makes by queueing. Not a
+                        # move the caller made. (Cut off by a stop, it reads
+                        # as done, as drive: direct's "stopped" verb does.)
+                        return refuse("preempted",
+                                      f"{state['driver']} took over -- {driver}'s "
+                                      f"{req.action} was cut off", driver)
+                except WheelFeedbackLost:
+                    # 3.76 A5: a RuntimeError too, but the wheels' fault, not
+                    # the bridge's -- answered no_feedback below. Lost mid-
+                    # verb, the last twist is still in ROS: stop directly.
+                    robot.stop()
+                    raise
                 except (httpx.HTTPError, RuntimeError) as e:
                     # The ROS side is unreachable. Stop directly -- the stop
                     # does not go through ROS -- and say why, by name.
@@ -759,7 +818,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         result = robot.stop()
         spares_goal = driver != DRIVER_ROS and driver_priority(driver) == DRIVER_AUTONOMOUS
         if hasattr(world_model, "cancel_goal") and not spares_goal:
-            with goal_stop_lock:
+            with goal_gen_lock:
                 goal_stop["gen"] += 1
                 goal_stop["hold"] = True
                 gen = goal_stop["gen"]
@@ -790,7 +849,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     elif settled_at is None:
                         settled_at = time.monotonic()
                     elif time.monotonic() - settled_at >= GOAL_STOP_SETTLE_S:
-                        goal_stop["hold"] = False
+                        with goal_gen_lock:
+                            # A newer stop owns the hold now; never lift it.
+                            if goal_stop["gen"] == gen:
+                                goal_stop["hold"] = False
                         return
             except Exception as e:  # noqa: BLE001 -- keep holding, keep trying
                 settled_at = None
@@ -987,8 +1049,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         # A person re-sending a goal after a stop: it supersedes the stop's
         # ending loop, which must never cancel this new goal.
         with goal_stop_lock:
-            goal_stop["gen"] += 1
-            goal_stop["hold"] = False
+            with goal_gen_lock:
+                goal_stop["gen"] += 1
+                goal_stop["hold"] = False
             try:
                 return world.set_goal(req.x_m, req.y_m)
             except httpx.HTTPError as e:
