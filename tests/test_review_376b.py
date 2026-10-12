@@ -301,3 +301,13 @@ def test_a_ros_verb_posts_no_motion_after_a_stop():
     assert stopped["at"] is not None, "the stop never landed -- the test proves nothing"
     after = [p for p in posts[stopped["at"]:] if p["linear_m_s"] or p["angular_rad_s"]]
     assert not after, f"motion posted after the stop: {after}"
+
+
+def test_an_overflowing_speed_is_dropped_too(car):
+    """The rest of B2 (the fixes' own review): float() of a 400-digit
+    integer raises OverflowError, outside the first catch list."""
+    robot, board = car
+    board._write({"T": 1001, "L": int("9" * 400), "R": 0.0})   # json writes the digits
+    assert _wait(lambda: robot.frames_dropped >= 1)
+    frames = robot.frames
+    assert _wait(lambda: robot.frames > frames + 3), "feedback stopped after the line"

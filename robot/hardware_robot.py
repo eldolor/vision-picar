@@ -284,7 +284,7 @@ class HardwareRobot(RobotInterface):
                     frame = json.loads(line)
                     if isinstance(frame, dict) and frame.get("T") == 1001:
                         self._on_base_feedback(frame)
-                except (ValueError, KeyError, TypeError) as e:
+                except Exception as e:  # noqa: BLE001 -- OverflowError, RecursionError too
                     # A partial line at start-up, noise, or a frame missing a
                     # field: dropped, and the last reason kept for /health.
                     # 3.76 B2: never the end of the reader.
@@ -296,6 +296,8 @@ class HardwareRobot(RobotInterface):
         `_zero_if_stale()` runs only on this thread, so after it nothing else
         would until the watchdog or the board's heartbeat (3.34, 3.76)."""
         self.link_error = why
+        if not self._running:
+            return                  # close() ended us: the fd may be gone, even reused
         with self._write_lock:
             with self._lock:
                 self._cmd = (0.0, 0.0)
