@@ -244,10 +244,28 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   (one simulator still: only the plan crosses over). Import checks all met
   (topology 1000/1000, furniture 99.85%, usable 570/570). Explore finds the
   target in 84 of the first 100 usable houses (bar 90; 84 pinned). The 16
-  misses are explore's, in four classes (panned sighting, approach ring,
-  lidar past the target, never seen). Open for the user: a section to fix
-  them. `docs/evaluations/PROCTHOR-HOUSES-2026-10-11.md`,
-  `HANDOFF-2026-10-11-3.66-procthor-houses.md`.
+  misses are explore's, in four classes. `docs/evaluations/PROCTHOR-HOUSES-2026-10-11.md`.
+  **Fixed (3.69), merged 2026-10-11:** explore now turns the body toward a
+  target seen on a pan, retries a refused turn to face it (smaller, then
+  back off once), takes the nearest lidar return on an edge beyond the
+  approach band, and looks at unseen patches from a place that can see
+  them. Found 84 -> 99 (tuning), 85 -> 100 and 84 -> 99 on two unseen
+  hundreds; median goals -24 to -38%; live explore in the furnished home
+  `found` (741 s). Left: house 27 (a 0.6 m passage with no 3.45-leavable
+  stop). Sweep pins 99. Known limit: in-band edge windows, majority wins.
+* **The Jetson serves the deployed twin (3.71), merged 2026-10-11.** Two
+  systemd units on the Jetson, `picar-stack` (`service/tunnel/run.sh`, sim
+  mode, from the worktree `~/vision-picar-service`) and `picar-ngrok`; the
+  laptop's ngrok is stopped (one domain, one agent). Back in ~7 s after a
+  crash and 53 s after a reboot. The Jetson uses the Mac's secret files.
+  **Stop both before a Jetson bench** (`tools/jetson/README.md` sections 4-5,
+  which also has the update steps). `run.sh` now exits when any server does.
+* **Random house (3.72), merged and deployed 2026-10-11.** The Sim tab's
+  button: `POST /sim/house/random` swaps in one of the 100 sweep houses in
+  place, no restart -- the one reset route, plain sim only, refused while
+  anyone drives and for 30 s after the brain last drove. Known limit: a
+  mission started elsewhere that has not moved yet is not seen.
+  `HANDOFF-2026-10-11-3.69-3.72.md`.
 * **Raising nav2's speed** (6.9's high end) now has its speed-dependent
   stop, but waits on measured braking (6.9 (d)) and 3.42's relayed-scan
   time stamp; read `HANDOFF-2026-10-07-lidar-and-speed.md` first.
