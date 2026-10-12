@@ -1,0 +1,58 @@
+{
+ "features": [
+  "path",
+  "turn",
+  "is_view",
+  "size",
+  "area",
+  "unknown_near",
+  "unseen_near",
+  "failed",
+  "reached",
+  "view_late"
+ ],
+ "seed": 3652,
+ "pop": 24,
+ "elite": 6,
+ "batch": 40,
+ "iters": [
+  {
+   "it": 0,
+   "best": 0.3907,
+   "elite_mean": 0.3371,
+   "pop_mean": 0.2508,
+   "mean": [
+    -9.959,
+    -0.918,
+    -10.204,
+    3.553,
+    2.249,
+    1.31,
+    -0.891,
+    -1.358,
+    -0.645,
+    0.13
+   ]
+  },
+  {
+   "it": 1,
+   "best": 0.5472,
+   "elite_mean": 0.3997,
+   "pop_mean": 0.2377,
+   "mean": [
+    -9.709,
+    -1.194,
+    -12.198,
+    4.479,
+    0.727,
+    1.782,
+    -1.076,
+    -1.179,
+    -0.718,
+    0.16
+   ]
+  }
+ ],
+ "selection": [],
+ "best": null
+}

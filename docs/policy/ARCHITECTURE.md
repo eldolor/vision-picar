@@ -347,6 +347,36 @@ set back from a corner still clears it. Coverage is the progress check.
 Approach points toward a seen target keep the old clearance: the arrival
 rule judges them at the lidar's 0.40 m, and they are not left again.
 
+### Explore's next goal may be learned; nothing else in explore is
+
+**Decision (3.65 phase 2, 2026-10-11).** Which goal explore sends next may
+come from a learned score instead of the hand-written order, behind
+`explore_goal_policy` (default `rule`). The learning is reinforcement
+learning in its evolutionary form: a linear score over ten facts explore
+already has about each candidate, its weights found by the cross-entropy
+method on simulated missions, each mission scored +1 if found, minus 0.02
+per goal and 0.01 per metre.
+
+**Why this decision and not the driving.** The misses 3.69 fixed were all
+decisions; nav2 reaches every goal it is sent; and the simulator is
+kinematic, so a learned controller would learn a world without slip. The
+choice of goal is where better data changes the outcome, and it is scored
+by a fast sweep against ground-truth reachability.
+
+**Why evolutionary, not a gradient method.** Ten weights, a reward mostly
+decided at the mission's end, and missions about a second each: scoring
+whole missions avoids per-step credit assignment, and the result is ten
+numbers anyone can read. A small network (and a gradient method such as
+PPO to train it) is allowed only after the linear score fails its
+criteria on record.
+
+**What keeps it safe.** The policy only ranks candidates the rules would
+send: unleavable, set-aside and twice-reached places are never offered.
+Sightings, approaches, escapes, the retry book, the end of the search,
+nav2 and `robot/safety.py` stay rules. A bad weight makes a search slower,
+never a move unsafe. It is judged on houses it was not trained or selected
+on, and live on nav2, before the default could change.
+
 ## Contracts
 
 | With | Direction | Category | Ownership |

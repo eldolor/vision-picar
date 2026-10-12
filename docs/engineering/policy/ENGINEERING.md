@@ -228,6 +228,28 @@ surfaces), when it takes the nearest return, which is short of the target,
 never past it. A view goal (`ViewGap.face`) turns toward the part of the
 patch it was chosen to see.
 
+**Explore's learned goal choice (3.65 phase 2).** `explore_goal_policy`
+(`brain:` block; `rule` | `learned`, default `rule`; validated by
+`load_brain_config`) reaches `MissionRunner(explore_goal_policy=...)`, which
+gives `ExploreAgent` a `goal_policy` from `brain/goal_policy.goal_policy_for`
+(None for the rule). With one set, `_next_frontier` calls `_learned_goal`:
+every frontier not reached twice and available in the retry book, and every
+view gap not already looked at or stood at, is pooled; `features()` gives
+each ten values (path, turn, is-view, frontier size, view area, unknown and
+camera-unseen shares within 1 m, retry failures, times reached, is-view x
+goals sent), each scaled to about 0..1; `LinearGoalPolicy.best()` sends
+the highest `w . f` (ties keep the rule's order). Turn is measured as the
+FACE turn measures it (`atan2(dx, -dy)`). When nothing is allowed, the
+boxed/cooling/searched logic runs as under the rule, with its skip counts.
+The weights live in `brain/explore_goal_weights.json` with their feature
+names, and loading refuses a mismatch. Training is
+`evaluations/explore-365/train.py` (cross-entropy method: 24 samples, best
+6 refit, 20 iterations, 40 training houses per iteration, selection every 4
+on usable 100-199); `harness.py` adds metres (each succeeded goal's
+true-floor path plus the verbs' odometer) and the reward, a crash scoring
+-100 so it can never beat a miss. `tests/test_goal_policy.py` pins that
+the rule written as weights sends the rule's goals.
+
 Arrival reads the scan in the body frame using `LIDAR_X_M` from
 `robot/safety.py`; its value is in the canonical chassis table,
 [platform](../platform/ENGINEERING.md) "Parameters and configuration".
