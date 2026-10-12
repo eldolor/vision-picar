@@ -75,6 +75,7 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.67](3.67-garage-exit-inflation.md) | nav2's inflation against the garage exit (2026-10-11): candidate A adopted, criterion 1 waived by the user |
 | [3.68](3.68-refusal-replan.md) | Replan around a spot the safety layer keeps refusing (2026-10-11): built; FAILED (goal 6 0/3), not adopted |
 | [3.69](3.69-explore-misses.md) | Explore's misses in the imported houses |
+| [3.70](3.70-survey-and-mission-ends.md) | Survey mode, missions on the robot's own saved map, and four end states shown on the phone (2026-10-11): criteria, written before building -- not yet confirmed by the user |
 | [3.71](3.71-jetson-services.md) | The robot server, brain and tunnel as Jetson services |
 | [3.72](3.72-random-house.md) | A randomizer button: the robot server picks one of the 100 ProcTHOR houses |
 | [3.73](3.73-mujoco-slip-braking.md) | MuJoCo: fit the Rover's slip and braking, and carry them into our simulator |
