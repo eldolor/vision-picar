@@ -1,0 +1,8 @@
+#!/bin/sh
+# Warn -- never block -- when a staged file lies inside a plan step another
+# live Claude Code session has claimed (docs/guides/PARALLEL-SESSIONS.md,
+# rule 8). Catches edits made through Bash, which the edit hook cannot see.
+# Installed for every worktree by `git config core.hooksPath tools/hooks`.
+root="$(git rev-parse --show-toplevel)"
+[ -f "$root/tools/plan_claims.py" ] && python3 "$root/tools/plan_claims.py" hook-commit </dev/null
+exit 0

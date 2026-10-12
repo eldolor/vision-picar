@@ -11,6 +11,10 @@ sessions never collide (docs/guides/PARALLEL-SESSIONS.md).
     python tools/plan_section.py reviewed [--thermos] [range]   record that the code commits in range
                                                         (default origin/dev..HEAD) were reviewed
     python tools/plan_section.py split                  one-time: PLAN-ros-alignment.md's 3.N sections -> files
+    python tools/plan_section.py board [--all]          every open step: claimed, active, waiting, blocked or free
+    python tools/plan_section.py next                   the first step this session may claim
+    python tools/plan_section.py claim <step>           take a step for this session (tools/plan_claims.py)
+    python tools/plan_section.py release [<step>]       give back this session's claims
 
 Sections live in `docs/plans/ros-alignment/<number>-<slug>.md`; the number is
 reserved by the BRANCH NAME `plan/<number>-<slug>`. Worktrees share one .git,
@@ -550,6 +554,9 @@ def main(argv):
         cmd_reviewed(args)
     elif cmd == "split":
         cmd_split()
+    elif cmd in ("board", "next", "claim", "release"):
+        import plan_claims
+        plan_claims.main(argv)
     else:
         raise SystemExit(__doc__)
 

@@ -13,6 +13,11 @@ python tools/plan_section.py new <slug> "<title>"
 #       docs/plans/ros-alignment/3.N-<slug>.md, committed.
 cd .claude/worktrees/plan-3.N
 
+#    Or continue one: `board` shows every open step and who holds it; `next`
+#    names the first step you may take. Then claim it (rule 8):
+python tools/plan_section.py board
+python tools/plan_section.py claim 3.N.X     # refused if it would collide
+
 # 2. Your own ports, ROS domain, container, image tag and log directory.
 eval "$(python tools/plan_section.py env)"
 docker build -t "$ROS_IMAGE" service/slam    # only if you change service/slam
@@ -102,7 +107,45 @@ Continuing an existing section: work in its worktree
    laptop skew each other. Long runs can go to the Jetson instead
    (`tools/jetson/README.md`). `PICAR_HEAVY_LOCK=0` skips the lock, for
    in-process work only.
-8. **Helpers.** `git rerere` is enabled, so a resolved conflict replays
+8. **Claim a step before working on it** (3.75). A section's discrete
+   steps are rows of a `## Steps` table in its own file:
+
+   ```
+   | Step | Title | Needs | Waits | Touches | State |
+   |---|---|---|---|---|---|
+   | 3.70.S | Survey mode | 3.50.D | -- | `brain/survey.py`, `control/` | open |
+   ```
+
+   `Needs` names steps that must be `done` first; `Waits` is `user`,
+   `rover` or `--`; `Touches` lists the paths the step will change (a
+   trailing `/` is a directory, `*` globs); `State` is `open`, `done` or
+   `dropped`. Commit the table: the board reads committed text, from the
+   section's newest `plan/*` branch or else `origin/dev`.
+   * `claim <step>` writes a claim into the shared `.git`
+     (`plan-claims/`), which every worktree on this machine sees. It is
+     owned by your Claude Code process and **frees itself when that process
+     exits**. `release` gives it back sooner.
+   * A claim is refused when its `Needs` are not done, when it waits on the
+     user or the Rover, when another live session holds a step of the same
+     section (one session per section: its worktree, ports and ROS domain),
+     or when its `Touches` overlap a live claim or a branch worked on in
+     the last 2 hours. A branch with no claim yet counts as active from its
+     last commit or its newest uncommitted edit. Against such a branch,
+     and only such a branch, `claim --accept-overlap` takes the step after
+     you have checked the shared file by hand. The claim records it.
+   * Guards: before editing a path inside another session's claim, Claude
+     Code asks the user (a `PreToolUse` hook on Edit/Write). A commit
+     touching one prints a warning from `tools/hooks/pre-commit`, which
+     catches edits made through Bash; it never blocks. Every local session
+     starts with the board in its context (`.claude/hooks/plan-board.sh`).
+   * Limit: claims are per machine. A Jetson or cloud session still meets
+     the others only at push.
+
+   *Why:* asked "what can you pick up next?" on 2026-10-12, a session had to
+   guess who was working from commit times. The tool's first run found two
+   sessions editing within the last minutes, neither visible from `dev`, and
+   one of them changing a file this section also changed.
+9. **Helpers.** `git rerere` is enabled, so a resolved conflict replays
    itself. Handoffs are named after their section.
 
 ## Setting up a machine (once)

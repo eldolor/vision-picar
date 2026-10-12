@@ -7,9 +7,26 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh",
             "timeout": 900
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/plan-board.sh",
+            "timeout": 30
           }
         ],
         "matcher": "startup|resume|clear"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/tools/plan_claims.py hook-edit 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }
