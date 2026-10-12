@@ -229,7 +229,7 @@ never past it. A view goal (`ViewGap.face`) turns toward the part of the
 patch it was chosen to see.
 
 **Explore's learned goal choice (3.65 phase 2).** `explore_goal_policy`
-(`brain:` block; `rule` | `learned`, default `rule`; validated by
+(`brain:` block; `rule` | `learned` | `network`, default `rule`; validated by
 `load_brain_config`) reaches `MissionRunner(explore_goal_policy=...)`, which
 gives `ExploreAgent` a `goal_policy` from `brain/goal_policy.goal_policy_for`
 (None for the rule). With one set, `_next_frontier` calls `_learned_goal`:
@@ -248,7 +248,15 @@ names, and loading refuses a mismatch. Training is
 on usable 100-199); `harness.py` adds metres (each succeeded goal's
 true-floor path plus the verbs' odometer) and the reward, a crash scoring
 -100 so it can never beat a miss. `tests/test_goal_policy.py` pins that
-the rule written as weights sends the rule's goals.
+the rule written as weights sends the rule's goals. `network`
+(amendment 2) is `NetGoalPolicy`: the same pool and features, scored
+`w . f + MLP(f)` (MLP 10 -> 32 -> 32 -> 1, tanh) by a numpy forward pass
+from `brain/explore_goal_net.json` (the linear weights plus each layer's
+`W`, `b`). It is trained by PPO in `evaluations/explore-365/train_net.py`
+(torch, trainer only): goals drawn from softmax(scores) while training,
+each mission's advantage its reward against the mean of 8 rollouts of the
+same house, the MLP's last layer starting at zero so training starts at the
+linear policy.
 
 Arrival reads the scan in the body frame using `LIDAR_X_M` from
 `robot/safety.py`; its value is in the canonical chassis table,
