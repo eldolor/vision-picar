@@ -25,7 +25,7 @@ the same commit that changes it.
 | `sim/replay_robot.py` | `ReplayRobot`: a directory of images, one frame per movement verb; `loop=True` wraps at the end. Open loop. Not selectable from the factory; constructed directly, by `tests/demo_replay_mission.py` and the tests |
 | `sim/teleop_robot.py` | `TeleopRobot`: the latest frame pushed through `POST /teleop/frame`; verbs are acks; `TeleopStall` once the last push is older than the stall timeout |
 | `robot/hardware_robot.py` | `HardwareRobot`: the motors over the ESP32 board's serial line (protocol: [motor-board engineering](../motor-board/ENGINEERING.md)). Sensing comes from an optional `sensors` body; without one, the defaults (and `get_distance()` 0.0). An optional `lidar` (3.42) is THE scan when present; `sensor_age_s()` is the older of the lidar's and the sensors' ages, and `turn_since_scan()` the encoder heading change since the scan's oldest point. With a lidar the safety cone reads its forward beams, so the 0.0 scalar no longer vetoes every forward move |
-| `robot/lidar_ld19.py` | 3.42: the D500 (LDROBOT STL-19P). The LD19 protocol from LDROBOT's MIT driver (47-byte packets, CRC-8 table), `Parser` (resync, split reads, CRC drops counted), `Assembler` (revolutions at the 360 wrap), `bin_scan()` (1-degree body bins, nearest return, mounting yaw `LIDAR_YAW_DEG` -90 `[CAD]`; a bin with no data carries the previous revolution's value or its neighbours', never reads as clear; more than 18 uncovered bins is no scan), `Ld19Scanner` (age = oldest point; unusable after `STALE_S` 0.3 s without packets or revolutions) and `Ld19Lidar` (a serial reader thread at 230,400 baud) |
+| `robot/lidar_ld19.py` | 3.42: the D500 (LDROBOT STL-19P). The LD19 protocol from LDROBOT's MIT driver (47-byte packets, CRC-8 table), `Parser` (resync, split reads, CRC drops counted), `Assembler` (revolutions at the 360 wrap; a list past `MAX_REVOLUTION_POINTS`, 1,800, that never wrapped is dropped and counted in `revolutions_dropped`, 3.76 B5), `bin_scan()` (1-degree body bins, nearest return, mounting yaw `LIDAR_YAW_DEG` -90 `[CAD]`; a bin with no data carries the previous revolution's value or its neighbours', never reads as clear; more than 18 uncovered bins is no scan), `Ld19Scanner` (each packet stamped by its own `timestamp_ms` behind the read's last packet, clamped to the time since the previous read, 3.76 B4; age = oldest point; unusable after `STALE_S` 0.3 s without packets or revolutions) and `Ld19Lidar` (a serial reader thread at 230,400 baud; it ends, with `link_error`, on a read error or an empty read from a hung-up line, 3.76 B3) |
 | `robot/ros_drive.py` | `RosDriveRobot`: wraps any backend under `drive: ros`. Verbs become `POST /cmd_vel` twists closed on the wrapped body's encoders; reads go to the wrapped body. Marks itself `drives_by_velocity = True`. `stop()` is described below |
 | `control/mission_runner.py` | `_HaltGate`: wraps the mission's body and raises `MissionHalted` on any motion once the mission has ended. Owned by [mission](../../mission/ARCHITECTURE.md) and listed here because the conformance suite runs it |
 | `tests/conftest.py` | `RecordingRobot`, a test double, and the `robot_over_asgi` fixture (a `RemoteRobot` over an in-process robot server) |
@@ -52,6 +52,12 @@ deadline), `set_wheel_velocity()` turns any **non-zero** command into a zero
 on the wrapped body. That is the stopped verb's last twist still on its way
 through `twist_mux`, `diff_drive_controller` and the plugin's `POST /wheels`.
 The next verb (`_begin()`, a new generation) lifts the hold at once.
+
+A verb's twists and the stop's zeros share `_send_lock`: a verb checks its
+generation and posts under it, and each zero is posted under it, so a zero
+always lands after a twist already on its way and no twist follows a stop
+(3.76 B8). A verb cut off by a newer verb or a stop reports `superseded:
+true`, which the safety layer does not judge as a failed verb (3.76 T1).
 
 `STOP_HOLD_S` is 0.6 s because a stale twist can reach the wheels for
 0.55 s when the zeros never arrive: `twist_mux` holds a silent input for its
@@ -80,7 +86,7 @@ while it is measuring them: a `T:1001` frame arrived within
 | `set_wheel_velocity()` non-zero | sends a zero, raises `WheelFeedbackLost` |
 | `set_wheel_velocity(0, 0)`, `stop()` | always succeed; `_send()` returns False on `OSError` instead of raising, and records `link_error` |
 | `verb_plan()` for a motion verb | raises `WheelFeedbackLost` |
-| a standing command | zeroed by `_zero_if_stale()`, which the reader thread runs every pass (at most 0.1 s apart); counted in `stale_zeroed` |
+| a standing command | zeroed by `_zero_if_stale()`, which the reader thread runs every pass (at most 0.1 s apart); counted in `stale_zeroed`. A reader that ends (a read error, or an empty read from a hung-up line) zeroes it on the way out (`_link_lost()`, 3.76 B3) |
 
 This applies before the first frame too. A verb already running when
 feedback stops ends `no_feedback` in `carry_out_verb()`, and
@@ -90,7 +96,7 @@ feedback stops ends `no_feedback` in `carry_out_verb()`, and
 unusable. The robot server answers `no_feedback` from `/action` and
 `/wheels` (unlogged for driver `ros`), and `/health`'s `motor_board` is
 `feedback_status()`: `fresh`, `age_s`, `stale_after_s`, `frames`,
-`board_reboots`, `stale_zeroed`, `fork_firmware`, `link_error`. It is
+`board_reboots`, `stale_zeroed`, `frames_dropped` and `last_drop` (lines that were not a usable frame -- not JSON, not an object, a missing or non-finite speed -- and why the last was not; 3.76 B2), `fork_firmware`, `link_error`. It is
 description, not part of `control/health.py`'s verdict.
 
 The rule lives in the body rather than in the safety layer because the

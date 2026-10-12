@@ -197,6 +197,13 @@ class Parser:
 Point = Tuple[float, int, float]     # (lidar angle deg, distance mm, time s)
 
 
+TIMESTAMP_WRAP_MS = 30000   # a packet's `timestamp_ms` wraps here
+
+# A revolution is ~450 points at 10 Hz; four times that never wrapped is a
+# stuck angle, not a slow lidar (3.76 B5).
+MAX_REVOLUTION_POINTS = 4 * 450
+
+
 class Assembler:
     """Points in, whole revolutions out: a revolution ends where the angle
     wraps past 360 (LDROBOT's `AssemblePacket` looks for < 20 after > 340;
@@ -207,6 +214,7 @@ class Assembler:
         self._points: List[Point] = []
         self._last_angle: Optional[float] = None
         self._first = True
+        self.dropped = 0            # revolutions dropped at the cap (3.76 B5)
 
     def add(self, points: Sequence[Point]) -> List[List[Point]]:
         done = []
@@ -218,6 +226,11 @@ class Assembler:
                 self._points = []
             self._points.append(p)
             self._last_angle = p[0]
+            if len(self._points) > MAX_REVOLUTION_POINTS:
+                # 3.76 B5: an angle that stopped advancing never wraps;
+                # without a cap one list grows until memory runs out.
+                self._points, self._first = [], True
+                self.dropped += 1
         return done
 
 
@@ -328,9 +341,20 @@ class Ld19Scanner:
         completed by them."""
         t = self.clock() if t is None else t
         done = 0
-        for pkt in self.parser.feed(data):
-            pts = packet_points(pkt, self._t_prev, t)
-            self._t_prev = t
+        pkts = self.parser.feed(data)
+        # 3.76 B4: packets read together were not measured together. Each is
+        # placed by the lidar's own clock (`timestamp_ms`, wrapping at 30 s)
+        # behind the read's last packet, within the time since the previous
+        # read; stamped all at `t`, a revolution read late in one chunk read
+        # as just taken.
+        t0 = self._t_prev
+        for pkt in pkts:
+            behind = ((pkts[-1].timestamp_ms - pkt.timestamp_ms) % TIMESTAMP_WRAP_MS) / 1000.0
+            t_k = t - behind
+            if t0 is not None:
+                t_k = min(t, max(t0, t_k))
+            pts = packet_points(pkt, self._t_prev, t_k)
+            self._t_prev = t_k
             with self._lock:
                 self._last_packet_at = t
                 self.speed_dps = pkt.speed_dps
@@ -393,6 +417,7 @@ class Ld19Scanner:
         with self._lock:
             return {"usable": self._fresh(now), "revolutions": self.revolutions,
                     "revolutions_unusable": self.revolutions_unusable,
+                    "revolutions_dropped": self._assembler.dropped,
                     "packets": self.parser.packets, "crc_failed": self.parser.crc_failed,
                     "speed_dps": self.speed_dps,
                     "last_packet_age_s": (None if self._last_packet_at is None
@@ -432,7 +457,10 @@ class Ld19Lidar(Ld19Scanner):
                 self.link_error = str(e)
                 return
             if not chunk:
-                continue
+                # 3.76 B3: readable yet empty is a hung-up line (a USB
+                # unplug); looping on it spins a core beside the wheel loop.
+                self.link_error = "the serial line hung up (end of file)"
+                return
             self.feed(chunk)
 
     def status(self) -> dict:

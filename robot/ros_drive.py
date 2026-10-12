@@ -146,6 +146,9 @@ class RosDriveRobot(RobotInterface):
         # may drive, and the old stream must not resume when it finishes.
         self._generation = 0
         self._gen_lock = threading.Lock()
+        # 3.76 B8: held across each verb twist and each of the stop's zeros,
+        # so the zeros always land after a twist already on its way.
+        self._send_lock = threading.Lock()
         self.verbs_through_ros = 0
         # The stop hold: in force while the generation is still the stop's
         # own and the clock is before _hold_until.
@@ -285,7 +288,12 @@ class RosDriveRobot(RobotInterface):
                     deadline = 0.0          # a wall is not something to retry into
                     break
                 rate = math.copysign(min(max_rate, max(min_rate, gain * abs(err))), err)
-                self._send(rate, 0.0) if linear else self._send(0.0, rate)
+                with self._send_lock:
+                    # 3.76 B8: checked under the lock the stop's zeros take, so
+                    # a twist is either on its way before them or not sent.
+                    if self._superseded(gen):
+                        break
+                    self._send(rate, 0.0) if linear else self._send(0.0, rate)
                 time.sleep(1.0 / CONTROL_HZ)
             if self._superseded(gen):
                 break
@@ -370,7 +378,8 @@ class RosDriveRobot(RobotInterface):
         try:
             for driver in ("twin-dpad", "brain", "ros"):
                 try:
-                    self._send(0.0, 0.0, driver=driver, timeout=STOP_ZERO_TIMEOUT_S)
+                    with self._send_lock:   # after any twist already on its way (3.76 B8)
+                        self._send(0.0, 0.0, driver=driver, timeout=STOP_ZERO_TIMEOUT_S)
                 except Exception:  # noqa: BLE001 -- the robot is already stopped
                     pass
         finally:

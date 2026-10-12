@@ -85,6 +85,9 @@ REBOOT_JUMP_M = 0.03
 # Two feedback intervals: a frame later than this is lost, not late, and the
 # last speed is no longer a fair guess.
 EXTRAPOLATE_MAX_S = 0.10
+# The fastest a board crystal is taken to drift against the host (3.76 B7):
+# ESP32 crystals are specified at tens of ppm; 200 ppm leaves room.
+CLOCK_DRIFT_MAX = 200e-6
 # The board stops its own motors after this much silence. Longer than the
 # robot server's 1 s watchdog on purpose: the server should always act
 # first, and this is what acts if the server itself dies.
@@ -167,6 +170,9 @@ class HardwareRobot(RobotInterface):
         attrs[4] = attrs[5] = speed
         termios.tcsetattr(self._fd, termios.TCSANOW, attrs)
         self._lock = threading.Lock()
+        # 3.76 B1: deciding a wheel command and writing it are one step, so
+        # the board's last command is always `_cmd`. Taken before `_lock`.
+        self._write_lock = threading.RLock()
         self._cmd = (0.0, 0.0)          # rad/s, as last commanded
         # Each wheel's travel on the BOARD's odometer, m since it booted,
         # as estimated here; and what to add to make it travel since THIS
@@ -184,6 +190,8 @@ class HardwareRobot(RobotInterface):
         self._clock_offset: Optional[float] = None
         self.fork_frames = 0
         self.frames = 0
+        self.frames_dropped = 0         # lines that were not a usable frame (3.76 B2)
+        self.last_drop = None           # ...and why the last one was not
         self.board_reboots = 0          # odometer jumps taken as a reboot
         self.stale_zeroed = 0           # standing commands zeroed on stale feedback
         self.link_error: Optional[str] = None   # the serial line's last OSError
@@ -224,12 +232,13 @@ class HardwareRobot(RobotInterface):
         """3.34: the body stops its own wheels when it stops hearing them.
         Run by the reader thread on every pass (at most 0.1 s apart), so a
         standing command outlives its feedback by at most that."""
-        with self._lock:
-            if self._cmd == (0.0, 0.0) or self._fresh():
-                return
-            self._cmd = (0.0, 0.0)
-            self.stale_zeroed += 1
-        self._send({"T": 1, "L": 0.0, "R": 0.0})
+        with self._write_lock:
+            with self._lock:
+                if self._cmd == (0.0, 0.0) or self._fresh():
+                    return
+                self._cmd = (0.0, 0.0)
+                self.stale_zeroed += 1
+            self._send({"T": 1, "L": 0.0, "R": 0.0})
 
     def feedback_status(self) -> dict:
         """The board link, for `/health` -- description, never a verdict
@@ -241,6 +250,8 @@ class HardwareRobot(RobotInterface):
                     "stale_after_s": FEEDBACK_STALE_S, "frames": self.frames,
                     "board_reboots": self.board_reboots,
                     "stale_zeroed": self.stale_zeroed,
+                    "frames_dropped": self.frames_dropped,
+                    "last_drop": self.last_drop,
                     "fork_firmware": self._last_ms is not None,
                     "track_scrub": self.track_scrub,
                     "link_error": self.link_error}
@@ -259,21 +270,44 @@ class HardwareRobot(RobotInterface):
             except (OSError, ValueError) as e:
                 # The line is gone. No more frames, so the readings go stale
                 # by themselves; what is left is to say why.
-                self.link_error = str(e)
+                self._link_lost(str(e))
+                return
+            if not chunk:
+                # 3.76 B3: readable yet empty is a hung-up line (a USB unplug);
+                # looping on it spins a core beside the wheel loop.
+                self._link_lost("the serial line hung up (end of file)")
                 return
             self._buf += chunk
             while b"\n" in self._buf:
                 line, self._buf = self._buf.split(b"\n", 1)
                 try:
                     frame = json.loads(line)
-                except ValueError:
-                    continue            # a partial line at start-up, or noise
-                if frame.get("T") == 1001:
-                    self._on_base_feedback(frame)
+                    if isinstance(frame, dict) and frame.get("T") == 1001:
+                        self._on_base_feedback(frame)
+                except (ValueError, KeyError, TypeError) as e:
+                    # A partial line at start-up, noise, or a frame missing a
+                    # field: dropped, and the last reason kept for /health.
+                    # 3.76 B2: never the end of the reader.
+                    self.frames_dropped += 1
+                    self.last_drop = f"{type(e).__name__}: {e}"[:200]
+
+    def _link_lost(self, why: str) -> None:
+        """The reader is ending: say why, and zero a standing command now --
+        `_zero_if_stale()` runs only on this thread, so after it nothing else
+        would until the watchdog or the board's heartbeat (3.34, 3.76)."""
+        self.link_error = why
+        with self._write_lock:
+            with self._lock:
+                self._cmd = (0.0, 0.0)
+            self._send({"T": 1, "L": 0.0, "R": 0.0})
 
     def _on_base_feedback(self, frame: dict):
         now = time.monotonic()
         speed = [float(frame["L"]), float(frame["R"])]
+        if not all(math.isfinite(v) for v in speed):
+            # 3.76 B2: json.loads takes NaN and Infinity; one would poison
+            # the integrated travel for good.
+            raise ValueError(f"a non-finite wheel speed: {speed}")
         fork = _fork_keys(frame)
         if fork is not None:
             odo, unit = fork[0], TENTH_MM
@@ -352,6 +386,13 @@ class HardwareRobot(RobotInterface):
         offset = now - self._board_s
         if self._clock_offset is None or offset < self._clock_offset:
             self._clock_offset = offset
+        else:
+            # 3.76 B7: a board crystal running slow makes the offset grow;
+            # a minimum held for good then ages every frame by the drift
+            # (0.1 s after ~35 min at 50 ppm). Let it rise as fast as a
+            # crystal can drift, and no faster, so it still keeps the least
+            # delayed frame's latency.
+            self._clock_offset = min(offset, self._clock_offset + CLOCK_DRIFT_MAX * dt)
         return dt, reset
 
     def _frame_age_s(self) -> float:
@@ -422,20 +463,21 @@ class HardwareRobot(RobotInterface):
         if fastest > BOARD_MAX_WHEEL_M_S:
             k = BOARD_MAX_WHEEL_M_S / fastest
             left_rad_s, right_rad_s = left_rad_s * k, right_rad_s * k
-        moving = bool(left_rad_s or right_rad_s)
-        with self._lock:
-            fresh = self._fresh()
-            self._cmd = (left_rad_s, right_rad_s) if fresh or not moving else (0.0, 0.0)
-        if moving and not fresh:
-            self._send({"T": 1, "L": 0.0, "R": 0.0})
-            raise WheelFeedbackLost(self._no_feedback())
-        # T=1 in closed-loop mode: wheel surface speeds, m/s.
-        sent = self._send({"T": 1, "L": round(left_rad_s * WHEEL_RADIUS_M, 5),
-                           "R": round(right_rad_s * WHEEL_RADIUS_M, 5)})
-        if moving and not sent:
+        with self._write_lock:
+            moving = bool(left_rad_s or right_rad_s)
             with self._lock:
-                self._cmd = (0.0, 0.0)
-            raise WheelFeedbackLost(f"the serial line to the motor board failed: {self.link_error}")
+                fresh = self._fresh()
+                self._cmd = (left_rad_s, right_rad_s) if fresh or not moving else (0.0, 0.0)
+            if moving and not fresh:
+                self._send({"T": 1, "L": 0.0, "R": 0.0})
+                raise WheelFeedbackLost(self._no_feedback())
+            # T=1 in closed-loop mode: wheel surface speeds, m/s.
+            sent = self._send({"T": 1, "L": round(left_rad_s * WHEEL_RADIUS_M, 5),
+                               "R": round(right_rad_s * WHEEL_RADIUS_M, 5)})
+            if moving and not sent:
+                with self._lock:
+                    self._cmd = (0.0, 0.0)
+                raise WheelFeedbackLost(f"the serial line to the motor board failed: {self.link_error}")
         return {"left_rad_s": left_rad_s, "right_rad_s": right_rad_s}
 
     def _no_feedback(self) -> str:
@@ -450,9 +492,10 @@ class HardwareRobot(RobotInterface):
         # The board integrates its own motors; the robot server's wheel loop
         # re-sends the standing command instead, which also feeds the
         # board's heartbeat.
-        left, right = self._cmd
-        if left or right:
-            self.set_wheel_velocity(left, right)
+        with self._write_lock:      # 3.76 B1: a stop cannot land between
+            left, right = self._cmd
+            if left or right:
+                self.set_wheel_velocity(left, right)
 
     def get_wheel_state(self) -> dict:
         per_rad = COUNTS_PER_REV / (2 * math.pi)
@@ -498,9 +541,10 @@ class HardwareRobot(RobotInterface):
         end = time.monotonic() + seconds
         while time.monotonic() < end:
             time.sleep(min(0.05, max(0.0, end - time.monotonic())))
-            if self.stop_count != stops:
-                return
-            self.set_wheel_velocity(left, right)     # feeds the heartbeat
+            with self._write_lock:  # 3.76: no stop between the check and the write
+                if self.stop_count != stops:
+                    return
+                self.set_wheel_velocity(left, right)     # feeds the heartbeat
         self.set_wheel_velocity(0.0, 0.0)
 
     def verb_plan(self, action: str, speed: int = 50, duration: float = 0.5,
@@ -565,7 +609,8 @@ class HardwareRobot(RobotInterface):
         w = 1.2 * self._track_m / 2 / WHEEL_RADIUS_M          # 1.2 rad/s body
         seconds = math.radians(abs(degrees_right)) / 1.2
         s = 1.0 if degrees_right > 0 else -1.0
-        self._run(s * w, -s * w, seconds)
+        if seconds:                 # 3.76 B6: a zero turn sends no pulse
+            self._run(s * w, -s * w, seconds)
         return {"turned_deg": degrees_right}
 
     def drive_forward(self, speed: int = 50, duration: float = 0.5) -> dict:
@@ -585,8 +630,9 @@ class HardwareRobot(RobotInterface):
     stop_count = 0
 
     def stop(self) -> dict:
-        self.stop_count += 1
-        self.set_wheel_velocity(0.0, 0.0)          # never raises: see _send()
+        with self._write_lock:
+            self.stop_count += 1
+            self.set_wheel_velocity(0.0, 0.0)      # never raises: see _send()
         return {"action": "stop"}
 
     # ---------- everything the board is not ----------
