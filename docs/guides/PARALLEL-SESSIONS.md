@@ -134,7 +134,11 @@ Continuing an existing section: work in its worktree
      and only such a branch, `claim --accept-overlap` takes the step after
      you have checked the shared file by hand. The claim records it.
    * Guards: before editing a path inside another session's claim, Claude
-     Code asks the user (a `PreToolUse` hook on Edit/Write). A commit
+     Code asks the user (a `PreToolUse` hook on Edit/Write). In auto or
+     bypass mode no one would see that question, so the edit is denied with
+     the reason. Only if the user agrees, `python3 tools/plan_claims.py
+     allow <step>` lets this session edit inside that claim; the claim
+     records it. A commit
      touching one prints a warning from `tools/hooks/pre-commit`, which
      catches edits made through Bash; it never blocks. Every local session
      starts with the board in its context (`.claude/hooks/plan-board.sh`).

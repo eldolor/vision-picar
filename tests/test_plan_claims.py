@@ -252,10 +252,10 @@ def test_next_names_a_free_step_and_release_frees_it(repo, owners):
 
 # ---------- criterion 4: the edit guard ----------
 
-def _hook(repo, path, owner_pid):
+def _hook(repo, path, owner_pid, mode="default"):
     env = {**os.environ, "PICAR_CLAIM_PID": str(owner_pid)}
     r = subprocess.run([sys.executable, os.path.join(TOOLS, "plan_claims.py"), "hook-edit"],
-                       input=json.dumps({"tool_name": "Edit", "cwd": repo,
+                       input=json.dumps({"tool_name": "Edit", "cwd": repo, "permission_mode": mode,
                                          "tool_input": {"file_path": path}}),
                        capture_output=True, text=True, env=env)
     assert r.returncode == 0
@@ -272,6 +272,14 @@ def test_criterion_4_the_edit_guard(repo, owners):
     assert _hook(repo, os.path.join(repo, "sim", "new.py"), a["pid"]) == ""     # its own claim
     assert _hook(repo, os.path.join(repo, "control", "x.py"), b["pid"]) == ""   # unclaimed
     assert _hook("/", "/etc/hosts", b["pid"]) == ""                            # not a repo
+    for mode in ("auto", "bypassPermissions", ""):     # no one would see an "ask"
+        d = json.loads(_hook(repo, os.path.join(repo, "sim", "new.py"), b["pid"], mode))
+        assert d["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert "allow 3.90.A" in d["hookSpecificOutput"]["permissionDecisionReason"]
+    pc.allow("3.90.A", cwd=repo, me=b)                 # the user agreed
+    assert _hook(repo, os.path.join(repo, "sim", "new.py"), b["pid"], "auto") == ""
+    _, c3 = owners()
+    assert _hook(repo, os.path.join(repo, "sim", "new.py"), c3["pid"], "auto")  # only for b
 
 
 @pytest.mark.parametrize("stdin", ["", "not json", "[]", '{"tool_input": null}', '{"tool_input": {}}'])

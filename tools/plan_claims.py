@@ -11,7 +11,9 @@ docs/guides/PARALLEL-SESSIONS.md rule 8).
                                                    branch holding no claim was checked by hand
     python tools/plan_section.py release [<step>]  give back this session's claims (or one)
 
-    python tools/plan_claims.py hook-edit          PreToolUse hook: ask before editing another session's claim
+    python tools/plan_claims.py allow <step>       the USER agreed this session may edit inside that claim
+    python tools/plan_claims.py hook-edit          PreToolUse hook: ask (or deny, in auto mode) before
+                                                   editing another session's claim
     python tools/plan_claims.py hook-commit        pre-commit hook: warn (never block) on the same
     python tools/plan_claims.py hook-start         SessionStart hook: the board's short form
 
@@ -497,14 +499,49 @@ def release(sid=None, cwd=None, me=None) -> list:
 # ---------- hooks (never fail the tool they guard) ----------
 
 def foreign_claims_on(rel: str, common: str, procs: dict, me) -> list:
+    """Live claims of other sessions covering rel, minus those whose owner the
+    user let this session edit (`allow`)."""
     return [c for c in read_claims(common)
             if alive(c, procs) and not same_owner(c, me)
+            and not any(same_owner(a, me) for a in c.get("allowed", []))
             and any(matches(rel, t) for t in c.get("touches", []))]
 
 
+def allow(sid: str, cwd=None, me=None) -> dict:
+    """The user agreed this session may edit inside another session's claim:
+    recorded in that claim, for as long as it lives."""
+    rp = repo(cwd)
+    if not rp:
+        raise SystemExit("not in a git repository")
+    procs = processes()
+    me = me or owner(procs)
+    if not me:
+        raise SystemExit("allow: no Claude Code process above this one")
+    path = os.path.join(claims_dir(rp[1]), f"{sid}.json")
+    with _Lock(rp[1]):
+        try:
+            c = json.load(open(path))
+        except (OSError, ValueError):
+            raise SystemExit(f"allow: no claim on {sid}")
+        if not alive(c, procs):
+            raise SystemExit(f"allow: {sid}'s owner has exited; the claim is free")
+        if not any(same_owner(a, me) for a in c.get("allowed", [])):
+            c.setdefault("allowed", []).append({**me, "at": time.strftime("%Y-%m-%dT%H:%M:%S")})
+        tmp = f"{path}.{os.getpid()}.tmp"
+        json.dump(c, open(tmp, "w"), indent=1)
+        os.replace(tmp, path)
+    return c
+
+
+# Modes in which Claude Code shows the user an "ask"; in the others (auto,
+# bypassPermissions, ...) an "ask" never reaches a person, so the guard denies.
+ASK_MODES = ("default", "plan", "acceptEdits")
+
+
 def hook_edit(stdin_text: str) -> str:
-    """PreToolUse on Edit/Write/NotebookEdit: ask the user before this session
-    edits a file inside another live session's claim. '' means no opinion."""
+    """PreToolUse on Edit/Write/NotebookEdit: before this session edits a file
+    inside another live session's claim, ask the user -- or, in a mode where
+    no one would see the question, deny with the reason. '' means no opinion."""
     try:
         data = json.loads(stdin_text)
         ti = data.get("tool_input") or {}
@@ -529,8 +566,15 @@ def hook_edit(stdin_text: str) -> str:
         reason = (f"{rel} is inside step {c['step']} ({c.get('title', '')[:60]}), claimed by "
                   f"another live Claude Code session (pid {c['pid']}, {c.get('worktree', '?')}). "
                   "Editing it here may collide with that session (PARALLEL-SESSIONS.md rule 8).")
+        mode = data.get("permission_mode", "")
+        if mode in ASK_MODES:
+            decision = "ask"
+        else:
+            decision = "deny"
+            reason += (" Ask the user before going on; only if they agree, run "
+                       f"`python3 tools/plan_claims.py allow {c['step']}` and retry.")
         return json.dumps({"hookSpecificOutput": {
-            "hookEventName": "PreToolUse", "permissionDecision": "ask",
+            "hookEventName": "PreToolUse", "permissionDecision": decision,
             "permissionDecisionReason": reason}})
     except Exception:                                  # a guard must never break editing
         return ""
@@ -581,6 +625,9 @@ def main(argv):
     elif cmd == "release":
         gone = release(args[0] if args else None)
         print("released " + (", ".join(gone) if gone else "nothing"))
+    elif cmd == "allow" and len(args) == 1:
+        allow(args[0])
+        print(f"this session may now edit inside {args[0]} (recorded in its claim)")
     elif cmd == "hook-edit":
         out = hook_edit(sys.stdin.read())
         if out:
