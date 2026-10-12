@@ -386,13 +386,12 @@ class ExploreAgent(MissionAgent):
 
         leave = leave_clearance_m(self.safety.min_distance_cm)
         frontiers = find_frontiers(m, pose["x_m"], pose["y_m"], clearance_m=leave)
+        skipped = {"reached twice": 0, "set aside": 0}
         if self.goal_policy is not None:
-            out = self._learned_goal(m, pose, frontiers, leave, known, now)
+            out = self._learned_goal(m, pose, frontiers, leave, known, now, skipped)
             if out is not None:
                 return out
-            frontiers = []   # none the rules allow; fall through to boxed/searched
-        skipped = {"reached twice": 0, "set aside": 0}
-        for rank, f in enumerate(frontiers):
+        for rank, f in enumerate(frontiers if self.goal_policy is None else ()):
             if sum(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < self.retry.radius_m
                    for rx, ry in self._reached) >= 2:
                 skipped["reached twice"] += 1
@@ -448,7 +447,7 @@ class ExploreAgent(MissionAgent):
                     or any(math.hypot(g.goal[0] - vx, g.goal[1] - vy) < self.retry.radius_m
                            for vx, vy in self._view_goals))
 
-    def _learned_goal(self, m, pose, frontiers, leave, known, now):
+    def _learned_goal(self, m, pose, frontiers, leave, known, now, skipped):
         """3.65 phase 2: pool every frontier and view gap the rule would
         send, and send the one the policy scores highest. None when the rules
         allow none -- the caller then decides boxed, cooling or searched,
@@ -459,7 +458,11 @@ class ExploreAgent(MissionAgent):
         for rank, f in enumerate(frontiers):
             reached = sum(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < r
                           for rx, ry in self._reached)
-            if reached >= 2 or not self.retry.available(f.goal[0], f.goal[1], now, known):
+            if reached >= 2:
+                skipped["reached twice"] += 1
+                continue
+            if not self.retry.available(f.goal[0], f.goal[1], now, known):
+                skipped["set aside"] += 1
                 continue
             pool.append(("frontier", f, rank))
             feats.append(goal_features(m, pose, f.goal, kind="frontier", path_m=f.distance_m,

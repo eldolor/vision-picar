@@ -46,8 +46,9 @@ def features(m: dict, pose: dict, goal: tuple, *, kind: str, path_m: float,
              size_m: float = 0.0, area_m2: float = 0.0, seen_cells: set = frozenset(),
              failures: int = 0, reached: int = 0, goals_sent: int = 0) -> list:
     """One candidate's feature vector, in `FEATURES` order."""
-    # Compass bearing, as `get_pose()` reports heading: 0 = +y_m, 90 = +x_m.
-    bearing = math.degrees(math.atan2(goal[0] - pose["x_m"], goal[1] - pose["y_m"]))
+    # The bearing as explore's FACE turn computes it (`brain/explore.py`):
+    # the simulator's heading 0 points to -y_m, 90 to +x_m.
+    bearing = math.degrees(math.atan2(goal[0] - pose["x_m"], -(goal[1] - pose["y_m"])))
     heading = pose.get("heading_deg")
     turn = 0.0 if heading is None else abs((bearing - heading + 180.0) % 360.0 - 180.0)
     res, w, h = m["resolution_m"], m["width"], m["height"]

@@ -21,6 +21,9 @@ from sim.grid_world import CELL_WALL                       # noqa: E402
 from tests.test_explore import CELL, FakeNav              # noqa: E402
 
 GOAL_COST, METRE_COST = 0.02, 0.01   # 3.65 phase 2's reward, fixed before training
+# A mission that raises scores far below any miss (200 goals and 2 km driven
+# is -25), so the trainer can never learn to crash.
+CRASH_COST = 100.0
 
 
 class MeteredNav(FakeNav):
@@ -75,6 +78,10 @@ def run_house(index: int, weights=None) -> dict:
                    metres=round(nav.metres + robot._path_m, 2))
     except Exception as e:  # noqa: BLE001 -- counted, never hidden
         row.update(outcome="exception", error=f"{type(e).__name__}: {e}", goals=0, metres=0.0)
-    row["reward"] = round((row["outcome"] == "found") - GOAL_COST * row["goals"]
-                          - METRE_COST * row["metres"], 4)
+    if row["outcome"] == "exception":
+        # Never better than a real miss, or the trainer would learn to crash.
+        row["reward"] = -CRASH_COST
+    else:
+        row["reward"] = round((row["outcome"] == "found") - GOAL_COST * row["goals"]
+                              - METRE_COST * row["metres"], 4)
     return row

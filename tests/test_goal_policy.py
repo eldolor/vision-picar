@@ -89,3 +89,25 @@ def test_a_policy_never_sends_a_goal_the_rules_would_not():
     assert runner.status()["outcome"] in ("found", "searched", "max_steps")
     assert offered, "the learned path never ran"
     assert all(reached < 2 and ok for reached, ok in offered), offered
+
+
+def test_turn_is_measured_as_explores_face_turn_measures_it():
+    """Heading 0 points to -y_m in the simulator (explore's FACE turn uses
+    atan2(dx, -dy)): a goal straight ahead needs no turn, one behind 180."""
+    from brain.goal_policy import features
+    m = {"resolution_m": 0.3, "width": 4, "height": 4, "origin_x_m": 0.0,
+         "origin_y_m": 0.0, "cells": [0] * 16}
+    pose = {"x_m": 0.5, "y_m": 0.8, "heading_deg": 0.0}
+    turn = FEATURES.index("turn")
+    assert features(m, pose, (0.5, 0.2), kind="frontier", path_m=0.6)[turn] == 0.0
+    assert features(m, pose, (0.5, 1.1), kind="frontier", path_m=0.3)[turn] == 1.0
+    assert features(m, {**pose, "heading_deg": 90.0}, (1.1, 0.8), kind="frontier",
+                    path_m=0.6)[turn] == 0.0
+
+
+def test_a_crashed_mission_never_scores_above_a_miss():
+    import sys
+    sys.path.insert(0, "evaluations/explore-365")
+    import harness
+    worst_miss = -1 - harness.GOAL_COST * 200 - harness.METRE_COST * 2000
+    assert -harness.CRASH_COST < worst_miss
