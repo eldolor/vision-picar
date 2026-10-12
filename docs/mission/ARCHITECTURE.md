@@ -173,7 +173,7 @@ them. The first outcome wins and later stops cannot rewrite it.
 |---|---|---|---|
 | **found** | end state | the target seen, at the arrival rule's range, and the cloud said yes; the robot parked beside it | ok |
 | **exhausted** | end state | nowhere reachable left to look: no frontier, no unseen floor, no labelled room left to enter | warn |
-| **out_of_budget** | end state | the mission's time limit or the battery floor was reached (or the step backstop derived from the time limit); the robot stops and reports where it looked | warn |
+| **out_of_budget** | end state | the mission's time limit or the battery floor was reached (or the step backstop derived from the time limit, or a `vision` mission's cap on paid calls); the robot stops and reports where it looked | warn |
 | **cancelled** | end state | a person ended it from the phone: Stop (`cancelled_by: stop`) or a D-pad or tap-to-goal takeover (`cancelled_by: dpad`); it reports where it looked. A refusal naming another AUTONOMOUS driver is no person's doing and ends `failed` | neutral |
 | room_reached | goal | a room-only mission reached its room | ok |
 | blocked | fault | the safety layer kept refusing forward | warn |

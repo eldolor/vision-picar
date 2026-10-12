@@ -119,7 +119,11 @@ consecutive reads, `BATTERY_CHECK_S` (0.5 s) apart on that clock.
 `robot.get_battery()` with `usable: false`, or a read that raises, never
 ends a mission (logged once). `max_steps` defaults to
 `derived_max_steps(mission_time_limit_s)` = limit / 0.5 s x 2 (120 with no
-limit); an explicit `max_steps` overrides it.
+limit); an explicit `max_steps` overrides it. Under `policy: "vision"` only,
+the check also ends it when `_cloud_calls` reaches `vision_max_calls`: one
+paid `/navigate` call per step, counted in `_guarded_vision` per call sent,
+failed ones included (a time limit is not a call limit; `tiered` has
+`tier_max_calls`).
 
 **The report (3.70 E3-E5).** For `exhausted`, `out_of_budget` and
 `cancelled`, `_finish()` starts a daemon thread after `_safe_stop()` that
@@ -310,7 +314,9 @@ otherwise). CORS allows any origin.
 `running`, `outcome`, `end_state` (3.70: one of the four end states, or
 null), `end_reason`, `cancelled_by` (`stop`, `dpad` or null), `report`
 (above; null until built, and for other outcomes), `budget`
-(`time_limit_s`, `elapsed_s`, `battery_floor_v`, `battery_v`), `error`,
+(`time_limit_s`, `elapsed_s`, `battery_floor_v`, `battery_v`,
+`cloud_calls`, `cloud_call_limit`; both null except under `vision`, and
+the limit null with the cap off), `error`,
 `policy`, `mission`, `target_object`,
 `target_room`, `step`, `max_steps`, `found`, `room_reached`, `complete`,
 `last_action`, `turns` (`count`, `reversals`, `last_turn_deg`, `share`,
@@ -360,6 +366,7 @@ The `brain:` block of `config/robot.yaml`, read by
 | `navigate_model_id`, `navigate_prompt_variant` | (unset) | `""` | -- | start | headless default; never guessed |
 | `mission_time_limit_s` | 1200 | 1200.0 | s | runner | 3.70 E4: set by the user 2026-10-12 (900 s of explore never finished `home_first_floor`); re-measured on the Rover. Ends `out_of_budget`; the step backstop is derived from it. 0 = no limit. A start request may override it |
 | `battery_floor_v` | 10.5 | 10.5 | V | runner | 3.70 E4: set by the user 2026-10-12 (3.5 V a cell, 3S) until a discharge curve is measured on the Rover. Under the fake board's 12.00 V. 0 = off |
+| `vision_max_calls` | 120 | 120 | paid calls | runner | 3.70: the user's call 2026-10-12, what the 120-step cap allowed before 3.70; `vision` only. Ends `out_of_budget`. 0 = no cap; a negative or fractional value is refused at load |
 | `stuck_after` | (unset) | 5 | refused FORWARDs | runner | an unlucky policy gets 1-2 refusals then turns; the first watched R1 run spent 19 on one jamb |
 | `min_distance_cm` | 20.0 | **30.0** | cm | agent's brain-side pre-check | 20 matches `safety.min_distance_cm`; 30 is one sim cell and vetoed ~half of legal moves with sensor noise on. See Known gaps |
 | `request_timeout_s` | 10.0 | 10.0 | s | robot and world clients, allow-list check | |

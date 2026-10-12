@@ -510,6 +510,7 @@ def create_app(
             mission_time_limit_s=(req.mission_time_limit_s
                                   or config["mission_time_limit_s"] or None),
             battery_floor_v=config["battery_floor_v"] or None,
+            vision_max_calls=config["vision_max_calls"] or None,
             stuck_after=config["stuck_after"],
             min_distance_cm=config["min_distance_cm"],
             policy=req.policy,

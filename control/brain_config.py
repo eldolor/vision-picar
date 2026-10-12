@@ -156,6 +156,11 @@ DEFAULTS = {
     # Both are re-measured on the Rover. 0 switches either off.
     "mission_time_limit_s": 1200.0,
     "battery_floor_v": 10.5,
+    # A `vision` mission's paid /navigate calls (one per step), counted per
+    # call sent; reaching it ends `out_of_budget`. The user's call 2026-10-12:
+    # 120, what the 120-step cap allowed before 3.70. `tiered` has its own
+    # (tier_max_calls). 0 = no cap.
+    "vision_max_calls": 120,
     # End a mission `blocked` after this many FORWARDs in a row refused by
     # the safety layer (control/mission_runner.py's BLOCKED). 0 disables.
     # Five because a policy that is merely unlucky gets one or two refusals
@@ -314,6 +319,10 @@ def load_brain_config(config_path=None) -> dict:
     confirm_s = float(merged["arrival_confirm_timeout_s"])
     if confirm_s <= 0:
         raise ValueError(f"brain.arrival_confirm_timeout_s must be > 0; got {confirm_s}")
+    calls = merged["vision_max_calls"]
+    if isinstance(calls, bool) or not isinstance(calls, int) or calls < 0:
+        raise ValueError(f"brain.vision_max_calls must be a whole number >= 0 "
+                         f"(0 = no cap); got {calls!r}")
     if float(merged["cloud_probe_s"]) < 0:
         raise ValueError(f"brain.cloud_probe_s must be >= 0 (0 = off); "
                          f"got {merged['cloud_probe_s']}")

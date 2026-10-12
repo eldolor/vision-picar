@@ -437,6 +437,7 @@ class MissionRunner:
         detections_fn: Optional[Callable[[dict], Optional[list]]] = None,
         mission_time_limit_s: Optional[float] = None,
         battery_floor_v: Optional[float] = None,
+        vision_max_calls: Optional[int] = None,
     ):
         if policy not in POLICIES:
             raise ValueError(f"Unknown policy: {policy!r}. Known: {', '.join(POLICIES)}")
@@ -518,6 +519,14 @@ class MissionRunner:
                                      else None)
         self.battery_floor_v = battery_floor_v if battery_floor_v else None
         self.max_steps = max_steps or derived_max_steps(self.mission_time_limit_s)
+        # Under `vision` every step is a paid /navigate call, and a time
+        # limit is not a call limit: before 3.70 the 120-step cap bounded
+        # both. Counted per call SENT (a failed one may still be billed).
+        # `tiered` rations its own calls (`tier_max_calls`); no other policy
+        # makes a paid call per step.
+        self.vision_max_calls = (vision_max_calls
+                                 if policy == "vision" and vision_max_calls else None)
+        self._cloud_calls = 0
         self._started_clock: Optional[float] = None
         self._ended_clock: Optional[float] = None    # elapsed stops at the end
         self._battery_checked_at: Optional[float] = None
@@ -642,6 +651,8 @@ class MissionRunner:
                 limits.insert(0, f"time limit {self.mission_time_limit_s:g} s")
             if self.battery_floor_v:
                 limits.append(f"battery floor {self.battery_floor_v:g} V")
+            if self.vision_max_calls:
+                limits.append(f"cloud call cap {self.vision_max_calls}")
             self._log_line(f"mission started: {self.memory.mission} ({', '.join(limits)})")
 
     def tick(self) -> bool:
@@ -854,6 +865,10 @@ class MissionRunner:
             self._finish(OUT_OF_BUDGET, f"time limit of {self.mission_time_limit_s:g} s "
                          f"reached ({elapsed:.1f} s)")
             return True
+        if self.vision_max_calls and self._cloud_calls >= self.vision_max_calls:
+            self._finish(OUT_OF_BUDGET, f"cloud call cap of {self.vision_max_calls} "
+                         f"reached ({self._cloud_calls} calls)")
+            return True
         if self.battery_floor_v and self._battery_spent():
             self._finish(OUT_OF_BUDGET, f"battery at {self._battery_v:.2f} V, under the "
                          f"{self.battery_floor_v:g} V floor "
@@ -956,6 +971,8 @@ class MissionRunner:
                     "elapsed_s": (round(elapsed, 1) if elapsed is not None else None),
                     "battery_floor_v": self.battery_floor_v,
                     "battery_v": self._battery_v,
+                    "cloud_calls": self._cloud_calls if self.policy == "vision" else None,
+                    "cloud_call_limit": self.vision_max_calls,
                 },
                 "error": self._error,
                 "policy": self.policy,
@@ -1078,6 +1095,9 @@ class MissionRunner:
             frame = {**frame, "odometry": self.robot.get_odometry()}
         except Exception as e:  # noqa: BLE001
             logger.debug("odometry unavailable this frame: %s", e)
+        if self.policy == "vision":
+            with self._lock:
+                self._cloud_calls += 1
         try:
             return call_with_timeout(self.vision_fn, frame, timeout_s=self.vision_timeout_s)
         except TimeoutError as e:

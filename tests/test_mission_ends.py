@@ -671,3 +671,78 @@ def test_a_room_goal_aims_inside_the_room_not_at_its_doorway():
     n = max(1, _math.ceil(ROOM_INSET_M / m["resolution_m"]))
     assert all(labels["cells"][(j + dj) * w + i + di] == k
                for di in range(-n, n + 1) for dj in range(-n, n + 1))
+
+
+# ---------- E4: a `vision` mission's cloud calls are capped ----------
+# Raised by /code-review on the 1200 s limit (2026-10-12): under `vision`
+# every step is a paid /navigate call, and a time limit is not a call limit.
+# Before 3.70 the 120-step cap bounded both; the user chose a 120-call cap.
+
+def _counting_scene():
+    calls = []
+
+    def scene(frame):
+        calls.append(frame)
+        return {"obstacles_ahead": [], "free_space": "clear", "doorway_visible": False,
+                "important_objects": [], "safest_direction": "FORWARD"}
+    return scene, calls
+
+
+def test_a_vision_mission_ends_out_of_budget_at_its_cloud_call_cap():
+    scene, calls = _counting_scene()
+    runner, robot, grid = _sim_runner(policy="vision", vision_fn=scene,
+                                      mission_time_limit_s=1200.0, vision_max_calls=5)
+    runner.start()
+    s = _drive(runner)
+    assert s["outcome"] == OUT_OF_BUDGET, s["log_tail"]
+    assert len(calls) == 5, "the cap is the number of calls made, no more"
+    assert "cloud call" in s["end_reason"]
+    assert s["budget"]["cloud_calls"] == 5 and s["budget"]["cloud_call_limit"] == 5
+    w = robot.get_wheel_state()
+    assert w["left"]["velocity_rad_s"] == 0 and w["right"]["velocity_rad_s"] == 0
+
+
+def test_a_failed_cloud_call_counts_against_the_cap():
+    """A call that failed was still sent, and may still be billed."""
+    def failing(frame):
+        raise RuntimeError("503")
+    runner, _, _ = _sim_runner(policy="vision", vision_fn=failing,
+                               vision_max_calls=2, max_vision_failures=10)
+    runner.start()
+    s = _drive(runner)
+    assert s["outcome"] == OUT_OF_BUDGET, s["log_tail"]
+    assert s["budget"]["cloud_calls"] == 2
+
+
+@pytest.mark.parametrize("policy", ["frontier", "tiered"])
+def test_the_call_cap_is_for_the_vision_policy_only(policy):
+    """frontier makes no paid call; tiered has its own cap (`tier_max_calls`)."""
+    scene, calls = _counting_scene()
+    runner, _, _ = _sim_runner(policy=policy, vision_fn=scene, max_steps=12,
+                               vision_max_calls=3)
+    runner.start()
+    s = _drive(runner)
+    assert "cloud call" not in (s["end_reason"] or ""), s["log_tail"]
+    assert s["budget"]["cloud_call_limit"] is None
+
+
+def test_a_vision_mission_counts_its_calls_with_the_cap_off():
+    """Review (bug pass): with the cap off is when nothing bounds spend, so
+    the count must still show."""
+    scene, calls = _counting_scene()
+    runner, _, _ = _sim_runner(policy="vision", vision_fn=scene, max_steps=4)
+    runner.start()
+    s = _drive(runner)
+    assert s["budget"]["cloud_call_limit"] is None
+    assert s["budget"]["cloud_calls"] == len(calls) == 4
+
+
+@pytest.mark.parametrize("bad", [-1, 2.5])
+def test_a_negative_or_fractional_call_cap_is_refused_at_load(tmp_path, bad):
+    """Review (both): -1 read as 'unlimited' would end every vision mission
+    before its first call, reported as a cap reached."""
+    from control.brain_config import load_brain_config
+    cfg = tmp_path / "robot.yaml"
+    cfg.write_text(f"brain:\n  vision_max_calls: {bad}\n")
+    with pytest.raises(ValueError, match="vision_max_calls"):
+        load_brain_config(str(cfg))

@@ -1454,3 +1454,21 @@ def test_a_real_camera_is_never_mistaken_for_the_simulator():
     assert bs._frames_are_simulated(RecordingRobot(fresh_mock_robot())) is True
     assert bs._frames_are_simulated(Real()) is False
     assert bs._frames_are_simulated(Raises()) is False
+
+
+@pytest.mark.parametrize("policy, limit", [("vision", 120), ("frontier", None)])
+def test_a_vision_mission_gets_the_configured_cloud_call_cap(tmp_path, monkeypatch,
+                                                              policy, limit):
+    """3.70: `vision_max_calls` (120, the user's call 2026-10-12) reaches a
+    `vision` mission and no other."""
+    import control.brain_server as bs
+
+    capture_model_id(monkeypatch)
+    monkeypatch.setattr(bs, "_validate_navigate_choices", lambda *a, **k: None)
+    app = bs.create_app(config_path=vision_config(tmp_path),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={"target_object": "x", "policy": policy})
+        client.post("/mission/stop")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"]["budget"]["cloud_call_limit"] == limit
