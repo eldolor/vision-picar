@@ -256,6 +256,10 @@ def load_brain_config(config_path=None) -> dict:
         merged["navigate_model_id"] = os.environ["NAVIGATE_MODEL_ID"]
     if os.environ.get("NAVIGATE_PROMPT_VARIANT"):
         merged["navigate_prompt_variant"] = os.environ["NAVIGATE_PROMPT_VARIANT"]
+    # 3.65 phase 2: the live runs (tests/demo_explore.py) switch explore's
+    # goal choice per stack without editing this yaml; validated below.
+    if os.environ.get("EXPLORE_GOAL_POLICY"):
+        merged["explore_goal_policy"] = os.environ["EXPLORE_GOAL_POLICY"]
     # Same idea, for a brain deployment whose robot has no EFS-backed
     # recordings volume mounted (cloudformation/teleop-brain.yaml) --
     # without this, a recorded frame would silently land on the container's

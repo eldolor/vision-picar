@@ -32,6 +32,14 @@ def test_an_unknown_policy_name_is_refused(tmp_path):
         goal_policy_for("clever")
 
 
+def test_the_environment_can_switch_it_and_is_validated(monkeypatch):
+    monkeypatch.setenv("EXPLORE_GOAL_POLICY", "network")
+    assert load_brain_config()["explore_goal_policy"] == "network"
+    monkeypatch.setenv("EXPLORE_GOAL_POLICY", "clever")
+    with pytest.raises(ValueError, match="explore_goal_policy"):
+        load_brain_config()
+
+
 def test_the_committed_weights_match_this_codes_features():
     data = json.loads(WEIGHTS_PATH.read_text())
     assert list(data["features"]) == list(FEATURES)
