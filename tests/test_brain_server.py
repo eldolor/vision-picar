@@ -168,7 +168,7 @@ def test_stop_halts_the_loop_and_stops_the_car():
 
         status = stopped.json()["status"]
         assert status["running"] is False
-        assert status["outcome"] == "stopped"
+        assert status["outcome"] == "cancelled"
         assert status["complete"] is False
 
         # And it stays stopped -- no background task quietly resumes it.

@@ -274,6 +274,8 @@ Resources:
             - /teleop-robot/world/truth
             - /teleop-robot/world/error
             - /teleop-robot/world/goal
+            # 3.70 E4. A phone has no battery to report; `usable: false`.
+            - /teleop-robot/battery
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

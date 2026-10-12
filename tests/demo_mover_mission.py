@@ -41,7 +41,9 @@ def main():
         sys.exit("the robot server has no /sim/objects -- not a sim, or predates 3.30")
 
     started = brain.post("/mission/start", json={
-        "target_object": target, "policy": policy, "max_steps": max_steps})
+        "target_object": target, "policy": policy, "max_steps": max_steps,
+        # 3.70 E4: bounded by its steps, not the config's 120 s test limit.
+        "mission_time_limit_s": 3600})
     print("start", started.status_code, started.json() if started.status_code != 200 else "")
     t0 = time.time()
     samples, near_mover, inside = 0, math.inf, 0

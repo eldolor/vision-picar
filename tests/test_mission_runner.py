@@ -14,11 +14,11 @@ import pytest
 from brain.agent import ObjectSearchAgent
 from brain.memory import MissionMemory
 from control.mission_runner import (
+    CANCELLED,
     FOUND,
     IDLE,
-    MAX_STEPS,
+    OUT_OF_BUDGET,
     RUNNING,
-    STOPPED,
     MissionRunner,
 )
 from tests.conftest import fresh_mock_runner, mock_world_for, RecordingRobot, fresh_mock_robot
@@ -95,7 +95,7 @@ def test_stop_mid_mission_halts_and_stops_the_car():
     assert "stop" in robot.calls
     status = runner.status()
     assert status["running"] is False
-    assert status["outcome"] == STOPPED
+    assert status["outcome"] == CANCELLED
     assert status["complete"] is False
     assert runner.tick() is False, "a stopped runner must not keep stepping"
     assert runner.status()["step"] == 5
@@ -107,7 +107,7 @@ def test_stop_is_idempotent_and_keeps_the_first_outcome():
     runner.tick()
     runner.stop()
     runner.abort("should not overwrite a completed mission")
-    assert runner.status()["outcome"] == STOPPED
+    assert runner.status()["outcome"] == CANCELLED
 
 
 def test_step_budget_ends_the_mission():
@@ -115,7 +115,7 @@ def test_step_budget_ends_the_mission():
     runner.start()
     status = drive_to_completion(runner)
 
-    assert status["outcome"] == MAX_STEPS
+    assert status["outcome"] == OUT_OF_BUDGET
     assert status["step"] == 4
     assert status["found"] is False
 
@@ -216,8 +216,8 @@ def test_a_runner_refuses_to_be_started_twice():
 
 
 def test_the_step_budget_ends_the_mission():
-    """max_steps is the last of the three budgets and the only one that
-    fires on a mission that is working, just not fast enough."""
+    """The step backstop fires on a mission that is working, just not fast
+    enough -- and since 3.70 E4 it ends Out of budget, never `max_steps`."""
     runner = MissionRunner(robot=fresh_mock_robot(),
                            target_object="an object that is not in this house",
                            max_steps=3)
@@ -227,8 +227,8 @@ def test_the_step_budget_ends_the_mission():
             break
     status = runner.status()
     assert status["running"] is False
-    assert status["outcome"] == "max_steps", status
-    assert "budget" in " ".join(status["log_tail"]).lower()
+    assert status["outcome"] == "out_of_budget", status
+    assert "step backstop" in " ".join(status["log_tail"]).lower()
 
 
 def test_a_policy_that_raises_ends_the_mission_rather_than_the_process():

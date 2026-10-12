@@ -32,7 +32,7 @@ import time
 
 import pytest
 
-from control.mission_runner import PREEMPTED
+from control.mission_runner import CANCELLED
 from control.remote_robot import RemoteRobot
 from robot.interface import Preempted
 from robot.safety import SafetyViolation
@@ -254,7 +254,8 @@ def test_a_foreign_driver_between_ticks_ends_the_mission_preempted():
             pass
 
         status = runner.status()
-        assert status["outcome"] == PREEMPTED, status
+        assert status["outcome"] == CANCELLED, status
+        assert status["cancelled_by"] == "dpad", status
         assert status["running"] is False
         assert "twin-dpad" in status["log_tail"][-1], status["log_tail"][-1]
     finally:

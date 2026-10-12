@@ -27,8 +27,9 @@ What it models: the host commands T=0 / 1 / 11 / 13 / 130 / 131 / 136 /
 speeds and the `odl`/`odr` odometers; integer encoder counts; a reboot
 (`reboot()`); a lossy wire (`drop_rate`). What it does not: the PID's
 dynamics (it is ideal: the wheel reaches its setpoint within one board loop)
-including its `THRESHOLD_PWM` deadband, the IMU (zeros), the OLED, servos,
-battery drain.
+including its `THRESHOLD_PWM` deadband, the IMU (zeros), the OLED, servos.
+Its battery (3.70 E4) holds 12.00 V unless given a drain: a straight line
+in time, not a discharge curve -- enough to cross a mission's floor.
 
 The wheels it turns are a `MockRobot`'s: the body the rest of the sim sees.
 """
@@ -87,7 +88,8 @@ class FakeEsp32:
     """
 
     def __init__(self, body, main_type: int = 2, drop_rate: float = 0.0,
-                 seed: int = 0, firmware: Optional[str] = None, millis_at_boot: int = 0):
+                 seed: int = 0, firmware: Optional[str] = None, millis_at_boot: int = 0,
+                 battery_v: Optional[float] = None, drain_v_per_s: Optional[float] = None):
         # Unnamed, the firmware is SIM_BOARD_FIRMWARE's (default "stock"), so
         # any suite that builds a board can be re-run over the fork (3.28).
         firmware = firmware or os.environ.get("SIM_BOARD_FIRMWARE", "stock")
@@ -95,6 +97,15 @@ class FakeEsp32:
             raise ValueError(f"firmware must be one of {FIRMWARES}")
         self.body = body
         self.firmware = firmware
+        # 3.70 E4: the pack's voltage at power-up and a straight-line drain,
+        # in volts per second of wall time. SIM_BATTERY_V and
+        # SIM_BATTERY_DRAIN_V_PER_S set them for a server run (the board
+        # lives in sim/body_server.py's process there).
+        self._battery_v0 = float(battery_v if battery_v is not None else
+                                 os.environ.get("SIM_BATTERY_V") or 12.0)
+        self._drain_v_per_s = float(drain_v_per_s if drain_v_per_s is not None else
+                                    os.environ.get("SIM_BATTERY_DRAIN_V_PER_S") or 0.0)
+        self._battery_since = time.monotonic()
         self._millis_start = int(millis_at_boot)
         self.drop_rate = drop_rate
         self._rng = random.Random(seed)
@@ -154,6 +165,11 @@ class FakeEsp32:
         self._raw_counts_at_boot = raw
         self._last_counts = [0, 0]
         self._booted_at = time.monotonic()
+
+    def battery_v(self) -> float:
+        """The pack's voltage now. A reboot does not recharge it."""
+        drained = self._drain_v_per_s * (time.monotonic() - self._battery_since)
+        return max(0.0, self._battery_v0 - drained)
 
     def millis(self) -> int:
         """millis(): ms since boot, an unsigned long -- it wraps at 2^32."""
@@ -326,7 +342,7 @@ class FakeEsp32:
                  "ax": 0, "ay": 0, "az": 0, "gx": 0, "gy": 0, "gz": 0,
                  "mx": 0, "my": 0, "mz": 0,
                  "odl": odl, "odr": odr,
-                 "v": 1200}                       # int v_int = (int)(loadVoltage_V * 100);
+                 "v": int(self.battery_v() * 100)}   # int v_int = (int)(loadVoltage_V * 100);
         if self.firmware == "fork":
             frame["odlt"], frame["odrt"] = self._odometers_tenth_mm(self.counts)
             frame["ms"] = self.millis()               # last_feedback_time = millis();

@@ -83,6 +83,7 @@ while it is measuring them: a `T:1001` frame arrived within
 | Call | Answer |
 |---|---|
 | `get_wheel_state()`, `get_odometry()` | `unusable_wheels()`, `unusable_odometry()` |
+| `get_battery()` | `unusable_battery()` (a stale `v` is no reading) |
 | `set_wheel_velocity()` non-zero | sends a zero, raises `WheelFeedbackLost` |
 | `set_wheel_velocity(0, 0)`, `stop()` | always succeed; `_send()` returns False on `OSError` instead of raising, and records `link_error` |
 | `verb_plan()` for a motion verb | raises `WheelFeedbackLost` |
@@ -145,6 +146,7 @@ default shown.
 | `get_depth_grid()` | `{"rows", "cols", "fov_deg"?, "pan_deg"?, "zones": [{"status", "distance_cm"}]}`, row-major | `unusable_grid()`: 1 x 8, all `unusable`, no `fov_deg` |
 | `get_odometry()` | `{"usable", "distance_m", "heading_deg"}`. Path length, never decreasing. Heading is degrees turned since start, clockwise-positive, in [0, 360), on every body that measures it (handoff 2d, 2026-10-03; `MockRobot` used to report its compass bearing). `tests/test_robot_contract.py` pins it on all six backends: 0 at start, 90 after a RIGHT 90 | `unusable_odometry()` |
 | `get_wheel_state()` | `{"usable", "left": {"position_rad", "velocity_rad_s", "counts"}, "right": {...}, "wheel_radius_m", "track_width_m", "counts_per_rev"}` | `unusable_wheels()` |
+| `get_battery()` | `{"usable", "v"}`, volts (3.70 E4). `HardwareRobot`: the last `T:1001` frame's `v` / 100 while frames are fresh; `RemoteRobot`: `GET /battery` (a 404 reads as no battery); `RosDriveRobot` and `_HaltGate` pass it through; every other backend has no board | `unusable_battery()`: `{"usable": false, "v": null}` |
 | `get_scan(max_range_m=None)` | `{"usable", "angle_min_deg", "angle_increment_deg", "range_min_m", "range_max_m", "ranges_m"}`. Angles relative to the body, clockwise-positive, 0 ahead; `None` per beam = no return | `unusable_scan()` (`ranges_m: None`) |
 | `set_wheel_velocity(left_rad_s, right_rad_s)` | dict; a standing command | raises `NotImplementedError` |
 | `advance(dt)` | lets `dt` s of the standing command elapse (the sim integrates; the hardware body re-sends it) | no-op |

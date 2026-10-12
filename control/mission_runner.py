@@ -43,6 +43,8 @@ what robot/server.py's watchdog (B3.1) exists to catch.
 """
 
 import logging
+import math
+import re
 import threading
 import time
 from typing import Callable, Optional
@@ -54,9 +56,10 @@ from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
 from brain.inventory import MAX_RANGE_M as INVENTORY_RANGE_M
 from brain.inventory import DEFAULT_FOV_DEG, Inventory, frame_detections
 from brain.memory import MissionMemory
+from brain.mission_report import map_coverage
 from brain.navigate import CloudUnavailable
 from brain.vision_agent import VisionAgent
-from robot.interface import Preempted, RobotInterface
+from robot.interface import DRIVER_MANUAL, Preempted, RobotInterface, driver_priority
 from robot.safety import SafetyViolation
 from world.interface import NullWorld, WorldInterface
 
@@ -82,7 +85,22 @@ DEFAULT_MIN_DISTANCE_CM = 20.0
 # with the frontier policy, so a budget of 80 would end just short of it.
 # Under a vision policy every step is a paid call and this wants to come
 # back down -- see PLAN-sim-hardening.md's cost note in S2b.
+#
+# 3.70 E4: only the fallback for a runner built with no time limit (the
+# in-process harnesses). The brain always passes one, and then the step
+# count is `derived_max_steps()` of it -- a runaway backstop, not a budget.
 DEFAULT_MAX_STEPS = 120
+# 3.70 E4 (decided by the user 2026-10-11, conflict 3): the backstop is the
+# time limit at one decision per photo, a photo every 0.5 s, times two -- so
+# it can fire only if the clock check itself has failed.
+STEP_BACKSTOP_FRAME_S = 0.5
+STEP_BACKSTOP_FACTOR = 2
+# 3.70 E4: how often the battery is read (on the mission's clock), and how
+# many readings in a row must sit under the floor. One low reading is a
+# motor's inrush sagging the pack, not an empty battery; two, half a second
+# apart, end the mission well inside E4's 2 s.
+BATTERY_CHECK_S = 0.5
+BATTERY_LOW_READINGS = 2
 DEFAULT_VISION_TIMEOUT_S = 20.0
 # 3.56. The arrival confirmation's own deadline (the user's choice, "~8 s"):
 # above the slowest cloud call ever recorded (6.78 s of 98), so a hanging
@@ -112,20 +130,25 @@ POLICIES = ("frontier", "vision", "tiered", "explore")
 VISION_POLICIES = ("vision", "tiered")
 
 # Mission outcomes. "running" is the only non-terminal one.
+#
+# 3.70 Part C (decided by the user 2026-10-11): a mission ENDS in one of four
+# end states -- `END_STATES` -- or in a fault (or, for `room_reached`, goal)
+# outcome kept beside them. docs/mission/ARCHITECTURE.md has the table.
 RUNNING = "running"
 IDLE = "idle"
 FOUND = "found"
 ROOM_REACHED = "room_reached"
-STOPPED = "stopped"
-MAX_STEPS = "max_steps"
 FAILED = "failed"
-# Phase M4. Someone with more authority took the robot -- a person at the
-# D-pad, by the order in AGENT-HARNESS.md. Deliberately NOT `failed`:
-# nothing went wrong, the mission was outranked, and calling it a failure
-# would put a normal human intervention in the same bucket as a dead AWS
-# link. It is terminal all the same; a preempted brain does not get to
-# argue.
-PREEMPTED = "preempted"
+# 3.70 E5. A person ended the mission from the phone: Stop (`cancelled_by:
+# "stop"`), or a D-pad tap that took the robot from the brain (M4,
+# `cancelled_by: "dpad"`). Deliberately NOT `failed`: nothing went wrong, and
+# calling it a failure would put a normal human intervention in the same
+# bucket as a dead AWS link. It is terminal all the same; a preempted brain
+# does not get to argue. Replaces `stopped` and `preempted`.
+CANCELLED = "cancelled"
+# 3.70 E4. The mission's time limit or the battery floor was reached (or the
+# step backstop derived from the time limit). Replaces `max_steps`.
+OUT_OF_BUDGET = "out_of_budget"
 # The way ahead is obstructed and the policy keeps asking to drive into it:
 # `stuck_after` FORWARDs in a row refused by the safety layer. Found on the
 # first watched R1 run, which aimed dead-centre at the backpack from a row
@@ -138,10 +161,11 @@ PREEMPTED = "preempted"
 BLOCKED = "blocked"
 DEFAULT_STUCK_AFTER = 5
 # 3.31. The `explore` policy ran out of places to look: no reachable frontier
-# left and nothing waiting out a cooldown. Not `blocked` -- it is a finding
-# about the house ("looked everywhere it could reach; not there"), and a
-# target that is absent should end here, never in a refusal.
-SEARCHED = "searched"
+# left, nothing waiting out a cooldown and (3.70 E3) no labelled room left
+# unentered. Not `blocked` -- it is a finding about the house ("looked
+# everywhere it could reach; not there"), and a target that is absent should
+# end here, never in a refusal. Was `searched` until 3.70 E1.
+EXHAUSTED = "exhausted"
 # 3.47. The robot reached what the local tier took for the target (the lidar
 # arrival rule held) but the cloud never ANSWERED the identity question --
 # B3.2's budget ran out on an unreachable cloud. Not `found`: since handoff
@@ -149,6 +173,45 @@ SEARCHED = "searched"
 # like this. Not `failed`: the robot did its part and is parked at it. A
 # cloud that answers "no" is a refusal and never ends here.
 ARRIVED_UNCONFIRMED = "arrived_unconfirmed"
+
+# 3.70: the four end states, in the order the phone lists them. Every other
+# terminal outcome is a fault (`failed`, `blocked`, `arrived_unconfirmed`) or
+# a goal reached (`room_reached`), shown in its own style; `end_state` is None
+# for those. `arrived_unconfirmed` is never Found.
+END_STATES = (FOUND, EXHAUSTED, OUT_OF_BUDGET, CANCELLED)
+# The end states that carry a "where it looked" report (E3-E5).
+REPORTED = (EXHAUSTED, OUT_OF_BUDGET, CANCELLED)
+
+# 3.70 E1: the names written before 3.70, and what each is read as. Old
+# records (mission logs, metrics rows, run JSON under `evaluations/`) are
+# READ through `read_outcome()`, never rewritten.
+_LEGACY_OUTCOMES = {
+    "searched": (EXHAUSTED, None),
+    "max_steps": (OUT_OF_BUDGET, None),
+    "stopped": (CANCELLED, "stop"),
+    "preempted": (CANCELLED, "dpad"),
+}
+
+
+def read_outcome(outcome: Optional[str],
+                 cancelled_by: Optional[str] = None) -> tuple:
+    """An outcome from any record, old or new, as `(outcome, cancelled_by)`
+    in today's names. A record's own `cancelled_by` wins over the one a
+    legacy name implies."""
+    new, implied = _LEGACY_OUTCOMES.get(outcome, (outcome, None))
+    return new, (cancelled_by or implied) if new == CANCELLED else None
+
+
+# robot/server.py's refusal names the holder first: "<holder> is driving -- ...".
+_PREEMPTED_BY = re.compile(r"^(\S+) is driving\b")
+
+
+def derived_max_steps(time_limit_s: Optional[float]) -> int:
+    """3.70 E4's step backstop: `time_limit_s / 0.5 s x 2` (a 30 min limit
+    gives 7,200). With no time limit, `DEFAULT_MAX_STEPS`."""
+    if not time_limit_s or time_limit_s <= 0 or not math.isfinite(time_limit_s):
+        return DEFAULT_MAX_STEPS
+    return int(round(time_limit_s / STEP_BACKSTOP_FRAME_S * STEP_BACKSTOP_FACTOR))
 
 
 def _caused_by(error: BaseException, kind: type) -> bool:
@@ -290,6 +353,9 @@ class _HaltGate(RobotInterface):
     def get_scan(self, max_range_m=None) -> dict:
         return self._robot.get_scan(max_range_m=max_range_m)
 
+    def get_battery(self) -> dict:
+        return self._robot.get_battery()
+
     def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
         # A MOVE, so gated like every other one: a mission that has ended
         # must not be able to start the wheels.
@@ -352,7 +418,7 @@ class MissionRunner:
         target_object: Optional[str] = None,
         target_room: Optional[str] = None,
         mission: Optional[str] = None,
-        max_steps: int = DEFAULT_MAX_STEPS,
+        max_steps: Optional[int] = None,
         min_distance_cm: float = DEFAULT_MIN_DISTANCE_CM,
         policy: str = "frontier",
         vision_fn: Optional[Callable[[dict], dict]] = None,
@@ -369,6 +435,8 @@ class MissionRunner:
         retry_limit: int = RETRY_LIMIT,
         inventory: bool = True,
         detections_fn: Optional[Callable[[dict], Optional[list]]] = None,
+        mission_time_limit_s: Optional[float] = None,
+        battery_floor_v: Optional[float] = None,
     ):
         if policy not in POLICIES:
             raise ValueError(f"Unknown policy: {policy!r}. Known: {', '.join(POLICIES)}")
@@ -385,7 +453,7 @@ class MissionRunner:
             raise ValueError(
                 "A mission needs a target_object or a target_room -- otherwise "
                 "MissionMemory.is_complete() is never true and it can only end "
-                "at max_steps."
+                "out of budget."
             )
 
         self.robot = robot
@@ -439,7 +507,23 @@ class MissionRunner:
         self.inventory_sink: Optional[Callable[[dict], None]] = None
         self._inventory_error_logged = False
         self.policy = policy
-        self.max_steps = max_steps
+        # 3.70 E4: the budget is a time limit (on `self.clock`, so sim time in
+        # process) and a battery floor. The step count is only a backstop
+        # derived from the time limit; an explicit `max_steps` (a harness,
+        # a sweep) still sets it, and still ends Out of budget.
+        if mission_time_limit_s is not None and not math.isfinite(mission_time_limit_s):
+            raise ValueError("mission_time_limit_s must be a finite number of seconds")
+        self.mission_time_limit_s = (mission_time_limit_s
+                                     if mission_time_limit_s and mission_time_limit_s > 0
+                                     else None)
+        self.battery_floor_v = battery_floor_v if battery_floor_v else None
+        self.max_steps = max_steps or derived_max_steps(self.mission_time_limit_s)
+        self._started_clock: Optional[float] = None
+        self._ended_clock: Optional[float] = None    # elapsed stops at the end
+        self._battery_checked_at: Optional[float] = None
+        self._battery_v: Optional[float] = None
+        self._battery_low = 0
+        self._battery_error_logged = False
         # None means "the agent's own sensor-built scene" -- resolved after
         # the agent exists, below, because that scene reads the agent's
         # SafetyController (`ConstrainedAgent.sensed_scene()`).
@@ -490,6 +574,10 @@ class MissionRunner:
         self._lock = threading.RLock()
         self._running = False
         self._outcome = IDLE
+        # 3.70: why it ended, who cancelled it, and where it looked.
+        self._end_reason: Optional[str] = None
+        self._cancelled_by: Optional[str] = None
+        self._report: Optional[dict] = None
         self._last_tick_at = None
         self._ticks = 0
         self._started_at = None
@@ -507,6 +595,8 @@ class MissionRunner:
         # Set as _finish's LAST act -- after the policy is closed and the
         # metrics row built -- so a late check never starts beside them.
         self.finished = threading.Event()
+        # 3.70: set once `status.report` is final (built, or none is due).
+        self.report_done = threading.Event()
         self._last_action: Optional[str] = None
         # R1's readout (PLAN-ros-alignment.md). How many turns the mission
         # has made, how many REVERSED the one before (LEFT straight after
@@ -545,8 +635,14 @@ class MissionRunner:
             self._running = True
             self._outcome = RUNNING
             self._started_at = time.monotonic()
+            self._started_clock = self.clock()
             self._last_tick_at = time.monotonic()
-            self._log_line(f"mission started: {self.memory.mission} (max_steps={self.max_steps})")
+            limits = [f"step backstop {self.max_steps}"]
+            if self.mission_time_limit_s:
+                limits.insert(0, f"time limit {self.mission_time_limit_s:g} s")
+            if self.battery_floor_v:
+                limits.append(f"battery floor {self.battery_floor_v:g} V")
+            self._log_line(f"mission started: {self.memory.mission} ({', '.join(limits)})")
 
     def tick(self) -> bool:
         """Advance the mission by one agent step. Returns True while the
@@ -554,11 +650,17 @@ class MissionRunner:
         if not self._running:
             return False
 
-        # The step budget is checked at the END of a tick, below, where
+        # The step backstop is checked at the END of a tick, below, where
         # _finish() then sets _running False -- so a duplicate check here
         # could never fire, and a second copy of the rule is one that can
         # drift from the real one. Removed after coverage showed it
         # unreachable rather than untested.
+        #
+        # 3.70 E4: the time limit and the battery floor are checked here,
+        # BEFORE a step, so a tick that starts past the limit moves nothing
+        # -- and at the end as well, so the mission ends within one tick of it.
+        if self._out_of_budget():
+            return False
         if self._cooldown_until is not None:
             # 3.31: waiting out a stuck retry. Nothing moves; time passes.
             remaining = self._cooldown_until - self.clock()
@@ -597,7 +699,7 @@ class MissionRunner:
             # the other driver said -- a stop from the loser of an
             # arbitration is one more command from a driver that has been
             # outranked, and the server refuses nobody's stop.
-            self._finish(PREEMPTED, str(e))
+            self._finish_preempted(e)
             return False
         except Exception as e:  # noqa: BLE001
             # Anything else -- a dead robot link, a backend fault -- is a
@@ -694,8 +796,8 @@ class MissionRunner:
         if self.memory.is_complete():
             self._finish(FOUND if self.memory.found else ROOM_REACHED, self.memory.summary())
             return False
-        if getattr(self.agent, "searched", False):
-            self._finish(SEARCHED, self.agent.last_event or "no reachable frontier left")
+        if getattr(self.agent, "exhausted", False):
+            self._finish(EXHAUSTED, self.agent.last_event or "no reachable frontier left")
             return False
         if self.stuck_after and self._refused_forwards >= self.stuck_after:
             if (self._arrival or {}).get("state") == "refused":
@@ -725,10 +827,63 @@ class MissionRunner:
                 return False
         if result.action == "WAIT":
             self.idle(0.25)
+        if self._out_of_budget():
+            return False
         if len(self.agent.history) >= self.max_steps:
-            self._finish(MAX_STEPS, f"step budget of {self.max_steps} exhausted")
+            self._finish(OUT_OF_BUDGET, f"step backstop of {self.max_steps} reached"
+                         + (f" (derived from the {self.mission_time_limit_s:g} s time limit)"
+                            if self.mission_time_limit_s else ""))
             return False
         return True
+
+    def _elapsed_s(self) -> Optional[float]:
+        if self._started_clock is None:
+            return None
+        end = self._ended_clock if self._ended_clock is not None else self.clock()
+        return end - self._started_clock
+
+    def _out_of_budget(self) -> bool:
+        """3.70 E4: end the mission Out of budget if its time limit has
+        passed or the battery has read under its floor twice in a row. True
+        when it has ended (by this or anything before it)."""
+        if not self._running:
+            return True
+        elapsed = self._elapsed_s()
+        if (self.mission_time_limit_s and elapsed is not None
+                and elapsed >= self.mission_time_limit_s):
+            self._finish(OUT_OF_BUDGET, f"time limit of {self.mission_time_limit_s:g} s "
+                         f"reached ({elapsed:.1f} s)")
+            return True
+        if self.battery_floor_v and self._battery_spent():
+            self._finish(OUT_OF_BUDGET, f"battery at {self._battery_v:.2f} V, under the "
+                         f"{self.battery_floor_v:g} V floor "
+                         f"{BATTERY_LOW_READINGS} readings in a row")
+            return True
+        return False
+
+    def _battery_spent(self) -> bool:
+        """Read the battery at most every `BATTERY_CHECK_S` of the mission's
+        clock. A body with no reading, or a read that fails, never ends a
+        mission: the floor guards a battery the brain can see."""
+        now = self.clock()
+        if (self._battery_checked_at is not None
+                and now - self._battery_checked_at < BATTERY_CHECK_S):
+            return False
+        self._battery_checked_at = now
+        try:
+            reading = self.robot.get_battery() or {}
+        except Exception as e:  # noqa: BLE001 -- see docstring
+            if not self._battery_error_logged:
+                self._battery_error_logged = True
+                self._log_line(f"battery unreadable: {e}")
+            return False
+        v = reading.get("v") if reading.get("usable") else None
+        if not isinstance(v, (int, float)):
+            self._battery_low = 0
+            return False
+        self._battery_v = float(v)
+        self._battery_low = self._battery_low + 1 if v < self.battery_floor_v else 0
+        return self._battery_low >= BATTERY_LOW_READINGS
 
     def _back_off(self) -> None:
         """3.31: one vetted REVERSE to give whatever is in the way room, then
@@ -744,7 +899,7 @@ class MissionRunner:
         except SafetyViolation as e:
             self._log_line(f"back-off refused: {e}")
         except Preempted as e:
-            self._finish(PREEMPTED, str(e))
+            self._finish_preempted(e)
             return
         except Exception as e:  # noqa: BLE001 -- same rule as a step that fails
             logger.exception("back-off failed")
@@ -752,10 +907,25 @@ class MissionRunner:
             return
         self._cooldown_until = self.clock() + self.retry_cooldown_s
 
+    def _finish_preempted(self, error: Preempted) -> None:
+        """3.70 E5: a refusal for authority ends the mission Cancelled by the
+        operator -- a person at the D-pad, or the phone's tap-to-goal (a nav2
+        goal in progress). One that names an AUTONOMOUS holder (another
+        brain, the ROS stack) is no person's doing: an arbitration fault,
+        `failed`. A refusal that names no holder reads as a person, as every
+        preemption did before 3.70."""
+        detail = str(error)
+        holder = _PREEMPTED_BY.match(detail)
+        if holder and driver_priority(holder.group(1)) != DRIVER_MANUAL:
+            self._finish(FAILED, f"preempted by an autonomous driver: {detail}")
+            return
+        self._finish(CANCELLED, detail, cancelled_by="dpad")
+
     def stop(self, reason: str = "stopped by operator") -> None:
-        """Operator stop. Always stops the car as well as the loop --
-        stopping the thinking is not stopping the robot."""
-        self._finish(STOPPED, reason)
+        """Operator stop: ends the mission Cancelled, `cancelled_by: "stop"`
+        (3.70 E5). Always stops the car as well as the loop -- stopping the
+        thinking is not stopping the robot."""
+        self._finish(CANCELLED, reason, cancelled_by="stop")
 
     def abort(self, reason: str) -> None:
         """Failsafe stop (B3.3's hung-tick guard calls this). Same as
@@ -769,9 +939,24 @@ class MissionRunner:
 
     def status(self) -> dict:
         with self._lock:
+            elapsed = self._elapsed_s()
             return {
                 "running": self._running,
                 "outcome": self._outcome,
+                # 3.70: one of END_STATES, or None (running, idle, or a
+                # fault outcome); why it ended; who, if a person did.
+                "end_state": self._outcome if self._outcome in END_STATES else None,
+                "end_reason": self._end_reason,
+                "cancelled_by": self._cancelled_by,
+                # Where it looked (E3-E5): set once the robot has stopped, so
+                # None for a moment after `running` turns False.
+                "report": dict(self._report) if self._report else None,
+                "budget": {
+                    "time_limit_s": self.mission_time_limit_s,
+                    "elapsed_s": (round(elapsed, 1) if elapsed is not None else None),
+                    "battery_floor_v": self.battery_floor_v,
+                    "battery_v": self._battery_v,
+                },
                 "error": self._error,
                 "policy": self.policy,
                 "mission": self.memory.mission,
@@ -1044,12 +1229,20 @@ class MissionRunner:
 
     def _finish(self, outcome: str, note: str, arrival: Optional[dict] = None,
                 tier_stats: Optional[dict] = None,
-                arrival_frame: Optional[dict] = None) -> None:
+                arrival_frame: Optional[dict] = None,
+                cancelled_by: Optional[str] = None) -> None:
         with self._lock:
             if self._ended():
                 return
             self._running = False
             self._outcome = outcome
+            self._end_reason = note
+            self._cancelled_by = cancelled_by if outcome == CANCELLED else None
+            if self._started_clock is not None:
+                try:
+                    self._ended_clock = self.clock()
+                except Exception:  # noqa: BLE001 -- nothing before the stop may raise (3.55)
+                    pass
             # 3.47: set with the outcome, in the same locked step, so a
             # stop() that wins the race never finds them rewritten.
             if arrival is not None:
@@ -1073,6 +1266,16 @@ class MissionRunner:
             self._log_line(f"mission ended ({outcome}): {note}")
         # Outside the lock: this is an HTTP call when the robot is remote.
         self._safe_stop()
+        # 3.70 E3-E5: where it looked -- after the stop, because it reads the
+        # map (an HTTP call when the world is remote, up to its timeout) and
+        # walks it. On a thread of its own: `_finish` also runs on the brain's
+        # event loop (the loop's cancellation handler on a Stop), which must
+        # never wait on a map. `report_done` is set when it lands.
+        if outcome in REPORTED:
+            threading.Thread(target=self._report_in_background, daemon=True,
+                             name="mission-report").start()
+        else:
+            self.report_done.set()
         # Phase A. A policy that dispatches its cloud calls holds a worker
         # thread and may have one answer outstanding right now. Closing it
         # here bumps its epoch, so a late answer is dropped rather than
@@ -1093,6 +1296,36 @@ class MissionRunner:
         # that rule, the same one the odometry read above follows.
         self._ship_metrics()
         self.finished.set()
+
+    def _report_in_background(self) -> None:
+        try:
+            report = self._build_report()
+            with self._lock:
+                self._report = report
+        finally:
+            self.report_done.set()
+
+    def _build_report(self) -> dict:
+        """3.70 E4/E5's "where it looked": the rooms the robot's centre
+        entered, how much of the floor the map holds, the goals it reached,
+        and the map it was on. Never allowed to fail a finish."""
+        rooms = set(self.memory.visited_rooms)
+        rooms.update(getattr(self.agent, "rooms_entered", ()) or ())
+        report = {
+            "rooms_entered": sorted(rooms),
+            "goals_reached": [list(g) for g in getattr(self.agent, "goals_reached", ())],
+            "coverage": None, "mapped_free_m2": None,
+            # 3.50 saves maps; until it is built there is no saved version,
+            # so this is the map the mission ran on, as the world names it.
+            "map_id": None, "map_version": None,
+        }
+        try:
+            m = self.world.get_map()
+            report.update(map_coverage(m))
+            report["map_id"], report["map_version"] = m.get("map_id"), m.get("map_version")
+        except Exception as e:  # noqa: BLE001 -- a report never fails a finish
+            logger.warning("report: map unreadable: %s", e)
+        return report
 
     def _ship_metrics(self) -> None:
         if not self.metrics_url:

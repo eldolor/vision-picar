@@ -64,8 +64,8 @@ import tty
 from typing import Optional
 
 from robot.interface import (
-    RobotInterface, WheelFeedbackLost, unusable_grid, unusable_odometry,
-    unusable_scan, unusable_wheels)
+    RobotInterface, WheelFeedbackLost, unusable_battery, unusable_grid,
+    unusable_odometry, unusable_scan, unusable_wheels)
 
 # The Waveshare UGV Rover (PLAN-ros-alignment.md 3.21): the ROS Driver
 # firmware's mainType 2 values, which the sim and the URDF carry too
@@ -180,6 +180,9 @@ class HardwareRobot(RobotInterface):
         self._board_m = [0.0, 0.0]
         self._origin_m = [0.0, 0.0]
         self._speed = [0.0, 0.0]        # m/s, the board's last report
+        # 3.70 E4: the battery, as the board's last frame put it -- the
+        # firmware's `v` is `(int)(loadVoltage_V * 100)`, so centivolts.
+        self._battery_v: Optional[float] = None
         self._last_frame_at: Optional[float] = None
         # The fork's board clock (3.28): the last `ms`, board time unwrapped
         # since this process first heard the board (s), and the smallest
@@ -355,6 +358,8 @@ class HardwareRobot(RobotInterface):
             # get_odometry()'s contract say.
             self._path_m += abs((after[0] + after[1]) / 2.0 - (before[0] + before[1]) / 2.0)
             self._speed = speed
+            v = frame.get("v")
+            self._battery_v = v / 100.0 if isinstance(v, (int, float)) else None
             self._last_frame_at = now
             self.frames += 1
             if fork is not None:
@@ -517,6 +522,15 @@ class HardwareRobot(RobotInterface):
                           "counts": int(round(pos[1] * per_rad))},
                 "wheel_radius_m": WHEEL_RADIUS_M, "track_width_m": self._track_m,
                 "counts_per_rev": COUNTS_PER_REV}
+
+    def get_battery(self) -> dict:
+        """3.70 E4: the board's last `v`, while its frames are fresh. A stale
+        reading is no reading: a board that went quiet says nothing about
+        the battery now."""
+        with self._lock:
+            if not self._fresh() or self._battery_v is None:
+                return unusable_battery()
+            return {"usable": True, "v": round(self._battery_v, 2)}
 
     def get_odometry(self) -> dict:
         with self._lock:

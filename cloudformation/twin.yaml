@@ -256,8 +256,11 @@ Resources:
             # 3.30's sim-only house: what is where, and moving it; 3.72's
             # house swap. A robot with no simulated house answers 501 or 409,
             # which has to be reachable to be read as an answer. One
-            # wildcard: the condition is full at five values.
+            # wildcard, so a fifth value fits:
             - /sim/*
+            # 3.70 E4: the battery, BODY state like /wheels (rule 12 is full).
+            # A backend with no board answers `usable: false`, reachable.
+            - /battery
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

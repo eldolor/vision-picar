@@ -86,7 +86,9 @@ def run_over_http(robot_url):
 def run_through_the_brain_service(robot_url):
     app = create_app(robot_factory=lambda: RemoteRobot(robot_url))
     with TestClient(app) as client:
-        client.post("/mission/start", json={"target_object": TARGET, "max_steps": BUDGET})
+        client.post("/mission/start", json={"target_object": TARGET, "max_steps": BUDGET,
+                                            # 3.70 E4: steps bound it, not the 120 s test limit
+                                            "mission_time_limit_s": 3600})
         while True:
             status = client.get("/mission/status").json()
             if not status["running"]:

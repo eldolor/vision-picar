@@ -665,7 +665,14 @@ finished map at mission start; N1's discovered map replaced it.)
   robot stopped.
 - **Telemetry** -- outcome, step, last action, vision failures, rooms, the
   model's (or tier's) reason, the robot watchdog, who is driving, the last
-  refusal. An `arrived_unconfirmed` ending (3.47) shows in yellow with a
+  refusal. **End states** (3.70): a mission ends **Found** (green),
+  **Exhausted -- nowhere reachable left to look** or **Out of budget --
+  time limit of 120 s reached** (or the battery floor; yellow), or
+  **Cancelled -- Stop pressed / D-pad took over** (uncoloured); never as an
+  error toast. **Where it looked** shows the rooms entered and how much floor
+  the robot's map holds, in square metres -- not a percentage: the brain
+  cannot count floor its map has not reached (3.70 E4).
+  `blocked` is yellow, `failed` red. An `arrived_unconfirmed` ending (3.47) shows in yellow with a
   warning toast that says the identity was not checked, then the late
   check's state (`will ask again when the cloud is back`, then what the
   cloud said, 3.53). **Cloud** (3.56): whether the vision service answers
@@ -683,7 +690,7 @@ finished map at mission start; N1's discovered map replaced it.)
     owns the rule).
   - **Outcome `blocked`** -- the mission stopped itself after five FORWARDs in
     a row were refused (`brain.stuck_after`), rather than pushing into a wall
-    until the step budget ran out. Going around is route planning -- nav2, R6.
+    until its budget ran out. Going around is route planning -- nav2, R6.
 
 **The tiered policy** (`brain/tiered.py` over `brain/perceive.py`) puts a local
 perception tier in front of the vision policy; the paid `/navigate` call goes

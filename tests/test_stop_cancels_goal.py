@@ -140,7 +140,7 @@ def test_a_mission_preempted_by_a_goal_leaves_the_goal_running(monkeypatch):
     runner.start()
     while runner.tick():
         pass
-    assert runner.status()["outcome"] == "preempted", runner.status()
+    assert runner.status()["outcome"] == "cancelled", runner.status()
     _wait_settled()
     assert bridge.goal is not None and bridge.goal["state"] == "active"
     assert bridge.cancelled == 0

@@ -18,7 +18,7 @@ import pytest
 from control.brain_config import load_brain_config
 
 
-def write(tmp_path, body="brain:\n  max_steps: 5\n"):
+def write(tmp_path, body="brain:\n  stuck_after: 5\n"):
     p = tmp_path / "robot.yaml"
     p.write_text(body)
     return str(p)

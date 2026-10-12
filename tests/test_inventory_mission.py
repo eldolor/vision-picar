@@ -149,7 +149,7 @@ def test_an_inventory_failure_never_fails_the_mission():
     runner.start()
     while runner.tick():
         pass
-    assert runner.status()["outcome"] == "max_steps"
+    assert runner.status()["outcome"] == "out_of_budget"
 
 
 def test_the_sink_gets_the_report_once_and_cannot_fail_the_mission():
@@ -165,7 +165,7 @@ def test_the_sink_gets_the_report_once_and_cannot_fail_the_mission():
     while runner.tick():
         pass
     runner.stop()
-    assert len(got) == 1 and got[0]["outcome"] == "max_steps"
+    assert len(got) == 1 and got[0]["outcome"] == "out_of_budget"
     assert {"reported", "candidates", "counts", "map_id"} <= set(got[0])
     tail = runner.status()["log_tail"]
     assert tail[-2].startswith("inventory:")
@@ -182,7 +182,7 @@ def test_the_sink_gets_the_report_once_and_cannot_fail_the_mission():
     runner.start()
     while runner.tick():
         pass
-    assert runner.status()["outcome"] == "max_steps"
+    assert runner.status()["outcome"] == "out_of_budget"
 
 
 def _detecting_runner(max_steps=5):

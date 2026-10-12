@@ -197,6 +197,14 @@ def unusable_wheels() -> dict:
             "wheel_radius_m": None, "track_width_m": None, "counts_per_rev": None}
 
 
+def unusable_battery() -> dict:
+    """The honest answer from a backend that cannot read its battery
+    (3.70 E4). `v: None`, never a number: a mission compares this against
+    its battery floor, and a made-up voltage would either end every mission
+    or none."""
+    return {"usable": False, "v": None}
+
+
 # ---- carrying out a verb (PLAN-ros-alignment.md 3.22) ----
 #
 # The MECHANICS of a verb, shared by the safety layer (which passes a
@@ -489,6 +497,17 @@ class RobotInterface(ABC):
         somewhere.
         """
         return unusable_odometry()
+
+    def get_battery(self) -> dict:
+        """The battery's voltage, as the motor board measures it -- 3.70 E4.
+
+            {"usable": bool, "v": float | None}     # volts
+
+        What a mission's battery floor is compared against. **Not abstract**
+        -- `unusable_battery()` for a backend with no board to ask, the same
+        pattern as `get_odometry()`.
+        """
+        return unusable_battery()
 
     def get_wheel_state(self) -> dict:
         """Per-wheel position, velocity and encoder count -- phase R2.

@@ -134,7 +134,7 @@ DEFAULTS = {
     # cloud's call, so the mission never ends. See brain/tiered.py.
     "tier_stale_after": 8,
     # A hard cap on paid deliberation calls per mission, the same shape as
-    # Robot view's 120-call cap. 0 means "no cap" -- max_steps still bounds
+    # Robot view's 120-call cap. 0 means "no cap" -- the time limit still bounds
     # the mission, and under this policy most steps cost nothing, so the
     # step budget is a poor proxy for the bill.
     "tier_max_calls": 0,
@@ -147,7 +147,14 @@ DEFAULTS = {
     # rather than compiled in because 1.11a asks for exactly the treatment
     # DEFAULT_MATCH_PROBABILITY got.
     "tier_corroboration_bar": 0.5,
-    "max_steps": 120,
+    # 3.70 E4 (decided by the user 2026-10-11): a mission's budget is a time
+    # limit and a battery floor; the step count is only a backstop derived
+    # from the limit (control/mission_runner.py's derived_max_steps()).
+    # **Both values are TEST VALUES until the user sets them** (3.70 E4,
+    # "TBD"): 120 s is the plan's test value, and 10.5 V sits under the fake
+    # board's 12.00 V. 0 switches either off.
+    "mission_time_limit_s": 120.0,
+    "battery_floor_v": 10.5,
     # End a mission `blocked` after this many FORWARDs in a row refused by
     # the safety layer (control/mission_runner.py's BLOCKED). 0 disables.
     # Five because a policy that is merely unlucky gets one or two refusals

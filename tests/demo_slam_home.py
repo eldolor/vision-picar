@@ -96,7 +96,8 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False, explo
     brain = httpx.Client(base_url=f"http://127.0.0.1:{dx.BRAIN}", timeout=60)
     if not tour:
         r = brain.post("/mission/start", json={"target_object": "purple elephant",
-                                               "policy": "explore", "max_steps": max_steps})
+                                               "policy": "explore", "max_steps": max_steps,
+                                               "mission_time_limit_s": limit_s})
         if r.status_code != 200:
             return {"start": r.status_code, "detail": r.text[:300]}
     samples, stop = [], threading.Event()
@@ -150,12 +151,13 @@ def run(slam_yaml=None, drift="", limit_s=1200, max_steps=400, tour=False, explo
         # 3.39: map before navigating. At the start nav2's costmap holds only
         # what SLAM has seen from the start pose, and the east of the house is
         # not on it -- a goal there cannot be planned to. Explore first (an
-        # absent target, so the mission ends "searched" or at the cap), then
+        # absent target, so the mission ends "exhausted" or at the cap), then
         # tour the mapped house.
         explore = None
         if explore_first_s:
             r = brain.post("/mission/start", json={"target_object": "purple elephant",
-                                                   "policy": "explore", "max_steps": max_steps})
+                                                   "policy": "explore", "max_steps": max_steps,
+                                                   "mission_time_limit_s": explore_first_s})
             t_ex = time.time()
             while time.time() - t_ex < explore_first_s:
                 st = brain.get("/mission/status").json()

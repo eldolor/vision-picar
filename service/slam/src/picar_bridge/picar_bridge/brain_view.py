@@ -30,17 +30,20 @@ import math
 OK, WARN, ERROR, STALE = 0, 1, 2, 3
 
 # Mission outcomes (control/mission_runner.py) and what each means to an
-# operator reading a diagnostics panel. `blocked`, `preempted` and
-# `max_steps` ended without failing but did not do the job;
-# `arrived_unconfirmed` (3.47) reached something the cloud never checked.
+# operator reading a diagnostics panel -- 3.70 E6's styles: Found ok,
+# Exhausted and Out of budget warn (looked, did not find), Cancelled neutral
+# (a person ended it: OK, as nothing is wrong). Beside the four, `blocked`
+# and `arrived_unconfirmed` (3.47) warn, `failed` is an error.
 _OUTCOME_LEVEL = {
-    "idle": OK, "running": OK, "found": OK, "room_reached": OK, "stopped": OK,
-    # 3.31: looked everywhere it could reach; a finding, not a fault.
-    "searched": OK,
-    "blocked": WARN, "preempted": WARN, "max_steps": WARN,
-    "arrived_unconfirmed": WARN,
+    "idle": OK, "running": OK, "found": OK, "room_reached": OK, "cancelled": OK,
+    "exhausted": WARN, "out_of_budget": WARN,
+    "blocked": WARN, "arrived_unconfirmed": WARN,
     "failed": ERROR,
 }
+# 3.70 E1: the names a brain from before 3.70 still writes, read as today's
+# (control/mission_runner.py's read_outcome(); this package cannot import it).
+_LEGACY_OUTCOMES = {"searched": "exhausted", "max_steps": "out_of_budget",
+                    "stopped": "cancelled", "preempted": "cancelled"}
 
 CAPTION_HEIGHT_M = 0.35
 ARROW_DEFAULT_M = 1.0
@@ -52,16 +55,20 @@ def diagnostic(status, error=None):
         return {"name": "brain: mission", "hardware_id": "brain", "level": STALE,
                 "message": f"brain unreachable: {error or 'no answer'}", "values": []}
     outcome = status.get("outcome") or "idle"
+    outcome = _LEGACY_OUTCOMES.get(outcome, outcome)
     level = _OUTCOME_LEVEL.get(outcome, WARN)
     if status.get("running"):
         message = f"running, step {status.get('step')}/{status.get('max_steps')}"
     else:
         # `error` is set only for `failed`; an arrival the cloud never
-        # checked (3.47) carries its reason on the arrival readout instead.
+        # checked (3.47) carries its reason on the arrival readout instead;
+        # an end state (3.70) carries `end_reason`.
         why = status.get("error") or (
             (status.get("arrival") or {}).get("reason")
-            if outcome == "arrived_unconfirmed" else None)
-        message = outcome + (f": {why}" if why else "")
+            if outcome == "arrived_unconfirmed" else status.get("end_reason"))
+        by = status.get("cancelled_by")
+        message = (outcome + (f" ({by})" if outcome == "cancelled" and by else "")
+                   + (f": {why}" if why else ""))
     tier = status.get("tier") or {}
     stats = tier.get("stats") or {}
     arrival = status.get("arrival") or {}
@@ -69,6 +76,8 @@ def diagnostic(status, error=None):
         ("policy", status.get("policy")),
         ("mission", status.get("mission")),
         ("outcome", outcome),
+        ("end_state", status.get("end_state")),
+        ("cancelled_by", status.get("cancelled_by")),
         ("step", status.get("step")),
         ("max_steps", status.get("max_steps")),
         ("last_action", status.get("last_action")),

@@ -99,4 +99,4 @@ def test_criterion_4_a_refused_centring_ends_the_mission_like_any_refused_move()
     runner, _ = _runner(-1.0, robot_cls=Outranked)
     runner.start()
     assert runner.tick() is False
-    assert runner.status()["outcome"] == "preempted"
+    assert runner.status()["outcome"] == "cancelled"

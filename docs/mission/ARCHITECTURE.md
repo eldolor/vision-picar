@@ -141,7 +141,7 @@ sweep measured through it would then overstate the car's safety
 **Decision.** The service holds one mission slot. A second start while one
 runs is refused with a conflict. A person at the D-pad still outranks the
 brain, but that is enforced by the robot (safety domain), and a mission that
-loses the robot ends **preempted**.
+loses the robot ends **cancelled** (by the D-pad).
 
 **Rejected.** Queueing or replacing: two loops driving one robot is exactly
 the failure the service exists to prevent, and a silent replace hides it.
@@ -165,13 +165,38 @@ to start over a failed validation call would turn one into the other.
 
 ### Outcomes say what happened, not just that it stopped
 
-**Decision.** A mission ends in exactly one of: found, room_reached,
-max_steps, blocked, searched, arrived_unconfirmed, stopped, preempted,
-failed. The first outcome wins and later stops cannot rewrite it. Three are
-deliberately not "failed":
+**Decision** (end states: 3.70, decided by the user 2026-10-11). A mission
+ends in one of **four end states**, or in one of the outcomes kept beside
+them. The first outcome wins and later stops cannot rewrite it.
 
-- **preempted** -- a person took the robot. Filing a normal intervention
-  beside a dead cloud link would invite a retry where retrying is wrong.
+| Outcome | Kind | Means | Phone style |
+|---|---|---|---|
+| **found** | end state | the target seen, at the arrival rule's range, and the cloud said yes; the robot parked beside it | ok |
+| **exhausted** | end state | nowhere reachable left to look: no frontier, no unseen floor, no labelled room left to enter | warn |
+| **out_of_budget** | end state | the mission's time limit or the battery floor was reached (or the step backstop derived from the time limit); the robot stops and reports where it looked | warn |
+| **cancelled** | end state | a person ended it from the phone: Stop (`cancelled_by: stop`) or a D-pad or tap-to-goal takeover (`cancelled_by: dpad`); it reports where it looked. A refusal naming another AUTONOMOUS driver is no person's doing and ends `failed` | neutral |
+| room_reached | goal | a room-only mission reached its room | ok |
+| blocked | fault | the safety layer kept refusing forward | warn |
+| arrived_unconfirmed | fault | parked at an arrival the cloud never answered (never shown as found) | warn |
+| failed | fault | B3.2's vision budget, B3.3's tick deadline, or a body fault | error |
+
+`searched`, `max_steps`, `stopped` and `preempted` -- the names before 3.70
+-- are no longer written. A record that carries one (a mission log, a
+metrics row, a run file under `evaluations/`) is READ as `exhausted`,
+`out_of_budget`, `cancelled` (by `stop`) and `cancelled` (by `dpad`), never
+rewritten.
+
+**The budget is time and battery, not steps** (3.70 E4, conflict 3). A step
+was one decision on one frame, so 120 steps was about a minute of searching.
+The step count stays only as a runaway backstop derived from the time limit
+(limit / 0.5 s x 2), so it can fire only if the clock check fails.
+
+Four are deliberately not "failed":
+
+- **cancelled** -- a person ended it, with Stop or the D-pad. Filing a
+  normal intervention beside a dead cloud link would invite a retry where
+  retrying is wrong.
+- **out_of_budget** -- it was still trying; the limit is the operator's.
 - **blocked** -- the policy kept asking to drive forward and the safety
   layer kept refusing (R1b, `PLAN-ros-alignment.md` 3.4). Nothing broke;
   going around is route planning, and nav2 reports an unreachable goal the
@@ -299,7 +324,8 @@ tools, a tool runner belongs inside the vision function, below the runner.
 | A tick never returns | the service abandons the tick thread, stops the robot and ends the mission | a stuck loop ends **failed** within one tick deadline, robot stopped, while status and health keep answering |
 | The brain process dies mid-move | nothing here can act | the robot's watchdog stops the motors within one watchdog period (safety domain) |
 | Stop lands while a tick is in flight | the halt gate refuses that tick's move or pan | after a mission ends, no further movement command from it reaches the robot |
-| A person takes the robot | the mission ends **preempted**; it stops the car, not retries | a preempted brain never re-takes the robot |
+| A person takes the robot | the mission ends **cancelled** (`cancelled_by: dpad`); it stops the car, not retries | a preempted brain never re-takes the robot |
+| The time limit passes or the battery reads under its floor | the mission ends **out_of_budget**, the robot stopped, with a report of where it looked | ends within one tick of the limit; two low readings in a row (one is a motor's sag) |
 | The safety layer keeps refusing forward | the mission ends **blocked** after a short run of refusals | no mission spends its budget pushing into a wall |
 | A body read or move raises anything else | the mission ends **failed** with the robot stopped | the brain never loops blind on a dead robot link |
 | World unreachable | missions run without a map | a mapper outage costs exploration efficiency, never a mission |

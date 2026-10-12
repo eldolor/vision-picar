@@ -38,8 +38,8 @@ from typing import Optional
 
 import httpx
 
-from robot.interface import (Preempted, RobotInterface, unusable_grid,
-                             unusable_scan, unusable_wheels,
+from robot.interface import (Preempted, RobotInterface, unusable_battery,
+                             unusable_grid, unusable_scan, unusable_wheels,
                              unusable_odometry)
 from robot.safety import SafetyViolation
 
@@ -156,6 +156,17 @@ class RemoteRobot(RobotInterface):
             if "HTTP 404" in str(e):
                 logger.info("robot server has no /wheels route -- reporting no wheel state")
                 return unusable_wheels()
+            raise
+
+    def get_battery(self) -> dict:
+        """3.70 E4. Same 404 rule as `get_odometry()`: a server that
+        predates the route has no battery to report."""
+        try:
+            return self._request("GET", "/battery")
+        except RobotTransportError as e:
+            if "HTTP 404" in str(e):
+                logger.info("robot server has no /battery route -- reporting no battery")
+                return unusable_battery()
             raise
 
     def get_scan(self, max_range_m: Optional[float] = None) -> dict:

@@ -432,6 +432,9 @@ class RosDriveRobot(RobotInterface):
     def get_wheel_state(self) -> dict:
         return self.inner.get_wheel_state()
 
+    def get_battery(self) -> dict:
+        return self.inner.get_battery()
+
     def get_scan(self, max_range_m=None) -> dict:
         return self.inner.get_scan(max_range_m=max_range_m)
 

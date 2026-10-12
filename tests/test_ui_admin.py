@@ -450,3 +450,28 @@ def test_an_older_scorers_card_is_marked_and_not_rescored_by_itself(browser, adm
     assert not [u for u in scored if walks["walks"][0]["walk"] in u], scored
     page.close()
     context.close()
+
+
+def test_the_metrics_table_reads_old_outcome_names_as_the_new_ones(browser):
+    """3.70 E1: a stored metrics row keeps the outcome it was written with;
+    the console reads `searched`, `max_steps`, `stopped` and `preempted` as
+    today's names and never shows the old ones. Red first: shown raw."""
+    page = browser.new_context(viewport=PHONE).new_page()
+    root = Path(REPO_ROOT) / "control"
+    def serve(name):
+        kind = "text/html" if name.endswith(".html") else "application/javascript"
+        return lambda route: route.fulfill(status=200, body=(root / name).read_text(),
+                                           content_type=kind)
+    for name in ("metrics.html", "metrics.js"):
+        page.route(f"http://metrics.test/{name}", serve(name))
+    runs = [{"run_id": f"r{i}", "finished_at": 1760000000 + i, "policy": "explore",
+             "outcome": o, "steps": 3, "stats": {}, "config": {}}
+            for i, o in enumerate(["searched", "max_steps", "stopped", "preempted", "found"])]
+    page.route("http://metrics.test/metrics/summary*", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=json.dumps({"runs": runs})))
+    page.goto("http://metrics.test/metrics.html")
+    pills = page.locator("td .pill")
+    sync_api.expect(pills).to_have_count(5, timeout=5000)
+    shown = sorted(pills.all_inner_texts())
+    assert shown == sorted(["exhausted", "out_of_budget", "cancelled", "cancelled", "found"]), shown
+    page.context.close()

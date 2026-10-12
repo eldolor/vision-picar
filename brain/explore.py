@@ -18,8 +18,12 @@ Each step reads SLAM's map and pose, and does exactly one of these:
   and the camera 60, so the map runs out of frontiers before the camera has
   looked at every floor; go and look at the largest patch of known floor
   the camera has not seen (`find_view_gaps`), and turn to face it;
-* **nothing left** -- no reachable frontier, no unseen floor, and nothing
-  waiting out a cooldown: the mission ends `searched`.
+* **a labelled room not yet entered** (3.70 E3) -- where the map carries
+  room labels (a survey's, S2), go into each labelled room the robot's
+  centre has not been inside yet;
+* **nothing left** -- no reachable frontier, no unseen floor, no labelled
+  room left to enter, and nothing waiting out a cooldown: the mission ends
+  `exhausted` (3.70 E1; `searched` before it).
 
 **No verb is ever sent while a goal is live.** Since 3.23 a goal is an
 autonomous driver and the robot server refuses every other autonomous
@@ -87,6 +91,11 @@ OPEN_ANGLES = (90, 45, 20, 10, 5)
 CREEP_SPEED = 5
 # "Boxed in": fewer reachable stopping places than this around the robot.
 BOXED_CELLS = 40
+# 3.70 E3: a room goal aims at least this far inside the room's label where
+# it can -- nav2's xy goal tolerance (nav2.yaml, 0.10 m) -- so arriving within
+# tolerance still puts the robot's centre in the room. In metres, not cells:
+# the sim's map is 30 cm a cell and SLAM's 5 cm.
+ROOM_INSET_M = 0.10
 # The robot server's refusal when the mission's OWN goal still holds the
 # robot (3.23) -- not a person taking over. A move refused for this waits.
 OWN_GOAL_REFUSAL = "nav2 goal is active"
@@ -147,7 +156,18 @@ class ExploreAgent(MissionAgent):
         self.retry = retry or RetryBook()
         # 3.65 phase 2: None is the rule; a policy ranks the same candidates.
         self.goal_policy = goal_policy
-        self.searched = False          # read by MissionRunner: ends `searched`
+        self.exhausted = False         # read by MissionRunner: ends `exhausted`
+        # 3.70 E3: labelled rooms the robot's centre has been inside, by the
+        # map's own room labels; and how often a room goal arrived without
+        # that (twice and the room is given up, as a frontier is).
+        self.rooms_entered: set = set()
+        self._room_goals_reached: dict = {}
+        # ...and how often one FAILED: a room nav2 keeps refusing is given up
+        # after the retry limit, by name -- not attacked cell by cell.
+        self._room_goals_failed: dict = {}
+        # 3.70 E4/E5's report: every goal reached, as [x_m, y_m, kind].
+        self.goals_reached: list = []
+        self._last_map: Optional[dict] = None
         self._goal: Optional[dict] = None   # {"x_m","y_m","kind","sent_at"}
         self._pending: list = []
         self._approach: Optional[tuple] = None
@@ -173,7 +193,8 @@ class ExploreAgent(MissionAgent):
         self._view_goals: list = []    # where view goals have stood the robot
         # 3.31's furnished-home runs: wedged between a sofa and a coffee
         # table, every goal aborted, the places were set aside one by one,
-        # and the search ended `searched` with the robot simply stuck.
+        # and the search ended (`searched`, now `exhausted`) with the robot
+        # simply stuck.
         self.escapes = 0
         self._wedged: list = []        # goals that failed without the robot moving
         self.seen_res: Optional[float] = None
@@ -212,6 +233,7 @@ class ExploreAgent(MissionAgent):
         pose = self._pose()
         if pose.get("usable"):
             frame["pose"] = {k: pose[k] for k in ("x_m", "y_m", "heading_deg", "map_id")}
+            self._note_room(pose)
         self.memory.record_observation(result.step, frame, scene)
         room = frame.get("room", "unknown")
         self.memory.mark_room_searched(room)
@@ -225,6 +247,11 @@ class ExploreAgent(MissionAgent):
             self._cancel()
             return "STOP", True, "target found"
         self._note_seen()
+        # 3.70 E3: the room it stands in counts as entered BEFORE it chooses,
+        # or its first room goal would be the room it is already in.
+        pose = self._pose()
+        if pose.get("usable"):
+            self._note_room(pose)
 
         state = self._goal_state()
         ended = None
@@ -424,9 +451,12 @@ class ExploreAgent(MissionAgent):
                 return out
         # "Boxed in" is counted at the clearance goals need (3.45 review):
         # counted at 0.22 m, a nook with room for nav2 but none to leave by
-        # found no goal, yet read as roomy -- and ended the search `searched`
-        # without backing out.
+        # found no goal, yet read as roomy -- and ended the search (then
+        # `searched`) without backing out.
         steps, _start, _need = reachable(m, pose["x_m"], pose["y_m"], clearance_m=leave)
+        room_goal = self._room_goal(m, steps, now, known)
+        if room_goal is not None:
+            return room_goal
         if len(steps) < BOXED_CELLS and self.escapes < MAX_ESCAPES:
             # Nowhere reachable to stop -- from HERE. Boxed in, not done.
             self._queue_escape("boxed", reachable_cells=len(steps))
@@ -434,11 +464,12 @@ class ExploreAgent(MissionAgent):
         if self.retry.cooling(now):
             return "WAIT", True, (f"no frontier ready; retrying in "
                                   f"{self.retry.next_ready_in(now):.0f} s")
-        self.searched = True
+        self.exhausted = True
         self.last_event = (f"no reachable frontier left ({len(frontiers)} on the map: "
                            f"{skipped['reached twice']} reached twice, "
                            f"{skipped['set aside']} set aside or dropped)")
-        self._event("searched", frontiers=len(frontiers), skipped=skipped)
+        self._event("exhausted", frontiers=len(frontiers), skipped=skipped,
+                    rooms_entered=sorted(self.rooms_entered))
         return "STOP", True, self.last_event
 
     def _view_allowed(self, g) -> bool:
@@ -450,7 +481,7 @@ class ExploreAgent(MissionAgent):
     def _learned_goal(self, m, pose, frontiers, leave, known, now, skipped):
         """3.65 phase 2: pool every frontier and view gap the rule would
         send, and send the one the policy scores highest. None when the rules
-        allow none -- the caller then decides boxed, cooling or searched,
+        allow none -- the caller then decides boxed, cooling or exhausted,
         exactly as under the rule."""
         r = self.retry.radius_m
         seen_cells = {self._to_cell(m, c) for c in self.seen}
@@ -498,6 +529,73 @@ class ExploreAgent(MissionAgent):
             self._view_goals.append(c.goal)
         return out
 
+    # ---------- 3.70 E3: labelled rooms ----------
+
+    @staticmethod
+    def _labels(m: dict) -> Optional[dict]:
+        """The map's room-label layer, if it has a usable one: `{"names":
+        [...], "cells": [index into names, or -1, per map cell]}`."""
+        labels = (m or {}).get("room_labels") or None
+        if (not labels or not labels.get("names")
+                or len(labels.get("cells") or ()) != m.get("width", 0) * m.get("height", 0)):
+            return None
+        return labels
+
+    def _note_room(self, pose: dict) -> None:
+        """Record the labelled room under the robot's centre, if any."""
+        m = self._last_map
+        labels = self._labels(m) if m else None
+        if labels is None:
+            return
+        i, j = self._to_cell(m, (pose["x_m"], pose["y_m"]))
+        if 0 <= i < m["width"] and 0 <= j < m["height"]:
+            k = labels["cells"][j * m["width"] + i]
+            if 0 <= k < len(labels["names"]):
+                self.rooms_entered.add(labels["names"][k])
+
+    def _room_goal(self, m: dict, steps: dict, now: float, known):
+        """A goal into the nearest labelled room not yet entered: the
+        reachable cell of it the robot can reach soonest, preferring cells
+        whose neighbours within ROOM_INSET_M carry the same label -- so
+        nav2's arrival tolerance cannot leave the robot's centre in the
+        doorway, outside the room. None when the map has no labels, or every
+        labelled room is entered, given up (reached twice without entering,
+        or failed `retry.limit` times), set aside, or out of reach."""
+        labels = self._labels(m)
+        if labels is None:
+            return None
+        w, h, res = m["width"], m["height"], m["resolution_m"]
+        cells, names = labels["cells"], labels["names"]
+        n = max(1, int(math.ceil(ROOM_INSET_M / res)))
+
+        def inset(i, j, k):
+            return all(0 <= i + di < w and 0 <= j + dj < h
+                       and cells[(j + dj) * w + i + di] == k
+                       for di in range(-n, n + 1) for dj in range(-n, n + 1))
+
+        best = {}
+        for (i, j), d in steps.items():
+            k = cells[j * w + i]
+            if not 0 <= k < len(names):
+                continue
+            name = names[k]
+            if (name in self.rooms_entered or self._room_goals_reached.get(name, 0) >= 2
+                    or self._room_goals_failed.get(name, 0) >= self.retry.limit):
+                continue
+            rank = (0 if inset(i, j, k) else 1, d)
+            if name not in best or rank < best[name][0]:
+                x = m["origin_x_m"] + (i + 0.5) * res
+                y = m["origin_y_m"] + (j + 0.5) * res
+                if self.retry.available(x, y, now, known):
+                    best[name] = (rank, x, y)
+        if not best:
+            return None
+        name, ((_, d), x, y) = min(best.items(), key=lambda kv: kv[1][0][1])
+        out = self._send(x, y, "room", now, room=name, path_m=round(d * res, 2))
+        if out[0] == "GOAL":
+            self._goal["room"] = name
+        return out
+
     def _goal_ended(self, state: str, now: float) -> None:
         g, self._goal = self._goal, None
         pose = self._pose()
@@ -512,6 +610,13 @@ class ExploreAgent(MissionAgent):
             self._looked.append(g["look_at"])
         if state == "succeeded":
             self.last_event = f"reached {g['kind']} goal"
+            self.goals_reached.append([round(g["x_m"], 2), round(g["y_m"], 2), g["kind"]])
+            if g.get("room"):
+                if pose.get("usable"):
+                    self._note_room(pose)
+                if g["room"] not in self.rooms_entered:
+                    self._room_goals_reached[g["room"]] = (
+                        self._room_goals_reached.get(g["room"], 0) + 1)
             if g["kind"] == "frontier":
                 self._reached.append((g["x_m"], g["y_m"]))
                 self._pending = list(LOOK_AROUND)
@@ -526,6 +631,8 @@ class ExploreAgent(MissionAgent):
             return
         target = g.get("target") or (g["x_m"], g["y_m"])
         self.goals_failed += 1
+        if g.get("room"):
+            self._room_goals_failed[g["room"]] = self._room_goals_failed.get(g["room"], 0) + 1
         if g.get("from") and pose.get("usable") and math.hypot(
                 pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M:
             # It never left: the robot is wedged, not the place unreachable.
@@ -742,6 +849,7 @@ class ExploreAgent(MissionAgent):
             return
         if not m.get("usable"):
             return
+        self._last_map = m
         res = m["resolution_m"]
         self.seen_res = res
         for c in camera_seen(m, pose["x_m"], pose["y_m"], pose["heading_deg"] + pan):

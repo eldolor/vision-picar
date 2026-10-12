@@ -264,8 +264,10 @@ returns `True` while the mission is still running, so a caller can write
     reached -- outcome `found` or `room_reached`.
 11. **Check for stuck, then the budget.** `stuck_after` (default 5)
     refused `FORWARD`s in a row ends the mission `blocked` (R1b, 2026-09-25:
-    going around is route planning, nav2's job). Then, at `max_steps`, the
-    mission ends `max_steps`. Both are decided outside the runner's lock,
+    going around is route planning, nav2's job). Then the budget (3.70
+    E4): the time limit and the battery floor -- also checked at the top
+    of every tick -- and the step backstop derived from the time limit; any
+    of them ends the mission `out_of_budget`. All are decided outside the runner's lock,
     because `_finish()` makes a network call.
 
 Steps 6 and 8 are the same check run twice on purpose. The brain's copy
@@ -277,32 +279,43 @@ it is the only one a compromised or buggy brain cannot skip.
 ## 4. Lifecycle and outcomes
 
 ```
-   idle ──start()──> running ──┬── found          target sighted
+   idle ──start()──> running ──┬── found          target sighted and confirmed
+                               ├── exhausted      nowhere reachable left to
+                               │                  look (explore; 3.70)
+                               ├── out_of_budget  time limit, battery floor,
+                               │                  or the step backstop (3.70)
+                               ├── cancelled      stop() (cancelled_by stop),
+                               │                  or a D-pad takeover
+                               │                  (cancelled_by dpad; §4.1)
                                ├── room_reached   target room entered
-                               ├── max_steps      budget exhausted
                                ├── blocked        stuck_after FORWARDs in a
                                │                  row refused (R1b)
                                ├── arrived_unconfirmed  vision budget
                                │                  blown while parked at an
                                │                  arrival the cloud never
                                │                  answered (3.47)
-                               ├── stopped        stop() -- an operator
-                               ├── preempted      a higher-priority driver
-                                                  took the robot (§4.1)
                                └── failed         abort(), a vision budget
                                                   blown, or a step raised
 ```
 
-**`preempted` is deliberately not `failed`.** Nothing went wrong; the
-mission was outranked. Filing a normal human intervention alongside a dead
-AWS link would make both harder to read, and would invite a retry where
-retrying is exactly wrong.
+The first four are the **end states** the phone shows (3.70, decided by the
+user 2026-10-11; `status.end_state`); the rest are kept beside them, each in
+its own style. `searched`, `max_steps`, `stopped` and `preempted` are the
+pre-3.70 names: never written now, read as `exhausted`, `out_of_budget`,
+`cancelled`/`stop` and `cancelled`/`dpad` (`read_outcome()`).
+`out_of_budget` and `cancelled` (and `exhausted`) carry `status.report`:
+the rooms entered, the coverage estimate, the goals reached and the map.
+
+**`cancelled` is deliberately not `failed`.** Nothing went wrong; a person
+ended it, at Stop or by taking the robot. Filing a normal human
+intervention alongside a dead AWS link would make both harder to read, and
+would invite a retry where retrying is exactly wrong.
 
 **`arrived_unconfirmed` is neither `found` nor `failed`** (3.47): the
 robot is parked at what the local tier took for the target, and the cloud
 that must confirm identity never answered. A person should look.
 
-**`blocked` is not `failed` or `max_steps` either** (added 2026-09-25):
+**`blocked` is not `failed` or `out_of_budget` either** (added 2026-09-25):
 nothing broke -- the collar did its job -- and the mission was no longer
 making progress. nav2 reports an unreachable goal the same way, which is
 why it is an outcome rather than a recovery.

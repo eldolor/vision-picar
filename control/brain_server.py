@@ -9,7 +9,8 @@ a MissionRunner as an asyncio background task, so a mission survives the
 HTTP request that started it -- which is the point. Today the browser IS
 the loop, so backgrounding the phone's tab halts autonomy.
 
-    POST /mission/start   {"target_object": "red backpack", "max_steps": 120,
+    POST /mission/start   {"target_object": "red backpack",
+                           "mission_time_limit_s": 600,   # optional (3.70)
                            "policy": "frontier" | "vision" | "tiered",
                            "fault": "none"}
     POST /mission/stop    always available, always stops the robot too
@@ -82,7 +83,7 @@ from typing import Callable, Optional
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from brain.navigate import vision_fn_for
 from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
@@ -137,7 +138,12 @@ class MissionStartRequest(BaseModel):
     target_object: Optional[str] = None
     target_room: Optional[str] = None
     mission: Optional[str] = None
+    # 3.70 E4: the step backstop is derived from the time limit; a value here
+    # overrides it (a harness or a sweep), and still ends `out_of_budget`.
     max_steps: Optional[int] = None
+    # 3.70 E4: this mission's time limit, in seconds, over the config's
+    # `mission_time_limit_s` (the live demos run longer than the test value).
+    mission_time_limit_s: Optional[float] = Field(default=None, gt=0, le=86400)
     policy: str = "frontier"
     # Which model answers /navigate for this mission (policy: "vision" only).
     # Omitted falls back to brain.navigate_model_id, then to the vision
@@ -500,7 +506,10 @@ def create_app(
             target_object=req.target_object,
             target_room=req.target_room,
             mission=req.mission,
-            max_steps=req.max_steps or config["max_steps"],
+            max_steps=req.max_steps,
+            mission_time_limit_s=(req.mission_time_limit_s
+                                  or config["mission_time_limit_s"] or None),
+            battery_floor_v=config["battery_floor_v"] or None,
             stuck_after=config["stuck_after"],
             min_distance_cm=config["min_distance_cm"],
             policy=req.policy,
@@ -792,6 +801,11 @@ def create_app(
         # (its poll stops), so it carries `cloud` like every other status.
         if runner is not None:
             await asyncio.to_thread(runner.stop)
+            # 3.70: the report is built after the stop, off this loop; give
+            # it a moment so the Stop's answer usually carries it.
+            done = getattr(runner, "report_done", None)
+            if done is not None:
+                await asyncio.to_thread(done.wait, 2.0)
             return {"stopped": True, "status": {**runner.status(), "cloud": cloud_status()}}
 
         # No mission has ever run: stop the car anyway.

@@ -14,6 +14,12 @@
 (function () {
   "use strict";
 
+  // 3.70 E1: the outcome names written before 3.70, read as today's
+  // (control/mission_runner.py read_outcome()). Stored rows are never rewritten.
+  var LEGACY_OUTCOME = { searched: "exhausted", max_steps: "out_of_budget",
+                         stopped: "cancelled", preempted: "cancelled" };
+  function readOutcome(o) { return (o && LEGACY_OUTCOME[o]) || o; }
+
   var SECRET_KEY = "vp_metrics_secret";
   // The admin console is the SAME service behind the SAME secret
   // (WALKS_SECRET guards /recording/*, /stats and /metrics/*), served from
@@ -166,15 +172,16 @@
         ? new Date(r.finished_at * 1000).toLocaleString(undefined,
             { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
         : (r.day || "–");
-      var cls = r.outcome === "found" ? "found"
-        : (r.outcome === "failed" ? "bad" : "");
+      var outcome = readOutcome(r.outcome);
+      var cls = outcome === "found" ? "found"
+        : (outcome === "failed" ? "bad" : "");
       var cfg = Object.keys(r.config || {}).filter(function (k) {
         return r.config[k] !== null && r.config[k] !== "";
       }).map(function (k) {
         return k.replace(/^tier_|^perception_|^navigate_/, "") + "=" + r.config[k];
       }).join(" · ");
       return "<tr><td>" + when + "</td>"
-        + '<td><span class="pill ' + cls + '">' + (r.outcome || "–") + "</span></td>"
+        + '<td><span class="pill ' + cls + '">' + (outcome || "–") + "</span></td>"
         + "<td>" + (r.steps == null ? "–" : r.steps) + "</td>"
         + "<td>" + (r.target_object || "–") + "</td>"
         + "<td>" + (c ? c.p50 + " / " + c.p90 + " / " + c.p99 : "–") + "</td>"

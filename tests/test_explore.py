@@ -19,7 +19,7 @@ import pytest
 from brain.explore import ExploreAgent
 from brain.frontier import RetryBook
 from brain.memory import MissionMemory
-from control.mission_runner import FOUND, MissionRunner, SEARCHED
+from control.mission_runner import EXHAUSTED, FOUND, MissionRunner
 from sim.grid_world import CELL_WALL
 from sim.maps import build_movers, build_world
 from sim.mock_robot import MockRobot
@@ -127,10 +127,10 @@ def test_a_target_in_sight_is_approached_along_its_bearing_at_the_lidar_range():
     assert APPROACH_NEAR_M - 0.01 <= math.hypot(tx - gx, ty - gy) <= APPROACH_FAR_M + 0.01
 
 
-def test_an_absent_target_ends_searched_not_blocked():
+def test_an_absent_target_ends_exhausted_not_blocked():
     runner, nav, grid = _mission(target="purple elephant", max_steps=200)
     s = runner.status()
-    assert s["outcome"] == SEARCHED, s["log_tail"][-5:]
+    assert s["outcome"] == EXHAUSTED, s["log_tail"][-5:]
 
 
 def test_a_goal_refused_for_authority_is_waited_on_not_failed():
@@ -446,7 +446,7 @@ def test_the_leave_clearance_is_the_half_length_plus_the_stopping_distance():
     assert leave_clearance_m(20.0) == pytest.approx(FOOTPRINT_LENGTH_M / 2 + 0.20)
 
 
-def test_a_nook_with_no_leavable_goal_backs_out_before_ending_searched():
+def test_a_nook_with_no_leavable_goal_backs_out_before_ending_exhausted():
     """3.45 review: goals need the leave clearance (0.35 m on a 5 cm map),
     so "boxed in" must be counted at it too. A 0.55 m corridor whose open
     end is unknown has room for nav2 (0.22 m) but nowhere to stop and leave
@@ -476,7 +476,7 @@ def test_a_nook_with_no_leavable_goal_backs_out_before_ending_searched():
     agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="purple elephant"),
                          navigator=FakeNav(robot), clock=lambda: 0.0, world=Nook())
     action, _ok, detail = agent._next_frontier(0.0)
-    assert not agent.searched and action != "STOP", detail
+    assert not agent.exhausted and action != "STOP", detail
     assert [e["why"] for e in agent.events if e["event"] == "escape"] == ["boxed"]
 
 

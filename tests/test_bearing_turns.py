@@ -353,7 +353,7 @@ def test_a_robot_that_reaches_the_target_is_not_called_blocked():
 
 def test_stuck_detection_can_be_switched_off():
     status = _run_from(JAMB_STARTS[0], stuck_after=0)
-    assert status["outcome"] == "max_steps"
+    assert status["outcome"] == "out_of_budget"
 
 
 def test_a_refusal_followed_by_progress_resets_the_count():

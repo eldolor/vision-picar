@@ -35,10 +35,16 @@ def test_an_unreachable_brain_is_stale_not_ok():
 
 
 @pytest.mark.parametrize("outcome,level", [
-    ("running", brain_view.OK), ("found", brain_view.OK), ("stopped", brain_view.OK),
-    ("blocked", brain_view.WARN), ("preempted", brain_view.WARN),
-    ("max_steps", brain_view.WARN), ("arrived_unconfirmed", brain_view.WARN),
-    ("failed", brain_view.ERROR)])
+    ("running", brain_view.OK), ("found", brain_view.OK), ("room_reached", brain_view.OK),
+    # 3.70 E6: the four end states -- Found ok, Exhausted and Out of budget
+    # warn, Cancelled neutral (OK) -- and the faults beside them.
+    ("exhausted", brain_view.WARN), ("out_of_budget", brain_view.WARN),
+    ("cancelled", brain_view.OK),
+    ("blocked", brain_view.WARN), ("arrived_unconfirmed", brain_view.WARN),
+    ("failed", brain_view.ERROR),
+    # Old names from a brain before 3.70, read as today's (E1).
+    ("searched", brain_view.WARN), ("max_steps", brain_view.WARN),
+    ("stopped", brain_view.OK), ("preempted", brain_view.OK)])
 def test_each_outcome_has_a_level(outcome, level):
     assert brain_view.diagnostic(_status(outcome=outcome))["level"] == level
 
@@ -57,8 +63,27 @@ def test_every_real_outcome_is_mapped():
     names |= set(re.findall(r"_finish\([A-Z_]+ if [^,]+ else ([A-Z_]+)", src))
     names |= {"IDLE", "RUNNING"}
     outcomes = {getattr(mr, n) for n in names}
-    assert {"found", "room_reached", "searched", "arrived_unconfirmed", "failed"} <= outcomes, outcomes
+    assert {"found", "room_reached", "exhausted", "out_of_budget", "cancelled",
+            "arrived_unconfirmed", "failed", "blocked"} <= outcomes, outcomes
     assert outcomes <= set(brain_view._OUTCOME_LEVEL), outcomes - set(brain_view._OUTCOME_LEVEL)
+    # 3.70 E1: the retired names are written nowhere.
+    assert not outcomes & {"searched", "stopped", "preempted", "max_steps"}, outcomes
+
+
+def test_a_cancelled_mission_says_who_and_why():
+    d = brain_view.diagnostic(_status(outcome="cancelled", cancelled_by="dpad",
+                                      end_state="cancelled",
+                                      end_reason="twin-dpad holds the robot"))
+    assert d["level"] == brain_view.OK
+    assert d["message"] == "cancelled (dpad): twin-dpad holds the robot", d["message"]
+    assert ("cancelled_by", "dpad") in d["values"]
+
+
+def test_out_of_budget_says_which_limit():
+    d = brain_view.diagnostic(_status(outcome="out_of_budget", end_state="out_of_budget",
+                                      end_reason="time limit of 120 s reached (120.3 s)"))
+    assert d["level"] == brain_view.WARN
+    assert "time limit" in d["message"]
 
 
 def test_an_unconfirmed_arrival_says_why():

@@ -65,6 +65,7 @@ Actions: `FORWARD`, `REVERSE`, `LEFT`, `RIGHT`, `STOP`, `LOOK_LEFT`,
 | `/depth` | the depth grid plus `path`: `{"indices", "clearance_cm", "source", "blocked", "veto_cm", "veto_source", "min_distance_cm", "sensor_to_bumper_cm"}` |
 | `/odometry` | `{"usable", "distance_m", "heading_deg"}` |
 | `/wheels` | the wheel state (read by `picar_sim_hardware`) |
+| `/battery` | `{"usable", "v"}` -- the motor board's pack voltage (3.70 E4; read by the brain against `battery_floor_v`); `usable: false`, `v: null` on a body with no board. ALB patterns in the kept `twin.yaml`/`teleop-robot.yaml` |
 | `/scan?max_range_m=` | the scan plus `stamp_unix` (capture time) |
 
 ### World (all secret)

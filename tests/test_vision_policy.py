@@ -18,7 +18,7 @@ import pytest
 from brain.memory import MissionMemory
 from brain.navigate import FrameHasNoImage, navigate_scene, to_scene, vision_fn_for
 from brain.vision_agent import VisionAgent
-from control.mission_runner import FOUND, MAX_STEPS, MissionRunner
+from control.mission_runner import FOUND, OUT_OF_BUDGET, MissionRunner
 from sim.replay_robot import NO_SENSOR_CM, ReplayRobot
 from tests.conftest import RecordingRobot
 
@@ -444,7 +444,7 @@ def test_the_step_budget_bounds_the_bill(tmp_path):
     while runner.tick():
         pass
 
-    assert runner.status()["outcome"] == MAX_STEPS
+    assert runner.status()["outcome"] == OUT_OF_BUDGET
     assert vision_fn.calls["n"] == 5
 
 

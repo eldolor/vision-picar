@@ -1523,13 +1523,59 @@
     el.className = "val" + (cls ? " " + cls : "");
   }
 
+  // 3.70 E6: each ending's style. The four end states: Found ok; Exhausted
+  // and Out of budget warn (3.53's style -- it looked and did not find);
+  // Cancelled neutral (a person ended it; nothing is wrong). Beside them:
+  // room_reached ok, blocked and arrived_unconfirmed warn, failed alert. No
+  // end state is ever drawn as an error.
   const BRAIN_OUTCOME_CLASS = {
-    found: "safe", room_reached: "safe", failed: "alert", stopped: "alert",
-    blocked: "alert",
+    found: "safe", exhausted: "warn", out_of_budget: "warn", cancelled: null,
+    room_reached: "safe", failed: "alert", blocked: "warn",
     // 3.53: neither -- the robot reached what it took for the target and
     // the cloud that must confirm identity could not be asked.
     arrived_unconfirmed: "warn",
   };
+
+  // 3.70 E1: the names a brain from before 3.70 still writes, read as
+  // today's (control/mission_runner.py read_outcome()), never shown raw.
+  const LEGACY_OUTCOME = {
+    searched: ["exhausted", null], max_steps: ["out_of_budget", null],
+    stopped: ["cancelled", "stop"], preempted: ["cancelled", "dpad"],
+  };
+  function readOutcome(status) {
+    const raw = (status && status.outcome) || "idle";
+    const legacy = LEGACY_OUTCOME[raw];
+    return legacy
+      ? { outcome: legacy[0], cancelledBy: (status && status.cancelled_by) || legacy[1] }
+      : { outcome: raw, cancelledBy: (status && status.cancelled_by) || null };
+  }
+
+  const CANCELLED_BY_WORDS = { stop: "Stop pressed", dpad: "D-pad took over" };
+  // 3.70 E6: the end states in words. Other outcomes keep their own names.
+  function endStateText(status) {
+    const r = readOutcome(status);
+    const why = status.end_reason ? " \u2014 " + status.end_reason : "";
+    if (r.outcome === "found") return "Found";
+    if (r.outcome === "exhausted") return "Exhausted \u2014 nowhere reachable left to look";
+    if (r.outcome === "out_of_budget") return "Out of budget" + why;
+    if (r.outcome === "cancelled") {
+      return "Cancelled" + (r.cancelledBy ? " \u2014 " + (CANCELLED_BY_WORDS[r.cancelledBy] || r.cancelledBy) : "");
+    }
+    return null;
+  }
+
+  // 3.70 E4/E5: "where it looked", from the brain's report. "" without one.
+  // The floor is said as AREA MAPPED, never the report's `coverage` share:
+  // that estimate cannot count floor the map has not reached, and read
+  // 97% on a live run whose truth was 28% (3.70 E4's records).
+  function reportText(report) {
+    if (!report) return "";
+    const rooms = (report.rooms_entered || []).length
+      ? "Looked in " + report.rooms_entered.join(", ") : "Entered no room";
+    const area = report.mapped_free_m2 == null ? ""
+      : "; " + Math.round(report.mapped_free_m2) + " m\u00B2 of floor mapped";
+    return rooms + area + ".";
+  }
 
   // 3.53: what the late identity check (asked once the cloud is back) has
   // said so far, in words. "" when there is none.
@@ -1587,12 +1633,17 @@
   }
 
   function renderBrainStatus(status) {
-    const outcome = status.outcome || "idle";
+    const outcome = readOutcome(status).outcome;
     const late = outcome === "arrived_unconfirmed" ? lateWords(status) : "";
     setBrainText("brain-tel-outcome",
-      outcome + (status.fault && status.fault !== "none" ? " (" + status.fault + " drill)" : "")
+      (endStateText(status) || outcome)
+        + (status.fault && status.fault !== "none" ? " (" + status.fault + " drill)" : "")
         + (late ? " — " + late : ""),
       BRAIN_OUTCOME_CLASS[outcome]);
+    // 3.70 E6: where an Out of budget or Cancelled mission looked.
+    setBrainText("brain-tel-report",
+      (outcome === "out_of_budget" || outcome === "cancelled" || outcome === "exhausted")
+        ? reportText(status.report) : null);
     setBrainText("brain-tel-step",
       status.step == null ? null : status.step + (status.max_steps ? " / " + status.max_steps : ""));
     // R1: a turn names its size. "LEFT 23°" is a bearing-sized correction;
@@ -1614,8 +1665,10 @@
     setBrainText("brain-tel-rooms",
       (status.rooms_searched && status.rooms_searched.length) ? status.rooms_searched.join(", ") : null);
     const unconfirmed = status.outcome === "arrived_unconfirmed";
+    // 3.70: an ended mission's Why is why it ENDED, not its last decision.
+    const ending = !status.running && endStateText(status) ? status.end_reason : null;
     setBrainText("brain-tel-why",
-      status.error || (unconfirmed ? unconfirmedText(status) : status.last_reasoning),
+      status.error || (unconfirmed ? unconfirmedText(status) : ending || status.last_reasoning),
       status.error ? "alert" : unconfirmed ? "warn" : null);
     renderCloudRow(status);
     renderTierReadouts(status);
@@ -2097,20 +2150,61 @@
     }
 
     if (wasRunning && !status.running) {
-      const ok = status.outcome === "found" || status.outcome === "room_reached";
-      if (status.outcome === "arrived_unconfirmed") {
+      const outcome = readOutcome(status).outcome;
+      const ok = outcome === "found" || outcome === "room_reached";
+      const ended = endStateText(status);
+      if (outcome === "arrived_unconfirmed") {
         showToast("Mission arrived_unconfirmed: " + unconfirmedText(status), "warn");
+      } else if (ended) {
+        // 3.70 E6: an end state is never an error toast.
+        showToast("Mission " + ended, ok ? "ok" : BRAIN_OUTCOME_CLASS[outcome] === "warn" ? "warn" : "info");
       } else {
-        showToast("Mission " + status.outcome + (status.error ? ": " + status.error : ""),
-          ok ? "ok" : "err");
+        showToast("Mission " + outcome + (status.error ? ": " + status.error : ""),
+          ok ? "ok" : BRAIN_OUTCOME_CLASS[outcome] === "warn" ? "warn" : "err");
       }
       stopBrainPolling();
       watchLateConfirmation(status);
+      fetchReportOnce(status);
     } else if (!status.running && !state.lateWatchTimerId) {
       // A page that connects (or reconnects) after the ending never saw
       // the transition; a late check still waiting is watched all the same.
       watchLateConfirmation(status);
     }
+  }
+
+  // 3.70 E4/E5: the brain writes the report just after the robot stops (it
+  // reads the map, which can take seconds), so the first status that says
+  // "ended" can predate it. Read again every REPORT_POLL_MS, at most
+  // REPORT_POLLS times, and draw it on the panel -- and on the Guide HUD when
+  // Drive via brain is showing that ending. Nothing else is redrawn. A newer
+  // mission start bumps `reportToken`, so an old read draws nothing.
+  const REPORT_POLL_MS = 1500;
+  const REPORT_POLLS = 6;
+  let reportToken = 0;
+  function fetchReportOnce(status) {
+    const outcome = readOutcome(status).outcome;
+    const token = ++reportToken;
+    if (status.report || !(outcome === "out_of_budget" || outcome === "cancelled"
+        || outcome === "exhausted")) return;
+    let left = REPORT_POLLS;
+    const poll = async function () {
+      if (token !== reportToken) return;
+      try {
+        const s = await brainApi("GET", "/mission/status");
+        if (token !== reportToken || !s || s.running || readOutcome(s).outcome !== outcome) return;
+        if (s.report) {
+          setBrainText("brain-tel-report", reportText(s.report));
+          if (state.guideEndShown) {
+            const r = missionStatusToRobotResult(s);
+            renderRobotTelemetry(r);
+            renderRobotStatus(r);
+          }
+          return;
+        }
+      } catch (e) { /* the panel already shows the ending; the report is extra */ }
+      if (--left > 0) setTimeout(poll, REPORT_POLL_MS);
+    };
+    setTimeout(poll, REPORT_POLL_MS);
   }
 
   // 3.53: after an `arrived_unconfirmed` ending the brain asks again once
@@ -2351,6 +2445,7 @@
       if (state.navigatePromptVariant) body.prompt_variant = state.navigatePromptVariant;
     }
     try {
+      reportToken++;               // 3.70: an older ending's report draws nothing
       await brainApi("POST", "/mission/start", body);
       state.brainMissionRunning = true;
       state.brainTarget = target.toLowerCase();
@@ -3197,8 +3292,20 @@
   // /navigate never had (outcome, vision_failures) -- see
   // renderRobotTelemetry.
   function missionStatusToRobotResult(status) {
-    const arrived = status.outcome === "found" || status.outcome === "room_reached";
-    if (status.outcome === "arrived_unconfirmed") {
+    const outcome = readOutcome(status).outcome;
+    const arrived = outcome === "found" || outcome === "room_reached";
+    if (!status.running && (outcome === "exhausted" || outcome === "out_of_budget"
+        || outcome === "cancelled")) {
+      // 3.70 E6: an end state, said as one -- never the error branch (an
+      // ERR LINK block, as if the brain had been lost). No `action`, as for
+      // an unconfirmed arrival: nothing decided a move.
+      const report = reportText(status.report);
+      return { action: null, endState: outcome, endText: endStateText(status),
+               reasoning: endStateText(status) + "." + (report ? " " + report : ""),
+               target_reached: false, target_visible: null, target_direction: null,
+               obstacle_ahead: false, _missionStatus: status };
+    }
+    if (outcome === "arrived_unconfirmed") {
       // 3.53: an outcome, not a lost link. No `action` -- nothing decided a
       // move, and a recorded walk files it like an error frame (action
       // null), so walk_eval's counts do not change.
@@ -3207,7 +3314,7 @@
                obstacle_ahead: false, _missionStatus: status };
     }
     if (!status.running && !arrived) {
-      // Mission ended without finding the target (stopped/failed/max_steps).
+      // Mission ended in a fault (failed, blocked).
       // Reported as an error so the existing error branches (caption,
       // telemetry, the screen-reader announcement) show it exactly like a
       // lost /navigate connection would -- including a live B3.2/T1-stall
@@ -3237,14 +3344,19 @@
     await pushTeleopFrame(base64);
     const status = await brainApi("GET", "/mission/status");
     if (!status.running) {
-      // The mission ended (found, room_reached, stopped, failed or
-      // max_steps) -- nothing left to push frames into. Reuses the same
+      // The mission ended (any end state or fault, 3.70) -- nothing left
+      // to push frames into. Reuses the same
       // pause the found-streak logic already drives, rather than a second
       // stop mechanism; "Resume searching" starts a fresh call loop, not a
       // fresh mission, so this stays a dead end until Stop/Start.
       pauseGuidanceSearch();
       watchLateConfirmation(status);
+      const ended = missionStatusToRobotResult(status);
+      state.guideEndShown = !!ended.endState;
+      fetchReportOnce(status);
+      return ended;
     }
+    state.guideEndShown = false;
     return missionStatusToRobotResult(status);
   }
 
@@ -3307,6 +3419,17 @@
     restartRobotAnimation(robotCountdown, "run");
   }
 
+  // 3.70 E6: where an ended mission looked, as HUD rows -- the caption is
+  // one line and cuts the report off at phone width.
+  function endReportRows(mission) {
+    const report = mission && mission.report;
+    if (!report) return "";
+    const rooms = (report.rooms_entered || []).join(", ") || "none";
+    return '<div id="robot-tel-rooms"><b>RMS</b>' + escapeHtml(rooms) + "</div>"
+      + (report.mapped_free_m2 == null ? ""
+        : '<div id="robot-tel-cov"><b>MAP</b>' + Math.round(report.mapped_free_m2) + " m\u00B2</div>");
+  }
+
   function renderRobotTelemetry(result) {
     const el = document.getElementById("robot-telemetry");
     if (!result || result.error) {
@@ -3323,8 +3446,13 @@
       : "NO";
     const obs = mission ? "N/A" : result.obstacle_ahead
       ? '<span class="v-alert">BLOCKED</span>' : '<span class="v-safe">CLEAR</span>';
+    const END_STA = { exhausted: ["EXHAUSTED", "v-warn"],
+                      out_of_budget: ["OUT OF BUDGET", "v-warn"], cancelled: ["CANCELLED", ""] };
     const reached = result.target_reached === true
       ? '<div><b>STA</b><span class="v-safe">REACHED</span></div>'
+      : result.endState && END_STA[result.endState]
+        ? '<div id="robot-tel-end"><b>STA</b><span class="' + END_STA[result.endState][1] + '">'
+          + END_STA[result.endState][0] + "</span></div>" + endReportRows(mission)
       : result.unconfirmed
         ? '<div><b>STA</b><span class="v-warn">UNCONFIRMED</span></div>' +
           (mission && mission.late_confirmation
@@ -3672,6 +3800,11 @@
     if (!result) { iconEl.innerHTML = ICON.search; textEl.textContent = "Not running."; return; }
     if (result.error) { iconEl.innerHTML = ICON.warning; textEl.textContent = result.error; return; }
     if (result.unconfirmed) { iconEl.innerHTML = ICON.warning; textEl.textContent = result.reasoning; return; }
+    if (result.endState) {
+      iconEl.innerHTML = result.endState === "cancelled" ? ICON.search : ICON.warning;
+      textEl.textContent = result.reasoning;
+      return;
+    }
     if (result.target_reached === true) {
       iconEl.innerHTML = ICON.target;
       textEl.textContent = "Reached " + (state.guidanceTarget || "the target") +
@@ -3692,12 +3825,13 @@
     const key = result.error ? "error"
       : result.unconfirmed
         ? "unconfirmed|" + ((result._missionStatus.late_confirmation || {}).state || "")
+        : result.endState ? "end|" + result.endState
         : (result.target_reached === true ? "reached" : (result.action || "?"));
     if (key === robotLastAnnouncedAction) return;
     robotLastAnnouncedAction = key;
     const msg = result.error
       ? "Decision unavailable. " + (result.error || "")
-      : result.unconfirmed ? result.reasoning
+      : result.unconfirmed || result.endState ? result.reasoning
       : key === "reached"
         ? "Reached " + (state.guidanceTarget || "the target") + ". Search paused."
         : key + ". " + (result.reasoning || "");
@@ -4543,6 +4677,8 @@
         // /navigate call: the brain binds it into the mission's vision_fn,
         // so "Drive via brain" runs the model you chose rather than silently
         // falling back to the service default.
+        reportToken++;             // 3.70: an older ending's report draws nothing
+        state.guideEndShown = false;
         await brainApi("POST", "/mission/start", {
           target_object: state.guidanceTarget,
           // The walk's own policy, not the Sim tab's. "tiered" runs

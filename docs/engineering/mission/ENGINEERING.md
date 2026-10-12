@@ -94,16 +94,48 @@ threads; where it and this file disagree, check the code.
    outside the lock, never raising), in the same locked step as the outcome.
    A failure that lands after `stop()`/`abort()` returns at once: not
    counted, not logged, nothing written. Otherwise `failed`; `Preempted` ->
-   finish
-   `preempted`; anything else -> finish `failed` ("step failed: ...").
+   `_finish_preempted()` (3.70 E5): `cancelled` with `cancelled_by: "dpad"`,
+   unless the refusal names an autonomous holder (`"<holder> is driving"`,
+   holder `brain` or `ros`) -- then `failed`, an arbitration fault. A goal in
+   progress (the phone's tap-to-goal) and a refusal naming no holder stay
+   `cancelled`; anything else -> finish `failed` ("step failed: ...").
 4. Under the lock: bump `ticks`, reset `vision_failures`, record the action,
    the turn counters, and copy `_tier`, `_perception` and `_arrival` off the
    scene (held, not overwritten with None); `last_frame_seq` is read from
    `result.frame`'s `metadata.seq`, not from the scene.
 5. Count consecutive refused FORWARDs (reset by any executed move).
 6. Outside the lock: `found`/`room_reached` if `memory.is_complete()`;
-   `blocked` if the refused count reaches `stuck_after`; `max_steps` if
-   `len(agent.history) >= max_steps`.
+   `exhausted` if the explore agent set `exhausted`; `blocked` if the
+   refused count reaches `stuck_after`; then the budget check again; then
+   `out_of_budget` if `len(agent.history) >= max_steps` (the step backstop).
+
+**The budget (3.70 E4).** `_out_of_budget()` runs at the top of every tick
+(before the cooldown wait and before any step, so a tick that starts past
+the limit moves nothing) and again at the end. It ends the mission
+`out_of_budget` when `self.clock() - start >= mission_time_limit_s` (the
+mission's clock: sim time in process, `time.monotonic()` live), or when the
+battery reads under `battery_floor_v` on `BATTERY_LOW_READINGS` (2)
+consecutive reads, `BATTERY_CHECK_S` (0.5 s) apart on that clock.
+`robot.get_battery()` with `usable: false`, or a read that raises, never
+ends a mission (logged once). `max_steps` defaults to
+`derived_max_steps(mission_time_limit_s)` = limit / 0.5 s x 2 (120 with no
+limit); an explicit `max_steps` overrides it.
+
+**The report (3.70 E3-E5).** For `exhausted`, `out_of_budget` and
+`cancelled`, `_finish()` starts a daemon thread after `_safe_stop()` that
+builds `status.report` (it reads the map, an HTTP call up to the world's
+timeout when remote, and walks it) and then sets `runner.report_done` (set at
+once for other outcomes). Never inline: the brain's loop calls `stop()` on
+its event loop when a Stop cancels it. `POST /mission/stop` waits up to 2 s
+for `report_done` so its answer usually carries it. The report holds:
+`rooms_entered` (the frames' rooms plus the explore agent's labelled rooms),
+`goals_reached` (`[x_m, y_m, kind]`), `coverage` and `mapped_free_m2`
+(`brain/mission_report.py map_coverage()`: known free floor over free plus
+walled-in unknown patches that border free floor -- an estimate on the map
+alone, within 2 points of truth once a search is done and 20-77 points HIGH
+part way through, so the twin shows `mapped_free_m2` instead), `map_id` and `map_version` (the map the mission ran on; no saved
+version until 3.50). So a status read in the moment between the stop and
+the report has `report: null`; the twin reads once more.
 
 ### How a tiered mission is built
 
@@ -267,14 +299,19 @@ otherwise). CORS allows any origin.
 | `target_object` | str, None | required for `vision`/`tiered` |
 | `target_room` | str, None | `frontier` only in practice; one of the two targets is required (`ValueError` -> 400) |
 | `mission` | str, None | free text; defaulted from the targets |
-| `max_steps` | int, None | falls back to config |
+| `max_steps` | int, None | the step backstop; omitted, derived from the time limit (3.70 E4) |
+| `mission_time_limit_s` | float, None; `0 < x <= 86400` (else 422) | this mission's time limit; omitted, the config's `mission_time_limit_s` (3.70 E4) |
 | `policy` | str, `"frontier"` | a plain `str` in the model, not a `Literal`. A value outside `POLICIES` (`frontier`, `vision`, `tiered`) passes validation and is refused by `MissionRunner` with `Unknown policy: ...`, which is a **400**, not a 422 |
 | `model_id`, `prompt_variant` | str, None | request, then config, then the vision service's default; checked once against `GET {vision_url}/navigate/models` |
 | `fault` | str, `"none"` | a plain `str`. `drills.apply()` refuses a value outside `drills.FAULTS` (`none`, `vision_error`, `vision_hang`, `tick_hang`) with `Unknown fault: ...`, which is a **400**. It does so before the drills-off check, so an unknown fault is a 400 even when drills are off |
 
 ### `MissionRunner.status()` fields
 
-`running`, `outcome`, `error`, `policy`, `mission`, `target_object`,
+`running`, `outcome`, `end_state` (3.70: one of the four end states, or
+null), `end_reason`, `cancelled_by` (`stop`, `dpad` or null), `report`
+(above; null until built, and for other outcomes), `budget`
+(`time_limit_s`, `elapsed_s`, `battery_floor_v`, `battery_v`), `error`,
+`policy`, `mission`, `target_object`,
 `target_room`, `step`, `max_steps`, `found`, `room_reached`, `complete`,
 `last_action`, `turns` (`count`, `reversals`, `last_turn_deg`, `share`,
 `spinning`), `last_reasoning`, `rooms_visited`, `rooms_searched`,
@@ -287,13 +324,17 @@ probes, paid_calls, reason, at, confirmed?}`, `state` one of `waiting`,
 `confirmed`, `refused`, `failed`, `not_asked`, `expired`, `dropped`.
 `AGENT-HARNESS.md` section 8 describes each.
 
-**Outcome strings:** `idle`, `running`, `found`, `room_reached`, `stopped`,
-`max_steps`, `blocked`, `searched`, `arrived_unconfirmed`, `preempted`,
-`failed`.
+**Outcome strings:** `idle`, `running`; the end states `found`,
+`exhausted`, `out_of_budget`, `cancelled` (`END_STATES`); beside them
+`room_reached`, `blocked`, `arrived_unconfirmed`, `failed`. 3.70 E1 retired
+`searched`, `max_steps`, `stopped` and `preempted`: never written, and read
+through `read_outcome(outcome, cancelled_by=None) -> (outcome,
+cancelled_by)` (`stopped` -> `cancelled`/`stop`, `preempted` ->
+`cancelled`/`dpad`). The twin and `brain_view.py` hold the same map.
 
 ### In-process
 
-- `MissionRunner(robot, target_object=None, target_room=None, mission=None, max_steps=120, min_distance_cm=20.0, policy="frontier", vision_fn=None, vision_timeout_s=20.0, max_vision_failures=3, world=None, stuck_after=5, ..., inventory=True, detections_fn=None)` (3.46: the object inventory, recorded and reported only; `runner.inventory_sink` is set by the brain server like the metrics fields);
+- `MissionRunner(robot, target_object=None, target_room=None, mission=None, max_steps=None, min_distance_cm=20.0, policy="frontier", vision_fn=None, vision_timeout_s=20.0, max_vision_failures=3, world=None, stuck_after=5, ..., inventory=True, detections_fn=None, mission_time_limit_s=None, battery_floor_v=None)` (3.70: with no time limit -- the in-process harnesses -- the backstop is 120 and no clock limit applies; the brain server always passes the config's) (3.46: the object inventory, recorded and reported only; `runner.inventory_sink` is set by the brain server like the metrics fields);
   `start()`, `tick() -> bool`, `stop(reason)`, `abort(reason)`,
   `is_running()`, `status()`. `start()` on a used runner raises.
 - `vision_fn(frame: dict) -> dict` -- the scene schema (policy domain).
@@ -317,7 +358,8 @@ The `brain:` block of `config/robot.yaml`, read by
 | `world_url` | (unset) | `""` | URL | `default_world_factory` | empty = the URL of the robot actually built; diverges if the world moves behind SLAM |
 | `vision_url` | `""` | `""` | URL | start validation, `vision_fn_for` | required for `vision`/`tiered` |
 | `navigate_model_id`, `navigate_prompt_variant` | (unset) | `""` | -- | start | headless default; never guessed |
-| `max_steps` | 120 | 120 | steps | runner | set when the reference frontier hunt took 83 steps (61 since 2026-09-28); every vision step is a paid call, so lower it for those policies |
+| `mission_time_limit_s` | 120 | 120.0 | s | runner | 3.70 E4: **a test value until the user sets it** (TBD). Ends `out_of_budget`; the step backstop is derived from it. 0 = no limit. A start request may override it |
+| `battery_floor_v` | 10.5 | 10.5 | V | runner | 3.70 E4: **a test value until the user sets it** (TBD; the Rover's pack decides it). Under the fake board's 12.00 V. 0 = off |
 | `stuck_after` | (unset) | 5 | refused FORWARDs | runner | an unlucky policy gets 1-2 refusals then turns; the first watched R1 run spent 19 on one jamb |
 | `min_distance_cm` | 20.0 | **30.0** | cm | agent's brain-side pre-check | 20 matches `safety.min_distance_cm`; 30 is one sim cell and vetoed ~half of legal moves with sensor noise on. See Known gaps |
 | `request_timeout_s` | 10.0 | 10.0 | s | robot and world clients, allow-list check | |
@@ -382,7 +424,7 @@ set `ROBOT_URL=http://127.0.0.1:<robot port>` for the brain.
 curl -s -X POST localhost:8001/mission/start -H 'content-type: application/json' \
      -d '{"target_object": "red backpack"}'          # {"started": true, "status": {"outcome": "running", ...}}
 curl -s localhost:8001/mission/status                 # step, last_action, log_tail advancing
-curl -s -X POST localhost:8001/mission/stop           # {"stopped": true, "status": {"outcome": "stopped", ...}}
+curl -s -X POST localhost:8001/mission/stop           # {"stopped": true, "status": {"outcome": "cancelled", "cancelled_by": "stop", ...}}
 ```
 
 A frontier mission in the starter house ends `found` in 61 steps (the trace
@@ -429,6 +471,7 @@ tests/test_mission_guarded_verbs.py -q`.
 
 | Test file (count on 2026-10-02) | What it pins |
 |---|---|
+| `tests/test_mission_ends.py` (43) | 3.70 E1-E5: the four end states named, the retired names gone and read as the new ones, `end_state`/`end_reason` per outcome; Stop and a D-pad takeover end `cancelled` with `cancelled_by`, the wheels at zero within 0.5 s; the time limit ends `out_of_budget` within one tick, the derived backstop with a stuck clock, an explicit `max_steps`; the battery under its floor twice (not once) within 2 s, no reading never ends one; the fake board drains `v` and `HardwareRobot.get_battery()` reads it; the report (rooms, coverage, map); a labelled room never entered keeps a mission from ending `exhausted`; coverage within 2 points of truth at the end of a search |
 | `tests/test_mission_runner.py` (32) | tick-driven equals blocking `run_mission()` step for step; outcomes and idempotent `_finish`; the gate refuses after stop; a stop landing mid-tick records no step; tiered readouts reach status and survive a scene with no tier; the tick keeps advancing while an async call is in flight |
 | `tests/test_brain_server.py` (60) | **the import boundary, by mechanism:** a subprocess imports the brain app and lists `sys.modules`, so a forbidden import fails the suite and does not depend on review; two-hop mission completes; 409 on a second start; stop with no mission stops the car; secret gating; `ROUTE_PREFIX`; **the brain process loads no `sim`, and from `robot`/`world` only `robot.interface`, `robot.safety`, `robot.identity`, `world.interface`**; model and wording validation (refused at start, outage tolerated, one round trip); unknown field is 422; tiered start refusals and sim-vs-real perception choice |
 | `tests/test_failsafes.py` (15) | B3.2 budget and hang; one failure survivable; no movement after stop; B3.3 dead-man; every drill ends `failed` with the robot stopped; no-fault builds the ordinary mission; drills can be switched off |

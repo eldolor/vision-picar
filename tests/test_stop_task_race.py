@@ -108,8 +108,8 @@ def test_a_stop_never_forgets_the_task_a_concurrent_start_began(reconfirm_app):
     assert new_task is not None
     assert seen["task_after_stop"] is new_task, "the Stop erased the new mission's loop task"
     # Criterion 2, pinned in full (review): the new mission was running and
-    # had ticked; the second Stop cancelled ITS loop and ended it `stopped`.
+    # had ticked; the second Stop cancelled ITS loop and ended it `cancelled` (3.70; was `stopped`).
     assert seen["running_before"] and seen["steps_before"] > 0, seen
     assert new_task.cancelled(), "the second Stop never cancelled the new loop"
-    assert seen["outcome"] == "stopped", seen["outcome"]
+    assert seen["outcome"] == "cancelled", seen["outcome"]
     assert seen["stops_from_first"] == 0, "the first Stop sent a stop to the new driver"

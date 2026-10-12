@@ -204,7 +204,7 @@ def test_a_dpad_tap_still_preempts_a_mission_under_drive_ros(stack):
         if status["outcome"] != "running":
             break
         time.sleep(0.3)
-    assert status["outcome"] == "preempted", status["outcome"]
+    assert status["outcome"] == "cancelled", status["outcome"]
     assert any("twin-dpad" in line for line in status["log_tail"]), status["log_tail"][-3:]
     health = robot.get("/health").json()
     assert health["driver"] == "twin-dpad"

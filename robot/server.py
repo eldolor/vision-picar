@@ -891,6 +891,15 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         """
         return robot.get_wheel_state()
 
+    @app.get(prefix + "/battery", dependencies=[Depends(require_secret)])
+    def battery():
+        """The battery's voltage, as the motor board reports it -- 3.70 E4.
+
+        What the brain compares against a mission's battery floor. A
+        backend with no board answers `usable: False`, never a number.
+        """
+        return robot.get_battery()
+
     @app.get(prefix + "/scan", dependencies=[Depends(require_secret)])
     def scan(max_range_m: Optional[float] = None):
         """A 360-degree range scan -- phase R2, what `sim_scan_node` will

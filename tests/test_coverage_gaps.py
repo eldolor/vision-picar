@@ -303,7 +303,7 @@ def test_a_walk_that_runs_out_of_steps_says_so():
             break
 
     status = runner.status()
-    assert status["outcome"] == "max_steps"
+    assert status["outcome"] == "out_of_budget"
     assert "budget" in " ".join(status["log_tail"]).lower()
 
 

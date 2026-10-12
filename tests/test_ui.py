@@ -2010,7 +2010,7 @@ def test_a_mission_that_ENDS_says_so_instead_of_sitting_on_deciding(browser, twi
     paused, by the very pause the answer had just caused. The caption
     stayed on the "Deciding..." set before dispatch, so the one fact a
     person needs -- the mission ended, and why -- was the one thing the
-    HUD would not show. A mission ending on max_steps is the common case,
+    HUD would not show. A mission ending out of budget is the common case,
     and it looked identical to a hang.
 
     Built on the same harness as
@@ -2033,7 +2033,9 @@ def test_a_mission_that_ENDS_says_so_instead_of_sitting_on_deciding(browser, twi
     page.on("pageerror", lambda e: errors.append(str(e)))
 
     ended = dict(tiered_status(running=False))
-    ended["outcome"] = "max_steps"
+    ended["outcome"] = "out_of_budget"   # 3.70 E1: was `max_steps`
+    ended["end_state"] = "out_of_budget"
+    ended["end_reason"] = "step backstop of 120 reached"
     ended["error"] = None
 
     page.route("**/brain-stub/health", lambda route: route.fulfill(
@@ -2063,7 +2065,7 @@ def test_a_mission_that_ENDS_says_so_instead_of_sitting_on_deciding(browser, twi
     page.click("#btn-guidance")
 
     sync_api.expect(page.locator("#guide-caption-text")).to_contain_text(
-        "max_steps", timeout=15000)
+        "Out of budget", timeout=15000)
     text = page.inner_text("#guide-caption-text")
     assert "Deciding" not in text, text
     assert not errors, errors
@@ -3763,3 +3765,241 @@ def test_a_refused_swap_reads_as_a_sentence(browser, twin_server):
         "House not changed: brain is driving; try again once it stops")
     assert "{" not in page.locator(".toast").last.text_content()
     page.close()
+
+
+# ---------- 3.70 E6: the four end states on the phone ----------
+
+END_REPORT = {"rooms_entered": ["hallway", "kitchen"], "coverage": 0.42,
+              "mapped_free_m2": 18.3, "goals_reached": [[1.2, 3.4, "frontier"]],
+              "map_id": "sim-grid", "map_version": 31}
+
+# outcome -> (end_state fields, panel text, panel class, toast kind, reports)
+END_CASES = {
+    "found": ({"end_reason": "Found red backpack in kitchen."},
+              "Found", "val safe", "ok", False),
+    "exhausted": ({"end_reason": "no reachable frontier left (3 on the map)"},
+                  "Exhausted", "val warn", "warn", True),
+    "out_of_budget": ({"end_reason": "time limit of 120 s reached (120.4 s)"},
+                      "Out of budget — time limit of 120 s reached", "val warn", "warn",
+                      True),
+    "cancelled": ({"end_reason": "stopped by operator", "cancelled_by": "stop"},
+                  "Cancelled — Stop pressed", "val", "info", True),
+}
+
+
+def ended_status(outcome, *, report=END_REPORT):
+    fields, *_ = END_CASES[outcome]
+    s = dict(tiered_status(running=False))
+    s.update({"outcome": outcome, "end_state": outcome, "error": None,
+              "cancelled_by": None, "report": report if END_CASES[outcome][4] else None,
+              "log_tail": [f"mission ended ({outcome}): {fields['end_reason']}"]})
+    s.update(fields)
+    return s
+
+
+@pytest.mark.parametrize("outcome", list(END_CASES))
+def test_the_panel_shows_each_end_state_in_its_own_words_and_style(
+        browser, twin_server, outcome):
+    """3.70 E6: the Remote brain panel names each of the four end states in
+    its own words and style -- Found ok, Exhausted and Out of budget warn,
+    Cancelled neutral -- never as an error; Out of budget and Cancelled show
+    where the robot looked. Red first: the panel showed the raw outcome name
+    and a red error toast for everything but `found`."""
+    _fields, text, cls, toast, reports = END_CASES[outcome]
+    current = {"body": tiered_status()}  # running, so the panel polls
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(current["body"])))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+
+    current["body"] = ended_status(outcome)
+    el = page.locator("#brain-tel-outcome")
+    sync_api.expect(el).to_contain_text(text, timeout=5000)
+    sync_api.expect(el).to_have_class(cls)
+    sync_api.expect(page.locator(".toast." + toast).filter(has_text="Mission ")).to_have_count(1)
+    assert page.locator(".toast.err").count() == 0, "an end state read as an error"
+    report = page.locator("#brain-tel-report")
+    if reports:
+        sync_api.expect(report).to_contain_text("Looked in hallway, kitchen")
+        sync_api.expect(report).to_contain_text("18 m\u00B2 of floor mapped")
+        assert "42%" not in report.inner_text(), "the coverage share is not shown (3.70 E4)"
+    else:
+        sync_api.expect(report).to_have_text("–")
+    page.locator("#brain-telemetry").screenshot(path=os.path.join(
+        os.environ.get("UI_SHOTS", "/tmp"), f"end-state-panel-{outcome}-390.png"))
+    assert not errors, errors
+    page.close()
+
+
+def test_a_report_written_after_the_ending_still_lands(browser, twin_server):
+    """3.70 E4: the brain writes the report just after the robot stops, so
+    the first ended status can lack it; the panel reads once more."""
+    current = {"body": tiered_status()}
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(current["body"])))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+    current["body"] = ended_status("out_of_budget", report=None)
+    sync_api.expect(page.locator("#brain-tel-outcome")).to_contain_text("Out of budget",
+                                                                        timeout=5000)
+    # The Why row says why it ENDED, not the last decision (bug pass).
+    sync_api.expect(page.locator("#brain-tel-why")).to_contain_text("time limit of 120 s")
+    current["body"] = ended_status("out_of_budget")
+    sync_api.expect(page.locator("#brain-tel-report")).to_contain_text(
+        "Looked in hallway, kitchen", timeout=5000)
+    assert not errors, errors
+    page.close()
+
+
+def test_on_the_guide_tab_a_late_report_still_lands(browser, twin_server):
+    """3.70, both reviews: the first ended status usually has no report yet
+    (it is built after the stop), and the Guide HUD never asked again."""
+    current = {"body": ended_status("cancelled", report=None)}
+    current["body"]["report"] = None
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json({"started": True, "status": {"running": True}})))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(current["body"])))
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")
+    sync_api.expect(page.locator("#robot-telemetry")).to_contain_text("CANCELLED",
+                                                                     timeout=15000)
+    assert page.locator("#robot-tel-rooms").count() == 0
+    current["body"] = ended_status("cancelled")
+    sync_api.expect(page.locator("#robot-tel-rooms")).to_contain_text("hallway, kitchen",
+                                                                     timeout=8000)
+    sync_api.expect(page.locator("#guide-caption-text")).to_contain_text("Looked in")
+    assert not errors, errors
+    context.close()
+
+
+def test_an_old_brain_s_outcome_names_are_read_as_the_new_ones(browser, twin_server):
+    """3.70 E1: a brain from before 3.70 still writes `preempted`; the panel
+    reads it as Cancelled by the D-pad, never shows the old name."""
+    current = {"body": tiered_status()}
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(current["body"])))
+    page.click("#btn-settings")
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="sim"]')
+    old = dict(tiered_status(running=False))
+    old.update({"outcome": "preempted", "error": None})
+    current["body"] = old
+    el = page.locator("#brain-tel-outcome")
+    sync_api.expect(el).to_contain_text("Cancelled — D-pad took over", timeout=5000)
+    sync_api.expect(el).to_have_class("val")
+    assert "preempted" not in el.inner_text()
+    assert page.locator(".toast.err").count() == 0
+    assert not errors, errors
+    page.close()
+
+
+@pytest.mark.parametrize("outcome, sta, sta_cls", [
+    ("exhausted", "EXHAUSTED", "v-warn"),
+    ("out_of_budget", "OUT OF BUDGET", "v-warn"),
+    ("cancelled", "CANCELLED", ""),
+])
+def test_on_the_guide_tab_an_end_state_is_an_outcome_not_a_lost_link(
+        browser, twin_server, outcome, sta, sta_cls):
+    """3.70 E6: Drive via brain drew every ending but `found` through the
+    error branch -- an `ERR LINK` block, as if the brain had been lost. Each
+    end state is said as one, in its own style, with where it looked."""
+    context = browser.new_context(viewport=PHONE, permissions=["camera"])
+    context.add_init_script(
+        "(() => { try {"
+        " localStorage.setItem('guidanceMode','robot');"
+        " localStorage.setItem('vp_guide_onboarded','1');"
+        " localStorage.setItem('vp_drive_via_brain','1');"
+        " localStorage.setItem('vp_drive_policy','tiered');"
+        " } catch (e) {} })();")
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.route("**/brain-stub/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(TIERED_BRAIN_HEALTH)))
+    page.route("**/health", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({
+            "status": "ok", "mode": "teleop", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0})))
+    page.route("**/teleop/frame", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json({"ok": True})))
+    page.route("**/brain-stub/mission/start", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json({"started": True, "status": {"running": True}})))
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(ended_status(outcome))))
+
+    page.goto(twin_server, wait_until="networkidle")
+    page.wait_for_timeout(500)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.fill("#cfg-brain-url", twin_server + "/brain-stub")
+    page.click("#btn-brain-connect")
+    page.wait_for_timeout(600)
+    page.click('.tab-btn[data-tab="guide"]')
+    page.wait_for_timeout(300)
+    page.fill("#guidance-target", "red backpack")
+    page.click("#btn-guidance")
+
+    caption = page.locator("#guide-caption-text")
+    sync_api.expect(caption).to_contain_text(END_CASES[outcome][1], timeout=15000)
+    sync_api.expect(caption).to_contain_text("Looked in hallway, kitchen")
+    telemetry = page.locator("#robot-telemetry")
+    sync_api.expect(telemetry).to_contain_text(sta)
+    # The caption is one line and cuts the report off; the HUD rows do not.
+    sync_api.expect(page.locator("#robot-tel-rooms")).to_contain_text("hallway, kitchen")
+    sync_api.expect(page.locator("#robot-tel-cov")).to_contain_text("18 m\u00B2")
+    assert "LINK" not in telemetry.inner_text(), telemetry.inner_text()
+    assert page.locator("#robot-telemetry .v-alert").count() == 0
+    span = page.locator("#robot-tel-end span")
+    assert (span.get_attribute("class") or "") == sta_cls
+    page.screenshot(path=os.path.join(os.environ.get("UI_SHOTS", "/tmp"),
+                                      f"end-state-guide-{outcome}-390.png"))
+    assert not errors, errors
+    context.close()

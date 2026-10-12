@@ -218,8 +218,11 @@ def run_mission(robot, house, policy="explore", target=TARGET, max_steps=200):
     walls = {(x, y) for y, row in enumerate(world.layout) for x, c in enumerate(row)
              if c == CELL_WALL}
     brain = httpx.Client(base_url=f"http://127.0.0.1:{BRAIN}", timeout=60)
+    # 3.70 E4: the brain's own time limit is the config's test value (120 s);
+    # a live run is bounded by MISSION_LIMIT_S here, so the brain is given it.
     r = brain.post("/mission/start", json={"target_object": target, "policy": policy,
-                                           "max_steps": max_steps})
+                                           "max_steps": max_steps,
+                                           "mission_time_limit_s": MISSION_LIMIT_S})
     if r.status_code != 200:
         return {"start": r.status_code, "detail": r.text[:300]}
     target_at = [(o["x"], o["y"]) for o in robot.get("/sim/objects").json()["objects"]
