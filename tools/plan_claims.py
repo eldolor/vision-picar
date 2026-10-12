@@ -70,8 +70,10 @@ def repo(cwd=None):
 
 def processes() -> dict:
     """{pid: (ppid, start, command basename)} from one `ps` call."""
-    out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,lstart=,comm="],
-                         capture_output=True, text=True).stdout
+    # A fixed zone and locale: lstart is a rendered local time, and a caller
+    # with another TZ or LC_TIME must read the same start for the same process.
+    out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,lstart=,comm="], capture_output=True,
+                         text=True, env={**os.environ, "TZ": "UTC", "LC_ALL": "C"}).stdout
     procs = {}
     for line in out.splitlines():
         parts = line.split()
@@ -216,10 +218,14 @@ def worktrees(root: str) -> dict:
 
 
 def dirty(wt: str):
-    """(newest mtime, paths) of a worktree's uncommitted changes."""
+    """(newest mtime, paths) of a worktree's uncommitted changes to TRACKED
+    files (staged new files count). Untracked files do not: a finished
+    section's worktree may still collect logs."""
     r = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, cwd=wt)
     newest, paths = 0.0, []
     for line in r.stdout.splitlines():
+        if line.startswith("??"):
+            continue
         rel = line[3:].split(" -> ")[-1].strip('"')
         paths.append(rel.rstrip("/") + ("/" if rel.endswith("/") else ""))
         try:
@@ -230,7 +236,7 @@ def dirty(wt: str):
 
 
 def section_branches(root: str) -> dict:
-    """{section: [(branch, last activity, files changed)]} for every plan/*
+    """{section: [(branch, last activity, files changed, files committed)]} for every plan/*
     branch with commits not on origin/dev or uncommitted work in its worktree.
     Activity is the newer of its last commit and its newest uncommitted edit,
     so a session that has not committed yet still shows."""
@@ -243,17 +249,18 @@ def section_branches(root: str) -> dict:
         m = BRANCH_RE.match(b)
         if not m:
             continue
-        files, last = [], 0
+        files, last, committed = [], 0, []
         base = git("merge-base", "origin/dev", b, cwd=root, check=False)
         if base and git("rev-parse", b, cwd=root) != base:
             files = git("diff", "--name-only", base, b, cwd=root).splitlines()
-            last = int(ts)
+            committed, last = list(files), int(ts)
         if b in wts and os.path.isdir(wts[b]):
             mt, paths = dirty(wts[b])
             files += [f for f in paths if f not in files]
             last = max(last, mt)
         if files:
-            out.setdefault(m.group(1), []).append((b, last, [f for f in files if f != INDEX]))
+            out.setdefault(m.group(1), []).append(
+                (b, last, [f for f in files if f != INDEX], committed))
     return out
 
 
@@ -267,8 +274,8 @@ def load_steps(root: str, branches=None) -> list:
         if m:
             files[m.group(1)] = ("origin/dev", f"{DIR}/{f}")
     for sec, bs in branches.items():
-        for b, ts, changed in sorted(bs, key=lambda x: x[1]):     # the newest wins
-            for f in changed:
+        for b, ts, _, committed in sorted(bs, key=lambda x: x[1]):   # the newest wins
+            for f in committed:            # committed text only: a dirty file is not yet published
                 m = FILE_RE.match(os.path.basename(f))
                 if f.startswith(DIR + "/") and m and m.group(1) == sec:
                     files[sec] = (b, f)
@@ -290,7 +297,7 @@ def load_steps(root: str, branches=None) -> list:
                 "title": (re.sub(r"^#+\s*3\.\d+[a-z]?\s*", "", text.split("\n", 1)[0])
                           or bs[0][0])[:70],
                 "needs": [], "waits": "", "state": "open",
-                "touches": sorted({f for _, _, ch in bs for f in ch}),
+                "touches": sorted({f for _, _, ch, _ in bs for f in ch}),
             })
     return steps
 
@@ -334,8 +341,8 @@ class _Lock:
 
 def active_branches(branches: dict, now: float) -> dict:
     """{section: [branch, ...]} whose last commit is within ACTIVE_S."""
-    return {sec: [b for b, ts, _ in bs if now - ts < ACTIVE_S]
-            for sec, bs in branches.items() if any(now - ts < ACTIVE_S for _, ts, _ in bs)}
+    return {sec: [b for b, ts, _, _ in bs if now - ts < ACTIVE_S]
+            for sec, bs in branches.items() if any(now - ts < ACTIVE_S for _, ts, _, _ in bs)}
 
 
 def assess(step: dict, steps: list, live: list, me, branches: dict, here_branch: str, now: float,
@@ -359,7 +366,7 @@ def assess(step: dict, steps: list, live: list, me, branches: dict, here_branch:
     mine_here = any(c.get("section") == step["section"] for c in live if same_owner(c, me))
     if step["section"] in act and not mine_here and here_branch not in act[step["section"]]:
         return "active", f"{', '.join(act[step['section']])} worked on in the last 2 h (no claim)"
-    own = here_branch in [b for b, _, _ in branches.get(step["section"], [])]
+    own = here_branch in [b for b, _, _, _ in branches.get(step["section"], [])]
     if step.get("implicit") and step["section"] not in act and not own:
         return "idle", "unmerged branch, idle over 2 h, no step table"
     if step["waits"]:
@@ -378,7 +385,7 @@ def assess(step: dict, steps: list, live: list, me, branches: dict, here_branch:
         if (sec == step["section"] or here_branch in bs
                 or any(c.get("section") == sec for c in live)):
             continue                               # its own work, or covered by a claim
-        files = sorted({f for b, ts, ch in branches[sec] if b in bs for f in ch})
+        files = sorted({f for b, ts, ch, _ in branches[sec] if b in bs for f in ch})
         hits = overlap(step["touches"], files)
         if hits and accepted is not None:
             accepted += [f"{bs[0]}: {y}" for _, y in hits]
@@ -516,6 +523,8 @@ def foreign_claims_on(rel: str, common: str, procs: dict, me) -> list:
 def allow(sid: str, cwd=None, me=None) -> dict:
     """The user agreed this session may edit inside another session's claim:
     recorded in that claim, for as long as it lives."""
+    if not (STEP_ID_RE.fullmatch(sid) or re.fullmatch(r"3\.\d+[a-z]?", sid)):
+        raise SystemExit(f"allow: {sid!r} is not a step id")
     rp = repo(cwd)
     if not rp:
         raise SystemExit("not in a git repository")

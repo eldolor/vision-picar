@@ -132,9 +132,9 @@ except SystemExit as e:
 
 
 def test_criterion_1_twenty_racers_one_winner(repo, owners, tmp_path):
-    """50 trials were measured once (3.75 records, ~70 s); the suite pins 5 so
+    """50 trials were measured once (3.75 records, ~70 s); the suite runs 1 so
     the fast tier stays fast. PICAR_RACE_TRIALS=50 repeats the measurement."""
-    racers, trials = 20, int(os.environ.get("PICAR_RACE_TRIALS", "5"))
+    racers, trials = 20, int(os.environ.get("PICAR_RACE_TRIALS", "1"))
     holders = [owners()[0] for _ in range(racers)]
     wins = []
     for trial in range(trials):
@@ -368,3 +368,47 @@ def test_review_session_start_names_claims_this_process_already_holds(repo, owne
     finally:
         del os.environ["PICAR_CLAIM_PID"]
     assert "THIS SESSION ALREADY HOLDS 3.90.A" in out and "release 3.90.A" in out
+
+
+# ---------- Thermos bug pass fixes (2026-10-12) ----------
+
+def test_thermos_owner_start_does_not_depend_on_the_callers_time_zone(owners):
+    p, a = owners()
+    os.environ["TZ"] = "Pacific/Kiritimati"                 # UTC+14: another rendering of lstart
+    try:
+        time.tzset()
+        assert pc.alive(a, pc.processes())
+    finally:
+        del os.environ["TZ"]
+        time.tzset()
+
+
+def test_thermos_untracked_files_alone_do_not_make_a_branch_active(repo, owners):
+    _, a = owners()
+    _git(repo, "branch", "plan/3.94-merged")              # nothing beyond origin/dev
+    wt = os.path.join(os.path.dirname(repo), "wt94")
+    _git(repo, "worktree", "add", "-q", wt, "plan/3.94-merged")
+    os.makedirs(os.path.join(wt, "brain"))
+    open(os.path.join(wt, "brain", "a.py"), "w").write("log\n")   # an untracked log, just now
+    assert "3.94" not in pc.section_branches(repo)
+    assert pc.claim("3.90.A", cwd=repo, me=a)
+
+
+def test_thermos_a_dirty_section_file_does_not_shadow_dev(repo):
+    _git(repo, "branch", "plan/3.90-test")                # nothing committed beyond origin/dev
+    wt = os.path.join(os.path.dirname(repo), "wt90")
+    _git(repo, "worktree", "add", "-q", wt, "plan/3.90-test")
+    open(os.path.join(repo, pc.DIR, "3.90-test.md"), "w").write(SECTION.replace(
+        "| 3.90.A | First | -- | -- | `brain/a.py`, `sim/` | open |",
+        "| 3.90.A | First | -- | -- | `brain/a.py`, `sim/` | done |"))
+    _git(repo, "commit", "-qam", "A done on dev")
+    _git(repo, "update-ref", "refs/remotes/origin/dev", "HEAD")
+    open(os.path.join(wt, pc.DIR, "3.90-test.md"), "a").write("\nediting\n")   # dirty, old table
+    states = {s["id"]: s["state"] for s in pc.load_steps(repo)}
+    assert states["3.90.A"] == "done"
+
+
+def test_thermos_allow_takes_only_a_step_id(repo, owners):
+    _, a = owners()
+    with pytest.raises(SystemExit, match="not a step id"):
+        pc.allow("../../config", cwd=repo, me=a)

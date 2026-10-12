@@ -140,10 +140,15 @@ Continuing an existing section: work in its worktree
      bypass mode no one would see that question, so the edit is denied with
      the reason. Only if the user agrees, `python3 tools/plan_claims.py
      allow <step>` lets this session edit inside that claim; the claim
-     records it. A commit
+     records it. **This is on trust:** nothing can check that the user was
+     asked, so a session that runs `allow` without asking breaks this rule. A commit
      touching one prints a warning from `tools/hooks/pre-commit`, which
      catches edits made through Bash; it never blocks. Every local session
      starts with the board in its context (`.claude/hooks/plan-board.sh`).
+   * Limit: a claim's owner is the nearest process named `claude`. One
+     such process hosting several conversations (`/clear`, or perhaps the
+     desktop app) makes them one owner; a CLI installed through npm shows
+     as `node` and cannot claim (`PICAR_CLAIM_PID` names an owner by hand).
    * Limit: claims are per machine. A Jetson or cloud session still meets
      the others only at push.
 
