@@ -310,10 +310,11 @@ brain:
   # 3.70 E4: a mission's budget -- a time limit (seconds) and a battery floor
   # (volts, the motor board's `v`). It ends `out_of_budget` at either. The
   # step count is no longer set here: it is a backstop derived from the time
-  # limit (limit / 0.5 s x 2). TEST VALUES until the user sets them (TBD in
-  # 3.70): 120 s is the plan's test value; 10.5 V is under the fake board's
-  # 12.00 V. 0 switches either off.
-  mission_time_limit_s: 120
+  # limit (limit / 0.5 s x 2). Set by the user 2026-10-12 (3.70): 1200 s,
+  # because 900 s of explore never finished home_first_floor; 10.5 V (3.5 V a
+  # cell, 3S) until a discharge curve is measured on the Rover. Both are
+  # re-measured on the car. 0 switches either off.
+  mission_time_limit_s: 1200
   battery_floor_v: 10.5
   # Brain-side pre-check; the robot server re-checks against
   # safety.min_distance_cm above, which is now the same number on purpose.

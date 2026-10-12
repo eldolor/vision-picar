@@ -142,7 +142,7 @@ class MissionStartRequest(BaseModel):
     # overrides it (a harness or a sweep), and still ends `out_of_budget`.
     max_steps: Optional[int] = None
     # 3.70 E4: this mission's time limit, in seconds, over the config's
-    # `mission_time_limit_s` (the live demos run longer than the test value).
+    # `mission_time_limit_s` (a live demo or a sweep sets its own).
     mission_time_limit_s: Optional[float] = Field(default=None, gt=0, le=86400)
     policy: str = "frontier"
     # Which model answers /navigate for this mission (policy: "vision" only).

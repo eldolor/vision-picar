@@ -358,8 +358,8 @@ The `brain:` block of `config/robot.yaml`, read by
 | `world_url` | (unset) | `""` | URL | `default_world_factory` | empty = the URL of the robot actually built; diverges if the world moves behind SLAM |
 | `vision_url` | `""` | `""` | URL | start validation, `vision_fn_for` | required for `vision`/`tiered` |
 | `navigate_model_id`, `navigate_prompt_variant` | (unset) | `""` | -- | start | headless default; never guessed |
-| `mission_time_limit_s` | 120 | 120.0 | s | runner | 3.70 E4: **a test value until the user sets it** (TBD). Ends `out_of_budget`; the step backstop is derived from it. 0 = no limit. A start request may override it |
-| `battery_floor_v` | 10.5 | 10.5 | V | runner | 3.70 E4: **a test value until the user sets it** (TBD; the Rover's pack decides it). Under the fake board's 12.00 V. 0 = off |
+| `mission_time_limit_s` | 1200 | 1200.0 | s | runner | 3.70 E4: set by the user 2026-10-12 (900 s of explore never finished `home_first_floor`); re-measured on the Rover. Ends `out_of_budget`; the step backstop is derived from it. 0 = no limit. A start request may override it |
+| `battery_floor_v` | 10.5 | 10.5 | V | runner | 3.70 E4: set by the user 2026-10-12 (3.5 V a cell, 3S) until a discharge curve is measured on the Rover. Under the fake board's 12.00 V. 0 = off |
 | `stuck_after` | (unset) | 5 | refused FORWARDs | runner | an unlucky policy gets 1-2 refusals then turns; the first watched R1 run spent 19 on one jamb |
 | `min_distance_cm` | 20.0 | **30.0** | cm | agent's brain-side pre-check | 20 matches `safety.min_distance_cm`; 30 is one sim cell and vetoed ~half of legal moves with sensor noise on. See Known gaps |
 | `request_timeout_s` | 10.0 | 10.0 | s | robot and world clients, allow-list check | |

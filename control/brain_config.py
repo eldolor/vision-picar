@@ -150,10 +150,11 @@ DEFAULTS = {
     # 3.70 E4 (decided by the user 2026-10-11): a mission's budget is a time
     # limit and a battery floor; the step count is only a backstop derived
     # from the limit (control/mission_runner.py's derived_max_steps()).
-    # **Both values are TEST VALUES until the user sets them** (3.70 E4,
-    # "TBD"): 120 s is the plan's test value, and 10.5 V sits under the fake
-    # board's 12.00 V. 0 switches either off.
-    "mission_time_limit_s": 120.0,
+    # Set by the user 2026-10-12: 1200 s, because six recorded 900 s explore
+    # runs of home_first_floor were all still searching; 10.5 V (3.5 V a cell
+    # on the Rover's 3S pack) until a discharge curve is measured on the car.
+    # Both are re-measured on the Rover. 0 switches either off.
+    "mission_time_limit_s": 1200.0,
     "battery_floor_v": 10.5,
     # End a mission `blocked` after this many FORWARDs in a row refused by
     # the safety layer (control/mission_runner.py's BLOCKED). 0 disables.
