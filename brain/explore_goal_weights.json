@@ -1,0 +1,27 @@
+{
+ "features": [
+  "path",
+  "turn",
+  "is_view",
+  "size",
+  "area",
+  "unknown_near",
+  "unseen_near",
+  "failed",
+  "reached",
+  "view_late"
+ ],
+ "weights": [
+  -10.0,
+  0.0,
+  -100.0,
+  3.0,
+  3.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "note": "Placeholder: the rule's order as a linear score (frontiers by path - size, views only after). Replaced by the trained weights."
+}

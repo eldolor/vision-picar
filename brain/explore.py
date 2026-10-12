@@ -41,6 +41,8 @@ from brain.agent import MissionAgent, StepResult
 from brain.arrival import ArrivalCheck
 from brain.frontier import (RetryBook, camera_seen, find_frontiers, find_view_gaps,
                             known_near, reachable)
+from brain.goal_policy import LinearGoalPolicy
+from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
 from robot.interface import Preempted, RobotInterface
 from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation
@@ -133,6 +135,7 @@ class ExploreAgent(MissionAgent):
         clock: Callable[[], float] = time.monotonic,
         goal_timeout_s: float = GOAL_TIMEOUT_S,
         retry: Optional[RetryBook] = None,
+        goal_policy: Optional[LinearGoalPolicy] = None,
         **kwargs,
     ):
         super().__init__(robot, memory, **kwargs)
@@ -142,6 +145,8 @@ class ExploreAgent(MissionAgent):
         self.clock = clock
         self.goal_timeout_s = goal_timeout_s
         self.retry = retry or RetryBook()
+        # 3.65 phase 2: None is the rule; a policy ranks the same candidates.
+        self.goal_policy = goal_policy
         self.searched = False          # read by MissionRunner: ends `searched`
         self._goal: Optional[dict] = None   # {"x_m","y_m","kind","sent_at"}
         self._pending: list = []
@@ -381,6 +386,11 @@ class ExploreAgent(MissionAgent):
 
         leave = leave_clearance_m(self.safety.min_distance_cm)
         frontiers = find_frontiers(m, pose["x_m"], pose["y_m"], clearance_m=leave)
+        if self.goal_policy is not None:
+            out = self._learned_goal(m, pose, frontiers, leave, known, now)
+            if out is not None:
+                return out
+            frontiers = []   # none the rules allow; fall through to boxed/searched
         skipped = {"reached twice": 0, "set aside": 0}
         for rank, f in enumerate(frontiers):
             if sum(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < self.retry.radius_m
@@ -431,6 +441,58 @@ class ExploreAgent(MissionAgent):
                            f"{skipped['set aside']} set aside or dropped)")
         self._event("searched", frontiers=len(frontiers), skipped=skipped)
         return "STOP", True, self.last_event
+
+    def _view_allowed(self, g) -> bool:
+        return not (any(math.hypot(g.centre[0] - lx, g.centre[1] - ly) < self.retry.radius_m
+                        for lx, ly in self._looked)
+                    or any(math.hypot(g.goal[0] - vx, g.goal[1] - vy) < self.retry.radius_m
+                           for vx, vy in self._view_goals))
+
+    def _learned_goal(self, m, pose, frontiers, leave, known, now):
+        """3.65 phase 2: pool every frontier and view gap the rule would
+        send, and send the one the policy scores highest. None when the rules
+        allow none -- the caller then decides boxed, cooling or searched,
+        exactly as under the rule."""
+        r = self.retry.radius_m
+        seen_cells = {self._to_cell(m, c) for c in self.seen}
+        pool, feats = [], []
+        for rank, f in enumerate(frontiers):
+            reached = sum(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < r
+                          for rx, ry in self._reached)
+            if reached >= 2 or not self.retry.available(f.goal[0], f.goal[1], now, known):
+                continue
+            pool.append(("frontier", f, rank))
+            feats.append(goal_features(m, pose, f.goal, kind="frontier", path_m=f.distance_m,
+                                       size_m=f.size_m, seen_cells=seen_cells,
+                                       failures=self.retry.failures_near(*f.goal),
+                                       reached=reached, goals_sent=self.goals_sent))
+        for g in find_view_gaps(m, pose["x_m"], pose["y_m"], seen_cells, clearance_m=leave):
+            if not self._view_allowed(g) or not self.retry.available(g.goal[0], g.goal[1],
+                                                                      now, known):
+                continue
+            pool.append(("view", g, None))
+            feats.append(goal_features(m, pose, g.goal, kind="view", path_m=g.distance_m,
+                                       area_m2=g.area_m2, seen_cells=seen_cells,
+                                       failures=self.retry.failures_near(*g.goal),
+                                       goals_sent=self.goals_sent))
+        i = self.goal_policy.best(feats)
+        if i is None:
+            return None
+        kind, c, rank = pool[i]
+        score = round(self.goal_policy.score(feats[i]), 3)
+        if kind == "frontier":
+            return self._send(c.goal[0], c.goal[1], "frontier", now, rank=rank,
+                              candidates=len(pool), path_m=round(c.distance_m, 2),
+                              size_m=round(c.size_m, 2), learned=score)
+        out = self._send(c.goal[0], c.goal[1], "view", now,
+                         look_at=[round(c.centre[0], 2), round(c.centre[1], 2)],
+                         area_m2=round(c.area_m2, 2), path_m=round(c.distance_m, 2),
+                         candidates=len(pool), learned=score)
+        if out[0] == "GOAL":
+            self._goal["look_at"] = c.centre
+            self._goal["face"] = c.face
+            self._view_goals.append(c.goal)
+        return out
 
     def _goal_ended(self, state: str, now: float) -> None:
         g, self._goal = self._goal, None

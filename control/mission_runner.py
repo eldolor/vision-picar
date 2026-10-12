@@ -49,6 +49,7 @@ from typing import Callable, Optional
 
 from brain.agent import ObjectSearchAgent
 from brain.explore import ExploreAgent
+from brain.goal_policy import goal_policy_for
 from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
 from brain.inventory import MAX_RANGE_M as INVENTORY_RANGE_M
 from brain.inventory import DEFAULT_FOV_DEG, Inventory, frame_detections
@@ -361,6 +362,7 @@ class MissionRunner:
         world: Optional[WorldInterface] = None,
         stuck_after: Optional[int] = DEFAULT_STUCK_AFTER,
         navigator=None,
+        explore_goal_policy: str = "rule",
         clock: Optional[Callable[[], float]] = None,
         idle: Optional[Callable[[float], None]] = None,
         retry_cooldown_s: float = RETRY_COOLDOWN_S,
@@ -464,7 +466,9 @@ class MissionRunner:
             if navigator is None:
                 raise ValueError("The explore policy needs a navigator -- nav2's goals "
                                  "(control/remote_navigator.py), PLAN-ros-alignment.md 3.31")
-            extra = {"navigator": navigator, "clock": self.clock}
+            extra = {"navigator": navigator, "clock": self.clock,
+                     # 3.65 phase 2: "rule" (None) or the learned goal choice.
+                     "goal_policy": goal_policy_for(explore_goal_policy)}
         self._gated = _HaltGate(robot, self.is_running,
                                 on_frame=self._observe if self.inventory else None)
         self.agent = agent_class(

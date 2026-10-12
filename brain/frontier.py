@@ -332,6 +332,11 @@ class RetryBook:
             return grown >= self.early_growth * e.known_at_failure
         return False
 
+    def failures_near(self, x_m: float, y_m: float) -> int:
+        """How often a goal near this place has failed (0 if never)."""
+        e = self._near(x_m, y_m)
+        return e.failures if e is not None else 0
+
     def cooling(self, now: float) -> bool:
         """Is anything still inside its cooldown? A place whose cooldown has
         passed is no longer waited on: if it is still a frontier it is

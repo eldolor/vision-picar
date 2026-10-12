@@ -508,6 +508,7 @@ def create_app(
             vision_timeout_s=config["vision_timeout_s"],
             arrival_confirm_timeout_s=config["arrival_confirm_timeout_s"],
             max_vision_failures=config["max_vision_failures"],
+            explore_goal_policy=config["explore_goal_policy"],
         )
         if navigator is not None:
             kwargs["navigator"] = navigator
