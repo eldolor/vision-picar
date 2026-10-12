@@ -124,7 +124,9 @@ Continuing an existing section: work in its worktree
    * `claim <step>` writes a claim into the shared `.git`
      (`plan-claims/`), which every worktree on this machine sees. It is
      owned by your Claude Code process and **frees itself when that process
-     exits**. `release` gives it back sooner.
+     exits**. `release` gives it back sooner. `/clear` keeps the process, so
+     the new conversation inherits the claim; the session-start board says
+     so first.
    * A claim is refused when its `Needs` are not done, when it waits on the
      user or the Rover, when another live session holds a step of the same
      section (one session per section: its worktree, ports and ROS domain),

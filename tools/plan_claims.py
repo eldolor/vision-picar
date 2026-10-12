@@ -135,12 +135,16 @@ def matches(path: str, pattern: str) -> bool:
 
 def overlap(a: list, b: list) -> list:
     """The pairs of Touches entries that can name the same file."""
+    def base(p):                   # a glob's literal directory: "sim/maps/*.py" -> "sim/maps/"
+        lit = re.split(r"[*?\[]", p, maxsplit=1)[0]
+        return lit[:lit.rfind("/") + 1]
+
     hits = []
     for x in a:
         for y in b:
-            lx, ly = x.split("*")[0].split("?")[0], y.split("*")[0].split("?")[0]
             if (matches(x, y) or matches(y, x)
-                    or (_is_glob(x) or _is_glob(y)) and (lx.startswith(ly) or ly.startswith(lx))):
+                    or _is_glob(x) and _is_glob(y)
+                    and (base(x).startswith(base(y)) or base(y).startswith(base(x)))):
                 hits.append((x, y))
     return hits
 
@@ -355,7 +359,8 @@ def assess(step: dict, steps: list, live: list, me, branches: dict, here_branch:
     mine_here = any(c.get("section") == step["section"] for c in live if same_owner(c, me))
     if step["section"] in act and not mine_here and here_branch not in act[step["section"]]:
         return "active", f"{', '.join(act[step['section']])} worked on in the last 2 h (no claim)"
-    if step.get("implicit") and step["section"] not in act:
+    own = here_branch in [b for b, _, _ in branches.get(step["section"], [])]
+    if step.get("implicit") and step["section"] not in act and not own:
         return "idle", "unmerged branch, idle over 2 h, no step table"
     if step["waits"]:
         return "waits", f"waits on the {step['waits']}"
@@ -370,8 +375,9 @@ def assess(step: dict, steps: list, live: list, me, branches: dict, here_branch:
         if hits:
             return "conflict", f"touches {hits[0][0]} -- claimed by {c['step']} (pid {c['pid']})"
     for sec, bs in act.items():
-        if sec == step["section"] or any(c.get("section") == sec for c in live):
-            continue
+        if (sec == step["section"] or here_branch in bs
+                or any(c.get("section") == sec for c in live)):
+            continue                               # its own work, or covered by a claim
         files = sorted({f for b, ts, ch in branches[sec] if b in bs for f in ch})
         hits = overlap(step["touches"], files)
         if hits and accepted is not None:
@@ -600,12 +606,22 @@ def hook_commit(cwd=None) -> str:
 
 
 def hook_start(cwd=None) -> str:
+    """The board for a new conversation. A claim belongs to the Claude Code
+    PROCESS, so after /clear or a resume in the same terminal the new
+    conversation inherits it; say so plainly rather than let it sit unseen."""
     try:
         board = cmd_board(short=True, cwd=cwd)
+        b = Board(cwd)
+        held = [c for c in b.live if same_owner(c, b.me)]
     except BaseException:
         return ""
-    return ("Plan steps (PARALLEL-SESSIONS.md rule 8). Before working on the plan, take a step: "
-            "`python tools/plan_section.py next`, then `claim <step>`. Board:\n" + board)
+    head = "".join(
+        f"THIS SESSION ALREADY HOLDS {c['step']} ({c.get('title', '')[:60]}; worktree "
+        f"{c.get('worktree', '?')}), claimed by an earlier conversation in this terminal. "
+        f"Continue it there, or give it back: `python3 tools/plan_claims.py release {c['step']}`.\n"
+        for c in held)
+    return (head + "Plan steps (PARALLEL-SESSIONS.md rule 8). Before working on the plan, take a "
+            "step: `python tools/plan_section.py next`, then `claim <step>`. Board:\n" + board)
 
 
 def main(argv):

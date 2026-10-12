@@ -317,3 +317,54 @@ def test_criterion_5_the_commit_guard_warns_and_never_blocks(repo, owners):
     r = subprocess.run(["git", "commit", "-q", "-m", "y"], cwd=repo, capture_output=True,
                        text=True, env=env)
     assert r.returncode == 0 and "WARNING" not in r.stderr
+
+
+# ---------- review fixes (2026-10-12) ----------
+
+def test_review_a_leading_or_middle_glob_is_not_a_prefix_of_everything():
+    assert not pc.overlap(["*.md"], ["robot/server.py"])
+    assert not pc.overlap(["sim/*/maps"], ["sim/x.py"])
+    assert pc.overlap(["*.md"], ["docs/x.md"])
+    assert pc.overlap(["sim/maps/*.py"], ["sim/*/x.py"])          # two globs under one directory
+
+
+def _busy_branch(repo, name, path):
+    _git(repo, "checkout", "-q", "-b", name)
+    os.makedirs(os.path.join(repo, os.path.dirname(path)), exist_ok=True)
+    open(os.path.join(repo, path), "w").write("x = 1\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", name)
+
+
+def test_review_a_session_never_conflicts_with_its_own_branch(repo, owners):
+    _, a = owners()
+    _busy_branch(repo, "plan/3.93-mine", "control/x.py")          # this checkout's branch
+    assert pc.claim("3.91.A", cwd=repo, me=a)                       # touches control/x.py
+
+
+def test_review_a_session_may_claim_its_own_idle_section(repo, owners):
+    _, a = owners()
+    _busy_branch(repo, "plan/3.93-mine", "control/y.py")
+    old = str(int(time.time()) - 3 * 3600)
+    _git(repo, "commit", "-q", "--amend", "--no-edit", f"--date=@{old}")
+    subprocess.run(["git", "commit", "-q", "--amend", "--no-edit"], cwd=repo, check=True,
+                   env={**os.environ, "GIT_COMMITTER_DATE": f"@{old}", "GIT_AUTHOR_NAME": "t",
+                        "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+                        "GIT_COMMITTER_EMAIL": "t@t"})
+    assert pc.claim("3.93", cwd=repo, me=a)
+    _git(repo, "checkout", "-q", "dev")
+    _, b = owners()
+    pc.release(cwd=repo, me=a)
+    with pytest.raises(SystemExit, match="idle"):
+        pc.claim("3.93", cwd=repo, me=b)                            # someone else: still idle
+
+
+def test_review_session_start_names_claims_this_process_already_holds(repo, owners):
+    _, a = owners()
+    pc.claim("3.90.A", cwd=repo, me=a)
+    os.environ["PICAR_CLAIM_PID"] = str(a["pid"])
+    try:
+        out = pc.hook_start(cwd=repo)
+    finally:
+        del os.environ["PICAR_CLAIM_PID"]
+    assert "THIS SESSION ALREADY HOLDS 3.90.A" in out and "release 3.90.A" in out
