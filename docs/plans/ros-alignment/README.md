@@ -79,4 +79,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.72](3.72-random-house.md) | A randomizer button: the robot server picks one of the 100 ProcTHOR houses |
 | [3.73](3.73-mujoco-slip-braking.md) | MuJoCo: fit the Rover's slip and braking, and carry them into our simulator |
 | [3.74](3.74-floor-hazards.md) | Below the lidar: a floor band and floor hazards |
+| [3.75](3.75-session-claims.md) | Sessions claim discrete steps: a step table per section, live claims, guards at edit and commit |
 <!-- /sections -->
