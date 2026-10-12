@@ -486,7 +486,8 @@ class ExploreAgent(MissionAgent):
         if kind == "frontier":
             return self._send(c.goal[0], c.goal[1], "frontier", now, rank=rank,
                               candidates=len(pool), path_m=round(c.distance_m, 2),
-                              size_m=round(c.size_m, 2), learned=score)
+                              size_m=round(c.size_m, 2), score=round(c.score, 2),
+                              learned=score)
         out = self._send(c.goal[0], c.goal[1], "view", now,
                          look_at=[round(c.centre[0], 2), round(c.centre[1], 2)],
                          area_m2=round(c.area_m2, 2), path_m=round(c.distance_m, 2),
