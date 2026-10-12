@@ -12,7 +12,11 @@ rule: sightings, approaches, escapes, the retry book, when the search ends.
 The weights are learned in simulation by the cross-entropy method
 (`evaluations/explore-365/train.py`) and committed in
 `brain/explore_goal_weights.json`; this module only reads and applies them.
-It imports nothing heavy, so the brain stays light.
+Under `explore_goal_policy: network` (amendment 2) the score is that linear
+term plus a small network's, trained by PPO
+(`evaluations/explore-365/train_net.py`) and committed in
+`brain/explore_goal_net.json`. It imports nothing heavier than numpy, so the
+brain stays light.
 """
 
 import json
@@ -20,10 +24,13 @@ import math
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+
 from brain.frontier import _cell_of
 from world.interface import CELL_FREE, CELL_UNKNOWN
 
 WEIGHTS_PATH = Path(__file__).resolve().parent / "explore_goal_weights.json"
+NET_PATH = Path(__file__).resolve().parent / "explore_goal_net.json"
 
 # The order the weights are stored in. Each feature is scaled to roughly
 # 0..1 over a house, so a weight's size says how much it matters.
@@ -114,10 +121,45 @@ class LinearGoalPolicy:
         return cls(data["weights"])
 
 
+class NetGoalPolicy(LinearGoalPolicy):
+    """`score = w . features + MLP(features)`: the linear score plus a small
+    tanh network's (amendment 2). `layers` is [(W, b), ...], W shaped
+    (out, in); the last layer has one output."""
+
+    def __init__(self, weights, layers):
+        super().__init__(weights)
+        self.layers = [(np.asarray(W, dtype=float), np.asarray(b, dtype=float))
+                       for W, b in layers]
+        if not self.layers or self.layers[0][0].shape[1] != len(FEATURES) \
+                or self.layers[-1][0].shape[0] != 1:
+            raise ValueError(f"the network must take {len(FEATURES)} features and give one score")
+
+    def score(self, f: list) -> float:
+        x = np.asarray(f, dtype=float)
+        for i, (W, b) in enumerate(self.layers):
+            x = W @ x + b
+            if i < len(self.layers) - 1:
+                x = np.tanh(x)
+        return super().score(f) + float(x[0])
+
+    @classmethod
+    def load(cls, path: Path = NET_PATH) -> "NetGoalPolicy":
+        data = json.loads(Path(path).read_text())
+        if list(data["features"]) != list(FEATURES):
+            raise ValueError(f"{path}: features {data['features']} do not match "
+                             f"this code's {list(FEATURES)}")
+        return cls(data["weights"], [(l["W"], l["b"]) for l in data["layers"]])
+
+
+POLICIES = ("rule", "learned", "network")
+
+
 def goal_policy_for(name: str) -> Optional[LinearGoalPolicy]:
     """`explore_goal_policy` -> the policy object, or None for the rule."""
     if name == "rule":
         return None
     if name == "learned":
         return LinearGoalPolicy.load()
-    raise ValueError(f"explore_goal_policy must be 'rule' or 'learned'; got {name!r}")
+    if name == "network":
+        return NetGoalPolicy.load()
+    raise ValueError(f"explore_goal_policy must be one of {POLICIES}; got {name!r}")

@@ -338,8 +338,9 @@ brain:
   # 3.56 -- while a cloud-policy mission runs, look at the vision service's
   # free /health this often and report it as status.cloud. 0 = off.
   cloud_probe_s: 15.0
-  # 3.65 phase 2 -- explore's next goal: "rule" (hand-written order) or
-  # "learned" (a linear score trained in simulation, brain/explore_goal_weights.json).
+  # 3.65 phase 2 -- explore's next goal: "rule" (hand-written order),
+  # "learned" (a linear score trained in simulation, brain/explore_goal_weights.json)
+  # or "network" (that plus a small network, brain/explore_goal_net.json).
   explore_goal_policy: rule
 
   # Replaying a recorded walk, which is NOT a mission and wants a longer

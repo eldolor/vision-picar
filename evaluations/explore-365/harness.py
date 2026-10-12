@@ -57,7 +57,9 @@ class MeteredNav(FakeNav):
         return out
 
 
-def run_house(index: int, weights=None) -> dict:
+def run_house(index: int, weights=None, policy=None) -> dict:
+    """`weights` -> a LinearGoalPolicy; `policy` -> any object with
+    `best`/`score` (the network, or train_net.py's sampler). Neither: the rule."""
     grid = build_world(f"procthor:val:{index}")
     robot = MockRobot(grid, render=False)
     nav = MeteredNav(robot)
@@ -66,6 +68,8 @@ def run_house(index: int, weights=None) -> dict:
                            clock=lambda: grid.sim_time, idle=robot.pass_time)
     if weights is not None:
         runner.agent.goal_policy = LinearGoalPolicy(weights)
+    if policy is not None:
+        runner.agent.goal_policy = policy
     row = {"index": index}
     try:
         runner.start()

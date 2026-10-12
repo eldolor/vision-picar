@@ -111,3 +111,24 @@ def test_a_crashed_mission_never_scores_above_a_miss():
     import harness
     worst_miss = -1 - harness.GOAL_COST * 200 - harness.METRE_COST * 2000
     assert -harness.CRASH_COST < worst_miss
+
+
+def test_the_network_starts_as_the_linear_score():
+    """Amendment 2: score = linear + MLP; with the MLP's last layer at zero
+    (where training starts) it is the linear score exactly, and a network
+    that does not take the ten features is refused."""
+    import numpy as np
+    from brain.goal_policy import NetGoalPolicy
+    rng = np.random.default_rng(0)
+    w = LinearGoalPolicy.load().weights
+    layers = [(rng.normal(size=(32, 10)), rng.normal(size=32)),
+              (rng.normal(size=(32, 32)), rng.normal(size=32)),
+              (np.zeros((1, 32)), np.zeros(1))]
+    net, lin = NetGoalPolicy(w, layers), LinearGoalPolicy(w)
+    for _ in range(20):
+        f = list(rng.uniform(0, 1, size=10))
+        assert net.score(f) == pytest.approx(lin.score(f))
+    layers[-1] = (rng.normal(size=(1, 32)), np.zeros(1))
+    assert NetGoalPolicy(w, layers).score(f) != pytest.approx(lin.score(f))
+    with pytest.raises(ValueError):
+        NetGoalPolicy(w, [(np.zeros((1, 9)), np.zeros(1))])

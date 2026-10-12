@@ -172,7 +172,8 @@ DEFAULTS = {
     "arrival_confirm_timeout_s": 8.0,
     "cloud_probe_s": 15.0,
     # 3.65 phase 2 -- how explore picks its next goal: "rule" (3.45/3.69's
-    # hand-written order) or "learned" (brain/explore_goal_weights.json).
+    # hand-written order), "learned" (brain/explore_goal_weights.json) or
+    # "network" (that plus a small network, brain/explore_goal_net.json).
     "explore_goal_policy": "rule",
     # Replaying a recorded walk (control/walk_replay.py) is a different
     # question from a live mission's vision call, and it wants a different
@@ -304,8 +305,8 @@ def load_brain_config(config_path=None) -> dict:
     if float(merged["cloud_probe_s"]) < 0:
         raise ValueError(f"brain.cloud_probe_s must be >= 0 (0 = off); "
                          f"got {merged['cloud_probe_s']}")
-    if merged["explore_goal_policy"] not in ("rule", "learned"):
-        raise ValueError(f"brain.explore_goal_policy must be 'rule' or 'learned'; "
+    if merged["explore_goal_policy"] not in ("rule", "learned", "network"):
+        raise ValueError(f"brain.explore_goal_policy must be 'rule', 'learned' or 'network'; "
                          f"got {merged['explore_goal_policy']!r}")
 
     return merged
