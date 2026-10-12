@@ -12,16 +12,16 @@
   "view_late"
  ],
  "weights": [
-  -10.0,
-  0.0,
-  -100.0,
-  3.0,
-  3.0,
-  0.0,
-  0.0,
-  0.0,
-  0.0,
-  0.0
+  -11.874,
+  -1.16,
+  -14.815,
+  6.52,
+  1.317,
+  2.721,
+  0.243,
+  -0.155,
+  -3.824,
+  0.835
  ],
- "note": "Placeholder: the rule's order as a linear score (frontiers by path - size, views only after). Replaced by the trained weights."
+ "note": "3.65 phase 2: cross-entropy method, seed 3652, train-run1 iteration 19; selection houses (usable 100-199) reward 0.3824, found 98/100 (the rule: 0.327, 99/100)."
 }

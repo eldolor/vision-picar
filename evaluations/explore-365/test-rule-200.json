@@ -1,0 +1,918 @@
+{
+ "range": [
+  200,
+  300
+ ],
+ "policy": "rule",
+ "weights": null,
+ "summary": {
+  "n": 100,
+  "found": 98,
+  "clean": 100,
+  "median_goals_found": 9.5,
+  "median_metres_found": 28.5,
+  "mean_reward": 0.3359
+ },
+ "rows": [
+  {
+   "index": 353,
+   "outcome": "found",
+   "ticks": 27,
+   "capped": false,
+   "goals": 7,
+   "metres": 14.7,
+   "reward": 0.713
+  },
+  {
+   "index": 354,
+   "outcome": "found",
+   "ticks": 38,
+   "capped": false,
+   "goals": 10,
+   "metres": 29.1,
+   "reward": 0.509
+  },
+  {
+   "index": 355,
+   "outcome": "found",
+   "ticks": 4,
+   "capped": false,
+   "goals": 1,
+   "metres": 2.7,
+   "reward": 0.953
+  },
+  {
+   "index": 358,
+   "outcome": "found",
+   "ticks": 15,
+   "capped": false,
+   "goals": 4,
+   "metres": 10.8,
+   "reward": 0.812
+  },
+  {
+   "index": 359,
+   "outcome": "found",
+   "ticks": 82,
+   "capped": false,
+   "goals": 19,
+   "metres": 60.34,
+   "reward": 0.0166
+  },
+  {
+   "index": 361,
+   "outcome": "found",
+   "ticks": 70,
+   "capped": false,
+   "goals": 18,
+   "metres": 36.0,
+   "reward": 0.28
+  },
+  {
+   "index": 364,
+   "outcome": "found",
+   "ticks": 8,
+   "capped": false,
+   "goals": 2,
+   "metres": 6.0,
+   "reward": 0.9
+  },
+  {
+   "index": 368,
+   "outcome": "found",
+   "ticks": 18,
+   "capped": false,
+   "goals": 5,
+   "metres": 10.8,
+   "reward": 0.792
+  },
+  {
+   "index": 369,
+   "outcome": "found",
+   "ticks": 27,
+   "capped": false,
+   "goals": 4,
+   "metres": 12.0,
+   "reward": 0.8
+  },
+  {
+   "index": 370,
+   "outcome": "found",
+   "ticks": 38,
+   "capped": false,
+   "goals": 10,
+   "metres": 28.8,
+   "reward": 0.512
+  },
+  {
+   "index": 372,
+   "outcome": "found",
+   "ticks": 39,
+   "capped": false,
+   "goals": 10,
+   "metres": 33.9,
+   "reward": 0.461
+  },
+  {
+   "index": 376,
+   "outcome": "found",
+   "ticks": 8,
+   "capped": false,
+   "goals": 2,
+   "metres": 7.5,
+   "reward": 0.885
+  },
+  {
+   "index": 378,
+   "outcome": "searched",
+   "ticks": 178,
+   "capped": false,
+   "goals": 58,
+   "metres": 224.4,
+   "reward": -3.404
+  },
+  {
+   "index": 379,
+   "outcome": "found",
+   "ticks": 86,
+   "capped": false,
+   "goals": 21,
+   "metres": 63.6,
+   "reward": -0.056
+  },
+  {
+   "index": 380,
+   "outcome": "found",
+   "ticks": 66,
+   "capped": false,
+   "goals": 17,
+   "metres": 61.2,
+   "reward": 0.048
+  },
+  {
+   "index": 381,
+   "outcome": "found",
+   "ticks": 14,
+   "capped": false,
+   "goals": 4,
+   "metres": 9.9,
+   "reward": 0.821
+  },
+  {
+   "index": 383,
+   "outcome": "found",
+   "ticks": 98,
+   "capped": false,
+   "goals": 25,
+   "metres": 50.7,
+   "reward": -0.007
+  },
+  {
+   "index": 384,
+   "outcome": "found",
+   "ticks": 83,
+   "capped": false,
+   "goals": 21,
+   "metres": 49.8,
+   "reward": 0.082
+  },
+  {
+   "index": 385,
+   "outcome": "found",
+   "ticks": 14,
+   "capped": false,
+   "goals": 4,
+   "metres": 14.4,
+   "reward": 0.776
+  },
+  {
+   "index": 387,
+   "outcome": "found",
+   "ticks": 45,
+   "capped": false,
+   "goals": 10,
+   "metres": 22.2,
+   "reward": 0.578
+  },
+  {
+   "index": 388,
+   "outcome": "found",
+   "ticks": 12,
+   "capped": false,
+   "goals": 3,
+   "metres": 8.1,
+   "reward": 0.859
+  },
+  {
+   "index": 389,
+   "outcome": "found",
+   "ticks": 32,
+   "capped": false,
+   "goals": 5,
+   "metres": 16.33,
+   "reward": 0.7367
+  },
+  {
+   "index": 390,
+   "outcome": "found",
+   "ticks": 62,
+   "capped": false,
+   "goals": 16,
+   "metres": 39.0,
+   "reward": 0.29
+  },
+  {
+   "index": 391,
+   "outcome": "found",
+   "ticks": 27,
+   "capped": false,
+   "goals": 7,
+   "metres": 33.9,
+   "reward": 0.521
+  },
+  {
+   "index": 395,
+   "outcome": "found",
+   "ticks": 8,
+   "capped": false,
+   "goals": 2,
+   "metres": 7.2,
+   "reward": 0.888
+  },
+  {
+   "index": 396,
+   "outcome": "found",
+   "ticks": 63,
+   "capped": false,
+   "goals": 16,
+   "metres": 48.0,
+   "reward": 0.2
+  },
+  {
+   "index": 397,
+   "outcome": "found",
+   "ticks": 7,
+   "capped": false,
+   "goals": 2,
+   "metres": 4.8,
+   "reward": 0.912
+  },
+  {
+   "index": 399,
+   "outcome": "found",
+   "ticks": 67,
+   "capped": false,
+   "goals": 17,
+   "metres": 52.8,
+   "reward": 0.132
+  },
+  {
+   "index": 403,
+   "outcome": "found",
+   "ticks": 23,
+   "capped": false,
+   "goals": 6,
+   "metres": 16.5,
+   "reward": 0.715
+  },
+  {
+   "index": 404,
+   "outcome": "found",
+   "ticks": 34,
+   "capped": false,
+   "goals": 9,
+   "metres": 22.2,
+   "reward": 0.598
+  },
+  {
+   "index": 405,
+   "outcome": "found",
+   "ticks": 90,
+   "capped": false,
+   "goals": 23,
+   "metres": 71.4,
+   "reward": -0.174
+  },
+  {
+   "index": 406,
+   "outcome": "found",
+   "ticks": 78,
+   "capped": false,
+   "goals": 20,
+   "metres": 46.5,
+   "reward": 0.135
+  },
+  {
+   "index": 407,
+   "outcome": "found",
+   "ticks": 111,
+   "capped": false,
+   "goals": 28,
+   "metres": 76.0,
+   "reward": -0.32
+  },
+  {
+   "index": 408,
+   "outcome": "found",
+   "ticks": 57,
+   "capped": false,
+   "goals": 13,
+   "metres": 48.0,
+   "reward": 0.26
+  },
+  {
+   "index": 409,
+   "outcome": "found",
+   "ticks": 14,
+   "capped": false,
+   "goals": 4,
+   "metres": 11.4,
+   "reward": 0.806
+  },
+  {
+   "index": 411,
+   "outcome": "found",
+   "ticks": 14,
+   "capped": false,
+   "goals": 4,
+   "metres": 12.3,
+   "reward": 0.797
+  },
+  {
+   "index": 413,
+   "outcome": "found",
+   "ticks": 86,
+   "capped": false,
+   "goals": 22,
+   "metres": 73.2,
+   "reward": -0.172
+  },
+  {
+   "index": 414,
+   "outcome": "found",
+   "ticks": 18,
+   "capped": false,
+   "goals": 5,
+   "metres": 17.1,
+   "reward": 0.729
+  },
+  {
+   "index": 415,
+   "outcome": "found",
+   "ticks": 41,
+   "capped": false,
+   "goals": 10,
+   "metres": 22.5,
+   "reward": 0.575
+  },
+  {
+   "index": 416,
+   "outcome": "found",
+   "ticks": 23,
+   "capped": false,
+   "goals": 6,
+   "metres": 21.0,
+   "reward": 0.67
+  },
+  {
+   "index": 418,
+   "outcome": "found",
+   "ticks": 35,
+   "capped": false,
+   "goals": 9,
+   "metres": 20.4,
+   "reward": 0.616
+  },
+  {
+   "index": 420,
+   "outcome": "found",
+   "ticks": 79,
+   "capped": false,
+   "goals": 19,
+   "metres": 68.1,
+   "reward": -0.061
+  },
+  {
+   "index": 422,
+   "outcome": "found",
+   "ticks": 36,
+   "capped": false,
+   "goals": 10,
+   "metres": 27.9,
+   "reward": 0.521
+  },
+  {
+   "index": 423,
+   "outcome": "found",
+   "ticks": 104,
+   "capped": false,
+   "goals": 26,
+   "metres": 100.2,
+   "reward": -0.522
+  },
+  {
+   "index": 424,
+   "outcome": "found",
+   "ticks": 60,
+   "capped": false,
+   "goals": 17,
+   "metres": 41.1,
+   "reward": 0.249
+  },
+  {
+   "index": 426,
+   "outcome": "found",
+   "ticks": 66,
+   "capped": false,
+   "goals": 17,
+   "metres": 36.6,
+   "reward": 0.294
+  },
+  {
+   "index": 427,
+   "outcome": "found",
+   "ticks": 86,
+   "capped": false,
+   "goals": 22,
+   "metres": 48.6,
+   "reward": 0.074
+  },
+  {
+   "index": 428,
+   "outcome": "found",
+   "ticks": 14,
+   "capped": false,
+   "goals": 4,
+   "metres": 11.1,
+   "reward": 0.809
+  },
+  {
+   "index": 430,
+   "outcome": "found",
+   "ticks": 66,
+   "capped": false,
+   "goals": 21,
+   "metres": 65.4,
+   "reward": -0.074
+  },
+  {
+   "index": 431,
+   "outcome": "found",
+   "ticks": 50,
+   "capped": false,
+   "goals": 13,
+   "metres": 37.8,
+   "reward": 0.362
+  },
+  {
+   "index": 432,
+   "outcome": "found",
+   "ticks": 54,
+   "capped": false,
+   "goals": 14,
+   "metres": 33.6,
+   "reward": 0.384
+  },
+  {
+   "index": 434,
+   "outcome": "found",
+   "ticks": 45,
+   "capped": false,
+   "goals": 11,
+   "metres": 33.3,
+   "reward": 0.447
+  },
+  {
+   "index": 436,
+   "outcome": "found",
+   "ticks": 46,
+   "capped": false,
+   "goals": 12,
+   "metres": 28.2,
+   "reward": 0.478
+  },
+  {
+   "index": 437,
+   "outcome": "found",
+   "ticks": 34,
+   "capped": false,
+   "goals": 9,
+   "metres": 23.7,
+   "reward": 0.583
+  },
+  {
+   "index": 441,
+   "outcome": "found",
+   "ticks": 18,
+   "capped": false,
+   "goals": 5,
+   "metres": 14.1,
+   "reward": 0.759
+  },
+  {
+   "index": 443,
+   "outcome": "found",
+   "ticks": 10,
+   "capped": false,
+   "goals": 3,
+   "metres": 9.6,
+   "reward": 0.844
+  },
+  {
+   "index": 444,
+   "outcome": "found",
+   "ticks": 19,
+   "capped": false,
+   "goals": 5,
+   "metres": 16.2,
+   "reward": 0.738
+  },
+  {
+   "index": 445,
+   "outcome": "found",
+   "ticks": 34,
+   "capped": false,
+   "goals": 9,
+   "metres": 21.0,
+   "reward": 0.61
+  },
+  {
+   "index": 446,
+   "outcome": "found",
+   "ticks": 26,
+   "capped": false,
+   "goals": 7,
+   "metres": 29.7,
+   "reward": 0.563
+  },
+  {
+   "index": 447,
+   "outcome": "found",
+   "ticks": 58,
+   "capped": false,
+   "goals": 15,
+   "metres": 47.1,
+   "reward": 0.229
+  },
+  {
+   "index": 450,
+   "outcome": "found",
+   "ticks": 26,
+   "capped": false,
+   "goals": 7,
+   "metres": 14.7,
+   "reward": 0.713
+  },
+  {
+   "index": 451,
+   "outcome": "found",
+   "ticks": 50,
+   "capped": false,
+   "goals": 13,
+   "metres": 29.1,
+   "reward": 0.449
+  },
+  {
+   "index": 452,
+   "outcome": "found",
+   "ticks": 38,
+   "capped": false,
+   "goals": 10,
+   "metres": 30.6,
+   "reward": 0.494
+  },
+  {
+   "index": 453,
+   "outcome": "found",
+   "ticks": 11,
+   "capped": false,
+   "goals": 3,
+   "metres": 5.4,
+   "reward": 0.886
+  },
+  {
+   "index": 455,
+   "outcome": "found",
+   "ticks": 47,
+   "capped": false,
+   "goals": 12,
+   "metres": 42.9,
+   "reward": 0.331
+  },
+  {
+   "index": 457,
+   "outcome": "found",
+   "ticks": 58,
+   "capped": false,
+   "goals": 15,
+   "metres": 36.6,
+   "reward": 0.334
+  },
+  {
+   "index": 458,
+   "outcome": "found",
+   "ticks": 87,
+   "capped": false,
+   "goals": 21,
+   "metres": 71.4,
+   "reward": -0.134
+  },
+  {
+   "index": 460,
+   "outcome": "found",
+   "ticks": 6,
+   "capped": false,
+   "goals": 2,
+   "metres": 4.2,
+   "reward": 0.918
+  },
+  {
+   "index": 466,
+   "outcome": "found",
+   "ticks": 41,
+   "capped": false,
+   "goals": 9,
+   "metres": 36.47,
+   "reward": 0.4553
+  },
+  {
+   "index": 467,
+   "outcome": "found",
+   "ticks": 6,
+   "capped": false,
+   "goals": 2,
+   "metres": 5.1,
+   "reward": 0.909
+  },
+  {
+   "index": 468,
+   "outcome": "found",
+   "ticks": 58,
+   "capped": false,
+   "goals": 15,
+   "metres": 38.1,
+   "reward": 0.319
+  },
+  {
+   "index": 469,
+   "outcome": "found",
+   "ticks": 71,
+   "capped": false,
+   "goals": 18,
+   "metres": 65.1,
+   "reward": -0.011
+  },
+  {
+   "index": 471,
+   "outcome": "searched",
+   "ticks": 109,
+   "capped": false,
+   "goals": 34,
+   "metres": 126.3,
+   "reward": -1.943
+  },
+  {
+   "index": 472,
+   "outcome": "found",
+   "ticks": 42,
+   "capped": false,
+   "goals": 11,
+   "metres": 34.2,
+   "reward": 0.438
+  },
+  {
+   "index": 473,
+   "outcome": "found",
+   "ticks": 14,
+   "capped": false,
+   "goals": 4,
+   "metres": 10.8,
+   "reward": 0.812
+  },
+  {
+   "index": 474,
+   "outcome": "found",
+   "ticks": 16,
+   "capped": false,
+   "goals": 4,
+   "metres": 14.7,
+   "reward": 0.773
+  },
+  {
+   "index": 476,
+   "outcome": "found",
+   "ticks": 34,
+   "capped": false,
+   "goals": 9,
+   "metres": 18.3,
+   "reward": 0.637
+  },
+  {
+   "index": 477,
+   "outcome": "found",
+   "ticks": 23,
+   "capped": false,
+   "goals": 6,
+   "metres": 15.3,
+   "reward": 0.727
+  },
+  {
+   "index": 482,
+   "outcome": "found",
+   "ticks": 59,
+   "capped": false,
+   "goals": 15,
+   "metres": 36.3,
+   "reward": 0.337
+  },
+  {
+   "index": 483,
+   "outcome": "found",
+   "ticks": 67,
+   "capped": false,
+   "goals": 17,
+   "metres": 42.9,
+   "reward": 0.231
+  },
+  {
+   "index": 485,
+   "outcome": "found",
+   "ticks": 37,
+   "capped": false,
+   "goals": 9,
+   "metres": 16.8,
+   "reward": 0.652
+  },
+  {
+   "index": 487,
+   "outcome": "found",
+   "ticks": 136,
+   "capped": false,
+   "goals": 41,
+   "metres": 127.37,
+   "reward": -1.0937
+  },
+  {
+   "index": 488,
+   "outcome": "found",
+   "ticks": 14,
+   "capped": false,
+   "goals": 4,
+   "metres": 9.9,
+   "reward": 0.821
+  },
+  {
+   "index": 489,
+   "outcome": "found",
+   "ticks": 10,
+   "capped": false,
+   "goals": 3,
+   "metres": 8.1,
+   "reward": 0.859
+  },
+  {
+   "index": 492,
+   "outcome": "found",
+   "ticks": 19,
+   "capped": false,
+   "goals": 5,
+   "metres": 23.1,
+   "reward": 0.669
+  },
+  {
+   "index": 495,
+   "outcome": "found",
+   "ticks": 14,
+   "capped": false,
+   "goals": 4,
+   "metres": 12.6,
+   "reward": 0.794
+  },
+  {
+   "index": 497,
+   "outcome": "found",
+   "ticks": 63,
+   "capped": false,
+   "goals": 16,
+   "metres": 48.3,
+   "reward": 0.197
+  },
+  {
+   "index": 500,
+   "outcome": "found",
+   "ticks": 27,
+   "capped": false,
+   "goals": 7,
+   "metres": 29.4,
+   "reward": 0.566
+  },
+  {
+   "index": 501,
+   "outcome": "found",
+   "ticks": 26,
+   "capped": false,
+   "goals": 7,
+   "metres": 18.3,
+   "reward": 0.677
+  },
+  {
+   "index": 508,
+   "outcome": "found",
+   "ticks": 32,
+   "capped": false,
+   "goals": 8,
+   "metres": 13.5,
+   "reward": 0.705
+  },
+  {
+   "index": 510,
+   "outcome": "found",
+   "ticks": 46,
+   "capped": false,
+   "goals": 12,
+   "metres": 35.4,
+   "reward": 0.406
+  },
+  {
+   "index": 511,
+   "outcome": "found",
+   "ticks": 343,
+   "capped": false,
+   "goals": 109,
+   "metres": 487.8,
+   "reward": -6.058
+  },
+  {
+   "index": 512,
+   "outcome": "found",
+   "ticks": 148,
+   "capped": false,
+   "goals": 37,
+   "metres": 136.5,
+   "reward": -1.105
+  },
+  {
+   "index": 515,
+   "outcome": "found",
+   "ticks": 55,
+   "capped": false,
+   "goals": 14,
+   "metres": 35.4,
+   "reward": 0.366
+  },
+  {
+   "index": 516,
+   "outcome": "found",
+   "ticks": 6,
+   "capped": false,
+   "goals": 2,
+   "metres": 6.3,
+   "reward": 0.897
+  },
+  {
+   "index": 518,
+   "outcome": "found",
+   "ticks": 65,
+   "capped": false,
+   "goals": 16,
+   "metres": 46.74,
+   "reward": 0.2126
+  },
+  {
+   "index": 520,
+   "outcome": "found",
+   "ticks": 47,
+   "capped": false,
+   "goals": 12,
+   "metres": 42.6,
+   "reward": 0.334
+  },
+  {
+   "index": 521,
+   "outcome": "found",
+   "ticks": 19,
+   "capped": false,
+   "goals": 5,
+   "metres": 9.9,
+   "reward": 0.801
+  },
+  {
+   "index": 526,
+   "outcome": "found",
+   "ticks": 14,
+   "capped": false,
+   "goals": 4,
+   "metres": 14.1,
+   "reward": 0.779
+  },
+  {
+   "index": 528,
+   "outcome": "found",
+   "ticks": 12,
+   "capped": false,
+   "goals": 2,
+   "metres": 5.4,
+   "reward": 0.906
+  }
+ ]
+}
