@@ -2,7 +2,7 @@
 evaluations/explore-365/evaluate.py -- 3.65 phase 2: run the rule or a set of
 weights over usable houses [lo, hi), one JSON row per house.
 
-    python evaluations/explore-365/evaluate.py LO HI rule|learned|WEIGHTS.json OUT.json
+    python evaluations/explore-365/evaluate.py LO HI rule|learned|network|WEIGHTS.json OUT.json
 """
 import json
 import os
@@ -14,16 +14,19 @@ from concurrent.futures import ProcessPoolExecutor
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, ".")
 from harness import run_house                      # noqa: E402
-from brain.goal_policy import WEIGHTS_PATH         # noqa: E402
+from brain.goal_policy import WEIGHTS_PATH, NetGoalPolicy  # noqa: E402
 from sim.maps.procthor import usable               # noqa: E402
 
 
 def _job(args):
-    return run_house(*args)
+    house, w, spec = args
+    # The network is loaded in the worker (amendment 2's committed file).
+    return run_house(house, policy=NetGoalPolicy.load()) if spec == "network" \
+        else run_house(house, w)
 
 
 def weights_of(spec: str):
-    if spec == "rule":
+    if spec in ("rule", "network"):
         return None
     data = json.load(open(WEIGHTS_PATH if spec == "learned" else spec))
     return data["weights"] if "weights" in data else data["best"]["weights"]
@@ -43,7 +46,7 @@ def main(lo: int, hi: int, spec: str, out: str) -> None:
     t = time.time()
     w = weights_of(spec)
     with ProcessPoolExecutor(max_workers=max(1, (os.cpu_count() or 4) - 2)) as ex:
-        rows = list(ex.map(_job, [(h, w) for h in usable()[lo:hi]]))
+        rows = list(ex.map(_job, [(h, w, spec) for h in usable()[lo:hi]]))
     s = summary(rows)
     json.dump({"range": [lo, hi], "policy": spec, "weights": w, "summary": s, "rows": rows},
               open(out, "w"), indent=1)
