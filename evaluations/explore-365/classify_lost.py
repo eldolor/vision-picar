@@ -34,16 +34,17 @@ def run(index, policy):
     tx, ty = (cx + 0.5) * 0.3, (cy + 0.5) * 0.3
     robot = MockRobot(grid, render=False)
     sightings, closest = [], [99.0]
-    orig = E.ExploreAgent._sighting
+    # Every tick's frame, through _choose (which every step calls), not
+    # _sighting (skipped while queued looks run -- where glimpses happen).
+    orig = E.ExploreAgent._choose
 
-    def spy(self, frame):
-        out = orig(self, frame)
+    def spy(self, frame, scene):
         d = math.hypot(grid.x * 0.3 - tx, grid.y * 0.3 - ty)
         closest[0] = min(closest[0], d)
         if any(x.get("label") == TARGET for x in frame.get("detections") or ()):
             sightings.append((self.goals_sent, round(d, 2)))
-        return out
-    E.ExploreAgent._sighting = spy
+        return orig(self, frame, scene)
+    E.ExploreAgent._choose = spy
     try:
         r = MissionRunner(robot, target_object=TARGET, policy="explore", navigator=MeteredNav(robot),
                           world=MockWorld(grid), max_steps=MAX_STEPS, clock=lambda: grid.sim_time,
@@ -58,11 +59,11 @@ def run(index, policy):
         seen = any(math.hypot(x - tx, y - ty) < 0.2 for x, y in a.seen)
         s = r.status()
     finally:
-        E.ExploreAgent._sighting = orig
+        E.ExploreAgent._choose = orig
     return {"outcome": s["outcome"], "goals": a.goals_sent, "closest_m": round(closest[0], 2),
             "target_cell_seen": seen, "sightings (goal, range m)": sightings[:6],
             "n_sightings": len(sightings), "explore": {k: v for k, v in s.get("explore", {}).items()
-                                                       if k in ("ended", "skipped", "reason")}}
+                                                       if k in ("last_event", "goals_failed", "camera_seen_m2")}}
 
 
 if __name__ == "__main__":
