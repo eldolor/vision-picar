@@ -196,6 +196,20 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   nearest return kept on data (the median traded precision and duplicates
   for recall), the per-frame reads kept by design. Seed 3463: every 3.46
   bar met before and after; landmarks with more hits than frames 2 -> 0.
+* **Review of the code written before the review rule (3.76), batches A-B
+  merged 2026-10-13.** Both reviewers on whole files, risky files only,
+  every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
+  `server.py`): 5 fixed -- a verb longer than the watchdog lost its
+  driver's authority, the wheel loop could overwrite a stop, lost feedback
+  under ROS drive read as a ROS outage, `/stop` waited on a hung bridge, a
+  take-over under ROS drive cancelled the person's own move. B (the board,
+  lidar and ROS drivers): 8 fixed -- a stop could leave the real board
+  driving, one bad board frame ended feedback for good, both serial readers
+  spun on an unplugged line, late lidar reads aged too young, an unbounded
+  revolution buffer, a 0 deg turn pulsed the motors, the board clock map
+  drifted with uptime, a ROS twist after a stop. Open for the user: `/scan`'s
+  stamp is the request time (3.42's own open item). Batches C-I (mission
+  loop, twin, perception, walks, inventory, cloud, tooling) to go.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,
