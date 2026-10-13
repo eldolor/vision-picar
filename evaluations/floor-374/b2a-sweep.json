@@ -1,0 +1,22 @@
+{
+ "exact": {
+  "runs": 1920,
+  "i_under_18cm": 0,
+  "worst_T": 19.9,
+  "ii_progress_on": 0.9778,
+  "ii_progress_off": 0.9778,
+  "iii_earlier_by_3cm": 0,
+  "iii_share": 0.0,
+  "band_refused_runs": 62
+ },
+ "noise": {
+  "runs": 1920,
+  "i_under_18cm": 0,
+  "worst_T": 20.0,
+  "ii_progress_on": 0.9691,
+  "ii_progress_off": 0.9778,
+  "iii_earlier_by_3cm": 196,
+  "iii_share": 0.1021,
+  "band_refused_runs": 922
+ }
+}

@@ -936,8 +936,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         The grid itself is untouched -- `zones` is exactly what the backend
         returned."""
         grid = robot.get_depth_grid()
-        clearance, source = safety.path_clearance()
-        veto_cm, veto_source = safety.forward_clearance()
+        clearance, source = safety.path_clearance(grid)
+        veto_cm, veto_source = safety.forward_clearance(grid)
         grid["path"] = {
             "indices": path_zone_indices(
                 int(grid.get("rows", 1)), int(grid.get("cols", 0)),
@@ -946,9 +946,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             "clearance_cm": clearance,
             "source": source,
             # What the veto would say about a FORWARD issued right now --
-            # the cone above AND the chassis' swept corridor (3.18), so this
-            # can read blocked while the cone's own clearance reads clear:
-            # something off a front corner. None is "nothing within range".
+            # the cone above AND the chassis' swept corridor (3.18) AND the
+            # depth camera's floor band (3.74), so this can read blocked
+            # while the cone's own clearance reads clear: something off a
+            # front corner, or under the lidar. None is "nothing within range".
             "blocked": veto_cm is not None and veto_cm < min_distance,
             "veto_cm": veto_cm,
             "veto_source": veto_source,

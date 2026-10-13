@@ -278,7 +278,7 @@ def gate_dir() -> str:
 #     ~45 of the 51 minutes. Their quick neighbours (test_depth_veto,
 #     test_pivot_safety, test_authority, test_failsafes, the contracts) stay.
 SLOW_FILES = [
-    "test_arrival.py", "test_bearing_turns.py", "test_firmware_fork.py",
+    "test_arrival.py", "test_bearing_turns.py", "test_firmware_fork.py", "test_floor_band_safety.py",
     "test_footprint_safety.py", "test_goal_policy_sweep.py", "test_guarded_verbs.py",
     "test_inventory_mission.py",
     "test_lidar_safety.py", "test_pan_safety.py", "test_procthor_sweep.py", "test_ros_driver_board.py",

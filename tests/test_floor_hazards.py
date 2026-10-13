@@ -12,7 +12,7 @@ import pytest
 from robot import interface
 from sim.grid_world import LIDAR_Z_M, ROBOT_HALF_CELL, GridWorld, Heading, LowObjectDetector
 from sim.mock_robot import (DEFAULT_CELL_CM, FLOOR_BAND_FOV_DEG, FLOOR_BAND_MAX_CM,
-                            FLOOR_BAND_MIN_CM, MockRobot)
+                            FLOOR_BAND_MIN_CM, FLOOR_BAND_ORIGIN_X_CM, MockRobot)
 from sim.mock_world import CELL_OCCUPIED, MockWorld
 
 CORRIDOR = ["#" * 14, "#" + "." * 12 + "#", "#" + "." * 12 + "#", "#" + "." * 12 + "#", "#" * 14]
@@ -33,9 +33,15 @@ def _centre(zones):
 
 
 def _true_clearance_cm(gap_cells):
-    """Robot centre (1.5) to the object's near face (2 + gap), less the half
-    cell every depth reading here is measured from."""
+    """Robot centre (1.5) to the object's near face (2 + gap): the level
+    row's measure, from the robot's cell edge."""
     return (2 + gap_cells - 1.5 - ROBOT_HALF_CELL) * DEFAULT_CELL_CM
+
+
+def _true_band_range_cm(gap_cells):
+    """The lens (`FLOOR_BAND_ORIGIN_X_CM` ahead of the centre) to the
+    object's near face: what the floor band measures."""
+    return (2 + gap_cells - 1.5) * DEFAULT_CELL_CM - FLOOR_BAND_ORIGIN_X_CM
 
 
 def test_the_lidar_plane_is_the_xacros():
@@ -53,7 +59,7 @@ def test_a_low_object_is_under_the_scan_and_in_the_floor_band(gap_cells):
     assert robot.get_depth_grid()["zones"] == wall.get_depth_grid()["zones"]
     assert robot.get_distance() == wall.get_distance()
 
-    truth = _true_clearance_cm(gap_cells)
+    truth = _true_band_range_cm(gap_cells)
     floor = robot.get_depth_grid()["floor"]
     for zone in _centre(floor["zones"]):
         if truth < FLOOR_BAND_MIN_CM:
@@ -73,7 +79,7 @@ def test_the_band_covers_minz_to_one_and_a_half_metres():
     for gap in range(0, 6):
         zone = _centre(_robot(gap).get_depth_grid()["floor"]["zones"])[0]
         if zone["status"] == interface.ZONE_RANGE:
-            measured.append(_true_clearance_cm(gap))
+            measured.append(_true_band_range_cm(gap))
     assert measured and min(measured) < FLOOR_BAND_MIN_CM + DEFAULT_CELL_CM
     assert max(measured) >= FLOOR_BAND_MAX_CM - DEFAULT_CELL_CM
 
@@ -218,3 +224,113 @@ def test_low_cells_follow_a_replaced_object_table():
     robot.world.move_object((4, 2), (5, 2))
     assert robot.world.low_cells == {(5, 2)}
     assert robot.world.lidar_solid_cells == frozenset()
+
+
+# ---------------- part B: the floor band in robot/safety.py ----------------
+
+from robot.safety import SafetyController  # noqa: E402
+
+
+def test_the_band_vetoes_a_forward_the_scan_would_allow():
+    robot = _robot(1)  # a sock ~45 cm from the lens, under every beam
+    safety = SafetyController(robot, 20.0)
+    assert safety.footprint_clearance(+1)[1] == "scan_footprint_no_target"
+    cm, source = safety.floor_clearance()
+    assert source == "floor_band" and cm < 40
+    assert safety.forward_clearance()[1].startswith("floor_band")
+
+
+def test_no_band_changes_nothing():
+    """A grid with no `floor` block -- every real body today."""
+    robot = _robot(1)
+    safety = SafetyController(robot, 20.0)
+    plain = robot.get_depth_grid()
+    plain.pop("floor")
+    assert safety.floor_clearance(plain) == (None, "no_floor_band")
+
+
+def test_unusable_zones_never_enter_the_comparison():
+    safety = SafetyController(_robot(None), 20.0)
+    grid = {"floor": {"fov_deg": 73.0, "pan_deg": 0.0, "origin_x_cm": 6.5,
+                      "zones": [{"status": interface.ZONE_UNUSABLE, "distance_cm": None}] * 32}}
+    assert safety.floor_clearance(grid) == (None, "floor_band_no_target")
+
+
+def test_a_tight_corridor_does_not_stop_the_robot():
+    """A one-cell (30 cm) corridor: its walls are 15 cm off the centre-line,
+    just outside the 23.1 cm chassis' corridor (11.55 + 3 cm). Measured
+    from the bumper instead of the lens (the first cut), they read as in
+    it and stopped the robot."""
+    layout = ["#" * 14, "#" + "." * 12 + "#", "#" * 14]
+    world = GridWorld(layout, {"hall": set()}, robot_x=1, robot_y=1, heading=Heading.E)
+    robot = MockRobot(world, render=False)
+    safety = SafetyController(robot, 20.0)
+    for _ in range(8):
+        cm, _source = safety.floor_clearance()
+        assert cm is None or cm > safety.required_clearance_cm(0.2)
+        robot.drive_forward(speed=50, duration=0.5)
+
+
+def _grid(*zones, origin=6.5, fov=73.0, cols=None):
+    """A floor block with the given (distance_cm, bearing_deg) zones."""
+    zs = [{"status": interface.ZONE_RANGE, "distance_cm": d, "bearing_deg": b} for d, b in zones]
+    return {"floor": {"fov_deg": fov, "pan_deg": 0.0, "origin_x_cm": origin,
+                      "min_range_cm": 20.0, "zones": zs}}
+
+
+def test_a_return_beside_the_body_stops_only_inside_its_width():
+    """As `footprint_clearance()` judges the scan (R6's frozen-at-a-jamb
+    lesson): beside the chassis, the 3 cm side margin does not apply."""
+    safety = SafetyController(_robot(None), 20.0)
+    # A point level with the front edge, 12.5 cm off the centre-line: inside
+    # the margin (14.55) but outside the width (11.55) -> no stop.
+    beside = _grid((_m_hyp(12.65 - 6.5 - 1.0, 12.5), _m_brg(12.65 - 6.5 - 1.0, 12.5)))
+    assert safety.floor_clearance(beside) == (None, "floor_band_no_target")
+    inside = _grid((_m_hyp(12.65 - 6.5 - 1.0, 10.0), _m_brg(12.65 - 6.5 - 1.0, 10.0)))
+    assert safety.floor_clearance(inside) == (0.0, "floor_band")
+    ahead = _grid((_m_hyp(12.65 - 6.5 + 10.0, 13.5), _m_brg(12.65 - 6.5 + 10.0, 13.5)))
+    assert safety.floor_clearance(ahead) == (pytest.approx(10.0, abs=0.1), "floor_band")
+
+
+def _m_hyp(x, y):
+    import math as _m
+    return _m.hypot(x, y)
+
+
+def _m_brg(x, y):
+    import math as _m
+    return _m.degrees(_m.atan2(y, x))
+
+
+def test_a_null_bearing_falls_back_to_the_zone_centre():
+    safety = SafetyController(_robot(None), 20.0)
+    grid = {"floor": {"fov_deg": 73.0, "origin_x_cm": 6.5, "zones": [
+        {"status": interface.ZONE_RANGE, "distance_cm": 40.0, "bearing_deg": None}]}}
+    assert safety.floor_clearance(grid)[1] == "floor_band"
+    assert safety.floor_clearance({"floor": {"fov_deg": None, "zones": [{}]}}) == (None, "no_floor_band")
+
+
+def test_band_and_scan_points_share_one_frame():
+    """A wall off to one side: every band return in range lies on a scan
+    return -- the two sensors put it on the SAME side. A first cut compared
+    them mirrored (bearings clockwise-positive, body y left-positive)."""
+    import math as _m
+
+    from robot.safety import scan_points_cm
+    layout = ["#" * 8, "#......#", "#......#", "#......#", "#" * 8]
+    world = GridWorld(layout, {"r": set()}, robot_x=2, robot_y=1, heading=Heading.E)
+    world.theta = _m.radians(20)   # the wall above at an angle, to the LEFT
+    robot = MockRobot(world, render=False)
+    pts = list(scan_points_cm(robot.get_scan()))
+    band = robot.get_depth_grid()["floor"]
+    hits = 0
+    for z in band["zones"]:
+        if z["status"] != interface.ZONE_RANGE:
+            continue
+        b = _m.radians(z["bearing_deg"])
+        px, py = band["origin_x_cm"] + z["distance_cm"] * _m.cos(b), -z["distance_cm"] * _m.sin(b)
+        # 2 cm, plus the scan's 1-degree beam spacing at that range (corners).
+        tol = 2.0 + z["distance_cm"] * _m.radians(1.0) + 0.5
+        assert min(_m.hypot(px - a, py - c) for a, c in pts) <= tol
+        hits += 1
+    assert hits >= 5

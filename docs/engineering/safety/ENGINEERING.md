@@ -47,7 +47,8 @@ within range, never "unknown".
 | `path_clearance()` | `depth_grid_facing_away`, `depth_grid`, `depth_grid_no_target`, `scan_path`, `scan_path_no_target`, `distance_sensor` | The cone, tried in that order. A panned grid with no path zones left is no opinion (`None`); otherwise the nearest `ZONE_RANGE` in the path zones; otherwise, if any path zone answered, no target; otherwise, with a usable scan, its beams within `PATH_HALF_ANGLE_DEG` of ahead minus `LIDAR_TO_FRONT_BUMPER_CM` (3.42: without it a lidar-only car fell to the scalar's 0.0 and could never drive forward); otherwise the scalar `get_distance()`. Unusable zones are dropped. All values are bumper-relative (`sensor_to_bumper_cm` subtracted, floored at 0) |
 | `footprint_clearance(+1 / -1)` | `scan_footprint`, `scan_footprint_no_target`, `no_scan` | Returns in the body frame within half-width + 3 cm of the centre-line and beyond the leading edge: distance past the edge. A return inside the outline reads 0.0 |
 | `rear_clearance()` | `scan_rear`, `scan_rear_no_target`, `no_rear_sensor` | Beams within `PATH_HALF_ANGLE_DEG` of astern, minus `LIDAR_TO_REAR_BUMPER_CM` |
-| `forward_clearance()` | the lesser of cone and corridor, or `path_not_observed` (0.0); then aged (below) | `path_not_observed` when the grid faces away and there is no scan |
+| `floor_clearance(grid)` | `floor_band`, `floor_band_no_target`, `no_floor_band` | 3.74. The depth grid's `floor` block (the depth camera's floor band: body-fixed, `origin_x_cm` ahead of `base_link`, `fov_deg`, `min_range_cm`, zones of `{status, distance_cm, bearing_deg?}`; fields in `RobotInterface.get_depth_grid()`). Each `ZONE_RANGE` zone is a point in the body frame -- range from the origin along the zone's `bearing_deg` (null or absent: its centre) -- judged by `_corridor_room()`, the one corridor rule the scan's `footprint_clearance()` uses too: ahead of the front edge within half-width + 3 cm, the room past the edge; beside the body only within the half-width (0.0). Inside the band's minimum range nothing is seen or carried (Known gaps). Unusable zones never compared. `no_floor_band` for a grid without the block or with no usable `fov_deg` (every real body today) |
+| `forward_clearance()` | the least of cone, corridor and floor band, or `path_not_observed` (0.0); then aged (below) | The cone and the band read ONE depth grid, the corridor and the band ONE scan. `path_not_observed` when the grid faces away and there is no scan; the band does not lift it |
 | `reverse_clearance()` | `astern_not_observed` (0.0), or the lesser of rear and corridor astern, off one scan; then aged (below) | `(0.0, "astern_not_observed")` when the scan is missing or unusable **and** `_has_wheels()` (the body's `get_wheel_state()` reports `usable: true`; a body without the method, or whose call raises, has none). Otherwise, with no scan, `(None, "no_rear_sensor")` and the reverse proceeds. The rule and its reasons: [architecture spec](../../safety/ARCHITECTURE.md), "A body that cannot see astern does not reverse" |
 | `pivot_blocked(omega)` / `pivot_scale(omega)` | reason string or None / `(fraction, reason)` | A return whose distance to the rectangle would end under `PIVOT_MARGIN_CM` **and** shrink. Binary search to 1/64 of the turn rate. No usable scan: never blocked. **Aged rotation** (3.42): `_turn_since_scan()` is the turn the scan has missed -- the body's own answer (`turn_since_scan()`, `HardwareRobot` from its encoder heading history) or else yaw rate x `sensor_age_s()` -- and the check runs from `PIVOT_AGE_SAMPLES` + 1 rotations across that arc. Zero for a body whose readings have no age |
 
@@ -328,6 +329,8 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | `tests/test_watchdog_integration.py` (6) | The watchdog against a live `uvicorn` subprocess with a 0.3 s timeout |
 | `tests/test_server.py` (23) | `watchdog_should_stop()`, sensing does not feed the watchdog, safety over HTTP |
 | `tests/test_wall_linters.py` | Footprint and `LIDAR_X_M` equal across the ROS wall; both collars still exist |
+| `tests/test_floor_hazards.py` | 3.74: the band vetoes what the scan passes over; no block, no change; unusable zones ignored; a 30 cm corridor's walls never stop the robot; beside the body only inside its width; a null bearing falls back to the zone centre; band and scan points share one frame |
+| `tests/test_floor_band_safety.py` | 3.74 B1 and B2a samples (slow tier): a sock ahead stops every run at >= 18 cm, and without the band runs touch it; with nothing low the band changes no run |
 
 **Recorded numbers** (all on ground truth; plan sections in
 `PLAN-ros-alignment.md`):
@@ -342,12 +345,23 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | 3.27 | 2880 runs: 0 under 18 cm; 120 pivots: 0 touching (worst gap 1.03). With a centred-lidar assumption: 177 under 18 cm (worst 15.7, astern), 56 pivots touching |
 | 3.29 | Fork-firmware turns: 120 of 120 within 1 deg (worst 0.84), +0.16 s a turn |
 | 3.30 | 2021 crossing runs: 0 under 18 cm, 0 contacts. Clamp off: 1522 failures |
+| 3.74 | A 5 cm object ahead, 600 runs at 0.1 and 0.2 m/s: 0 under 18 cm (closest 19.76), 0 contacts; band off 600 / 600 under, 437 contacts. Nothing low, 1920 runs: exact, no run changed; with S5 noise, 10.2% stopped > 3 cm earlier (bar 1%, failed; a property of per-zone noise, see the plan), progress -0.87 points |
 
 Change checklist: confirm each new criterion RED against the old code
 first; run the sweeps, not just the pinned samples; run the suite in module
 order; record the table in the plan entry.
 
 ## Known gaps
+
+- **The floor band's blind range (3.74).** Inside the depth camera's
+  minimum range (about 14 cm past the bumper) the band sees nothing, and
+  nothing carries an earlier sighting across it. A FORWARD at the normal
+  bar (20 cm) never gets there; a creep (3 cm bar, 3.44) after the band
+  stopped the robot, or a pivot that swings a low object in, can. A hold
+  carried by the wheels was built and removed in review: each of the
+  robot server's two controllers and the brain's own kept a separate one,
+  `/depth` raced it, and it failed open on a feedback blip. Options are in
+  `PLAN-ros-alignment.md` 3.74.
 
 - **The car only turns until its lidar driver lands**: see "Driving
   without a lidar" above. By decision.

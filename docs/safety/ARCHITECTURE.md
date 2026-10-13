@@ -122,6 +122,22 @@ Whichever check reads less decides.
 cannot close on them, and nav2's stop polygon froze the robot against a door
 jamb for exactly that reason (`PLAN-ros-alignment.md` 3.15, 3.18).
 
+### What lies under the lidar is checked by the depth camera's floor band (3.74)
+
+The lidar sees one plane, 12 cm up. A sock, a cable or a shoe is under
+it. The depth camera's near floor is a third check in series, on the same
+footing as the corridor: each return is placed relative to the body and
+counts only inside the strip the chassis will sweep, by the same rule as
+the scan's. Forward only; the band sees neither the sides of a pivot nor
+astern, and inside its minimum range it is blind: a creep after the band
+stopped the robot can drive into what it can no longer see (an open
+question below). **Rejected:** fusing with the lidar (a band return the scan
+also holds is the scan's). A lidar point just outside the corridor could
+excuse a low object just inside it, and under noise it fused almost
+nothing (3.74 review). **Rejected:** letting a detector's
+"hazard" veto motion. A camera can be wrong; recognition steers
+(3.74 part C), measurement vetoes.
+
 ### A turn is refused only when it closes on something
 
 A rectangle's corners swing beyond its sides when it pivots, so rotation is
@@ -345,6 +361,13 @@ are commitments, not tuning.
 | A person or pet crosses the path | Same vet, same bars | The static-obstacle bars above hold with something moving (3.30) |
 
 ## Open questions
+
+- **The floor band's blind range** (3.74). A creep or a pivot can carry a
+  low object into the range the depth camera cannot measure. Remembering
+  the sighting is stateful safety across three controllers; refusing a
+  forward creep whenever the band is fitted costs the creep escape.
+  Decide on the car's numbers (how often creep escape runs at all).
+  Owner: the user.
 
 - **Braking, and a faster planner.** The stopping distance now follows
   speed (Decisions, 3.44), but its braking rate is a placeholder until it

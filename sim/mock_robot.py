@@ -109,17 +109,27 @@ LIDAR_RANGE_M = 12.0
 
 # The OAK-D Lite's floor band (3.74, from section 6.8's vendor reading; `[V]`
 # Luxonis, `[CAD]` Waveshare's URDF -- measure both on the car). The camera
-# is fixed to the chassis and level, so the band is cast along the BODY, not
-# the pan-tilt. Its horizontal field is 73 deg. Its minimum depth is ~20 cm
-# at 400P with extended disparity, and the lens sits ~6 cm behind the front
-# edge, so nothing nearer than ~14 cm past the bumper can be measured: those
-# zones read UNUSABLE, never clear (M3). The 29 deg half-angle down from
-# ~10.2 cm sees a 5 cm object from ~9 cm, inside MinZ, so MinZ is the binding
-# limit and elevation is not modelled. Beyond 1.5 m the band reports nothing
-# (stereo on a grazing floor is the noisiest there is; it is a near-field
-# guard, not a map).
+# is fixed to the chassis and level, 6.5 cm ahead of `base_link`, so the
+# band is cast from there along the BODY, not the pan-tilt, and its ranges
+# are from the lens: the block publishes `origin_x_cm` so a consumer can put
+# each return in the body frame, as `LIDAR_X_M` does for the scan. Its
+# horizontal field is 73 deg. Its minimum depth is ~20 cm at 400P with
+# extended disparity (about 14 cm past the bumper): nearer zones read
+# UNUSABLE, never clear (M3). The 29 deg half-angle down from ~10.2 cm sees
+# a 5 cm object from ~9 cm, inside MinZ, so MinZ is the binding limit and
+# elevation is not modelled. Beyond 1.5 m the band reports nothing (stereo
+# on a grazing floor is the noisiest there is; it is a near-field guard,
+# not a map).
 FLOOR_BAND_FOV_DEG = 73.0
-FLOOR_BAND_MIN_CM = (0.20 - 0.06) * 100.0
+# Columns, one exact ray each, 0.76 deg apart. One ray per 9-degree zone let
+# a sock's near corner fall between rays (3.74 B1: two of 100 runs stopped
+# at 17.7 cm); the nearest of several rays per zone let a nearer return
+# just outside the corridor hide a farther one inside it (3.74 review).
+# A single ray hides only what the camera could not see either.
+FLOOR_BAND_COLS = 96
+FLOOR_BAND_RAYS_PER_COL = 1
+FLOOR_BAND_ORIGIN_X_CM = 6.5
+FLOOR_BAND_MIN_CM = 20.0
 FLOOR_BAND_MAX_CM = 150.0
 
 WHEEL_MAX_RAD_S = (
@@ -663,7 +673,7 @@ class MockRobot(RobotInterface):
         pan_deg = math.degrees(renderer.normalize_angle(base_angle - self.world.theta))
         return {"rows": 1, "cols": cols, "pan_deg": round(pan_deg, 4),
                 "fov_deg": math.degrees(renderer.FPV_FOV), "zones": zones,
-                "floor": self._floor_band(cols, cell_cm)}
+                "floor": self._floor_band(FLOOR_BAND_COLS, cell_cm)}
 
     def _floor_sensor(self):
         """S5's sensor model for the floor band, with its OWN random stream
@@ -679,8 +689,8 @@ class MockRobot(RobotInterface):
     def _floor_band(self, cols: int, cell_cm: float) -> dict:
         """The depth camera's floor band (3.74 part A): per zone, the
         nearest thing of ANY height -- a sock as much as a wall -- along the
-        body's heading, measured like the level row (from the robot's cell
-        edge, the march's overshoot taken off).
+        body's heading, as a range from the lens (`origin_x_cm` ahead of the
+        centre), the march's overshoot taken off so it never overstates.
 
         A separate block, not a second row of `zones`: it is another sensor
         at another pose (body-fixed, 73 deg), and a row would claim the
@@ -690,14 +700,25 @@ class MockRobot(RobotInterface):
         when configured, drops and perturbs each zone independently."""
         fov = math.radians(FLOOR_BAND_FOV_DEG)
         solid = self.world.solid_cells
-        px, py, theta = self.world.x, self.world.y, self.world.theta
-        max_cells = FLOOR_BAND_MAX_CM / cell_cm + renderer.FPV_STEP + ROBOT_HALF_CELL
+        theta = self.world.theta
+        off = FLOOR_BAND_ORIGIN_X_CM / cell_cm
+        px = self.world.x + off * math.cos(theta)
+        py = self.world.y + off * math.sin(theta)
+        max_cells = FLOOR_BAND_MAX_CM / cell_cm + 0.01
         zones = []
+        k = FLOOR_BAND_RAYS_PER_COL
         for i in range(cols):
-            angle = theta - fov / 2 + fov * (i + 0.5) / cols
-            dist_cells = renderer.cast_ray(self.world.layout, px, py, angle,
-                                           solid=solid, max_dist=max_cells)
-            clearance = max(0.0, dist_cells - renderer.FPV_STEP - ROBOT_HALF_CELL) * cell_cm
+            # `cast_ray_exact()`: never further than the march, and cheaper
+            # (3.18). The zone publishes its nearest ray's bearing with its
+            # range -- where in the zone the thing is: a range placed at the
+            # zone's centre put a wall just outside the corridor inside it
+            # (3.74 B2 pilot).
+            rel_rays = [-fov / 2 + fov * (i + (j + 0.5) / k) / cols for j in range(k)]
+            dist_cells, rel = min(
+                (renderer.cast_ray_exact(self.world.layout, px, py, theta + r,
+                                         solid=solid, max_dist=max_cells), r)
+                for r in rel_rays)
+            clearance = dist_cells * cell_cm
             # A ray that reached its own horizon met nothing: that is not a
             # range of exactly `max_range_cm`.
             if dist_cells >= max_cells or clearance > FLOOR_BAND_MAX_CM:
@@ -711,9 +732,10 @@ class MockRobot(RobotInterface):
             elif reading is None or reading < FLOOR_BAND_MIN_CM:
                 zones.append({"status": interface.ZONE_UNUSABLE, "distance_cm": None})
             else:
-                zones.append({"status": interface.ZONE_RANGE, "distance_cm": round(reading, 1)})
+                zones.append({"status": interface.ZONE_RANGE, "distance_cm": round(reading, 1),
+                              "bearing_deg": round(math.degrees(rel), 3)})
         return {"cols": cols, "fov_deg": FLOOR_BAND_FOV_DEG, "pan_deg": 0.0,
-                "min_range_cm": FLOOR_BAND_MIN_CM, "max_range_cm": FLOOR_BAND_MAX_CM,
+                "origin_x_cm": FLOOR_BAND_ORIGIN_X_CM, "min_range_cm": FLOOR_BAND_MIN_CM, "max_range_cm": FLOOR_BAND_MAX_CM,
                 "zones": zones}
 
     def get_scan(self, max_range_m: Optional[float] = None) -> dict:

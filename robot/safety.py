@@ -119,6 +119,7 @@ FOOTPRINT_SIDE_MARGIN_CM = 3.0
 # shares (3.17's second finding is about exactly that loop).
 SAFETY_SCAN_RANGE_M = 0.6
 
+
 # ---- the stop distance follows speed (PLAN-ros-alignment.md 3.44, 6.9) ----
 #
 # `min_distance_cm` (20 cm) is a STOPPING distance for a moving robot, and
@@ -408,6 +409,25 @@ def scan_points_cm(scan: dict):
         yield r * 100.0 * math.cos(a) + off, -r * 100.0 * math.sin(a)
 
 
+def _corridor_room(along_cm: float, lateral_cm: float) -> Optional[float]:
+    """How far the chassis can travel before its leading edge reaches a
+    point `along_cm` ahead of `base_link` (in the direction of travel) and
+    `lateral_cm` off the centre-line -- 3.18's swept corridor, the one rule
+    the scan (`footprint_clearance()`) and the floor band
+    (`floor_clearance()`) are both judged by. Ahead of the edge and within
+    half the width plus `FOOTPRINT_SIDE_MARGIN_CM`: its distance past the
+    edge. Beside the body, only within the outline's own width: 0.0 (the
+    body is on it). Anything else never stops a straight move (R6's
+    stop-polygon froze the robot against a jamb): None."""
+    half_len = FOOTPRINT_LENGTH_M * 50.0
+    half_wid = FOOTPRINT_WIDTH_M * 50.0
+    if along_cm > half_len and lateral_cm <= half_wid + FOOTPRINT_SIDE_MARGIN_CM:
+        return along_cm - half_len
+    if 0.0 < along_cm <= half_len and lateral_cm <= half_wid:
+        return 0.0
+    return None
+
+
 class SafetyController:
     def __init__(self, robot: RobotInterface, min_distance_cm: float = 20.0,
                  sensor_to_bumper_cm: float = SENSOR_TO_BUMPER_CM):
@@ -440,7 +460,8 @@ class SafetyController:
         """
         return round(max(0.0, distance_cm - self.sensor_to_bumper_cm), 6)
 
-    def path_clearance(self) -> Tuple[Optional[float], str]:
+    def path_clearance(self, grid: Optional[dict] = None, scan: Optional[dict] = None
+                       ) -> Tuple[Optional[float], str]:
         """How much room the next forward move has, and where that came
         from -- phase M3.
 
@@ -491,8 +512,9 @@ class SafetyController:
         # robot with no depth sensor at all is the normal case, not an
         # error.
         get_grid = getattr(self.robot, "get_depth_grid", None)
-        if get_grid is not None:
+        if grid is None and get_grid is not None:
             grid = get_grid()
+        if grid is not None:
             zones = grid.get("zones") or []
             indices = path_zone_indices(int(grid.get("rows", 1)),
                                         int(grid.get("cols", 0)),
@@ -516,7 +538,7 @@ class SafetyController:
         # Without this a lidar-only car (the Rover until its depth camera
         # has a driver) fell to the scalar, which HardwareRobot answers
         # 0.0 with no sensor -- FORWARD refused forever.
-        scan = self._scan()
+        scan = self._scan() if scan is None else scan
         if scan and scan.get("usable"):
             a0, inc = scan["angle_min_deg"], scan["angle_increment_deg"]
             ahead = [r for i, r in enumerate(scan["ranges_m"])
@@ -595,17 +617,10 @@ class SafetyController:
         scan = self._scan() if scan is None else scan
         if not scan or not scan.get("usable"):
             return None, "no_scan"
-        half_len = FOOTPRINT_LENGTH_M * 50.0
-        half_wid = FOOTPRINT_WIDTH_M * 50.0
         best = None
         for x, y in scan_points_cm(scan):
-            along = direction * x
-            lateral = abs(y)
-            if along > half_len and lateral <= half_wid + FOOTPRINT_SIDE_MARGIN_CM:
-                room = along - half_len
-            elif 0.0 < along <= half_len and lateral <= half_wid:
-                room = 0.0
-            else:
+            room = _corridor_room(direction * x, abs(y))
+            if room is None:
                 continue
             best = room if best is None else min(best, room)
         if best is None:
@@ -723,18 +738,81 @@ class SafetyController:
         found = [r for r in readings if r[0] is not None]
         return min(found, key=lambda r: r[0]) if found else readings[0]
 
-    def forward_clearance(self) -> Tuple[Optional[float], str]:
-        """What a FORWARD is vetted against: the cone (`path_clearance()`)
-        and the swept corridor (`footprint_clearance()`), in series.
+    def floor_clearance(self, grid: Optional[dict] = None) -> Tuple[Optional[float], str]:
+        """Room ahead of anything BELOW the lidar's plane -- 3.74 part B.
 
-        **If neither can see the path, the answer is 0.0** (3.18 part 2): a
-        camera panned away and no scan means nothing observes the ground the
-        move crosses, and unobserved must not read as clear -- M3's rule, one
-        level up."""
-        cone, corridor = self.path_clearance(), self.footprint_clearance(+1)
+        The depth camera's floor band (`grid["floor"]`, a block of its own:
+        body-fixed, its own field and minimum range; fields in
+        `RobotInterface.get_depth_grid()`) sees a sock, a cable or a shoe
+        the scan passes over. Each zone that returned a range is a point in
+        the body frame: `distance_cm` from the band's origin (`origin_x_cm`
+        ahead of `base_link`, the lens) along the zone's `bearing_deg` when
+        it publishes one, else the zone's centre. It is judged exactly as
+        `footprint_clearance()` judges a scan return: ahead of the front
+        edge and within half the width plus `FOOTPRINT_SIDE_MARGIN_CM`, the
+        room is its distance past the edge; beside the body, only inside
+        the outline's own width (0.0); anything else never stops a straight
+        move. Forward only: the band does not see the sides of a pivot, or
+        astern.
+
+        **Inside its minimum range it is blind**, and nothing is carried
+        across it: a creep (3 cm bar, 3.44) after the band stopped the robot
+        can drive a sock into that range and on into it. Before 3.74 nothing
+        saw the sock at all; a hold carried by the wheels was built and
+        removed after review (one hold per controller, three controllers,
+        and a race with `/depth`). PLAN 3.74 records the gap.
+
+        M3's rule holds: an unusable zone -- a dropout, or a thing inside
+        the stereo's minimum range -- never enters the comparison.
+        `(None, "no_floor_band")` for a backend without a band (every real
+        body today); `(None, "floor_band_no_target")` when the corridor is
+        clear."""
+        if grid is None:
+            get_grid = getattr(self.robot, "get_depth_grid", None)
+            grid = get_grid() if get_grid is not None else None
+        band = (grid or {}).get("floor")
+        try:
+            fov = float(band["fov_deg"]) if band else 0.0
+        except (TypeError, ValueError, KeyError):
+            fov = 0.0
+        if not band or not band.get("zones") or fov <= 0:
+            return None, "no_floor_band"
+        zones = band["zones"]
+        pan = float(band.get("pan_deg") or 0.0)
+        origin = float(band.get("origin_x_cm") or 0.0)
+        best = None
+        for zone, centre in zip(zones, _zone_bearings_deg(len(zones), fov)):
+            if zone.get("status") != ZONE_RANGE or zone.get("distance_cm") is None:
+                continue
+            bearing = zone.get("bearing_deg")
+            b = math.radians((centre if bearing is None else float(bearing)) + pan)
+            d = float(zone["distance_cm"])
+            room = _corridor_room(origin + d * math.cos(b), abs(d * math.sin(b)))
+            if room is not None:
+                best = room if best is None else min(best, room)
+        if best is None:
+            return None, "floor_band_no_target"
+        return round(best, 1), "floor_band"
+
+    def forward_clearance(self, grid: Optional[dict] = None) -> Tuple[Optional[float], str]:
+        """What a FORWARD is vetted against: the cone (`path_clearance()`),
+        the swept corridor (`footprint_clearance()`) and, since 3.74, the
+        depth camera's floor band (`floor_clearance()`), in series,
+        off ONE depth grid and ONE scan.
+
+        **If neither the cone nor the scan can see the path, the answer is
+        0.0** (3.18 part 2): a camera panned away and no scan means nothing
+        observes the ground the move crosses, and unobserved must not read
+        as clear -- M3's rule, one level up. The band does not lift that:
+        it sees only the near floor."""
+        if grid is None:
+            get_grid = getattr(self.robot, "get_depth_grid", None)
+            grid = get_grid() if get_grid is not None else None
+        scan = self._scan()
+        cone, corridor = self.path_clearance(grid, scan), self.footprint_clearance(+1, scan)
         if cone[1] == "depth_grid_facing_away" and corridor[1] == "no_scan":
             return 0.0, "path_not_observed"
-        return self._aged(self._nearer(cone, corridor), +1)
+        return self._aged(self._nearer(cone, corridor, self.floor_clearance(grid)), +1)
 
     def reverse_clearance(self) -> Tuple[Optional[float], str]:
         """What a reverse is vetted against: the rear cone and the swept

@@ -419,7 +419,18 @@ class RobotInterface(ABC):
                 {"status": ZONE_RANGE | ZONE_NO_TARGET | ZONE_UNUSABLE,
                  "distance_cm": float | None},
                 ...
-             ]}
+             ],
+             "floor": {            # optional (3.74): a depth camera's floor
+                                   #   band, its own sensor (robot/safety.py
+                                   #   floor_clearance() reads it)
+                "cols": int, "fov_deg": float,
+                "pan_deg": float,      # where it points off the body, cw+
+                "origin_x_cm": float,  # the lens, ahead of base_link
+                "min_range_cm": float, "max_range_cm": float,
+                "zones": [{"status": ..., "distance_cm": float | None,
+                           # optional: where in the zone its range lay,
+                           # clockwise-positive off the band's axis
+                           "bearing_deg": float}, ...]}}
 
         **Not abstract, and deliberately so.** Most backends here have no
         depth sensor and never will -- a photograph has no depth in it, and

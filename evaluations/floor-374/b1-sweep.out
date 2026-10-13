@@ -1,0 +1,2 @@
+band {'runs': 600, 'under_bar': 0, 'touched': 0, 'worst_T': 19.763481232541295}
+no band {'runs': 600, 'under_bar': 600, 'touched': 437, 'worst_T': 0.0}
