@@ -60,6 +60,7 @@ MATCH_M = 1.0
 SEEN_RANGE_M = 3.0
 MAX_STEPS = 150
 MISSIONS = 20
+SURVEY_TIME_LIMIT_S = 1800.0     # 3.70 S1's survey limit
 ABSENT_TARGET = "unicorn"
 
 _CELL_TO_INSTANCE = {cell: k for k, (_, cells) in enumerate(house.INSTANCES) for cell in cells}
@@ -179,15 +180,26 @@ class _LookCounter:
         inventory.observe = observe
 
 
-def run_one(start, *, noisy=True, seed=0, max_steps=MAX_STEPS, inventory=True) -> dict:
+def run_one(start, *, noisy=True, seed=0, max_steps=MAX_STEPS, inventory=True,
+            survey=False) -> dict:
     (cx, cy), theta, room = start
     grid = build_world("complex_house")
     grid.x, grid.y, grid.theta = cx + 0.5, cy + 0.5, theta
     robot = MockRobot(grid, render=False)
     det = ErringDetector(grid, random.Random(seed), noisy=noisy)
-    runner = MissionRunner(robot, target_object=ABSENT_TARGET, max_steps=max_steps,
-                           policy="frontier", world=mock_world_for(robot),
-                           inventory=inventory, detections_fn=det)
+    if survey:
+        # 3.70 S3: the survey job -- explore's frontier loop with no target,
+        # nav2 stood in for by FakeNav -- until it ends Exhausted.
+        from tests.test_explore import FakeNav
+        runner = MissionRunner(robot, job="survey", policy="explore",
+                               navigator=FakeNav(robot), world=mock_world_for(robot),
+                               mission_time_limit_s=SURVEY_TIME_LIMIT_S,
+                               inventory=inventory, detections_fn=det,
+                               clock=lambda: grid.sim_time, idle=robot.pass_time)
+    else:
+        runner = MissionRunner(robot, target_object=ABSENT_TARGET, max_steps=max_steps,
+                               policy="frontier", world=mock_world_for(robot),
+                               inventory=inventory, detections_fn=det)
     honesty = _LookCounter(runner.inventory) if inventory else None
     t0 = time.perf_counter()
     runner.start()
@@ -253,6 +265,8 @@ def main(argv=None):
     ap.add_argument("--half", type=int, choices=(1, 2))
     ap.add_argument("--steps", type=int, default=MAX_STEPS)
     ap.add_argument("--clean", action="store_true", help="no injected detector errors")
+    ap.add_argument("--survey", action="store_true",
+                    help="3.70 S3: the survey job (explore, no target) instead of a search")
     ap.add_argument("--seed", type=int, default=346,
                     help="starts' seed: 346 sweep 1; 3461 sweep 2 (amendment 1); 3462 sweep 3 (amendment 2)")
     args = ap.parse_args(argv)
@@ -265,7 +279,7 @@ def main(argv=None):
     runs = []
     for k in idx:
         r = run_one(all_starts[k], noisy=not args.clean, seed=args.seed * 100 + k,
-                    max_steps=args.steps)
+                    max_steps=args.steps, survey=args.survey)
         runs.append(r)
         print(f"mission {k + 1:2d} from {r['start_room']:<12} {r['outcome']:<10} "
               f"{len(r['report']['reported']):3d} reported {len(r['report']['candidates']):3d} "

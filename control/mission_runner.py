@@ -58,6 +58,7 @@ from brain.inventory import DEFAULT_FOV_DEG, Inventory, frame_detections
 from brain.memory import MissionMemory
 from brain.mission_report import map_coverage
 from brain.navigate import CloudUnavailable
+from brain.room_labels import RoomLabeller, frame_room
 from brain.vision_agent import VisionAgent
 from robot.interface import DRIVER_MANUAL, Preempted, RobotInterface, driver_priority
 from robot.safety import SafetyViolation
@@ -128,6 +129,12 @@ POLICIES = ("frontier", "vision", "tiered", "explore")
 # learns that perception grew a tier (2.6's first invariant), it only
 # learns that this policy, like "vision", cannot run without one.
 VISION_POLICIES = ("vision", "tiered")
+
+# 3.70 Part A: what a mission is for. `find` looks for a target (or goes to a
+# room); `survey` (decided by the user 2026-10-11) has no target: explore's
+# frontier loop maps the house and labels its rooms, and ends Exhausted --
+# never Found, so it never asks the cloud to confirm a target.
+JOBS = ("find", "survey")
 
 # Mission outcomes. "running" is the only non-terminal one.
 #
@@ -541,7 +548,13 @@ class MissionRunner:
         mission_time_limit_s: Optional[float] = None,
         battery_floor_v: Optional[float] = None,
         vision_max_calls: Optional[int] = None,
+        job: str = "find",
+        room_label_fn: Optional[Callable[[dict], Optional[str]]] = None,
+        room_label_max_calls: Optional[int] = None,
+        room_label_mode: str = "rooms",
     ):
+        if job not in JOBS:
+            raise ValueError(f"Unknown job: {job!r}. Known: {', '.join(JOBS)}")
         if policy not in POLICIES:
             raise ValueError(f"Unknown policy: {policy!r}. Known: {', '.join(POLICIES)}")
         if policy in VISION_POLICIES and vision_fn is None:
@@ -553,7 +566,14 @@ class MissionRunner:
                 "vision_fn_for(), which binds a target and the vision service URL"
                 " (and brain/tiered.py's tiered_vision_fn_for(), which wraps one)."
             )
-        if not target_object and not target_room:
+        if job == "survey":
+            if policy != "explore":
+                raise ValueError("A survey runs explore's frontier loop: policy must be "
+                                 f"'explore', not {policy!r}")
+            if target_object or target_room:
+                raise ValueError("A survey has no target: it maps the house and labels "
+                                 "its rooms, and never ends Found")
+        elif not target_object and not target_room:
             raise ValueError(
                 "A mission needs a target_object or a target_room -- otherwise "
                 "MissionMemory.is_complete() is never true and it can only end "
@@ -561,6 +581,17 @@ class MissionRunner:
             )
 
         self.robot = robot
+        self.job = job
+        # 3.70 S2: a survey names rooms as it goes -- one ask per room, at
+        # most `room_label_max_calls` (brain/room_labels.py). The label
+        # source defaults to the frame's own `room`, which only a simulated
+        # frame carries; on the car it is the cloud (a paid call each).
+        self.room_labeller = (RoomLabeller(room_label_fn or frame_room,
+                                           max_calls=room_label_max_calls,
+                                           mode=room_label_mode,
+                                           clock=lambda: self.clock())
+                              if job == "survey" else None)
+        self._label_error_logged = False
         # WORLD state, and the first consumer `control/` has ever had for it
         # (`PLAN-mapping.md` N1 built the routes; nothing here read them).
         # Optional and defaulting to `NullWorld()` rather than None, so every
@@ -652,7 +683,8 @@ class MissionRunner:
         self.max_vision_failures = max_vision_failures
 
         self.memory = MissionMemory(
-            mission=mission or self._default_mission(target_object, target_room),
+            mission=mission or ("Survey the house." if job == "survey"
+                                else self._default_mission(target_object, target_room)),
             target_object=target_object,
             target_room=target_room,
         )
@@ -916,6 +948,21 @@ class MissionRunner:
         if self.memory.is_complete():
             self._finish(FOUND if self.memory.found else ROOM_REACHED, self.memory.summary())
             return False
+        if self.room_labeller is not None and self.is_running():
+            # The pose now, and -- only if it asks -- a frame taken now: the
+            # step's own frame was taken before its move. A label is never
+            # worth a survey: any error here (the pose, the frame, the label
+            # source, the map cut) skips this step's label and is logged once.
+            try:
+                name = self.room_labeller.observe(getattr(self.agent, "_last_map", None),
+                                                  self.world.get_pose(), self._label_frame,
+                                                  alive=self.is_running)
+                if name is not None:
+                    self._log_line(f"room label {self.room_labeller.calls}: {name}")
+            except Exception:  # noqa: BLE001 -- see above
+                if not self._label_error_logged:
+                    logger.warning("room label skipped", exc_info=True)
+                    self._label_error_logged = True
         if getattr(self.agent, "exhausted", False):
             self._finish(EXHAUSTED, self.agent.last_event or "no reachable frontier left")
             return False
@@ -1085,6 +1132,10 @@ class MissionRunner:
                 },
                 "error": self._error,
                 "policy": self.policy,
+                "job": self.job,
+                # 3.70 S2: a survey's room labels -- how many asks, the cap,
+                # whether it was reached, and the names so far.
+                "survey": (self.room_labeller.status() if self.room_labeller else None),
                 "mission": self.memory.mission,
                 "target_object": self.memory.target_object,
                 "target_room": self.memory.target_room,
@@ -1823,6 +1874,25 @@ class MissionRunner:
             f"{frame.get('room', 'unknown')}, facing {frame.get('facing', '?')}, "
             f"free space {scene.get('free_space', '?')}, sees {objects}"
         )
+
+    def _label_frame(self) -> Optional[dict]:
+        """The frame a survey's room label is asked about, taken now -- or
+        None once the mission has stopped, so a stop landing during the map
+        cut asks nobody."""
+        return self.robot.get_camera_frame() if self.is_running() else None
+
+    def room_labels(self) -> Optional[dict]:
+        """3.70 S2: a survey's room labels as the map's `room_labels` block
+        (`{"names", "cells"}`, what brain/explore.py reads), on the world's
+        current map; None for a find mission or with no usable map. Saving
+        it with the map is S4's (3.50's map store)."""
+        if self.room_labeller is None:
+            return None
+        try:
+            return self.room_labeller.layer(self.world.get_map())
+        except Exception:  # noqa: BLE001 -- a read, never fatal
+            logger.warning("room labels unavailable", exc_info=True)
+            return None
 
     @staticmethod
     def _default_mission(target_object: Optional[str], target_room: Optional[str]) -> str:

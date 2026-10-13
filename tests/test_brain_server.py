@@ -1472,3 +1472,66 @@ def test_a_vision_mission_gets_the_configured_cloud_call_cap(tmp_path, monkeypat
         client.post("/mission/stop")
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"]["budget"]["cloud_call_limit"] == limit
+
+
+# ---------- 3.70 S1/S2: a survey starts from the HTTP API ----------
+
+class _StubNavigator:
+    """RemoteNavigator's surface, with nav2 present and nothing moving."""
+
+    def __init__(self, *a, **k):
+        pass
+
+    def available(self):
+        return True
+
+    def set_goal(self, x_m, y_m):
+        return {"accepted": False, "reason": "stub"}
+
+    def get_goal(self):
+        return {"state": None}
+
+    def cancel_goal(self):
+        return {}
+
+
+def _survey_app(tmp_path, monkeypatch, **extra):
+    import control.brain_server as bs
+    monkeypatch.setattr(bs, "RemoteNavigator", _StubNavigator)
+    lines = ["brain:", "  tick_interval_s: 0.0"] + [f"  {k}: {v}" for k, v in extra.items()]
+    config = tmp_path / "robot.yaml"
+    config.write_text("\n".join(lines) + "\n")
+    return bs.create_app(config_path=str(config),
+                         robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+
+
+def test_a_survey_starts_with_no_target_and_its_own_budget(tmp_path, monkeypatch):
+    app = _survey_app(tmp_path, monkeypatch, survey_time_limit_s=1500,
+                      room_label_max_calls=7)
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={"job": "survey", "policy": "explore"})
+        client.post("/mission/stop")
+    assert resp.status_code == 200, resp.text
+    s = resp.json()["status"]
+    assert s["job"] == "survey" and s["target_object"] is None
+    assert s["budget"]["time_limit_s"] == 1500
+    assert s["survey"]["label_call_limit"] == 7
+
+
+@pytest.mark.parametrize("body", [
+    {"job": "survey", "policy": "explore", "target_object": "red backpack"},
+    {"job": "survey", "policy": "frontier"},
+    {"job": "tidy", "policy": "explore"},
+])
+def test_a_survey_the_runner_would_refuse_is_refused_at_start(tmp_path, monkeypatch, body):
+    app = _survey_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json=body)
+    assert resp.status_code in (400, 422), resp.text
+
+
+def test_an_explore_search_still_needs_a_target(tmp_path, monkeypatch):
+    app = _survey_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={"policy": "explore"})
+    assert resp.status_code in (400, 422), resp.text

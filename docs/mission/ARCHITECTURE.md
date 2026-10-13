@@ -207,6 +207,26 @@ Four are deliberately not "failed":
   ([policy](../policy/ARCHITECTURE.md), "The cloud confirms identity at
   arrival").
 
+### A survey is a mission with no target
+
+**Decision** (3.70, decided by the user 2026-10-11). A survey -- started
+from the phone, for a new house or after big changes -- is a mission whose
+job is `survey`: explore's frontier loop with no target. It maps the house
+and names its rooms, and ends **exhausted** when nothing reachable is left
+(or out of budget, or cancelled). It never ends found and never asks the
+cloud to confirm a target, because there is none. It is the same brain
+driver as any mission (arbitration unchanged), with its own time limit.
+
+**A room is asked about once, not once a frame.** On the car a room's name
+is a paid cloud call, so a survey asks only when the robot stands in space
+no earlier answer covers, and at most a capped number of times per survey;
+reaching the cap leaves the rest of the house unlabelled and never ends the
+survey. Which space an answer covers -- a room cut from the map's shape, or
+everything within walking distance of where it was asked -- decides both
+the count of calls and where labels land; the sim measures both
+(3.70 S2). Rooms with no wall between them (open plans) cannot be told
+apart by the map's shape, so labels there land by distance at best.
+
 ### An unconfirmed arrival is asked again when the cloud is back
 
 **Decision** (3.53, approved by the user 2026-10-09). After an
