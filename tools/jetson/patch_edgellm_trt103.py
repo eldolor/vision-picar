@@ -48,7 +48,27 @@ def patch(text: str) -> str:
     return text
 
 
+FP4_LINE = ("        return desc.type == DataType::kFP4 || desc.type == DataType::kINT8 "
+            "|| desc.type == DataType::kFP8;\n")
+
+
+def patch_fp4(text: str) -> str:
+    """`DataType::kFP4` arrived in TensorRT 10.8. The NVFP4 all-reduce plugin
+    is Blackwell-only and never runs on Orin; below 10.8 it accepts the
+    other two types. Idempotent."""
+    if "PICAR_378_FP4" in text:
+        return text
+    assert text.count(FP4_LINE) >= 1, "kFP4 anchor not found"
+    return text.replace(FP4_LINE, (
+        "#if NV_TENSORRT_MAJOR > 10 || (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_MINOR >= 8) "
+        "// PICAR_378_FP4\n" + FP4_LINE + "#else\n"
+        "        return desc.type == DataType::kINT8 || desc.type == DataType::kFP8;\n#endif\n"))
+
+
 if __name__ == "__main__":
-    p = Path(sys.argv[1]) / "cpp/common/trtUtils.cpp"
+    tree = Path(sys.argv[1])
+    p = tree / "cpp/common/trtUtils.cpp"
     p.write_text(patch(p.read_text()))
-    print("patched", p)
+    q = tree / "cpp/plugins/fusedNvfp4GemmAllReducePlugin/fusedNvfp4GemmAllReducePlugin.cpp"
+    q.write_text(patch_fp4(q.read_text()))
+    print("patched", p, q)
