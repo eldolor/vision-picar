@@ -12,6 +12,7 @@ SRC="$(cd "$(dirname "$0")" && pwd)/edgellm_identity.cpp"
 TREE="${1:?usage: build_edgellm_identity.sh <edge-llm tree>}"
 cd "$TREE"
 cp "$SRC" examples/llm/edgellm_identity.cpp
+python3 "$(dirname "$SRC")/patch_edgellm_trt103.py" "$TREE"
 if ! grep -q edgellm_identity examples/llm/CMakeLists.txt; then
   cat >> examples/llm/CMakeLists.txt <<'CMAKE'
 
