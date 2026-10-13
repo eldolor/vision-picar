@@ -293,6 +293,18 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   ProcTHOR sweep, 99 -> 97; first time a goal choice on the Jetson with a
   0.05 m SLAM map -- unmeasured, every candidate's features are a Python
   scan). Trainers in `evaluations/explore-365/`.
+* **Below the lidar (3.74), parts A-B merged 2026-10-12.** Borrowed from
+  Ecovacs' vacuum detector. A: sim objects can be lower than the lidar
+  (`SIM_MAP=complex_house_hazards`), a body-fixed depth-camera floor band
+  in the depth grid (`floor` block), a seeded stand-in hazard detector.
+  B: `robot/safety.py`'s `floor_clearance()` in series with the cone and
+  corridor, by the corridor's own rule. B1 met (a 5 cm object: 600 runs,
+  0 under 18 cm; without the band 437 contacts). Failed and recorded:
+  B2a (iii) under S5 noise (10.2% stopped early; a per-zone noise
+  artefact, the car's B3 decides) and B2b's park (124 s, the lidar
+  corridor's wedge, not the band). Known gap: the band's blind range
+  (a creep or pivot can carry a sock inside 14 cm). C (hazard class,
+  steering) and D (perception data) to go.
 * **Raising nav2's speed** (6.9's high end) now has its speed-dependent
   stop, but waits on measured braking (6.9 (d)) and 3.42's relayed-scan
   time stamp; read `HANDOFF-2026-10-07-lidar-and-speed.md` first.
