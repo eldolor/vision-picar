@@ -643,3 +643,68 @@ def test_a_glimpse_backs_off_at_most_once_from_one_place():
                 break
             agent._do_pending()
     assert sent.count("REVERSE") == 1
+
+
+def test_a_creep_is_logged_with_the_floor_band_reading(caplog):
+    """3.74: whether the band's blind range needs closing waits on how often
+    a creep runs on the car, and whether the band saw something ahead just
+    before -- so every creep is an event carrying both readings."""
+    import json
+    import logging
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="x"),
+                         navigator=FakeNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid))
+    agent.safety.check_and_execute = lambda action, **kw: {"executed": action}
+    agent._pending = [("CREEP", ["FORWARD"])]
+    with caplog.at_level(logging.INFO, logger="explore"):
+        agent._do_pending()
+    creeps = [json.loads(r.getMessage()[len("explore "):]) for r in caplog.records
+              if r.getMessage().startswith("explore {") and '"creep"' in r.getMessage()]
+    assert len(creeps) == 1
+    assert creeps[0]["way"] == "FORWARD" and creeps[0]["executed"] is True
+    assert creeps[0]["floor"][1] in ("floor_band", "floor_band_no_target")
+    assert "forward" in creeps[0] and creeps[0]["waited"] is False
+    assert isinstance(creeps[0]["floor_blind"], int)
+
+
+def test_a_sock_inside_the_bands_blind_range_shows_as_blind_zones(caplog):
+    """3.74 review: inside its minimum range the band's own answer reads
+    clear, so the creep event also counts the band zones that read
+    unusable -- what the car's count looks for."""
+    import json
+    import logging
+    from sim.grid_world import GridWorld, Heading
+    layout = ["#" * 10, "#........#", "#........#", "#........#", "#" * 10]
+    grid = GridWorld(layout, {"r": set()}, objects={(2, 2): "sock"}, robot_x=1, robot_y=2,
+                     heading=Heading.E, object_heights={"sock": 0.05})
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="x"),
+                         navigator=FakeNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid))
+    agent.safety.check_and_execute = lambda action, **kw: {"executed": action}
+    agent._pending = [("CREEP", ["FORWARD"])]
+    with caplog.at_level(logging.INFO, logger="explore"):
+        agent._do_pending()
+    creep = [json.loads(r.getMessage()[len("explore "):]) for r in caplog.records
+             if '"creep"' in r.getMessage()][0]
+    assert creep["floor"][1] == "floor_band_no_target"     # the band's answer: clear
+    assert creep["floor_blind"] > 0                          # ...but it is blind there
+
+
+def test_a_failing_reading_never_stops_the_creep():
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="x"),
+                         navigator=FakeNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid))
+    asked = []
+    agent.safety.check_and_execute = lambda action, **kw: asked.append(action) or {"executed": action}
+
+    def broken(*a, **k):
+        raise RuntimeError("sensor gone")
+    agent.safety.floor_clearance = broken
+    agent._pending = [("CREEP", ["FORWARD"])]
+    agent._do_pending()
+    assert asked == ["FORWARD"]

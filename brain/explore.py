@@ -48,7 +48,7 @@ from brain.frontier import (RetryBook, camera_seen, find_frontiers, find_view_ga
 from brain.goal_policy import LinearGoalPolicy
 from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
-from robot.interface import Preempted, RobotInterface
+from robot.interface import ZONE_UNUSABLE, Preempted, RobotInterface
 from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation
 
 logger = logging.getLogger("explore")
@@ -726,7 +726,14 @@ class ExploreAgent(MissionAgent):
             ends = item[1] if len(item) > 1 else self._creep_ends()
             if not ends:                 # the reverse freed it: on to the turn
                 return self._do_pending() if self._pending else ("WAIT", True, "not wedged")
+            seen = self._creep_readings()
             out = self._verb(ends[0], speed=CREEP_SPEED)
+            # 3.74: how often a creep runs, and whether the depth camera's
+            # floor band had something ahead just before -- the car's numbers
+            # decide whether the band's blind range needs closing (a forward
+            # creep can carry a sock inside it). A record, no behaviour.
+            self._event("creep", way=ends[0], executed=bool(out[1]),
+                        waited=out[0] == "WAIT", **seen)
             if out[0] == "WAIT":
                 self._requeue(ends[0], ("CREEP", ends))
             elif not out[1] and len(ends) > 1:
@@ -806,6 +813,28 @@ class ExploreAgent(MissionAgent):
                     self._last_seen = None
             return out
         return self._verb(item)
+
+    def _creep_readings(self) -> dict:
+        """What the safety layer read just before a creep (3.74), off ONE
+        depth grid: the forward veto and the floor band, each as (cm,
+        source), and `floor_blind` -- how many band zones read unusable,
+        which is what a sock inside the band's minimum range looks like
+        (the band's own answer then reads clear). Nothing on failure -- a
+        record must never stop the escape."""
+        out = {}
+        try:
+            grid = self.robot.get_depth_grid()
+        except Exception:  # noqa: BLE001
+            return out
+        for key, read in (("forward", "forward_clearance"), ("floor", "floor_clearance")):
+            try:
+                cm, source = getattr(self.safety, read)(grid)
+                out[key] = [cm, source]
+            except Exception:  # noqa: BLE001 -- a log line, not a decision
+                pass
+        band = (grid or {}).get("floor") or {}
+        out["floor_blind"] = sum(z.get("status") == ZONE_UNUSABLE for z in band.get("zones") or [])
+        return out
 
     def _creep_ends(self) -> list:
         """The straight moves the full bar refuses, roomier end first --
