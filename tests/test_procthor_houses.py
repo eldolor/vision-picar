@@ -27,11 +27,25 @@ def test_it_is_registered_by_name():
     assert parse_name("procthor:val:12") == 12
     assert parse_name("procthor:train:12") is None
     with pytest.raises(ValueError, match="procthor:val"):
-        build_world("procthor:test:1")
+        build_world("procthor:train:1")
 
 
 def test_all_val_houses_are_committed():
     assert len(houses()) == 1000
+
+
+def test_the_test_split_is_its_own_set_of_houses():
+    """3.65 amendment 3: `procthor:test:<i>` is the `test` split, kept out of
+    every tuning run; `parse_name` still means `val` only."""
+    from sim.maps.procthor import parse_split_name
+    assert parse_split_name("procthor:test:7") == ("test", 7)
+    assert parse_split_name("procthor:val:7") == ("val", 7)
+    assert parse_name("procthor:test:7") is None
+    assert build_world("procthor:test:7").map_name == "procthor:test:7"
+    assert len(houses("test")) == 1000 and houses("test") is not houses()
+    assert len(usable("test")) == 613
+    a, b = build_world("procthor:test:7"), build_world("procthor:val:7")
+    assert a.layout != b.layout
 
 
 def test_the_outside_is_closed(sample):

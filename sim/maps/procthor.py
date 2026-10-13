@@ -1,6 +1,8 @@
 """
 procthor.py -- ProcTHOR-10K houses as simulator houses
-(PLAN-ros-alignment.md 3.66). Selected with SIM_MAP=procthor:val:<index>.
+(PLAN-ros-alignment.md 3.66). Selected with SIM_MAP=procthor:val:<index>, or
+procthor:test:<index> for the `test` split (3.65 amendment 3: houses kept
+out of every tuning run).
 
 **Why.** Four hand-drawn houses are four chances to tune a policy to a
 house. ProcTHOR-10K (AI2, Apache-2.0, `procthor_data/LICENSE`) is ten
@@ -39,32 +41,41 @@ from dataclasses import dataclass, field
 from sim.grid_world import GridWorld, Heading
 
 CELL_M = 0.30
-DATA = os.path.join(os.path.dirname(__file__), "procthor_data", "val.json.gz")
+SPLITS = ("val", "test")
+_DIR = os.path.join(os.path.dirname(__file__), "procthor_data")
+DATA = os.path.join(_DIR, "val.json.gz")
 # The usable houses (three or more rooms; the Rover, with the safety margin,
 # starts free and reaches every room), as measured by
 # evaluations/procthor-366/measure.py on tests/chassis_fit.py.
-USABLE = os.path.join(os.path.dirname(__file__), "procthor_data", "usable_val.json")
+USABLE = os.path.join(_DIR, "usable_val.json")
+
+
+def data_path(split: str = "val") -> str:
+    return os.path.join(_DIR, f"{split}.json.gz")
+
+
+def usable_path(split: str = "val") -> str:
+    return os.path.join(_DIR, f"usable_{split}.json")
 TARGET = "red backpack"
 LEGGED = {"DiningTable", "SideTable", "CoffeeTable", "Desk"}
 # A leg sits this far in from the footprint's corner, metres.
 LEG_INSET_M = 0.09
 _NAMES = {"BasketBall": "basketball", "TVStand": "tv stand"}
 
-_houses = None
+_houses = {}
 
 
-def houses() -> list:
-    """Every reduced `val` house, loaded once."""
-    global _houses
-    if _houses is None:
-        with gzip.open(DATA, "rt") as f:
-            _houses = json.load(f)["houses"]
-    return _houses
+def houses(split: str = "val") -> list:
+    """Every reduced house of one split, loaded once."""
+    if split not in _houses:
+        with gzip.open(data_path(split), "rt") as f:
+            _houses[split] = json.load(f)["houses"]
+    return _houses[split]
 
 
-def usable() -> list:
+def usable(split: str = "val") -> list:
     """Indices of the usable houses, ascending: a sweep takes the first N."""
-    with open(USABLE) as f:
+    with open(usable_path(split)) as f:
         return json.load(f)
 
 
@@ -72,6 +83,13 @@ def parse_name(name: str):
     """'procthor:val:12' -> 12, or None for a name that is not one of these."""
     m = re.fullmatch(r"procthor:val:(\d+)", name)
     return int(m.group(1)) if m else None
+
+
+def parse_split_name(name: str):
+    """'procthor:test:12' -> ('test', 12); 'procthor:val:12' -> ('val', 12);
+    None for a name that is not one of these."""
+    m = re.fullmatch(r"procthor:(val|test):(\d+)", name)
+    return (m.group(1), int(m.group(2))) if m else None
 
 
 def object_name(kind: str) -> str:
@@ -133,8 +151,8 @@ class Conversion:
         return joins
 
 
-def convert(index: int) -> Conversion:
-    h = houses()[index]
+def convert(index: int, split: str = "val") -> Conversion:
+    h = houses(split)[index]
     xs = [p[0] for r in h["rooms"] for p in r["poly"]]
     zs = [p[1] for r in h["rooms"] for p in r["poly"]]
     ox, oz = min(xs), min(zs)
@@ -233,7 +251,7 @@ def convert(index: int) -> Conversion:
                 key=lambda cell: (math.hypot(cell[0] + 0.5 - sx, cell[1] + 0.5 - sy), cell),
                 default=None)
     if start is None:
-        raise ValueError(f"procthor:val:{index} has no free cell to start on")
+        raise ValueError(f"procthor:{split}:{index} has no free cell to start on")
 
     reach, queue = {start}, deque([start])
     while queue:
@@ -271,5 +289,5 @@ def _area(poly) -> float:
     return abs(sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(poly, poly[1:] + poly[:1]))) / 2
 
 
-def build_procthor_world(index: int) -> GridWorld:
-    return convert(index).world
+def build_procthor_world(index: int, split: str = "val") -> GridWorld:
+    return convert(index, split).world

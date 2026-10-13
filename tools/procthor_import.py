@@ -2,9 +2,10 @@
 tools/procthor_import.py -- ProcTHOR-10K houses, reduced to floor plans
 (PLAN-ros-alignment.md 3.66).
 
-Downloads the pinned `val` split of ProcTHOR-10K and AI2's asset database
-(both Apache-2.0, checked by sha256), keeps what a 2D grid can use, and
-writes `sim/maps/procthor_data/val.json.gz`, which `sim/maps/procthor.py`
+Downloads a pinned split of ProcTHOR-10K (`val`, or `test` since 3.65
+amendment 3) and AI2's asset database (both Apache-2.0, checked by
+sha256), keeps what a 2D grid can use, and writes
+`sim/maps/procthor_data/<split>.json.gz`, which `sim/maps/procthor.py`
 reads. The suite reads only that committed file; nothing here runs in it.
 
 Kept per house, in metres (ProcTHOR's x and z):
@@ -17,7 +18,7 @@ Kept per house, in metres (ProcTHOR's x and z):
   centre, yaw and the asset's footprint;
 * start: the agent's position.
 
-    python -m tools.procthor_import            # fetch, verify, write
+    python -m tools.procthor_import [val|test]   # fetch, verify, write
 """
 
 import gzip
@@ -32,11 +33,16 @@ SOURCES = {
     "val": ("https://media.githubusercontent.com/media/allenai/procthor-10k/"
             "439193522244720b86d8c81cde2e51e3a4d150cf/val.jsonl.gz",
             "d808540514e26b6726cd2790490e669b572eeb94febb5188a2f403591dd21721"),
+    # 3.65 amendment 3: the same commit's `test` split, for houses no model
+    # or rule tuning has seen. Hash taken on first fetch, 2026-10-12.
+    "test": ("https://media.githubusercontent.com/media/allenai/procthor-10k/"
+             "439193522244720b86d8c81cde2e51e3a4d150cf/test.jsonl.gz",
+             "9a9fa6f134e76fe87f3fd92c00883651cf9fadf4e9ad4072d6d73be229f001dc"),
     "assets": ("https://raw.githubusercontent.com/allenai/procthor/"
                "53d5bd4c8c96a699e6a615dc390abb670cc9d353/procthor/databases/asset-database.json",
                "a292c54a227e16b27db81e6bc105c863e674cd6c1ec892d231886ea7604395d4"),
 }
-OUT = os.path.join(os.path.dirname(__file__), "..", "sim", "maps", "procthor_data", "val.json.gz")
+OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "sim", "maps", "procthor_data")
 
 # An object whose bottom is below this reaches the band the chassis and the
 # D500 meet; a painting or a wall-mounted TV does not.
@@ -139,16 +145,20 @@ def reduce_house(house: dict, sizes: dict) -> dict:
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    split = argv[0] if argv else "val"
+    if split not in ("val", "test"):
+        raise SystemExit(f"split must be val or test; got {split!r}")
     cache = os.environ.get("PROCTHOR_CACHE", os.path.expanduser("~/.cache/vision-picar/procthor"))
     os.makedirs(cache, exist_ok=True)
     assets = json.loads(fetch("assets", cache))
     sizes = {a["assetId"]: {"type": a["objectType"], "box": a["boundingBox"]}
              for group in assets.values() for a in group}
-    lines = gzip.decompress(fetch("val", cache)).splitlines()
+    lines = gzip.decompress(fetch(split, cache)).splitlines()
     houses = [reduce_house(json.loads(line), sizes) for line in lines]
-    out = os.path.normpath(OUT)
+    out = os.path.normpath(os.path.join(OUT_DIR, f"{split}.json.gz"))
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    payload = json.dumps({"source": {k: v[0] for k, v in SOURCES.items()},
+    payload = json.dumps({"source": {k: SOURCES[k][0] for k in (split, "assets")},
                           "houses": houses}, separators=(",", ":")).encode()
     # mtime 0: the same sources give the same bytes.
     with open(out, "wb") as f:

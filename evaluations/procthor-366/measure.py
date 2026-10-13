@@ -1,8 +1,9 @@
 """
 evaluations/procthor-366/measure.py -- 3.66's criteria 1-4 over every
-ProcTHOR `val` house. Writes `conversion.json` (per house) beside itself.
+ProcTHOR `val` house (or `test`, 3.65 amendment 3). Writes
+`conversion.json` (`conversion-test.json`) beside itself and the usable list.
 
-    python evaluations/procthor-366/measure.py
+    python evaluations/procthor-366/measure.py [val|test]
 """
 
 import json
@@ -13,17 +14,22 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from sim.maps.procthor import USABLE, convert, houses  # noqa: E402
+from sim.maps.procthor import convert, houses, usable_path  # noqa: E402
 from tests.chassis_fit import SAFETY_MARGIN_M, UGV_ROVER, fit  # noqa: E402
 
-OUT = os.path.join(os.path.dirname(__file__), "conversion.json")
-
-
-def main():
+def main(split="val"):
+    out = os.path.join(os.path.dirname(__file__),
+                       "conversion.json" if split == "val" else f"conversion-{split}.json")
     rows = []
-    for index in range(len(houses())):
+    for index in range(len(houses(split))):
         t = time.perf_counter()
-        cv = convert(index)
+        try:
+            cv = convert(index, split)
+        except ValueError as e:
+            # A house the conversion cannot start a robot in (none in `val`;
+            # `test` has some): recorded, never usable.
+            rows.append({"index": index, "error": str(e), "rooms": 0, "usable": False})
+            continue
         build_s = time.perf_counter() - t
         got = cv.grid_joins()
         row = {"index": index, "rooms": len(cv.room_ids), "build_s": round(build_s, 4),
@@ -32,17 +38,20 @@ def main():
                "floor_objects": cv.floor_objects, "placed_objects": cv.placed_objects,
                "target": any(v == "red backpack" for v in cv.world.objects.values())}
         if row["rooms"] >= 3:
-            f = fit(f"procthor:val:{index}", *UGV_ROVER, SAFETY_MARGIN_M)
+            f = fit(f"procthor:{split}:{index}", *UGV_ROVER, SAFETY_MARGIN_M)
             row["start_free"] = f["start_free"]
             row["unreached"] = sorted(n for n, r in f["rooms"].items() if not r["reached"])
             row["usable"] = f["start_free"] and not row["unreached"]
         rows.append(row)
         if index % 100 == 0:
             print(index, flush=True)
-    json.dump(rows, open(OUT, "w"), indent=0)
-    with open(USABLE, "w") as f:
+    json.dump(rows, open(out, "w"), indent=0)
+    with open(usable_path(split), "w") as f:
         json.dump([r["index"] for r in rows if r.get("usable")], f)
 
+    failed = [r for r in rows if "error" in r]
+    print(f"not converted: {len(failed)} {[r['index'] for r in failed][:20]}")
+    rows = [r for r in rows if "error" not in r]
     n = len(rows)
     topo = sum(1 for r in rows if not r["lost"] and not r["leaked"])
     area = sum(1 for r in rows if abs(r["area_err"]) <= 0.05)
@@ -58,4 +67,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(*sys.argv[1:])
