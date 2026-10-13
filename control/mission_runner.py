@@ -1120,7 +1120,9 @@ class MissionRunner:
                              "goals_failed": self.agent.goals_failed,
                              "last_event": self.agent.last_event,
                              "camera_seen_m2": round(len(self.agent.seen)
-                                                     * (self.agent.seen_res or 0) ** 2, 2)}
+                                                     * (self.agent.seen_res or 0) ** 2, 2),
+                             # 3.77: goal-choice wall time, every choice.
+                             "choice_ms": self.agent.choice_stats()}
                             if self.policy == "explore" else None),
                 # 3.46: counts only; the list is GET /mission/inventory.
                 "inventory": (self.inventory.counts()

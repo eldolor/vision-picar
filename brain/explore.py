@@ -131,6 +131,8 @@ def leave_clearance_m(min_distance_cm: float) -> float:
 
 # 3.45: decisions kept for a run's record (`events`), newest last.
 MAX_EVENTS = 5000
+# 3.77: goal-choice times kept for `choice_stats()`.
+CHOICE_TIMES_KEPT = 5000
 
 
 class Navigator(Protocol):
@@ -215,6 +217,14 @@ class ExploreAgent(MissionAgent):
         self._wedged: list = []        # goals that failed without the robot moving
         self.seen_res: Optional[float] = None
         self.goals_sent = 0
+        # 3.77: a goal choice's wall time, from the start of `_next_frontier`
+        # to its decision -- before the navigator is asked or an escape move
+        # runs. Logged as `choice_ms` on the goal it sends, and every
+        # choice's (sent, waiting, boxed or exhausted) kept for
+        # `choice_stats()`.
+        self._choice_t0: Optional[float] = None
+        self._choice_ms: Optional[float] = None
+        self.choice_times_ms: collections.deque = collections.deque(maxlen=CHOICE_TIMES_KEPT)
         self.goals_failed = 0
         self.last_event = ""
         # 3.45: every goal, its end and every escape or pan, as structured
@@ -374,6 +384,8 @@ class ExploreAgent(MissionAgent):
         return any(math.hypot(g["x_m"] - x, g["y_m"] - y) < OWN_GOAL_TOLERANCE_M for x, y in mine)
 
     def _send(self, x_m: float, y_m: float, kind: str, now: float, **info):
+        if self._choice_t0 is not None:
+            info["choice_ms"] = self._decided()
         # 3.76: remembered BEFORE the call. A send whose answer is lost (a
         # read timeout after the bridge took the goal) leaves that goal
         # driving; it is still the mission's own, never "someone else's".
@@ -488,6 +500,36 @@ class ExploreAgent(MissionAgent):
         return known_near(m, x_m, y_m, self.retry.radius_m)
 
     def _next_frontier(self, now: float):
+        self._choice_t0, self._choice_ms = time.perf_counter(), None
+        try:
+            return self._choose_next(now)
+        finally:
+            self.choice_times_ms.append(self._decided())
+            self._choice_t0 = None
+
+    def _decided(self) -> float:
+        """The current choice's time up to its decision, fixed the first
+        time it is asked for."""
+        if self._choice_ms is None:
+            self._choice_ms = round((time.perf_counter() - self._choice_t0) * 1000, 1)
+        return self._choice_ms
+
+    def choice_stats(self) -> Optional[dict]:
+        """3.77: how long goal choices took, wall clock, from the pose and map
+        fetch to the decision -- the navigator call or escape move that
+        follows excluded: count, p50, p90 and max over the last
+        CHOICE_TIMES_KEPT (more than a mission's choices). p90 is
+        `sorted[int(0.9 n)]`, as `evaluations/goal-choice-377/bench.py` and
+        3.65's `time_choice.py` take it: never below nearest-rank, and the
+        maximum when n is 10 or fewer."""
+        xs = sorted(self.choice_times_ms)
+        if not xs:
+            return None
+        return {"n": len(xs), "p50_ms": round(xs[len(xs) // 2], 1),
+                "p90_ms": round(xs[min(len(xs) - 1, int(0.9 * len(xs)))], 1),
+                "max_ms": round(xs[-1], 1)}
+
+    def _choose_next(self, now: float):
         pose = self._pose()
         try:
             m = self.world.get_map()
@@ -550,6 +592,7 @@ class ExploreAgent(MissionAgent):
             return room_goal
         if len(rch) < BOXED_CELLS and self.escapes < MAX_ESCAPES:
             # Nowhere reachable to stop -- from HERE. Boxed in, not done.
+            self._decided()             # the escape move is not choice time
             self._queue_escape("boxed", reachable_cells=len(rch))
             return self._do_pending()
         if self.retry.cooling(now):

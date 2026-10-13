@@ -388,6 +388,12 @@ def test_every_goal_its_end_and_the_escape_are_logged_as_events(caplog):
     assert names[:4] == ["goal_sent", "goal_ended", "escape", "verb"], names
     sent, ended, escape, verb = agent.events[:4]
     assert sent["kind"] == "frontier" and {"rank", "score", "path_m", "size_m"} <= set(sent)
+    # 3.77: how long the choice took, wall clock, before nav2 was asked;
+    # and every choice is counted, not only those that sent a goal.
+    assert isinstance(sent["choice_ms"], float) and sent["choice_ms"] >= 0
+    stats = agent.choice_stats()
+    assert stats["n"] >= 1 and 0 <= stats["p50_ms"] <= stats["p90_ms"] <= stats["max_ms"]
+    assert sent["choice_ms"] in agent.choice_times_ms    # one number per choice
     assert ended["state"] == "aborted" and ended["moved_m"] is not None
     assert escape["why"] == "wedged" and verb["action"] == "REVERSE"
     logged = [json.loads(r.getMessage().split(" ", 1)[1]) for r in caplog.records
