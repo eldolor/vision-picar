@@ -92,7 +92,11 @@ environment banner (`env_label`). Deployed, that is the vision service's
 
 **Magic-link query parameters:** `secret` (vision), `robotSecret`,
 `brainSecret`, `visionUrl`, `serverUrl`, `brainUrl`. They are read once
-at load by the prefill section.
+at load by the prefill section. **A link that moves a service to another
+origin without that service's own secret drops the secret saved for it**
+(and says so in a warning toast); a link to the same origin keeps it.
+Before 3.76 the saved secret stayed and the load-time auto-connect sent
+it to whatever host the link named.
 
 **Persisted preferences** (in `localStorage`): through `PREF`,
 `vp_server_url`, `vp_brain_url`, `vp_cfg_server_secret` (robot secret),
@@ -125,11 +129,12 @@ shared with the tunnel proxy").
 | Constant | Value | Unit | Where | Why |
 |---|---|---|---|---|
 | `GUIDANCE_THROTTLE_MS`, `ROBOT_THROTTLE_MS` | 500 | ms | Guide loop | Gap between dispatches |
-| `GUIDANCE_MAX_IN_FLIGHT` | 2 (1 under Drive via brain) | calls | `guidanceStep()` | At 8 concurrent replay workers Bedrock throttled 10 of 22 frames; a mission must decide from the current frame. `guidanceStep()` also returns at once while the run is paused (3.53): a tick scheduled before the pause used to dispatch anyway and reset the caption to "Deciding...". Stop zeroes the count and bumps `guidanceEpoch`; a call from an earlier epoch never decrements it (3.64), and coming back to a hidden page reschedules even with calls in flight; nothing reschedules while the page is hidden |
+| `GUIDANCE_MAX_IN_FLIGHT` | 2 (1 under Drive via brain) | calls | `guidanceStep()` | At 8 concurrent replay workers Bedrock throttled 10 of 22 frames; a mission must decide from the current frame. `guidanceStep()` also returns at once while the run is paused (3.53): a tick scheduled before the pause used to dispatch anyway and reset the caption to "Deciding...". Stop zeroes the count and bumps `guidanceEpoch`; a call from an earlier epoch never decrements it (3.64), and coming back to a hidden page reschedules even with calls in flight; nothing reschedules while the page is hidden. Since 3.76: Start checks the epoch after each of its awaits (a Close mid-start starts nothing, and a mission the brain had just started is stopped); the Drive-via-brain mode is the one latched at Start; an older call's failure is not drawn over a newer answer; "Deciding..." shows only until the run's first answer. The Sim panel keeps polling through a status error and a failed Stop (3.76) |
 | `LATE_POLL_MS` | 3000 | ms | `watchLateConfirmation()` | The brain probes the cloud every 15 s (3.53); slower than the mission poll on purpose |
 | `--accent-warn` | `#F2C94C` | colour | `.warn`, `.v-warn`, `.toast.warn` | 3.53: neither success nor failure -- `arrived_unconfirmed`; 3.70: Exhausted, Out of budget and `blocked` too |
 | Error backoff | `min(30000, base * 2^streak)` | ms | Guide loop | Replaces the scheduled tick rather than adding to it; the first success after failures replaces it back with the base throttle (3.64) |
-| `GUIDANCE_MAX_CALLS`, `ROBOT_MAX_CALLS` | 120 | calls / session | Guide loop | Caps a forgotten tab's spend; reserved at dispatch |
+| `GUIDANCE_MAX_CALLS`, `ROBOT_MAX_CALLS` | 120 | calls / session | Guide loop | Caps a forgotten tab's spend; reserved at dispatch. Not applied under Drive via brain (3.76), where a tick is a frame push and the brain caps its own calls; the budget then reads "N steps" |
+| `WALK_NAME_MAX` | 64 | characters | `newWalkName()` | The brain's `WALK_NAME`; target, model and prompt tags are cut to fit and the timestamp is kept whole (3.76) |
 | `CAPTURE_MAX_DIM` | 1280 | px, long edge | capture | 960 never engaged on a 640 px stream. The recorder saves the same bytes. |
 | `GUIDANCE_STILL_SKIP_DEG_PER_SEC` / `GUIDANCE_MAX_CONSECUTIVE_SKIPS` | 3 / 3 | deg/s / ticks | capture | Skip a paid call while the phone is still |
 | `GUIDANCE_FOUND_STREAK_TO_PAUSE` / `ROBOT_REACHED_STREAK_TO_PAUSE` | 1 / 2 | answers | pause logic | Robot view ends a run silently, so it takes one extra confirmation |
@@ -213,6 +218,7 @@ neighbours.
 | `tests/test_frame_source.py` | 3 | The readout says `server` for a real frame, and `none` (with nothing drawn) for a frame with no pixels |
 | `tests/test_static_assets.py` | 10 | Every file both pages and the manifest reference is published; keys mirror paths; `admin` stays extensionless; pages and scripts are no-cache; `sync.sh` reads the same manifest |
 | `tests/test_ui_admin.py` | 15 | The admin console at phone width (recordings domain) |
+| `tests/test_ui_review_376d.py` | 10 | 3.76 batch D: a setup link moving a service does not carry its saved secret (robot, brain), and one to the same address keeps it; Close while Start awaits starts nothing; an older failure is not drawn over a newer answer; the Sim panel keeps watching after a status error and after a failed Stop; a long model and prompt give a walk name the brain accepts; a walk whose saves are in flight at Stop is still finished, after its frames; a STOP that never reached the robot says so |
 
 The UI tests skip without Chromium. A green run without a browser has
 tested nothing here.

@@ -144,7 +144,7 @@
     guidanceMuted: false, guidanceNotVisibleStreak: 0,
     guidancePaused: false, guidanceFoundStreak: 0,
     guidancePanSpeed: 0, guidanceLastOrientation: null,
-    guidanceConsecutiveSkips: 0, guidanceErrorStreak: 0,
+    guidanceConsecutiveSkips: 0, guidanceErrorStreak: 0, guidanceCaptionIsAnswer: false,
     connecting: false,
     // Remote brain (phase B4): this page observes a mission it does not run.
     brainUrl: "", brainSecret: "", brainConnected: false, brainConnecting: false,
@@ -156,7 +156,7 @@
     // Brain liveness (see startBrainLiveness): the retry timer, and whether
     // a connection was LOST (as opposed to never made), so its return can
     // be announced.
-    brainLivenessTimerId: null, brainLost: false,
+    brainLivenessTimerId: null, brainLost: false, brainPollErrored: false,
     // How far a D-pad LEFT/RIGHT turns, in degrees (R0). 90 is what every
     // tap sent before the pose went continuous, so it stays the default.
     turnStepDeg: 90,
@@ -169,7 +169,7 @@
     // The robot's own id for the most recently pushed teleop frame, so a
     // recorded frame can name the id the mission will report deciding on.
     lastTeleopSeq: null,
-    recordWalk: false, recordWalkName: null, recordSaved: 0, recordFailed: 0,
+    recordWalk: false, recordWalkName: null, recordPending: [], recordSaved: 0, recordFailed: 0,
     // Which WALK a frame belongs to, which is not the same lifetime as
     // guidanceEpoch's run -- see recordWalkFrame(). recordOrphaned counts
     // frames dropped because their walk ended before their answer landed.
@@ -739,12 +739,12 @@
     // running brain mission the way a D-pad press does.
     apiPost("/world/goal", {x_m: x, y_m: y}, {"x-driver": "twin-dpad"}).then(function (r) {
       if (r && r.accepted === false) {
-        showToast("Could not send the goal: " + (r.reason || r.error || "refused"), "error");
+        showToast("Could not send the goal: " + (r.detail || r.reason || r.error || "refused"), "err");
       } else {
         showToast("Sending the robot there", "info");
       }
     }).catch(function (e) {
-      showToast("Could not send the goal (" + (e.message || e) + ")", "error");
+      showToast("Could not send the goal (" + (e.message || e) + ")", "err");
     });
   }
 
@@ -1003,15 +1003,22 @@
     const label = extra && extra.angle ? action + " " + extra.angle + "\u00B0" : action;
     logEntry(label, executed, executed ? "" : refusalText(resp), resp.reason);
 
-    const frame = await fetchFrame();
-    recordObservation(frame);
-    render(frame);
+    // The action was delivered; a frame that does not come back is the
+    // watchdog readout's to report, not a failed press (3.76).
+    let frame = null;
+    try {
+      frame = await fetchFrame();
+      recordObservation(frame);
+      render(frame);
+    } catch (e) { /* renderWatchdog() says the robot is unreachable */ }
     return { executed: executed, frame: frame };
   }
 
   const REFUSAL_LABEL = {
     safety_distance: "SAFETY VETO",
     preempted: "PREEMPTED",
+    unreachable: "NOT SENT",       // 3.76: the press never reached the robot
+    rejected: "REJECTED",          // 3.76: the server answered with an error
     watchdog: "WATCHDOG",
   };
 
@@ -1025,7 +1032,21 @@
     if (!state.connected) return;
     const extra = (action === "LEFT" || action === "RIGHT")
       ? { angle: state.turnStepDeg } : undefined;
-    await commitAction(action, DRIVER_DPAD, extra);
+    try {
+      await commitAction(action, DRIVER_DPAD, extra);
+    } catch (e) {
+      // 3.76: a press that failed said nothing at all -- for STOP, a person
+      // could not tell a stop from one that was lost. A status means the
+      // robot server answered and refused (a wrong secret, a bad request);
+      // none means it was never reached.
+      const answered = typeof e.status === "number";
+      logEntry(action, false, (answered ? "refused: " : "not delivered: ") + (e.message || e),
+               answered ? "rejected" : "unreachable");
+      showToast((answered
+        ? action + " was refused by the robot server (HTTP " + e.status + ")"
+        : (action === "STOP" ? "STOP did not reach the robot" : action + " was not sent"))
+        + ": " + (e.message || e), "err");
+    }
   }
 
   // ---------- R0: the D-pad's turn step ----------
@@ -1082,12 +1103,25 @@
     } catch (e) { /* keep the last */ }
   }
 
+  // 3.76: what one mission saw is not the next mission's: the FOUND line
+  // was recorded once per page session, and a new house kept the last
+  // house's rooms as searched.
+  function resetSightings() {
+    state.sightings = [];
+    state.found = false;
+    state.foundSighting = null;
+    state.searchedRooms = new Set();
+    const log = document.getElementById("log");
+    if (log) delete log.dataset.foundLogged;
+  }
+
   async function randomHouse() {
     state.houseBusy = true;
     updateHouseButton();
     try {
       const r = await apiPost("/sim/house/random", {});
       state.houseEpoch = (state.houseEpoch || 0) + 1;
+      resetSightings();
       showHouse(r.sim_map, true);
       // A new house is a new map: drop the old one and fetch at once.
       state.lastMap = null;
@@ -1096,7 +1130,9 @@
       // The map, depth and camera are re-read with a frame, and nothing
       // fetches one while nobody drives -- so fetch it here, or the page
       // keeps drawing the old house.
-      render(await fetchFrame());
+      // 3.76: the house HAS changed by now; a frame that fails to come
+      // back is not "House not changed" (a retry would swap again).
+      try { render(await fetchFrame()); } catch (frameErr) { /* the next poll redraws */ }
       showToast("Now in " + r.sim_map + ".", "ok");
     } catch (e) {
       // A refusal's detail is {reason, detail}: show the sentence.
@@ -1180,6 +1216,12 @@
     state.lastPose = null;
     state.lastMap = null;
     state.lastMapFetchAt = 0;
+    // 3.76: and the other three latches, and the readings they guard.
+    state.odometryUnsupported = false;
+    state.worldErrorUnsupported = false;
+    state.goalsUnsupported = false;
+    state.lastWorldError = null;
+    state.lastGoal = null;
     state.serverSecret = document.getElementById("cfg-server-secret").value.trim();
     state.connecting = true;
     setButtonBusy(btn, true, "Connecting\u2026");
@@ -1925,11 +1967,26 @@
     state.watchdogTimerId = null;
   }
 
+  let watchdogInFlight = false;
+  const WATCHDOG_FETCH_TIMEOUT_MS = 3000;
   async function renderWatchdog() {
     if (!state.connected) { setBrainText("brain-tel-watchdog", null); return; }
+    // 3.76: one at a time -- on a slow tunnel the 500 ms interval stacked
+    // requests whose answers could land out of order.
+    if (watchdogInFlight) return;
+    watchdogInFlight = true;
     try {
-      const res = await fetch(state.serverUrl + "/health",
-        { headers: tunnelHeaders(state.serverUrl, {}) });
+      // Bounded, so one hung request cannot hold the guard for good.
+      const ctl = new AbortController();
+      const timer = setTimeout(function () { ctl.abort(); }, WATCHDOG_FETCH_TIMEOUT_MS);
+      let res;
+      try {
+        res = await fetch(state.serverUrl + "/health",
+          { headers: tunnelHeaders(state.serverUrl, {}), signal: ctl.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!res.ok) throw new Error("HTTP " + res.status);
       const health = await res.json();
       const age = health.seconds_since_last_command;
       const timeout = health.watchdog_timeout_s;
@@ -1957,9 +2014,11 @@
         fired ? "alert" : "safe");
       renderAuthority(health);
     } catch (e) {
-      setBrainText("brain-tel-watchdog", "unreachable", "alert");
+      setBrainText("brain-tel-watchdog", /^HTTP \d/.test(e.message || "") ? e.message : "unreachable", "alert");
       setBrainText("brain-tel-driver", null);
       setBrainText("brain-tel-refusal", null);
+    } finally {
+      watchdogInFlight = false;
     }
   }
 
@@ -2118,17 +2177,36 @@
     }, BRAIN_LIVENESS_MS);
   }
 
+  let brainPollGen = 0, brainPollInFlight = false;
   async function pollBrainOnce() {
+    // 3.76: one at a time (a slow brain error stacked requests), and an
+    // answer from before a Stop or a stop of polling is dropped -- it used
+    // to toast the ending a second time, or set "running" back over a
+    // stopped mission with no poll left to correct it.
+    if (brainPollInFlight) return;
+    brainPollInFlight = true;
+    const gen = brainPollGen;
     let status;
     try {
       status = await brainApi("GET", "/mission/status");
     } catch (e) {
+      brainPollInFlight = false;
+      if (gen !== brainPollGen) return;
       if (brainGone(e)) { markBrainLost(e); return; }
       setBrainText("brain-tel-outcome", "brain error: " + e.message, "alert");
-      stopBrainPolling();
-      showToast("The brain service answered with an error: " + e.message, "err");
+      // 3.76: keep polling. Stopping here froze the panel for good over a
+      // mission that kept running -- nothing restarts the poll, and the
+      // liveness ping only runs while no poll does. Said once per run of
+      // errors, not every 700 ms.
+      if (!state.brainPollErrored) {
+        state.brainPollErrored = true;
+        showToast("The brain service answered with an error: " + e.message + " -- still watching.", "err");
+      }
       return;
     }
+    brainPollInFlight = false;
+    if (gen !== brainPollGen) return;
+    state.brainPollErrored = false;
 
     const wasRunning = state.brainMissionRunning;
     state.brainMissionRunning = !!status.running;
@@ -2153,7 +2231,13 @@
       const outcome = readOutcome(status).outcome;
       const ok = outcome === "found" || outcome === "room_reached";
       const ended = endStateText(status);
-      if (outcome === "arrived_unconfirmed") {
+      if (outcome === "idle") {
+        // 3.76: "idle" after a running mission is a brain that restarted
+        // (or another brain) -- the mission was lost with it, not ended.
+        showToast("The brain no longer has the mission -- it restarted, or this is "
+          + "another brain. A brain that restarted stopped the robot; if another one "
+          + "is still running it, stop it there.", "warn");
+      } else if (outcome === "arrived_unconfirmed") {
         showToast("Mission arrived_unconfirmed: " + unconfirmedText(status), "warn");
       } else if (ended) {
         // 3.70 E6: an end state is never an error toast.
@@ -2301,6 +2385,8 @@
   function stopBrainPolling() {
     if (state.brainPollTimerId) clearInterval(state.brainPollTimerId);
     state.brainPollTimerId = null;
+    brainPollGen++;                  // 3.76: a poll in flight is now stale
+    state.brainPollErrored = false;
   }
 
   function updateBrainControls() {
@@ -2447,6 +2533,7 @@
     try {
       reportToken++;               // 3.70: an older ending's report draws nothing
       await brainApi("POST", "/mission/start", body);
+      resetSightings();   // 3.76: only once the brain took it; a refused start leaves the watched one's
       state.brainMissionRunning = true;
       state.brainTarget = target.toLowerCase();
       state.brainLogSignature = "";
@@ -2464,16 +2551,24 @@
   async function stopBrainMission() {
     const btn = document.getElementById("btn-brain-mission");
     setButtonBusy(btn, true, "Stopping\u2026");
+    // 3.76: the poll is paused while the Stop is in flight (one that landed
+    // during the brain's report wait toasted the same ending a second time)
+    // and resumed if the Stop fails: the mission is still running, and a
+    // failed Stop used to stop the page watching it.
+    stopBrainPolling();
     try {
       const res = await brainApi("POST", "/mission/stop");
       state.brainMissionRunning = false;
-      if (res.status) renderBrainStatus(res.status);
+      if (res.status) {
+        renderBrainStatus(res.status);
+        fetchReportOnce(res.status);   // 3.76: a report later than the Stop's 2 s wait
+      }
       showToast("Mission stopped \u2014 and so is the robot.", "ok");
     } catch (e) {
-      showToast("Could not stop: " + e.message, "err");
+      showToast("Could not stop: " + e.message + " -- the mission may still be running.", "err");
+      if (state.brainConnected) startBrainPolling();
     } finally {
       setButtonBusy(btn, false);
-      stopBrainPolling();
       updateBrainControls();
     }
   }
@@ -2540,6 +2635,9 @@
       await pollBrainOnce();
       if (state.brainMissionRunning) startBrainPolling();
     } catch (e) {
+      // 3.76: a poll for the old address must not keep running against the
+      // new one, and the liveness loop's reconnect should say it is back.
+      if (state.brainPollTimerId) { stopBrainPolling(); state.brainLost = true; }
       state.brainConnected = false;
       state.brainPerception = null;
       const said = e.message && e.message !== "HTTP " + e.status ? " (" + e.message + ")" : "";
@@ -2664,6 +2762,7 @@
   // wants the material. Recording is off unless the brain is connected and
   // has it enabled (brain.allow_recording).
 
+  const WALK_NAME_MAX = 64;
   function newWalkName() {
     const d = new Date();
     const pad = function (n) { return String(n).padStart(2, "0"); };
@@ -2691,8 +2790,14 @@
     const promptTag = (state.navigatePromptVariant && state.navigatePromptVariant !== "default")
       ? "-" + state.navigatePromptVariant.replace(/[^a-z0-9]+/gi, "-").slice(0, 20)
       : "";
-    return target + modelTag + promptTag + "-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) +
+    const stamp = "-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) +
       "-" + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+    // 3.76: the brain takes at most 64 characters (WALK_NAME in
+    // control/recording_routes.py) and refuses every frame of a longer
+    // name; the parts above can add to 82. The timestamp is kept whole.
+    const head = (target + modelTag + promptTag).slice(0, WALK_NAME_MAX - stamp.length)
+      .replace(/-+$/, "");
+    return head + stamp;
   }
 
   function recordingActive() {
@@ -2739,6 +2844,7 @@
       return;
     }
     state.recordWalkName = newWalkName();
+    state.recordPending = [];       // this walk's frame saves (3.76)
     state.recordSaved = 0;
     state.recordFailed = 0;
     state.recordOrphaned = 0;
@@ -2786,7 +2892,11 @@
     if (!recordingActive() || !state.recordWalkName) return;
     // Captured before recording began: there is no slot reserved for it.
     if (seq === null || seq === undefined) return;
-    brainApi("POST", "/recording/frame", {
+    // 3.76: counted for THIS walk only -- a save landing after its walk
+    // ended used to count toward the next one -- and kept, so the walk's
+    // end can wait for it before declaring the walk finished.
+    const walkEpoch = state.recordEpoch, pending = state.recordPending;
+    const save = brainApi("POST", "/recording/frame", {
       walk: state.recordWalkName,
       seq: seq,
       image_base64: base64,
@@ -2797,47 +2907,64 @@
       // Null outside teleop, where there is nothing to align.
       teleop_seq: teleopSeq,
     }).then(function () {
-      state.recordSaved += 1;
-      renderRecordStatus();
+      if (walkEpoch === state.recordEpoch) { state.recordSaved += 1; renderRecordStatus(); }
+      return true;
     }).catch(function (e) {
-      state.recordFailed += 1;
-      if (state.recordFailed === 1) showToast("Frame not saved: " + e.message, "err");
-      renderRecordStatus();
+      if (walkEpoch === state.recordEpoch) {
+        state.recordFailed += 1;
+        if (state.recordFailed === 1) showToast("Frame not saved: " + e.message, "err");
+        renderRecordStatus();
+      }
+      return false;
     });
+    if (pending) pending.push(save);
   }
 
   function endWalkRecording() {
     if (!state.recordWalkName) return;
-    const name = state.recordWalkName, saved = state.recordSaved;
+    const name = state.recordWalkName, pending = state.recordPending || [];
+    // Read now: the canvas is the next walk's by the time the saves land.
+    const captureWidth = guidanceCaptureCanvas.width || null;
+    const captureHeight = guidanceCaptureCanvas.height || null;
+    const modelId = state.navigateModelId || null, target = state.guidanceTarget || null;
     state.recordWalkName = null;
+    state.recordPending = [];
     // A frame whose /navigate answer lands after this must not be written
     // into whatever walk is current by then -- see recordWalkFrame().
     state.recordEpoch++;
     renderRecordStatus();
-    if (saved > 0) {
-      // Tell the brain this walk is complete, and hand over the two facts
-      // the frames can't carry on their own: which model answered, and what
-      // was being searched for. Without this a walk is only "finished" in
-      // the sense that no more frames arrived, and the admin console can't
-      // tell a completed walk from one still in progress. Fire-and-forget
-      // and best-effort, exactly like recordWalkFrame() -- a closed tab
-      // never sends it, which is why admin also scores lazily on first read.
-      brainApi("POST", "/recording/finish", {
-        walk: name,
-        model_id: state.navigateModelId || null,
-        target_object: state.guidanceTarget || null,
-        // What the frames were actually captured at. Read off the canvas
-        // that encoded them rather than off the constraint we asked for --
-        // getUserMedia's `ideal` is a request, not a promise, and a phone
-        // that could only manage 640 must say so in the walk rather than
-        // leave the next reader to infer it from the plan.
-        capture_width: guidanceCaptureCanvas.width || null,
-        capture_height: guidanceCaptureCanvas.height || null,
-      }).catch(function () { /* admin's lazy path covers this */ });
+    // 3.76: finished once every save already sent has landed. Decided on the
+    // count at Stop, a walk whose saves were all still in flight was never
+    // finished, and a finish could land before the walk's last frames.
+    Promise.all(pending).then(function (results) {
+      const saved = results.filter(Boolean).length;
+      if (saved > 0) finishWalk(name, saved, modelId, target, captureWidth, captureHeight);
+    });
+  }
 
-      showToast(saved + " frames saved as " + name + " -- replay it with " +
-        "python -m tests.demo_replay_mission", "ok");
-    }
+  function finishWalk(name, saved, modelId, target, captureWidth, captureHeight) {
+    // Tell the brain this walk is complete, and hand over the two facts
+    // the frames can't carry on their own: which model answered, and what
+    // was being searched for. Without this a walk is only "finished" in
+    // the sense that no more frames arrived, and the admin console can't
+    // tell a completed walk from one still in progress. Fire-and-forget
+    // and best-effort, exactly like recordWalkFrame() -- a closed tab
+    // never sends it, which is why admin also scores lazily on first read.
+    brainApi("POST", "/recording/finish", {
+      walk: name,
+      model_id: modelId,
+      target_object: target,
+      // What the frames were actually captured at. Read off the canvas
+      // that encoded them rather than off the constraint we asked for --
+      // getUserMedia's `ideal` is a request, not a promise, and a phone
+      // that could only manage 640 must say so in the walk rather than
+      // leave the next reader to infer it from the plan.
+      capture_width: captureWidth,
+      capture_height: captureHeight,
+    }).catch(function () { /* admin's lazy path covers this */ });
+
+    showToast(saved + " frames saved as " + name + " -- replay it with " +
+      "python -m tests.demo_replay_mission", "ok");
   }
 
   function renderRecordStatus() {
@@ -2932,16 +3059,20 @@
     updateModelPickerRow();
   }
 
+  let navigateModelsToken = 0;
   function fetchNavigateModels() {
     const url = document.getElementById("cfg-url").value.trim();
     if (!url) return;
     if (state.navigateModelsLoaded) return;
+    // 3.76: an answer for a URL changed since is dropped.
+    const token = ++navigateModelsToken;
     fetch(deriveServiceUrl(url, "/navigate/models"))
       .then(function (resp) {
         if (!resp.ok) throw new Error("HTTP " + resp.status);
         return resp.json();
       })
       .then(function (data) {
+        if (token !== navigateModelsToken) return;
         const select = document.getElementById("cfg-navigate-model");
         if (!select || !Array.isArray(data.models)) return;
         // Only latch on success. Setting this before the request meant a
@@ -3238,7 +3369,11 @@
       headers: headers,
       body: JSON.stringify(payload),
     }).then(function (resp) {
-      return resp.json().then(function (data) {
+      // 3.76: a proxy's HTML error page is "HTTP 504", not a JSON parse error.
+      return resp.json().catch(function () {
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        throw new Error("the vision service sent an answer that is not JSON");
+      }).then(function (data) {
         if (!resp.ok) {
           let message = errorDetail(data) || ("HTTP " + resp.status);
           // The one failure that is routinely misdiagnosed. A rejected
@@ -3340,9 +3475,12 @@
     };
   }
 
-  async function driveViaBrainStep(base64) {
+  async function driveViaBrainStep(base64, epoch) {
     await pushTeleopFrame(base64);
     const status = await brainApi("GET", "/mission/status");
+    // 3.76: an answer from a run since stopped changes nothing here -- it
+    // used to pause the next run, or watch an old mission over it.
+    if (epoch !== undefined && epoch !== state.guidanceEpoch) return missionStatusToRobotResult(status);
     if (!status.running) {
       // The mission ended (any end state or fault, 3.70) -- nothing left
       // to push frames into. Reuses the same
@@ -3482,7 +3620,7 @@
       "<div><b>VIS</b>" + vis + "</div>" +
       "<div><b>OBS</b>" + obs + "</div>" +
       "<div><b>SEQ</b>" + String(state.guidanceCallCount).padStart(3, "0") +
-        "/" + String(guidanceCallCap()).padStart(3, "0") + "</div>" +
+        (isFinite(guidanceCallCap()) ? "/" + String(guidanceCallCap()).padStart(3, "0") : "") + "</div>" +
       brainRow + cloudRow + reached;
     document.getElementById("robot-obstacle")
       .classList.toggle("visible", result.obstacle_ahead === true);
@@ -3975,8 +4113,12 @@
   let guidanceWakeLock = null;
   async function requestGuidanceWakeLock() {
     if (!("wakeLock" in navigator)) return;
+    const epoch = state.guidanceEpoch;
     try {
-      guidanceWakeLock = await navigator.wakeLock.request("screen");
+      const lock = await navigator.wakeLock.request("screen");
+      // 3.76: a stop that ran while this was pending released nothing.
+      if (epoch !== state.guidanceEpoch) { lock.release().catch(function () {}); return; }
+      guidanceWakeLock = lock;
     } catch (e) { /* best-effort -- e.g. backgrounded before the request resolved */ }
   }
   function releaseGuidanceWakeLock() {
@@ -4136,6 +4278,7 @@
 
   function resumeGuidanceSearch() {
     state.guidancePaused = false;
+    state.guidanceCaptionIsAnswer = false;   // the paused caption is not a current answer
     state.guidanceFoundStreak = 0;
     // Clear the transition history so the state we resume into is announced
     // fresh, even if it matches whatever was last spoken before the pause.
@@ -4172,6 +4315,10 @@
   // round trip instead. Resume extends it, same as Guide.
   const ROBOT_MAX_CALLS = 120;
   function guidanceCallCap() {
+    // 3.76: under Drive via brain a tick is a frame push and a status read,
+    // not a paid call; the brain caps its own (vision_max_calls). Pausing
+    // here starved the mission of frames until TeleopStall failed it.
+    if (state.guidanceViaBrain) return Infinity;
     return state.guidanceMode === "robot" ? ROBOT_MAX_CALLS : GUIDANCE_MAX_CALLS;
   }
 
@@ -4196,9 +4343,12 @@
     const fill = document.getElementById("guide-budget-fill");
     fill.style.width = pct + "%";
     fill.classList.toggle("warn", pct >= 80);
-    document.getElementById("guidance-call-count").textContent = used + "/" + cap;
+    const capText = isFinite(cap) ? String(cap) : "no cap";
+    document.getElementById("guidance-call-count").textContent =
+      isFinite(cap) ? used + "/" + cap : used + " steps";
     document.getElementById("guide-budget").setAttribute(
-      "aria-label", used + " of " + cap + " vision calls used this session");
+      "aria-label", isFinite(cap) ? used + " of " + capText + " vision calls used this session"
+        : used + " steps; the brain caps its own calls");
   }
 
   // The phone hasn't moved, so the previous read still describes what's on
@@ -4224,7 +4374,9 @@
     // one action at a time -- the step budget and the failsafes are built
     // on that. Overlapping calls there would have the brain deciding from
     // frames it has already acted past, so that mode stays serial.
-    const maxInFlight = driveViaBrainActive() ? 1 : GUIDANCE_MAX_IN_FLIGHT;
+    // 3.76: the mode latched at Start, never the live toggle -- one failed
+    // liveness probe used to switch a brain walk to paid direct calls.
+    const maxInFlight = state.guidanceViaBrain ? 1 : GUIDANCE_MAX_IN_FLIGHT;
     if (state.guidanceInFlight >= maxInFlight) { scheduleGuidanceNext(); return; }
 
     if (state.guidanceCallCount >= guidanceCallCap()) {
@@ -4276,7 +4428,10 @@
     // the cap while calls were still outstanding.
     state.guidanceCallCount += 1;
     renderGuidanceBudget();
-    (isRobot ? renderRobotStatus : renderGuidanceStatus)(null, true);
+    // 3.76: "Deciding..." only while the caption holds no current answer
+    // (a run's start, after Resume, after an error) -- with calls pipelined
+    // it replaced every answer within one throttle gap.
+    if (!state.guidanceCaptionIsAnswer) (isRobot ? renderRobotStatus : renderGuidanceStatus)(null, true);
 
     // Scheduled here rather than in the finally below: that is the whole
     // change. Pacing the next dispatch on the throttle instead of on this
@@ -4286,8 +4441,8 @@
     try {
       const base64 = captureGuidanceFrame();
       robotSignalCapture();
-      const result = (isRobot && driveViaBrainActive())
-        ? await driveViaBrainStep(base64)
+      const result = (isRobot && state.guidanceViaBrain)
+        ? await driveViaBrainStep(base64, epoch)
         : await callGuidanceEndpoint(base64, state.guidanceTarget);
       // Nothing below this line may touch state belonging to a run that is
       // no longer the current one -- not the error streak, not the frame
@@ -4305,8 +4460,10 @@
       // ones too stale to draw. Dropping them would silently thin a
       // recording that sim/replay_robot.py later plays back frame by
       // frame.
+      // 3.76: null outside Drive via brain -- lastTeleopSeq outlives the
+      // walk that set it, and a plain walk recorded after one carried it.
       if (isRobot) recordWalkFrame(base64, result, recSeq, recEpoch,
-                                   state.lastTeleopSeq);
+                                   state.guidanceViaBrain ? state.lastTeleopSeq : null);
 
       // Everything past here changes what the person sees or the loop
       // believes, so it must not run for an answer that has been overtaken
@@ -4315,6 +4472,7 @@
       if (!state.guidanceRunning) return;
       if (seq <= state.guidanceLastRenderedSeq) return;
       state.guidanceLastRenderedSeq = seq;
+      state.guidanceCaptionIsAnswer = true;
 
       if (isRobot) {
         // No found-pause here, deliberately. Guide pauses on arrival
@@ -4355,6 +4513,9 @@
       // A previous run's failure must not pace, or discourage, this one --
       // same reasoning as the epoch check on the success path above.
       if (epoch !== state.guidanceEpoch) return;
+      // 3.76: a newer call already answered; this older failure says
+      // nothing about now -- no error drawn, no backoff.
+      if (seq <= state.guidanceLastRenderedSeq) return;
       state.guidanceErrorStreak++;
       // The next tick was already scheduled at the base throttle before
       // this call failed, so the backoff has to replace that timer rather
@@ -4362,6 +4523,7 @@
       // hammered at 500ms while the backoff sits unused.
       scheduleGuidanceNext({ replace: true });
       if (!state.guidanceRunning || state.guidancePaused) return;
+      state.guidanceCaptionIsAnswer = false;
       (isRobot ? renderRobotStatus : renderGuidanceStatus)({ error: e.message }, false);
       if (isRobot) renderRobotTelemetry({ error: e.message });
       // Keyed as "error", so the exponential backoff's repeated failures
@@ -4596,6 +4758,7 @@
       });
     } catch (e) {
       showGuideStartError("Camera access failed: " + e.message);
+      stopMotionTracking();          // 3.76: started above, for a run that never began
       return;
     }
     // Must happen inside this user-gesture-triggered handler -- iOS's
@@ -4605,6 +4768,13 @@
 
     guidanceVideo.srcObject = state.guidanceStream;
     guidanceFullscreen.classList.add("active");
+    // 3.76: from here the fullscreen's Close (stopGuidance) is live while
+    // this start still awaits -- video metadata, the robot's /health, the
+    // primed frame, /mission/start, the brain's /health. Stop bumps the
+    // epoch; every await below checks it, so a closed start never carries
+    // on into a run with no camera and no one watching.
+    const startEpoch = state.guidanceEpoch;
+    const closed = function () { return state.guidanceEpoch !== startEpoch; };
     setRobotZonesVisible(state.guidanceMode === "robot");
     updateGuideRotateHint();
     state.guidanceTarget = document.getElementById("guidance-target").value.trim() || "red backpack";
@@ -4618,6 +4788,7 @@
     // after /mission/start) specifically so a real frame can be pushed
     // before the mission exists -- see that block's comment.
     await waitForGuidanceVideoReady();
+    if (closed()) return;
 
     // Phase T3 (PLAN-teleop-robot.md): hand this walk to a real
     // MissionRunner mission instead of a one-off /navigate call per frame.
@@ -4634,6 +4805,7 @@
       // no clue why. /health now reports which mode is actually running.
       try {
         const robotHealth = await apiGet("/health");
+        if (closed()) return;
         if (robotHealth.mode !== "teleop") {
           throw new Error(
             "Robot server URL isn't a teleop deployment (it reports mode: '" +
@@ -4642,6 +4814,7 @@
           );
         }
       } catch (e) {
+        if (closed()) return;
         showGuideStartError("Can't drive via brain: " + e.message);
         state.guidanceViaBrain = false;
         stopGuidance();
@@ -4658,7 +4831,9 @@
       // tick, whenever it fires, sees something pushed moments ago.
       try {
         await pushTeleopFrame(captureGuidanceFrame());
+        if (closed()) return;
       } catch (e) {
+        if (closed()) return;
         showGuideStartError("Could not reach the robot server to prime the first frame: " + e.message);
         state.guidanceViaBrain = false;
         stopGuidance();
@@ -4693,7 +4868,14 @@
           model_id: state.navigateModelId || null,
           prompt_variant: state.navigatePromptVariant || null,
         });
+        if (closed()) {
+          // Closed while the brain was starting it: the Close's own
+          // /mission/stop may have landed before the mission existed.
+          brainApi("POST", "/mission/stop").catch(function () { /* best-effort */ });
+          return;
+        }
       } catch (e) {
+        if (closed()) return;
         showGuideStartError("Could not start the brain-driven mission: " + e.message);
         state.guidanceViaBrain = false;
         stopGuidance();
@@ -4729,6 +4911,7 @@
     if (recordingActive()) {
       try {
         const brainHealth = await brainApi("GET", "/health");
+        if (closed()) return;
         if (!brainHealth.recording_allowed) {
           showGuideStartError(
             "This brain service has recording disabled (no storage attached). " +
@@ -4739,6 +4922,7 @@
           return;
         }
       } catch (e) {
+        if (closed()) return;
         showGuideStartError("Could not reach the brain service to check recording support: " + e.message);
         stopGuidance();
         return;
@@ -4770,13 +4954,20 @@
     guidanceStep();
   }
 
+  // 3.76: stopGuidance() ends the wait too. It clears srcObject, so the
+  // metadata would never load and a start closed here waited for good,
+  // holding guidanceStarting: Start did nothing until a reload.
+  let endGuidanceVideoWait = null;
   function waitForGuidanceVideoReady() {
     if (guidanceVideo.videoWidth > 0 && guidanceVideo.videoHeight > 0) return Promise.resolve();
     return new Promise(function (resolve) {
-      guidanceVideo.addEventListener("loadedmetadata", function onReady() {
-        guidanceVideo.removeEventListener("loadedmetadata", onReady);
+      function done() {
+        guidanceVideo.removeEventListener("loadedmetadata", done);
+        endGuidanceVideoWait = null;
         resolve();
-      });
+      }
+      endGuidanceVideoWait = done;
+      guidanceVideo.addEventListener("loadedmetadata", done);
     });
   }
 
@@ -4784,6 +4975,7 @@
   // (visibilitychange) pauses the analysis timer below but leaves the
   // camera live, per PLAN-ar-guidance.md.
   function stopGuidance() {
+    if (endGuidanceVideoWait) endGuidanceVideoWait();
     endWalkRecording();
     if (state.guidanceViaBrain) {
       // Fire-and-forget, same as recordWalkFrame() -- stopGuidance() isn't
@@ -4797,6 +4989,7 @@
       state.guidanceViaBrain = false;
     }
     state.guidanceRunning = false;
+    state.guideEndShown = false;   // 3.76: a later Sim-tab ending is not this walk's
     if (state.guidanceTimerId) clearTimeout(state.guidanceTimerId);
     state.guidanceTimerId = null;
     stopMotionTracking();
@@ -4822,6 +5015,7 @@
     // seq, silently suppressing the new run's first few real decisions.
     // guidanceStep() captures this at dispatch and compares it on return.
     state.guidanceEpoch++;
+    state.guidanceCaptionIsAnswer = false;
     state.guidanceInFlight = 0;
     state.guidanceSeq = 0;
     state.guidanceLastRenderedSeq = 0;
@@ -5780,6 +5974,33 @@
       const urlVisionUrl = params.get("visionUrl");
       const urlServerUrl = params.get("serverUrl");
       const urlBrainUrl = params.get("brainUrl");
+      // 3.76: a link that moves a service to ANOTHER origin without that
+      // service's own secret must not inherit the secret saved here -- the
+      // page auto-connects on load, so it would go straight to whatever host
+      // the link named. That service's saved secret is dropped and Settings
+      // asks for it; a link to the same origin (the setup QR) keeps it.
+      const originOf = function (u) {
+        try { return new URL(u, location.href).origin; } catch (e) { return null; }
+      };
+      const moved = [];
+      [[urlVisionUrl, urlSecret, "cfg-url", "vp_cfg_secret", "vision service"],
+       [urlServerUrl, urlRobotSecret, "cfg-server-url", "vp_cfg_server_secret", "robot"],
+       [urlBrainUrl, urlBrainSecret, "cfg-brain-url", "vp_cfg_brain_secret", "brain"]]
+        .forEach(function (row) {
+          const linkUrl = row[0], linkSecret = row[1], field = document.getElementById(row[2]);
+          if (!linkUrl || linkSecret) return;
+          if (originOf(linkUrl) !== originOf(field ? field.value : "")) {
+            if (localStorage.getItem(row[3])) moved.push(row[4]);
+            localStorage.removeItem(row[3]);
+          }
+        });
+      if (moved.length) {
+        setTimeout(function () {
+          showToast("The link moved the " + moved.join(" and ") + " to a new address. "
+            + "Enter its secret in Settings -- the one saved here was cleared, "
+            + "so it is not sent to the new address.", "warn");
+        }, 0);
+      }
       if (urlSecret) localStorage.setItem("vp_cfg_secret", urlSecret);
       if (urlRobotSecret) localStorage.setItem("vp_cfg_server_secret", urlRobotSecret);
       if (urlBrainSecret) localStorage.setItem("vp_cfg_brain_secret", urlBrainSecret);
