@@ -47,7 +47,7 @@ import math
 import re
 import threading
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 from brain.agent import ObjectSearchAgent
 from brain.explore import ExploreAgent
@@ -203,7 +203,9 @@ def read_outcome(outcome: Optional[str],
 
 
 # robot/server.py's refusal names the holder first: "<holder> is driving -- ...".
-_PREEMPTED_BY = re.compile(r"^(\S+) is driving\b")
+# "X is driving" (arbitration) or "X took over" (a verb cut off under
+# drive: ros, 3.76 T1): X is who holds the robot now.
+_PREEMPTED_BY = re.compile(r"^(\S+) (?:is driving|took over)\b")
 
 
 def derived_max_steps(time_limit_s: Optional[float]) -> int:
@@ -236,6 +238,98 @@ class VisionUnavailable(RuntimeError):
 class MissionHalted(RuntimeError):
     """Raised by _HaltGate when the agent tries to move a robot whose
     mission has already ended. Expected, not exceptional."""
+
+
+# A goal read back through the SLAM anchor (world/ros_world.py) comes back a
+# little moved; within this it is still the mission's own (3.76 C1).
+OWN_GOAL_TOLERANCE_M = 0.05
+
+
+class _GatedNavigator:
+    """3.76 C1/C3/C4: the explore policy's nav2 goals, gated as `_HaltGate`
+    gates its moves. No goal is sent once the mission has ended, and one
+    accepted as it ended is cancelled at once. A goal refused because a
+    PERSON holds the robot is a preemption, not a "wait and ask again".
+    `cancel_own()` ends the mission's own goal at the mission's end -- the
+    robot server spares a goal on the brain's stop (it reads one as a
+    loser's teardown), and under explore the goal is the brain's -- but not
+    a goal someone else has set since."""
+
+    def __init__(self, navigator, is_running: Callable[[], bool]):
+        self._nav, self._is_running = navigator, is_running
+        self._own: Optional[Tuple[float, float]] = None
+        # The client is closed by whichever finishes last: `end()`, or a
+        # goal still on its way when the mission ended -- which must still
+        # be able to cancel itself.
+        self._lock = threading.Lock()
+        self._in_flight = 0
+        self._ending = False
+        self._closed = False
+
+    def set_goal(self, x_m: float, y_m: float) -> dict:
+        with self._lock:
+            if not self._is_running() or self._ending:
+                return {"accepted": False, "reason": "mission_ended"}
+            self._in_flight += 1
+        try:
+            reply = self._nav.set_goal(x_m, y_m) or {}
+            if reply.get("accepted"):
+                self._own = (x_m, y_m)
+                if not self._is_running():
+                    self.cancel_own()           # the mission ended while it was on its way
+        finally:
+            with self._lock:
+                self._in_flight -= 1
+            self._close_if_done()
+        if reply.get("reason") == "preempted" and not reply.get("accepted"):
+            holder = _PREEMPTED_BY.match(reply.get("detail") or "")
+            if holder and driver_priority(holder.group(1)) == DRIVER_MANUAL:
+                raise Preempted(reply["detail"])
+        return reply
+
+    def get_goal(self) -> dict:
+        return self._nav.get_goal()
+
+    def cancel_goal(self) -> dict:
+        if not self._is_running():
+            # The goal on the server may be a person's by now; the
+            # mission's own is ended by cancel_own().
+            return {"canceled": False, "reason": "mission_ended"}
+        return self._nav.cancel_goal()
+
+    def cancel_own(self) -> None:
+        own = self._own
+        if own is None:
+            return
+        try:
+            goal = (self._nav.get_goal() or {}).get("goal") or {}
+            if (goal.get("state") in ("pending", "active")
+                    and math.hypot(goal.get("x_m", math.inf) - own[0],
+                                   goal.get("y_m", math.inf) - own[1]) < OWN_GOAL_TOLERANCE_M):
+                self._nav.cancel_goal()
+        except Exception as e:  # noqa: BLE001 -- nothing on the way out may raise (3.55)
+            logger.warning("could not end the mission's nav2 goal: %s", e)
+
+    def end(self) -> None:
+        """The mission ended: its own goal cancelled, then the client closed
+        once no goal is on its way. Run off the brain's event loop (a Stop
+        runs `_finish` there) -- both are calls through to the ROS bridge."""
+        self.cancel_own()
+        with self._lock:
+            self._ending = True
+        self._close_if_done()
+
+    def _close_if_done(self) -> None:
+        with self._lock:
+            if not self._ending or self._in_flight or self._closed:
+                return
+            self._closed = True
+        closer = getattr(self._nav, "close", None)
+        if closer is not None:
+            try:
+                closer()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("closing the navigator failed: %s", e)
 
 
 class _HaltGate(RobotInterface):
@@ -555,11 +649,13 @@ class MissionRunner:
         agent_class = (VisionAgent if policy in VISION_POLICIES
                        else ExploreAgent if policy == "explore" else ObjectSearchAgent)
         extra = {}
+        self._navigator: Optional[_GatedNavigator] = None
         if policy == "explore":
             if navigator is None:
                 raise ValueError("The explore policy needs a navigator -- nav2's goals "
                                  "(control/remote_navigator.py), PLAN-ros-alignment.md 3.31")
-            extra = {"navigator": navigator, "clock": self.clock,
+            self._navigator = _GatedNavigator(navigator, self.is_running)
+            extra = {"navigator": self._navigator, "clock": self.clock,
                      # 3.65 phase 2: "rule" (None) or the learned goal choice.
                      "goal_policy": goal_policy_for(explore_goal_policy)}
         self._gated = _HaltGate(robot, self.is_running,
@@ -1284,6 +1380,13 @@ class MissionRunner:
                 except Exception as e:  # noqa: BLE001
                     logger.warning("inventory summary failed: %s", e)
             self._log_line(f"mission ended ({outcome}): {note}")
+        if self._navigator is not None:
+            # 3.76 C1: the mission's own nav2 goal, which the brain's stop
+            # spares, is cancelled too -- started first, beside the stop, and
+            # on a thread, because a Stop runs this on the brain's event loop
+            # and these are calls through to the ROS bridge.
+            threading.Thread(target=self._navigator.end, daemon=True,
+                             name="mission-goal-end").start()
         # Outside the lock: this is an HTTP call when the robot is remote.
         self._safe_stop()
         # 3.70 E3-E5: where it looked -- after the stop, because it reads the
@@ -1515,6 +1618,12 @@ class MissionRunner:
         share this one rule, so a frame is dropped exactly when the report
         it would change has already been saved."""
         return not self._running and self._outcome != IDLE
+
+    def discard(self) -> None:
+        """A runner built but never started (a Stop landed on its start,
+        3.76 C2): let go of what it holds."""
+        if self._navigator is not None:
+            self._navigator.end()
 
     def _safe_stop(self) -> None:
         try:

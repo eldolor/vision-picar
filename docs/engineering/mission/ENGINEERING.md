@@ -96,6 +96,7 @@ threads; where it and this file disagree, check the code.
    counted, not logged, nothing written. Otherwise `failed`; `Preempted` ->
    `_finish_preempted()` (3.70 E5): `cancelled` with `cancelled_by: "dpad"`,
    unless the refusal names an autonomous holder (`"<holder> is driving"`,
+   or `"<holder> took over"` for a verb cut off under `drive: ros`, 3.76,
    holder `brain` or `ros`) -- then `failed`, an arbitration fault. A goal in
    progress (the phone's tap-to-goal) and a refusal naming no holder stay
    `cancelled`; anything else -> finish `failed` ("step failed: ...").
@@ -289,7 +290,7 @@ otherwise). CORS allows any origin.
 
 | Method, path | Body | Success | Errors |
 |---|---|---|---|
-| `POST /mission/start` | `MissionStartRequest` (below) | `{"started": true, "status": {...}}` | 409 `"A mission is already running."`; 400 config or validation error with its message; 403 drill on a brain with drills off; 422 an unknown field or a bad type |
+| `POST /mission/start` | `MissionStartRequest` (below) | `{"started": true, "status": {...}}` | 409 `"A mission is already running."` (also while another start is still building its runner, 3.76 C2); 409 `"Stopped while the mission was being set up."` when a Stop landed during the build (the runner is discarded, never started); 400 config or validation error with its message (explore: an unreachable robot server or a refused secret is named as such, 3.76); 403 drill on a brain with drills off; 422 an unknown field or a bad type |
 | `POST /mission/stop` | none | `{"stopped": true, "status": {...}}` -- cancels the loop task, then `runner.stop()`; with no mission ever run, stops the robot anyway and returns the idle status | -- |
 | `GET /mission/status` | none | `MissionRunner.status()` plus `fault`; before any mission `{"running": false, "outcome": "idle", "step": 0, "log_tail": [], "fault": "none"}` | -- |
 | `GET /mission/inventory` | none | `{"inventory": null}` before any mission; else the current or last mission's object inventory (3.46; shape in the [perception engineering spec](../perception/ENGINEERING.md), "Inventory"). On mission end the report is also saved by `control/inventory_store.py` on a daemon thread | -- |
@@ -351,6 +352,16 @@ cancelled_by)` (`stopped` -> `cancelled`/`stop`, `preempted` ->
   `turn_right`, `look_left`, `look_right`, `look_center`,
   `set_wheel_velocity`; plus `verb_plan()` (guarded) and `verb_done()` /
   `stop_count` (forwarded) since 3.32. Raises `MissionHalted`.
+- `_GatedNavigator` (3.76 C1-C4), what `explore` gets in place of the
+  navigator: `set_goal` answers `{"accepted": false, "reason":
+  "mission_ended"}` once the mission has ended, cancels a goal accepted
+  while it ended, and raises `Preempted` when a goal is refused because a
+  person (`DRIVER_MANUAL`) holds the robot; `cancel_goal` does nothing once
+  ended. `_finish` starts `end()` on a thread (`mission-goal-end`) before
+  its stop: it cancels the mission's OWN goal if nav2 still holds one
+  within `OWN_GOAL_TOLERANCE_M` (0.05 m) of it -- the robot server spares a
+  goal on the brain's stop -- then closes the client once no goal is on its
+  way. `discard()` does the same for a runner built and never started.
 
 ## Parameters and configuration
 
@@ -487,6 +498,7 @@ tests/test_mission_guarded_verbs.py -q`.
 | `tests/test_bearing_turns.py` | `blocked` after `stuck_after` refusals, never on an arrival, switchable off, reset by progress |
 | `tests/test_arrival_reconfirm.py` (26) | 3.53: once the cloud is back, exactly one paid call on all 12 clear starts for a cloud that sees the target and one that does not; the outcome unchanged; no robot method called; free and bounded probing (`expired`); two paid attempts, half a window apart, then `failed`, and a server-side outage that clears in the window `confirmed`; a cancel never pays, also when it lands between the probe and the call; a cap refusal counts no paid call; a hung call is never doubled; only an unconfirmed arrival records anything; the metrics row re-sent, not added; through `brain_server`, a new mission drops it, a refused start and a Stop after the ending (also one in the loop's last sleep) do not; the brain's own loop asks |
 | `tests/test_robot_contract.py` | `_HaltGate` passes the body conformance suite as a backend |
+| `tests/test_review_376c.py` (13) | 3.76 batch C: Stop ends explore's own nav2 goal (not a person's), also one accepted as Stop lands on another thread; no goal after the end; a person at the D-pad ends explore; explore waits on `ros` just after its goal; "took over" parsed; one start at a time while building, and a Stop during the build means no start; unreachable or 401 robot named at start |
 | `tests/test_remote_robot.py` | an identical action sequence and step count in-process, over ASGI and over a live socket |
 | `tests/test_offline_mode.py` (11) | 3.49, with every socket connect refused and the real HTTP cloud client: the robot server loads no cloud client (a subprocess's `sys.modules`, and every file under `robot/`); `frontier`/`explore` still `found`; tiered (sync, async) searches from out of sight and ends `arrived_unconfirmed` at the target; `vision` fails without moving; no offline tiered run `failed`; a hanging cloud parks for at most budget x timeout + 1 s; the twin references no external host |
 

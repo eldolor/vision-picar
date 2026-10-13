@@ -99,6 +99,10 @@ ROOM_INSET_M = 0.10
 # The robot server's refusal when the mission's OWN goal still holds the
 # robot (3.23) -- not a person taking over. A move refused for this waits.
 OWN_GOAL_REFUSAL = "nav2 goal is active"
+# 3.76 C5: just after the mission's own goal ends, `ros` still holds the
+# robot until its authority lapses (watchdog_timeout_s after nav2's last
+# wheel post). A move refused for that waits too.
+OWN_GOAL_HOLDER = "ros is driving"
 
 
 def leave_clearance_m(min_distance_cm: float) -> float:
@@ -908,7 +912,7 @@ class ExploreAgent(MissionAgent):
         except SafetyViolation as exc:
             out = action, False, str(exc)
         except Preempted as exc:
-            if OWN_GOAL_REFUSAL not in str(exc):
+            if OWN_GOAL_REFUSAL not in str(exc) and not str(exc).startswith(OWN_GOAL_HOLDER):
                 raise
             self._pending.insert(0, action)
             out = "WAIT", False, f"{action} waits: the mission's own goal still holds the robot"

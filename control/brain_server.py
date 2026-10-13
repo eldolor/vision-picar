@@ -496,7 +496,18 @@ def create_app(
                 config.get("world_url") or getattr(robot, "base_url", None)
                 or config["robot_url"],
                 secret=robot_secret, timeout=config["request_timeout_s"])
-            if not navigator.available():
+            try:
+                ok = navigator.available()
+            except httpx.HTTPError as e:
+                # 3.76: an unreachable robot server was a bare 500.
+                navigator.close()
+                raise ValueError(f"The explore policy could not reach the robot server's "
+                                 f"goals at {navigator.base_url}: {e}") from e
+            except PermissionError as e:
+                navigator.close()
+                raise ValueError(str(e)) from e
+            if not ok:
+                navigator.close()
                 raise ValueError(
                     "The explore policy needs nav2: this robot server's world cannot "
                     "take goals (run it with WORLD_MODE=ros and the ROS container up "
@@ -522,11 +533,19 @@ def create_app(
         )
         if navigator is not None:
             kwargs["navigator"] = navigator
-        runner_class, kwargs, tick_timeout_s = drills.apply(req.fault, kwargs, config)
-        # The dead-man deadline is per mission, not per process, so a drill
-        # can shorten its own without touching anything else.
-        state["tick_timeout_s"] = tick_timeout_s
-        runner = runner_class(robot, world=world(), **kwargs)
+        try:
+            runner_class, kwargs, tick_timeout_s = drills.apply(req.fault, kwargs, config)
+            # The dead-man deadline is per mission, not per process, so a drill
+            # can shorten its own without touching anything else.
+            runner = runner_class(robot, world=world(), **kwargs)
+        except BaseException:
+            if navigator is not None:
+                navigator.close()      # 3.76: a refused start keeps no client open
+            raise
+        # Kept on the runner and applied once the start is committed (3.76):
+        # set here, a drill whose start then failed left its deadline in
+        # /health until the next start.
+        runner.tick_timeout_s = tick_timeout_s
         # Metrics shipping, configured on the runner rather than passed
         # through its constructor: MissionRunner's signature is the
         # harness contract (AGENT-HARNESS.md) and a dashboard is not part
@@ -569,7 +588,7 @@ def create_app(
     # does no I/O) so that POST /mission/stop can stop the car even when no
     # mission has ever run.
     state: dict = {
-        "robot": None, "world": None, "runner": None, "task": None,
+        "robot": None, "world": None, "runner": None, "task": None, "building": None,
         "fault": drills.NONE, "tick_timeout_s": config["tick_timeout_s"],
         # 3.53: the late confirmation of the last mission, if one is waiting,
         # and a generation bumped by every start and stop, so a mission loop
@@ -710,10 +729,13 @@ def create_app(
     @app.post(prefix + "/mission/start", dependencies=[Depends(require_secret)])
     async def start_mission(req: MissionStartRequest):
         runner = state["runner"]
-        if runner is not None and runner.is_running():
+        if (runner is not None and runner.is_running()) or state["building"] is not None:
             # Reject rather than race -- two loops driving one robot is
-            # exactly the failure this service exists to prevent.
+            # exactly the failure this service exists to prevent. A mission
+            # still being BUILT counts (3.76 C2): the build is awaited, and
+            # a second start in that window used to pass this check too.
             raise HTTPException(status_code=409, detail="A mission is already running.")
+        build = state["building"] = {"stopped": False}
         try:
             # Off the event loop: building a vision runner now makes a
             # blocking GET to the vision service to validate model_id, and a
@@ -726,6 +748,16 @@ def create_app(
             raise HTTPException(status_code=403, detail=str(e))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        finally:
+            state["building"] = None
+        if build["stopped"]:
+            # 3.76 C2: Stop was pressed while this mission was being set up.
+            # It never starts, so nothing it would do ever moves the car.
+            discard = getattr(runner, "discard", None)
+            if discard is not None:
+                await asyncio.to_thread(discard)
+            raise HTTPException(status_code=409,
+                                detail="Stopped while the mission was being set up.")
 
         # 3.53: a new mission drops the last one's late confirmation -- only
         # once it really exists (a refused start leaves the check alone) and
@@ -733,6 +765,7 @@ def create_app(
         # still finishing from starting one for itself.
         state["generation"] += 1
         cancel_reconfirm("a new mission started")
+        state["tick_timeout_s"] = getattr(runner, "tick_timeout_s", state["tick_timeout_s"])
         runner.start()
         state["fault"] = req.fault or drills.NONE
         state["runner"] = runner
@@ -747,6 +780,8 @@ def create_app(
         thinking is not stopping the robot."""
         runner = state["runner"]
         task = state["task"]
+        if state["building"] is not None:
+            state["building"]["stopped"] = True    # 3.76 C2: a mission being set up never starts
         # 3.53: a Stop that ENDS a running mission means no late check for
         # it -- the bump stops its loop starting one. A Stop after the
         # mission had already ended leaves the check alone: the Guide tab

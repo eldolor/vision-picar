@@ -30,6 +30,7 @@ class RemoteNavigator:
         self.base_url = base_url.rstrip("/")
         self.headers = {"x-app-secret": secret} if secret else {}
         # An injected client is how tests mount the app in-process.
+        self._owns_client = client is None
         self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout)
 
     def _call(self, method: str, json: Optional[dict] = None) -> httpx.Response:
@@ -38,6 +39,10 @@ class RemoteNavigator:
     def available(self) -> bool:
         """Can this server take goals at all? (A world with nav2 behind it.)"""
         r = self._call("GET")
+        if r.status_code in (401, 403):
+            # 3.76: a wrong secret read as "this world has no nav2".
+            raise PermissionError(f"the robot server refused the brain's secret "
+                                  f"(HTTP {r.status_code}) -- check APP_SHARED_SECRET")
         return r.status_code == 200
 
     def set_goal(self, x_m: float, y_m: float) -> dict:
@@ -60,3 +65,10 @@ class RemoteNavigator:
             return {"canceled": False, "reason": "unsupported"}
         r.raise_for_status()
         return r.json()
+
+    def close(self) -> None:
+        """One client per explore mission: closed at its end (3.76), or a
+        long-lived brain gathers sockets. An injected client is the
+        caller's to close."""
+        if self._owns_client:
+            self._client.close()
