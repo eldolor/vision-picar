@@ -2,34 +2,24 @@
 tools/jetson/bench_identity_trt.py
 
 3.78 arm T (`docs/plans/ros-alignment/3.78-trt-vs-llamacpp.md`): the arrival
-question of 3.48 asked of Qwen2.5-VL-3B under TensorRT Edge-LLM v0.6.0 on the
-Jetson, on the same pinned frames, so its records score with
+question of 3.48 asked of a VLM under TensorRT Edge-LLM v0.9.1 on the Jetson,
+on the same pinned frames, so its records score with
 `control/identity_eval.py` exactly as `bench_identity_llama`'s do.
 
     python -m tools.jetson.bench_identity_trt \\
-        --runner ~/bench-378/TensorRT-Edge-LLM/build/examples/llm/llm_inference \\
-        --engine-dir ~/bench-378/ws/X/engines/llm \\
-        --visual-engine-dir ~/bench-378/ws/X/engines/visual \\
-        --tokenizer ~/bench-378/ws/X/onnx/llm/tokenizer.json \\
+        --driver ~/bench-378/ell91/build/examples/llm/edgellm_identity \\
+        --engine-dir ~/bench-378/ws91/X/engines/llm \\
+        --visual-engine-dir ~/bench-378/ws91/X/engines/visual \\
+        --tokenizer ~/bench-378/ws91/X/onnx/llm/tokenizer.json \\
         --recordings recordings --walk <w> ... --out T.json
 
-**Amendment 1.** Edge-LLM's `handleRequest()` returns token ids and text
-only -- no logprobs, no stream -- so:
-
-* the decision is read from the greedy tokens with 3.48's own rule
-  (`p_localised` fed a one-hot distribution: the generated token at
-  probability 1);
-* stopping at the decision is done by length: pass 1 (untimed) generates up
-  to 64 tokens a frame and finds the deciding token's index; pass 2 (timed)
-  runs each frame with `max_generate_length` = that index + 1.
-
-The runner is Edge-LLM's `llm_inference` patched (`patch_llm_inference.py`
-beside this file) to put each request's wall time (`ms`, stream
-synchronised, JPEG decode and preprocessing included) and its `output_ids`
-in its output, to honour a per-request `max_generate_length`, and to decode
-each frame inside its own timed request rather than all of them while
-parsing the input (so memory holds one frame, as arm L's does). The model
-loads once per pass and the frames run back to back after 3 warm-up runs.
+**Amendment 3: measured as arm L is.** The driver (`edgellm_identity.cpp`
+beside this file) keeps one runtime resident and streams each reply token by
+token with its top-20 logprobs (log softmax of the raw logits, the quantity
+llama-server's `top_logprobs` returns). This client applies L's own
+`decision_reached`, sends `C` to cancel at the deciding token, and scores the
+reply with L's own `p_localised`. `ms` is client-side, from sending the
+request -- whose parsing decodes the JPEG -- to receiving the deciding token.
 """
 
 from __future__ import annotations
@@ -38,73 +28,98 @@ import argparse
 import json
 import statistics
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Optional, Sequence
 
 from tools.jetson.bench_identity_llama import (
-    MAX_TOKENS, PROMPT, MemSampler, mem_available_mb, p_localised, percentile)
-
-WARMUP = 3
-
-
-def one_hot_content(tokens: Sequence[str]) -> list:
-    """Generated token texts -> the `logprobs.content` shape `p_localised`
-    reads, each token at probability 1 (amendment 1)."""
-    return [{"token": t, "logprob": 0.0, "top_logprobs": [{"token": t, "logprob": 0.0}]}
-            for t in tokens]
+    MAX_TOKENS, PROMPT, TOP_LOGPROBS, WARMUP, MemSampler, decision_reached,
+    mem_available_mb, p_localised, percentile)
 
 
-def decide(tokens: Sequence[str]) -> tuple:
-    """`(score, parsed, decided_at)` for one greedy reply: score 1.0 (YES)
-    or 0.0 (NO), as `p_localised` reads a one-hot stream."""
-    return p_localised(one_hot_content(tokens))
-
-
-def stop_length(decided_at: Optional[int]) -> int:
-    """Pass 2's `max_generate_length`: up to and including the deciding
-    token, or the full 64 when the reply never decided (3.58's rule)."""
-    return MAX_TOKENS if decided_at is None else decided_at + 1
-
-
-def request(image: Path, target: str, max_len: int) -> dict:
-    return {"max_generate_length": max_len,
-            "messages": [{"role": "user", "content": [
-                {"type": "image", "image": str(image)},
-                {"type": "text", "text": PROMPT.format(target=target)}]}]}
-
-
-def input_doc(reqs: list) -> dict:
-    # Greedy: top_k 1 picks the argmax whatever the temperature.
+def request_doc(image: Path, target: str) -> dict:
+    """One frame as an Edge-LLM request file: greedy (top_k 1 picks the
+    argmax whatever the temperature), 64 tokens at most, top-20 logprobs."""
     return {"batch_size": 1, "temperature": 1.0, "top_p": 1.0, "top_k": 1,
-            "max_generate_length": MAX_TOKENS, "requests": reqs}
+            "max_generate_length": MAX_TOKENS, "num_logprobs": TOP_LOGPROBS,
+            "requests": [{"messages": [{"role": "user", "content": [
+                {"type": "image", "image": str(image)},
+                {"type": "text", "text": PROMPT.format(target=target)}]}]}]}
 
 
-def token_texts(tok, ids: Sequence[int]) -> list:
-    """Each id decoded alone, as llama-server's per-token `token` field is."""
-    return [tok.decode([i]) for i in ids]
+def parse_token_line(line: str) -> tuple:
+    """`T <id> <k> <id>:<lp> ...` -> `(id, [(id, logprob), ...])`."""
+    parts = line.split()
+    if not parts or parts[0] != "T":
+        raise ValueError(f"not a token line: {line!r}")
+    chosen, k = int(parts[1]), int(parts[2])
+    alts = []
+    for p in parts[3:3 + k]:
+        i, lp = p.split(":")
+        alts.append((int(i), float(lp)))
+    return chosen, alts
 
 
-def run_pass(args, reqs: list, out: Path) -> dict:  # pragma: no cover -- needs the board
-    inp = out.with_suffix(".input.json")
-    inp.write_text(json.dumps(input_doc(reqs)))
-    # A crashed run must not be scored from an earlier run's file.
-    out.unlink(missing_ok=True)
-    cmd = [str(Path(args.runner).expanduser()),
-           f"--engineDir={Path(args.engine_dir).expanduser()}",
-           f"--multimodalEngineDir={Path(args.visual_engine_dir).expanduser()}",
-           f"--inputFile={inp}", f"--outputFile={out}", f"--warmup={WARMUP}"]
-    before = mem_available_mb()
-    sampler = MemSampler()
-    sampler.start()
-    t0 = time.monotonic()
-    with open(f"{out}.log", "w") as log:
-        rc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT).returncode
-    wall = time.monotonic() - t0
-    sampler.stop()
-    doc = json.loads(out.read_text()) if out.exists() else {"responses": []}
-    return {"rc": rc, "wall_s": wall, "responses": doc.get("responses", []),
-            "mem_before": before, "mem_low": sampler.low}
+def parse_end_line(line: str) -> tuple:
+    """`E <reason> <ms> <ok>` -> `(reason, ms, ok)`."""
+    _, reason, ms, ok = line.split()
+    return int(reason), float(ms), ok == "1"
+
+
+def content_entry(decode, chosen: int, alts: Sequence[tuple]) -> dict:
+    """One streamed token in the `logprobs.content` shape `p_localised`
+    reads. `decode` turns one id into its text, as llama-server's per-token
+    `token` field is."""
+    lp = next((v for i, v in alts if i == chosen), 0.0)
+    return {"token": decode(chosen), "logprob": lp,
+            "top_logprobs": [{"token": decode(i), "logprob": v} for i, v in alts]}
+
+
+class Driver:  # pragma: no cover -- needs the board
+    def __init__(self, cmd: list, log):
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=log, text=True, bufsize=1)
+
+    def wait_ready(self):
+        for line in self.proc.stdout:
+            if line.strip() == "READY":
+                return
+        raise RuntimeError(f"driver exited before READY ({self.proc.wait()})")
+
+    def ask(self, req_path: Path, decode) -> dict:
+        """One frame under the stopping rule: content up to the decision,
+        the client-side ms to it, and the driver's end line."""
+        t0 = time.perf_counter()
+        self.proc.stdin.write(f"{req_path}\n")
+        self.proc.stdin.flush()
+        content, took, decided = [], None, False
+        for raw in self.proc.stdout:
+            line = raw.strip()
+            if line.startswith("T "):
+                if decided:
+                    continue  # tokens generated before the cancel landed
+                chosen, alts = parse_token_line(line)
+                content.append(content_entry(decode, chosen, alts))
+                if decision_reached(content):
+                    took = (time.perf_counter() - t0) * 1000
+                    decided = True
+                    self.proc.stdin.write("C\n")
+                    self.proc.stdin.flush()
+            elif line.startswith("E "):
+                reason, driver_ms, ok = parse_end_line(line)
+                if took is None:
+                    took = (time.perf_counter() - t0) * 1000
+                return {"content": content, "ms": took, "decided": decided,
+                        "ok": ok, "reason": reason, "driver_ms": driver_ms}
+        raise RuntimeError(f"driver exited mid-request ({self.proc.wait()})")
+
+    def close(self):
+        try:
+            self.proc.stdin.close()
+            self.proc.wait(timeout=60)
+        except Exception:
+            self.proc.kill()
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
@@ -112,83 +127,94 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
     from control.perception_eval import load_corpus
 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    ap.add_argument("--runner", required=True)
+    ap.add_argument("--driver", required=True)
     ap.add_argument("--engine-dir", required=True)
     ap.add_argument("--visual-engine-dir", required=True)
     ap.add_argument("--tokenizer", required=True)
+    ap.add_argument("--model-name", default="Qwen2.5-VL-3B-Instruct")
     ap.add_argument("--recordings", default="recordings")
     ap.add_argument("--walk", action="append", required=True)
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
     tok = Tokenizer.from_file(str(Path(args.tokenizer).expanduser()))
+    cache: dict = {}
+
+    def decode(i: int) -> str:
+        if i not in cache:
+            cache[i] = tok.decode([i], skip_special_tokens=False)
+        return cache[i]
+
     walks = load_corpus(Path(args.recordings), only=args.walk)
     frames = [(w, p, vis, adj) for w in walks for p, vis, adj in w.frames]
+    reqdir = Path(tempfile.mkdtemp(prefix="trt378-"))
+    paths = []
+    for n, (w, p, _, _) in enumerate(frames):
+        rp = reqdir / f"{n:04d}.json"
+        rp.write_text(json.dumps(request_doc(p.resolve(), w.target)))
+        paths.append(rp)
+
     out = Path(args.out).expanduser()
-
-    # Pass 1, untimed: where does each reply decide?
-    p1 = run_pass(args, [request(p, w.target, MAX_TOKENS) for w, p, _, _ in frames],
-                  out.with_suffix(".pass1.json"))
-    first = {}
-    for r in p1["responses"]:
-        ids = r.get("output_ids")
-        first[r["request_idx"]] = decide(token_texts(tok, ids)) if ids is not None else None
-
-    # Pass 2, timed: each frame generates up to its deciding token.
-    lengths = [stop_length(first[i][2]) if first.get(i) else MAX_TOKENS
-               for i in range(len(frames))]
-    p2 = run_pass(args, [request(p, w.target, n) for (w, p, _, _), n in zip(frames, lengths)],
-                  out.with_suffix(".pass2.json"))
-    by_idx = {r["request_idx"]: r for r in p2["responses"]}
-
+    before = mem_available_mb()
+    sampler = MemSampler()
+    sampler.start()
+    log = open(f"{out}.driver.log", "w")
+    drv = Driver([str(Path(args.driver).expanduser()),
+                  str(Path(args.engine_dir).expanduser()),
+                  str(Path(args.visual_engine_dir).expanduser())], log)
     records, ms, replies = [], [], {}
-    errors = noparse = object_replies = changed = 0
-    for i, (w, p, vis, adj) in enumerate(frames):
-        r = by_idx.get(i)
-        if r is None or r.get("output_ids") is None:
-            errors += 1
+    errors = noparse = object_replies = undecided = 0
+    try:
+        t0 = time.monotonic()
+        drv.wait_ready()
+        load_s = time.monotonic() - t0
+        for rp in paths[:WARMUP]:
+            drv.ask(rp, decode)
+        for (w, p, vis, adj), rp in zip(frames, paths):
+            got = drv.ask(rp, decode)
+            if not got["ok"] and not got["decided"]:
+                errors += 1
+                records.append({"walk": w.name, "frame": p.name, "visible": vis,
+                                "status": "unavailable", "score": None,
+                                "metric": "confidence", "label": None, "candidates": 0,
+                                "adjudicated": adj, "ms": 0.0})
+                print(f"{w.name}/{p.name} ERROR reason={got['reason']}", flush=True)
+                continue
+            content = got["content"]
+            score, parsed, decided = p_localised(content)
+            noparse += 0 if parsed else 1
+            undecided += 0 if got["decided"] else 1
+            if parsed and content[decided]["token"].strip().startswith("{"):
+                object_replies += 1
+            replies[f"{w.name}/{p.name}"] = "".join(e["token"] for e in content)[:160]
+            ms.append(got["ms"])
             records.append({"walk": w.name, "frame": p.name, "visible": vis,
-                            "status": "unavailable", "score": None, "metric": "confidence",
-                            "label": None, "candidates": 0, "adjudicated": adj, "ms": 0.0})
-            print(f"{w.name}/{p.name} ERROR", flush=True)
-            continue
-        texts = token_texts(tok, r["output_ids"])
-        score, parsed, decided = decide(texts)
-        noparse += 0 if parsed else 1
-        if parsed and texts[decided].strip().startswith("{"):
-            object_replies += 1
-        if first.get(i) and first[i][0] != score:
-            changed += 1
-        replies[f"{w.name}/{p.name}"] = "".join(texts)[:160]
-        ms.append(r["ms"])
-        records.append({"walk": w.name, "frame": p.name, "visible": vis,
-                        "status": "detected" if score >= 0.5 else "absent",
-                        "score": score, "metric": "confidence", "label": None,
-                        "candidates": 1, "adjudicated": adj, "ms": r["ms"]})
-        print(f"{w.name}/{p.name} vis={vis} p={score:.0f} {r['ms']:.0f}ms", flush=True)
+                            "status": "detected" if score >= 0.5 else "absent",
+                            "score": score, "metric": "confidence", "label": None,
+                            "candidates": 1, "adjudicated": adj, "ms": got["ms"]})
+            print(f"{w.name}/{p.name} vis={vis} p={score:.3f} {got['ms']:.0f}ms", flush=True)
+    finally:
+        sampler.stop()
+        drv.close()
+        log.close()
 
-    low = p2["mem_low"] if p2["mem_low"] is not None else p2["mem_before"]
+    low = sampler.low if sampler.low is not None else before
     doc = {
-        "config": {"detector": "trt-edgellm:Qwen2.5-VL-3B-Instruct int4_awq + visual fp16",
-                   "runtime": "TensorRT Edge-LLM v0.6.0 llm_inference (patched, 3.78 amendment 1)",
+        "config": {"detector": f"trt-edgellm:{args.model_name} int4_awq + visual fp16",
+                   "runtime": "TensorRT Edge-LLM v0.9.1, edgellm_identity (3.78 amendment 3)",
                    "device": "jetson-orin-nano-super-15w", "prompt": PROMPT,
-                   "max_tokens": MAX_TOKENS, "metric": "confidence (one-hot, greedy)",
-                   "stop_at_decision": "by length (pass 1 -> pass 2)"},
+                   "max_tokens": MAX_TOKENS, "top_logprobs": TOP_LOGPROBS,
+                   "metric": "confidence", "stop_at_decision": True},
         "records": records,
         "latency_ms": ({"n": len(ms), "p50": statistics.median(ms),
                         "p90": percentile(ms, 90), "max": max(ms)} if ms else None),
-        "memory_mb": {"available_before": p2["mem_before"], "available_low": low,
-                      "drop": p2["mem_before"] - low},
-        # Process wall time less the timed requests: load, warm-up and exit.
-        "overhead_s": p2["wall_s"] - sum(ms) / 1000.0,
-        "pass_rc": [p1["rc"], p2["rc"]], "decision_changed_pass1_to_2": changed,
-        "noparse": noparse, "object_replies": object_replies, "errors": errors,
-        "replies": replies,
+        "memory_mb": {"available_before": before, "available_low": low, "drop": before - low},
+        "load_s": load_s, "noparse": noparse, "undecided": undecided,
+        "object_replies": object_replies, "errors": errors, "replies": replies,
     }
     out.write_text(json.dumps(doc, indent=1))
-    print(json.dumps({k: doc[k] for k in ("latency_ms", "memory_mb", "overhead_s", "pass_rc",
-                                          "decision_changed_pass1_to_2", "noparse",
-                                          "object_replies", "errors")}))
+    print(json.dumps({k: doc[k] for k in ("latency_ms", "memory_mb", "load_s", "noparse",
+                                          "undecided", "object_replies", "errors")}))
     return 0
 
 
