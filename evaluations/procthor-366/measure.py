@@ -27,8 +27,13 @@ def main(split="val"):
             cv = convert(index, split)
         except ValueError as e:
             # A house the conversion cannot start a robot in (none in `val`;
-            # `test` has some): recorded, never usable.
-            rows.append({"index": index, "error": str(e), "rooms": 0, "usable": False})
+            # `test` has three): recorded, never usable, and counted as a
+            # failure below. Any other conversion error still stops the run.
+            if "no free cell to start on" not in str(e):
+                raise
+            rows.append({"index": index, "error": str(e), "rooms": None, "usable": False,
+                         "lost": ["not converted"], "leaked": [], "area_err": None,
+                         "floor_objects": 0, "placed_objects": 0, "build_s": None})
             continue
         build_s = time.perf_counter() - t
         got = cv.grid_joins()
@@ -50,20 +55,22 @@ def main(split="val"):
         json.dump([r["index"] for r in rows if r.get("usable")], f)
 
     failed = [r for r in rows if "error" in r]
-    print(f"not converted: {len(failed)} {[r['index'] for r in failed][:20]}")
-    rows = [r for r in rows if "error" not in r]
+    print(f"not converted (counted as failing 1, 2 and 4): {len(failed)} "
+          f"{[r['index'] for r in failed][:20]}")
     n = len(rows)
     topo = sum(1 for r in rows if not r["lost"] and not r["leaked"])
-    area = sum(1 for r in rows if abs(r["area_err"]) <= 0.05)
+    area = sum(1 for r in rows if r["area_err"] is not None and abs(r["area_err"]) <= 0.05)
     fo = sum(r["floor_objects"] for r in rows)
     po = sum(r["placed_objects"] for r in rows)
-    big = [r for r in rows if r["rooms"] >= 3]
+    # An unconverted house's rooms are unknown: it counts in criterion 4's
+    # denominator as not usable rather than vanishing from it.
+    big = [r for r in rows if r["rooms"] is None or r["rooms"] >= 3]
     usable = sum(1 for r in big if r["usable"])
     print(f"1 topology kept: {topo}/{n} = {topo / n:.1%} (bar 95%)")
     print(f"2 outline within 5%: {area}/{n} = {area / n:.1%} (bar 95%)")
     print(f"3 furniture placed: {po}/{fo} = {po / fo:.2%} (bar 98%)")
     print(f"4 usable (>= 3 rooms): {usable}/{len(big)} = {usable / len(big):.1%} (bar 80%)")
-    print(f"6 build median {statistics.median(r['build_s'] for r in rows) * 1000:.0f} ms (bar 500)")
+    print(f"6 build median {statistics.median(r['build_s'] for r in rows if r['build_s'] is not None) * 1000:.0f} ms (bar 500)")
 
 
 if __name__ == "__main__":
