@@ -196,6 +196,19 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   nearest return kept on data (the median traded precision and duplicates
   for recall), the per-frame reads kept by design. Seed 3463: every 3.46
   bar met before and after; landmarks with more hits than frames 2 -> 0.
+* **Four end states (3.70 E1-E6), merged and the twin deployed
+  2026-10-12.** A mission ends `found`, `exhausted` (was `searched`),
+  `out_of_budget` (was `max_steps`) or `cancelled` (was `stopped` and
+  `preempted`, with `cancelled_by` `stop`/`dpad`), beside the faults.
+  Old records are read through `read_outcome()`, never rewritten. The
+  budget is a time limit (`mission_time_limit_s` 1200 s, the user's;
+  900 s of explore never finishes `home_first_floor`), a battery floor
+  (`battery_floor_v` 10.5 V, two low readings; re-measure on the Rover)
+  and, for `vision` only, 120 paid calls (`vision_max_calls`); `max_steps`
+  is only a backstop derived from the limit. Each end carries a report
+  (rooms entered, goals, m² mapped); its `coverage` share FAILED its
+  2-point bar mid-search (+69/+77 live), so the phone shows m². Survey
+  mode and missions on a saved map (the rest of 3.70) are not built.
 * **Review of the code written before the review rule (3.76), batches A-B
   merged 2026-10-13.** Both reviewers on whole files, risky files only,
   every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
@@ -355,7 +368,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
 * **The Rover's motor board speaks JSON, not ROS** (`T:1001` frames with
   `odl`/`odr`, 660 pulses/rev). Its `T:0` "e-stop" releases the arm, not
   the wheels; the heartbeat (1.5 s) is the board's only stop.
-* **Tiered phone walks end `max_steps` even when they arrive.** Arrival
+* **Tiered phone walks end `out_of_budget` (before 3.70, `max_steps`)
+  even when they arrive.** Arrival
   needs a lidar scan and a phone walk has none, so do not read a phone
   walk's outcome as a navigation result.
 * **The world map is discovered, not copied** (N1). `world.mode` must
