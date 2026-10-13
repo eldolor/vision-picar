@@ -221,8 +221,15 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   spun on an unplugged line, late lidar reads aged too young, an unbounded
   revolution buffer, a 0 deg turn pulsed the motors, the board clock map
   drifted with uptime, a ROS twist after a stop. Open for the user: `/scan`'s
-  stamp is the request time (3.42's own open item). Batches C-I (mission
-  loop, twin, perception, walks, inventory, cloud, tooling) to go.
+  stamp is the request time (3.42's own open item). **Batch C (the mission
+  loop), merged 2026-10-13:** 6 fixed -- Stop (any non-found end) left an
+  explore mission's own nav2 goal driving (the server spares a goal on the
+  brain's stop; the runner now ends its own), two starts during one build
+  both ran and a Stop during the build was lost, explore's goals bypassed
+  the halt gate, a person at the D-pad did not end explore, explore's pan
+  just after its goal failed the mission, and start errors (a bare 500, a
+  wrong secret read as no nav2). Batches D-I (twin, perception, walks,
+  inventory, cloud, tooling) to go.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,
