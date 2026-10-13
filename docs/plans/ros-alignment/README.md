@@ -82,5 +82,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.74](3.74-floor-hazards.md) | Below the lidar: a floor band and floor hazards |
 | [3.75](3.75-session-claims.md) | Sessions claim discrete steps: a step table per section, live claims, guards at edit and commit |
 | [3.76](3.76-legacy-review.md) | Review of the risky files written before the review rule |
-| [3.78](3.78-trt-vs-llamacpp.md) | TensorRT Edge-LLM vs llama.cpp for the local VLM, on JetPack 7.2 |
+| [3.78](3.78-trt-vs-llamacpp.md) | TensorRT Edge-LLM vs llama.cpp for the local VLM, on the board as it is (JetPack 6.2.1) |
 <!-- /sections -->
