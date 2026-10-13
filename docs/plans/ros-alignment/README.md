@@ -82,4 +82,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.74](3.74-floor-hazards.md) | Below the lidar: a floor band and floor hazards |
 | [3.75](3.75-session-claims.md) | Sessions claim discrete steps: a step table per section, live claims, guards at edit and commit |
 | [3.76](3.76-legacy-review.md) | Review of the risky files written before the review rule |
+| [3.77](3.77-fast-goal-choice.md) | Fast goal choice on the Jetson |
 <!-- /sections -->
