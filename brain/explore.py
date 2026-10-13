@@ -631,8 +631,6 @@ class ExploreAgent(MissionAgent):
             return
         target = g.get("target") or (g["x_m"], g["y_m"])
         self.goals_failed += 1
-        if g.get("room"):
-            self._room_goals_failed[g["room"]] = self._room_goals_failed.get(g["room"], 0) + 1
         if g.get("from") and pose.get("usable") and math.hypot(
                 pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M:
             # It never left: the robot is wedged, not the place unreachable.
@@ -649,16 +647,24 @@ class ExploreAgent(MissionAgent):
                 # (An approach wedging at all counts: a sighting that wedges
                 # the robot every time must still run out of tries.)
                 self.retry.fail(target[0], target[1], now)
+                self._room_failed(g)
             self._queue_escape("wedged", goal=[round(g["x_m"], 2), round(g["y_m"], 2)],
                                again=again)
             self.last_event = f"{g['kind']} goal {state} without moving; backing out"
             logger.info(self.last_event)
             return
         n = self.retry.fail(target[0], target[1], now)
+        self._room_failed(g)
         if g["kind"] == "approach":
             self._approach = None
         self.last_event = f"{g['kind']} goal {state}; set aside (failure {n})"
         logger.info(self.last_event)
+
+    def _room_failed(self, g: dict) -> None:
+        """A room goal's failure counts against the room only when it counts
+        against the place: the first wedge is forgiven, as for any goal."""
+        if g.get("room"):
+            self._room_goals_failed[g["room"]] = self._room_goals_failed.get(g["room"], 0) + 1
 
     def _cancel(self) -> None:
         if self._goal is not None:

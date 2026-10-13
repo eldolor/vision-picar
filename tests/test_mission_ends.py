@@ -649,7 +649,10 @@ def test_a_room_nav2_keeps_refusing_is_given_up_by_name():
         grid.advance_time(5.0)
     assert agent.exhausted, agent.last_event
     assert other not in agent.rooms_entered
-    assert nav.room_goals == agent.retry.limit
+    # This nav2 refuses without the robot moving: a wedge, whose first at
+    # each place is forgiven (as for any goal), so each counted failure may
+    # follow one forgiven one -- bounded, never cell by cell without end.
+    assert agent.retry.limit <= nav.room_goals <= 2 * agent.retry.limit - 1
 
 
 def test_a_room_goal_aims_inside_the_room_not_at_its_doorway():
@@ -746,3 +749,23 @@ def test_a_negative_or_fractional_call_cap_is_refused_at_load(tmp_path, bad):
     cfg.write_text(f"brain:\n  vision_max_calls: {bad}\n")
     with pytest.raises(ValueError, match="vision_max_calls"):
         load_brain_config(str(cfg))
+
+
+def test_a_room_goal_s_first_wedge_is_forgiven_like_any_goal_s():
+    """Code review (after the 3.65 rebase): a room goal that failed with the
+    robot wedged and never moving counted against the room at once, where
+    every other goal kind forgives the first wedge at a place. Wedged
+    `retry.limit` times, a reachable room would be given up by name."""
+    agent, grid, here, rooms = _known_house_agent(
+        lambda g, here: [here, next(r for r in sorted(g.rooms) if r != here)])
+    other = next(r for r in rooms if r != here)
+    pose = agent._pose()
+    goal = {"x_m": 5.0, "y_m": 5.0, "kind": "room", "room": other,
+            "sent_at": grid.sim_time, "from": (pose["x_m"], pose["y_m"])}
+    agent._goal = dict(goal)
+    agent._goal_ended("aborted", grid.sim_time)
+    assert agent._room_goals_failed.get(other, 0) == 0, "the first wedge counted"
+    agent._pending = []
+    agent._goal = dict(goal)
+    agent._goal_ended("aborted", grid.sim_time)
+    assert agent._room_goals_failed.get(other, 0) == 1, "wedged AGAIN must count"
