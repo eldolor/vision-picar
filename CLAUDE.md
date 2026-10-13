@@ -228,8 +228,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   both ran and a Stop during the build was lost, explore's goals bypassed
   the halt gate, a person at the D-pad did not end explore, explore's pan
   just after its goal failed the mission, and start errors (a bare 500, a
-  wrong secret read as no nav2). Batches D-I (twin, perception, walks,
-  inventory, cloud, tooling) to go.
+  wrong secret read as no nav2). **Batch D (the twin), merged 2026-10-13,
+  NOT YET DEPLOYED:** 24 fixed, one a security bug -- a setup link that
+  moved a service to another origin kept the phone's saved secret and the
+  load-time auto-connect sent it there (now dropped, with a warning). Also:
+  Close during Start hung Start or began an invisible run; one brain error
+  or a failed Stop froze the Sim panel over a running mission; walk names
+  over 64 characters lost whole walks; a lost STOP said nothing; the
+  120-call cap paused Drive-via-brain walks. Ships with
+  `service/static/sync.sh` from the user's laptop. Batches E-I
+  (perception, walks, inventory, cloud, tooling) to go.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,
