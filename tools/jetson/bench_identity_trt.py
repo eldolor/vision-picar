@@ -26,7 +26,9 @@ only -- no logprobs, no stream -- so:
 The runner is Edge-LLM's `llm_inference` patched (`patch_llm_inference.py`
 beside this file) to put each request's wall time (`ms`, stream
 synchronised, JPEG decode and preprocessing included) and its `output_ids`
-in its output, and to honour a per-request `max_generate_length`. The model
+in its output, to honour a per-request `max_generate_length`, and to decode
+each frame inside its own timed request rather than all of them while
+parsing the input (so memory holds one frame, as arm L's does). The model
 loads once per pass and the frames run back to back after 3 warm-up runs.
 """
 
@@ -86,6 +88,8 @@ def token_texts(tok, ids: Sequence[int]) -> list:
 def run_pass(args, reqs: list, out: Path) -> dict:  # pragma: no cover -- needs the board
     inp = out.with_suffix(".input.json")
     inp.write_text(json.dumps(input_doc(reqs)))
+    # A crashed run must not be scored from an earlier run's file.
+    out.unlink(missing_ok=True)
     cmd = [str(Path(args.runner).expanduser()),
            f"--engineDir={Path(args.engine_dir).expanduser()}",
            f"--multimodalEngineDir={Path(args.visual_engine_dir).expanduser()}",

@@ -61,5 +61,72 @@ sub('''            responseJson["request_idx"] = requestIdx;''',
                 responseJson["output_ids"] = response.outputIds[batchIdx];
             }''')
 
+# Images are decoded inside the timed request, one frame at a time (3.78
+# review): stock llm_inference decodes every image while parsing the input
+# file, which keeps the decode out of the timing and all 299 frames in
+# memory at once. Arm L decodes inside its timed request and holds one.
+sub("""                                auto image = rt::imageUtils::loadImageFromFile(msgContent.content);
+                                if (image.buffer != nullptr)
+                                {
+                                    imageBuffers.push_back(std::move(image));
+                                }""",
+    """                                // PICAR_378: decoded lazily, inside the timed request""")
+
+sub("""    // Perform warmup runs if requested
+    if (args.warmup > 0)""",
+    """    // PICAR_378: decode a request's images (and only its images) on demand.
+    auto picarLoad = [](rt::LLMGenerationRequest& req) {
+        for (auto& rq : req.requests)
+        {
+            rq.imageBuffers.clear();
+            for (auto const& m : rq.messages)
+            {
+                for (auto const& c : m.contents)
+                {
+                    if (c.type == "image")
+                    {
+                        auto image = rt::imageUtils::loadImageFromFile(c.content);
+                        if (image.buffer != nullptr)
+                        {
+                            rq.imageBuffers.push_back(std::move(image));
+                        }
+                    }
+                }
+            }
+        }
+    };
+    auto picarFree = [](rt::LLMGenerationRequest& req) {
+        for (auto& rq : req.requests)
+        {
+            rq.imageBuffers.clear();
+            rq.imageBuffers.shrink_to_fit();
+        }
+    };
+
+    // Perform warmup runs if requested
+    if (args.warmup > 0)""")
+
+sub("""            rt::LLMGenerationResponse warmupResponse;
+            bool requestStatus = false;""",
+    """            rt::LLMGenerationResponse warmupResponse;
+            picarLoad(firstRequest); // PICAR_378
+            bool requestStatus = false;""")
+
+sub("""        LOG_INFO("Warmup of %d runs completed. Starting actual benchmark runs...", args.warmup);""",
+    """        picarFree(firstRequest); // PICAR_378
+        LOG_INFO("Warmup of %d runs completed. Starting actual benchmark runs...", args.warmup);""")
+
+sub("""        auto picarT0 = std::chrono::steady_clock::now(); // PICAR_378
+""",
+    """        auto picarT0 = std::chrono::steady_clock::now(); // PICAR_378
+        picarLoad(request);
+""")
+
+sub("""        double picarMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - picarT0).count();
+""",
+    """        double picarMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - picarT0).count();
+        picarFree(request);
+""")
+
 p.write_text(s)
 print("patched")
