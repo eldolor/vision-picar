@@ -129,7 +129,12 @@ was FORWARD again.
 
 **Triggers** (`_trigger_for`): first frame -> `mission_start` (and seeds the
 edge detector); `unavailable` -> nothing, clears the run; confirmed edge into
-`detected` -> `candidate_sighting`; `absent` streak >= cold-search bar, or
+`detected` -> `candidate_sighting` (a sighting held back by a call in flight
+fires once it lands, 3.76); every pacing count below runs from when the
+last answer LANDED, not from when it was asked (3.76: a slow call used to
+leave a bar already passed, and a second call went out back to back);
+`absent` frames since then >= cold-search bar (a `detected` frame does not
+reset the count), or
 distance since last call >= `cold_search_after_cm` -> `cold_search`; frames
 since last call >= `stale_after` -> `staleness`. `max_calls` caps the total,
 the arrival confirmation included (a sixth key in `stats.triggers`,

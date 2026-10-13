@@ -308,3 +308,22 @@ def test_a_goal_whose_answer_was_lost_is_still_the_missions_own():
     agent._pending = ["LOOK_LEFT"]
     agent._do_pending()                              # must not raise
     assert nav.goal["state"] == "canceled"
+
+
+# ---------- cold search after a slow call (the user's option 3) ----------
+
+
+def test_no_second_call_fires_as_soon_as_a_slow_call_lands():
+    """Every pacing count kept running while an async call was out (absent
+    frames, frames since the call, distance), so the frame after a slow call
+    landed was already past a bar and a second paid call went out back to
+    back. With the shipped defaults (cold search 6, staleness 8)."""
+    cloud = _SlowCloud()
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 40), cloud, async_cloud=True)
+    tier(FRAME)                                   # start: a call goes out
+    for _ in range(10):                           # ten absent frames while it is out
+        tier(FRAME)
+    tier._inflight.result(timeout=5)              # it has landed
+    tier(FRAME)                                   # the first frame after
+    time.sleep(0.5)
+    assert cloud.calls == 1, f"{cloud.calls} calls: {tier.stats.triggers}"

@@ -28,7 +28,7 @@ see `DEFAULT_STALE_AFTER`) -- plus one paid call that is not a trigger:
 |---|---|---|
 | `mission_start` | first frame | 2.5: blocking only under a synchronous tier; under `async_cloud` the one blocking call is the arrival confirmation |
 | `candidate_sighting` | perception says `detected` | 2.4's *"the one that does real work"* -- on-board proposes, the cloud confirms identity and **reachability** |
-| `cold_search` | `absent` for `cold_search_after` consecutive frames | 2.4's inverse: the cloud proposes, on-board tracks. Without it a target outside COCO's 80 never fires anything and the robot can drive past it indefinitely |
+| `cold_search` | `cold_search_after` `absent` frames since the last answer landed (a `detected` frame does not reset the count) | 2.4's inverse: the cloud proposes, on-board tracks. Without it a target outside COCO's 80 never fires anything and the robot can drive past it indefinitely |
 
 `goal_achieved`, `goal_impossible` and `room_change` are
 deliberately absent. They are listed in `UNAVAILABLE_TRIGGERS` so the gap
@@ -940,6 +940,14 @@ class TieredVision:
             self._last_taken = fut
             trigger, self._inflight_trigger = self._inflight_trigger, None
             perception, self._inflight_perception = self._inflight_perception, None
+        # 3.76 (the user, 2026-10-13): pacing counts from when the cloud
+        # ANSWERED, not from when it was asked. Every count kept running while
+        # a slow call was out -- absent frames, frames since the call, distance
+        # -- so the frame after it landed was already past a bar and a second
+        # paid call went out back to back.
+        self._absent_streak = 0
+        self._since_call = 0
+        self._mark_odometry_call()
         try:
             scene = fut.result()
         except BaseException as exc:  # noqa: BLE001

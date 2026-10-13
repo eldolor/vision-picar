@@ -212,6 +212,10 @@ brain:
   # zero additional coverage. Past about 9 the staleness floor becomes the
   # binding rule instead, which is 6.1's finding arriving from the other
   # side, so the useful range of this number is 2..9.
+  # Counted (like the staleness and distance bars) from when the last cloud
+  # answer LANDED, since 3.76 -- a slow call no longer leaves a bar already
+  # passed for the next frame (the user, 2026-10-13). Not consecutive: a
+  # detected frame does not reset it, as when the 6 was measured.
   tier_cold_search_after: 6
 
   # Phase C. How much NEW GROUND (centimetres) may be covered before the
