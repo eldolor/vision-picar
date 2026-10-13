@@ -38,6 +38,9 @@ def patch(text: str) -> str:
 """
     assert text.count(old) == 1, "loader anchor not found"
     text = text.replace(old, new)
+    # Only the V2 reader calls it; unused below 10.7 and -Werror is on.
+    text = text.replace("\nbool isDeviceAccessiblePointer(void* ptr) noexcept",
+                        "\n[[maybe_unused]] bool isDeviceAccessiblePointer(void* ptr) noexcept", 1)
     if "#include <fstream>" not in text:
         text = "#include <fstream>\n#include <vector>\n" + text
     return text
