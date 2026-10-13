@@ -82,5 +82,4 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.74](3.74-floor-hazards.md) | Below the lidar: a floor band and floor hazards |
 | [3.75](3.75-session-claims.md) | Sessions claim discrete steps: a step table per section, live claims, guards at edit and commit |
 | [3.76](3.76-legacy-review.md) | Review of the risky files written before the review rule |
-| [3.70](3.70-survey-and-mission-ends.md) | Survey mode, missions on the robot's own saved map, and four end states shown on the phone (2026-10-11): criteria, written before building -- not yet confirmed by the user |
 <!-- /sections -->
