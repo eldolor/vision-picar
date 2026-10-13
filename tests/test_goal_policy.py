@@ -96,7 +96,7 @@ def test_a_policy_never_sends_a_goal_the_rules_would_not():
         runner, _nav, _g = _mission_with([10.0, 0, 0, 0, 0, 0, 0, 10.0, 10.0, 0])
     finally:
         E.ExploreAgent._send = orig
-    assert runner.status()["outcome"] in ("found", "searched", "max_steps")
+    assert runner.status()["outcome"] in ("found", "exhausted", "out_of_budget")
     assert offered, "the learned path never ran"
     assert all(reached < 2 and ok for reached, ok in offered), offered
 
