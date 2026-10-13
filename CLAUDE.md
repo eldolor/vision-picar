@@ -236,8 +236,19 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   or a failed Stop froze the Sim panel over a running mission; walk names
   over 64 characters lost whole walks; a lost STOP said nothing; the
   120-call cap paused Drive-via-brain walks. Ships with
-  `service/static/sync.sh` from the user's laptop. Batches E-I
-  (perception, walks, inventory, cloud, tooling) to go.
+  `service/static/sync.sh` from the user's laptop. **Batch E (perception,
+  arrival, cloud calls), merged 2026-10-13:** 12 fixed -- a Stop mid-frame
+  still bought a paid tiered call; landed answers fed the spin guard;
+  sightings lost behind a call in flight; a scheme-less vision URL read as
+  "cloud unreachable"; explore adopted or cancelled a person's map goal,
+  drove away from a target within standoff, failed on one nav2 blip, and
+  never ran its early-retry rule (now on: the 100-house sweep still pins
+  99). **Open, found by it:** explore reads `frame["detections"]`, which
+  only the simulator provides -- on the car it cannot see the target until
+  its perception on real frames is built (the user, 2026-10-13); and
+  cold search counts absent frames since the last call, not consecutive
+  ones (the user's call). Batches F-I (walks, inventory, cloud, tooling)
+  to go.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,
