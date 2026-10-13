@@ -47,7 +47,7 @@ from typing import Callable, Optional, Protocol
 from brain.agent import MissionAgent, StepResult
 from brain.arrival import ArrivalCheck
 from brain.frontier import (RetryBook, camera_seen, find_frontiers, find_view_gaps,
-                            known_near, reachable)
+                            known_near, reach, reachable)
 from brain.goal_policy import LinearGoalPolicy
 from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
@@ -500,10 +500,13 @@ class ExploreAgent(MissionAgent):
             return known_near(m, x, y, self.retry.radius_m)
 
         leave = leave_clearance_m(self.safety.min_distance_cm)
-        frontiers = find_frontiers(m, pose["x_m"], pose["y_m"], clearance_m=leave)
+        # One reachability search per choice, shared by every step below (3.77).
+        rch = reach(m, pose["x_m"], pose["y_m"], clearance_m=leave)
+        frontiers = find_frontiers(m, pose["x_m"], pose["y_m"], clearance_m=leave,
+                                   reach_map=rch)
         skipped = {"reached twice": 0, "set aside": 0}
         if self.goal_policy is not None:
-            out = self._learned_goal(m, pose, frontiers, leave, known, now, skipped)
+            out = self._learned_goal(m, pose, frontiers, leave, known, now, skipped, rch)
             if out is not None:
                 return out
         for rank, f in enumerate(frontiers if self.goal_policy is None else ()):
@@ -518,7 +521,8 @@ class ExploreAgent(MissionAgent):
                                   skipped=dict(skipped))
             skipped["set aside"] += 1
         seen_cells = {self._to_cell(m, c) for c in self.seen}
-        for g in find_view_gaps(m, pose["x_m"], pose["y_m"], seen_cells, clearance_m=leave):
+        for g in find_view_gaps(m, pose["x_m"], pose["y_m"], seen_cells, clearance_m=leave,
+                                reach_map=rch):
             if any(math.hypot(g.centre[0] - lx, g.centre[1] - ly) < self.retry.radius_m
                    for lx, ly in self._looked):
                 continue
@@ -541,13 +545,12 @@ class ExploreAgent(MissionAgent):
         # counted at 0.22 m, a nook with room for nav2 but none to leave by
         # found no goal, yet read as roomy -- and ended the search (then
         # `searched`) without backing out.
-        steps, _start, _need = reachable(m, pose["x_m"], pose["y_m"], clearance_m=leave)
-        room_goal = self._room_goal(m, steps, now, known)
+        room_goal = self._room_goal(m, rch, now, known)
         if room_goal is not None:
             return room_goal
-        if len(steps) < BOXED_CELLS and self.escapes < MAX_ESCAPES:
+        if len(rch) < BOXED_CELLS and self.escapes < MAX_ESCAPES:
             # Nowhere reachable to stop -- from HERE. Boxed in, not done.
-            self._queue_escape("boxed", reachable_cells=len(steps))
+            self._queue_escape("boxed", reachable_cells=len(rch))
             return self._do_pending()
         if self.retry.cooling(now):
             return "WAIT", True, (f"no frontier ready; retrying in "
@@ -566,7 +569,7 @@ class ExploreAgent(MissionAgent):
                     or any(math.hypot(g.goal[0] - vx, g.goal[1] - vy) < self.retry.radius_m
                            for vx, vy in self._view_goals))
 
-    def _learned_goal(self, m, pose, frontiers, leave, known, now, skipped):
+    def _learned_goal(self, m, pose, frontiers, leave, known, now, skipped, rch=None):
         """3.65 phase 2: pool every frontier and view gap the rule would
         send, and send the one the policy scores highest. None when the rules
         allow none -- the caller then decides boxed, cooling or exhausted,
@@ -588,7 +591,8 @@ class ExploreAgent(MissionAgent):
                                        size_m=f.size_m, seen_cells=seen_cells,
                                        failures=self.retry.failures_near(*f.goal),
                                        reached=reached, goals_sent=self.goals_sent))
-        for g in find_view_gaps(m, pose["x_m"], pose["y_m"], seen_cells, clearance_m=leave):
+        for g in find_view_gaps(m, pose["x_m"], pose["y_m"], seen_cells, clearance_m=leave,
+                                reach_map=rch):
             if not self._view_allowed(g) or not self.retry.available(g.goal[0], g.goal[1],
                                                                       now, known):
                 continue
@@ -641,7 +645,7 @@ class ExploreAgent(MissionAgent):
             if 0 <= k < len(labels["names"]):
                 self.rooms_entered.add(labels["names"][k])
 
-    def _room_goal(self, m: dict, steps: dict, now: float, known):
+    def _room_goal(self, m: dict, rch, now: float, known):
         """A goal into the nearest labelled room not yet entered: the
         reachable cell of it the robot can reach soonest, preferring cells
         whose neighbours within ROOM_INSET_M carry the same label -- so
@@ -652,6 +656,7 @@ class ExploreAgent(MissionAgent):
         labels = self._labels(m)
         if labels is None:
             return None
+        steps = rch.steps
         w, h, res = m["width"], m["height"], m["resolution_m"]
         cells, names = labels["cells"], labels["names"]
         n = max(1, int(math.ceil(ROOM_INSET_M / res)))

@@ -1,0 +1,15 @@
+{
+ "host": "picar-jetson",
+ "machine": "aarch64",
+ "poses": 120,
+ "old": {
+  "p50_ms": 2259.3,
+  "p90_ms": 2423.9,
+  "max_ms": 2495.5
+ },
+ "new": {
+  "p50_ms": 66.7,
+  "p90_ms": 90.2,
+  "max_ms": 93.2
+ }
+}

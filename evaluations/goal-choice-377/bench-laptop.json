@@ -1,0 +1,15 @@
+{
+ "host": "macbookair.lan",
+ "machine": "arm64",
+ "poses": 120,
+ "old": {
+  "p50_ms": 632.7,
+  "p90_ms": 679.9,
+  "max_ms": 695.1
+ },
+ "new": {
+  "p50_ms": 21.8,
+  "p90_ms": 26.1,
+  "max_ms": 36.6
+ }
+}
