@@ -13,12 +13,13 @@ GUARD = "#if NV_TENSORRT_MAJOR > 10 || (NV_TENSORRT_MAJOR == 10 && NV_TENSORRT_M
 
 
 def patch(text: str) -> str:
-    if "PICAR_378_TRT103" in text:
-        return text
-    head = "class FileStreamReaderV2 : public nvinfer1::IStreamReaderV2"
-    i = text.index(head)
-    j = text.index("\n};\n", i) + len("\n};\n")
-    text = text[:i] + GUARD + " // PICAR_378_TRT103\n" + text[i:j] + "#endif\n" + text[j:]
+    """Each edit checks for itself, so a tree patched by an earlier version
+    of this script still gets the later edits."""
+    if "PICAR_378_TRT103" not in text:
+        head = "class FileStreamReaderV2 : public nvinfer1::IStreamReaderV2"
+        i = text.index(head)
+        j = text.index("\n};\n", i) + len("\n};\n")
+        text = text[:i] + GUARD + " // PICAR_378_TRT103\n" + text[i:j] + "#endif\n" + text[j:]
     old = """    FileStreamReaderV2 streamReader(enginePath);
     auto engine = std::unique_ptr<nvinfer1::ICudaEngine>(runtime.deserializeCudaEngine(streamReader));
 """
@@ -36,8 +37,9 @@ def patch(text: str) -> str:
     auto engine = std::unique_ptr<nvinfer1::ICudaEngine>(runtime.deserializeCudaEngine(blob.data(), blob.size()));
 #endif
 """
-    assert text.count(old) == 1, "loader anchor not found"
-    text = text.replace(old, new)
+    if "#else\n    std::ifstream file(enginePath" not in text:
+        assert text.count(old) == 1, "loader anchor not found"
+        text = text.replace(old, new)
     # Only the V2 reader calls it; unused below 10.7 and -Werror is on.
     text = text.replace("\nbool isDeviceAccessiblePointer(void* ptr) noexcept",
                         "\n[[maybe_unused]] bool isDeviceAccessiblePointer(void* ptr) noexcept", 1)

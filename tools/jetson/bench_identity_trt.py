@@ -163,7 +163,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
                   str(Path(args.engine_dir).expanduser()),
                   str(Path(args.visual_engine_dir).expanduser())], log)
     records, ms, replies = [], [], {}
-    errors = noparse = object_replies = undecided = 0
+    errors = noparse = object_replies = undecided = bare_tokens = 0
     try:
         t0 = time.monotonic()
         drv.wait_ready()
@@ -181,6 +181,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
                 print(f"{w.name}/{p.name} ERROR reason={got['reason']}", flush=True)
                 continue
             content = got["content"]
+            # A token streamed without alternatives would score as one-hot
+            # (amendment 1's rule) where amendment 3 promises top-20: count it.
+            bare_tokens += sum(1 for e in content if not e["top_logprobs"])
             score, parsed, decided = p_localised(content)
             noparse += 0 if parsed else 1
             undecided += 0 if got["decided"] else 1
@@ -210,11 +213,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
                         "p90": percentile(ms, 90), "max": max(ms)} if ms else None),
         "memory_mb": {"available_before": before, "available_low": low, "drop": before - low},
         "load_s": load_s, "noparse": noparse, "undecided": undecided,
+        "tokens_without_logprobs": bare_tokens,
         "object_replies": object_replies, "errors": errors, "replies": replies,
     }
     out.write_text(json.dumps(doc, indent=1))
     print(json.dumps({k: doc[k] for k in ("latency_ms", "memory_mb", "load_s", "noparse",
-                                          "undecided", "object_replies", "errors")}))
+                                          "undecided", "tokens_without_logprobs",
+                                          "object_replies", "errors")}))
+    if bare_tokens:
+        print(f"WARNING: {bare_tokens} tokens arrived without logprobs -- "
+              "those frames were scored one-hot, not as amendment 3 states", flush=True)
     return 0
 
 
