@@ -289,10 +289,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   met criteria 1-6: 196/200 test houses, median goals 11 -> 8 (-27%), live
   3/3 found, 0 contacts, +4% time. Caveats: the median moved one step,
   the mean only -12%; live in `home_first_floor` it sent more goals (27 vs
-  21). Open for the user: make `network` the default (re-pins 3.69's
-  ProcTHOR sweep, 99 -> 97; first time a goal choice on the Jetson with a
-  0.05 m SLAM map -- unmeasured, every candidate's features are a Python
-  scan). Trainers in `evaluations/explore-365/`.
+  21). **Amendment 3 kept `rule` the default:** on 613 fresh houses
+  (ProcTHOR `test` split, `procthor:test:<i>`) the network finds 608 vs 606
+  and scores higher, but saves only 11% of median goals (bar 20%).
+  **Goal choice is slow on the Jetson at SLAM resolution -- the rule's
+  too:** 1.4 s p90 (network 2.2 s), `find_frontiers`' pure-Python search;
+  about 30 s of standing still per 20-goal search. Worth a section before
+  the Rover. Trainers and `time_choice.py` in `evaluations/explore-365/`.
 * **Below the lidar (3.74), parts A-B merged 2026-10-12.** Borrowed from
   Ecovacs' vacuum detector. A: sim objects can be lower than the lidar
   (`SIM_MAP=complex_house_hazards`), a body-fixed depth-camera floor band
