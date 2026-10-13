@@ -65,10 +65,35 @@ def patch_fp4(text: str) -> str:
         "        return desc.type == DataType::kINT8 || desc.type == DataType::kFP8;\n#endif\n"))
 
 
+CUBIN_OLD = "                CUDA_DRIVER_CHECK(cuModuleLoadData(&hModule, kernelMeta.mCubin));\n"
+CUBIN_NEW = """                // PICAR_378_CUBIN: v0.9.1 ships two sm87 custom-mask cubins
+                // (head dim 256) built by CUDA 12.8+ (ELF ABI 8), which
+                // JetPack 6.2's 12.6 driver rejects. Skip what cannot load;
+                // a model that needs a skipped kernel fails at its lookup.
+                CUresult const picarLoad = cuModuleLoadData(&hModule, kernelMeta.mCubin);
+                if (picarLoad == CUDA_ERROR_INVALID_IMAGE)
+                {
+                    LOG_WARNING("Skipping FMHA cubin for %s: built by a newer CUDA than this driver",
+                        kernelMeta.mFuncName);
+                    continue;
+                }
+                CUDA_DRIVER_CHECK(picarLoad);
+"""
+
+
+def patch_cubin(text: str) -> str:
+    if "PICAR_378_CUBIN" in text:
+        return text
+    assert text.count(CUBIN_OLD) == 1, "cubin load anchor not found"
+    return text.replace(CUBIN_OLD, CUBIN_NEW)
+
+
 if __name__ == "__main__":
     tree = Path(sys.argv[1])
     p = tree / "cpp/common/trtUtils.cpp"
     p.write_text(patch(p.read_text()))
     q = tree / "cpp/plugins/fusedNvfp4GemmAllReducePlugin/fusedNvfp4GemmAllReducePlugin.cpp"
     q.write_text(patch_fp4(q.read_text()))
-    print("patched", p, q)
+    r = tree / "cpp/kernels/contextAttentionKernels/contextFMHARunner.cpp"
+    r.write_text(patch_cubin(r.read_text()))
+    print("patched", p, q, r)
