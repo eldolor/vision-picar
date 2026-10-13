@@ -67,17 +67,19 @@ def patch_fp4(text: str) -> str:
 
 CUBIN_OLD = "                CUDA_DRIVER_CHECK(cuModuleLoadData(&hModule, kernelMeta.mCubin));\n"
 CUBIN_NEW = """                // PICAR_378_CUBIN: v0.9.1 ships two sm87 custom-mask cubins
-                // (head dim 256) built by CUDA 12.8+ (ELF ABI 8), which
-                // JetPack 6.2's 12.6 driver rejects. Skip what cannot load;
-                // a model that needs a skipped kernel fails at its lookup.
-                CUresult const picarLoad = cuModuleLoadData(&hModule, kernelMeta.mCubin);
-                if (picarLoad == CUDA_ERROR_INVALID_IMAGE)
+                // (head dim 256) built by CUDA 12.8+ (ELF ABI version 8).
+                // JetPack 6.2's 12.6 driver rejects one and crashes inside
+                // cuModuleLoadData on the other, so the ELF header is read
+                // first and anything above ABI 7 is skipped. A model that
+                // needs a skipped kernel fails at its lookup.
+                auto const* picarElf = reinterpret_cast<unsigned char const*>(kernelMeta.mCubin);
+                if (picarElf[0] == 0x7f && picarElf[1] == 'E' && picarElf[8] > 7)
                 {
-                    LOG_WARNING("Skipping FMHA cubin for %s: built by a newer CUDA than this driver",
-                        kernelMeta.mFuncName);
+                    LOG_WARNING("Skipping FMHA cubin for %s: ELF ABI %d is newer than this driver",
+                        kernelMeta.mFuncName, static_cast<int>(picarElf[8]));
                     continue;
                 }
-                CUDA_DRIVER_CHECK(picarLoad);
+                CUDA_DRIVER_CHECK(cuModuleLoadData(&hModule, kernelMeta.mCubin));
 """
 
 
