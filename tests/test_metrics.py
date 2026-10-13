@@ -160,3 +160,30 @@ def test_the_row_carries_the_OUTCOME_beside_the_latency():
     cannot read as a win."""
     row = row_for({"outcome": "failed", "policy": "tiered", "tier": {}})
     assert row["outcome"] == "failed"
+
+
+def test_the_row_says_who_cancelled_a_mission(client):
+    """3.70 folded `stopped` and `preempted` into `cancelled`, and the row
+    kept only the outcome: an operator's Stop and a person taking over at
+    the D-pad were stored alike (3.76 C9)."""
+    tc, store = client
+    row = row_for({"outcome": "cancelled", "cancelled_by": "dpad", "policy": "explore"})
+    assert row["cancelled_by"] == "dpad"
+    r = tc.post("/metrics/runs", json={**row, "run_id": "r-cancel"})
+    assert r.status_code == 200, r.text
+    stored = tc.get("/metrics/summary").json()["runs"][0]
+    assert stored["outcome"] == "cancelled" and stored["cancelled_by"] == "dpad"
+
+
+def test_a_row_for_any_other_outcome_carries_no_cancelled_by():
+    """Sent only when set: a found or failed row stays one an older walks
+    function (`extra: forbid`) takes, so the deploy order matters only for
+    cancelled rows."""
+    assert "cancelled_by" not in row_for({"outcome": "found", "cancelled_by": None})
+
+
+def test_cancelled_by_is_stop_or_dpad(client):
+    tc, _ = client
+    r = tc.post("/metrics/runs", json=a_run(run_id="r-bad", outcome="cancelled",
+                                             cancelled_by="operator"))
+    assert r.status_code == 422
