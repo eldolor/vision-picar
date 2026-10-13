@@ -269,3 +269,42 @@ def test_a_failure_records_how_much_of_the_map_was_known_there():
     agent._goal_ended("aborted", agent.clock())
     entry = agent.retry._near(g["x_m"], g["y_m"])
     assert entry is not None and entry.known_at_failure > 0, entry
+
+
+def test_a_found_target_ends_found_even_if_a_foreign_goal_is_live():
+    """The found path cancels the mission's goal first; with someone else's
+    goal live that cancel raised Preempted, and a confirmed find (its cloud
+    call paid) ended `cancelled`."""
+    agent, nav = _explore()
+    for _ in range(30):
+        agent.step()
+        if agent._goal is not None:
+            break
+    nav.goal = {"state": "active", "x_m": agent._goal["x_m"] + 2.0, "y_m": agent._goal["y_m"]}
+    agent.memory.is_complete = lambda: True
+    action, executed, detail = agent._choose({}, {})
+    assert action == "STOP" and "found" in detail
+
+
+class _LostAnswerNav(_HeldNav):
+    """The bridge takes the goal, then our read of its answer times out."""
+
+    lose = False
+
+    def set_goal(self, x_m, y_m):
+        reply = super().set_goal(x_m, y_m)
+        if self.lose:
+            raise httpx.ReadTimeout("answer lost")
+        return reply
+
+
+def test_a_goal_whose_answer_was_lost_is_still_the_missions_own():
+    """A send whose answer was lost left that goal driving and unknown to
+    the mission; the next pan took it for a person's and ended the mission
+    'cancelled by the D-pad'."""
+    agent, nav = _explore(_LostAnswerNav)
+    nav.lose = True
+    agent._send(1.25, 1.25, "frontier", agent.clock())
+    agent._pending = ["LOOK_LEFT"]
+    agent._do_pending()                              # must not raise
+    assert nav.goal["state"] == "canceled"

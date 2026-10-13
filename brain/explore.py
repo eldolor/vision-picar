@@ -35,6 +35,7 @@ The brain reaches nav2 through a `Navigator` it declares here, not through
 `control/remote_navigator.py` implements it over `/world/goal`.
 """
 
+import collections
 import json
 import logging
 import math
@@ -182,6 +183,7 @@ class ExploreAgent(MissionAgent):
         self._last_map: Optional[dict] = None
         self._goal: Optional[dict] = None   # {"x_m","y_m","kind","sent_at"}
         self._last_sent: Optional[tuple] = None   # the last goal it sent, live or not (3.76)
+        self._attempts = collections.deque(maxlen=4)   # goals it tried to send, answered or not
         self._blips = 0
         self._pending: list = []
         self._approach: Optional[tuple] = None
@@ -258,7 +260,10 @@ class ExploreAgent(MissionAgent):
     def _choose(self, frame: dict, scene: dict):
         now = self.clock()
         if self.memory.is_complete():
-            self._cancel()
+            try:
+                self._cancel()
+            except Preempted:
+                pass        # 3.76: found is found; a goal that is not ours is not ours to end
             return "STOP", True, "target found"
         self._note_seen()
         # 3.70 E3: the room it stands in counts as entered BEFORE it chooses,
@@ -273,7 +278,9 @@ class ExploreAgent(MissionAgent):
             if state in TERMINAL_STATES or state is None:
                 self._goal_ended(state or "lost", now)
                 ended = self.last_event
-            elif now - self._goal["sent_at"] > self.goal_timeout_s:
+            elif state != "unreadable" and now - self._goal["sent_at"] > self.goal_timeout_s:
+                # (3.76: not while the bridge is unreadable -- an outage is
+                # not the place's failure.)
                 # Record the failure first (it reads the goal), then cancel.
                 self._goal_ended("timeout", now)
                 try:
@@ -352,15 +359,25 @@ class ExploreAgent(MissionAgent):
         logger.warning("goal call failed (%d in a row), waiting: %s", self._blips, exc)
 
     def _is_own(self, g: dict, own: Optional[tuple] = None) -> bool:
-        """Is this live goal the mission's own? Read back through the SLAM
-        anchor it comes back a little moved (`OWN_GOAL_TOLERANCE_M`)."""
-        if own is None:
-            own = (self._goal["x_m"], self._goal["y_m"]) if self._goal is not None else self._last_sent
-        if own is None or g.get("x_m") is None or g.get("y_m") is None:
+        """Is this live goal the mission's own -- the one it holds, or any it
+        recently tried to send? Read back through the SLAM anchor a goal
+        comes back a little moved (`OWN_GOAL_TOLERANCE_M`)."""
+        if g.get("x_m") is None or g.get("y_m") is None:
             return False
-        return math.hypot(g["x_m"] - own[0], g["y_m"] - own[1]) < OWN_GOAL_TOLERANCE_M
+        mine = list(self._attempts)
+        if own is not None:
+            mine.append(own)
+        if self._goal is not None:
+            mine.append((self._goal["x_m"], self._goal["y_m"]))
+        if self._last_sent is not None:
+            mine.append(self._last_sent)
+        return any(math.hypot(g["x_m"] - x, g["y_m"] - y) < OWN_GOAL_TOLERANCE_M for x, y in mine)
 
     def _send(self, x_m: float, y_m: float, kind: str, now: float, **info):
+        # 3.76: remembered BEFORE the call. A send whose answer is lost (a
+        # read timeout after the bridge took the goal) leaves that goal
+        # driving; it is still the mission's own, never "someone else's".
+        self._attempts.append((x_m, y_m))
         try:
             reply = self.navigator.set_goal(x_m, y_m) or {}
         except Preempted:
@@ -380,6 +397,7 @@ class ExploreAgent(MissionAgent):
                         reason=reply.get("reason"))
             return "WAIT", False, self.last_event
         pose = self._pose()
+        self._blips = 0
         self._last_sent = (x_m, y_m)
         self._goal = {"x_m": x_m, "y_m": y_m, "kind": kind, "sent_at": now,
                       "from": (pose["x_m"], pose["y_m"]) if pose.get("usable") else None}

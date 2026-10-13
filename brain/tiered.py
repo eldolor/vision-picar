@@ -479,9 +479,10 @@ class TierStats:
     perception_ms: list = field(default_factory=list)
     # How many samples each bucket has been offered, and the reservoir's
     # draw (seeded, so a replay samples the same way) -- 3.76.
-    _seen: dict = field(default_factory=dict, repr=False)
-    _max: dict = field(default_factory=dict, repr=False)
-    _rng: random.Random = field(default_factory=lambda: random.Random(0), repr=False)
+    _seen: dict = field(default_factory=dict, repr=False, compare=False)
+    _max: dict = field(default_factory=dict, repr=False, compare=False)
+    _rng: random.Random = field(default_factory=lambda: random.Random(0),
+                                repr=False, compare=False)
 
     # Enough to characterise a walk (a mission is ~120 steps and ~20 calls)
     # and small enough that the status payload stays a status payload.
@@ -777,7 +778,12 @@ class TieredVision:
         self._mark_odometry_call()
 
         if self.async_cloud:
-            self._dispatch(frame, trigger, frame_epoch)
+            if not self._dispatch(frame, trigger, frame_epoch):
+                # 3.76: close() won the race: nothing went out, so nothing
+                # is counted as a call.
+                self.stats.cloud_calls -= 1
+                self.stats.triggers[trigger] -= 1
+                return self._local_scene(perception, note="mission ended")
             return self._local_scene(perception, note="dispatched",
                                      dispatched=trigger)
 
@@ -872,7 +878,7 @@ class TieredVision:
 
     # -- Phase A: dispatch, collect, and hold the goal --------------------
 
-    def _dispatch(self, frame: dict, trigger: str, epoch: Optional[int] = None) -> None:
+    def _dispatch(self, frame: dict, trigger: str, epoch: Optional[int] = None) -> bool:
         """Start the cloud call on a worker thread and return immediately.
 
         3.76: `epoch` is the frame's, taken when the frame began, so a
@@ -883,7 +889,7 @@ class TieredVision:
             epoch = self._epoch
         with self._executor_lock:
             if self._closed:
-                return
+                return False
             if self._executor is None:
                 # One worker, created lazily so a synchronous mission (the
                 # default) never starts a thread at all.
@@ -896,6 +902,7 @@ class TieredVision:
             self._inflight_perception = self._perception_this_frame
             self._inflight = self._executor.submit(
                 self._call_cloud, frame, epoch)
+        return True
 
     def _call_cloud(self, frame: dict, epoch: int) -> Optional[dict]:
         """Runs on the worker. Returns None if the mission moved on.
