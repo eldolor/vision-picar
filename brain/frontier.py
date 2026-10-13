@@ -302,15 +302,18 @@ class RetryBook:
                 return e
         return None
 
-    def fail(self, x_m: float, y_m: float, now: float, known: int = 0) -> int:
-        """Record a failure; returns how many this place has now."""
+    def fail(self, x_m: float, y_m: float, now: float, known=0) -> int:
+        """Record a failure; returns how many this place has now. `known` is
+        the known-cell count around the place, or a callable giving it at a
+        point -- measured at the ENTRY's own position, the one `available()`
+        later compares against (3.76)."""
         e = self._near(x_m, y_m)
         if e is None:
             e = _Entry(x_m, y_m, 0, now)
             self.entries.append(e)
         e.failures += 1
         e.last_t = now
-        e.known_at_failure = known
+        e.known_at_failure = known(e.x_m, e.y_m) if callable(known) else known
         return e.failures
 
     def dropped(self, x_m: float, y_m: float) -> bool:

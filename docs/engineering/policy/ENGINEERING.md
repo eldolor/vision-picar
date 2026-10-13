@@ -24,8 +24,8 @@ file is true only until the code changes and is updated in the same commit.
 | `brain/arrival.py` | `ArrivalCheck.observe(scene, robot)`, `arrived_scene()`, the readout states (`REFUSED` is set by the agent, never here: this module makes no calls). |
 | `brain/goal_pose.py` | `OdomTracker` (integrates `get_odometry()` path length along heading), `GoalPose` (`sight()`, `bearing_from()`, `distance_from()`, `clear()`; `is_point`). |
 | `brain/memory.py` | `MissionMemory` (visited/searched rooms, `Sighting` with a map-frame pose, `ActionRecord`, `is_complete()`, `summary()`, `as_context()`). |
-| `brain/explore.py` | `ExploreAgent(MissionAgent)`, the `explore` policy over nav2 (3.31): frontier, view and approach goals through a `Navigator`, the retry rule, the wedged/boxed escape (`_queue_escape()`, `_do_pending()`: REVERSE, CREEP, OPEN). Since 3.45 every decision is a record in `agent.events` and an INFO line `explore {json}`: `goal_sent` (kind, goal, and for a frontier its `rank`, `candidates`, `path_m`, `size_m`, `score`, `skipped`), `goal_refused`, `goal_ended` (`state`, `seconds`, `moved_m`), `escape` (`why`: wedged or boxed), `creep` (3.74: `way`, `executed`, `waited`, the safety layer's `forward` and `floor` readings just before, each `[cm, source]` off one depth grid, and `floor_blind`, the band zones reading unusable), `verb` (action, `executed`, `waited`, the refusal), `searched`; each with the SLAM `pose`. A verb refused for the mission's own goal (`OWN_GOAL_REFUSAL`) or for `ros` still holding the robot just after it (`OWN_GOAL_HOLDER`, 3.76 C5) waits; any other refusal ends the mission. A goal refused because a person holds the robot raises `Preempted` from the runner's gated navigator (3.76 C4). |
-| `brain/frontier.py` | `find_frontiers()`, `reachable()`, `RetryBook`, `camera_seen()`, `find_view_gaps()`: pure functions over `get_map()`'s grid (3.31). |
+| `brain/explore.py` | `ExploreAgent(MissionAgent)`, the `explore` policy over nav2 (3.31): frontier, view and approach goals through a `Navigator`, the retry rule, the wedged/boxed escape (`_queue_escape()`, `_do_pending()`: REVERSE, CREEP, OPEN). Since 3.45 every decision is a record in `agent.events` and an INFO line `explore {json}`: `goal_sent` (kind, goal, and for a frontier its `rank`, `candidates`, `path_m`, `size_m`, `score`, `skipped`), `goal_refused`, `goal_ended` (`state`, `seconds`, `moved_m`), `escape` (`why`: wedged or boxed), `creep` (3.74: `way`, `executed`, `waited`, the safety layer's `forward` and `floor` readings just before, each `[cm, source]` off one depth grid, and `floor_blind`, the band zones reading unusable), `verb` (action, `executed`, `waited`, the refusal), `searched`; each with the SLAM `pose`. A verb refused for the mission's own goal (`OWN_GOAL_REFUSAL`) or for `ros` still holding the robot just after it (`OWN_GOAL_HOLDER`, 3.76 C5) waits; any other refusal ends the mission. A goal refused because a person holds the robot raises `Preempted` from the runner's gated navigator (3.76 C4). Since 3.76 E: a goal nav2 holds that is not the mission's own (`OWN_GOAL_TOLERANCE_M`, 0.05 m, shared with the runner) -- live or just finished -- raises `Preempted`, and `_verb`/`_cancel` cancel only the mission's own (a leftover before its first goal is still cancelled); a transport error or 5xx on a goal call is a wait, up to `BRIDGE_BLIPS_MAX` (40) in a row, and any other error still ends the mission; an approach already within standoff cancels a live goal. |
+| `brain/frontier.py` | `find_frontiers()`, `reachable()`, `RetryBook`, `camera_seen()`, `find_view_gaps()`: pure functions over `get_map()`'s grid (3.31). `RetryBook.fail(known=)` takes a count or a callable measured at the entry's own position; explore passes its map since 3.76, which turns on the early retry (`early_growth`, 25% more known cells around a failed place) that had never run. |
 | `brain/rooms.py` | `ROOM_FEATURES`, `identify_room()`. Tested, but nothing in the mission path calls it: sim frames carry a room label and real frames take the cloud's `room_guess`. |
 
 **Which agent runs.** `control/mission_runner.py` builds `VisionAgent` for
@@ -76,7 +76,14 @@ given (3.56: the brain's second client, built with the confirmation's
 shorter HTTP deadline), else the triggers' `cloud_vision_fn`, resolved at
 call time; `close()` drops `confirm_vision_fn`, so 3.53's late check (which
 only runs after the runner has closed the policy) asks on the triggers'
-client and B3.2's full deadline; `set_searched_rooms()` reaches both clients, and
+client and B3.2's full deadline. Since 3.76 `close()` also marks the policy
+closed, under the lock `_dispatch` takes: no trigger call is sent once it has
+run, even from a frame that was in perception when Stop landed (the frame's
+epoch, taken at its start, travels with the call), and no worker pool is
+created again; a landed async answer annotated for its side effects is not
+counted by the spin guard; a `candidate_sighting` held back by a call in
+flight re-arms. `confirm_arrival()` still works after `close()`, for 3.53;
+`set_searched_rooms()` reaches both clients, and
 `wait_inflight()` drains an async call still out so the runner can do that
 on B3.2's timeout before the confirmation's own clock starts -- counts it in `cloud_calls`
 and in `triggers["arrival_confirmation"]` (`TRIGGER_ARRIVAL`), and confirms
@@ -200,7 +207,7 @@ decision, and its value and evidence are kept in one place,
 | `STEER_BAND_DEG` | 3.0 | `brain/tiered.py` | R1b: all 28 blocked search runs had driven 5-6 degrees off the door line |
 | `MIN_TURN_DEG`, `MAX_TURN_DEG` | 5, 90 | `brain/tiered.py` | floor stops a zero turn; ceiling re-measures behind targets |
 | `SCAN_TURN_DEG` | 45 | `brain/tiered.py` | R1b: under the 60-degree sim and 66-degree camera field of view; 86% -> 100% of search starts found |
-| `TierStats.MAX_SAMPLES` | 500 | `brain/tiered.py` | bounds the status payload |
+| `TierStats.MAX_SAMPLES` | 500 | `brain/tiered.py` | bounds the status payload. Since 3.76 a reservoir: a uniform sample of the whole mission (seeded), not its first 500; `n` and `max` are the true count and maximum |
 | `ARRIVAL_RADIUS_M` | 0.40 | `brain/arrival.py` | the scan reads 0.465 m one move out and 0.165 m at the collar |
 | `ARRIVAL_CENTRE_DEG` | 3.0 | `brain/arrival.py` | duplicates `STEER_BAND_DEG`; a test pins them equal |
 | `ARRIVAL_FRAMES` | 2 | `brain/arrival.py` | one bad frame never ends a mission |

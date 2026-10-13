@@ -38,6 +38,8 @@ The brain reaches nav2 through a `Navigator` it declares here, not through
 import json
 import logging
 import math
+
+import httpx
 import time
 from typing import Callable, Optional, Protocol
 
@@ -103,6 +105,12 @@ OWN_GOAL_REFUSAL = "nav2 goal is active"
 # robot until its authority lapses (watchdog_timeout_s after nav2's last
 # wheel post). A move refused for that waits too.
 OWN_GOAL_HOLDER = "ros is driving"
+# A goal read back through the SLAM anchor (world/ros_world.py) comes back a
+# little moved; within this it is still the mission's own (3.76).
+OWN_GOAL_TOLERANCE_M = 0.05
+# Transient goal-call failures in a row before the search gives up (3.76):
+# about ten seconds of ticks.
+BRIDGE_BLIPS_MAX = 40
 
 
 def leave_clearance_m(min_distance_cm: float) -> float:
@@ -173,6 +181,8 @@ class ExploreAgent(MissionAgent):
         self.goals_reached: list = []
         self._last_map: Optional[dict] = None
         self._goal: Optional[dict] = None   # {"x_m","y_m","kind","sent_at"}
+        self._last_sent: Optional[tuple] = None   # the last goal it sent, live or not (3.76)
+        self._blips = 0
         self._pending: list = []
         self._approach: Optional[tuple] = None
         # Where the target was last seen, kept after it leaves view: the den
@@ -312,11 +322,55 @@ class ExploreAgent(MissionAgent):
     def _goal_state(self) -> Optional[str]:
         if self._goal is None:
             return None
-        g = (self.navigator.get_goal() or {}).get("goal") or {}
+        try:
+            g = (self.navigator.get_goal() or {}).get("goal") or {}
+        except Exception as exc:  # noqa: BLE001 -- judged by _bridge_blip
+            self._bridge_blip(exc)
+            return "unreadable"
+        self._blips = 0
+        if g.get("x_m") is not None and not self._is_own(g):
+            # 3.76: a goal someone else set (a tap on the map) replaced the
+            # mission's -- live, or already finished between polls. It used
+            # to be taken for the mission's own: waited on, then recorded as
+            # the mission's place reached or failed.
+            raise Preempted(f"a nav2 goal set by someone else replaced the mission's "
+                            f"({g.get('x_m')}, {g.get('y_m')})")
         return g.get("state")
 
+    def _bridge_blip(self, exc: Exception) -> None:
+        """3.76: a goal call that failed TRANSIENTLY -- the transport, a 5xx
+        (the robot server's 503 `ros_unavailable`) -- is a wait, as a map
+        outage is; one failed read used to end the whole search `failed`.
+        Anything else (a 401, a bug), or more than BRIDGE_BLIPS_MAX in a
+        row, still raises: a goal route that never answers is not a search."""
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        transient = (isinstance(exc, (httpx.TransportError, ConnectionError, TimeoutError))
+                     or (status is not None and status >= 500))
+        self._blips += 1
+        if not transient or self._blips > BRIDGE_BLIPS_MAX:
+            raise exc
+        logger.warning("goal call failed (%d in a row), waiting: %s", self._blips, exc)
+
+    def _is_own(self, g: dict, own: Optional[tuple] = None) -> bool:
+        """Is this live goal the mission's own? Read back through the SLAM
+        anchor it comes back a little moved (`OWN_GOAL_TOLERANCE_M`)."""
+        if own is None:
+            own = (self._goal["x_m"], self._goal["y_m"]) if self._goal is not None else self._last_sent
+        if own is None or g.get("x_m") is None or g.get("y_m") is None:
+            return False
+        return math.hypot(g["x_m"] - own[0], g["y_m"] - own[1]) < OWN_GOAL_TOLERANCE_M
+
     def _send(self, x_m: float, y_m: float, kind: str, now: float, **info):
-        reply = self.navigator.set_goal(x_m, y_m) or {}
+        try:
+            reply = self.navigator.set_goal(x_m, y_m) or {}
+        except Preempted:
+            raise
+        except Exception as exc:  # noqa: BLE001 -- judged by _bridge_blip
+            self._bridge_blip(exc)
+            self.last_event = f"goal not sent: {exc}"
+            self._event("goal_refused", kind=kind, goal=[round(x_m, 2), round(y_m, 2)],
+                        reason=f"error: {exc}"[:120])
+            return "WAIT", False, self.last_event
         if not reply.get("accepted"):
             # Refused before nav2 saw it -- most often authority still held by
             # this mission's own last verb (it lapses on silence). Not a
@@ -326,6 +380,7 @@ class ExploreAgent(MissionAgent):
                         reason=reply.get("reason"))
             return "WAIT", False, self.last_event
         pose = self._pose()
+        self._last_sent = (x_m, y_m)
         self._goal = {"x_m": x_m, "y_m": y_m, "kind": kind, "sent_at": now,
                       "from": (pose["x_m"], pose["y_m"]) if pose.get("usable") else None}
         self.goals_sent += 1
@@ -340,7 +395,9 @@ class ExploreAgent(MissionAgent):
         d = math.hypot(tx - pose["x_m"], ty - pose["y_m"])
         if d <= APPROACH_STANDOFF_M + 0.05:
             # Already as close as the approach would bring it; the found
-            # rule decides from here.
+            # rule decides from here. 3.76: and a frontier or view goal still
+            # live would drive it away from the target before arrival fires.
+            self._cancel()
             self._approach = (tx, ty)
             return "WAIT", True, "at the target; looking"
         gx, gy = self._approach_point(pose, tx, ty, d)
@@ -402,6 +459,15 @@ class ExploreAgent(MissionAgent):
                 return best[1], best[2]
         k = (d - APPROACH_STANDOFF_M) / d
         return pose["x_m"] + (tx - pose["x_m"]) * k, pose["y_m"] + (ty - pose["y_m"]) * k
+
+    def _known_at(self, x_m: float, y_m: float) -> int:
+        """How much of the map is known around a place now -- recorded with
+        a failure, so `RetryBook.available()` can try it again early once the
+        map has grown there (3.76: never passed, so that rule never ran)."""
+        m = self._last_map                # this tick's map (`_note_seen`): no second fetch
+        if not m or not m.get("usable"):
+            return 0
+        return known_near(m, x_m, y_m, self.retry.radius_m)
 
     def _next_frontier(self, now: float):
         pose = self._pose()
@@ -650,14 +716,14 @@ class ExploreAgent(MissionAgent):
             if again or g["kind"] == "approach":
                 # (An approach wedging at all counts: a sighting that wedges
                 # the robot every time must still run out of tries.)
-                self.retry.fail(target[0], target[1], now)
+                self.retry.fail(target[0], target[1], now, known=self._known_at)
                 self._room_failed(g)
             self._queue_escape("wedged", goal=[round(g["x_m"], 2), round(g["y_m"], 2)],
                                again=again)
             self.last_event = f"{g['kind']} goal {state} without moving; backing out"
             logger.info(self.last_event)
             return
-        n = self.retry.fail(target[0], target[1], now)
+        n = self.retry.fail(target[0], target[1], now, known=self._known_at)
         self._room_failed(g)
         if g["kind"] == "approach":
             self._approach = None
@@ -672,6 +738,16 @@ class ExploreAgent(MissionAgent):
 
     def _cancel(self) -> None:
         if self._goal is not None:
+            # 3.76: only the mission's own -- DELETE is not arbitrated, and
+            # the live goal may be a person's tap that replaced it.
+            try:
+                live = (self.navigator.get_goal() or {}).get("goal") or {}
+            except Exception:  # noqa: BLE001 -- cancel blind, as before
+                live = None
+            if live and live.get("x_m") is not None and not self._is_own(live):
+                self._goal = None
+                raise Preempted(f"a nav2 goal set by someone else replaced the mission's "
+                                f"({live.get('x_m')}, {live.get('y_m')})")
             try:
                 self.navigator.cancel_goal()
             except Exception:  # noqa: BLE001 -- best effort; the goal times out anyway
@@ -802,7 +878,7 @@ class ExploreAgent(MissionAgent):
                     # turning, refused, until the tick cap).
                     if "FORWARD" in self._pending:
                         self._pending.remove("FORWARD")
-                    self.retry.fail(tx, ty, self.clock())
+                    self.retry.fail(tx, ty, self.clock(), known=self._known_at)
                 else:
                     # Back off, turn to it with the room that gives, and come
                     # back in facing it (the guarded verb stops at the bar):
@@ -903,10 +979,24 @@ class ExploreAgent(MissionAgent):
         ended one house run `preempted`. A refusal for the mission's OWN goal
         waits and tries again; one for anything else (a person at the D-pad)
         still ends the mission."""
+        # 3.76: only the mission's OWN goal (the last one it sent). A goal
+        # someone else set is theirs: cancelling it (DELETE is not
+        # arbitrated) deleted a person's tap; it ends the mission instead.
         try:
-            self.navigator.cancel_goal()
+            live = (self.navigator.get_goal() or {}).get("goal") or {}
         except Exception:  # noqa: BLE001 -- best effort; the refusal path covers it
-            pass
+            live = {}
+        if live.get("state") in ("pending", "active"):
+            # Before this mission sent any goal, a live one is a leftover (a
+            # previous mission's that its end could not cancel): cancelled,
+            # as before.
+            if self._last_sent is not None and not self._is_own(live, self._last_sent):
+                raise Preempted(f"a nav2 goal set by someone else is live "
+                                f"({live.get('x_m')}, {live.get('y_m')})")
+            try:
+                self.navigator.cancel_goal()
+            except Exception:  # noqa: BLE001 -- best effort; the refusal path covers it
+                pass
         try:
             out = action, True, self.safety.check_and_execute(action, **kwargs)
         except SafetyViolation as exc:

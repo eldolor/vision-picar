@@ -50,7 +50,7 @@ import time
 from typing import Callable, Optional, Tuple
 
 from brain.agent import ObjectSearchAgent
-from brain.explore import ExploreAgent
+from brain.explore import OWN_GOAL_TOLERANCE_M, ExploreAgent  # one tolerance for both (3.76)
 from brain.goal_policy import goal_policy_for
 from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
 from brain.inventory import MAX_RANGE_M as INVENTORY_RANGE_M
@@ -240,9 +240,6 @@ class MissionHalted(RuntimeError):
     mission has already ended. Expected, not exceptional."""
 
 
-# A goal read back through the SLAM anchor (world/ros_world.py) comes back a
-# little moved; within this it is still the mission's own (3.76 C1).
-OWN_GOAL_TOLERANCE_M = 0.05
 
 
 class _GatedNavigator:

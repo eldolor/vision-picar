@@ -75,6 +75,7 @@ from __future__ import annotations
 import logging
 import threading
 import math
+import random
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -476,21 +477,46 @@ class TierStats:
     # mission cannot grow this without limit.
     cloud_ms: list = field(default_factory=list)
     perception_ms: list = field(default_factory=list)
+    # How many samples each bucket has been offered, and the reservoir's
+    # draw (seeded, so a replay samples the same way) -- 3.76.
+    _seen: dict = field(default_factory=dict, repr=False)
+    _max: dict = field(default_factory=dict, repr=False)
+    _rng: random.Random = field(default_factory=lambda: random.Random(0), repr=False)
 
     # Enough to characterise a walk (a mission is ~120 steps and ~20 calls)
     # and small enough that the status payload stays a status payload.
     MAX_SAMPLES = 500
 
     def record(self, bucket: str, ms: float) -> None:
+        """3.76: a uniform sample of the whole mission (reservoir sampling),
+        not its first MAX_SAMPLES -- at 4 frames/s that was the first two
+        minutes of a 20-minute mission, so a later slowdown never showed."""
         samples = getattr(self, bucket)
+        seen = self._seen[bucket] = self._seen.get(bucket, 0) + 1
+        value = round(float(ms), 1)
+        self._max[bucket] = max(self._max.get(bucket, value), value)
         if len(samples) < self.MAX_SAMPLES:
-            samples.append(round(float(ms), 1))
+            samples.append(value)
+        else:
+            j = self._rng.randrange(seen)
+            if j < self.MAX_SAMPLES:
+                samples[j] = value
+
+    def _percentiles(self, bucket: str) -> Optional[dict]:
+        """The reservoir's percentiles with the TRUE count and maximum: `n`
+        is how many samples back the figures, and one slow call must never
+        be evicted from `max` (3.76)."""
+        p = percentiles(getattr(self, bucket))
+        if p is not None:
+            p["n"] = self._seen.get(bucket, p["n"])
+            p["max"] = round(self._max.get(bucket, p["max"]))
+        return p
 
     def as_dict(self) -> dict:
         saving = (self.frames / self.cloud_calls) if self.cloud_calls else None
         return {
-            "cloud_ms": percentiles(self.cloud_ms),
-            "perception_ms": percentiles(self.perception_ms),
+            "cloud_ms": self._percentiles("cloud_ms"),
+            "perception_ms": self._percentiles("perception_ms"),
             "frames": self.frames,
             "cloud_calls": self.cloud_calls,
             "claims": self.claims,
@@ -642,6 +668,8 @@ class TieredVision:
         # dead session's decision over a live camera view in Robot view,
         # and that filed one walk's frame into the next walk's directory.
         self._epoch = 0
+        self._closed = False
+        self._executor_lock = threading.Lock()
         self._last_cloud_scene: Optional[dict] = None
         # A verdict from an async call, held for exactly ONE frame -- the
         # one it landed on. Without this the corroboration row reads "no
@@ -687,6 +715,11 @@ class TieredVision:
     # -- the vision_fn contract ------------------------------------------
 
     def __call__(self, frame: dict) -> dict:
+        # 3.76: the mission this frame belongs to. A Stop closes the policy
+        # from another thread, often while this frame is in perception; the
+        # call this frame would fire must then not go out (it was billed,
+        # on a worker pool created again and never shut down).
+        frame_epoch = self._epoch
         self._read_odometry(frame)
         # An answer that landed since the last frame becomes the current
         # goal now, BEFORE the trigger policy runs -- so a call that has
@@ -714,6 +747,12 @@ class TieredVision:
             self._since_call += 1
             return self._local_scene(perception)
 
+        if (trigger == TRIGGER_CANDIDATE and self.async_cloud
+                and self._inflight is not None):
+            # 3.76: the edge into `detected` was spent in _trigger_for; held
+            # back by the call in flight, it must fire once that lands, not
+            # wait for the staleness floor.
+            self._last_confirmed = None
         if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
             logger.warning("call cap %d reached -- not firing %s",
                            self.max_calls, trigger)
@@ -728,6 +767,9 @@ class TieredVision:
                 perception,
                 note=f"{self._inflight_trigger} call still in flight")
 
+        if self._closed or self._epoch != frame_epoch:
+            return self._local_scene(perception, note="mission ended")
+
         self.stats.cloud_calls += 1
         self.stats.triggers[trigger] = self.stats.triggers.get(trigger, 0) + 1
         self._absent_streak = 0
@@ -735,7 +777,7 @@ class TieredVision:
         self._mark_odometry_call()
 
         if self.async_cloud:
-            self._dispatch(frame, trigger)
+            self._dispatch(frame, trigger, frame_epoch)
             return self._local_scene(perception, note="dispatched",
                                      dispatched=trigger)
 
@@ -830,21 +872,30 @@ class TieredVision:
 
     # -- Phase A: dispatch, collect, and hold the goal --------------------
 
-    def _dispatch(self, frame: dict, trigger: str) -> None:
-        """Start the cloud call on a worker thread and return immediately."""
-        if self._executor is None:
-            # One worker, created lazily so a synchronous mission (the
-            # default) never starts a thread at all.
-            self._executor = ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix="tiered-cloud")
-        epoch = self._epoch
-        self._inflight_trigger = trigger
-        # Corroboration (1.11a) compares the cloud's claim against the
-        # LOCAL evidence from the same frame. Async breaks that pairing
-        # unless the perception is carried along with the call, so it is.
-        self._inflight_perception = self._perception_this_frame
-        self._inflight = self._executor.submit(
-            self._call_cloud, frame, epoch)
+    def _dispatch(self, frame: dict, trigger: str, epoch: Optional[int] = None) -> None:
+        """Start the cloud call on a worker thread and return immediately.
+
+        3.76: `epoch` is the frame's, taken when the frame began, so a
+        close() landing at any point after that makes the worker skip the
+        call; and the pool is created under the lock close() takes, so a
+        close() is never followed by a new pool nothing shuts down."""
+        if epoch is None:
+            epoch = self._epoch
+        with self._executor_lock:
+            if self._closed:
+                return
+            if self._executor is None:
+                # One worker, created lazily so a synchronous mission (the
+                # default) never starts a thread at all.
+                self._executor = ThreadPoolExecutor(
+                    max_workers=1, thread_name_prefix="tiered-cloud")
+            self._inflight_trigger = trigger
+            # Corroboration (1.11a) compares the cloud's claim against the
+            # LOCAL evidence from the same frame. Async breaks that pairing
+            # unless the perception is carried along with the call, so it is.
+            self._inflight_perception = self._perception_this_frame
+            self._inflight = self._executor.submit(
+                self._call_cloud, frame, epoch)
 
     def _call_cloud(self, frame: dict, epoch: int) -> Optional[dict]:
         """Runs on the worker. Returns None if the mission moved on.
@@ -909,7 +960,7 @@ class TieredVision:
         # frame belongs to this frame's pixels, and what carries forward is
         # the goal, not the whole answer.
         if perception is not None:
-            annotated = self._annotate(scene, perception, trigger or "")
+            annotated = self._annotate(scene, perception, trigger or "", executed=False)
             verdict = (annotated.get("_tier") or {}).get("corroboration")
             if verdict:
                 # Marked `landed_late`, and carrying the trigger it belongs
@@ -937,11 +988,13 @@ class TieredVision:
         It exists for the arrival TICK, with a robot waiting; once the mission
         has ended (MissionRunner closes the policy in `_finish`), 3.53's late
         check asks through the triggers' client and B3.2's full deadline."""
-        self.reset_epoch()
-        self.confirm_vision_fn = None
-        if self._executor is not None:
-            self._executor.shutdown(wait=False, cancel_futures=True)
-            self._executor = None
+        with self._executor_lock:
+            self._closed = True
+            self.reset_epoch()
+            self.confirm_vision_fn = None
+            if self._executor is not None:
+                self._executor.shutdown(wait=False, cancel_futures=True)
+                self._executor = None
 
     def _held_direction(self) -> Optional[str]:
         """The last direction the cloud gave, if there is one.
@@ -1324,7 +1377,8 @@ class TieredVision:
         else:
             self._consecutive_turn_deg = 0.0
 
-    def _annotate(self, scene: dict, perception: Perception, trigger: str) -> dict:
+    def _annotate(self, scene: dict, perception: Perception, trigger: str,
+                  executed: bool = True) -> dict:
         """A real cloud scene, with the local evidence attached beside it.
 
         The cloud's answer is **not** overridden by the local one, in
@@ -1361,7 +1415,11 @@ class TieredVision:
             # The cloud said turn and nothing local can size it: a search
             # step, for the reason SCAN_TURN_DEG gives.
             out["turn_deg"] = SCAN_TURN_DEG
-        self._note_action(direction, out.get("turn_deg"))
+        if executed:
+            # 3.76: not for a landed async answer annotated for its side
+            # effects -- that turn is never executed, and counting it fired
+            # the spin guard early (or a FORWARD reset it mid-spin).
+            self._note_action(direction, out.get("turn_deg"))
         out["_perception"] = perception.as_dict()
         out["_tier"] = {"cloud_called": True, "trigger": trigger,
                         # Synchronous: asked and answered on one frame.

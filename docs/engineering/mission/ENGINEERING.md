@@ -84,7 +84,9 @@ threads; where it and this file disagree, check the code.
    by a tick that succeeds. On the budget's last failure the mission ends
    `arrived_unconfirmed` if `_failed_arrival` is set AND that last failure
    has `CloudUnavailable` (`brain/navigate.py`: a transport error, a 5xx, a
-   408 or a 429, raised where the HTTP call is made) in its chain of
+   408 or a 429, raised where the HTTP call is made; not a URL with no or a
+   wrong scheme, `httpx.UnsupportedProtocol`, which is our configuration and
+   a plain `RuntimeError` since 3.76) in its chain of
    explicit causes (`_caused_by()`, `__cause__` only). A readout is kept
    only when its confirmation itself failed that way; a confirmation that
    times out is attributed to the cloud, a trigger call that times out is

@@ -152,6 +152,11 @@ def navigate_scene(
     try:
         try:
             response = http.post(url, headers=headers, json=body, timeout=timeout_s)
+        except httpx.UnsupportedProtocol as e:
+            # 3.76: a URL with no or a wrong scheme is our configuration, not
+            # an unreachable cloud -- read as one, an arrival ended
+            # `arrived_unconfirmed` and 3.53 probed for ten minutes.
+            raise RuntimeError(f"the vision URL is not usable ({url!r}): {e}") from e
         except httpx.TransportError as e:
             raise CloudUnavailable(f"{type(e).__name__}: {e}") from e
         if response.status_code >= 500 or response.status_code in (408, 429):
@@ -221,7 +226,8 @@ def to_scene(result: dict, target_object: str) -> dict:
             # Ordinal proximity, present only under the
             # "default-with-distance" prompt variant. Anything the service
             # did not vouch for arrives as "unknown", and "unknown" must
-            # never be acted on -- see brain/agent.py's proximity veto.
+            # never be acted on (the proximity veto that read it was deleted
+            # in 3.64; the lidar is the obstacle sensor).
             "distance_estimate": (
                 result.get("distance_estimate")
                 if result.get("distance_estimate") in DISTANCE_ESTIMATES
