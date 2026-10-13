@@ -27,5 +27,5 @@ mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DTRT_PACKAGE_DIR=/usr \
   -DCMAKE_TOOLCHAIN_FILE=cmake/aarch64_linux_toolchain.cmake \
   -DEMBEDDED_TARGET=jetson-orin -DCUDA_CTK_VERSION=12.6
-make -j"${JOBS:-5}" llm_build visual_build edgellm_identity
-ls -la examples/llm/llm_build examples/multimodal/visual_build examples/llm/edgellm_identity
+make -j"${JOBS:-5}" NvInfer_edgellm_plugin llm_build visual_build edgellm_identity
+ls -la libNvInfer_edgellm_plugin.so examples/llm/llm_build examples/multimodal/visual_build examples/llm/edgellm_identity

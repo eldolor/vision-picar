@@ -11,6 +11,7 @@ on the same pinned frames, so its records score with
         --engine-dir ~/bench-378/ws91/X/engines/llm \\
         --visual-engine-dir ~/bench-378/ws91/X/engines/visual \\
         --tokenizer ~/bench-378/ws91/X/onnx/llm/tokenizer.json \\
+        --plugin ~/bench-378/ell91/build/libNvInfer_edgellm_plugin.so \\
         --recordings recordings --walk <w> ... --out T.json
 
 **Amendment 3: measured as arm L is.** The driver (`edgellm_identity.cpp`
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import subprocess
 import tempfile
@@ -77,9 +79,10 @@ def content_entry(decode, chosen: int, alts: Sequence[tuple]) -> dict:
 
 
 class Driver:  # pragma: no cover -- needs the board
-    def __init__(self, cmd: list, log):
+    def __init__(self, cmd: list, log, plugin: str):
+        env = dict(os.environ, EDGELLM_PLUGIN_PATH=plugin)
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     stderr=log, text=True, bufsize=1)
+                                     stderr=log, text=True, bufsize=1, env=env)
 
     def wait_ready(self):
         for line in self.proc.stdout:
@@ -131,6 +134,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
     ap.add_argument("--engine-dir", required=True)
     ap.add_argument("--visual-engine-dir", required=True)
     ap.add_argument("--tokenizer", required=True)
+    ap.add_argument("--plugin", required=True,
+                    help="Edge-LLM's libNvInfer_edgellm_plugin.so (EDGELLM_PLUGIN_PATH)")
     ap.add_argument("--model-name", default="Qwen2.5-VL-3B-Instruct")
     ap.add_argument("--recordings", default="recordings")
     ap.add_argument("--walk", action="append", required=True)
@@ -161,7 +166,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
     log = open(f"{out}.driver.log", "w")
     drv = Driver([str(Path(args.driver).expanduser()),
                   str(Path(args.engine_dir).expanduser()),
-                  str(Path(args.visual_engine_dir).expanduser())], log)
+                  str(Path(args.visual_engine_dir).expanduser())], log,
+                 str(Path(args.plugin).expanduser()))
     records, ms, replies = [], [], {}
     errors = noparse = object_replies = undecided = bare_tokens = 0
     try:
