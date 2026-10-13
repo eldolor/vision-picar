@@ -60,6 +60,10 @@ PROMPT = ('Output the bounding box of the {target} as JSON: '
 MAX_TOKENS = 64
 TOP_LOGPROBS = 20
 WARMUP = 3
+# 3.78 amendment 2: merged into every request body. `--no-thinking` sets the
+# chat template's `enable_thinking` False (Qwen3.5 thinks by default; Edge-LLM
+# defaults it off), as tools/inventory_vlm.py does.
+EXTRA_BODY: dict = {}
 
 
 def _mass(alternatives, pred) -> float:
@@ -245,6 +249,7 @@ def ask(base: str, jpeg: bytes, target: str) -> dict:  # pragma: no cover
             {"type": "text", "text": PROMPT.format(target=target)}]}],
         "max_tokens": MAX_TOKENS, "temperature": 0, "top_k": 1,
         "logprobs": True, "top_logprobs": TOP_LOGPROBS,
+        **EXTRA_BODY,
     }
     return _post(base + "/v1/chat/completions", body)
 
@@ -283,6 +288,7 @@ def ask_until_decided(base: str, jpeg_path, target: str) -> dict:  # pragma: no 
             {"type": "text", "text": PROMPT.format(target=target)}]}],
         "max_tokens": MAX_TOKENS, "temperature": 0, "top_k": 1,
         "logprobs": True, "top_logprobs": TOP_LOGPROBS,
+        **EXTRA_BODY,
     }
     req = urllib.request.Request(base + "/v1/chat/completions",
                                  data=json.dumps(body).encode(),
@@ -328,7 +334,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
     ap.add_argument("--out", required=True)
     ap.add_argument("--stop-at-decision", action="store_true",
                     help="3.58: stream, and stop at the deciding token")
+    ap.add_argument("--no-thinking", action="store_true",
+                    help="3.78: chat_template_kwargs enable_thinking False")
     args = ap.parse_args(argv)
+    if args.no_thinking:
+        EXTRA_BODY["chat_template_kwargs"] = {"enable_thinking": False}
 
     walks = load_corpus(Path(args.recordings), only=args.walk)
     frames = [(w, p, vis, adj) for w in walks for p, vis, adj in w.frames]
@@ -418,7 +428,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
                    "device": "jetson-orin-nano-super-15w", "runtime": "llama-server CUDA",
                    "prompt": PROMPT, "max_tokens": MAX_TOKENS,
                    "top_logprobs": TOP_LOGPROBS, "metric": "confidence",
-                   "cache_ram_mib": 0, "stop_at_decision": bool(args.stop_at_decision)},
+                   "cache_ram_mib": 0, "stop_at_decision": bool(args.stop_at_decision),
+                   "extra_body": dict(EXTRA_BODY)},
         "records": records,
         "latency_ms": {"n": len(ms), "p50": statistics.median(ms),
                        "p90": percentile(ms, 90), "max": max(ms)},
