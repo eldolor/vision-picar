@@ -125,9 +125,55 @@ The bridge's routes and their fields are specified once, in the
   than assuming the robot had not moved; on the Jetson the old reading came
   seconds late, after motion, and anchored SLAM's frame about 20 degrees off
   for the session.
-- **Bridges older than `start_truth`** (`"first_contact"`): the anchor falls
-  back to the truth at the first question.
+- **One anchor per session, installed once, never moved** (3.76 round 5).
+  While the bridge's start-truth thread is still working (`/slam/pose`'s
+  `start_truth_pending: true` with no `start_truth`), nothing is installed:
+  the pose and the map read unusable and `set_goal()` refuses ("no SLAM
+  session yet") for those few seconds at a session's start. Then the
+  session is anchored once: on `start_truth` if the bridge recorded one,
+  otherwise at first contact (`"first_contact"`: the truth at the first
+  question; its error can be too small; a truth that answers unusable
+  installs nothing and is asked again, round 6; so does one that raises -- `RemoteGrid` with the body process down -- and an unanchored session asks the truth at most every `TRUTH_RETRY_S` (1 s), so the motion path does not pay a truth round trip on every pose read, round 7; only a FAILED read starts that wait, so a healthy truth is never followed by a dropout; each kind of failure -- raised, `usable: false` -- is logged once per session, and a session that warned logs one line when it anchors, rounds 8-10). A bridge without
+  the field reads as not pending, as before -- so **an old bridge image
+  anchors at first contact for good**: `vision-picar-ros:latest` must be
+  rebuilt from `dev` with this change before a live run is trusted. Rounds 1-4 anchored at first contact and moved
+  the anchor onto the start truth later; every rule for when that was safe
+  raced something (a goal being converted, a point chosen on the old map, a
+  failed post) and a move shifts every house-frame position a consumer
+  holds, so the move was removed. `map_version` adds the anchor's `epoch`,
+  which is always 0 today (every `Anchor` is built with the default); it is
+  kept so a future re-anchor has to be counted. Consumers cope with the
+  unusable start: explore waits ("no map yet"), the mission runner's
+  inventory skips the read, the twin shows the pose as unusable as it does
+  before SLAM is up.
 - **On hardware** (no truth): `alpha = 0`, `t = 0`, `anchored_at = None`.
+- **One anchor per reader** (3.76 H1-5). The anchor is one `Anchor`
+  NamedTuple (session, alpha, t, anchored_at, epoch), replaced whole under a
+  lock and never mutated;
+  every conversion uses the tuple it read, so FastAPI's threadpool never
+  mixes a new session with an old alpha.
+- **Freshness** (3.76 H1-13). A pose whose bridge `age_s` exceeds
+  `POSE_STALE_S` (1 s) reads unusable; a bridge without `age_s` reads as
+  before.
+- **Goals follow the bridge's session** (3.76 H1-12). `set_goal()` reads
+  the bridge's pose first every time, so a goal after a container restart
+  is converted with the new session's anchor (refused while that session
+  has no map; a pose read that fails with a session known raises, which
+  the robot server answers `ros_unavailable`). The post names the session it
+  was converted for; a bridge that restarted since answers 409, which reads
+  as `{"accepted": false, "reason": "no SLAM session yet"}` with both sessions in
+  `detail` (rounds 8-9). `get_goal()` adopts a newer
+  session that carries a live goal instead of reading it as `None`; if that
+  session cannot be anchored yet (no map, or the pose read fails) the goal
+  is answered with its state, `unanchored: true` and no `x_m`/`y_m` (R7), so
+  arbitration and the stop's hold still see it. It is never the mission's
+  own (the mission's goals are sent only on an anchored session, whose
+  anchor never changes), so explore treats it as someone else's (policy
+  spec, round 7) and the mission runner's `cancel_own()` leaves it.
+- **No older session re-installed** (3.76 R8). The anchor remembers the
+  bridge's `at` on the reply that installed it; a reply from another
+  session with an older `at` (a late reader straddling a restart) is
+  ignored.
 
 ## Parameters and configuration
 
@@ -233,6 +279,19 @@ Checklist for a change here:
   `tests/test_world_contract.py`, with a docstring.
 
 ## Known gaps
+
+- **First-contact truth reads are single-flight** (3.76 H, round 10's
+  review): while one pose reader asks the truth for a session's first
+  contact, every other reader answers unusable instead of making its own
+  call; a failed read throttles further reads for `TRUTH_RETRY_S`, stamped
+  when it ended (per session; a session's read never clears another's).
+  Every bridge reply goes through `_json_object()`: an error status raises
+  `httpx.HTTPStatusError` carrying the bridge's own `error` text (a 503
+  "nav2 is not up", a 401), a 409 on `POST /goal` is the session-changed
+  refusal, and a body that is not a JSON object raises `httpx.DecodingError`
+  -- never read as an accepted goal. Known: a reader racing a healthy read
+  answers unusable until it lands, and in the instant between the read
+  ending and the anchor being installed a second reader can ask again.
 
 - **Range mismatch.** `MockWorld`'s ring reaches 4.2 m, the camera's
   horizon. The simulator's lidar (`get_scan()`) reaches 12 m. In a large

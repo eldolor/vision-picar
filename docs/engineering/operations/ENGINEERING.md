@@ -42,9 +42,9 @@ file that holds it.
 
 | File | What it does |
 |---|---|
-| `service/tunnel/run.sh` | Sources the secrets files, exports the variables below, sets `WORLD_MODE` from `ROBOT_MODE` (sim -> sim, anything else -> none), then starts three uvicorns on 127.0.0.1: robot :8000, brain :8001 with `ROUTE_PREFIX=/brain`, proxy :8080. With `SIM_MOTOR_BOARD=fake` it first starts the simulated body's programs (`PLAN-ros-alignment.md` 3.36): `sim/body_server.py` on `SIM_BODY_URL` (default :8002) and one `sim/sensor_server.py` per entry of `SIM_SENSORS_URL` (default :8003 and :8004), exporting both URLs and `SIM_BODY_SHM` (default `picar_sim_body`) for the robot server. Its cleanup kills only its own children, so the ngrok agent survives |
-| `service/tunnel/proxy.py` | FastAPI catch-all. `/brain/*` -> brain; `/vision/*` -> the deployed vision service, answering `OPTIONS` itself with 204; everything else -> robot. On the REQUEST it drops `host` and `content-length`; on the RESPONSE it drops `content-encoding`, `content-length`, `transfer-encoding` and `connection`, and adds permissive CORS headers. An upstream error becomes 502 `upstream <url> unreachable`. Timeout 120 s |
-| `service/tunnel/restart.sh` | Stops whatever holds :8000/:8001/:8080 (graceful, then `kill -9` after 5 s), plus the simulator programs' ports under `SIM_MOTOR_BOARD=fake` (3.36; :8002-8004 unless the URLs say otherwise), restarts `run.sh` detached (log `~/.vision-picar-tunnel.log`), then polls both `/health` routes, and under the fake board the body program's too, until each reports the checkout's `git rev-parse --short HEAD` |
+| `service/tunnel/run.sh` | Sources the secrets files, exports the variables below, sets `WORLD_MODE` from `ROBOT_MODE` (sim -> sim, anything else -> none), then starts three uvicorns on 127.0.0.1: robot :8000, brain :8001 with `ROUTE_PREFIX=/brain`, proxy :8080. With `SIM_MOTOR_BOARD=fake` it first starts the simulated body's programs (`PLAN-ros-alignment.md` 3.36): `sim/body_server.py` on `SIM_BODY_URL` (default :8002) and one `sim/sensor_server.py` per entry of `SIM_SENSORS_URL` (default :8003 and :8004), exporting both URLs and `SIM_BODY_SHM` (default `picar_sim_body`) for the robot server. Refuses to start when `LOCAL_SECRET` is empty or under 16 characters (an empty one left `require_secret()` inert on the public tunnel; 3.76 H3-1); `VISION_SECRET` is optional (3.76 H3-3). The inventory-bucket lookup is bounded (`--cli-connect-timeout 3 --cli-read-timeout 5`, one attempt; 3.76 H3-14). Under `SIM_LIDAR=fake` it removes a stale link first and exits if none appears in 5 s (3.76 H3-17). Its cleanup kills only its own children, so the ngrok agent survives, and waits up to 8 s for them to finish, once (the INT/TERM trap only exits; the EXIT trap cleans up) (3.76 H3-15) |
+| `service/tunnel/proxy.py` | FastAPI catch-all. `/brain/*` -> brain; `/vision/*` -> the deployed vision service, answering `OPTIONS` itself with 204; everything else -> robot. Forwards the path as sent (`raw_path`, so `%2F`/`%23` stay encoded; a raw non-ASCII byte is percent-encoded once). On the REQUEST it drops `host`, `content-length` and the hop-by-hop headers (RFC 9110 7.6.1, plus any `connection` names), and refuses a body over `MAX_BODY_BYTES` (16 MB) with 413 before buffering it, and answers 503 while more than `MAX_INFLIGHT_BYTES` (48 MB) of bodies are buffered across requests; on the RESPONSE it drops `content-encoding`, `content-length` and the hop-by-hop headers, rewrites a `location` naming the robot or brain upstream to a path on the tunnel, and adds permissive CORS headers to `/vision/*` replies and to robot or brain 5xx (the robot and brain answer CORS themselves, except on an unhandled 500). The `/vision` preflight echoes the requested headers. An upstream error (or an invalid URL) becomes a JSON 502 `upstream <url> unreachable`; the proxy's own 413/503/502 carry `access-control-allow-origin: *`. Timeout 120 s. 3.76 H3 |
+| `service/tunnel/restart.sh` | Stops whatever holds :8000/:8001/:8080 (graceful, then `kill -9` after 5 s), plus the simulator programs' ports under `SIM_MOTOR_BOARD=fake` (3.36; :8002-8004 unless the URLs say otherwise), restarts `run.sh` detached (log `~/.vision-picar-tunnel.log`), then polls both `/health` routes, and under the fake board the body program's too, until each reports the checkout's `git rev-parse --short HEAD`. The robot and brain are polled THROUGH the proxy (:8080), the secret goes to curl on stdin (never the command line), and it asks both again through the proxy 5 s later before saying OK. Where `picar-stack` is a systemd unit in any state but stopped (the Jetson) it refuses, naming the bench's stop and the unit's restart. 3.76 H3 |
 
 ngrok itself is configured outside the repo: `ngrok start picar` uses the
 user's own ngrok config, pointing at :8080.
@@ -68,9 +68,9 @@ explore's decisions were missing from every live run before 3.45.
 
 | File | What it does |
 |---|---|
-| `control/metrics_client.py` | `row_for(status, git_revision=, config=, walk=)` builds a row from `MissionRunner.status()`. `ship_run()` POSTs it and never raises. `ship_run_async()` does it on a daemon thread, which is how "off the mission's path" is met |
+| `control/metrics_client.py` | `row_for(status, git_revision=, config=, walk=)` builds a row from `MissionRunner.status()`; `started_at` is `finished_at` less the status's `budget.elapsed_s` (it was always null before 3.76 F13). `ship_run()` POSTs it and never raises. `ship_run_async()` does it on a daemon thread, which is how "off the mission's path" is met |
 | `control/metrics_routes.py` | `register_metrics_routes(app, store, require_secret)`, mounted by `control/admin_server.py` and so by the walks Lambda |
-| `control/metrics.html`, `control/metrics.js` | The dashboard, served at `/metrics` from the static bucket |
+| `control/metrics.html`, `control/metrics.js` | The dashboard, served at `/metrics` from the static bucket. Every stored value is escaped before it reaches the page (3.76 F14: a mission's target, typed by a person, ran as script in the page that holds the walks secret) |
 
 `MissionRunner._ship_metrics()` (`control/mission_runner.py`) calls the
 shipper last, after the mission has ended.
@@ -91,8 +91,8 @@ required):
 
 | Method, path | Request | Response |
 |---|---|---|
-| `POST /metrics/runs` | `MetricsRun`: `run_id` (matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$`), `started_at`, `finished_at`, `git_revision`, `policy`, `config`, `outcome`, `steps`, `target_object`, `walk`, `stats` (the tier's stats verbatim; since `50b2293` `cloud_calls` includes one `arrival_confirmation` call per tiered arrival, so a release comparison across that commit shows the step). Extra fields are refused (422); a `run_id` that fails the pattern is a 400 | `{stored, day}`. Stored in the walk store as container `metrics-YYYY-MM-DD` (one per UTC day, beside the walks), object `<run_id>.json` |
-| `GET /metrics/summary?days=14` | `days` clamped to 1..90 | `{days, runs, count}`, newest first, rows whole, never aggregated |
+| `POST /metrics/runs` | `MetricsRun`: `run_id` (matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$`), `started_at`, `finished_at`, `git_revision`, `policy`, `config`, `outcome`, `steps`, `target_object`, `walk`, `stats` (the tier's stats verbatim; since `50b2293` `cloud_calls` includes one `arrival_confirmation` call per tiered arrival, so a release comparison across that commit shows the step). Extra fields are refused (422); a `run_id` that fails the pattern, or that the store refuses (`x..y`, 3.76 F7), is a 400 | `{stored, day}`. Stored in the walk store as container `metrics-YYYY-MM-DD` (one per UTC day, beside the walks), object `<run_id>.json` |
+| `GET /metrics/summary?days=14` | `days` clamped to 1..90 | `{days, runs, count}`, newest first, rows whole, never aggregated. A store that cannot be listed is a 503 naming the error, never "no runs" (3.76 F12) |
 
 **Health routes** (unauthenticated on both servers):
 
@@ -125,13 +125,13 @@ page) on the robot server.
 | `PROXY_ROBOT_URL` / `PROXY_BRAIN_URL` / `PROXY_VISION_URL` | `http://127.0.0.1:8000` / `:8001` / a hard-coded literal, as `VISION_URL` | URL | `service/tunnel/proxy.py` | Upstreams of the fan-out |
 | `ENV_LABEL` | unset | text | robot server; the walks function (`control/admin_server.py`). Both Lambdas receive it from the `EnvLabel` stack parameter, but the vision function never reads it | Shows a non-production banner on the twin |
 | `GIT_REVISION` | unset | text | `robot/identity.py` | Set at image build time; no `.git` in a container |
-| `~/.vision-picar-local-secrets` | must exist (mode 600) | file | `run.sh`, `restart.sh` | Holds `LOCAL_SECRET` and `VISION_SECRET`. Never in the repo |
+| `~/.vision-picar-local-secrets` | must exist (mode 600) | file | `run.sh`, `restart.sh` | Holds `LOCAL_SECRET` (16 characters at least: `run.sh` refuses less) and `VISION_SECRET` (optional). Never in the repo |
 | `~/.vision-picar-serverless-secrets` | optional | file | `run.sh` | Holds `WALKS_SECRET` for metrics |
 | `NavigateModelId` | `us.anthropic.claude-opus-4-5-20251101-v1:0` | model id | `serverless.yaml` -> `BEDROCK_NAVIGATE_MODEL_ID` | Chosen by measurement; owned by cloud-vision. Keep in step with the code default |
 | `VisionSharedSecret` / `WalksSharedSecret` | `""` | secret | `serverless.yaml` | Empty means the function runs with NO auth. `build.sh` says so |
 | `VisionFunction` `Timeout` | 30 | s | `serverless.yaml` | A vision call is 1-3 s and Robot view allows two in flight |
 | `WalksFunction` `Timeout` | 900 | s | `serverless.yaml` | Lambda's ceiling, sized for a replay, which re-asks every frame and outlived the old 60 s load-balancer limit. As templated, deployed replay is disabled anyway (see Known gaps) |
-| `ExpireAfterDays` (deploy bucket) | 30 | days | `deploy-bucket.yaml` | The zips are the only pre-built rollback path, at about 39 MB a build |
+| `ExpireAfterDays` (deploy bucket) | 365 | days | `deploy-bucket.yaml` | The zips are the only pre-built rollback path, at about 39 MB a build, and what a failed `serverless.yaml` update rolls back to: 30 days left a deploy a month after the last build unable to roll back (3.76 H2-7). Applies only once the deploy-bucket stack is updated with `ExpireAfterDays=365`. |
 | `WATCHDOG_POLL_SLACK` | 10 | polls | `control/health.py` | The watchdog loop wakes every 0.1 s (`WATCHDOG_POLL_INTERVAL_S`); a stall is ten missed polls, 1 s |
 | `DEFAULT_TIMEOUT_S` | 5.0 | s | `control/health.py`, `control/metrics_client.py` | One health or metrics request |
 | `MAX_DAYS` | 90 | days | `control/metrics_routes.py` | Bounds a summary to 90 LIST calls |
@@ -190,6 +190,27 @@ the wrong architecture got in. `build.sh` copies `config/robot.yaml` and
 `control/brain_config.py` from one tree on purpose: `load_brain_config()`
 rejects unknown keys, so a mismatched pair is a cold-start `ValueError`.
 
+**Apply the deploy bucket's retention** (3.76 H2-7; once, then whenever
+`ExpireAfterDays` changes). `aws cloudformation deploy` reuses a stack's
+PREVIOUS parameter values, so a new template `Default` changes nothing on
+a deployed stack -- pass the value explicitly:
+
+```bash
+aws cloudformation deploy --template-file cloudformation/deploy-bucket.yaml \
+  --stack-name <deploy-bucket stack> --region us-east-2 \
+  --parameter-overrides ExpireAfterDays=365
+aws s3api get-bucket-lifecycle-configuration --bucket <DeployBucketName> \
+  --query 'Rules[?ID==`expire-lambda-artifacts`].Expiration.Days'   # expect [365]
+```
+
+Verify against the bucket, not the stack status (the template's own note:
+an imported bucket once reported `UPDATE_COMPLETE` with no lifecycle at
+all). **Known limit:** the rule ages every zip alike, the live ones
+included. Exempting the live keys would need the deploy to tag them (a
+lifecycle rule can filter on a tag) and to untag the old ones -- new
+steps in a manual deploy, so not done; a deploy more than `ExpireAfterDays`
+after the previous build still cannot roll back.
+
 **Publish the twin and consoles:**
 
 ```bash
@@ -198,8 +219,10 @@ aws cloudformation describe-stacks --stack-name vision-picar-serverless \
 bash service/static/sync.sh <StaticBucketName> <DistributionId>
 ```
 
-Expected: one line per asset, then the invalidation id and `InProgress`.
-Wait for `Completed` before testing. `MISSING: <src>` means the manifest
+Expected: one line per asset, then the invalidation id, `waiting for
+Completed`, and `Completed`: the script waits (`aws cloudfront wait
+invalidation-completed`, about 10 min at most; 3.76 H2-12) and exits
+non-zero if it never completes. `MISSING: <src>` means the manifest
 names a file that does not exist. Check parity afterwards by diffing
 `curl -s <SiteUrl>app.js` against `git show HEAD:web-twin/app.js`. The
 `SiteUrl` output already carries the `https://` scheme and the trailing

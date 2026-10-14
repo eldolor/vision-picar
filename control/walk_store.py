@@ -86,8 +86,12 @@ class WalkStoreError(Exception):
     """A name the store refuses, or a backend that could not be reached."""
 
 
+def _safe(name) -> bool:
+    return isinstance(name, str) and bool(SAFE_NAME.match(name)) and ".." not in name
+
+
 def _check(name: str, what: str) -> str:
-    if not isinstance(name, str) or not SAFE_NAME.match(name) or ".." in name:
+    if not _safe(name):
         raise WalkStoreError(f"Unsafe {what}: {name!r}")
     return name
 
@@ -236,14 +240,19 @@ class LocalWalkStore(WalkStore):
     def list_walks(self) -> list[str]:
         if not self.root.is_dir():
             return []
+        # 3.76 F8: a name this store would refuse (Finder's `.DS_Store`, a
+        # folder with a space) is not ours: listed, every later call on it
+        # raised and the whole walk list or download answered 500.
         return sorted(p.name for p in self.root.iterdir()
-                      if p.is_dir() and not p.name.startswith(METRICS_PREFIX))
+                      if p.is_dir() and _safe(p.name)
+                      and not p.name.startswith(METRICS_PREFIX))
 
     def list_files(self, walk: str) -> list[tuple[str, int]]:
         d = self._dir(walk)
         if not d.is_dir():
             return []
-        return sorted((p.name, p.stat().st_size) for p in d.iterdir() if p.is_file())
+        return sorted((p.name, p.stat().st_size) for p in d.iterdir()
+                      if p.is_file() and _safe(p.name))
 
     def read_bytes(self, walk: str, name: str) -> bytes:
         return self._path(walk, name).read_bytes()
@@ -339,7 +348,9 @@ class S3WalkStore(WalkStore):
         for page in self._pages(Prefix=root, Delimiter="/"):
             for cp in page.get("CommonPrefixes", []):
                 name = cp["Prefix"][len(root):].strip("/")
-                if name and not name.startswith(METRICS_PREFIX):
+                # 3.76 F8, as LocalWalkStore: a name this store refuses is
+                # not listed (every later call on it raised).
+                if _safe(name) and not name.startswith(METRICS_PREFIX):
                     names.add(name)
         return sorted(names)
 
@@ -351,7 +362,7 @@ class S3WalkStore(WalkStore):
                 name = obj["Key"][len(wp):]
                 # Skip anything nested deeper than the walk: the layout is
                 # flat, and a stray key must not be reported as a file.
-                if name and "/" not in name:
+                if _safe(name):
                     out.append((name, obj["Size"]))
         return sorted(out)
 

@@ -28,6 +28,7 @@ which is what a real robot has and works on any backend with a range sensor.
 import base64
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -144,16 +145,42 @@ def describe_base64(data: str, media_type: str = "image/jpeg") -> dict:
     return _parse_scene_json(text)
 
 
+_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+
+
+def _loads_object(text: str) -> dict:
+    """Mirrored from service/vision_analyze/vision_core.py (3.76 round 2,
+    S5): the whole text, else the first fenced block, else the first object
+    from the first "{"; a JSON value that is not an object is ValueError
+    (it was a TypeError in the schema merge)."""
+    candidates = [text]
+    fenced = _FENCE.search(text)
+    if fenced:
+        candidates.append(fenced.group(1))
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    start = text.find("{")
+    if start >= 0:
+        try:
+            parsed, _ = json.JSONDecoder().raw_decode(text, start)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError("no JSON object in the reply")
+
+
 def _parse_scene_json(text: str) -> dict:
     text = text.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
     try:
-        parsed = json.loads(text)
+        parsed = _loads_object(text)
         # Fill in any keys the model omitted rather than trusting it blindly.
         return {**_EMPTY_SCHEMA, **parsed}
-    except json.JSONDecodeError:
+    except ValueError:
         logger.warning(f"Failed to parse VLM response as JSON: {text!r}")
         return {**_EMPTY_SCHEMA, "_raw": text}

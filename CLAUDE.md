@@ -229,14 +229,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   the halt gate, a person at the D-pad did not end explore, explore's pan
   just after its goal failed the mission, and start errors (a bare 500, a
   wrong secret read as no nav2). **Batch D (the twin), merged 2026-10-13,
-  NOT YET DEPLOYED:** 24 fixed, one a security bug -- a setup link that
+  deployed 2026-10-14:** 24 fixed, one a security bug -- a setup link that
   moved a service to another origin kept the phone's saved secret and the
   load-time auto-connect sent it there (now dropped, with a warning). Also:
   Close during Start hung Start or began an invisible run; one brain error
   or a failed Stop froze the Sim panel over a running mission; walk names
   over 64 characters lost whole walks; a lost STOP said nothing; the
-  120-call cap paused Drive-via-brain walks. Ships with
-  `service/static/sync.sh` from the user's laptop. **Batch E (perception,
+  120-call cap paused Drive-via-brain walks. **Batch E (perception,
   arrival, cloud calls), merged 2026-10-13:** 12 fixed -- a Stop mid-frame
   still bought a paid tiered call; landed answers fed the spin guard;
   sightings lost behind a call in flight; a scheme-less vision URL read as
@@ -248,10 +247,36 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   its perception on real frames is built (the user, 2026-10-13); and
   cold search counts absent frames since the last answer landed, not
   consecutive ones (kept; since E4 every tiered pacing count runs from the
-  landing, so a slow call no longer buys a second one back to back). Batches
-  F-I (walks, inventory, cloud, tooling) to go:
-  `HANDOFF-2026-10-13-3.76-legacy-review.md` has the state, the two deploys
-  waiting on the user's laptop, and how a batch is run.
+  landing, so a slow call no longer buys a second one back to back).
+  **Batch H (cloud, tunnel, ROS bridge), merged 2026-10-14, NOT YET
+  DEPLOYED:** 34 fixed. The bridge forgot a goal after one cancel (a lost
+  cancel left nav2 driving after a Stop): it now re-sends until nav2's
+  result. Each SLAM session is anchored once, after `start_truth_pending`
+  clears, and never moved -- **rebuild `vision-picar-ros:latest` from
+  `dev`** (an old bridge anchors at first contact for good). The cloud read
+  odd model replies and Bedrock's 3.75 MB / 8000 px limits as outages, and
+  a hung call outlived the Lambda; the tunnel served an empty
+  `LOCAL_SECRET` open (`run.sh` now refuses one under 16 characters).
+  The vision Lambda and the deploy bucket's 365-day retention deployed
+  2026-10-14. Open: a refused goal lifts a stop's hold
+  (`robot/server.py`); a bridge 401 on a goal makes explore wait out the
+  time limit. **Batches F and G (recorded walks, the inventory and the late
+  identity check), merged and deployed 2026-10-14** (walks Lambda and
+  consoles from `5fcb7bb`; G runs in the brain, no deploy). F: 20 fixed,
+  one a security bug -- the metrics console put stored text into
+  `innerHTML` in the page holding the walks secret. Also: judge or
+  collision outages stored as finished scores (now flagged and left out of
+  the summary), judged and metrics-only scores averaged together, a replay
+  outliving the 900 s Lambda, a frame delete that half-failed or left
+  scores current (scores are marked, then the manifest, then the image),
+  a score recreating a deleted walk, `label_assist` paying again for a
+  reply it could not parse, `compare` over different frames. G: 9 fixed,
+  all in the late identity check (3.53) -- a call outliving its guard
+  ended the window `failed`, and in later rounds landed answers and errors
+  were lost, doubled or counted twice. Open for the user: landmark points
+  grow without bound (G2, latent: real frames carry no detections), and
+  what the uploaded inventory may carry (G12, G13). Batch I (tooling) to
+  go: `HANDOFF-2026-10-13-3.76-legacy-review.md`.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,
@@ -342,9 +367,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   against the frozen `tests/frontier_reference.py`; do not "simplify" its
   order-keeping). One `reach()` per choice, shared. Jetson 15 W worst path
   p90 2,424 -> 90 ms (bar 100). Live 3/3 found, 0 contacts, median 642 s.
-  Status reports `explore.choice_ms`. Open: those runs sent more goals
-  (28/28/31 vs 21/21/22), cause not investigated; they predate 3.76 E's
-  early retry.
+  Status reports `explore.choice_ms`. **Its extra goals come from the
+  speed (3.79, merged 2026-10-14):** on one `dev`, slowing only the choice
+  by 450 ms took median goals 29 -> 22, with time to find unchanged
+  (758 vs 752 s) and 0 contacts; why is untested. Fix only if fewer goals
+  matter on the Rover (wait for a fresh scan; its own section). Live runs
+  at laptop load above ~4 are invalid (3.79's runner waits for quiet).
 * **Below the lidar (3.74), parts A-B merged 2026-10-12.** Borrowed from
   Ecovacs' vacuum detector. A: sim objects can be lower than the lidar
   (`SIM_MAP=complex_house_hazards`), a body-fixed depth-camera floor band

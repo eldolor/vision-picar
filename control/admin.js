@@ -144,7 +144,11 @@
           .map(function (f) { return f + " x" + r.flags[f]; }).join(", ");
         return '<div class="summary-row">' +
           '<span class="summary-model">' + escapeHtml(shortModel(r.model_id)) + variant +
-            ' <span class="status">' + escapeHtml(r.source) + "</span></span>" +
+            // 3.76 F2: a judged mean and a metrics-only one are separate rows
+            // (two formulas); the label says which this is.
+            ' <span class="status">' + escapeHtml(r.source +
+              (r.basis === "metrics-only" && r.source === "recorded" ? " · no judge" : "")) +
+            "</span></span>" +
           '<span class="summary-num">' + r.mean_score + " avg</span>" +
           '<span class="summary-num">' + Math.round(r.reach_rate * 100) + "% reached</span>" +
           '<span class="summary-num">' + r.walks + (r.walks === 1 ? " walk" : " walks") + "</span>" +
@@ -370,6 +374,11 @@
     if (ev.stale) {
       // 3.64 E2: an older scorer's number, not comparable with today's;
       // Re-score is the person's call (it can be a paid judge run).
+      // 3.76 F4: or scored before frames were deleted from the walk.
+      if (ev.stale_reason === "frames deleted") {
+        return '<span class="score-badge stale" title="Scored before frames were deleted -- Re-score to update">' +
+          "frames deleted</span>";
+      }
       return '<span class="score-badge stale" title="Scored by an older scorer -- Re-score to compare">' +
         "old scorer</span>";
     }
@@ -507,7 +516,7 @@
       if (r && r.score != null && r.last_unusable) {
         const pct = Math.round((r.last_unusable.coverage || 0) * 100);
         showInlineError(replaySelect, "Only " + pct + "% of frames came back -- kept the earlier "
-          + (r.stale ? "(older scorer's) result" : "score"));
+          + (r.stale ? "(no longer current) result" : "score"));
       }
     }
     replaySelect.onchange = async function () {
@@ -640,7 +649,10 @@
           // three timed-out prompt variants came to look equivalent.
           if (r.stale && r.score != null) {
             // 3.64 E2: scored by an older scorer, so not comparable.
-            return head + "scored by an older scorer · replay it again</div>";
+            // 3.76 F4: or before frames were deleted from the walk.
+            return head + (r.stale_reason === "frames deleted"
+              ? "scored before frames were deleted" : "scored by an older scorer") +
+              " · replay it again</div>";
           }
           if (r.score == null) {
             const got = r.coverage == null ? "" :
@@ -739,12 +751,27 @@
     armConfirm(delBtn, "Delete frame", async function () {
       delBtn.disabled = true;
       try {
-        await api("DELETE", "/recording/walks/" + encodeURIComponent(w.walk) + "/frames/" + encodeURIComponent(f.file));
+        const gone = await api("DELETE", "/recording/walks/" + encodeURIComponent(w.walk) + "/frames/" + encodeURIComponent(f.file));
         card.remove();
         w.frames -= 1;
         detail.frames = detail.frames.filter(function (x) { return x.file !== f.file; });
         const meta = walkEl.querySelector(".walk-meta");
         if (meta) meta.textContent = w.frames + " frame" + (w.frames === 1 ? "" : "s");
+        // 3.76 F4: the server marked every stored score of this walk; say so
+        // now rather than on the next reload.
+        // A score already stale keeps its reason, as the server's
+        // _stale_reason() does ("older scorer" first). Only a listed frame
+        // marks anything (an unlisted image was in no score).
+        function mark(x) {
+          return x.stale ? x : Object.assign({}, x, { stale: true, stale_reason: "frames deleted" });
+        }
+        if (!gone || gone.marked !== false) {
+          if (w.eval) w.eval = mark(w.eval);
+          w.replays = (w.replays || []).map(mark);
+        }
+        const r = walkRenderers[w.walk];
+        if (r) { r.renderHead(); r.renderReplays(); }
+        loadSummary();
         loadStats();
       } catch (e) {
         showInlineError(delBtn, "Delete failed: " + e.message);

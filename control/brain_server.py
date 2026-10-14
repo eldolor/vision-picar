@@ -85,7 +85,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from brain.navigate import vision_fn_for
+from brain.navigate import MAX_TARGET_CHARS, vision_fn_for
 from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
                             DEFAULT_MATCH_PROBABILITY, PerceptionUnavailable)
 from brain.tiered import tiered_vision_fn_for
@@ -446,11 +446,20 @@ def create_app(
                     "brain.vision_url in config/robot.yaml (or VISION_URL in the "
                     "environment)."
                 )
-            if not req.target_object:
+            # 3.76 round 3 (P4): blank and over-long targets are refused HERE,
+            # for the cloud policies only, because the vision service answers
+            # both 400 -- a mission that started would fail every call.
+            # frontier/explore never ask the cloud and keep their old rules.
+            if not req.target_object or not req.target_object.strip():
                 raise ValueError(
                     f"The {req.policy} policy searches for an object -- /navigate "
                     "takes a target_object. A target_room-only mission needs "
                     "policy='frontier'."
+                )
+            if len(req.target_object) > MAX_TARGET_CHARS:
+                raise ValueError(
+                    f"The {req.policy} policy's target_object is over "
+                    f"{MAX_TARGET_CHARS} characters; the vision service refuses it."
                 )
             model_id = req.model_id or config["navigate_model_id"] or None
             prompt_variant = (

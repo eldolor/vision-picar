@@ -38,6 +38,7 @@ and no AWS.
 """
 
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,8 @@ DEFAULT_WORKERS = 6
 
 
 def replay_walk(entries, frame_bytes_for, target_object, post_navigate,
-                model_id=None, prompt_variant=None, max_workers=DEFAULT_WORKERS):
+                model_id=None, prompt_variant=None, max_workers=DEFAULT_WORKERS,
+                deadline=None):
     """Re-ask every frame of a walk.
 
     `post_navigate(image_bytes, target_object, model_id, prompt_variant) -> dict`
@@ -69,6 +71,11 @@ def replay_walk(entries, frame_bytes_for, target_object, post_navigate,
     Varying `prompt_variant` instead of `model_id` is the same experiment on
     the other axis, and the more interesting one: the failure that started
     this project was a wording problem, not a model problem.
+
+    `deadline` (a `time.monotonic()` value) is when to stop sending frames
+    (3.76 F3): a frame whose turn comes after it is an error, not a call, so
+    a replay against a slow vision service ends with a record the caller
+    can store instead of being killed by its host with nothing written.
 
     Returns the replayed answers shaped as walk.jsonl entries, so the very
     same control/walk_eval.py scoring runs over a replay and over the
@@ -81,6 +88,8 @@ def replay_walk(entries, frame_bytes_for, target_object, post_navigate,
 
     def one(entry):
         nav = entry.get("navigate") or {}
+        if deadline is not None and time.monotonic() >= deadline:
+            return entry, None, "not sent: the replay's deadline passed"
         image = frame_bytes_for(entry)
         if not image:
             return entry, None, "no image bytes"

@@ -167,6 +167,10 @@ def propose_cloud(walk_dir: Path, model_id: str, region: str | None = None,
 
     def one(path: Path):
         body = path.read_bytes()
+        # 3.76 F9: only the CALL is retried (throttling, a dropped
+        # connection). A reply that came back and cannot be read was paid
+        # for, and asking again bought the same unreadable answer up to
+        # three more times -- none of it counted in `usage`.
         for attempt in range(4):
             try:
                 r = client.converse(
@@ -175,23 +179,30 @@ def propose_cloud(walk_dir: Path, model_id: str, region: str | None = None,
                         {"image": {"format": "jpeg", "source": {"bytes": body}}},
                         {"text": prompt}]}],
                     inferenceConfig={"maxTokens": 200})
-                text = "".join(b["text"] for b in r["output"]["message"]["content"] if "text" in b)
-                d = json.loads(text[text.index("{"):text.rindex("}") + 1])
-                u = r.get("usage") or {}
-                return path.name, {
-                    "visible": bool(d.get("visible")),
-                    # An absent confidence must not read as 0.0 ("certainly
-                    # absent") -- that would file it in the band nobody
-                    # reviews. Unknown sorts into `review` instead.
-                    "confidence": float(d["confidence"]) if "confidence" in d else 0.5,
-                    "seen": str(d.get("seen", ""))[:120],
-                    "in_tok": u.get("inputTokens", 0), "out_tok": u.get("outputTokens", 0),
-                }
+                break
             except Exception as e:  # noqa: BLE001 -- one bad frame must not lose the walk
                 if attempt == 3:
-                    return path.name, {"error": f"{type(e).__name__}: {e}"[:140]}
+                    return path.name, {"error": f"{type(e).__name__}: {e}"[:140],
+                                       "in_tok": 0, "out_tok": 0}
                 import time as _t
                 _t.sleep(2 ** attempt)
+        u = r.get("usage") or {}
+        tokens = {"in_tok": u.get("inputTokens", 0), "out_tok": u.get("outputTokens", 0)}
+        try:
+            text = "".join(b["text"] for b in r["output"]["message"]["content"] if "text" in b)
+            d = json.loads(text[text.index("{"):text.rindex("}") + 1])
+            return path.name, {
+                "visible": bool(d.get("visible")),
+                # An absent confidence must not read as 0.0 ("certainly
+                # absent") -- that would file it in the band nobody
+                # reviews. Unknown sorts into `review` instead.
+                "confidence": float(d["confidence"]) if "confidence" in d else 0.5,
+                "seen": str(d.get("seen", ""))[:120],
+                **tokens,
+            }
+        except Exception as e:  # noqa: BLE001 -- an unreadable reply is an error, not a retry
+            return path.name, {"error": f"unreadable reply: {type(e).__name__}: {e}"[:140],
+                               **tokens}
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         results = dict(pool.map(one, frames))
@@ -199,6 +210,8 @@ def propose_cloud(walk_dir: Path, model_id: str, region: str | None = None,
     labels, scores, seen, errors = {}, {}, {}, 0
     in_tok = out_tok = 0
     for name, r in results.items():
+        # Every reply that came back is counted, read or not.
+        in_tok += r["in_tok"]; out_tok += r["out_tok"]
         if r.get("error"):
             errors += 1
             # Unscored rather than guessed: a frame the labeller never saw
@@ -210,7 +223,6 @@ def propose_cloud(walk_dir: Path, model_id: str, region: str | None = None,
         # in the `visible` band.
         p = r["confidence"] if r["visible"] else 1.0 - r["confidence"]
         scores[name] = round(p, 4); labels[name] = bool(r["visible"]); seen[name] = r["seen"]
-        in_tok += r["in_tok"]; out_tok += r["out_tok"]
 
     bands = {"visible": [], "review": [], "absent": []}
     for name, s in scores.items():

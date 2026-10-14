@@ -129,12 +129,14 @@ Response body (JSON):
 """
 
 import base64
+import hmac
 import logging
 import os
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+import vision_core
 from vision_core import (
     describe_image_bytes,
     describe_image_bytes_person,
@@ -149,7 +151,22 @@ from rooms_core import identify_room
 
 logger = logging.getLogger("vision_analyze")
 
-MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5MB, matches Claude's API limit
+# The request gate is the LAMBDA payload, not Bedrock: a sync invocation
+# carries at most 6 MB (6,291,456 bytes), and base64 grows bytes by 4/3, so
+# 4.5 MB raw is ~6.0 MB encoded plus the JSON around it. Bedrock's 3.75 MB
+# (vision_core.MAX_IMAGE_BYTES) is checked by vision_core AFTER any
+# conversion: a 4.2 MB HEIC shrinks to fit, a passthrough JPEG over 3.75 MB
+# is a 413 there (3.76 round 3, P3).
+MAX_REQUEST_IMAGE_BYTES = 4_500_000
+
+# 3.76 H2-8: caller text goes into the prompt (the target ~6 times), so it is
+# bounded. A target is a few words (brain/navigate.py's MAX_TARGET_CHARS
+# mirrors this, so the brain refuses at mission start instead). The brain
+# sends searched rooms SORTED, so which 20 survive is arbitrary -- a house
+# has fewer; a long room name (model text fed back) is cut, not dropped.
+MAX_TARGET_CHARS = 200
+MAX_SEARCHED_ROOMS = 20
+MAX_ROOM_CHARS = 64
 
 _DEFAULT_ALLOWED_ORIGINS = ["http://localhost:5173", "http://localhost:8000"]
 
@@ -165,19 +182,28 @@ def _check_secret(request: Request):
     expected_secret = os.environ.get("APP_SHARED_SECRET")
     if expected_secret:
         provided = request.headers.get("x-app-secret", "")
-        if provided != expected_secret:
+        # 3.76 H2-9: constant time, so the comparison leaks no prefix length.
+        if not hmac.compare_digest(provided.encode(), expected_secret.encode()):
             raise HTTPException(status_code=401, detail="Missing or invalid x-app-secret header.")
 
 
 async def _decode_image(request: Request) -> tuple:
     """Shared by /analyze and /navigate: auth check, JSON parse, base64
     decode, size check. Returns (image_bytes, media_type, body)."""
+    # 3.76 round 4 (G1): the Bedrock retry budget runs from here, so the
+    # decode and any conversion count against Lambda's 30 s too.
+    vision_core.mark_request_start()
     _check_secret(request)
 
     try:
         body = await request.json()
+        # 3.76 H2-5: a JSON list or string body was a TypeError, i.e. a 500.
+        if not isinstance(body, dict):
+            raise ValueError("the body must be a JSON object")
         image_b64 = body["image_base64"]
         media_type = body.get("media_type", "image/jpeg")
+        if not isinstance(media_type, str):
+            raise ValueError("'media_type' must be a string")
     except (KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Bad request: {e}")
 
@@ -186,10 +212,43 @@ async def _decode_image(request: Request) -> tuple:
     except Exception:
         raise HTTPException(status_code=400, detail="image_base64 did not decode.")
 
-    if len(image_bytes) > MAX_IMAGE_BYTES:
-        raise HTTPException(status_code=413, detail="Image too large (5MB limit).")
+    if len(image_bytes) > MAX_REQUEST_IMAGE_BYTES:
+        raise HTTPException(status_code=413,
+                            detail=f"Image too large ({MAX_REQUEST_IMAGE_BYTES} byte request limit).")
 
     return image_bytes, media_type, body
+
+
+def _target_object(body: dict) -> str:
+    target_object = body.get("target_object")
+    # Whitespace-only is missing too: a paid call on a blank noun (round 2, S10).
+    if not target_object or (isinstance(target_object, str) and not target_object.strip()):
+        raise HTTPException(status_code=400, detail="Bad request: 'target_object' is required.")
+    if not isinstance(target_object, str) or len(target_object) > MAX_TARGET_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bad request: 'target_object' must be a string of at most {MAX_TARGET_CHARS} characters.",
+        )
+    return target_object
+
+
+def _vision_call(what: str, fn, *args, **kwargs):
+    """One model call with the routes' shared error mapping (round 3, P5).
+
+    An `ImageRejected` is the caller's image (400/413). EVERYTHING else is a
+    502, Bedrock's own refusals included: a ValidationException is also what
+    a deployed-wrong model id or a model not enabled in this region raise,
+    and as a 4xx those would end an arrived mission `failed` without 3.47's
+    late re-ask. Known limit: a malformed frame Bedrock rejects therefore
+    reads as unreachable too (3.76 round 3, P1).
+    """
+    try:
+        return fn(*args, **kwargs)
+    except vision_core.ImageRejected as e:  # read at call time: one class
+        raise HTTPException(status_code=e.status, detail=str(e))
+    except Exception as e:
+        logger.exception("Vision API call failed")
+        raise HTTPException(status_code=502, detail=f"Vision {what} failed: {e}")
 
 
 def create_app() -> FastAPI:
@@ -213,11 +272,7 @@ def create_app() -> FastAPI:
     async def analyze(request: Request):
         image_bytes, media_type, _body = await _decode_image(request)
 
-        try:
-            scene = describe_image_bytes(image_bytes, media_type)
-        except Exception as e:
-            logger.exception("Vision API call failed")
-            raise HTTPException(status_code=502, detail=f"Vision analysis failed: {e}")
+        scene = _vision_call("analysis", describe_image_bytes, image_bytes, media_type)
 
         scene["room_guess"] = identify_room(scene.get("important_objects", []))
         return scene
@@ -235,11 +290,7 @@ def create_app() -> FastAPI:
         """
         image_bytes, media_type, _body = await _decode_image(request)
 
-        try:
-            return describe_image_bytes_person(image_bytes, media_type)
-        except Exception as e:
-            logger.exception("Vision API call failed")
-            raise HTTPException(status_code=502, detail=f"Vision description failed: {e}")
+        return _vision_call("description", describe_image_bytes_person, image_bytes, media_type)
 
     @app.get("/navigate/models")
     def navigate_models():
@@ -260,37 +311,38 @@ def create_app() -> FastAPI:
     async def navigate(request: Request):
         image_bytes, media_type, body = await _decode_image(request)
 
-        target_object = body.get("target_object")
-        if not target_object:
-            raise HTTPException(status_code=400, detail="Bad request: 'target_object' is required.")
+        target_object = _target_object(body)
 
         searched_rooms = body.get("searched_rooms") or []
         if not isinstance(searched_rooms, list):
             searched_rooms = []
-        searched_rooms = [r for r in searched_rooms if isinstance(r, str) and r.strip()]
+        searched_rooms = [r.strip()[:MAX_ROOM_CHARS] for r in searched_rooms
+                          if isinstance(r, str) and r.strip()]
+        searched_rooms = list(dict.fromkeys(searched_rooms))[:MAX_SEARCHED_ROOMS]
 
         model_id = body.get("model_id")
-        if model_id is not None and model_id not in NAVIGATE_MODEL_CHOICES:
+        # isinstance first: a list or dict is unhashable, a TypeError (500) in
+        # the `in` test (3.76 round 2, S2).
+        if model_id is not None and (not isinstance(model_id, str)
+                                     or model_id not in NAVIGATE_MODEL_CHOICES):
             raise HTTPException(
                 status_code=400,
                 detail=f"Bad request: 'model_id' must be one of {sorted(NAVIGATE_MODEL_CHOICES)}.",
             )
 
         prompt_variant = body.get("prompt_variant")
-        if prompt_variant is not None and prompt_variant not in NAVIGATE_PROMPT_VARIANTS:
+        if prompt_variant is not None and (not isinstance(prompt_variant, str)
+                                           or prompt_variant not in NAVIGATE_PROMPT_VARIANTS):
             raise HTTPException(
                 status_code=400,
                 detail=f"Bad request: 'prompt_variant' must be one of {sorted(NAVIGATE_PROMPT_VARIANTS)}.",
             )
 
-        try:
-            decision = describe_image_bytes_navigate(
-                image_bytes, target_object, media_type, searched_rooms=searched_rooms,
-                model_id=model_id, prompt_variant=prompt_variant
-            )
-        except Exception as e:
-            logger.exception("Vision API call failed")
-            raise HTTPException(status_code=502, detail=f"Vision navigation failed: {e}")
+        decision = _vision_call(
+            "navigation", describe_image_bytes_navigate,
+            image_bytes, target_object, media_type, searched_rooms=searched_rooms,
+            model_id=model_id, prompt_variant=prompt_variant,
+        )
 
         return decision
 
@@ -298,15 +350,10 @@ def create_app() -> FastAPI:
     async def guidance(request: Request):
         image_bytes, media_type, body = await _decode_image(request)
 
-        target_object = body.get("target_object")
-        if not target_object:
-            raise HTTPException(status_code=400, detail="Bad request: 'target_object' is required.")
+        target_object = _target_object(body)
 
-        try:
-            result = describe_image_bytes_guidance(image_bytes, target_object, media_type)
-        except Exception as e:
-            logger.exception("Vision API call failed")
-            raise HTTPException(status_code=502, detail=f"Vision guidance failed: {e}")
+        result = _vision_call("guidance", describe_image_bytes_guidance,
+                              image_bytes, target_object, media_type)
 
         return result
 

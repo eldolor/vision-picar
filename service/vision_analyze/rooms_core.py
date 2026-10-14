@@ -16,10 +16,16 @@ ROOM_FEATURES = {
 
 
 def identify_room(visible_objects: list) -> str:
-    if not visible_objects:
+    # 3.76 H2-5: here the list is the MODEL's output, unvalidated. Only
+    # non-empty strings count: a non-string item was an AttributeError (500),
+    # a bare string was iterated letter by letter, and "" is a substring of
+    # every feature, so it scored every room and "living room" always won.
+    if not isinstance(visible_objects, list):
         return "unknown"
-
-    lowered_objects = [obj.lower() for obj in visible_objects]
+    lowered_objects = [obj.strip().lower() for obj in visible_objects
+                       if isinstance(obj, str) and obj.strip()]
+    if not lowered_objects:
+        return "unknown"
 
     best_room = "unknown"
     best_score = 0

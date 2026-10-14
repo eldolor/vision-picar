@@ -690,12 +690,13 @@ def test_review_a_spent_cap_counts_no_paid_call():
 
 def test_review_a_hung_call_is_never_doubled():
     """From review: a confirmation that times out is still in flight; no
-    second one goes out beside it -- `failed` after exactly one."""
+    second one goes out beside it. 3.76 G1: it is a failed attempt (not the
+    end of the window), and nothing more is sent while it stays out."""
     import threading
     release = threading.Event()
     cloud = SwitchableCloud()
     runner, _, _ = _ended_unconfirmed(cloud, CLEAR_STARTS[0])
-    runner.vision_timeout_s = 0.2
+    runner.vision_timeout_s = 0.1
     hung = {"n": 0}
 
     def hang(frame):
@@ -703,8 +704,10 @@ def test_review_a_hung_call_is_never_doubled():
         release.wait(5)
         return _quiet_cloud(frame)
     runner.vision_fn.cloud_vision_fn = hang
-    FakeClockReconfirmer(runner, lambda: True, interval_s=15, window_s=600).run()
-    release.set()
+    try:
+        FakeClockReconfirmer(runner, lambda: True, interval_s=15, window_s=600).run()
+    finally:
+        release.set()
     late = runner.status()["late_confirmation"]
     assert late["state"] == "failed" and "hung" in late["reason"], late
     assert hung["n"] == 1 and late["paid_calls"] == 1, (hung, late)

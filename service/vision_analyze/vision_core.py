@@ -51,12 +51,17 @@ change, for exactly this kind of per-route tuning; /navigate additionally
 accepts a per-request model_id from the allow-list below.
 """
 
+import contextvars
 import io
 import json
 import logging
 import os
+import re
+import time
 
 import boto3
+from botocore.exceptions import ClientError
+from botocore.config import Config
 import pillow_heif
 from PIL import Image
 
@@ -151,6 +156,9 @@ def _load_navigate_model_choices() -> dict:
 
 
 NAVIGATE_MODEL_CHOICES = _load_navigate_model_choices()
+# 3.76 H2-6: the default is always offered. An env list that leaves it out
+# made /navigate/models advertise a default its own picker did not contain.
+NAVIGATE_MODEL_CHOICES.setdefault(NAVIGATE_MODEL_ID, NAVIGATE_MODEL_ID)
 
 SCENE_PROMPT = """You are viewing a photo of a room, taken by the owner of a small indoor robot to help it understand the space.
 Describe:
@@ -228,11 +236,65 @@ MODEL_REGIONS = _load_model_regions()
 # (and a new connection pool) per request.
 _clients = {}
 
+# 3.76 H2-11: botocore's default read timeout is 60 s, but the function is
+# killed at 30 s (serverless.yaml's VisionFunction Timeout; API Gateway and
+# CloudFront give up at 30 s too). A hung call must end HERE, as an
+# exception app.py logs and answers 502 for, not as a killed function with
+# nothing in its log. ONE attempt: botocore's default retries a read timeout
+# (5 attempts in legacy mode), which ran a hung call far past 30 s and paid
+# for each retry (3.76 round 2, S1). attempts x (connect + read) < 30 s.
+_BEDROCK_CONFIG = Config(connect_timeout=5, read_timeout=20,
+                         retries={"total_max_attempts": 1})
+
+
+# 3.76 round 3 (P2). One attempt (above) also dropped botocore's retry of a
+# throttle, which legacy mode absorbed. These two codes are refusals before
+# any work (not billed), so they get ONE retry here -- but only if a whole
+# further attempt still fits the function's 30 s with a margin; otherwise
+# the error stands and app.py answers 502 as before.
+_RETRYABLE_CODES = ("ThrottlingException", "ServiceUnavailableException")
+_CALL_BUDGET_S = 28.0
+_RETRY_BACKOFF_S = 1.0
+
+
+# When the current request began (3.76 round 4, G1). app.py marks it on
+# entry, so the retry budget counts the image conversion before the call
+# too; a caller that never marks one budgets from the call itself.
+_request_started: contextvars.ContextVar = contextvars.ContextVar(
+    "vision_request_started", default=None)
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+def mark_request_start() -> None:
+    _request_started.set(_now())
+
+
+def _converse(client, **kwargs):
+    started = _request_started.get()
+    if started is None:
+        started = _now()
+    try:
+        return client.converse(**kwargs)
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        attempt_s = _BEDROCK_CONFIG.connect_timeout + _BEDROCK_CONFIG.read_timeout
+        elapsed = _now() - started
+        if code not in _RETRYABLE_CODES or \
+                elapsed + _RETRY_BACKOFF_S + attempt_s > _CALL_BUDGET_S:
+            raise
+        logger.warning("Bedrock %s; retrying once", code)
+    time.sleep(_RETRY_BACKOFF_S)
+    return client.converse(**kwargs)
+
 
 def _get_client(model_id: str | None = None):
     region = MODEL_REGIONS.get(model_id) if model_id else None
     if region not in _clients:
-        _clients[region] = boto3.client("bedrock-runtime", region_name=region)
+        _clients[region] = boto3.client("bedrock-runtime", region_name=region,
+                                        config=_BEDROCK_CONFIG)
     return _clients[region]
 
 
@@ -250,16 +312,99 @@ def _bedrock_image_format(media_type: str) -> str:
     return _BEDROCK_FORMAT_ALIASES.get(fmt, fmt)
 
 
+# 3.76 H2-4: Bedrock's own limit, not the Anthropic API's 5 MB. botocore's
+# bedrock-runtime model (ImageSource): "Each image's size, height, and width
+# must be no more than 3.75 MB, 8000 px, and 8000 px". Base64 of this is
+# ~5 MB, inside Lambda's 6 MB request payload.
+MAX_IMAGE_BYTES = 3_750_000
+
+
+class ImageRejected(ValueError):
+    """The caller's image cannot be sent: unreadable (400) or too large
+    (413). The caller's fault, so app.py must not answer 502 -- the brain
+    reads every 5xx as the cloud being unreachable (3.47)."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
+# Bedrock's per-image pixel limit (same botocore source as MAX_IMAGE_BYTES).
+MAX_IMAGE_SIDE_PX = 8000
+
+
+# The most pixels this service will decode (3.76 round 5). Measured locally
+# (fresh process, Pillow decode + convert + thumbnail + JPEG encode, peak
+# RSS): 48.8 MP (8064x6048, an iPhone 48 MP photo) 604 MB; 50 MP (10000x5000)
+# 686 MB; 64 MP 540-792 MB by shape; 81 MP 878 MB; 100 MP 1234 MB. The
+# function has 1024 MB and the app itself ~60 MB, so 50 MP keeps ~280 MB of
+# margin and still takes a 48 MP photo. Above it: 413, never an OOM kill.
+MAX_DECODE_PIXELS = 50_000_000
+
+
+def _open_image(image_bytes: bytes):
+    """Image.open (header only, no pixels decoded) WITHOUT Pillow's own bomb
+    check, which raised before the size could be read: a 14000 px flat PNG
+    then skipped the shrink and went to Bedrock as is. MAX_DECODE_PIXELS is
+    this service's ceiling instead, applied before any decode. Safe to
+    toggle: the routes run their model calls one at a time on the event
+    loop."""
+    saved = Image.MAX_IMAGE_PIXELS
+    Image.MAX_IMAGE_PIXELS = None
+    try:
+        return Image.open(io.BytesIO(image_bytes))
+    finally:
+        Image.MAX_IMAGE_PIXELS = saved
+
+
+def _fit(width: int, height: int) -> tuple:
+    scale = min(1.0, MAX_IMAGE_SIDE_PX / max(width, height))
+    return max(1, round(width * scale)), max(1, round(height * scale))
+
+
 def _convert_to_jpeg(image_bytes: bytes) -> bytes:
-    image = Image.open(io.BytesIO(image_bytes))
-    buf = io.BytesIO()
-    image.convert("RGB").save(buf, format="JPEG")
+    """JPEG that Bedrock will take. 3.76 round 2 (S4): a 48 MP iPhone HEIC
+    re-encodes past 3.75 MB, so it is shrunk to fit rather than refused:
+    sides capped at MAX_IMAGE_SIDE_PX; if the first encode is still over
+    MAX_IMAGE_BYTES, scaled once by sqrt(limit/size) with a 10% margin
+    (JPEG size goes roughly with pixel count), then by 3/4 per pass in the
+    rare case that is still over (round 3, P5: one extra encode, not eight).
+    Round 5: a JPEG is decoded at a reduced scale where the result still
+    covers the target size (draft), and anything that would decode to more
+    than MAX_DECODE_PIXELS is refused (413) before a pixel is decoded.
+    """
+    image = _open_image(image_bytes)
+    if image.format in ("JPEG", "MPO"):     # MPO: a JPEG with a second picture (phones)
+        image.draft("RGB", _fit(*image.size))
+    width, height = image.size
+    if width * height > MAX_DECODE_PIXELS:
+        raise ImageRejected(
+            413, f"Image too large to process ({width}x{height} px; at most "
+                 f"{MAX_DECODE_PIXELS:,} pixels).")
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    image.thumbnail((MAX_IMAGE_SIDE_PX, MAX_IMAGE_SIDE_PX))
+    buf = _encode_jpeg(image)
+    if buf.tell() > MAX_IMAGE_BYTES:
+        scale = 0.9 * (MAX_IMAGE_BYTES / buf.tell()) ** 0.5
+        while True:
+            image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))))
+            buf = _encode_jpeg(image)
+            if buf.tell() <= MAX_IMAGE_BYTES or min(image.size) <= 64:
+                break
+            scale = 0.75
     return buf.getvalue()
 
 
-def describe_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
-    client = _get_client(ANALYZE_MODEL_ID)
+def _encode_jpeg(image) -> io.BytesIO:
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", quality=85)
+    return buf
 
+
+def _prepare_image(image_bytes: bytes, media_type: str) -> tuple:
+    """(bytes, Bedrock format) for one image, converted when Bedrock has no
+    format for it, and measured AFTER any conversion."""
     fmt = _bedrock_image_format(media_type)
     if fmt not in ("gif", "jpeg", "png", "webp"):
         # Most commonly HEIC/HEIF -- the default photo format on iPhone,
@@ -268,10 +413,47 @@ def describe_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> 
         # actual bytes need transcoding). pillow-heif registers HEIC/HEIF
         # support into Pillow's Image.open() so this one code path handles
         # any input Pillow understands, not just HEIC specifically.
-        image_bytes = _convert_to_jpeg(image_bytes)
+        try:
+            image_bytes = _convert_to_jpeg(image_bytes)
+        except ImageRejected:
+            raise
+        except (OSError, ValueError, Image.DecompressionBombError) as e:
+            raise ImageRejected(400, f"image could not be read as {media_type}: {e}") from e
         fmt = "jpeg"
+    elif _needs_shrinking(image_bytes):
+        # 3.76 round 4 (G2): a native image over Bedrock's bytes or 8000 px
+        # was sent as is (a ValidationException, read by the brain as an
+        # outage) or refused 413. Shrunk the same way as a conversion.
+        try:
+            image_bytes, fmt = _convert_to_jpeg(image_bytes), "jpeg"
+        except ImageRejected:
+            raise
+        except (OSError, ValueError, Image.DecompressionBombError):
+            pass  # unreadable here: sent or refused exactly as before
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise ImageRejected(413, f"Image too large ({MAX_IMAGE_BYTES} byte limit).")
+    return image_bytes, fmt
 
-    response = client.converse(
+
+def _needs_shrinking(image_bytes: bytes) -> bool:
+    """Over Bedrock's bytes, or a side over MAX_IMAGE_SIDE_PX. The size
+    comes from the header (Image.open does not decode pixels); bytes Pillow
+    cannot open are left alone, so the brain's own JPEGs gain no new error."""
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        return True
+    try:
+        width, height = _open_image(image_bytes).size
+    except Exception:  # noqa: BLE001 -- not an image Pillow knows: as before
+        return False
+    return max(width, height) > MAX_IMAGE_SIDE_PX
+
+
+def describe_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
+    client = _get_client(ANALYZE_MODEL_ID)
+
+    image_bytes, fmt = _prepare_image(image_bytes, media_type)
+
+    response = _converse(client,
         modelId=ANALYZE_MODEL_ID,
         messages=[
             {
@@ -293,6 +475,44 @@ def describe_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> 
     content_blocks = response["output"]["message"]["content"]
     text = "".join(b["text"] for b in content_blocks if "text" in b)
     return _parse_scene_json(text)
+
+
+# A fenced block anywhere in the reply: ```json ... ``` (or bare ```).
+_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+
+
+def _loads_object(text: str) -> dict:
+    """The model's JSON object, or ValueError (json.JSONDecodeError is one).
+
+    3.76 H2-1/H2-2 and round 2 (S7). Valid JSON that is not an object (a
+    list, null, a number) used to escape as a TypeError from
+    {**SCHEMA, **parsed}: app.py answered 502 and the brain read the model's
+    own bad answer as the cloud being unreachable. And `strip("`")` only
+    trimmed the ends, so prose after the JSON lost a real answer. Tried in
+    order: the whole text, the first fenced block, then the first object
+    decoded from the first "{" (prose before or after it is ignored; a ```
+    inside a JSON string cannot cut it short).
+    """
+    candidates = [text]
+    fenced = _FENCE.search(text)
+    if fenced:
+        candidates.append(fenced.group(1))
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    start = text.find("{")
+    if start >= 0:
+        try:
+            parsed, _ = json.JSONDecoder().raw_decode(text, start)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError("no JSON object in the reply")
 
 
 NAVIGATE_PROMPT_TEMPLATE = """You are the camera of a small indoor robot searching for a {target_object}.
@@ -728,6 +948,13 @@ def variant_asks_obstacle(variant: str) -> bool:
 
 
 DEFAULT_PROMPT_VARIANT = os.environ.get("NAVIGATE_PROMPT_VARIANT", "default")
+# 3.76 H2-6: an unknown name ran the "default" wording while every reply
+# (and /navigate/models) reported the unknown name -- a recorded walk
+# attributed to a prompt that does not exist. Report what actually runs.
+if DEFAULT_PROMPT_VARIANT not in NAVIGATE_PROMPT_VARIANTS:
+    logger.warning("NAVIGATE_PROMPT_VARIANT=%r is not a known variant; using 'default'",
+                   DEFAULT_PROMPT_VARIANT)
+    DEFAULT_PROMPT_VARIANT = "default"
 
 
 # Appended into the prompt only when the caller has already searched at
@@ -781,10 +1008,7 @@ def describe_image_bytes_navigate(
     model_id = model_id or NAVIGATE_MODEL_ID
     client = _get_client(model_id)
 
-    fmt = _bedrock_image_format(media_type)
-    if fmt not in ("gif", "jpeg", "png", "webp"):
-        image_bytes = _convert_to_jpeg(image_bytes)
-        fmt = "jpeg"
+    image_bytes, fmt = _prepare_image(image_bytes, media_type)
 
     note = ""
     if searched_rooms:
@@ -792,10 +1016,13 @@ def describe_image_bytes_navigate(
             rooms=", ".join(searched_rooms), target_object=target_object
         )
     variant = prompt_variant or DEFAULT_PROMPT_VARIANT
-    template = NAVIGATE_PROMPT_VARIANTS.get(variant, NAVIGATE_PROMPT_TEMPLATE)
+    if variant not in NAVIGATE_PROMPT_VARIANTS:
+        # 3.76 round 2 (S8): never run one wording and stamp another's name.
+        raise ValueError(f"unknown prompt variant {variant!r}")
+    template = NAVIGATE_PROMPT_VARIANTS[variant]
     prompt = template.format(target_object=target_object, searched_rooms_note=note)
 
-    response = client.converse(
+    response = _converse(client,
         modelId=model_id,
         messages=[
             {
@@ -842,12 +1069,8 @@ def describe_image_bytes_navigate(
 
 def _parse_navigate_json(text: str) -> dict:
     text = text.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
     try:
-        parsed = json.loads(text)
+        parsed = _loads_object(text)
         merged = {**_NAVIGATE_EMPTY_SCHEMA, **parsed}
         if merged["action"] not in ("FORWARD", "LEFT", "RIGHT", "REVERSE", "STOP"):
             merged["action"] = "STOP"
@@ -890,7 +1113,7 @@ def _parse_navigate_json(text: str) -> dict:
         if merged.get("path_ahead") not in PATH_AHEAD_VALUES:
             merged["path_ahead"] = "unclear"
         return merged
-    except json.JSONDecodeError:
+    except ValueError:
         logger.warning(f"Failed to parse VLM navigate response as JSON: {text!r}")
         return {**_NAVIGATE_EMPTY_SCHEMA, "_raw": text}
 
@@ -959,12 +1182,9 @@ _GUIDANCE_PROXIMITIES = ("near", "medium", "far", "unknown")
 def describe_image_bytes_guidance(image_bytes: bytes, target_object: str, media_type: str = "image/jpeg") -> dict:
     client = _get_client(GUIDANCE_MODEL_ID)
 
-    fmt = _bedrock_image_format(media_type)
-    if fmt not in ("gif", "jpeg", "png", "webp"):
-        image_bytes = _convert_to_jpeg(image_bytes)
-        fmt = "jpeg"
+    image_bytes, fmt = _prepare_image(image_bytes, media_type)
 
-    response = client.converse(
+    response = _converse(client,
         modelId=GUIDANCE_MODEL_ID,
         messages=[
             {
@@ -990,12 +1210,8 @@ def describe_image_bytes_guidance(image_bytes: bytes, target_object: str, media_
 
 def _parse_guidance_json(text: str) -> dict:
     text = text.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
     try:
-        parsed = json.loads(text)
+        parsed = _loads_object(text)
         merged = {**_GUIDANCE_EMPTY_SCHEMA, **parsed}
         if merged["position"] not in _GUIDANCE_POSITIONS:
             merged["position"] = "not_visible"
@@ -1007,7 +1223,7 @@ def _parse_guidance_json(text: str) -> dict:
         v = merged.get("target_visible")
         merged["target_visible"] = v is True or (isinstance(v, str) and v.strip().lower() == "true")
         return merged
-    except json.JSONDecodeError:
+    except ValueError:
         logger.warning(f"Failed to parse VLM guidance response as JSON: {text!r}")
         return {**_GUIDANCE_EMPTY_SCHEMA, "_raw": text}
 
@@ -1042,12 +1258,9 @@ def describe_image_bytes_person(image_bytes: bytes, media_type: str = "image/jpe
     """
     client = _get_client(MODEL_ID)
 
-    fmt = _bedrock_image_format(media_type)
-    if fmt not in ("gif", "jpeg", "png", "webp"):
-        image_bytes = _convert_to_jpeg(image_bytes)
-        fmt = "jpeg"
+    image_bytes, fmt = _prepare_image(image_bytes, media_type)
 
-    response = client.converse(
+    response = _converse(client,
         modelId=MODEL_ID,
         messages=[
             {
@@ -1073,30 +1286,22 @@ def describe_image_bytes_person(image_bytes: bytes, media_type: str = "image/jpe
 
 def _parse_describe_json(text: str) -> dict:
     text = text.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
     try:
-        parsed = json.loads(text)
+        parsed = _loads_object(text)
         merged = {**_DESCRIBE_EMPTY_SCHEMA, **parsed}
         if not isinstance(merged.get("objects"), list):
             merged["objects"] = []
         return merged
-    except json.JSONDecodeError:
+    except ValueError:
         logger.warning(f"Failed to parse VLM describe response as JSON: {text!r}")
         return {**_DESCRIBE_EMPTY_SCHEMA, "_raw": text}
 
 
 def _parse_scene_json(text: str) -> dict:
     text = text.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.lower().startswith("json"):
-            text = text[4:]
     try:
-        parsed = json.loads(text)
+        parsed = _loads_object(text)
         return {**_EMPTY_SCHEMA, **parsed}
-    except json.JSONDecodeError:
+    except ValueError:
         logger.warning(f"Failed to parse VLM response as JSON: {text!r}")
         return {**_EMPTY_SCHEMA, "_raw": text}

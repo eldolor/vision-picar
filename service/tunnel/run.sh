@@ -28,6 +28,7 @@ cd "$ROOT"
 # shellcheck disable=SC1090
 source .venv/bin/activate
 
+# --- secrets ---
 SECRETS="$HOME/.vision-picar-local-secrets"
 [ -f "$SECRETS" ] || { echo "missing $SECRETS -- see the header of this file"; exit 1; }
 # shellcheck disable=SC1090
@@ -41,14 +42,24 @@ SERVERLESS_SECRETS="$HOME/.vision-picar-serverless-secrets"
 [ -f "$SERVERLESS_SECRETS" ] && { set -a; source "$SERVERLESS_SECRETS"; set +a; }
 
 # Gates inbound calls to BOTH local servers. require_secret() is inert
-# without it, and these are on the public internet through the tunnel.
+# without it, and these are on the public internet through the tunnel --
+# so an EMPTY one (a truncated or placeholder file; `set -u` only catches
+# an unset one) is refused here rather than served open (3.76 H3-1).
+LOCAL_SECRET="${LOCAL_SECRET:-}"
+if [ "${#LOCAL_SECRET}" -lt 16 ]; then
+  echo "LOCAL_SECRET in $SECRETS is empty or shorter than 16 characters -- refusing to put an open robot on the internet" >&2
+  exit 1
+fi
 export APP_SHARED_SECRET="$LOCAL_SECRET"
 # The brain calling the robot. Same value: both are yours.
 export ROBOT_SHARED_SECRET="$LOCAL_SECRET"
 # The brain calling the deployed vision service, which has its OWN secret --
 # set separately or the brain would send the one above and get a 401.
 export VISION_URL="${VISION_URL:-https://d114x92g7i4syl.cloudfront.net}"
-export VISION_SHARED_SECRET="$VISION_SECRET"
+# Optional: without it the cloud answers 401 and the brain runs as offline
+# (3.49) -- never a reason to keep the robot from starting (3.76 H3-3).
+export VISION_SHARED_SECRET="${VISION_SECRET:-}"
+# --- end secrets ---
 # One metrics row per mission, to the walks service (which owns the
 # storage). Its own secret, like the vision one -- reviewing metrics is a
 # different privilege from asking the model a question. The shipper can
@@ -63,7 +74,11 @@ export METRICS_SECRET="${WALKS_SECRET:-}"
 # rather than reading a failed lookup as the opt-out.
 # --- inventory bucket (tests/test_inventory_mission.py runs this block) ---
 if [ -z "${INVENTORY_BUCKET+set}" ]; then
-  _bucket="$(aws cloudformation list-exports \
+  # Bounded: at boot under systemd on a network that drops packets, the
+  # CLI's own 60 s connect timeout and retries held every server back for
+  # minutes (3.76 H3-14).
+  _bucket="$(AWS_MAX_ATTEMPTS=1 aws cloudformation list-exports \
+    --cli-connect-timeout 3 --cli-read-timeout 5 \
     --query "Exports[?Name=='vision-picar-recordings-s3-BucketName'].Value" \
     --output text 2>/dev/null || true)"
   if [ -n "$_bucket" ] && [ "$_bucket" != "None" ]; then
@@ -96,11 +111,22 @@ echo "robot mode: $ROBOT_MODE   world: $WORLD_MODE   vision: $VISION_URL"
 # would silently take the tunnel down with them and the phone would report
 # a bare "Load failed" with nothing to point at.
 pids=()
-cleanup() { for pid in "${pids[@]:-}"; do kill "$pid" 2>/dev/null || true; done; }
+# Then wait (bounded) for them to finish: exiting at once let systemd's
+# KillMode=mixed SIGKILL them mid-shutdown, and on the Mac returned while the
+# old servers still held the ports (3.76 H3-15).
+cleanup() {
+  for pid in "${pids[@]:-}"; do kill "$pid" 2>/dev/null || true; done
+  for _ in $(seq 1 40); do
+    alive=0
+    for pid in "${pids[@]:-}"; do kill -0 "$pid" 2>/dev/null && alive=1; done
+    [ "$alive" = 0 ] && return 0
+    sleep 0.2
+  done
+}
 trap cleanup EXIT
 # A requested stop (Ctrl-C, systemctl stop) ends the script at once and
 # cleanly: exit 0, so systemd does not mark the unit failed (3.71 review).
-trap 'cleanup; exit 0' INT TERM
+trap 'exit 0' INT TERM   # the EXIT trap runs cleanup, once
 
 # 3.36: under SIM_MOTOR_BOARD=fake the simulated body runs as its own
 # programs, started first -- physics + the fake board (sim/body_server.py)
@@ -128,9 +154,13 @@ if [ "${SIM_MOTOR_BOARD:-}" = "fake" ]; then
   # ROBOT_LIDAR is the link, as the udev name is on the car.
   if [ "${SIM_LIDAR:-}" = "fake" ]; then
     export ROBOT_LIDAR="${ROBOT_LIDAR:-/tmp/picar-lidar-$(id -u)}"
+    # A link left by a killed run can name a pty macOS has since given to
+    # something else; it would satisfy the wait below at once (3.76 H3-17).
+    rm -f "$ROBOT_LIDAR"
     python -m sim.fake_lidar --link "$ROBOT_LIDAR" &
     pids+=($!)
     for _ in $(seq 1 50); do [ -e "$ROBOT_LIDAR" ] && break; sleep 0.1; done
+    [ -e "$ROBOT_LIDAR" ] || { echo "the fake lidar made no link at $ROBOT_LIDAR in 5 s" >&2; exit 1; }
     echo "  lidar   $ROBOT_LIDAR   (fake D500)"
   fi
 fi

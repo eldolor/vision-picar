@@ -34,14 +34,20 @@ Parameters:
       carries the account and region.
   ExpireAfterDays:
     Type: Number
-    Default: 30
+    Default: 365
     MinValue: 1
     Description: >
       How long a build artifact is kept. These zips are the ONLY pre-built
       rollback path now that stage 2 emptied and deleted the ECR
       repositories -- redeploying an older function means either an artifact
-      still in here or a fresh `bash service/lambda/build.sh`. 30 days is a
-      compromise between that and unbounded growth at ~39MB per build.
+      still in here or a fresh `bash service/lambda/build.sh`. They are also
+      what CloudFormation ROLLS BACK TO: serverless.yaml's VisionCodeKey /
+      WalksCodeKey name the live zips, and a failed update re-reads the
+      previous keys. Expired, that rollback fails (UPDATE_ROLLBACK_FAILED).
+      30 days did exactly that to any deploy more than a month after the
+      last build (3.76 H2-7). 365 days at ~39MB a build is pennies a month;
+      deploying more than a year after the last build still needs the old
+      zips re-uploaded first.
 
 Conditions:
   GenerateBucketName: !Equals [!Ref BucketName, ""]
