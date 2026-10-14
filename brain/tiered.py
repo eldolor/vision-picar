@@ -1466,6 +1466,11 @@ class TieredVision:
         """Invalidate anything in flight. Called when a mission ends, so a
         late answer cannot be applied to a robot that has stopped."""
         self._epoch += 1
+        q = self._inflight_question
+        if q is not None:
+            # A question cancelled before it ran never sets this itself; an
+            # arrival waiting on it must not wait for ever (review round 3).
+            q.local_done.set()
         with self._collect_lock:
             self._inflight = None
             self._inflight_trigger = None

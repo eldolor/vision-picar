@@ -648,3 +648,16 @@ def test_review2_out_of_vocabulary_with_an_absent_tier_reaches_the_cloud_at_the_
     play(tier, 5, make=moving)
     # start; then 50 cm (frames 2-4 at 20 cm each) reaches the bar on frame 4.
     assert cloud.calls == 2, tier.stats.as_dict()
+
+
+def test_review3_a_stop_releases_an_arrival_waiting_on_a_cancelled_question():
+    tier, cloud = tier_for([P(ABSENT)], Local(no()), async_cloud=True,
+                           local_identity_fn=lambda f: yes())
+    gate = threading.Event()
+    tier._executor = __import__("concurrent.futures").futures.ThreadPoolExecutor(1)
+    tier._executor.submit(gate.wait, 5)             # the worker is busy: the question queues
+    tier(frame())
+    q = tier._inflight_question
+    tier.close()                                    # cancels it before it ever runs
+    assert q.local_done.is_set()
+    gate.set()
