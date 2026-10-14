@@ -1492,5 +1492,7 @@ def test_a_live_sighting_still_outranks_a_dead_reckoned_one():
     src = inspect.getsource(TieredVision._local_scene)
 
     assert "steer = self._steer_to(perception)" in src
-    assert "reckoned = None if steer else self._dead_reckoned_direction()" in src
-    assert "direction = steer or reckoned or held or SCAN_ACTION" in src
+    # 3.80.D added a rung between them (a local VLM's located yes): still
+    # below the live sighting, still above dead reckoning.
+    assert "reckoned = None if (steer or located) else self._dead_reckoned_direction()" in src
+    assert "direction = steer or located or reckoned or held or SCAN_ACTION" in src

@@ -319,6 +319,12 @@ brain:
   tier_local_no_below: 0.1
   tier_local_max_unable: 2
   tier_local_timeout_s: 3.0
+  # 3.80.D -- per frame, with the local tier on: a best candidate with CLIP
+  # P in [band_low, the 0.8 gate) on tier_consecutive_frames frames asks the
+  # local VLM (`uncertain_band`), as do an out-of-vocabulary target and
+  # today's four triggers; the cloud only after max_unable unable answers in
+  # a row, or when the local VLM is absent (approved by the user 2026-10-14).
+  tier_local_band_low: 0.5
 
   # 3.70 E4: a mission's budget -- a time limit (seconds) and a battery floor
   # (volts, the motor board's `v`). It ends `out_of_budget` at either. The

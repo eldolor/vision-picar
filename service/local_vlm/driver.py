@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import queue
+import re
 import subprocess
 import tempfile
 import threading
@@ -41,6 +42,22 @@ CANCEL_GRACE_S = 3.0
 # unseen, and the request would then run to its end.
 MIN_SEND_S = 0.1
 _EOF = object()
+# 3.80.D: the first JSON object in a reply, for its `bbox_2d`.
+_OBJECT = re.compile(r"\{[^{}]*\}")
+
+
+def parse_box(text: str) -> Optional[list]:
+    """`[x1, y1, x2, y2]` from the first object in `text` that carries a
+    well-formed `bbox_2d`, or None. Only the generated text is read: the
+    prompt's own example box is never in it (perceive_lab's lesson)."""
+    for m in _OBJECT.finditer(text):
+        try:
+            box = [float(v) for v in json.loads(m.group(0))["bbox_2d"]]
+        except (ValueError, KeyError, TypeError):
+            continue
+        if len(box) == 4 and box[2] > box[0] and box[3] > box[1]:
+            return box
+    return None
 
 
 class DriverGone(RuntimeError):
@@ -100,10 +117,16 @@ class EdgeDriver:
         except (BrokenPipeError, OSError, ValueError) as e:
             raise DriverGone(f"driver stdin closed: {e}") from e
 
-    def ask(self, jpeg: bytes, target: str, deadline_s: float) -> dict:
+    def ask(self, jpeg: bytes, target: str, deadline_s: float, box: bool = False) -> dict:
         """One arrival question. Returns `{"status", "score", "parsed",
-        "ms", "driver_ms"}`; status is `answered`, `timeout`, `unparsed`,
-        `busy` or `error`. Raises DriverGone when the driver is not there.
+        "ms", "driver_ms", "box"}`; status is `answered`, `timeout`,
+        `unparsed`, `busy` or `error`. Raises DriverGone when the driver is
+        not there.
+
+        3.80.D: with `box`, a reply that decides yes is read on until its box
+        closes (or the deadline: the score, with `box` None), so a sighting
+        says where; a no still ends at the deciding token. The score is the
+        one read at the decision either way.
 
         It returns at the deciding token or at the deadline, whichever comes
         first. The driver ends the request on its own after the cancel, and
@@ -142,7 +165,7 @@ class EdgeDriver:
                     self.lines.put(_EOF)
                     raise DriverGone(f"driver exited ({self.proc.poll()})")
             self._send(str(req))
-            result, ended = self._stream(t0, end)
+            result, ended = self._stream(t0, end, box)
             if not ended:
                 handed_off = True
                 threading.Thread(target=self._drain, args=(files,), daemon=True).start()
@@ -176,37 +199,55 @@ class EdgeDriver:
         finally:
             self._release(files)
 
-    def _stream(self, t0: float, end: float) -> tuple:
+    def _stream(self, t0: float, end: float, want_box: bool = False) -> tuple:
         """`(result, ended)`: `ended` False when a cancel was sent and the
         request's end line is still to come (`_drain` reads it)."""
         content = []
+        decided = None   # the reply at the deciding token, once reached (box mode)
+
+        def reply(ms, driver_ms=None, found=None):
+            score, parsed, _ = decided or p_localised(content)
+            return {"status": "answered" if parsed else "unparsed",
+                    "score": score if parsed else None, "parsed": parsed,
+                    "ms": ms, "driver_ms": driver_ms, "box": found,
+                    "decision_ms": decision_ms}
+
+        decision_ms = None
         while True:
             line = self._next(end - time.monotonic())
             if line is None:
                 self._send("C")
+                ms = (time.monotonic() - t0) * 1000
+                if decided is not None:
+                    # Past the decision, short of the box: the score stands.
+                    return reply(ms), False
                 return ({"status": "timeout", "score": None, "parsed": False,
-                         "ms": (time.monotonic() - t0) * 1000, "driver_ms": None}, False)
+                         "ms": ms, "driver_ms": None, "box": None}, False)
             if line.startswith("T "):
                 chosen, alts = parse_token_line(line)
                 content.append(content_entry(self.decode, chosen, alts))
-                if decision_reached(content):
-                    ms = (time.monotonic() - t0) * 1000
-                    self._send("C")
-                    score, parsed, _ = p_localised(content)
-                    return ({"status": "answered" if parsed else "unparsed",
-                             "score": score if parsed else None, "parsed": parsed,
-                             "ms": ms, "driver_ms": None}, False)
+                if decided is None and decision_reached(content):
+                    decision_ms = (time.monotonic() - t0) * 1000
+                    decided = p_localised(content)
+                    text = "".join(c["token"] for c in content)
+                    if not (want_box and decided[1] and "{" in text):
+                        self._send("C")
+                        return reply(decision_ms), False
+                if decided is not None:
+                    found = parse_box("".join(c["token"] for c in content))
+                    if found is not None:
+                        # The driver ends the request at its end id anyway; a
+                        # C that arrives after that is skipped by its loop.
+                        self._send("C")
+                        return reply((time.monotonic() - t0) * 1000, found=found), False
             elif line.startswith("E "):
                 reason, driver_ms, ok = parse_end_line(line)
                 self.served += 1
                 ms = (time.monotonic() - t0) * 1000
                 if not ok and not content:
                     return ({"status": "error", "score": None, "parsed": False,
-                             "ms": ms, "driver_ms": driver_ms}, True)
-                score, parsed, _ = p_localised(content)
-                return ({"status": "answered" if parsed else "unparsed",
-                         "score": score if parsed else None, "parsed": parsed,
-                         "ms": ms, "driver_ms": driver_ms}, True)
+                             "ms": ms, "driver_ms": driver_ms, "box": None}, True)
+                return reply(ms, driver_ms), True
             else:
                 logger.warning("driver line not understood: %r", line[:80])
 

@@ -146,6 +146,54 @@ counts `local_calls`, `local` (`yes`, `no`, `absent`, `unable_<status>`,
 `unable_band`, `unable_noscore`, `unable_runner_timeout`), `local_ms` and `escalations`. `close()` closes and drops the
 client, so 3.53's late check is the cloud's.
 
+**Every frame's question through the local tier (3.80.D).** With
+`local_sighting_fn` set (the brain sets it with `local_identity_fn`, to the
+same client's `ask(frame, box=True)`), `_trigger_for()` adds two questions
+and `__call__` puts every question to the local tier first:
+* `uncertain_band` (`TRIGGER_BAND`): an absent frame whose best candidate's
+  CLIP P is in [`local_band_low` (config `tier_local_band_low`, 0.5), the
+  pipeline's `match_probability` (0.8)) on `consecutive_frames` frames in a
+  row; asked once per run (`_band_asked`), armed again by any other frame.
+* `out_of_vocabulary` (`TRIGGER_OOV`): `vocabulary.in_vocabulary` false and
+  `_absent_streak >= consecutive_frames`; checked before `cold_search`.
+* `_local_first()` is the sighting call unless `_frame_unable` has reached
+  `local_max_unable`; then the question takes today's cloud path, counted in
+  `frame_escalations["unable"]`, and the count starts again.
+* `_ask_local_first()` counts `local_triggers[trigger]` and runs
+  `_ask_tiers()` on the async worker (`_dispatch(..., tier="local", job=...)`,
+  so one question is in flight across both tiers; `_tier.in_flight_tier`
+  says which) or inline. `_ask_tiers()` returns a `_LocalAnswer`, or -- the
+  call raised (`LocalVLMAbsent` or any fault) -- counts
+  `local_frame["absent"]` and `frame_escalations["absent"]` and returns the
+  cloud's scene about the same frame (cloud counted with its trigger, under
+  `_stats_lock`, cap checked; a Stop since dispatch returns None and pays
+  nothing). A cloud scene lands as before and drops `_local_held`.
+* `_apply_local()` (on landing; a different epoch is ignored): yes (>= 0.5)
+  and no (<= `local_no_below`) reset `_frame_unable` and the pacing counts
+  as a landed cloud answer does. A yes whose reply has `box_frac` gives a
+  bearing (`_bearing_of()`: box centre over the pipeline's `hfov_deg`, 66
+  if none, plus the frame's pan, less the heading odometry measured since
+  the question's `_Question.pose`), stored as a one-shot `_local_turn`
+  (sized by `turn_for()`, or FORWARD inside `STEER_BAND_DEG`) and
+  `_local_held = "FORWARD"`, which `_held_direction()` returns before the
+  cloud's goal. A no drops both. Anything else is unable
+  (`unable_<status>`, `unable_band`, `unable_noscore`): `_frame_unable` + 1
+  and the question stays open -- the pacing counts are not reset, a
+  candidate's edge and the band are armed again, a `mission_start` is
+  asked again (`_retry_start`).
+* `_local_scene()` precedence: perception's steer, then `_local_turn`
+  (used once), then dead reckoning, then the held goal, then the scan; the
+  spin guard skips a located turn. `_tier` adds `local_called` (the
+  question asked this frame) and `local_landed` (`trigger`, `answer`,
+  `score`, `bearing_deg`), and the reasoning reads `[reactive tier, local
+  question: <trigger>]`.
+* `TierStats` adds `local_triggers`, `local_frame`, `local_frame_calls` and
+  `frame_escalations`; `cloud_calls` and `triggers` count only questions
+  that reached the cloud, and `max_calls` caps only those. A local failure
+  never reaches B3.2; a cloud failure after an escalation does.
+* `wait_inflight()` waits for a local question still out even with the
+  call cap spent, when the arrival will ask the local tier next.
+
 **What the hysteresis does and does not gate.** `consecutive_frames` is
 read only in `_trigger_for()`. `_steer_to()` returns a direction for any
 frame whose `status` is `detected` with a bearing, with no streak, so one

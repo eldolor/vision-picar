@@ -15,7 +15,11 @@ from service.local_vlm.driver import DriverGone, EdgeDriver
 from service.local_vlm.server import create_app
 
 FAKE = Path(__file__).with_name("fake_edgellm_driver.py")
-VOCAB = {6: "[{", 7: "[]", 9: "x"}
+VOCAB = {6: "[{", 7: "[]", 9: "x",
+         # 3.80.D: the rest of a box, `[{"bbox_2d": [282, 40, 362, 160]}]`
+         # (centred in a 640-wide frame as Qwen sees it, 644 wide).
+         10: '"bbox_2d": [', 11: "282", 12: ", ", 13: "40", 14: "362", 15: "160",
+         16: "]}]"}
 JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 64
 IMAGE = base64.b64encode(JPEG).decode()
 
@@ -232,3 +236,44 @@ def test_a_death_seen_by_one_reader_is_seen_by_the_next(drv):
     for _ in range(2):
         with pytest.raises(DriverGone):
             drv._next(0.1)
+
+
+# --- 3.80.D: the box, for sightings (D9) -----------------------------------
+
+BOX = [282.0, 40.0, 362.0, 160.0]
+
+
+def test_d9_box_yes_returns_the_same_score_and_the_box(drv):
+    plain = drv.ask(JPEG, "yes thing", 5.0)
+    got = drv.ask(JPEG, "yes thing", 5.0, box=True)
+    assert got["status"] == "answered" and got["score"] == pytest.approx(plain["score"])
+    assert got["box"] == BOX
+    # Without `box` the reply carries none: the arrival question is unchanged.
+    assert plain.get("box") is None
+
+
+def test_d9_box_no_ends_at_the_decision_with_no_box(drv):
+    t0 = time.monotonic()
+    got = drv.ask(JPEG, "plain thing", 5.0, box=True)
+    assert got["status"] == "answered" and got["score"] == pytest.approx(0.05)
+    assert got["box"] is None and time.monotonic() - t0 < 1.0
+
+
+def test_d9_a_deadline_after_the_decision_keeps_the_score_without_a_box(drv):
+    t0 = time.monotonic()
+    got = drv.ask(JPEG, "boxslow thing", 0.5, box=True)
+    assert got["status"] == "answered" and got["score"] == pytest.approx(0.9)
+    assert got["box"] is None
+    assert time.monotonic() - t0 < 0.9
+    # The cancelled tail is drained; the runtime answers the next request.
+    assert drv.ask(JPEG, "yes thing", 5.0, box=True)["box"] == BOX
+
+
+def test_d9_http_box_flag(tmp_path, monkeypatch):
+    c, _ = app_client(tmp_path, monkeypatch)
+    with c:
+        wait_ready(c)
+        r = c.post("/identity", json={"image_b64": IMAGE, "target": "yes thing", "box": True})
+        assert r.status_code == 200 and r.json()["box"] == BOX
+        r = c.post("/identity", json={"image_b64": IMAGE, "target": "yes thing"})
+        assert r.status_code == 200 and r.json().get("box") is None

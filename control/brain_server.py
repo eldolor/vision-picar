@@ -71,6 +71,7 @@ budget (B3.2), which only sees calls that return or time out.
 import asyncio
 import base64
 import binascii
+import functools
 import json
 import logging
 import os
@@ -351,11 +352,16 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
         "corroboration_bar": config["tier_corroboration_bar"],
         # 3.56: the arrival confirmation's own client (None: the triggers').
         "confirm_vision_fn": confirm_vision_fn,
-        # 3.80.C: the local VLM tier at arrival, when a URL is configured.
-        "local_identity_fn": _local_identity_fn(target, config, local_secret),
         "local_no_below": config["tier_local_no_below"],
         "local_max_unable": config["tier_local_max_unable"],
+        "local_band_low": config["tier_local_band_low"],
     }
+    # 3.80.C: the local VLM tier at arrival, when a URL is configured; 3.80.D:
+    # the same client for every frame's question, asking where as well.
+    local = _local_identity_fn(target, config, local_secret)
+    kwargs["local_identity_fn"] = local
+    kwargs["local_sighting_fn"] = (functools.partial(local.ask, box=True)
+                                   if local is not None else None)
     if simulated:
         # 1.12, built at last (PLAN-ros-alignment.md R1): the simulator
         # reports what its geometry says is visible, and nothing loads YOLO

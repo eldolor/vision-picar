@@ -502,3 +502,28 @@ def test_review3_a_busy_frame_is_not_counted_as_a_local_call():
     tier._local_inflight = 99                    # a check still out
     v = tier.confirm_local({})
     assert v["local_status"] == "busy" and tier.stats.local_calls == 0
+
+
+# --- 3.80.D: the client asks for the box (D9) --------------------------------
+
+def _jpeg_frame_sized(w, h):
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new("RGB", (w, h)).save(out, format="JPEG")
+    return {"image_base64": base64.b64encode(out.getvalue()).decode()}
+
+
+def test_d9_client_box_comes_back_as_fractions_of_the_image_qwen_saw(tmp_path, monkeypatch):
+    from brain.local_vlm import model_size
+    # Qwen2.5-VL's smart_resize: each side to a multiple of 28.
+    assert model_size(640, 480) == (644, 476)
+    tc = _service(tmp_path, monkeypatch)
+    try:
+        client = LocalVLMClient("http://testserver", "yes thing", client=tc)
+        got = client.ask(_jpeg_frame_sized(640, 480), box=True)
+        assert got["status"] == "answered" and got["box"] == [282.0, 40.0, 362.0, 160.0]
+        assert got["box_frac"] == pytest.approx([282 / 644, 40 / 476, 362 / 644, 160 / 476])
+        # The arrival question asks for no box.
+        assert client.ask(_jpeg_frame_sized(640, 480)).get("box") is None
+    finally:
+        tc.__exit__(None, None, None)

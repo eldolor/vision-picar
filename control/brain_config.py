@@ -155,6 +155,7 @@ DEFAULTS = {
     "tier_local_no_below": 0.1,
     "tier_local_max_unable": 2,
     "tier_local_timeout_s": 3.0,
+    "tier_local_band_low": 0.5,
     # 3.70 E4 (decided by the user 2026-10-11): a mission's budget is a time
     # limit and a battery floor; the step count is only a backstop derived
     # from the limit (control/mission_runner.py's derived_max_steps()).
@@ -353,6 +354,10 @@ def load_brain_config(config_path=None) -> dict:
     if isinstance(unable, bool) or not isinstance(unable, int) or unable < 1:
         raise ValueError(f"brain.tier_local_max_unable must be a whole number >= 1; "
                          f"got {unable!r}")
+    band_low = float(merged["tier_local_band_low"])
+    if not 0.0 < band_low < 0.8:
+        raise ValueError(f"brain.tier_local_band_low must be in (0, 0.8), below the "
+                         f"match gate; got {band_low}")
     if float(merged["tier_local_timeout_s"]) <= 0:
         raise ValueError(f"brain.tier_local_timeout_s must be > 0; "
                          f"got {merged['tier_local_timeout_s']}")

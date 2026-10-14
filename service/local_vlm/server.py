@@ -47,6 +47,8 @@ class IdentityRequest(BaseModel):
     image_b64: str = Field(max_length=MAX_IMAGE_B64)
     target: str = Field(min_length=1, max_length=200)
     deadline_s: float = Field(default=3.0, gt=0, le=MAX_DEADLINE_S)
+    # 3.80.D: a sighting also wants the box (a yes is read on until it closes).
+    box: bool = False
 
 
 def require_secret(x_app_secret: str = Header(default="")):
@@ -143,7 +145,7 @@ def create_app(make_driver: Callable[[], EdgeDriver], *, info: Optional[dict] = 
         if not jpeg.startswith(b"\xff\xd8"):
             raise HTTPException(status_code=400, detail="image is not a JPEG")
         try:
-            return drv.ask(jpeg, req.target, req.deadline_s)
+            return drv.ask(jpeg, req.target, req.deadline_s, box=req.box)
         except DriverGone as e:
             died(str(e))
             raise HTTPException(status_code=503, detail="local VLM absent")

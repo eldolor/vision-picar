@@ -1,7 +1,11 @@
 """A stand-in for tools/jetson/edgellm_identity.cpp, speaking its protocol,
 for tests/test_local_vlm.py. The target in the request picks what it does:
 
-    yes / no   a merged `[{` or `[]` first, then filler until cancelled
+    yes / no   a merged `[{` or `[]` first; a yes then its box (3.80.D),
+               `[{"bbox_2d": [282, 40, 362, 160]}]`, and the end; a no
+               filler until cancelled
+    boxslow    a yes whose box comes 0.2 s a token (a deadline after the
+               decision)
     slow       filler every 0.2 s until cancelled
     prefill    1 s before the first token (a cancel is not seen until then)
     noparse    three filler tokens, then the end id
@@ -62,6 +66,21 @@ def stream(first, gap):
     return 2
 
 
+# 3.80.D: the box after a merged `[{` (ids 10-16 in the tests' vocabulary).
+BOX_TAIL = (10, 11, 12, 13, 12, 14, 12, 15, 16)
+
+
+def box(gap):
+    """A yes, then its box a token every `gap` s, then the end (1, as EOS).
+    3 if cancelled on the way."""
+    out(f"T 6 2 6:{lp(0.9)} 7:{lp(0.1)}")
+    for tid in BOX_TAIL:
+        if readline(gap) == "C":
+            return 3
+        out(f"T {tid} 1 {tid}:-0.01")
+    return 1
+
+
 def main():
     if os.environ.get("FAKE_NEVER_READY"):
         while readline() not in ("", None):
@@ -98,10 +117,12 @@ def main():
         if "prefill" in text:
             time.sleep(1.0)
             reason = stream(f"T {FILLER} 1 {FILLER}:-0.01", 0.02)
+        elif "boxslow" in text:
+            reason = box(0.2)
         elif "slow" in text:
             reason = stream(None, 0.2)
         elif "yes" in text:
-            reason = stream(f"T 6 2 6:{lp(0.9)} 7:{lp(0.1)}", 0.02)
+            reason = box(0.02)
         else:
             reason = stream(f"T 7 2 7:{lp(0.95)} 6:{lp(0.05)}", 0.02)
         out(f"E {reason} {(time.monotonic() - t0) * 1000:.3f} 1")

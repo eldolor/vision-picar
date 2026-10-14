@@ -79,6 +79,13 @@ service cannot drift from what was measured.
 * `POST /identity` `{image_b64, target, deadline_s}` (secret-gated):
   `status` `answered` with the raw `score`, or `timeout`, `unparsed`,
   `busy`, `error` (each an *unable* answer). 503: absent.
+* 3.80.D: `box: true` (a sighting) reads a reply that decides yes on until
+  its first JSON object with a well-formed `bbox_2d` closes, then cancels;
+  the reply adds `box` `[x1, y1, x2, y2]` (the model's pixels) and
+  `decision_ms`. The score is the one read at the deciding token, so it
+  equals the reply without `box`. A no ends at the deciding token as
+  before; a deadline after the decision returns `answered` with the score
+  and `box` null.
 * One request at a time. The driver's cancel check reads stdin, so only
   `C` is ever written while a request runs, and a request with under
   0.1 s left when the runtime frees is `timeout` without being sent (a `C`
@@ -103,7 +110,12 @@ to JPEG with Pillow when it is not one) and returns the service's dict. A
 refused or dropped connection or a 503 raises `LocalVLMAbsent`; the client's
 own timeout (`deadline_s` + `TAIL_S` 2 s, the cancelled tail B6 measured)
 returns status `timeout`; any other non-200, or a frame with no image,
-returns status `error`. The thresholds are the policy's
+returns status `error`. `ask(frame, box=True)` (3.80.D, every frame's
+question; the brain passes `functools.partial(client.ask, box=True)` as the
+policy's `local_sighting_fn`) adds `box_frac`: the box over the size Qwen2.5-VL
+saw the frame at (`model_size()`, its processor's `smart_resize`: each side
+to a multiple of 28; 640x480 is seen as 644x476), clipped to [0, 1]. The
+thresholds are the policy's
 ([policy engineering](../policy/ENGINEERING.md)).
 
 
