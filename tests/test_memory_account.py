@@ -48,6 +48,8 @@ def test_components_group_by_command_and_container_and_carry_gpu():
         _proc("14", "/usr/bin/python3 /opt/ros/humble/bin/ros2 launch picar_bringup x", 20,
               cgroup="/system.slice/docker-abc123.scope"),
         _proc("15", "/usr/bin/dockerd -H fd://", 25, cgroup="/system.slice/docker.service"),
+        _proc("16", "python -m tools.jetson.bench_identity_trt --driver /x/edgellm_identity", 90),
+        _proc("17", "/x/build/examples/llm/edgellm_identity /e/llm /e/visual", 500),
     ]
     g = ma.component_rows(_rec(1, "window", 700, procs, nvmap={"11": 1200, "99": 30}))
     assert g["perception (YOLOE + CLIP)"]["gpu"] == 1200
@@ -56,6 +58,9 @@ def test_components_group_by_command_and_container_and_carry_gpu():
     assert g["ROS container: controller_server"]["anon"] == 30
     assert g["ROS container: ros2 launch"]["anon"] == 20
     assert g["docker daemons"]["anon"] == 25
+    # the client's command line names the driver; it is still the client
+    assert g["VLM bench client"]["anon"] == 90
+    assert g["VLM driver (VE, Edge-LLM)"]["anon"] == 500
     # GPU memory whose process the sample did not list is still counted
     assert g["GPU, process not listed"]["gpu"] == 30
 

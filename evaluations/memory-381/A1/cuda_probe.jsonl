@@ -1,0 +1,4 @@
+{"stage": "python", "Rss_mb": 9.6, "Pss_mb": 5.1, "Pss_Anon_mb": 4.4, "Pss_File_mb": 0.8, "Pss_Shmem_mb": 0.0, "gpu_mb": 0.0}
+{"stage": "cudart", "Rss_mb": 26.9, "Pss_mb": 20.6, "Pss_Anon_mb": 12.5, "Pss_File_mb": 8.2, "Pss_Shmem_mb": 0.0, "gpu_mb": 65.3}
+{"stage": "torch", "Rss_mb": 416.7, "Pss_mb": 405.5, "Pss_Anon_mb": 265.4, "Pss_File_mb": 140.0, "Pss_Shmem_mb": 0.0, "gpu_mb": 73.3}
+{"stage": "cudnn", "Rss_mb": 610.8, "Pss_mb": 599.3, "Pss_Anon_mb": 411.1, "Pss_File_mb": 188.2, "Pss_Shmem_mb": 0.0, "gpu_mb": 107.5}

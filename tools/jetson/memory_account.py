@@ -125,8 +125,10 @@ COMPONENTS = [  # first match wins; matched against "comm cmd"
     ("simulator sensors", r"sim\.sensor_server"),
     ("tunnel proxy", r"service\.tunnel\.proxy"),
     ("perception (YOLOE + CLIP)", r"perception_loop\.py"),
+    # The client before the driver: its command line names the driver's path.
+    ("VLM bench client", r"bench_identity_trt|bench_identity_llama"),
     ("VLM driver (VE, Edge-LLM)", r"edgellm_identity"),
-    ("VLM bench client", r"bench_identity_trt|bench_identity_llama|llama-server"),
+    ("VLM server (llama.cpp)", r"llama-server"),
     ("local VLM service", r"local_vlm|vlm_service"),
     ("nav load / harness python", r"demo_nav_goals|python - "),
     ("measurement (sampler, tegrastats)", r"memory_account|tegrastats"),

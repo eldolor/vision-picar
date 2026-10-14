@@ -1,0 +1,21 @@
+{"stage": "python", "Rss_mb": 9.3, "Pss_Anon_mb": 4.3, "Pss_File_mb": 0.7}
+{"stage": "import torch", "Rss_mb": 384.5, "Pss_Anon_mb": 233.3, "Pss_File_mb": 142.0}
+{"stage": "torch + CUDA + cuDNN", "Rss_mb": 543.4, "Pss_Anon_mb": 347.7, "Pss_File_mb": 184.3}
+{"stage": "import brain.perceive, ultralytics, open_clip", "Rss_mb": 708.4, "Pss_Anon_mb": 481.9, "Pss_File_mb": 211.2}
+{"stage": "pipeline_for (YOLOE + CLIP loaded, prompt set)", "Rss_mb": 808.5, "Pss_Anon_mb": 577.5, "Pss_File_mb": 213.8}
+{"stage": "after 5 frames", "Rss_mb": 1516.3, "Pss_Anon_mb": 1248.0, "Pss_File_mb": 249.8}
+{"tensors_mb_by_device": {"cpu": 52.4, "cuda": 441.7}}
+{"module": "open_clip.model.CLIP", "mb": 389.4, "device": ["cuda"]}
+{"module": "open_clip.modified_resnet.ModifiedResNet", "mb": 146.4, "device": ["cuda"]}
+{"module": "torch.nn.modules.container.ModuleList", "mb": 144.3, "device": ["cuda"]}
+{"module": "open_clip.transformer.Transformer", "mb": 144.3, "device": ["cuda"]}
+{"module": "torch.nn.modules.sparse.Embedding", "mb": 96.5, "device": ["cuda"]}
+{"module": "torch.nn.modules.container.Sequential", "mb": 57.2, "device": ["cuda"]}
+{"module": "open_clip.modified_resnet.AttentionPool2d", "mb": 56.4, "device": ["cuda"]}
+{"module": "ultralytics.nn.tasks.YOLOESegModel", "mb": 52.4, "device": ["cpu"]}
+{"module": "ultralytics.models.yolo.model.YOLOE", "mb": 52.4, "device": ["cpu"]}
+{"module": "torch.nn.modules.container.Sequential", "mb": 52.4, "device": ["cpu"]}
+{"module": "ultralytics.nn.tasks.YOLOESegModel", "mb": 52.2, "device": ["cuda"]}
+{"module": "torch.nn.modules.container.Sequential", "mb": 52.2, "device": ["cuda"]}
+{"module": "torch.nn.modules.container.Sequential", "mb": 27.2, "device": ["cuda"]}
+{"module": "open_clip.modified_resnet.Bottleneck", "mb": 23.1, "device": ["cuda"]}
