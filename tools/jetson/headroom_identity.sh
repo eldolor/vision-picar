@@ -13,11 +13,19 @@
 # Env: IMAGE (default vision-picar-ros:plan-3.58), NAME (picar-ros-358),
 # BENCH (~/bench-348). Tears the stack down afterwards and restores the
 # desktop, so the board is left as found.
+#
+# 3.78 amendment 4: RUNTIME=trt answers with TensorRT Edge-LLM through
+# bench_identity_trt (ENGINES, the model's engines dir; EDGELLM, the built
+# Edge-LLM tree). The twin's systemd units (3.71) are stopped after the
+# multi-user isolate, which would otherwise start them (3.78's deviation).
 set -uo pipefail
 OUT="${1:?out dir}"; mkdir -p "$OUT"
 IMAGE="${IMAGE:-vision-picar-ros:plan-3.58}"
 NAME="${NAME:-picar-ros-358}"
 BENCH="${BENCH:-$HOME/bench-348}"
+RUNTIME="${RUNTIME:-llama}"
+ENGINES="${ENGINES:-$HOME/bench-378/ws91/Qwen2.5-VL-3B-Instruct/engines}"
+EDGELLM="${EDGELLM:-$HOME/bench-378/ell91}"
 source .venv/bin/activate
 set -a; source ~/.vision-picar-local-secrets; set +a
 export APP_SHARED_SECRET="$LOCAL_SECRET"
@@ -48,7 +56,8 @@ PERC=; MEM=; WHL=; NAV=
 trap teardown EXIT
 
 sudo systemctl isolate multi-user.target; sleep 5
-{ echo "== desktop: $(systemctl is-active gdm)"
+sudo systemctl stop picar-stack picar-ngrok 2>/dev/null; sleep 3
+{ echo "== desktop: $(systemctl is-active gdm); twin units: $(systemctl is-active picar-stack) $(systemctl is-active picar-ngrok); runtime $RUNTIME"
   echo "== run L $(date +%T) rev $(git rev-parse --short HEAD) image $IMAGE $(sudo nvpmodel -q | head -1)"
   echo "== MemAvailable before anything: $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) MB"; } | tee "$OUT/run.log"
 OOM0=$(oom)
@@ -106,14 +115,24 @@ NAV=$!
 
 W0=$(wheel); T0=$(date +%s)
 echo "== window start $(date +%T); wheel (moving late max_dt): $W0" | tee -a "$OUT/run.log"
-python -m tools.jetson.bench_identity_llama --stop-at-decision \
-  --server "$BENCH/llama.cpp/build/bin/llama-server" \
-  --model "$BENCH/models/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf" \
-  --mmproj "$BENCH/models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf" \
-  --recordings recordings \
-  --walk blue-bottle-20260907-142454 --walk blue-bottle-20260907-185007 \
-  --walk blue-shoes-20260907-152528 --walk red-backpack-20260907-144856 \
-  --out "$OUT/loaded.json" > "$OUT/bench.log" 2>&1
+WALKS=(--walk blue-bottle-20260907-142454 --walk blue-bottle-20260907-185007
+       --walk blue-shoes-20260907-152528 --walk red-backpack-20260907-144856)
+if [ "$RUNTIME" = trt ]; then
+  python -m tools.jetson.bench_identity_trt \
+    --driver "$EDGELLM/build/examples/llm/edgellm_identity" \
+    --engine-dir "$ENGINES/llm" --visual-engine-dir "$ENGINES/visual" \
+    --tokenizer "$ENGINES/llm/tokenizer.json" \
+    --plugin "$EDGELLM/build/libNvInfer_edgellm_plugin.so" \
+    --recordings recordings "${WALKS[@]}" \
+    --out "$OUT/loaded.json" > "$OUT/bench.log" 2>&1
+else
+  python -m tools.jetson.bench_identity_llama --stop-at-decision \
+    --server "$BENCH/llama.cpp/build/bin/llama-server" \
+    --model "$BENCH/models/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf" \
+    --mmproj "$BENCH/models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf" \
+    --recordings recordings "${WALKS[@]}" \
+    --out "$OUT/loaded.json" > "$OUT/bench.log" 2>&1
+fi
 BENCH_EXIT=$?
 W1=$(wheel); T1=$(date +%s)
 rm -f "$OUT/nav.run"; wait $NAV 2>/dev/null; NAV=
