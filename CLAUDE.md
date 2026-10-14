@@ -151,6 +151,30 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   the robot stack running it fails latency (3.64 s p90, bar 3.6) and memory
   (`MemAvailable` minimum 296 MB, bar 1 GB); not recommended. Open for the
   user: close it, or try loading the model only at arrival.
+* **The local VLM's runtime (3.78), merged 2026-10-14: TensorRT Edge-LLM
+  v0.9.1, engine VE.** Qwen2.5-VL-3B INT4 AWQ with a reduced vocabulary
+  (17,920) and FP8 embedding (`~/bench-378/ws91/q25VE/engines` on the
+  Jetson), driven by `tools/jetson/edgellm_identity.cpp` (JetPack 6.2
+  patches: `patch_edgellm_trt103.py`). 2.6x faster than llama.cpp; under the
+  whole robot stack 1.32 s p90, 606 MB `MemAvailable` minimum, 3.48's
+  accuracy (97.2% precision). The user set the memory floor at **0.5 GB with
+  the VLM killed first** (2026-10-14) and waived the teal-bin bar. Qwen3-VL-4B
+  and Qwen3.5-4B fail accuracy under every runtime. Margin over the floor is
+  ~100 MB; 3.81 (memory budget) is open.
+* **Tiered identity (3.80 A-C), merged 2026-10-14; the local tier is OFF by
+  default.** The user's strict order: perception, then local Qwen, then the
+  cloud only after `tier_local_max_unable` (2) unable answers or when the
+  local VLM is absent; thresholds approved (no_below 0.1, yes at 0.5,
+  timeout 3.0 s). B: `service/local_vlm` on `127.0.0.1:8005`, systemd unit
+  `picar-local-vlm` (`OOMScoreAdjust=1000`) installed by
+  `install_services.sh` but **not enabled**; stop it before Jetson benches.
+  Board: 299/299 answers as 3.78, HTTP p90 1.17 s, 4.07 GB. C: the arrival
+  question asks it first (`brain/local_vlm.py`, `TieredVision.confirm_local`,
+  arrival state `checking`); on with `tier_local_vlm_url` / `LOCAL_VLM_URL`.
+  C1-C8 met (live: `found` offline, 0 cloud calls at arrival). D (per-frame
+  escalation) and E (board measurements, then turning it on) are open;
+  `picar-stack`'s `OOMScoreAdjust=-900` (B4) is checked once installed from
+  `dev`. Survey room labels go through the same tiers in 3.70.S6.
 * **Rooms from CLIP (3.51, 3.54), merged 2026-10-09.** Zero-shot fails
   (67%); few-shot on the user's own rooms meets accuracy on three rooms
   (81%, within 1.1 points of the cloud) but not laptop-CPU cost. Not wired
