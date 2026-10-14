@@ -56,8 +56,9 @@ classes, the same reason the target gate thresholds `probability`.
 
 Repetition shows the detector is consistent, not that it is right; a mug
 called a vase every time would earn a confident vase. Each landmark counts
-labels over its counted hits, reports the majority, and is `disputed` when
-the runner-up holds `DISPUTE_SHARE` or more of the votes.
+labels over its counted hits, reports the most voted (a plurality with
+three or more labels), and is `disputed` when the runner-up holds
+`DISPUTE_SHARE` or more of the votes the top two labels share (3.76 G3).
 
 ## Fusion
 

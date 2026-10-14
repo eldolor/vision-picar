@@ -217,10 +217,20 @@ ends on its own and `runner.late_confirmation_pending()`,
    inside the window; a window that runs out after a failed call ends
    `failed`, not `expired`)
    (`/health` is shallow: it answers while Bedrock is down, so only a paid
-   call sees that outage), at most two paid attempts, then `failed`; a
-   `TimeoutError` ends it `failed` at once, because that call is still in
-   flight on its abandoned thread and a second beside it would break "one
-   call at a time". Not `_guarded_confirm()`, which maps the timeout away.
+   call sees that outage), at most two paid attempts, then `failed`. A
+   call that outlives its guard (`TimeoutError`, "the late confirmation
+   hung") is a failed attempt like any other (3.76 G1: it used to end the
+   check at once, so a slow but working cloud lost its second attempt). It
+   stays out on its abandoned thread and answers into its own box: the next
+   `late_ask()` returns that answer without a new call, and the loop takes
+   it at the next probe, not at the half-window retry; on the last attempt
+   allowed it is still awaited until the window ends. While any confirmation
+   is out (the mission's own, or a late one) `late_ask()` raises
+   `LateCallInFlight` at once with nothing sent -- it never waits, so probes
+   keep their pace and a cancel is seen at the next one -- and the loop asks
+   again later; never two calls at once. A window that ends with a call
+   still out is `failed`, never "unreachable". Not `_guarded_confirm()`,
+   which maps the timeout away.
 3. The verdict becomes `confirmed`, `refused` or `not_asked` (no call made:
    the policy's cap). The window running out is `expired`.
 
@@ -275,7 +285,7 @@ same record while no mission runs. `record(up)` sets `reachable` or
 `unreachable`, moving `since` (wall-clock epoch seconds) only on a change;
 a probe that raises is `unreachable`. `GET /mission/status` and the start
 response carry `cloud: {state, since, checked_at, age_s, probes, probe_s}`
-(`age_s` measured on the brain's clock, and `probe_s` the interval of whichever prober last answered, so the twin can tell an old answer
+(`age_s` measured on the brain's monotonic clock -- a wall-clock step at boot once aged a fresh answer by hours, 3.76 G4 -- and `probe_s` the interval of whichever prober last answered, so the twin can tell an old answer
 from a current one without comparing clocks; `state`
 is `unknown` before the first probe), or `cloud: null` with no watch; so
 does `POST /mission/stop`'s status (with a runner or idle), the last one the
@@ -499,7 +509,8 @@ tests/test_mission_guarded_verbs.py -q`.
 | `tests/test_camera_centred_start.py` (11) | 3.20's four criteria: centred first decision under `frontier` and `vision` (tiered is not parametrised), no step or vision call spent, centred start unchanged against `tests/data/frontier_trace_centred.json`, a refused centring ends the mission like any refused move |
 | `tests/test_mission_guarded_verbs.py` (3) | 3.32: a mission's verbs go through the safety layer's guarded plan; the gate forwards plan and stop count; a finished mission refuses a plan |
 | `tests/test_bearing_turns.py` | `blocked` after `stuck_after` refusals, never on an arrival, switchable off, reset by progress |
-| `tests/test_arrival_reconfirm.py` (26) | 3.53: once the cloud is back, exactly one paid call on all 12 clear starts for a cloud that sees the target and one that does not; the outcome unchanged; no robot method called; free and bounded probing (`expired`); two paid attempts, half a window apart, then `failed`, and a server-side outage that clears in the window `confirmed`; a cancel never pays, also when it lands between the probe and the call; a cap refusal counts no paid call; a hung call is never doubled; only an unconfirmed arrival records anything; the metrics row re-sent, not added; through `brain_server`, a new mission drops it, a refused start and a Stop after the ending (also one in the loop's last sleep) do not; the brain's own loop asks |
+| `tests/test_arrival_reconfirm.py` (26) | 3.53: once the cloud is back, exactly one paid call on all 12 clear starts for a cloud that sees the target and one that does not; the outcome unchanged; no robot method called; free and bounded probing (`expired`); two paid attempts, half a window apart, then `failed`, and a server-side outage that clears in the window `confirmed`; a cancel never pays, also when it lands between the probe and the call; a cap refusal counts no paid call; a hung call is never doubled (a second attempt only once it has ended, 3.76 G1); only an unconfirmed arrival records anything; the metrics row re-sent, not added; through `brain_server`, a new mission drops it, a refused start and a Stop after the ending (also one in the loop's last sleep) do not; the brain's own loop asks |
+| `tests/test_review_376g.py` (7) | 3.76 G1, G4: a late answer that outlived its guard is used once it lands (not paid twice, not held to the retry), also on the last attempt; a confirmation still out delays the ask without ending the window or blocking a probe; a window that ends with nothing out is not "still in flight"; the cloud watch's `age_s` survives a wall-clock step |
 | `tests/test_robot_contract.py` | `_HaltGate` passes the body conformance suite as a backend |
 | `tests/test_review_376c.py` (13) | 3.76 batch C: Stop ends explore's own nav2 goal (not a person's), also one accepted as Stop lands on another thread; no goal after the end; a person at the D-pad ends explore; explore waits on `ros` just after its goal; "took over" parsed; one start at a time while building, and a Stop during the build means no start; unreachable or 401 robot named at start |
 | `tests/test_remote_robot.py` | an identical action sequence and step count in-process, over ASGI and over a live socket |

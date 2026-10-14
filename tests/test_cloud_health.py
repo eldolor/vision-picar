@@ -549,8 +549,10 @@ def test_review_a_slow_async_trigger_is_not_charged_to_the_confirmation():
 
 def test_review_the_late_check_never_sends_beside_a_confirmation_still_out():
     """/code-review on 3062488: 3.53's late_ask() ignored a confirmation
-    still in flight. Now it waits (B3.2's timeout) and, still out, raises
-    TimeoutError -- the Reconfirmer's "hung" -- with nothing sent."""
+    still in flight. Now it raises LateCallInFlight with nothing sent (3.76
+    G1: the Reconfirmer asks on a later probe; a TimeoutError here used to
+    end the whole window)."""
+    from control.mission_runner import LateCallInFlight
     from tests.test_arrival_reconfirm import _ended_unconfirmed
     cloud = SwitchableCloud()
     runner, _, _ = _ended_unconfirmed(cloud, CLEAR_STARTS[0])
@@ -562,7 +564,7 @@ def test_review_the_late_check_never_sends_beside_a_confirmation_still_out():
     runner.vision_timeout_s = 0.1
     before = cloud.calls
     try:
-        with pytest.raises(TimeoutError):
+        with pytest.raises(LateCallInFlight):
             runner.late_ask()
     finally:
         release.set()
@@ -683,7 +685,7 @@ def test_review_an_old_answer_carries_its_age():
     snapshot says how old its answer is, on the brain's own clock."""
     t = {"now": 1000.0}
     watch = CloudWatch(lambda: True, interval_s=15, active=lambda: False,
-                       wall=lambda: t["now"])
+                       wall=lambda: t["now"], mono=lambda: t["now"])
     assert watch.snapshot()["age_s"] is None
     watch.record(True)
     t["now"] = 4600.0

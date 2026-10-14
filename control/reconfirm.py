@@ -18,8 +18,13 @@ rewritten and `memory.found` stays false.
   `max_paid` paid attempts.
 * **Never touches the robot.** The mission is over and its car stopped; a
   stop from here would halt whoever drives next.
-* **Cancelled** by a new mission or a Stop (`dropped`); lost on a brain
+* **Cancelled** by a new mission, or by a Stop that lands before the
+  mission has ended (`dropped`). A Stop after the ending leaves it running
+  (3.53 amendment; the Guide tab sends one on every close). Lost on a brain
   restart (it lives in memory only).
+* **One call at a time.** A call that outlives its guard is a failed
+  attempt; the next waits until it has ended (3.76 G1: a slow but working
+  cloud used to end the whole window as "hung").
 """
 
 import logging
@@ -28,6 +33,8 @@ import time
 from typing import Callable, Optional
 
 import httpx
+
+from control.mission_runner import LateCallInFlight
 
 logger = logging.getLogger("reconfirm")
 
@@ -86,17 +93,21 @@ class Reconfirmer:
         self.runner.late_update(state="waiting", reason="cloud unreachable; probing")
         deadline = self.clock() + self.window_s
         probes = failed_asks = 0
+        spent = False       # max_paid reached; only an answer still due counts
         next_paid_at = None
         last_error = None
         while not self._cancelled.is_set():
             if self.clock() >= deadline:
-                if failed_asks:
+                out = bool(getattr(self.runner, "late_call_out", lambda: False)())
+                if failed_asks or out:
                     # The cloud WAS reached and a paid call failed; saying
                     # "unreachable" would be the opposite of what happened.
-                    self.runner.late_update(
-                        state="failed",
-                        reason=f"{failed_asks} paid attempt(s) failed and the "
-                               f"window ran out; last: {last_error}")
+                    # 3.76 G1: nor is it when a call is still out at the end.
+                    why = (f"{failed_asks} paid attempt(s) failed and the window "
+                           f"ran out; last: {last_error}") if failed_asks else (
+                          "the cloud answered, but an earlier confirmation was "
+                          "still in flight when the window ran out")
+                    self.runner.late_update(state="failed", reason=why)
                 else:
                     self.runner.late_update(
                         state="expired",
@@ -112,20 +123,31 @@ class Reconfirmer:
             # throttling (5xx/429), which only a paid call can see. So after
             # a paid call fails, the next one waits half the window -- the two
             # attempts span the outage the window exists for, not 15 s of it.
-            ready = next_paid_at is None or self.clock() >= next_paid_at
-            if up and ready and not self._cancelled.is_set():
+            # 3.76 G1: an answer a timed-out call has since delivered is taken
+            # at once -- it is already paid for, and holding it half a window
+            # risked a Start dropping it.
+            landed = bool(getattr(self.runner, "late_answer_landed", lambda: False)())
+            ready = landed or (not spent and (next_paid_at is None
+                                              or self.clock() >= next_paid_at))
+            if (up or landed) and ready and not self._cancelled.is_set():
                 try:
                     verdict = self.runner.late_ask()
-                except TimeoutError as e:
-                    # The call is still in flight on its abandoned thread; a
-                    # second one beside it would break "one call at a time".
-                    self.runner.late_update(
-                        state="failed", reason=f"the late confirmation hung: {e}")
-                    return
+                except LateCallInFlight:
+                    # 3.76 G1: nothing was sent; ask on a later probe.
+                    pass
                 except Exception as e:  # noqa: BLE001
+                    # A call that outlived its guard (TimeoutError) is a
+                    # failed attempt like any other (3.76 G1: it ended the
+                    # window, losing the attempt max_paid allows); late_ask()
+                    # sends nothing beside it while it is out, and takes its
+                    # answer if it lands.
                     failed_asks += 1
                     logger.warning("late confirmation attempt %d failed: %s", failed_asks, e)
-                    if failed_asks >= self.max_paid:
+                    if failed_asks >= self.max_paid and isinstance(e, TimeoutError):
+                        # The last allowed call is still out: no more are
+                        # sent, but its answer is taken if it lands in time.
+                        spent, last_error = True, e
+                    elif failed_asks >= self.max_paid:
                         self.runner.late_update(
                             state="failed",
                             reason=f"{failed_asks} paid attempts failed; last: {e}")
@@ -181,11 +203,17 @@ class CloudWatch:
     """
 
     def __init__(self, probe: Callable[[], bool], *, interval_s: float,
-                 active: Callable[[], bool], wall: Callable[[], float] = time.time):
+                 active: Callable[[], bool], wall: Callable[[], float] = time.time,
+                 mono: Callable[[], float] = time.monotonic):
         self.probe = probe
         self.interval_s = interval_s
         self.active = active
         self.wall = wall
+        # 3.76 G4: the age is measured on a clock that never steps; a wall
+        # clock set by NTP at boot made a current answer read hours old (or
+        # an old one current). Wall time is kept for `since`/`checked_at`.
+        self.mono = mono
+        self._checked_mono: Optional[float] = None
         self._lock = threading.Lock()
         self._state = UNKNOWN
         self._since: Optional[float] = None
@@ -206,6 +234,7 @@ class CloudWatch:
             if state != self._state:
                 self._state, self._since = state, now
             self._checked_at = now
+            self._checked_mono = self.mono()
             self._probes += 1
             self._last_interval_s = interval_s or self.interval_s
 
@@ -228,7 +257,8 @@ class CloudWatch:
         to decide whether the answer is current. Nothing probes between
         cloud missions, so an old answer stays here; `age_s` says how old."""
         with self._lock:
-            age = None if self._checked_at is None else max(0.0, self.wall() - self._checked_at)
+            age = (None if self._checked_mono is None
+                   else max(0.0, self.mono() - self._checked_mono))
             return {"state": self._state, "since": self._since,
                     "checked_at": self._checked_at, "age_s": age,
                     "probes": self._probes,
