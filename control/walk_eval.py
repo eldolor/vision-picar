@@ -45,6 +45,7 @@ bedrock client and the frame bytes.
 import json
 import logging
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
@@ -374,7 +375,8 @@ def collision_candidates(entries: list) -> list:
 
 def check_collisions(client, model_id: str, entries: list, frame_bytes_for,
                      target_object: str = "the target object",
-                     max_checks: int = 12, max_workers: int = 4) -> dict:
+                     max_checks: int = 12, max_workers: int = 4,
+                     deadline: float | None = None) -> dict:
     """Look for frames where the robot was told to drive into something.
 
     This is the one failure with physical consequences, and nothing else in
@@ -386,14 +388,19 @@ def check_collisions(client, model_id: str, entries: list, frame_bytes_for,
     Sampled from the END backwards. A walk that drives into something tends
     to do it once it is lost, which is late; and the last frames are where a
     recording stops precisely because the operator saw it happen.
+
+    `deadline` (`time.monotonic()`): no call starts after it, and a frame
+    not checked by then counts as `failed` (3.76 F3).
     """
     candidates = collision_candidates(entries)
     if not candidates:
-        return {"checked": 0, "collisions": [], "frames": []}
+        return {"checked": 0, "failed": 0, "collisions": [], "frames": []}
     picks = sorted(candidates[-max_checks:])
 
     def one(i):
         entry = entries[i]
+        if deadline is not None and time.monotonic() >= deadline:
+            return "failed"
         try:
             image = frame_bytes_for(entry)
             if not image:
@@ -409,16 +416,22 @@ def check_collisions(client, model_id: str, entries: list, frame_bytes_for,
             verdict = _parse_json_reply(text)
         except Exception as e:  # noqa: BLE001 -- one bad frame must not lose the check
             logger.warning("collision check failed on %s: %s", entry.get("file"), e)
-            return None
+            return "failed"
         return {"seq": entry.get("seq"), "file": entry.get("file"),
                 "would_collide": verdict.get("would_collide") is True,
                 "why": str(verdict.get("why", ""))[:200]}
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        results = [r for r in pool.map(one, picks) if r is not None]
+        answers = list(pool.map(one, picks))
+    results = [r for r in answers if isinstance(r, dict)]
 
     return {
         "checked": len(results),
+        # 3.76 F1: frames the check meant to look at and could not (a call
+        # that failed, not a frame with no image). Counted, because a check
+        # that silently skipped the frame that hit the wall is not a clean
+        # bill: the caller marks the score `collisions-unchecked`.
+        "failed": answers.count("failed"),
         "forward_frames": len(candidates),
         "collisions": [r for r in results if r["would_collide"]],
         "frames": results,

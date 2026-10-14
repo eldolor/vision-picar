@@ -134,7 +134,7 @@ shared with the tunnel proxy").
 | `--accent-warn` | `#F2C94C` | colour | `.warn`, `.v-warn`, `.toast.warn` | 3.53: neither success nor failure -- `arrived_unconfirmed`; 3.70: Exhausted, Out of budget and `blocked` too |
 | Error backoff | `min(30000, base * 2^streak)` | ms | Guide loop | Replaces the scheduled tick rather than adding to it; the first success after failures replaces it back with the base throttle (3.64) |
 | `GUIDANCE_MAX_CALLS`, `ROBOT_MAX_CALLS` | 120 | calls / session | Guide loop | Caps a forgotten tab's spend; reserved at dispatch. Not applied under Drive via brain (3.76), where a tick is a frame push and the brain caps its own calls; the budget then reads "N steps" |
-| `WALK_NAME_MAX` | 64 | characters | `newWalkName()` | The brain's `WALK_NAME`; target, model and prompt tags are cut to fit and the timestamp is kept whole (3.76) |
+| `WALK_NAME_MAX` | 64 | characters | `newWalkName()` | The brain's `WALK_NAME`; target, model and prompt tags are cut to fit and the timestamp is kept whole (3.76). A target starting `metrics` is named `walk-metrics...`, since the brain refuses a walk named like a metrics day (3.76 F6) |
 | `CAPTURE_MAX_DIM` | 1280 | px, long edge | capture | 960 never engaged on a 640 px stream. The recorder saves the same bytes. |
 | `GUIDANCE_STILL_SKIP_DEG_PER_SEC` / `GUIDANCE_MAX_CONSECUTIVE_SKIPS` | 3 / 3 | deg/s / ticks | capture | Skip a paid call while the phone is still |
 | `GUIDANCE_FOUND_STREAK_TO_PAUSE` / `ROBOT_REACHED_STREAK_TO_PAUSE` | 1 / 2 | answers | pause logic | Robot view ends a run silently, so it takes one extra confirmation |

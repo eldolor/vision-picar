@@ -121,6 +121,46 @@ NAVIGATE_ATTEMPTS = 4
 # but left unscored, and /recording/summary already skips a null score.
 REPLAY_MIN_COVERAGE = float(os.environ.get("REPLAY_MIN_COVERAGE", "0.8"))
 
+# 3.76 F3: how long a replay keeps STARTING calls. The walks Lambda is killed
+# at 900 s, and a killed replay stores nothing -- not even the `unusable`
+# record that says the attempt happened -- while every call it made is billed.
+# No /navigate attempt and no collision call starts after this; one in flight
+# runs out. The slowest is a collision call (read_timeout 90 s x 3 attempts,
+# _bedrock_client), so the last one ends by 600 + 270 = 870 s, before 900. A
+# healthy replay (~3 s a frame over 6 workers) needs it only past ~1,200
+# frames, more than a walk may hold.
+REPLAY_DEADLINE_S = float(os.environ.get("REPLAY_DEADLINE_S", "600"))
+# An attempt with less than this left would be paid for and then abandoned.
+REPLAY_MIN_ATTEMPT_S = 5.0
+
+# 3.76 F1: flags that say a score is missing a part it was meant to have.
+# Shown on the card; kept out of /recording/summary like a stale one.
+JUDGE_INCOMPLETE = "judge-incomplete"
+COLLISIONS_UNCHECKED = "collisions-unchecked"
+INCOMPLETE_FLAGS = (JUDGE_INCOMPLETE, COLLISIONS_UNCHECKED)
+
+
+def _judge_failed(judge) -> bool:
+    """The judge was asked and answered for no frame (3.76 F1)."""
+    return bool(judge.get("error")) or (
+        not judge.get("judged") and bool(judge.get("attempted")))
+
+
+def _incomplete(record: dict) -> bool:
+    """A score missing a part it was meant to have (3.76 F1), so not one to
+    average. Read from the flags a score is now written with, and from the
+    record itself for one stored before them. A score whose collision check
+    DID find a hit is kept whatever else failed: it is capped, and a model
+    that hit something must stay visible in the summary."""
+    flags = set(record.get("flags") or ())
+    if "collision" in flags:
+        return False
+    if flags & set(INCOMPLETE_FLAGS):
+        return True
+    judge = record.get("judge")
+    return isinstance(judge, dict) and (
+        _judge_failed(judge) or record.get("collisions") is None)
+
 
 def _bedrock_client():
     """Imported lazily and built per call site rather than at module import:
@@ -136,11 +176,14 @@ def _bedrock_client():
 
 
 def post_navigate(vision_url: str, timeout_s: float, image_bytes: bytes,
-                  target_object: str, model_id, prompt_variant=None):
+                  target_object: str, model_id, prompt_variant=None, deadline=None):
     """One call to the DEPLOYED /navigate -- see control/walk_replay.py's
     docstring for why replay goes through the service rather than straight to
     Bedrock. Module level, like _bedrock_client above, so a test can replace
-    it without a live service."""
+    it without a live service.
+
+    `deadline` (`time.monotonic()`): no retry starts after it, and no
+    attempt waits past it (3.76 F3)."""
     import base64
 
     import httpx
@@ -168,8 +211,15 @@ def post_navigate(vision_url: str, timeout_s: float, image_bytes: bytes,
 
     last = ""
     for attempt in range(NAVIGATE_ATTEMPTS):
+        wait = timeout_s
+        if deadline is not None:
+            left = deadline - _time.monotonic()
+            if left < REPLAY_MIN_ATTEMPT_S:
+                last = last or "not sent: the replay's deadline passed"
+                break
+            wait = min(timeout_s, left)
         try:
-            with httpx.Client(timeout=timeout_s) as client:
+            with httpx.Client(timeout=wait) as client:
                 resp = client.post(vision_url.rstrip("/") + "/navigate",
                                    json=body, headers=headers)
         except httpx.TransportError as e:
@@ -390,7 +440,12 @@ def create_app(config_path=None, store=None) -> FastAPI:
         # A day of mission metrics shares the store but is not a walk
         # (handoff 4c): it must not be readable, replayable or DELETABLE
         # through a walk route.
-        if walk.startswith(METRICS_PREFIX) or not store.walk_exists(walk):
+        try:
+            exists = store.walk_exists(walk)
+        except WalkStoreError:
+            # 3.76 F7: WALK_NAME allows "a..b", the store does not.
+            raise HTTPException(status_code=400, detail="Bad walk name.")
+        if walk.startswith(METRICS_PREFIX) or not exists:
             raise HTTPException(status_code=404, detail="No such walk.")
         return walk
 
@@ -546,6 +601,19 @@ def create_app(config_path=None, store=None) -> FastAPI:
                 logger.warning("collision check failed for %s: %s", walk_name, e)
 
         scored = walk_eval.score_walk(metrics, judge, collisions)
+        if use_judge and JUDGE_ENABLED and entries:
+            # 3.76 F1: an outage used to read as a plain metrics-only card at
+            # the current schema -- never retried, counted in the summary,
+            # and uncapped by a collision check that never ran. Kept (the
+            # calls that did answer were paid for), marked, and left out of
+            # the summary; re-score is the person's call, as for a stale one.
+            # A judge that answered for some frames is a (smaller) sample, as
+            # a frame with no image always made it; one that answered for
+            # none is not a judged score at all.
+            if _judge_failed(judge):
+                scored["flags"] = scored["flags"] + [JUDGE_INCOMPLETE]
+            if collisions is None or collisions.get("failed"):
+                scored["flags"] = scored["flags"] + [COLLISIONS_UNCHECKED]
         result = {
             "schema": walk_eval.SCHEMA_VERSION,
             "walk": walk_name,
@@ -556,21 +624,49 @@ def create_app(config_path=None, store=None) -> FastAPI:
             "judge": judge,
             "collisions": collisions,
         }
+        return _persist(walk_name, EVAL_FILE_NAME, result, entries)
+
+    def _persist(walk_name: str, name: str, record: dict, scored: list) -> dict:
+        """Write a score or replay beside its walk -- unless the walk was
+        deleted while it ran (3.76 F5): writing then made the directory or
+        prefix again, and the deleted walk came back holding one sidecar.
+
+        `scored` is the walk.jsonl it was computed from. A frame deleted
+        while it ran marks it stale here (3.76 F4), as delete_frame marks
+        the records already stored. Returns the record as written."""
         try:
-            store.write_json(walk_name, EVAL_FILE_NAME, result)
+            if not store.walk_exists(walk_name):
+                logger.warning("%s was deleted while %s was computed; not stored",
+                               walk_name, name)
+                return record
+            now = {e.get("file") for e in _walk_entries(store, walk_name)}
+            gone = {e.get("file") for e in scored} - now
+            if gone:
+                record = {**record, "frames_deleted": sorted(
+                    set(record.get("frames_deleted") or []) | gone)}
+            store.write_json(walk_name, name, record)
         except (OSError, WalkStoreError) as e:
-            logger.warning("could not persist eval for %s: %s", walk_name, e)
-        return result
+            logger.warning("could not persist %s for %s: %s", name, walk_name, e)
+        return record
+
+    def _stale_reason(record: dict) -> Optional[str]:
+        """Why a stored score is not this walk's current one, or None: the one
+        rule for scorecards and replays alike. Written by an older scorer, so
+        not comparable (3.64 E2); or scored before frames were deleted from
+        the walk (3.76 F4)."""
+        if record.get("schema") != walk_eval.SCHEMA_VERSION:
+            return "older scorer"
+        if record.get("frames_deleted"):
+            return "frames deleted"
+        return None
 
     def _stale(record: dict) -> bool:
-        """Written by an older scorer, so not comparable (3.64 E2): the one
-        rule for scorecards and replays alike."""
-        return record.get("schema") != walk_eval.SCHEMA_VERSION
+        return _stale_reason(record) is not None
 
     def _marked(replay: dict) -> dict:
         """A replay as sent to a client, `stale` computed on the way out and
         never stored."""
-        return {**replay, "stale": _stale(replay)}
+        return {**replay, "stale": _stale(replay), "stale_reason": _stale_reason(replay)}
 
     def _replay_summaries(walk_name: str) -> list:
         """The compact form the walk list shows -- never the per-frame diff,
@@ -584,7 +680,7 @@ def create_app(config_path=None, store=None) -> FastAPI:
                            ("model_id", "prompt_variant", "score", "verdict", "flags",
                             "agreement", "errors", "coverage")},
                         # 3.64 E2: scored by an older scorer; replay it again.
-                        "stale": _stale(r)})
+                        "stale": _stale(r), "stale_reason": _stale_reason(r)})
         return out
 
     def _eval_summary(walk_name: str) -> Optional[dict]:
@@ -598,7 +694,7 @@ def create_app(config_path=None, store=None) -> FastAPI:
         # auto-scorer re-run the paid judge over the whole corpus after a
         # schema bump. Re-score is the person's call; the summary skips it.
         return {**{k: ev.get(k) for k in ("score", "verdict", "flags", "basis", "model_id")},
-                "stale": _stale(ev)}
+                "stale": _stale(ev), "stale_reason": _stale_reason(ev)}
 
     @app.post("/recording/walks/{walk}/evaluate", dependencies=[Depends(require_secret)])
     async def evaluate_walk(walk: str, judge: bool = True):
@@ -643,15 +739,18 @@ def create_app(config_path=None, store=None) -> FastAPI:
             except FileNotFoundError:
                 return None
 
+        deadline = time.monotonic() + REPLAY_DEADLINE_S
+
         def call(image_bytes, target_object, chosen, variant):
             # replay_timeout_s, NOT the mission's vision_timeout_s -- see
             # control/brain_config.py for why those are different questions.
             return post_navigate(config["vision_url"], config["replay_timeout_s"],
-                                 image_bytes, target_object, chosen, variant)
+                                 image_bytes, target_object, chosen, variant,
+                                 deadline=deadline)
 
         out = walk_replay.replay_walk(
             entries, frame_bytes_for, target, call, model_id=model_id,
-            prompt_variant=prompt_variant)
+            prompt_variant=prompt_variant, deadline=deadline)
 
         # How much of the walk actually came back. A replay is only evidence
         # about a model or a wording to the extent the service answered; see
@@ -676,12 +775,17 @@ def create_app(config_path=None, store=None) -> FastAPI:
             try:
                 collisions = walk_eval.check_collisions(
                     _bedrock_client(), JUDGE_MODEL_ID, out["entries"], frame_bytes_for,
-                    target_object=target, max_checks=COLLISION_MAX_CHECKS)
+                    target_object=target, max_checks=COLLISION_MAX_CHECKS,
+                    deadline=deadline)
             except Exception as e:  # noqa: BLE001 -- degrade, don't lose the replay
                 logger.warning("collision check failed for replay of %s: %s", walk_name, e)
 
         if usable:
             scored = walk_eval.score_walk(metrics, None, collisions)
+            if JUDGE_ENABLED and out["entries"] and (
+                    collisions is None or collisions.get("failed")):
+                # 3.76 F1: the clean-looking score this check exists to stop.
+                scored["flags"] = scored["flags"] + [COLLISIONS_UNCHECKED]
         else:
             # Deliberately not a low score: a low score is a claim about the
             # model, and this is a statement about the harness. Scoring these
@@ -730,11 +834,7 @@ def create_app(config_path=None, store=None) -> FastAPI:
                 kept["last_unusable"] = {k: result[k] for k in
                                          ("replayed_at", "coverage", "frames", "errors")}
                 result = kept
-        try:
-            store.write_json(walk_name, name, result)
-        except (OSError, WalkStoreError) as e:
-            logger.warning("could not persist replay for %s: %s", walk_name, e)
-        return _marked(result)
+        return _marked(_persist(walk_name, name, result, entries))
 
     @app.post("/recording/walks/{walk}/replay", dependencies=[Depends(require_secret)])
     async def replay_walk_route(walk: str, req: ReplayRequest):
@@ -818,12 +918,34 @@ def create_app(config_path=None, store=None) -> FastAPI:
     async def delete_frame(walk: str, filename: str):
         _require_walk(walk)
         _require_frame(walk, filename)
-        store.delete_file(walk, filename)
+
+        def names_file(line: str) -> bool:
+            # 3.76 F4: a line it cannot read (an interrupted append) is kept,
+            # not its to drop -- json.loads raised here AFTER the image was
+            # gone, and the manifest went on naming the deleted frame.
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                return False
+            return isinstance(row, dict) and row.get("file") == filename
+
+        # The manifest first: a failure after it leaves an unlisted image,
+        # never a listed frame with no image.
         if store.file_exists(walk, "walk.jsonl"):
             lines = [ln for ln in store.read_text(walk, "walk.jsonl").splitlines()
                      if ln.strip()]
-            kept = [ln for ln in lines if json.loads(ln).get("file") != filename]
+            kept = [ln for ln in lines if not names_file(ln)]
             store.write_text(walk, "walk.jsonl", "".join(ln + "\n" for ln in kept))
+        store.delete_file(walk, filename)
+        # 3.76 F4: every stored score counted this frame. Marked, never
+        # re-scored here (the judge and replays are paid): stale, with the
+        # reason, so the console says so and the summary leaves them out.
+        for name in [EVAL_FILE_NAME] + store.list_names(walk, REPLAY_PREFIX, ".json"):
+            record = store.read_json(walk, name)
+            if record is not None:
+                record["frames_deleted"] = sorted(
+                    set(record.get("frames_deleted") or []) | {filename})
+                store.write_json(walk, name, record)
         return {"deleted": filename, "walk": walk}
 
     @app.get("/admin")
@@ -861,9 +983,15 @@ def create_app(config_path=None, store=None) -> FastAPI:
                 return
             if _stale(ev):
                 return                  # 3.64 E2: an older scorer's number
-            key = (model_id or "(unknown)", prompt_variant or "default", source)
+            if _incomplete(ev):
+                return                  # 3.76 F1: a part of the score is missing
+            # 3.76 F2: by basis too. A judged score and a metrics-only one are
+            # two formulas (walk_eval.score_walk); one mean of both is neither.
+            basis = ev.get("basis") or "metrics-only"
+            key = (model_id or "(unknown)", prompt_variant or "default", source, basis)
             row = acc.setdefault(key, {
                 "model_id": key[0], "prompt_variant": key[1], "source": source,
+                "basis": basis,
                 "walks": 0, "scores": [], "reached": 0, "collisions": 0,
                 "flags": {}, "frames": [],
             })

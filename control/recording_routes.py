@@ -49,7 +49,7 @@ from typing import Callable, Optional
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel
 
-from control.walk_store import WalkStoreError
+from control.walk_store import METRICS_PREFIX, WalkStoreError
 
 # Kept here, with the routes that enforce them, rather than in either
 # server: these ARE the naming contract for a walk, and
@@ -134,6 +134,12 @@ def mount_recording_routes(
     def _refuse():
         raise HTTPException(status_code=403, detail="Recording is disabled on this brain.")
 
+    def _metrics_name(walk: str) -> bool:
+        # 3.76 F6: a day of mission metrics shares the store. A walk by that
+        # name would be stored and then never listed (list_walks() leaves the
+        # prefix out), and its meta.json read as a metrics run.
+        return walk.startswith(METRICS_PREFIX)
+
     @app.post(prefix + "/recording/frame", dependencies=deps)
     async def record_frame(req: RecordFrameRequest):
         """Save one walk frame. Off by default on any process that should
@@ -147,6 +153,9 @@ def mount_recording_routes(
                 status_code=400,
                 detail="walk must be 1-64 chars of letters, digits, dot, dash or underscore.",
             )
+        if _metrics_name(req.walk):
+            raise HTTPException(status_code=400,
+                                detail=f"A walk name may not start with {METRICS_PREFIX!r}.")
         if not 0 <= req.seq <= 9999:
             raise HTTPException(status_code=400, detail="seq out of range.")
         # Checked before decoding -- base64 is 4/3 the size of what it
@@ -202,7 +211,7 @@ def mount_recording_routes(
             if proxy:
                 return await proxy("/recording/finish", req)
             _refuse()
-        if not WALK_NAME.match(req.walk):
+        if not WALK_NAME.match(req.walk) or _metrics_name(req.walk):
             raise HTTPException(status_code=400, detail="Bad walk name.")
 
         try:

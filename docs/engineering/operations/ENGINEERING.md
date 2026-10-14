@@ -68,9 +68,9 @@ explore's decisions were missing from every live run before 3.45.
 
 | File | What it does |
 |---|---|
-| `control/metrics_client.py` | `row_for(status, git_revision=, config=, walk=)` builds a row from `MissionRunner.status()`. `ship_run()` POSTs it and never raises. `ship_run_async()` does it on a daemon thread, which is how "off the mission's path" is met |
+| `control/metrics_client.py` | `row_for(status, git_revision=, config=, walk=)` builds a row from `MissionRunner.status()`; `started_at` is `finished_at` less the status's `budget.elapsed_s` (it was always null before 3.76 F13). `ship_run()` POSTs it and never raises. `ship_run_async()` does it on a daemon thread, which is how "off the mission's path" is met |
 | `control/metrics_routes.py` | `register_metrics_routes(app, store, require_secret)`, mounted by `control/admin_server.py` and so by the walks Lambda |
-| `control/metrics.html`, `control/metrics.js` | The dashboard, served at `/metrics` from the static bucket |
+| `control/metrics.html`, `control/metrics.js` | The dashboard, served at `/metrics` from the static bucket. Every stored value is escaped before it reaches the page (3.76 F14: a mission's target, typed by a person, ran as script in the page that holds the walks secret) |
 
 `MissionRunner._ship_metrics()` (`control/mission_runner.py`) calls the
 shipper last, after the mission has ended.
@@ -91,8 +91,8 @@ required):
 
 | Method, path | Request | Response |
 |---|---|---|
-| `POST /metrics/runs` | `MetricsRun`: `run_id` (matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$`), `started_at`, `finished_at`, `git_revision`, `policy`, `config`, `outcome`, `steps`, `target_object`, `walk`, `stats` (the tier's stats verbatim; since `50b2293` `cloud_calls` includes one `arrival_confirmation` call per tiered arrival, so a release comparison across that commit shows the step). Extra fields are refused (422); a `run_id` that fails the pattern is a 400 | `{stored, day}`. Stored in the walk store as container `metrics-YYYY-MM-DD` (one per UTC day, beside the walks), object `<run_id>.json` |
-| `GET /metrics/summary?days=14` | `days` clamped to 1..90 | `{days, runs, count}`, newest first, rows whole, never aggregated |
+| `POST /metrics/runs` | `MetricsRun`: `run_id` (matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$`), `started_at`, `finished_at`, `git_revision`, `policy`, `config`, `outcome`, `steps`, `target_object`, `walk`, `stats` (the tier's stats verbatim; since `50b2293` `cloud_calls` includes one `arrival_confirmation` call per tiered arrival, so a release comparison across that commit shows the step). Extra fields are refused (422); a `run_id` that fails the pattern, or that the store refuses (`x..y`, 3.76 F7), is a 400 | `{stored, day}`. Stored in the walk store as container `metrics-YYYY-MM-DD` (one per UTC day, beside the walks), object `<run_id>.json` |
+| `GET /metrics/summary?days=14` | `days` clamped to 1..90 | `{days, runs, count}`, newest first, rows whole, never aggregated. A store that cannot be listed is a 503 naming the error, never "no runs" (3.76 F12) |
 
 **Health routes** (unauthenticated on both servers):
 

@@ -70,6 +70,7 @@ import base64
 import json
 import math
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional, Sequence
@@ -647,6 +648,10 @@ def _config_of(args) -> dict:
         "imgsz": args.imgsz,
         "vlm_max_pixels": args.vlm_max_pixels,
         "vlm_ground": not args.no_vlm_boxes,
+        # 3.76 F11: both change the score, and a record that cannot name
+        # them cannot be told apart from the run it is compared with.
+        "detector_confidence": getattr(args, "detector_confidence", None),
+        "segmenter": getattr(args, "segmenter", None),
     }
 
 
@@ -658,6 +663,10 @@ def _label_for(config: dict) -> str:
     label = " + ".join(bits)
     if config.get("crop_path") == "soft_gate":
         label += f" [soft k={config.get('affinity_k')}]"
+    if config.get("segmenter"):
+        label += f" [seg {config['segmenter']}]"
+    if config.get("detector_confidence") is not None:
+        label += f" [box conf {config['detector_confidence']}]"
     return label
 
 
@@ -728,12 +737,27 @@ def cmd_score(args) -> int:
     return 0
 
 
+def _frame_set(records) -> Counter:
+    return Counter((r.walk, r.frame, bool(r.visible)) for r in records)
+
+
 def cmd_compare(args) -> int:
     named = []
     for spec in args.files:
         label, _, path = spec.rpartition("=")
         records, config = load_records(Path(path))
         named.append((label or _label_for(config), records))
+    # 3.76 F10: recall at a false-positive budget is only comparable over the
+    # same labelled frames -- the same positives to find and the same
+    # negatives to budget. A run saved before the corpus grew (or under
+    # --walk/--frames-from) was tabled beside a full one in silence.
+    first_set = _frame_set(named[0][1])
+    for label, records in named[1:]:
+        if _frame_set(records) != first_set:
+            return _fail(
+                f"{named[0][0]!r} and {label!r} were scored over different frames "
+                f"({sum(first_set.values())} vs {len(records)}, or different labels) "
+                f"-- re-score both with the same --frames-from before comparing.")
     budgets = [int(b) for b in args.fp_budget.split(",")]
     print("\n  Recall at matched precision. A recall without its "
           "false-positive count is\n  not a result -- it is how an "
