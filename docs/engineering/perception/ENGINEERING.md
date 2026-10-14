@@ -67,6 +67,23 @@ returns its boxes labelled with the target string; YOLOE's own threshold
 
 ## Interfaces
 
+**The local VLM service (3.80.B):** `service/local_vlm/server.py`, its
+own process on `127.0.0.1:8005` (`LOCAL_VLM_PORT`), systemd unit
+`picar-local-vlm` (`OOMScoreAdjust=1000`; `tools/jetson/README.md`
+section 5). It keeps 3.78's `edgellm_identity` driver resident
+(`service/local_vlm/driver.py`) and asks with 3.78's own prompt, request
+file, stopping rule and score, imported from
+`tools/jetson/bench_identity_llama.py` and `bench_identity_trt.py` so the
+service cannot drift from what was measured.
+* `POST /identity` `{image_b64, target, deadline_s}` (secret-gated):
+  `status` `answered` with the raw `score`, or `timeout`, `unparsed`,
+  `busy`, `error` (each an *unable* answer). 503: absent.
+* One request at a time. The driver's cancel check reads stdin, so only
+  `C` is ever written while a request runs.
+* A dead driver ends the process with exit 3; systemd restarts it after
+  30 s, three times in 15 min at most.
+
+
 **`Perception.as_dict()`** (published as the scene's `_perception` and on
 `GET /mission/status` as `perception`): `status`, `crop_source`, `reason`,
 `synthesised`, `pan_deg`, `tilt_deg`, `bearing_deg` (degrees, negative left,
