@@ -1,6 +1,6 @@
 {
  "outcome": "found",
- "seconds": 24,
+ "seconds": 23,
  "steps": 84,
  "arrival": {
   "state": "arrived",
@@ -27,12 +27,12 @@
      "mean": 0
     },
     "local_ms": {
-     "n": 15,
-     "p50": 3,
-     "p90": 5,
-     "p99": 5,
-     "max": 5,
-     "mean": 3
+     "n": 1,
+     "p50": 4,
+     "p90": 4,
+     "p99": 4,
+     "max": 4,
+     "mean": 4
     },
     "local_calls": 1,
     "local": {
@@ -49,6 +49,14 @@
      "no": 14
     },
     "local_frame_calls": 14,
+    "local_frame_ms": {
+     "n": 14,
+     "p50": 3,
+     "p90": 5,
+     "p99": 5,
+     "max": 5,
+     "mean": 3
+    },
     "frame_escalations": {},
     "frames": 84,
     "cloud_calls": 0,
@@ -90,7 +98,7 @@
   "inventory: 3 reported, 0 candidates from 84 frames -- red backpack, refrigerator, sofa",
   "mission ended (found): Hallway, kitchen, living room searched. Found."
  ],
- "logs": "/var/folders/4m/90g11pps7z52mxb1k0ps3pjm0000gr/T/demo_local_tier-1792011452",
+ "logs": "/var/folders/4m/90g11pps7z52mxb1k0ps3pjm0000gr/T/demo_local_tier-1792011880",
  "met": true,
  "d11_met": true
 }
