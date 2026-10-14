@@ -283,6 +283,17 @@ def _frames_are_simulated(robot: RobotInterface) -> bool:
     return (frame.get("metadata") or {}).get("source") == "sim"
 
 
+def _local_vlm_secret(config: dict, secret: Optional[str]) -> Optional[str]:
+    """`LOCAL_VLM_SECRET`, else the brain's own `APP_SHARED_SECRET` -- but
+    that one only to a service on this machine: it gates the robot too, and
+    the client sends it over plain HTTP (bug pass, 2026-10-14)."""
+    if "LOCAL_VLM_SECRET" in os.environ:
+        return os.environ["LOCAL_VLM_SECRET"]
+    from urllib.parse import urlparse
+    host = urlparse((config.get("tier_local_vlm_url") or "").strip()).hostname
+    return secret if host in ("127.0.0.1", "localhost", "::1") else None
+
+
 def _local_identity_fn(target: str, config: dict, secret: Optional[str]):
     """3.80.C: the client for the local VLM service, or None when no URL is
     configured. Built per mission (it holds the target) and closed with the
@@ -514,7 +525,7 @@ def create_app(
                 vision_fn = _tiered_vision_fn(
                     req.target_object, vision_fn, config,
                     simulated=_frames_are_simulated(robot), confirm_vision_fn=confirm_fn,
-                    local_secret=os.environ.get("LOCAL_VLM_SECRET", secret))
+                    local_secret=_local_vlm_secret(config, secret))
 
         navigator = None
         if req.policy == "explore":

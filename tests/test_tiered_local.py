@@ -211,7 +211,8 @@ def test_c6_a_new_arrival_gives_the_local_tier_its_tries_again():
     tier.confirm_arrival({})
     tier.confirm_arrival({})
     assert not tier.next_confirm_is_local()
-    tier.arrival_ended()
+    for _ in range(3):  # LOCAL_RESET_FRAMES off the arrival rule, in a row
+        tier.arrival_ended()
     assert tier.next_confirm_is_local()
     assert tier.confirm_arrival({})["tier"] == "local"
 
@@ -341,3 +342,102 @@ def test_client_a_wrong_secret_or_no_image_is_unable_not_absent():
                             client=httpx.Client(transport=httpx.MockTransport(reject)))
     assert client.ask(_jpeg_frame())["status"] == "error"
     assert client.ask({})["status"] == "error"
+
+
+# --- review fixes (2026-10-14) ----------------------------------------------
+
+def test_review_a_slow_local_tier_under_a_short_deadline_is_unable_not_a_cloud_outage():
+    """/code-review: with B3.2's deadline under the client's 5 s, a slow local
+    VLM used the whole step and the cloud path was charged an outage it never
+    had. Now the local call gets part of the step and counts unable."""
+    import threading
+    import time as _t
+    release = threading.Event()
+
+    def slow(frame):
+        release.wait(5)
+        return yes()
+    cloud = Cloud(see=True)
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud, confirm_vision_fn=cloud,
+                        local_identity_fn=slow)
+    runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
+                           policy="tiered", vision_fn=tier, vision_timeout_s=2.0)
+    t0 = _t.monotonic()
+    verdict = runner._guarded_confirm({"image_base64": "x"})
+    assert _t.monotonic() - t0 < 2.0
+    assert verdict["undecided"] and verdict["local_status"] == "timeout"
+    assert cloud.calls == 0
+    assert tier.stats.local.get("unable_runner_timeout") == 1
+    # The abandoned call's late yes changes nothing.
+    release.set()
+    _t.sleep(0.3)
+    assert tier.stats.local.get("yes") is None and tier._local_unable == 1
+
+
+def test_review_a_local_refusal_is_not_credited_to_the_cloud_on_later_frames():
+    from brain.agent import MissionAgent
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        local_identity_fn=Local(no()))
+    agent = MissionAgent.__new__(MissionAgent)
+    agent.arrival_confirm_fn = None
+    agent.vision_fn = tier
+    agent._identity_refused = False
+    agent._refusal = None
+    first = agent._confirm_identity({"state": "arrived"}, {})
+    assert first["state"] == REFUSED
+    later = agent._confirm_identity({"state": "arrived"}, {})
+    assert "the local model did not confirm" in later["reason"], later["reason"]
+    assert "cloud" not in later["reason"]
+
+
+def test_review_a_flickering_arrival_still_reaches_the_cloud():
+    """Bug pass: one or two frames off the arrival rule (a missed detection)
+    must not give the local tier fresh tries every time, or an undecidable
+    target is never put to the cloud."""
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        local_identity_fn=Local(unable()))
+    tier.confirm_arrival({})
+    tier.arrival_ended()
+    tier.arrival_ended()
+    tier.confirm_arrival({})
+    assert not tier.next_confirm_is_local()
+    assert tier.confirm_arrival({"image_base64": "x"})["tier"] == "cloud"
+    assert tier.stats.escalations == 1
+
+
+def test_review_escalations_count_cloud_asks_not_spent_tries():
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        local_identity_fn=Local(unable()))
+    tier.confirm_arrival({})
+    tier.confirm_arrival({})
+    assert tier.stats.escalations == 0  # not yet handed to the cloud
+    for _ in range(3):
+        tier.arrival_ended()
+    assert tier.stats.escalations == 0
+
+
+def test_review_a_stop_during_the_local_check_buys_no_cloud_call():
+    cloud = Cloud(see=True)
+    holder = {}
+
+    def stopped_mid_call(frame):
+        holder["runner"].stop()
+        raise LocalVLMAbsent("client closed by the stop")
+    tier = TieredVision(FrameReportedPipeline(TARGET), cloud, confirm_vision_fn=cloud,
+                        local_identity_fn=stopped_mid_call)
+    runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
+                           policy="tiered", vision_fn=tier, vision_timeout_s=5.0)
+    holder["runner"] = runner
+    runner.start()
+    verdict = runner._guarded_confirm({"image_base64": "x"})
+    assert not verdict["confirmed"] and not verdict["cloud_called"]
+    assert cloud.calls == 0 and tier.stats.cloud_calls == 0
+
+
+def test_review_the_shared_secret_goes_only_to_a_local_service(monkeypatch):
+    from control.brain_server import _local_vlm_secret
+    monkeypatch.delenv("LOCAL_VLM_SECRET", raising=False)
+    assert _local_vlm_secret({"tier_local_vlm_url": "http://127.0.0.1:8005"}, "s") == "s"
+    assert _local_vlm_secret({"tier_local_vlm_url": "http://vlm.example.com"}, "s") is None
+    monkeypatch.setenv("LOCAL_VLM_SECRET", "own")
+    assert _local_vlm_secret({"tier_local_vlm_url": "http://vlm.example.com"}, "s") == "own"

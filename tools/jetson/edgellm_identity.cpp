@@ -146,6 +146,11 @@ int main(int argc, char** argv)
                 std::cerr << "request failed: " << e.what() << "\n";
                 ok = false;
             }
+            catch (...)
+            {
+                std::cerr << "request failed: unknown exception\n";
+                ok = false;
+            }
             // handleRequest has exits (validation, vision preprocessing,
             // prefill setup) before it attaches the channel's finaliser; on
             // those nothing finishes the channel and consume() below would

@@ -316,8 +316,10 @@ class MissionAgent(ConstrainedAgent):
         """Returns the readout; sets `self._confirmed_this_frame` when this
         frame asked the cloud."""
         if self._identity_refused:
+            who = ("the local model" if (self._refusal or {}).get("tier") == "local"
+                   else "the cloud")
             return {**readout, "state": REFUSED, "identity": self._refusal,
-                    "reason": "the cloud did not confirm this arrival; not asking again "
+                    "reason": f"{who} did not confirm this arrival; not asking again "
                               "until the arrival ends"}
         confirm = self.arrival_confirm_fn or getattr(self.vision_fn, "confirm_arrival", None)
         try:

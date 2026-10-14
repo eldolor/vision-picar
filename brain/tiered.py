@@ -100,6 +100,9 @@ TRIGGER_ARRIVAL = "arrival_confirmation"
 LOCAL_YES_AT = 0.5
 DEFAULT_LOCAL_NO_BELOW = 0.1
 DEFAULT_LOCAL_MAX_UNABLE = 2
+# Frames off the arrival rule, in a row, that end an arrival for the local
+# tier's count: ArrivalCheck's own 2 frames plus one.
+LOCAL_RESET_FRAMES = 3
 
 # 2.4's other four. Named, not implemented -- each needs a tier that does
 # not exist yet, and a trigger that cannot fire is worse than one that is
@@ -589,6 +592,11 @@ class TieredVision:
         self.local_no_below = float(local_no_below)
         self.local_max_unable = max(1, int(local_max_unable))
         self._local_unable = 0
+        # Guards the local tier's counters against a call the runner
+        # abandoned (abandon_local) returning on its own thread later.
+        self._local_lock = threading.Lock()
+        self._local_seq = 0
+        self._frames_off_arrival = 0
         self.cloud_vision_fn = cloud_vision_fn
         # 3.56: the arrival confirmation's own client, built with the
         # confirmation's shorter deadline so a hang ends in httpx (as
@@ -871,9 +879,16 @@ class TieredVision:
         return self.local_identity_fn is not None and self._local_unable < self.local_max_unable
 
     def arrival_ended(self) -> None:
-        """The arrival rule stopped holding: the next arrival is a new
-        question, and the local tier gets its tries again."""
-        self._local_unable = 0
+        """A frame on which the arrival rule does not hold. After
+        `LOCAL_RESET_FRAMES` of them in a row the next arrival is a new
+        question and the local tier gets its tries again; fewer is the same
+        arrival flickering (a missed detection, a panned camera), which must
+        not keep the question from ever reaching the cloud (bug pass,
+        2026-10-14)."""
+        with self._local_lock:
+            self._frames_off_arrival += 1
+            if self._frames_off_arrival >= LOCAL_RESET_FRAMES:
+                self._local_unable = 0
 
     def confirm_local(self, frame: dict) -> Optional[dict]:
         """The local VLM's verdict on the arrival frame, or None when the
@@ -886,37 +901,64 @@ class TieredVision:
         if not self.next_confirm_is_local():
             return None
         s = self.stats
+        with self._local_lock:
+            seq = self._local_seq
+            self._frames_off_arrival = 0
         started = time.perf_counter()
         try:
             got = self.local_identity_fn(frame) or {}
+            error = None
         except Exception as e:  # noqa: BLE001 -- LocalVLMAbsent, or a fault in the client
+            got, error = None, e
+        with self._local_lock:
+            if seq != self._local_seq:
+                # The runner gave up on this call and already counted it
+                # (abandon_local); a late answer changes nothing.
+                return None
             s.record("local_ms", (time.perf_counter() - started) * 1000)
-            s.local["absent"] = s.local.get("absent", 0) + 1
-            logger.warning("local VLM absent at arrival (%s); asking the cloud", e)
-            return None
-        s.record("local_ms", (time.perf_counter() - started) * 1000)
-        s.local_calls += 1
-        status, score = got.get("status"), got.get("score")
-        base = {"cloud_called": False, "local_called": True, "tier": "local",
-                "local_status": status, "local_score": score}
-        if status == "answered" and isinstance(score, (int, float)):
-            if score >= LOCAL_YES_AT:
-                s.local["yes"] = s.local.get("yes", 0) + 1
-                return {**base, "confirmed": True, "stats": s.as_dict(),
-                        "reason": f"the local model sees the target (score {score:.2f})"}
-            if score <= self.local_no_below:
-                s.local["no"] = s.local.get("no", 0) + 1
-                return {**base, "confirmed": False, "stats": s.as_dict(),
-                        "reason": f"the local model does not see the target (score {score:.2f})"}
-        kind = f"unable_{status}" if status != "answered" else "unable_band"
+            if error is not None:
+                s.local["absent"] = s.local.get("absent", 0) + 1
+                logger.warning("local VLM absent at arrival (%s); asking the cloud", error)
+                return None
+            s.local_calls += 1
+            status, score = got.get("status"), got.get("score")
+            base = {"cloud_called": False, "local_called": True, "tier": "local",
+                    "local_status": status, "local_score": score}
+            if status == "answered" and isinstance(score, (int, float)):
+                if score >= LOCAL_YES_AT:
+                    s.local["yes"] = s.local.get("yes", 0) + 1
+                    return {**base, "confirmed": True, "stats": s.as_dict(),
+                            "reason": f"the local model sees the target (score {score:.2f})"}
+                if score <= self.local_no_below:
+                    s.local["no"] = s.local.get("no", 0) + 1
+                    return {**base, "confirmed": False, "stats": s.as_dict(),
+                            "reason": f"the local model does not see the target "
+                                      f"(score {score:.2f})"}
+            kind = (f"unable_{status}" if status != "answered"
+                    else "unable_band" if isinstance(score, (int, float)) else "unable_noscore")
+            what = (f"score {score:.2f}" if isinstance(score, (int, float))
+                    else (got.get("reason") or status or "no reply"))
+            return {**base, **self._count_unable(kind, what)}
+
+    def abandon_local(self) -> dict:
+        """The runner stopped waiting for `confirm_local` (B3.2's deadline
+        left no more time): counted here as an unable answer, as the
+        client's own timeout is, and the call's late answer, whenever it
+        returns, is ignored."""
+        with self._local_lock:
+            self._local_seq += 1
+            self.stats.local_calls += 1
+            return {"cloud_called": False, "local_called": True, "tier": "local",
+                    "local_status": "timeout", "local_score": None,
+                    **self._count_unable("unable_runner_timeout",
+                                         "no answer inside the mission's deadline")}
+
+    def _count_unable(self, kind: str, what: str) -> dict:
+        s = self.stats
         s.local[kind] = s.local.get(kind, 0) + 1
         self._local_unable += 1
         last = self._local_unable >= self.local_max_unable
-        if last:
-            s.escalations += 1
-        what = (f"score {score:.2f}" if isinstance(score, (int, float))
-                else (got.get("reason") or status or "no reply"))
-        return {**base, "confirmed": False, "undecided": True, "stats": s.as_dict(),
+        return {"confirmed": False, "undecided": True, "stats": s.as_dict(),
                 "reason": (f"the local model could not decide ({what}); "
                            + ("asking the cloud next" if last else "asking again"))}
 
@@ -950,6 +992,9 @@ class TieredVision:
             self._collect_inflight()
         self.stats.cloud_calls += 1
         self.stats.triggers[TRIGGER_ARRIVAL] = self.stats.triggers.get(TRIGGER_ARRIVAL, 0) + 1
+        if self.local_identity_fn is not None and not self.next_confirm_is_local():
+            # 3.80.C: an arrival the local tier could not decide, handed up.
+            self.stats.escalations += 1
         started = time.perf_counter()
         try:
             scene = (self.confirm_vision_fn or self.cloud_vision_fn)(frame) or {}

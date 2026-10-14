@@ -130,12 +130,17 @@ timeout, `tier_local_timeout_s` + 2 s, comes back as `timeout`), is
 arrival frame. After `local_max_unable` (2) undecided answers,
 `next_confirm_is_local()` is False and the next arrival frame goes to the
 cloud. The agent calls the policy's `arrival_ended()` on every frame the
-arrival rule does not hold, which resets the count. Verdicts carry `tier`
+arrival rule does not hold; `LOCAL_RESET_FRAMES` (3) of them in a row reset
+the count, fewer are the same arrival flickering. `abandon_local()` (the
+runner gave up waiting) counts one unable answer, status `timeout`, and a
+sequence number makes the abandoned call's late answer change nothing.
+`escalations` counts arrival questions the cloud was asked after the local
+tier's tries were spent. Verdicts carry `tier`
 (`local`/`cloud`) and `local_called`; `_label_confirmation()` sets
 `_tier.identity_tier`, keeps `cloud_called` only for a real cloud call, and
 the runner's log line reads `[local: arrival_confirmation]`. `TierStats`
 counts `local_calls`, `local` (`yes`, `no`, `absent`, `unable_<status>`,
-`unable_band`), `local_ms` and `escalations`. `close()` closes and drops the
+`unable_band`, `unable_noscore`, `unable_runner_timeout`), `local_ms` and `escalations`. `close()` closes and drops the
 client, so 3.53's late check is the cloud's.
 
 **What the hysteresis does and does not gate.** `consecutive_frames` is

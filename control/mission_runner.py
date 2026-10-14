@@ -1327,22 +1327,39 @@ class MissionRunner:
                 raise VisionUnavailable(msg) from CloudUnavailable(msg)
             return remaining
 
-        # 3.80.C: the local VLM first. Its client's own timeout bounds it
-        # (tier_local_timeout_s plus the drain tail); a verdict -- yes, no or
-        # undecided -- ends the tick with no cloud call, and nothing waits on
-        # a cloud trigger still out, which the local answer does not need.
+        # 3.80.C: the local VLM first. A verdict -- yes, no or undecided --
+        # ends the tick with no cloud call, and nothing waits on a cloud
+        # trigger still out, which the local answer does not need. It may use
+        # what is left of the step minus a cloud confirmation's guard (an
+        # absent VLM hands the SAME frame to the cloud), or half of what is
+        # left when B3.2's deadline is too short for both (a drill). A local
+        # call that outlives that is an unable answer, never a cloud outage.
         local = getattr(self.vision_fn, "confirm_local", None)
         cloud = getattr(self.vision_fn, "confirm_cloud", None)
-        if local is not None and cloud is not None:
+        if (local is not None and cloud is not None
+                and getattr(self.vision_fn, "local_identity_fn", None) is not None):
+            # Only with a local tier configured: without one the step is
+            # exactly what it was before 3.80 (`confirm_arrival`).
+            remaining = left("the local identity check")
+            budget = max(remaining - self.confirm_guard_s(), remaining / 2)
             try:
-                verdict = call_with_timeout(local, frame,
-                                            timeout_s=left("the local identity check"))
+                verdict = call_with_timeout(local, frame, timeout_s=budget)
             except TimeoutError:
-                verdict = None
-                logger.warning("the local identity check outlived B3.2's deadline; "
-                               "asking the cloud")
+                abandon = getattr(self.vision_fn, "abandon_local", None)
+                verdict = abandon() if abandon is not None else None
+                logger.warning("the local identity check outlived %.1f s; counted unable",
+                               budget)
             if verdict is not None:
                 return verdict
+            with self._lock:
+                running = self._running
+            if not running:
+                # A Stop landed during the local check (close() drops the
+                # client, which reads as absent): the cloud is not asked for
+                # a mission that has ended (bug pass, 2026-10-14; 3.76 E's
+                # class).
+                return {"confirmed": False, "cloud_called": False,
+                        "reason": "the mission ended during the identity check"}
             confirm = cloud
 
         # An async trigger call still out is waited for first (its deadline
@@ -1885,7 +1902,8 @@ class MissionRunner:
             # so would be noise.
             tier = scene.get("_tier") or {}
             if tier.get("identity_tier") == "local":
-                return f"[local: {tier.get('trigger')}] {seen} -- {nav['reasoning']}"
+                paid = " + a cloud call" if tier.get("cloud_called") else ""
+                return f"[local: {tier.get('trigger')}{paid}] {seen} -- {nav['reasoning']}"
             if tier.get("cloud_called"):
                 return f"[cloud: {tier.get('trigger')}] {seen} -- {nav['reasoning']}"
             return f"{seen} -- {nav['reasoning']}"
