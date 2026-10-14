@@ -584,3 +584,67 @@ def test_review_the_simulator_reads_bearings_in_its_own_field_of_view(monkeypatc
     tier = _tiered_vision_fn("backpack", Cloud(), load_brain_config(), simulated=True)
     assert tier.pipeline.hfov_deg == pytest.approx(math.degrees(renderer.FPV_FOV))
     tier.close()
+
+
+# --- review round 2 (2026-10-14) -------------------------------------------------
+
+def test_review2_on_the_clouds_turn_the_arrival_does_not_wait_for_a_frame_question():
+    svc = OneAtATime(no())
+    tier = TieredVision(Pipeline([P(ABSENT)]), Cloud(), cold_search_after=99, stale_after=0,
+                        async_cloud=True, local_sighting_fn=svc.sight,
+                        local_identity_fn=svc.confirm)
+    tier(frame())                                   # a question holds the service
+    tier._local_unable = tier.local_max_unable      # the arrival is the cloud's now
+    t0 = time.monotonic()
+    assert tier.confirm_local(frame()) is None
+    assert time.monotonic() - t0 < 0.5
+    svc.gate.set()
+    tier.close()
+
+
+def test_review2_the_arrival_does_not_wait_out_a_frame_questions_cloud_call():
+    gate = threading.Event()
+
+    def slow_cloud(f):
+        gate.wait(5)
+        return Cloud()(f)
+
+    tier = TieredVision(Pipeline([P(ABSENT)]), slow_cloud, cold_search_after=99, stale_after=0,
+                        async_cloud=True, local_sighting_fn=Local(LocalVLMAbsent("gone")),
+                        local_identity_fn=lambda f: yes())
+    tier(frame())                                   # local absent -> slow cloud on the worker
+    time.sleep(0.2)
+    t0 = time.monotonic()
+    assert tier.confirm_local(frame())["confirmed"] is True
+    assert time.monotonic() - t0 < 0.5
+    gate.set()
+    tier.close()
+
+
+def test_review2_the_arrival_never_applies_a_frame_answer_off_the_tick_thread():
+    svc = OneAtATime(unable())
+    tier = TieredVision(Pipeline([P(ABSENT)]), Cloud(), cold_search_after=99, stale_after=0,
+                        async_cloud=True, local_sighting_fn=svc.sight,
+                        local_identity_fn=svc.confirm)
+    tier(frame())
+    svc.gate.set()
+    tier.confirm_local(frame())
+    assert tier._frame_unable == 0 and tier.stats.local_frame == {}
+    tier(frame())                                   # the tick applies it
+    assert tier._frame_unable == 1
+    tier.close()
+
+
+def test_review2_out_of_vocabulary_with_an_absent_tier_reaches_the_cloud_at_the_distance_bar():
+    tier, cloud = tier_for([P(ABSENT)], Local(LocalVLMAbsent("gone")),
+                           vocabulary=vocab(False), cold_search_after=99,
+                           cold_search_after_cm=50)
+
+    def moving(i=[0]):
+        i[0] += 1
+        return {"image_base64": "x", "pan_deg": 0.0,
+                "odometry": {"usable": True, "distance_m": 0.2 * i[0], "heading_deg": 90.0}}
+
+    play(tier, 5, make=moving)
+    # start; then 50 cm (frames 2-4 at 20 cm each) reaches the bar on frame 4.
+    assert cloud.calls == 2, tier.stats.as_dict()

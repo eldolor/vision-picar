@@ -600,6 +600,9 @@ class _Question:
     pan_deg: float
     hfov_deg: float
     cloud_ok: bool = True
+    # Set when the local tier has answered (or failed): the arrival's own
+    # local check waits for this, not for the whole question.
+    local_done: threading.Event = field(default_factory=threading.Event)
 
 
 @dataclass
@@ -660,6 +663,7 @@ class TieredVision:
         self._local_turn: Optional[tuple] = None   # (direction, turn_deg), used once
         self._local_held: Optional[str] = None     # FORWARD after a located yes
         self._inflight_tier: Optional[str] = None
+        self._inflight_question: Optional["_Question"] = None
         self._local_landed: Optional[dict] = None  # shown on the frame it landed
         # Counts the worker thread changes too (an absent local tier's
         # cloud call).
@@ -968,10 +972,13 @@ class TieredVision:
             # An absent local tier hands this to the cloud, which an
             # out-of-vocabulary question earns only at cold_search's bar.
             cloud_ok=(trigger != TRIGGER_OOV
-                      or self._absent_streak >= self._cold_search_bar()))
+                      or self._absent_streak >= self._cold_search_bar()
+                      or self._distance_bar_reached()))
         if self.async_cloud:
+            self._inflight_question = q
             if not self._dispatch(frame, trigger, epoch, tier="local",
                                   job=lambda: self._ask_tiers(frame, q, fn)):
+                self._inflight_question = None
                 with self._stats_lock:   # close() won: nothing was asked
                     self.stats.local_triggers[trigger] -= 1
                 return self._local_scene(perception, note="mission ended")
@@ -999,12 +1006,15 @@ class TieredVision:
         frame; None if the mission moved on. A cloud failure raises, for
         B3.2, as a trigger's always has."""
         if q.epoch != self._epoch:
+            q.local_done.set()
             return None
         started = time.perf_counter()
         try:
             got, error = (fn(frame, box=True) or {}), None
         except Exception as e:  # noqa: BLE001 -- LocalVLMAbsent, or a fault in the client
             got, error = None, e
+        finally:
+            q.local_done.set()
         with self._stats_lock:
             self.stats.record("local_frame_ms", (time.perf_counter() - started) * 1000)
         if error is None:
@@ -1103,11 +1113,7 @@ class TieredVision:
         the confirmation. `confirm_arrival()` keeps the same wait for callers
         that do not do this first. With the call cap already spent there is
         nothing to wait for: `confirm_arrival()` refuses locally at once."""
-        if (self.max_calls is not None and self.stats.cloud_calls >= self.max_calls
-                and not (self.local_identity_fn is not None
-                         and self._inflight_tier == "local")):
-            # 3.80.D: a local question still out is waited for when the
-            # arrival asks the local tier next (it serves one at a time).
+        if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
             return
         fut = self._inflight
         if fut is not None:
@@ -1174,16 +1180,16 @@ class TieredVision:
         An unable answer is `undecided`: neither confirmed nor refused, and
         the agent asks again on the next arrival frame."""
         s = self.stats
-        fut = self._inflight
-        if fut is not None and self._inflight_tier == "local":
+        q = self._inflight_question
+        if q is not None and self.next_confirm_is_local():
             # 3.80.D: a frame's question still holds the local VLM, which
             # serves one request at a time: asked now, the arrival would be
-            # `busy` (review, 2026-10-14). The runner's budget bounds this.
-            try:
-                fut.result()
-            except BaseException:  # noqa: BLE001 -- _collect_inflight holds it
-                pass
-            self._collect_inflight()
+            # `busy` (review, 2026-10-14). Only on the local tier's turn, and
+            # only for the question's LOCAL phase (bounded by the client's
+            # timeout, and by the runner's budget); a cloud call it fell
+            # through to is not waited for. The answer is left for the tick
+            # thread to apply (review round 2).
+            q.local_done.wait()
         with self._local_lock:
             # An arrival frame: the arrival is still on (arrival_ended's run
             # of frames off it starts again), whichever tier is asked.
@@ -1403,6 +1409,7 @@ class TieredVision:
             self._last_taken = fut
             trigger, self._inflight_trigger = self._inflight_trigger, None
             self._inflight_tier = None
+            self._inflight_question = None
             perception, self._inflight_perception = self._inflight_perception, None
         if fut.exception() is None and isinstance(fut.result(), _LocalAnswer):
             # 3.80.D: the local tier's answer; its own rules reset the pacing.
@@ -1463,6 +1470,7 @@ class TieredVision:
             self._inflight = None
             self._inflight_trigger = None
             self._inflight_tier = None
+            self._inflight_question = None
             self._inflight_perception = None
         self._landed_corroboration = None
         self._local_turn = None

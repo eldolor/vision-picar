@@ -191,8 +191,20 @@ and `__call__` puts every question to the local tier first:
   `frame_escalations`; `cloud_calls` and `triggers` count only questions
   that reached the cloud, and `max_calls` caps only those. A local failure
   never reaches B3.2; a cloud failure after an escalation does.
-* `wait_inflight()` waits for a local question still out even with the
-  call cap spent, when the arrival will ask the local tier next.
+* The local VLM serves one request at a time, so `confirm_local()`, on the
+  local tier's turn only (`next_confirm_is_local()`), first waits for the
+  LOCAL phase of a frame's question still out (`_Question.local_done`, set
+  when the sighting call returns or fails) -- never for a cloud call it fell
+  through to, and never applying its answer, which the tick thread does.
+* A question due for the cloud is never `out_of_vocabulary` (it waits for
+  `cold_search`), and an absent local tier hands an `out_of_vocabulary`
+  question to the cloud only past cold_search's frame or distance bar
+  (`_Question.cloud_ok`). With the call cap spent, `_local_first()` keeps
+  the question local whatever the unable count. Any cloud answer resets
+  `_frame_unable`; `frame_escalations["unable"]` counts only a dispatch that
+  went out. Per-frame latency is `local_frame_ms`, apart from the arrival's
+  `local_ms`. The simulator's pipeline reads boxes in the render's 60 deg
+  (`control/brain_server.py` `SIM_HFOV_DEG`).
 
 **What the hysteresis does and does not gate.** `consecutive_frames` is
 read only in `_trigger_for()`. `_steer_to()` returns a direction for any
