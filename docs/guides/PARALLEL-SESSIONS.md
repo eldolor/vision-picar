@@ -82,14 +82,24 @@ Continuing an existing section: work in its worktree
 6. **The merge gate: fast on push, full at night.** A push to `dev` runs
    `tools/hooks/pre-push` (installed by `git config core.hooksPath
    tools/hooks`), which calls `plan_section.py gate`. A push that changes
-   only docs (`docs/`, `docs-review/`, any `.md`) runs the spec lint and
-   nothing else. Any other push runs the **fast tier**: the whole suite
+   only Markdown (any `.md`) and the images under `docs/` runs the spec
+   lint and `test_plan_section.py` (which reads the real section files and
+   index) and nothing else; the data under `docs/` is not docs, since tests
+   read it. Any other push runs the **fast tier**: the whole suite
    except the real-browser tests (`test_ui*.py`, `test_frame_source.py`),
    the live-stack ones (`*_live.py`) and the measurement sweeps
    (`SLOW_FILES` in `tools/plan_section.py`, which held ~45 of the full
    run's 51 minutes), unless `ready` already recorded a pass for that
-   commit. A pass is recorded for the CHANGE (`git patch-id`), so a clean
-   rebase onto another session's push does not rerun the tier. A new
+   commit. Both run on the working tree, so the gate and `ready` refuse
+   one that is not the commit: a different HEAD, uncommitted changes, or
+   an untracked file that is not ignored (it could be a module the commit
+   imports). A pass is recorded for the CHANGE (its diff without blob ids
+   or line numbers, whitespace kept -- not `git patch-id`, which ignores
+   indentation), so a clean rebase onto another session's push does not
+   rerun the tier. A push that deletes `dev` is refused (only the user
+   overrides that too, with `PICAR_SKIP_GATE=1`). Review records use the
+   same id; ones written before 2026-10-14 used `git patch-id`, so re-run
+   `reviewed` on a branch that had them. A new
    sweep that runs hundreds of missions belongs on that list. The **full suite** runs once a night on the latest
    `origin/dev` (`tools/nightly_suite.sh`, installed with `--install`;
    result in `~/Library/Logs/vision-picar/nightly-latest.txt`) and with

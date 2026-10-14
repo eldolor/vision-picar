@@ -758,7 +758,8 @@ project coherent. Their full narrative is in the archive copy.
   after the review (range defaults to what is not yet on `dev`). The push
   gate WARNS -- never blocks -- about code commits with no recorded review,
   or a risky path with no Thermos pass (`RISKY_PREFIXES`). Records are keyed
-  by each commit's patch-id, so they survive a rebase or a merge from
+  by each commit's diff id (whitespace kept; `git patch-id` until
+  2026-10-14, so older records no longer match), so they survive a rebase or a merge from
   `dev`. Merge commits are not checked: code written while resolving a
   conflict by hand gets no warning, so review it as part of the branch. Added
   2026-10-09 after a session pushed three commits unreviewed; the user's

@@ -12,10 +12,14 @@ py="$(dirname "$(git rev-parse --git-common-dir)")/.venv/bin/python"
 zero=0000000000000000000000000000000000000000
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ "$remote_ref" = "refs/heads/dev" ] || continue
-  [ "$local_sha" = "$zero" ] && continue
   if [ "${PICAR_SKIP_GATE:-}" = "1" ]; then
     echo "pre-push: merge gate SKIPPED for $local_sha (PICAR_SKIP_GATE=1)" >&2
     continue
+  fi
+  # A zero local sha deletes dev: refused, never waved through (3.76 I9).
+  if [ "$local_sha" = "$zero" ]; then
+    echo "pre-push: refusing to delete dev (the user's call: PICAR_SKIP_GATE=1)" >&2
+    exit 1
   fi
   base="$remote_sha"
   [ "$base" = "$zero" ] && base="$(git merge-base origin/dev "$local_sha" 2>/dev/null)"

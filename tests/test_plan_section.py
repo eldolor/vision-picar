@@ -264,7 +264,7 @@ def test_a_coloured_git_config_still_gives_a_patch_id(tmp_path, monkeypatch):
     g("config", "color.ui", "always")       # a user's setting must not empty the id
     (repo / "tool.py").write_text("x = 1\n")
     g("add", "."); g("commit", "-qm", "a tool")
-    assert ps.commit_patch_id(g("rev-parse", "HEAD"), str(repo))
+    assert ps.commit_diff_id(g("rev-parse", "HEAD"), str(repo))
 
 
 def test_moving_a_risky_file_away_still_asks_for_thermos(tmp_path, monkeypatch):

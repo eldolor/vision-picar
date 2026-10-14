@@ -22,6 +22,7 @@ so every session on this machine sees every branch, pushed or not, and git
 refuses to create a branch that exists -- which makes `new` atomic.
 """
 
+import hashlib
 import os
 import re
 import subprocess
@@ -46,6 +47,19 @@ def git(*args, check=True, cwd=None) -> str:
 
 def top() -> str:
     return git("rev-parse", "--show-toplevel")
+
+
+def common_dir(cwd=None) -> str:
+    """The shared .git, absolute. Git prints it relative (`.git`, `../.git`)
+    in the main checkout, which then names a different place from any other
+    cwd (3.76 I7)."""
+    return git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd)
+
+
+def main_checkout(cwd=None) -> str:
+    """The main checkout, where every section's worktree lives -- never the
+    current worktree, or `new` run from one nests the next inside it (I5)."""
+    return os.path.dirname(common_dir(cwd))
 
 
 def slugify(title: str) -> str:
@@ -165,17 +179,30 @@ def cmd_new(slug: str, title: str) -> None:
     slug = slugify(slug)
     git("fetch", "-q", "origin", cwd=root)
     n = max(used_numbers(root) | {0}) + 1
+    trees = os.path.join(main_checkout(root), ".claude", "worktrees")
     for _ in range(20):
         num = f"3.{n}"
         branch = f"plan/{num}-{slug}"
-        wt = os.path.join(root, ".claude", "worktrees", f"plan-{num}")
-        r = subprocess.run(["git", "worktree", "add", "-q", "-b", branch, wt, "origin/dev"],
+        wt = os.path.join(trees, f"plan-{num}")
+        # The branch first, on its own: only one session can create it, so a
+        # branch this call made is this call's to delete. `worktree add -b`
+        # made it and THEN found the path taken, and the retry left it
+        # holding 3.N a second time (3.76 I5).
+        made = subprocess.run(["git", "branch", branch, "origin/dev"],
+                              capture_output=True, text=True, cwd=root)
+        if made.returncode:
+            if "already exists" not in made.stderr:
+                raise SystemExit(made.stderr.strip())
+            n += 1                 # another session took it a moment ago
+            continue
+        r = subprocess.run(["git", "worktree", "add", "-q", wt, branch],
                            capture_output=True, text=True, cwd=root)
         if r.returncode == 0:
             break
+        git("branch", "-D", branch, check=False, cwd=root)
         if "already exists" not in r.stderr:
             raise SystemExit(r.stderr.strip())
-        n += 1                     # another session took it a moment ago
+        n += 1                     # the path is another session's
     else:
         raise SystemExit("could not reserve a section number")
     with open(os.path.join(wt, DIR, f"{num}-{slug}.md"), "w") as fh:
@@ -201,7 +228,8 @@ def section_of_branch(root: str) -> str:
 
 def resources(num: str) -> dict:
     """Everything a live stack can collide on, derived from the section
-    number so no two sections share any of it (ports 9000 + 10 x minor)."""
+    number so no two of 3.1-3.99 share any of it (ports 9000 + 10 x minor).
+    Past 3.99 it wraps onto the section 100 older."""
     minor = int(num.split(".")[1].rstrip("abcdefghijklmnopqrstuvwxyz"))
     base = 9000 + 10 * (minor % 100)
     return {
@@ -211,7 +239,10 @@ def resources(num: str) -> dict:
         # The minor number itself (3.44 -> 44): ROS 2 domains above 101 can
         # clash with Linux's ephemeral ports. 73 and 74 are the fixed domains
         # older stacks use (demo_explore's default, 3.42's lidar stack).
-        "ROS_DOMAIN_ID": {73: 100, 74: 101}.get(minor % 100, minor % 100),
+        # 3.100 would land on 0, the domain of every stack started without
+        # one (3.76 I8); it shares 100 with 3.73 instead, as everything past
+        # 3.99 already wraps onto a section 100 older (3.101 is 3.1's).
+        "ROS_DOMAIN_ID": {73: 100, 74: 101, 0: 100}.get(minor % 100, minor % 100),
         "PICAR_ROS_CONTAINER": f"picar-ros-{num.replace('.', '')}",
         "ROS_IMAGE": f"vision-picar-ros:plan-{num}",
         "EXPLORE_LOGDIR": f"/tmp/vision-picar-{num}",
@@ -263,7 +294,7 @@ def cmd_overlap() -> None:
 # ---------- the merge gate ----------
 
 def gate_dir() -> str:
-    d = os.path.join(git("rev-parse", "--git-common-dir"), "plan-gate")
+    d = os.path.join(common_dir(), "plan-gate")
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -294,15 +325,39 @@ SLOW_TESTS = [
 ]
 
 
+DOC_IMAGES = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".pdf")
+# What a docs-only push runs: the spec lint, and the tests that read the
+# real section files, index and plan (3.76 I4).
+DOCS_TESTS = ["tests/test_spec_lint.py", "tests/test_plan_section.py"]
+
+
 def docs_only(paths) -> bool:
-    """A change no test reads: prose, specs and the plan. The spec lint
-    still runs on it."""
+    """A change only DOCS_TESTS read: Markdown, and the images the docs
+    show. Not everything under docs/ -- tests pin numbers from
+    docs/evaluations/*.json (3.76 I4)."""
     return bool(paths) and all(
-        p.endswith(".md") or p.startswith(("docs/", "docs-review/")) for p in paths)
+        p.endswith(".md") or (p.startswith(("docs/", "docs-review/")) and p.endswith(DOC_IMAGES))
+        for p in paths)
+
+
+def uncommitted(root: str) -> list:
+    """What the working tree holds that HEAD does not, untracked files
+    included: the suite runs on the working tree, so an untracked module a
+    commit imports would pass it and fail on dev (3.76 I1). Ignored files
+    (.venv, caches) are not listed."""
+    # Explicit: a user's status.showUntrackedFiles=no would hide them.
+    return git("status", "--porcelain", "--untracked-files=normal", cwd=root).splitlines()
+
+
+def refuse_uncommitted(root: str, why: str) -> None:
+    left = uncommitted(root)
+    if left:
+        shown = "\n  ".join(left[:10]) + ("\n  ..." if len(left) > 10 else "")
+        raise SystemExit(f"{why}:\n  {shown}")
 
 
 def venv_python(root: str) -> str:
-    py = os.path.join(os.path.dirname(git("rev-parse", "--git-common-dir", cwd=root)), ".venv", "bin", "python")
+    py = os.path.join(main_checkout(root), ".venv", "bin", "python")
     return py if os.path.exists(py) else sys.executable
 
 
@@ -353,9 +408,11 @@ def run_tests(root: str, full: bool) -> bool:
 # commits without the reviews it asks for. The gate now WARNS -- never
 # blocks (the user's choice: warn first, block only if warnings are pushed
 # past) -- about code commits with no recorded review. A record is keyed on
-# the commit's own patch-id, so a rebase or a merge from dev keeps it, and
+# the commit's own diff id, so a rebase or a merge from dev keeps it, and
 # it is self-reported: it says a session ran the review, not that it read
-# it. Paths below are where CLAUDE.md asks for the Thermos pass too.
+# it. The key is `diff_id`, not `git patch-id` (3.76 I2): records written
+# before 2026-10-14 name the old key, so re-run `reviewed` on a branch that
+# had them. Paths below are where CLAUDE.md asks for the Thermos pass too.
 RISKY_PREFIXES = (
     "robot/safety.py", "robot/server.py", "robot/ros_drive.py", "robot/hardware_robot.py",
     "robot/lidar_ld19.py", "control/mission_runner.py", "control/brain_server.py",
@@ -375,14 +432,40 @@ def risky(paths) -> bool:
     return any(p.startswith(RISKY_PREFIXES) for p in paths)
 
 
-def commit_patch_id(sha: str, root: str) -> str:
-    # Plumbing, never `git show`: a user's color.ui=always or diff settings
-    # would change the text and leave patch-id with nothing (review, 2026-10-09).
-    diff = subprocess.run(["git", "diff-tree", "-p", "--no-color", "--no-ext-diff",
-                           "--root", sha], capture_output=True, cwd=root).stdout
-    out = subprocess.run(["git", "patch-id", "--stable"], input=diff,
-                         capture_output=True, cwd=root).stdout.decode().split()
-    return out[0] if out else ""
+def diff_id(diff: bytes) -> str:
+    """A change's id, kept by a rebase that applies it cleanly: the diff
+    with its blob ids and line numbers dropped (a hunk's function context,
+    after the second @@, is kept: it tells apart one edit made to two
+    identical blocks). Not `git patch-id`, which
+    ignores whitespace -- moving a Python line out of a block kept the old
+    change's pass and review (3.76 I2) -- and whose `--verbatim` older git
+    (the Jetson's 2.34) lacks."""
+    if not diff.strip():
+        return ""
+    h = hashlib.sha1()
+    for line in diff.split(b"\n"):
+        if line.startswith(b"index "):
+            continue
+        if line.startswith(b"@@"):
+            line = b"@@" + line.split(b"@@", 2)[-1] if line.count(b"@@") >= 2 else b"@@"
+        h.update(line)
+        h.update(b"\n")
+    return h.hexdigest()
+
+
+def tree_diff(root: str, *revs: str) -> bytes:
+    """The diff to key on, in plumbing: `git diff` follows a user's
+    color.ui, diff.context, diff.noprefix, renames and textconv, and either
+    emptied the id (review, 2026-10-09) or let two changes share one (3.76).
+    --binary: two different edits of one image must not share an id."""
+    return subprocess.run(["git", "diff-tree", "-p", "--no-commit-id", "--binary", "--no-renames",
+                           "--no-textconv", "--no-color", "--no-ext-diff", "-U3", "--root", *revs],
+                          capture_output=True, cwd=root).stdout
+
+
+def commit_diff_id(sha: str, root: str) -> str:
+    """The commit's own change (against its first parent), as `diff_id`."""
+    return diff_id(tree_diff(root, sha))
 
 
 def code_commits(rng: str, root: str) -> list:
@@ -423,9 +506,9 @@ def cmd_reviewed(args) -> None:
     import time
     stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
     for sha, subject, _files in commits:
-        pid = commit_patch_id(sha, root)
+        pid = commit_diff_id(sha, root)
         if not pid:
-            raise SystemExit(f"no patch-id for {sha[:9]}; nothing recorded for it")
+            raise SystemExit(f"no diff id for {sha[:9]}; nothing recorded for it")
         with open(os.path.join(gate_dir(), f"review-{pid}"), "a") as f:
             f.write(f"code-review {stamp} {sha[:9]}\n")
             if thermos:
@@ -438,7 +521,7 @@ def review_warnings(base: str, sha: str, root: str) -> list:
     """What the push carries without its recorded reviews. Never blocks."""
     out = []
     for c, subject, files in code_commits(f"{base}..{sha}", root):
-        have = review_record(commit_patch_id(c, root))
+        have = review_record(commit_diff_id(c, root))
         if "code-review" not in have:
             out.append(f"{c[:9]} {subject[:60]} -- no /code-review recorded")
         elif risky(files) and "thermos" not in have:
@@ -466,16 +549,13 @@ def warn_reviews(base: str, sha: str, root: str) -> None:
 
 
 def change_id(base: str, sha: str, root: str) -> str:
-    """`git patch-id` of the change being pushed: the same diff gets the same
+    """`diff_id` of the change being pushed: the same diff gets the same
     id after a rebase that applied cleanly. Keying the pass on this, not on
     the commit, is what stops a 7-minute tier losing a race to every other
     session's push (2026-10-09: two in a row). The nightly full run still
     sees how changes combine."""
-    diff = subprocess.run(["git", "diff", "--no-color", "--no-ext-diff", base, sha],
-                          capture_output=True, cwd=root).stdout
-    out = subprocess.run(["git", "patch-id", "--stable"], input=diff,
-                         capture_output=True, cwd=root).stdout.decode().split()
-    return "change-" + out[0] if out else ""
+    did = diff_id(tree_diff(root, base, sha))
+    return "change-" + did if did else ""
 
 
 def cmd_gate(base: str, sha: str) -> None:
@@ -494,18 +574,23 @@ def cmd_gate(base: str, sha: str) -> None:
     if cid and os.path.exists(os.path.join(gate_dir(), cid)):
         print("pre-push: this change already passed the fast tier before a rebase", flush=True)
         return
-    files = git("diff", "--name-only", base, sha, cwd=root).splitlines() if base else []
+    # Both tiers run on the working tree, so it must be the commit pushed --
+    # the spec lint too, which once linted whatever the checkout held (I3).
+    if sha != git("rev-parse", "HEAD", cwd=root):
+        raise SystemExit("pre-push: the gate runs on the working tree, so push "
+                         "HEAD with everything committed (or run `ready` first)")
+    refuse_uncommitted(root, "pre-push: the working tree is not the commit pushed "
+                             "(commit, or remove, these first; or run `ready`)")
+    # --no-renames: both sides, so a .py renamed to .md is not "docs only".
+    files = git("diff", "--name-only", "--no-renames", base, sha,
+                cwd=root).splitlines() if base else []
     if docs_only(files):
-        print("pre-push: docs only -- running the spec lint", flush=True)
-        if subprocess.run([venv_python(root), "-m", "pytest", "tests/test_spec_lint.py",
+        print("pre-push: docs only -- running the spec lint and the plan's tests", flush=True)
+        if subprocess.run([venv_python(root), "-m", "pytest", *DOCS_TESTS,
                            "-q", "-p", "no:cacheprovider"], cwd=root,
                           env=scrubbed_env()).returncode:
             raise SystemExit("pre-push: spec lint failed")
         return
-    if sha != git("rev-parse", "HEAD", cwd=root) or git(
-            "status", "--porcelain", "--untracked-files=no", cwd=root):
-        raise SystemExit("pre-push: the fast tier runs on the working tree, so push "
-                         "HEAD with everything committed (or run `ready` first)")
     print(f"pre-push: running the fast tier on {sha[:9]} ...", flush=True)
     if not run_tests(root, full=False):
         raise SystemExit("pre-push: fast tier failed")
@@ -526,8 +611,8 @@ def cmd_ready(full: bool = False) -> None:
     write_index(root)
     if git("status", "--porcelain", "--", INDEX, cwd=root):
         raise SystemExit(f"{INDEX} is stale: commit the regenerated index")
-    if git("status", "--porcelain", "--untracked-files=no", cwd=root):
-        raise SystemExit("uncommitted changes: commit first, so the pass names a commit")
+    refuse_uncommitted(root, "uncommitted or untracked files: commit (or remove) them "
+                             "first, so the pass names the tree the suite ran on")
     sha = git("rev-parse", "HEAD", cwd=root)
     print(f"running the {'full suite' if full else 'fast tier'} on {sha[:9]} ...", flush=True)
     if not run_tests(root, full):
