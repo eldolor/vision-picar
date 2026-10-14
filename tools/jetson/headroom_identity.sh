@@ -99,6 +99,10 @@ MEM=$!
 PYTHONPATH=. python tools/jetson/perception_loop.py 3600 > "$OUT/perception.log" 2> "$OUT/perception.err" &
 PERC=$!
 waitfor 180 "perception loaded" grep -q "loaded 1 pipeline" "$OUT/perception.log"
+# 3.78's rule: perception is warm (its first frame done) before the VLM
+# starts, so the window is the steady state. 3.81.A's first run started the
+# window while a fresh checkout downloaded perception's weights.
+waitfor 300 "perception's first frame" grep -qE '^[0-9:]{8} [0-9]+ ' "$OUT/perception.log"
 phase perception
 ( while true; do echo "$(date +%T) $(wheel)"; sleep 5; done ) > "$OUT/wheel.log" &
 WHL=$!
