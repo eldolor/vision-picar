@@ -77,7 +77,8 @@ def main() -> int:
                                  sorted(dev)))
         except Exception:  # noqa: BLE001
             continue
-    # Keep only the outermost of nested modules of the same size and device.
+    # Exact duplicates dropped only. Nested modules are all listed, and a
+    # module's size includes its children's: do not add the rows up.
     for mb, name, dev in sorted(set((m, n, tuple(d)) for m, n, d in mods), reverse=True)[:25]:
         print(json.dumps({"module": name, "mb": mb, "device": list(dev)}))
     time.sleep(0.5)

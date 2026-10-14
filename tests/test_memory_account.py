@@ -28,6 +28,23 @@ def test_pick_takes_the_windows_lowest_memavailable():
     assert ma.pick(recs, "window")["t"] == 3
 
 
+def test_pick_refuses_a_phase_no_sample_has():
+    import pytest
+    with pytest.raises(SystemExit):
+        ma.pick([_rec(1, "idle", 100)], "window")
+
+
+def test_nvmap_clients_reads_a_process_name_with_spaces(tmp_path, monkeypatch):
+    d = tmp_path / "iovmm"
+    d.mkdir()
+    (d / "clients").write_text("CLIENT  PROCESS  PID  SIZE\n"
+                               "user  gnome-shell  252159  4872K\n"
+                               "user  Web Content  301  2048K\n"
+                               "total                 6920K\n")
+    monkeypatch.setattr(ma, "NVMAP", tmp_path)
+    assert ma.nvmap_clients() == {"252159": 4872, "301": 2048}
+
+
 def test_system_rows_add_up_to_memtotal_with_the_remainder_unexplained():
     rows = dict(ma.system_rows(_rec(1, "window", 700)))
     # page cache excludes shmem, which has its own row

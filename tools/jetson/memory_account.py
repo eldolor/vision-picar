@@ -52,9 +52,10 @@ def nvmap_clients() -> dict:
     """{pid: kB} from iovmm/clients ("user <comm> <pid> <size>K" lines)."""
     out = {}
     for line in read(NVMAP / "iovmm/clients").splitlines():
-        m = re.match(r"\s*\S+\s+(\S+)\s+(\d+)\s+(\d+)K\s*$", line)
+        # Anchored at the end: a process name may contain spaces.
+        m = re.search(r"\s(\d+)\s+(\d+)K\s*$", line)
         if m:
-            out[m.group(2)] = out.get(m.group(2), 0) + int(m.group(3))
+            out[m.group(1)] = out.get(m.group(1), 0) + int(m.group(2))
     return out
 
 
@@ -156,7 +157,10 @@ def mb(kb) -> int:
 
 
 def pick(recs: list, phase: str) -> dict:
-    cand = [r for r in recs if r["phase"] == phase] or recs
+    cand = [r for r in recs if r["phase"] == phase]
+    if not cand:  # never a table of some other phase under this one's name
+        raise SystemExit(f"no sample has phase {phase!r}; phases: "
+                         f"{sorted({r['phase'] for r in recs})}")
     return min(cand, key=lambda r: r["meminfo"]["MemAvailable"])
 
 

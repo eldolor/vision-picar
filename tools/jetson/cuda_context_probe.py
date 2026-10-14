@@ -30,7 +30,7 @@ def own_memory() -> dict:
             out[k + "_mb"] = round(int(v.split()[0]) / 1024, 1)
     gpu = 0
     for line in Path("/sys/kernel/debug/nvmap/iovmm/clients").read_text().splitlines():
-        m = re.match(r"\s*\S+\s+\S+\s+(\d+)\s+(\d+)K\s*$", line)
+        m = re.search(r"\s(\d+)\s+(\d+)K\s*$", line)
         if m and m.group(1) == str(os.getpid()):
             gpu += int(m.group(2))
     out["gpu_mb"] = round(gpu / 1024, 1)
@@ -49,8 +49,11 @@ def main(stage: str) -> int:
                     continue
             if lib:
                 break
-        assert lib is not None, "libcudart not found"
-        assert lib.cudaFree(ctypes.c_void_p(0)) == 0
+        if lib is None:
+            raise SystemExit("libcudart not found")
+        err = lib.cudaFree(ctypes.c_void_p(0))  # creates the context; never inside an assert
+        if err != 0:
+            raise SystemExit(f"cudaFree(0) failed: {err}")
     elif stage in ("torch", "cudnn"):
         import torch
         x = torch.zeros(1, device="cuda")
