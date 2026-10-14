@@ -1003,6 +1003,9 @@ def create_app(
             # the wrong model, and wording moved a FORWARD rate from 0.000 to
             # 1.000 in this project's own 3x3 matrix.
             "navigate_prompt_variant": config["navigate_prompt_variant"] or None,
+            # 3.70 S5: the most paid room-name calls one survey may make
+            # (null: no cap), so the phone can say it before a survey starts.
+            "room_label_max_calls": config["room_label_max_calls"] or None,
             # Phase P2. Whether `policy: "tiered"` can run here at all, and
             # which models it would load if it did -- so the twin can name
             # the detector on screen before anything is spent, and grey the

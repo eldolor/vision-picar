@@ -1411,7 +1411,16 @@
         tab. Start it and this page becomes an observer &mdash; close it,
         background it, or open it on another phone, and the robot keeps going.
       </div>
+      <!-- 3.70 S5: the job. A survey has no target and runs explore only,
+           so the target box and the policy picker hide for it. -->
       <div class="btn-row" style="margin-top:8px;">
+        <select id="brain-job" class="select-input" style="flex:1;">
+          <option value="find">Find an object</option>
+          <option value="survey">Survey the house</option>
+        </select>
+      </div>
+      <div class="hint" id="brain-job-hint" style="display:none;"></div>
+      <div class="btn-row" id="brain-target-row">
         <input type="text" id="brain-target" class="text-input" value="red backpack" list="target-history-list" style="flex:2;">
         <!-- `primary`, not the default grey: this is the panel's one
              action, and in the default style it read as a label beside a
@@ -1419,7 +1428,7 @@
              "there is no start button". -->
         <button id="btn-brain-mission" class="primary" style="flex:1;" disabled>Start</button>
       </div>
-      <div class="btn-row">
+      <div class="btn-row" id="brain-policy-row">
         <select id="brain-policy" class="select-input" style="flex:1;">
           <option value="frontier">Rule-based policy &middot; free</option>
           <option value="vision">Vision policy &middot; paid, one model call per step</option>
@@ -1451,6 +1460,7 @@
              that cannot aim goes LEFT, RIGHT, LEFT. -->
         <div class="full">Turns: <span class="val" id="brain-tel-turns">&ndash;</span></div>
         <div class="full">Rooms searched: <span class="val" id="brain-tel-rooms">&ndash;</span></div>
+        <div class="full" id="brain-survey-row" style="display:none;">Rooms named: <span class="val" id="brain-tel-survey">&ndash;</span></div>
         <div class="full">Why: <span class="val" id="brain-tel-why">&ndash;</span></div>
         <div class="full">Where it looked: <span class="val" id="brain-tel-report">&ndash;</span></div>
         <!-- 3.56. Whether the vision service answers its free /health, looked
