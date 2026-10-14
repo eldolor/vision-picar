@@ -331,10 +331,17 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   21). **Amendment 3 kept `rule` the default:** on 613 fresh houses
   (ProcTHOR `test` split, `procthor:test:<i>`) the network finds 608 vs 606
   and scores higher, but saves only 11% of median goals (bar 20%).
-  **Goal choice is slow on the Jetson at SLAM resolution -- the rule's
-  too:** 1.4 s p90 (network 2.2 s), `find_frontiers`' pure-Python search;
-  about 30 s of standing still per 20-goal search. Worth a section before
-  the Rover. Trainers and `time_choice.py` in `evaluations/explore-365/`.
+  Goal choice was slow on the Jetson at SLAM resolution (1.4 s p90, the
+  rule's own); fixed by 3.77. Trainers and `time_choice.py` in
+  `evaluations/explore-365/`.
+* **Fast goal choice (3.77), merged 2026-10-13.** `brain/frontier.py`'s
+  grid work in numpy with **exactly** the old answers (0 differences
+  against the frozen `tests/frontier_reference.py`; do not "simplify" its
+  order-keeping). One `reach()` per choice, shared. Jetson 15 W worst path
+  p90 2,424 -> 90 ms (bar 100). Live 3/3 found, 0 contacts, median 642 s.
+  Status reports `explore.choice_ms`. Open: those runs sent more goals
+  (28/28/31 vs 21/21/22), cause not investigated; they predate 3.76 E's
+  early retry.
 * **Below the lidar (3.74), parts A-B merged 2026-10-12.** Borrowed from
   Ecovacs' vacuum detector. A: sim objects can be lower than the lidar
   (`SIM_MAP=complex_house_hazards`), a body-fixed depth-camera floor band
