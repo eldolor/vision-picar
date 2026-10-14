@@ -127,7 +127,7 @@ failure:
 ```bash
 cd ~/vision-picar
 docker build -t vision-picar-ros service/slam                  # once; long the first time
-set -a; source ~/.vision-picar-local-secrets; set +a           # LOCAL_SECRET, and VISION_SECRET (run.sh needs it defined)
+set -a; source ~/.vision-picar-local-secrets; set +a           # LOCAL_SECRET (16+ characters, run.sh refuses less); VISION_SECRET optional
 export APP_SHARED_SECRET="$LOCAL_SECRET"
 
 # one run -- repeat this block five times

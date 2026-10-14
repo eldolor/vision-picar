@@ -41,10 +41,15 @@ def identify_room(visible_objects: list) -> str:
     (e.g. visible "white kitchen cabinets" matches feature "white
     cabinets", and visible "cabinets" alone also matches).
     """
-    if not visible_objects:
+    # Mirrored from service/vision_analyze/rooms_core.py (3.76 round 2, S5):
+    # only non-empty strings count. "" is a substring of every feature, so it
+    # scored every room; a bare string was iterated letter by letter.
+    if not isinstance(visible_objects, list):
         return "unknown"
-
-    lowered_objects = [obj.lower() for obj in visible_objects]
+    lowered_objects = [obj.strip().lower() for obj in visible_objects
+                       if isinstance(obj, str) and obj.strip()]
+    if not lowered_objects:
+        return "unknown"
 
     best_room = "unknown"
     best_score = 0

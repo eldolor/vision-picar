@@ -338,7 +338,7 @@ def vision(recordings, monkeypatch):
     calls = []
 
     def fake_post(vision_url, timeout_s, image_bytes, target_object, model_id,
-                  prompt_variant=None):
+                  prompt_variant=None, deadline=None):
         calls.append({"target": target_object, "model_id": model_id,
                       "prompt_variant": prompt_variant})
         return nav_reply("FORWARD")
@@ -398,7 +398,7 @@ def test_one_failing_frame_does_not_lose_the_replay(recordings, monkeypatch):
     n = {"calls": 0}
 
     def flaky(vision_url, timeout_s, image_bytes, target_object, model_id,
-              prompt_variant=None):
+              prompt_variant=None, deadline=None):
         n["calls"] += 1
         if n["calls"] == 2:
             raise RuntimeError("HTTP 502: vision service down")
@@ -488,7 +488,7 @@ def timing_out(recordings, monkeypatch, fails, total):
     n = {"calls": 0}
 
     def flaky(vision_url, timeout_s, image_bytes, target_object, model_id,
-              prompt_variant=None):
+              prompt_variant=None, deadline=None):
         n["calls"] += 1
         if n["calls"] <= fails:
             raise RuntimeError("ReadTimeout: timed out")
@@ -566,7 +566,7 @@ def vision_timeouts(recordings, monkeypatch):
     seen = []
 
     def fake_post(vision_url, timeout_s, image_bytes, target_object, model_id,
-                  prompt_variant=None):
+                  prompt_variant=None, deadline=None):
         seen.append(timeout_s)
         return nav_reply("FORWARD")
 

@@ -85,7 +85,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from brain.navigate import vision_fn_for
+from brain.navigate import MAX_TARGET_CHARS, vision_fn_for
 from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
                             DEFAULT_MATCH_PROBABILITY, PerceptionUnavailable)
 from brain.tiered import tiered_vision_fn_for
@@ -145,6 +145,9 @@ class MissionStartRequest(BaseModel):
     # `mission_time_limit_s` (a live demo or a sweep sets its own).
     mission_time_limit_s: Optional[float] = Field(default=None, gt=0, le=86400)
     policy: str = "frontier"
+    # 3.70 Part A: "find" (a target or a room) or "survey" (no target: map
+    # the house and label its rooms; explore only). Checked by MissionRunner.
+    job: str = "find"
     # Which model answers /navigate for this mission (policy: "vision" only).
     # Omitted falls back to brain.navigate_model_id, then to the vision
     # service's own default. Validated against the service's published
@@ -446,11 +449,20 @@ def create_app(
                     "brain.vision_url in config/robot.yaml (or VISION_URL in the "
                     "environment)."
                 )
-            if not req.target_object:
+            # 3.76 round 3 (P4): blank and over-long targets are refused HERE,
+            # for the cloud policies only, because the vision service answers
+            # both 400 -- a mission that started would fail every call.
+            # frontier/explore never ask the cloud and keep their old rules.
+            if not req.target_object or not req.target_object.strip():
                 raise ValueError(
                     f"The {req.policy} policy searches for an object -- /navigate "
                     "takes a target_object. A target_room-only mission needs "
                     "policy='frontier'."
+                )
+            if len(req.target_object) > MAX_TARGET_CHARS:
+                raise ValueError(
+                    f"The {req.policy} policy's target_object is over "
+                    f"{MAX_TARGET_CHARS} characters; the vision service refuses it."
                 )
             model_id = req.model_id or config["navigate_model_id"] or None
             prompt_variant = (
@@ -489,9 +501,9 @@ def create_app(
         if req.policy == "explore":
             # 3.31. Goals go to nav2 through the robot server; checked here so
             # a world with no planner refuses at start, not on the first tick.
-            if not req.target_object:
+            if not req.target_object and req.job != "survey":
                 raise ValueError("The explore policy searches for an object -- it "
-                                 "needs a target_object.")
+                                 "needs a target_object (or job 'survey').")
             navigator = RemoteNavigator(
                 config.get("world_url") or getattr(robot, "base_url", None)
                 or config["robot_url"],
@@ -519,7 +531,11 @@ def create_app(
             mission=req.mission,
             max_steps=req.max_steps,
             mission_time_limit_s=(req.mission_time_limit_s
-                                  or config["mission_time_limit_s"] or None),
+                                  or (config["survey_time_limit_s"] if req.job == "survey"
+                                      else config["mission_time_limit_s"]) or None),
+            job=req.job,
+            room_label_max_calls=config["room_label_max_calls"] or None,
+            room_label_mode=config["room_label_mode"],
             battery_floor_v=config["battery_floor_v"] or None,
             vision_max_calls=config["vision_max_calls"] or None,
             stuck_after=config["stuck_after"],
@@ -561,7 +577,8 @@ def create_app(
         # 3.55: microseconds, so two missions for one target started in the
         # same second do not share a file name and S3 key.
         mission_id = (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-                      + "-" + (req.target_object or req.target_room or "mission"))
+                      + "-" + (req.target_object or req.target_room
+                               or ("survey" if req.job == "survey" else "mission")))
         runner.inventory_sink = lambda report: threading.Thread(
             target=store.save, args=(mission_id, report), daemon=True).start()
         # The knobs whose effect the dashboard exists to watch. A trend

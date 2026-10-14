@@ -71,6 +71,11 @@ import httpx
 logger = logging.getLogger("navigate")
 
 DEFAULT_TIMEOUT_S = 60.0
+# Mirrors service/vision_analyze/app.py's MAX_TARGET_CHARS: the service
+# answers a longer target 400, which reaches a mission as a plain
+# RuntimeError on every call. control/brain_server.py refuses it at mission
+# start instead, early and visibly (3.76 round 2, S11).
+MAX_TARGET_CHARS = 200
 
 # /navigate's action vocabulary is already the robot's -- FORWARD, LEFT,
 # RIGHT, REVERSE, STOP -- so no translation table is needed. Anything else

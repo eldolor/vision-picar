@@ -72,10 +72,16 @@ def row_for(status: dict, *, git_revision: str = "", config: dict = None,
     """
     tier = status.get("tier") or {}
     stats = dict(tier.get("stats") or {})
+    finished_at = time.time()
+    # 3.76 F13: the status publishes how long the mission ran (`budget`), not
+    # when it began (its clock is monotonic), so every row stored a null
+    # start. Wall time on a live brain, whose robot is a RemoteRobot; only an
+    # in-process sim runs on sim time, and it ships no metrics.
+    elapsed = (status.get("budget") or {}).get("elapsed_s")
     return {
-        "run_id": f"{int(time.time())}-{status.get('policy') or 'none'}",
-        "started_at": status.get("started_at"),
-        "finished_at": time.time(),
+        "run_id": f"{int(finished_at)}-{status.get('policy') or 'none'}",
+        "started_at": (finished_at - elapsed) if elapsed is not None else None,
+        "finished_at": finished_at,
         "git_revision": git_revision,
         "policy": status.get("policy"),
         "config": dict(config or {}),

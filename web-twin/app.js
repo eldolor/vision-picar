@@ -2766,8 +2766,11 @@
   function newWalkName() {
     const d = new Date();
     const pad = function (n) { return String(n).padStart(2, "0"); };
-    const target = (state.guidanceTarget || "walk").toLowerCase()
+    let target = (state.guidanceTarget || "walk").toLowerCase()
       .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "walk";
+    // 3.76 F6: "metrics-" names a day of mission metrics in the same store,
+    // and the brain refuses a walk named like one.
+    if (/^metrics/.test(target)) target = "walk-" + target;
     // The model rides along inside walk.jsonl's own entries regardless (see
     // vision_core.describe_image_bytes_navigate's model_id field), but
     // putting a short tag in the name too means the admin viewer's plain

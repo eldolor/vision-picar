@@ -59,7 +59,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from control.walk_store import METRICS_PREFIX  # one definition, beside the filter
+from control.walk_store import METRICS_PREFIX, WalkStoreError  # one definition, beside the filter
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
 MAX_DAYS = 90
 
@@ -110,7 +110,11 @@ def register_metrics_routes(app, store, require_secret) -> APIRouter:
         row = run.model_dump()
         row["stored_at"] = time.time()
         day = _day_of(run.finished_at or run.started_at)
-        store.write_json(f"{METRICS_PREFIX}{day}", f"{run.run_id}.json", row)
+        try:
+            store.write_json(f"{METRICS_PREFIX}{day}", f"{run.run_id}.json", row)
+        except WalkStoreError:
+            # 3.76 F7: RUN_ID_RE allows "x..y", the store does not.
+            raise HTTPException(400, "run_id must be a short safe name")
         return {"stored": run.run_id, "day": day}
 
     @router.get("/metrics/summary", dependencies=[Depends(require_secret)])
@@ -129,10 +133,13 @@ def register_metrics_routes(app, store, require_secret) -> APIRouter:
             day = (today - timedelta(days=back)).strftime("%Y-%m-%d")
             container = f"{METRICS_PREFIX}{day}"
             try:
+                # A day with no runs lists as empty on both backends.
                 names = store.list_names(container, prefix="")
-            except Exception:
-                # A day with no runs. Not an error -- most days have none.
-                continue
+            except Exception as e:  # noqa: BLE001 -- named in the answer
+                # 3.76 F12: only a failure lands here (AccessDenied, a
+                # throttle, no credentials), and skipping it drew "No runs
+                # stored yet" over an unreadable store.
+                raise HTTPException(503, f"metrics store unreadable: {type(e).__name__}")
             for name in names:
                 if not name.endswith(".json"):
                     continue

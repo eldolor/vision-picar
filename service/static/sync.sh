@@ -74,5 +74,12 @@ done < <(rows)
 # request either way and removes the chance of forgetting one. CloudFront
 # gives 1000 free invalidation paths a month; this uses one.
 echo "==> invalidating $DIST"
-aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/*' \
-  --query 'Invalidation.[Id,Status]' --output text
+INVALIDATION=$(aws cloudfront create-invalidation --distribution-id "$DIST" --paths '/*' \
+  --query 'Invalidation.Id' --output text)
+# A change is not shipped until the invalidation reports Completed (CLAUDE.md
+# section 6); exiting at InProgress let an edge keep serving the old app.js
+# while the run looked finished (3.76 H2-12). The waiter polls for ~10 min
+# and fails the script if it never completes.
+echo "    $INVALIDATION: waiting for Completed"
+aws cloudfront wait invalidation-completed --distribution-id "$DIST" --id "$INVALIDATION"
+echo "    $INVALIDATION: Completed"

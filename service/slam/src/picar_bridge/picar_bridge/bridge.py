@@ -91,6 +91,45 @@ PAN_HZ = 20.0
 # The brain ticks at ~4 Hz; a status twice a second is enough to follow it
 # and cheap enough to leave on.
 BRAIN_HZ = 2.0
+# How long POST /goal waits for nav2's action server before answering 503
+# (3.76 H1-8): well inside world/ros_world.py's 2 s client timeout, or the
+# caller gives up first and reads a timeout instead of "nav2 is not up".
+NAV2_WAIT_S = 1.0
+# A goal nav2 has not accepted or rejected in this long never will be (its
+# navigator died after wait_for_server): it ends `aborted` (3.76 H1-2). While
+# pending, the robot server refuses every other autonomous driver and a
+# stop waits on it, so "pending" must not be forever. nav2 answers in ms.
+GOAL_RESPONSE_TIMEOUT_S = 5.0
+# The start truth (3.76 H1-4, round 2): the truth is sampled somewhere inside
+# the request, so the odometry is carried by its own velocities to the
+# request's midpoint, and only a request this quick is used -- the error left
+# is at most speed x half of it (1 rad/s: under 3 deg; at rest: none).
+START_TRUTH_MAX_RTT_S = 0.1
+# Older odometry than this is not extrapolated (the controllers stalled).
+START_TRUTH_MAX_ODOM_AGE_S = 0.5
+# With no answer within START_TRUTH_MAX_RTT_S this long after the first, the
+# quickest seen is used (3.76 Q2: a loaded Jetson at container start may
+# never meet the bar); /world/truth is asked at most every START_TRUTH_POLL_S.
+START_TRUTH_FALLBACK_S = 3.0
+START_TRUTH_POLL_S = 0.2
+# The cancel schedule (3.76 round 10): ONE rule for every goal the bridge is
+# cancelling -- the live goal's and any superseded one's -- whoever asks (a
+# stop, the D-pad, a superseding goal, or the bridge's own timer): a cancel
+# is due once the last send to that goal is CANCEL_RESEND_S old during the
+# goal's first CANCEL_SLOWER_AFTER_S of cancelling, then CANCEL_SLOWEST_S
+# old. 0.2 s is under the stop loop's 0.25 s poll, so every poll re-sends
+# while it matters; a hung navigator gets about 360 cancels an hour per goal
+# after 30 s (a known limit). The timer's CANCEL_TIMER_S tick is only how
+# often it looks.
+CANCEL_RESEND_S = 0.2
+CANCEL_SLOWER_AFTER_S = 30.0
+CANCEL_SLOWEST_S = 10.0
+CANCEL_TIMER_S = 0.5
+# A cancelled goal with no result this long after its first cancel, while
+# nav2's navigator is gone and nothing has driven on cmd_vel/nav for as long,
+# ends `aborted` (3.76 R6): otherwise it read `active` for the session, the
+# stop held `ros` at zero and every autonomous driver was refused for good.
+CANCEL_RESULT_TIMEOUT_S = 10.0
 
 
 def _yaw_pitch_roll(q):
@@ -129,6 +168,9 @@ class Bridge(Node):
         # without reading the truth at any later moment. NEVER published
         # into ROS: nothing on this side may navigate by it.
         self.start_truth = None
+        # True while the start-truth thread is still working (3.76 round 5):
+        # world/ros_world.py anchors nothing for a session until it ends.
+        self.start_truth_pending = True
         threading.Thread(target=self._record_start_truth, daemon=True,
                          name="start-truth").start()
         self.last_map = None
@@ -141,10 +183,19 @@ class Bridge(Node):
         # ---- R6 ----
         self.nav = ActionClient(self, NavigateToPose, "navigate_to_pose")
         self.goal_handle = None
+        # Every goal handle the bridge has asked to cancel and nav2 has not
+        # yet answered with a result: id(handle) -> {handle, record, since,
+        # last} (3.76 Q3). Re-sent by a timer until the result arrives.
+        self.cancelling = {}
+        self._nav_ready = True           # refreshed by _resend_cancels, outside the lock
         self.goal = None               # {"x_m","y_m","yaw_rad","state","since"}
         self.plan = []
         self.create_subscription(Path, "/plan", self._on_plan, 10)
         self.create_subscription(Twist, "/cmd_vel_mux", self._on_mux, 10)
+        # What nav2's controller and behaviours command (R6 R6's remap):
+        # the last non-zero one, for R6's "nothing is driving" check.
+        self.last_nav_twist_at = None
+        self.create_subscription(Twist, "cmd_vel/nav", self._on_nav_twist, 10)
         self.create_subscription(Twist, "/diff_drive_controller/cmd_vel_unstamped",
                                  self._on_applied, 10)
         self._reset_stats()
@@ -158,6 +209,7 @@ class Bridge(Node):
         self.create_timer(1.0 / SCAN_HZ, self._poll_scan,
                           callback_group=MutuallyExclusiveCallbackGroup())
         self.create_timer(1.0 / PAN_HZ, self._publish_pan)
+        self.create_timer(CANCEL_TIMER_S, self._resend_cancels)
         # ---- the brain, for ROS tools ----
         self.brain_url = os.environ.get("BRAIN_URL", "http://host.docker.internal:8001/brain").rstrip("/")
         self.brain_http = KeepAliveClient(self.brain_url, auth, timeout=1.0) if self.brain_url else None
@@ -268,7 +320,13 @@ class Bridge(Node):
             self.plan = [(p.pose.position.x, p.pose.position.y) for p in msg.poses]
 
     def send_goal(self, body):
-        if not self.nav.wait_for_server(timeout_sec=2.0):
+        # A goal converted for another session (the container restarted
+        # between the caller's pose read and this post) is refused before
+        # anything is cancelled (3.76 round 8). A caller that names none is
+        # taken as before.
+        if body.get("session") not in (None, self.session):
+            return 409, {"error": "the SLAM session changed", "session": self.session}
+        if not self.nav.wait_for_server(timeout_sec=NAV2_WAIT_S):
             return 503, {"error": "nav2 is not up (navigate_to_pose has no server)"}
         self.cancel_goal()
         ps = PoseStamped()
@@ -283,8 +341,14 @@ class Bridge(Node):
         goal.pose = ps
         with self.lock:
             self.plan = []
+            # The superseded goal was sent its cancel above, and nav2's
+            # navigator preempts it for this one anyway; its handle must not
+            # stand in for the new goal's.
+            self.goal_handle = None
             self.goal = {"x_m": ps.pose.position.x, "y_m": ps.pose.position.y, "yaw_rad": yaw,
-                         "state": "pending", "since": time.time()}
+                         "state": "pending", "since": time.time(),
+                         # internal, monotonic, never published (round 8)
+                         "_t0": time.monotonic()}
             record = self.goal
         future = self.nav.send_goal_async(goal)
         future.add_done_callback(lambda f: self._on_goal_response(f, record))
@@ -292,22 +356,36 @@ class Bridge(Node):
 
     def _on_goal_response(self, future, record):
         handle = future.result()
+        send = None
         with self.lock:
             if not handle.accepted:
-                record["state"] = "rejected"
+                if record["state"] == "pending":
+                    record["state"] = "rejected"
                 return
-            if record is not self.goal:          # superseded while pending
-                handle.cancel_goal_async()
-                return
-            if record.get("cancel_reason"):      # cancelled while pending (spec review 3, V2)
-                handle.cancel_goal_async()
-                record["state"] = "canceled"
-                return
-            self.goal_handle = handle
-            record["state"] = "active"
-        handle.get_result_async().add_done_callback(lambda f: self._on_result(f, record))
+            if record is not self.goal:
+                # Superseded while pending: nav2 preempts it for the new one,
+                # and it is cancelled until its result says so (3.76 Q3).
+                record.setdefault("cancel_reason", "superseded")
+                send = self._ask_cancel(handle, record)
+            else:
+                if record["state"] != "pending":
+                    # Given up on (H1-2) and accepted after all (3.76 R2): it is
+                    # live again, reads `active`, and is cancelled until it ends.
+                    record["reason"] = "nav2 accepted it after the deadline; cancelled"
+                    record.pop("ended", None)
+                    record.setdefault("cancel_reason", "accepted after the deadline")
+                self.goal_handle = handle
+                record["state"] = "active"
+                if record.get("cancel_reason"):  # cancelled while pending (spec review 3, V2)
+                    # It reads `active` until nav2's result says it ended
+                    # (3.76 H1-1): a lost cancel must stay visible.
+                    send = self._ask_cancel(handle, record)
+        if send is not None:
+            send.cancel_goal_async()             # outside bridge.lock (round 8)
+        handle.get_result_async().add_done_callback(
+            lambda f: self._on_result(f, record, handle))
 
-    def _on_result(self, future, record):
+    def _on_result(self, future, record, handle=None):
         status = future.result().status
         name = {GoalStatus.STATUS_SUCCEEDED: "succeeded",
                 GoalStatus.STATUS_ABORTED: "aborted",
@@ -315,26 +393,164 @@ class Bridge(Node):
         with self.lock:
             record["state"] = name
             record["ended"] = time.time()
+            if handle is not None:
+                self.cancelling.pop(id(handle), None)
             if self.goal is record:
                 self.goal_handle = None
 
-    def cancel_goal(self, why="cancelled"):
+    def _ask_cancel(self, handle, record):
+        """Under self.lock. Note that the bridge wants `handle` ended (an
+        entry in `cancelling` until nav2's result, 3.76 Q3), and return it if
+        a cancel is due now (else None). The CALLER sends, outside the lock
+        (round 8): a future with no executor runs its callbacks inline, and
+        rclpy's client lock taken under bridge.lock could invert against a
+        callback that takes bridge.lock."""
+        now = time.monotonic()
+        return handle if self._take_due(self._register(handle, record, now), now) else None
+
+    def _register(self, handle, record, now):
+        """Under self.lock. The `cancelling` entry for `handle`, made once."""
+        entry = self.cancelling.get(id(handle))
+        if entry is None:
+            entry = self.cancelling[id(handle)] = {
+                "handle": handle, "record": record, "since": now, "last": -math.inf}
+            record.setdefault("_cancel_sent_at", now)         # internal, monotonic
+        return entry
+
+    @staticmethod
+    def _take_due(entry, now):
+        """Under self.lock. The one schedule (round 10, constant block): is a
+        cancel due for `entry`? If so, mark it sent."""
+        interval = (CANCEL_RESEND_S if now - entry["since"] < CANCEL_SLOWER_AFTER_S
+                    else CANCEL_SLOWEST_S)
+        if now - entry["last"] < interval:
+            return False
+        entry["last"] = now
+        return True
+
+    def _due_handles(self, now):
+        """Under self.lock. Every cancelling goal due now, dropping any R6
+        gives up on."""
+        due = []
+        for key, entry in list(self.cancelling.items()):
+            if self._navigator_silent(entry["since"], now):
+                del self.cancelling[key]             # R6: nothing left to stop
+                continue
+            if self._take_due(entry, now):
+                due.append(entry["handle"])
+        return due
+
+    def _navigator_silent(self, since, now):
+        """Under self.lock. When to give up on a cancel nav2 never answered
+        (3.76 R6): the navigator is GONE and nothing has driven on
+        cmd_vel/nav for CANCEL_RESULT_TIMEOUT_S since. Never while the
+        navigator is up (round 5 reverted F2's 30 s clause): nav2's recovery
+        tree can be silent for longer than that -- a Wait, a refused Spin or
+        BackUp -- and then resume the very goal the stop was ending, with no
+        handle left to cancel it. A hung but advertised navigator therefore
+        holds the goal live: a fail-safe lockout until a new goal or a
+        restart (the ROS spec's known limits)."""
+        return (now - since > CANCEL_RESULT_TIMEOUT_S
+                and (self.last_nav_twist_at is None
+                     or now - self.last_nav_twist_at > CANCEL_RESULT_TIMEOUT_S)
+                and not self._nav_ready)
+
+    def _resend_cancels(self):
+        """The bridge's own re-send of every cancel not yet answered by a
+        result (3.76 Q3), looking every CANCEL_TIMER_S; sent outside the lock."""
+        # rclpy is asked OUTSIDE bridge.lock (round 10's review): the
+        # answer is cached for _navigator_silent(), which runs under it on
+        # every Stop and D-pad cancel. Starts True -- assume the navigator
+        # is up, the fail-safe side.
+        # Asked only while something is being cancelled; a query that raises
+        # reads as True -- the navigator up, the fail-safe side (no give-up).
         with self.lock:
-            handle, self.goal_handle = self.goal_handle, None
-            if self.goal and self.goal["state"] in ("pending", "active"):
-                self.goal["cancel_reason"] = why
-        if handle is not None:
+            busy = bool(self.cancelling) or bool(
+                self.goal and self.goal["state"] == "active" and self.goal.get("_cancel_sent_at"))
+        if busy:
+            try:
+                ready = bool(self.nav.server_is_ready())
+            except Exception as e:  # noqa: BLE001
+                ready = True
+                self.get_logger().warn(f"navigator readiness query failed ({e}); "
+                                       "read as up, so no cancelled goal is given up",
+                                       throttle_duration_sec=30.0)
+        else:
+            ready = True
+        with self.lock:
+            self._nav_ready = ready
+            due = self._due_handles(time.monotonic())
+        for handle in due:
             handle.cancel_goal_async()
-            return True
+
+    def _expire_pending(self):
+        """Under self.lock. Bounded outcomes for a goal nav2 stopped
+        answering. Pending with no answer (H1-2): `aborted`; if the answer
+        comes after all, _on_goal_response() makes it live and cancels it.
+        Active, cancelled, and no result (3.76 R6): `aborted` only once
+        nav2's navigator is gone AND nothing has driven on cmd_vel/nav since
+        the cancel -- so the stop's hold is lifted only over silent wheels."""
+        g, now = self.goal, time.monotonic()
+        if not g:
+            return
+        if g["state"] == "pending" and now - g["_t0"] > GOAL_RESPONSE_TIMEOUT_S:
+            g["state"] = "aborted"
+            g["ended"] = time.time()
+            g["reason"] = f"nav2 did not answer the goal within {GOAL_RESPONSE_TIMEOUT_S:.0f} s"
+        elif (g["state"] == "active" and g.get("_cancel_sent_at") is not None
+              and self._navigator_silent(g["_cancel_sent_at"], now)):
+            g["state"] = "aborted"
+            g["ended"] = time.time()
+            g["reason"] = ("cancelled, no result from nav2, and nothing has driven "
+                           f"on cmd_vel/nav for {CANCEL_RESULT_TIMEOUT_S:.0f} s")
+            if self.goal_handle is not None:
+                self.cancelling.pop(id(self.goal_handle), None)
+            self.goal_handle = None
+
+    def _superseded_live(self):
+        """Under self.lock. Goals asked to cancel, other than the current
+        one, with no result yet."""
+        return sum(1 for e in self.cancelling.values() if e["record"] is not self.goal)
+
+    def cancel_goal(self, why="cancelled"):
+        """Ask nav2 to cancel the live goal AND every superseded goal still
+        cancelling, each on the one schedule (round 10), until nav2 reports
+        it ended (3.76 H1-1):
+        the handle is kept until _on_result(), because a cancel can be lost
+        or refused. The bridge also re-sends on its own timer (Q3). True
+        while anything the bridge asked to end is still live."""
+        with self.lock:
+            self._expire_pending()
+            live = bool(self.goal and self.goal["state"] in ("pending", "active"))
+            if live:
+                # The first reason stands (R9): a D-pad stream must not
+                # overwrite the stop that ended the goal.
+                self.goal.setdefault("cancel_reason", why)
+            now = time.monotonic()
+            if self.goal_handle is not None:
+                self._register(self.goal_handle, self.goal, now)
+            due = self._due_handles(now)         # the live goal and every superseded one
+            superseded = self._superseded_live()
+        for handle in due:
+            handle.cancel_goal_async()           # outside bridge.lock (round 8)
         # A pending goal has no handle yet; the cancel_reason set above makes
         # _on_goal_response() cancel it the moment nav2 accepts it.
-        return bool(self.goal and self.goal.get("cancel_reason")
-                    and self.goal["state"] == "pending")
+        return live or superseded > 0
 
     def goal_state(self):
         with self.lock:
-            return 200, {"session": self.session, "goal": dict(self.goal) if self.goal else None,
-                         "plan": list(self.plan)}
+            self._expire_pending()
+            g = ({k: v for k, v in self.goal.items() if not k.startswith("_")}
+                 if self.goal else None)          # internal fields stay internal (round 8)
+            superseded = self._superseded_live()
+            if g is not None and superseded and g["state"] not in ("pending", "active"):
+                # A superseded goal nav2 has not confirmed ended may still be
+                # driving (3.76 Q3): read as live, so goal_in_progress()
+                # refuses other autonomous drivers and a stop keeps its hold.
+                g["state"] = "active"
+                g["reason"] = f"{superseded} superseded goal(s) still being cancelled"
+            return 200, {"session": self.session, "goal": g, "plan": list(self.plan),
+                         "cancelling": len(self.cancelling)}
 
     # ---------- R6: what reached the wheels ----------
 
@@ -344,6 +560,11 @@ class Bridge(Node):
         self._last_w_sign = 0
         self._last_mux = None
         self._last_odom_xy = None
+
+    def _on_nav_twist(self, msg):
+        if msg.linear.x or msg.angular.z:
+            with self.lock:
+                self.last_nav_twist_at = time.monotonic()
 
     def _on_mux(self, msg):
         with self.lock:
@@ -375,10 +596,18 @@ class Bridge(Node):
             return None
         t = tr.transform.translation
         yaw, _, _ = _yaw_pitch_roll(tr.transform.rotation)
-        return {"x_m": t.x, "y_m": t.y, "yaw_rad": yaw}
+        # Time() is the LATEST transform, however old (3.76 H1-13): with
+        # slam_toolbox or ros2_control dead the chain freezes and this would
+        # answer the last pose for ever. `age_s` lets the consumer tell.
+        stamp = tr.header.stamp.sec + tr.header.stamp.nanosec * 1e-9
+        age = self.get_clock().now().nanoseconds * 1e-9 - stamp
+        return {"x_m": t.x, "y_m": t.y, "yaw_rad": yaw, "age_s": max(0.0, age)}
 
     def slam_pose(self):
-        return 200, {"session": self.session, "start_truth": self.start_truth,
+        with self.lock:                      # one consistent pair (round 5)
+            start, pending = self.start_truth, self.start_truth_pending
+        return 200, {"session": self.session, "start_truth": start,
+                     "start_truth_pending": pending,
                      "map": self._pose_in("map"),
                      "odom": self._pose_in("odom"), "at": time.time()}
 
@@ -386,6 +615,13 @@ class Bridge(Node):
         return self.robot_http.get_json(path)
 
     def _record_start_truth(self):
+        try:
+            self._find_start_truth()
+        finally:
+            with self.lock:
+                self.start_truth_pending = False
+
+    def _find_start_truth(self):
         """Where the robot stood in the house at odometry zero (R5), for
         world/ros_world.py to lay SLAM's frame on. Its own thread (3.36).
 
@@ -396,22 +632,61 @@ class Bridge(Node):
         the fallback test, while a person drove -- and each time it anchored
         SLAM's frame ~20 deg off for the session."""
         deadline = time.time() + START_TRUTH_WINDOW_S
+        quickest = None                  # (rtt, truth, odometry at the midpoint), 3.76 Q2
+        first_answer = None
         while rclpy.ok() and time.time() < deadline:
             with self.lock:
                 have_odom = self.last_odom is not None
             if not have_odom:                        # the controllers are not up yet
                 time.sleep(0.05)
                 continue
+            asked = time.time()
             try:
                 t = self._robot_get("/world/truth")
             except Exception:  # noqa: BLE001 -- busy: try again
-                time.sleep(0.2)
+                time.sleep(START_TRUTH_POLL_S)
                 continue
-            if t.get("usable"):
+            answered = time.time()
+            if not t.get("usable"):
+                return                               # answered: hardware, nothing to record
+            # The truth was sampled somewhere inside the request (3.76 H1-4,
+            # R4): carry the newest odometry by its own velocities to the
+            # request's midpoint. The same odometry read before and after
+            # proves nothing mid-turn.
+            with self.lock:
+                odom = dict(self.last_odom)
+            mid, rtt = (asked + answered) / 2, answered - asked
+            if mid - odom["at"] <= START_TRUTH_MAX_ODOM_AGE_S:
+                # The fallback's clock starts at the first USABLE pair (3.76
+                # F4), not at the first answer paired with stale odometry.
+                first_answer = first_answer or answered
+                pair = (rtt, t, convert.odometry_at(odom, mid))
+                if rtt <= START_TRUTH_MAX_RTT_S:
+                    with self.lock:
+                        self.start_truth = convert.odometry_zero_in_house(t, pair[2])
+                    return
+                if quickest is None or rtt < quickest[0]:
+                    quickest = pair
+            if quickest is not None and answered - first_answer >= START_TRUTH_FALLBACK_S:
+                # A loaded board may never answer within the bar (3.76 Q2):
+                # the quickest answer seen, extrapolated like any other.
                 with self.lock:
-                    odom = dict(self.last_odom)
-                    self.start_truth = convert.odometry_zero_in_house(t, odom)
-            return                                  # answered: usable, or hardware
+                    self.start_truth = convert.odometry_zero_in_house(quickest[1], quickest[2])
+                self.get_logger().warn(
+                    f"start truth from a {quickest[0] * 1000:.0f} ms request (none within "
+                    f"{START_TRUTH_MAX_RTT_S * 1000:.0f} ms in {START_TRUTH_FALLBACK_S:.0f} s); "
+                    "the anchor may be off by up to the robot's speed times half that")
+                return
+            time.sleep(max(0.0, START_TRUTH_POLL_S - (time.time() - asked)))
+        if quickest is not None:
+            # The window closed before the fallback's own 3 s (3.76 round 5):
+            # the quickest pair seen beats none.
+            with self.lock:
+                self.start_truth = convert.odometry_zero_in_house(quickest[1], quickest[2])
+            self.get_logger().warn(
+                f"start truth from a {quickest[0] * 1000:.0f} ms request as the "
+                f"{START_TRUTH_WINDOW_S:.0f} s window closed")
+            return
         self.get_logger().error("no start truth recorded in the first "
                                 f"{START_TRUTH_WINDOW_S:.0f} s; house-frame goals and "
                                 "/world/error are unanchored this session")
@@ -548,23 +823,31 @@ def _handler(bridge):
                 return self._send(*bridge.health())
             if not self._authorised():
                 return None
+            # Each of these is copied under the lock and serialised and
+            # written OUTSIDE it (3.76 H1-6): every callback, the scan poll
+            # and /cmd_vel take that lock, and a slow reader held them all.
+            # last_odom/last_scan/last_map are replaced whole, never mutated.
             if url.path == "/odom":
                 with bridge.lock:
-                    return self._send(200, bridge.last_odom or {"usable": False})
+                    reply = bridge.last_odom or {"usable": False}
+                return self._send(200, reply)
             if url.path == "/scan":
                 with bridge.lock:
-                    return self._send(200, bridge.last_scan or {"usable": False})
+                    reply = bridge.last_scan or {"usable": False}
+                return self._send(200, reply)
             if url.path == "/slam/pose":
                 return self._send(*bridge.slam_pose())
             if url.path == "/slam/map":
                 with bridge.lock:
-                    return self._send(200, bridge.last_map or {"session": bridge.session,
-                                                               "version": 0, "usable": False})
+                    reply = bridge.last_map or {"session": bridge.session,
+                                                "version": 0, "usable": False}
+                return self._send(200, reply)
             if url.path == "/goal":
                 return self._send(*bridge.goal_state())
             if url.path == "/nav/stats":
                 with bridge.lock:
-                    return self._send(200, dict(bridge.stats))
+                    reply = dict(bridge.stats)
+                return self._send(200, reply)
             if url.path == "/tf":
                 q = parse_qs(url.query)
                 return self._send(*bridge.tf(q.get("target", ["base_link"])[0],

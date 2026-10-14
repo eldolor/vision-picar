@@ -256,7 +256,12 @@ as misses. It keeps the frames whose `<walk>/<frame>` key is among the JSON
 file's keys or list items. A plain JSON list of keys therefore also works as
 a pin, but that is not its purpose. Never compare a GPU row with a CPU row
 (P24). Try a lab model with `--detector owlv2` or
-`--detector crops:<backend>`.
+`--detector crops:<backend>`. `compare` enforces the pin
+(3.76 F10): it refuses files whose (walk, frame, label) sets differ, naming
+both, and exits 1. A saved config records `detector_confidence` and
+`segmenter` too, and the auto-label shows them, since either changes the
+score (3.76 F11); the segmenter only when it is not the default, so a
+default run's label still matches records written before the key.
 
 **Pre-flight a target string** before a rig walk:
 

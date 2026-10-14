@@ -61,3 +61,18 @@ def odometry_zero_in_house(truth, odom):
     return {"x_m": truth["x_m"] - (c * ox - s * oy),
             "y_m": truth["y_m"] - (s * ox + c * oy),
             "heading_deg": (90.0 + alpha) % 360.0}
+
+
+def odometry_at(odom, t):
+    """`odom` ({x_m, y_m, yaw_rad, linear_m_s, angular_rad_s, at}, ROS odom
+    frame) carried by its own body velocities to time `t` -- a constant
+    twist over the gap (3.76 H1-4, R4). The start truth is sampled inside a
+    request; the newest odometry is up to one controller period older, and
+    mid-turn that gap alone is degrees of heading."""
+    dt = t - odom["at"]
+    v, w = odom.get("linear_m_s") or 0.0, odom.get("angular_rad_s") or 0.0
+    yaw = odom["yaw_rad"]
+    mid = yaw + w * dt / 2
+    return {"x_m": odom["x_m"] + v * dt * math.cos(mid),
+            "y_m": odom["y_m"] + v * dt * math.sin(mid),
+            "yaw_rad": yaw + w * dt}

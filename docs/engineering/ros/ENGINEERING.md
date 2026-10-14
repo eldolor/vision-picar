@@ -31,7 +31,7 @@ tf2_ros and slam_toolbox, built from source), then `/ws/install`. It then
 |---|---|---|
 | `picar_description` | xacro | `service/slam/src/picar_description/urdf/picar.urdf.xacro`. Every dimension sits in one block at the top, tagged `[BOM]`, `[CAD]` or `[PLACEHOLDER]`. It declares the `ros2_control` system `picar`, whose plugin is `picar_sim_hardware/PicarSimHardware`, with velocity command and position/velocity state interfaces on `left_wheel_joint` and `right_wheel_joint`. |
 | `picar_sim_hardware` | C++ | `service/slam/src/picar_sim_hardware/src/picar_sim_hardware.cpp`, a `hardware_interface::SystemInterface`. `write()` sends `POST /wheels {left_rad_s, right_rad_s}` with `x-driver: ros` on every cycle, zeros included, because those posts are ROS's heartbeat to the robot server. `read()` does `GET /wheels` and reads `left` and `right` `position_rad` and `velocity_rad_s`. libcurl keeps one connection open. |
-| `picar_bridge` | Python | `bridge.py` is the `Bridge` node plus a `ThreadingHTTPServer` on `BRIDGE_PORT`. `convert.py` holds the wall's conversions (scan, quaternion, and since `PLAN-ros-alignment.md` 3.36 `odometry_zero_in_house()`) and imports no rclpy. The node runs on a `MultiThreadedExecutor`; the 10 Hz scan poll (a blocking HTTP read of the robot's `/scan`) has its own `MutuallyExclusiveCallbackGroup` (3.36), because in the node's default group it starved every subscription on the Jetson: a full scan took about one timer period, the timer was always due, rclpy serves due timers first, and `/odom` went unread for minutes (nav2's odom TF went stale and every goal stalled). The start truth is recorded by its own thread from node start (next paragraph). `brain_view.py` maps brain status to diagnostics and markers, with no rclpy. `keepalive.py` holds one kept-open HTTP connection per thread, with no rclpy. |
+| `picar_bridge` | Python | `bridge.py` is the `Bridge` node plus a `ThreadingHTTPServer` on `BRIDGE_PORT`. `convert.py` holds the wall's conversions (scan, quaternion, and since `PLAN-ros-alignment.md` 3.36 `odometry_zero_in_house()`) and imports no rclpy. The node runs on a `MultiThreadedExecutor`; the 10 Hz scan poll (a blocking HTTP read of the robot's `/scan`) has its own `MutuallyExclusiveCallbackGroup` (3.36), because in the node's default group it starved every subscription on the Jetson: a full scan took about one timer period, the timer was always due, rclpy serves due timers first, and `/odom` went unread for minutes (nav2's odom TF went stale and every goal stalled). The start truth is recorded by its own thread from node start (next paragraph). The HTTP handlers copy what they answer under the node's lock and serialise and write it outside (3.76 H1-6): every subscription callback, the scan poll and `/cmd_vel` take that lock, and a slow reader once held it for the whole write. `brain_view.py` maps brain status to diagnostics and markers, with no rclpy. `keepalive.py` holds one kept-open HTTP connection per thread, with no rclpy. |
 | `picar_bringup` | launch + yaml | `service/slam/src/picar_bringup/launch/picar.launch.py` starts everything (next table). Its `config/` directory holds `controllers.yaml`, `twist_mux.yaml`, `slam.yaml` and `nav2.yaml`. |
 
 **The start truth** (`GET /slam/pose`'s `start_truth`, what
@@ -39,7 +39,19 @@ tf2_ros and slam_toolbox, built from source), then `/ws/install`. It then
 node waits for the controllers' first `/odom`, then reads the robot's
 `/world/truth`, and composes the house pose at odometry zero from that
 truth and the odometry held at the same instant
-(`convert.odometry_zero_in_house(truth, odom)`, 3.36). It retries a failed
+(`convert.odometry_zero_in_house(truth, odom)`, 3.36). "The same instant"
+is made true (3.76 H1-4, R4-R5): the newest odometry is carried by its own
+velocities to the truth request's midpoint (`convert.odometry_at()`), and
+only a request answered within `START_TRUTH_MAX_RTT_S` from odometry under
+`START_TRUTH_MAX_ODOM_AGE_S` old is used; otherwise it asks again, at most
+every `START_TRUTH_POLL_S`. With no such answer `START_TRUTH_FALLBACK_S`
+after the first usable pair (F4: not the first answer of any kind) -- or when the window closes first -- the quickest answer seen is used (extrapolated the same
+way) and a warning names its round trip (3.76 Q2: a loaded Jetson at
+container start may never meet the bar). The
+error left is at most speed x half the request (1 rad/s: under 3 deg; at
+rest: none), and a moving robot is anchored at the first quick answer, not
+at the window's end. (It used to read the odometry after the reply, so a
+turn during a slow request was baked into the anchor.) It retries a failed
 read until `START_TRUTH_WINDOW_S`, stops at the first answer (usable, or
 `usable: false` on hardware, which leaves it null), and logs an error if
 the window closes with none. It used to be the truth at the first
@@ -93,11 +105,11 @@ the `MAX_BRIDGE_ROUTES` budget.
 | `GET /scan` | -- | The last LaserScan published, as `{angle_min_rad, angle_increment_rad, ranges_m (None = no return), at}` |
 | `GET /tf?target=&source=` | Defaults `base_link` and `laser` | `{translation_m, quaternion_xyzw, yaw_rad, pitch_rad, roll_rad}`, or 404 |
 | `POST /pan` | `{angle_rad}` | Holds the published `pan_joint` angle. A test hook for R3. |
-| `GET /slam/pose` | -- | `{session, start_truth, map, odom, at}`. `map` and `odom` are `{x_m, y_m, yaw_rad}` of `base_footprint` in that frame, or null. |
+| `GET /slam/pose` | -- | `{session, start_truth, start_truth_pending, map, odom, at}`. `start_truth_pending` is true while the start-truth thread is still working (3.76 round 5); `world/ros_world.py` anchors nothing for the session until it is false or `start_truth` is set. `map` and `odom` are `{x_m, y_m, yaw_rad, age_s}` of `base_footprint` in that frame, or null. `age_s` is how old tf2's latest transform is (3.76 H1-13): the lookup answers the last transform however old, so a dead `slam_toolbox` or `ros2_control` would otherwise read as a live, frozen pose. `world/ros_world.py` reads a pose older than `POSE_STALE_S` (1 s) as unusable. |
 | `GET /slam/map` | -- | `{session, version, resolution_m, width, height, origin_x_m, origin_y_m, origin_yaw_rad, data, at}`, ROS 0-100 / -1 |
-| `POST /goal` | `{x_m, y_m, yaw_rad}`, map frame | 200 `{state: "pending"}`, or 503 when nav2's `navigate_to_pose` has no server within 2 s. It replaces any existing goal. |
-| `GET /goal` | -- | `{session, goal: {x_m, y_m, yaw_rad, state, since, [ended, cancel_reason]}, plan: [[x, y], ...]}`. `state` is one of `pending`, `active`, `succeeded`, `aborted`, `canceled`, `rejected`, `status_<n>`. |
-| `DELETE /goal` | -- | `{cancelled: bool}` |
+| `POST /goal` | `{x_m, y_m, yaw_rad, [session]}`, map frame | 409 `{error, session}` if `session` is given and is not this bridge's (3.76 round 8: a goal converted for a container that has since restarted; nothing is cancelled), else 200 `{state: "pending"}`, or 503 when nav2's `navigate_to_pose` has no server within `NAV2_WAIT_S` (1 s, inside `RosWorld`'s 2 s client timeout so the 503 arrives; it was 2 s and the caller timed out first, 3.76 H1-8). It replaces any existing goal. |
+| `GET /goal` | -- | `{session, goal: {x_m, y_m, yaw_rad, state, since, [ended, cancel_reason, reason]}, plan: [[x, y], ...], cancelling}` (`since` and `ended` are wall time; the goal's internal `_`-prefixed monotonic fields are never published). `cancelling` counts the goals the bridge has asked nav2 to cancel and nav2 has not yet ended (3.76 Q3); while a SUPERSEDED one is among them, the current goal reads `active` with a `reason` saying so, so `goal_in_progress()` keeps refusing other autonomous drivers and a stop keeps its hold until nav2 confirms. `state` is one of `pending`, `active`, `succeeded`, `aborted`, `canceled`, `rejected`, `status_<n>`. A goal nav2 has not accepted or rejected within `GOAL_RESPONSE_TIMEOUT_S` (5 s) reads `aborted` with a `reason` (3.76 H1-2): while it read `pending` the robot server refused every other autonomous driver and a stop waited on it, for ever if nav2's navigator died after `wait_for_server`. If nav2 answers later, the goal is live again: `active`, with its handle kept and cancelled until it ends (3.76 R2). A cancelled goal with no result reads `aborted` only when nav2's `navigate_to_pose` server is GONE and nothing has driven on `cmd_vel/nav` for `CANCEL_RESULT_TIMEOUT_S` (10 s) since the first cancel (3.76 R6); the same rule gives up a superseded entry in `cancelling`. Never while the navigator is up (round 5 reverted F2's 30 s clause: nav2's recovery tree can be silent that long and then resume the goal); the robot server then settles its stop and lifts the `ros` hold over silent wheels. While the server is up it stays `active` (fail-safe). An unanswered goal stays plain `aborted` with a `reason` rather than a new state (3.76 R10): every consumer already treats `aborted` as ended, nav2 answers in milliseconds, and explore's stuck rule does not hold a goal the robot never moved toward against the place the first time. |
+| `DELETE /goal` | -- | `{cancelled: bool}`. Re-sends nav2's cancel on every call until nav2 reports the goal ended (3.76 H1-1): the handle is kept until the result arrives, because a cancel can be lost or refused and the robot server's stop loop re-sends until the goal reads ended. Every handle the bridge has asked to cancel -- the live goal's, a superseded one's, one accepted late -- stays in `Bridge.cancelling` until nav2's result arrives (or R6's rule gives it up) (3.76 Q3). One schedule for every such goal, whoever asks -- this route, a stop, the D-pad's twist, a superseding goal, or the bridge's own timer, which looks every `CANCEL_TIMER_S` (0.5 s): a cancel is due once the last send to that goal is `CANCEL_RESEND_S` (0.2 s) old during its first 30 s of cancelling, then 10 s old (round 10, `_take_due()`). Each call here asks for every due entry, superseded ones included. The first `cancel_reason` stands (3.76 R9). Answers true while anything it asked to end is still live. |
 | `GET /nav/stats`, `POST /nav/stats/reset` | -- | `{applied, reversals, metres, monitor_stops, monitor_slows, since}`, R6's flicker and collar counts |
 
 ### Topics and frames
@@ -167,7 +179,7 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 |---|---|
 | `POST /wheels` under `drive: ros` | Only `x-driver: ros` is accepted. Each post counts toward `wheel_posts` and refreshes `last_command_at`, so it feeds the watchdog. The command is still vetted by `SafetyController.vet_wheel_velocity()` and re-vetted by the 20 Hz wheel loop. |
 | `/action` under `drive: ros` | M4 arbitration runs first. With ROS up, the verb runs `RosDriveRobot` through `safety.check_and_execute()`, and an `httpx.HTTPError` or `RuntimeError` gives `robot.stop()` plus `ros_unavailable`. With ROS down, a person runs `fallback_safety` and the result is tagged `via: direct-fallback`; an autonomous driver is refused `ros_unavailable`. The verb's twists go on the `/action`'s driver's twist_mux input; a driver with no input (anything but `twin-dpad`, `brain` and `ros`) gets 400 `unknown driver` from the bridge, which surfaces as `ros_unavailable` (Known gaps) without marking the bridge down. |
-| Stop (`RosDriveRobot.stop()`) | Specified in the [body engineering spec](../body/ENGINEERING.md) ("The ROS drive stop"), including `STOP_ZERO_TIMEOUT_S` and `STOP_HOLD_S`. What the ROS side determines: the hold must outlast twist_mux's input `timeout` plus `diff_drive_controller`'s `cmd_vel_timeout` (the two ADD) plus one plugin period, so a change to either yaml timeout below means re-deriving the hold there. A person's stop also ends any nav2 goal ([safety engineering](../safety/ENGINEERING.md), "Stop ends a nav2 goal"). The ROS-side facts: the server's `DELETE /goal` reaches `Bridge.cancel_goal()`, which cancels an accepted handle; for a goal still `pending` it records `cancel_reason`, answers `cancelled: true`, and `_on_goal_response()` cancels the goal the moment nav2 accepts it and marks it `canceled`. |
+| Stop (`RosDriveRobot.stop()`) | Specified in the [body engineering spec](../body/ENGINEERING.md) ("The ROS drive stop"), including `STOP_ZERO_TIMEOUT_S` and `STOP_HOLD_S`. What the ROS side determines: the hold must outlast twist_mux's input `timeout` plus `diff_drive_controller`'s `cmd_vel_timeout` (the two ADD) plus one plugin period, so a change to either yaml timeout below means re-deriving the hold there. A person's stop also ends any nav2 goal ([safety engineering](../safety/ENGINEERING.md), "Stop ends a nav2 goal"). The ROS-side facts: the server's `DELETE /goal` reaches `Bridge.cancel_goal()`, which cancels an accepted handle, and again on every later call until nav2's result arrives (3.76 H1-1); for a goal still `pending` it records `cancel_reason`, answers `cancelled: true`, and `_on_goal_response()` cancels the goal the moment nav2 accepts it, keeping its handle; it reads `active` until nav2's result says `canceled` (3.76 H1-1: it used to be marked `canceled` on one unconfirmed cancel). |
 
 ## Parameters and configuration
 
@@ -208,6 +220,14 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | collision_monitor `time_before_collision`; `PolygonSlow` `slowdown_ratio` | 1.0 s; 0.5 | s, -- | `nav2.yaml` | The monitor projects the footprint along the command (`approach`) and has no `stop` polygon. A stop polygon froze the robot against a door jamb, because Humble's stop action refuses every command, turning away included (3.15). This is how the architecture's "a collision guard never blocks turning away" is kept. |
 | `SCAN_HZ`, `PAN_HZ`, `BRAIN_HZ` | 10, 20, 2 | Hz | `bridge.py` | The scan reaches about 10 Hz (R4 criterion 7 needs at least 5). The brain ticks at about 4 Hz. |
 | `START_TRUTH_WINDOW_S` | 30 | s | `bridge.py` | How long the start-truth thread waits for the controllers' first odometry and one answer from the robot's `/world/truth` (3.36). Generous for a slow board; the anchor no longer assumes the robot is at rest, so waiting costs nothing. The live chain and nav suites wait 35 s for `start_truth` before they move the robot. |
+| `NAV2_WAIT_S` | 1.0 | s | `bridge.py` | How long `POST /goal` waits for nav2's action server before its 503; under `RosWorld`'s 2 s client timeout (3.76 H1-8). |
+| `GOAL_RESPONSE_TIMEOUT_S` | 5.0 | s | `bridge.py` | A goal nav2 has not answered in this long ends `aborted` (3.76 H1-2). nav2 answers in milliseconds. |
+| `START_TRUTH_MAX_RTT_S`, `START_TRUTH_MAX_ODOM_AGE_S` | 0.1, 0.5 | s | `bridge.py` | The start truth's pairing (3.76 H1-4, R4): a request answered within 0.1 s leaves at most speed x 0.05 s of error after extrapolation; older odometry than 0.5 s means the controllers stalled. |
+| `START_TRUTH_FALLBACK_S`, `START_TRUTH_POLL_S` | 3.0, 0.2 | s | `bridge.py` | 3.76 Q2: after 3 s with no quick answer, the quickest seen; `/world/truth` asked at most 5 times a second. |
+| `CANCEL_SLOWER_AFTER_S`, `CANCEL_SLOWEST_S` | 30, 10 | s | `bridge.py` | The one cancel schedule (3.76 round 10): every `CANCEL_RESEND_S` for an entry's first 30 s, then every 10 s. |
+| `CANCEL_TIMER_S` | 0.5 | s | `bridge.py` | How often the bridge's own timer looks for due cancels (3.76 Q3); the schedule itself is the same for every asker. |
+| `CANCEL_RESEND_S` | 0.2 | s | `bridge.py` | The re-send interval per goal during its first 30 s of cancelling (3.76 R9, round 10); under the stop loop's 0.25 s poll, so every poll re-sends. |
+| `CANCEL_RESULT_TIMEOUT_S` | 10 | s | `bridge.py` | A cancelled goal with no result this long, nav2's navigator gone and `cmd_vel/nav` silent as long, ends `aborted` (3.76 R6). |
 | `KeepAliveClient` timeout | 0.5 (robot), 1.0 (brain) | s | `bridge.py` | New connections through Docker Desktop stalled past 0.5 s on 41 of 433 polls. A kept-open connection stalled on 0 of 595 (G1). |
 | `MAX_DUPLICATES`, `MAX_BRIDGE_ROUTES` | 11, 13 | count | `tests/test_wall_linters.py` | Raise only in a commit that says why. Eleven since 3.27's lidar offset. |
 
@@ -247,6 +267,7 @@ Always-run tests (no Docker; counts from `pytest --collect-only`,
 | `tests/test_ros_verb_safety.py` | 7 | G2 through `tests/ros_verb_sweep.py`: travel-to-contact at least 18.0 cm after every move (0/1440 under, closest 19.73), no contact, a verb achieving under 1 cm or 0.5 deg is a refusal (0/252 unrefused), clear turns 100% within 0.64 deg (worst 0.49). |
 | `tests/test_ros_fallback.py` | 10 | G3 offline: the pulse, the person-only fallback, autonomy refused, recovery with no restart. Handoff 1d: a dead bridge behind a live plugin marks ROS down, and ROS is back once the bridge answers; the plugin's posts move nothing meanwhile, and `/health` names which half is down (2026-10-03). |
 | `tests/test_bridge_convert.py`, `tests/test_bridge_keepalive.py`, `tests/test_brain_view.py` | 16, 7, 19 | The bridge's plain-Python parts. |
+| `tests/test_review_376h1.py` | 49 | 3.76 batch H1 (rounds 1-10), red-first. `bridge.py` itself, loaded against stub ROS modules placed in `sys.modules` for one test and removed after: cancels re-sent on one schedule (0.2 s for 30 s, then 10 s) to every cancelling goal whoever asks, outside the lock, until nav2's result, for the live goal, a superseded one and a late-accepted one, which read live meanwhile; a cancel given up only with the navigator gone and `cmd_vel/nav` silent, never while it is up; an unanswered goal ends `aborted`; a goal converted for another session refused 409; no internal fields on `/goal`; the 503 inside the client's timeout; the start truth extrapolated to the request's midpoint, its 3 s and window-end fallbacks, polling at 5 Hz, and `start_truth_pending`; no reply written under the lock; each pose's `age_s`. `RosWorld`: one anchor per session, nothing installed while the start truth is pending or the truth reads unusable, never moved once installed; a truth that raises or reads unusable leaves it unanchored and is asked at most once a second; one consistent anchor per reader; no older session re-installed; goals across a restart; an unanchored live goal reports its state; a stale pose unusable. Explore: a goal it cannot place is treated as not the mission's own (E9). |
 
 Live tests (skip without the stack):
 
@@ -272,6 +293,19 @@ Checklist for a change:
   on `scaled_house`.
 
 ## Known gaps
+
+- **A burst of cancels in a goal's first 30 s** (3.76 H, round 10's review):
+  every Stop or D-pad cancel, and the 0.5 s timer, may re-send to every
+  cancelling goal every 0.2 s, so N superseded goals plus the live one with
+  the D-pad streaming send up to about 5 x (N + 1) cancels a second for 30 s.
+  Accepted: nav2 is local and a Stop must reach every goal that may still
+  drive. Navigator readiness for the give-up is read by the timer outside
+  `bridge.lock` and cached (`_nav_ready`), so no rclpy call runs under the
+  lock on the Stop or D-pad path. It is queried only while a cancel is
+  outstanding (an entry in `cancelling`, or an active goal with a cancel sent)
+  and reads True otherwise; a query that raises reads True too (logged,
+  throttled to 30 s) -- the fail-safe side, so a navigator whose readiness
+  cannot be read is never given up on.
 
 - **G4 is met only on the fork firmware** (3.33, 2026-10-05: 5 consecutive
   runs of `18 passed` on the Jetson); on the stock firmware the +/-2 deg
@@ -337,3 +371,46 @@ Checklist for a change:
   G4 ran it on the Jetson with `--network host` (`PLAN-ros-alignment.md`
   3.33, met 2026-10-05); with host networking Foxglove listens on every
   interface.
+- **The pan joint is never fed** (3.76 H1-9). `pan_rad` changes only on
+  `POST /pan`, R3's test hook, so `camera_link`'s TF and the brain arrow's
+  yaw (`brain_view.markers()`) always assume pan 0. Nothing in ROS steers by
+  either today; before a camera feeds ROS (Isaac part B, a depth costmap)
+  the bridge must publish the robot's real pan.
+- **An exception in a timer callback ends the bridge** (3.76 H1-7, latent).
+  Humble's `MultiThreadedExecutor` re-raises a callback's exception out of
+  `spin()` (read from rclpy 3.3.21 in the image), and the launch file does
+  not respawn the bridge. `_poll_scan` parses the robot's reply outside its
+  `try`; no backend sends a scan that fails there (every one keeps the
+  `robot/interface.py` contract, and `robot/safety.py` would fail first).
+- **Without `APP_SHARED_SECRET` the bridge accepts anyone** (3.76 H1-15),
+  as `require_secret()` does: dev mode. The README's laptop run publishes
+  `-p 8090:8090` on every interface and the Jetson run uses host
+  networking, so set the secret (both documented runs do); `/health` stays
+  open by design and names the robot and brain URLs.
+- **The start truth's fallback can use a slow sample** (3.76 Q2). On a
+  board that never answers `/world/truth` within 0.1 s, the quickest answer
+  in the first 3 s of usable pairs is used; extrapolated to its midpoint,
+  its error is up to the robot's speed x half its round trip. The warning
+  names the round trip.
+- **A lost goal response reads `aborted` after 5 s** (3.76 H1-2). The race
+  in rclpy#1123 (a goal response handled before its future is registered)
+  is fixed in the image's rclpy 3.3.21; any lost response still ends the
+  goal `aborted` after `GOAL_RESPONSE_TIMEOUT_S`, and a late accept is then
+  made live and cancelled (R2).
+- **A hung but advertised navigator holds the goal live** (3.76 round 5).
+  A cancel is given up only once nav2's navigator is gone; a navigator that
+  stays advertised but never answers keeps the goal `active`: the robot
+  server refuses autonomous drivers and the stop keeps `ros` at zero. A new
+  goal does NOT lift it (the hung one stays in `cancelling` and the new one
+  reads live behind it); only a container restart does, or the navigator
+  going away with `cmd_vel/nav` silent 10 s. A fail-safe lockout, chosen
+  over lifting the hold under a recovery tree that may resume the goal.
+  One schedule for every cancelling goal, whoever asks (round 10): due
+  every 0.2 s for its first 30 s -- so every stop-loop poll re-sends while
+  it matters -- then every 10 s. Under a hung navigator that is about
+  360 cancels an hour per goal after the first 30 s, each a pending future
+  in rclpy's ActionClient that is never answered -- slow growth, not a
+  bound. The cancel's own future is not consulted (it can stay undone with
+  nav2 healthy). Every cancel is sent outside `bridge.lock`. Every interval
+  in the goal code is `time.monotonic()` (an NTP step on the Jetson moves
+  wall time), and those fields are internal: `GET /goal` never shows them.

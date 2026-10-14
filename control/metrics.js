@@ -43,12 +43,21 @@
     return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
   }
 
+  // 3.76 F14: every stored value is text from whoever POSTed the row (a
+  // mission's target is typed by a person), and this page holds the walks
+  // secret in localStorage. Escaped on the way into innerHTML, all of it.
+  function esc(v) {
+    return String(v).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+
   function card(label, dotClass, value, unit, foot) {
     return '<div class="card"><div class="label">'
       + (dotClass ? '<i class="dot ' + dotClass + '"></i>' : "")
-      + label + '</div><div class="value">' + value
-      + (unit ? '<small>' + unit + '</small>' : "")
-      + '</div><div class="foot">' + (foot || "") + '</div></div>';
+      + esc(label) + '</div><div class="value">' + esc(value)
+      + (unit ? '<small>' + esc(unit) + '</small>' : "")
+      + '</div><div class="foot">' + esc(foot || "") + '</div></div>';
   }
 
   function renderKpis(runs) {
@@ -180,19 +189,19 @@
       }).map(function (k) {
         return k.replace(/^tier_|^perception_|^navigate_/, "") + "=" + r.config[k];
       }).join(" · ");
-      return "<tr><td>" + when + "</td>"
-        + '<td><span class="pill ' + cls + '">' + (outcome || "–") + "</span></td>"
-        + "<td>" + (r.steps == null ? "–" : r.steps) + "</td>"
-        + "<td>" + (r.target_object || "–") + "</td>"
-        + "<td>" + (c ? c.p50 + " / " + c.p90 + " / " + c.p99 : "–") + "</td>"
+      return "<tr><td>" + esc(when) + "</td>"
+        + '<td><span class="pill ' + cls + '">' + esc(outcome || "–") + "</span></td>"
+        + "<td>" + esc(r.steps == null ? "–" : r.steps) + "</td>"
+        + "<td>" + esc(r.target_object || "–") + "</td>"
+        + "<td>" + esc(c ? c.p50 + " / " + c.p90 + " / " + c.p99 : "–") + "</td>"
         // n beside every percentile, always: a percentile over a handful
         // of samples is one sample with a fancy name.
-        + '<td class="mono">' + (c ? c.n : "0") + "</td>"
-        + "<td>" + (l ? l.p50 + "ms" : "–") + "</td>"
+        + '<td class="mono">' + esc(c ? c.n : "0") + "</td>"
+        + "<td>" + esc(l ? l.p50 + "ms" : "–") + "</td>"
         + "<td>" + (tot ? Math.round((p.detected || 0) / tot * 100) + "%" : "–") + "</td>"
-        + "<td>" + (s.cloud_calls == null ? "–" : s.cloud_calls) + "</td>"
-        + '<td class="mono">' + (r.git_revision || "–").slice(0, 7) + "</td>"
-        + '<td class="mono">' + (cfg || "–") + "</td></tr>";
+        + "<td>" + esc(s.cloud_calls == null ? "–" : s.cloud_calls) + "</td>"
+        + '<td class="mono">' + esc(String(r.git_revision || "–").slice(0, 7)) + "</td>"
+        + '<td class="mono">' + esc(cfg || "–") + "</td></tr>";
     });
     $("runs").innerHTML = head + rows.join("");
   }
