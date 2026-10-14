@@ -246,9 +246,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   99). **Open, found by it:** explore reads `frame["detections"]`, which
   only the simulator provides -- on the car it cannot see the target until
   its perception on real frames is built (the user, 2026-10-13); and
-  cold search counts absent frames since the last call, not consecutive
-  ones (the user's call). Batches F-I (walks, inventory, cloud, tooling)
-  to go.
+  cold search counts absent frames since the last answer landed, not
+  consecutive ones (kept; since E4 every tiered pacing count runs from the
+  landing, so a slow call no longer buys a second one back to back). Batches
+  F-I (walks, inventory, cloud, tooling) to go:
+  `HANDOFF-2026-10-13-3.76-legacy-review.md` has the state, the two deploys
+  waiting on the user's laptop, and how a batch is run.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,
