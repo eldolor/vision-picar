@@ -1,0 +1,1329 @@
+[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 0% ──────────── 244.4KB/26.5MB 2.4MB/s 0.1s<11.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 3% ──────────── 923.1KB/26.5MB 6.0MB/s 0.2s<4.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 6% ╸─────────── 1.8/26.5MB 8.7MB/s 0.3s<2.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 9% ━─────────── 2.6/26.5MB 8.1MB/s 0.4s<2.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 13% ━╸────────── 3.5/26.5MB 8.7MB/s 0.5s<2.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 17% ━━────────── 4.5/26.5MB 10.5MB/s 0.6s<2.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 20% ━━────────── 5.5/26.5MB 9.0MB/s 0.7s<2.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 23% ━━╸───────── 6.3/26.5MB 4.5MB/s 0.9s<4.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 31% ━━━╸──────── 8.5/26.5MB 21.5MB/s 1.0s<0.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 35% ━━━━──────── 9.5/26.5MB 10.4MB/s 1.1s<1.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 39% ━━━━╸─────── 10.6/26.5MB 10.3MB/s 1.2s<1.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 43% ━━━━━─────── 11.6/26.5MB 10.5MB/s 1.3s<1.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 47% ━━━━━╸────── 12.6/26.5MB 10.1MB/s 1.4s<1.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 50% ━━━━━━────── 13.4/26.5MB 5.0MB/s 1.5s<2.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 57% ━━━━━━╸───── 15.2/26.5MB 18.3MB/s 1.6s<0.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 60% ━━━━━━━───── 16.1/26.5MB 8.4MB/s 1.7s<1.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 64% ━━━━━━━╸──── 17.1/26.5MB 10.5MB/s 1.8s<0.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 68% ━━━━━━━━──── 18.1/26.5MB 9.6MB/s 2.0s<0.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 72% ━━━━━━━━╸─── 19.1/26.5MB 10.2MB/s 2.1s<0.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 76% ━━━━━━━━━─── 20.2/26.5MB 10.6MB/s 2.2s<0.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 80% ━━━━━━━━━╸── 21.3/26.5MB 10.5MB/s 2.3s<0.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 84% ━━━━━━━━━━── 22.4/26.5MB 11.0MB/s 2.4s<0.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 87% ━━━━━━━━━━── 23.2/26.5MB 7.2MB/s 2.5s<0.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 90% ━━━━━━━━━━╸─ 24.1/26.5MB 9.1MB/s 2.6s<0.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 94% ━━━━━━━━━━━─ 25.1/26.5MB 9.5MB/s 2.7s<0.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 98% ━━━━━━━━━━━╸ 26.2/26.5MB 10.8MB/s 2.8s<0.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/yoloe-11s-seg.pt to 'yoloe-11s-seg.pt': 100% ━━━━━━━━━━━━ 26.5MB 9.5MB/s 2.8s
+loaded 1 pipeline
+[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 0% ──────────── 585.7KB/572.0MB 2.1MB/s 0.3s<4:33[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 0% ──────────── 1.1/572.0MB 1.4MB/s 0.7s<6:34[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 0% ──────────── 1.7/572.0MB 3.1MB/s 0.9s<3:02[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 0% ──────────── 2.9/572.0MB 7.1MB/s 1.0s<1:20[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 0% ──────────── 4.0/572.0MB 8.6MB/s 1.1s<1:06[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 0% ──────────── 4.6/572.0MB 4.7MB/s 1.3s<2:01[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 1% ──────────── 6.3/572.0MB 13.6MB/s 1.4s<41.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 1% ──────────── 8.0/572.0MB 11.5MB/s 1.5s<49.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 1% ──────────── 9.2/572.0MB 11.1MB/s 1.6s<50.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 1% ──────────── 10.3/572.0MB 10.3MB/s 1.8s<54.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 1% ──────────── 11.4/572.0MB 10.1MB/s 1.9s<55.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 2% ──────────── 12.6/572.0MB 10.0MB/s 2.0s<56.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 2% ──────────── 13.7/572.0MB 11.0MB/s 2.1s<50.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 2% ──────────── 14.9/572.0MB 10.6MB/s 2.2s<52.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 2% ──────────── 16.0/572.0MB 6.5MB/s 2.4s<1:25[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 2% ──────────── 17.2/572.0MB 10.3MB/s 2.5s<53.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 3% ──────────── 18.3/572.0MB 10.8MB/s 2.6s<51.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 3% ──────────── 19.4/572.0MB 10.6MB/s 2.7s<51.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 3% ──────────── 20.6/572.0MB 10.1MB/s 2.8s<54.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 3% ──────────── 22.3/572.0MB 11.5MB/s 3.0s<47.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 4% ──────────── 23.5/572.0MB 10.5MB/s 3.1s<52.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 4% ╸─────────── 24.6/572.0MB 11.0MB/s 3.2s<49.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 4% ╸─────────── 25.7/572.0MB 10.6MB/s 3.3s<51.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 4% ╸─────────── 26.9/572.0MB 8.7MB/s 3.4s<1:03[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 4% ╸─────────── 28.0/572.0MB 8.9MB/s 3.5s<1:01[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 5% ╸─────────── 29.2/572.0MB 8.0MB/s 3.7s<1:08[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 5% ╸─────────── 30.3/572.0MB 10.9MB/s 3.8s<49.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 5% ╸─────────── 31.5/572.0MB 10.6MB/s 3.9s<50.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 5% ╸─────────── 32.6/572.0MB 11.4MB/s 4.0s<47.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 5% ╸─────────── 33.7/572.0MB 10.7MB/s 4.1s<50.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 6% ╸─────────── 34.9/572.0MB 10.6MB/s 4.2s<50.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 6% ╸─────────── 36.0/572.0MB 10.7MB/s 4.3s<50.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 6% ╸─────────── 37.8/572.0MB 11.0MB/s 4.5s<48.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 6% ╸─────────── 38.9/572.0MB 10.7MB/s 4.6s<49.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 6% ╸─────────── 40.0/572.0MB 10.6MB/s 4.7s<50.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 7% ╸─────────── 41.2/572.0MB 9.5MB/s 4.8s<55.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 7% ╸─────────── 42.3/572.0MB 10.6MB/s 4.9s<50.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 7% ╸─────────── 43.5/572.0MB 10.3MB/s 5.0s<51.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 7% ╸─────────── 44.6/572.0MB 10.5MB/s 5.1s<50.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 7% ╸─────────── 45.8/572.0MB 11.2MB/s 5.2s<46.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 8% ╸─────────── 46.9/572.0MB 11.0MB/s 5.3s<47.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 8% ━─────────── 48.0/572.0MB 10.2MB/s 5.5s<51.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 8% ━─────────── 49.2/572.0MB 11.1MB/s 5.6s<47.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 8% ━─────────── 50.3/572.0MB 10.5MB/s 5.7s<49.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 8% ━─────────── 51.5/572.0MB 10.8MB/s 5.8s<48.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 9% ━─────────── 52.6/572.0MB 11.2MB/s 5.9s<46.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 9% ━─────────── 53.8/572.0MB 10.2MB/s 6.0s<50.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 9% ━─────────── 54.9/572.0MB 9.3MB/s 6.1s<55.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 9% ━─────────── 56.1/572.0MB 9.1MB/s 6.2s<56.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 9% ━─────────── 57.2/572.0MB 10.7MB/s 6.3s<48.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 10% ━─────────── 58.3/572.0MB 10.4MB/s 6.5s<49.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 10% ━─────────── 59.5/572.0MB 10.6MB/s 6.6s<48.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 10% ━─────────── 61.2/572.0MB 10.2MB/s 6.7s<50.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 10% ━─────────── 62.9/572.0MB 12.3MB/s 6.9s<41.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 11% ━─────────── 64.1/572.0MB 10.6MB/s 7.0s<47.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 11% ━─────────── 65.2/572.0MB 9.3MB/s 7.1s<54.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 11% ━─────────── 66.3/572.0MB 11.4MB/s 7.2s<44.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 11% ━─────────── 67.5/572.0MB 10.6MB/s 7.3s<47.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 11% ━─────────── 68.6/572.0MB 8.3MB/s 7.4s<1:01[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 12% ━─────────── 69.8/572.0MB 10.3MB/s 7.6s<48.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 12% ━─────────── 70.9/572.0MB 10.5MB/s 7.7s<47.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 12% ━╸────────── 72.1/572.0MB 10.9MB/s 7.8s<45.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 12% ━╸────────── 73.2/572.0MB 9.6MB/s 7.9s<51.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 13% ━╸────────── 74.9/572.0MB 11.7MB/s 8.0s<42.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 13% ━╸────────── 76.1/572.0MB 11.1MB/s 8.1s<44.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 13% ━╸────────── 77.2/572.0MB 10.1MB/s 8.3s<49.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 13% ━╸────────── 78.4/572.0MB 6.9MB/s 8.4s<1:12[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 13% ━╸────────── 79.5/572.0MB 8.0MB/s 8.6s<1:02[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 14% ━╸────────── 80.6/572.0MB 5.6MB/s 8.8s<1:28[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 14% ━╸────────── 81.8/572.0MB 8.6MB/s 8.9s<57.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 14% ━╸────────── 82.9/572.0MB 9.5MB/s 9.0s<51.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 14% ━╸────────── 84.1/572.0MB 9.0MB/s 9.1s<54.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 14% ━╸────────── 85.2/572.0MB 7.1MB/s 9.3s<1:09[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 15% ━╸────────── 86.4/572.0MB 9.8MB/s 9.4s<49.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 15% ━╸────────── 87.5/572.0MB 10.1MB/s 9.5s<47.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 15% ━╸────────── 88.7/572.0MB 9.4MB/s 9.7s<51.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 15% ━╸────────── 89.8/572.0MB 9.5MB/s 9.8s<50.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 15% ━╸────────── 90.9/572.0MB 8.1MB/s 9.9s<59.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 16% ━╸────────── 92.1/572.0MB 9.5MB/s 10.0s<50.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 16% ━╸────────── 93.2/572.0MB 9.0MB/s 10.2s<53.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 16% ━╸────────── 94.4/572.0MB 9.8MB/s 10.3s<48.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 16% ━━────────── 95.5/572.0MB 8.7MB/s 10.4s<54.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 16% ━━────────── 96.7/572.0MB 9.4MB/s 10.5s<50.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 17% ━━────────── 97.8/572.0MB 9.8MB/s 10.7s<48.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 17% ━━────────── 99.0/572.0MB 9.3MB/s 10.8s<50.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 17% ━━────────── 100.1/572.0MB 9.7MB/s 10.9s<48.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 17% ━━────────── 101.2/572.0MB 9.3MB/s 11.0s<50.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 17% ━━────────── 102.4/572.0MB 9.6MB/s 11.1s<48.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 18% ━━────────── 103.5/572.0MB 8.6MB/s 11.3s<54.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 18% ━━────────── 104.7/572.0MB 9.7MB/s 11.4s<48.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 18% ━━────────── 105.8/572.0MB 10.7MB/s 11.5s<43.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 18% ━━────────── 107.0/572.0MB 9.9MB/s 11.6s<46.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 18% ━━────────── 108.1/572.0MB 10.4MB/s 11.7s<44.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 19% ━━────────── 109.8/572.0MB 10.9MB/s 11.9s<42.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 19% ━━────────── 111.0/572.0MB 11.1MB/s 12.0s<41.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 19% ━━────────── 112.1/572.0MB 11.1MB/s 12.1s<41.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 19% ━━────────── 113.3/572.0MB 10.9MB/s 12.2s<42.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 19% ━━────────── 114.4/572.0MB 10.0MB/s 12.3s<45.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 20% ━━────────── 116.1/572.0MB 11.8MB/s 12.4s<38.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 20% ━━────────── 117.3/572.0MB 6.8MB/s 12.6s<1:07[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 20% ━━────────── 118.4/572.0MB 11.0MB/s 12.7s<41.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 20% ━━╸───────── 119.5/572.0MB 11.0MB/s 12.8s<41.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 21% ━━╸───────── 120.7/572.0MB 10.7MB/s 12.9s<42.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 21% ━━╸───────── 121.8/572.0MB 10.5MB/s 13.0s<43.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 21% ━━╸───────── 123.0/572.0MB 11.1MB/s 13.1s<40.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 21% ━━╸───────── 124.1/572.0MB 10.2MB/s 13.3s<44.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 21% ━━╸───────── 125.3/572.0MB 10.5MB/s 13.4s<42.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 22% ━━╸───────── 126.4/572.0MB 10.4MB/s 13.5s<42.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 22% ━━╸───────── 127.6/572.0MB 10.6MB/s 13.6s<41.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 22% ━━╸───────── 128.7/572.0MB 10.7MB/s 13.7s<41.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 22% ━━╸───────── 129.8/572.0MB 9.4MB/s 13.8s<47.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 22% ━━╸───────── 131.0/572.0MB 10.3MB/s 13.9s<42.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 23% ━━╸───────── 132.1/572.0MB 11.0MB/s 14.0s<40.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 23% ━━╸───────── 133.3/572.0MB 10.6MB/s 14.1s<41.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 23% ━━╸───────── 134.4/572.0MB 10.8MB/s 14.2s<40.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 23% ━━╸───────── 135.6/572.0MB 10.9MB/s 14.3s<39.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 23% ━━╸───────── 136.1/572.0MB 5.0MB/s 14.5s<1:26[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 24% ━━╸───────── 137.8/572.0MB 14.5MB/s 14.6s<29.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 24% ━━╸───────── 139.0/572.0MB 11.0MB/s 14.7s<39.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 24% ━━╸───────── 140.1/572.0MB 10.3MB/s 14.8s<42.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 24% ━━╸───────── 141.3/572.0MB 11.1MB/s 14.9s<38.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 24% ━━╸───────── 142.4/572.0MB 10.6MB/s 15.0s<40.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 25% ━━━───────── 143.6/572.0MB 7.6MB/s 15.2s<56.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 25% ━━━───────── 144.7/572.0MB 7.4MB/s 15.3s<57.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 25% ━━━───────── 145.9/572.0MB 10.3MB/s 15.4s<41.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 25% ━━━───────── 147.0/572.0MB 10.6MB/s 15.5s<40.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 25% ━━━───────── 148.1/572.0MB 10.2MB/s 15.6s<41.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 26% ━━━───────── 149.3/572.0MB 10.8MB/s 15.7s<39.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 26% ━━━───────── 150.4/572.0MB 11.0MB/s 15.8s<38.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 26% ━━━───────── 151.6/572.0MB 10.8MB/s 16.0s<39.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 26% ━━━───────── 152.7/572.0MB 10.3MB/s 16.1s<40.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 26% ━━━───────── 153.9/572.0MB 9.3MB/s 16.2s<44.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 27% ━━━───────── 155.0/572.0MB 8.5MB/s 16.3s<49.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 27% ━━━───────── 155.6/572.0MB 5.1MB/s 16.4s<1:22[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 27% ━━━───────── 156.7/572.0MB 8.0MB/s 16.6s<52.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 27% ━━━───────── 157.9/572.0MB 8.3MB/s 16.7s<50.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 27% ━━━───────── 159.0/572.0MB 9.3MB/s 16.8s<44.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 27% ━━━───────── 160.2/572.0MB 9.8MB/s 17.0s<41.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 28% ━━━───────── 161.3/572.0MB 11.0MB/s 17.1s<37.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 28% ━━━───────── 162.4/572.0MB 9.9MB/s 17.2s<41.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 28% ━━━───────── 163.6/572.0MB 9.9MB/s 17.3s<41.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 28% ━━━───────── 164.7/572.0MB 10.7MB/s 17.4s<37.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 28% ━━━───────── 165.9/572.0MB 9.9MB/s 17.5s<40.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 29% ━━━╸──────── 167.0/572.0MB 9.5MB/s 17.6s<42.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 29% ━━━╸──────── 168.2/572.0MB 8.2MB/s 17.8s<49.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 29% ━━━╸──────── 169.3/572.0MB 9.5MB/s 17.9s<42.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 29% ━━━╸──────── 170.4/572.0MB 10.7MB/s 18.0s<37.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 29% ━━━╸──────── 171.6/572.0MB 10.8MB/s 18.1s<37.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 30% ━━━╸──────── 172.7/572.0MB 10.6MB/s 18.2s<37.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 30% ━━━╸──────── 173.9/572.0MB 11.1MB/s 18.3s<35.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 30% ━━━╸──────── 175.0/572.0MB 10.2MB/s 18.4s<38.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 30% ━━━╸──────── 176.2/572.0MB 7.4MB/s 18.6s<53.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 31% ━━━╸──────── 177.9/572.0MB 11.8MB/s 18.7s<33.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 31% ━━━╸──────── 179.0/572.0MB 9.4MB/s 18.8s<41.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 31% ━━━╸──────── 180.2/572.0MB 7.0MB/s 19.0s<56.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 31% ━━━╸──────── 181.3/572.0MB 9.1MB/s 19.1s<42.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 31% ━━━╸──────── 182.5/572.0MB 10.1MB/s 19.3s<38.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 32% ━━━╸──────── 183.6/572.0MB 9.3MB/s 19.4s<41.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 32% ━━━╸──────── 184.7/572.0MB 9.2MB/s 19.5s<41.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 32% ━━━╸──────── 185.9/572.0MB 10.2MB/s 19.6s<37.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 32% ━━━╸──────── 187.0/572.0MB 7.5MB/s 19.8s<51.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 32% ━━━╸──────── 188.2/572.0MB 10.4MB/s 19.9s<36.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 33% ━━━╸──────── 189.3/572.0MB 9.9MB/s 20.0s<38.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 33% ━━━╸──────── 190.5/572.0MB 9.7MB/s 20.1s<39.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 33% ━━━━──────── 191.6/572.0MB 9.0MB/s 20.2s<42.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 33% ━━━━──────── 192.8/572.0MB 10.8MB/s 20.3s<35.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 33% ━━━━──────── 193.9/572.0MB 10.9MB/s 20.4s<34.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 34% ━━━━──────── 195.0/572.0MB 10.7MB/s 20.6s<35.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 34% ━━━━──────── 196.2/572.0MB 9.3MB/s 20.7s<40.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 34% ━━━━──────── 197.3/572.0MB 10.1MB/s 20.8s<37.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 34% ━━━━──────── 198.5/572.0MB 11.2MB/s 20.9s<33.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 34% ━━━━──────── 199.6/572.0MB 11.1MB/s 21.0s<33.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 35% ━━━━──────── 200.8/572.0MB 10.2MB/s 21.1s<36.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 35% ━━━━──────── 201.9/572.0MB 10.1MB/s 21.2s<36.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 35% ━━━━──────── 203.1/572.0MB 10.5MB/s 21.3s<35.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 35% ━━━━──────── 204.2/572.0MB 9.4MB/s 21.4s<39.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 35% ━━━━──────── 205.3/572.0MB 7.1MB/s 21.6s<51.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 36% ━━━━──────── 206.5/572.0MB 10.6MB/s 21.7s<34.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 36% ━━━━──────── 207.6/572.0MB 10.6MB/s 21.8s<34.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 36% ━━━━──────── 208.8/572.0MB 10.8MB/s 21.9s<33.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 36% ━━━━──────── 209.3/572.0MB 3.6MB/s 22.1s<1:41[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 36% ━━━━──────── 210.5/572.0MB 5.5MB/s 22.3s<1:06[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 36% ━━━━──────── 211.1/572.0MB 3.6MB/s 22.5s<1:41[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 37% ━━━━──────── 212.2/572.0MB 9.0MB/s 22.6s<40.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 37% ━━━━──────── 213.3/572.0MB 8.0MB/s 22.7s<45.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 37% ━━━━──────── 214.5/572.0MB 9.8MB/s 22.8s<36.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 37% ━━━━╸─────── 215.6/572.0MB 8.9MB/s 23.0s<39.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 37% ━━━━╸─────── 216.8/572.0MB 8.9MB/s 23.1s<39.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 38% ━━━━╸─────── 217.9/572.0MB 10.2MB/s 23.2s<34.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 38% ━━━━╸─────── 219.1/572.0MB 10.0MB/s 23.3s<35.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 38% ━━━━╸─────── 220.2/572.0MB 10.1MB/s 23.4s<34.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 38% ━━━━╸─────── 221.4/572.0MB 8.9MB/s 23.6s<39.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 38% ━━━━╸─────── 222.5/572.0MB 10.4MB/s 23.7s<33.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 39% ━━━━╸─────── 223.6/572.0MB 10.1MB/s 23.8s<34.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 39% ━━━━╸─────── 224.8/572.0MB 10.2MB/s 23.9s<34.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 39% ━━━━╸─────── 225.9/572.0MB 6.7MB/s 24.1s<52.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 39% ━━━━╸─────── 227.1/572.0MB 8.0MB/s 24.2s<42.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 39% ━━━━╸─────── 228.2/572.0MB 7.8MB/s 24.4s<44.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 39% ━━━━╸─────── 228.8/572.0MB 5.7MB/s 24.5s<1:00[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 40% ━━━━╸─────── 229.9/572.0MB 7.8MB/s 24.6s<44.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 40% ━━━━╸─────── 231.1/572.0MB 8.0MB/s 24.8s<42.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 40% ━━━━╸─────── 232.2/572.0MB 9.2MB/s 24.9s<37.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 40% ━━━━╸─────── 233.4/572.0MB 9.5MB/s 25.0s<35.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 40% ━━━━╸─────── 234.5/572.0MB 9.4MB/s 25.1s<35.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 41% ━━━━╸─────── 235.7/572.0MB 10.3MB/s 25.2s<32.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 41% ━━━━╸─────── 236.8/572.0MB 9.1MB/s 25.4s<37.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 41% ━━━━╸─────── 237.9/572.0MB 9.3MB/s 25.5s<35.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 41% ━━━━━─────── 239.1/572.0MB 10.3MB/s 25.6s<32.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 41% ━━━━━─────── 240.2/572.0MB 10.0MB/s 25.7s<33.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 42% ━━━━━─────── 241.4/572.0MB 10.7MB/s 25.8s<30.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 42% ━━━━━─────── 242.5/572.0MB 7.4MB/s 26.0s<44.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 42% ━━━━━─────── 243.7/572.0MB 10.0MB/s 26.1s<32.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 42% ━━━━━─────── 244.8/572.0MB 10.0MB/s 26.2s<32.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 42% ━━━━━─────── 246.0/572.0MB 9.8MB/s 26.3s<33.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 43% ━━━━━─────── 247.1/572.0MB 10.0MB/s 26.4s<32.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 43% ━━━━━─────── 248.2/572.0MB 9.1MB/s 26.6s<35.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 43% ━━━━━─────── 249.4/572.0MB 9.5MB/s 26.7s<33.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 43% ━━━━━─────── 250.5/572.0MB 9.8MB/s 26.8s<32.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 43% ━━━━━─────── 251.7/572.0MB 10.7MB/s 26.9s<30.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 44% ━━━━━─────── 252.8/572.0MB 8.7MB/s 27.0s<36.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 44% ━━━━━─────── 254.0/572.0MB 10.6MB/s 27.1s<30.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 44% ━━━━━─────── 255.1/572.0MB 9.2MB/s 27.3s<34.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 44% ━━━━━─────── 256.2/572.0MB 9.1MB/s 27.4s<34.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 44% ━━━━━─────── 257.4/572.0MB 10.9MB/s 27.5s<29.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 45% ━━━━━─────── 258.5/572.0MB 10.5MB/s 27.6s<29.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 45% ━━━━━─────── 259.7/572.0MB 10.1MB/s 27.7s<31.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 45% ━━━━━─────── 260.8/572.0MB 8.6MB/s 27.9s<36.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 45% ━━━━━─────── 262.0/572.0MB 7.4MB/s 28.0s<42.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 45% ━━━━━╸────── 263.1/572.0MB 10.4MB/s 28.1s<29.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 46% ━━━━━╸────── 264.3/572.0MB 9.6MB/s 28.2s<32.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 46% ━━━━━╸────── 265.4/572.0MB 10.6MB/s 28.3s<28.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 46% ━━━━━╸────── 266.5/572.0MB 10.5MB/s 28.5s<29.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 46% ━━━━━╸────── 267.7/572.0MB 10.0MB/s 28.6s<30.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 46% ━━━━━╸────── 268.8/572.0MB 10.4MB/s 28.7s<29.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 47% ━━━━━╸────── 270.0/572.0MB 10.6MB/s 28.8s<28.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 47% ━━━━━╸────── 271.1/572.0MB 10.9MB/s 28.9s<27.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 47% ━━━━━╸────── 272.3/572.0MB 9.8MB/s 29.0s<30.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 47% ━━━━━╸────── 273.4/572.0MB 8.2MB/s 29.1s<36.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 47% ━━━━━╸────── 274.6/572.0MB 8.9MB/s 29.3s<33.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 48% ━━━━━╸────── 275.7/572.0MB 9.8MB/s 29.4s<30.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 48% ━━━━━╸────── 276.8/572.0MB 10.7MB/s 29.5s<27.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 48% ━━━━━╸────── 278.0/572.0MB 10.8MB/s 29.6s<27.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 48% ━━━━━╸────── 279.1/572.0MB 10.4MB/s 29.7s<28.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 48% ━━━━━╸────── 280.3/572.0MB 10.7MB/s 29.8s<27.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 49% ━━━━━╸────── 281.4/572.0MB 10.5MB/s 29.9s<27.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 49% ━━━━━╸────── 282.6/572.0MB 10.2MB/s 30.0s<28.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 49% ━━━━━╸────── 283.7/572.0MB 10.0MB/s 30.2s<28.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 49% ━━━━━╸────── 284.8/572.0MB 10.4MB/s 30.3s<27.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 49% ━━━━━╸────── 286.0/572.0MB 10.8MB/s 30.4s<26.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 50% ━━━━━━────── 287.1/572.0MB 8.3MB/s 30.5s<34.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 50% ━━━━━━────── 288.3/572.0MB 10.2MB/s 30.6s<27.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 50% ━━━━━━────── 289.4/572.0MB 9.9MB/s 30.7s<28.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 50% ━━━━━━────── 290.6/572.0MB 11.0MB/s 30.8s<25.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 50% ━━━━━━────── 291.7/572.0MB 10.3MB/s 31.0s<27.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 51% ━━━━━━────── 292.9/572.0MB 10.0MB/s 31.1s<28.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 51% ━━━━━━────── 294.0/572.0MB 10.5MB/s 31.2s<26.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 51% ━━━━━━────── 295.1/572.0MB 10.0MB/s 31.3s<27.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 51% ━━━━━━────── 296.3/572.0MB 10.9MB/s 31.4s<25.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 51% ━━━━━━────── 297.4/572.0MB 9.7MB/s 31.5s<28.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 52% ━━━━━━────── 298.6/572.0MB 10.7MB/s 31.6s<25.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 52% ━━━━━━────── 299.7/572.0MB 9.1MB/s 31.7s<29.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 52% ━━━━━━────── 300.9/572.0MB 10.7MB/s 31.9s<25.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 52% ━━━━━━────── 302.0/572.0MB 11.0MB/s 32.0s<24.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 52% ━━━━━━────── 303.1/572.0MB 10.8MB/s 32.1s<24.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 53% ━━━━━━────── 304.3/572.0MB 10.2MB/s 32.2s<26.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 53% ━━━━━━────── 305.4/572.0MB 10.8MB/s 32.3s<24.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 53% ━━━━━━────── 306.6/572.0MB 8.4MB/s 32.4s<31.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 53% ━━━━━━────── 307.7/572.0MB 6.8MB/s 32.6s<39.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 53% ━━━━━━────── 308.9/572.0MB 8.6MB/s 32.7s<30.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 54% ━━━━━━╸───── 310.0/572.0MB 10.2MB/s 32.8s<25.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 54% ━━━━━━╸───── 311.2/572.0MB 8.1MB/s 33.0s<32.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 54% ━━━━━━╸───── 312.3/572.0MB 10.1MB/s 33.1s<25.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 54% ━━━━━━╸───── 313.4/572.0MB 10.6MB/s 33.2s<24.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 54% ━━━━━━╸───── 314.6/572.0MB 9.9MB/s 33.3s<25.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 55% ━━━━━━╸───── 315.7/572.0MB 10.5MB/s 33.4s<24.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 55% ━━━━━━╸───── 316.9/572.0MB 9.9MB/s 33.5s<25.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 55% ━━━━━━╸───── 318.0/572.0MB 10.1MB/s 33.6s<25.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 55% ━━━━━━╸───── 319.2/572.0MB 9.8MB/s 33.8s<25.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 55% ━━━━━━╸───── 320.3/572.0MB 8.9MB/s 33.9s<28.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 56% ━━━━━━╸───── 321.5/572.0MB 10.2MB/s 34.0s<24.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 56% ━━━━━━╸───── 322.6/572.0MB 9.5MB/s 34.1s<26.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 56% ━━━━━━╸───── 323.7/572.0MB 6.2MB/s 34.3s<39.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 56% ━━━━━━╸───── 324.9/572.0MB 10.1MB/s 34.4s<24.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 56% ━━━━━━╸───── 326.0/572.0MB 10.3MB/s 34.5s<23.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 57% ━━━━━━╸───── 327.2/572.0MB 10.6MB/s 34.6s<23.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 57% ━━━━━━╸───── 328.3/572.0MB 11.0MB/s 34.7s<22.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 57% ━━━━━━╸───── 329.5/572.0MB 11.0MB/s 34.8s<22.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 57% ━━━━━━╸───── 330.6/572.0MB 10.3MB/s 35.0s<23.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 57% ━━━━━━╸───── 331.7/572.0MB 11.0MB/s 35.1s<21.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 58% ━━━━━━╸───── 332.9/572.0MB 8.8MB/s 35.2s<27.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 58% ━━━━━━━───── 334.0/572.0MB 10.1MB/s 35.3s<23.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 58% ━━━━━━━───── 335.2/572.0MB 10.0MB/s 35.4s<23.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 58% ━━━━━━━───── 336.3/572.0MB 8.0MB/s 35.6s<29.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 58% ━━━━━━━───── 337.5/572.0MB 9.1MB/s 35.7s<25.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 59% ━━━━━━━───── 338.6/572.0MB 9.6MB/s 35.8s<24.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 59% ━━━━━━━───── 339.8/572.0MB 10.1MB/s 35.9s<23.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 59% ━━━━━━━───── 340.9/572.0MB 9.5MB/s 36.0s<24.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 59% ━━━━━━━───── 342.0/572.0MB 10.2MB/s 36.2s<22.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 59% ━━━━━━━───── 343.2/572.0MB 7.8MB/s 36.3s<29.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 60% ━━━━━━━───── 343.8/572.0MB 4.5MB/s 36.4s<51.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 60% ━━━━━━━───── 345.5/572.0MB 12.1MB/s 36.6s<18.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 60% ━━━━━━━───── 346.6/572.0MB 11.1MB/s 36.7s<20.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 60% ━━━━━━━───── 347.8/572.0MB 8.7MB/s 36.8s<25.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 60% ━━━━━━━───── 348.9/572.0MB 7.9MB/s 37.0s<28.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 61% ━━━━━━━───── 350.1/572.0MB 11.0MB/s 37.1s<20.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 61% ━━━━━━━───── 351.2/572.0MB 9.6MB/s 37.2s<22.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 61% ━━━━━━━───── 352.3/572.0MB 10.8MB/s 37.3s<20.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 61% ━━━━━━━───── 353.5/572.0MB 10.2MB/s 37.4s<21.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 61% ━━━━━━━───── 354.6/572.0MB 10.0MB/s 37.5s<21.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 62% ━━━━━━━───── 355.8/572.0MB 7.2MB/s 37.7s<29.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 62% ━━━━━━━───── 356.3/572.0MB 4.8MB/s 37.8s<45.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 62% ━━━━━━━───── 357.5/572.0MB 8.0MB/s 37.9s<26.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 62% ━━━━━━━╸──── 358.6/572.0MB 8.6MB/s 38.1s<24.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 62% ━━━━━━━╸──── 359.8/572.0MB 6.9MB/s 38.2s<30.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 62% ━━━━━━━╸──── 360.3/572.0MB 5.3MB/s 38.3s<40.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 63% ━━━━━━━╸──── 360.9/572.0MB 3.9MB/s 38.5s<53.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 63% ━━━━━━━╸──── 362.6/572.0MB 14.5MB/s 38.6s<14.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 63% ━━━━━━━╸──── 363.8/572.0MB 10.5MB/s 38.7s<19.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 63% ━━━━━━━╸──── 364.9/572.0MB 10.8MB/s 38.8s<19.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 63% ━━━━━━━╸──── 366.1/572.0MB 10.7MB/s 38.9s<19.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 64% ━━━━━━━╸──── 367.2/572.0MB 10.6MB/s 39.0s<19.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 64% ━━━━━━━╸──── 368.4/572.0MB 10.3MB/s 39.1s<19.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 64% ━━━━━━━╸──── 369.5/572.0MB 10.0MB/s 39.3s<20.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 64% ━━━━━━━╸──── 370.6/572.0MB 9.4MB/s 39.4s<21.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 64% ━━━━━━━╸──── 371.2/572.0MB 4.7MB/s 39.5s<42.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 65% ━━━━━━━╸──── 372.4/572.0MB 8.4MB/s 39.6s<23.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 65% ━━━━━━━╸──── 373.5/572.0MB 9.5MB/s 39.8s<21.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 65% ━━━━━━━╸──── 374.6/572.0MB 9.7MB/s 39.9s<20.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 65% ━━━━━━━╸──── 375.8/572.0MB 10.2MB/s 40.0s<19.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 65% ━━━━━━━╸──── 376.9/572.0MB 10.2MB/s 40.1s<19.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 66% ━━━━━━━╸──── 378.1/572.0MB 10.2MB/s 40.2s<19.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 66% ━━━━━━━╸──── 379.2/572.0MB 11.1MB/s 40.3s<17.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 66% ━━━━━━━╸──── 380.4/572.0MB 6.8MB/s 40.5s<28.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 66% ━━━━━━━━──── 381.5/572.0MB 8.7MB/s 40.6s<21.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 66% ━━━━━━━━──── 382.7/572.0MB 6.7MB/s 40.8s<28.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 67% ━━━━━━━━──── 383.8/572.0MB 10.0MB/s 40.9s<18.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 67% ━━━━━━━━──── 384.9/572.0MB 11.0MB/s 41.0s<17.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 67% ━━━━━━━━──── 386.1/572.0MB 8.7MB/s 41.1s<21.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 67% ━━━━━━━━──── 387.2/572.0MB 9.4MB/s 41.3s<19.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 67% ━━━━━━━━──── 388.4/572.0MB 8.0MB/s 41.4s<23.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 68% ━━━━━━━━──── 389.5/572.0MB 8.6MB/s 41.5s<21.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 68% ━━━━━━━━──── 390.7/572.0MB 10.8MB/s 41.6s<16.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 68% ━━━━━━━━──── 391.8/572.0MB 10.6MB/s 41.7s<16.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 68% ━━━━━━━━──── 392.9/572.0MB 10.9MB/s 41.8s<16.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 68% ━━━━━━━━──── 394.1/572.0MB 8.4MB/s 42.0s<21.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 69% ━━━━━━━━──── 395.2/572.0MB 10.4MB/s 42.1s<17.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 69% ━━━━━━━━──── 396.4/572.0MB 10.4MB/s 42.2s<17.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 69% ━━━━━━━━──── 397.5/572.0MB 9.8MB/s 42.3s<17.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 69% ━━━━━━━━──── 398.7/572.0MB 10.4MB/s 42.4s<16.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 69% ━━━━━━━━──── 399.8/572.0MB 9.9MB/s 42.5s<17.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 70% ━━━━━━━━──── 401.0/572.0MB 9.7MB/s 42.7s<17.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 70% ━━━━━━━━──── 402.1/572.0MB 10.4MB/s 42.8s<16.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 70% ━━━━━━━━──── 403.2/572.0MB 10.7MB/s 42.9s<15.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 70% ━━━━━━━━──── 404.4/572.0MB 10.4MB/s 43.0s<16.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 70% ━━━━━━━━╸─── 405.5/572.0MB 11.0MB/s 43.1s<15.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 71% ━━━━━━━━╸─── 406.7/572.0MB 9.5MB/s 43.2s<17.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 71% ━━━━━━━━╸─── 407.2/572.0MB 5.3MB/s 43.3s<30.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 71% ━━━━━━━━╸─── 408.4/572.0MB 9.0MB/s 43.4s<18.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 71% ━━━━━━━━╸─── 409.5/572.0MB 9.1MB/s 43.6s<17.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 71% ━━━━━━━━╸─── 410.7/572.0MB 11.3MB/s 43.7s<14.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 71% ━━━━━━━━╸─── 411.8/572.0MB 10.7MB/s 43.8s<15.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 72% ━━━━━━━━╸─── 413.0/572.0MB 10.4MB/s 43.9s<15.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 72% ━━━━━━━━╸─── 414.1/572.0MB 10.5MB/s 44.0s<15.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 72% ━━━━━━━━╸─── 415.3/572.0MB 10.9MB/s 44.1s<14.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 72% ━━━━━━━━╸─── 416.4/572.0MB 11.1MB/s 44.2s<14.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 72% ━━━━━━━━╸─── 417.5/572.0MB 8.4MB/s 44.3s<18.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 73% ━━━━━━━━╸─── 418.7/572.0MB 10.9MB/s 44.5s<14.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 73% ━━━━━━━━╸─── 419.8/572.0MB 6.5MB/s 44.6s<23.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 73% ━━━━━━━━╸─── 421.0/572.0MB 9.7MB/s 44.7s<15.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 73% ━━━━━━━━╸─── 422.1/572.0MB 11.0MB/s 44.9s<13.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 73% ━━━━━━━━╸─── 423.3/572.0MB 10.2MB/s 45.0s<14.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 74% ━━━━━━━━╸─── 424.4/572.0MB 11.1MB/s 45.1s<13.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 74% ━━━━━━━━╸─── 425.6/572.0MB 10.9MB/s 45.2s<13.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 74% ━━━━━━━━╸─── 426.7/572.0MB 10.5MB/s 45.3s<13.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 74% ━━━━━━━━╸─── 427.8/572.0MB 10.1MB/s 45.4s<14.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 74% ━━━━━━━━╸─── 429.0/572.0MB 10.9MB/s 45.5s<13.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 75% ━━━━━━━━━─── 430.1/572.0MB 9.2MB/s 45.6s<15.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 75% ━━━━━━━━━─── 431.3/572.0MB 10.3MB/s 45.7s<13.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 75% ━━━━━━━━━─── 432.4/572.0MB 8.2MB/s 45.9s<17.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 75% ━━━━━━━━━─── 433.6/572.0MB 10.3MB/s 46.0s<13.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 75% ━━━━━━━━━─── 434.7/572.0MB 9.7MB/s 46.1s<14.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 76% ━━━━━━━━━─── 435.8/572.0MB 11.1MB/s 46.2s<12.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 76% ━━━━━━━━━─── 437.0/572.0MB 10.3MB/s 46.3s<13.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 76% ━━━━━━━━━─── 438.1/572.0MB 10.7MB/s 46.4s<12.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 76% ━━━━━━━━━─── 439.3/572.0MB 9.8MB/s 46.5s<13.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 76% ━━━━━━━━━─── 440.4/572.0MB 11.0MB/s 46.6s<11.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 77% ━━━━━━━━━─── 441.6/572.0MB 10.6MB/s 46.8s<12.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 77% ━━━━━━━━━─── 442.7/572.0MB 10.5MB/s 46.9s<12.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 77% ━━━━━━━━━─── 443.9/572.0MB 11.3MB/s 47.0s<11.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 77% ━━━━━━━━━─── 445.0/572.0MB 9.6MB/s 47.1s<13.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 77% ━━━━━━━━━─── 445.6/572.0MB 5.3MB/s 47.2s<23.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 78% ━━━━━━━━━─── 446.7/572.0MB 10.7MB/s 47.3s<11.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 78% ━━━━━━━━━─── 447.9/572.0MB 10.6MB/s 47.4s<11.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 78% ━━━━━━━━━─── 449.0/572.0MB 11.0MB/s 47.5s<11.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 78% ━━━━━━━━━─── 450.1/572.0MB 10.7MB/s 47.6s<11.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 78% ━━━━━━━━━─── 451.3/572.0MB 10.5MB/s 47.7s<11.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 79% ━━━━━━━━━─── 452.4/572.0MB 10.7MB/s 47.8s<11.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 79% ━━━━━━━━━╸── 453.6/572.0MB 10.9MB/s 47.9s<10.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 79% ━━━━━━━━━╸── 454.7/572.0MB 10.9MB/s 48.0s<10.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 79% ━━━━━━━━━╸── 455.9/572.0MB 11.2MB/s 48.1s<10.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 79% ━━━━━━━━━╸── 457.0/572.0MB 10.5MB/s 48.2s<11.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 80% ━━━━━━━━━╸── 458.2/572.0MB 8.0MB/s 48.4s<14.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 80% ━━━━━━━━━╸── 459.3/572.0MB 7.1MB/s 48.6s<15.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 80% ━━━━━━━━━╸── 460.4/572.0MB 8.3MB/s 48.7s<13.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 80% ━━━━━━━━━╸── 461.6/572.0MB 9.9MB/s 48.8s<11.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 80% ━━━━━━━━━╸── 462.7/572.0MB 9.5MB/s 48.9s<11.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 81% ━━━━━━━━━╸── 463.9/572.0MB 9.7MB/s 49.0s<11.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 81% ━━━━━━━━━╸── 465.0/572.0MB 10.6MB/s 49.2s<10.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 81% ━━━━━━━━━╸── 466.2/572.0MB 9.4MB/s 49.3s<11.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 81% ━━━━━━━━━╸── 467.3/572.0MB 10.8MB/s 49.4s<9.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 81% ━━━━━━━━━╸── 468.5/572.0MB 10.0MB/s 49.5s<10.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 81% ━━━━━━━━━╸── 469.0/572.0MB 5.7MB/s 49.6s<18.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 82% ━━━━━━━━━╸── 470.2/572.0MB 9.0MB/s 49.7s<11.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 82% ━━━━━━━━━╸── 471.3/572.0MB 9.7MB/s 49.8s<10.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 82% ━━━━━━━━━╸── 472.5/572.0MB 9.9MB/s 50.0s<10.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 82% ━━━━━━━━━╸── 473.6/572.0MB 10.1MB/s 50.1s<9.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 82% ━━━━━━━━━╸── 474.7/572.0MB 10.5MB/s 50.2s<9.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 83% ━━━━━━━━━╸── 475.9/572.0MB 10.4MB/s 50.3s<9.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 83% ━━━━━━━━━━── 477.0/572.0MB 10.3MB/s 50.4s<9.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 83% ━━━━━━━━━━── 478.2/572.0MB 10.7MB/s 50.5s<8.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 83% ━━━━━━━━━━── 479.3/572.0MB 9.8MB/s 50.6s<9.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 83% ━━━━━━━━━━── 480.5/572.0MB 11.0MB/s 50.7s<8.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 84% ━━━━━━━━━━── 481.6/572.0MB 10.7MB/s 50.8s<8.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 84% ━━━━━━━━━━── 482.8/572.0MB 7.7MB/s 51.0s<11.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 84% ━━━━━━━━━━── 483.9/572.0MB 10.3MB/s 51.1s<8.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 84% ━━━━━━━━━━── 485.0/572.0MB 10.5MB/s 51.2s<8.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 84% ━━━━━━━━━━── 486.2/572.0MB 10.0MB/s 51.3s<8.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 85% ━━━━━━━━━━── 487.3/572.0MB 10.6MB/s 51.4s<8.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 85% ━━━━━━━━━━── 488.5/572.0MB 10.8MB/s 51.5s<7.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 85% ━━━━━━━━━━── 489.6/572.0MB 10.5MB/s 51.6s<7.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 85% ━━━━━━━━━━── 490.8/572.0MB 10.4MB/s 51.8s<7.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 85% ━━━━━━━━━━── 491.9/572.0MB 10.0MB/s 51.9s<8.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 86% ━━━━━━━━━━── 493.0/572.0MB 10.2MB/s 52.0s<7.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 86% ━━━━━━━━━━── 494.2/572.0MB 10.5MB/s 52.1s<7.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 86% ━━━━━━━━━━── 494.8/572.0MB 5.1MB/s 52.2s<15.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 86% ━━━━━━━━━━── 496.5/572.0MB 10.5MB/s 52.4s<7.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 86% ━━━━━━━━━━── 497.6/572.0MB 9.9MB/s 52.5s<7.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 87% ━━━━━━━━━━── 498.8/572.0MB 10.0MB/s 52.6s<7.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 87% ━━━━━━━━━━── 499.9/572.0MB 10.6MB/s 52.7s<6.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 87% ━━━━━━━━━━╸─ 501.1/572.0MB 10.9MB/s 52.8s<6.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 87% ━━━━━━━━━━╸─ 502.2/572.0MB 11.1MB/s 52.9s<6.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 87% ━━━━━━━━━━╸─ 503.3/572.0MB 10.7MB/s 53.0s<6.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 88% ━━━━━━━━━━╸─ 504.5/572.0MB 10.1MB/s 53.1s<6.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 88% ━━━━━━━━━━╸─ 505.6/572.0MB 10.6MB/s 53.2s<6.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 88% ━━━━━━━━━━╸─ 506.8/572.0MB 10.1MB/s 53.3s<6.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 88% ━━━━━━━━━━╸─ 507.9/572.0MB 9.7MB/s 53.5s<6.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 88% ━━━━━━━━━━╸─ 509.1/572.0MB 7.7MB/s 53.6s<8.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 89% ━━━━━━━━━━╸─ 510.2/572.0MB 11.0MB/s 53.7s<5.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 89% ━━━━━━━━━━╸─ 511.3/572.0MB 10.9MB/s 53.8s<5.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 89% ━━━━━━━━━━╸─ 512.5/572.0MB 10.4MB/s 53.9s<5.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 89% ━━━━━━━━━━╸─ 513.6/572.0MB 10.4MB/s 54.0s<5.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 89% ━━━━━━━━━━╸─ 514.8/572.0MB 10.9MB/s 54.1s<5.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 90% ━━━━━━━━━━╸─ 515.9/572.0MB 10.3MB/s 54.3s<5.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 90% ━━━━━━━━━━╸─ 517.1/572.0MB 9.8MB/s 54.4s<5.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 90% ━━━━━━━━━━╸─ 518.2/572.0MB 10.7MB/s 54.5s<5.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 90% ━━━━━━━━━━╸─ 519.4/572.0MB 11.0MB/s 54.6s<4.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 90% ━━━━━━━━━━╸─ 520.5/572.0MB 11.0MB/s 54.7s<4.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 91% ━━━━━━━━━━╸─ 521.6/572.0MB 9.7MB/s 54.8s<5.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 91% ━━━━━━━━━━╸─ 522.8/572.0MB 10.9MB/s 54.9s<4.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 91% ━━━━━━━━━━╸─ 523.9/572.0MB 10.6MB/s 55.0s<4.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 91% ━━━━━━━━━━━─ 525.1/572.0MB 10.4MB/s 55.1s<4.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 91% ━━━━━━━━━━━─ 526.2/572.0MB 11.1MB/s 55.2s<4.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 92% ━━━━━━━━━━━─ 527.4/572.0MB 4.9MB/s 55.5s<9.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 92% ━━━━━━━━━━━─ 529.1/572.0MB 12.7MB/s 55.6s<3.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 92% ━━━━━━━━━━━─ 530.2/572.0MB 8.4MB/s 55.7s<4.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 92% ━━━━━━━━━━━─ 531.4/572.0MB 8.7MB/s 55.9s<4.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 93% ━━━━━━━━━━━─ 532.5/572.0MB 11.3MB/s 56.0s<3.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 93% ━━━━━━━━━━━─ 533.7/572.0MB 6.3MB/s 56.2s<6.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 93% ━━━━━━━━━━━─ 534.8/572.0MB 10.2MB/s 56.3s<3.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 93% ━━━━━━━━━━━─ 535.9/572.0MB 7.9MB/s 56.4s<4.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 93% ━━━━━━━━━━━─ 537.1/572.0MB 7.8MB/s 56.6s<4.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 94% ━━━━━━━━━━━─ 538.2/572.0MB 6.7MB/s 56.7s<5.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 94% ━━━━━━━━━━━─ 539.4/572.0MB 8.9MB/s 56.9s<3.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 94% ━━━━━━━━━━━─ 540.5/572.0MB 9.4MB/s 57.0s<3.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 94% ━━━━━━━━━━━─ 541.7/572.0MB 9.8MB/s 57.1s<3.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 94% ━━━━━━━━━━━─ 542.8/572.0MB 10.4MB/s 57.2s<2.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 95% ━━━━━━━━━━━─ 544.0/572.0MB 7.0MB/s 57.4s<4.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 95% ━━━━━━━━━━━─ 545.1/572.0MB 8.7MB/s 57.5s<3.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 95% ━━━━━━━━━━━─ 546.2/572.0MB 10.6MB/s 57.6s<2.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 95% ━━━━━━━━━━━─ 547.4/572.0MB 6.5MB/s 57.8s<3.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 95% ━━━━━━━━━━━╸ 548.5/572.0MB 7.6MB/s 57.9s<3.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 96% ━━━━━━━━━━━╸ 549.7/572.0MB 9.2MB/s 58.1s<2.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 96% ━━━━━━━━━━━╸ 550.8/572.0MB 8.6MB/s 58.2s<2.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 96% ━━━━━━━━━━━╸ 552.0/572.0MB 9.1MB/s 58.3s<2.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 96% ━━━━━━━━━━━╸ 553.1/572.0MB 10.7MB/s 58.4s<1.8s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 96% ━━━━━━━━━━━╸ 554.2/572.0MB 10.4MB/s 58.5s<1.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 97% ━━━━━━━━━━━╸ 555.4/572.0MB 7.3MB/s 58.7s<2.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 97% ━━━━━━━━━━━╸ 556.5/572.0MB 10.5MB/s 58.8s<1.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 97% ━━━━━━━━━━━╸ 557.7/572.0MB 10.4MB/s 58.9s<1.4s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 97% ━━━━━━━━━━━╸ 558.8/572.0MB 10.2MB/s 59.0s<1.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 97% ━━━━━━━━━━━╸ 560.0/572.0MB 10.3MB/s 59.1s<1.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 98% ━━━━━━━━━━━╸ 561.1/572.0MB 10.7MB/s 59.2s<1.0s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 98% ━━━━━━━━━━━╸ 562.3/572.0MB 10.7MB/s 59.3s<0.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 98% ━━━━━━━━━━━╸ 563.4/572.0MB 9.5MB/s 59.5s<0.9s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 98% ━━━━━━━━━━━╸ 564.5/572.0MB 10.3MB/s 59.6s<0.7s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 98% ━━━━━━━━━━━╸ 565.7/572.0MB 10.3MB/s 59.7s<0.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 99% ━━━━━━━━━━━╸ 566.8/572.0MB 9.1MB/s 59.8s<0.6s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 99% ━━━━━━━━━━━╸ 568.0/572.0MB 7.3MB/s 1:00<0.5s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 99% ━━━━━━━━━━━╸ 569.1/572.0MB 10.6MB/s 1:00<0.3s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 99% ━━━━━━━━━━━╸ 570.3/572.0MB 8.3MB/s 1:00<0.2s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 99% ━━━━━━━━━━━╸ 571.4/572.0MB 9.0MB/s 1:00<0.1s[KDownloading https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip_blt.ts to 'mobileclip_blt.ts': 100% ━━━━━━━━━━━━ 572.0MB 9.5MB/s 1:00
+19:28:50 70866 absent
+19:28:50 121 absent
+19:28:50 105 absent
+19:28:50 102 absent
+19:28:51 114 absent
+19:28:51 113 absent
+19:28:51 349 absent
+19:28:51 101 absent
+19:28:52 105 absent
+19:28:52 108 absent
+19:28:52 111 absent
+19:28:53 312 absent
+19:28:53 95 absent
+19:28:53 123 absent
+19:28:53 110 absent
+19:28:54 109 absent
+19:28:54 105 absent
+19:28:54 188 detected
+19:28:54 97 absent
+19:28:55 190 absent
+19:28:55 218 detected
+19:28:55 135 absent
+19:28:55 100 absent
+19:28:56 97 absent
+19:28:56 117 absent
+19:28:56 98 absent
+19:28:56 195 absent
+19:28:57 183 absent
+19:28:57 97 absent
+19:28:57 108 absent
+19:28:57 104 absent
+19:28:58 103 absent
+19:28:58 193 absent
+19:28:58 113 absent
+19:28:58 112 absent
+19:28:59 104 absent
+19:28:59 202 absent
+19:28:59 100 absent
+19:28:59 99 absent
+19:29:00 106 absent
+19:29:00 115 absent
+19:29:00 105 absent
+19:29:00 98 absent
+19:29:01 101 absent
+19:29:01 105 absent
+19:29:01 108 absent
+19:29:01 110 absent
+19:29:02 204 absent
+19:29:02 104 absent
+19:29:02 109 absent
+19:29:02 105 absent
+19:29:03 99 absent
+19:29:03 102 absent
+19:29:03 109 absent
+19:29:03 104 absent
+19:29:04 86 absent
+19:29:04 102 absent
+19:29:04 107 absent
+19:29:04 104 absent
+19:29:05 189 absent
+19:29:05 104 absent
+19:29:05 97 absent
+19:29:05 99 absent
+19:29:06 191 absent
+19:29:06 109 absent
+19:29:06 110 absent
+19:29:06 122 absent
+19:29:07 112 absent
+19:29:07 98 absent
+19:29:07 113 absent
+19:29:07 109 absent
+19:29:08 110 absent
+19:29:08 108 absent
+19:29:08 111 absent
+19:29:08 288 absent
+19:29:09 102 absent
+19:29:09 127 absent
+19:29:09 110 absent
+19:29:09 106 absent
+19:29:10 89 absent
+19:29:10 174 detected
+19:29:10 94 absent
+19:29:10 206 absent
+19:29:11 212 detected
+19:29:11 134 absent
+19:29:11 108 absent
+19:29:11 101 absent
+19:29:12 100 absent
+19:29:12 104 absent
+19:29:12 178 absent
+19:29:12 171 absent
+19:29:13 103 absent
+19:29:13 104 absent
+19:29:13 97 absent
+19:29:13 100 absent
+19:29:14 191 absent
+19:29:14 103 absent
+19:29:14 108 absent
+19:29:14 108 absent
+19:29:15 200 absent
+19:29:15 102 absent
+19:29:15 107 absent
+19:29:15 104 absent
+19:29:16 100 absent
+19:29:16 97 absent
+19:29:16 103 absent
+19:29:16 102 absent
+19:29:17 103 absent
+19:29:17 96 absent
+19:29:17 98 absent
+19:29:17 194 absent
+19:29:18 96 absent
+19:29:18 96 absent
+19:29:18 107 absent
+19:29:18 112 absent
+19:29:19 113 absent
+19:29:19 110 absent
+19:29:19 106 absent
+19:29:19 100 absent
+19:29:20 111 absent
+19:29:20 100 absent
+19:29:20 110 absent
+19:29:20 173 absent
+19:29:21 97 absent
+19:29:21 103 absent
+19:29:21 101 absent
+19:29:21 187 absent
+19:29:22 88 absent
+19:29:22 97 absent
+19:29:22 103 absent
+19:29:22 107 absent
+19:29:23 108 absent
+19:29:23 132 absent
+19:29:23 114 absent
+19:29:23 107 absent
+19:29:24 114 absent
+19:29:24 112 absent
+19:29:24 299 absent
+19:29:24 105 absent
+19:29:25 122 absent
+19:29:25 98 absent
+19:29:25 105 absent
+19:29:25 112 absent
+19:29:26 204 detected
+19:29:26 93 absent
+19:29:26 181 absent
+19:29:27 207 detected
+19:29:27 130 absent
+19:29:27 102 absent
+19:29:27 102 absent
+19:29:27 100 absent
+19:29:28 98 absent
+19:29:28 169 absent
+19:29:28 179 absent
+19:29:28 97 absent
+19:29:29 107 absent
+19:29:29 94 absent
+19:29:29 98 absent
+19:29:30 193 absent
+19:29:30 104 absent
+19:29:30 105 absent
+19:29:30 102 absent
+19:29:30 188 absent
+19:29:31 98 absent
+19:29:31 101 absent
+19:29:31 108 absent
+19:29:31 86 absent
+19:29:32 96 absent
+19:29:32 95 absent
+19:29:32 98 absent
+19:29:32 99 absent
+19:29:33 115 absent
+19:29:33 96 absent
+19:29:33 178 absent
+19:29:33 96 absent
+19:29:34 99 absent
+19:29:34 106 absent
+19:29:34 109 absent
+19:29:34 99 absent
+19:29:35 112 absent
+19:29:35 97 absent
+19:29:35 98 absent
+19:29:35 97 absent
+19:29:36 102 absent
+19:29:36 98 absent
+19:29:36 180 absent
+19:29:36 96 absent
+19:29:37 100 absent
+19:29:37 106 absent
+19:29:37 170 absent
+19:29:37 99 absent
+19:29:38 102 absent
+19:29:38 98 absent
+19:29:38 102 absent
+19:29:38 106 absent
+19:29:39 132 absent
+19:29:39 108 absent
+19:29:39 105 absent
+19:29:39 105 absent
+19:29:40 115 absent
+19:29:40 318 absent
+19:29:40 105 absent
+19:29:41 124 absent
+19:29:41 98 absent
+19:29:41 97 absent
+19:29:41 105 absent
+19:29:42 181 detected
+19:29:42 100 absent
+19:29:42 175 absent
+19:29:42 213 detected
+19:29:43 121 absent
+19:29:43 101 absent
+19:29:43 102 absent
+19:29:43 94 absent
+19:29:44 98 absent
+19:29:44 177 absent
+19:29:44 184 absent
+19:29:44 99 absent
+19:29:45 100 absent
+19:29:45 94 absent
+19:29:45 99 absent
+19:29:45 180 absent
+19:29:46 97 absent
+19:29:46 102 absent
+19:29:46 97 absent
+19:29:46 205 absent
+19:29:47 99 absent
+19:29:47 109 absent
+19:29:47 99 absent
+19:29:47 99 absent
+19:29:48 99 absent
+19:29:48 102 absent
+19:29:48 97 absent
+19:29:48 104 absent
+19:29:49 103 absent
+19:29:49 109 absent
+19:29:49 182 absent
+19:29:49 95 absent
+19:29:50 105 absent
+19:29:50 105 absent
+19:29:50 103 absent
+19:29:50 104 absent
+19:29:50 82 absent
+19:29:51 99 absent
+19:29:51 98 absent
+19:29:51 104 absent
+19:29:52 101 absent
+19:29:52 96 absent
+19:29:52 194 absent
+19:29:52 96 absent
+19:29:53 106 absent
+19:29:53 112 absent
+19:29:53 174 absent
+19:29:53 111 absent
+19:29:54 102 absent
+19:29:54 100 absent
+19:29:54 109 absent
+19:29:54 111 absent
+19:29:55 129 absent
+19:29:55 109 absent
+19:29:55 106 absent
+19:29:55 109 absent
+19:29:56 105 absent
+19:29:56 307 absent
+19:29:56 105 absent
+19:29:56 126 absent
+19:29:57 104 absent
+19:29:57 99 absent
+19:29:57 97 absent
+19:29:57 189 detected
+19:29:58 98 absent
+19:29:58 198 absent
+19:29:58 204 detected
+19:29:58 126 absent
+19:29:59 113 absent
+19:29:59 103 absent
+19:29:59 98 absent
+19:29:59 103 absent
+19:30:00 177 absent
+19:30:00 176 absent
+19:30:00 95 absent
+19:30:00 105 absent
+19:30:01 96 absent
+19:30:01 95 absent
+19:30:01 184 absent
+19:30:01 98 absent
+19:30:02 101 absent
+19:30:02 98 absent
+19:30:02 188 absent
+19:30:02 100 absent
+19:30:03 97 absent
+19:30:03 99 absent
+19:30:03 103 absent
+19:30:03 114 absent
+19:30:04 105 absent
+19:30:04 100 absent
+19:30:04 102 absent
+19:30:04 109 absent
+19:30:05 104 absent
+19:30:05 190 absent
+19:30:05 100 absent
+19:30:05 94 absent
+19:30:06 99 absent
+19:30:06 100 absent
+19:30:06 108 absent
+19:30:06 102 absent
+19:30:07 96 absent
+19:30:07 96 absent
+19:30:07 97 absent
+19:30:07 104 absent
+19:30:08 99 absent
+19:30:08 177 absent
+19:30:08 96 absent
+19:30:08 103 absent
+19:30:09 105 absent
+19:30:09 192 absent
+19:30:09 101 absent
+19:30:09 101 absent
+19:30:10 105 absent
+19:30:10 101 absent
+19:30:10 108 absent
+19:30:10 135 absent
+19:30:11 122 absent
+19:30:11 109 absent
+19:30:11 105 absent
+19:30:11 110 absent
+19:30:12 314 absent
+19:30:12 110 absent
+19:30:12 129 absent
+19:30:12 102 absent
+19:30:13 111 absent
+19:30:13 98 absent
+19:30:13 197 detected
+19:30:13 108 absent
+19:30:14 180 absent
+19:30:14 203 detected
+19:30:14 133 absent
+19:30:14 105 absent
+19:30:15 101 absent
+19:30:15 96 absent
+19:30:15 100 absent
+19:30:16 176 absent
+19:30:16 191 absent
+19:30:16 91 absent
+19:30:16 107 absent
+19:30:16 105 absent
+19:30:17 110 absent
+19:30:17 202 absent
+19:30:17 101 absent
+19:30:17 102 absent
+19:30:18 94 absent
+19:30:18 189 absent
+19:30:18 98 absent
+19:30:18 98 absent
+19:30:19 100 absent
+19:30:19 92 absent
+19:30:19 102 absent
+19:30:19 97 absent
+19:30:20 102 absent
+19:30:20 98 absent
+19:30:20 101 absent
+19:30:20 100 absent
+19:30:21 171 absent
+19:30:21 97 absent
+19:30:21 102 absent
+19:30:21 109 absent
+19:30:22 104 absent
+19:30:22 101 absent
+19:30:22 101 absent
+19:30:22 101 absent
+19:30:23 109 absent
+19:30:23 114 absent
+19:30:23 103 absent
+19:30:23 107 absent
+19:30:24 190 absent
+19:30:24 103 absent
+19:30:24 108 absent
+19:30:24 105 absent
+19:30:25 183 absent
+19:30:25 100 absent
+19:30:25 109 absent
+19:30:25 112 absent
+19:30:26 112 absent
+19:30:26 110 absent
+19:30:26 129 absent
+19:30:26 113 absent
+19:30:27 107 absent
+19:30:27 110 absent
+19:30:27 110 absent
+19:30:28 313 absent
+19:30:28 107 absent
+19:30:28 121 absent
+19:30:28 105 absent
+19:30:29 102 absent
+19:30:29 99 absent
+19:30:29 177 detected
+19:30:29 98 absent
+19:30:30 194 absent
+19:30:30 198 detected
+19:30:30 122 absent
+19:30:30 100 absent
+19:30:31 100 absent
+19:30:31 107 absent
+19:30:31 102 absent
+19:30:31 188 absent
+19:30:32 166 absent
+19:30:32 100 absent
+19:30:32 96 absent
+19:30:32 103 absent
+19:30:33 102 absent
+19:30:33 192 absent
+19:30:33 94 absent
+19:30:33 98 absent
+19:30:34 101 absent
+19:30:34 204 absent
+19:30:34 100 absent
+19:30:34 98 absent
+19:30:35 101 absent
+19:30:35 94 absent
+19:30:35 110 absent
+19:30:35 99 absent
+19:30:36 104 absent
+19:30:36 99 absent
+19:30:36 98 absent
+19:30:36 85 absent
+19:30:37 181 absent
+19:30:37 95 absent
+19:30:37 95 absent
+19:30:37 100 absent
+19:30:38 98 absent
+19:30:38 107 absent
+19:30:38 105 absent
+19:30:38 110 absent
+19:30:39 101 absent
+19:30:39 101 absent
+19:30:39 99 absent
+19:30:39 103 absent
+19:30:40 191 absent
+19:30:40 84 absent
+19:30:40 96 absent
+19:30:40 100 absent
+19:30:41 181 absent
+19:30:41 101 absent
+19:30:41 113 absent
+19:30:41 103 absent
+19:30:42 107 absent
+19:30:42 104 absent
+19:30:42 130 absent
+19:30:42 107 absent
+19:30:43 111 absent
+19:30:43 112 absent
+19:30:43 114 absent
+19:30:43 305 absent
+19:30:44 108 absent
+19:30:44 121 absent
+19:30:44 94 absent
+19:30:44 95 absent
+19:30:45 108 absent
+19:30:45 197 detected
+19:30:45 96 absent
+19:30:45 189 absent
+19:30:46 206 detected
+19:30:46 122 absent
+19:30:46 105 absent
+19:30:46 107 absent
+19:30:47 95 absent
+19:30:47 99 absent
+19:30:47 186 absent
+19:30:47 177 absent
+19:30:48 94 absent
+19:30:48 102 absent
+19:30:48 101 absent
+19:30:48 103 absent
+19:30:49 180 absent
+19:30:49 96 absent
+19:30:49 102 absent
+19:30:49 102 absent
+19:30:50 199 absent
+19:30:50 105 absent
+19:30:50 104 absent
+19:30:50 104 absent
+19:30:51 100 absent
+19:30:51 107 absent
+19:30:51 109 absent
+19:30:51 105 absent
+19:30:52 100 absent
+19:30:52 94 absent
+19:30:52 95 absent
+19:30:52 187 absent
+19:30:53 94 absent
+19:30:53 99 absent
+19:30:53 101 absent
+19:30:53 104 absent
+19:30:54 103 absent
+19:30:54 105 absent
+19:30:54 101 absent
+19:30:54 104 absent
+19:30:55 99 absent
+19:30:55 97 absent
+19:30:55 101 absent
+19:30:55 184 absent
+19:30:56 101 absent
+19:30:56 97 absent
+19:30:56 103 absent
+19:30:56 179 absent
+19:30:57 115 absent
+19:30:57 104 absent
+19:30:57 101 absent
+19:30:57 109 absent
+19:30:58 102 absent
+19:30:58 130 absent
+19:30:58 112 absent
+19:30:58 113 absent
+19:30:59 108 absent
+19:30:59 106 absent
+19:30:59 300 absent
+19:30:59 105 absent
+19:31:00 126 absent
+19:31:00 99 absent
+19:31:00 102 absent
+19:31:00 101 absent
+19:31:01 182 detected
+19:31:01 97 absent
+19:31:01 189 absent
+19:31:02 185 detected
+19:31:02 126 absent
+19:31:02 96 absent
+19:31:02 104 absent
+19:31:02 102 absent
+19:31:03 93 absent
+19:31:03 169 absent
+19:31:03 176 absent
+19:31:03 100 absent
+19:31:04 104 absent
+19:31:04 100 absent
+19:31:04 99 absent
+19:31:05 185 absent
+19:31:05 95 absent
+19:31:05 107 absent
+19:31:05 101 absent
+19:31:06 192 absent
+19:31:06 98 absent
+19:31:06 98 absent
+19:31:06 104 absent
+19:31:06 99 absent
+19:31:07 100 absent
+19:31:07 100 absent
+19:31:07 104 absent
+19:31:07 99 absent
+19:31:08 94 absent
+19:31:08 94 absent
+19:31:08 196 absent
+19:31:08 96 absent
+19:31:09 91 absent
+19:31:09 96 absent
+19:31:09 105 absent
+19:31:09 109 absent
+19:31:10 113 absent
+19:31:10 98 absent
+19:31:10 111 absent
+19:31:10 109 absent
+19:31:11 99 absent
+19:31:11 99 absent
+19:31:11 176 absent
+19:31:11 99 absent
+19:31:12 105 absent
+19:31:12 102 absent
+19:31:12 186 absent
+19:31:12 106 absent
+19:31:13 94 absent
+19:31:13 99 absent
+19:31:13 111 absent
+19:31:13 106 absent
+19:31:14 137 absent
+19:31:14 110 absent
+19:31:14 109 absent
+19:31:14 105 absent
+19:31:15 106 absent
+19:31:15 315 absent
+19:31:15 106 absent
+19:31:16 128 absent
+19:31:16 105 absent
+19:31:16 105 absent
+19:31:16 105 absent
+19:31:17 183 detected
+19:31:17 93 absent
+19:31:17 176 absent
+19:31:17 211 detected
+19:31:18 122 absent
+19:31:18 98 absent
+19:31:18 105 absent
+19:31:18 97 absent
+19:31:19 97 absent
+19:31:19 171 absent
+19:31:19 177 absent
+19:31:19 96 absent
+19:31:20 96 absent
+19:31:20 110 absent
+19:31:20 99 absent
+19:31:20 193 absent
+19:31:21 96 absent
+19:31:21 98 absent
+19:31:21 95 absent
+19:31:21 190 absent
+19:31:22 104 absent
+19:31:22 104 absent
+19:31:22 92 absent
+19:31:22 95 absent
+19:31:23 102 absent
+19:31:23 102 absent
+19:31:23 102 absent
+19:31:23 126 absent
+19:31:24 99 absent
+19:31:24 103 absent
+19:31:24 181 absent
+19:31:24 93 absent
+19:31:25 98 absent
+19:31:25 106 absent
+19:31:25 104 absent
+19:31:25 103 absent
+19:31:26 100 absent
+19:31:26 110 absent
+19:31:26 99 absent
+19:31:26 105 absent
+19:31:27 103 absent
+19:31:27 104 absent
+19:31:27 177 absent
+19:31:27 95 absent
+19:31:28 99 absent
+19:31:28 109 absent
+19:31:28 178 absent
+19:31:28 101 absent
+19:31:29 103 absent
+19:31:29 100 absent
+19:31:29 100 absent
+19:31:29 105 absent
+19:31:30 132 absent
+19:31:30 109 absent
+19:31:30 105 absent
+19:31:30 110 absent
+19:31:31 105 absent
+19:31:31 300 absent
+19:31:31 105 absent
+19:31:31 129 absent
+19:31:32 97 absent
+19:31:32 107 absent
+19:31:32 100 absent
+19:31:32 199 detected
+19:31:33 93 absent
+19:31:33 178 absent
+19:31:33 213 detected
+19:31:33 120 absent
+19:31:34 111 absent
+19:31:34 97 absent
+19:31:34 102 absent
+19:31:34 104 absent
+19:31:35 186 absent
+19:31:35 176 absent
+19:31:35 95 absent
+19:31:35 103 absent
+19:31:36 102 absent
+19:31:36 96 absent
+19:31:36 189 absent
+19:31:36 100 absent
+19:31:37 103 absent
+19:31:37 97 absent
+19:31:37 197 absent
+19:31:37 99 absent
+19:31:38 103 absent
+19:31:38 94 absent
+19:31:38 105 absent
+19:31:38 106 absent
+19:31:39 107 absent
+19:31:39 76 absent
+19:31:39 103 absent
+19:31:39 102 absent
+19:31:40 98 absent
+19:31:40 173 absent
+19:31:40 96 absent
+19:31:40 99 absent
+19:31:41 102 absent
+19:31:41 98 absent
+19:31:41 106 absent
+19:31:41 99 absent
+19:31:42 103 absent
+19:31:42 103 absent
+19:31:42 102 absent
+19:31:42 101 absent
+19:31:43 95 absent
+19:31:43 172 absent
+19:31:43 95 absent
+19:31:43 101 absent
+19:31:44 102 absent
+19:31:44 189 absent
+19:31:44 98 absent
+19:31:44 103 absent
+19:31:45 105 absent
+19:31:45 105 absent
+19:31:45 103 absent
+19:31:45 133 absent
+19:31:46 103 absent
+19:31:46 109 absent
+19:31:46 107 absent
+19:31:46 113 absent
+19:31:47 311 absent
+19:31:47 106 absent
+19:31:47 124 absent
+19:31:47 100 absent
+19:31:48 95 absent
+19:31:48 93 absent
+19:31:48 193 detected
+19:31:48 96 absent
+19:31:49 177 absent
+19:31:49 201 detected
+19:31:49 123 absent
+19:31:49 102 absent
+19:31:50 94 absent
+19:31:50 98 absent
+19:31:50 101 absent
+19:31:51 173 absent
+19:31:51 175 absent
+19:31:51 103 absent
+19:31:51 109 absent
+19:31:51 100 absent
+19:31:52 104 absent
+19:31:52 178 absent
+19:31:52 98 absent
+19:31:52 103 absent
+19:31:53 104 absent
+19:31:53 194 absent
+19:31:53 97 absent
+19:31:53 97 absent
+19:31:54 96 absent
+19:31:54 103 absent
+19:31:54 111 absent
+19:31:54 105 absent
+19:31:55 102 absent
+19:31:55 97 absent
+19:31:55 94 absent
+19:31:55 99 absent
+19:31:56 183 absent
+19:31:56 96 absent
+19:31:56 96 absent
+19:31:56 99 absent
+19:31:57 103 absent
+19:31:57 119 absent
+19:31:57 101 absent
+19:31:57 101 absent
+19:31:58 100 absent
+19:31:58 101 absent
+19:31:58 102 absent
+19:31:58 95 absent
+19:31:59 184 absent
+19:31:59 97 absent
+19:31:59 100 absent
+19:31:59 96 absent
+19:32:00 185 absent
+19:32:00 101 absent
+19:32:00 106 absent
+19:32:00 110 absent
+19:32:01 109 absent
+19:32:01 110 absent
+19:32:01 128 absent
+19:32:01 108 absent
+19:32:02 110 absent
+19:32:02 105 absent
+19:32:02 111 absent
+19:32:03 326 absent
+19:32:03 110 absent
+19:32:03 123 absent
+19:32:03 98 absent
+19:32:04 100 absent
+19:32:04 99 absent
+19:32:04 180 detected
+19:32:04 95 absent
+19:32:05 187 absent
+19:32:05 205 detected
+19:32:05 128 absent
+19:32:05 85 absent
+19:32:06 103 absent
+19:32:06 101 absent
+19:32:06 102 absent
+19:32:06 188 absent
+19:32:07 184 absent
+19:32:07 97 absent
+19:32:07 106 absent
+19:32:07 101 absent
+19:32:08 100 absent
+19:32:08 177 absent
+19:32:08 101 absent
+19:32:08 101 absent
+19:32:09 100 absent
+19:32:09 188 absent
+19:32:09 102 absent
+19:32:09 109 absent
+19:32:10 106 absent
+19:32:10 97 absent
+19:32:10 106 absent
+19:32:10 107 absent
+19:32:11 106 absent
+19:32:11 105 absent
+19:32:11 96 absent
+19:32:11 114 absent
+19:32:12 188 absent
+19:32:12 98 absent
+19:32:12 99 absent
+19:32:12 103 absent
+19:32:13 98 absent
+19:32:13 102 absent
+19:32:13 107 absent
+19:32:13 106 absent
+19:32:14 104 absent
+19:32:14 99 absent
+19:32:14 100 absent
+19:32:14 101 absent
+19:32:15 180 absent
+19:32:15 89 absent
+19:32:15 95 absent
+19:32:15 101 absent
+19:32:16 185 absent
+19:32:16 104 absent
+19:32:16 102 absent
+19:32:16 97 absent
+19:32:17 109 absent
+19:32:17 101 absent
+19:32:17 131 absent
+19:32:17 108 absent
+19:32:18 110 absent
+19:32:18 112 absent
+19:32:18 106 absent
+19:32:19 308 absent
+19:32:19 105 absent
+19:32:19 120 absent
+19:32:19 94 absent
+19:32:19 99 absent
+19:32:20 95 absent
+19:32:20 190 detected
+19:32:20 94 absent
+19:32:20 175 absent
+19:32:21 198 detected
+19:32:21 122 absent
+19:32:21 104 absent
+19:32:21 103 absent
+19:32:22 97 absent
+19:32:22 97 absent
+19:32:22 162 absent
+19:32:22 176 absent
+19:32:23 101 absent
+19:32:23 97 absent
+19:32:23 98 absent
+19:32:23 100 absent
+19:32:24 179 absent
+19:32:24 96 absent
+19:32:24 103 absent
+19:32:24 100 absent
+19:32:25 191 absent
+19:32:25 100 absent
+19:32:25 106 absent
+19:32:25 102 absent
+19:32:26 102 absent
+19:32:26 97 absent
+19:32:26 105 absent
+19:32:26 97 absent
+19:32:27 108 absent
+19:32:27 113 absent
+19:32:27 96 absent
+19:32:27 176 absent
+19:32:28 93 absent
+19:32:28 95 absent
+19:32:28 104 absent
+19:32:28 109 absent
+19:32:29 109 absent
+19:32:29 100 absent
+19:32:29 103 absent
+19:32:29 105 absent
+19:32:30 95 absent
+19:32:30 104 absent
+19:32:30 97 absent
+19:32:30 192 absent
+19:32:31 96 absent
+19:32:31 98 absent
+19:32:31 97 absent
+19:32:31 178 absent
+19:32:32 101 absent
+19:32:32 97 absent
+19:32:32 102 absent
+19:32:32 100 absent
+19:32:33 84 absent
+19:32:33 131 absent
+19:32:33 106 absent
+19:32:33 104 absent
+19:32:34 109 absent
+19:32:34 104 absent
+19:32:34 303 absent
+19:32:34 107 absent
+19:32:35 121 absent
+19:32:35 97 absent
+19:32:35 105 absent
+19:32:35 97 absent
+19:32:36 184 detected
+19:32:36 95 absent
+19:32:36 187 absent
+19:32:37 206 detected
+19:32:37 126 absent
+19:32:37 100 absent
+19:32:37 108 absent
+19:32:37 100 absent
+19:32:38 97 absent
+19:32:38 174 absent
+19:32:38 175 absent
+19:32:38 101 absent
+19:32:39 108 absent
+19:32:39 93 absent
+19:32:39 96 absent
+19:32:40 189 absent
+19:32:40 99 absent
+19:32:40 103 absent
+19:32:40 99 absent
+19:32:41 201 absent
+19:32:41 102 absent
+19:32:41 96 absent
+19:32:41 104 absent
+19:32:41 102 absent
+19:32:42 109 absent
+19:32:42 102 absent
+19:32:42 101 absent
+19:32:42 97 absent
+19:32:43 102 absent
+19:32:43 103 absent
+19:32:43 197 absent
+19:32:43 108 absent
+19:32:44 101 absent
+19:32:44 98 absent
+19:32:44 100 absent
+19:32:44 103 absent
+19:32:45 102 absent
+19:32:45 99 absent
+19:32:45 109 absent
+19:32:45 108 absent
+19:32:46 94 absent
+19:32:46 96 absent
+19:32:46 181 absent
+19:32:46 100 absent
+19:32:47 103 absent
+19:32:47 100 absent
+19:32:47 179 absent
+19:32:47 99 absent
+19:32:48 102 absent
+19:32:48 98 absent
+19:32:48 110 absent
+19:32:48 106 absent
+19:32:49 136 absent
+19:32:49 107 absent
+19:32:49 109 absent
+19:32:49 116 absent
+19:32:50 108 absent
+19:32:50 303 absent
+19:32:50 110 absent
+19:32:51 129 absent
+19:32:51 98 absent
+19:32:51 99 absent
+19:32:51 98 absent
+19:32:52 182 detected
+19:32:52 95 absent
+19:32:52 176 absent
+19:32:52 202 detected
+19:32:53 113 absent
+19:32:53 107 absent
+19:32:53 101 absent
+19:32:53 99 absent
+19:32:54 95 absent
+19:32:54 171 absent
+19:32:54 174 absent
+19:32:54 106 absent
+19:32:55 98 absent
+19:32:55 93 absent
+19:32:55 98 absent
+19:32:55 177 absent
+19:32:56 98 absent
+19:32:56 101 absent
+19:32:56 98 absent
+19:32:56 188 absent
+19:32:57 97 absent
+19:32:57 104 absent
+19:32:57 102 absent
+19:32:57 103 absent
+19:32:58 110 absent
+19:32:58 97 absent
+19:32:58 96 absent
+19:32:58 101 absent
+19:32:59 107 absent
+19:32:59 99 absent
+19:32:59 184 absent
+19:32:59 95 absent
+19:33:00 94 absent
+19:33:00 97 absent
+19:33:00 104 absent
+19:33:00 113 absent
+19:33:01 108 absent
+19:33:01 100 absent
+19:33:01 97 absent
+19:33:01 99 absent
+19:33:02 103 absent
+19:33:02 101 absent
+19:33:02 178 absent
+19:33:02 100 absent
+19:33:03 95 absent
+19:33:03 102 absent
+19:33:03 196 absent
+19:33:03 127 absent
+19:33:04 99 absent
+19:33:04 95 absent
+19:33:04 107 absent
+19:33:04 110 absent
+19:33:05 129 absent
+19:33:05 95 absent
+19:33:05 106 absent
+19:33:05 112 absent
+19:33:06 110 absent
+19:33:06 302 absent
+19:33:06 110 absent
+19:33:06 120 absent
+19:33:07 97 absent
+19:33:07 96 absent
+19:33:07 105 absent
+19:33:07 184 detected
+19:33:08 102 absent
+19:33:08 188 absent
+19:33:08 198 detected
+19:33:08 129 absent
+19:33:09 99 absent
+19:33:09 103 absent
+19:33:09 107 absent
+19:33:09 109 absent
+19:33:10 172 absent
+19:33:10 177 absent
+19:33:10 100 absent
+19:33:10 105 absent
+19:33:11 102 absent
+19:33:11 88 absent
+19:33:11 181 absent
+19:33:11 95 absent
+19:33:12 115 absent
+19:33:12 113 absent
+19:33:12 187 absent
+19:33:12 100 absent
+19:33:13 100 absent
+19:33:13 94 absent
+19:33:13 102 absent
+19:33:13 102 absent
+19:33:14 96 absent
+19:33:14 101 absent
+19:33:14 105 absent
+19:33:14 98 absent
+19:33:15 106 absent
+19:33:15 187 absent
+19:33:15 97 absent
+19:33:15 102 absent
+19:33:16 102 absent
+19:33:16 99 absent
+19:33:16 101 absent
+19:33:16 106 absent
+19:33:17 108 absent
+19:33:17 101 absent
+19:33:17 106 absent
+19:33:17 101 absent
+19:33:18 101 absent
+19:33:18 183 absent
+19:33:18 95 absent
+19:33:18 100 absent
+19:33:19 114 absent
+19:33:19 187 absent
+19:33:19 107 absent
+19:33:19 102 absent
+19:33:20 111 absent
+19:33:20 102 absent
+19:33:20 111 absent
+19:33:20 132 absent
+19:33:21 109 absent
+19:33:21 106 absent
+19:33:21 108 absent
+19:33:21 115 absent
+19:33:22 308 absent
+19:33:22 85 absent
+19:33:22 125 absent
+19:33:22 118 absent
+19:33:23 114 absent
+19:33:23 102 absent
+19:33:23 198 detected
+19:33:23 95 absent
+19:33:24 177 absent
+19:33:24 199 detected
+19:33:24 121 absent
+19:33:24 107 absent
+19:33:25 107 absent
+19:33:25 99 absent
+19:33:25 115 absent
+19:33:26 185 absent
+19:33:26 184 absent
+19:33:26 98 absent
+19:33:26 105 absent
+19:33:26 106 absent
+19:33:27 98 absent
+19:33:27 181 absent
+19:33:27 95 absent
+19:33:27 112 absent
+19:33:28 107 absent
+19:33:28 193 absent
+19:33:28 98 absent
+19:33:28 107 absent
+19:33:29 105 absent
+19:33:29 108 absent
+19:33:29 100 absent
+19:33:29 101 absent
+19:33:30 97 absent
+19:33:30 101 absent
+19:33:30 101 absent
+19:33:30 104 absent
+19:33:31 165 absent
+19:33:31 97 absent
+19:33:31 95 absent
+19:33:31 105 absent
+19:33:32 109 absent
+19:33:32 102 absent
+19:33:32 107 absent
+19:33:32 105 absent
+19:33:33 111 absent
+19:33:33 102 absent
+19:33:33 100 absent
+19:33:33 103 absent
+19:33:34 169 absent
+19:33:34 102 absent
+19:33:34 107 absent
+19:33:34 123 absent
+19:33:35 183 absent
+19:33:35 105 absent
+19:33:35 95 absent
+19:33:35 102 absent
+19:33:36 110 absent
+19:33:36 99 absent
+19:33:36 127 absent
+19:33:36 107 absent
+19:33:37 102 absent
+19:33:37 114 absent
+19:33:37 106 absent
+19:33:38 300 absent
+19:33:38 111 absent
+19:33:38 128 absent
+19:33:38 99 absent
+19:33:39 101 absent
+19:33:39 98 absent
+19:33:39 188 detected
+19:33:39 95 absent
+19:33:40 181 absent
+19:33:40 197 detected
+19:33:40 122 absent
+19:33:40 107 absent
+19:33:41 110 absent
+19:33:41 108 absent
+19:33:41 93 absent
+19:33:41 175 absent
+19:33:42 179 absent
+19:33:42 110 absent
+19:33:42 99 absent
+19:33:42 102 absent
+19:33:43 101 absent
+19:33:43 188 absent
+19:33:43 95 absent
+19:33:43 107 absent
+19:33:44 97 absent
+19:33:44 193 absent
+19:33:44 98 absent
+19:33:44 100 absent
+19:33:45 98 absent
+19:33:45 91 absent
+19:33:45 104 absent
+19:33:45 99 absent
+19:33:46 98 absent
+19:33:46 106 absent
+19:33:46 103 absent
+19:33:46 102 absent
+19:33:47 177 absent
+19:33:47 94 absent
+19:33:47 99 absent
+19:33:47 102 absent
+19:33:48 111 absent
+19:33:48 106 absent
+19:33:48 99 absent
+19:33:48 104 absent
+19:33:49 108 absent
+19:33:49 105 absent
+19:33:49 101 absent
+19:33:49 93 absent
+19:33:50 185 absent
+19:33:50 98 absent
+19:33:50 96 absent
+19:33:50 110 absent
+19:33:51 192 absent
+19:33:51 103 absent
+19:33:51 95 absent
+19:33:51 104 absent
+19:33:52 114 absent
+19:33:52 107 absent
+19:33:52 131 absent
+19:33:52 110 absent
+19:33:53 106 absent
+19:33:53 107 absent
+19:33:53 110 absent
+19:33:53 309 absent
+19:33:54 107 absent
+19:33:54 127 absent
+19:33:54 106 absent
+19:33:54 110 absent
+19:33:55 104 absent
+19:33:55 178 detected
+19:33:55 93 absent
+19:33:55 183 absent
+19:33:56 209 detected
+19:33:56 123 absent
+19:33:56 102 absent
+19:33:56 97 absent
+19:33:57 106 absent
+19:33:57 100 absent
+19:33:57 184 absent
+19:33:57 178 absent
+19:33:58 101 absent
+19:33:58 105 absent
+19:33:58 96 absent
+19:33:58 111 absent
+19:33:59 192 absent
+19:33:59 97 absent
+19:33:59 97 absent
+19:33:59 106 absent
+19:34:00 187 absent
+19:34:00 103 absent
+19:34:00 96 absent
+19:34:00 100 absent
+19:34:01 97 absent
+19:34:01 100 absent
+19:34:01 109 absent
+19:34:01 113 absent
+19:34:02 104 absent
+19:34:02 97 absent
+19:34:02 95 absent
+19:34:02 184 absent
+19:34:03 95 absent
+19:34:03 102 absent
+19:34:03 95 absent
+19:34:03 98 absent
+19:34:04 106 absent
+19:34:04 99 absent
+19:34:04 105 absent
+19:34:04 102 absent
+19:34:05 102 absent
+19:34:05 99 absent
+19:34:05 83 absent
+19:34:05 116 absent
+19:34:06 73 absent
+19:34:06 91 absent
+19:34:06 82 absent
+19:34:06 165 absent
+19:34:07 97 absent
+19:34:07 74 absent
+19:34:07 79 absent
+19:34:07 78 absent
+19:34:08 89 absent
+19:34:08 87 absent
+19:34:08 84 absent
+19:34:08 76 absent
+19:34:09 72 absent
+19:34:09 78 absent
+19:34:09 232 absent
+19:34:09 59 absent
+19:34:10 87 absent
+19:34:10 72 absent
+19:34:10 73 absent
+19:34:10 75 absent
+19:34:11 148 detected
+19:34:11 74 absent
+19:34:11 144 absent
+19:34:11 131 detected
+19:34:12 78 absent
+19:34:12 82 absent
+19:34:12 83 absent
+19:34:12 86 absent
+19:34:13 78 absent
+19:34:13 120 absent
+19:34:13 123 absent
+19:34:13 77 absent
+19:34:14 77 absent
+19:34:14 73 absent
+19:34:14 75 absent
+19:34:14 131 absent
+19:34:15 75 absent
+19:34:15 81 absent
+19:34:15 79 absent
+19:34:15 177 absent
+19:34:16 83 absent
+19:34:16 76 absent
+19:34:16 81 absent
+19:34:16 73 absent
+19:34:17 90 absent
+19:34:17 78 absent
+19:34:17 77 absent
+19:34:17 82 absent
+19:34:18 82 absent
+19:34:18 77 absent
+19:34:18 152 absent
+19:34:18 76 absent
+19:34:19 82 absent
+19:34:19 76 absent
+19:34:19 80 absent
+19:34:19 80 absent
+19:34:20 86 absent
+19:34:20 78 absent
+19:34:20 80 absent
+19:34:20 85 absent
+19:34:21 86 absent
+19:34:21 78 absent
+19:34:21 141 absent
+19:34:21 80 absent
+19:34:22 81 absent
+19:34:22 79 absent
+19:34:22 144 absent
+19:34:22 81 absent
+19:34:23 83 absent

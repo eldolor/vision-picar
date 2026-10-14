@@ -84,4 +84,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.76](3.76-legacy-review.md) | Review of the risky files written before the review rule |
 | [3.77](3.77-fast-goal-choice.md) | Fast goal choice on the Jetson |
 | [3.80](3.80-tiered-identity.md) | Tiered identity: perception, then local Qwen, then the cloud |
+| [3.78](3.78-trt-vs-llamacpp.md) | TensorRT Edge-LLM vs llama.cpp for the local VLM, on the board as it is (JetPack 6.2.1) |
 <!-- /sections -->
