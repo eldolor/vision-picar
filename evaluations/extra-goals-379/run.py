@@ -22,8 +22,10 @@ QUIET_CHECKS = 3          # in a row, a minute apart
 
 def heavy_lock_free() -> bool:
     import fcntl
-    path = ROOT / subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=ROOT,
-                                 capture_output=True, text=True).stdout.strip() / "heavy-run.lock"
+    # The same file, and the same /tmp fallback, as tests/demo_explore.heavy_lock().
+    common = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=ROOT,
+                            capture_output=True, text=True).stdout.strip() or "/tmp"
+    path = (ROOT / common).resolve() / "heavy-run.lock"
     with open(path, "a+") as f:
         try:
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -59,6 +61,10 @@ def main(arms: str) -> None:
         lines = [l for l in out.stdout.splitlines() if l.startswith("{")]
         rec = {"arm": arm, "load_1m": round(load, 2), "exit": out.returncode}
         rec.update(json.loads(lines[-1]) if lines else {"error": out.stderr[-500:]})
+        if "waiting for the heavy-run lock" in out.stderr:
+            # Another live run took the lock between the gate and the run's own
+            # lock: the run started without amendment 1's quiet minutes.
+            rec["invalid"] = "amendment 1: waited for another live run after the gate"
         with open(HERE / "runs.jsonl", "a") as f:
             f.write(json.dumps(rec) + "\n")
         print(json.dumps({k: rec.get(k) for k in ("arm", "load_1m", "outcome", "seconds",
