@@ -29,6 +29,17 @@ logger = logging.getLogger("metrics")
 DEFAULT_TIMEOUT_S = 5.0
 
 
+def _refused_as_unknown(r, field: str) -> bool:
+    """A 422 whose errors include `field` refused as an extra (unknown) one."""
+    try:
+        detail = r.json().get("detail")
+    except Exception:  # noqa: BLE001 -- not JSON: not that refusal
+        return False
+    return isinstance(detail, list) and any(
+        isinstance(e, dict) and e.get("type") == "extra_forbidden"
+        and list(e.get("loc") or [])[-1:] == [field] for e in detail)
+
+
 def ship_run(url: str, row: dict, *, secret: str = "",
              timeout_s: float = DEFAULT_TIMEOUT_S) -> bool:
     """POST one run row. Returns whether it landed; never raises."""
@@ -38,16 +49,16 @@ def ship_run(url: str, row: dict, *, secret: str = "",
         import httpx
 
         headers = {"x-app-secret": secret} if secret else {}
-        r = httpx.post(url.rstrip("/") + "/metrics/runs", json=row,
-                       headers=headers, timeout=timeout_s)
-        if r.status_code == 422 and "cancelled_by" in row and "cancelled_by" in r.text:
-            # 3.76 C9 review: a walks function that does not know (or does
-            # not accept) the field refuses the whole row; keep the row and
-            # lose only the label, rather than lose the run.
-            logger.warning("metrics refused cancelled_by (%s); sending the row without it",
-                           r.text[:200])
-            row = {k: v for k, v in row.items() if k != "cancelled_by"}
-            r = httpx.post(url.rstrip("/") + "/metrics/runs", json=row,
+        endpoint = url.rstrip("/") + "/metrics/runs"
+        r = httpx.post(endpoint, json=row, headers=headers, timeout=timeout_s)
+        if r.status_code == 422 and "cancelled_by" in row and _refused_as_unknown(r, "cancelled_by"):
+            # 3.76 C9 review: an older walks function (`extra: forbid`) that
+            # does not know the field refuses the whole row; keep the run and
+            # lose only the label. A refused VALUE is not retried: that is a
+            # contract mismatch to see, not to paper over.
+            logger.warning("metrics: the walks function does not know cancelled_by; "
+                           "sending the row without it")
+            r = httpx.post(endpoint, json={k: v for k, v in row.items() if k != "cancelled_by"},
                            headers=headers, timeout=timeout_s)
         if r.status_code >= 400:
             logger.warning("metrics rejected (%s): %s", r.status_code,
