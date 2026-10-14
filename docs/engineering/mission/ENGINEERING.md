@@ -116,7 +116,8 @@ threads; where it and this file disagree, check the code.
    `result.frame`'s `metadata.seq`, not from the scene.
 5. Count consecutive refused FORWARDs (reset by any executed move).
 6. Outside the lock: `found`/`room_reached` if `memory.is_complete()`;
-   `exhausted` if the explore agent set `exhausted`; `blocked` if the
+   a survey's room labeller looks (below); `exhausted` if the explore agent
+   set `exhausted`; `blocked` if the
    refused count reaches `stuck_after`; then the budget check again; then
    `out_of_budget` if `len(agent.history) >= max_steps` (the step backstop).
 
@@ -151,6 +152,61 @@ alone, within 2 points of truth once a search is done and 20-77 points HIGH
 part way through, so the twin shows `mapped_free_m2` instead), `map_id` and `map_version` (the map the mission ran on; no saved
 version until 3.50). So a status read in the moment between the stop and
 the report has `report: null`; the twin reads once more.
+
+**A survey (3.70 S1-S2).** `job="survey"` (default `"find"`; `JOBS`) is a
+mission with no target under `policy="explore"` only: `MissionRunner`
+refuses a survey with a target or another policy, and an unknown job, with
+`ValueError`. The explore agent runs unchanged -- with no target it never
+sights one, so it never approaches, never asks the arrival confirmation and
+never ends `found`; it ends `exhausted` (or out of budget, or cancelled).
+Its budget is `survey_time_limit_s` (brain_server picks it for a survey).
+A survey owns a `RoomLabeller` (`brain/room_labels.py`): once a tick, after
+the step, the runner reads the pose (`world.get_pose()`) and the explore
+agent's last map and calls `observe(map, pose, robot.get_camera_frame)`. It
+asks `room_label_fn(frame)` -- a frame taken THEN, at that pose, never the
+step's own frame, taken before its move -- only when the robot stands in
+space no earlier ask covers, at most `room_label_max_calls` times; reaching
+the cap sets `capped` and leaves the rest unlabelled (the survey goes on).
+Coverage is by `room_label_mode`. Both start from a cut of the map into
+rooms by its shape (a watershed of clearance split at necks under
+`NECK_RATIO` 0.75 of the lower peak: doorways). `spacing`, the default --
+whenever the robot is more than `SPACING_M` (2.0 m) from every earlier ask,
+by walking distance over the cut where each step from one of its rooms into
+another costs `DOOR_M` (3.0 m) more; each cell takes the answer of the ask
+nearest it by that distance, so a doorway gets a fresh ask and labels stop
+there, and an open plan is asked every 2 m with labels meeting halfway. An
+answer labels at most `REACH_M` (6.0 m: its room and one doorway on) of
+that distance, an `unclear` answer holds its space and names nothing, and a
+seed whose cell is no longer floor starts from the nearest floor within
+`SNAP_M` (0.3 m).
+`rooms` -- once per room of the cut, asked only from wider than
+`NECK_RATIO` inside the room (fewer calls; an open plan is one room).
+The default label source is `frame_room()`: the frame's `room`, which only a
+simulated frame carries. A frame with no `room` key (a real camera) is
+`NO_SOURCE`: nothing counted, and the labeller stops asking -- and fetching
+frames -- for the rest of the mission (`status.survey.no_source`). On the
+car the source is the cloud's `room_guess`, not wired yet (3.70 S2's car
+half). A `room` of "unknown" (off the sim's rooms; teleop and replay frames)
+is `NOT_HERE`: nothing counted, asked again after `RETRY_S`. A source that
+raises keeps its call counted (sent may be billed) and backs off `RETRY_S`
+(10 s), doubling per failure in a row up to `RETRY_MAX_S` (300 s), so an
+outage spends a few calls, not the cap. The cap is checked first (no cut,
+no frame once reached), and `capped` is set on the ask that reaches it.
+The map is re-cut at most every `RESEGMENT_S` (5 s, on the runner's clock)
+-- a cut is pure Python, 0.2-0.9 s on a 200-400 cell square map, and a SLAM
+map changes size and origin about once a second while exploring. Between
+cuts a place is looked up by POSITION in the last cut's own grid (`_Cut`),
+and floor that cut has not seen is never asked about until the next;
+`spacing` mode's walking distances are kept with the cut they were
+measured on and redone for a new cut or a new ask. A call is
+counted when sent. `_label_frame()` returns None once the mission has
+stopped, and `alive` (`is_running`) is checked again after the frame, so a
+stop landing during a cut or a frame read asks nobody. Any error in the
+labeller (pose, frame, label source, cut) skips that step's label, logged
+once -- never the survey. `MissionRunner.room_labels()` is the map's
+`room_labels` block cut fresh from the world's current map (`{"names",
+"cells"}`, the shape `brain/explore.py` reads for E3); saving it with the
+map is S4's.
 
 ### How a tiered mission is built
 
@@ -332,6 +388,7 @@ otherwise). CORS allows any origin.
 | `mission` | str, None | free text; defaulted from the targets |
 | `max_steps` | int, None | the step backstop; omitted, derived from the time limit (3.70 E4) |
 | `mission_time_limit_s` | float, None; `0 < x <= 86400` (else 422) | this mission's time limit; omitted, the config's `mission_time_limit_s` (3.70 E4) |
+| `job` | str, `"find"` | 3.70: `"survey"` takes no target and `policy: "explore"` only; its time limit is the config's `survey_time_limit_s`. Checked by `MissionRunner` (400) |
 | `policy` | str, `"frontier"` | a plain `str` in the model, not a `Literal`. A value outside `POLICIES` (`frontier`, `vision`, `tiered`) passes validation and is refused by `MissionRunner` with `Unknown policy: ...`, which is a **400**, not a 422 |
 | `model_id`, `prompt_variant` | str, None | request, then config, then the vision service's default; checked once against `GET {vision_url}/navigate/models` |
 | `fault` | str, `"none"` | a plain `str`. `drills.apply()` refuses a value outside `drills.FAULTS` (`none`, `vision_error`, `vision_hang`, `tick_hang`) with `Unknown fault: ...`, which is a **400**. It does so before the drills-off check, so an unknown fault is a 400 even when drills are off |
@@ -344,7 +401,9 @@ null), `end_reason`, `cancelled_by` (`stop`, `dpad` or null), `report`
 (`time_limit_s`, `elapsed_s`, `battery_floor_v`, `battery_v`,
 `cloud_calls`, `cloud_call_limit`; both null except under `vision`, and
 the limit null with the cap off), `error`,
-`policy`, `mission`, `target_object`,
+`policy`, `job` (3.70: `find` or `survey`), `survey` (null for `find`;
+`{mode, label_calls, label_call_limit, capped, rooms_named, seeds}`, each
+seed `[x_m, y_m, name]`), `mission`, `target_object`,
 `target_room`, `step`, `max_steps`, `found`, `room_reached`, `complete`,
 `last_action`, `turns` (`count`, `reversals`, `last_turn_deg`, `share`,
 `spinning`), `last_reasoning`, `rooms_visited`, `rooms_searched`,
@@ -403,6 +462,9 @@ The `brain:` block of `config/robot.yaml`, read by
 | `navigate_model_id`, `navigate_prompt_variant` | (unset) | `""` | -- | start | headless default; never guessed |
 | `mission_time_limit_s` | 1200 | 1200.0 | s | runner | 3.70 E4: set by the user 2026-10-12 (900 s of explore never finished `home_first_floor`); re-measured on the Rover. Ends `out_of_budget`; the step backstop is derived from it. 0 = no limit. A start request may override it |
 | `battery_floor_v` | 10.5 | 10.5 | V | runner | 3.70 E4: set by the user 2026-10-12 (3.5 V a cell, 3S) until a discharge curve is measured on the Rover. Under the fake board's 12.00 V. 0 = off |
+| `survey_time_limit_s` | 1800 | 1800.0 | s | brain_server | 3.70 S1: a survey's time limit, proposed as twice 3.45's 900 s. 0 = no limit |
+| `room_label_mode` | `spacing` | `spacing` | -- | runner | 3.70 S2: when a survey asks for a room's name -- every 2 m walked and through every doorway (`spacing`), or once per room of the map's shape (`rooms`) |
+| `room_label_max_calls` | 60 | 60 | calls | runner | 3.70 S2: asks per survey; `spacing`'s 9 sim surveys' median (29) x 2, rounded up to the most any of 100 ProcTHOR surveys asked (60). Each is a paid call on the car. Reaching it leaves the rest unlabelled. 0 = no cap |
 | `vision_max_calls` | 120 | 120 | paid calls | runner | 3.70: the user's call 2026-10-12, what the 120-step cap allowed before 3.70; `vision` only. Ends `out_of_budget`. 0 = no cap; a negative or fractional value is refused at load |
 | `stuck_after` | (unset) | 5 | refused FORWARDs | runner | an unlucky policy gets 1-2 refusals then turns; the first watched R1 run spent 19 on one jamb |
 | `min_distance_cm` | 20.0 | **30.0** | cm | agent's brain-side pre-check | 20 matches `safety.min_distance_cm`; 30 is one sim cell and vetoed ~half of legal moves with sensor noise on. See Known gaps |
@@ -517,6 +579,8 @@ tests/test_mission_guarded_verbs.py -q`.
 | Test file (count on 2026-10-02) | What it pins |
 |---|---|
 | `tests/test_mission_ends.py` (43) | 3.70 E1-E5: the four end states named, the retired names gone and read as the new ones, `end_state`/`end_reason` per outcome; Stop and a D-pad takeover end `cancelled` with `cancelled_by`, the wheels at zero within 0.5 s; the time limit ends `out_of_budget` within one tick, the derived backstop with a stuck clock, an explicit `max_steps`; the battery under its floor twice (not once) within 2 s, no reading never ends one; the fake board drains `v` and `HardwareRobot.get_battery()` reads it; the report (rooms, coverage, map); a labelled room never entered keeps a mission from ending `exhausted`; coverage within 2 points of truth at the end of a search |
+| `tests/test_survey.py` (39) | 3.70 S1-S2: a survey needs no target and ends `exhausted`; never `found`, never a confirmation; refused with a target, under another policy, or an unknown job; the room labeller cuts a map at its door, asks once per room and never from the doorway, never past its cap (the survey still ends `exhausted`), keeps `unclear`, spaces asks in `spacing` mode, asks again through a doorway within the spacing and stops `spacing` labels at the doorway, lets an `unclear` hold its room, leaves rooms two doorways from any answer unlabelled, keeps (and does not re-ask beside) a seed whose cell turned occupied, and names the room a survey starts in; a label source or frame read that raises skips the label (the survey still ends `exhausted`); a frame with no room spends no call; no ask after a stop; the cap is checked before any cut; cuts are rate-limited on the labeller's clock; `room_labels()` is a full map layer cut from the map it is given; a boolean `survey_time_limit_s` is refused at load; a growing, shifting map is not re-cut every tick and still finds the robot's room by position; `spacing` never asks on floor its cached distances have not seen; no source is remembered (no more frames); an `unknown` frame spends nothing and waits; a failing source backs off; `capped` is set on the ask that reaches the cap; a stop after the frame never reaches the source |
+| `tests/test_survey_sweep.py` (4, slow) | 3.70 S1/S2 pinned: the 9 sim surveys end `exhausted` with coverage >= 95%; label calls and rooms labelled >= 95% no worse than recorded, per mode |
 | `tests/test_mission_runner.py` (32) | tick-driven equals blocking `run_mission()` step for step; outcomes and idempotent `_finish`; the gate refuses after stop; a stop landing mid-tick records no step; tiered readouts reach status and survive a scene with no tier; the tick keeps advancing while an async call is in flight |
 | `tests/test_brain_server.py` (60) | **the import boundary, by mechanism:** a subprocess imports the brain app and lists `sys.modules`, so a forbidden import fails the suite and does not depend on review; two-hop mission completes; 409 on a second start; stop with no mission stops the car; secret gating; `ROUTE_PREFIX`; **the brain process loads no `sim`, and from `robot`/`world` only `robot.interface`, `robot.safety`, `robot.identity`, `world.interface`**; model and wording validation (refused at start, outage tolerated, one round trip); unknown field is 422; tiered start refusals and sim-vs-real perception choice |
 | `tests/test_failsafes.py` (15) | B3.2 budget and hang; one failure survivable; no movement after stop; B3.3 dead-man; every drill ends `failed` with the robot stopped; no-fault builds the ordinary mission; drills can be switched off |

@@ -169,6 +169,19 @@ DEFAULTS = {
     # 120, what the 120-step cap allowed before 3.70. `tiered` has its own
     # (tier_max_calls). 0 = no cap.
     "vision_max_calls": 120,
+    # 3.70 S1: a survey's own time limit -- 30 min, proposed in the plan as
+    # twice 3.45's 900 s cap; a survey maps the whole house.
+    "survey_time_limit_s": 1800.0,
+    # 3.70 S2: a survey asks for a room's name every `SPACING_M` of walking
+    # and on coming through a doorway ("spacing", amendment 1), or once per
+    # room of the map's shape ("rooms": fewer calls, worse labels), at most
+    # `room_label_max_calls` times (on the car each is a paid cloud call;
+    # reaching it leaves the rest unlabelled, never ends the survey). The
+    # cap is `spacing`'s 9-survey median (29) x 2, rounded up to the most
+    # any of 100 ProcTHOR surveys asked (60) (brain/room_labels.py,
+    # tests/survey_sweep.py). 0 = no cap.
+    "room_label_mode": "spacing",
+    "room_label_max_calls": 60,
     # End a mission `blocked` after this many FORWARDs in a row refused by
     # the safety layer (control/mission_runner.py's BLOCKED). 0 disables.
     # Five because a policy that is merely unlucky gets one or two refusals
@@ -343,6 +356,17 @@ def load_brain_config(config_path=None) -> dict:
     if float(merged["tier_local_timeout_s"]) <= 0:
         raise ValueError(f"brain.tier_local_timeout_s must be > 0; "
                          f"got {merged['tier_local_timeout_s']}")
+    calls = merged["room_label_max_calls"]
+    if isinstance(calls, bool) or not isinstance(calls, int) or calls < 0:
+        raise ValueError(f"brain.room_label_max_calls must be a whole number >= 0 "
+                         f"(0 = no cap); got {calls!r}")
+    if merged["room_label_mode"] not in ("rooms", "spacing"):
+        raise ValueError(f"brain.room_label_mode must be 'rooms' or 'spacing'; "
+                         f"got {merged['room_label_mode']!r}")
+    limit = merged["survey_time_limit_s"]
+    if isinstance(limit, bool) or not isinstance(limit, (int, float)) or limit < 0:
+        raise ValueError(f"brain.survey_time_limit_s must be a number of seconds >= 0 "
+                         f"(0 = off); got {limit!r}")
     if float(merged["cloud_probe_s"]) < 0:
         raise ValueError(f"brain.cloud_probe_s must be >= 0 (0 = off); "
                          f"got {merged['cloud_probe_s']}")
