@@ -334,3 +334,10 @@ def test_the_hook_refuses_to_delete_dev(tmp_path, monkeypatch):
     r = sp.run(["sh", hook, "origin", "x"], input=line, text=True, cwd=repo,
                capture_output=True, env={**os.environ, "PICAR_SKIP_GATE": "1"})
     assert r.returncode == 0, r.stderr
+
+
+def test_the_whole_gate_is_on_the_risky_list():
+    """I12 (the user, 2026-10-14): the claims the pre-commit hook reads and
+    the nightly full run are the gate too."""
+    for path in ("tools/plan_claims.py", "tools/nightly_suite.sh"):
+        assert ps.risky([path]), path

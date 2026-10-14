@@ -425,6 +425,9 @@ RISKY_PREFIXES = (
     "brain/arrival.py", "control/perception_eval.py", "control/label_assist.py",
     "control/admin_server.py", "control/metrics_",
     "service/", "cloudformation/", "tools/hooks/", "tools/plan_section.py",
+    # The rest of the gate (3.76 I12, the user): the claims the pre-commit
+    # hook reads, and the nightly full run.
+    "tools/plan_claims.py", "tools/nightly_suite.sh",
 )
 
 
