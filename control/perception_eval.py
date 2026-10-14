@@ -656,6 +656,8 @@ def _config_of(args) -> dict:
 
 
 def _label_for(config: dict) -> str:
+    from brain.perceive import DEFAULT_SEGMENTER   # heavy deps are lazy there
+
     proposer = config.get("proposer") or "none"
     bits = [str(config.get("detector"))]
     if proposer != "none":
@@ -663,7 +665,9 @@ def _label_for(config: dict) -> str:
     label = " + ".join(bits)
     if config.get("crop_path") == "soft_gate":
         label += f" [soft k={config.get('affinity_k')}]"
-    if config.get("segmenter"):
+    if config.get("segmenter") and config["segmenter"] != DEFAULT_SEGMENTER:
+        # Named only off the default (3.76 F11), so a default run's label
+        # still matches records written before the key existed.
         label += f" [seg {config['segmenter']}]"
     if config.get("detector_confidence") is not None:
         label += f" [box conf {config['detector_confidence']}]"

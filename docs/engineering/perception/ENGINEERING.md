@@ -260,7 +260,8 @@ a pin, but that is not its purpose. Never compare a GPU row with a CPU row
 (3.76 F10): it refuses files whose (walk, frame, label) sets differ, naming
 both, and exits 1. A saved config records `detector_confidence` and
 `segmenter` too, and the auto-label shows them, since either changes the
-score (3.76 F11).
+score (3.76 F11); the segmenter only when it is not the default, so a
+default run's label still matches records written before the key.
 
 **Pre-flight a target string** before a rig walk:
 

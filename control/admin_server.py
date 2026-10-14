@@ -635,12 +635,22 @@ def create_app(config_path=None, store=None) -> FastAPI:
         while it ran marks it stale here (3.76 F4), as delete_frame marks
         the records already stored. Returns the record as written."""
         try:
-            if not store.walk_exists(walk_name):
+            # The two checks only read, after the paid work: a store that
+            # cannot answer them (S3 throttling raises ClientError) skips the
+            # check rather than losing the result. Known limit: a walk or
+            # frame deleted during the run AND a failed check here are not
+            # seen.
+            try:
+                exists = store.walk_exists(walk_name)
+                now = {e.get("file") for e in _walk_entries(store, walk_name)} if exists else set()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("could not check %s before storing %s: %s", walk_name, name, e)
+                exists, now = True, None
+            if not exists:
                 logger.warning("%s was deleted while %s was computed; not stored",
                                walk_name, name)
                 return record
-            now = {e.get("file") for e in _walk_entries(store, walk_name)}
-            gone = {e.get("file") for e in scored} - now
+            gone = {e.get("file") for e in scored} - now if now is not None else set()
             if gone:
                 record = {**record, "frames_deleted": sorted(
                     set(record.get("frames_deleted") or []) | gone)}
@@ -929,24 +939,33 @@ def create_app(config_path=None, store=None) -> FastAPI:
                 return False
             return isinstance(row, dict) and row.get("file") == filename
 
-        # The manifest first: a failure after it leaves an unlisted image,
-        # never a listed frame with no image.
-        if store.file_exists(walk, "walk.jsonl"):
-            lines = [ln for ln in store.read_text(walk, "walk.jsonl").splitlines()
-                     if ln.strip()]
-            kept = [ln for ln in lines if not names_file(ln)]
-            store.write_text(walk, "walk.jsonl", "".join(ln + "\n" for ln in kept))
-        store.delete_file(walk, filename)
-        # 3.76 F4: every stored score counted this frame. Marked, never
+        lines = ([ln for ln in store.read_text(walk, "walk.jsonl").splitlines()
+                  if ln.strip()] if store.file_exists(walk, "walk.jsonl") else [])
+        kept = [ln for ln in lines if not names_file(ln)]
+        listed = len(kept) < len(lines)
+        # 3.76 F4: every stored score counted a listed frame. Marked, never
         # re-scored here (the judge and replays are paid): stale, with the
         # reason, so the console says so and the summary leaves them out.
+        # An image the manifest never listed was in no score (not marked).
+        # Marked FIRST, while the manifest still lists the frame: a retry
+        # after any later failure still finds it listed and marks again.
+        marked = False
         for name in [EVAL_FILE_NAME] + store.list_names(walk, REPLAY_PREFIX, ".json"):
             record = store.read_json(walk, name)
-            if record is not None:
+            if record is None:
+                continue
+            if listed:
                 record["frames_deleted"] = sorted(
                     set(record.get("frames_deleted") or []) | {filename})
                 store.write_json(walk, name, record)
-        return {"deleted": filename, "walk": walk}
+            # A retry after the image delete failed: the marks already made.
+            marked = marked or filename in (record.get("frames_deleted") or [])
+        # Then the manifest, then the image: a failure between them leaves an
+        # unlisted image, never a listed frame with no image.
+        if listed:
+            store.write_text(walk, "walk.jsonl", "".join(ln + "\n" for ln in kept))
+        store.delete_file(walk, filename)
+        return {"deleted": filename, "walk": walk, "marked": marked}
 
     @app.get("/admin")
     async def admin_page():

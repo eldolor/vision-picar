@@ -241,6 +241,12 @@ class LateCallInFlight(Exception):
     asks once it has ended."""
 
 
+class LateCallFailed(Exception):
+    """A late call that outlived its guard has since ended in an error
+    (3.76 G1). Already counted as a failed attempt when it timed out; this
+    carries the real error, as `__cause__`."""
+
+
 class MissionHalted(RuntimeError):
     """Raised by _HaltGate when the agent tries to move a robot whose
     mission has already ended. Expected, not exceptional."""
@@ -1221,15 +1227,17 @@ class MissionRunner:
         t = self.confirm_timeout_s()
         return t + min(CONFIRM_GUARD_GRACE_MAX_S, 0.25 * t)
 
-    def late_answer_landed(self) -> bool:
-        """A late call that outlived its guard has answered since (3.76 G1):
-        the next late_ask() returns that answer and sends nothing."""
+    def late_pending(self) -> Optional[str]:
+        """3.76 G1: "out" while a confirmation (the mission's own, or a late
+        one) is still in flight; "value" or "error" once a late call that
+        outlived its guard has ended -- the next late_ask() returns that
+        answer or raises LateCallFailed, sending nothing; else None."""
+        if self._confirm_alive():
+            return "out"
         box = self._late_box
-        return box is not None and "value" in box and not self._confirm_alive()
-
-    def late_call_out(self) -> bool:
-        """A confirmation (the mission's own, or a late one) is still out."""
-        return self._confirm_alive()
+        if box is None:
+            return None
+        return "value" if "value" in box else ("error" if "error" in box else None)
 
     def _confirm_alive(self) -> bool:
         t = self._confirm_thread
@@ -1546,21 +1554,18 @@ class MissionRunner:
         know a call is still outstanding, so it never sends a second one
         beside it (tiered.py: one call in flight at a time)."""
         # 3.76 G1: an earlier late call that outlived its guard may have
-        # answered since. That answer was paid for and IS the answer.
+        # ended since. Its answer was paid for and IS the answer; its error
+        # was already counted as a failed attempt when it timed out.
         landed = self._late_box
         if landed is not None and not self._confirm_alive():
             self._late_box = None
             if "value" in landed:
-                self._refresh_tier_stats()
                 with self._lock:
-                    late = self._late
-                    final = late is not None and late["state"] != "waiting"
-                if final:
-                    # A cancel shipped the record first; send it again with
-                    # counters that include this call (as the call path does).
-                    self._ship_late_metrics(dict(late))
-                    return None
+                    if (self._late or {"state": "waiting"})["state"] != "waiting":
+                        return None
                 return landed["value"]
+            if "error" in landed:
+                raise LateCallFailed(str(landed["error"])) from landed["error"]
         # 3.56: the mission's last arrival confirmation (or an earlier late
         # call) may have outlived its guard and still be out. Nothing is
         # sent beside it, and nothing waits for it here (3.76 G1: a join of
@@ -1584,8 +1589,23 @@ class MissionRunner:
         box: dict = {}
 
         def ask(f):
-            box["value"] = confirm(f)
-            return box["value"]
+            try:
+                box["value"] = confirm(f)
+                return box["value"]
+            except BaseException as e:  # noqa: BLE001 -- kept, and re-raised
+                box["error"] = e
+                raise
+            finally:
+                # Ended after its guard gave up on it: its counters (cloud_ms,
+                # cloud_calls) are only in the policy now. A record a cancel
+                # already made final is re-sent with them (3.76 G1), as the
+                # call path's own `finally` does for a call that returned.
+                self._refresh_tier_stats()
+                with self._lock:
+                    reship = (dict(self._late) if box.get("abandoned") and self._late
+                              and self._late["state"] != "waiting" else None)
+                if reship is not None:
+                    self._ship_late_metrics(reship)
         self._late_box = box
         uncount = False
         try:
@@ -1593,10 +1613,21 @@ class MissionRunner:
                 verdict = call_with_timeout(ask, frame, timeout_s=self.vision_timeout_s,
                                             on_start=self._set_confirm_thread)
             except TimeoutError as e:
-                if self._confirm_alive():
-                    # Out on its abandoned thread; its answer, if it comes,
-                    # waits in `box` for the next late_ask().
+                with self._lock:
+                    hung = self._confirm_alive()
+                    box["abandoned"] = hung
+                if hung:
+                    # Out on its abandoned thread; its answer or error, when
+                    # it comes, waits in `box` for the next late_ask().
                     raise TimeoutError(f"the late confirmation hung: {e}") from e
+                # Ended between the guard's look and this one: its answer is
+                # paid for and in the box -- used, never asked again.
+                self._late_box = None
+                if "value" not in box:
+                    raise box.get("error") or e
+                verdict = box["value"]
+            except BaseException:
+                self._late_box = None   # ended here; nothing left to settle
                 raise
             self._late_box = None
             # A cap refusal made no call; take back the count (the policy

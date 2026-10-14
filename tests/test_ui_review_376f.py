@@ -122,3 +122,48 @@ def test_f4_deleting_a_frame_marks_the_score_at_once(browser, admin_server):  # 
     _shot(page, "frame-deleted-live")
     assert errors == []
     page.close()
+
+
+def _delete_first_frame(browser, admin_server, walks, delete_reply):  # noqa: F811
+    page, errors = open_console(browser, admin_server, viewport=PHONE, walks=walks)
+    name = walks["walks"][0]["walk"]
+    page.route(f"**/recording/walks/{name}", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps({
+            "walk": name, "frames": [{"file": "frame-0000.jpg", "bytes": 1000}],
+            "entries": [{"seq": 0, "file": "frame-0000.jpg",
+                         "navigate": {"action": "FORWARD", "reasoning": "r"}}],
+            "label": None, "model_id": None, "meta": None, "eval": None})))
+    page.route("**/frames/*", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps(delete_reply))
+        if r.request.method == "DELETE" else r.fulfill(
+        status=200, content_type="image/jpeg", body=b"\xff\xd8\xff\xd9"))
+    walk = page.locator(".walk").first
+    walk.locator(".walk-actions button", has_text="View").click()
+    walk.locator("button", has_text="Delete frame").click()
+    walk.locator("button", has_text="Really delete").click()
+    sync_api.expect(walk.locator(".frame")).to_have_count(0)
+    return page, errors, walk
+
+
+def test_f4_a_delete_keeps_an_older_scorers_reason(browser, admin_server):  # noqa: F811
+    """Second review (/code-review): the console rewrote "old scorer" as
+    "frames deleted"; the server says "older scorer" first."""
+    walks = copy.deepcopy(WALKS)
+    walks["walks"][0]["eval"].update(stale=True, stale_reason="older scorer")
+    page, errors, walk = _delete_first_frame(browser, admin_server, walks,
+                                             {"deleted": "frame-0000.jpg", "marked": True})
+    sync_api.expect(walk.locator(".score-badge")).to_have_text("old scorer")
+    assert errors == []
+    page.close()
+
+
+def test_f4_an_unlisted_image_leaves_the_score_current(browser, admin_server):  # noqa: F811
+    """Second review (/code-review): the server marks nothing for an image
+    the manifest never listed; the console marked the score anyway."""
+    walks = copy.deepcopy(WALKS)
+    page, errors, walk = _delete_first_frame(browser, admin_server, walks,
+                                             {"deleted": "frame-0000.jpg", "marked": False})
+    sync_api.expect(walk.locator(".score-badge")).to_contain_text("72")
+    _shot(page, "unlisted-delete")
+    assert errors == []
+    page.close()

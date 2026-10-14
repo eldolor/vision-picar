@@ -751,7 +751,7 @@
     armConfirm(delBtn, "Delete frame", async function () {
       delBtn.disabled = true;
       try {
-        await api("DELETE", "/recording/walks/" + encodeURIComponent(w.walk) + "/frames/" + encodeURIComponent(f.file));
+        const gone = await api("DELETE", "/recording/walks/" + encodeURIComponent(w.walk) + "/frames/" + encodeURIComponent(f.file));
         card.remove();
         w.frames -= 1;
         detail.frames = detail.frames.filter(function (x) { return x.file !== f.file; });
@@ -759,9 +759,16 @@
         if (meta) meta.textContent = w.frames + " frame" + (w.frames === 1 ? "" : "s");
         // 3.76 F4: the server marked every stored score of this walk; say so
         // now rather than on the next reload.
-        const marked = { stale: true, stale_reason: "frames deleted" };
-        if (w.eval) w.eval = Object.assign({}, w.eval, marked);
-        w.replays = (w.replays || []).map(function (r) { return Object.assign({}, r, marked); });
+        // A score already stale keeps its reason, as the server's
+        // _stale_reason() does ("older scorer" first). Only a listed frame
+        // marks anything (an unlisted image was in no score).
+        function mark(x) {
+          return x.stale ? x : Object.assign({}, x, { stale: true, stale_reason: "frames deleted" });
+        }
+        if (!gone || gone.marked !== false) {
+          if (w.eval) w.eval = mark(w.eval);
+          w.replays = (w.replays || []).map(mark);
+        }
         const r = walkRenderers[w.walk];
         if (r) { r.renderHead(); r.renderReplays(); }
         loadSummary();

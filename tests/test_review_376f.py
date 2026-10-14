@@ -546,3 +546,102 @@ def test_f4_a_score_in_flight_across_a_frame_delete_is_marked(client, monkeypatc
     c.post("/recording/walks/walk-race/evaluate")
     stored = json.loads((d / "eval.json").read_text())
     assert stored["frames_deleted"] == ["frame-0001.jpg"]
+
+
+# ---------- the second review of the committed fixes ----------
+
+
+def test_f4_an_unlisted_image_marks_no_score(client):
+    """Second review (/code-review): deleting an image the manifest never
+    listed -- one no score counted -- marked every score stale."""
+    c, root = client
+    d = make_walk(root, "walk-u", ["FORWARD"] * 2)
+    c.post("/recording/walks/walk-u/evaluate?judge=false")
+    (d / "frame-0099.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+    resp = c.delete("/recording/walks/walk-u/frames/frame-0099.jpg")
+    assert resp.status_code == 200 and resp.json()["marked"] is False, resp.text
+    assert "frames_deleted" not in json.loads((d / "eval.json").read_text())
+
+
+def test_f5_a_store_read_failure_after_the_paid_work_still_stores_it(client, monkeypatch):
+    """Second review (/code-review): F4/F5's reads before the write let an S3
+    error (a ClientError, not OSError) escape after the paid work; nothing
+    was stored and the route answered 500."""
+    c, root = client
+    d = make_walk(root, "walk-t", ["FORWARD"] * 2)
+    real, n = admin_server._walk_entries, {"calls": 0}
+
+    def throttled_second_read(store, walk):
+        n["calls"] += 1
+        if n["calls"] > 1:
+            raise RuntimeError("ThrottlingException")
+        return real(store, walk)
+    monkeypatch.setattr(admin_server, "_walk_entries", throttled_second_read)
+    resp = c.post("/recording/walks/walk-t/evaluate?judge=false")
+    assert resp.status_code == 200, resp.text
+    assert (d / "eval.json").exists()
+
+
+def test_f11_a_default_segmenter_keeps_the_old_label():
+    """Second review (/code-review): every label gained the default
+    segmenter's name, so a default run no longer matched older records."""
+    from brain.perceive import DEFAULT_SEGMENTER
+    base = {"detector": "yoloe", "proposer": "none"}
+    assert perception_eval._label_for({**base, "segmenter": DEFAULT_SEGMENTER}) == \
+        perception_eval._label_for(base)
+    assert "sam" in perception_eval._label_for({**base, "segmenter": "sam"})
+
+
+def test_f4_a_retried_delete_still_marks_the_scores(client, monkeypatch):
+    """The fixes' second review (both reviewers): the manifest was rewritten,
+    then the image delete failed; the retry found the frame unlisted and
+    marked nothing, so a score of a deleted frame read as current."""
+    c, root = client
+    d = make_walk(root, "walk-r", ["FORWARD"] * 3)
+    c.post("/recording/walks/walk-r/evaluate?judge=false")
+    real = LocalWalkStore.delete_file
+    failing = {"once": True}
+
+    def delete_file(self, walk, name):
+        if failing.pop("once", False):
+            raise RuntimeError("S3: InternalError")
+        return real(self, walk, name)
+    monkeypatch.setattr(LocalWalkStore, "delete_file", delete_file)
+    with pytest.raises(RuntimeError):
+        c.delete("/recording/walks/walk-r/frames/frame-0001.jpg")
+    resp = c.delete("/recording/walks/walk-r/frames/frame-0001.jpg")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["marked"] is True, "the console marks from this"
+    assert json.loads((d / "eval.json").read_text())["frames_deleted"] == ["frame-0001.jpg"]
+    assert not (d / "frame-0001.jpg").exists()
+    assert "frame-0001.jpg" not in (d / "walk.jsonl").read_text()
+
+
+def test_f11_an_empty_segmenter_is_not_named():
+    assert "seg" not in perception_eval._label_for(
+        {"detector": "yoloe", "proposer": "none", "segmenter": ""})
+
+
+def test_f4_a_retry_after_a_failed_mark_marks_every_score(client, monkeypatch):
+    """The fixes' sixth review (both reviewers): with the manifest written
+    first, a mark that failed could never be retried -- the frame was no
+    longer listed -- so a replay of the deleted frame read as current."""
+    c, root = client
+    d = make_walk(root, "walk-p", ["FORWARD"] * 3)
+    c.post("/recording/walks/walk-p/evaluate?judge=false")
+    (d / "replay-m.json").write_text(json.dumps({
+        "schema": walk_eval.SCHEMA_VERSION, "model_id": "m", "score": 50, "flags": []}))
+    real = LocalWalkStore.write_json
+    failing = {"once": True}
+
+    def write_json(self, walk, name, record):
+        if name.startswith("replay-") and failing.pop("once", False):
+            raise RuntimeError("S3: SlowDown")
+        return real(self, walk, name, record)
+    monkeypatch.setattr(LocalWalkStore, "write_json", write_json)
+    with pytest.raises(RuntimeError):
+        c.delete("/recording/walks/walk-p/frames/frame-0001.jpg")
+    resp = c.delete("/recording/walks/walk-p/frames/frame-0001.jpg")
+    assert resp.status_code == 200 and resp.json()["marked"] is True, resp.text
+    for name in ("eval.json", "replay-m.json"):
+        assert json.loads((d / name).read_text())["frames_deleted"] == ["frame-0001.jpg"], name

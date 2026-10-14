@@ -34,9 +34,10 @@ from typing import Callable, Optional
 
 import httpx
 
-from control.mission_runner import LateCallInFlight
+from control.mission_runner import LateCallFailed, LateCallInFlight
 
 logger = logging.getLogger("reconfirm")
+_ASK_AGAIN = object()
 
 DEFAULT_MAX_PAID = 2
 
@@ -93,21 +94,47 @@ class Reconfirmer:
         self.runner.late_update(state="waiting", reason="cloud unreachable; probing")
         deadline = self.clock() + self.window_s
         probes = failed_asks = 0
-        spent = False       # max_paid reached; only an answer still due counts
+        spent = False       # max_paid reached; only the last call still out counts
+        seen_up = False
         next_paid_at = None
         last_error = None
         while not self._cancelled.is_set():
+            # 3.76 G1: a call that outlived its guard and has since ended is
+            # settled first -- before the deadline, so an answer landing in
+            # the last interval is kept, and without a probe (it is paid).
+            pending = self.runner.late_pending()
+            if pending in ("value", "error"):
+                try:
+                    verdict = self.runner.late_ask()
+                except LateCallFailed as e:
+                    last_error = e.__cause__ or e
+                    logger.warning("an earlier late confirmation ended: %s", last_error)
+                else:
+                    if verdict is not None:  # None: a cancel landed first
+                        self.runner.late_update(**_state_for(verdict))
+                    return
+                pending = self.runner.late_pending()
+            if spent and pending != "out":
+                # Every attempt is spent and none is still out.
+                self.runner.late_update(
+                    state="failed",
+                    reason=f"{failed_asks} paid attempts failed; last: {last_error}")
+                return
             if self.clock() >= deadline:
-                out = bool(getattr(self.runner, "late_call_out", lambda: False)())
-                if failed_asks or out:
+                if failed_asks:
                     # The cloud WAS reached and a paid call failed; saying
                     # "unreachable" would be the opposite of what happened.
-                    # 3.76 G1: nor is it when a call is still out at the end.
-                    why = (f"{failed_asks} paid attempt(s) failed and the window "
-                           f"ran out; last: {last_error}") if failed_asks else (
-                          "the cloud answered, but an earlier confirmation was "
-                          "still in flight when the window ran out")
-                    self.runner.late_update(state="failed", reason=why)
+                    self.runner.late_update(
+                        state="failed",
+                        reason=f"{failed_asks} paid attempt(s) failed and the "
+                               f"window ran out; last: {last_error}")
+                elif pending == "out" and seen_up:
+                    # 3.76 G1: reached, but never asked -- an earlier
+                    # confirmation was still out at the end.
+                    self.runner.late_update(
+                        state="failed",
+                        reason="the cloud answered, but an earlier confirmation "
+                               "was still in flight when the window ran out")
                 else:
                     self.runner.late_update(
                         state="expired",
@@ -118,46 +145,53 @@ class Reconfirmer:
                 up = bool(self.probe())
             except Exception:  # noqa: BLE001 -- a probe never ends the loop
                 up = False
+            seen_up = seen_up or up
             self.runner.late_update(probes=probes)
             # /health is shallow: it answers while Bedrock is down or
             # throttling (5xx/429), which only a paid call can see. So after
             # a paid call fails, the next one waits half the window -- the two
             # attempts span the outage the window exists for, not 15 s of it.
-            # 3.76 G1: an answer a timed-out call has since delivered is taken
-            # at once -- it is already paid for, and holding it half a window
-            # risked a Start dropping it.
-            landed = bool(getattr(self.runner, "late_answer_landed", lambda: False)())
-            ready = landed or (not spent and (next_paid_at is None
-                                              or self.clock() >= next_paid_at))
-            if (up or landed) and ready and not self._cancelled.is_set():
+            ready = not spent and (next_paid_at is None or self.clock() >= next_paid_at)
+            if up and ready and not self._cancelled.is_set():
                 try:
-                    verdict = self.runner.late_ask()
+                    try:
+                        verdict = self.runner.late_ask()
+                    except LateCallFailed as e:
+                        # An earlier call ended in an error during this
+                        # probe: counted when it timed out, so not again.
+                        last_error = e.__cause__ or e
+                        logger.warning("an earlier late confirmation ended: %s", last_error)
+                        verdict = _ASK_AGAIN
+                    if verdict is _ASK_AGAIN:
+                        # Nothing is out now, and this attempt was due (its
+                        # half-window wait is over): sent at once, since
+                        # waiting an interval could reach the deadline.
+                        verdict = self.runner.late_ask()
                 except LateCallInFlight:
                     # 3.76 G1: nothing was sent; ask on a later probe.
                     pass
                 except Exception as e:  # noqa: BLE001
                     # A call that outlived its guard (TimeoutError) is a
                     # failed attempt like any other (3.76 G1: it ended the
-                    # window, losing the attempt max_paid allows); late_ask()
-                    # sends nothing beside it while it is out, and takes its
-                    # answer if it lands.
+                    # window, losing the attempt max_paid allows). It stays
+                    # out, nothing is sent beside it, and its answer or error
+                    # is settled at the top of the loop when it ends.
                     failed_asks += 1
-                    logger.warning("late confirmation attempt %d failed: %s", failed_asks, e)
-                    if failed_asks >= self.max_paid and isinstance(e, TimeoutError):
-                        # The last allowed call is still out: no more are
-                        # sent, but its answer is taken if it lands in time.
-                        spent, last_error = True, e
-                    elif failed_asks >= self.max_paid:
-                        self.runner.late_update(
-                            state="failed",
-                            reason=f"{failed_asks} paid attempts failed; last: {e}")
-                        return
                     last_error = e
-                    # Half a window on, but inside it: a first failure late
-                    # in the window still gets its second attempt.
-                    now = self.clock()
-                    next_paid_at = min(now + self.window_s / 2,
-                                       max(now, deadline - self.interval_s))
+                    logger.warning("late confirmation attempt %d failed: %s", failed_asks, e)
+                    if failed_asks >= self.max_paid:
+                        if not isinstance(e, TimeoutError):
+                            self.runner.late_update(
+                                state="failed",
+                                reason=f"{failed_asks} paid attempts failed; last: {e}")
+                            return
+                        spent = True
+                    else:
+                        # Half a window on, but inside it: a first failure late
+                        # in the window still gets its second attempt.
+                        now = self.clock()
+                        next_paid_at = min(now + self.window_s / 2,
+                                           max(now, deadline - self.interval_s))
                 else:
                     if verdict is not None:  # None: a cancel landed first
                         self.runner.late_update(**_state_for(verdict))
