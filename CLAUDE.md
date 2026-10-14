@@ -255,7 +255,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   Objects during a survey FAILED on duplicates only (1.30, bar 1.2). Not
   wired: the car's paid label call (S2's car half). Open: time the map cut
   (`segment()`, ~1 s on the laptop, every 5 s) on the Jetson. Missions on a
-  saved map (S4, M1-M3) wait on 3.50's build; S5 (phone) not built.
+  saved map (S4, M1-M3) wait on 3.50's build. **S5, merged and the twin
+  deployed 2026-10-14:** the Sim tab's Remote brain panel picks Find or
+  Survey; a survey reads "Surveying the house" with its rooms named
+  against the cap (the brain's `/health` `room_label_max_calls`).
 * **Review of the code written before the review rule (3.76), all nine
   batches merged by 2026-10-14; the review is done.** Both reviewers on whole files, risky files only,
   every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
