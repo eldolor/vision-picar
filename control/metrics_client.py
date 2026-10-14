@@ -40,6 +40,15 @@ def ship_run(url: str, row: dict, *, secret: str = "",
         headers = {"x-app-secret": secret} if secret else {}
         r = httpx.post(url.rstrip("/") + "/metrics/runs", json=row,
                        headers=headers, timeout=timeout_s)
+        if r.status_code == 422 and "cancelled_by" in row and "cancelled_by" in r.text:
+            # 3.76 C9 review: a walks function that does not know (or does
+            # not accept) the field refuses the whole row; keep the row and
+            # lose only the label, rather than lose the run.
+            logger.warning("metrics refused cancelled_by (%s); sending the row without it",
+                           r.text[:200])
+            row = {k: v for k, v in row.items() if k != "cancelled_by"}
+            r = httpx.post(url.rstrip("/") + "/metrics/runs", json=row,
+                           headers=headers, timeout=timeout_s)
         if r.status_code >= 400:
             logger.warning("metrics rejected (%s): %s", r.status_code,
                            r.text[:200])
@@ -90,7 +99,9 @@ def row_for(status: dict, *, git_revision: str = "", config: dict = None,
         "target_object": status.get("target_object"),
         "walk": walk,
         "stats": stats,
-        # 3.76 C9: only when set, so a row for any other outcome is still one
-        # an older walks function (`extra: forbid`) takes.
-        **({"cancelled_by": status["cancelled_by"]} if status.get("cancelled_by") else {}),
+        # 3.76 C9: only on a cancelled row and only when set, so a row for any
+        # other outcome is still one an older walks function (`extra: forbid`)
+        # takes -- whatever the status dict carries.
+        **({"cancelled_by": status["cancelled_by"]}
+           if status.get("cancelled_by") and status.get("outcome") == "cancelled" else {}),
     }

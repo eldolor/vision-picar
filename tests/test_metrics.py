@@ -187,3 +187,26 @@ def test_cancelled_by_is_stop_or_dpad(client):
     r = tc.post("/metrics/runs", json=a_run(run_id="r-bad", outcome="cancelled",
                                              cancelled_by="operator"))
     assert r.status_code == 422
+
+
+def test_c9_review_cancelled_by_only_rides_a_cancelled_row():
+    """row_for took the field from any status that carried it."""
+    assert "cancelled_by" not in row_for({"outcome": "failed", "cancelled_by": "stop"})
+
+
+def test_c9_review_a_walks_function_that_refuses_the_field_still_gets_the_row(monkeypatch):
+    """An older walks function (`extra: forbid`) answered 422 and the whole
+    cancelled run was dropped; now it is sent again without the label."""
+    import httpx
+    sent = []
+
+    def post(url, json=None, headers=None, timeout=None):
+        sent.append(dict(json))
+        if "cancelled_by" in json:
+            return httpx.Response(422, text='{"detail":[{"loc":["body","cancelled_by"],"msg":"Extra inputs are not permitted"}]}')
+        return httpx.Response(200, json={"stored": True})
+
+    monkeypatch.setattr(httpx, "post", post)
+    row = row_for({"outcome": "cancelled", "cancelled_by": "stop", "policy": "explore"})
+    assert ship_run("http://walks.test", row) is True
+    assert len(sent) == 2 and "cancelled_by" not in sent[1]
