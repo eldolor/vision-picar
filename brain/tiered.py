@@ -991,6 +991,13 @@ class TieredVision:
             if self._local_done is not None and self._local_done[0] == cid:
                 return self._local_done[1]
             self._local_abandoned.add(cid)
+            if self._local_inflight != cid:
+                # Its thread never got as far as sending: not a local call,
+                # but the arrival waited its share all the same.
+                return {"cloud_called": False, "local_called": False, "tier": "local",
+                        "local_status": "timeout", "local_score": None,
+                        **self._count_unable("unable_not_started",
+                                             "the local check did not start in time")}
             self.stats.local_calls += 1
             return {"cloud_called": False, "local_called": True, "tier": "local",
                     "local_status": "timeout", "local_score": None,

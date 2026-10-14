@@ -493,6 +493,7 @@ def test_review3_a_call_given_up_on_before_its_thread_starts_is_never_sent():
     gave_up = tier.abandon_local(cid)
     assert gave_up["undecided"], "the earlier call's verdict was returned for this one"
     assert tier.confirm_local({}, cid) is None and local.asked == 1
+    assert tier.stats.local_calls == 1 and tier.stats.local.get("unable_not_started") == 1
 
 
 def test_review3_a_busy_frame_is_not_counted_as_a_local_call():
