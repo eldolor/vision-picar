@@ -441,3 +441,45 @@ def test_review_the_shared_secret_goes_only_to_a_local_service(monkeypatch):
     assert _local_vlm_secret({"tier_local_vlm_url": "http://vlm.example.com"}, "s") is None
     monkeypatch.setenv("LOCAL_VLM_SECRET", "own")
     assert _local_vlm_secret({"tier_local_vlm_url": "http://vlm.example.com"}, "s") == "own"
+
+
+def test_review2_cloud_frames_keep_the_arrival_on_for_the_flicker_count():
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        local_identity_fn=Local(unable()))
+    tier.confirm_arrival({})
+    tier.confirm_arrival({})
+    for _ in range(3):  # three single-frame flickers, each between cloud asks
+        tier.arrival_ended()
+        tier.confirm_arrival({"image_base64": "x"})
+    assert not tier.next_confirm_is_local(), "the same arrival got fresh local tries"
+
+
+def test_review2_an_answer_that_lands_at_the_deadline_is_kept_and_counted_once():
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        local_identity_fn=Local(yes()))
+    v = tier.confirm_local({})               # finished just before the runner gave up
+    assert tier.abandon_local() == v and v["confirmed"]
+    assert tier.stats.local_calls == 1 and tier.stats.local == {"yes": 1}
+
+
+def test_review2_a_local_check_still_out_is_not_joined_by_a_second():
+    import threading
+    release, asked = threading.Event(), []
+
+    def slow(frame):
+        asked.append(1)
+        release.wait(5)
+        return yes()
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud, local_identity_fn=slow)
+    t = threading.Thread(target=tier.confirm_local, args=({},))
+    t.start()
+    while not asked:
+        pass
+    assert tier.abandon_local()["undecided"]
+    second = tier.confirm_local({})
+    assert second["undecided"] and second["local_status"] == "busy"
+    assert len(asked) == 1, "a second request went out beside the first"
+    release.set()
+    t.join(5)
+    assert tier.stats.local.get("yes") is None          # the late yes was dropped
+    assert not tier.next_confirm_is_local()             # 2 unable: the cloud is next
