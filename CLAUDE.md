@@ -248,8 +248,20 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   its perception on real frames is built (the user, 2026-10-13); and
   cold search counts absent frames since the last answer landed, not
   consecutive ones (kept; since E4 every tiered pacing count runs from the
-  landing, so a slow call no longer buys a second one back to back). Batches
-  F-I (walks, inventory, cloud, tooling) to go:
+  landing, so a slow call no longer buys a second one back to back).
+  **Batch H (cloud, tunnel, ROS bridge), merged 2026-10-14, NOT YET
+  DEPLOYED:** 34 fixed. The bridge forgot a goal after one cancel (a lost
+  cancel left nav2 driving after a Stop): it now re-sends until nav2's
+  result. Each SLAM session is anchored once, after `start_truth_pending`
+  clears, and never moved -- **rebuild `vision-picar-ros:latest` from
+  `dev`** (an old bridge anchors at first contact for good). The cloud read
+  odd model replies and Bedrock's 3.75 MB / 8000 px limits as outages, and
+  a hung call outlived the Lambda; the tunnel served an empty
+  `LOCAL_SECRET` open (`run.sh` now refuses one under 16 characters).
+  Awaiting the user: the vision Lambda deploy, and the deploy-bucket stack
+  with `ExpireAfterDays=365` passed explicitly. Open: a refused goal lifts
+  a stop's hold (`robot/server.py`); a bridge 401 on a goal makes explore
+  wait out the time limit. Batches F, G, I (walks, inventory, tooling) to go:
   `HANDOFF-2026-10-13-3.76-legacy-review.md` has the state, the two deploys
   waiting on the user's laptop, and how a batch is run.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
