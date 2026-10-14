@@ -1726,6 +1726,7 @@
       ? status.job : state.brainJobChosen;
     state.brainJob = job;
     document.getElementById("brain-job").value = job;
+    renderBrainJob();   // every caller, not only those that also update controls
     setBrainText("brain-tel-outcome",
       (surveyStateText(status) || endStateText(status) || outcome)
         + (status.fault && status.fault !== "none" ? " (" + status.fault + " drill)" : "")
@@ -2560,7 +2561,9 @@
     const survey = state.brainJob === "survey";
     document.getElementById("brain-target").style.display = survey ? "none" : "";
     document.getElementById("brain-policy-row").style.display = survey ? "none" : "";
-    document.getElementById("brain-fault").style.display = survey ? "none" : "";
+    document.getElementById("brain-fault-row").style.display = survey ? "none" : "";
+    renderBrainPolicyHint();   // both read the job: one redraw for all its controls
+    updateBrainPickersRow();
     const hint = document.getElementById("brain-job-hint");
     hint.style.display = survey ? "" : "none";
     if (!survey) return;

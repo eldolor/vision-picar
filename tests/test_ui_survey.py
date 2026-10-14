@@ -73,6 +73,11 @@ def test_the_survey_job_starts_a_target_less_explore_mission(browser, twin_serve
     # The find-only inputs are hidden: a survey has no target to type.
     sync_api.expect(page.locator("#brain-target")).to_be_hidden()
     sync_api.expect(page.locator("#brain-policy")).to_be_hidden()
+    # The rows themselves, not only their inputs: a hidden select in a shown
+    # row leaves an empty 8 px gap (Thermos bug pass, 2026-10-14).
+    sync_api.expect(page.locator("#brain-policy-row")).to_be_hidden()
+    sync_api.expect(page.locator("#brain-fault-row")).to_have_count(1)
+    sync_api.expect(page.locator("#brain-fault-row")).to_be_hidden()
     sync_api.expect(page.locator("#brain-job-hint")).to_contain_text("60")
     page.click("#btn-brain-mission")
     sync_api.expect(page.locator("#btn-brain-mission")).to_have_text("Stop", timeout=5000)
