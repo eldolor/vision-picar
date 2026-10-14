@@ -893,7 +893,15 @@ class TieredVision:
             if self._frames_off_arrival >= LOCAL_RESET_FRAMES:
                 self._local_unable = 0
 
-    def confirm_local(self, frame: dict) -> Optional[dict]:
+    def begin_local(self) -> int:
+        """Reserve the id of the next local call, so a caller that may give
+        up on it (the runner's `abandon_local(call_id)`) names THAT call even
+        if its thread has not started yet."""
+        with self._local_lock:
+            self._local_started += 1
+            return self._local_started
+
+    def confirm_local(self, frame: dict, call_id: Optional[int] = None) -> Optional[dict]:
         """The local VLM's verdict on the arrival frame, or None when the
         cloud must be asked instead (no local tier, it is absent, or it has
         already been unable `local_max_unable` times). Never raises: the
@@ -906,19 +914,27 @@ class TieredVision:
             # An arrival frame: the arrival is still on (arrival_ended's run
             # of frames off it starts again), whichever tier is asked.
             self._frames_off_arrival = 0
+            if call_id is None:
+                self._local_started += 1
+                call_id = self._local_started
+            if call_id in self._local_abandoned:
+                # Given up on before its thread got here: never sent.
+                self._local_abandoned.discard(call_id)
+                return None
             if not self.next_confirm_is_local():
+                self._local_done = (call_id, None)
                 return None
             if self._local_inflight is not None:
                 # The last local check outlived the runner's deadline and is
                 # still out: one request at a time, so this frame sends none,
                 # and it counts as unable (bug pass review, 2026-10-14).
-                s.local_calls += 1
-                return {"cloud_called": False, "local_called": True, "tier": "local",
-                        "local_status": "busy", "local_score": None,
-                        **self._count_unable("unable_inflight",
-                                             "the previous local check is still running")}
-            self._local_started += 1
-            call_id = self._local_inflight = self._local_started
+                verdict = {"cloud_called": False, "local_called": False, "tier": "local",
+                           "local_status": "busy", "local_score": None,
+                           **self._count_unable("unable_inflight",
+                                                "the previous local check is still running")}
+                self._local_done = (call_id, verdict)
+                return verdict
+            self._local_inflight = call_id
         started = time.perf_counter()
         try:
             got = self.local_identity_fn(frame) or {}
@@ -964,18 +980,16 @@ class TieredVision:
                 else (got.get("reason") or status or "no reply"))
         return {**base, **self._count_unable(kind, what)}
 
-    def abandon_local(self) -> Optional[dict]:
+    def abandon_local(self, call_id: Optional[int] = None) -> Optional[dict]:
         """The runner stopped waiting for `confirm_local` (its share of
         B3.2's deadline ran out): counted here as one unable answer, and the
         call's late answer, whenever it returns, is ignored. A call that
         finished in the moment between the timeout and this returns its own
         verdict instead, counted once."""
         with self._local_lock:
-            cid = self._local_started
+            cid = self._local_started if call_id is None else call_id
             if self._local_done is not None and self._local_done[0] == cid:
                 return self._local_done[1]
-            if self._local_inflight != cid:
-                return None
             self._local_abandoned.add(cid)
             self.stats.local_calls += 1
             return {"cloud_called": False, "local_called": True, "tier": "local",

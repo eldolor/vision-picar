@@ -483,3 +483,21 @@ def test_review2_a_local_check_still_out_is_not_joined_by_a_second():
     t.join(5)
     assert tier.stats.local.get("yes") is None          # the late yes was dropped
     assert not tier.next_confirm_is_local()             # 2 unable: the cloud is next
+
+
+def test_review3_a_call_given_up_on_before_its_thread_starts_is_never_sent():
+    local = Local(no())
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud, local_identity_fn=local)
+    tier.confirm_local({})                       # an earlier arrival's "no" is the last done
+    cid = tier.begin_local()
+    gave_up = tier.abandon_local(cid)
+    assert gave_up["undecided"], "the earlier call's verdict was returned for this one"
+    assert tier.confirm_local({}, cid) is None and local.asked == 1
+
+
+def test_review3_a_busy_frame_is_not_counted_as_a_local_call():
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        local_identity_fn=Local(yes()))
+    tier._local_inflight = 99                    # a check still out
+    v = tier.confirm_local({})
+    assert v["local_status"] == "busy" and tier.stats.local_calls == 0

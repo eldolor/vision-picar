@@ -1342,11 +1342,15 @@ class MissionRunner:
             # exactly what it was before 3.80 (`confirm_arrival`).
             remaining = left("the local identity check")
             budget = max(remaining - self.confirm_guard_s(), remaining / 2)
+            begin = getattr(self.vision_fn, "begin_local", None)
+            call_id = begin() if begin is not None else None
             try:
-                verdict = call_with_timeout(local, frame, timeout_s=budget)
+                verdict = (call_with_timeout(local, frame, call_id, timeout_s=budget)
+                           if call_id is not None
+                           else call_with_timeout(local, frame, timeout_s=budget))
             except TimeoutError:
                 abandon = getattr(self.vision_fn, "abandon_local", None)
-                verdict = abandon() if abandon is not None else None
+                verdict = abandon(call_id) if abandon is not None else None
                 logger.warning("the local identity check outlived %.1f s; counted unable",
                                budget)
             if verdict is not None:
