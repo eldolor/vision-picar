@@ -115,24 +115,40 @@ with open(f"{out}/status.log", "w") as f:
         if not s.get("running") and s.get("outcome") not in (None, "idle", "running"):
             break
         time.sleep(2)
+end = {k: s.get(k) for k in ("running", "outcome", "step")}
+json.dump(end, open(f"{out}/mission_end.json", "w"))
 print("mission end", json.dumps({k: s.get(k) for k in ("outcome", "step", "report")})[:600], flush=True)
+if s.get("running"):
+    # Cut off by the poll bound, not ended by the mission: not a whole mission.
+    raise SystemExit("mission still running at the poll bound")
 PY
+MISSION_EXIT=$?
 W1=$(wheel); T1=$(date +%s)
 echo "== mission end $(date +%T); wheel: $W1" | tee -a "$OUT/run.log"
 kill $PERC $MEM $WHL 2>/dev/null; PERC=; MEM=; WHL=; sudo pkill tegrastats
 OOM1=$(oom)
-python3 - "$OUT" "$T0" "$T1" "$W0" "$W1" "$OOM0" "$OOM1" <<'PY' | tee -a "$OUT/run.log"
-import json, statistics as st, sys
+python3 - "$OUT" "$T0" "$T1" "$W0" "$W1" "$OOM0" "$OOM1" "$MISSION_EXIT" <<'PY' | tee -a "$OUT/run.log"
+import json, os, statistics as st, sys
 out, t0, t1 = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 w0, w1 = sys.argv[4].split(), sys.argv[5].split()
 mem = [tuple(map(int, l.split())) for l in open(f"{out}/mem.log") if len(l.split()) == 2]
 win = [m for t, m in mem if t0 <= t <= t1]
+end_path = f"{out}/mission_end.json"
+end = json.load(open(end_path)) if os.path.exists(end_path) else {}
+# A run is a whole-mission measurement only if the mission started, ended on
+# its own, and the window holds at least two minutes of samples (review, 3.78).
+valid = sys.argv[8] == "0" and len(win) >= 120 and not end.get("running")
+if not win:
+    win = [0]
 first = win[:60]; last = win[-60:]
-s = {"window_s": t1 - t0, "mem_min_mb": min(win), "mem_median_mb": st.median(win),
+s = {"valid": valid, "mission_exit": int(sys.argv[8]), "mission_end": end,
+     "window_s": t1 - t0, "mem_min_mb": min(win), "mem_median_mb": st.median(win),
      "mem_first_min_median_mb": st.median(first), "mem_last_min_median_mb": st.median(last),
      "drift_mb": st.median(first) - st.median(last),
      "oom_events": int(sys.argv[7]) - int(sys.argv[6]),
      "wheel_moving_ticks": int(w1[0]) - int(w0[0]), "wheel_late_ticks": int(w1[1]) - int(w0[1])}
 json.dump(s, open(f"{out}/summary.json", "w"), indent=1)
 print("== summary:", json.dumps(s))
+if not valid:
+    print("== NOT A VALID MISSION MEASUREMENT (see mission_exit / mission_end / window_s)")
 PY
