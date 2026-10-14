@@ -9,7 +9,8 @@ for tests/test_local_vlm.py. The target in the request picks what it does:
     die        exits as soon as it reads the request
     wedge      one filler token, then ignores everything
 
-Env: FAKE_NEVER_READY=1 never prints READY.
+Env: FAKE_NEVER_READY=1 never prints READY; FAKE_ANSWER=yes|no answers so
+for every target (a live mission's real target names none of the modes).
 """
 
 import json
@@ -77,6 +78,8 @@ def main():
         content = doc["requests"][0]["messages"][0]["content"]
         assert os.path.exists(content[0]["image"]), "image file missing"
         text = content[1]["text"]
+        if os.environ.get("FAKE_ANSWER"):
+            text = os.environ["FAKE_ANSWER"]
         t0 = time.monotonic()
         if "die" in text:
             sys.exit(1)

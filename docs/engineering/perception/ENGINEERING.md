@@ -93,6 +93,18 @@ service cannot drift from what was measured.
   15 min at most (`StartLimitBurst=4` counts the first start too),
   `OOMPolicy=continue`, `KillMode=mixed`.
 
+**The brain's client (3.80.C):** `brain/local_vlm.py` `LocalVLMClient(url,
+target, secret, deadline_s)`, built per tiered mission by
+`control/brain_server.py` `_local_identity_fn()` when `tier_local_vlm_url`
+(env `LOCAL_VLM_URL`) is set; the secret is `LOCAL_VLM_SECRET`, else
+`APP_SHARED_SECRET`. `ask(frame)` sends the frame's `image_base64` (re-encoded
+to JPEG with Pillow when it is not one) and returns the service's dict. A
+refused or dropped connection or a 503 raises `LocalVLMAbsent`; the client's
+own timeout (`deadline_s` + `TAIL_S` 2 s, the cancelled tail B6 measured)
+returns status `timeout`; any other non-200, or a frame with no image,
+returns status `error`. The thresholds are the policy's
+([policy engineering](../policy/ENGINEERING.md)).
+
 
 **`Perception.as_dict()`** (published as the scene's `_perception` and on
 `GET /mission/status` as `perception`): `status`, `crop_source`, `reason`,

@@ -280,8 +280,22 @@ def _frames_are_simulated(robot: RobotInterface) -> bool:
     return (frame.get("metadata") or {}).get("source") == "sim"
 
 
+def _local_identity_fn(target: str, config: dict, secret: Optional[str]):
+    """3.80.C: the client for the local VLM service, or None when no URL is
+    configured. Built per mission (it holds the target) and closed with the
+    policy. Never probed here: a VLM that is absent at arrival hands the
+    question to the cloud, so a mission never waits on it to start."""
+    url = (config.get("tier_local_vlm_url") or "").strip()
+    if not url:
+        return None
+    from brain.local_vlm import LocalVLMClient
+    return LocalVLMClient(url, target, secret=secret,
+                          deadline_s=config["tier_local_timeout_s"])
+
+
 def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
-                      simulated: bool = False, confirm_vision_fn=None):
+                      simulated: bool = False, confirm_vision_fn=None,
+                      local_secret: Optional[str] = None):
     """Wrap the cloud vision_fn in brain/tiered.py's trigger discipline.
 
     **This is where the optional heavy dependencies are actually loaded**,
@@ -321,6 +335,10 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
         "corroboration_bar": config["tier_corroboration_bar"],
         # 3.56: the arrival confirmation's own client (None: the triggers').
         "confirm_vision_fn": confirm_vision_fn,
+        # 3.80.C: the local VLM tier at arrival, when a URL is configured.
+        "local_identity_fn": _local_identity_fn(target, config, local_secret),
+        "local_no_below": config["tier_local_no_below"],
+        "local_max_unable": config["tier_local_max_unable"],
     }
     if simulated:
         # 1.12, built at last (PLAN-ros-alignment.md R1): the simulator
@@ -490,9 +508,10 @@ def create_app(
                     model_id=model_id,
                     prompt_variant=prompt_variant,
                 )
-                vision_fn = _tiered_vision_fn(req.target_object, vision_fn, config,
-                                              simulated=_frames_are_simulated(robot),
-                                              confirm_vision_fn=confirm_fn)
+                vision_fn = _tiered_vision_fn(
+                    req.target_object, vision_fn, config,
+                    simulated=_frames_are_simulated(robot), confirm_vision_fn=confirm_fn,
+                    local_secret=os.environ.get("LOCAL_VLM_SECRET", secret))
 
         navigator = None
         if req.policy == "explore":

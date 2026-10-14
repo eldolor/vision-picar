@@ -147,6 +147,14 @@ DEFAULTS = {
     # rather than compiled in because 1.11a asks for exactly the treatment
     # DEFAULT_MATCH_PROBABILITY got.
     "tier_corroboration_bar": 0.5,
+    # 3.80.C -- the local VLM tier at arrival (service/local_vlm, on the
+    # Jetson at :8005). Empty: off, the cloud alone confirms identity.
+    # A score <= no_below refuses, >= 0.5 confirms; max_unable undecided
+    # answers in one arrival hand it to the cloud (the user, 2026-10-14).
+    "tier_local_vlm_url": "",
+    "tier_local_no_below": 0.1,
+    "tier_local_max_unable": 2,
+    "tier_local_timeout_s": 3.0,
     # 3.70 E4 (decided by the user 2026-10-11): a mission's budget is a time
     # limit and a battery floor; the step count is only a backstop derived
     # from the limit (control/mission_runner.py's derived_max_steps()).
@@ -265,6 +273,8 @@ def load_brain_config(config_path=None) -> dict:
         merged["robot_url"] = os.environ["ROBOT_URL"]
     if os.environ.get("VISION_URL"):
         merged["vision_url"] = os.environ["VISION_URL"]
+    if "LOCAL_VLM_URL" in os.environ:
+        merged["tier_local_vlm_url"] = os.environ["LOCAL_VLM_URL"].strip()
     if os.environ.get("NAVIGATE_MODEL_ID"):
         merged["navigate_model_id"] = os.environ["NAVIGATE_MODEL_ID"]
     if os.environ.get("NAVIGATE_PROMPT_VARIANT"):
@@ -323,6 +333,16 @@ def load_brain_config(config_path=None) -> dict:
     if isinstance(calls, bool) or not isinstance(calls, int) or calls < 0:
         raise ValueError(f"brain.vision_max_calls must be a whole number >= 0 "
                          f"(0 = no cap); got {calls!r}")
+    no_below = float(merged["tier_local_no_below"])
+    if not 0.0 <= no_below < 0.5:
+        raise ValueError(f"brain.tier_local_no_below must be in [0, 0.5); got {no_below}")
+    unable = merged["tier_local_max_unable"]
+    if isinstance(unable, bool) or not isinstance(unable, int) or unable < 1:
+        raise ValueError(f"brain.tier_local_max_unable must be a whole number >= 1; "
+                         f"got {unable!r}")
+    if float(merged["tier_local_timeout_s"]) <= 0:
+        raise ValueError(f"brain.tier_local_timeout_s must be > 0; "
+                         f"got {merged['tier_local_timeout_s']}")
     if float(merged["cloud_probe_s"]) < 0:
         raise ValueError(f"brain.cloud_probe_s must be >= 0 (0 = off); "
                          f"got {merged['cloud_probe_s']}")

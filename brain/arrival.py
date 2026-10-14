@@ -71,6 +71,10 @@ NOT_JUDGED = "not_judged"
 # on the arrival frame (handoff 2026-10-02 1a) -- set by `brain/agent.py`,
 # which holds the cloud; this module never calls out.
 REFUSED = "refused"
+# 3.80.C: arrived, and the local VLM could not decide the identity; asked
+# again on the next arrival frame (or the cloud, after `tier_local_max_unable`).
+# Neither found nor refused.
+CHECKING = "checking"
 
 
 class ArrivalCheck:

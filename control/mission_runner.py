@@ -1275,6 +1275,24 @@ class MissionRunner:
                 raise VisionUnavailable(msg) from CloudUnavailable(msg)
             return remaining
 
+        # 3.80.C: the local VLM first. Its client's own timeout bounds it
+        # (tier_local_timeout_s plus the drain tail); a verdict -- yes, no or
+        # undecided -- ends the tick with no cloud call, and nothing waits on
+        # a cloud trigger still out, which the local answer does not need.
+        local = getattr(self.vision_fn, "confirm_local", None)
+        cloud = getattr(self.vision_fn, "confirm_cloud", None)
+        if local is not None and cloud is not None:
+            try:
+                verdict = call_with_timeout(local, frame,
+                                            timeout_s=left("the local identity check"))
+            except TimeoutError:
+                verdict = None
+                logger.warning("the local identity check outlived B3.2's deadline; "
+                               "asking the cloud")
+            if verdict is not None:
+                return verdict
+            confirm = cloud
+
         # An async trigger call still out is waited for first (its deadline
         # is the triggers'); only then does the confirmation's own, shorter
         # clock start, so a healthy but slow trigger is never charged to it.
@@ -1814,6 +1832,8 @@ class MissionRunner:
             # other policy, where every step calls out and a label saying
             # so would be noise.
             tier = scene.get("_tier") or {}
+            if tier.get("identity_tier") == "local":
+                return f"[local: {tier.get('trigger')}] {seen} -- {nav['reasoning']}"
             if tier.get("cloud_called"):
                 return f"[cloud: {tier.get('trigger')}] {seen} -- {nav['reasoning']}"
             return f"{seen} -- {nav['reasoning']}"

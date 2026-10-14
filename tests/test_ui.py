@@ -2945,6 +2945,40 @@ def test_a_confirmed_arrival_names_its_range_and_the_cloud(browser, twin_server)
     page.close()
 
 
+def test_an_arrival_the_local_model_confirmed_does_not_credit_the_cloud(browser, twin_server):
+    """3.80.C: the local VLM answers first; the row must name it."""
+    arrived = {"state": "arrived", "streak": 2, "bearing_deg": 0.4, "range_m": 0.36,
+               "radius_m": 0.4, "reason": "target centred at 0.355 m, 2 frame(s) running",
+               "identity": {"confirmed": True, "cloud_called": False, "local_called": True,
+                            "tier": "local",
+                            "reason": "the local model sees the target (score 0.93)"}}
+    page, errors = open_with_brain(browser, twin_server,
+                                   status=tiered_status(running=False, arrival=arrived))
+    row = page.locator("#brain-tel-arrival")
+    sync_api.expect(row).to_contain_text("arrived", timeout=5000)
+    text = row.inner_text()
+    assert "confirmed by the local model" in text and "cloud" not in text, text
+    assert not errors, errors
+    page.close()
+
+
+def test_an_arrival_being_checked_is_on_the_panel(browser, twin_server):
+    """3.80.C: `checking` -- the local VLM could not decide; asked again."""
+    checking = {"state": "checking", "streak": 2, "bearing_deg": 0.4, "range_m": 0.36,
+                "radius_m": 0.4,
+                "reason": "arrived, identity being checked: the local model could not "
+                          "decide (score 0.31); asking again",
+                "identity": {"confirmed": False, "undecided": True, "tier": "local"}}
+    page, errors = open_with_brain(browser, twin_server, status=tiered_status(arrival=checking))
+    row = page.locator("#brain-tel-arrival")
+    sync_api.expect(row).to_contain_text("checking", timeout=5000)
+    assert "asking again" in row.inner_text()
+    box = row.bounding_box()
+    assert box is not None and box["x"] + box["width"] <= PHONE["width"] + 1, box
+    assert not errors, errors
+    page.close()
+
+
 def test_the_arrival_row_says_nothing_before_any_judgement(browser, twin_server):
     page, _ = open_with_brain(browser, twin_server, status=tiered_status(arrival=None))
     page.wait_for_timeout(600)
