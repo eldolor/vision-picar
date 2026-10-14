@@ -27,24 +27,42 @@ def patch(text: str) -> str:
     FileStreamReaderV2 streamReader(enginePath);
     auto engine = std::unique_ptr<nvinfer1::ICudaEngine>(runtime.deserializeCudaEngine(streamReader));
 #else
-    std::ifstream file(enginePath, std::ios::binary | std::ios::ate);
-    std::vector<char> blob(file ? static_cast<size_t>(file.tellg()) : 0);
-    file.seekg(0);
-    if (!blob.empty())
+    // PICAR_378_MMAP (amendment 4): map the file read-only rather than copy
+    // it, so the engine bytes are reclaimable page cache, not a heap copy
+    // beside the deserialised engine.
+    std::unique_ptr<nvinfer1::ICudaEngine> engine;
+    int const fd = ::open(enginePath.c_str(), O_RDONLY);
+    struct stat st{};
+    if (fd >= 0 && ::fstat(fd, &st) == 0 && st.st_size > 0)
     {
-        file.read(blob.data(), static_cast<std::streamsize>(blob.size()));
+        void* map = ::mmap(nullptr, static_cast<size_t>(st.st_size), PROT_READ, MAP_PRIVATE, fd, 0);
+        if (map != MAP_FAILED)
+        {
+            engine.reset(runtime.deserializeCudaEngine(map, static_cast<size_t>(st.st_size)));
+            ::munmap(map, static_cast<size_t>(st.st_size));
+        }
     }
-    auto engine = std::unique_ptr<nvinfer1::ICudaEngine>(runtime.deserializeCudaEngine(blob.data(), blob.size()));
+    if (fd >= 0)
+    {
+        ::close(fd);
+    }
 #endif
 """
-    if "#else\n    std::ifstream file(enginePath" not in text:
+    if "PICAR_378_MMAP" not in text:
+        # A tree patched by the earlier heap-copy version: put the anchor back.
+        k = text.find("#else\n    std::ifstream file(enginePath")
+        if k >= 0:
+            g = text.rfind(GUARD, 0, k)
+            e = text.index("#endif\n", k) + len("#endif\n")
+            text = text[:g] + old + text[e:]
         assert text.count(old) == 1, "loader anchor not found"
         text = text.replace(old, new)
     # Only the V2 reader calls it; unused below 10.7 and -Werror is on.
     text = text.replace("\nbool isDeviceAccessiblePointer(void* ptr) noexcept",
                         "\n[[maybe_unused]] bool isDeviceAccessiblePointer(void* ptr) noexcept", 1)
-    if "#include <fstream>" not in text:
-        text = "#include <fstream>\n#include <vector>\n" + text
+    if "#include <sys/mman.h>" not in text:
+        text = ("#include <fcntl.h>\n#include <sys/mman.h>\n#include <sys/stat.h>\n"
+                "#include <unistd.h>\n") + text
     return text
 
 
