@@ -1,0 +1,72 @@
+[
+ {
+  "name": "cloud (us.anthropic.claude-opus-4-5-20251101-v1:0)",
+  "gate": 0.5,
+  "frames": 299,
+  "visible": 74,
+  "tp": 72,
+  "fp": 34,
+  "precision": 0.6792452830188679,
+  "recall": 0.972972972972973,
+  "yes_on_confabulations": 34,
+  "confabulation_frames": 34,
+  "recall_at_0fp_fitted": 0.0,
+  "separable_at_0fp": true
+ },
+ {
+  "name": "L",
+  "gate": 0.5,
+  "frames": 299,
+  "visible": 74,
+  "tp": 66,
+  "fp": 2,
+  "precision": 0.9705882352941176,
+  "recall": 0.8918918918918919,
+  "yes_on_confabulations": 0,
+  "confabulation_frames": 34,
+  "recall_at_0fp_fitted": 0.05405405405405406,
+  "separable_at_0fp": true
+ },
+ {
+  "name": "Ln",
+  "gate": 0.5,
+  "frames": 299,
+  "visible": 74,
+  "tp": 66,
+  "fp": 2,
+  "precision": 0.9705882352941176,
+  "recall": 0.8918918918918919,
+  "yes_on_confabulations": 0,
+  "confabulation_frames": 34,
+  "recall_at_0fp_fitted": 0.05405405405405406,
+  "separable_at_0fp": true
+ },
+ {
+  "name": "T-q25vl3b",
+  "gate": 0.5,
+  "frames": 299,
+  "visible": 74,
+  "tp": 69,
+  "fp": 2,
+  "precision": 0.971830985915493,
+  "recall": 0.9324324324324325,
+  "yes_on_confabulations": 1,
+  "confabulation_frames": 34,
+  "recall_at_0fp_fitted": 0.40540540540540543,
+  "separable_at_0fp": false
+ },
+ {
+  "name": "T-q3vl4b",
+  "gate": 0.5,
+  "frames": 299,
+  "visible": 74,
+  "tp": 74,
+  "fp": 49,
+  "precision": 0.6016260162601627,
+  "recall": 1.0,
+  "yes_on_confabulations": 33,
+  "confabulation_frames": 34,
+  "recall_at_0fp_fitted": 0.43243243243243246,
+  "separable_at_0fp": false
+ }
+]
