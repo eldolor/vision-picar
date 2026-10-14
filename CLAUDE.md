@@ -256,8 +256,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   wired: the car's paid label call (S2's car half). Open: time the map cut
   (`segment()`, ~1 s on the laptop, every 5 s) on the Jetson. Missions on a
   saved map (S4, M1-M3) wait on 3.50's build; S5 (phone) not built.
-* **Review of the code written before the review rule (3.76), batches A-B
-  merged 2026-10-13.** Both reviewers on whole files, risky files only,
+* **Review of the code written before the review rule (3.76), all nine
+  batches merged by 2026-10-14; the review is done.** Both reviewers on whole files, risky files only,
   every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
   `server.py`): 5 fixed -- a verb longer than the watchdog lost its
   driver's authority, the wheel loop could overwrite a stop, lost feedback
@@ -322,8 +322,17 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   ended the window `failed`, and in later rounds landed answers and errors
   were lost, doubled or counted twice. Open for the user: landmark points
   grow without bound (G2, latent: real frames carry no detections), and
-  what the uploaded inventory may carry (G12, G13). Batch I (tooling) to
-  go: `HANDOFF-2026-10-13-3.76-legacy-review.md`.
+  what the uploaded inventory may carry (G12, G13). **Batch I (the
+  tooling), merged 2026-10-14:** 8 fixed -- `ready` and the push gate
+  passed with an un-added module the commit imports (untracked files now
+  refuse); passes and review records ignored whitespace (`git patch-id`;
+  now a diff id that keeps it, so records written before no longer match:
+  re-run `reviewed`); a docs-only push linted the checkout, not the commit,
+  and counted `docs/` data tests read; `new` leaked a branch or nested a
+  worktree; the venv was missed from a subdirectory; 3.100 sat on ROS
+  domain 0; `git push origin :dev` passed unchecked. `tools/plan_claims.py`
+  and `tools/nightly_suite.sh` joined the risky list (the user). Handoff:
+  `HANDOFF-2026-10-13-3.76-legacy-review.md`.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,
