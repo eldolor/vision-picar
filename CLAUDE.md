@@ -342,9 +342,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   against the frozen `tests/frontier_reference.py`; do not "simplify" its
   order-keeping). One `reach()` per choice, shared. Jetson 15 W worst path
   p90 2,424 -> 90 ms (bar 100). Live 3/3 found, 0 contacts, median 642 s.
-  Status reports `explore.choice_ms`. Open: those runs sent more goals
-  (28/28/31 vs 21/21/22), cause not investigated; they predate 3.76 E's
-  early retry.
+  Status reports `explore.choice_ms`. **Its extra goals come from the
+  speed (3.79, merged 2026-10-14):** on one `dev`, slowing only the choice
+  by 450 ms took median goals 29 -> 22, with time to find unchanged
+  (758 vs 752 s) and 0 contacts; why is untested. Fix only if fewer goals
+  matter on the Rover (wait for a fresh scan; its own section). Live runs
+  at laptop load above ~4 are invalid (3.79's runner waits for quiet).
 * **Below the lidar (3.74), parts A-B merged 2026-10-12.** Borrowed from
   Ecovacs' vacuum detector. A: sim objects can be lower than the lidar
   (`SIM_MAP=complex_house_hazards`), a body-fixed depth-camera floor band
