@@ -3,6 +3,7 @@ for tests/test_local_vlm.py. The target in the request picks what it does:
 
     yes / no   a merged `[{` or `[]` first, then filler until cancelled
     slow       filler every 0.2 s until cancelled
+    prefill    1 s before the first token (a cancel is not seen until then)
     noparse    three filler tokens, then the end id
     error      the request is refused (`E 0 0 0`)
     die        exits as soon as it reads the request
@@ -91,7 +92,10 @@ def main():
                 out(f"T {FILLER} 1 {FILLER}:-0.01")
             out(f"E 1 {(time.monotonic() - t0) * 1000:.3f} 1")
             continue
-        if "slow" in text:
+        if "prefill" in text:
+            time.sleep(1.0)
+            reason = stream(f"T {FILLER} 1 {FILLER}:-0.01", 0.02)
+        elif "slow" in text:
             reason = stream(None, 0.2)
         elif "yes" in text:
             reason = stream(f"T 6 2 6:{lp(0.9)} 7:{lp(0.1)}", 0.02)

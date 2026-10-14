@@ -18,6 +18,9 @@ ExecStart=/home/picar/vision-picar-service/.venv/bin/python -m service.local_vlm
 # floor of 2026-10-14): losing the VLM sends identity to the cloud tier;
 # losing the robot server stops the robot.
 OOMScoreAdjust=1000
+# A kernel OOM kill of the driver must not stop the unit by itself: the
+# service sees its driver gone, exits 3, and Restart= decides.
+OOMPolicy=continue
 Restart=on-failure
 RestartSec=30
 TimeoutStopSec=20

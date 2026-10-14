@@ -79,9 +79,19 @@ service cannot drift from what was measured.
   `status` `answered` with the raw `score`, or `timeout`, `unparsed`,
   `busy`, `error` (each an *unable* answer). 503: absent.
 * One request at a time. The driver's cancel check reads stdin, so only
-  `C` is ever written while a request runs.
-* A dead driver ends the process with exit 3; systemd restarts it after
-  30 s, three times in 15 min at most.
+  `C` is ever written while a request runs, and a request with under
+  0.1 s left when the runtime frees is `timeout` without being sent (a `C`
+  right behind its path could sit in the driver's stdin buffer unseen).
+* A reply returns at the deciding token or at `deadline_s`, whichever is
+  first. The cancelled tail (up to the next token, or the end of a
+  prefill, ~1 s) is drained in the background with the runtime held, so
+  the next request can be `busy`. A driver that does not end a cancelled
+  request in 3 s is killed.
+* A dead driver ends the process with exit 3 half a second later (so the
+  request that found it gets its 503); a caller must also read a dropped
+  connection as absent. systemd restarts it after 30 s, three times in
+  15 min at most (`StartLimitBurst=4` counts the first start too),
+  `OOMPolicy=continue`, `KillMode=mixed`.
 
 
 **`Perception.as_dict()`** (published as the scene's `_perception` and on

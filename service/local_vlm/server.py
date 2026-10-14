@@ -38,8 +38,13 @@ READY_TIMEOUT_S = 300.0  # VE loads in ~40 s idle; 3.78.F saw 70 s under load
 MAX_DEADLINE_S = 30.0
 
 
+# A 640x480 frame is ~60 KB; the cap keeps a bad caller from filling
+# /dev/shm, which is RAM.
+MAX_IMAGE_B64 = 4_000_000
+
+
 class IdentityRequest(BaseModel):
-    image_b64: str
+    image_b64: str = Field(max_length=MAX_IMAGE_B64)
     target: str = Field(min_length=1, max_length=200)
     deadline_s: float = Field(default=3.0, gt=0, le=MAX_DEADLINE_S)
 

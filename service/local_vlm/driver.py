@@ -78,6 +78,7 @@ class EdgeDriver:
         except queue.Empty:
             return None
         if line is _EOF:
+            self.lines.put(_EOF)  # sticky: every later reader sees the death too
             raise DriverGone(f"driver exited ({self.proc.poll()})")
         return line
 
@@ -86,6 +87,7 @@ class EdgeDriver:
         while True:
             line = self._next(end - time.monotonic())
             if line is None:
+                self.proc.kill()  # a half-loaded runtime must not linger
                 raise DriverGone(f"driver not READY in {timeout:.0f} s")
             if line == "READY":
                 self.ready = True
@@ -101,7 +103,15 @@ class EdgeDriver:
     def ask(self, jpeg: bytes, target: str, deadline_s: float) -> dict:
         """One arrival question. Returns `{"status", "score", "parsed",
         "ms", "driver_ms"}`; status is `answered`, `timeout`, `unparsed`,
-        `busy` or `error`. Raises DriverGone when the driver is not there."""
+        `busy` or `error`. Raises DriverGone when the driver is not there.
+
+        It returns at the deciding token or at the deadline, whichever comes
+        first. The driver ends the request on its own after the cancel, and
+        that tail is drained in the background with the runtime still held,
+        so the next request waits for it (and is `busy` if it cannot).
+        `driver_ms` is the driver's own time, known only when the request
+        ended before the reply returned (`error`, or an end id before any
+        decision); otherwise None."""
         t0 = time.monotonic()
         end = t0 + deadline_s
         if not self.alive:
@@ -109,7 +119,8 @@ class EdgeDriver:
         if not self.lock.acquire(timeout=max(0.0, deadline_s)):
             return {"status": "busy", "score": None, "parsed": False,
                     "ms": (time.monotonic() - t0) * 1000, "driver_ms": None}
-        img = req = None
+        files: list = []
+        handed_off = False
         try:
             if end - time.monotonic() < MIN_SEND_S:
                 return {"status": "timeout", "score": None, "parsed": False,
@@ -117,71 +128,91 @@ class EdgeDriver:
             self._n += 1
             img = self.workdir / f"local-vlm-{os.getpid()}-{self._n}.jpg"
             req = self.workdir / f"local-vlm-{os.getpid()}-{self._n}.json"
+            files = [img, req]
             img.write_bytes(jpeg)
             req.write_text(json.dumps(request_doc(img, target)))
-            # A line left by an earlier, abandoned exchange is not this
-            # request's: the lock means none can be in flight now.
+            # A line left by an earlier exchange is not this request's: the
+            # lock means none can be in flight now.
             while True:
                 try:
                     stale = self.lines.get_nowait()
                 except queue.Empty:
                     break
                 if stale is _EOF:
+                    self.lines.put(_EOF)
                     raise DriverGone(f"driver exited ({self.proc.poll()})")
             self._send(str(req))
-            return self._stream(t0, end)
+            result, ended = self._stream(t0, end)
+            if not ended:
+                handed_off = True
+                threading.Thread(target=self._drain, args=(files,), daemon=True).start()
+            return result
         finally:
-            for f in (img, req):
-                if f is not None:
-                    f.unlink(missing_ok=True)
-            self.lock.release()
+            if not handed_off:
+                self._release(files)
 
-    def _stream(self, t0: float, end: float) -> dict:
-        content, took, cancelled, timed_out = [], None, False, False
-        cancel_by = None
-        while True:
-            wait = (cancel_by if cancelled else end) - time.monotonic()
-            line = self._next(wait)
-            if line is None:
-                if cancelled:
-                    # It did not end the request after a cancel: wedged. Kill
-                    # it, so the service exits and systemd starts it fresh.
+    def _release(self, files) -> None:
+        for f in files:
+            f.unlink(missing_ok=True)
+        self.lock.release()
+
+    def _drain(self, files) -> None:
+        """After a cancel: wait for the request's end line, then free the
+        runtime. A driver that does not end it in CANCEL_GRACE_S is wedged
+        and is killed; the service's watcher then reports it gone."""
+        try:
+            until = time.monotonic() + CANCEL_GRACE_S
+            while True:
+                line = self._next(until - time.monotonic())
+                if line is None:
+                    logger.error("driver did not end a cancelled request; killing it")
                     self.proc.kill()
-                    raise DriverGone("driver did not end a cancelled request")
-                timed_out, cancelled = True, True
-                cancel_by = time.monotonic() + CANCEL_GRACE_S
+                    return
+                if line.startswith("E "):
+                    self.served += 1
+                    return
+        except DriverGone:
+            return
+        finally:
+            self._release(files)
+
+    def _stream(self, t0: float, end: float) -> tuple:
+        """`(result, ended)`: `ended` False when a cancel was sent and the
+        request's end line is still to come (`_drain` reads it)."""
+        content = []
+        while True:
+            line = self._next(end - time.monotonic())
+            if line is None:
                 self._send("C")
-                continue
+                return ({"status": "timeout", "score": None, "parsed": False,
+                         "ms": (time.monotonic() - t0) * 1000, "driver_ms": None}, False)
             if line.startswith("T "):
-                if cancelled:
-                    continue  # generated before the cancel landed
                 chosen, alts = parse_token_line(line)
                 content.append(content_entry(self.decode, chosen, alts))
                 if decision_reached(content):
-                    took = (time.monotonic() - t0) * 1000
-                    cancelled = True
-                    cancel_by = time.monotonic() + CANCEL_GRACE_S
+                    ms = (time.monotonic() - t0) * 1000
                     self._send("C")
+                    score, parsed, _ = p_localised(content)
+                    return ({"status": "answered" if parsed else "unparsed",
+                             "score": score if parsed else None, "parsed": parsed,
+                             "ms": ms, "driver_ms": None}, False)
             elif line.startswith("E "):
                 reason, driver_ms, ok = parse_end_line(line)
                 self.served += 1
-                ms = took if took is not None else (time.monotonic() - t0) * 1000
-                if timed_out:
-                    return {"status": "timeout", "score": None, "parsed": False,
-                            "ms": ms, "driver_ms": driver_ms}
+                ms = (time.monotonic() - t0) * 1000
                 if not ok and not content:
-                    return {"status": "error", "score": None, "parsed": False,
-                            "ms": ms, "driver_ms": driver_ms}
+                    return ({"status": "error", "score": None, "parsed": False,
+                             "ms": ms, "driver_ms": driver_ms}, True)
                 score, parsed, _ = p_localised(content)
-                return {"status": "answered" if parsed else "unparsed",
-                        "score": score if parsed else None, "parsed": parsed,
-                        "ms": ms, "driver_ms": driver_ms}
+                return ({"status": "answered" if parsed else "unparsed",
+                         "score": score if parsed else None, "parsed": parsed,
+                         "ms": ms, "driver_ms": driver_ms}, True)
             else:
                 logger.warning("driver line not understood: %r", line[:80])
 
     def close(self) -> None:
         try:
             self.proc.stdin.close()
-            self.proc.wait(timeout=30)
+            self.proc.wait(timeout=10)  # inside the unit's TimeoutStopSec (20 s)
         except Exception:  # noqa: BLE001
             self.proc.kill()

@@ -34,12 +34,16 @@ def drv(tmp_path):
 
 
 def test_yes_is_scored_and_cancelled_at_the_decision(drv, tmp_path):
+    t0 = time.monotonic()
     got = drv.ask(JPEG, "yes thing", 5.0)
     assert got["status"] == "answered" and got["parsed"]
     assert got["score"] == pytest.approx(0.9)
-    # Cancelled at the deciding token, long before 64 filler tokens (1.3 s).
-    assert got["driver_ms"] < 1000
-    # The request and image files are gone once it is answered.
+    # Returned at the deciding token; the cancelled tail is drained behind it
+    # well before 64 filler tokens (1.3 s) would have run.
+    assert drv.lock.acquire(timeout=1.0)
+    drv.lock.release()
+    assert time.monotonic() - t0 < 1.0 and drv.served == 1
+    # The request and image files are gone once the tail is drained.
     assert list(tmp_path.iterdir()) == []
 
 
@@ -83,10 +87,11 @@ def test_a_dead_driver_raises(drv):
 def test_a_wedged_driver_is_killed(drv, monkeypatch):
     import service.local_vlm.driver as d
     monkeypatch.setattr(d, "CANCEL_GRACE_S", 0.3)
-    with pytest.raises(DriverGone):
-        drv.ask(JPEG, "wedge thing", 0.2)
-    drv.proc.wait(timeout=5)
+    assert drv.ask(JPEG, "wedge thing", 0.2)["status"] == "timeout"
+    drv.proc.wait(timeout=5)  # killed by the drain once the grace ran out
     assert not drv.alive
+    with pytest.raises(DriverGone):
+        drv.ask(JPEG, "yes thing", 5.0)
 
 
 # --- the HTTP app -----------------------------------------------------------
@@ -208,3 +213,22 @@ def test_a_driver_that_cannot_start_is_a_death(tmp_path, monkeypatch):
             time.sleep(0.05)
         assert deaths == [1]
         assert c.get("/health").json()["ready"] is False
+
+
+def test_the_deadline_bounds_the_reply_even_before_the_first_token(drv):
+    t0 = time.monotonic()
+    got = drv.ask(JPEG, "prefill thing", 0.3)
+    assert got["status"] == "timeout" and time.monotonic() - t0 < 0.5
+    # The runtime is held until the cancelled request ends (~1 s): a short
+    # request behind it is busy, a patient one is answered.
+    assert drv.ask(JPEG, "yes thing", 0.2)["status"] == "busy"
+    assert drv.ask(JPEG, "yes thing", 5.0)["score"] == pytest.approx(0.9)
+
+
+def test_a_death_seen_by_one_reader_is_seen_by_the_next(drv):
+    with pytest.raises(DriverGone):
+        drv.ask(JPEG, "die thing", 5.0)
+    drv.proc.wait(timeout=5)
+    for _ in range(2):
+        with pytest.raises(DriverGone):
+            drv._next(0.1)
