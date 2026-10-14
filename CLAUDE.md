@@ -161,6 +161,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   the VLM killed first** (2026-10-14) and waived the teal-bin bar. Qwen3-VL-4B
   and Qwen3.5-4B fail accuracy under every runtime. Margin over the floor is
   ~100 MB; 3.81 (memory budget) is open.
+* **Memory budget (3.81), step A merged 2026-10-14.** The loaded window
+  under VE, accounted (`tools/jetson/memory_account.py`,
+  `headroom_identity.sh ACCOUNT=1`): 97.7% of MemTotal explained at the
+  minimum (664 MB; F2's 606 stays the baseline). The VLM driver 3.97 GB
+  (engines 3.05, visual encoder 1.29 of it), perception 1.94 GB (heap 1.11,
+  of which ~0.45 GB is YOLOE's MobileCLIP text encoder, built on the first
+  frame, dropped, never given back; CLIP's text tower 0.24 GB of GPU),
+  Python services ~0.2 GB, ROS 0.25 GB. A torch GPU process costs ~0.6 GB
+  before any model. nvmap's page pool (952 MB idle) drains to 0 under load:
+  not hidden headroom. B (rank the trims, their criteria) waits on the user.
 * **Tiered identity (3.80 A-C), merged 2026-10-14; the local tier is OFF by
   default.** The user's strict order: perception, then local Qwen, then the
   cloud only after `tier_local_max_unable` (2) unable answers or when the
