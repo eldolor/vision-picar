@@ -90,4 +90,7 @@ def row_for(status: dict, *, git_revision: str = "", config: dict = None,
         "target_object": status.get("target_object"),
         "walk": walk,
         "stats": stats,
+        # 3.76 C9: only when set, so a row for any other outcome is still one
+        # an older walks function (`extra: forbid`) takes.
+        **({"cancelled_by": status["cancelled_by"]} if status.get("cancelled_by") else {}),
     }

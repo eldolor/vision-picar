@@ -1,0 +1,15 @@
+== rev 12cb12c NV Power Mode: 15W; desktop inactive; twin inactive
+== ready: {"service":"local_vlm","ready":true,"alive":true,"load_s":7.948371222009882,"served":0,"engines":"/home/picar/bench-378/ws91/q25VE/engines","pid":246070}
+== B1/B2: {"statuses": {"answered": 298, "unparsed": 1}, "latency_ms": {"n": 299, "p50": 945.3815289889462, "p90": 1168.515811994439, "max": 1174.7708420152776}}
+== B6: {"frame": "blue-bottle-20260907-185007/frame-0002.jpg", "short": {"status": "timeout", "score": null, "parsed": false, "ms": 300.1742019841913, "driver_ms": null}, "short_ms": 310.7586319965776, "after": {"status": "answered", "score": 0.0, "parsed": true, "ms": 1547.8043280018028, "driver_ms": null}, "after_ms": 1556.7112489952706, "met": true}
+== B5 death 1: health gone after 0.89s
+== B5 death 1: restarted, ready
+== B5 death 2: health gone after 1.0s
+== B5 death 2: restarted, ready
+== B5 death 3: health gone after 1.82s
+== B5 death 3: restarted, ready
+== B5 death 4: health gone after 0.88s
+== B5 death 4: not restarted; unit failed exit-code
+== B5 end: unit failed, NRestarts 4
+== summary: {"mem_before_mb": 6997.2734375, "mem_during_median_mb": 2947.21484375, "steady_use_mb": 4050.05859375, "peak_use_mb": 4137.1953125, "latency_ms": {"n": 299, "p50": 945.3815289889462, "p90": 1168.515811994439, "max": 1174.7708420152776}, "statuses": {"answered": 298, "unparsed": 1}}
+== torn down; desktop active; twin units active active

@@ -5,6 +5,9 @@
 #
 #   picar-stack   service/tunnel/run.sh -- robot server, brain, proxy (:8080)
 #   picar-ngrok   `ngrok start picar`, the public URL the deployed twin uses
+#   picar-local-vlm   service/local_vlm (3.80.B) -- installed, NOT enabled:
+#                 `sudo systemctl start picar-local-vlm` when it is wanted.
+#                 Needs ~/.vision-picar-local-vlm.env (README.md section 5).
 #
 # Run ON the Jetson, from the service worktree:
 #   cd ~/vision-picar-service && bash tools/jetson/install_services.sh
@@ -20,7 +23,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 command -v ngrok >/dev/null || { echo "ngrok is not installed"; exit 1; }
 ngrok config check >/dev/null
 
-for unit in picar-stack picar-ngrok; do
+for unit in picar-stack picar-ngrok picar-local-vlm; do
   sudo install -m 644 "$HERE/systemd/$unit.service" "/etc/systemd/system/$unit.service"
 done
 sudo systemctl daemon-reload

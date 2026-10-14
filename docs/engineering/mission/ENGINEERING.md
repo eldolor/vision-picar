@@ -76,6 +76,19 @@ threads; where it and this file disagree, check the code.
    (which `call_with_timeout` would run unbounded). `late_ask()` (3.53)
    honours the same thread: it waits up to `vision_timeout_s`, then raises
    `TimeoutError` with nothing sent, and registers its own call's thread.
+   **3.80.C:** when the policy has `confirm_local` and `confirm_cloud` and a
+   local tier is configured (`local_identity_fn`; without one, nothing here
+   changes),
+   `_guarded_confirm()` first calls `confirm_local(frame)`, before any
+   `wait_inflight()` (a local answer needs no cloud call to land), with
+   what is left of the step minus `confirm_guard_s()`, or half of what is
+   left if that is more (a drill's short deadline). A verdict -- confirmed,
+   refused or undecided -- is returned as is; a local call that outlives its
+   share is the policy's `abandon_local()` verdict (undecided), never a
+   cloud failure. None (no local tier, absent, or its tries spent) goes on
+   to the steps above with `confirm_cloud` as the confirmation -- unless the
+   runner has stopped meanwhile, which returns a refusal with no call. `late_ask()`
+   is unchanged: the policy is closed by then, so it asks the cloud.
 3. Exceptions: `MissionHalted` -> return False (stop landed mid-tick);
    `VisionUnavailable` -> `_handle_vision_failure()`. An arrival
    confirmation that raised carries that tick's readout as

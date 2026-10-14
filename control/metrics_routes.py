@@ -54,7 +54,7 @@ import json
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -82,6 +82,10 @@ class MetricsRun(BaseModel):
     # The mission's own outcome, so a latency improvement that came with a
     # collapse in outcomes cannot read as a win.
     outcome: Optional[str] = None
+    # 3.70 folded `stopped` and `preempted` into `cancelled`; who did it --
+    # "stop" (the operator) or "dpad" (a person took over) -- rides here
+    # (3.76 C9). None for every other outcome and for rows before it.
+    cancelled_by: Optional[Literal["stop", "dpad"]] = None
     steps: Optional[int] = None
     target_object: Optional[str] = None
     walk: Optional[str] = None

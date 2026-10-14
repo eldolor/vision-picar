@@ -103,8 +103,8 @@ and :8080 from boot and restarts itself when killed, so it would race the
 bench's own stack for the ports.
 
 ```bash
-sudo systemctl stop picar-stack picar-ngrok     # before the bench
-sudo systemctl start picar-stack picar-ngrok    # after
+sudo systemctl stop picar-stack picar-ngrok picar-local-vlm   # before the bench
+sudo systemctl start picar-stack picar-ngrok                  # after (the VLM only if it was running)
 ```
 
 **G4 is 5 consecutive runs of the live chain and nav suites against the
@@ -177,6 +177,21 @@ systemd units start the stack at boot and restart it when it stops.
 |---|---|---|
 | `picar-stack` | `service/tunnel/run.sh` (robot :8000, brain :8001, proxy :8080), sim mode | `~/.vision-picar-tunnel.log` |
 | `picar-ngrok` | `ngrok start picar` -> the public URL | `~/.vision-picar-ngrok.log` |
+| `picar-local-vlm` | `service/local_vlm` (3.80.B): Qwen2.5-VL-3B (3.78's VE) under TensorRT Edge-LLM on 127.0.0.1:8005; **installed, not enabled at boot** | `~/.vision-picar-local-vlm.log` |
+
+`picar-local-vlm` holds about 4 GB while it runs and is the first process
+the kernel kills (`OOMScoreAdjust=1000`; `picar-stack` is -900). It reads
+`~/.vision-picar-local-vlm.env` (mode 600):
+
+```bash
+LOCAL_VLM_ENGINES=/home/picar/bench-378/ws91/q25VE/engines
+LOCAL_VLM_EDGELLM=/home/picar/bench-378/ell91
+APP_SHARED_SECRET=<the LOCAL_SECRET of ~/.vision-picar-local-secrets>
+```
+
+The engines and the driver are built by 3.78's
+`tools/jetson/build_edgellm_identity.sh` (Edge-LLM v0.9.1, patched for
+JetPack 6.2 by `patch_edgellm_trt103.py`).
 
 They run from a **service worktree**, `~/vision-picar-service` (its
 `.venv` is a link to `~/vision-picar/.venv`), so the bench checkout in

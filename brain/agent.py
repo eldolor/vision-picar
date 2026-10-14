@@ -24,7 +24,7 @@ from typing import Callable, Optional
 
 from robot.interface import RobotInterface
 from robot.safety import VERB_MIN_MOVE_M, SafetyController, SafetyViolation
-from brain.arrival import ARRIVED, NOT_JUDGED, REFUSED, ArrivalCheck, arrived_scene
+from brain.arrival import ARRIVED, CHECKING, NOT_JUDGED, REFUSED, ArrivalCheck, arrived_scene
 from brain.memory import MissionMemory
 from world.interface import NullWorld, WorldInterface, unusable_pose
 
@@ -316,8 +316,10 @@ class MissionAgent(ConstrainedAgent):
         """Returns the readout; sets `self._confirmed_this_frame` when this
         frame asked the cloud."""
         if self._identity_refused:
+            who = ("the local model" if (self._refusal or {}).get("tier") == "local"
+                   else "the cloud")
             return {**readout, "state": REFUSED, "identity": self._refusal,
-                    "reason": "the cloud did not confirm this arrival; not asking again "
+                    "reason": f"{who} did not confirm this arrival; not asking again "
                               "until the arrival ends"}
         confirm = self.arrival_confirm_fn or getattr(self.vision_fn, "confirm_arrival", None)
         try:
@@ -339,10 +341,16 @@ class MissionAgent(ConstrainedAgent):
                 logger.warning("arrival readout lost: %s takes no attributes; "
                                "an outage here will end `failed`", type(e).__name__)
             raise
-        self._confirmed_this_frame = bool(verdict.get("cloud_called"))
+        self._confirmed_this_frame = bool(verdict.get("cloud_called")
+                                          or verdict.get("local_called"))
         readout = {**readout, "identity": verdict}
         if verdict.get("confirmed"):
             return readout
+        if verdict.get("undecided"):
+            # 3.80.C: the local VLM could not decide. Not a refusal: the
+            # next arrival frame asks again (the cloud, after max_unable).
+            return {**readout, "state": CHECKING,
+                    "reason": f"arrived, identity being checked: {verdict.get('reason')}"}
         self._identity_refused = True
         self._refusal = verdict
         return {**readout, "state": REFUSED,
@@ -360,6 +368,9 @@ class MissionAgent(ConstrainedAgent):
         else:
             self._identity_refused = False
             self._refusal = None
+            ended = getattr(self.vision_fn, "arrival_ended", None)
+            if ended is not None:
+                ended()
         if readout["state"] == ARRIVED:
             scene = arrived_scene(scene, self.memory.target_object, readout)
         else:
@@ -377,7 +388,11 @@ class MissionAgent(ConstrainedAgent):
         tier's AFTER the call -- the snapshot the vision step took predates
         it, and a mission that ends `found` takes no later one."""
         tier = dict(scene.get("_tier") or {})
-        tier.update(cloud_called=True, trigger="arrival_confirmation")
+        # 3.80.C: a step whose question the local VLM answered is not a
+        # cloud step; `identity_tier` says which tier was asked.
+        tier.update(cloud_called=bool(tier.get("cloud_called") or verdict.get("cloud_called")),
+                    trigger="arrival_confirmation",
+                    identity_tier=verdict.get("tier", "cloud"))
         if verdict.get("stats"):
             tier["stats"] = verdict["stats"]
         scene["_tier"] = tier

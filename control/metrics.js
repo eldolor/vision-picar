@@ -19,6 +19,10 @@
   var LEGACY_OUTCOME = { searched: "exhausted", max_steps: "out_of_budget",
                          stopped: "cancelled", preempted: "cancelled" };
   function readOutcome(o) { return (o && LEGACY_OUTCOME[o]) || o; }
+  // 3.76 C9: who cancelled -- the row's own `cancelled_by`, else what an
+  // old name said (`stopped` was the operator, `preempted` the D-pad).
+  var LEGACY_CANCELLED_BY = { stopped: "stop", preempted: "dpad" };
+  function cancelledBy(r) { return r.cancelled_by || LEGACY_CANCELLED_BY[r.outcome] || null; }
 
   var SECRET_KEY = "vp_metrics_secret";
   // The admin console is the SAME service behind the SAME secret
@@ -184,13 +188,15 @@
       var outcome = readOutcome(r.outcome);
       var cls = outcome === "found" ? "found"
         : (outcome === "failed" ? "bad" : "");
+      var by = outcome === "cancelled" ? cancelledBy(r) : null;
       var cfg = Object.keys(r.config || {}).filter(function (k) {
         return r.config[k] !== null && r.config[k] !== "";
       }).map(function (k) {
         return k.replace(/^tier_|^perception_|^navigate_/, "") + "=" + r.config[k];
       }).join(" · ");
       return "<tr><td>" + esc(when) + "</td>"
-        + '<td><span class="pill ' + cls + '">' + esc(outcome || "–") + "</span></td>"
+        + '<td><span class="pill ' + cls + '">' + esc(outcome || "–")
+        + (by ? " · " + esc(by) : "") + "</span></td>"
         + "<td>" + esc(r.steps == null ? "–" : r.steps) + "</td>"
         + "<td>" + esc(r.target_object || "–") + "</td>"
         + "<td>" + esc(c ? c.p50 + " / " + c.p90 + " / " + c.p99 : "–") + "</td>"

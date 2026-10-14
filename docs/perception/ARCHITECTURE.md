@@ -271,6 +271,18 @@ It is uploaded to the project's private recordings store (decided by the
 user 2026-10-07) as labels and positions only -- never an image -- because
 it is a list of what is in someone's home.
 
+### A local VLM, in its own process, the first thing lost (3.80)
+
+The identity question at arrival ("is this the target?") can be answered
+on the board: 3.78 measured a small VLM there more precise than the cloud
+on the same frames, and fast enough to answer while the robot waits. It
+runs as **its own service**, not inside the brain, for one reason: it is
+the largest single user of memory, and when memory runs out the kernel
+must take it and nothing that keeps the robot safe. A VLM that is gone is
+*absent*, and the question goes to the cloud; the robot keeps driving.
+The order of asking is perception, then the local VLM, then the cloud
+(the user, 2026-10-14); the brain decides what each answer means.
+
 ## Contracts
 
 | With | Direction | Category | Ownership |

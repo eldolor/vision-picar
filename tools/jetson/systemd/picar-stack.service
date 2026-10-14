@@ -10,6 +10,9 @@ ExecStart=/bin/bash service/tunnel/run.sh
 Restart=on-failure
 RestartSec=5
 KillMode=mixed
+# 3.80.B: below everything else when memory runs out, the local VLM
+# (+1000) first. Not -1000: a stack that is itself the leak stays killable.
+OOMScoreAdjust=-900
 TimeoutStopSec=20
 StandardOutput=append:/home/picar/.vision-picar-tunnel.log
 StandardError=append:/home/picar/.vision-picar-tunnel.log

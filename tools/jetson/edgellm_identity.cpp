@@ -15,6 +15,7 @@
  *   stdout  T <id> <k> <id>:<lp> ...      one line per generated token, top-k entries
  *   stdin   C                             cancel the current request (optional)
  *   stdout  E <reason> <ms> <ok>          request over: reason 1 end-id, 2 length, 3 cancelled
+ *                                         ok 0: refused (E 0 0 0) or the runtime failed it
  *   stdin   EOF                           exit
  */
 
@@ -68,6 +69,11 @@ int main(int argc, char** argv)
     }
     std::string const engineDir = argv[1];
     std::string const visualDir = argv[2];
+
+    // The runtime logs INFO to stdout, which is this driver's protocol
+    // stream: a log line there is noise to the client at best, and written
+    // from the worker thread it could split a T line (bug pass, 2026-10-14).
+    gLogger.setLevel(nvinfer1::ILogger::Severity::kWARNING);
 
     auto pluginHandles = loadEdgellmPluginLib();
     cudaStream_t stream{};
@@ -129,7 +135,29 @@ int main(int argc, char** argv)
 
         rt::LLMGenerationResponse response;
         std::atomic<bool> ok{false};
-        std::thread worker([&] { ok = runtime->handleRequest(req, response, stream); });
+        std::thread worker([&] {
+            try
+            {
+                ok = runtime->handleRequest(req, response, stream);
+            }
+            catch (std::exception const& e)
+            {
+                // Escaping the thread would std::terminate the driver.
+                std::cerr << "request failed: " << e.what() << "\n";
+                ok = false;
+            }
+            catch (...)
+            {
+                std::cerr << "request failed: unknown exception\n";
+                ok = false;
+            }
+            // handleRequest has exits (validation, vision preprocessing,
+            // prefill setup) before it attaches the channel's finaliser; on
+            // those nothing finishes the channel and consume() below would
+            // wait for ever. Cancelling after a normal finish changes
+            // nothing: consume() drains what is pending, then returns.
+            ch->cancel();
+        });
 
         rt::FinishReason reason = rt::FinishReason::kNotFinished;
         bool cancelled = false;

@@ -1,0 +1,20 @@
+{
+ "frame": "blue-bottle-20260907-185007/frame-0002.jpg",
+ "short": {
+  "status": "timeout",
+  "score": null,
+  "parsed": false,
+  "ms": 300.4285159986466,
+  "driver_ms": null
+ },
+ "short_ms": 314.6651559800375,
+ "after": {
+  "status": "answered",
+  "score": 0.0,
+  "parsed": true,
+  "ms": 1554.5004990126472,
+  "driver_ms": null
+ },
+ "after_ms": 1564.9097559798975,
+ "met": true
+}

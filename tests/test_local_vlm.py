@@ -1,0 +1,234 @@
+"""3.80.B: the local VLM service against a fake driver that speaks
+edgellm_identity's protocol (tests/fake_edgellm_driver.py)."""
+
+import base64
+import os
+import sys
+import threading
+import time
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from service.local_vlm.driver import DriverGone, EdgeDriver
+from service.local_vlm.server import create_app
+
+FAKE = Path(__file__).with_name("fake_edgellm_driver.py")
+VOCAB = {6: "[{", 7: "[]", 9: "x"}
+JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 64
+IMAGE = base64.b64encode(JPEG).decode()
+
+
+def make_driver(tmp_path, **env):
+    return EdgeDriver([sys.executable, str(FAKE)], dict(os.environ, **env),
+                      VOCAB.get, workdir=str(tmp_path))
+
+
+@pytest.fixture
+def drv(tmp_path):
+    d = make_driver(tmp_path)
+    d.wait_ready(10)
+    yield d
+    d.close()
+
+
+def test_yes_is_scored_and_cancelled_at_the_decision(drv, tmp_path):
+    t0 = time.monotonic()
+    got = drv.ask(JPEG, "yes thing", 5.0)
+    assert got["status"] == "answered" and got["parsed"]
+    assert got["score"] == pytest.approx(0.9)
+    # Returned at the deciding token; the cancelled tail is drained behind it
+    # well before 64 filler tokens (1.3 s) would have run.
+    assert drv.lock.acquire(timeout=1.0)
+    drv.lock.release()
+    assert time.monotonic() - t0 < 1.0 and drv.served == 1
+    # The request and image files are gone once the tail is drained.
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_no_scores_low(drv):
+    got = drv.ask(JPEG, "plain thing", 5.0)
+    assert got["status"] == "answered" and got["score"] == pytest.approx(0.05)
+
+
+def test_deadline_cancels_and_the_driver_stays_usable(drv):
+    t0 = time.monotonic()
+    got = drv.ask(JPEG, "slow thing", 0.3)
+    assert got["status"] == "timeout" and got["score"] is None
+    assert time.monotonic() - t0 < 0.8
+    assert drv.ask(JPEG, "yes thing", 5.0)["score"] == pytest.approx(0.9)
+
+
+def test_unparsed_and_error_are_unable_not_answers(drv):
+    assert drv.ask(JPEG, "noparse thing", 5.0)["status"] == "unparsed"
+    assert drv.ask(JPEG, "error thing", 5.0)["status"] == "error"
+    assert drv.ask(JPEG, "yes thing", 5.0)["status"] == "answered"
+
+
+def test_busy_when_the_runtime_is_held_past_the_deadline(drv):
+    slow = threading.Thread(target=drv.ask, args=(JPEG, "slow thing", 1.0))
+    slow.start()
+    time.sleep(0.1)
+    got = drv.ask(JPEG, "yes thing", 0.2)
+    slow.join()
+    assert got["status"] == "busy"
+    # The held request ended cleanly; the next one is answered.
+    assert drv.ask(JPEG, "yes thing", 5.0)["status"] == "answered"
+
+
+def test_a_dead_driver_raises(drv):
+    with pytest.raises(DriverGone):
+        drv.ask(JPEG, "die thing", 5.0)
+    with pytest.raises(DriverGone):
+        drv.ask(JPEG, "yes thing", 5.0)
+
+
+def test_a_wedged_driver_is_killed(drv, monkeypatch):
+    import service.local_vlm.driver as d
+    monkeypatch.setattr(d, "CANCEL_GRACE_S", 0.3)
+    assert drv.ask(JPEG, "wedge thing", 0.2)["status"] == "timeout"
+    drv.proc.wait(timeout=5)  # killed by the drain once the grace ran out
+    assert not drv.alive
+    with pytest.raises(DriverGone):
+        drv.ask(JPEG, "yes thing", 5.0)
+
+
+# --- the HTTP app -----------------------------------------------------------
+
+def app_client(tmp_path, monkeypatch, secret=None, make=None, **env):
+    if secret:
+        monkeypatch.setenv("APP_SHARED_SECRET", secret)
+    else:
+        monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    deaths = []
+    app = create_app(make or (lambda: make_driver(tmp_path, **env)), info={"engines": "fake"},
+                     on_death=lambda: deaths.append(1), ready_timeout_s=10,
+                     watch_interval_s=0.05, death_delay_s=0.0)
+    return TestClient(app), deaths
+
+
+def wait_ready(c, timeout=10):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if c.get("/health").json()["ready"]:
+            return
+        time.sleep(0.05)
+    raise AssertionError("not ready")
+
+
+def test_http_answers_and_reports_health(tmp_path, monkeypatch):
+    c, deaths = app_client(tmp_path, monkeypatch)
+    with c:
+        wait_ready(c)
+        r = c.post("/identity", json={"image_b64": IMAGE, "target": "yes thing"})
+        assert r.status_code == 200 and r.json()["score"] == pytest.approx(0.9)
+        h = c.get("/health").json()
+        assert h["alive"] and h["served"] == 1 and h["engines"] == "fake"
+    assert deaths == []  # a shutdown we asked for is not a death
+
+
+def test_http_503_while_loading_and_when_absent(tmp_path, monkeypatch):
+    c, deaths = app_client(tmp_path, monkeypatch, FAKE_NEVER_READY="1")
+    with c:
+        assert c.get("/health").json()["ready"] is False
+        r = c.post("/identity", json={"image_b64": IMAGE, "target": "yes thing"})
+        assert r.status_code == 503
+
+
+def test_http_driver_death_is_503_and_reported_once(tmp_path, monkeypatch):
+    c, deaths = app_client(tmp_path, monkeypatch)
+    with c:
+        wait_ready(c)
+        r = c.post("/identity", json={"image_b64": IMAGE, "target": "die thing"})
+        assert r.status_code == 503
+        end = time.monotonic() + 3
+        while not deaths and time.monotonic() < end:
+            time.sleep(0.05)
+        time.sleep(0.2)  # the watcher sees the exit too, and must not count it again
+        assert deaths == [1]
+        assert c.get("/health").json()["alive"] is False
+        assert c.post("/identity", json={"image_b64": IMAGE, "target": "yes"}).status_code == 503
+
+
+def test_http_watcher_sees_a_death_between_requests(tmp_path, monkeypatch):
+    c, deaths = app_client(tmp_path, monkeypatch)
+    with c:
+        wait_ready(c)
+        h = c.get("/health").json()
+        assert h["alive"]
+        # Kill the driver the way the OOM killer would.
+        os.system(f"pkill -9 -f {FAKE.name} -P {os.getpid()}")
+        end = time.monotonic() + 3
+        while not deaths and time.monotonic() < end:
+            time.sleep(0.05)
+        assert deaths == [1]
+
+
+def test_http_rejects_bad_input_and_wants_the_secret(tmp_path, monkeypatch):
+    c, _ = app_client(tmp_path, monkeypatch, secret="s3")
+    with c:
+        wait_ready(c)
+        body = {"image_b64": IMAGE, "target": "yes thing"}
+        assert c.post("/identity", json=body).status_code == 401
+        h = {"x-app-secret": "s3"}
+        assert c.post("/identity", json=body, headers=h).status_code == 200
+        bad = {"image_b64": "!!notb64", "target": "yes"}
+        assert c.post("/identity", json=bad, headers=h).status_code == 400
+        png = {"image_b64": base64.b64encode(b"\x89PNG....").decode(), "target": "yes"}
+        assert c.post("/identity", json=png, headers=h).status_code == 400
+        long = {"image_b64": IMAGE, "target": "yes", "deadline_s": 999}
+        assert c.post("/identity", json=long, headers=h).status_code == 422
+
+
+def test_b1_compare_flags_drift_flips_and_missing_frames():
+    from tools.jetson.bench_local_vlm import compare
+    old = [{"walk": "w", "frame": f"f{i}", "score": s} for i, s in enumerate([0.0, 0.9, 0.52])]
+    same = [dict(r, score=r["score"] + 0.005) for r in old]
+    assert compare(same, old)["met"]
+    drift = [dict(old[0]), dict(old[1], score=0.95), dict(old[2], score=0.49)]
+    res = compare(drift, old)
+    assert not res["met"] and res["flips"] == ["w/f2"] and len(res["off"]) == 2
+    gone = [dict(old[0], score=None)] + old[1:]
+    assert compare(gone, old)["missing"] == ["w/f0"]
+    assert not compare(old[:2], old)["met"]  # a frame not asked at all
+
+
+def test_no_time_left_is_a_timeout_and_nothing_is_sent(drv, monkeypatch):
+    import service.local_vlm.driver as d
+    monkeypatch.setattr(d, "MIN_SEND_S", 0.5)
+    got = drv.ask(JPEG, "yes thing", 0.2)
+    assert got["status"] == "timeout" and got["driver_ms"] is None
+    assert drv.served == 0  # the driver never saw it
+    assert drv.ask(JPEG, "yes thing", 5.0)["status"] == "answered"
+
+
+def test_a_driver_that_cannot_start_is_a_death(tmp_path, monkeypatch):
+    def boom():
+        raise FileNotFoundError("no edgellm_identity here")
+    c, deaths = app_client(tmp_path, monkeypatch, make=boom)
+    with c:
+        end = time.monotonic() + 3
+        while not deaths and time.monotonic() < end:
+            time.sleep(0.05)
+        assert deaths == [1]
+        assert c.get("/health").json()["ready"] is False
+
+
+def test_the_deadline_bounds_the_reply_even_before_the_first_token(drv):
+    t0 = time.monotonic()
+    got = drv.ask(JPEG, "prefill thing", 0.3)
+    assert got["status"] == "timeout" and time.monotonic() - t0 < 0.5
+    # The runtime is held until the cancelled request ends (~1 s): a short
+    # request behind it is busy, a patient one is answered.
+    assert drv.ask(JPEG, "yes thing", 0.2)["status"] == "busy"
+    assert drv.ask(JPEG, "yes thing", 5.0)["score"] == pytest.approx(0.9)
+
+
+def test_a_death_seen_by_one_reader_is_seen_by_the_next(drv):
+    with pytest.raises(DriverGone):
+        drv.ask(JPEG, "die thing", 5.0)
+    drv.proc.wait(timeout=5)
+    for _ in range(2):
+        with pytest.raises(DriverGone):
+            drv._next(0.1)

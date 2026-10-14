@@ -1,0 +1,85 @@
+{
+ "outcome": "found",
+ "seconds": 27,
+ "steps": 84,
+ "arrival": {
+  "state": "arrived",
+  "streak": 2,
+  "reason": "target centred at 0.355 m, 2 frame(s) running",
+  "bearing_deg": 1.7,
+  "range_m": 0.355,
+  "radius_m": 0.4,
+  "identity": {
+   "cloud_called": false,
+   "local_called": true,
+   "tier": "local",
+   "local_status": "answered",
+   "local_score": 0.8999999480397283,
+   "confirmed": true,
+   "stats": {
+    "cloud_ms": {
+     "n": 14,
+     "p50": 15,
+     "p90": 15,
+     "p99": 16,
+     "max": 16,
+     "mean": 15
+    },
+    "perception_ms": {
+     "n": 98,
+     "p50": 0,
+     "p90": 0,
+     "p99": 0,
+     "max": 0,
+     "mean": 0
+    },
+    "local_ms": {
+     "n": 1,
+     "p50": 3,
+     "p90": 3,
+     "p99": 3,
+     "max": 3,
+     "mean": 3
+    },
+    "local_calls": 1,
+    "local": {
+     "yes": 1
+    },
+    "escalations": 0,
+    "frames": 98,
+    "cloud_calls": 14,
+    "claims": 0,
+    "corroborated": 0,
+    "verdicts": {},
+    "frames_per_call": 7.0,
+    "triggers": {
+     "mission_start": 1,
+     "cold_search": 11,
+     "candidate_sighting": 1,
+     "staleness": 1
+    },
+    "perception": {
+     "absent": 80,
+     "detected": 18
+    }
+   },
+   "reason": "the local model sees the target (score 0.90)"
+  }
+ },
+ "identity_tier": "local",
+ "arrival_cloud_calls": 0,
+ "local_calls": 1,
+ "local": {
+  "yes": 1
+ },
+ "service_served": 1,
+ "log_tail": [
+  "step 81: FORWARD (ok) -- target center -- [reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+  "step 82: FORWARD (blocked) -- target center -- [reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+  "step 83: STOP (ok) -- [local: arrival_confirmation] target reached -- arrived -- target centred at 0.355 m, 2 frame(s) running; [reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+  "inventory: 3 reported, 0 candidates from 98 frames -- red backpack, refrigerator, sofa",
+  "mission ended (found): Hallway, kitchen, living room searched. Found."
+ ],
+ "logs": "/var/folders/4m/90g11pps7z52mxb1k0ps3pjm0000gr/T/demo_local_tier-1791998393",
+ "met": true
+}

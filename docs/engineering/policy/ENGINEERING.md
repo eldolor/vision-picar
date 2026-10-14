@@ -114,6 +114,35 @@ refused -- <reason>`. A mission then ended `blocked` by `stuck_after` says it
 stopped at an object the cloud did not confirm, not that the way was
 obstructed (`MissionRunner.tick()`).
 
+**Arrival through the local tier (3.80.C).** With `local_identity_fn` set
+(the brain builds `brain/local_vlm.py`'s `LocalVLMClient` when
+`tier_local_vlm_url` / `LOCAL_VLM_URL` is non-empty; empty, the default, is
+everything above unchanged), `confirm_arrival()` is `confirm_local()` and,
+only when that returns None, `confirm_cloud()` (the cloud call described
+above). `confirm_local()` never raises: the client's `LocalVLMAbsent` (a
+refused or dropped connection, a 503) or any other exception returns None,
+so the cloud is asked on the same frame. A score >= `LOCAL_YES_AT` (0.5)
+confirms; <= `local_no_below` (0.1) refuses, as the cloud's no does; a score
+between, or status `unparsed`/`timeout`/`busy`/`error` (the client's own
+timeout, `tier_local_timeout_s` + 2 s, comes back as `timeout`), is
+`undecided`. The agent turns `undecided` into readout state `checking`
+(`brain/arrival.py` `CHECKING`): not refused, asked again on the next
+arrival frame. After `local_max_unable` (2) undecided answers,
+`next_confirm_is_local()` is False and the next arrival frame goes to the
+cloud. The agent calls the policy's `arrival_ended()` on every frame the
+arrival rule does not hold; `LOCAL_RESET_FRAMES` (3) of them in a row reset
+the count, fewer are the same arrival flickering. `abandon_local()` (the
+runner gave up waiting) counts one unable answer, status `timeout`, and a
+sequence number makes the abandoned call's late answer change nothing.
+`escalations` counts arrival questions the cloud was asked after the local
+tier's tries were spent. Verdicts carry `tier`
+(`local`/`cloud`) and `local_called`; `_label_confirmation()` sets
+`_tier.identity_tier`, keeps `cloud_called` only for a real cloud call, and
+the runner's log line reads `[local: arrival_confirmation]`. `TierStats`
+counts `local_calls`, `local` (`yes`, `no`, `absent`, `unable_<status>`,
+`unable_band`, `unable_noscore`, `unable_runner_timeout`), `local_ms` and `escalations`. `close()` closes and drops the
+client, so 3.53's late check is the cloud's.
+
 **What the hysteresis does and does not gate.** `consecutive_frames` is
 read only in `_trigger_for()`. `_steer_to()` returns a direction for any
 frame whose `status` is `detected` with a bearing, with no streak, so one

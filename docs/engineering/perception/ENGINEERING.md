@@ -67,6 +67,45 @@ returns its boxes labelled with the target string; YOLOE's own threshold
 
 ## Interfaces
 
+**The local VLM service (3.80.B):** `service/local_vlm/server.py`, its
+own process on `127.0.0.1:8005` (`LOCAL_VLM_PORT`), systemd unit
+`picar-local-vlm` (`OOMScoreAdjust=1000`; `tools/jetson/README.md`
+section 5). It keeps 3.78's `edgellm_identity` driver resident
+(`service/local_vlm/driver.py`) and asks with 3.78's own prompt, request
+file, stopping rule and score, imported from
+`tools/jetson/bench_identity_llama.py` and `bench_identity_trt.py` so the
+service cannot drift from what was measured.
+* `POST /identity` `{image_b64, target, deadline_s}` (secret-gated):
+  `status` `answered` with the raw `score`, or `timeout`, `unparsed`,
+  `busy`, `error` (each an *unable* answer). 503: absent.
+* One request at a time. The driver's cancel check reads stdin, so only
+  `C` is ever written while a request runs, and a request with under
+  0.1 s left when the runtime frees is `timeout` without being sent (a `C`
+  right behind its path could sit in the driver's stdin buffer unseen).
+* A reply returns at the deciding token or at `deadline_s`, whichever is
+  first. The cancelled tail (up to the next token, or the end of a
+  prefill, ~1 s) is drained in the background with the runtime held, so
+  the next request can be `busy`. A driver that does not end a cancelled
+  request in 3 s is killed.
+* A dead driver ends the process with exit 3 half a second later (so the
+  request that found it gets its 503); a caller must also read a dropped
+  connection as absent. systemd restarts it after 30 s, three times in
+  15 min at most (`StartLimitBurst=4` counts the first start too),
+  `OOMPolicy=continue`, `KillMode=mixed`.
+
+**The brain's client (3.80.C):** `brain/local_vlm.py` `LocalVLMClient(url,
+target, secret, deadline_s)`, built per tiered mission by
+`control/brain_server.py` `_local_identity_fn()` when `tier_local_vlm_url`
+(env `LOCAL_VLM_URL`) is set; the secret is `LOCAL_VLM_SECRET`, else
+`APP_SHARED_SECRET` for a loopback URL only (none for any other host). `ask(frame)` sends the frame's `image_base64` (re-encoded
+to JPEG with Pillow when it is not one) and returns the service's dict. A
+refused or dropped connection or a 503 raises `LocalVLMAbsent`; the client's
+own timeout (`deadline_s` + `TAIL_S` 2 s, the cancelled tail B6 measured)
+returns status `timeout`; any other non-200, or a frame with no image,
+returns status `error`. The thresholds are the policy's
+([policy engineering](../policy/ENGINEERING.md)).
+
+
 **`Perception.as_dict()`** (published as the scene's `_perception` and on
 `GET /mission/status` as `perception`): `status`, `crop_source`, `reason`,
 `synthesised`, `pan_deg`, `tilt_deg`, `bearing_deg` (degrees, negative left,

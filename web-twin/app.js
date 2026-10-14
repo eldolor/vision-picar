@@ -1875,7 +1875,8 @@
       let text, cls = null;
       if (arrival.state === "arrived") {
         text = "arrived" + (range ? " at " + range : "")
-          + (identity.confirmed ? " \u00b7 identity confirmed by the cloud" : "");
+          + (identity.confirmed ? " \u00b7 identity confirmed by "
+             + (identity.tier === "local" ? "the local model" : "the cloud") : "");
         cls = "safe";
       } else if (arrival.state === "refused") {
         text = "refused" + (range ? " at " + range : "") + " \u00b7 "

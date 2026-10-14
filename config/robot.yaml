@@ -310,6 +310,15 @@ brain:
   # cannot see makes every sighting `unclear`, and the robot would steer
   # forever without committing.
   tier_corroboration_bar: 0.5
+  # 3.80.C -- the local VLM tier at arrival: service/local_vlm on the Jetson
+  # (http://127.0.0.1:8005). Empty is off: the cloud alone confirms. Env
+  # LOCAL_VLM_URL overrides. A local score <= no_below refuses, >= 0.5
+  # confirms; max_unable undecided answers in one arrival go to the cloud
+  # (thresholds approved by the user 2026-10-14).
+  tier_local_vlm_url: ""
+  tier_local_no_below: 0.1
+  tier_local_max_unable: 2
+  tier_local_timeout_s: 3.0
 
   # 3.70 E4: a mission's budget -- a time limit (seconds) and a battery floor
   # (volts, the motor board's `v`). It ends `out_of_budget` at either. The
