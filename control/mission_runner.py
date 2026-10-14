@@ -551,7 +551,7 @@ class MissionRunner:
         job: str = "find",
         room_label_fn: Optional[Callable[[dict], Optional[str]]] = None,
         room_label_max_calls: Optional[int] = None,
-        room_label_mode: str = "rooms",
+        room_label_mode: str = "spacing",
     ):
         if job not in JOBS:
             raise ValueError(f"Unknown job: {job!r}. Known: {', '.join(JOBS)}")
@@ -582,7 +582,8 @@ class MissionRunner:
 
         self.robot = robot
         self.job = job
-        # 3.70 S2: a survey names rooms as it goes -- one ask per room, at
+        # 3.70 S2: a survey names rooms as it goes -- an ask every 2 m and
+        # through every doorway (`spacing`), or one per room (`rooms`), at
         # most `room_label_max_calls` (brain/room_labels.py). The label
         # source defaults to the frame's own `room`, which only a simulated
         # frame carries; on the car it is the cloud (a paid call each).

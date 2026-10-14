@@ -221,11 +221,14 @@ driver as any mission (arbitration unchanged), with its own time limit.
 is a paid cloud call, so a survey asks only when the robot stands in space
 no earlier answer covers, and at most a capped number of times per survey;
 reaching the cap leaves the rest of the house unlabelled and never ends the
-survey. Which space an answer covers -- a room cut from the map's shape, or
-everything within walking distance of where it was asked -- decides both
-the count of calls and where labels land; the sim measures both
-(3.70 S2). Rooms with no wall between them (open plans) cannot be told
-apart by the map's shape, so labels there land by distance at best.
+survey. Which space an answer covers decides both the count of calls and
+where labels land. The default reaches as far as walking distance, with a
+doorway counting as far: the robot is asked again every couple of metres
+and through every doorway, and an answer stops at the doorway (3.70 S2,
+measured in the sim against one ask per room of the map's shape, which
+costs a third of the calls and labels far worse). Rooms with no wall
+between them (open plans) cannot be told apart by the map's shape, so
+labels there land by distance at best.
 
 ### An unconfirmed arrival is asked again when the cloud is back
 

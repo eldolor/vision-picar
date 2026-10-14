@@ -132,7 +132,7 @@ def test_the_map_is_cut_into_rooms_at_the_door():
 
 def test_one_ask_per_room_and_none_from_the_doorway():
     asked = []
-    lab = RoomLabeller(lambda f: asked.append(f) or f["room"])
+    lab = RoomLabeller(lambda f: asked.append(f) or f["room"], mode="rooms")
     m = _two_rooms()
     # In the doorway the camera may be looking at either room: no ask.
     assert lab.observe(m, _pose(3.05, 1.6), lambda: {"room": "hall"}) is None
@@ -150,7 +150,7 @@ def test_one_ask_per_room_and_none_from_the_doorway():
 
 def test_the_cap_leaves_the_rest_unlabelled_and_never_asks_past_it():
     asked = []
-    lab = RoomLabeller(lambda f: asked.append(1) or "den", max_calls=1)
+    lab = RoomLabeller(lambda f: asked.append(1) or "den", max_calls=1, mode="rooms")
     m = _two_rooms()
     lab.observe(m, _pose(1.5, 1.6), dict)
     assert lab.observe(m, _pose(4.7, 1.6), dict) is None
@@ -161,7 +161,7 @@ def test_the_cap_leaves_the_rest_unlabelled_and_never_asks_past_it():
 
 def test_unclear_names_nothing_and_is_not_asked_again():
     asked = []
-    lab = RoomLabeller(lambda f: asked.append(1) or None)
+    lab = RoomLabeller(lambda f: asked.append(1) or None, mode="rooms")
     m = _two_rooms()
     for x in (1.5, 1.2):
         lab.observe(m, _pose(x, 1.6), dict)
@@ -178,6 +178,76 @@ def test_spacing_mode_asks_again_only_beyond_its_spacing():
     lab.observe(m, _pose(2.0, 1.6), dict)           # 1.5 m on: covered
     assert len(asked) == 1
     lab.observe(m, _pose(2.6, 1.6), dict)           # 2.1 m on: not covered
+    assert len(asked) == 2
+
+
+def test_spacing_labels_stop_at_the_doorway_not_halfway_between_asks():
+    # den asked 2.5 m from the door, kitchen 1 m past it: halfway by walking
+    # is inside the den, but the room ends at the door.
+    lab = RoomLabeller(lambda f: f["room"], mode="spacing")
+    m = _two_rooms()
+    lab.observe(m, _pose(0.5, 1.6), lambda: {"room": "den"})
+    lab.observe(m, _pose(4.0, 1.6), lambda: {"room": "kitchen"})
+    layer = lab.layer(m)
+    row = [layer["names"][k] if k >= 0 else None
+           for k in layer["cells"][16 * m["width"]:17 * m["width"]]]
+    assert set(row[1:31]) == {"den"}, row
+    assert set(row[32:62]) == {"kitchen"}, row
+
+
+def _row(layer, m, j=16):
+    return [layer["names"][k] if k >= 0 else None
+            for k in layer["cells"][j * m["width"]:(j + 1) * m["width"]]]
+
+
+def test_spacing_unclear_holds_its_room_against_a_label_through_the_door():
+    lab = RoomLabeller(lambda f: f["room"], mode="spacing")
+    m = _two_rooms()
+    lab.observe(m, _pose(1.5, 1.6), lambda: {"room": "den"})
+    lab.observe(m, _pose(4.7, 1.6), lambda: {"room": None})       # unclear
+    row = _row(lab.layer(m), m)
+    assert set(row[32:62]) == {None}, row
+
+
+def _three_rooms():
+    """`_two_rooms` with a third 3 m room on the right, through a second
+    0.9 m door (x = 6.2-6.3 m)."""
+    res, w, h = 0.1, 94, 32
+    cells = []
+    for j in range(h):
+        for i in range(w):
+            edge = i in (0, w - 1) or j in (0, h - 1)
+            wall = i in (31, 62) and not 12 <= j < 21
+            cells.append(CELL_OCCUPIED if edge or wall else CELL_FREE)
+    return {"usable": True, "map_id": "m3", "map_version": 1, "resolution_m": res,
+            "width": w, "height": h, "origin_x_m": 0.0, "origin_y_m": 0.0, "cells": cells}
+
+
+def test_spacing_capped_leaves_rooms_two_doorways_on_unlabelled():
+    lab = RoomLabeller(lambda f: "den", mode="spacing", max_calls=1)
+    m = _three_rooms()
+    lab.observe(m, _pose(1.5, 1.6), dict)
+    row = _row(lab.layer(m), m)
+    assert set(row[1:31]) == {"den"}, row
+    assert set(row[63:93]) == {None}, row
+
+
+def test_spacing_keeps_a_seed_whose_cell_is_no_longer_floor():
+    lab = RoomLabeller(lambda f: "den", mode="spacing")
+    m = _two_rooms()
+    lab.observe(m, _pose(1.55, 1.65), dict)
+    k = 16 * m["width"] + 15
+    moved = {**m, "map_version": 2, "cells": m["cells"][:k] + [CELL_OCCUPIED] + m["cells"][k + 1:]}
+    row = _row(lab.layer(moved), moved)
+    assert set(row[1:15]) == {"den"}, row
+
+
+def test_spacing_asks_again_through_a_doorway_even_within_its_spacing():
+    asked = []
+    lab = RoomLabeller(lambda f: asked.append(1) or f["room"], mode="spacing", spacing_m=2.0)
+    m = _two_rooms()
+    lab.observe(m, _pose(2.0, 1.6), lambda: {"room": "den"})
+    lab.observe(m, _pose(3.8, 1.6), lambda: {"room": "kitchen"})   # ~1.8 m on, another room
     assert len(asked) == 2
 
 
@@ -226,7 +296,7 @@ def test_a_frame_read_that_raises_skips_the_label(monkeypatch):
 def test_a_frame_with_no_room_and_no_label_source_spends_no_call():
     """On the car no label source is wired yet: an ask must not burn the cap
     on an `unclear` it never asked anyone for."""
-    lab = RoomLabeller(frame_room, max_calls=3)
+    lab = RoomLabeller(frame_room, max_calls=3, mode="rooms")
     m = _two_rooms()
     assert lab.observe(m, _pose(1.5, 1.6), lambda: {"image": "..."}) is None
     assert lab.calls == 0 and lab.seeds == []
@@ -234,7 +304,7 @@ def test_a_frame_with_no_room_and_no_label_source_spends_no_call():
 
 def test_no_ask_once_the_mission_has_stopped():
     asked = []
-    lab = RoomLabeller(lambda f: asked.append(1) or "den")
+    lab = RoomLabeller(lambda f: asked.append(1) or "den", mode="rooms")
     m = _two_rooms()
     assert lab.observe(m, _pose(1.5, 1.6), lambda: None) is None   # look() refused
     assert asked == [] and lab.calls == 0
@@ -242,7 +312,7 @@ def test_no_ask_once_the_mission_has_stopped():
 
 def test_the_cap_is_checked_before_any_segmentation(monkeypatch):
     import brain.room_labels as rl
-    lab = RoomLabeller(lambda f: "den", max_calls=1)
+    lab = RoomLabeller(lambda f: "den", max_calls=1, mode="rooms")
     m = _two_rooms()
     lab.observe(m, _pose(1.5, 1.6), dict)
     monkeypatch.setattr(rl, "segment", lambda *a, **k: (_ for _ in ()).throw(AssertionError))
@@ -257,7 +327,7 @@ def test_segmentation_is_rate_limited_on_the_labeller_s_clock(monkeypatch):
     real = rl.segment
     monkeypatch.setattr(rl, "segment", lambda *a, **k: runs.append(1) or real(*a, **k))
     t = [0.0]
-    lab = RoomLabeller(lambda f: "den", clock=lambda: t[0])
+    lab = RoomLabeller(lambda f: "den", clock=lambda: t[0], mode="rooms")
     m = _two_rooms()
     for v in range(1, 6):                           # five new map versions in 1 s
         t[0] += 0.2
@@ -305,7 +375,7 @@ def test_a_growing_map_is_not_recut_on_every_tick(monkeypatch):
     runs, real = [], rl.segment
     monkeypatch.setattr(rl, "segment", lambda *a, **k: runs.append(1) or real(*a, **k))
     t = [0.0]
-    lab = RoomLabeller(lambda f: "den", clock=lambda: t[0])
+    lab = RoomLabeller(lambda f: "den", clock=lambda: t[0], mode="rooms")
     m = _two_rooms()
     for _ in range(4):
         t[0] += 0.5
@@ -316,7 +386,7 @@ def test_a_growing_map_is_not_recut_on_every_tick(monkeypatch):
 
 def test_a_grown_map_still_finds_the_robot_s_room_by_position():
     t = [0.0]
-    lab = RoomLabeller(lambda f: "den", clock=lambda: t[0])
+    lab = RoomLabeller(lambda f: "den", clock=lambda: t[0], mode="rooms")
     m = _two_rooms()
     lab.observe(m, _pose(1.5, 1.6), dict)
     t[0] += 1.0
@@ -341,7 +411,7 @@ def test_spacing_never_asks_on_floor_its_cached_distances_have_not_seen():
 
 def test_no_label_source_is_remembered_and_no_frame_is_fetched_again():
     looks = []
-    lab = RoomLabeller(frame_room)
+    lab = RoomLabeller(frame_room, mode="rooms")
     m = _two_rooms()
     for x in (1.5, 1.2, 4.7):
         lab.observe(m, _pose(x, 1.6), lambda: looks.append(1) or {"image": "..."})
@@ -351,7 +421,7 @@ def test_no_label_source_is_remembered_and_no_frame_is_fetched_again():
 def test_a_frame_off_the_rooms_spends_no_call_and_waits_before_asking_again():
     t = [0.0]
     looks = []
-    lab = RoomLabeller(frame_room, clock=lambda: t[0])
+    lab = RoomLabeller(frame_room, clock=lambda: t[0], mode="rooms")
     m = _two_rooms()
     lab.observe(m, _pose(1.5, 1.6), lambda: looks.append(1) or {"room": "unknown"})
     lab.observe(m, _pose(1.5, 1.6), lambda: looks.append(1) or {"room": "unknown"})
@@ -364,7 +434,7 @@ def test_a_failing_label_source_backs_off_and_does_not_burn_the_cap():
     t = [0.0]
     def down(frame):
         raise ConnectionError("cloud down")
-    lab = RoomLabeller(down, max_calls=20, clock=lambda: t[0])
+    lab = RoomLabeller(down, max_calls=20, clock=lambda: t[0], mode="rooms")
     m = _two_rooms()
     for _ in range(50):                             # 50 ticks, 0.2 s apart
         t[0] += 0.2
@@ -378,7 +448,7 @@ def test_a_failing_label_source_backs_off_and_does_not_burn_the_cap():
 def test_the_map_layer_is_cut_from_the_map_it_is_given(monkeypatch):
     import brain.room_labels as rl
     t = [0.0]
-    lab = RoomLabeller(lambda f: "den", clock=lambda: t[0])
+    lab = RoomLabeller(lambda f: "den", clock=lambda: t[0], mode="rooms")
     m = _two_rooms()
     lab.observe(m, _pose(1.5, 1.6), dict)
     cut = []
@@ -390,7 +460,7 @@ def test_the_map_layer_is_cut_from_the_map_it_is_given(monkeypatch):
 
 
 def test_capped_is_set_on_the_ask_that_reaches_the_cap():
-    lab = RoomLabeller(lambda f: "den", max_calls=1)
+    lab = RoomLabeller(lambda f: "den", max_calls=1, mode="rooms")
     lab.observe(_two_rooms(), _pose(1.5, 1.6), dict)
     assert lab.capped
 
@@ -398,9 +468,22 @@ def test_capped_is_set_on_the_ask_that_reaches_the_cap():
 def test_a_stop_after_the_frame_never_reaches_the_label_source():
     asked = []
     alive = [True]
-    lab = RoomLabeller(lambda f: asked.append(1) or "den")
+    lab = RoomLabeller(lambda f: asked.append(1) or "den", mode="rooms")
     def look():
         alive[0] = False                            # the stop lands while the frame is read
         return {"room": "den"}
     assert lab.observe(_two_rooms(), _pose(1.5, 1.6), look, alive=lambda: alive[0]) is None
     assert asked == [] and lab.calls == 0
+
+
+def test_spacing_does_not_ask_again_beside_a_seed_whose_cell_turned_occupied():
+    t = [0.0]
+    asked = []
+    lab = RoomLabeller(lambda f: asked.append(1) or "den", mode="spacing", clock=lambda: t[0])
+    m = _two_rooms()
+    lab.observe(m, _pose(1.55, 1.65), dict)
+    k = 16 * m["width"] + 15
+    t[0] += 10.0
+    moved = {**m, "map_version": 2, "cells": m["cells"][:k] + [CELL_OCCUPIED] + m["cells"][k + 1:]}
+    lab.observe(moved, _pose(1.65, 1.65), dict)
+    assert len(asked) == 1

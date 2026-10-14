@@ -1,40 +1,43 @@
 """
 brain/room_labels.py -- 3.70 S2: rooms labelled during a survey.
 
-A survey asks for a room's name ONCE per room, not once per frame (the
-user's decision, 2026-10-11, conflict 6): on the car each ask is a paid
-cloud call. So the map is first cut into rooms by its own shape, and a room
-is asked about only when the robot stands well inside one that no label
-covers yet.
+A survey asks for a room's name from time to time, not once per frame: on
+the car each ask is a paid cloud call. Where an answer reaches, and when to
+ask again, come from the map.
 
-**Rooms from the map's shape** (morphological segmentation, the method
-`ipa_room_segmentation` calls "morphological"):
+**Rooms from the map's shape** (`segment()`): a watershed of clearance.
+Free cells are added widest first; two pieces stay apart where the cell
+joining them is a neck -- narrower than `NECK_RATIO` of the lower piece's
+widest point, as a doorway is -- and merge otherwise. Unknown cells pass
+distance but are not floor, so a room half seen still has its middle. Open
+plans (a kitchen open to a family room) have no neck, so the cut alone
+cannot separate them.
 
-1. *Cores.* Free cells farther than `core_clear_m` from anything occupied.
-   A doorway is narrower than twice that, so it has no core, and the cores
-   of two rooms joined by a door are separate pieces.
-2. *Growth.* Every core spreads over the free floor, breadth first and all
-   at once, for at most `grow_m`; a cell goes to the core that reaches it
-   first. A doorway is split between its two rooms.
-3. *Leftovers.* Free floor no core reached -- a hall too narrow for a core
-   -- is cut into its connected pieces, each a room of its own.
+**Two ways of asking** (`mode`):
 
-Unknown cells are neither: they do not close a core (a room half seen is
-still a room) and nothing grows into them.
+* `spacing` (the default, 3.70 S2 amendment 1) -- ask whenever the robot
+  is more than `SPACING_M` from every earlier ask, by walking distance over
+  the cut where every step from one of its rooms into another costs
+  `DOOR_M` more. So a robot that has come through a doorway is asked again,
+  an open plan is asked about every 2 m, and each cell takes the answer of
+  the ask nearest it by that same distance: labels stop at doorways that
+  have an ask on the other side, reach at most one doorway on (`REACH_M`)
+  where none does, and between asks in an open plan meet halfway. An
+  `unclear` answer holds its space and names nothing.
+* `rooms` -- once per room of the cut, from inside it (wider than
+  `NECK_RATIO` of the room's widest point: a robot in a doorway may be
+  looking at the room it is leaving); the answer names the whole room.
+  Fewer calls, worse labels: an open plan is one room.
 
 **Labels.** A label is a *seed*: a name and the house-frame point the robot
 stood on when it was asked. Seeds are kept by position, never by room id,
-because the map grows and every segmentation numbers its rooms afresh. A
-room takes the name most of its seeds carry; a room with no seed is
-unlabelled. `layer()` writes that as the map's `room_labels` block,
-`{"names": [...], "cells": [index into names, or -1, per map cell]}` -- the
-shape `brain/explore.py` reads (3.70 E3).
-
-**When to ask.** Only from inside a room's core: a robot in a doorway may
-be looking at the room it is leaving. One ask per room; an answer of
-"unclear" is kept as a seed too (it labels nothing, and stops the room being
-asked again). At `max_calls` asks the rest of the house stays unlabelled --
-the survey goes on (the cap ends labelling, never the survey).
+because the map grows and every cut numbers its rooms afresh. `layer()`
+writes them as the map's `room_labels` block, `{"names": [...], "cells":
+[index into names, or -1, per map cell]}` -- the shape `brain/explore.py`
+reads (3.70 E3). An answer of "unclear" is kept as a seed (it labels
+nothing, and the place is not asked about again). At `max_calls` asks the
+rest of the house stays unlabelled -- the survey goes on (the cap ends
+labelling, never the survey).
 
 numpy only: the Jetson's install has no scipy.
 """
@@ -43,7 +46,7 @@ from __future__ import annotations
 
 import heapq
 import time
-from collections import Counter, deque
+from collections import Counter
 from typing import Callable, Optional
 
 import numpy as np
@@ -202,28 +205,68 @@ def segment(m: dict, neck_ratio: float = NECK_RATIO, min_room_m2: float = MIN_RO
     return seg, d
 
 
-def _geodesic(free: np.ndarray, sources: list):
-    """Multi-source breadth-first distance over free cells (4-connected), in
-    cells, and which source reached each cell first. Unreached: -1."""
-    h, w = free.shape
-    d = np.full((h, w), -1, dtype=int)
+def _floor_near(seg: np.ndarray, c: tuple, r: int) -> Optional[tuple]:
+    """`c` if it is floor in the cut, else the nearest floor cell within `r`
+    cells -- a seed is kept in metres, and a SLAM correction or a later cut
+    can turn the cell it stood on into a wall or unknown; None if none."""
+    h, w = seg.shape
+    j0, i0 = c
+    best = None
+    for j in range(max(0, j0 - r), min(h, j0 + r + 1)):
+        for i in range(max(0, i0 - r), min(w, i0 + r + 1)):
+            if seg[j, i] >= 0:
+                dd = (j - j0) ** 2 + (i - i0) ** 2
+                if best is None or dd < best[0]:
+                    best = (dd, j, i)
+    return (best[1], best[2]) if best else None
+
+
+def _walk(seg: np.ndarray, sources: list, res: float, door_m: float):
+    """Multi-source walking distance over a cut's floor (4-connected), in
+    metres, where every step from one of the cut's rooms into another costs
+    `door_m` more; and which source reached each cell first. Unreached:
+    inf and -1."""
+    h, w = seg.shape
+    d = np.full((h, w), np.inf)
     owner = np.full((h, w), -1, dtype=int)
-    q = deque()
-    for k, (j, i) in enumerate(sources):
-        if 0 <= j < h and 0 <= i < w and d[j, i] < 0:
-            d[j, i], owner[j, i] = 0, k
-            q.append((j, i))
-    while q:
-        j, i = q.popleft()
+    heap = []
+    snap = max(1, int(round(SNAP_M / res)))
+    for k, src in enumerate(sources):
+        c = _floor_near(seg, src, snap)
+        if c is not None and d[c] > 0:
+            d[c], owner[c] = 0.0, k
+            heap.append((0.0, c[0], c[1], k))
+    heapq.heapify(heap)
+    while heap:
+        dist, j, i, k = heapq.heappop(heap)
+        if dist > d[j, i]:
+            continue
+        here = seg[j, i]
         for nj, ni in ((j + 1, i), (j - 1, i), (j, i + 1), (j, i - 1)):
-            if 0 <= nj < h and 0 <= ni < w and free[nj, ni] and d[nj, ni] < 0:
-                d[nj, ni], owner[nj, ni] = d[j, i] + 1, owner[j, i]
-                q.append((nj, ni))
+            if 0 <= nj < h and 0 <= ni < w and seg[nj, ni] >= 0:
+                nd = dist + res + (door_m if seg[nj, ni] != here else 0.0)
+                if nd < d[nj, ni]:
+                    d[nj, ni], owner[nj, ni] = nd, k
+                    heapq.heappush(heap, (nd, nj, ni, k))
     return d, owner
 
 
 MODES = ("rooms", "spacing")
 SPACING_M = 2.0
+# `spacing`: walking from one of the cut's rooms into another counts this
+# much extra -- more than SPACING_M, so a robot that has come through a
+# doorway is asked again, and an answer reaches past a doorway only when
+# nothing was asked on the other side.
+DOOR_M = 3.0
+# A seed whose own cell is no longer floor (a SLAM correction, a later cut)
+# starts from the nearest floor cell within this distance.
+SNAP_M = 0.3
+# `spacing`: an answer labels floor up to this far by that same distance --
+# its own room and at most one doorway on (the cut has more doorways than
+# the house: stopping at the first one left 46 -> 38 of the 9 surveys' 90
+# rooms under 95%; one on, as many as no limit). A room two doorways from
+# any answer stays unlabelled.
+REACH_M = 2 * DOOR_M
 
 
 class _Cut:
@@ -248,19 +291,20 @@ class _Cut:
 class RoomLabeller:
     """Asks `label_fn(frame)` for a room's name, at most `max_calls` times,
     and `layer(m)` is the map's `room_labels` block. Two ways to decide when
-    to ask, and how far an answer reaches:
+    to ask, and how far an answer reaches (the module's docstring):
 
-    * `rooms` -- once per room of the map's shape (`segment()`), from inside
-      it; the answer names that whole room.
-    * `spacing` -- whenever the robot is more than `spacing_m` (walking
-      distance on the map) from every earlier ask; each cell takes the
-      answer of the ask nearest it by walking distance.
+    * `spacing` -- whenever the robot is more than `spacing_m` from every
+      earlier ask, walking over the cut with `door_m` added per doorway;
+      each cell takes the answer of the ask nearest it by that distance.
+    * `rooms` -- once per room of the cut (`segment()`), from inside it; the
+      answer names that whole room.
 
     Not thread-safe: the mission loop's own."""
 
     def __init__(self, label_fn: Callable[[dict], object],
-                 max_calls: Optional[int] = None, mode: str = "rooms",
+                 max_calls: Optional[int] = None, mode: str = "spacing",
                  neck_ratio: float = NECK_RATIO, spacing_m: float = SPACING_M,
+                 door_m: float = DOOR_M,
                  clock: Callable[[], float] = time.monotonic):
         if mode not in MODES:
             raise ValueError(f"Unknown room-label mode {mode!r}. Known: {', '.join(MODES)}")
@@ -269,14 +313,15 @@ class RoomLabeller:
         self.mode = mode
         self.neck_ratio = neck_ratio
         self.spacing_m = spacing_m
+        self.door_m = door_m
+        self.reach_m = REACH_M
         self.clock = clock
         self.seeds: list = []          # [x_m, y_m, name]
         self.calls = 0
         self.capped = False            # the cap was reached: no more asks
         self.no_source = False         # NO_SOURCE seen: no more asks, no frames
         self._cut: Optional[_Cut] = None
-        self._geo: Optional[_Cut] = None   # spacing: distances from the seeds (in .d)
-        self._geo_seeds = -1
+        self._geo = None               # spacing: (cut, seeds counted, distances)
         self._retry_at: Optional[float] = None
         self._failures = 0
 
@@ -301,34 +346,22 @@ class RoomLabeller:
             self._cut = _Cut(m, seg, d, peaks, self.clock())
         return self._cut
 
-    @staticmethod
-    def _free(m: dict) -> np.ndarray:
-        return np.asarray(m["cells"]).reshape(m["height"], m["width"]) == CELL_FREE
-
-    @staticmethod
-    def _cell(m: dict, x: float, y: float) -> tuple:
-        res = m["resolution_m"]
-        return (int((y - m["origin_y_m"]) // res), int((x - m["origin_x_m"]) // res))
-
     def _wants(self, m: dict, x: float, y: float) -> bool:
         """Whether the robot standing at (x, y) is in space no ask covers --
         judged on the last cut; floor that cut has not seen is never asked
         about (wait for the next)."""
-        if self.mode == "spacing":
-            if not self.seeds:
-                j, i = self._cell(m, x, y)
-                free = self._free(m)
-                return 0 <= j < free.shape[0] and 0 <= i < free.shape[1] and bool(free[j, i])
-            if self._geo_seeds != len(self.seeds) or self._due(self._geo, m):
-                free = self._free(m)
-                d, _ = _geodesic(free, [self._cell(m, sx, sy) for sx, sy, _ in self.seeds])
-                self._geo = _Cut(m, d, d, None, self.clock())
-                self._geo_seeds = len(self.seeds)
-            c = self._geo.cell(x, y)
-            if c is None or self._geo.d[c] < 0:
-                return False           # not reached in the last distances: wait
-            return self._geo.d[c] * self._geo.res > self.spacing_m
         cut = self._segments(m)
+        if self.mode == "spacing":
+            c = cut.cell(x, y)
+            if c is None or cut.seg[c] < 0:
+                return False           # not floor in the last cut: wait
+            if not self.seeds:
+                return True
+            if self._geo is None or self._geo[0] is not cut or self._geo[1] != len(self.seeds):
+                d, _ = _walk(cut.seg, [cut.cell(sx, sy) or (-1, -1) for sx, sy, _ in self.seeds],
+                             cut.res, self.door_m)
+                self._geo = (cut, len(self.seeds), d)
+            return bool(self._geo[2][c] > self.spacing_m)
         c = cut.cell(x, y)
         if c is None or cut.seg[c] < 0:
             return False
@@ -395,15 +428,18 @@ class RoomLabeller:
         if not m or not m.get("usable", True) or "cells" not in m:
             return None
         named = [(x, y, n) for x, y, n in self.seeds if n != UNCLEAR]
+        cut = self._segments(m, fresh=True)
         if self.mode == "spacing":
-            free = self._free(m)
-            d, owner = _geodesic(free, [self._cell(m, x, y) for x, y, _ in named])
+            # Every seed walks -- an `unclear` one holds its space and names
+            # nothing -- and an answer reaches REACH_M at most: a cell it
+            # reaches only through two doorways stays unlabelled.
+            d, owner = _walk(cut.seg, [cut.cell(x, y) or (-1, -1) for x, y, _ in self.seeds],
+                             cut.res, self.door_m)
             names = sorted({n for _x, _y, n in named})
             index = {n: k for k, n in enumerate(names)}
-            lut = np.array([index[n] for _x, _y, n in named] + [-1], dtype=int)
-            cells = np.where(owner >= 0, lut[owner], -1)
+            lut = np.array([index.get(n, -1) for _x, _y, n in self.seeds] + [-1], dtype=int)
+            cells = np.where((owner >= 0) & (d < self.reach_m), lut[owner], -1)
             return {"names": names, "cells": cells.ravel().tolist()}
-        cut = self._segments(m, fresh=True)
         seg = cut.seg
         votes: dict = {}
         for x, y, name in named:

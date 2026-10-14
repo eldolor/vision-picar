@@ -7,7 +7,9 @@ house, FakeNav for nav2). Recorded 2026-10-13 in 3.70's "Records: S1-S3":
 * every survey ends `exhausted` with coverage >= 95% (S1, met);
 * `rooms`: label calls median 10, max 19 -- never past the cap of 20;
   rooms >= 95% labelled 22 of 90 (S2 FAILED; pinned as no regression);
-* `spacing`: calls median 28, max 40; rooms >= 95% labelled 36 of 90.
+* `spacing` (amendment 1: asked again through every doorway, labels stop
+  at doorways): calls median 29, max 44; rooms >= 95% labelled 46 of 90
+  (36 before; S2 still FAILED, pinned as no regression).
 """
 
 import statistics
@@ -37,5 +39,5 @@ def test_label_calls_and_where_labels_land_do_not_regress(rows):
         assert statistics.median(calls) <= 10 and max(calls) <= 20, calls
         assert good >= 22, good
     else:
-        assert statistics.median(calls) <= 28 and max(calls) <= 40, calls
-        assert good >= 36, good
+        assert statistics.median(calls) <= 29 and max(calls) <= 44, calls
+        assert good >= 46, good

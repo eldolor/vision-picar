@@ -164,14 +164,16 @@ DEFAULTS = {
     # 3.70 S1: a survey's own time limit -- 30 min, proposed in the plan as
     # twice 3.45's 900 s cap; a survey maps the whole house.
     "survey_time_limit_s": 1800.0,
-    # 3.70 S2: a survey asks for a room's name once per room of the map's
-    # shape ("rooms") or every `SPACING_M` of walking ("spacing"), at most
+    # 3.70 S2: a survey asks for a room's name every `SPACING_M` of walking
+    # and on coming through a doorway ("spacing", amendment 1), or once per
+    # room of the map's shape ("rooms": fewer calls, worse labels), at most
     # `room_label_max_calls` times (on the car each is a paid cloud call;
     # reaching it leaves the rest unlabelled, never ends the survey). The
-    # cap is the sim surveys' median count x 2 (brain/room_labels.py,
+    # cap is `spacing`'s 9-survey median (29) x 2, rounded up to the most
+    # any of 100 ProcTHOR surveys asked (60) (brain/room_labels.py,
     # tests/survey_sweep.py). 0 = no cap.
-    "room_label_mode": "rooms",
-    "room_label_max_calls": 20,
+    "room_label_mode": "spacing",
+    "room_label_max_calls": 60,
     # End a mission `blocked` after this many FORWARDs in a row refused by
     # the safety layer (control/mission_runner.py's BLOCKED). 0 disables.
     # Five because a policy that is merely unlucky gets one or two refusals

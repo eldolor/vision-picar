@@ -326,13 +326,15 @@ brain:
   vision_max_calls: 120
   # 3.70 S1-S2: a survey (job "survey": no target, explore only) has its own
   # time limit, 30 min (proposed: twice 3.45's 900 s), and asks for a room's
-  # name once per room of the map's shape ("rooms") or every 2 m walked
-  # ("spacing"), at most room_label_max_calls times -- on the car each is a
-  # paid cloud call. The cap is the sim surveys' median x 2; reaching it
-  # leaves the rest unlabelled, it never ends the survey. 0 = no cap.
+  # name every 2 m walked and through every doorway ("spacing"), or once per
+  # room of the map's shape ("rooms": fewer calls, worse labels), at most
+  # room_label_max_calls times -- on the car each is a paid cloud call. The
+  # cap is spacing's sim median (29) x 2, rounded up to the ProcTHOR max
+  # (60); reaching it leaves the rest unlabelled, never ends the survey.
+  # 0 = no cap.
   survey_time_limit_s: 1800
-  room_label_mode: rooms
-  room_label_max_calls: 20
+  room_label_mode: spacing
+  room_label_max_calls: 60
   # Brain-side pre-check; the robot server re-checks against
   # safety.min_distance_cm above, which is now the same number on purpose.
   # NOT 30.0: that is exactly one grid cell, so with sim.sensor_noise on it
