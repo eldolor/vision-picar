@@ -1,0 +1,19 @@
+19:27:55 hallway, north: succeeded 0.10 m
+19:28:11 kitchen, through its door: succeeded 0.10 m
+19:28:36 hallway, south: succeeded 0.09 m
+19:28:52 bedroom, through its door: succeeded 0.09 m
+19:29:20 study, across the hallway: succeeded 0.10 m
+19:29:52 back to the start: succeeded 0.09 m
+19:30:10 hallway, north: succeeded 0.09 m
+19:30:27 kitchen, through its door: succeeded 0.10 m
+19:30:51 hallway, south: succeeded 0.09 m
+19:31:08 bedroom, through its door: succeeded 0.10 m
+19:31:35 study, across the hallway: succeeded 0.10 m
+19:32:07 back to the start: succeeded 0.10 m
+19:32:25 hallway, north: succeeded 0.09 m
+19:32:42 kitchen, through its door: succeeded 0.10 m
+19:33:06 hallway, south: succeeded 0.09 m
+19:33:22 bedroom, through its door: succeeded 0.09 m
+19:33:50 study, across the hallway: succeeded 0.09 m
+19:34:23 back to the start: succeeded 0.09 m
+goals 18/18 succeeded
