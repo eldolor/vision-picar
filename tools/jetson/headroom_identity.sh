@@ -18,12 +18,18 @@
 # bench_identity_trt (ENGINES, the model's engines dir; EDGELLM, the built
 # Edge-LLM tree). The twin's systemd units (3.71) are stopped after the
 # multi-user isolate, which would otherwise start them (3.78's deviation).
+#
+# 3.81.A: ACCOUNT=1 also runs tools/jetson/memory_account.py as root for the
+# whole run (one sample every 5 s, tagged with the phase: idle, stack,
+# perception, window), logs perception's torch allocator, and holds 30 s in
+# each phase before the window so each is sampled at rest.
 set -uo pipefail
 OUT="${1:?out dir}"; mkdir -p "$OUT"
 IMAGE="${IMAGE:-vision-picar-ros:plan-3.58}"
 NAME="${NAME:-picar-ros-358}"
 BENCH="${BENCH:-$HOME/bench-348}"
 RUNTIME="${RUNTIME:-llama}"
+ACCOUNT="${ACCOUNT:-0}"
 ENGINES="${ENGINES:-$HOME/bench-378/ws91/Qwen2.5-VL-3B-Instruct/engines}"
 EDGELLM="${EDGELLM:-$HOME/bench-378/ell91}"
 source .venv/bin/activate
@@ -42,8 +48,10 @@ waitfor() {  # seconds what cmd...
   done
 }
 
+phase() { [ "$ACCOUNT" = 1 ] && { echo "$1" > "$OUT/phase"; [ "$1" = window ] || [ "$1" = end ] || sleep 30; }; }
 teardown() {
   kill $PERC $MEM $WHL $NAV 2>/dev/null; sudo pkill tegrastats 2>/dev/null
+  [ "$ACCOUNT" = 1 ] && { echo end > "$OUT/phase"; sleep 6; sudo pkill -f 'memory_account.py sample'; }
   docker rm -f "$NAME" >/dev/null 2>&1
   pids="$(pgrep -f 'bash service/tunnel/run.sh'; for p in 8000 8001 8002 8003 8004 8080; do lsof -nP -tiTCP:$p -sTCP:LISTEN; done)"
   [ -n "$pids" ] && kill $pids 2>/dev/null; sleep 3
@@ -61,6 +69,12 @@ sudo systemctl stop picar-stack picar-ngrok 2>/dev/null; sleep 3
   echo "== run L $(date +%T) rev $(git rev-parse --short HEAD) image $IMAGE $(sudo nvpmodel -q | head -1)"
   echo "== MemAvailable before anything: $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) MB"; } | tee "$OUT/run.log"
 OOM0=$(oom)
+if [ "$ACCOUNT" = 1 ]; then
+  export PERCEPTION_TORCH_LOG="$OUT/torch.jsonl"
+  sudo python3 tools/jetson/memory_account.py sample "$OUT/account.jsonl" \
+    --phase-file "$OUT/phase" > "$OUT/account.err" 2>&1 &
+  phase idle
+fi
 
 docker rm -f "$NAME" >/dev/null 2>&1
 SIM_MAP=scaled_house ROBOT_DRIVE=ros WORLD_MODE=ros ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake \
@@ -77,6 +91,7 @@ from tests import demo_nav_goals as nav
 nav.map_first(nav.client())
 EOF
 echo "== mapped $(date +%T); MemAvailable with the stack: $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) MB" | tee -a "$OUT/run.log"
+phase stack
 
 sudo tegrastats --interval 1000 --logfile "$OUT/tegrastats.log" &
 ( while true; do echo "$(date +%s) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)"; sleep 1; done ) > "$OUT/mem.log" &
@@ -84,6 +99,7 @@ MEM=$!
 PYTHONPATH=. python tools/jetson/perception_loop.py 3600 > "$OUT/perception.log" 2> "$OUT/perception.err" &
 PERC=$!
 waitfor 180 "perception loaded" grep -q "loaded 1 pipeline" "$OUT/perception.log"
+phase perception
 ( while true; do echo "$(date +%T) $(wheel)"; sleep 5; done ) > "$OUT/wheel.log" &
 WHL=$!
 touch "$OUT/nav.run"
@@ -113,6 +129,7 @@ print(f"goals {ok}/{n} succeeded", flush=True)
 EOF
 NAV=$!
 
+phase window
 W0=$(wheel); T0=$(date +%s)
 echo "== window start $(date +%T); wheel (moving late max_dt): $W0" | tee -a "$OUT/run.log"
 WALKS=(--walk blue-bottle-20260907-142454 --walk blue-bottle-20260907-185007
@@ -137,6 +154,7 @@ BENCH_EXIT=$?
 W1=$(wheel); T1=$(date +%s)
 rm -f "$OUT/nav.run"; wait $NAV 2>/dev/null; NAV=
 echo "== window end $(date +%T) bench exit $BENCH_EXIT; wheel: $W1" | tee -a "$OUT/run.log"
+phase end
 kill $PERC $MEM $WHL 2>/dev/null; PERC=; MEM=; WHL=; sudo pkill tegrastats
 OOM1=$(oom)
 
