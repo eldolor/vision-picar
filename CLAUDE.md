@@ -172,9 +172,9 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   question asks it first (`brain/local_vlm.py`, `TieredVision.confirm_local`,
   arrival state `checking`); on with `tier_local_vlm_url` / `LOCAL_VLM_URL`.
   C1-C8 met (live: `found` offline, 0 cloud calls at arrival). D (per-frame
-  escalation) and E (board measurements, then turning it on) are open;
-  `picar-stack`'s `OOMScoreAdjust=-900` (B4) is checked once installed from
-  `dev`. Survey room labels go through the same tiers in 3.70.S6.
+  escalation) and E (board measurements, then turning it on) are open.
+  `picar-stack` runs at `oom_score_adj` -900 on the Jetson (B4, checked
+  2026-10-14 at `954cc68`). Survey room labels go through the same tiers in 3.70.S6.
 * **Rooms from CLIP (3.51, 3.54), merged 2026-10-09.** Zero-shot fails
   (67%); few-shot on the user's own rooms meets accuracy on three rooms
   (81%, within 1.1 points of the cloud) but not laptop-CPU cost. Not wired
