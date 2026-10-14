@@ -1485,6 +1485,9 @@ class _StubNavigator:
     def available(self):
         return True
 
+    def close(self):           # 3.76: a refused start closes its navigator
+        pass
+
     def set_goal(self, x_m, y_m):
         return {"accepted": False, "reason": "stub"}
 
