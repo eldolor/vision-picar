@@ -458,3 +458,129 @@ def test_d8_config_refuses_a_band_outside_zero_to_the_gate(tmp_path, value):
     cfg.write_text(f"brain:\n  tier_local_band_low: {value}\n")
     with pytest.raises(ValueError, match="tier_local_band_low"):
         load_brain_config(str(cfg))
+
+
+# --- review fixes (2026-10-14: /code-review + the bug pass) -----------------------
+
+class OneAtATime:
+    """The service serves one request at a time: a second while one is out
+    is `busy`. Sightings and arrival share it, as on the board."""
+
+    def __init__(self, sighting, identity=None):
+        self.lock = threading.Lock()
+        self.sighting, self.identity = sighting, identity or yes()
+        self.gate = threading.Event()
+        self.order = []
+
+    def sight(self, frame, box=False):
+        with self.lock:
+            self.order.append("sighting")
+            self.gate.wait(5)
+            return dict(self.sighting)
+
+    def confirm(self, frame):
+        if not self.lock.acquire(blocking=False):
+            self.order.append("identity-busy")
+            return unable("busy")
+        try:
+            self.order.append("identity")
+            return dict(self.identity)
+        finally:
+            self.lock.release()
+
+
+def test_review_the_arrival_check_waits_for_a_sighting_question_still_out():
+    svc = OneAtATime(no())
+    tier = TieredVision(Pipeline([P(ABSENT)]), Cloud(), cold_search_after=99, stale_after=0,
+                        async_cloud=True, local_sighting_fn=svc.sight,
+                        local_identity_fn=svc.confirm)
+    tier(frame())                                   # mission_start, held at the service
+    done = {}
+    t = threading.Thread(target=lambda: done.setdefault("v", tier.confirm_local(frame())))
+    t.start()
+    time.sleep(0.2)
+    svc.gate.set()
+    t.join(5)
+    assert svc.order == ["sighting", "identity"]
+    assert done["v"]["confirmed"] is True
+    tier.close()
+
+
+def test_review_a_spent_call_cap_never_locks_the_free_local_tier_out():
+    local = Local(unable(), unable(), no())
+    tier, cloud = tier_for([P(ABSENT)], local, vocabulary=vocab(False), max_calls=1)
+    tier.stats.cloud_calls = 1                       # the cap is spent
+    play(tier, 8)
+    assert local.asked >= 3 and cloud.calls == 0
+
+
+def test_review_out_of_vocabulary_reaches_the_cloud_no_faster_than_cold_search():
+    # The local VLM absent: each question would be a paid call.
+    tier, cloud = tier_for([P(ABSENT)], Local(LocalVLMAbsent("gone")),
+                           vocabulary=vocab(False), cold_search_after=6)
+    play(tier, 19)
+    # start, then one every 6 absent frames: as cold_search with no local tier.
+    assert cloud.calls == 4, tier.stats.as_dict()
+
+
+def test_review_unable_out_of_vocabulary_escalates_at_cold_search_pace():
+    tier, cloud = tier_for([P(ABSENT)], Local(unable()), vocabulary=vocab(False),
+                           cold_search_after=6)
+    play(tier, 19)
+    assert cloud.calls <= 4, tier.stats.as_dict()
+
+
+def test_review_an_unavailable_frame_breaks_the_band_run():
+    frames = ([P(ABSENT, 0.2)] + [P(ABSENT, 0.6)] * 3 + [P(UNAVAILABLE)]
+              + [P(ABSENT, 0.6)] * 2)
+    tier, cloud = tier_for(frames, Local(no()))
+    play(tier, len(frames))
+    assert asked(tier)[TRIGGER_BAND] == 2
+    # band, unavailable, band is not two in a row.
+    frames = [P(ABSENT, 0.2), P(ABSENT, 0.6), P(UNAVAILABLE), P(ABSENT, 0.6)]
+    tier, cloud = tier_for(frames, Local(no()))
+    play(tier, len(frames))
+    assert TRIGGER_BAND not in asked(tier)
+
+
+def test_review_sighting_and_arrival_latency_are_kept_apart():
+    tier, cloud = tier_for([P(ABSENT)], Local(no()), local_identity_fn=lambda f: yes())
+    play(tier, 1)
+    tier.confirm_local(frame())
+    d = tier.stats.as_dict()
+    assert d["local_ms"]["n"] == 1 and d["local_frame_ms"]["n"] == 1
+
+
+def test_review_a_cloud_answer_after_an_absent_local_tier_starts_the_unable_count_again():
+    local = Local(unable(), LocalVLMAbsent("gone"), unable(), unable())
+    tier, cloud = tier_for([P(ABSENT)], local, cold_search_after=1)
+    play(tier, 3)          # unable, absent -> cloud, unable
+    assert cloud.calls == 1 and local.asked == 3
+    play(tier, 1)          # one unable since the cloud: still local
+    assert local.asked == 4 and cloud.calls == 1
+
+
+def test_review_a_failed_dispatch_counts_no_escalation():
+    tier, cloud = tier_for([P(ABSENT)], Local(unable()), async_cloud=True)
+    tier._frame_unable = tier.local_max_unable
+    tier._dispatch = lambda *a, **k: False    # close() wins the race to dispatch
+    tier(frame())
+    assert tier.stats.frame_escalations == {} and tier._frame_unable == tier.local_max_unable
+
+
+def test_review_a_sync_cloud_answer_drops_a_located_turn_not_yet_used():
+    tier, cloud = tier_for([P(ABSENT)], Local(unable()))
+    tier._local_turn = ("RIGHT", 30)
+    tier._frame_unable = tier.local_max_unable   # this question goes to the cloud
+    s = tier(frame())
+    assert s["_tier"]["cloud_called"] and tier._local_turn is None
+
+
+def test_review_the_simulator_reads_bearings_in_its_own_field_of_view(monkeypatch):
+    import sim.renderer as renderer
+    from control.brain_config import load_brain_config
+    from control.brain_server import _tiered_vision_fn
+    monkeypatch.delenv("LOCAL_VLM_URL", raising=False)
+    tier = _tiered_vision_fn("backpack", Cloud(), load_brain_config(), simulated=True)
+    assert tier.pipeline.hfov_deg == pytest.approx(math.degrees(renderer.FPV_FOV))
+    tier.close()

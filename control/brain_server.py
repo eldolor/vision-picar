@@ -286,6 +286,11 @@ def _frames_are_simulated(robot: RobotInterface) -> bool:
     return (frame.get("metadata") or {}).get("source") == "sim"
 
 
+# sim/renderer.py's FPV_FOV, in degrees. Copied, not imported: control/ never
+# imports the simulator (CLAUDE.md rule 5); tests/test_tiered_frames.py pins it.
+SIM_HFOV_DEG = 60.0
+
+
 def _local_vlm_secret(config: dict, secret: Optional[str]) -> Optional[str]:
     """`LOCAL_VLM_SECRET`, else the brain's own `APP_SHARED_SECRET` -- but
     that one only to a service on this machine: it gates the robot too, and
@@ -371,8 +376,10 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
         # "sim ground truth", and every tier frame carries `synthesised`.
         from brain.perceive import FrameReportedPipeline
 
-        return tiered_vision_fn_for(target, cloud_vision_fn,
-                                    pipeline=FrameReportedPipeline(target), **kwargs)
+        pipeline = FrameReportedPipeline(target)
+        # 3.80.D: a local VLM's box is read in the render's field of view.
+        pipeline.hfov_deg = SIM_HFOV_DEG
+        return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
     pipeline_kwargs = {}
     if config["perception_detector"]:
         pipeline_kwargs["weights"] = config["perception_detector"]

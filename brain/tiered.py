@@ -526,6 +526,7 @@ class TierStats:
     local_frame: dict = field(default_factory=dict)
     local_frame_calls: int = 0
     frame_escalations: dict = field(default_factory=dict)
+    local_frame_ms: list = field(default_factory=list)
     # How many samples each bucket has been offered, and the reservoir's
     # draw (seeded, so a replay samples the same way) -- 3.76.
     _seen: dict = field(default_factory=dict, repr=False, compare=False)
@@ -574,6 +575,7 @@ class TierStats:
             "local_triggers": dict(self.local_triggers),
             "local_frame": dict(self.local_frame),
             "local_frame_calls": self.local_frame_calls,
+            "local_frame_ms": self._percentiles("local_frame_ms"),
             "frame_escalations": dict(self.frame_escalations),
             "frames": self.frames,
             "cloud_calls": self.cloud_calls,
@@ -597,6 +599,7 @@ class _Question:
     pose: Optional[Pose]
     pan_deg: float
     hfov_deg: float
+    cloud_ok: bool = True
 
 
 @dataclass
@@ -892,10 +895,7 @@ class TieredVision:
 
         if local_fn is not None:
             return self._ask_local_first(frame, perception, trigger, frame_epoch, local_fn)
-        if self.local_sighting_fn is not None:
-            # 3.80.D: handed up after `local_max_unable` unable answers.
-            self._frame_unable = 0
-            self._count("frame_escalations", "unable")
+        escalated = self.local_sighting_fn is not None
 
         self.stats.cloud_calls += 1
         self.stats.triggers[trigger] = self.stats.triggers.get(trigger, 0) + 1
@@ -910,9 +910,14 @@ class TieredVision:
                 self.stats.cloud_calls -= 1
                 self.stats.triggers[trigger] -= 1
                 return self._local_scene(perception, note="mission ended")
+            if escalated:
+                # 3.80.D: handed up after `local_max_unable` unable answers.
+                self._count("frame_escalations", "unable")
             return self._local_scene(perception, note="dispatched",
                                      dispatched=trigger)
 
+        if escalated:
+            self._count("frame_escalations", "unable")
         _t0 = time.perf_counter()
         scene = self.cloud_vision_fn(frame)
         self.stats.record("cloud_ms", (time.perf_counter() - _t0) * 1000)
@@ -922,6 +927,8 @@ class TieredVision:
         # scanning -- the exact behaviour Phase F exists to remove.
         self._last_cloud_scene = scene
         self._local_held = None
+        self._local_turn = None     # 3.80.D: this answer is newer
+        self._frame_unable = 0
         return self._annotate(scene, perception, trigger)
 
     # -- 3.80.D: a frame's question, to the local tier first --------------
@@ -931,8 +938,13 @@ class TieredVision:
         the cloud's: no local tier, or it was unable `local_max_unable`
         times in a row."""
         fn = self.local_sighting_fn
-        if fn is None or self._frame_unable >= self.local_max_unable:
+        if fn is None:
             return None
+        if self._frame_unable >= self.local_max_unable:
+            # With the call cap spent there is no cloud to hand it to: the
+            # free local tier keeps the question (review, 2026-10-14).
+            spent = self.max_calls is not None and self.stats.cloud_calls >= self.max_calls
+            return fn if spent else None
         return fn
 
     def _count(self, bucket: str, key: str) -> None:
@@ -952,7 +964,11 @@ class TieredVision:
             pose=(Pose(self._odom.pose.x, self._odom.pose.y, self._odom.pose.heading_deg)
                   if (self._odometry_usable and self._odom.samples) else None),
             pan_deg=float(frame.get("pan_deg") or 0.0),
-            hfov_deg=float(getattr(self.pipeline, "hfov_deg", None) or DEFAULT_HFOV_DEG))
+            hfov_deg=float(getattr(self.pipeline, "hfov_deg", None) or DEFAULT_HFOV_DEG),
+            # An absent local tier hands this to the cloud, which an
+            # out-of-vocabulary question earns only at cold_search's bar.
+            cloud_ok=(trigger != TRIGGER_OOV
+                      or self._absent_streak >= self._cold_search_bar()))
         if self.async_cloud:
             if not self._dispatch(frame, trigger, epoch, tier="local",
                                   job=lambda: self._ask_tiers(frame, q, fn)):
@@ -973,6 +989,8 @@ class TieredVision:
         self._mark_odometry_call()
         self._last_cloud_scene = got
         self._local_held = None
+        self._local_turn = None
+        self._frame_unable = 0
         return self._annotate(got, perception, trigger)
 
     def _ask_tiers(self, frame: dict, q: "_Question", fn):
@@ -988,7 +1006,7 @@ class TieredVision:
         except Exception as e:  # noqa: BLE001 -- LocalVLMAbsent, or a fault in the client
             got, error = None, e
         with self._stats_lock:
-            self.stats.record("local_ms", (time.perf_counter() - started) * 1000)
+            self.stats.record("local_frame_ms", (time.perf_counter() - started) * 1000)
         if error is None:
             return _LocalAnswer(q, got if isinstance(got, dict) else {})
         logger.warning("local VLM absent for %s (%s); asking the cloud", q.trigger, error)
@@ -997,7 +1015,8 @@ class TieredVision:
                 return None   # a Stop while the local tier was asked: nothing paid
             s = self.stats
             s.local_frame["absent"] = s.local_frame.get("absent", 0) + 1
-            if self.max_calls is not None and s.cloud_calls >= self.max_calls:
+            if (not q.cloud_ok
+                    or (self.max_calls is not None and s.cloud_calls >= self.max_calls)):
                 return _LocalAnswer(q, {}, absent=True)
             s.cloud_calls += 1
             s.triggers[q.trigger] = s.triggers.get(q.trigger, 0) + 1
@@ -1015,7 +1034,9 @@ class TieredVision:
             return
         trigger = ans.q.trigger
         if ans.absent:
-            # Absent and the call cap spent: nothing answered, nothing paid.
+            # Absent, and the cloud not to be asked (the call cap spent, or an
+            # out-of-vocabulary question before cold_search's bar): nothing
+            # answered, nothing paid.
             self._local_landed = {"trigger": trigger, "answer": "absent", "score": None}
             return
         got = ans.got
@@ -1153,6 +1174,16 @@ class TieredVision:
         An unable answer is `undecided`: neither confirmed nor refused, and
         the agent asks again on the next arrival frame."""
         s = self.stats
+        fut = self._inflight
+        if fut is not None and self._inflight_tier == "local":
+            # 3.80.D: a frame's question still holds the local VLM, which
+            # serves one request at a time: asked now, the arrival would be
+            # `busy` (review, 2026-10-14). The runner's budget bounds this.
+            try:
+                fut.result()
+            except BaseException:  # noqa: BLE001 -- _collect_inflight holds it
+                pass
+            self._collect_inflight()
         with self._local_lock:
             # An arrival frame: the arrival is still on (arrival_ended's run
             # of frames off it starts again), whichever tier is asked.
@@ -1406,6 +1437,7 @@ class TieredVision:
             return
         self._last_cloud_scene = scene
         self._local_held = None
+        self._frame_unable = 0      # 3.80.D: a cloud answer starts the count again
         # Run the annotation for its SIDE EFFECTS -- corroboration and the
         # stats 6.3 puts on the panel -- against the perception this call
         # was actually made on, not whatever is in front of the camera now.
@@ -1502,6 +1534,8 @@ class TieredVision:
         # cloud call every few frames and look like a search.
         if perception.status == UNAVAILABLE:
             self._run.clear()
+            self._band_run = 0          # 3.80.D: any other frame breaks a band run
+            self._band_asked = False
             return None
 
         if self._retry_start:
@@ -1542,9 +1576,11 @@ class TieredVision:
             if band and self._band_run >= self.consecutive_frames and not self._band_asked:
                 self._band_asked = True
                 return TRIGGER_BAND
-            if (self.local_sighting_fn is not None and self.vocabulary is not None
+            if (self._local_first() is not None and self.vocabulary is not None
                     and not self.vocabulary.in_vocabulary
                     and self._absent_streak >= self.consecutive_frames):
+                # Only while the local tier takes it: a question due for the
+                # cloud waits for cold_search's bar (review, 2026-10-14).
                 return TRIGGER_OOV
             # An OR, not a replacement. Distance is the better measure of
             # "how much new view is there to look at" while the robot is
