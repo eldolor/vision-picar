@@ -207,8 +207,21 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   and, for `vision` only, 120 paid calls (`vision_max_calls`); `max_steps`
   is only a backstop derived from the limit. Each end carries a report
   (rooms entered, goals, m² mapped); its `coverage` share FAILED its
-  2-point bar mid-search (+69/+77 live), so the phone shows m². Survey
-  mode and missions on a saved map (the rest of 3.70) are not built.
+  2-point bar mid-search (+69/+77 live), so the phone shows m².
+  **Survey mode (3.70 S1-S3), merged 2026-10-14, sim only.** `job:
+  "survey"` (no target, explore only, `survey_time_limit_s` 1800 s) ends
+  `exhausted`, never `found`: 9/9 sim and 100/100 ProcTHOR; the one live
+  run in `home_first_floor` FAILED (out of time at 30 min, 26 frontiers
+  left). Room labels (`brain/room_labels.py`): asked every 2 m and through
+  every doorway (`room_label_mode: spacing`; a doorway counts 3 m, an
+  answer reaches one doorway on), at most 60 calls a survey -- the user's
+  choice 2026-10-13, ~$0.43 typical, ~$0.88 at the cap on Opus 5.5 (an
+  estimate). FAILED the 95%-per-room bar: 46 of 90 rooms (was 36), even
+  asking at every stop tops out at 57 (open plans, rooms never entered).
+  Objects during a survey FAILED on duplicates only (1.30, bar 1.2). Not
+  wired: the car's paid label call (S2's car half). Open: time the map cut
+  (`segment()`, ~1 s on the laptop, every 5 s) on the Jetson. Missions on a
+  saved map (S4, M1-M3) wait on 3.50's build; S5 (phone) not built.
 * **Review of the code written before the review rule (3.76), batches A-B
   merged 2026-10-13.** Both reviewers on whole files, risky files only,
   every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
