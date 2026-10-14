@@ -345,7 +345,11 @@ class ExploreAgent(MissionAgent):
             self._bridge_blip(exc)
             return "unreadable"
         self._blips = 0
-        if g.get("x_m") is not None and not self._is_own(g):
+        # 3.76 round 7: a goal with no house position (RosWorld's
+        # `unanchored`) is never the mission's own -- its goals are sent on
+        # an anchored session whose anchor never changes -- so it is treated
+        # as any goal that is not ours (E9). `_is_own` is False without x_m.
+        if g.get("state") and not self._is_own(g):
             # 3.76: a goal someone else set (a tap on the map) replaced the
             # mission's -- live, or already finished between polls. It used
             # to be taken for the mission's own: waited on, then recorded as
@@ -810,7 +814,7 @@ class ExploreAgent(MissionAgent):
                 live = (self.navigator.get_goal() or {}).get("goal") or {}
             except Exception:  # noqa: BLE001 -- cancel blind, as before
                 live = None
-            if live and live.get("x_m") is not None and not self._is_own(live):
+            if live and live.get("state") and not self._is_own(live):   # round 7: unplaced too
                 self._goal = None
                 raise Preempted(f"a nav2 goal set by someone else replaced the mission's "
                                 f"({live.get('x_m')}, {live.get('y_m')})")

@@ -34,6 +34,19 @@ if [ "${SIM_MOTOR_BOARD:-}" = "fake" ]; then
   done
 fi
 EXPECT="$(git rev-parse --short HEAD)"
+# 3.71: on the Jetson run.sh is the `picar-stack` unit. Killing it from here
+# exits it 0 (its TERM trap), so systemd does not restart it, and the copy
+# started below runs outside systemd: never restarted after a crash, and not
+# stopped by `systemctl stop` before a bench (3.76 H3-13).
+# Any state but stopped counts: a crash-looping unit reads `activating`
+# between restarts, and would start a second run.sh over this one.
+if command -v systemctl >/dev/null 2>&1; then
+  case "$(systemctl is-active picar-stack 2>/dev/null || true)" in
+    active|activating|deactivating|reloading)
+      echo "FAILED: run.sh is the picar-stack unit here. For a bench, stop both units first: sudo systemctl stop picar-stack picar-ngrok (tools/jetson/README.md sections 4-5); to restart the served stack: sudo systemctl restart picar-stack" >&2
+      exit 1 ;;
+  esac
+fi
 
 listeners() {
   local p
@@ -70,17 +83,22 @@ disown || true
 
 # ---- verify: the NEW code is what answers ---------------------------------
 revision() {  # $1 = health URL; prints the git revision it reports, or nothing
-  curl -s -m 2 ${LOCAL_SECRET:+-H "x-app-secret: $LOCAL_SECRET"} "$1" 2>/dev/null \
+  # The secret goes in on stdin (`-H @-`), not the command line, where `ps`
+  # shows it to every user on the machine (3.76 H3-9).
+  printf '%s\n' "${LOCAL_SECRET:+x-app-secret: $LOCAL_SECRET}" \
+    | curl -s -m 2 -H @- "$1" 2>/dev/null \
     | python3 -c "import sys,json; print(json.load(sys.stdin)['identity']['git_revision'])" 2>/dev/null || true
 }
 SECRETS="$HOME/.vision-picar-local-secrets"
 # shellcheck disable=SC1090
 [ -f "$SECRETS" ] && { set -a; source "$SECRETS"; set +a; }
 
+# Through the proxy (:8080, what ngrok points at), so a proxy that never
+# came up is not reported OK (3.76 H3-8).
 robot=""; brain=""; body="$EXPECT"
 for _ in $(seq 1 40); do
-  robot="$(revision http://127.0.0.1:8000/health)"
-  brain="$(revision http://127.0.0.1:8001/brain/health)"
+  robot="$(revision http://127.0.0.1:8080/health)"
+  brain="$(revision http://127.0.0.1:8080/brain/health)"
   [ "${SIM_MOTOR_BOARD:-}" = "fake" ] && body="$(revision "$SIM_BODY_URL/health")"
   [ "$robot" = "$EXPECT" ] && [ "$brain" = "$EXPECT" ] && [ "$body" = "$EXPECT" ] && break
   sleep 0.5
@@ -93,6 +111,19 @@ if [ "$robot" != "$EXPECT" ] || [ "$brain" != "$EXPECT" ] || [ "$body" != "$EXPE
   exit 1
 fi
 
+# run.sh stops everything when any one of its programs ends, first checked
+# 3 s after it starts and every 2 s after: a sensor server that died at
+# import can still be taking the rest down. Look once more after that.
+# Asked through the proxy again, not by pgrep: a run.sh already in its
+# (bounded) cleanup still matches pgrep for up to 8 s.
+sleep 5
+if [ "$(revision http://127.0.0.1:8080/health)" != "$EXPECT" ] \
+   || [ "$(revision http://127.0.0.1:8080/brain/health)" != "$EXPECT" ]; then
+  echo "FAILED: the stack stopped answering after it came up (one of run.sh's programs ended)." >&2
+  echo "Log: $LOG" >&2
+  grep -E "ERROR|Traceback|ended" "$LOG" >&2 || true
+  exit 1
+fi
 echo "OK: robot and brain both running $EXPECT (log: $LOG)"
 if ! pgrep -x ngrok >/dev/null 2>&1; then
   echo "WARNING: ngrok is not running -- the deployed twin cannot reach this machine. Start it with: ngrok start picar"

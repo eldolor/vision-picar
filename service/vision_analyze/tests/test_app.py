@@ -118,7 +118,7 @@ def test_analyze_bad_base64_is_a_400(client):
 
 
 def test_analyze_oversized_image_is_a_413(client, monkeypatch):
-    monkeypatch.setattr(app_module, "MAX_IMAGE_BYTES", 4)
+    monkeypatch.setattr(app_module.vision_core, "MAX_IMAGE_BYTES", 4)
     resp = client.post("/analyze", json={"image_base64": IMAGE_B64})
     assert resp.status_code == 413
 
@@ -707,7 +707,7 @@ def test_a_pinned_model_is_called_in_its_own_region(monkeypatch):
     monkeypatch.setattr(vision_core, "_clients", {})
     built = []
     monkeypatch.setattr(vision_core.boto3, "client",
-                        lambda svc, region_name=None: built.append(region_name) or object())
+                        lambda svc, region_name=None, **kw: built.append(region_name) or object())
 
     vision_core._get_client("us.anthropic.claude-fable-5-1")
     vision_core._get_client("us.anthropic.claude-opus-4-5-20251101-v1:0")
@@ -724,7 +724,7 @@ def test_clients_are_cached_per_region_not_globally(monkeypatch):
 
     monkeypatch.setattr(vision_core, "_clients", {})
     monkeypatch.setattr(vision_core.boto3, "client",
-                        lambda svc, region_name=None: ("client", region_name))
+                        lambda svc, region_name=None, **kw: ("client", region_name))
 
     pinned = vision_core._get_client("us.anthropic.claude-fable-5-1")
     ambient = vision_core._get_client("amazon.nova-lite-v1:0")

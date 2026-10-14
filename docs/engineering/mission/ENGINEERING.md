@@ -152,7 +152,7 @@ here. The chooser between the sim stand-in and real models is
 which only supplies both pipelines. `POST /mission/start` with `policy` `vision` or `tiered`, in
 `control/brain_server.py`:
 
-1. Refuse with 400 if `vision_url` is empty or there is no `target_object`.
+1. Refuse with 400 if `vision_url` is empty, or the `target_object` is missing, blank after stripping, or over `brain.navigate.MAX_TARGET_CHARS` (200, the vision service's own limit; 3.76 H2 round 3). The vision service answers both 400, so a mission that started would fail every call. `frontier` and `explore` keep their own rules (no length cap; explore refuses only a missing target).
 2. Resolve `model_id` and `prompt_variant` (request, then config, then the
    service default). Check them once against `GET {vision_url}/navigate/models`
    (`_validate_navigate_choices()`). An unknown value is a 400. An unreachable
@@ -303,7 +303,7 @@ otherwise). CORS allows any origin.
 
 | Field | Type, default | Notes |
 |---|---|---|
-| `target_object` | str, None | required for `vision`/`tiered` |
+| `target_object` | str, None | required for `vision`/`tiered`, where it must be non-blank and at most 200 characters (400 otherwise); no cap for `frontier`/`explore` |
 | `target_room` | str, None | `frontier` only in practice; one of the two targets is required (`ValueError` -> 400) |
 | `mission` | str, None | free text; defaulted from the targets |
 | `max_steps` | int, None | the step backstop; omitted, derived from the time limit (3.70 E4) |
@@ -469,7 +469,8 @@ fault is a 403 naming `brain.allow_drills`.
 | Response | Cause |
 |---|---|
 | 400 `The {policy} policy needs a vision service. Set brain.vision_url ...` (`vision` or `tiered`) | `vision_url` empty |
-| 400 `... searches for an object -- /navigate takes a target_object` | room-only mission under a cloud policy |
+| 400 `... searches for an object -- /navigate takes a target_object` | room-only mission, or a blank target, under a cloud policy |
+| 400 `... target_object is over 200 characters; the vision service refuses it` | an over-long target under `vision`/`tiered` |
 | 400 `model_id 'x' is not offered by the vision service. Available: ...` | bad model; same shape for `prompt_variant` |
 | 400 `The tiered policy cannot start: ... pip install -r requirements-perception.txt` | perception extras missing (perception domain) |
 | 400 `Unknown policy: 'x'. Known: frontier, vision, tiered` | bad `policy` value (a 400, not a 422) |
