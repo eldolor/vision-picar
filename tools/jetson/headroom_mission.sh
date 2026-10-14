@@ -99,8 +99,9 @@ import json, sys, time, httpx, os
 out, limit = sys.argv[1], int(sys.argv[2])
 h = {"x-app-secret": os.environ["APP_SHARED_SECRET"]}
 b = httpx.Client(base_url="http://127.0.0.1:8001/brain", timeout=60, headers=h)
-r = b.post("/mission/start", json={"target_object": "red backpack", "policy": "explore",
-                                   "mission_time_limit_s": limit})
+# The config's own mission_time_limit_s (1200 s) bounds the mission; older
+# brains reject a per-mission limit.
+r = b.post("/mission/start", json={"target_object": "red backpack", "policy": "explore"})
 print("start", r.status_code, r.text[:200], flush=True)
 if r.status_code != 200:
     raise SystemExit("mission did not start")
