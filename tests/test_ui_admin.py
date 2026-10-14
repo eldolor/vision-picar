@@ -467,11 +467,16 @@ def test_the_metrics_table_reads_old_outcome_names_as_the_new_ones(browser):
     runs = [{"run_id": f"r{i}", "finished_at": 1760000000 + i, "policy": "explore",
              "outcome": o, "steps": 3, "stats": {}, "config": {}}
             for i, o in enumerate(["searched", "max_steps", "stopped", "preempted", "found"])]
+    # 3.76 C9: a row since then names who cancelled it.
+    runs.append({"run_id": "r9", "finished_at": 1760000009, "policy": "explore",
+                 "outcome": "cancelled", "cancelled_by": "dpad", "steps": 3,
+                 "stats": {}, "config": {}})
     page.route("http://metrics.test/metrics/summary*", lambda route: route.fulfill(
         status=200, content_type="application/json", body=json.dumps({"runs": runs})))
     page.goto("http://metrics.test/metrics.html")
     pills = page.locator("td .pill")
-    sync_api.expect(pills).to_have_count(5, timeout=5000)
+    sync_api.expect(pills).to_have_count(6, timeout=5000)
     shown = sorted(pills.all_inner_texts())
-    assert shown == sorted(["exhausted", "out_of_budget", "cancelled", "cancelled", "found"]), shown
+    assert shown == sorted(["exhausted", "out_of_budget", "cancelled · stop", "cancelled · dpad",
+                            "found", "cancelled · dpad"]), shown
     page.context.close()
