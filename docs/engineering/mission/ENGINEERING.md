@@ -221,6 +221,10 @@ here. The chooser between the sim stand-in and real models is
 which only supplies both pipelines. `POST /mission/start` with `policy` `vision` or `tiered`, in
 `control/brain_server.py`:
 
+0. If the previous runner has not finished closing (`runner.finished`
+   unset: `is_running()` is false before `_finish` closes the policy, which
+   frees its perception models), wait for it, up to `PREVIOUS_CLOSE_WAIT_S`
+   (10 s), then build anyway with a warning (3.81.E).
 1. Refuse with 400 if `vision_url` is empty, or the `target_object` is missing, blank after stripping, or over `brain.navigate.MAX_TARGET_CHARS` (200, the vision service's own limit; 3.76 H2 round 3). The vision service answers both 400, so a mission that started would fail every call. `frontier` and `explore` keep their own rules (no length cap; explore refuses only a missing target).
 2. Resolve `model_id` and `prompt_variant` (request, then config, then the
    service default). Check them once against `GET {vision_url}/navigate/models`

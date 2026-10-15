@@ -82,7 +82,10 @@ run, even from a frame that was in perception when Stop landed (the frame's
 epoch, taken at its start, travels with the call), and no worker pool is
 created again; a landed async answer annotated for its side effects is not
 counted by the spin guard; a `candidate_sighting` held back by a call in
-flight re-arms. `confirm_arrival()` still works after `close()`, for 3.53;
+flight re-arms. Since 3.81.E `close()` also swaps the pipeline for a
+released stand-in (`RELEASED_PIPELINE`, every frame `unavailable`) so the
+ended mission's models can be freed; a frame already in perception finishes on
+the old one. `confirm_arrival()` still works after `close()`, for 3.53;
 `set_searched_rooms()` reaches both clients, and
 `wait_inflight()` drains an async call still out so the runner can do that
 on B3.2's timeout before the confirmation's own clock starts -- counts it in `cloud_calls`

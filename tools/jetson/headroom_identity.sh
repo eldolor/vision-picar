@@ -27,7 +27,8 @@
 # 3.81 amendment 2: SWITCH=1 has perception switch to a target it has not
 # seen 60 s and 210 s into the window (C1's window lasted 388 s) (a new pipeline built while the old
 # is alive, as a mission start does), with an empty text cache, and the
-# summary reports MemAvailable's dip around each switch.
+# summary reports MemAvailable's dip around each switch. SWITCH=release
+# closes the previous pipeline's policy first, as the brain does (3.81.E).
 set -uo pipefail
 OUT="${1:?out dir}"; mkdir -p "$OUT"
 IMAGE="${IMAGE:-vision-picar-ros:plan-3.58}"
@@ -106,7 +107,9 @@ phase stack
 sudo tegrastats --interval 1000 --logfile "$OUT/tegrastats.log" &
 ( while true; do echo "$(date +%s) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)"; sleep 1; done ) > "$OUT/mem.log" &
 MEM=$!
-if [ "${SWITCH:-0}" = 1 ]; then
+if [ "${SWITCH:-0}" != 0 ]; then
+  [ "$SWITCH" = release ] && export PERCEPTION_SWITCH_RELEASE=1
+  echo "$SWITCH" > "$OUT/switch_mode"
   export PERCEPTION_SWITCH_FILE="$OUT/switch" PICAR_TEXT_CACHE="$OUT/text-cache"
   rm -rf "$PICAR_TEXT_CACHE" "$PERCEPTION_SWITCH_FILE"
 fi
@@ -150,7 +153,7 @@ NAV=$!
 phase window
 W0=$(wheel); T0=$(date +%s)
 SWT=
-[ "${SWITCH:-0}" = 1 ] && { ( sleep 60; echo "blue bottle" >> "$OUT/switch"
+[ "${SWITCH:-0}" != 0 ] && { ( sleep 60; echo "blue bottle" >> "$OUT/switch"
                              sleep 150; echo "burgundy backpack" >> "$OUT/switch" ) & SWT=$!; }
 echo "== window start $(date +%T); wheel (moving late max_dt): $W0" | tee -a "$OUT/run.log"
 WALKS=(--walk blue-bottle-20260907-142454 --walk blue-bottle-20260907-185007
@@ -232,6 +235,9 @@ for sw in switches:
 if os.path.exists(f"{out}/switch") or switches:
     summary["switches"] = switches
     summary["switches_expected"] = 2
+    # 1: the previous pipeline alive through the build; release: closed first
+    summary["switch_mode"] = (open(f"{out}/switch_mode").read().strip()
+                              if os.path.exists(f"{out}/switch_mode") else None)
 json.dump(summary, open(f"{out}/summary.json", "w"), indent=1)
 print("== summary:", json.dumps(summary))
 EOF

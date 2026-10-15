@@ -112,6 +112,8 @@ from robot.interface import RobotInterface
 from world.interface import NullWorld, WorldInterface
 
 logger = logging.getLogger("brain_server")
+# 3.81.E: how long a start waits for the ended mission to finish closing.
+PREVIOUS_CLOSE_WAIT_S = 10.0
 
 
 def require_secret(x_app_secret: str = Header(default="")):
@@ -784,6 +786,21 @@ def create_app(
             raise HTTPException(status_code=409, detail="A mission is already running.")
         build = state["building"] = {"stopped": False}
         try:
+            # 3.81.E: a runner reads as not running before `_finish` has
+            # closed its policy (the car's stop comes first), and the close
+            # is what frees its perception models. Building now would hold
+            # two pipelines at once (3.81 C2: 377 MB free with the local
+            # VLM resident). Bounded: a close that never lands costs a wait,
+            # not the start.
+            finished = getattr(runner, "finished", None)
+            if finished is not None and not finished.is_set():
+                if not await asyncio.to_thread(finished.wait, PREVIOUS_CLOSE_WAIT_S):
+                    logger.warning("the previous mission had not finished closing "
+                                   "after %.0f s; building anyway", PREVIOUS_CLOSE_WAIT_S)
+                if build["stopped"]:
+                    # Stopped while waiting: never load the models at all.
+                    raise HTTPException(status_code=409,
+                                        detail="Stopped while the mission was being set up.")
             # Off the event loop: building a vision runner now makes a
             # blocking GET to the vision service to validate model_id, and a
             # slow or dead service would otherwise stall the loop for the

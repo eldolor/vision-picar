@@ -86,6 +86,18 @@ from brain.perceive import ABSENT, DETECTED, UNAVAILABLE, Perception
 
 logger = logging.getLogger("tiered")
 
+
+class _ReleasedPipeline:
+    """What an ended mission's policy holds instead of its pipeline (3.81.E),
+    so the mission's YOLOE and CLIP are freed before the next mission builds
+    its own. A frame that still arrives sees nothing, honestly."""
+
+    def perceive(self, frame: dict) -> Perception:
+        return Perception(status=UNAVAILABLE, reason="the mission has ended")
+
+
+RELEASED_PIPELINE = _ReleasedPipeline()
+
 TRIGGER_START = "mission_start"
 TRIGGER_CANDIDATE = "candidate_sighting"
 TRIGGER_COLD_SEARCH = "cold_search"
@@ -1194,6 +1206,9 @@ class TieredVision:
             self._closed = True
             self.reset_epoch()
             self.confirm_vision_fn = None
+            # 3.81.E: the models go with the mission. A frame already in
+            # perception finishes on the pipeline it started with.
+            self.pipeline = RELEASED_PIPELINE
             # 3.80.C: the local tier answers only a live arrival; the late
             # check (3.53) is the cloud's.
             local, self.local_identity_fn = self.local_identity_fn, None

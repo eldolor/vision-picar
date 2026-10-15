@@ -21,6 +21,7 @@ every number here.
 | File | What it does |
 |---|---|
 | `brain/perceive.py` | The shipped tier. Tri-state constants; `Box`, `Detection`, `Candidate` (`margin`, `probability`), `Perception` (`as_dict()`); the `Detector`, `CropScorer`, `RegionProposer`, `TextScorer` protocols; `PerceptionPipeline`; `FrameReportedPipeline` (the sim); the concrete backends `YoloE`, `YoloDetector`, `ClipScorer`, `SegformerFloorProposer`, `OpenVocabCropSource`; `pipeline_for()`, `detector_for()`, `coco_class_for()`, `label_affinity()`, `Vocabulary`. |
+| `brain/text_encoder.py` | 3.81 T1-T2: the text features perception needs (YOLOE's prompt from MobileCLIP's text tower, CLIP RN50's target and distractor texts) come from a disk cache (`PICAR_TEXT_CACHE`, default `~/.cache/vision-picar/text-features`, one JSON per model and texts, written atomically) or, on a miss, from a CPU-only child (`python -m brain.text_encoder`, `CUDA_VISIBLE_DEVICES=""`, 20 s timeout under the brain's 30 s tick guard, a failed text not retried for 60 s); any failure is `PerceptionUnavailable`. The child cuts MobileCLIP's text tower out of `mobileclip_blt.ts` once per board (`mobileclip_blt_text_<size>.ts` beside it). Features equal the in-process ones (MobileCLIP bit-identical, CLIP within 3.7e-7). A new target costs 7-36 s on the Jetson; a cached one nothing. |
 | `brain/perceive_lab.py` | Candidates behind the same protocols: `GroundingDino`, `Owlv2`, `OmDetTurbo`, `LlmDet`, `YoloWorld`, `VlmDetector`, `SamProposer`, `OpenVocabPipeline`, a TensorRT OWLv2 loaded lazily from `tools/trt/trt_owlv2.py`; `pipeline_for_spec()` builds any of them from strings. Never imported by `brain/perceive.py`. |
 | `brain/tiered.py` | Calls `pipeline.perceive(frame)` once per frame; computes 1.11a's corroboration verdict (`corroboration_for()`) and publishes the `Vocabulary` verdict. Policy-side details are in [policy](../policy/ENGINEERING.md). |
 | `control/brain_server.py` | Builds the pipeline at mission start. The sequence is described once, in [mission](../mission/ENGINEERING.md) ("How a tiered mission is built"). `_perception_available()` answers health with `find_spec` for `ultralytics`, `open_clip`, `torch`. |
@@ -121,7 +122,13 @@ null when unmeasurable), `match_margin`, `match_probability`, `similarity`,
 **Factories:**
 `pipeline_for(target, *, weights="yoloe-11s-seg.pt", clip_model="RN50", device=None, floor_mask=False, segmenter=DEFAULT_SEGMENTER, **kwargs)`
 raises `PerceptionUnavailable` naming the pip command when a library is
-missing. `PerceptionPipeline(detector, scorer, target, *, hfov_deg=66.0, match_margin=None, match_probability=0.8, distractors=DEFAULT_DISTRACTORS, max_crops=None, crop_path="low_confidence", proposer=None, affinity_k=8, confidence=None)`.
+missing. Before it loads it waits until no `PerceptionPipeline.perceive` is
+in flight in the process (a Stop cancels the loop, not the tick thread still
+inside the ended mission's frame), up to `PERCEIVE_WAIT_S` (30 s, then it
+builds anyway with a warning; frames given up on are not waited for again), runs `gc.collect()` and, when torch is already
+imported and has CUDA, `torch.cuda.empty_cache()` (3.81.E), so the previous
+mission's models, released by its policy's `close()`, are gone before the
+next are built. `PerceptionPipeline(detector, scorer, target, *, hfov_deg=66.0, match_margin=None, match_probability=0.8, distractors=DEFAULT_DISTRACTORS, max_crops=None, crop_path="low_confidence", proposer=None, affinity_k=8, confidence=None)`.
 
 **Sim frames.** `FrameReportedPipeline` reads `frame["detections"]`, a list
 of `{label, bearing_deg, distance_m}` written by `sim/grid_world.py`

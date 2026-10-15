@@ -96,9 +96,12 @@ from __future__ import annotations
 
 import base64
 import binascii
+import gc
 import io
 import logging
 import math
+import sys
+import threading
 from dataclasses import dataclass, field
 from typing import Optional, Protocol, Sequence
 
@@ -869,6 +872,20 @@ class PerceptionPipeline:
         )
 
     def perceive(self, frame: dict) -> Perception:
+        """One frame in, one `Perception` out (counted while in flight, so
+        `pipeline_for` can wait for an ended mission's last frame, 3.81.E)."""
+        token = object()
+        with _in_flight:
+            _perceiving.add(token)
+        try:
+            return self._perceive(frame)
+        finally:
+            with _in_flight:
+                _perceiving.discard(token)
+                _abandoned.discard(token)
+                _in_flight.notify_all()
+
+    def _perceive(self, frame: dict) -> Perception:
         """One frame in, one `Perception` out.
 
         Takes a `RobotInterface` frame dict rather than raw bytes, so that
@@ -1463,7 +1480,13 @@ def pipeline_for(target: str, *, weights: str = DEFAULT_DETECTOR,
     frame, and 2.1's 15-30Hz row plus 2.9's budget mean segmentation has no
     business running at the detector's rate on the real part. Turning it on
     off-robot costs only time; deciding its schedule is C6's job.
+
+    3.81.E: frees what earlier pipelines left first -- an ended mission's
+    policy drops its pipeline, but YOLOE's objects hold reference cycles and
+    torch keeps freed GPU blocks -- so a mission start never holds two
+    (3.81 C2: 377 MB free with VE resident, floor 500).
     """
+    _free_unused()
     return PerceptionPipeline(
         detector=detector_for(weights, target, device=device),
         scorer=ClipScorer(clip_model, device=device),
@@ -1471,6 +1494,32 @@ def pipeline_for(target: str, *, weights: str = DEFAULT_DETECTOR,
         proposer=SegformerFloorProposer(segmenter, device=device) if floor_mask else None,
         **kwargs,
     )
+
+
+# 3.81.E: real-pipeline frames in perception now, process-wide. In the brain
+# a frame still in flight at a mission start is the ended mission's (a Stop
+# cancels the loop, not its tick thread), so the build waits for it -- up to
+# a bound, because a hung tick (B3.3) may never return.
+_in_flight = threading.Condition()
+_perceiving: set = set()   # one token per frame in perception
+PERCEIVE_WAIT_S = 30.0
+# Frames given up on (still in flight when a wait timed out): a hung frame
+# costs one wait, not one per later start. A frame leaves it when it returns.
+_abandoned: set = set()
+
+
+def _free_unused() -> None:
+    with _in_flight:
+        if not _in_flight.wait_for(lambda: _perceiving <= _abandoned,
+                                   timeout=PERCEIVE_WAIT_S):
+            logger.warning("%d frame(s) still in perception after %.0f s; building "
+                           "the new pipeline beside them",
+                           len(_perceiving - _abandoned), PERCEIVE_WAIT_S)
+            _abandoned.update(_perceiving)
+    gc.collect()
+    torch = sys.modules.get("torch")  # never imported here just to free
+    if torch is not None and torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def is_text_prompted(weights: str) -> bool:
