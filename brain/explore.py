@@ -411,6 +411,14 @@ class ExploreAgent(MissionAgent):
             self.last_event = f"goal refused: {reply.get('reason')}"
             self._event("goal_refused", kind=kind, goal=[round(x_m, 2), round(y_m, 2)],
                         reason=reply.get("reason"))
+            if reply.get("retryable") is False:
+                # 3.82: the robot server says no wait mends it -- its bridge
+                # refused the goal for how the two are set up (a 401 for a
+                # mismatched secret). Waited on, the robot sat still for the
+                # whole time limit.
+                raise RuntimeError(
+                    f"the ROS bridge refused the goal (HTTP {reply.get('bridge_status')}), "
+                    f"a setup fault no wait mends: {reply.get('detail')}")
             return "WAIT", False, self.last_event
         pose = self._pose()
         self._blips = 0

@@ -173,3 +173,92 @@ def test_a_stop_during_a_goal_in_flight_ends_whichever_goal_nav2_holds(rig, acce
     assert reply["r"]["accepted"] is accepted, reply
     assert drive_for(STOP_HOLD_S + 0.5) == 0.0, "nav2 drove after the Stop"
     assert wait_until(lambda: bridge.goal is None), "the Stop never ended the goal nav2 held"
+
+
+# ---------- criterion 5: a bridge that refuses the secret ends explore ----------
+
+from control.mission_runner import FAILED, MissionRunner  # noqa: E402
+from control.remote_navigator import RemoteNavigator  # noqa: E402
+from sim.maps import build_world  # noqa: E402
+from sim.mock_robot import MockRobot  # noqa: E402
+from sim.mock_world import MockWorld  # noqa: E402
+from tests.conftest import ASGI_BASE_URL, asgi_client  # noqa: E402
+
+BRIDGE_FAULTS = {
+    "401": ((401, {"error": "unauthorised"}), False),
+    "403": ((403, {"error": "forbidden"}), False),
+    "transport": ("transport", True),
+    "nav2 down": (REFUSALS["nav2 down"], True),
+}
+
+
+def _server_over(monkeypatch, refuse_post):
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    bridge = RefusingBridge(start_truth=START)
+    bridge.refuse_post = refuse_post
+    world, _ = world_with(truth=FakeTruth(1.0, 1.0, 90.0), bridge=bridge)
+    monkeypatch.setattr(server, "get_world", lambda *a, **kw: world)
+    return asgi_client(server.create_app()), bridge
+
+
+@pytest.mark.parametrize("fault", list(BRIDGE_FAULTS))
+def test_the_goal_refusal_says_whether_waiting_can_help(monkeypatch, fault):
+    """Every bridge error came back `ros_unavailable` with only prose to
+    tell a rotated secret from a blip."""
+    refuse_post, retryable = BRIDGE_FAULTS[fault]
+    client, _ = _server_over(monkeypatch, refuse_post)
+    r = client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()
+    assert r["accepted"] is False and r["reason"] == "ros_unavailable", r
+    assert r.get("retryable") is retryable, r
+    expected_status = None if refuse_post == "transport" else refuse_post[0]
+    assert r.get("bridge_status") == expected_status, r
+
+
+def _explore_over_http(client):
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    nav = RemoteNavigator(ASGI_BASE_URL, client=client)
+    return MissionRunner(robot, target_object="red backpack", policy="explore",
+                         navigator=nav, world=MockWorld(grid), max_steps=400,
+                         clock=lambda: grid.sim_time, idle=robot.pass_time)
+
+
+def _ticks_after_first_goal(runner, bridge, limit=400, after=20):
+    """Tick until the first goal reaches the bridge, then at most `after`
+    more; returns the ticks run after it (None if no goal was ever sent)."""
+    runner.start()
+    seen = None
+    for _ in range(limit):
+        ticking = runner.tick()
+        if seen is not None:
+            seen += 1
+        elif bridge.post_entered.is_set():
+            seen = 1                             # the tick that sent it
+        if not ticking or (seen is not None and seen >= after):
+            break
+    return seen
+
+
+@pytest.mark.parametrize("fault", ["401", "403"])
+def test_a_bridge_that_refuses_the_secret_ends_the_explore_mission(monkeypatch, fault):
+    """`_send()` waited on every refusal, so a mismatched bridge secret sat
+    the robot still for the whole time limit (1200 s) instead of failing."""
+    client, bridge = _server_over(monkeypatch, BRIDGE_FAULTS[fault][0])
+    runner = _explore_over_http(client)
+    ticks = _ticks_after_first_goal(runner, bridge)
+    assert ticks is not None, "explore never sent a goal -- the test proves nothing"
+    status = runner.status()
+    assert status["outcome"] == FAILED, status
+    assert ticks <= 3, f"the mission ran {ticks} ticks after the refusal"
+    assert f"HTTP {fault}" in str(status.get("end_reason")), status
+
+
+@pytest.mark.parametrize("fault", ["transport", "nav2 down", "session changed"])
+def test_a_transient_bridge_fault_is_still_waited_on(monkeypatch, fault):
+    refuse_post = REFUSALS[fault]
+    client, bridge = _server_over(monkeypatch, refuse_post)
+    runner = _explore_over_http(client)
+    ticks = _ticks_after_first_goal(runner, bridge)
+    assert ticks == 20, ticks
+    assert runner.is_running(), runner.status()
+    runner.stop()

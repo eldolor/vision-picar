@@ -188,6 +188,15 @@ def _held(lock):
         lock.release()
 
 
+def _bridge_retryable(status: Optional[int]) -> bool:
+    """3.82: can waiting mend a bridge error on a goal? A transport error
+    (no status) or a 5xx may pass; so may 408, 409 and 429. Any other 4xx --
+    a 401 for a mismatched secret, a 404 from a bridge without the route --
+    is a fault in how the two are set up. The same split as
+    brain/navigate.py's CloudUnavailable."""
+    return status is None or status >= 500 or status in (408, 409, 429)
+
+
 def watchdog_should_stop(last_command_at: float, now: float, timeout_s: float) -> bool:
     """Pure decision logic -- see module docstring for why this is
     tested separately from the async polling loop that calls it."""
@@ -1066,9 +1075,14 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             try:
                 reply = world.set_goal(req.x_m, req.y_m)
             except httpx.HTTPError as e:
-                # Handoff 4d: refused by name, not a 500.
+                # Handoff 4d: refused by name, not a 500. 3.82: and whether
+                # waiting can help, as a field rather than prose -- the
+                # bridge refusing our secret (a 401) is a fault no wait
+                # mends; a transport error or a 5xx may pass.
+                status = getattr(getattr(e, "response", None), "status_code", None)
                 return {"accepted": False, "reason": "ros_unavailable",
-                        "detail": f"the ROS bridge did not take the goal: {e}"}
+                        "detail": f"the ROS bridge did not take the goal: {e}",
+                        "bridge_status": status, "retryable": _bridge_retryable(status)}
             if reply.get("accepted") is True:
                 with goal_gen_lock:
                     # A stop that landed while set_goal() was in flight owns
