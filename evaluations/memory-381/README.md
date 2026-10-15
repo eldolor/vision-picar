@@ -23,3 +23,4 @@ these; this file says what each one is.
 * The void first attempt (weights downloaded inside the window) stays on
   the board as `~/out-381/A1-invalid-download`, not copied.
 * `C1/`: 3.81.C, A1's window with T1-T3 (NOTE.md says which files ran); `tables.md` at the window's minimum.
+* `C2-old/`, `C2-new/`: amendment 2, the new-target peak (a target switch at 60 s and 210 s of the window), old perception against new; NOTE.md in each.

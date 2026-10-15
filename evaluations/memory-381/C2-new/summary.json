@@ -1,0 +1,35 @@
+{
+ "window_s": 373,
+ "mem_available_min_mb": 377,
+ "mem_samples": 371,
+ "oom_events": 0,
+ "wheel_moving_ticks": 6637,
+ "wheel_late_ticks": 0,
+ "wheel_max_dt_since_start_s": 0.0689,
+ "perception_frames": 1435,
+ "perception_p90_ms": 185,
+ "nav": "goals 18/18 succeeded",
+ "max_temp_c": 64.218,
+ "throttle_lines": 0,
+ "switches": [
+  {
+   "target": "blue bottle",
+   "start": 1792033591,
+   "after_samples": 89,
+   "min_after_mb": 377,
+   "min_before_mb": 1008,
+   "build_s": 7.2,
+   "dip_mb": 631
+  },
+  {
+   "target": "burgundy backpack",
+   "start": 1792033741,
+   "after_samples": 89,
+   "min_after_mb": 835,
+   "min_before_mb": 1473,
+   "build_s": 7.7,
+   "dip_mb": 638
+  }
+ ],
+ "switches_expected": 2
+}
