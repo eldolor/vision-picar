@@ -1,0 +1,11 @@
+== desktop: inactive; twin units: inactive inactive; runtime trt
+== run L 10:42:36 rev 91c10c1 image vision-picar-ros:plan-3.78 NV Power Mode: 15W
+== MemAvailable before anything: 5993 MB
+OK: robot and brain both running 91c10c1 (log: /home/picar/.vision-picar-tunnel.log)
+WARNING: ngrok is not running -- the deployed twin cannot reach this machine. Start it with: ngrok start picar
+== stack up 10:43:14
+== mapped 10:45:57; MemAvailable with the stack: 5555 MB
+== window start 10:47:36; wheel (moving late max_dt): 2825 0 0.0598
+== window end 10:54:18 bench exit 0; wheel: 9460 0 0.0709
+== summary: {"window_s": 375, "mem_available_min_mb": 508, "mem_samples": 373, "oom_events": 0, "wheel_moving_ticks": 6635, "wheel_late_ticks": 0, "wheel_max_dt_since_start_s": 0.0709, "perception_frames": 1438, "perception_p90_ms": 184, "nav": "goals 18/18 succeeded", "max_temp_c": 64.093, "throttle_lines": 0, "switches": [{"target": "blue bottle", "start": 1792079316, "after_samples": 90, "min_after_mb": 508, "min_before_mb": 992, "build_s": 7.3, "dip_mb": 484}, {"target": "burgundy backpack", "start": 1792079466, "after_samples": 89, "min_after_mb": 896, "min_before_mb": 1471, "build_s": 6.8, "dip_mb": 575}], "switches_expected": 2, "switch_mode": "release"}
+== torn down; desktop: active

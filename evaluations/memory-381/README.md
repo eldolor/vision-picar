@@ -24,3 +24,4 @@ these; this file says what each one is.
   the board as `~/out-381/A1-invalid-download`, not copied.
 * `C1/`: 3.81.C, A1's window with T1-T3 (NOTE.md says which files ran); `tables.md` at the window's minimum.
 * `C2-old/`, `C2-new/`: amendment 2, the new-target peak (a target switch at 60 s and 210 s of the window), old perception against new; NOTE.md in each.
+* `C3/`: 3.81.E, C2's window with the previous pipeline released before each switch (`SWITCH=release`).
