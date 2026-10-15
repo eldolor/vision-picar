@@ -836,3 +836,66 @@ def test_a_refused_approach_leaves_no_older_approach_on_record():
     sent_before = len([c for c in nav.calls if c[0] == "set"])
     agent.step()
     assert len([c for c in nav.calls if c[0] == "set"]) > sent_before
+
+
+class SlowNav(FakeNav):
+    """nav2 that keeps a goal active; each poll is 2 s, and the robot moves
+    `step_m` (east) per poll -- 0 is 3.83's wedge under the dining table."""
+
+    def __init__(self, robot, step_m=0.0):
+        super().__init__(robot)
+        self.step_m = step_m
+
+    def get_goal(self):
+        self.calls.append(("get",))
+        self.robot.pass_time(2.0)
+        self.grid.x += self.step_m / CELL
+        return {"goal": self.goal, "plan": []}
+
+
+def _slow_agent(step_m):
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    nav = SlowNav(robot, step_m)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="purple elephant"),
+                         navigator=nav, clock=lambda: grid.sim_time, world=MockWorld(grid))
+    return grid, nav, agent
+
+
+def test_a_goal_that_makes_no_progress_is_cut_as_stalled_and_backed_out_of():
+    """3.83: wedged under the dining table, every goal ran its full 120 s.
+    No STALL_M of progress over STALL_S ends it early, and the wedge
+    handling backs out -- a keepout spot cannot free a robot the
+    controller keeps pushing forward (3.68)."""
+    from brain.explore import STALL_S
+    grid, nav, agent = _slow_agent(0.0)
+    assert agent.step().action == "GOAL"
+    t0 = grid.sim_time
+    while agent._goal is not None and grid.sim_time - t0 < 60:
+        agent.step()
+    ended = [e for e in agent.events if e["event"] == "goal_ended"][0]
+    assert ended["state"] == "stalled"
+    assert STALL_S <= ended["seconds"] <= STALL_S + 4.0
+    assert ("cancel",) in nav.calls
+    assert [e for e in agent.events if e["event"] == "escape"][0]["why"] == "wedged"
+
+
+def test_a_goal_still_moving_is_not_cut():
+    from brain.explore import GOAL_TIMEOUT_S
+    grid, nav, agent = _slow_agent(0.1)          # 0.1 m a 2 s poll: slow, but moving
+    agent.goal_timeout_s = GOAL_TIMEOUT_S
+    assert agent.step().action == "GOAL"
+    t0 = grid.sim_time
+    while agent._goal is not None and grid.sim_time - t0 < 60:
+        agent.step()
+    assert not [e for e in agent.events if e["event"] == "goal_ended"]
+
+
+def test_a_goal_is_not_cut_before_stall_s():
+    from brain.explore import STALL_S
+    grid, nav, agent = _slow_agent(0.0)
+    assert agent.step().action == "GOAL"
+    t0 = grid.sim_time
+    while grid.sim_time - t0 < STALL_S - 4.0:
+        agent.step()
+    assert agent._goal is not None

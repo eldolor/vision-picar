@@ -145,13 +145,18 @@ the 20 Hz post never waits) that, only while `goal_in_progress()` and on a
 world with `set_keepout`, reads the pose and adds a disc of `SPOT_R_M`
 (0.15 m) centred `SPOT_AHEAD_M` (0.30 m) ahead -- clear of the chassis' own nose and corners -- to `SpotBook` (`SPOT_TTL_S`
 300 s, at most `MAX_SPOTS` 8), then sends the whole live set through
-`RosWorld.set_keepout` to the bridge's `POST /nav/keepout`. It logs one
+`RosWorld.set_keepout` to the bridge's `POST /nav/keepout`. Since 3.83 a
+spot within `SPOT_DEDUPE_M` (0.30 m) of a live one sends nothing (3.68 had
+re-marked one spot up to 30 times), and a spot the bridge did not take
+(an error, or `accepted: false`) is dropped from the book again, so the
+next wedge there can still mark it. It logs one
 `keepout: marked ...` warning a mark, or `keepout: not marked (...)` on a
 failure, including a reply with `accepted: false`. Marks from one server
 are sent one at a time (`spot_lock` is held across the post), so a slow
 bridge cannot receive an older set after a newer one. It moves nothing and
-changes no vetting: a mark only takes effect if nav2's global costmap lists
-the `KeepoutFilter`.
+changes no vetting. nav2's global costmap lists the `KeepoutFilter` since
+3.83 (`nav2.yaml`); backing out of a wedge is the brain's (explore's
+`STALL_S` cut).
 
 ## Parameters and configuration
 

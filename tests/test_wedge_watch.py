@@ -114,6 +114,25 @@ def test_spots_expire_and_are_capped():
     assert book.live(11.98)[0]["ttl_s"] == 0.1             # never 0: the bridge refuses it
 
 
+def test_a_spot_near_a_live_one_is_not_marked_again():
+    """3.83: 3.68 re-marked one spot up to 30 times (the robot sat still
+    and the watch re-fired every 3 s), which evicted useful marks and made
+    the count mean nothing. Within SPOT_DEDUPE_M of a live spot: nothing."""
+    book = ww.SpotBook(ttl_s=10.0)
+    assert book.add(0.0, 1.0, 1.0) is not None
+    assert book.add(3.0, 1.0 + ww.SPOT_DEDUPE_M * 0.9, 1.0) is None
+    assert len(book.live(3.0)) == 1
+    assert book.live(3.0)[0]["ttl_s"] == pytest.approx(7.0)    # the old one is not renewed
+    far = book.add(3.0, 1.0 + ww.SPOT_DEDUPE_M * 1.1, 1.0)
+    assert [s["x_m"] for s in far] == [1.0, pytest.approx(1.0 + ww.SPOT_DEDUPE_M * 1.1)]
+
+
+def test_an_expired_spot_does_not_block_a_new_mark():
+    book = ww.SpotBook(ttl_s=10.0)
+    book.add(0.0, 1.0, 1.0)
+    assert book.add(10.5, 1.0, 1.0) is not None
+
+
 def test_the_spot_clears_the_chassis_it_is_marked_for():
     """The disc must not reach under the robot's own footprint, or the
     robot stands on lethal cells the moment it is marked."""
@@ -129,10 +148,12 @@ class KeepoutBridge(GoalBridge):
     def __init__(self, **kw):
         super().__init__(**kw)
         self.keepout = None
+        self.keepout_posts = 0
 
     def handler(self, request):
         if request.url.path == "/nav/keepout":
             self.keepout = json.loads(request.content)["spots"]
+            self.keepout_posts += 1
             return httpx.Response(200, json={"spots": len(self.keepout)})
         return super().handler(request)
 
@@ -240,6 +261,35 @@ def test_a_mark_without_a_slam_session_is_not_logged_as_marked(wedged_server, mo
         drive_refused(client, 0.5)
         assert wait_for(lambda: "keepout: not marked" in caplog.text)
     assert "keepout: marked" not in caplog.text
+
+
+def test_a_robot_still_wedged_is_marked_once(wedged_server):
+    """3.83: the watch fires every hold while the robot sits still; the
+    server sends the spot once, not once a hold."""
+    client, bridge = wedged_server
+    assert client.post("/world/goal", json={"x_m": 3.0, "y_m": 1.0}).json()["accepted"]
+    drive_refused(client, 1.2)                      # about five holds of 0.2 s
+    assert wait_for(lambda: bridge.keepout)
+    time.sleep(0.3)
+    assert bridge.keepout_posts == 1
+    assert len(bridge.keepout) == 1
+
+
+def test_a_mark_the_bridge_did_not_take_is_tried_again(wedged_server, monkeypatch):
+    """3.83: a spot is deduped only against marks nav2 actually has; one
+    the bridge refused must not silence the next wedge there."""
+    client, bridge = wedged_server
+    assert client.post("/world/goal", json={"x_m": 3.0, "y_m": 1.0}).json()["accepted"]
+    world = server.get_world()
+    real, calls = world.set_keepout, []
+
+    def first_refused(spots):
+        calls.append(spots)
+        return {"accepted": False, "reason": "no SLAM session yet"} if len(calls) == 1 else real(spots)
+    monkeypatch.setattr(world, "set_keepout", first_refused)
+    drive_refused(client, 0.8)
+    assert wait_for(lambda: bridge.keepout)
+    assert len(bridge.keepout) == 1
 
 
 def test_no_goal_in_progress_marks_nothing(wedged_server):

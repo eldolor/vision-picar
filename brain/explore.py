@@ -84,6 +84,13 @@ LOOK_AROUND = ("LOOK_LEFT", "LOOK_RIGHT", "LOOK_CENTER")
 # A goal that fails with the robot no further than this from where it was
 # sent is the ROBOT's problem (wedged in furniture), not the place's.
 STUCK_MOVED_M = 0.15
+# 3.83: a goal during which the robot has moved less than STALL_M over the
+# last STALL_S is ended as `stalled` and backed out of. Wedged under the
+# dining table, every goal ran its full GOAL_TIMEOUT_S: 14 in a row, 28 min.
+# A keepout spot reroutes the planner but cannot free a robot the
+# controller keeps pushing forward; backing out can (3.68's record).
+STALL_S = 20.0
+STALL_M = 0.15
 # Escapes tried before a search may conclude, while boxed in.
 MAX_ESCAPES = 3
 # An escape's turn sizes, each tried on the roomier side and then the other,
@@ -350,6 +357,12 @@ class ExploreAgent(MissionAgent):
             if state in TERMINAL_STATES or state is None:
                 self._goal_ended(state or "lost", now)
                 ended = self.last_event
+            elif state != "unreadable" and self._stalled(pose, now):
+                self._goal_ended("stalled", now)
+                try:
+                    self.navigator.cancel_goal()
+                except Exception:  # noqa: BLE001 -- best effort, as for a timeout
+                    logger.warning("goal cancel failed", exc_info=True)
             elif state != "unreadable" and now - self._goal["sent_at"] > self.goal_timeout_s:
                 # (3.76: not while the bridge is unreadable -- an outage is
                 # not the place's failure.)
@@ -984,6 +997,24 @@ class ExploreAgent(MissionAgent):
             self._goal["room"] = name
         return out
 
+    def _stalled(self, pose: dict, now: float) -> bool:
+        """3.83: no STALL_M of progress over the last STALL_S of this goal.
+        The anchor moves on whenever the robot gets STALL_M from it, so a
+        slow goal that keeps moving is never cut; an unusable pose decides
+        nothing."""
+        g = self._goal
+        if not pose.get("usable"):
+            return False
+        anchor = g.get("anchor")
+        if anchor is None:
+            # From where and when the goal began; without a start pose, now.
+            anchor = g["anchor"] = ((*g["from"], g["sent_at"]) if g.get("from")
+                                    else (pose["x_m"], pose["y_m"], now))
+        if math.hypot(pose["x_m"] - anchor[0], pose["y_m"] - anchor[1]) >= STALL_M:
+            g["anchor"] = (pose["x_m"], pose["y_m"], now)
+            return False
+        return now - anchor[2] >= STALL_S
+
     def _goal_ended(self, state: str, now: float) -> None:
         g, self._goal = self._goal, None
         pose = self._pose()
@@ -1019,9 +1050,10 @@ class ExploreAgent(MissionAgent):
             return
         target = g.get("target") or (g["x_m"], g["y_m"])
         self.goals_failed += 1
-        if g.get("from") and pose.get("usable") and math.hypot(
-                pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M:
-            # It never left: the robot is wedged, not the place unreachable.
+        if state == "stalled" or (g.get("from") and pose.get("usable") and math.hypot(
+                pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M):
+            # It never left (or, 3.83, stopped making progress on the way):
+            # the robot is wedged, not the place unreachable.
             # Do not hold it against the place -- once. A place that wedges
             # it AGAIN is one the robot cannot leave for: 3.38's acceptance
             # run sent one living-room goal eleven times, each wedged against

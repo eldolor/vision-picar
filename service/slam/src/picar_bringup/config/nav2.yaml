@@ -126,6 +126,15 @@ global_costmap:
         inflation_radius: 0.35       # 3.67 A (was 0.12)
         cost_scaling_factor: 5.0     # 3.67 A (was 8.0)
       always_send_full_costmap: true
+      # 3.83 (3.68's filter): spots the robot server marks where the safety
+      # layer keeps refusing nav2's forward moves (robot/wedge_watch.py).
+      # The GLOBAL costmap only: the planner routes around a spot, while the
+      # controller's and the recoveries' footprint checks never see it.
+      filters: [keepout_filter]
+      keepout_filter:
+        plugin: nav2_costmap_2d::KeepoutFilter
+        enabled: true
+        filter_info_topic: /costmap_filter_info
 
 planner_server:
   ros__parameters:

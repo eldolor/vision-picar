@@ -27,6 +27,8 @@ SPOT_R_M = 0.15       # the centre's next 0.15-0.45 m: clear of the chassis'
                       # own front (0.1265 m) and corners (0.208 m from the centre)
 SPOT_TTL_S = 300.0    # a wrong mark blocks a real passage only this long
 MAX_SPOTS = 8         # the oldest is dropped first
+SPOT_DEDUPE_M = 0.30  # 3.83: a wedge whose spot is this near a live one marks
+                      # nothing -- 3.68 re-marked one spot up to 30 times
 
 
 def forward_clamped(left_cmd: float, right_cmd: float, reason) -> bool:
@@ -72,12 +74,22 @@ class SpotBook:
         self.ttl_s, self.max_spots = ttl_s, max_spots
         self.spots = []                  # [{"x_m","y_m","r_m","until"}]
 
-    def add(self, now: float, x_m: float, y_m: float, r_m: float = SPOT_R_M) -> list:
-        """Add one; return the live set as the bridge takes it."""
+    def add(self, now: float, x_m: float, y_m: float, r_m: float = SPOT_R_M):
+        """Add one; return the live set as the bridge takes it, or None when
+        a live spot already lies within SPOT_DEDUPE_M (nothing to send: the
+        robot still sitting at a marked spot is the brain's to back out of)."""
         self.spots = [s for s in self.spots if s["until"] > now]
+        if any(math.hypot(s["x_m"] - x_m, s["y_m"] - y_m) < SPOT_DEDUPE_M for s in self.spots):
+            return None
         self.spots.append({"x_m": x_m, "y_m": y_m, "r_m": r_m, "until": now + self.ttl_s})
         self.spots = self.spots[-self.max_spots:]
         return self.live(now)
+
+    def drop_last(self) -> None:
+        """Forget the spot just added: the bridge did not take it, so a
+        later wedge there must be able to mark it (3.83)."""
+        if self.spots:
+            self.spots.pop()
 
     def live(self, now: float) -> list:
         # A spot about to expire is sent with 0.1 s left, never 0: the bridge

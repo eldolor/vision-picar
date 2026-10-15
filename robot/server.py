@@ -468,7 +468,15 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # post, so two marks sent out of order would drop the newer spot.
             with spot_lock:
                 spots = spot_book.add(time.monotonic(), x, y)
-                reply = world_model.set_keepout(spots)
+                if spots is None:
+                    return          # 3.83: this spot is already marked
+                try:
+                    reply = world_model.set_keepout(spots)
+                except Exception:
+                    spot_book.drop_last()
+                    raise
+                if not reply.get("accepted"):
+                    spot_book.drop_last()
         except Exception as e:  # noqa: BLE001 -- a lost mark costs a replan, not safety
             logger.warning(f"keepout: not marked ({e})")
             return
