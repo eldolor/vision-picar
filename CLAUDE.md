@@ -160,9 +160,9 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   accuracy (97.2% precision). The user set the memory floor at **0.5 GB with
   the VLM killed first** (2026-10-14) and waived the teal-bin bar. Qwen3-VL-4B
   and Qwen3.5-4B fail accuracy under every runtime. Margin over the floor is
-  ~100 MB; 3.81 (memory budget) raised it to ~500 MB, D open.
-* **Memory budget (3.81), steps A-C and E merged 2026-10-15; D (T4 or T5)
-  waits on the user.** A: under VE the VLM driver holds 3.97 GB (engines
+  ~100 MB; 3.81 (memory budget) raised it to ~500 MB; D deferred to the Rover.
+* **Memory budget (3.81), steps A-C and E merged 2026-10-15; D deferred
+  (amendment 4, the user): measure on the Rover first (step F).** A: under VE the VLM driver holds 3.97 GB (engines
   3.05, visual encoder 1.29), perception 1.94, Python services ~0.2, ROS
   0.25; a torch GPU process costs ~0.6 GB before any model. C (amendment 1):
   text features come from a disk cache or a CPU-only child
@@ -489,6 +489,9 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     battery (`JETSON-BOM.md` 9.5).
   * Measure every `[PLACEHOLDER]` in the xacro, including `track_scrub`.
   * B5: systemd units so everything starts at boot.
+  * 3.81.F: `MemAvailable` over a full tiered mission with VE resident and
+    one change of target; below 500 MB (or trending there inside 1,200 s)
+    reopens 3.81.D, in amendment 4's order.
 * **Decisions still open:** `PLAN-ros-alignment.md` section 6 (map save and
   reload, gyro heading, the floor band below the lidar, speed by
   clearance); `HANDOFF-2026-10-02-spec-review.md` section 3 (3a-3c);
