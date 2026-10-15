@@ -177,6 +177,29 @@ Continuing an existing section: work in its worktree
    spends money (Bedrock, paid GPU hosts), a deploy (Lambda, CloudFront,
    the twin), a force push or a deleted `dev`, and `PICAR_SKIP_GATE=1`.
    Merge `origin/dev` in (or rebase) first.
+11. **Delete a branch once its work is in `dev`** (the user, 2026-10-15).
+   After your push lands, delete your section's branch on `origin`
+   (`git push origin --delete plan/3.N-<slug>`), its local branch and its
+   worktree (`git worktree remove .claude/worktrees/plan-3.N`). Any
+   session may also delete another session's stale branch when **all**
+   hold:
+   * its content is in `dev`: `git merge-tree --write-tree origin/dev
+     origin/<b>` prints `origin/dev`'s own tree
+     (`git rev-parse origin/dev^{tree}`), or a section on `dev` says it
+     superseded the branch (a renumbered section). The count of commits
+     "ahead" is not enough: rebased or squashed work still shows as ahead;
+   * it holds no live claim and has had no commit for 2 hours (rule 8's
+     "active");
+   * it is not `main` (the default branch) or `dev`.
+
+   A branch with work that is NOT in `dev` (abandoned or still open) is
+   deleted only when the user says so. Fetch the full history first
+   (`git fetch --unshallow origin` in a cloud clone): a shallow clone has
+   no merge base, so every branch looks unmerged. Deleting a `plan/*`
+   branch never frees its number, because `new` also counts the section
+   files on `origin/dev`. *Why:* nine branches besides `dev` had piled up
+   on `origin` by 2026-10-15, six of them already in `dev`, and `overlap`
+   and `board` read every `plan/*` branch.
 
 ## Setting up a machine (once)
 
