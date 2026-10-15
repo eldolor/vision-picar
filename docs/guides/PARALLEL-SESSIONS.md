@@ -103,7 +103,11 @@ Continuing an existing section: work in its worktree
    `reviewed` on a branch that had them. A new
    sweep that runs hundreds of missions belongs on that list. The **full suite** runs once a night on the latest
    `origin/dev` (`tools/nightly_suite.sh`, installed with `--install`;
-   result in `~/Library/Logs/vision-picar/nightly-latest.txt`) and with
+   result in `~/Library/Logs/vision-picar/nightly-latest.txt`; its worktree
+   is reset and cleaned to that commit each night, a refresh that fails is
+   that night's FAIL, a run past `NIGHTLY_TIMEOUT_S`, default 7000 s, is
+   stopped and reported FAIL, a run someone stops reads STOPPED and is not
+   emailed, and one run holds a lock: a second reads SKIPPED) and with
    `ready --full` before merging a section that changes the twin or the
    ROS stack. It reports; it never blocks a push. Only the user overrides
    the gate (`PICAR_SKIP_GATE=1`).
@@ -129,9 +133,18 @@ Continuing an existing section: work in its worktree
 
    `Needs` names steps that must be `done` first; `Waits` is `user`,
    `rover` or `--`; `Touches` lists the paths the step will change (a
-   trailing `/` is a directory, `*` globs); `State` is `open`, `done` or
-   `dropped`. Commit the table: the board reads committed text, from the
-   section's newest `plan/*` branch or else `origin/dev`.
+   trailing `/` is a directory, `*` globs and crosses `/`); `State` is
+   `open`, `done` or `dropped`, and only its first word counts (`done
+   (sweep met)` is done); any other word shows as `unknown` and is never
+   claimable. Commit the table: the board reads committed text, from the
+   section's newest `plan/*` branch that changed the file and holds
+   `origin/dev`'s copy of it; else from `origin/dev`. A branch whose file
+   `origin/dev` changed after it forked (a branch merged under other
+   commits, or abandoned, stays unmerged for good) is not read until it
+   merges `origin/dev`: until then `claim` does not see its new rows. In a
+   Touches cell, tick every path, one per comma: other text makes the step
+   `unknown` until it is fixed. `Waits` reads `user`, `rover` or `--` by
+   the same first-word rule as `State`.
    * `claim <step>` writes a claim into the shared `.git`
      (`plan-claims/`), which every worktree on this machine sees. It is
      owned by your Claude Code process and **frees itself when that process
