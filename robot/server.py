@@ -447,6 +447,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     goal_gen_lock = threading.Lock()
     verbs_lock = threading.Lock()       # guards state["verbs_running"] (3.76 A1)
 
+    # 3.84: answers that name a fault of the robot itself, never renamed
+    # `person_stop` (the mission ends `failed`, naming it).
+    FAULTS = ("no_feedback", "ros_unavailable")
+
     def is_autonomy(driver: str) -> bool:
         """The brain (or `teleop`): an autonomous driver other than ROS's
         actuator, whose wheel commands the Stop's hold governs instead."""
@@ -466,7 +470,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             return None
         detail = (f"{latch['by']} pressed Stop -- autonomy stays stopped until a new "
                   f"mission starts, so {driver} was refused")
-        if not record:      # a verb's answer re-read: its own outcome is already counted
+        if not record:      # a verb's refusal re-read: that refusal was already recorded
             return {"executed": False, "reason": PERSON_STOP, "detail": detail}
         return refuse(PERSON_STOP, detail, driver)
 
@@ -656,13 +660,20 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # its zeroing made the verb read as vetoed or overtaken -- is the
             # answer: the brain hears the Stop and ends its mission. (One that
             # landed in the microseconds after a whole move reads the same;
-            # the mission ends `cancelled` either way.) A fault (`no_feedback`,
-            # `ros_unavailable`) keeps its own name, so it is never hidden.
+            # the mission ends `cancelled` either way.) A fault keeps its own
+            # name, never hidden behind the Stop. Either way, refused under
+            # the latch, the brain lets go of the robot at once.
             latch = autonomy_latch()
-            if latch is not None and (outcome.get("executed") or outcome.get("reason") in
-                                      (STOPPED, "safety_distance", "preempted")):
-                outcome = person_stop_refusal(driver, latch, record=False)
-            if outcome.get("reason") in (PERSON_STOP, STOPPED):
+            if latch is not None:
+                result = outcome.get("result")
+                fault = (outcome.get("reason") in FAULTS or
+                         (isinstance(result, dict) and result.get("ended") == "no_feedback"))
+                if not fault and outcome.get("reason") != PERSON_STOP:
+                    # A move that ran is recorded here; a refusal already was.
+                    outcome = person_stop_refusal(driver, latch,
+                                                  record=bool(outcome.get("executed")))
+            if outcome.get("reason") == STOPPED or (latch is not None
+                                                     and not outcome.get("executed")):
                 return lapse_refused_claim(driver, outcome, stamp.get("at", now))
         return outcome
 

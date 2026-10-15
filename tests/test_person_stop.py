@@ -523,7 +523,7 @@ def test_a_brain_verb_refused_at_execution_does_not_keep_the_robot(monkeypatch):
     assert r["accepted"] is True, f"the refused brain verb kept the robot: {r}"
 
 
-# ---------- review round 4 ----------
+# ---------- review rounds 4-6 ----------
 
 
 @pytest.mark.parametrize("answer", ["veto", "fault"])
@@ -550,8 +550,30 @@ def test_a_brain_answer_under_the_latch_is_the_stop_unless_it_is_a_fault(monkeyp
     monkeypatch.setattr(SafetyController, "check_and_execute", stopped_mid_verb)
     r = client.post("/action", json={"action": "LEFT", "angle": 30},
                     headers={"x-driver": "brain"}).json()
-    if answer == "veto":
-        assert r["reason"] == "person_stop", r
-        assert client.get("/health").json()["authority_holder"] is None, "kept the robot"
-    else:
-        assert r["reason"] == "no_feedback", r
+    assert r["reason"] == ("person_stop" if answer == "veto" else "no_feedback"), r
+    # Round 6: refused under the latch, a fault too lets go of the robot.
+    assert client.get("/health").json()["authority_holder"] is None, "kept the robot"
+
+
+def test_a_brain_move_cut_by_a_persons_stop_is_recorded_once(monkeypatch):
+    """Round 6: a move that ran, answered `person_stop` because the Stop
+    latched while it ran, is recorded once (it was recorded nowhere)."""
+    import threading
+
+    from robot.safety import SafetyController
+
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    client = asgi_client(server.create_app())
+
+    def ran_then_stopped(self, action, **kw):
+        t = threading.Thread(target=lambda: client.post("/stop", headers={"x-driver": "twin-dpad"}))
+        t.start()
+        t.join(5.0)
+        return {"action": "turn_left", "turned_deg": 12.0}
+
+    monkeypatch.setattr(SafetyController, "check_and_execute", ran_then_stopped)
+    r = client.post("/action", json={"action": "LEFT", "angle": 30},
+                    headers={"x-driver": "brain"}).json()
+    assert r["reason"] == "person_stop", r
+    health = client.get("/health").json()
+    assert health["refusal_counts"].get("person_stop") == 1, health["refusal_counts"]
