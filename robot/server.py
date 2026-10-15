@@ -665,15 +665,13 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # the latch, the brain lets go of the robot at once.
             latch = autonomy_latch()
             if latch is not None:
-                result = outcome.get("result")
-                fault = (outcome.get("reason") in FAULTS or
-                         (isinstance(result, dict) and result.get("ended") == "no_feedback"))
+                fault = outcome.get("reason") in FAULTS
                 if not fault and outcome.get("reason") != PERSON_STOP:
                     # A move that ran is recorded here; a refusal already was.
                     outcome = person_stop_refusal(driver, latch,
                                                   record=bool(outcome.get("executed")))
-            if outcome.get("reason") == STOPPED or (latch is not None
-                                                     and not outcome.get("executed")):
+            if outcome.get("reason") in (PERSON_STOP, STOPPED) or (
+                    latch is not None and not outcome.get("executed")):
                 return lapse_refused_claim(driver, outcome, stamp.get("at", now))
         return outcome
 
