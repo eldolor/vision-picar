@@ -89,4 +89,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.81](3.81-rover-memory-budget.md) | Rover memory budget: measure where memory goes, then trim |
 | [3.82](3.82-refused-goal-hold.md) | A refused goal must not lift a Stop's hold |
 | [3.83](3.83-dining-room-trap.md) | Explore wedged under the dining table (2026-10-15): built; FAILED, not adopted |
+| [3.84](3.84-person-stop-last-word.md) | A person's Stop is the last word over autonomy |
 <!-- /sections -->
