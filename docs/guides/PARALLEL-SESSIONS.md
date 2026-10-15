@@ -33,7 +33,8 @@ python tools/plan_section.py reviewed [--thermos]   # --thermos when it ran too
 git fetch origin && git rebase origin/dev
 python tools/plan_section.py ready           # fast tier; records a pass (optional:
                                              # the push runs the same check itself)
-# 6. Ask the user. Only then: git push origin HEAD:dev
+# 6. Push when your judgement says the work is ready (the user, 2026-10-15):
+git push origin HEAD:dev
 ```
 
 Continuing an existing section: work in its worktree
@@ -104,8 +105,8 @@ Continuing an existing section: work in its worktree
    `origin/dev` (`tools/nightly_suite.sh`, installed with `--install`;
    result in `~/Library/Logs/vision-picar/nightly-latest.txt`) and with
    `ready --full` before merging a section that changes the twin or the
-   ROS stack. It reports; it never blocks a push. Pushing still needs the
-   user's go-ahead. Only the user overrides the gate (`PICAR_SKIP_GATE=1`).
+   ROS stack. It reports; it never blocks a push. Only the user overrides
+   the gate (`PICAR_SKIP_GATE=1`).
    *Why:* the gate first ran the full suite, about 40 minutes, on every
    push, and a pass named one commit, so each rebase onto another
    session's push started it over; two timing-sensitive tests then failed
@@ -168,6 +169,14 @@ Continuing an existing section: work in its worktree
    one of them changing a file this section also changed.
 9. **Helpers.** `git rerere` is enabled, so a resolved conflict replays
    itself. Handoffs are named after their section.
+10. **Each session pushes to `dev` on its own judgement** (the user,
+   2026-10-15: "Each agent can use their judgement to commit to dev").
+   No go-ahead is asked. Push work that is finished as a step: reviewed
+   (CLAUDE.md section 6), its criteria recorded (met or failed), and
+   through the gate. Still the user's call, and asked: anything that
+   spends money (Bedrock, paid GPU hosts), a deploy (Lambda, CloudFront,
+   the twin), a force push or a deleted `dev`, and `PICAR_SKIP_GATE=1`.
+   Merge `origin/dev` in (or rebase) first.
 
 ## Setting up a machine (once)
 

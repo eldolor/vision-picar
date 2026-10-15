@@ -537,8 +537,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     `eval "$(python tools/plan_section.py env)"`. Never rebuild
     `vision-picar-ros:latest` from a branch.
   * `overlap` before editing a shared file.
-  * `ready` (rebase check + full suite) before asking to push to `dev`; a
+  * `ready` (rebase check + full suite) before pushing to `dev`; a
     pre-push hook enforces it.
+  * **Each session pushes to `dev` on its own judgement; no go-ahead is
+    asked** (the user, 2026-10-15): a finished, reviewed step that passes
+    the gate. Spending, deploys, force pushes and `PICAR_SKIP_GATE=1` are
+    still asked. `PARALLEL-SESSIONS.md` rule 10.
   * One heavy live run at a time (a lock in `tests/demo_explore.stack()`).
   * CLAUDE.md section 3b and other shared status are updated at merge, not
     on a branch.
