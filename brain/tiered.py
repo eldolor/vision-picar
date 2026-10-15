@@ -113,6 +113,10 @@ DEFAULT_LOCAL_BAND_LOW = 0.5
 # not exist yet, and a trigger that cannot fire is worse than one that is
 # absent, because it looks like coverage.
 TRIGGER_STALE = "staleness"
+# 3.80.D: the questions any landed cloud answer answers -- the cloud is asked
+# one navigate question whatever the trigger; a candidate's and the band's are
+# about one view.
+NAVIGATION_QUESTIONS = ("mission_start", "cold_search", "staleness")
 
 UNAVAILABLE_TRIGGERS = {
     "goal_achieved": "needs C6 -- nothing holds a goal to achieve",
@@ -610,6 +614,7 @@ class TieredVision:
         # candidate the local tier said yes to.
         self.local_band_low = float(local_band_low)
         self._sight_unable = 0
+        self._unable_for: Optional[str] = None     # the question that count is for
         self._pending_question: Optional[str] = None
         self._sight_call: Optional[tuple] = None
         self._local_executor = None
@@ -819,7 +824,7 @@ class TieredVision:
             raise err
 
         trigger = self._trigger_for(perception)
-        escalated = False
+        escalated, fresh = False, None
         if local_on:
             # 3.80.D, the user's strict order: every question goes to the
             # local VLM first; the cloud only after `local_max_unable` unable
@@ -829,8 +834,8 @@ class TieredVision:
                 # Its candidate is out of view: nothing is left to ask about,
                 # and a yes now would be about something else (review).
                 pending = self._pending_question = None
-                self._sight_unable = 0
-            if pending is not None and self._sight_unable >= self.local_max_unable:
+            if (pending is not None and pending == self._unable_for
+                    and self._sight_unable >= self.local_max_unable):
                 # The question the local tier could not answer is the
                 # cloud's; a fresh one on this frame neither jumps the local
                 # tier nor is dropped: it is the next local question (review).
@@ -844,19 +849,21 @@ class TieredVision:
             self._since_call += 1
             return self._local_scene(perception)
 
-        if (trigger == TRIGGER_CANDIDATE and self.async_cloud
+        if (TRIGGER_CANDIDATE in (trigger, fresh) and self.async_cloud
                 and self._inflight is not None):
             # 3.76: the edge into `detected` was spent in _trigger_for; held
             # back by the call in flight, it must fire once that lands, not
-            # wait for the staleness floor.
+            # wait for the staleness floor. 3.80.D: so must one that fired on
+            # a frame whose escalated question is held (bug pass).
             self._last_confirmed = None
         if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
             logger.warning("call cap %d reached -- not firing %s",
                            self.max_calls, trigger)
             if escalated:
-                # The cloud is spent: the local tier goes on answering.
-                self._sight_unable = 0
-                self._pending_question = None
+                # The cloud is spent: the local tier goes on answering, the
+                # fresh question first (bug pass).
+                self._forget_unable()
+                self._pending_question = fresh if fresh != trigger else None
             return self._local_scene(perception, note="call cap reached")
 
         if self.async_cloud and self._inflight is not None:
@@ -877,7 +884,7 @@ class TieredVision:
         self.stats.triggers[trigger] = self.stats.triggers.get(trigger, 0) + 1
         if escalated:
             self.stats.escalations += 1
-            self._sight_unable = 0
+            self._forget_unable()
             self._pending_question = fresh if fresh != trigger else None
         self._absent_streak = 0
         self._since_call = 0
@@ -1156,6 +1163,9 @@ class TieredVision:
         # _call_local's own release.
         fut.add_done_callback(lambda _f, cid=call_id: self._release_local(cid))
         self._pending_question = None
+        if trigger != self._unable_for:
+            # A different question starts its own count (review).
+            self._sight_unable, self._unable_for = 0, trigger
         self.stats.local_triggers[trigger] = self.stats.local_triggers.get(trigger, 0) + 1
         if trigger == TRIGGER_UNCERTAIN:
             self._band_armed = False
@@ -1235,7 +1245,8 @@ class TieredVision:
         if kind in ("yes", "no"):
             # Answered: pacing counts from here, as from a cloud answer. A
             # question held back while this one was out is still asked.
-            self._sight_unable = 0
+            if self._unable_for == trigger:
+                self._forget_unable()
             if self._pending_question == trigger:
                 self._pending_question = None
             self._absent_streak = 0
@@ -1251,13 +1262,28 @@ class TieredVision:
         # Not answered: the same question next frame -- to the cloud once the
         # local tier has been unable `local_max_unable` times, or is absent --
         # unless a newer one is already waiting, which is asked instead.
-        if self._pending_question is None:
-            self._pending_question = trigger
+        if self._pending_question not in (None, trigger):
+            # A newer question waits and is asked instead; this one is
+            # superseded, and an edge it spent fires again (bug pass, review).
+            self._rearm(trigger)
+            return
+        self._pending_question = trigger
         if kind == "absent":
             logger.info("local VLM absent for %s (%s); asking the cloud", trigger, what)
             self._sight_unable = self.local_max_unable
         else:
             self._sight_unable += 1
+
+    def _forget_unable(self) -> None:
+        self._sight_unable, self._unable_for = 0, None
+
+    def _rearm(self, trigger: str) -> None:
+        """A question dropped unanswered: an edge it spent fires again
+        (`cold_search` and `staleness` fire again on their own counts)."""
+        if trigger == TRIGGER_CANDIDATE:
+            self._last_confirmed = None
+        elif trigger == TRIGGER_UNCERTAIN:
+            self._band_armed = True
 
     def _band_candidate(self, perception: Perception):
         """The frame's strongest candidate if perception called the frame
@@ -1451,10 +1477,15 @@ class TieredVision:
         self._absent_streak = 0
         self._since_call = 0
         self._mark_odometry_call()
-        if self._sight_unable >= self.local_max_unable:
-            # 3.80.D: a question escalated while this call was out is
-            # answered by it (review: never a paid call straight behind it).
-            self._sight_unable = 0
+        pending = self._pending_question
+        if (pending is not None and pending == self._unable_for
+                and self._sight_unable >= self.local_max_unable
+                and (pending == trigger or pending in NAVIGATION_QUESTIONS)):
+            # 3.80.D: a question escalated while this call was out is answered
+            # by it -- the cloud is asked one navigate question whatever the
+            # trigger -- so no paid call follows straight behind (review). A
+            # question about one view (a candidate, the band) still goes up.
+            self._forget_unable()
             self._pending_question = None
         try:
             scene = fut.result()
@@ -1509,6 +1540,7 @@ class TieredVision:
         with self._local_lock:
             self._sight_call = None
         self._pending_question = None
+        self._forget_unable()
         self._local_landed = None
 
     def close(self) -> None:

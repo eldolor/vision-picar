@@ -166,17 +166,24 @@ strongest candidate has that label and P >= `local_band_low` into
 `Perception.promoted()` (status `detected`), so it steers, triggers and is
 judged at arrival as a detection, until a frame with neither a band
 candidate nor a detection clears the label (a label is stored only from a
-candidate that was in the band on the frame asked about). Unable sets
-`_pending_question` (unless a newer one waits) and adds one to
-`_sight_unable`; absent sets it to `local_max_unable`. A pending
-`uncertain_candidate` whose candidate has left the band is dropped. With
-`_sight_unable >= local_max_unable` the pending question takes the cloud
-path as before (cap, one cloud call in flight, `_dispatch`) under its own
-trigger; a fresh question on that frame becomes the next local one. Sent,
-it counts in `escalations` and resets the count; at the cap the count and
-question are dropped (the local tier goes on answering); with a cloud call
-out it waits, and that call's landing (`_collect_inflight`) answers it, so
-no paid call follows straight behind. A cloud yes to `uncertain_candidate`
+candidate that was in the band on the frame asked about). The unable count
+belongs to one question (`_unable_for`): asking a different question starts
+it at 0. Unable sets `_pending_question` and adds one to `_sight_unable`;
+absent sets it to `local_max_unable`. If a newer question is already
+pending, the failed one is superseded instead (`_rearm()`: a spent
+`candidate_sighting` edge or the band fires again) and nothing is counted. A
+pending `uncertain_candidate` whose candidate has left the band is dropped.
+When the pending question is the counted one and `_sight_unable >=
+local_max_unable`, it takes the cloud path as before (cap, one cloud call in
+flight, `_dispatch`) under its own trigger; a fresh question on that frame
+becomes the next local one (a spent candidate edge is re-armed while a cloud
+call is out). Sent, it counts in `escalations` and the count is forgotten; at
+the cap the count is forgotten and the fresh question kept for the local
+tier; with a cloud call out it waits. A landing (`_collect_inflight`)
+answers a waiting question of the same trigger or a navigation one
+(`NAVIGATION_QUESTIONS`: start, cold search, staleness -- the cloud is asked
+one navigate question whatever the trigger), so no paid call follows
+straight behind; a candidate's or the band's still goes up. A cloud yes to `uncertain_candidate`
 promotes as a local yes does (`_cloud_answered_band`). With a local tier
 every cloud call is an escalation: `confirm_cloud()` counts the arrival's
 too, whether the local tier was spent or absent. `confirm_local()` waits on

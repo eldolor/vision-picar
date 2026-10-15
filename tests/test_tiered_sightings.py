@@ -579,3 +579,146 @@ def test_review_an_arrival_handed_up_by_an_absent_tier_is_an_escalation():
     tier = TieredVision(Script(absent()), Cloud(), local_identity_fn=Local(LocalVLMAbsent("x")))
     assert tier.confirm_arrival({})["tier"] == "cloud"
     assert tier.stats.escalations == 1
+
+
+# ---------- bug pass fixes (2026-10-15) ----------
+
+def test_bugpass_an_older_questions_failure_is_not_counted_against_a_newer_one():
+    gate = threading.Event()
+    local, cloud = Local(LocalVLMAbsent("blip"), no(), gate=gate), Cloud()
+    tier = tier_for(Script(absent(), *([detected()] * 6)), local, cloud)
+    tier({})                                   # start, held
+    tier({}), tier({})                         # candidate_sighting waits behind it
+    gate.set()
+    settle(tier)
+    for _ in range(3):
+        tier({})
+        settle(tier)
+    assert cloud.calls == 0, "the candidate got its own local try"
+    assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE) == 1
+
+
+def test_bugpass_a_cloud_landing_answers_only_its_own_escalated_question():
+    gate = threading.Event()
+
+    class Held(Cloud):
+        def __call__(self, frame):
+            assert gate.wait(5)
+            return super().__call__(frame)
+
+    b = absent(cand(0.6))
+    # start -> absent -> cloud (held); then the band question -> absent, held
+    # behind it; the start's landing must not count as the band's answer.
+    local, cloud = Local(LocalVLMAbsent("gone")), Held()
+    tier = tier_for(Script(absent(), absent(), b, b, b, b, b, b), local, cloud)
+    for _ in range(5):
+        tier({})
+        call = tier._sight_call
+        if call is not None:
+            call[3].result(5)
+    assert tier._pending_question == TRIGGER_UNCERTAIN
+    gate.set()
+    tier._inflight.result(5)
+    tier({})                       # collects the start's answer; the band's goes up
+    assert tier.stats.triggers.get(TRIGGER_UNCERTAIN) == 1
+
+
+def test_bugpass_a_candidate_edge_held_behind_an_escalation_fires_later():
+    gate = threading.Event()
+
+    class Held(Cloud):
+        def __call__(self, frame):
+            assert gate.wait(5)
+            return super().__call__(frame)
+
+    u = {"status": "unparsed", "score": None}
+    local, cloud = Local(u), Held()
+    # F1 start -> unable; F2 the start to the cloud (held); F3-F8 absent ->
+    # cold_search to the local tier, unable; F9 it waits behind the held
+    # call; F10 the candidate edge fires on that waiting frame.
+    tier = tier_for(Script(*([absent()] * 8), *([detected()] * 12)), local, cloud,
+                    local_max_unable=1)
+    for _ in range(10):
+        tier({})
+        call = tier._sight_call
+        if call is not None:
+            call[3].result(5)
+    assert tier._pending_question == TRIGGER_COLD_SEARCH and tier._inflight is not None
+    gate.set()
+    tier._inflight.result(5)
+    for _ in range(6):
+        tier({})
+        settle(tier)
+    # Asked of the local tier first (never straight to the cloud), and the
+    # waiting cold_search was answered by the landing, not sent behind it.
+    assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE) == 1, tier.stats.local_triggers
+    assert TRIGGER_COLD_SEARCH not in tier.stats.triggers, tier.stats.triggers
+    assert tier.stats.cloud_calls == tier.stats.escalations
+
+
+
+# ---------- second review round (2026-10-15) ----------
+
+def test_review2_no_paid_call_straight_behind_a_landing_for_a_navigation_question():
+    gate = threading.Event()
+
+    class Held(Cloud):
+        def __call__(self, frame):
+            assert gate.wait(5)
+            return super().__call__(frame)
+
+    local, cloud = Local(LocalVLMAbsent("gone")), Held()
+    tier = tier_for(Script(absent()), local, cloud, cold_search_after=3)
+    for _ in range(7):                       # start up (held); cold_search escalates behind it
+        tier({})
+        call = tier._sight_call
+        if call is not None:
+            call[3].result(5)
+    assert tier._pending_question == TRIGGER_COLD_SEARCH
+    gate.set()
+    tier._inflight.result(5)
+    tier({})
+    assert tier.stats.cloud_calls == 1, "the landing answered the waiting cold_search"
+
+
+def test_review2_a_new_question_does_not_inherit_the_old_ones_count():
+    u = {"status": "unparsed", "score": None}
+    local, cloud = Local(u), Cloud()
+    tier = tier_for(Script(absent(), *([detected()] * 4)), local, cloud,
+                    consecutive_frames=1)
+    scenes = run(tier, 4)
+    # Frame 1 start (unable); frame 2 the candidate (unable, its first);
+    # frame 3 asks the candidate again locally, not the cloud; after its own
+    # second unable answer, frame 4 hands it up.
+    assert scenes[2]["_tier"].get("local_dispatched") == TRIGGER_CANDIDATE
+    assert scenes[3]["_tier"]["cloud_called"] and scenes[3]["_tier"]["trigger"] == TRIGGER_CANDIDATE
+    assert cloud.calls == 1
+
+
+def test_review2_a_superseded_candidate_question_fires_again():
+    gate = threading.Event()
+    u = {"status": "unparsed", "score": None}
+    gate.set()
+    local = Local(no(), u, no(), gate=gate)
+    tier = tier_for(Script(absent(), *([detected()] * 30)), local, Cloud())
+    run(tier, 1)                             # start: no
+    tier({})                                 # collects it
+    gate.clear()
+    tier({})                                 # candidate out, held
+    assert tier._sight_call is not None and tier._sight_call[1] == TRIGGER_CANDIDATE
+    tier._pending_question = TRIGGER_STALE   # a newer question waits behind it
+    gate.set()
+    settle(tier)
+    for _ in range(4):
+        tier({})
+        settle(tier)
+    assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE) == 2, tier.stats.local_triggers
+
+
+def test_review2_at_the_cap_the_fresh_question_is_kept_for_the_local_tier():
+    local, cloud = Local(LocalVLMAbsent("gone"), no()), Cloud()
+    tier = tier_for(Script(absent(), *([detected()] * 5)), local, cloud,
+                    consecutive_frames=1, max_calls=0)
+    run(tier, 3)
+    assert cloud.calls == 0
+    assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE) == 1, tier.stats.local_triggers
