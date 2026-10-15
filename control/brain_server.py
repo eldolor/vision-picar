@@ -103,7 +103,7 @@ from control.recording_routes import (  # noqa: F401 -- re-exported, see above
     RecordFrameRequest,
     mount_recording_routes,
 )
-from control.remote_robot import RemoteRobot
+from control.remote_robot import DEFAULT_DRIVER, RemoteRobot
 from control.remote_navigator import RemoteNavigator
 from control.remote_world import RemoteWorld
 from control.walk_store import walk_store_from_config
@@ -540,7 +540,7 @@ def create_app(
                 config.get("world_url") or getattr(robot, "base_url", None)
                 or config["robot_url"],
                 secret=robot_secret, timeout=config["request_timeout_s"],
-                driver=getattr(robot, "driver", "brain"))   # its goals named as its verbs (3.84)
+                driver=getattr(robot, "driver", DEFAULT_DRIVER))   # its goals named as its verbs (3.84)
             try:
                 ok = navigator.available()
             except httpx.HTTPError as e:

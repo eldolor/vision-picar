@@ -39,6 +39,7 @@ from robot.interface import (
     VERB_PERIOD_S,
     WheelFeedbackLost,
     carry_out_verb,
+    verb_stop_baseline,
     ZONE_RANGE,
     ZONE_UNUSABLE,
 )
@@ -1077,7 +1078,7 @@ class SafetyController:
         if not (plan.get("wall_clock") and plan.get("settle")):
             return carry_out_verb(self.robot, plan, limit)
         start = self.robot.get_wheel_state()
-        stops0 = getattr(self.robot, "stop_count", 0)
+        stops0 = verb_stop_baseline(self.robot)        # 3.84
         outcome = carry_out_verb(self.robot, plan, limit)
         if outcome["ended"] == "complete":
             outcome = self._settle(plan, start, stops0, outcome)

@@ -17,6 +17,7 @@ from typing import Optional
 
 import httpx
 
+from control.remote_robot import DEFAULT_DRIVER
 from world.bridge_faults import fault_from_headers, response_detail, setup_fault_message
 
 DEFAULT_TIMEOUT_S = 10.0
@@ -28,7 +29,7 @@ class RemoteNavigator:
 
     def __init__(self, base_url: str, secret: Optional[str] = None,
                  timeout: float = DEFAULT_TIMEOUT_S,
-                 client: Optional[httpx.Client] = None, driver: str = "brain"):
+                 client: Optional[httpx.Client] = None, driver: str = DEFAULT_DRIVER):
         self.base_url = base_url.rstrip("/")
         # 3.84: explore's goals name the brain, so the robot server can tell
         # them from a script's and refuse them after a person's Stop.

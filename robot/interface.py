@@ -8,6 +8,7 @@ methods. brain/ never imports a backend directly -- only this interface,
 via robot/factory.py.
 """
 
+import contextvars
 import math
 import time
 from abc import ABC, abstractmethod
@@ -109,6 +110,17 @@ class Preempted(Exception):
 
 # 3.84: the refusal a person's Stop latches on autonomy, by name.
 PERSON_STOP = "person_stop"
+
+# 3.84: the robot's `stop_count` as robot/server.py read it, just before it
+# last checked a person's Stop for this verb. A verb takes it as its stop
+# baseline instead of reading the count itself later, so a stop that lands
+# between that check and the verb's first motion ends the verb unmoved.
+VERB_STOP_BASELINE = contextvars.ContextVar("verb_stop_baseline", default=None)
+
+
+def verb_stop_baseline(robot) -> int:
+    base = VERB_STOP_BASELINE.get()
+    return getattr(robot, "stop_count", 0) if base is None else base
 
 
 class StoppedByPerson(Preempted):
@@ -272,7 +284,7 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
     radius, track = w0["wheel_radius_m"], w0["track_width_m"]
     v = (left + right) / 2.0 * radius
     rate = abs(v) if straight else math.degrees(abs((right - left) * radius / track))
-    stops0 = getattr(robot, "stop_count", 0)
+    stops0 = verb_stop_baseline(robot)                 # 3.84
 
     last = {"done": 0.0}
 

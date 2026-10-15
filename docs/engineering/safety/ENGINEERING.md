@@ -201,9 +201,11 @@ allowed through on the ROS drive path lifts the hold, as it lifts
 `RosDriveRobot`'s own stop hold (`lift_hold_for_verb()`, 3.84): under
 `goal_gen_lock`, and only if `goal_stop["stops"]` is still the count `/action`
 read as the request arrived -- a verb a stop overtook is not run and is
-refused `stopped`, and the stop keeps its hold. `goal_stop["lifted_verbs"]`
-counts the verbs running with the hold lifted; when the LAST ends
-(`rehold_after_verb()`, in a `finally`), the hold is set again if a stop's
+refused `stopped`, and the stop keeps its hold. `goal_stop["lifted"]`
+counts the verbs running with the hold lifted, keyed by the stop count they
+lifted it under; when the LAST one lifted under the newest stop ends
+(`rehold_after_verb()`, in a `finally`; one lifted before a newer stop
+neither counts nor re-holds), the hold is set again if a stop's
 loop is still ending a goal and is the current one (`ending == gen`; an
 accepted goal clears `ending`), so nav2's `ros` commands for the stopped goal
 stay at zero after a person's move; the loop keeps cancelling and lifts it
@@ -223,9 +225,20 @@ itself since 3.84; the latch is re-read where 3.82 answers `stopped`, so a
 brain goal a person's Stop overtook answers `person_stop`). It is read again
 at execution, because an autonomous verb's arbitration can wait on the
 bridge: a direct verb under `motion_lock`, a ROS verb in
-`lift_hold_for_verb()` under `goal_gen_lock`, and a direct `/wheels` after
-its write (a latch seen then zeroes the wheels again: the Stop latches
-before its `robot.stop()`). Never refused:
+`lift_hold_for_verb()` under `goal_gen_lock`. Just before that read the
+server takes the robot's `stop_count` and hands it to the verb as
+`robot.interface.VERB_STOP_BASELINE` (a context variable): `carry_out_verb()`,
+`SafetyController.run_verb()`'s settle and `RosDriveRobot._begin()` use it
+as their stop baseline instead of reading the count later, so a Stop that
+lands between the read and the verb's first motion (the Stop latches before
+its `robot.stop()`) ends the verb unmoved -- `_begin()` then returns an
+already-superseded generation and leaves the Stop's own hold in place
+(`RosDriveRobot.stop_count` counts its stops). A brain command refused
+`person_stop` at execution had been given the robot by arbitration; its
+claim lapses at once (`lapse_refused_claim()`). A direct `/wheels` takes
+`stop_count` before its vet and, if any stop landed by the end of its write
+(`/stop` never takes `motion_lock`), zeroes the wheels again and answers
+`person_stop` (the brain, latched) or `stopped`. Never refused:
 any `/stop`, `DELETE /world/goal`, a person's verbs and goals, unnamed
 goals (ranked `ros`, today's behaviour), and `ros`'s `/wheels` (the hold
 governs those). `brain`, `teleop` and `ros` stops set nothing. Only

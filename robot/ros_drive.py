@@ -49,7 +49,7 @@ from typing import Optional
 import httpx
 
 from robot.interface import (DRIVER_MANUAL, VERB_STALL_S, RobotInterface, WheelFeedbackLost,
-                             driver_priority)
+                             driver_priority, verb_stop_baseline)
 
 logger = logging.getLogger("ros_drive")
 
@@ -145,6 +145,8 @@ class RosDriveRobot(RobotInterface):
         # robot/server.py's M4 arbitration has already decided the newcomer
         # may drive, and the old stream must not resume when it finishes.
         self._generation = 0
+        # Every stop() (3.84): a verb's baseline, as the inner robot's own.
+        self.stop_count = 0
         self._gen_lock = threading.Lock()
         # 3.76 B8: held across each verb twist and each of the stop's zeros,
         # so the zeros always land after a twist already on its way.
@@ -242,6 +244,11 @@ class RosDriveRobot(RobotInterface):
 
     def _begin(self) -> int:
         with self._gen_lock:
+            if self.stop_count != verb_stop_baseline(self):
+                # 3.84: a stop since robot/server.py last checked for a
+                # person's: this verb is superseded before it moves, and the
+                # stop keeps its own hold (a bump here would lift it).
+                return self._generation - 1
             self._generation += 1
             self.verbs_through_ros += 1
             return self._generation
@@ -365,6 +372,7 @@ class RosDriveRobot(RobotInterface):
         input in the background -- a stop must not depend on the container
         being alive, or answering."""
         with self._gen_lock:
+            self.stop_count += 1
             self._generation += 1
             self._hold_gen = self._generation
             self._hold_until = time.monotonic() + STOP_HOLD_S

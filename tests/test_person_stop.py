@@ -383,11 +383,15 @@ def test_a_persons_second_press_is_not_muted_by_the_first_ones_end(ros_goals):
     bridge.cancel_fails = True
     assert stack.client.post("/stop", headers={"x-driver": "twin-dpad"}).json()["executed"]
     time.sleep(0.3)
-    first = threading.Thread(target=lambda: stack.act("RIGHT", angle=90))
+    replies = {}
+    first = threading.Thread(target=lambda: replies.setdefault("first", stack.act("RIGHT", angle=90)))
     first.start()
     time.sleep(0.2)
+    assert first.is_alive(), "the first press ended before the second -- proves nothing"
     r = stack.act("LEFT", angle=45)
     first.join(10.0)
+    # The first was cut off by the second: they overlapped.
+    assert abs(replies["first"]["result"]["turned_deg"]) < 85, replies
     assert r["executed"] is True, r
     assert abs(r["result"]["turned_deg"]) > 30, f"the second press was held at zero: {r}"
     assert _nav2_for(stack, 0.5) == 0.0, "nav2 drove the stopped goal after the presses"
@@ -421,3 +425,94 @@ def test_a_brain_wheel_command_racing_a_persons_stop_is_zeroed(monkeypatch):
                     headers={"x-driver": "brain"}).json()
     assert r["reason"] == "person_stop", r
     assert _wheels(robot) == (0.0, 0.0), "the brain's command outlived the person's Stop"
+
+
+# ---------- review round 2 ----------
+
+
+def test_a_brain_verb_whose_latch_read_preceded_a_stop_does_not_move_direct(monkeypatch):
+    """Both reviewers, round 2: the latch was read again at execution, but
+    the verb took its own stop snapshot later (`carry_out_verb`'s
+    `stops0`, after the safety pre-check). A person's Stop in between was
+    never seen by the verb, which ran its whole move after the Stop."""
+    import threading
+
+    from tests.test_review_376a import _keep_robot
+
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    built = _keep_robot(monkeypatch)
+    client = asgi_client(server.create_app())
+    robot = built["robot"]
+    real, armed = robot.verb_plan, {"on": True}
+
+    def verb_plan(*a, **kw):
+        if armed.pop("on", False):
+            t = threading.Thread(target=lambda: client.post(
+                "/stop", headers={"x-driver": "twin-dpad"}))
+            t.start()
+            t.join(5.0)                              # the Stop lands inside the pre-check
+        return real(*a, **kw)
+
+    monkeypatch.setattr(robot, "verb_plan", verb_plan)
+    before = (robot.world.x, robot.world.y, robot.world.theta)
+    client.post("/action", json={"action": "LEFT", "angle": 60}, headers={"x-driver": "brain"})
+    after = (robot.world.x, robot.world.y, robot.world.theta)
+    assert abs(after[2] - before[2]) < 0.02, f"the brain's turn ran after the Stop: {before} -> {after}"
+
+
+def test_a_brain_verb_whose_latch_read_preceded_a_stop_does_not_move_ros(monkeypatch):
+    """The same window under drive: ros: RosDriveRobot's `_begin()` bumped
+    its generation after the Stop's, so the verb was neither superseded nor
+    under the Stop's own hold, and with no goal hold it turned."""
+    import threading
+
+    from tests.test_ros_fallback import Stack
+
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    stack = Stack(monkeypatch)
+    try:
+        stack.ros_up()
+        time.sleep(0.2)
+        real, armed = stack.robot._begin, {"on": True}
+
+        def begin():
+            if armed.pop("on", False):
+                t = threading.Thread(target=lambda: stack.client.post(
+                    "/stop", headers={"x-driver": "twin-dpad"}))
+                t.start()
+                t.join(5.0)
+            return real()
+
+        monkeypatch.setattr(stack.robot, "_begin", begin)
+        before = stack.pose()
+        stack.act("LEFT", driver="brain", angle=60)
+        time.sleep(0.5)
+        after = stack.pose()
+        assert abs(after[2] - before[2]) < 0.02, f"the brain's turn ran after the Stop: {before} -> {after}"
+    finally:
+        stack.close()
+
+
+def test_a_brain_verb_refused_at_execution_does_not_keep_the_robot(monkeypatch):
+    """Both reviewers, round 2: refused `person_stop` only at execution, the
+    brain verb had already been given the robot by arbitration, and kept it
+    for `watchdog_timeout_s`: a script's goal right after the Stop was
+    refused `preempted`."""
+    import threading
+
+    client, bridge = _server_over(monkeypatch, None)
+    bridge.get_gate, bridge.get_entered = threading.Event(), threading.Event()
+    reply = {}
+    verb = threading.Thread(target=lambda: reply.setdefault("r", client.post(
+        "/action", json={"action": "LEFT", "angle": 30}, headers={"x-driver": "brain"}).json()))
+    verb.start()
+    try:
+        assert bridge.get_entered.wait(5.0)
+        client.post("/stop", headers={"x-driver": "twin-dpad"})
+    finally:
+        bridge.get_gate.set()
+    verb.join(10.0)
+    bridge.get_gate = None
+    assert reply["r"]["reason"] == "person_stop", reply
+    r = client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()
+    assert r["accepted"] is True, f"the refused brain verb kept the robot: {r}"
