@@ -150,8 +150,10 @@ spot within `SPOT_DEDUPE_M` (0.30 m) of a live one sends nothing (3.68 had
 re-marked one spot up to 30 times), a spot the bridge did not take
 (an error, or `accepted: false`) is undone (`drop_last` restores the book
 as it was, including a spot the add trimmed), so the next wedge there can
-still mark it, and a new SLAM session (`map_id`; a restarted bridge has no
-spots) starts the book empty. `RosWorld.set_keepout` converts on the
+still mark it, and a new SLAM session (`map_id`, read with the pose the spot
+is placed on; a restarted bridge has no spots) starts the book empty.
+`set_keepout(spots, map_id=...)` sends nothing when the bridge is already
+on another session (the spots would be converted on the wrong anchor). `RosWorld.set_keepout` converts on the
 bridge's current session's anchor and names that session; a bridge on
 another one answers 409, read as `accepted: false` (as `set_goal`, 3.76
 H1-12). It logs one

@@ -943,3 +943,13 @@ def test_a_stall_after_moving_says_so():
     while agent._goal is not None and grid.sim_time - t0 < 60:
         agent.step()
     assert "without moving" not in agent.last_event and "stalled" in agent.last_event
+
+
+def test_a_stall_with_no_pose_at_its_end_still_reads_cleanly():
+    grid, nav, agent = _slow_agent(0.0)
+    assert agent.step().action == "GOAL"
+    agent._goal["from"] = None
+    t0 = grid.sim_time
+    while agent._goal is not None and grid.sim_time - t0 < 60:
+        agent.step()
+    assert "None" not in agent.last_event and "stalled" in agent.last_event

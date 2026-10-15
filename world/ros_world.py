@@ -435,7 +435,7 @@ class RosWorld(WorldInterface):
         # and a 200 that is not a JSON object is never a goal nav2 took.
         return {"accepted": True, **_json_object(r)}
 
-    def set_keepout(self, spots: list) -> dict:
+    def set_keepout(self, spots: list, map_id: Optional[str] = None) -> dict:
         """3.68: the whole set of keepout spots nav2 must plan around
         ({x_m, y_m, r_m, ttl_s}, house frame), replacing the last. The
         robot server decides them (robot/wedge_watch.py); the bridge only
@@ -447,6 +447,11 @@ class RosWorld(WorldInterface):
         anchor = self._ensure_session(reply)
         if anchor is None:
             return {"accepted": False, "reason": "no SLAM session yet"}
+        if map_id is not None and map_id != f"slam-{anchor.session}":
+            # The spots were placed on another session's pose (3.83 review
+            # round 2): on this anchor they would land in the wrong place.
+            return {"accepted": False, "reason": "no SLAM session yet",
+                    "detail": f"the spots are for {map_id}, the bridge is on slam-{anchor.session}"}
         out = []
         for s in spots:
             rx, ry = _ours_to_ros(*self._unapply(s["x_m"], s["y_m"], anchor))

@@ -282,6 +282,19 @@ def test_a_mark_names_the_session_it_was_converted_for():
     assert reply["accepted"] is False and "session" in reply["detail"]
 
 
+def test_a_mark_for_another_session_is_not_sent():
+    """3.83 review round 2: the spots were placed (and the book tagged) on
+    the session the robot server's pose came from; if the bridge has moved
+    on by the time set_keepout reads it, nothing is sent -- converting them
+    on the new anchor would draw them in the wrong place."""
+    world, bridge = world_with(truth=FakeTruth(1.0, 1.0, 90.0), bridge=KeepoutBridge(
+        start_truth={"x_m": 1.0, "y_m": 1.0, "heading_deg": 90.0}))
+    spot = [{"x_m": 1.0, "y_m": 0.5, "r_m": 0.15, "ttl_s": 300}]
+    reply = world.set_keepout(spot, map_id="slam-an-older-one")
+    assert reply["accepted"] is False and bridge.keepout_posts == 0
+    assert world.set_keepout(spot, map_id=world.map_id)["accepted"]
+
+
 def test_a_refused_mark_does_not_lose_the_spot_it_trimmed():
     """3.83 review: at MAX_SPOTS, add() trims the oldest before the post;
     undoing a refused post must bring that one back, not only drop the new."""
@@ -297,7 +310,7 @@ def test_a_mark_without_a_slam_session_is_not_logged_as_marked(wedged_server, mo
     client, bridge = wedged_server
     assert client.post("/world/goal", json={"x_m": 3.0, "y_m": 1.0}).json()["accepted"]
     world = server.get_world()
-    monkeypatch.setattr(world, "set_keepout", lambda spots: {"accepted": False,
+    monkeypatch.setattr(world, "set_keepout", lambda spots, **kw: {"accepted": False,
                                                              "reason": "no SLAM session yet"})
     with caplog.at_level("WARNING", logger="server"):
         drive_refused(client, 0.5)
@@ -325,9 +338,10 @@ def test_a_mark_the_bridge_did_not_take_is_tried_again(wedged_server, monkeypatc
     world = server.get_world()
     real, calls = world.set_keepout, []
 
-    def first_refused(spots):
+    def first_refused(spots, **kw):
         calls.append(spots)
-        return {"accepted": False, "reason": "no SLAM session yet"} if len(calls) == 1 else real(spots)
+        return ({"accepted": False, "reason": "no SLAM session yet"} if len(calls) == 1
+                else real(spots, **kw))
     monkeypatch.setattr(world, "set_keepout", first_refused)
     drive_refused(client, 0.8)
     assert wait_for(lambda: bridge.keepout)

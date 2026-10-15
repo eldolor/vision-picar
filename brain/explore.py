@@ -1082,7 +1082,8 @@ class ExploreAgent(MissionAgent):
                 self._room_failed(g)
             self._queue_escape("wedged", charged=state != "stalled",
                                goal=[round(g["x_m"], 2), round(g["y_m"], 2)], again=again)
-            self.last_event = (f"{g['kind']} goal stalled ({moved} m from its start); backing out"
+            self.last_event = ((f"{g['kind']} goal stalled ({moved} m from its start); backing out"
+                                if moved is not None else f"{g['kind']} goal stalled; backing out")
                                if state == "stalled" else
                                f"{g['kind']} goal {state} without moving; backing out")
             logger.info(self.last_event)
