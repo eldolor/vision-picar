@@ -1,0 +1,2 @@
+{"scenario": "a", "error": "goal A never drove", "state": "rejected", "code": "5a9cf41", "at": "2026-10-15T11:50:58"}
+{"scenario": "b", "accepted": true, "end_state": "succeeded", "seconds": 6.8, "end_error_m": 0.087, "pass": true, "code": "5a9cf41", "at": "2026-10-15T11:50:58"}

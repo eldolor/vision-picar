@@ -92,7 +92,7 @@ import time
 import httpx
 import asyncio
 import logging
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from pathlib import Path
 from typing import List, Optional
 
@@ -109,6 +109,7 @@ from robot.interface import (
 # The ROS container's driver name on POST /wheels (R2b, R4).
 DRIVER_ROS = "ros"
 from robot.safety import SafetyController, SafetyViolation, path_zone_indices
+from world.bridge_faults import classify as bridge_fault, headers_for
 from world.factory import get_world
 
 logger = logging.getLogger("server")
@@ -428,7 +429,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     motion_lock = threading.Lock()
     # A stop ending a nav2 goal (see _end_goal_after_stop): the generation,
     # and whether nav2's wheel commands are held at zero meanwhile.
-    goal_stop = {"gen": 0, "hold": False}
+    # `stops` counts the stops that end a goal -- every stop but the brain's
+    # (3.82): a goal one overtook while it waited is never sent; `gen` also
+    # moves on an accepted goal.
+    goal_stop = {"gen": 0, "hold": False, "stops": 0}
     # Serialises the bridge calls that start or end a goal: held ACROSS them.
     goal_stop_lock = threading.Lock()
     # Guards `goal_stop` itself and is never held across a bridge call, so
@@ -607,19 +611,23 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             return _carry_out(req, driver, now)
 
     @contextmanager
-    def verb_running(driver: str):
+    def verb_running(driver: str, restamp=lambda: True):
         """Hold the robot for `driver` while its verb runs (3.76 A1), and
         restart its lapse clock at the verb's END: the end is the driver's
-        last word, not its start."""
+        last word, not its start. A person's goal holds it the same way
+        while it waits and the bridge answers, and restarts the clock only if
+        the goal was accepted (`restamp`, 3.82)."""
         with verbs_lock:     # threadpool threads: a lost update would never lapse
             state["verbs_running"] += 1
         try:
             yield
         finally:
             with verbs_lock:
+                # Re-stamped before the count drops (3.82), so the claim
+                # never reads as lapsed in between.
+                if state["driver"] == driver and restamp():
+                    state["driver_at"] = time.monotonic()
                 state["verbs_running"] -= 1
-            if state["driver"] == driver:
-                state["driver_at"] = time.monotonic()
 
     def _carry_out(req: ActionRequest, driver: str, now: float):
         try:
@@ -820,6 +828,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         if hasattr(world_model, "cancel_goal") and not spares_goal:
             with goal_gen_lock:
                 goal_stop["gen"] += 1
+                goal_stop["stops"] += 1
                 goal_stop["hold"] = True
                 gen = goal_stop["gen"]
             threading.Thread(target=_end_goal_after_stop, args=(gen,), daemon=True,
@@ -1044,30 +1053,88 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         as one -- it takes the robot from the brain, whose next command is
         refused `preempted`, exactly as a D-pad press does. A goal naming no
         one keeps 3.23's rank: scripts and the nav suites post those."""
+        # The stops as the request ARRIVED, before arbitration or any wait
+        # (3.82): a stop pressed after the tap was sent overtakes it.
+        with goal_gen_lock:
+            stops = goal_stop["stops"]
         world = _goals()
         now = time.monotonic()
         person = (x_driver or "").strip()
+        claim = None
         if person and driver_priority(person) == DRIVER_MANUAL:
             refused = arbitrate(person, now)
             if refused:
                 return {"accepted": False, **refused}
+            # Taken at once, as a D-pad press takes it, so no brain verb or
+            # explore goal slips in while the bridge answers; given back if
+            # the bridge refuses the goal (3.82: a refused one never existed).
+            claim = (state["driver"], state["driver_at"])
             state["driver"], state["driver_at"] = person, now
         else:
             refused = arbitrate(DRIVER_ROS, now)
             if refused:
                 return {"accepted": False, **refused}
         # A person re-sending a goal after a stop: it supersedes the stop's
-        # ending loop, which must never cancel this new goal.
-        with goal_stop_lock:
-            with goal_gen_lock:
-                goal_stop["gen"] += 1
-                goal_stop["hold"] = False
-            try:
-                return world.set_goal(req.x_m, req.y_m)
-            except httpx.HTTPError as e:
-                # Handoff 4d: refused by name, not a 500.
-                return {"accepted": False, "reason": "ros_unavailable",
-                        "detail": f"the ROS bridge did not take the goal: {e}"}
+        # ending loop, which must never cancel this new goal -- but only once
+        # the bridge has taken it with no stop pressed since it arrived (3.82; nav2 may still reject it, and the
+        # bridge cancelled the old goal before sending it). A refused goal
+        # never existed, so the stop's loop keeps ending the goal the stop
+        # was for, and keeps its hold.
+        def give_back():
+            # Only if nobody has driven since: a person's later press, or the
+            # brain after the claim lapsed, keeps what it took.
+            if claim is not None and state["driver"] == person and state["driver_at"] == now:
+                state["driver"], state["driver_at"] = claim
+
+        accepted = False
+        try:
+            # The person's claim is held for as long as this takes, however
+            # long, as a verb in progress is (3.82; 3.76 A1).
+            with (verb_running(person, restamp=lambda: accepted) if claim is not None
+                  else nullcontext()):
+                with goal_stop_lock:
+                    with goal_gen_lock:
+                        stale = goal_stop["stops"] != stops
+                    if stale:
+                        # A stop was pressed while this waited: never sent.
+                        return {"accepted": False, "reason": "stopped",
+                                "detail": "a stop was pressed after this goal was sent; "
+                                          "the goal was not passed to nav2"}
+                    try:
+                        reply = world.set_goal(req.x_m, req.y_m)
+                    except httpx.HTTPError as e:
+                        # Handoff 4d: refused by name, not a 500. 3.82: and
+                        # whether waiting can help, as fields rather than
+                        # prose -- a 401 from the bridge is no outage.
+                        return {"accepted": False, "reason": "ros_unavailable",
+                                "detail": f"the ROS bridge did not take the goal: {e}",
+                                **bridge_fault(e)}
+                    taken = isinstance(reply, dict) and reply.get("accepted") is True
+                    if taken:
+                        with goal_gen_lock:
+                            # A stop pressed while set_goal() was in flight
+                            # owns a newer loop, which, waiting on
+                            # goal_stop_lock, ends the goal just taken. Never
+                            # supersede it. (Another goal accepted since this
+                            # request arrived, before it got the lock, moved
+                            # `gen` on; this one supersedes the loop all the
+                            # same.)
+                            accepted = goal_stop["stops"] == stops
+                            if accepted:
+                                goal_stop["gen"] += 1
+                                goal_stop["hold"] = False
+                        if not accepted:
+                            # Said so, and the claim given back: the stop's
+                            # loop ends this goal.
+                            return {"accepted": False, "reason": "stopped",
+                                    "detail": "a stop was pressed while the bridge took this "
+                                              "goal; the stop ends it"}
+                    return reply
+        finally:
+            if not accepted:
+                # After the claim's count dropped, so a stale claim given
+                # back is never held up by it.
+                give_back()
 
     def _bridge_call(fn):
         """A goal read or cancel against a bridge that is down answers 503
@@ -1075,8 +1142,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         try:
             return fn()
         except httpx.HTTPError as e:
+            # 3.82: whether waiting can help, as headers (the body stays the
+            # detail the twin shows): a 401 from the bridge is no outage.
             raise HTTPException(status_code=503,
-                                detail=f"ros_unavailable: the ROS bridge did not answer: {e}")
+                                detail=f"ros_unavailable: {e}",
+                                headers=headers_for(bridge_fault(e)))
 
     @app.get(prefix + "/world/goal", dependencies=[Depends(require_secret)])
     def world_goal_get():

@@ -17,6 +17,8 @@ from typing import Optional
 
 import httpx
 
+from world.bridge_faults import fault_from_headers, response_detail, setup_fault_message
+
 DEFAULT_TIMEOUT_S = 10.0
 
 
@@ -43,6 +45,11 @@ class RemoteNavigator:
             # 3.76: a wrong secret read as "this world has no nav2".
             raise PermissionError(f"the robot server refused the brain's secret "
                                   f"(HTTP {r.status_code}) -- check APP_SHARED_SECRET")
+        fault = fault_from_headers(r.headers) if r.status_code == 503 else None
+        if fault is not None and not fault["retryable"]:
+            # 3.82: the robot server's bridge refused it for a fault no wait
+            # mends (a 401: the two secrets differ), which read as "no nav2".
+            raise PermissionError(setup_fault_message("the goal route", fault, response_detail(r)))
         return r.status_code == 200
 
     def set_goal(self, x_m: float, y_m: float) -> dict:

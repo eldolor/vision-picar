@@ -53,6 +53,7 @@ from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
 from robot.interface import ZONE_UNUSABLE, Preempted, RobotInterface
 from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation
+from world.bridge_faults import fault_from_headers, response_detail, setup_fault_message
 
 logger = logging.getLogger("explore")
 
@@ -112,6 +113,12 @@ OWN_GOAL_TOLERANCE_M = 0.05
 # Transient goal-call failures in a row before the search gives up (3.76):
 # about ten seconds of ticks.
 BRIDGE_BLIPS_MAX = 40
+
+
+def _setup_fault(what: str, reply: dict) -> RuntimeError:
+    """3.82: a bridge fault no wait mends, as the error that ends the
+    mission `failed` with its status named."""
+    return RuntimeError(setup_fault_message(what, reply, reply.get("detail")))
 
 
 def leave_clearance_m(min_distance_cm: float) -> float:
@@ -364,7 +371,15 @@ class ExploreAgent(MissionAgent):
         outage is; one failed read used to end the whole search `failed`.
         Anything else (a 401, a bug), or more than BRIDGE_BLIPS_MAX in a
         row, still raises: a goal route that never answers is not a search."""
-        status = getattr(getattr(exc, "response", None), "status_code", None)
+        response = getattr(exc, "response", None)
+        status = getattr(response, "status_code", None)
+        # 3.82: the robot server says, in a header, whether its bridge's
+        # error can pass; else world/bridge_faults.py's one rule decides.
+        fault = fault_from_headers(getattr(response, "headers", None))
+        if fault is not None and not fault["retryable"]:
+            # Named as the setup fault it is, not as the robot server's 503.
+            raise _setup_fault("a goal call",
+                               {**fault, "detail": response_detail(response)}) from exc
         transient = (isinstance(exc, (httpx.TransportError, ConnectionError, TimeoutError))
                      or (status is not None and status >= 500))
         self._blips += 1
@@ -411,6 +426,12 @@ class ExploreAgent(MissionAgent):
             self.last_event = f"goal refused: {reply.get('reason')}"
             self._event("goal_refused", kind=kind, goal=[round(x_m, 2), round(y_m, 2)],
                         reason=reply.get("reason"))
+            if reply.get("retryable") is False:
+                # 3.82: the robot server says no wait mends it -- its bridge
+                # refused the goal for how the two are set up (a 401 for a
+                # mismatched secret). Waited on, the robot sat still for the
+                # whole time limit.
+                raise _setup_fault("the goal", reply)
             return "WAIT", False, self.last_event
         pose = self._pose()
         self._blips = 0
@@ -539,6 +560,10 @@ class ExploreAgent(MissionAgent):
             m = self.world.get_map()
         except Exception as exc:  # noqa: BLE001 -- a map outage is a wait, not an end
             return "WAIT", False, f"map unreachable: {exc}"
+        if not m.get("usable") and m.get("retryable") is False:
+            # 3.82: no map because the bridge refuses the robot server (a
+            # 401 for mismatched secrets), not because none is built yet.
+            raise _setup_fault("the map", m)
         if not pose.get("usable") or not m.get("usable"):
             return "WAIT", False, "no map yet"
 

@@ -137,11 +137,14 @@ brain was deleted 2026-09-25).
    `pending` or `active`: refuse `preempted`. An unreadable bridge counts as
    no goal.
 2. If nobody holds the robot, or the holder is `driver`: allow. The holder
-   is `driver` while any `/action` verb is being carried out
-   (`state["verbs_running"]`, every drive path, 3.76 A1), else `driver`
-   until `watchdog_timeout_s` after `driver_at`. A verb's end re-stamps
-   `driver_at` if its driver still holds the robot, so a verb longer than
-   the timeout never lapses mid-run.
+   is `driver` while any `/action` verb is being carried out, or a goal
+   naming a person is with the bridge (`state["verbs_running"]`, every drive
+   path, 3.76 A1; the goal since 3.82), else `driver` until
+   `watchdog_timeout_s` after `driver_at`. A verb's end re-stamps
+   `driver_at` if its driver still holds the robot, before the count drops,
+   so a verb longer than the timeout never lapses mid-run; a person's goal re-stamps it only when
+   the bridge took the goal, and otherwise gives the slot back to whoever
+   held it if nobody has driven since.
 3. Lower rank than the holder: refuse `preempted`.
 4. Both autonomous: refuse `preempted`.
 5. Otherwise allow (equal manual rank, or a higher rank taking over).
@@ -174,7 +177,22 @@ a non-zero `/wheels` from `ros` is treated as zero: under ROS drive it is
 applied as zero; under direct drive it takes the zero-command branch. A
 newer stop or an accepted `POST /world/goal` bumps the generation, so one
 loop runs at a time and never cancels a new goal (the goal route sets it
-under the same lock). `goal_stop`'s two fields have their own lock,
+under the same lock). A stop that ends a goal (every stop but the
+brain's) also counts itself in `goal_stop["stops"]`, which only those stops
+move. The goal route reads that count
+as the request arrives -- before arbitration and any wait on
+`goal_stop_lock` -- and, only when `set_goal()`'s answer is `accepted: true`
+and no stop has been pressed since, bumps the generation and clears the hold
+(3.82). A goal a stop overtook while it waited for the lock is answered
+`{"accepted": false, "reason": "stopped"}` without being sent; another goal
+accepted meanwhile does not make it stale. A goal the bridge took while a
+stop was pressed is answered `stopped` too (the stop's loop ends it, and the
+person's claim is given back):
+a refused goal (bridge unreachable, its 409, nav2 down, `accepted: false`)
+never existed, so the stop's loop keeps ending the goal it was for and
+keeps its hold; and a stop that landed while `set_goal()` was in flight owns the
+newer generation, so its loop, waiting on `goal_stop_lock`, ends the goal
+just taken. `goal_stop`'s two fields have their own lock,
 `goal_gen_lock`, never held across a bridge call; `/stop` takes only that
 one, so it answers at once while the bridge hangs (3.76 A8). The loop
 clears the hold only if its generation is still current. A verb allowed through on the ROS drive path clears

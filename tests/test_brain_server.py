@@ -268,9 +268,12 @@ def test_the_brain_process_never_loads_the_simulator():
     # simulator check above while still making "run the brain on the Pi"
     # stop being a config change. `control/remote_world.py` is how the brain
     # reaches a world, over HTTP, like everything else.
+    # `world.bridge_faults` (3.82) is the one rule for "can waiting mend a
+    # bridge error", which the robot server sends and the brain reads: httpx
+    # only, and it can reach no backend.
     assert set(loaded) <= {
         "robot", "robot.interface", "robot.safety", "robot.identity",
-        "world", "world.interface",
+        "world", "world.interface", "world.bridge_faults",
     }, loaded
 
 
