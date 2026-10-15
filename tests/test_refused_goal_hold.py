@@ -1,0 +1,175 @@
+"""
+tests/test_refused_goal_hold.py
+
+`PLAN-ros-alignment.md` 3.82: a goal the bridge refuses must not lift a
+Stop's hold, and a bridge that refuses the robot server's secret must end
+an explore mission instead of being waited on for the whole time limit.
+
+In process, against tests/test_stop_cancels_goal.py's fake bridge and fake
+nav2 (nav2 drives while the bridge holds an active goal, posting `ros`
+wheel commands the way `picar_sim_hardware` relays them).
+"""
+
+import threading
+import time
+
+import httpx
+import pytest
+from fastapi.testclient import TestClient
+
+import robot.server as server
+from robot.ros_drive import STOP_HOLD_S
+from tests.test_ros_goals import world_with
+from tests.test_ros_world import FakeTruth
+from tests.test_stop_cancels_goal import SlowBridge
+
+START = {"x_m": 1.0, "y_m": 1.0, "heading_deg": 90.0}
+
+
+class RefusingBridge(SlowBridge):
+    """SlowBridge whose `POST /goal` can be refused, or held in flight."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.refuse_post = None        # None, "transport", or an (status, body) answer
+        self.post_gate = None          # a threading.Event a post waits on
+        self.post_entered = threading.Event()
+
+    def handler(self, request):
+        if request.url.path == "/goal" and request.method == "POST":
+            self.post_entered.set()
+            if self.post_gate is not None:
+                self.post_gate.wait(5.0)
+            if self.refuse_post == "transport":
+                raise httpx.ConnectError("bridge unreachable", request=request)
+            if self.refuse_post is not None:
+                status, body = self.refuse_post
+                return httpx.Response(status, json=body)
+        return super().handler(request)
+
+
+@pytest.fixture
+def rig(monkeypatch):
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    bridge = RefusingBridge(start_truth=START)
+    world, _ = world_with(truth=FakeTruth(1.0, 1.0, 90.0), bridge=bridge)
+    monkeypatch.setattr(server, "get_world", lambda *a, **kw: world)
+    client = TestClient(server.create_app())
+
+    def nav2_tick():
+        if bridge.goal and bridge.goal.get("state") == "active":
+            client.post("/wheels", json={"left_rad_s": 3.0, "right_rad_s": 3.0},
+                        headers={"x-driver": "ros"})
+
+    def wheel_speeds():
+        w = client.get("/wheels").json()
+        return w["left"]["velocity_rad_s"], w["right"]["velocity_rad_s"]
+
+    def drive_for(seconds):
+        """nav2 ticking at 20 Hz; the fastest wheel speed seen meanwhile."""
+        worst, end = 0.0, time.monotonic() + seconds
+        while time.monotonic() < end:
+            nav2_tick()
+            worst = max(worst, *map(abs, wheel_speeds()))
+            time.sleep(0.05)
+        return worst
+
+    def wait_until(cond, seconds=3.0):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            if cond():
+                return True
+            time.sleep(0.02)
+        return cond()
+
+    return client, bridge, world, nav2_tick, wheel_speeds, drive_for, wait_until
+
+
+def _goal_a_driving(client, bridge, nav2_tick, wheel_speeds):
+    assert client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()["accepted"]
+    nav2_tick()
+    assert wheel_speeds() != (0.0, 0.0), "the fake nav2 never drove -- the test proves nothing"
+
+
+# ---------- criterion 2: a refused goal keeps the Stop's hold ----------
+
+REFUSALS = {
+    "transport": "transport",
+    "nav2 down": (503, {"error": "nav2 is not up (navigate_to_pose has no server)"}),
+    "session changed": (409, {"error": "the SLAM session changed", "session": "other"}),
+}
+
+
+@pytest.mark.parametrize("refusal", list(REFUSALS) + ["no SLAM session"])
+def test_a_refused_goal_after_a_stop_does_not_free_the_goal_the_stop_is_ending(rig, monkeypatch,
+                                                                                refusal):
+    """The goal route cleared the hold and bumped the generation BEFORE
+    `set_goal()` answered, so a refused goal ended the Stop's goal-ending
+    loop and released nav2 onto the goal the Stop had not yet cancelled."""
+    client, bridge, world, nav2_tick, wheel_speeds, drive_for, wait_until = rig
+    _goal_a_driving(client, bridge, nav2_tick, wheel_speeds)
+    bridge.cancel_fails = True                       # the Stop's first cancels fail
+    assert client.post("/stop", headers={"x-driver": "twin-dpad"}).json()["executed"]
+    time.sleep(STOP_HOLD_S + 0.1)                    # past RosDriveRobot's own stop hold
+    if refusal == "no SLAM session":
+        monkeypatch.setattr(world, "set_goal",
+                            lambda x, y: {"accepted": False, "reason": "no SLAM session yet"})
+    else:
+        bridge.refuse_post = REFUSALS[refusal]
+    # Posted naming no one (ranked `ros`), so no person's authority holds
+    # nav2's wheel commands out and masks the hold.
+    r = client.post("/world/goal", json={"x_m": 1.0, "y_m": 2.0}).json()
+    assert r["accepted"] is False, r
+    assert bridge.goal is not None and bridge.goal["state"] == "active", \
+        "goal A was cancelled anyway -- the test proves nothing"
+    assert drive_for(1.5) == 0.0, f"a refused goal ({refusal}) released nav2 onto goal A"
+    bridge.cancel_fails = False                      # the bridge takes cancels again
+    assert wait_until(lambda: bridge.goal is None), "the Stop's loop gave up on goal A"
+
+
+# ---------- criterion 3: handoff 3b, an accepted goal after a Stop ----------
+
+
+def test_an_accepted_goal_after_a_stop_drives_and_is_never_cancelled_by_it(rig):
+    client, bridge, world, nav2_tick, wheel_speeds, drive_for, wait_until = rig
+    _goal_a_driving(client, bridge, nav2_tick, wheel_speeds)
+    bridge.cancel_fails = True                       # the Stop's loop is still running
+    client.post("/stop", headers={"x-driver": "twin-dpad"})
+    time.sleep(0.1)
+    bridge.cancel_fails = False
+    assert client.post("/world/goal", json={"x_m": 1.0, "y_m": 2.0}).json()["accepted"]
+    cancelled = bridge.cancelled
+    assert drive_for(0.3) > 0.0, "a person's new goal was held at zero"
+    time.sleep(1.0)
+    assert bridge.cancelled == cancelled and bridge.goal is not None, \
+        "the Stop's loop cancelled the goal that superseded it"
+
+
+# ---------- criterion 4: a Stop while set_goal() is in flight ----------
+
+
+@pytest.mark.parametrize("accepted", [True, False])
+def test_a_stop_during_a_goal_in_flight_ends_whichever_goal_nav2_holds(rig, accepted):
+    """Guards the fix's design: bumping the generation AFTER an accepted
+    answer, unconditionally, would supersede a Stop that landed while the
+    call was in flight, and nav2 would drive the goal the Stop ended."""
+    client, bridge, world, nav2_tick, wheel_speeds, drive_for, wait_until = rig
+    _goal_a_driving(client, bridge, nav2_tick, wheel_speeds)
+    bridge.post_gate, bridge.post_entered = threading.Event(), threading.Event()
+    if not accepted:
+        bridge.refuse_post = REFUSALS["nav2 down"]
+    reply = {}
+    poster = threading.Thread(target=lambda: reply.setdefault("r", client.post(
+        "/world/goal", json={"x_m": 1.0, "y_m": 2.0}).json()))
+    poster.start()
+    try:
+        assert bridge.post_entered.wait(5.0), "the goal never reached the bridge"
+        t0 = time.monotonic()
+        assert client.post("/stop", headers={"x-driver": "twin-dpad"}).json()["executed"]
+        assert time.monotonic() - t0 < 0.5, "the Stop waited on the goal in flight (A8)"
+    finally:
+        bridge.post_gate.set()
+    poster.join(5.0)
+    assert reply["r"]["accepted"] is accepted, reply
+    assert drive_for(STOP_HOLD_S + 0.5) == 0.0, "nav2 drove after the Stop"
+    assert wait_until(lambda: bridge.goal is None), "the Stop never ended the goal nav2 held"

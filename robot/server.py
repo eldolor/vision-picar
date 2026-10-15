@@ -1057,17 +1057,27 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             if refused:
                 return {"accepted": False, **refused}
         # A person re-sending a goal after a stop: it supersedes the stop's
-        # ending loop, which must never cancel this new goal.
+        # ending loop, which must never cancel this new goal -- but only once
+        # nav2 has it (3.82). A refused goal never existed, so the stop's
+        # loop keeps ending the goal the stop was for, and keeps its hold.
         with goal_stop_lock:
             with goal_gen_lock:
-                goal_stop["gen"] += 1
-                goal_stop["hold"] = False
+                gen = goal_stop["gen"]
             try:
-                return world.set_goal(req.x_m, req.y_m)
+                reply = world.set_goal(req.x_m, req.y_m)
             except httpx.HTTPError as e:
                 # Handoff 4d: refused by name, not a 500.
                 return {"accepted": False, "reason": "ros_unavailable",
                         "detail": f"the ROS bridge did not take the goal: {e}"}
+            if reply.get("accepted") is True:
+                with goal_gen_lock:
+                    # A stop that landed while set_goal() was in flight owns
+                    # a newer generation: its loop, waiting on goal_stop_lock,
+                    # ends the goal just taken. Never supersede it.
+                    if goal_stop["gen"] == gen:
+                        goal_stop["gen"] += 1
+                        goal_stop["hold"] = False
+            return reply
 
     def _bridge_call(fn):
         """A goal read or cancel against a bridge that is down answers 503

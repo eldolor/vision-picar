@@ -174,7 +174,14 @@ a non-zero `/wheels` from `ros` is treated as zero: under ROS drive it is
 applied as zero; under direct drive it takes the zero-command branch. A
 newer stop or an accepted `POST /world/goal` bumps the generation, so one
 loop runs at a time and never cancels a new goal (the goal route sets it
-under the same lock). `goal_stop`'s two fields have their own lock,
+under the same lock). The goal route reads the generation before
+`set_goal()` and, only when the answer is `accepted: true` and the
+generation is still the one it read, bumps it and clears the hold (3.82):
+a refused goal (bridge unreachable, its 409, nav2 down, `accepted: false`)
+never existed, so the stop's loop keeps ending the goal it was for and
+keeps its hold; and a stop that landed while `set_goal()` was in flight
+owns the newer generation, so its loop, waiting on `goal_stop_lock`, ends
+the goal just taken. `goal_stop`'s two fields have their own lock,
 `goal_gen_lock`, never held across a bridge call; `/stop` takes only that
 one, so it answers at once while the bridge hangs (3.76 A8). The loop
 clears the hold only if its generation is still current. A verb allowed through on the ROS drive path clears
