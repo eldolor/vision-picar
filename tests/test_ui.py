@@ -3732,6 +3732,34 @@ def test_a_slam_map_follows_the_robot_while_nobody_drives_from_the_page(browser,
     page.close()
 
 
+def test_the_map_keeps_following_through_an_unusable_reply(browser, twin_server):
+    """Thermos 3.83 #1: a bridge blip or a container restart answers one
+    `usable: false` map; the page must keep following and show the map
+    again when the bridge is back, with no press and no brain."""
+    current = {"map": dict(_SLAM_MAP, map_version=3)}
+    page, errors = open_twin(browser, twin_server)
+    _stub_world(page, _SLAM_MAP, _SLAM_POSE, _SLAM_ERROR)
+    page.route("**/world/map", lambda r: r.fulfill(status=200, content_type="application/json",
+                                                   body=json.dumps(current["map"])))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => (document.getElementById('map-readout') || {}).textContent.includes('slam-t1 v3')",
+        timeout=8000)
+    current["map"] = {"usable": False, "map_id": None, "retryable": True}
+    page.wait_for_function(
+        "() => !document.getElementById('map-readout').textContent.includes('slam-t1')",
+        timeout=2500)
+    current["map"] = dict(_SLAM_MAP, map_version=5)
+    page.wait_for_function(
+        "() => document.getElementById('map-readout').textContent.includes('slam-t1 v5')",
+        timeout=2500)
+    assert not errors, errors
+    page.close()
+
+
 def test_a_new_costmap_version_is_redrawn(browser, twin_server):
     """3.83 criterion 5d: the layer follows nav2 -- a new version is on the
     canvas within 2.5 s."""

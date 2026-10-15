@@ -1172,7 +1172,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             raise HTTPException(status_code=501, detail=(
                 "this world has no costmap -- costmaps are nav2's (WORLD_MODE=ros, "
                 "PLAN-ros-alignment.md 3.83)"))
-        return Response(json.dumps(world_model.get_costmap()), media_type="application/json")
+        return Response(json.dumps(world_model.get_costmap(), separators=(",", ":")),
+                        media_type="application/json")
 
     @app.get(prefix + "/world/error", dependencies=[Depends(require_secret)])
     def world_error():
@@ -1238,8 +1239,13 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         everywhere else. `map_version` is what lets a client avoid asking
         for it -- poll `/world/pose` freely, re-read this only when the
         version moves.
+
+        Encoded with `json.dumps` (3.83): FastAPI's encoder walked the
+        ~10^5 cells in Python, ~160 ms on a furnished house, on the process
+        that runs the wheel loop -- and the twin reads this every second.
         """
-        return world_model.get_map()
+        return Response(json.dumps(world_model.get_map(), separators=(",", ":")),
+                        media_type="application/json")
 
     @app.post(prefix + "/sim/house/random", dependencies=[Depends(require_secret)])
     def sim_house_random():

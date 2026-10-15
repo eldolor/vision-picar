@@ -206,9 +206,15 @@ def test_a_bridge_that_cannot_answer_is_unusable_and_says_whether_to_wait(status
 
 
 @pytest.mark.parametrize("break_it", [
-    lambda c: c.__setitem__("costs", c["costs"][:-1]),           # short data
-    lambda c: c.__setitem__("version", None),
-    lambda c: c.__setitem__("width", "wide"),
+    lambda b: b.__setitem__("data", b["data"][:-1]),              # short data
+    lambda b: b.__setitem__("version", None),
+    lambda b: b.__setitem__("version", "3"),
+    lambda b: b.__setitem__("width", "wide"),
+    lambda b: b.__setitem__("resolution_m", "0.05"),
+    lambda b: b.__setitem__("resolution_m", 0.0),
+    lambda b: b.__setitem__("origin_x_m", float("nan")),
+    lambda b: b["data"].__setitem__(3, "lethal"),
+    lambda b: b["data"].__setitem__(3, 10 ** 9),
 ])
 def test_a_malformed_costmap_is_unusable_not_a_500(break_it, monkeypatch):
     world, bridge = costmap_world(truth=FakeTruth(1.0, 1.0, 90.0))
@@ -219,10 +225,10 @@ def test_a_malformed_costmap_is_unusable_not_a_500(break_it, monkeypatch):
         if request.url.path == "/nav/costmap":
             body = convert.grid_record(bridge.session, 1, 0.1, 10, 10, -0.5, -0.5, 0.0,
                                        bridge.costs, 0.0)
-            c = {"costs": body["data"], "version": body["version"], "width": body["width"]}
-            break_it(c)
-            body.update(data=c["costs"], version=c["version"], width=c["width"])
-            return httpx.Response(200, json=body)
+            break_it(body)
+            import json as _json
+            return httpx.Response(200, content=_json.dumps(body).encode(),
+                                  headers={"content-type": "application/json"})
         return orig(request)
 
     world._http = httpx.Client(base_url="http://bridge", transport=httpx.MockTransport(broken))
@@ -245,6 +251,28 @@ def test_the_same_version_is_placed_once(monkeypatch):
     bridge.costmap_version = 2
     world.get_costmap()
     assert len(calls) == 2
+
+
+def test_a_costmap_nav2_stopped_publishing_is_stale_not_live():
+    """The bridge keeps nav2's last costmap; one older than 5 s by the
+    bridge's clock is a nav2 that stopped, and is not drawn as live."""
+    world, bridge = costmap_world(truth=FakeTruth(1.0, 1.0, 90.0))
+    world.get_pose()
+    orig = bridge.handler
+
+    def aged(age):
+        def handler(request):
+            r = orig(request)
+            if request.url.path == "/nav/costmap":
+                return httpx.Response(200, json=dict(r.json(), age_s=age))
+            return r
+        return handler
+
+    world._http = httpx.Client(base_url="http://bridge", transport=httpx.MockTransport(aged(1.2)))
+    assert world.get_costmap()["usable"] is True
+    world._http = httpx.Client(base_url="http://bridge", transport=httpx.MockTransport(aged(6.0)))
+    cm = world.get_costmap()
+    assert cm["usable"] is False and cm["stale"] is True
 
 
 def test_a_bridge_that_is_down_is_unusable():

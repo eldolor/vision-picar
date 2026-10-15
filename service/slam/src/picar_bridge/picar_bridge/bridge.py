@@ -869,9 +869,13 @@ def _handler(bridge):
                 return self._send(200, reply)
             if url.path == "/nav/costmap":
                 with bridge.lock:
-                    reply = bridge.last_costmap or {"session": bridge.session,
-                                                    "version": 0, "usable": False}
-                return self._send(200, reply)
+                    reply = bridge.last_costmap
+                if reply is None:
+                    return self._send(200, {"session": bridge.session, "version": 0,
+                                            "usable": False})
+                # How old, by this clock: a stopped nav2 leaves its last
+                # costmap here, and the consumer must not draw it as live.
+                return self._send(200, dict(reply, age_s=time.time() - reply["at"]))
             if url.path == "/goal":
                 return self._send(*bridge.goal_state())
             if url.path == "/nav/stats":

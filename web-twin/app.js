@@ -704,6 +704,11 @@
     try {
       var cm = await apiGet("/world/costmap");
       if (stale() || gen !== costmapGen) return;
+      // Two refreshes can overlap (a frame's and followWorld's): an older
+      // version landing second must not replace the newer one.
+      var prev = state.lastCostmap;
+      if (prev && prev.usable && cm && cm.usable && prev.map_id === cm.map_id &&
+          cm.costmap_version < prev.costmap_version) return;
       state.lastCostmap = cm;
     } catch (err) {
       if (gen !== costmapGen) return;
@@ -715,11 +720,13 @@
   // One cell per pixel, painted once per costmap version and scaled onto
   // the map by drawImage: a furnished house's inflation is tens of
   // thousands of cells, and the map redraws on every frame.
-  var costmapRaster = { costmap: null, canvas: null };
+  var costmapRaster = { key: null, canvas: null };
   function costmapCanvas(cm) {
-    if (costmapRaster.costmap === cm) return costmapRaster.canvas;
+    // Keyed by version, not by object: every fetch parses a new object.
     var css = getComputedStyle(document.documentElement);
     var hex = (css.getPropertyValue("--map-cost") || "#C86BFA").trim().replace("#", "");
+    var key = cm.map_id + " v" + cm.costmap_version + " " + hex;
+    if (costmapRaster.key === key) return costmapRaster.canvas;
     var rgb = [0, 2, 4].map(function (i) { return parseInt(hex.substr(i, 2), 16) || 0; });
     var c = document.createElement("canvas");
     c.width = cm.width; c.height = cm.height;
@@ -733,7 +740,7 @@
       img.data[4 * k + 3] = Math.round(255 * a);
     }
     cctx.putImageData(img, 0, 0);
-    costmapRaster = { costmap: cm, canvas: c };
+    costmapRaster = { key: key, canvas: c };
     return c;
   }
 
@@ -760,6 +767,8 @@
     // 3.83) is said as such, not as "not yet".
     var what = cm && cm.usable && cm.map_id === grid.map_id
       ? "costmap v" + cm.costmap_version + " \u00b7 shade = nav2's cost, strongest = lethal"
+      : cm && cm.stale
+        ? "costmap: nav2 has stopped publishing (last " + Math.round(Number(cm.age_s) || 0) + " s ago)"
       : cm && cm.retryable === false
         ? "costmap: the ROS bridge refused" +
           (cm.bridge_status ? " (" + Number(cm.bridge_status) + ")" : "") +
@@ -1321,6 +1330,7 @@
     state.goalsUnsupported = false;
     state.costmapUnsupported = false;
     state.lastCostmap = null;
+    state.followingSlam = false;
     costmapGen++;
     state.lastWorldError = null;
     state.lastGoal = null;
@@ -2131,15 +2141,24 @@
   // robot driven by anyone else (a nav2 goal tapped on this map, a script,
   // another phone) built its map unseen. On the Sim tab the world is now
   // followed on the map's own clock whenever nothing else has read it.
-  var worldFollowInFlight = false;
+  // `apiGet` has no timeout, so the guard is a start time that lapses: one
+  // hung request over a stalled tunnel must not stop the following for good.
+  var WORLD_FOLLOW_GUARD_MS = 8000;
+  var worldFollowSince = 0;
   async function followWorld() {
-    // A SLAM map only: the simulator's own map changes only when this page
-    // or a brain mission drives, and both already fetch frames.
-    if (!state.connected || state.worldUnsupported || worldFollowInFlight) return;
-    if (!isSlamMap(state.lastMap)) return;
+    // A SLAM world only: the simulator's own map changes only when this
+    // page or a brain mission drives, and both already fetch frames. Once a
+    // SLAM map has been seen on this connection, an unusable reply (a
+    // bridge blip, a restarted container) keeps being followed until the
+    // map is back. Never for a hidden page.
+    if (!state.connected || state.worldUnsupported || document.hidden) return;
+    if (isSlamMap(state.lastMap)) state.followingSlam = true;
+    if (!state.followingSlam) return;
+    if (state.lastMap && state.lastMap.usable && !isSlamMap(state.lastMap)) return;
+    if (Date.now() - worldFollowSince < WORLD_FOLLOW_GUARD_MS) return;
     if (Date.now() - (state.lastWorldRefreshAt || 0) < MAP_FETCH_INTERVAL_MS) return;
-    worldFollowInFlight = true;
-    try { await refreshWorld(); } finally { worldFollowInFlight = false; }
+    var mine = worldFollowSince = Date.now();
+    try { await refreshWorld(); } finally { if (worldFollowSince === mine) worldFollowSince = 0; }
   }
   function stopWatchdogPolling() {
     if (state.watchdogTimerId) clearInterval(state.watchdogTimerId);

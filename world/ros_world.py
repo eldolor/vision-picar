@@ -49,6 +49,9 @@ FREE_BELOW = 25
 # ros2_control dead that is frozen. Normal ages are under 0.1 s (TF at
 # 20 Hz and slam_toolbox's 0.05 s publish period).
 POSE_STALE_S = 1.0
+# nav2 publishes the global costmap at 1 Hz (nav2.yaml); one this old is
+# from a nav2 that stopped (3.83). Read by the bridge's clock (`age_s`).
+COSTMAP_STALE_S = 5.0
 # How often an unanchored session may ask the truth again (3.76 round 7).
 TRUTH_RETRY_S = 1.0
 
@@ -96,14 +99,17 @@ def _whole_grid(g: dict) -> bool:
     exactly width x height. A short or malformed one is no grid, never a
     500 or a grid read out of bounds."""
     try:
-        w, h = int(g["width"]), int(g["height"])
-        float(g["resolution_m"]), float(g["origin_x_m"]), float(g["origin_y_m"])
-        float(g["origin_yaw_rad"]), int(g["version"])
-        data = g["data"]
-    except (KeyError, TypeError, ValueError):
+        w, h, version, data = g["width"], g["height"], g["version"], g["data"]
+        geometry = [g[k] for k in ("resolution_m", "origin_x_m", "origin_y_m",
+                                   "origin_yaw_rad")]
+    except (KeyError, TypeError):
         return False
-    return (isinstance(data, list) and w > 0 and h > 0 and len(data) == w * h
-            and g["resolution_m"] > 0)
+    whole = lambda v: isinstance(v, int) and not isinstance(v, bool)   # noqa: E731
+    real = lambda v: (isinstance(v, (int, float)) and not isinstance(v, bool)   # noqa: E731
+                      and math.isfinite(v))
+    return (whole(w) and whole(h) and whole(version) and w > 0 and h > 0
+            and all(real(v) for v in geometry) and geometry[0] > 0
+            and isinstance(data, list) and len(data) == w * h)
 
 
 def _json_object(r: httpx.Response) -> dict:
@@ -323,24 +329,38 @@ class RosWorld(WorldInterface):
         return self._truth.get_truth() if self._truth else unusable_truth()
 
     def get_map(self) -> dict:
+        return self._placed("/slam/map", "_map_cache", self._resample)
+
+    def _placed(self, path: str, cache_attr: str, place, max_age_s=None) -> dict:
+        """A bridge grid (`/slam/map`, `/nav/costmap`) placed on the house:
+        fetched, checked, and placed by `place(record, anchor)` once per
+        (session, version, anchor). `usable: false` when there is none to
+        place -- another session's, malformed, older than `max_age_s` by the
+        bridge's own clock, or a bridge that cannot answer."""
         try:
             if self._session is None:
                 self._ensure_session(self._fetch_pose())
-            r = self._http.get("/slam/map")
-            m = _json_object(r)
+            g = _json_object(self._http.get(path))
         except httpx.HTTPError as e:
-            # No map, and whether waiting can bring one (3.82): explore ends
+            # No grid, and whether waiting can bring one (3.82): explore ends
             # its mission on `retryable: false` instead of waiting it out.
             return {**unusable_map(), **classify(e)}
         anchor = self._anchor
-        if m.get("session") != anchor.session or not _whole_grid(m):
+        if g.get("session") != anchor.session or not _whole_grid(g):
             return unusable_map()
-        key = (m["session"], m["version"], anchor)
-        cache = self._map_cache
+        age = g.get("age_s")
+        if max_age_s is not None and isinstance(age, (int, float)) and not age <= max_age_s:
+            return {**unusable_map(), "stale": True, "age_s": age}
+        key = (g["session"], g["version"], anchor)
+        cache = getattr(self, cache_attr)
         if cache and cache[0] == key:
             return cache[1]
-        out = self._resample(m, anchor)
-        self._map_cache = (key, out)
+        try:
+            out = place(g, anchor)
+        except (TypeError, ValueError, OverflowError):
+            # Cells that are not small integers: no grid, never a 500.
+            return unusable_map()
+        setattr(self, cache_attr, (key, out))
         return out
 
     def _resample(self, m: dict, anchor=None) -> dict:
@@ -374,28 +394,19 @@ class RosWorld(WorldInterface):
         row-major, as nav2 publishes them (-1 unknown, 0 free, 1-98
         inflation, 99 inscribed, 100 lethal). `usable: false` when there is
         none to place: before nav2's first publish, from another session,
-        or when the bridge cannot answer (with 3.82's `retryable`)."""
-        try:
-            if self._session is None:
-                self._ensure_session(self._fetch_pose())
-            c = _json_object(self._http.get("/nav/costmap"))
-        except httpx.HTTPError as e:
-            return {**unusable_map(), **classify(e)}
-        anchor = self._anchor
-        if c.get("session") != anchor.session or not _whole_grid(c):
-            return unusable_map()
-        key = (c["session"], c["version"], anchor)
-        cache = self._costmap_cache
-        if cache and cache[0] == key:
-            return cache[1]
+        when the bridge cannot answer (with 3.82's `retryable`), or when
+        nav2 has not published for `COSTMAP_STALE_S` (`stale: true`): a
+        stopped nav2's last costmap is not today's."""
+        return self._placed("/nav/costmap", "_costmap_cache", self._place_costmap,
+                            max_age_s=COSTMAP_STALE_S)
+
+    def _place_costmap(self, c: dict, anchor) -> dict:
         geo, idx = self._sample_index(c, anchor)
         data = np.asarray(c["data"], dtype=np.int16)
         costs = np.where(idx >= 0, data[np.maximum(idx, 0)], -1)
-        out = {"usable": True, "map_id": f"slam-{anchor.session}",
-               "costmap_version": c["version"] + anchor.epoch, **geo,
-               "costs": costs.tolist()}
-        self._costmap_cache = (key, out)
-        return out
+        return {"usable": True, "map_id": f"slam-{anchor.session}",
+                "costmap_version": c["version"] + anchor.epoch, **geo,
+                "costs": costs.tolist()}
 
     def _sample_index(self, m: dict, anchor):
         """The one placement of a SLAM-frame grid on the house: the
@@ -427,7 +438,7 @@ class RosWorld(WorldInterface):
         wx, wy = min_x + (cols + 0.5) * res, min_y + (rows + 0.5) * res
         dx, dy = wx - t[0], wy - t[1]
         x, y = ca * dx + sa * dy, -sa * dx + ca * dy
-        rx, ry = x, -y                                   # _ours_to_ros
+        rx, ry = _ours_to_ros(x, y)
         rx, ry = rx - ox, ry - oy
         gx, gy = cyaw * rx + syaw * ry, -syaw * rx + cyaw * ry
         i, j = np.floor(gx / res).astype(np.int64), np.floor(gy / res).astype(np.int64)
