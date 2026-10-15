@@ -137,6 +137,18 @@ def test_a_new_slam_session_forgets_the_old_marks():
     assert live is not None and len(live) == 1
 
 
+def test_undoing_a_stale_session_mark_restores_the_newer_book():
+    """3.83 review round 4: a mark placed on an old session's pose, sent
+    after the book moved to the new session, is refused; undoing it must
+    give back the new session's spots, or the next post drops them."""
+    book = ww.SpotBook(ttl_s=300.0)
+    book.add(0.0, 1.0, 1.0, session="slam-b")
+    assert book.add(1.0, 5.0, 5.0, session="slam-a") is not None   # stale: empties the book
+    book.drop_last()                                                # the bridge refused it
+    assert book.session == "slam-b"
+    assert [s["x_m"] for s in book.live(1.0)] == [1.0]
+
+
 def test_an_expired_spot_does_not_block_a_new_mark():
     book = ww.SpotBook(ttl_s=10.0)
     book.add(0.0, 1.0, 1.0)

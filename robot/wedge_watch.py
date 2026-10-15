@@ -82,21 +82,23 @@ class SpotBook:
         robot still sitting at a marked spot is the brain's to back out of).
         A different `session` (a restarted bridge, 3.83 review) starts the
         book empty: the new bridge has none of the old marks."""
+        before = (list(self.spots), self.session)
         if session != self.session:
             self.spots, self.session = [], session
         self.spots = [s for s in self.spots if s["until"] > now]
         if any(math.hypot(s["x_m"] - x_m, s["y_m"] - y_m) < SPOT_DEDUPE_M for s in self.spots):
             return None
-        self._before = list(self.spots)
+        self._before = before
         self.spots.append({"x_m": x_m, "y_m": y_m, "r_m": r_m, "until": now + self.ttl_s})
         self.spots = self.spots[-self.max_spots:]
         return self.live(now)
 
     def drop_last(self) -> None:
         """Undo the last add: the bridge did not take it, so a later wedge
-        there must be able to mark it, and a spot it trimmed is kept (3.83)."""
+        there must be able to mark it, and a spot it trimmed is kept -- and so is
+        the session it replaced, when a stale mark had emptied the book (3.83)."""
         if self._before is not None:
-            self.spots, self._before = self._before, None
+            (self.spots, self.session), self._before = self._before, None
 
     def live(self, now: float) -> list:
         # A spot about to expire is sent with 0.1 s left, never 0: the bridge
