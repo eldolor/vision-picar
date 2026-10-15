@@ -163,10 +163,11 @@ the gate). The band fires once an episode has had a band candidate
 `unable` is that question's own count of unable answers. An identity
 question dropped unanswered (its episode ended, or displaced) hands its count
 on to the next question of its kind for `CARRY_FRAMES` (6) frames
-(`_carried`): capped at `local_max_unable - 1` (the next one still gets one
-local try) unless it was already spent, when the next one goes up -- so a
-flickering target behind a slow, unable local tier still reaches the cloud,
-and a question minutes later starts at 0. Any answer, or an escalation,
+(`_carried`): a count short of the max leaves the next one a local try, a
+spent one sends it up -- so a flickering target behind a slow, unable local
+tier still reaches the cloud, and a question minutes later starts at 0. When
+the band's object crosses the gate, the candidate question takes over the
+waiting band question and its count: one question about one view. Any answer, or an escalation,
 clears it.
 
 *The one waiting slot (`_waiting`).* A waiting identity question whose
@@ -203,9 +204,10 @@ cap it is dropped, not re-armed (it would loop against an absent tier); with
 a cloud call out it waits, and the landing (`_collect_inflight`) answers it
 if it is that question or a navigation one -- the cloud is asked one
 navigate question whatever the trigger -- so no paid call follows straight
-behind; a call that failed answers nothing, and the escalated question it
-carried waits again (`_unanswered()`). An escalated band question disarms
-the band, as a local one does. A cloud yes to `uncertain_candidate` promotes its episode as a local
+behind; a call that failed answers nothing. A failed escalated call is not
+retried (as a failed trigger call never was): B3.2 counts it, and the
+question is dropped. An escalated band question disarms the band, as a
+local one does. A cloud yes to `uncertain_candidate` promotes its episode as a local
 yes does (`_cloud_answered()`). With a local tier every cloud call is an
 escalation: `confirm_cloud()` counts the arrival's too, whether the local
 tier was spent or absent.

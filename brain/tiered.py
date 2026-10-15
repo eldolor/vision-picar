@@ -875,6 +875,13 @@ class TieredVision:
             fresh = (band if band is not None and trigger in (TRIGGER_COLD_SEARCH, TRIGGER_STALE)
                      else (trigger or band))
             fq = self._question(fresh) if fresh is not None else None
+            if (w is not None and fq is not None and w.trigger == TRIGGER_UNCERTAIN
+                    and fq.trigger == TRIGGER_CANDIDATE and w.episode == self._band_ep):
+                # The band's object crossed the gate: one question about it,
+                # now the candidate's, with the band's count -- never two
+                # (two paid calls) about one view (review 7).
+                fq.unable = max(fq.unable, w.unable)
+                w = self._waiting = None
             if w is not None and fq is not None and not fq.same(w):
                 if (fq.trigger in IDENTITY_QUESTIONS and w.trigger not in IDENTITY_QUESTIONS
                         and w.trigger != TRIGGER_START):
@@ -955,11 +962,7 @@ class TieredVision:
                                      dispatched=trigger)
 
         _t0 = time.perf_counter()
-        try:
-            scene = self.cloud_vision_fn(frame)
-        except BaseException:
-            self._unanswered(escalated)
-            raise
+        scene = self.cloud_vision_fn(frame)
         self.stats.record("cloud_ms", (time.perf_counter() - _t0) * 1000)
         # The goal the stand-in holds on later free frames. Set on BOTH
         # paths: it lived only in _collect_inflight() at first, so a
@@ -1194,9 +1197,8 @@ class TieredVision:
         the episode it is about."""
         episode = (self._band_ep if trigger == TRIGGER_UNCERTAIN
                    else self._seen_ep if trigger == TRIGGER_CANDIDATE else None)
-        # A question of the same kind dropped unanswered hands on its count,
-        # short of the max: this one still gets one local try, and a
-        # flickering target still reaches the cloud (bug pass 4).
+        # A question of the same kind dropped unanswered hands on its count
+        # (`_carry_unable`).
         n, until = self._carried.get(trigger, (0, 0))
         return _Question(trigger, episode, n if self.stats.frames <= until else 0)
 
@@ -1204,12 +1206,10 @@ class TieredVision:
         """An identity question dropped unanswered hands its count to the next
         of its kind for CARRY_FRAMES frames: a flickering target behind a
         slow, unable tier still reaches the cloud (bug pass 4, review 6), and
-        an unrelated question minutes later starts at 0. A count below the
-        max is capped at max - 1, so a new question gets one local try."""
+        an unrelated question minutes later starts at 0. A count short of the
+        max leaves the next question a local try; a spent one sends it up."""
         if q.trigger in IDENTITY_QUESTIONS and q.unable:
-            n = q.unable if q.unable >= self.local_max_unable else min(
-                q.unable, self.local_max_unable - 1)
-            self._carried[q.trigger] = (n, self.stats.frames + CARRY_FRAMES)
+            self._carried[q.trigger] = (q.unable, self.stats.frames + CARRY_FRAMES)
 
     def _in_view(self, q: _Question) -> bool:
         """Is what the question asks about still in view (its episode on)?
@@ -1284,13 +1284,6 @@ class TieredVision:
             self._collect_local()
         return self._local_scene(perception, note=f"asked the local VLM ({trigger})",
                                  local_dispatched=trigger)
-
-    def _unanswered(self, q: Optional[_Question]) -> None:
-        """An escalated question whose cloud call failed is not answered: it
-        waits again, still due for the cloud, if its subject is in view and
-        nothing else waits (review 6); B3.2 counts the failure as before."""
-        if q is not None and self._waiting is None and self._in_view(q):
-            self._waiting = q
 
     def _hold(self, q: _Question) -> None:
         """A question that cannot be asked now waits in the slot if it is
@@ -1643,7 +1636,6 @@ class TieredVision:
             with self._collect_lock:
                 if fut is not self._charged:
                     self._pending_error = exc
-            self._unanswered(question)
             return
         if scene is None:
             # Superseded: the mission ended or reset while this was out.

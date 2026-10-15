@@ -1036,25 +1036,43 @@ def test_review6_a_waiting_band_question_is_asked_when_its_object_is_detected():
     local, cloud = Local(no(), u, no()), Cloud()
     tier = tier_for(Script(absent(), b, b, *([detected()] * 12)), local, cloud)
     run(tier, 15)
+    # The band question's retry goes out on the first detected frame (the
+    # candidate edge needs two) and is answered no; the candidate then asks
+    # its own. Never blocked, and no paid call.
     assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 2, tier.stats.local_triggers
-    assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE, 0) >= 1, tier.stats.local_triggers
+    assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE) == 1, tier.stats.local_triggers
+    assert cloud.calls == 0
 
 
-def test_review6_a_failed_escalated_call_gives_its_question_back():
+def test_review7_one_object_is_never_two_paid_questions():
+    u = {"status": "unparsed", "score": None}
+    b = absent(cand(0.6))
+    local, cloud = Local(no(), u), Cloud()
+    tier = tier_for(Script(absent(), b, b, *([detected()] * 12)), local, cloud)
+    run(tier, 15)
+    assert cloud.calls == 1, tier.stats.triggers
+
+
+def test_review7_a_failed_escalated_call_is_not_retried():
+    """Review 7: re-queueing it made a paid call every other frame with the
+    cloud down, and reset B3.2's count each time. Dropped, as a failed
+    trigger call always was."""
     class Fails(Cloud):
         def __call__(self, frame):
             self.calls += 1
-            if self.calls == 1:
-                raise RuntimeError("503")
-            return super().__call__(frame)
+            raise RuntimeError("503")
 
     u = {"status": "unparsed", "score": None}
-    tier = tier_for(Script(absent(), *([detected()] * 8)), Local(no(), u), Fails(),
-                    async_cloud=False, local_max_unable=1)
-    run(tier, 3)                               # start; the candidate asked, unable
-    with pytest.raises(RuntimeError):
-        tier({})                               # escalated: the cloud fails
-    assert tier._pending_question == TRIGGER_CANDIDATE
+    cloud = Fails()
+    tier = tier_for(Script(absent(), *([detected()] * 12)), Local(no(), u), cloud,
+                    local_max_unable=1)
+    for _ in range(12):
+        try:
+            tier({})
+        except RuntimeError:
+            pass
+        settle(tier)
+    assert cloud.calls == 1, cloud.calls
 
 
 def test_review6_a_carry_expires():
@@ -1070,8 +1088,10 @@ def test_review6_a_carry_expires():
 def test_review6_pacing_advances_on_a_busy_hold():
     gate = threading.Event()
     tier = tier_for(Script(absent()), Local(no(), gate=gate), Cloud(), cold_search_after=1)
-    tier({})                                   # start, held
-    for _ in range(4):
-        tier({})                               # cold_search held behind it
-    assert tier._since_call >= 4
-    gate.set()
+    try:
+        tier({})                               # the start goes out and blocks
+        for _ in range(4):
+            tier({})                           # cold_search held behind it
+        assert tier._since_call >= 4
+    finally:
+        gate.set()
