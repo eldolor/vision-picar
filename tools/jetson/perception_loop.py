@@ -7,7 +7,15 @@ on real frames at the tier's budgeted rate (4 Hz = 250 ms a frame), for
 3.81.A: with PERCEPTION_TORCH_LOG set, every 20th frame appends torch's CUDA
 allocator counters (MB) to that file as one JSON line, so the memory
 accounting can split this process's GPU memory into tensors, the
-allocator's cache and the rest (CUDA context, cuDNN/cuBLAS workspaces)."""
+allocator's cache and the rest (CUDA context, cuDNN/cuBLAS workspaces).
+
+3.81 amendment 2: with PERCEPTION_SWITCH_FILE set, each line appended to
+that file is a new target: the loop builds its pipeline as a mission start
+does (`pipeline_for`) while the previous one is still alive, then drops the
+previous one, logging "switch start <epoch s> <target>" and "switch done <epoch s> <build
+s> <target>" so the harness can read the memory dip around it. The build
+time covers the models only: the target's text features (T1-T2's child) are
+encoded on the new pipeline's first frames, inside the harness's 90 s."""
 import json
 import os
 import sys
@@ -23,6 +31,23 @@ frames = json.loads(FRAMES_FILE.read_text())
 pipe = pipeline_for("red backpack")
 print("loaded 1 pipeline", flush=True)
 TORCH_LOG = os.environ.get("PERCEPTION_TORCH_LOG")
+SWITCH_FILE = os.environ.get("PERCEPTION_SWITCH_FILE")
+switched = 0
+
+
+def maybe_switch() -> None:
+    global pipe, switched
+    if not SWITCH_FILE or not os.path.exists(SWITCH_FILE):
+        return
+    targets = [t.strip() for t in Path(SWITCH_FILE).read_text().splitlines() if t.strip()]
+    for target in targets[switched:]:
+        switched += 1
+        print(f"{time.strftime('%T')} switch start {int(time.time())} {target}", flush=True)
+        t0 = time.perf_counter()
+        new = pipeline_for(target)
+        pipe = new  # the previous pipeline was alive through the build
+        print(f"{time.strftime('%T')} switch done {int(time.time())} "
+              f"{time.perf_counter() - t0:.1f} {target}", flush=True)
 
 
 def log_torch() -> None:
@@ -43,6 +68,7 @@ def log_torch() -> None:
 
 end, i = time.time() + seconds, 0
 while time.time() < end:
+    maybe_switch()
     f = frames[i % len(frames)]
     i += 1
     t0 = time.perf_counter()

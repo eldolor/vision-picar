@@ -23,6 +23,11 @@
 # whole run (one sample every 5 s, tagged with the phase: idle, stack,
 # perception, window), logs perception's torch allocator, and holds 30 s in
 # each phase before the window so each is sampled at rest.
+#
+# 3.81 amendment 2: SWITCH=1 has perception switch to a target it has not
+# seen 60 s and 210 s into the window (C1's window lasted 388 s) (a new pipeline built while the old
+# is alive, as a mission start does), with an empty text cache, and the
+# summary reports MemAvailable's dip around each switch.
 set -uo pipefail
 OUT="${1:?out dir}"; mkdir -p "$OUT"
 IMAGE="${IMAGE:-vision-picar-ros:plan-3.58}"
@@ -101,6 +106,10 @@ phase stack
 sudo tegrastats --interval 1000 --logfile "$OUT/tegrastats.log" &
 ( while true; do echo "$(date +%s) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)"; sleep 1; done ) > "$OUT/mem.log" &
 MEM=$!
+if [ "${SWITCH:-0}" = 1 ]; then
+  export PERCEPTION_SWITCH_FILE="$OUT/switch" PICAR_TEXT_CACHE="$OUT/text-cache"
+  rm -rf "$PICAR_TEXT_CACHE" "$PERCEPTION_SWITCH_FILE"
+fi
 PYTHONPATH=. python tools/jetson/perception_loop.py 3600 > "$OUT/perception.log" 2> "$OUT/perception.err" &
 PERC=$!
 waitfor 180 "perception loaded" grep -q "loaded 1 pipeline" "$OUT/perception.log"
@@ -140,6 +149,9 @@ NAV=$!
 
 phase window
 W0=$(wheel); T0=$(date +%s)
+SWT=
+[ "${SWITCH:-0}" = 1 ] && { ( sleep 60; echo "blue bottle" >> "$OUT/switch"
+                             sleep 150; echo "burgundy backpack" >> "$OUT/switch" ) & SWT=$!; }
 echo "== window start $(date +%T); wheel (moving late max_dt): $W0" | tee -a "$OUT/run.log"
 WALKS=(--walk blue-bottle-20260907-142454 --walk blue-bottle-20260907-185007
        --walk blue-shoes-20260907-152528 --walk red-backpack-20260907-144856)
@@ -164,11 +176,12 @@ W1=$(wheel); T1=$(date +%s)
 rm -f "$OUT/nav.run"; wait $NAV 2>/dev/null; NAV=
 echo "== window end $(date +%T) bench exit $BENCH_EXIT; wheel: $W1" | tee -a "$OUT/run.log"
 phase end
+[ -n "$SWT" ] && kill $SWT 2>/dev/null
 kill $PERC $MEM $WHL 2>/dev/null; PERC=; MEM=; WHL=; sudo pkill tegrastats
 OOM1=$(oom)
 
 python3 - "$OUT" "$T0" "$T1" "$W0" "$W1" "$OOM0" "$OOM1" <<'EOF' | tee -a "$OUT/run.log"
-import json, re, sys
+import json, os, re, sys
 out, t0, t1 = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 w0, w1 = sys.argv[4].split(), sys.argv[5].split()
 mem = [int(l.split()[1]) for l in open(f"{out}/mem.log")
@@ -197,6 +210,28 @@ summary = {
     "nav": nav[-1] if nav else None,
     "max_temp_c": max(temps) if temps else None, "throttle_lines": throttle,
 }
+# SWITCH=1: each switch's dip = min MemAvailable in the 90 s from its start
+# minus the min of the 60 s before it (3.81 amendment 2).
+allmem = [tuple(map(int, l.split())) for l in open(f"{out}/mem.log") if len(l.split()) == 2]
+switches = []
+for l in open(f"{out}/perception.log"):
+    p = l.split()
+    if len(p) >= 5 and p[1:3] == ["switch", "start"]:
+        s0 = int(p[3])
+        after = [m for t, m in allmem if s0 <= t < s0 + 90]
+        before = [m for t, m in allmem if s0 - 60 <= t < s0]
+        switches.append({"target": " ".join(p[4:]), "start": s0,
+                         "after_samples": len(after),  # < ~90: the window ended early
+                         "min_after_mb": min(after) if after else None,
+                         "min_before_mb": min(before) if before else None})
+    elif len(p) >= 6 and p[1:3] == ["switch", "done"] and switches:
+        switches[-1]["build_s"] = float(p[4])
+for sw in switches:
+    if sw["min_after_mb"] is not None and sw["min_before_mb"] is not None:
+        sw["dip_mb"] = sw["min_before_mb"] - sw["min_after_mb"]
+if os.path.exists(f"{out}/switch") or switches:
+    summary["switches"] = switches
+    summary["switches_expected"] = 2
 json.dump(summary, open(f"{out}/summary.json", "w"), indent=1)
 print("== summary:", json.dumps(summary))
 EOF
