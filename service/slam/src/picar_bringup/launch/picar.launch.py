@@ -8,7 +8,8 @@
                             -> diff_drive_controller  (the collars in series)
     foxglove_bridge (2026-09-27): a READ-ONLY window for Foxglove on :8765 --
         every topic, including the brain's (/brain/status, /diagnostics,
-        /brain/markers), and no way to publish, call services or set params
+        /brain/markers), and no way to publish, call services or set params.
+        Only with PICAR_FOXGLOVE=1 since 3.81 (14 MB the Rover does not need)
 """
 import os
 import tempfile
@@ -63,6 +64,8 @@ def generate_launch_description():
     to_nav = [("cmd_vel", "cmd_vel/nav")]
     nav_nodes = ["controller_server", "planner_server", "behavior_server", "bt_navigator"]
 
+    foxglove = os.environ.get("PICAR_FOXGLOVE", "0") == "1"
+
     return LaunchDescription([
         Node(package="robot_state_publisher", executable="robot_state_publisher",
              parameters=[{"robot_description": description}]),
@@ -101,8 +104,10 @@ def generate_launch_description():
         # client PUBLISH, call services and set parameters -- a second door
         # into the wheels that skips robot/server.py's arbitration. Only the
         # connection graph is offered, so it can look and never touch.
-        Node(package="foxglove_bridge", executable="foxglove_bridge",
-             parameters=[{"port": 8765, "address": "0.0.0.0",
-                          "capabilities": ["connectionGraph"]}],
-             output="log"),
+        # Opt-in (3.81 T3): a viewer for a person at a laptop, not part of
+        # the robot. PICAR_FOXGLOVE=1 on the container turns it on.
+        *([Node(package="foxglove_bridge", executable="foxglove_bridge",
+                parameters=[{"port": 8765, "address": "0.0.0.0",
+                             "capabilities": ["connectionGraph"]}],
+                output="log")] if foxglove else []),
     ])

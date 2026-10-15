@@ -137,7 +137,7 @@ page) on the robot server.
 | `MAX_DAYS` | 90 | days | `control/metrics_routes.py` | Bounds a summary to 90 LIST calls |
 
 **Ports.** Default local stack: robot :8000, brain :8001, tunnel proxy
-:8080, ROS bridge :8090, foxglove 127.0.0.1:8765, and under the fake motor
+:8080, ROS bridge :8090, foxglove 127.0.0.1:8765 (only with `PICAR_FOXGLOVE=1`), and under the fake motor
 board the sim body :8002 and sensors :8003/:8004 (3.36; a parallel stack
 moves them with `SIM_BODY_URL` / `SIM_SENSORS_URL` and needs its own
 `SIM_BODY_SHM`, or two body programs share one state block). When another session owns

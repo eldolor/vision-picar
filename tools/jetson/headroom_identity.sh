@@ -80,7 +80,12 @@ docker rm -f "$NAME" >/dev/null 2>&1
 SIM_MAP=scaled_house ROBOT_DRIVE=ros WORLD_MODE=ros ROBOT_MODE=hardware SIM_MOTOR_BOARD=fake \
   bash service/tunnel/restart.sh >> "$OUT/run.log" 2>&1 || { echo "STOP: restart.sh failed" | tee -a "$OUT/run.log"; exit 2; }
 waitfor 60 "wheels usable" sh -c "curl -s -H 'x-app-secret: $LOCAL_SECRET' localhost:8000/wheels | grep -q '\"usable\": *true'"
-docker run -d --name "$NAME" --network host \
+# LAUNCH_FROM_TREE=1: this checkout's launch file over the image's (the
+# image links it from /ws/src), so a launch change is measured without a
+# rebuild (3.81 T3).
+LAUNCH_MOUNT=()
+[ "${LAUNCH_FROM_TREE:-0}" = 1 ] && LAUNCH_MOUNT=(-v "$PWD/service/slam/src/picar_bringup/launch/picar.launch.py:/ws/src/picar_bringup/launch/picar.launch.py:ro")
+docker run -d --name "$NAME" --network host "${LAUNCH_MOUNT[@]}" \
   -e APP_SHARED_SECRET -e ROBOT_URL=http://127.0.0.1:8000 -e BRAIN_URL=http://127.0.0.1:8001/brain \
   "$IMAGE" ros2 launch picar_bringup picar.launch.py >/dev/null
 waitfor 180 "bridge up" curl -sf localhost:8090/health -o /dev/null

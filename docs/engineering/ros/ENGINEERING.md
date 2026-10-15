@@ -79,7 +79,7 @@ The nodes `picar.launch.py` starts:
 | `slam_toolbox/async_slam_toolbox_node` | Configured by `slam.yaml`. |
 | nav2 `controller_server`, `planner_server`, `behavior_server`, `bt_navigator` | `cmd_vel` is remapped to `cmd_vel/nav`. They run under `lifecycle_manager_navigation` with autostart on. |
 | `nav2_collision_monitor/collision_monitor` | Reads `/cmd_vel_mux` and writes `/diff_drive_controller/cmd_vel_unstamped`. It has its own lifecycle manager. |
-| `foxglove_bridge` | Port 8765, address `0.0.0.0`, capabilities `["connectionGraph"]` only. |
+| `foxglove_bridge` | Off unless the container has `PICAR_FOXGLOVE=1` (3.81: the Rover does not need it). Port 8765, address `0.0.0.0`, capabilities `["connectionGraph"]` only. |
 
 ### On the project's side (no ROS)
 

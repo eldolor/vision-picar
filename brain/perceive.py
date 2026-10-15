@@ -1133,18 +1133,27 @@ class ClipScorer:
         self.model, _, self.preprocess = open_clip.create_model_and_transforms(
             model_name, pretrained=pretrained, device=self.device)
         self.model.eval()
-        self.tokenizer = open_clip.get_tokenizer(model_name)
+        # 3.81 T2: texts are encoded by `brain.text_encoder` (a CPU child,
+        # cached on disk), so the text tower would only hold memory --
+        # 243 MB of GPU for RN50. Dropped; encode_image never touches it.
+        for name in ("transformer", "token_embedding", "positional_embedding",
+                     "ln_final", "text_projection", "attn_mask"):
+            if hasattr(self.model, name):
+                delattr(self.model, name)
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
         self.model_name = model_name
+        self.pretrained = pretrained
         self._text_cache: dict = {}
 
     def _text_features(self, texts: Sequence[str]):  # pragma: no cover
         key = tuple(texts)
         if key not in self._text_cache:
-            tokens = self.tokenizer(list(texts)).to(self.device)
-            with self._torch.no_grad():
-                feats = self.model.encode_text(tokens)
-                feats /= feats.norm(dim=-1, keepdim=True)
-            self._text_cache[key] = feats
+            from brain.text_encoder import clip_features
+
+            rows = clip_features(self.model_name, self.pretrained, key)
+            self._text_cache[key] = self._torch.tensor(
+                rows, dtype=self._torch.float32, device=self.device)
         return self._text_cache[key]
 
     def text_similarity(self, anchor: str,
@@ -1356,8 +1365,61 @@ class YoloE(UltralyticsTextDetector):
 
     def _set_text(self, text: str):  # pragma: no cover - needs the model
         # YOLOE wants precomputed text embeddings, where YOLO-World takes
-        # the strings themselves. The one line the two families differ by.
-        self.model.set_classes([text], self.model.get_text_pe([text]))
+        # the strings themselves. Not `self.model.get_text_pe`: that builds
+        # all of MobileCLIP in this process and leaves ~0.5 GB of heap
+        # behind (3.81 T1). `brain.text_encoder` encodes in a child and
+        # caches; the head's own `get_tpe` is the rest of `get_text_pe`.
+        import torch
+        from brain.text_encoder import MOBILECLIP, YOLOE_TEXT_MODEL, yoloe_features
+
+        # Whatever happens below, the old prompt is no longer the model's:
+        # a failure here must make the next frame try again, not predict
+        # with a reloaded model's default classes under the old name.
+        self._classes = None
+        if next(self.model.model.parameters()).is_meta:  # released, below
+            from ultralytics import YOLOE as _YE
+            self.model = _YE(self.weights)
+        net = self.model.model
+        if getattr(net, "text_model", YOLOE_TEXT_MODEL) != YOLOE_TEXT_MODEL:
+            # A checkpoint naming another text model: the child cannot
+            # build it, so pay ultralytics' in-process cost rather than
+            # encode with the wrong model.
+            logger.warning("YOLOE text model %r: encoding in process",
+                           net.text_model)
+            self.model.set_classes([text], self.model.get_text_pe([text]))
+            return
+        from pathlib import Path
+
+        from ultralytics.utils.downloads import attempt_download_asset
+
+        source = str(Path(attempt_download_asset(MOBILECLIP)).resolve())
+        param = next(net.parameters())
+        feats = torch.tensor(yoloe_features(source, text),
+                             dtype=torch.float32).reshape(1, 1, -1)
+        with torch.inference_mode():
+            pe = net.model[-1].get_tpe(feats.to(param.device).to(param.dtype))
+        self.model.set_classes([text], pe)
+
+    def detect_text(self, image: bytes, text: str):  # pragma: no cover - needs the model
+        fresh = self._classes != [text]
+        out = super().detect_text(image, text)
+        if fresh:
+            self._release()
+        return out
+
+    def _release(self):  # pragma: no cover - needs the model
+        """3.81 T3, after a prompt's first frame. On CUDA the predictor runs
+        its own fused GPU copy and ultralytics keeps the CPU model beside it
+        (52 MB) only to rebuild the predictor on the next `set_classes`; it
+        goes to `meta`, and `_set_text` reloads the weights file if a new
+        prompt comes. On the CPU the predictor may share that very model, so
+        nothing is released. (Emptying torch's cache here too freed 9 MB
+        in 3.81 C1's window, under its 10 MB bar, so it is not done.)"""
+        predictor = getattr(self.model, "predictor", None)
+        if (predictor is None or getattr(predictor.device, "type", None) != "cuda"
+                or next(self.model.model.parameters()).device.type != "cpu"):
+            return
+        self.model.model.to("meta")
 
 
 class OpenVocabCropSource:
