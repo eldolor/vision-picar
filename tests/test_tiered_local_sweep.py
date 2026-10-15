@@ -36,7 +36,7 @@ from tests.test_bearing_turns import GOAL, TARGET, _build, _Flaky, _quiet_cloud
 SEEDS = range(5)
 UNABLE_SHARE = 0.2
 CLOUD_FALL = 0.80          # criterion D8: >= 80% fewer cloud calls
-# Measured 2026-10-15 (3.80.D): 1511 -> 67 cloud calls, found 344 -> 343.
+# Measured 2026-10-15 (3.80.D, at ac24675): 1511 -> 65 cloud calls, found 344 -> 343.
 # D8's progress half ("found not fewer") FAILED by one mission and is
 # recorded so in the plan; the measured count is pinned, so it cannot get
 # worse unnoticed. The lost mission: the detector missed the target on the

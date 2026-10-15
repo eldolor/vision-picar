@@ -29,10 +29,10 @@
     "local_ms": {
      "n": 15,
      "p50": 4,
-     "p90": 7,
+     "p90": 6,
      "p99": 9,
      "max": 9,
-     "mean": 4
+     "mean": 5
     },
     "local_calls": 15,
     "local": {
@@ -82,7 +82,7 @@
   "inventory: 3 reported, 0 candidates from 84 frames -- red backpack, refrigerator, sofa",
   "mission ended (found): Hallway, kitchen, living room searched. Found."
  ],
- "logs": "/tmp/demo_local_tier-1792033182",
+ "logs": "/tmp/demo_local_tier-1792045704",
  "criterion": "D9",
  "met": true
 }
