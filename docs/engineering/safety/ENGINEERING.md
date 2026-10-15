@@ -195,9 +195,17 @@ newer generation, so its loop, waiting on `goal_stop_lock`, ends the goal
 just taken. `goal_stop`'s two fields have their own lock,
 `goal_gen_lock`, never held across a bridge call; `/stop` takes only that
 one, so it answers at once while the bridge hangs (3.76 A8). The loop
-clears the hold only if its generation is still current. A verb allowed through on the ROS drive path clears
-the hold, as it lifts `RosDriveRobot`'s own stop hold; the loop keeps
-cancelling. The `/action` STOP verb and the watchdog do none of this; they
+clears the hold only if its generation is still current (and then sets
+`goal_stop["ending"]`, the generation `/stop` gave it, back to None). A verb
+allowed through on the ROS drive path lifts the hold, as it lifts
+`RosDriveRobot`'s own stop hold (`lift_hold_for_verb()`, 3.84): under
+`goal_gen_lock`, and only if `goal_stop["stops"]` is still the count `/action`
+read as the request arrived -- a stop pressed after the verb was arbitrated
+keeps its hold. When the verb ends (`rehold_after_verb()`, in a `finally`),
+the hold is set again if a stop's loop is still ending a goal and is the
+current one (`ending == gen`), so nav2's `ros` commands for the stopped goal
+stay at zero after a person's move; the loop keeps cancelling and lifts it
+when it settles. The `/action` STOP verb and the watchdog do none of this; they
 call `robot.stop()`.
 
 **A person's Stop is the last word over autonomy** (3.84, decided with the
@@ -362,7 +370,7 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | `tests/test_blind_reverse.py` (5) | 2026-10-02: `HardwareRobot` over the fake board with no sensors refuses a REVERSE verb without moving and clamps a standing reverse to zero; a standing turn (`vet_wheel_velocity()`) passes; a teleop body still reverses; a body with a scan is judged by it. Not pinned: a turn VERB, and a settle pass astern (Known gaps) |
 | `tests/test_authority.py` (13) | M4: ranks, lapse, stop claims nothing, reasons on the wire, preemption ends a mission |
 | `tests/test_review_376a.py` (5) | 3.76 batch A: a verb longer than the watchdog keeps its driver's authority; the wheel loop never writes over a stop; lost feedback under ROS drive is `no_feedback` and stops the robot; a second stop answers while the bridge hangs; a person taking over a ROS verb is not stopped by it, and the cut-off verb reads `preempted` |
-| `tests/test_person_stop.py` | 3.84: a person's Stop (`twin-dpad`, unnamed, `teleop-operator`) during explore: nav2 at 0.0 rad/s for 3 s, explore's next goal never reaches the bridge, the mission ends `cancelled`/`stop`; a brain verb or `brain`-named goal after it is refused `person_stop`; a mission over `RemoteRobot` ends `cancelled`/`stop`; a `brain` or `ros` stop latches nothing; a person's verb and goal, and an unnamed goal, still drive; `/autonomy/resume` and a new mission lift it |
+| `tests/test_person_stop.py` | 3.84: a person's Stop (`twin-dpad`, unnamed, `teleop-operator`) during explore: nav2 at 0.0 rad/s for 3 s, explore's next goal never reaches the bridge, the mission ends `cancelled`/`stop`; under `drive: ros` a verb arbitrated before a Stop (held between arbitration and the hold lift) leaves its hold set, and a person's verb during the Stop's loop turns > 30 deg, then nav2 is held at 0.0 until the loop ends the goal and lifts it; a brain verb or `brain`-named goal after it is refused `person_stop`; a mission over `RemoteRobot` ends `cancelled`/`stop`; a `brain` or `ros` stop latches nothing; a person's verb and goal, and an unnamed goal, still drive; `/autonomy/resume` and a new mission lift it |
 | `tests/test_goal_arbitration.py` (9) | 3.23: a goal is an autonomous driver |
 | `tests/test_stop_cancels_goal.py` (13) | Handoff 2026-10-02 1b: with an active goal and a fake nav2 that drives while it holds one, the wheels are still at zero `STOP_HOLD_S` + 0.1 s after `/stop`; a new goal can be set afterwards; a hung cancel costs the stop nothing. Spec review 3 V1: the brain's `/stop` spares the goal, and a mission preempted by a goal (`MissionRunner` over `RemoteRobot`) ends `preempted` with the goal still active; a person's stop still ends it. V2, nav2 ticking at 20 Hz from the moment of the stop: zero wheels while a 0.3 s cancel is in flight, through a failing cancel (retried once the bridge returns), and for a goal accepted after the stop; a new goal drives again |
 | `tests/test_ros_fallback.py` (10) | 3.24 G3, all four criteria; handoff 1d: a dead bridge behind a live plugin reads `drive.ros_up` false, a person's verb runs direct, an autonomous one is refused `ros_unavailable`, and ROS is back once the bridge answers. Spec review 3 V8-V9: with the bridge down and the plugin alive, the plugin's non-zero `/wheels` post is answered `ros_unavailable` and moves nothing, and `/health` names which half is down |

@@ -434,7 +434,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # (3.82): a goal one overtook while it waited is never sent; `gen` also
     # moves on an accepted goal. `autonomy_stopped` is a person's Stop's
     # latch (3.84): who pressed it and when, until a mission starts.
-    goal_stop = {"gen": 0, "hold": False, "stops": 0, "autonomy_stopped": None}
+    # `ending` is the generation of the stop loop still ending a goal, None
+    # once it settled (3.84: a verb's hold lift lasts only as long as the verb).
+    goal_stop = {"gen": 0, "hold": False, "stops": 0, "autonomy_stopped": None,
+                 "ending": None}
     # Serialises the bridge calls that start or end a goal: held ACROSS them.
     goal_stop_lock = threading.Lock()
     # Guards `goal_stop` itself and is never held across a bridge call, so
@@ -615,9 +618,14 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     def do_action(req: ActionRequest, x_driver: str = Header(default="")):
         now = time.monotonic()
         driver = (x_driver or "").strip() or DRIVER_UNKNOWN
+        # The stops as the request ARRIVED (3.84, as the goal route since
+        # 3.82): a stop pressed after this verb was arbitrated keeps its hold.
+        with goal_gen_lock:
+            stops = goal_stop["stops"]
+            latch = goal_stop["autonomy_stopped"]
         # 3.84: after a person's Stop the brain is refused by name, before
         # arbitration could answer it anything else.
-        refused = person_stop_refusal(driver, autonomy_latch())
+        refused = person_stop_refusal(driver, latch)
         if refused:
             return refused
 
@@ -636,7 +644,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         if driver_priority(driver) == DRIVER_AUTONOMOUS:
             state["autonomous_at"] = now
         with verb_running(driver):
-            return _carry_out(req, driver, now)
+            return _carry_out(req, driver, now, stops)
 
     @contextmanager
     def verb_running(driver: str, restamp=lambda: True):
@@ -657,7 +665,26 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     state["driver_at"] = time.monotonic()
                 state["verbs_running"] -= 1
 
-    def _carry_out(req: ActionRequest, driver: str, now: float):
+    def lift_hold_for_verb(stops: int) -> bool:
+        """3.84: a verb allowed to drive under `drive: ros` lifts the stop's
+        goal hold -- its twists come back as `ros` wheel posts -- under
+        `goal_gen_lock`, and only if no stop was counted since the verb
+        arrived: a later Stop's hold is that Stop's."""
+        with goal_gen_lock:
+            if goal_stop["stops"] != stops:
+                return False
+            goal_stop["hold"] = False
+            return True
+
+    def rehold_after_verb():
+        """3.84: the hold a verb lifted comes back when it ends while a
+        stop's loop is still ending a goal (that loop the current one), so
+        nav2 never drives the stopped goal after a person's move."""
+        with goal_gen_lock:
+            if goal_stop["ending"] is not None and goal_stop["ending"] == goal_stop["gen"]:
+                goal_stop["hold"] = True
+
+    def _carry_out(req: ActionRequest, driver: str, now: float, stops: int):
         try:
             if by_velocity and not ros_up(now):
                 # 3.24 G3: the ROS stack is down. A PERSON drives on through
@@ -689,9 +716,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 # may drive.
                 # A verb allowed to drive lifts the stop's goal hold, as it
                 # lifts RosDriveRobot's own stop hold: under this drive its
-                # twists come back as `ros` wheel posts. The ending loop keeps
-                # cancelling the goal regardless.
-                goal_stop["hold"] = False
+                # twists come back as `ros` wheel posts. Under the lock and
+                # only if no stop came since it arrived, and for the verb's
+                # length only (3.84). The ending loop keeps cancelling.
+                lifted = lift_hold_for_verb(stops)
                 try:
                     with robot.driving_as(driver):
                         result = safety.check_and_execute(
@@ -717,6 +745,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     # does not go through ROS -- and say why, by name.
                     robot.stop()
                     return refuse("ros_unavailable", f"drive: ros, and the bridge failed: {e}", driver)
+                finally:
+                    if lifted:
+                        rehold_after_verb()
             else:
                 with motion_lock:
                     state["verb_active"] = True
@@ -866,6 +897,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 goal_stop["stops"] += 1
                 goal_stop["hold"] = True
                 gen = goal_stop["gen"]
+                goal_stop["ending"] = gen
             threading.Thread(target=_end_goal_after_stop, args=(gen,), daemon=True,
                              name="stop-end-goal").start()
         return {"executed": True, "result": result, "driver": driver}
@@ -912,6 +944,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                             # A newer stop owns the hold now; never lift it.
                             if goal_stop["gen"] == gen:
                                 goal_stop["hold"] = False
+                                goal_stop["ending"] = None
                         return
             except Exception as e:  # noqa: BLE001 -- keep holding, keep trying
                 settled_at = None

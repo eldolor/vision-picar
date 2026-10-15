@@ -288,7 +288,6 @@ def _nav2_for(stack, seconds):
     return worst
 
 
-@pytest.mark.xfail(strict=True, reason="3.84.B: the bare hold clear")
 def test_a_verb_arbitrated_before_a_stop_does_not_lift_its_hold(ros_goals, monkeypatch):
     """`_carry_out` cleared `goal_stop["hold"]` bare, after arbitration. A
     person's Stop that set the hold between the verb's arbitration and that
@@ -324,7 +323,6 @@ def test_a_verb_arbitrated_before_a_stop_does_not_lift_its_hold(ros_goals, monke
     assert bridge.goal is not None, "the goal was cancelled anyway -- the test proves nothing"
 
 
-@pytest.mark.xfail(strict=True, reason="3.84.B: the bare hold clear")
 def test_a_persons_verb_during_the_stops_loop_drives_then_the_hold_returns(ros_goals):
     """A person's own verb after their Stop always works; the hold it lifts
     for its twists comes back when it ends, while the Stop's loop is still
