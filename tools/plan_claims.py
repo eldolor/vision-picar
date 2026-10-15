@@ -45,6 +45,7 @@ FILE_RE = re.compile(r"^(3\.(\d+)([a-z]?))-(.+)\.md$")
 BRANCH_RE = re.compile(r"^(?:origin/)?plan/(3\.\d+[a-z]?)-")
 STEP_ID_RE = re.compile(r"3\.\d+[a-z]?\.[A-Za-z0-9_-]+")
 WAITS = ("user", "rover")
+STATES = ("open", "done", "dropped")
 CLOSED = ("done", "dropped")
 ACTIVE_S = 2 * 3600          # a section branch committed within this is "active"
 
@@ -137,16 +138,23 @@ def matches(path: str, pattern: str) -> bool:
 
 def overlap(a: list, b: list) -> list:
     """The pairs of Touches entries that can name the same file."""
-    def base(p):                   # a glob's literal directory: "sim/maps/*.py" -> "sim/maps/"
-        lit = re.split(r"[*?\[]", p, maxsplit=1)[0]
-        return lit[:lit.rfind("/") + 1]
+    def lit(p):                    # a glob's literal part: "sim/maps/*.py" -> "sim/maps/";
+        return re.split(r"[*?\[]", p, maxsplit=1)[0]   # "tools/inventory_*" -> "tools/inventory_"
+
+    def under(plain, glob):        # files below a directory entry (trailing `/`) the glob can
+        if not plain.endswith("/"):    # match: `*` crosses `/`, so "brain/*.py" covers
+            return False               # "brain/survey/x.py"
+        return (plain.strip("/") + "/").startswith(lit(glob))
 
     hits = []
     for x in a:
         for y in b:
+            # Two globs share a path only if one's literal part begins the other's.
             if (matches(x, y) or matches(y, x)
-                    or _is_glob(x) and _is_glob(y)
-                    and (base(x).startswith(base(y)) or base(y).startswith(base(x)))):
+                    or (_is_glob(x) and _is_glob(y)
+                        and (lit(x).startswith(lit(y)) or lit(y).startswith(lit(x))))
+                    or (not _is_glob(x) and _is_glob(y) and under(x, y))
+                    or (_is_glob(x) and not _is_glob(y) and under(y, x))):
                 hits.append((x, y))
     return hits
 
@@ -157,11 +165,47 @@ def _cells(line: str) -> list:
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
-def _items(cell: str) -> list:
+def _items(cell: str) -> tuple:
+    """(entries, stray text): comma-separated plain entries (one with a space
+    or `;` in it is stray), or, once any entry is ticked, the ticked ones only
+    -- and the text beside them, which
+    `assess` shows rather than guess at (3.76 J8: a plain entry beside ticked
+    ones was dropped without a word)."""
     ticked = re.findall(r"`([^`]+)`", cell)
     if ticked:
-        return ticked
-    return [x.strip() for x in cell.split(",") if x.strip() and x.strip() not in ("--", "-")]
+        stray = re.sub(r"`[^`]+`", "", cell)
+        loose = [x for x in ticked if re.search(r"[\s,;]", x)]   # "`a.py, sim/`": a list
+        stray = ", ".join(([] if re.fullmatch(r"[\s,]*", stray) else [stray.strip(" ,")]) + loose)
+        return [x for x in ticked if x not in loose], stray
+    parts = [x.strip() for x in cell.split(",") if x.strip() and x.strip() not in ("--", "-")]
+    loose = [x for x in parts if re.search(r"\s|;", x)]   # "a.py and sim/": not one path
+    return [x for x in parts if x not in loose], ", ".join(loose)
+
+
+def _word(cell: str, allowed: tuple):
+    """The cell's first word if it is one of `allowed` and stands alone
+    (markup around it, then the end, a space, a bracket or a full stop):
+    `**done**`, `` `rover` ``, `done (sweep met)`; not `done?`, `done/dropped`,
+    `done-ish` or `~~open~~ done`."""
+    w = re.match(r"[*_`]*([a-z]+)[*_`]*(?=$|[\s(.,;:])", cell.strip().lower())
+    return w.group(1) if w and w.group(1) in allowed else None
+
+
+def _state(cell: str) -> str:
+    """The State cell's first word, so `done (sweep met; ...)` is done. A cell
+    that starts with anything but open, done or dropped keeps its text, and
+    `assess` never offers that step."""
+    return _word(cell, STATES) or (cell.strip().lower() or "open")
+
+
+def _waits(cell: str) -> str:
+    """`user` or `rover` by the same rule as State; empty or `--` is no
+    wait; any other text is kept, and `assess` shows it (round 13: a ticked
+    or annotated `rover` read as no wait, and the step as free)."""
+    cell = cell.strip().lower()
+    if cell in ("", "-", "--"):
+        return ""
+    return _word(cell, WAITS) or "?" + cell
 
 
 def parse_steps(text: str, section: str) -> list:
@@ -176,13 +220,15 @@ def parse_steps(text: str, section: str) -> list:
         c = _cells(line)
         if len(c) < 6 or not STEP_ID_RE.fullmatch(c[0]):
             continue
-        waits = c[3].strip().lower()
+        waits = _waits(c[3])
+        touches, stray = _items(c[4])
         steps.append({
             "id": c[0], "section": section, "title": c[1],
             "needs": STEP_ID_RE.findall(c[2]),
-            "waits": waits if waits in WAITS else "",
-            "touches": _items(c[4]),
-            "state": c[5].strip().lower() or "open",
+            "waits": waits,
+            "touches": touches,
+            "stray": stray,
+            "state": _state(c[5]),
         })
     return steps
 
@@ -264,20 +310,42 @@ def section_branches(root: str) -> dict:
     return out
 
 
+def _dev_moved(root: str, branch: str, path: str, dev_path: str = "") -> bool:
+    """origin/dev changed `path` after `branch` forked, so the branch does not
+    hold dev's copy: dev's table is read until the branch merges dev. A branch
+    merged under other shas, or abandoned, stays "unmerged" for good, and its
+    old table must not replace dev's (3.76 J6). Content, not commit times:
+    this repo merges dev into a plan branch and then fast-forwards dev, so no
+    commit records when a change reached dev (round 9). The cost: a live
+    branch's new rows are hidden while dev has moved under it -- visible
+    (`claim` says "no step"), and merging dev ends it. `dev_path` is the
+    section's file on dev, checked too: a branch that renamed the file has
+    no copy at dev's name to compare (round 10)."""
+    base = git("merge-base", "origin/dev", branch, cwd=root, check=False)
+    blob = lambda ref, p: git("rev-parse", "-q", "--verify", f"{ref}:{p}", cwd=root, check=False)
+    if not blob(branch, path):
+        return True                   # the branch deleted or renamed it: not its copy (round 8)
+    return bool(base) and any(blob("origin/dev", p) != blob(base, p)
+                              for p in {path, dev_path} - {""})
+
+
 def load_steps(root: str, branches=None) -> list:
     """Every step in every section, each section read from its newest ref:
-    the newest of its plan/* branches if one changed the file, else origin/dev."""
+    the newest of its plan/* branches that changed the file and holds
+    origin/dev's copy of it (`_dev_moved`), else origin/dev."""
     branches = branches if branches is not None else section_branches(root)
     files = {}                                         # section -> (ref, path)
     for f in git("ls-tree", "--name-only", f"origin/dev:{DIR}", cwd=root, check=False).splitlines():
         m = FILE_RE.match(f)
         if m:
             files[m.group(1)] = ("origin/dev", f"{DIR}/{f}")
+    on_dev = {sec: path for sec, (_, path) in files.items()}
     for sec, bs in branches.items():
         for b, ts, _, committed in sorted(bs, key=lambda x: x[1]):   # the newest wins
             for f in committed:            # committed text only: a dirty file is not yet published
                 m = FILE_RE.match(os.path.basename(f))
-                if f.startswith(DIR + "/") and m and m.group(1) == sec:
+                if (f.startswith(DIR + "/") and m and m.group(1) == sec
+                        and not _dev_moved(root, b, f, on_dev.get(sec, ""))):
                     files[sec] = (b, f)
     blobs = _cat(root, [f"{ref}:{path}" for ref, path in files.values()])
     for sec, bs in branches.items():                   # a branch with no section file yet
@@ -348,7 +416,8 @@ def active_branches(branches: dict, now: float) -> dict:
 def assess(step: dict, steps: list, live: list, me, branches: dict, here_branch: str, now: float,
            accepted=None):
     """(status, reason) for one step from this session's point of view.
-    status: done | mine | claimed | active | waits | blocked | conflict | free."""
+    status: done | dropped | mine | claimed | unknown | active | idle | waits | blocked |
+    conflict | free."""
     if step["state"] in CLOSED:
         return step["state"], ""
     held = [c for c in live if c["step"] == step["id"]]
@@ -362,6 +431,13 @@ def assess(step: dict, steps: list, live: list, me, branches: dict, here_branch:
         c = other[0]
         return "claimed", (f"section {step['section']} is held by pid {c['pid']} ({c['step']}): one "
                            "session per section, which owns its worktree, ports and ROS domain")
+    if step["state"] != "open":                   # after the claims: a held step stays its holder's
+        return "unknown", f"State `{step['state'][:40]}` is not open, done or dropped"
+    if step.get("stray"):
+        return "unknown", (f"Touches has text that is not one path ({step['stray'][:40]}): "
+                           "tick every path, one per comma")
+    if step["waits"].startswith("?"):
+        return "unknown", f"Waits `{step['waits'][1:41]}` is not user, rover or --"
     act = active_branches(branches, now)
     mine_here = any(c.get("section") == step["section"] for c in live if same_owner(c, me))
     if step["section"] in act and not mine_here and here_branch not in act[step["section"]]:
@@ -420,11 +496,11 @@ class Board:
 
 # ---------- commands ----------
 
-ORDER = ["mine", "claimed", "active", "free", "conflict", "blocked", "waits", "idle"]
+ORDER = ["mine", "claimed", "active", "free", "conflict", "blocked", "waits", "unknown", "idle"]
 
 
-def cmd_board(show_all=False, short=False, cwd=None) -> str:
-    b = Board(cwd)
+def cmd_board(show_all=False, short=False, cwd=None, b=None) -> str:
+    b = b or Board(cwd)
     rows = []
     for s in b.steps:
         st, why = b.status(s)
@@ -433,7 +509,7 @@ def cmd_board(show_all=False, short=False, cwd=None) -> str:
         rows.append((st, s, why))
     rows.sort(key=lambda r: ORDER.index(r[0]) if r[0] in ORDER else 99)
     if short:
-        rows = [r for r in rows if r[0] in ("mine", "claimed", "active", "free")]
+        rows = [r for r in rows if r[0] in ("mine", "claimed", "active", "free", "unknown")]
     lines = []
     for st, s, why in rows:
         lines.append(f"{st:9} {s['id']:10} {s['title'][:60]}" + (f"\n{'':20} {why}" if why else ""))
@@ -452,7 +528,8 @@ def cmd_next(cwd=None) -> str:
         if not s.get("implicit") and b.status(s)[0] == "free":
             return (f"{s['id']}: {s['title']}\n  touches: {', '.join(s['touches']) or '--'}\n"
                     f"  take it: python tools/plan_section.py claim {s['id']}")
-    return "no free step: every open step is claimed, active, blocked or waiting (see `board`)"
+    return ("no free step: every open step is claimed, active, blocked, waiting or unknown "
+            "(see `board`)")
 
 
 def claim(sid: str, cwd=None, me=None, accept_overlap=False) -> dict:
@@ -468,8 +545,9 @@ def claim(sid: str, cwd=None, me=None, accept_overlap=False) -> dict:
         raise SystemExit(f"claim: no step {sid} (steps are rows of a section's `## Steps` table, "
                          f"committed on origin/dev or its plan/* branch)")
     with _Lock(b.common):
-        b.claims = read_claims(b.common)              # re-read under the lock
-        b.live = [c for c in b.claims if alive(c, b.procs)]
+        b.claims = read_claims(b.common)              # re-read under the lock, against a
+        b.procs = processes()                         # process list from now: an owner that
+        b.live = [c for c in b.claims if alive(c, b.procs)]   # started since the board is alive
         accepted = [] if accept_overlap else None
         st, why = b.status(s, accepted)
         if st == "mine":
@@ -481,12 +559,16 @@ def claim(sid: str, cwd=None, me=None, accept_overlap=False) -> dict:
              "session": os.environ.get("CLAUDE_SESSION_ID", ""),
              "worktree": b.top, "branch": b.here, "accepted_overlap": accepted or [],
              "claimed_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
-        path = os.path.join(claims_dir(b.common), f"{sid}.json")
-        tmp = f"{path}.{os.getpid()}.tmp"
-        with open(tmp, "w") as fh:
-            json.dump(c, fh, indent=1)
-        os.replace(tmp, path)
+        _write_claim(os.path.join(claims_dir(b.common), f"{sid}.json"), c)
     return c
+
+
+def _write_claim(path: str, c: dict):
+    """Swapped in whole: a reader never sees half a claim."""
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w") as fh:
+        json.dump(c, fh, indent=1)
+    os.replace(tmp, path)
 
 
 def release(sid=None, cwd=None, me=None) -> list:
@@ -494,10 +576,10 @@ def release(sid=None, cwd=None, me=None) -> list:
     rp = repo(cwd)
     if not rp:
         raise SystemExit("not in a git repository")
-    procs = processes()
-    me = me or owner(procs)
     gone = []
     with _Lock(rp[1]):
+        procs = processes()           # under the lock: an owner started since is alive (J7)
+        me = me or owner(procs)
         for c in read_claims(rp[1]):
             if sid and c["step"] != sid:
                 continue
@@ -528,23 +610,22 @@ def allow(sid: str, cwd=None, me=None) -> dict:
     rp = repo(cwd)
     if not rp:
         raise SystemExit("not in a git repository")
-    procs = processes()
-    me = me or owner(procs)
-    if not me:
-        raise SystemExit("allow: no Claude Code process above this one")
     path = os.path.join(claims_dir(rp[1]), f"{sid}.json")
     with _Lock(rp[1]):
+        procs = processes()           # under the lock, as claim() and release()
+        me = me or owner(procs)
+        if not me:
+            raise SystemExit("allow: no Claude Code process above this one")
         try:
-            c = json.load(open(path))
+            with open(path) as fh:
+                c = json.load(fh)
         except (OSError, ValueError):
             raise SystemExit(f"allow: no claim on {sid}")
         if not alive(c, procs):
             raise SystemExit(f"allow: {sid}'s owner has exited; the claim is free")
         if not any(same_owner(a, me) for a in c.get("allowed", [])):
             c.setdefault("allowed", []).append({**me, "at": time.strftime("%Y-%m-%dT%H:%M:%S")})
-        tmp = f"{path}.{os.getpid()}.tmp"
-        json.dump(c, open(tmp, "w"), indent=1)
-        os.replace(tmp, path)
+        _write_claim(path, c)
     return c
 
 
@@ -619,8 +700,8 @@ def hook_start(cwd=None) -> str:
     PROCESS, so after /clear or a resume in the same terminal the new
     conversation inherits it; say so plainly rather than let it sit unseen."""
     try:
-        board = cmd_board(short=True, cwd=cwd)
         b = Board(cwd)
+        board = cmd_board(short=True, b=b)
         held = [c for c in b.live if same_owner(c, b.me)]
     except BaseException:
         return ""

@@ -316,6 +316,7 @@ SLOW_FILES = [
     "test_ros_verb_safety.py", "test_settle_pass.py", "test_sim_fingerprint.py", "test_speed_clearance.py",
     "test_startup_race.py", "test_wheel_feedback.py",
     "test_survey_sweep.py",
+    "test_review_376j_nightly.py",     # 3.76 J: the nightly script's stops and limits (~35 s)
 ]
 SLOW_TESTS = [
     "--ignore-glob=tests/test_ui*.py",
