@@ -455,9 +455,13 @@ def test_a_brain_verb_whose_latch_read_preceded_a_stop_does_not_move_direct(monk
 
     monkeypatch.setattr(robot, "verb_plan", verb_plan)
     before = (robot.world.x, robot.world.y, robot.world.theta)
-    client.post("/action", json={"action": "LEFT", "angle": 60}, headers={"x-driver": "brain"})
+    r = client.post("/action", json={"action": "LEFT", "angle": 60},
+                    headers={"x-driver": "brain"}).json()
     after = (robot.world.x, robot.world.y, robot.world.theta)
     assert abs(after[2] - before[2]) < 0.02, f"the brain's turn ran after the Stop: {before} -> {after}"
+    # Round 3: the brain hears the Stop, not a 0 deg move, and lets go.
+    assert r["executed"] is False and r["reason"] == "person_stop", r
+    assert client.get("/health").json()["authority_holder"] is None, "the cut verb kept the robot"
 
 
 def test_a_brain_verb_whose_latch_read_preceded_a_stop_does_not_move_ros(monkeypatch):
@@ -485,10 +489,11 @@ def test_a_brain_verb_whose_latch_read_preceded_a_stop_does_not_move_ros(monkeyp
 
         monkeypatch.setattr(stack.robot, "_begin", begin)
         before = stack.pose()
-        stack.act("LEFT", driver="brain", angle=60)
+        r = stack.act("LEFT", driver="brain", angle=60)
         time.sleep(0.5)
         after = stack.pose()
         assert abs(after[2] - before[2]) < 0.02, f"the brain's turn ran after the Stop: {before} -> {after}"
+        assert r["executed"] is False and r["reason"] == "person_stop", r
     finally:
         stack.close()
 

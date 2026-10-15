@@ -145,8 +145,8 @@ class RosDriveRobot(RobotInterface):
         # robot/server.py's M4 arbitration has already decided the newcomer
         # may drive, and the old stream must not resume when it finishes.
         self._generation = 0
-        # Every stop() (3.84): a verb's baseline, as the inner robot's own.
-        self.stop_count = 0
+        # 3.84: this wrapper's own stops, counted under _gen_lock; see stop_count.
+        self._stops = 0
         self._gen_lock = threading.Lock()
         # 3.76 B8: held across each verb twist and each of the stop's zeros,
         # so the zeros always land after a twist already on its way.
@@ -241,6 +241,14 @@ class RosDriveRobot(RobotInterface):
             pass
         finally:
             self._probing.release()
+
+    @property
+    def stop_count(self) -> int:
+        """3.84: every stop -- this wrapper's (counted under `_gen_lock`, so
+        `_begin()` sees it before the inner robot's) and any made on the
+        inner robot directly (`fallback_safety`, a house load) -- so the
+        server's stop guards and a verb's baseline see them all."""
+        return self._stops + getattr(self.inner, "stop_count", 0)
 
     def _begin(self) -> int:
         with self._gen_lock:
@@ -372,7 +380,7 @@ class RosDriveRobot(RobotInterface):
         input in the background -- a stop must not depend on the container
         being alive, or answering."""
         with self._gen_lock:
-            self.stop_count += 1
+            self._stops += 1
             self._generation += 1
             self._hold_gen = self._generation
             self._hold_until = time.monotonic() + STOP_HOLD_S

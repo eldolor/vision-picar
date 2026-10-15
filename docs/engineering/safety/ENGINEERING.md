@@ -233,9 +233,15 @@ as their stop baseline instead of reading the count later, so a Stop that
 lands between the read and the verb's first motion (the Stop latches before
 its `robot.stop()`) ends the verb unmoved -- `_begin()` then returns an
 already-superseded generation and leaves the Stop's own hold in place
-(`RosDriveRobot.stop_count` counts its stops). A brain command refused
-`person_stop` at execution had been given the robot by arbitration; its
-claim lapses at once (`lapse_refused_claim()`). A direct `/wheels` takes
+(`RosDriveRobot.stop_count` is its own stops plus the inner robot's, so a
+stop made on the inner robot directly counts too). A brain verb that ran
+while a person's Stop latched -- cut by it, or ended unmoved by the
+baseline -- answers `person_stop`, not a move. A brain command refused at
+execution (`person_stop`, or `stopped`) had been given the robot by
+arbitration; its claim lapses at once and `autonomous_at` returns to before
+it (`lapse_refused_claim()`). A direct verb sets `verb_active` before taking
+the baseline, so a watchdog stop cannot land in between. Nothing is logged
+under `goal_gen_lock`. A direct `/wheels` takes
 `stop_count` before its vet and, if any stop landed by the end of its write
 (`/stop` never takes `motion_lock`), zeroes the wheels again and answers
 `person_stop` (the brain, latched) or `stopped`. Never refused:
