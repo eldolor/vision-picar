@@ -40,9 +40,15 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tests.demo_explore import heavy_lock
+from sim.maps.procthor import TARGET
 from tests.demo_local_tier import PY, ROOT, free_port, wait
 
 BUDGET = 60                       # cloud calls a mission may make (~$0.40)
+MISSION_CAP = 200                 # criterion 2's sweep: calls a mission may make
+TOTAL_CAP_USD = 20.0              # criterion 2's sweep: the user's cap, all missions
+SWEEP_HOUSES = ["home_first_floor"] + [f"procthor:val:{i}" for i in
+                                       (0, 2, 3, 4, 5, 9, 10, 11, 12, 13, 15, 17, 18,
+                                        21, 26, 27, 32, 34, 36, 37)]
 DEFAULT_VISION_URL = "https://d114x92g7i4syl.cloudfront.net"   # service/tunnel/run.sh
 # Opus 4.5 on Bedrock, USD per token (the claude-api price list, 2026-10).
 PRICE_IN, PRICE_OUT = 5e-6, 25e-6
@@ -119,6 +125,7 @@ class Proxy(BaseHTTPRequestHandler):
     upstream = ""
     secret = ""
     mode = "real"
+    budget = BUDGET
     calls: list = []
     lock = threading.Lock()
 
@@ -146,7 +153,7 @@ class Proxy(BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         with self.lock:
             n = len(self.calls)
-            if self.path == "/navigate" and self.mode == "real" and n >= BUDGET:
+            if self.path == "/navigate" and self.mode == "real" and n >= self.budget:
                 self.calls.append({"refused": True})
                 return self._send(429, b'{"detail": "pilot budget spent"}')
         t0 = time.monotonic()
@@ -174,9 +181,10 @@ class Proxy(BaseHTTPRequestHandler):
         self._send(code, content)
 
 
-def run_mission(args):
+def run_mission(args, budget=BUDGET, local_vlm=""):
     heavy_lock()
     s = secrets()
+    Proxy.budget = budget
     Proxy.upstream = (s.get("VISION_URL") or DEFAULT_VISION_URL).rstrip("/")
     Proxy.secret = s.get("VISION_SECRET", "")
     Proxy.mode = args.cloud
@@ -201,6 +209,7 @@ def run_mission(args):
                          stderr=subprocess.STDOUT,
                          env=dict(env, ROBOT_URL=f"http://127.0.0.1:{robot_p}",
                                   VISION_URL=f"http://127.0.0.1:{proxy_p}",
+                                  LOCAL_VLM_URL=local_vlm,
                                   PICAR_LOG_LEVEL="INFO")),
     ]
     t0, status = time.time(), {}
@@ -208,7 +217,7 @@ def run_mission(args):
         wait(f"http://127.0.0.1:{robot_p}")
         wait(f"http://127.0.0.1:{brain_p}")
         brain = httpx.Client(base_url=f"http://127.0.0.1:{brain_p}", timeout=60)
-        r = brain.post("/mission/start", json={"target_object": "red backpack",
+        r = brain.post("/mission/start", json={"target_object": TARGET,
                                                "policy": "tiered",
                                                "mission_time_limit_s": args.limit})
         if r.status_code != 200:
@@ -234,6 +243,9 @@ def run_mission(args):
     calls = [c for c in Proxy.calls if not c.get("refused")]
     usages = [c["usage"] for c in calls if c.get("usage")]
     return {"cloud": args.cloud, "house": args.house, "outcome": status.get("outcome"),
+            "budget": budget, "capped": sum(1 for c in Proxy.calls if c.get("refused")) > 0,
+            "local_vlm": bool(local_vlm), "local": stats.get("local"),
+            "local_calls": stats.get("local_calls"), "local_triggers": stats.get("local_triggers"),
             "seconds": round(time.time() - t0), "steps": status.get("step"),
             "cloud_calls_proxy": len(calls),
             "refused_over_budget": sum(1 for c in Proxy.calls if c.get("refused")),
@@ -249,14 +261,44 @@ def run_mission(args):
             "log_tail": (status.get("log_tail") or [])[-4:], "logs": str(logs)}
 
 
+def run_sweep(args):
+    """Criterion 2: one mission per house, appended to --out as JSON lines,
+    so a stopped sweep resumes where it was. Stops before a mission the
+    remaining money could not cover at MISSION_CAP calls."""
+    out = Path(args.out)
+    done = [json.loads(l) for l in out.read_text().splitlines()] if out.exists() else []
+    spent = sum(r.get("cost_usd") or 0 for r in done)
+    for house in SWEEP_HOUSES:
+        if any(r["house"] == house for r in done):
+            continue
+        per_call = 0.0055 if not done else max(0.004, spent / max(1, sum(
+            r.get("cloud_calls_proxy") or 0 for r in done)))
+        budget = min(MISSION_CAP, int((TOTAL_CAP_USD - spent) / (per_call * 1.2)))
+        if budget < MISSION_CAP:
+            print(f"stopping before {house}: ${spent:.2f} spent", flush=True)
+            break
+        args.house = house
+        row = run_mission(args, budget=budget, local_vlm=args.local_vlm or "")
+        spent += row["cost_usd"]
+        with out.open("a") as f:
+            f.write(json.dumps(row) + "\n")
+        print(f"{house}: {row['outcome']} calls={row['cloud_calls_proxy']} "
+              f"local={row['local_calls']} ${row['cost_usd']} total ${spent:.2f}", flush=True)
+    return {"missions": len(out.read_text().splitlines()), "spent_usd": round(spent, 3)}
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=("frames", "mission"))
+    ap.add_argument("what", choices=("frames", "mission", "sweep"))
     ap.add_argument("--cloud", choices=("real", "standin"), default="standin")
     ap.add_argument("--house", default="home_first_floor")
     ap.add_argument("--limit", type=float, default=1200)
     ap.add_argument("--out")
+    ap.add_argument("--local-vlm", help="the local tier's URL (arm 'local'); empty: off")
     args = ap.parse_args()
+    if args.what == "sweep":
+        print(json.dumps(run_sweep(args), indent=1))
+        return
     doc = run_frames(args) if args.what == "frames" else run_mission(args)
     print(json.dumps(doc, indent=1))
     if args.out:
