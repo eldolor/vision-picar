@@ -271,9 +271,9 @@ Resources:
         - Field: path-pattern
           Values:
             - /teleop-robot/scan
-            - /teleop-robot/world/truth
-            - /teleop-robot/world/error
-            - /teleop-robot/world/goal
+            # The world routes nothing above names (truth, error, goal, and
+            # 3.83's costmap) as one wildcard: the five-value limit was full.
+            - /teleop-robot/world/*
             # 3.70 E4. A phone has no battery to report; `usable: false`.
             - /teleop-robot/battery
       Actions:

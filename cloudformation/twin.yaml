@@ -250,9 +250,9 @@ Resources:
       Conditions:
         - Field: path-pattern
           Values:
-            - /world/truth
-            - /world/error
-            - /world/goal
+            # The world routes nothing above names (truth, error, goal, and
+            # 3.83's costmap) as one wildcard: the five-value limit was full.
+            - /world/*
             # 3.30's sim-only house: what is where, and moving it; 3.72's
             # house swap. A robot with no simulated house answers 501 or 409,
             # which has to be reachable to be read as an answer. One
