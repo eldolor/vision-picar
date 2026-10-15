@@ -552,13 +552,19 @@ def test_review_the_escalated_question_goes_up_not_a_fresh_one():
 
 
 def test_review_a_question_about_what_is_in_view_goes_before_a_navigation_one():
-    """Third review: a candidate never waits behind a navigation question;
-    the start, displaced, is not sent to the cloud."""
-    local, cloud = Local(LocalVLMAbsent("gone"), no()), Cloud()
-    tier = tier_for(Script(absent(), *([detected()] * 5)), local, cloud,
-                    consecutive_frames=1)
-    scenes = run(tier, 3)
-    assert scenes[1]["_tier"]["local_dispatched"] == TRIGGER_CANDIDATE
+    """Third review: a candidate never waits behind a navigation question
+    (`mission_start` aside, which cannot fire again)."""
+    gate = threading.Event()
+    gate.set()
+    local, cloud = Local(no(), LocalVLMAbsent("gone"), no(), gate=gate), Cloud()
+    tier = tier_for(Script(absent(), absent(), *([detected()] * 6)), local, cloud,
+                    consecutive_frames=1, cold_search_after=1)
+    run(tier, 1)                               # the start, answered
+    s2 = tier({})                              # cold_search asked: absent
+    settle(tier)
+    s3 = tier({})                              # it waits for the cloud; a candidate fires
+    assert s2["_tier"]["local_dispatched"] == TRIGGER_COLD_SEARCH
+    assert s3["_tier"]["local_dispatched"] == TRIGGER_CANDIDATE
     assert cloud.calls == 0
 
 
@@ -610,10 +616,10 @@ def test_review_an_arrival_handed_up_by_an_absent_tier_is_an_escalation():
 
 # ---------- bug pass fixes (2026-10-15) ----------
 
-def test_bugpass_a_failed_start_does_not_take_the_slot_from_a_waiting_candidate():
-    """The start's absent answer lands while a candidate question waits: the
-    candidate (about what is in view) keeps the slot and gets its own local
-    try -- the start's failure is never counted against it."""
+def test_bugpass_a_failed_start_is_never_lost_behind_a_candidate():
+    """The start's absent answer lands while a candidate question waits. The
+    start cannot fire again, so it keeps the slot and goes up; the candidate
+    fires again and gets its own local try (review 6)."""
     gate = threading.Event()
     local, cloud = Local(LocalVLMAbsent("blip"), no(), gate=gate), Cloud()
     tier = tier_for(Script(absent(), *([detected()] * 8)), local, cloud)
@@ -624,7 +630,7 @@ def test_bugpass_a_failed_start_does_not_take_the_slot_from_a_waiting_candidate(
     for _ in range(4):
         tier({})
         settle(tier)
-    assert cloud.calls == 0, tier.stats.triggers
+    assert tier.stats.triggers == {TRIGGER_START: 1}, tier.stats.triggers
     assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE) == 1, tier.stats.local_triggers
 
 
@@ -765,18 +771,30 @@ def test_review2_at_the_cap_the_fresh_question_is_kept_for_the_local_tier():
 
 # ---------- bug pass, second round (2026-10-15) ----------
 
-def test_bugpass2_a_new_band_episode_gets_a_local_try_whatever_was_carried():
+def test_bugpass2_a_new_band_episode_gets_a_local_try_unless_the_last_was_spent():
     u = {"status": "unparsed", "score": None}
     bag, chair = absent(cand(0.6, "bag")), absent(cand(0.6, "chair"))
-    local, cloud = Local(no(), u, u, u), Cloud()
-    # The bag: unable twice, then gone before the cloud is asked. The chair is
-    # a new question: the carry is capped at max - 1, so it is asked locally
-    # once before it goes up -- never straight to the cloud.
-    tier = tier_for(Script(absent(), bag, bag, bag, absent(), absent(), absent(),
+    # Unable once, then gone: the next band question is asked locally once
+    # (the carry is capped at max - 1) before it goes up.
+    local, cloud = Local(no(), u, u), Cloud()
+    tier = tier_for(Script(absent(), bag, bag, absent(), absent(), absent(),
                            chair, chair, chair, chair), local, cloud)
-    scenes = run(tier, 11)
-    assert scenes[7]["_tier"]["cloud_called"] is False
-    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 3, tier.stats.local_triggers
+    scenes = run(tier, 10)
+    assert scenes[6]["_tier"]["cloud_called"] is False
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 2, tier.stats.local_triggers
+    assert cloud.calls == 1
+
+
+def test_review6_a_question_spent_just_before_it_left_view_goes_up_on_its_return():
+    """Unable the max times, then gone for 3 frames: within CARRY_FRAMES the
+    next band question is the same failure, and goes up (review 6)."""
+    u = {"status": "unparsed", "score": None}
+    b = absent(cand(0.6))
+    local, cloud = Local(no(), u, u), Cloud()
+    tier = tier_for(Script(absent(), b, b, b, absent(), absent(), absent(), b, b, b),
+                    local, cloud)
+    run(tier, 10)
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 2, tier.stats.local_triggers
     assert cloud.calls == 1
 
 
@@ -1007,3 +1025,53 @@ def test_bugpass4_a_failed_cloud_call_does_not_answer_the_waiting_question():
     except Exception:  # noqa: BLE001
         pass
     assert tier._pending_question == TRIGGER_COLD_SEARCH, "a failure is not an answer"
+
+
+
+# ---------- sixth review (2026-10-15) ----------
+
+def test_review6_a_waiting_band_question_is_asked_when_its_object_is_detected():
+    u = {"status": "unparsed", "score": None}
+    b = absent(cand(0.6))
+    local, cloud = Local(no(), u, no()), Cloud()
+    tier = tier_for(Script(absent(), b, b, *([detected()] * 12)), local, cloud)
+    run(tier, 15)
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 2, tier.stats.local_triggers
+    assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE, 0) >= 1, tier.stats.local_triggers
+
+
+def test_review6_a_failed_escalated_call_gives_its_question_back():
+    class Fails(Cloud):
+        def __call__(self, frame):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("503")
+            return super().__call__(frame)
+
+    u = {"status": "unparsed", "score": None}
+    tier = tier_for(Script(absent(), *([detected()] * 8)), Local(no(), u), Fails(),
+                    async_cloud=False, local_max_unable=1)
+    run(tier, 3)                               # start; the candidate asked, unable
+    with pytest.raises(RuntimeError):
+        tier({})                               # escalated: the cloud fails
+    assert tier._pending_question == TRIGGER_CANDIDATE
+
+
+def test_review6_a_carry_expires():
+    u = {"status": "unparsed", "score": None}
+    b = absent(cand(0.6))
+    frames = [absent(), b, b, b] + [absent()] * 12 + [b, b, b]
+    local, cloud = Local(no(), u, u, u), Cloud()
+    tier = tier_for(Script(*frames), local, cloud, cold_search_after=1000, stale_after=0)
+    run(tier, len(frames))
+    assert cloud.calls == 0, "a question minutes later starts at 0"
+
+
+def test_review6_pacing_advances_on_a_busy_hold():
+    gate = threading.Event()
+    tier = tier_for(Script(absent()), Local(no(), gate=gate), Cloud(), cold_search_after=1)
+    tier({})                                   # start, held
+    for _ in range(4):
+        tier({})                               # cold_search held behind it
+    assert tier._since_call >= 4
+    gate.set()

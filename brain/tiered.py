@@ -103,6 +103,8 @@ DEFAULT_LOCAL_MAX_UNABLE = 2
 # Frames off the arrival rule, in a row, that end an arrival for the local
 # tier's count: ArrivalCheck's own 2 frames plus one.
 LOCAL_RESET_FRAMES = 3
+# 3.80.D: how long a dropped identity question's unable count is handed on.
+CARRY_FRAMES = 2 * LOCAL_RESET_FRAMES
 # 3.80.D: a candidate perception called absent, but with CLIP P at or above
 # this, asks the local VLM (only with a local tier: it is not one of the
 # cloud's triggers and never becomes one on its own).
@@ -870,10 +872,12 @@ class TieredVision:
                 w = self._waiting = None
             # A question about what is in view goes first (review 5): a
             # navigation trigger on the band's frame fires again on its counts.
-            fresh = band if band is not None and trigger in NAVIGATION_QUESTIONS else (trigger or band)
+            fresh = (band if band is not None and trigger in (TRIGGER_COLD_SEARCH, TRIGGER_STALE)
+                     else (trigger or band))
             fq = self._question(fresh) if fresh is not None else None
             if w is not None and fq is not None and not fq.same(w):
-                if fq.trigger in IDENTITY_QUESTIONS and w.trigger not in IDENTITY_QUESTIONS:
+                if (fq.trigger in IDENTITY_QUESTIONS and w.trigger not in IDENTITY_QUESTIONS
+                        and w.trigger != TRIGGER_START):
                     w = self._waiting = None
                 else:
                     self._rearm(fq.trigger)
@@ -932,6 +936,8 @@ class TieredVision:
             self.stats.escalations += 1
             self._waiting = None
             self._carried.pop(escalated.trigger, None)
+            if escalated.trigger == TRIGGER_UNCERTAIN:
+                self._band_armed = False    # asked, of the cloud (review 6)
         self._absent_streak = 0
         self._since_call = 0
         self._mark_odometry_call()
@@ -949,7 +955,11 @@ class TieredVision:
                                      dispatched=trigger)
 
         _t0 = time.perf_counter()
-        scene = self.cloud_vision_fn(frame)
+        try:
+            scene = self.cloud_vision_fn(frame)
+        except BaseException:
+            self._unanswered(escalated)
+            raise
         self.stats.record("cloud_ms", (time.perf_counter() - _t0) * 1000)
         # The goal the stand-in holds on later free frames. Set on BOTH
         # paths: it lived only in _collect_inflight() at first, so a
@@ -1187,11 +1197,19 @@ class TieredVision:
         # A question of the same kind dropped unanswered hands on its count,
         # short of the max: this one still gets one local try, and a
         # flickering target still reaches the cloud (bug pass 4).
-        return _Question(trigger, episode, self._carried.get(trigger, 0))
+        n, until = self._carried.get(trigger, (0, 0))
+        return _Question(trigger, episode, n if self.stats.frames <= until else 0)
 
     def _carry_unable(self, q: _Question) -> None:
+        """An identity question dropped unanswered hands its count to the next
+        of its kind for CARRY_FRAMES frames: a flickering target behind a
+        slow, unable tier still reaches the cloud (bug pass 4, review 6), and
+        an unrelated question minutes later starts at 0. A count below the
+        max is capped at max - 1, so a new question gets one local try."""
         if q.trigger in IDENTITY_QUESTIONS and q.unable:
-            self._carried[q.trigger] = min(q.unable, self.local_max_unable - 1)
+            n = q.unable if q.unable >= self.local_max_unable else min(
+                q.unable, self.local_max_unable - 1)
+            self._carried[q.trigger] = (n, self.stats.frames + CARRY_FRAMES)
 
     def _in_view(self, q: _Question) -> bool:
         """Is what the question asks about still in view (its episode on)?
@@ -1209,7 +1227,10 @@ class TieredVision:
         if perception.status == UNAVAILABLE:
             return False
         if q.trigger == TRIGGER_UNCERTAIN:
-            return self._band_candidate(perception) is not None
+            # Its object crossed the gate (the episode holds through it):
+            # a detection shows it too (review 6).
+            return (self._band_candidate(perception) is not None
+                    or perception.status == DETECTED)
         if q.trigger == TRIGGER_CANDIDATE:
             return perception.status == DETECTED
         return True
@@ -1227,6 +1248,7 @@ class TieredVision:
                 call_id = self._local_inflight = self._local_started
         if busy:
             self._hold(q)
+            self._since_call += 1           # a free frame for pacing (review 6)
             return self._local_scene(perception, note=f"{trigger}: a local check is still out")
         with self._executor_lock:
             if self._closed or epoch != self._epoch:
@@ -1262,6 +1284,13 @@ class TieredVision:
             self._collect_local()
         return self._local_scene(perception, note=f"asked the local VLM ({trigger})",
                                  local_dispatched=trigger)
+
+    def _unanswered(self, q: Optional[_Question]) -> None:
+        """An escalated question whose cloud call failed is not answered: it
+        waits again, still due for the cloud, if its subject is in view and
+        nothing else waits (review 6); B3.2 counts the failure as before."""
+        if q is not None and self._waiting is None and self._in_view(q):
+            self._waiting = q
 
     def _hold(self, q: _Question) -> None:
         """A question that cannot be asked now waits in the slot if it is
@@ -1362,12 +1391,14 @@ class TieredVision:
             return
         w = self._waiting
         if (w is not None and w.trigger in IDENTITY_QUESTIONS
-                and q.trigger not in IDENTITY_QUESTIONS):
+                and q.trigger not in IDENTITY_QUESTIONS and q.trigger != TRIGGER_START):
             # A question about what is in view waits: it goes first; this
             # navigation one fires again on its own counts (review 5).
             return
         if w is not None and not w.same(q):
-            # This one is the older: it keeps the slot, the newer fires again.
+            # This one is the older: it keeps the slot, the newer fires again
+            # (an identity one hands its count on, as when dropped).
+            self._carry_unable(w)
             self._rearm(w.trigger)
         self._waiting = q
 
@@ -1612,6 +1643,7 @@ class TieredVision:
             with self._collect_lock:
                 if fut is not self._charged:
                     self._pending_error = exc
+            self._unanswered(question)
             return
         if scene is None:
             # Superseded: the mission ended or reset while this was out.
@@ -1627,6 +1659,7 @@ class TieredVision:
             # question about another view (a candidate, the band) still goes
             # up, and so does one whose answer failed (bug pass 4).
             self._waiting = None
+            self._carried.pop(w.trigger, None)
         self._last_cloud_scene = scene
         self._cloud_answered(question, scene)
         # Run the annotation for its SIDE EFFECTS -- corroboration and the

@@ -161,10 +161,12 @@ nothing, and a `detected` frame keeps a band episode on (the object crossed
 the gate). The band fires once an episode has had a band candidate
 `consecutive_frames` frames running, once per episode unless re-armed.
 `unable` is that question's own count of unable answers. An identity
-question dropped unanswered (its episode ended) hands its count on to the
-next question of its kind, capped at `local_max_unable - 1` (`_carried`): the
-next one still gets one local try, and a flickering target behind a slow,
-unable local tier still reaches the cloud. An able answer, or an escalation,
+question dropped unanswered (its episode ended, or displaced) hands its count
+on to the next question of its kind for `CARRY_FRAMES` (6) frames
+(`_carried`): capped at `local_max_unable - 1` (the next one still gets one
+local try) unless it was already spent, when the next one goes up -- so a
+flickering target behind a slow, unable local tier still reaches the cloud,
+and a question minutes later starts at 0. Any answer, or an escalation,
 clears it.
 
 *The one waiting slot (`_waiting`).* A waiting identity question whose
@@ -173,11 +175,12 @@ re-arms its edge (`_rearm()`: a spent candidate edge or the band;
 `cold_search` and `staleness` fire again on their own counts) and waits,
 except that an identity question displaces a waiting navigation one (and
 goes first when both fire on one frame, or when the navigation one lands
-unable while it waits). A
+unable while it waits) -- never `mission_start`, which cannot fire again. A
 question is asked (`_ask_local()`) only on a frame that shows it
-(`_present()`: a usable frame; the band candidate or a detection for an
-identity question), else it waits (a free frame for `staleness`'s count). With C's one slot (`_local_inflight`)
-taken, it waits (`_hold()`: in `_waiting` if free, else re-armed). Sent, the
+(`_present()`: a usable frame; for the band question its candidate or a
+detection, its object having crossed the gate; for a candidate a detection), else it waits (a free frame for `staleness`'s count). With C's one slot (`_local_inflight`)
+taken, it waits (`_hold()`: in `_waiting` if free, else re-armed; a free
+frame for pacing). Sent, the
 call runs on its own one-thread pool (`tiered-local`; a synchronous policy
 waits for it and collects it on the same frame), `_sight_call` holds `(id,
 question, perception, future, epoch)`, `local_triggers[trigger]` counts it,
@@ -200,7 +203,9 @@ cap it is dropped, not re-armed (it would loop against an absent tier); with
 a cloud call out it waits, and the landing (`_collect_inflight`) answers it
 if it is that question or a navigation one -- the cloud is asked one
 navigate question whatever the trigger -- so no paid call follows straight
-behind; a call that failed answers nothing. A cloud yes to `uncertain_candidate` promotes its episode as a local
+behind; a call that failed answers nothing, and the escalated question it
+carried waits again (`_unanswered()`). An escalated band question disarms
+the band, as a local one does. A cloud yes to `uncertain_candidate` promotes its episode as a local
 yes does (`_cloud_answered()`). With a local tier every cloud call is an
 escalation: `confirm_cloud()` counts the arrival's too, whether the local
 tier was spent or absent.
