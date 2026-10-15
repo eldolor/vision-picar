@@ -1048,10 +1048,16 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         world = _goals()
         now = time.monotonic()
         person = (x_driver or "").strip()
+        claim = None
         if person and driver_priority(person) == DRIVER_MANUAL:
             refused = arbitrate(person, now)
             if refused:
                 return {"accepted": False, **refused}
+            # Taken at once, as a D-pad press takes it, so no brain verb or
+            # explore goal slips in while the bridge answers; given back if
+            # the bridge refuses the goal (3.82: a refused one never existed).
+            claim = (state["driver"], state["driver_at"])
+            state["driver"], state["driver_at"] = person, now
         else:
             refused = arbitrate(DRIVER_ROS, now)
             if refused:
@@ -1062,12 +1068,19 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         # bridge cancelled the old goal before sending it). A refused goal
         # never existed, so the stop's
         # loop keeps ending the goal the stop was for, and keeps its hold.
+        def give_back():
+            # Only if nobody has driven since: a person's later press, or the
+            # brain after the claim lapsed, keeps what it took.
+            if claim is not None and state["driver"] == person and state["driver_at"] == now:
+                state["driver"], state["driver_at"] = claim
+
         with goal_stop_lock:
             with goal_gen_lock:
                 gen = goal_stop["gen"]
             try:
                 reply = world.set_goal(req.x_m, req.y_m)
             except httpx.HTTPError as e:
+                give_back()
                 # Handoff 4d: refused by name, not a 500. 3.82: and whether
                 # waiting can help, as a field rather than prose -- the
                 # bridge refusing our secret (a 401) is a fault no wait
@@ -1075,11 +1088,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 return {"accepted": False, "reason": "ros_unavailable",
                         "detail": f"the ROS bridge did not take the goal: {e}",
                         **bridge_fault(e)}
-            if reply.get("accepted") is True:
-                if person and driver_priority(person) == DRIVER_MANUAL:
-                    # Only a goal nav2 was given takes the robot from the
-                    # brain (3.82): a refused one never existed.
-                    state["driver"], state["driver_at"] = person, time.monotonic()
+            except Exception:
+                give_back()
+                raise
+            if reply.get("accepted") is not True:
+                give_back()
+            else:
                 with goal_gen_lock:
                     # A stop that landed while set_goal() was in flight owns
                     # a newer generation: its loop, waiting on goal_stop_lock,

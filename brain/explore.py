@@ -53,7 +53,7 @@ from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
 from robot.interface import ZONE_UNUSABLE, Preempted, RobotInterface
 from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation
-from world.bridge_faults import RETRYABLE_HEADER, retryable_status
+from world.bridge_faults import RETRYABLE_HEADER, STATUS_HEADER, hint
 
 logger = logging.getLogger("explore")
 
@@ -122,8 +122,7 @@ def _setup_fault(what: str, reply: dict) -> RuntimeError:
     why = f"HTTP {status}" if status is not None else "a reply that is not JSON"
     detail = f": {reply['detail']}" if reply.get("detail") else ""
     return RuntimeError(f"the ROS bridge refused {what} ({why}), a setup fault no wait "
-                        f"mends -- check that the robot server and the ROS container share "
-                        f"APP_SHARED_SECRET{detail}")
+                        f"mends -- {hint(status)}{detail}")
 
 
 def leave_clearance_m(min_distance_cm: float) -> float:
@@ -380,12 +379,14 @@ class ExploreAgent(MissionAgent):
         status = getattr(response, "status_code", None)
         # 3.82: the robot server says, in a header, whether its bridge's
         # error can pass; else world/bridge_faults.py's one rule decides.
-        verdict = getattr(response, "headers", {}).get(RETRYABLE_HEADER)
-        if verdict is not None:
-            transient = verdict == "true"
-        else:
-            transient = (isinstance(exc, (httpx.TransportError, ConnectionError, TimeoutError))
-                         or (status is not None and retryable_status(status)))
+        headers = getattr(response, "headers", None) or {}
+        if headers.get(RETRYABLE_HEADER) == "false":
+            # Named as the setup fault it is, not as the robot server's 503.
+            bridge = headers.get(STATUS_HEADER)
+            raise _setup_fault("a goal call", {"bridge_status": int(bridge) if bridge else None,
+                                               "detail": str(exc)}) from exc
+        transient = (isinstance(exc, (httpx.TransportError, ConnectionError, TimeoutError))
+                     or (status is not None and status >= 500))
         self._blips += 1
         if not transient or self._blips > BRIDGE_BLIPS_MAX:
             raise exc

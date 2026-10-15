@@ -34,8 +34,12 @@ class RefusingBridge(SlowBridge):
         self.refuse_post = None        # None, "transport", or an (status, body) answer
         self.post_gate = None          # a threading.Event a post waits on
         self.post_entered = threading.Event()
+        self.refuse_reads = False      # True: GET/DELETE /goal answer 401
 
     def handler(self, request):
+        if (request.url.path == "/goal" and request.method in ("GET", "DELETE")
+                and self.refuse_reads):
+            return httpx.Response(401, json={"error": "bad or missing x-app-secret"})
         if request.url.path == "/goal" and request.method == "POST":
             self.post_entered.set()
             if self.post_gate is not None:
@@ -281,13 +285,13 @@ class SecretBridge(RefusingBridge):
 
     def __init__(self, everything, **kw):
         super().__init__(**kw)
-        self.everything = everything   # "401" or "transport"
+        self.everything = everything   # "401", "404" or "transport"
 
     def handler(self, request):
         if request.url.path != "/health":
             if self.everything == "transport":
                 raise httpx.ConnectError("bridge unreachable", request=request)
-            return httpx.Response(401, json={"error": "bad or missing x-app-secret"})
+            return httpx.Response(int(self.everything), json={"error": "refused"})
         return super().handler(request)
 
 
@@ -373,3 +377,62 @@ def test_a_goal_reply_that_is_not_json_is_a_setup_fault(monkeypatch):
     client, _ = _server_over(monkeypatch, "html")
     r = client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()
     assert r["accepted"] is False and r.get("retryable") is False, r
+
+
+# ---------- review round 2 ----------
+
+
+def test_a_tap_in_flight_still_holds_the_robot_against_the_brain(monkeypatch):
+    """Round 1 moved the person's claim to after `set_goal()` answered:
+    while the bridge answered, explore's own goal or a brain verb passed
+    arbitration and then replaced or ran beside the person's goal."""
+    client, bridge = _server_over(monkeypatch, None)
+    bridge.post_gate = threading.Event()
+    reply = {}
+    tap = threading.Thread(target=lambda: reply.setdefault("r", client.post(
+        "/world/goal", json={"x_m": 2.0, "y_m": 1.0}, headers={"x-driver": "twin-dpad"}).json()))
+    tap.start()
+    try:
+        assert bridge.post_entered.wait(5.0)
+        verb = client.post("/action", json={"action": "LOOK_LEFT"},
+                           headers={"x-driver": "brain"}).json()
+        assert verb.get("reason") == "preempted", verb
+        bridge.post_entered.clear()
+        goal = {}
+        other = threading.Thread(target=lambda: goal.setdefault("r", client.post(
+            "/world/goal", json={"x_m": 1.0, "y_m": 2.0}).json()))
+        other.start()
+        other.join(1.0)
+        assert goal.get("r", {}).get("reason") == "preempted", goal
+    finally:
+        bridge.post_gate.set()
+    tap.join(5.0)
+    assert reply["r"]["accepted"] is True, reply
+
+
+def test_a_bridge_404_is_not_blamed_on_the_secret(monkeypatch):
+    client = _server_with_secret_fault(monkeypatch, "404")
+    with pytest.raises(PermissionError) as e:
+        RemoteNavigator(ASGI_BASE_URL, client=client).available()
+    assert "HTTP 404" in str(e.value) and "ROS_BRIDGE_URL" in str(e.value), e.value
+    assert "APP_SHARED_SECRET" not in str(e.value), e.value
+
+
+def test_a_secret_fault_on_a_goal_read_is_named_as_one(monkeypatch):
+    """`_bridge_blip` re-raised the robot server's bare 503: the mission
+    ended reading like an outage, not a mismatched secret."""
+    client, bridge = _server_over(monkeypatch, None)
+    runner = _explore_over_http(client)
+    runner.start()
+    for _ in range(400):
+        if bridge.goal is not None or not runner.tick():
+            break
+    assert bridge.goal is not None, "explore never sent a goal -- the test proves nothing"
+    bridge.refuse_reads = True
+    for _ in range(5):
+        if not runner.tick():
+            break
+    status = runner.status()
+    assert status["outcome"] == FAILED, status
+    assert "HTTP 401" in str(status["end_reason"]), status
+    assert "APP_SHARED_SECRET" in str(status["end_reason"]), status
