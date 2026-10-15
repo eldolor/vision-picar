@@ -88,4 +88,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.80](3.80-tiered-identity.md) | Tiered identity: perception, then local Qwen, then the cloud |
 | [3.81](3.81-rover-memory-budget.md) | Rover memory budget: measure where memory goes, then trim |
 | [3.82](3.82-refused-goal-hold.md) | A refused goal must not lift a Stop's hold |
+| [3.83](3.83-costmap-overlay.md) | nav2's costmap on the twin's map, live |
 <!-- /sections -->
