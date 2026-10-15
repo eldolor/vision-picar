@@ -234,10 +234,12 @@ lands between the read and the verb's first motion (the Stop latches before
 its `robot.stop()`) ends the verb unmoved -- `_begin()` then returns an
 already-superseded generation and leaves the Stop's own hold in place
 (`RosDriveRobot.stop_count` is its own stops plus the inner robot's, so a
-stop made on the inner robot directly counts too). Whatever a brain verb
-answers, a person's latch set by the time it ends makes the answer
-`person_stop` (cut by the Stop, ended unmoved by the baseline, or its bridge
-call broken by the Stop's zeroing). A brain command refused at execution
+stop made on the inner robot directly counts too). A brain verb that
+ran, or that reads as vetoed, overtaken (`stopped`) or preempted, answers
+`person_stop` when a person's latch is set by the time it ends (cut by the
+Stop, ended unmoved by the baseline, or read as a veto because of the Stop's
+zeroing; not counted a second time in `refusal_counts`); a fault
+(`no_feedback`, `ros_unavailable`) keeps its own name. A brain command refused at execution
 (`person_stop`, or `stopped`) had been given the robot by arbitration; its
 claim lapses at once (`lapse_refused_claim()`), only if `driver_at` is still
 that command's own stamp (`verb_running(stamped=...)`), never a newer

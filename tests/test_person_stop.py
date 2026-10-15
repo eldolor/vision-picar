@@ -521,3 +521,37 @@ def test_a_brain_verb_refused_at_execution_does_not_keep_the_robot(monkeypatch):
     assert reply["r"]["reason"] == "person_stop", reply
     r = client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()
     assert r["accepted"] is True, f"the refused brain verb kept the robot: {r}"
+
+
+# ---------- review round 4 ----------
+
+
+@pytest.mark.parametrize("answer", ["veto", "fault"])
+def test_a_brain_answer_under_the_latch_is_the_stop_unless_it_is_a_fault(monkeypatch, answer):
+    """Round 4: a brain verb that the person's Stop made read as vetoed
+    (its zeroing) answers `person_stop` and lets go of the robot; a real
+    fault (lost wheel feedback) keeps its own name, never hidden by it."""
+    import threading
+
+    from robot.interface import WheelFeedbackLost
+    from robot.safety import SafetyController, SafetyViolation
+
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    client = asgi_client(server.create_app())
+
+    def stopped_mid_verb(self, action, **kw):
+        t = threading.Thread(target=lambda: client.post("/stop", headers={"x-driver": "twin-dpad"}))
+        t.start()
+        t.join(5.0)
+        if answer == "veto":
+            raise SafetyViolation("Blocked LEFT: stopped after 0.0deg")
+        raise WheelFeedbackLost("the wheels stopped being measured mid-verb")
+
+    monkeypatch.setattr(SafetyController, "check_and_execute", stopped_mid_verb)
+    r = client.post("/action", json={"action": "LEFT", "angle": 30},
+                    headers={"x-driver": "brain"}).json()
+    if answer == "veto":
+        assert r["reason"] == "person_stop", r
+        assert client.get("/health").json()["authority_holder"] is None, "kept the robot"
+    else:
+        assert r["reason"] == "no_feedback", r

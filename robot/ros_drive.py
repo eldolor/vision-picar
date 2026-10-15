@@ -248,7 +248,7 @@ class RosDriveRobot(RobotInterface):
         `_gen_lock`, so `_begin()` sees it before the inner robot's) and any
         made on the inner robot directly (`fallback_safety`, a house load) --
         so the server's stop guards and a verb's baseline see them all. Not a
-        count of stops (one `stop()` moves it by 2): compare it, never count."""
+        count of stops (one `stop()` moves it by one or two): compare it, never count."""
         return self._stops + getattr(self.inner, "stop_count", 0)
 
     def _begin(self) -> int:

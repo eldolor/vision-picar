@@ -456,7 +456,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         with goal_gen_lock:
             return goal_stop["autonomy_stopped"]
 
-    def person_stop_refusal(driver: str, latch):
+    def person_stop_refusal(driver: str, latch, record: bool = True):
         """3.84: a person's Stop is the last word over autonomy. While its
         latch is set, every command from the brain is refused by name, so the
         mission ends `cancelled` by the Stop rather than driving on; a
@@ -464,9 +464,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         `goal_gen_lock` or not, as its own order needs."""
         if latch is None or not is_autonomy(driver):
             return None
-        return refuse(PERSON_STOP,
-                      f"{latch['by']} pressed Stop -- autonomy stays stopped until a new "
-                      f"mission starts, so {driver} was refused", driver)
+        detail = (f"{latch['by']} pressed Stop -- autonomy stays stopped until a new "
+                  f"mission starts, so {driver} was refused")
+        if not record:      # a verb's answer re-read: its own outcome is already counted
+            return {"executed": False, "reason": PERSON_STOP, "detail": detail}
+        return refuse(PERSON_STOP, detail, driver)
 
     async def wheel_loop():
         """Vet and (in the sim) integrate a standing wheel command -- R2b.
@@ -651,13 +653,15 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         if is_autonomy(driver) and isinstance(outcome, dict):
             # 3.84: a person's Stop latched by the time the brain's verb
             # ended -- it cut the verb, ended it before its first motion, or
-            # broke its bridge call -- is the answer, whatever else came
-            # back: the brain hears the Stop and ends its mission. (One that
+            # its zeroing made the verb read as vetoed or overtaken -- is the
+            # answer: the brain hears the Stop and ends its mission. (One that
             # landed in the microseconds after a whole move reads the same;
-            # the mission ends `cancelled` either way.)
+            # the mission ends `cancelled` either way.) A fault (`no_feedback`,
+            # `ros_unavailable`) keeps its own name, so it is never hidden.
             latch = autonomy_latch()
-            if latch is not None and outcome.get("reason") != PERSON_STOP:
-                outcome = person_stop_refusal(driver, latch)
+            if latch is not None and (outcome.get("executed") or outcome.get("reason") in
+                                      (STOPPED, "safety_distance", "preempted")):
+                outcome = person_stop_refusal(driver, latch, record=False)
             if outcome.get("reason") in (PERSON_STOP, STOPPED):
                 return lapse_refused_claim(driver, outcome, stamp.get("at", now))
         return outcome
@@ -928,8 +932,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 if not by_velocity and getattr(robot, "stop_count", 0) != stops0:
                     robot.set_wheel_velocity(0.0, 0.0)
                     stopped = ((brain and person_stop_refusal(driver, autonomy_latch()))
-                               or {"executed": False, "reason": STOPPED, "driver": driver,
-                                   "detail": "a stop landed while this command was applied"})
+                               or refuse(STOPPED, "a stop landed while this command was "
+                                         "applied", driver))
                     return lapse_refused_claim(driver, stopped, now) if brain else stopped
             except NotImplementedError as e:
                 return refuse("unsupported", str(e), driver)
