@@ -548,6 +548,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     asked** (the user, 2026-10-15): a finished, reviewed step that passes
     the gate. Spending, deploys, force pushes and `PICAR_SKIP_GATE=1` are
     still asked. `PARALLEL-SESSIONS.md` rule 10.
+  * **Delete your branch (remote, local, worktree) once its work is in
+    `dev`**; a stale branch whose content is already in `dev` may be
+    deleted by anyone, one with work not in `dev` only on the user's word
+    (the user, 2026-10-15). `PARALLEL-SESSIONS.md` rule 11.
   * One heavy live run at a time (a lock in `tests/demo_explore.stack()`).
   * CLAUDE.md section 3b and other shared status are updated at merge, not
     on a branch.
