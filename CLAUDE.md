@@ -259,6 +259,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   deployed 2026-10-14:** the Sim tab's Remote brain panel picks Find or
   Survey; a survey reads "Surveying the house" with its rooms named
   against the cap (the brain's `/health` `room_label_max_calls`).
+  **M5 (no survey, no saved map), merged 2026-10-15 with its live
+  criterion FAILED:** ProcTHOR usable 200-299 98/100 (bar 90, pinned);
+  `home_first_floor` from an empty map 10 of 13 rooms (median 612 s,
+  0 contacts) -- hall, laundry and living room ran out 1800 s in the
+  dining room, cycling frontier goals among the chairs (failures counted
+  per point; not yet tested). No run entered the laundry.
+  `evaluations/unsurveyed-370/`.
 * **Review of the code written before the review rule (3.76), all nine
   batches merged by 2026-10-14; the review is done.** Both reviewers on whole files, risky files only,
   every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
