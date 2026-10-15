@@ -14,6 +14,7 @@ import io
 import logging
 import math
 import sys
+import threading
 
 import httpx
 import pytest
@@ -39,16 +40,27 @@ def _quiet_logs():
 
 
 class Local:
-    """A scripted local tier: each ask returns the next answer (the last one
-    repeats). An answer is a dict, or an exception to raise."""
+    """A scripted local tier: each arrival ask returns the next answer (the
+    last one repeats). An answer is a dict, or an exception to raise.
 
-    def __init__(self, *answers):
+    Since 3.80.D the frames' questions go to the same tier; they run on the
+    policy's `tiered-local` worker, are answered `sight` (yes by default, so
+    they never reach the cloud) and counted in `sight_asked`, so `asked` is
+    still the arrival's alone."""
+
+    def __init__(self, *answers, sight=None):
         self.answers = list(answers)
+        self.sight = sight if sight is not None else {"status": "answered", "score": 0.9}
         self.asked = 0
+        self.sight_asked = 0
 
     def __call__(self, frame):
-        a = self.answers[min(self.asked, len(self.answers) - 1)]
-        self.asked += 1
+        if threading.current_thread().name.startswith("tiered-local"):
+            self.sight_asked += 1
+            a = self.sight
+        else:
+            a = self.answers[min(self.asked, len(self.answers) - 1)]
+            self.asked += 1
         if isinstance(a, BaseException):
             raise a
         return a
@@ -110,7 +122,9 @@ def test_c1_a_local_yes_ends_found_with_no_cloud_call():
     assert cells <= ARRIVED_CELLS
     assert local.asked == 1 and cloud.calls == 0
     assert tier.stats.triggers.get(TRIGGER_ARRIVAL) is None
-    assert tier.stats.local == {"yes": 1} and tier.stats.local_calls == 1
+    # The frames' questions (3.80.D) said yes too, each counted once.
+    assert tier.stats.local == {"yes": local.asked + local.sight_asked}
+    assert tier.stats.local_calls == local.asked + local.sight_asked
     assert status["arrival"]["identity"]["tier"] == "local"
 
 

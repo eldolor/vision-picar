@@ -155,6 +155,9 @@ DEFAULTS = {
     "tier_local_no_below": 0.1,
     "tier_local_max_unable": 2,
     "tier_local_timeout_s": 3.0,
+    # 3.80.D -- with the local tier on, a candidate below perception's gate
+    # with CLIP P at or above this asks it (`uncertain_candidate`).
+    "tier_local_band_low": 0.5,
     # 3.70 E4 (decided by the user 2026-10-11): a mission's budget is a time
     # limit and a battery floor; the step count is only a backstop derived
     # from the limit (control/mission_runner.py's derived_max_steps()).
@@ -356,6 +359,9 @@ def load_brain_config(config_path=None) -> dict:
     if float(merged["tier_local_timeout_s"]) <= 0:
         raise ValueError(f"brain.tier_local_timeout_s must be > 0; "
                          f"got {merged['tier_local_timeout_s']}")
+    band_low = float(merged["tier_local_band_low"])
+    if not 0.0 < band_low < 1.0:
+        raise ValueError(f"brain.tier_local_band_low must be in (0, 1); got {band_low}")
     calls = merged["room_label_max_calls"]
     if isinstance(calls, bool) or not isinstance(calls, int) or calls < 0:
         raise ValueError(f"brain.room_label_max_calls must be a whole number >= 0 "

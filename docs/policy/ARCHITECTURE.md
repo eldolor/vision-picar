@@ -132,6 +132,14 @@ field flicker; hysteresis took the saving from 2.8x to 4.1x. The three other
 triggers in 2.4 (goal achieved, goal impossible, room change) need tiers that
 do not exist and are named as unavailable rather than faked.
 
+**With a local VLM (3.80, the user's strict order of 2026-10-14):** the same
+events ask the local VLM first, and so does a candidate just below
+perception's gate. The cloud is asked only when the local VLM could not
+answer twice in a row, or is not there. Its direction therefore arrives only
+on those occasions; between them the robot steers on perception's bearing
+and searches, as it already does while a cloud call is out. Off until 3.80.E
+measures it on the board.
+
 **Scope of the hysteresis.** It gates *when the cloud is called*, and nothing
 else. It does not gate steering: the next decision makes that explicit.
 

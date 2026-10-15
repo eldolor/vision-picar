@@ -353,6 +353,7 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
         "local_identity_fn": _local_identity_fn(target, config, local_secret),
         "local_no_below": config["tier_local_no_below"],
         "local_max_unable": config["tier_local_max_unable"],
+        "local_band_low": config["tier_local_band_low"],
     }
     if simulated:
         # 1.12, built at last (PLAN-ros-alignment.md R1): the simulator

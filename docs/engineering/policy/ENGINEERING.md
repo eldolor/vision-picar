@@ -143,6 +143,55 @@ counts `local_calls`, `local` (`yes`, `no`, `absent`, `unable_<status>`,
 `unable_band`, `unable_noscore`, `unable_runner_timeout`), `local_ms` and `escalations`. `close()` closes and drops the
 client, so 3.53's late check is the cloud's.
 
+**The frames' questions through the local tier (3.80.D).** With
+`local_identity_fn` set, `__call__` asks the local VLM first whatever the
+frame escalates: a trigger from `_trigger_for()` (unchanged), else
+`uncertain_candidate` (`TRIGGER_UNCERTAIN`, from `_band_observe()`: an
+`absent` frame whose `Perception.strongest()` has P >= `local_band_low`
+(`tier_local_band_low`, 0.5), `consecutive_frames` frames running, once per
+run; a frame without one re-arms it; `unavailable` changes nothing), else
+`_pending_question`. `_ask_local()` reserves an id from C's counter and takes
+C's one slot (`_local_inflight`); with the slot taken the question becomes
+`_pending_question` and nothing is sent. Otherwise the call runs on its own
+one-thread pool (`tiered-local`; under a synchronous policy the tick waits
+for it and collects it on the same frame), `_sight_call` holds `(id, trigger, perception, future, epoch)`,
+`local_triggers[trigger]` counts it, the band is disarmed for
+`uncertain_candidate`, and pacing restarts as on a cloud dispatch.
+`_collect_local()` (top of `__call__`, an atomic take; an epoch change or a
+cancelled call is dropped) reads the answer with `_classify_local()` (also
+C's): `yes`/`no` reset `_sight_unable`, clear `_pending_question` if it was
+that question, and restart pacing; a yes to `uncertain_candidate` stores the
+candidate's label, and `_promote()` then turns any `absent` frame whose
+strongest candidate has that label and P >= `local_band_low` into
+`Perception.promoted()` (status `detected`), so it steers, triggers and is
+judged at arrival as a detection, until a frame with neither a band
+candidate nor a detection clears the label (a label is stored only from a
+candidate that was in the band on the frame asked about). Unable sets
+`_pending_question` (unless a newer one waits) and adds one to
+`_sight_unable`; absent sets it to `local_max_unable`. A pending
+`uncertain_candidate` whose candidate has left the band is dropped. With
+`_sight_unable >= local_max_unable` the pending question takes the cloud
+path as before (cap, one cloud call in flight, `_dispatch`) under its own
+trigger; a fresh question on that frame becomes the next local one. Sent,
+it counts in `escalations` and resets the count; at the cap the count and
+question are dropped (the local tier goes on answering); with a cloud call
+out it waits, and that call's landing (`_collect_inflight`) answers it, so
+no paid call follows straight behind. A cloud yes to `uncertain_candidate`
+promotes as a local yes does (`_cloud_answered_band`). With a local tier
+every cloud call is an escalation: `confirm_cloud()` counts the arrival's
+too, whether the local tier was spent or absent. `confirm_local()` waits on
+a frame's call out (`sight[3]`) before taking the slot, so an arrival never
+sends beside it; given up on while waiting (`abandon_local`, tracked in
+`_arrival_waiting`), it is `undecided` with `local.arrival_waited` counted,
+never an unable answer. An arrival check still out (abandoned) keeps the
+frames' questions waiting. Both paths time the call with `_timed_local()`
+and record `local_ms` alike.
+`close()` shuts the local pool down with the cloud's; `reset_epoch()` drops
+`_sight_call`, the pending question and the landed readout. Each frame's
+`_tier` carries `local_dispatched`, `local_in_flight`, `local_landed`
+(`{trigger, answer, score, status}`, shown once) and `local_unable`, and none
+of these keys without a local tier.
+
 **What the hysteresis does and does not gate.** `consecutive_frames` is
 read only in `_trigger_for()`. `_steer_to()` returns a direction for any
 frame whose `status` is `detected` with a bearing, with no streak, so one

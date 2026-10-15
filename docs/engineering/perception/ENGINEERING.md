@@ -106,6 +106,12 @@ returns status `error`. The thresholds are the policy's
 ([policy engineering](../policy/ENGINEERING.md)).
 
 
+**`Perception.strongest()`** is the candidate with the highest probability
+whatever the gate said (None without candidates), and
+**`Perception.promoted(candidate, why)`** a copy with status `detected`,
+`best` that candidate and `reason` why: 3.80.D's uncertain band and a local
+VLM's yes to it ([policy engineering](../policy/ENGINEERING.md)).
+
 **`Perception.as_dict()`** (published as the scene's `_perception` and on
 `GET /mission/status` as `perception`): `status`, `crop_source`, `reason`,
 `synthesised`, `pan_deg`, `tilt_deg`, `bearing_deg` (degrees, negative left,

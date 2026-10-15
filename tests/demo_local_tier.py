@@ -7,7 +7,11 @@ service (`service/local_vlm`, on tests/fake_edgellm_driver.py told to say
 yes) and the cloud unreachable. Expected: `found`, identity from the local
 tier, no cloud call at arrival.
 
-    python -m tests.demo_local_tier [--answer yes|no] [--out evaluations/tiered-380/C/C8.json]
+3.80.D acceptance D9 (`--criterion D9`), the same run: since D every
+trigger asks the local tier too, so the whole mission makes 0 cloud calls
+and its triggers are counted as local questions.
+
+    python -m tests.demo_local_tier [--answer yes|no] [--criterion C8|D9] [--out evaluations/tiered-380/C/C8.json]
 
 Three servers on free ports; nothing on :8000/:8001/:8005 is touched.
 """
@@ -62,6 +66,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--answer", default="yes", choices=("yes", "no"))
     ap.add_argument("--house", default="scaled_house")
+    ap.add_argument("--criterion", default="C8", choices=("C8", "D9"))
     ap.add_argument("--out")
     args = ap.parse_args()
     robot_p, brain_p, vlm_p = free_port(), free_port(), free_port()
@@ -112,11 +117,18 @@ def main():
                "identity_tier": identity.get("tier"),
                "arrival_cloud_calls": (stats.get("triggers") or {}).get("arrival_confirmation", 0),
                "local_calls": stats.get("local_calls"), "local": stats.get("local"),
+               "cloud_calls": stats.get("cloud_calls"),
+               "local_triggers": stats.get("local_triggers"),
+               "escalations": stats.get("escalations"),
                "service_served": served, "log_tail": (status.get("log_tail") or [])[-5:],
                "logs": str(logs)}
         want = "found" if args.answer == "yes" else None
-        doc["met"] = (doc["outcome"] == "found" and doc["identity_tier"] == "local"
-                      and doc["arrival_cloud_calls"] == 0) if want else None
+        doc["criterion"] = args.criterion
+        met = (doc["outcome"] == "found" and doc["identity_tier"] == "local"
+               and doc["arrival_cloud_calls"] == 0)
+        if args.criterion == "D9":
+            met = met and doc["cloud_calls"] == 0 and bool(doc["local_triggers"])
+        doc["met"] = met if want else None
         print(json.dumps(doc, indent=1))
         if args.out:
             Path(args.out).parent.mkdir(parents=True, exist_ok=True)

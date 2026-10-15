@@ -281,7 +281,11 @@ the largest single user of memory, and when memory runs out the kernel
 must take it and nothing that keeps the robot safe. A VLM that is gone is
 *absent*, and the question goes to the cloud; the robot keeps driving.
 The order of asking is perception, then the local VLM, then the cloud
-(the user, 2026-10-14); the brain decides what each answer means.
+(the user, 2026-10-14); the brain decides what each answer means. It holds
+for every question a frame raises, not only the arrival's (3.80.D): a
+candidate perception scores just below its gate is put to the local VLM
+too, and its yes makes it a detection, which is how the middle tier
+recovers what CLIP's gate alone would miss.
 
 ## Contracts
 

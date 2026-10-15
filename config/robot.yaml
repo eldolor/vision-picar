@@ -315,10 +315,15 @@ brain:
   # LOCAL_VLM_URL overrides. A local score <= no_below refuses, >= 0.5
   # confirms; max_unable undecided answers in one arrival go to the cloud
   # (thresholds approved by the user 2026-10-14).
+  # 3.80.D: with it on, the frames' questions (the four triggers, and a
+  # candidate below perception's gate with CLIP P >= band_low) ask it first
+  # too; the cloud only after max_unable unable answers in a row or when it
+  # is absent.
   tier_local_vlm_url: ""
   tier_local_no_below: 0.1
   tier_local_max_unable: 2
   tier_local_timeout_s: 3.0
+  tier_local_band_low: 0.5
 
   # 3.70 E4: a mission's budget -- a time limit (seconds) and a battery floor
   # (volts, the motor board's `v`). It ends `out_of_budget` at either. The

@@ -99,7 +99,7 @@ import binascii
 import io
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional, Protocol, Sequence
 
 logger = logging.getLogger("perceive")
@@ -579,6 +579,18 @@ class Perception:
     @property
     def bearing_deg(self) -> Optional[float]:
         return self.best.bearing_deg if self.best else None
+
+    def strongest(self) -> Optional[Candidate]:
+        """The candidate with the highest probability, whatever the gate
+        decided -- 3.80.D's uncertain band reads it on an `absent` frame,
+        where `best` is None."""
+        return max(self.candidates, key=lambda c: c.probability) if self.candidates else None
+
+    def promoted(self, candidate: Candidate, why: str) -> "Perception":
+        """This frame with `candidate` taken as a detection: 3.80.D, after
+        the local VLM said yes to a candidate below the gate. The status
+        changes and `reason` says why; nothing else does."""
+        return replace(self, status=DETECTED, best=candidate, reason=why)
 
     def as_dict(self) -> dict:
         """The shape that crosses the wire in phase C5, and that the twin

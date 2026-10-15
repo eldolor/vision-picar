@@ -103,6 +103,11 @@ DEFAULT_LOCAL_MAX_UNABLE = 2
 # Frames off the arrival rule, in a row, that end an arrival for the local
 # tier's count: ArrivalCheck's own 2 frames plus one.
 LOCAL_RESET_FRAMES = 3
+# 3.80.D: a candidate perception called absent, but with CLIP P at or above
+# this, asks the local VLM (only with a local tier: it is not one of the
+# cloud's triggers and never becomes one on its own).
+TRIGGER_UNCERTAIN = "uncertain_candidate"
+DEFAULT_LOCAL_BAND_LOW = 0.5
 
 # 2.4's other four. Named, not implemented -- each needs a tier that does
 # not exist yet, and a trigger that cannot fire is worse than one that is
@@ -494,6 +499,10 @@ class TierStats:
     local: dict = field(default_factory=dict)
     local_ms: list = field(default_factory=list)
     escalations: int = 0
+    # 3.80.D: the frames' questions sent to the local tier, by trigger.
+    # Their answers are counted in `local` beside the arrival's, and a
+    # question handed to the cloud in `escalations`.
+    local_triggers: dict = field(default_factory=dict)
     # How many samples each bucket has been offered, and the reservoir's
     # draw (seeded, so a replay samples the same way) -- 3.76.
     _seen: dict = field(default_factory=dict, repr=False, compare=False)
@@ -538,6 +547,7 @@ class TierStats:
             "local_ms": self._percentiles("local_ms"),
             "local_calls": self.local_calls,
             "local": dict(self.local),
+            "local_triggers": dict(self.local_triggers),
             "escalations": self.escalations,
             "frames": self.frames,
             "cloud_calls": self.cloud_calls,
@@ -584,6 +594,7 @@ class TieredVision:
         local_identity_fn: Optional[Callable[[dict], dict]] = None,
         local_no_below: float = DEFAULT_LOCAL_NO_BELOW,
         local_max_unable: int = DEFAULT_LOCAL_MAX_UNABLE,
+        local_band_low: float = DEFAULT_LOCAL_BAND_LOW,
     ):
         self.pipeline = pipeline
         # 3.80.C: the local VLM tier at arrival (brain/local_vlm.py's
@@ -592,6 +603,20 @@ class TieredVision:
         self.local_no_below = float(local_no_below)
         self.local_max_unable = max(1, int(local_max_unable))
         self._local_unable = 0
+        # 3.80.D: the frames' questions through the same tier. Unable answers
+        # in a row (an absent tier sets it to the max), the question to ask
+        # again next frame, the sighting call out (id, trigger, perception,
+        # future, epoch), the uncertain band's edge, and the label of a band
+        # candidate the local tier said yes to.
+        self.local_band_low = float(local_band_low)
+        self._sight_unable = 0
+        self._pending_question: Optional[str] = None
+        self._sight_call: Optional[tuple] = None
+        self._local_executor = None
+        self._local_landed: Optional[dict] = None
+        self._band_run = 0
+        self._band_armed = True
+        self._band_label: Optional[str] = None
         # Guards the local tier's counters against a call the runner
         # abandoned (abandon_local) returning on its own thread later.
         self._local_lock = threading.Lock()
@@ -600,6 +625,8 @@ class TieredVision:
         self._local_done: Optional[tuple] = None   # (id, verdict) of the last one ended
         self._local_abandoned: set = set()
         self._frames_off_arrival = 0
+        # 3.80.D: the arrival call waiting for a frame's local question.
+        self._arrival_waiting: Optional[int] = None
         self.cloud_vision_fn = cloud_vision_fn
         # 3.56: the arrival confirmation's own client, built with the
         # confirmation's shorter deadline so a hang ends in httpx (as
@@ -764,13 +791,23 @@ class TieredVision:
         # goal now, BEFORE the trigger policy runs -- so a call that has
         # already returned is never counted as still in flight.
         self._collect_inflight()
+        # 3.80.D: and a local answer, before the band and the triggers read
+        # what it decided.
+        self._collect_local()
         _t0 = time.perf_counter()
         perception = self.pipeline.perceive(frame)
         self.stats.record("perception_ms", (time.perf_counter() - _t0) * 1000)
-        self._perception_this_frame = perception
         self.stats.frames += 1
         self.stats.perception[perception.status] = (
             self.stats.perception.get(perception.status, 0) + 1)
+        # 3.80.D, only with a local tier: the uncertain band's edge, read on
+        # what perception itself said, then a band candidate the local VLM
+        # already said yes to taken as a detection.
+        local_on = self.local_identity_fn is not None
+        band = self._band_observe(perception) if local_on else None
+        if local_on:
+            perception = self._promote(perception)
+        self._perception_this_frame = perception
 
         # B3.2 still owns the failure budget. An async call that failed is
         # raised on the first frame after it lands rather than swallowed,
@@ -782,6 +819,27 @@ class TieredVision:
             raise err
 
         trigger = self._trigger_for(perception)
+        escalated = False
+        if local_on:
+            # 3.80.D, the user's strict order: every question goes to the
+            # local VLM first; the cloud only after `local_max_unable` unable
+            # answers in a row, or when the local tier is absent.
+            pending = self._pending_question
+            if pending == TRIGGER_UNCERTAIN and self._band_candidate(perception) is None:
+                # Its candidate is out of view: nothing is left to ask about,
+                # and a yes now would be about something else (review).
+                pending = self._pending_question = None
+                self._sight_unable = 0
+            if pending is not None and self._sight_unable >= self.local_max_unable:
+                # The question the local tier could not answer is the
+                # cloud's; a fresh one on this frame neither jumps the local
+                # tier nor is dropped: it is the next local question (review).
+                fresh = trigger or band
+                trigger, escalated = pending, True
+            else:
+                question = trigger or band or pending
+                if question is not None:
+                    return self._ask_local(frame, question, perception, frame_epoch)
         if trigger is None:
             self._since_call += 1
             return self._local_scene(perception)
@@ -795,13 +853,19 @@ class TieredVision:
         if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
             logger.warning("call cap %d reached -- not firing %s",
                            self.max_calls, trigger)
+            if escalated:
+                # The cloud is spent: the local tier goes on answering.
+                self._sight_unable = 0
+                self._pending_question = None
             return self._local_scene(perception, note="call cap reached")
 
         if self.async_cloud and self._inflight is not None:
             # One call at a time. A second dispatch while the first is
             # outstanding is how replays used to lose frames (CLAUDE.md's
             # note on stacking replays on one vision task), and it would
-            # also spend twice for one answer.
+            # also spend twice for one answer. 3.80.D: an escalated question
+            # waits, and the call out answers it when it lands
+            # (`_collect_inflight`), never a second call behind it.
             return self._local_scene(
                 perception,
                 note=f"{self._inflight_trigger} call still in flight")
@@ -811,6 +875,10 @@ class TieredVision:
 
         self.stats.cloud_calls += 1
         self.stats.triggers[trigger] = self.stats.triggers.get(trigger, 0) + 1
+        if escalated:
+            self.stats.escalations += 1
+            self._sight_unable = 0
+            self._pending_question = fresh if fresh != trigger else None
         self._absent_streak = 0
         self._since_call = 0
         self._mark_odometry_call()
@@ -821,6 +889,8 @@ class TieredVision:
                 # is counted as a call.
                 self.stats.cloud_calls -= 1
                 self.stats.triggers[trigger] -= 1
+                if escalated:
+                    self.stats.escalations -= 1
                 return self._local_scene(perception, note="mission ended")
             return self._local_scene(perception, note="dispatched",
                                      dispatched=trigger)
@@ -833,6 +903,7 @@ class TieredVision:
         # synchronous mission had nothing to hold and silently kept
         # scanning -- the exact behaviour Phase F exists to remove.
         self._last_cloud_scene = scene
+        self._cloud_answered_band(trigger, scene, perception)
         return self._annotate(scene, perception, trigger)
 
     def wait_inflight(self) -> None:
@@ -910,37 +981,57 @@ class TieredVision:
         An unable answer is `undecided`: neither confirmed nor refused, and
         the agent asks again on the next arrival frame."""
         s = self.stats
-        with self._local_lock:
-            # An arrival frame: the arrival is still on (arrival_ended's run
-            # of frames off it starts again), whichever tier is asked.
-            self._frames_off_arrival = 0
-            if call_id is None:
-                self._local_started += 1
-                call_id = self._local_started
-            if call_id in self._local_abandoned:
-                # Given up on before its thread got here: never sent.
-                self._local_abandoned.discard(call_id)
-                return None
-            if not self.next_confirm_is_local():
-                self._local_done = (call_id, None)
-                return None
-            if self._local_inflight is not None:
-                # The last local check outlived the runner's deadline and is
-                # still out: one request at a time, so this frame sends none,
-                # and it counts as unable (bug pass review, 2026-10-14).
-                verdict = {"cloud_called": False, "local_called": False, "tier": "local",
-                           "local_status": "busy", "local_score": None,
-                           **self._count_unable("unable_inflight",
-                                                "the previous local check is still running")}
-                self._local_done = (call_id, verdict)
-                return verdict
-            self._local_inflight = call_id
-        started = time.perf_counter()
-        try:
-            got = self.local_identity_fn(frame) or {}
-            error = None
-        except Exception as e:  # noqa: BLE001 -- LocalVLMAbsent, or a fault in the client
-            got, error = None, e
+        while True:
+            with self._local_lock:
+                self._arrival_waiting = None
+                # An arrival frame: the arrival is still on (arrival_ended's
+                # run of frames off it starts again), whichever tier is asked.
+                self._frames_off_arrival = 0
+                if call_id is None:
+                    self._local_started += 1
+                    call_id = self._local_started
+                if call_id in self._local_abandoned:
+                    # Given up on before its thread got here: never sent.
+                    self._local_abandoned.discard(call_id)
+                    return None
+                if not self.next_confirm_is_local():
+                    self._local_done = (call_id, None)
+                    return None
+                sight = self._sight_call
+                if (sight is not None and sight[0] == self._local_inflight
+                        and sight[3].done()):
+                    # Ended (or cancelled at a Stop) a moment before its own
+                    # release ran: not out any more.
+                    self._local_inflight = None
+                if (self._local_inflight is not None and sight is not None
+                        and sight[0] == self._local_inflight):
+                    # 3.80.D: a frame's question is out. One request at a
+                    # time: wait for it (inside the runner's local budget),
+                    # then ask the arrival's own -- never beside it, and
+                    # never counted unable for it.
+                    wait_on = sight[3]
+                    self._arrival_waiting = call_id
+                else:
+                    if self._local_inflight is not None:
+                        # The last local check outlived the runner's deadline
+                        # and is still out: one request at a time, so this
+                        # frame sends none, and it counts as unable (bug pass
+                        # review, 2026-10-14).
+                        verdict = {"cloud_called": False, "local_called": False,
+                                   "tier": "local", "local_status": "busy",
+                                   "local_score": None,
+                                   **self._count_unable(
+                                       "unable_inflight",
+                                       "the previous local check is still running")}
+                        self._local_done = (call_id, verdict)
+                        return verdict
+                    self._local_inflight = call_id
+                    break
+            try:
+                wait_on.result()
+            except BaseException:  # noqa: BLE001 -- cancelled at a Stop; its own collector decides
+                pass
+        got, error, ms = self._timed_local(self.local_identity_fn, frame)
         with self._local_lock:
             if self._local_inflight == call_id:
                 self._local_inflight = None
@@ -949,35 +1040,44 @@ class TieredVision:
                 # (abandon_local); a late answer changes nothing.
                 self._local_abandoned.discard(call_id)
                 return None
-            s.record("local_ms", (time.perf_counter() - started) * 1000)
+            s.record("local_ms", ms)
             verdict = self._local_verdict(got, error)
             self._local_done = (call_id, verdict)
             return verdict
 
+    def _classify_local(self, got: Optional[dict], error: Optional[BaseException]):
+        """`(kind, status, score, what)` for one local answer: kind `absent`
+        (the call raised), `yes`, `no`, or `unable_<why>`. The arrival's and
+        the frames' questions read it the same way."""
+        if error is not None:
+            return "absent", None, None, str(error)
+        status, score = got.get("status"), got.get("score")
+        numeric = isinstance(score, (int, float))
+        if status == "answered" and numeric:
+            if score >= LOCAL_YES_AT:
+                return "yes", status, score, f"score {score:.2f}"
+            if score <= self.local_no_below:
+                return "no", status, score, f"score {score:.2f}"
+        kind = (f"unable_{status}" if status != "answered"
+                else "unable_band" if numeric else "unable_noscore")
+        what = f"score {score:.2f}" if numeric else (got.get("reason") or status or "no reply")
+        return kind, status, score, what
+
     def _local_verdict(self, got: Optional[dict], error: Optional[BaseException]):
         s = self.stats
-        if error is not None:
+        kind, status, score, what = self._classify_local(got, error)
+        if kind == "absent":
             s.local["absent"] = s.local.get("absent", 0) + 1
             logger.warning("local VLM absent at arrival (%s); asking the cloud", error)
             return None
         s.local_calls += 1
-        status, score = got.get("status"), got.get("score")
         base = {"cloud_called": False, "local_called": True, "tier": "local",
                 "local_status": status, "local_score": score}
-        if status == "answered" and isinstance(score, (int, float)):
-            if score >= LOCAL_YES_AT:
-                s.local["yes"] = s.local.get("yes", 0) + 1
-                return {**base, "confirmed": True, "stats": s.as_dict(),
-                        "reason": f"the local model sees the target (score {score:.2f})"}
-            if score <= self.local_no_below:
-                s.local["no"] = s.local.get("no", 0) + 1
-                return {**base, "confirmed": False, "stats": s.as_dict(),
-                        "reason": f"the local model does not see the target "
-                                  f"(score {score:.2f})"}
-        kind = (f"unable_{status}" if status != "answered"
-                else "unable_band" if isinstance(score, (int, float)) else "unable_noscore")
-        what = (f"score {score:.2f}" if isinstance(score, (int, float))
-                else (got.get("reason") or status or "no reply"))
+        if kind in ("yes", "no"):
+            s.local[kind] = s.local.get(kind, 0) + 1
+            return {**base, "confirmed": kind == "yes", "stats": s.as_dict(),
+                    "reason": (f"the local model sees the target ({what})" if kind == "yes"
+                               else f"the local model does not see the target ({what})")}
         return {**base, **self._count_unable(kind, what)}
 
     def abandon_local(self, call_id: Optional[int] = None) -> Optional[dict]:
@@ -991,6 +1091,17 @@ class TieredVision:
             if self._local_done is not None and self._local_done[0] == cid:
                 return self._local_done[1]
             self._local_abandoned.add(cid)
+            if self._arrival_waiting == cid:
+                # 3.80.D: it was waiting for a frame's question to the local
+                # tier; never asked, so not an unable answer (review).
+                self._arrival_waiting = None
+                s = self.stats
+                s.local["arrival_waited"] = s.local.get("arrival_waited", 0) + 1
+                return {"cloud_called": False, "local_called": False, "tier": "local",
+                        "local_status": "busy", "local_score": None,
+                        "confirmed": False, "undecided": True, "stats": s.as_dict(),
+                        "reason": "a frame's question to the local model was still "
+                                  "out; asking again"}
             if self._local_inflight != cid:
                 # Its thread never got as far as sending: not a local call,
                 # but the arrival waited its share all the same.
@@ -1012,6 +1123,209 @@ class TieredVision:
         return {"confirmed": False, "undecided": True, "stats": s.as_dict(),
                 "reason": (f"the local model could not decide ({what}); "
                            + ("asking the cloud next" if last else "asking again"))}
+
+    # -- 3.80.D: the frames' questions through the local tier --------------
+
+    def _ask_local(self, frame: dict, trigger: str, perception: Perception,
+                   epoch: int) -> dict:
+        """Send this frame's question to the local VLM on its own worker and
+        return the stand-in now. One local request at a time, the arrival's
+        included: with one out, this question waits for the next frame."""
+        with self._local_lock:
+            busy = self._local_inflight is not None
+            if not busy:
+                self._local_started += 1
+                call_id = self._local_inflight = self._local_started
+        if busy:
+            self._pending_question = trigger
+            return self._local_scene(perception, note=f"{trigger}: a local check is still out")
+        with self._executor_lock:
+            if self._closed or epoch != self._epoch:
+                fut = None
+            else:
+                if self._local_executor is None:
+                    self._local_executor = ThreadPoolExecutor(
+                        max_workers=1, thread_name_prefix="tiered-local")
+                fut = self._local_executor.submit(self._call_local, call_id, frame, epoch)
+                with self._local_lock:
+                    self._sight_call = (call_id, trigger, perception, fut, epoch)
+        if fut is None:
+            self._release_local(call_id)
+            return self._local_scene(perception, note="mission ended")
+        # A call cancelled before it ran (close() at a Stop) never reaches
+        # _call_local's own release.
+        fut.add_done_callback(lambda _f, cid=call_id: self._release_local(cid))
+        self._pending_question = None
+        self.stats.local_triggers[trigger] = self.stats.local_triggers.get(trigger, 0) + 1
+        if trigger == TRIGGER_UNCERTAIN:
+            self._band_armed = False
+        # Paced from the question, as a cloud dispatch is; an answer resets
+        # it again when it lands (3.76), an unable one asks again.
+        self._absent_streak = 0
+        self._since_call = 0
+        self._mark_odometry_call()
+        if not self.async_cloud:
+            # A synchronous policy waits for its answers, this one included.
+            try:
+                fut.result()
+            except BaseException:  # noqa: BLE001 -- cancelled at a Stop
+                pass
+            self._collect_local()
+        return self._local_scene(perception, note=f"asked the local VLM ({trigger})",
+                                 local_dispatched=trigger)
+
+    def _release_local(self, call_id: int) -> None:
+        with self._local_lock:
+            if self._local_inflight == call_id:
+                self._local_inflight = None
+
+    @staticmethod
+    def _timed_local(fn, frame: dict) -> tuple:
+        """`(reply, error, ms)` for one local call, the arrival's or a
+        frame's. Never raises: the local tier failing is never a mission
+        failure."""
+        started = time.perf_counter()
+        try:
+            got, error = fn(frame) or {}, None
+        except Exception as e:  # noqa: BLE001 -- LocalVLMAbsent, or a fault in the client
+            got, error = None, e
+        return got, error, (time.perf_counter() - started) * 1000
+
+    def _call_local(self, call_id: int, frame: dict, epoch: int) -> Optional[tuple]:
+        """Runs on the local worker: `(reply, error, ms)`, or None when the
+        mission moved on before it started. Never raises."""
+        try:
+            fn = self.local_identity_fn
+            if fn is None or epoch != self._epoch:
+                return None
+            return self._timed_local(fn, frame)
+        finally:
+            self._release_local(call_id)
+
+    def _collect_local(self) -> None:
+        """Apply a frame's local answer that has landed. Never waits. The
+        take is atomic, as `_collect_inflight`'s is."""
+        with self._local_lock:
+            call = self._sight_call
+            if call is None or not call[3].done():
+                return
+            self._sight_call = None
+        _cid, trigger, perception, fut, epoch = call
+        if epoch != self._epoch or fut.cancelled():
+            return
+        try:
+            got = fut.result()
+        except BaseException:  # noqa: BLE001 -- _call_local never raises; defensive
+            got = None
+        if got is None:
+            return
+        self._land_local(trigger, perception, *got)
+
+    def _land_local(self, trigger: str, perception: Perception, got, error, ms) -> None:
+        s = self.stats
+        kind, status, score, what = self._classify_local(got, error)
+        with self._local_lock:
+            # Counted as the arrival's are (`confirm_local`, `_local_verdict`).
+            s.local[kind] = s.local.get(kind, 0) + 1
+            s.record("local_ms", ms)
+            if kind != "absent":
+                s.local_calls += 1
+        self._local_landed = {"trigger": trigger, "answer": kind, "score": score,
+                              "status": status}
+        if kind in ("yes", "no"):
+            # Answered: pacing counts from here, as from a cloud answer. A
+            # question held back while this one was out is still asked.
+            self._sight_unable = 0
+            if self._pending_question == trigger:
+                self._pending_question = None
+            self._absent_streak = 0
+            self._since_call = 0
+            self._mark_odometry_call()
+            if trigger == TRIGGER_UNCERTAIN and kind == "yes":
+                # Only a candidate that was in the band on the frame asked
+                # about: a yes on any other frame is not about it (review).
+                cand = self._band_candidate(perception)
+                if cand is not None:
+                    self._band_label = cand.detection.label
+            return
+        # Not answered: the same question next frame -- to the cloud once the
+        # local tier has been unable `local_max_unable` times, or is absent --
+        # unless a newer one is already waiting, which is asked instead.
+        if self._pending_question is None:
+            self._pending_question = trigger
+        if kind == "absent":
+            logger.info("local VLM absent for %s (%s); asking the cloud", trigger, what)
+            self._sight_unable = self.local_max_unable
+        else:
+            self._sight_unable += 1
+
+    def _band_candidate(self, perception: Perception):
+        """The frame's strongest candidate if perception called the frame
+        absent and it is in the uncertain band; else None."""
+        if perception.status != ABSENT:
+            return None
+        cand = perception.strongest()
+        return cand if cand is not None and cand.probability >= self.local_band_low else None
+
+    def _cloud_answered_band(self, trigger: Optional[str], scene: dict,
+                             perception: Optional[Perception]) -> None:
+        """A band question the local tier handed up: the cloud's yes
+        promotes the candidate as the local tier's would (review), so the
+        call it cost is not thrown away."""
+        if trigger != TRIGGER_UNCERTAIN or perception is None:
+            return
+        if (scene.get("_navigate") or {}).get("target_visible") is True:
+            cand = self._band_candidate(perception)
+            if cand is not None:
+                self._band_label = cand.detection.label
+
+    def _band_observe(self, perception: Perception) -> Optional[str]:
+        """The uncertain band's edge: `TRIGGER_UNCERTAIN` once per run of
+        `consecutive_frames` absent frames whose strongest candidate has P
+        at or above `local_band_low`; a frame without one arms it again.
+        `unavailable` says nothing and changes nothing."""
+        if perception.status == UNAVAILABLE:
+            return None
+        cand = self._band_candidate(perception)
+        if cand is None:
+            self._band_run = 0
+            self._band_armed = True
+            if perception.status != DETECTED:
+                # Gone from view: a later candidate is a new question.
+                self._band_label = None
+            return None
+        self._band_run += 1
+        if self._band_label is not None and cand.detection.label == self._band_label:
+            return None   # already confirmed; _promote takes it as a detection
+        if self._band_armed and self._band_run >= self.consecutive_frames:
+            return TRIGGER_UNCERTAIN
+        return None
+
+    def _promote(self, perception: Perception) -> Perception:
+        """A band candidate of the label the local VLM said yes to, taken as
+        this frame's detection; anything else unchanged."""
+        if self._band_label is None:
+            return perception
+        cand = self._band_candidate(perception)
+        if cand is None or cand.detection.label != self._band_label:
+            return perception
+        return perception.promoted(
+            cand, f"{cand.detection.label} @ P {cand.probability:.3f}, below the gate; "
+                  "the local VLM said yes")
+
+    def _local_readout(self, dispatched: Optional[str] = None, consume: bool = True) -> dict:
+        """The frame's `_tier` keys for the local tier; none without one, so
+        a policy with it off publishes exactly what it did before 3.80.D."""
+        if self.local_identity_fn is None and self._local_landed is None:
+            return {}
+        landed = self._local_landed
+        if consume:
+            self._local_landed = None
+        call = self._sight_call
+        return {"local_dispatched": dispatched,
+                "local_in_flight": call[1] if call is not None else None,
+                "local_landed": landed,
+                "local_unable": self._sight_unable}
 
     def confirm_cloud(self, frame: dict) -> dict:
         """One paid, synchronous cloud call on the ARRIVAL frame: is the
@@ -1045,8 +1359,10 @@ class TieredVision:
         self.stats.triggers[TRIGGER_ARRIVAL] = self.stats.triggers.get(TRIGGER_ARRIVAL, 0) + 1
         with self._local_lock:
             self._frames_off_arrival = 0
-        if self.local_identity_fn is not None and not self.next_confirm_is_local():
-            # 3.80.C: an arrival the local tier could not decide, handed up.
+        if self.local_identity_fn is not None:
+            # 3.80.C: an arrival the local tier could not decide, or found
+            # absent, handed up (3.80.D review: absent counts too, so with a
+            # local tier every cloud call is an escalation).
             self.stats.escalations += 1
         started = time.perf_counter()
         try:
@@ -1135,6 +1451,11 @@ class TieredVision:
         self._absent_streak = 0
         self._since_call = 0
         self._mark_odometry_call()
+        if self._sight_unable >= self.local_max_unable:
+            # 3.80.D: a question escalated while this call was out is
+            # answered by it (review: never a paid call straight behind it).
+            self._sight_unable = 0
+            self._pending_question = None
         try:
             scene = fut.result()
         except BaseException as exc:  # noqa: BLE001
@@ -1155,6 +1476,7 @@ class TieredVision:
             # orphaned-call bug.
             return
         self._last_cloud_scene = scene
+        self._cloud_answered_band(trigger, scene, perception)
         # Run the annotation for its SIDE EFFECTS -- corroboration and the
         # stats 6.3 puts on the panel -- against the perception this call
         # was actually made on, not whatever is in front of the camera now.
@@ -1182,6 +1504,12 @@ class TieredVision:
             self._inflight_perception = None
         self._landed_corroboration = None
         self._pending_error = None
+        # 3.80.D: a frame's local question out is dropped with the epoch (it
+        # still holds the one local slot until its request ends).
+        with self._local_lock:
+            self._sight_call = None
+        self._pending_question = None
+        self._local_landed = None
 
     def close(self) -> None:
         """Release the worker thread. Safe to call more than once.
@@ -1205,6 +1533,9 @@ class TieredVision:
             if self._executor is not None:
                 self._executor.shutdown(wait=False, cancel_futures=True)
                 self._executor = None
+            if self._local_executor is not None:
+                self._local_executor.shutdown(wait=False, cancel_futures=True)
+                self._local_executor = None
 
     def _held_direction(self) -> Optional[str]:
         """The last direction the cloud gave, if there is one.
@@ -1365,7 +1696,8 @@ class TieredVision:
     # -- what comes back -------------------------------------------------
 
     def _local_scene(self, perception: Perception, note: str = "",
-                     dispatched: Optional[str] = None) -> dict:
+                     dispatched: Optional[str] = None,
+                     local_dispatched: Optional[str] = None) -> dict:
         """The stand-in. Same schema `brain/navigate.py` produces, so every
         consumer is unchanged -- but `_navigate.reasoning` says plainly
         that no model was asked, because a log line that reads like a
@@ -1502,6 +1834,8 @@ class TieredVision:
                       "holding": held,
                       "vocabulary": self._vocabulary_readout(),
                       "pacing": self._pacing_readout(),
+                      # 3.80.D: the local tier's question this frame.
+                      **self._local_readout(local_dispatched),
                       "stats": self.stats.as_dict()},
         }
 
@@ -1642,6 +1976,7 @@ class TieredVision:
                         "corroboration": corroboration,
                         "vocabulary": self._vocabulary_readout(),
                         "pacing": self._pacing_readout(),
+                        **self._local_readout(consume=executed),
                         "stats": self.stats.as_dict()}
         return out
 
