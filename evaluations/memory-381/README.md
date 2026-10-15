@@ -22,3 +22,4 @@ these; this file says what each one is.
     `nav.log`, `wheel.log`, `run.log`.
 * The void first attempt (weights downloaded inside the window) stays on
   the board as `~/out-381/A1-invalid-download`, not copied.
+* `C1/`: 3.81.C, A1's window with T1-T3 (NOTE.md says which files ran); `tables.md` at the window's minimum.
