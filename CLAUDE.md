@@ -323,9 +323,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   a hung call outlived the Lambda; the tunnel served an empty
   `LOCAL_SECRET` open (`run.sh` now refuses one under 16 characters).
   The vision Lambda and the deploy bucket's 365-day retention deployed
-  2026-10-14. Open: a refused goal lifts a stop's hold
-  (`robot/server.py`); a bridge 401 on a goal makes explore wait out the
-  time limit. **Batches F and G (recorded walks, the inventory and the late
+  2026-10-14. Its two open goal bugs are fixed by 3.82 (below).
+  **A refused goal keeps a Stop's hold (3.82), merged 2026-10-15:** a
+  goal supersedes a Stop's goal-ending loop only when the bridge took it
+  and no Stop was counted since the request arrived (live, a refused goal
+  right after a Stop: 0 cm true vs 128 cm on `dev`); a bridge that refuses
+  the secret ends explore `failed` naming the 401 (one retry rule,
+  `world/bridge_faults.py`). Open items:
+  `HANDOFF-2026-10-15-3.82-refused-goal-hold.md`. **Batches F and G (recorded walks, the inventory and the late
   identity check), merged and deployed 2026-10-14** (walks Lambda and
   consoles from `5fcb7bb`; G runs in the brain, no deploy). F: 20 fixed,
   one a security bug -- the metrics console put stored text into
