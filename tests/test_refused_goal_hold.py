@@ -510,7 +510,8 @@ def test_a_tap_a_stop_overtook_while_it_waited_for_the_lock_is_never_sent(rig):
     """The goal route read the stop generation only once it held
     `goal_stop_lock`. A tap waiting behind a Stop's loop, then a second Stop:
     if the tap got the lock first it took the second Stop's generation as
-    its own, superseded it, and nav2 drove after that Stop."""
+    its own, superseded it, and nav2 drove after that Stop. Now a tap a Stop
+    overtook while it waited is refused `stopped`, never sent."""
     client, bridge, world, nav2_tick, wheel_speeds, drive_for, wait_until = rig
     _goal_a_driving(client, bridge, nav2_tick, wheel_speeds)
     bridge.get_gate = threading.Event()
@@ -559,3 +560,37 @@ def test_of_two_taps_around_a_stop_only_the_later_one_is_sent(rig):
     assert replies["t1"]["accepted"] is False, replies
     assert replies["t2"]["accepted"] is True, replies
     assert drive_for(STOP_HOLD_S + 1.0) > 0.0, "the later tap never drove"
+
+
+
+# ---------- review round 6 ----------
+
+
+def test_two_taps_with_no_stop_between_are_both_sent(rig):
+    """Round 5 judged staleness by the generation, which an accepted goal
+    also moves: a second tap that waited behind the first was refused
+    'stopped' -- no Stop was pressed -- and the person's correction lost."""
+    client, bridge, world, nav2_tick, wheel_speeds, drive_for, wait_until = rig
+    bridge.post_gate, bridge.post_entered = threading.Event(), threading.Event()
+    replies = {}
+
+    def tap(name, x, y):
+        replies[name] = client.post("/world/goal", json={"x_m": x, "y_m": y},
+                                    headers={"x-driver": "twin-dpad"}).json()
+
+    t1 = threading.Thread(target=tap, args=("t1", 2.0, 1.0))
+    t1.start()
+    assert bridge.post_entered.wait(5.0)
+    t2 = threading.Thread(target=tap, args=("t2", 1.0, 2.0))
+    t2.start()
+    time.sleep(0.5)                                  # tap 2 waits on goal_stop_lock
+    bridge.post_gate.set()
+    t1.join(5.0)
+    t2.join(5.0)
+    assert replies["t1"]["accepted"] is True and replies["t2"]["accepted"] is True, replies
+
+
+def test_the_bridge_secret_is_sent_without_a_files_newline():
+    from world.ros_world import RosWorld
+    world = RosWorld("http://bridge", secret="s3cret\n")
+    assert world._http.headers["x-app-secret"] == "s3cret"

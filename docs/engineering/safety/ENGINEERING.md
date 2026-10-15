@@ -141,8 +141,8 @@ brain was deleted 2026-09-25).
    naming a person is with the bridge (`state["verbs_running"]`, every drive
    path, 3.76 A1; the goal since 3.82), else `driver` until
    `watchdog_timeout_s` after `driver_at`. A verb's end re-stamps
-   `driver_at` if its driver still holds the robot, so a verb longer than
-   the timeout never lapses mid-run; a person's goal re-stamps it only when
+   `driver_at` if its driver still holds the robot, before the count drops,
+   so a verb longer than the timeout never lapses mid-run; a person's goal re-stamps it only when
    the bridge took the goal, and otherwise gives the slot back to whoever
    held it if nobody has driven since.
 3. Lower rank than the holder: refuse `preempted`.
@@ -177,13 +177,14 @@ a non-zero `/wheels` from `ros` is treated as zero: under ROS drive it is
 applied as zero; under direct drive it takes the zero-command branch. A
 newer stop or an accepted `POST /world/goal` bumps the generation, so one
 loop runs at a time and never cancels a new goal (the goal route sets it
-under the same lock). The goal route reads the generation as the
-request arrives -- before it waits on `goal_stop_lock` -- and, only when
-`set_goal()`'s answer is `accepted: true` and the generation is still the
-one it read, bumps it and clears the hold (3.82). A goal whose generation
-has already moved on when it gets the lock -- a stop pressed while it
-waited -- is answered `{"accepted": false, "reason": "stopped"}` without
-being sent:
+under the same lock). A person's stop also counts itself in
+`goal_stop["stops"]`, which only stops move. The goal route reads that count
+as the request arrives -- before arbitration and any wait on
+`goal_stop_lock` -- and, only when `set_goal()`'s answer is `accepted: true`
+and no stop has been pressed since, bumps the generation and clears the hold
+(3.82). A goal a stop overtook while it waited for the lock is answered
+`{"accepted": false, "reason": "stopped"}` without being sent; another goal
+accepted meanwhile does not make it stale:
 a refused goal (bridge unreachable, its 409, nav2 down, `accepted: false`)
 never existed, so the stop's loop keeps ending the goal it was for and
 keeps its hold; and a stop that landed while `set_goal()` was in flight owns the

@@ -112,6 +112,11 @@ def _json_object(r: httpx.Response) -> dict:
 class RosWorld(WorldInterface):
     def __init__(self, bridge_url: str, secret: str = "", truth: Optional[WorldInterface] = None,
                  timeout_s: float = 2.0, client: Optional[httpx.Client] = None):
+        # Stripped (3.82): a secret read from a file with its newline makes
+        # every request unsendable (httpx's LocalProtocolError), which no
+        # retry rule can tell from a dropped connection. A bridge that kept
+        # the newline in its own secret answers 401, named as such.
+        secret = (secret or "").strip()
         headers = {"x-app-secret": secret} if secret else {}
         self._http = client or httpx.Client(base_url=bridge_url.rstrip("/"), headers=headers,
                                             timeout=timeout_s)

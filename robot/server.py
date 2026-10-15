@@ -429,7 +429,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     motion_lock = threading.Lock()
     # A stop ending a nav2 goal (see _end_goal_after_stop): the generation,
     # and whether nav2's wheel commands are held at zero meanwhile.
-    goal_stop = {"gen": 0, "hold": False}
+    # `stops` counts person stops alone (3.82): a goal that one overtook
+    # while it waited is never sent; `gen` also moves on an accepted goal.
+    goal_stop = {"gen": 0, "hold": False, "stops": 0}
     # Serialises the bridge calls that start or end a goal: held ACROSS them.
     goal_stop_lock = threading.Lock()
     # Guards `goal_stop` itself and is never held across a bridge call, so
@@ -620,9 +622,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             yield
         finally:
             with verbs_lock:
+                # Re-stamped before the count drops (3.82), so the claim
+                # never reads as lapsed in between.
+                if state["driver"] == driver and restamp():
+                    state["driver_at"] = time.monotonic()
                 state["verbs_running"] -= 1
-            if state["driver"] == driver and restamp():
-                state["driver_at"] = time.monotonic()
 
     def _carry_out(req: ActionRequest, driver: str, now: float):
         try:
@@ -823,6 +827,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         if hasattr(world_model, "cancel_goal") and not spares_goal:
             with goal_gen_lock:
                 goal_stop["gen"] += 1
+                goal_stop["stops"] += 1
                 goal_stop["hold"] = True
                 gen = goal_stop["gen"]
             threading.Thread(target=_end_goal_after_stop, args=(gen,), daemon=True,
@@ -1047,6 +1052,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         as one -- it takes the robot from the brain, whose next command is
         refused `preempted`, exactly as a D-pad press does. A goal naming no
         one keeps 3.23's rank: scripts and the nav suites post those."""
+        # The stops as the request ARRIVED, before arbitration or any wait
+        # (3.82): a stop pressed after the tap was sent overtakes it.
+        with goal_gen_lock:
+            stops = goal_stop["stops"]
         world = _goals()
         now = time.monotonic()
         person = (x_driver or "").strip()
@@ -1076,11 +1085,6 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             if claim is not None and state["driver"] == person and state["driver_at"] == now:
                 state["driver"], state["driver_at"] = claim
 
-        # The generation as the request ARRIVED, before any wait on the lock
-        # (3.82): a stop pressed after the tap -- while it waited behind a
-        # stop's loop, or while the bridge answered -- is newer, and wins.
-        with goal_gen_lock:
-            gen = goal_stop["gen"]
         accepted = False
         try:
             # The person's claim is held for as long as this takes, however
@@ -1089,9 +1093,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                   else nullcontext()):
                 with goal_stop_lock:
                     with goal_gen_lock:
-                        stale = goal_stop["gen"] != gen
+                        stale = goal_stop["stops"] != stops
                     if stale:
-                        # A stop landed while this waited: it was never sent.
+                        # A stop was pressed while this waited: never sent.
                         return {"accepted": False, "reason": "stopped",
                                 "detail": "a stop was pressed after this goal was sent; "
                                           "the goal was not passed to nav2"}
@@ -1107,11 +1111,13 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     accepted = isinstance(reply, dict) and reply.get("accepted") is True
                     if accepted:
                         with goal_gen_lock:
-                            # A stop that landed while set_goal() was in
-                            # flight owns a newer generation: its loop,
-                            # waiting on goal_stop_lock, ends the goal just
-                            # taken. Never supersede it.
-                            if goal_stop["gen"] == gen:
+                            # A stop pressed while set_goal() was in flight
+                            # owns a newer loop, which, waiting on
+                            # goal_stop_lock, ends the goal just taken. Never
+                            # supersede it. (Another goal accepted meanwhile
+                            # moved `gen` on; this one supersedes the loop
+                            # all the same.)
+                            if goal_stop["stops"] == stops:
                                 goal_stop["gen"] += 1
                                 goal_stop["hold"] = False
                     return reply
