@@ -865,7 +865,9 @@ class TieredVision:
             if w is not None and not self._in_view(w):
                 # Its candidate's episode ended: nothing left to ask about.
                 w = self._waiting = None
-            fresh = trigger or band
+            # A question about what is in view goes first (review 5): a
+            # navigation trigger on the band's frame fires again on its counts.
+            fresh = band if band is not None and trigger in NAVIGATION_QUESTIONS else (trigger or band)
             fq = self._question(fresh) if fresh is not None else None
             if w is not None and fq is not None and not fq.same(w):
                 if fq.trigger in IDENTITY_QUESTIONS and w.trigger not in IDENTITY_QUESTIONS:
@@ -879,6 +881,7 @@ class TieredVision:
                 # episode's tolerance): an answer would be about something
                 # else, so the question waits for one that shows it.
                 self._waiting = q
+                self._since_call += 1       # a free frame for pacing (review 5)
                 return self._local_scene(perception, note=f"{q.trigger}: waiting for a frame that shows it")
             if q is not None and q.unable < self.local_max_unable:
                 return self._ask_local(frame, q, perception, frame_epoch)
@@ -1345,10 +1348,13 @@ class TieredVision:
         if not self._in_view(q):
             return                      # its episode ended while it was out
         w = self._waiting
+        if (w is not None and w.trigger in IDENTITY_QUESTIONS
+                and q.trigger not in IDENTITY_QUESTIONS):
+            # A question about what is in view waits: it goes first; this
+            # navigation one fires again on its own counts (review 5).
+            return
         if w is not None and not w.same(q):
-            # This one is the older: it keeps the slot, the newer fires again
-            # (and, if it is about what is in view, displaces a navigation
-            # question in `__call__`'s one rule).
+            # This one is the older: it keeps the slot, the newer fires again.
             self._rearm(w.trigger)
         self._waiting = q
 
@@ -1375,6 +1381,13 @@ class TieredVision:
         candidate `consecutive_frames` frames running, and once per episode
         unless re-armed. `unavailable` says nothing and changes nothing."""
         if perception.status == UNAVAILABLE:
+            return None
+        if perception.status == DETECTED:
+            # The object crossed the gate: still in view, so its episode (and
+            # a yes to it) holds; it is not a band frame (review 5).
+            self._band_run = 0
+            if self._band_ep is not None:
+                self._band_off = 0
             return None
         if self._band_candidate(perception) is None:
             self._band_run = 0
@@ -1432,11 +1445,13 @@ class TieredVision:
         if consume:
             self._local_landed = None
         call, w = self._sight_call, self._waiting
+        # The count of the question being asked: waiting, or out (review 5).
+        counted = w if w is not None else (call[1] if call is not None else None)
         return {"local_dispatched": dispatched,
                 "local_in_flight": call[1].trigger if call is not None else None,
                 "local_landed": landed,
                 "local_waiting": w.trigger if w is not None else None,
-                "local_unable": w.unable if w is not None else 0}
+                "local_unable": counted.unable if counted is not None else 0}
 
     @property
     def _pending_question(self) -> Optional[str]:
@@ -1635,6 +1650,7 @@ class TieredVision:
         self._inflight_question = None
         self._band_ep = self._seen_ep = self._band_yes_ep = None
         self._band_off = self._seen_off = 0
+        self._band_run, self._band_armed = 0, True
         self._local_landed = None
 
     def close(self) -> None:

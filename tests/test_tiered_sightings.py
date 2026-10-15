@@ -881,3 +881,74 @@ def test_review3_a_one_frame_miss_is_the_same_question():
     run(tier, 9)
     assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 2, tier.stats.local_triggers
     assert tier.stats.triggers.get(TRIGGER_UNCERTAIN) == 1
+
+
+# ---------- fifth review (2026-10-15) ----------
+
+def test_review5_a_band_yes_holds_while_the_object_crosses_the_gate():
+    b = absent(cand(0.6, bearing=-30.0))
+    local = Local(no(), yes())
+    tier = tier_for(Script(absent(), b, b, b, *([detected()] * 4), b, b, b), local, Cloud())
+    scenes = run(tier, 11)
+    assert [s["_perception"]["status"] for s in scenes[8:]] == [DETECTED] * 3
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 1, tier.stats.local_triggers
+
+
+def test_review5_the_band_goes_before_a_navigation_trigger_on_the_same_frame():
+    b = absent(cand(0.6))
+    tier = tier_for(Script(absent(), absent(), b, b), Local(no()), Cloud(),
+                    consecutive_frames=1, cold_search_after=2)
+    scenes = run(tier, 3)
+    # Frame 3: cold_search reaches its bar as the band fires.
+    assert scenes[2]["_tier"]["local_dispatched"] == TRIGGER_UNCERTAIN
+
+
+def test_review5_a_navigation_question_landing_unable_never_takes_the_slot_from_a_band_one():
+    gate = threading.Event()
+    gate.set()
+    u = {"status": "unparsed", "score": None}
+    b = absent(cand(0.6))
+    local = Local(no(), u, no(), gate=gate)
+    tier = tier_for(Script(absent(), absent(), absent(), b, b, absent(), b, b), local,
+                    Cloud(), cold_search_after=2)
+    run(tier, 2)
+    gate.clear()
+    tier({})                                   # frame 3: cold_search out, held
+    tier({}), tier({})                         # frames 4-5: the band fires, waits
+    assert tier._pending_question == TRIGGER_UNCERTAIN
+    gate.set()
+    settle(tier)
+    s6 = tier({})                              # cold_search lands unable; a tolerance frame
+    assert tier._pending_question == TRIGGER_UNCERTAIN, "the band question kept the slot"
+    s7 = tier({})
+    assert s7["_tier"]["local_dispatched"] == TRIGGER_UNCERTAIN
+
+
+def test_review5_pacing_advances_while_a_question_waits():
+    b = absent(cand(0.6))
+    u = {"status": "unparsed", "score": None}
+    tier = tier_for(Script(absent(), b, b, *([Perception(status=UNAVAILABLE)] * 6)),
+                    Local(no(), u), Cloud())
+    run(tier, 9)
+    assert tier._since_call >= 5
+
+
+def test_review5_reset_epoch_clears_the_band_run():
+    b = absent(cand(0.6))
+    tier = tier_for(Script(absent(), *([b] * 6)), Local(no()), Cloud(), consecutive_frames=3)
+    run(tier, 6)
+    tier.reset_epoch()
+    assert tier._band_run == 0 and tier._band_armed
+
+
+def test_review5_the_unable_readout_holds_while_a_retry_is_out():
+    gate = threading.Event()
+    gate.set()
+    u = {"status": "unparsed", "score": None}
+    local = Local(u, u, gate=gate)
+    tier = tier_for(Script(absent()), local, Cloud())
+    run(tier, 1)                               # start: unable lands next frame
+    gate.clear()
+    s = tier({})                               # the retry goes out, held
+    assert s["_tier"]["local_unable"] == 1
+    gate.set()

@@ -157,7 +157,8 @@ the episode it is about. A band episode is a run of `absent` frames whose
 0.5), whatever the label (YOLOE's labels flicker); a detection episode a run
 of `detected` frames (`_seen_observe()`, after promotion). Either ends after
 `LOCAL_RESET_FRAMES` (3) frames without it; `unavailable` frames change
-nothing. The band fires once an episode has had a band candidate
+nothing, and a `detected` frame keeps a band episode on (the object crossed
+the gate). The band fires once an episode has had a band candidate
 `consecutive_frames` frames running, once per episode unless re-armed.
 `unable` is that question's own count of unable answers.
 
@@ -165,10 +166,12 @@ nothing. The band fires once an episode has had a band candidate
 episode has ended is dropped. A fresh question that is not the waiting one
 re-arms its edge (`_rearm()`: a spent candidate edge or the band;
 `cold_search` and `staleness` fire again on their own counts) and waits,
-except that an identity question displaces a waiting navigation one. A
+except that an identity question displaces a waiting navigation one (and
+goes first when both fire on one frame, or when the navigation one lands
+unable while it waits). A
 question is asked (`_ask_local()`) only on a frame that shows it
 (`_present()`: a usable frame; the band candidate or a detection for an
-identity question), else it waits. With C's one slot (`_local_inflight`)
+identity question), else it waits (a free frame for `staleness`'s count). With C's one slot (`_local_inflight`)
 taken, it waits (`_hold()`: in `_waiting` if free, else re-armed). Sent, the
 call runs on its own one-thread pool (`tiered-local`; a synchronous policy
 waits for it and collects it on the same frame), `_sight_call` holds `(id,
@@ -207,7 +210,8 @@ waiting. Both paths time the call with `_timed_local()` and record
 `reset_epoch()` drops `_sight_call`, the waiting question, the episodes and
 the landed readout. Each frame's `_tier` carries `local_dispatched`,
 `local_in_flight`, `local_landed` (`{trigger, answer, score, status}`, shown
-once), `local_waiting` and `local_unable`, and none of these keys without a
+once), `local_waiting` and `local_unable` (the waiting question's count, else
+the one out's), and none of these keys without a
 local tier.
 
 **What the hysteresis does and does not gate.** `consecutive_frames` is
