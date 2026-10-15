@@ -1095,3 +1095,40 @@ def test_review6_pacing_advances_on_a_busy_hold():
         assert tier._since_call >= 4
     finally:
         gate.set()
+
+
+
+# ---------- eighth review (2026-10-15) ----------
+
+def test_review8_the_merged_band_question_is_not_asked_again_in_its_episode():
+    gate = threading.Event()
+    gate.set()
+    u = {"status": "unparsed", "score": None}
+    b = absent(cand(0.6))
+    local, cloud = Local(no(), u, no(), gate=gate), Cloud()
+    frames = [absent(), absent(), b, b, *([detected()] * 3), b, b, b, b]
+    tier = tier_for(Script(*frames), local, cloud, cold_search_after=2)
+    run(tier, 2)
+    gate.clear()
+    tier({})                                   # frame 3: cold_search out (held)
+    tier({})                                   # frame 4: the band fires, waits behind it
+    tier({}), tier({})                         # frames 5-6: detected; the candidate merges it
+    assert tier._pending_question == TRIGGER_CANDIDATE
+    gate.set()
+    settle(tier)
+    for _ in range(len(frames) - 6):
+        tier({})
+        settle(tier)
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN, 0) == 0, tier.stats.local_triggers
+    assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE) == 1, tier.stats.local_triggers
+
+
+def test_review8_a_merged_spent_band_count_still_leaves_the_candidate_a_local_try():
+    from brain.tiered import _Question
+    tier = tier_for(Script(absent(), *([detected()] * 4)), Local(no()), Cloud(),
+                    consecutive_frames=1)
+    run(tier, 1)
+    tier._band_ep = 99
+    tier._waiting = _Question(TRIGGER_UNCERTAIN, 99, unable=2)
+    s = tier({})
+    assert s["_tier"]["local_dispatched"] == TRIGGER_CANDIDATE

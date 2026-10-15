@@ -876,11 +876,14 @@ class TieredVision:
                      else (trigger or band))
             fq = self._question(fresh) if fresh is not None else None
             if (w is not None and fq is not None and w.trigger == TRIGGER_UNCERTAIN
-                    and fq.trigger == TRIGGER_CANDIDATE and w.episode == self._band_ep):
+                    and fq.trigger == TRIGGER_CANDIDATE):
                 # The band's object crossed the gate: one question about it,
                 # now the candidate's, with the band's count -- never two
-                # (two paid calls) about one view (review 7).
-                fq.unable = max(fq.unable, w.unable)
+                # (two paid calls) about one view (review 7). Short of the
+                # max: the detection may be another object, and gets a local
+                # try (review 8); the band stays asked (disarmed).
+                fq.unable = max(fq.unable, min(w.unable, self.local_max_unable - 1))
+                self._band_armed = False
                 w = self._waiting = None
             if w is not None and fq is not None and not fq.same(w):
                 if (fq.trigger in IDENTITY_QUESTIONS and w.trigger not in IDENTITY_QUESTIONS
@@ -1649,7 +1652,8 @@ class TieredVision:
             # by it -- the cloud is asked one navigate question whatever the
             # trigger -- so no paid call follows straight behind (review). A
             # question about another view (a candidate, the band) still goes
-            # up, and so does one whose answer failed (bug pass 4).
+            # up. Only on a real answer: a failure answers nothing (bug pass
+            # 4), and a failed escalated question is not retried (review 7).
             self._waiting = None
             self._carried.pop(w.trigger, None)
         self._last_cloud_scene = scene

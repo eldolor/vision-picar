@@ -167,7 +167,9 @@ on to the next question of its kind for `CARRY_FRAMES` (6) frames
 spent one sends it up -- so a flickering target behind a slow, unable local
 tier still reaches the cloud, and a question minutes later starts at 0. When
 the band's object crosses the gate, the candidate question takes over the
-waiting band question and its count: one question about one view. Any answer, or an escalation,
+waiting band question (the band disarmed) and its count, short of the max:
+one question about one view, and still a local try (the detection may be
+another object). Any answer, or an escalation,
 clears it.
 
 *The one waiting slot (`_waiting`).* A waiting identity question whose
