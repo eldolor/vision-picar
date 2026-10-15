@@ -39,9 +39,10 @@ class RefusingBridge(SlowBridge):
         self.get_entered = threading.Event()
 
     def handler(self, request):
-        if request.url.path == "/goal" and request.method == "GET" and self.get_gate is not None:
+        gate = self.get_gate
+        if request.url.path == "/goal" and request.method == "GET" and gate is not None:
             self.get_entered.set()
-            self.get_gate.wait(5.0)
+            gate.wait(5.0)
         if (request.url.path == "/goal" and request.method in ("GET", "DELETE")
                 and self.refuse_reads):
             return httpx.Response(401, json={"error": "bad or missing x-app-secret"})
@@ -492,7 +493,6 @@ def test_a_secret_fault_on_a_goal_read_carries_the_bridges_own_words(monkeypatch
 
 def test_a_bridge_url_with_no_scheme_is_a_setup_fault():
     assert classify(httpx.UnsupportedProtocol("no scheme"))["retryable"] is False
-    assert classify(httpx.LocalProtocolError("illegal header value"))["retryable"] is False
     assert classify(httpx.ConnectError("refused"))["retryable"] is True
 
 
@@ -506,7 +506,7 @@ def test_a_mangled_status_header_never_raises():
 # ---------- review round 4 ----------
 
 
-def test_a_stop_pressed_while_a_tap_waits_for_the_lock_still_ends_the_tapped_goal(rig):
+def test_a_tap_a_stop_overtook_while_it_waited_for_the_lock_is_never_sent(rig):
     """The goal route read the stop generation only once it held
     `goal_stop_lock`. A tap waiting behind a Stop's loop, then a second Stop:
     if the tap got the lock first it took the second Stop's generation as
@@ -520,11 +520,42 @@ def test_a_stop_pressed_while_a_tap_waits_for_the_lock_still_ends_the_tapped_goa
     tap = threading.Thread(target=lambda: reply.setdefault("r", client.post(
         "/world/goal", json={"x_m": 1.0, "y_m": 2.0}).json()))
     tap.start()
-    time.sleep(0.2)                                   # the tap waits on goal_stop_lock
+    time.sleep(0.5)                                   # the tap waits on goal_stop_lock
     client.post("/stop", headers={"x-driver": "twin-dpad"})       # pressed after the tap
-    bridge.get_gate.set()
-    bridge.get_gate = None
+    gate, bridge.get_gate = bridge.get_gate, None
+    gate.set()
     tap.join(5.0)
-    assert reply["r"]["accepted"] is True, reply
-    assert drive_for(STOP_HOLD_S + 1.5) == 0.0, "nav2 drove the tapped goal after the later Stop"
-    assert wait_until(lambda: bridge.goal is None), "the later Stop never ended the tapped goal"
+    assert reply["r"]["accepted"] is False and reply["r"]["reason"] == "stopped", reply
+    assert drive_for(STOP_HOLD_S + 1.5) == 0.0, "nav2 drove after the later Stop"
+    assert wait_until(lambda: bridge.goal is None), "the Stops never ended goal A"
+
+
+def test_of_two_taps_around_a_stop_only_the_later_one_is_sent(rig):
+    """code-review round 5: the lock is not FIFO. Tap 1, a Stop, tap 2: if
+    tap 2 got the lock first, tap 1 then replaced its goal and, the
+    generation already moved on, nothing ended it -- the tap pressed BEFORE
+    the Stop drove."""
+    client, bridge, world, nav2_tick, wheel_speeds, drive_for, wait_until = rig
+    _goal_a_driving(client, bridge, nav2_tick, wheel_speeds)
+    bridge.get_gate = threading.Event()
+    client.post("/stop", headers={"x-driver": "twin-dpad"})
+    assert bridge.get_entered.wait(5.0)
+    replies = {}
+
+    def tap(name, x, y):
+        replies[name] = client.post("/world/goal", json={"x_m": x, "y_m": y}).json()
+
+    t1 = threading.Thread(target=tap, args=("t1", 1.0, 2.0))
+    t1.start()
+    time.sleep(0.5)
+    client.post("/stop", headers={"x-driver": "twin-dpad"})
+    t2 = threading.Thread(target=tap, args=("t2", 1.5, 2.5))
+    t2.start()
+    time.sleep(0.5)
+    gate, bridge.get_gate = bridge.get_gate, None
+    gate.set()
+    t1.join(5.0)
+    t2.join(5.0)
+    assert replies["t1"]["accepted"] is False, replies
+    assert replies["t2"]["accepted"] is True, replies
+    assert drive_for(STOP_HOLD_S + 1.0) > 0.0, "the later tap never drove"

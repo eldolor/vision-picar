@@ -92,7 +92,7 @@ import time
 import httpx
 import asyncio
 import logging
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from pathlib import Path
 from typing import List, Optional
 
@@ -608,10 +608,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             return _carry_out(req, driver, now)
 
     @contextmanager
-    def verb_running(driver: str):
+    def verb_running(driver: str, restamp=lambda: True):
         """Hold the robot for `driver` while its verb runs (3.76 A1), and
         restart its lapse clock at the verb's END: the end is the driver's
-        last word, not its start."""
+        last word, not its start. A person's goal holds it the same way
+        while the bridge answers, and restarts the clock only if the bridge
+        took the goal (`restamp`, 3.82)."""
         with verbs_lock:     # threadpool threads: a lost update would never lapse
             state["verbs_running"] += 1
         try:
@@ -619,7 +621,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         finally:
             with verbs_lock:
                 state["verbs_running"] -= 1
-            if state["driver"] == driver:
+            if state["driver"] == driver and restamp():
                 state["driver_at"] = time.monotonic()
 
     def _carry_out(req: ActionRequest, driver: str, now: float):
@@ -844,12 +846,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 with goal_stop_lock:
                     if goal_stop["gen"] != gen:
                         return
-                    # Read while settling too (3.82): a goal taken after the
-                    # first cancel landed -- a tap that waited on this lock --
-                    # is ended as well, never waited out.
-                    goal = (world_model.get_goal() or {}).get("goal")
-                    if goal and goal.get("state") in ("pending", "active"):
-                        settled_at = None
+                    goal = (world_model.get_goal() or {}).get("goal") if settled_at is None else None
+                    if settled_at is None and goal and goal.get("state") in ("pending", "active"):
                         world_model.cancel_goal()
                     elif settled_at is None:
                         settled_at = time.monotonic()
@@ -1080,48 +1078,48 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
         # The generation as the request ARRIVED, before any wait on the lock
         # (3.82): a stop pressed after the tap -- while it waited behind a
-        # stop's loop -- is newer, and its loop ends the goal the tap takes.
+        # stop's loop, or while the bridge answered -- is newer, and wins.
         with goal_gen_lock:
             gen = goal_stop["gen"]
         accepted = False
-        if claim is not None:
-            # The person's claim is held for as long as the bridge takes,
-            # however long, as a verb in progress is (3.82; 3.76 A1).
-            with verbs_lock:
-                state["verbs_running"] += 1
         try:
-            with goal_stop_lock:
-                try:
-                    reply = world.set_goal(req.x_m, req.y_m)
-                except httpx.HTTPError as e:
-                    # Handoff 4d: refused by name, not a 500. 3.82: and
-                    # whether waiting can help, as fields rather than prose --
-                    # a 401 from the bridge is no outage.
-                    return {"accepted": False, "reason": "ros_unavailable",
-                            "detail": f"the ROS bridge did not take the goal: {e}",
-                            **bridge_fault(e)}
-                accepted = isinstance(reply, dict) and reply.get("accepted") is True
-                if accepted:
+            # The person's claim is held for as long as this takes, however
+            # long, as a verb in progress is (3.82; 3.76 A1).
+            with (verb_running(person, restamp=lambda: accepted) if claim is not None
+                  else nullcontext()):
+                with goal_stop_lock:
                     with goal_gen_lock:
-                        # A stop that landed since the request arrived owns a
-                        # newer generation: its loop, waiting on
-                        # goal_stop_lock, ends the goal just taken. Never
-                        # supersede it.
-                        if goal_stop["gen"] == gen:
-                            goal_stop["gen"] += 1
-                            goal_stop["hold"] = False
-                return reply
+                        stale = goal_stop["gen"] != gen
+                    if stale:
+                        # A stop landed while this waited: it was never sent.
+                        return {"accepted": False, "reason": "stopped",
+                                "detail": "a stop was pressed after this goal was sent; "
+                                          "the goal was not passed to nav2"}
+                    try:
+                        reply = world.set_goal(req.x_m, req.y_m)
+                    except httpx.HTTPError as e:
+                        # Handoff 4d: refused by name, not a 500. 3.82: and
+                        # whether waiting can help, as fields rather than
+                        # prose -- a 401 from the bridge is no outage.
+                        return {"accepted": False, "reason": "ros_unavailable",
+                                "detail": f"the ROS bridge did not take the goal: {e}",
+                                **bridge_fault(e)}
+                    accepted = isinstance(reply, dict) and reply.get("accepted") is True
+                    if accepted:
+                        with goal_gen_lock:
+                            # A stop that landed while set_goal() was in
+                            # flight owns a newer generation: its loop,
+                            # waiting on goal_stop_lock, ends the goal just
+                            # taken. Never supersede it.
+                            if goal_stop["gen"] == gen:
+                                goal_stop["gen"] += 1
+                                goal_stop["hold"] = False
+                    return reply
         finally:
-            if claim is not None:
-                if accepted and state["driver"] == person:
-                    # The accepted goal's lapse clock starts now.
-                    state["driver_at"] = time.monotonic()
-                with verbs_lock:
-                    state["verbs_running"] -= 1
-                if not accepted:
-                    # After the count drops, so a stale claim given back is
-                    # never held up by it.
-                    give_back()
+            if not accepted:
+                # After the claim's count dropped, so a stale claim given
+                # back is never held up by it.
+                give_back()
 
     def _bridge_call(fn):
         """A goal read or cancel against a bridge that is down answers 503

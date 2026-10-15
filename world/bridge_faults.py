@@ -39,13 +39,13 @@ def classify(exc: Exception) -> dict:
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code
         return {"bridge_status": status, "retryable": retryable_status(status)}
-    if (isinstance(exc, httpx.TransportError)
-            and not isinstance(exc, (httpx.UnsupportedProtocol, httpx.LocalProtocolError))):
+    if isinstance(exc, httpx.TransportError) and not isinstance(exc, httpx.UnsupportedProtocol):
+        # Every protocol error included: httpcore raises LocalProtocolError
+        # for a pooled connection the bridge dropped, not only for a header
+        # it cannot send, so it is not told apart (3.82 round 5).
         return {"bridge_status": None, "retryable": True}
     # A 200 that is not JSON (DecodingError), a URL with no scheme
-    # (UnsupportedProtocol), a request we could not even form -- a secret
-    # with a newline in its header (LocalProtocolError) -- a redirect loop:
-    # how the two are set up.
+    # (UnsupportedProtocol), a redirect loop: how the two are set up.
     return {"bridge_status": None, "retryable": False}
 
 
@@ -76,8 +76,7 @@ def hint(status: Optional[int]) -> str:
     if status in (401, 403):
         return "check that the robot server and the ROS container share APP_SHARED_SECRET"
     if status is None:
-        return ("check ROS_BRIDGE_URL (the bridge's own http:// address, answering JSON) "
-                "and that the secret holds no stray characters")
+        return "check ROS_BRIDGE_URL: the bridge's own http:// address, answering JSON"
     return ("check ROS_BRIDGE_URL, and rebuild vision-picar-ros:latest from dev if the "
             "image is older than the robot server")
 
@@ -92,12 +91,11 @@ def setup_fault_message(what: str, fault: dict, detail: Optional[str] = None) ->
             f"{hint(status)}{tail}")
 
 
-def response_detail(r) -> str:
-    """An HTTP error reply's `detail`, else the start of its text."""
+def response_detail(r) -> Optional[str]:
+    """An HTTP error reply's JSON `detail`, or None: never a proxy's page,
+    which would end up in a mission's end reason."""
     try:
         body = r.json()
     except ValueError:
-        body = None
-    if isinstance(body, dict) and body.get("detail"):
-        return str(body["detail"])
-    return (r.text or "")[:200]
+        return None
+    return str(body["detail"]) if isinstance(body, dict) and body.get("detail") else None
