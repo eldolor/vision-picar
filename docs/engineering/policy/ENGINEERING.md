@@ -160,7 +160,12 @@ of `detected` frames (`_seen_observe()`, after promotion). Either ends after
 nothing, and a `detected` frame keeps a band episode on (the object crossed
 the gate). The band fires once an episode has had a band candidate
 `consecutive_frames` frames running, once per episode unless re-armed.
-`unable` is that question's own count of unable answers.
+`unable` is that question's own count of unable answers. An identity
+question dropped unanswered (its episode ended) hands its count on to the
+next question of its kind, capped at `local_max_unable - 1` (`_carried`): the
+next one still gets one local try, and a flickering target behind a slow,
+unable local tier still reaches the cloud. An able answer, or an escalation,
+clears it.
 
 *The one waiting slot (`_waiting`).* A waiting identity question whose
 episode has ended is dropped. A fresh question that is not the waiting one
@@ -195,7 +200,7 @@ cap it is dropped, not re-armed (it would loop against an absent tier); with
 a cloud call out it waits, and the landing (`_collect_inflight`) answers it
 if it is that question or a navigation one -- the cloud is asked one
 navigate question whatever the trigger -- so no paid call follows straight
-behind. A cloud yes to `uncertain_candidate` promotes its episode as a local
+behind; a call that failed answers nothing. A cloud yes to `uncertain_candidate` promotes its episode as a local
 yes does (`_cloud_answered()`). With a local tier every cloud call is an
 escalation: `confirm_cloud()` counts the arrival's too, whether the local
 tier was spent or absent.

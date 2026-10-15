@@ -499,21 +499,17 @@ def test_review_a_band_question_whose_candidate_left_is_dropped():
     u = {"status": "unparsed", "score": None}
     frames = [absent(), absent(cand(0.6, "bag")), absent(cand(0.6, "bag"))] \
         + [absent(cand(0.2, "chair"))] * 3 + [absent(cand(0.6, "chair"))] * 3
-    local = Local(no(), u, u)
-    tier = tier_for(Script(*frames), local, Cloud())
+    local, cloud = Local(no(), u, u), Cloud()
+    tier = tier_for(Script(*frames), local, cloud)
     scenes = run(tier, 8)
     tier({})                                   # frame 9 collects the chair's answer
-    # The bag's question waits (never asked about a frame without it), its
-    # episode ends after 3 such frames, and it is dropped; the chair is a
-    # new question, asked once its band run is long enough.
+    # The bag's question waits (never asked about a frame without it), and is
+    # dropped when its episode ends; the chair is a new question, asked once
+    # locally -- with the bag's one unable answer carried (bug pass 4), its
+    # own unable answer sends it up on frame 9.
     assert [s["_tier"].get("local_dispatched") for s in scenes[3:6]] == [None] * 3
-    # The bag once; the chair once, then again on frame 9.
-    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 3, tier.stats.local_triggers
-    # The chair's unable answer is asked again as the chair's question (its
-    # own count, 1), never as the bag's.
-    out = tier._sight_call[1]
-    assert out.trigger == TRIGGER_UNCERTAIN and out.episode == tier._band_ep
-    assert out.unable == 1
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 2, tier.stats.local_triggers
+    assert cloud.calls == 1
 
 
 def test_review_a_waiting_question_is_never_asked_about_a_frame_without_its_subject():
@@ -769,17 +765,19 @@ def test_review2_at_the_cap_the_fresh_question_is_kept_for_the_local_tier():
 
 # ---------- bug pass, second round (2026-10-15) ----------
 
-def test_bugpass2_a_new_band_episode_starts_its_own_count():
+def test_bugpass2_a_new_band_episode_gets_a_local_try_whatever_was_carried():
     u = {"status": "unparsed", "score": None}
     bag, chair = absent(cand(0.6, "bag")), absent(cand(0.6, "chair"))
     local, cloud = Local(no(), u, u, u), Cloud()
-    # The bag: asked, unable twice; it leaves (3 frames: its episode ends)
-    # before the cloud is asked. The chair is a new question with its own tries.
+    # The bag: unable twice, then gone before the cloud is asked. The chair is
+    # a new question: the carry is capped at max - 1, so it is asked locally
+    # once before it goes up -- never straight to the cloud.
     tier = tier_for(Script(absent(), bag, bag, bag, absent(), absent(), absent(),
-                           chair, chair, chair), local, cloud)
-    scenes = run(tier, 10)
-    assert cloud.calls == 0, [s["_tier"].get("trigger") for s in scenes]
-    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 4
+                           chair, chair, chair, chair), local, cloud)
+    scenes = run(tier, 11)
+    assert scenes[7]["_tier"]["cloud_called"] is False
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 3, tier.stats.local_triggers
+    assert cloud.calls == 1
 
 
 def test_bugpass2_a_band_question_displaced_by_a_fresh_trigger_is_asked_again():
@@ -952,3 +950,60 @@ def test_review5_the_unable_readout_holds_while_a_retry_is_out():
     s = tier({})                               # the retry goes out, held
     assert s["_tier"]["local_unable"] == 1
     gate.set()
+
+
+
+# ---------- bug pass, fourth round (2026-10-15) ----------
+
+def test_bugpass4_a_flickering_target_behind_a_slow_unable_tier_reaches_the_cloud():
+    """Each detection run ends before two slow unable answers land; the count
+    is carried, so the sighting still goes up."""
+    u = {"status": "unparsed", "score": None}
+    gate = threading.Event()
+    gate.set()
+    frames = [absent()] + ([detected()] * 3 + [absent()] * 3) * 20
+    local, cloud = Local(no(), u, gate=gate), Cloud()
+    tier = tier_for(Script(*frames), local, cloud, stale_after=0, cold_search_after=1000)
+    run(tier, 2)
+    for _ in range(20):                        # every answer lands 5 frames late
+        gate.clear()
+        for _ in range(5):
+            tier({})
+        gate.set()
+        settle(tier)
+        if tier.stats.triggers.get(TRIGGER_CANDIDATE):
+            break
+    assert tier.stats.triggers.get(TRIGGER_CANDIDATE) == 1, \
+        (tier.stats.local_triggers, tier.stats.triggers)
+
+
+def test_bugpass4_a_failed_cloud_call_does_not_answer_the_waiting_question():
+    gate = threading.Event()
+    calls = []
+
+    class Fails(Cloud):
+        def __call__(self, frame):
+            calls.append(1)
+            if len(calls) == 1:
+                assert gate.wait(5)
+                raise RuntimeError("503")
+            return super().__call__(frame)
+
+    tier = tier_for(Script(absent()), Local(LocalVLMAbsent("gone")), Fails(),
+                    cold_search_after=3)
+    for _ in range(7):                         # start up (held, will fail); cold_search waits
+        tier({})
+        call = tier._sight_call
+        if call is not None:
+            call[3].result(5)
+    assert tier._pending_question == TRIGGER_COLD_SEARCH
+    gate.set()
+    try:
+        tier._inflight.result(5)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        tier({})                               # collects the failure (raised next frame)
+    except Exception:  # noqa: BLE001
+        pass
+    assert tier._pending_question == TRIGGER_COLD_SEARCH, "a failure is not an answer"

@@ -634,6 +634,8 @@ class TieredVision:
         # The one waiting question (the older keeps the slot), and the
         # episodes identity questions are about: the band's and a detection's.
         self._waiting: Optional[_Question] = None
+        # Unable counts handed on by identity questions dropped unanswered.
+        self._carried: dict = {}
         self._band_ep: Optional[int] = None
         self._band_off = 0
         self._band_yes_ep: Optional[int] = None
@@ -864,6 +866,7 @@ class TieredVision:
             w = self._waiting
             if w is not None and not self._in_view(w):
                 # Its candidate's episode ended: nothing left to ask about.
+                self._carry_unable(w)
                 w = self._waiting = None
             # A question about what is in view goes first (review 5): a
             # navigation trigger on the band's frame fires again on its counts.
@@ -928,6 +931,7 @@ class TieredVision:
         if escalated is not None:
             self.stats.escalations += 1
             self._waiting = None
+            self._carried.pop(escalated.trigger, None)
         self._absent_streak = 0
         self._since_call = 0
         self._mark_odometry_call()
@@ -1180,7 +1184,14 @@ class TieredVision:
         the episode it is about."""
         episode = (self._band_ep if trigger == TRIGGER_UNCERTAIN
                    else self._seen_ep if trigger == TRIGGER_CANDIDATE else None)
-        return _Question(trigger, episode)
+        # A question of the same kind dropped unanswered hands on its count,
+        # short of the max: this one still gets one local try, and a
+        # flickering target still reaches the cloud (bug pass 4).
+        return _Question(trigger, episode, self._carried.get(trigger, 0))
+
+    def _carry_unable(self, q: _Question) -> None:
+        if q.trigger in IDENTITY_QUESTIONS and q.unable:
+            self._carried[q.trigger] = min(q.unable, self.local_max_unable - 1)
 
     def _in_view(self, q: _Question) -> bool:
         """Is what the question asks about still in view (its episode on)?
@@ -1330,6 +1341,7 @@ class TieredVision:
                               "status": status}
         if kind in ("yes", "no"):
             # Answered: pacing counts from here, as from a cloud answer.
+            self._carried.pop(q.trigger, None)
             if q.same(self._waiting):
                 self._waiting = None
             self._absent_streak = 0
@@ -1346,7 +1358,8 @@ class TieredVision:
         else:
             q.unable += 1
         if not self._in_view(q):
-            return                      # its episode ended while it was out
+            self._carry_unable(q)       # its episode ended while it was out
+            return
         w = self._waiting
         if (w is not None and w.trigger in IDENTITY_QUESTIONS
                 and q.trigger not in IDENTITY_QUESTIONS):
@@ -1586,14 +1599,6 @@ class TieredVision:
         self._absent_streak = 0
         self._since_call = 0
         self._mark_odometry_call()
-        w = self._waiting
-        if (w is not None and w.unable >= self.local_max_unable
-                and (w.same(question) or w.trigger in NAVIGATION_QUESTIONS)):
-            # 3.80.D: a question escalated while this call was out is answered
-            # by it -- the cloud is asked one navigate question whatever the
-            # trigger -- so no paid call follows straight behind (review). A
-            # question about another view (a candidate, the band) still goes up.
-            self._waiting = None
         try:
             scene = fut.result()
         except BaseException as exc:  # noqa: BLE001
@@ -1613,6 +1618,15 @@ class TieredVision:
             # Dropping it silently is the point -- applying it is the
             # orphaned-call bug.
             return
+        w = self._waiting
+        if (w is not None and w.unable >= self.local_max_unable
+                and (w.same(question) or w.trigger in NAVIGATION_QUESTIONS)):
+            # 3.80.D: a question escalated while this call was out is answered
+            # by it -- the cloud is asked one navigate question whatever the
+            # trigger -- so no paid call follows straight behind (review). A
+            # question about another view (a candidate, the band) still goes
+            # up, and so does one whose answer failed (bug pass 4).
+            self._waiting = None
         self._last_cloud_scene = scene
         self._cloud_answered(question, scene)
         # Run the annotation for its SIDE EFFECTS -- corroboration and the
@@ -1651,6 +1665,7 @@ class TieredVision:
         self._band_ep = self._seen_ep = self._band_yes_ep = None
         self._band_off = self._seen_off = 0
         self._band_run, self._band_armed = 0, True
+        self._carried = {}
         self._local_landed = None
 
     def close(self) -> None:
