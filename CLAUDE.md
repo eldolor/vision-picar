@@ -160,17 +160,25 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   accuracy (97.2% precision). The user set the memory floor at **0.5 GB with
   the VLM killed first** (2026-10-14) and waived the teal-bin bar. Qwen3-VL-4B
   and Qwen3.5-4B fail accuracy under every runtime. Margin over the floor is
-  ~100 MB; 3.81 (memory budget) is open.
-* **Memory budget (3.81), step A merged 2026-10-14.** The loaded window
-  under VE, accounted (`tools/jetson/memory_account.py`,
-  `headroom_identity.sh ACCOUNT=1`): 97.7% of MemTotal explained at the
-  minimum (664 MB; F2's 606 stays the baseline). The VLM driver 3.97 GB
-  (engines 3.05, visual encoder 1.29 of it), perception 1.94 GB (heap 1.11,
-  of which ~0.45 GB is YOLOE's MobileCLIP text encoder, built on the first
-  frame, dropped, never given back; CLIP's text tower 0.24 GB of GPU),
-  Python services ~0.2 GB, ROS 0.25 GB. A torch GPU process costs ~0.6 GB
-  before any model. nvmap's page pool (952 MB idle) drains to 0 under load:
-  not hidden headroom. B (rank the trims, their criteria) waits on the user.
+  ~100 MB; 3.81 (memory budget) raised it to ~500 MB, D open.
+* **Memory budget (3.81), steps A-C and E merged 2026-10-15; D (T4 or T5)
+  waits on the user.** A: under VE the VLM driver holds 3.97 GB (engines
+  3.05, visual encoder 1.29), perception 1.94, Python services ~0.2, ROS
+  0.25; a torch GPU process costs ~0.6 GB before any model. C (amendment 1):
+  text features come from a disk cache or a CPU-only child
+  (`brain/text_encoder.py`, `PICAR_TEXT_CACHE`), so MobileCLIP and CLIP's
+  text tower leave perception's process; YOLOE's CPU copy is dropped;
+  `foxglove_bridge` runs only with `PICAR_FOXGLOVE=1`. Steady
+  `MemAvailable` minimum 992-1,086 MB over three runs (606 before):
+  criterion 2 (+1.0 GB) not met, ~600 MB short. Failed and kept by the
+  user: T1's heap bar (A's MobileCLIP attribution was wrong: YOLOE's first
+  predict reuses that heap) and new-target time (a new target's first frame
+  7-36 s; a cached one is faster than before). E (amendment 3): a mission
+  start held two pipelines (377 MB free); now `TieredVision.close()` drops
+  the pipeline, a start waits for the ended runner's close (10 s) and for a
+  frame still in perception (30 s), and `pipeline_for` collects first: the
+  new-target low is 508 MB (floor 500), set by the text child. Records:
+  `evaluations/memory-381/`; `headroom_identity.sh SWITCH=release`.
 * **Tiered identity (3.80 A-C), merged 2026-10-14; the local tier is OFF by
   default.** The user's strict order: perception, then local Qwen, then the
   cloud only after `tier_local_max_unable` (2) unable answers or when the
