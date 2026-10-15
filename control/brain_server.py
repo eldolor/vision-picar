@@ -786,6 +786,19 @@ def create_app(
             raise HTTPException(status_code=409, detail="A mission is already running.")
         build = state["building"] = {"stopped": False}
         try:
+            # 3.84: a person pressed Start, so a person's earlier Stop no
+            # longer latches the brain out. Lifted FIRST, before the build: a
+            # D-pad Stop pressed while the mission is set up latches it again,
+            # and the mission's first command ends it `cancelled` by that Stop.
+            resume = getattr(robot(), "resume_autonomy", None)
+            if resume is not None:
+                try:
+                    await asyncio.to_thread(resume)
+                except Exception as e:  # noqa: BLE001 -- never unsafe: the latch stays
+                    # Not a refusal to start: an unreachable robot server fails
+                    # the mission on its own, and a latch left set only ends
+                    # it `cancelled` by the Stop that set it.
+                    logger.warning("could not lift a person's Stop at mission start: %s", e)
             # 3.81.E: a runner reads as not running before `_finish` has
             # closed its policy (the car's stop comes first), and the close
             # is what frees its perception models. Building now would hold

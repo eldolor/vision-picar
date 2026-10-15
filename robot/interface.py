@@ -107,6 +107,17 @@ class Preempted(Exception):
     """
 
 
+# 3.84: the refusal a person's Stop latches on autonomy, by name.
+PERSON_STOP = "person_stop"
+
+
+class StoppedByPerson(Preempted):
+    """A person's Stop latched autonomy off (3.84): every brain goal and
+    verb is refused `person_stop` until a new mission starts. A `Preempted`,
+    so every path that ends a mission on a preemption ends it here too; the
+    runner ends it `cancelled` with `cancelled_by: "stop"`, not "dpad"."""
+
+
 
 # ---------- the depth grid (phase M2, PLAN-microduck-transplants.md) ----------
 #

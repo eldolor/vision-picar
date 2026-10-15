@@ -38,9 +38,9 @@ from typing import Optional
 
 import httpx
 
-from robot.interface import (Preempted, RobotInterface, unusable_battery,
-                             unusable_grid, unusable_scan, unusable_wheels,
-                             unusable_odometry)
+from robot.interface import (PERSON_STOP, Preempted, RobotInterface, StoppedByPerson,
+                             unusable_battery, unusable_grid, unusable_scan,
+                             unusable_wheels, unusable_odometry)
 from robot.safety import SafetyViolation
 
 logger = logging.getLogger("remote_robot")
@@ -109,6 +109,22 @@ class RemoteRobot(RobotInterface):
         guarantees is always available."""
         body = self._request("POST", "/stop")
         return body.get("result", {})
+
+    def resume_autonomy(self) -> bool:
+        """3.84: lift a person's Stop's latch. The brain calls it when a
+        mission STARTS, never otherwise. True if a latch was lifted; a robot
+        server older than 3.84 has no such route and nothing to lift."""
+        try:
+            response = self._client.request("POST", f"{self.base_url}/autonomy/resume",
+                                            headers=self.headers)
+        except httpx.HTTPError as e:
+            raise RobotTransportError(f"POST /autonomy/resume failed: {e}") from e
+        if response.status_code == 404:
+            return False
+        if response.status_code >= 400:
+            raise RobotTransportError(f"POST /autonomy/resume -> HTTP "
+                                      f"{response.status_code}: {response.text[:200]}")
+        return bool(response.json().get("resumed"))
 
     # ---------- camera pan ----------
 
@@ -221,6 +237,10 @@ class RemoteRobot(RobotInterface):
             # older than M4 sends no reason at all, and everything it
             # refuses is a safety veto, which is what the fallback below
             # preserves.
+            if body.get("reason") == PERSON_STOP:
+                # 3.84: a person's Stop latched autonomy off -- the end of
+                # the mission, `cancelled` by that Stop.
+                raise StoppedByPerson(detail)
             if body.get("reason") == "preempted":
                 raise Preempted(detail)
             if body.get("reason") == "ros_unavailable":

@@ -618,5 +618,8 @@ def test_a_tap_taken_while_a_stop_was_pressed_gives_the_robot_back(rig):
     tap.join(5.0)
     assert reply["r"]["reason"] == "stopped", reply
     assert wait_until(lambda: bridge.goal is None, 2.0), "the Stop never ended the taken goal"
+    # 3.84: the person's Stop latches the brain out until a mission starts;
+    # lifted here, so what is left to refuse the brain is the tap's claim.
+    client.post("/autonomy/resume", headers={"x-driver": "brain"})
     verb = client.post("/action", json={"action": "LOOK_RIGHT"}, headers={"x-driver": "brain"}).json()
     assert "twin-dpad" not in str(verb.get("detail", "")), f"the stopped tap kept the robot: {verb}"

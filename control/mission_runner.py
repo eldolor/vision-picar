@@ -60,7 +60,8 @@ from brain.mission_report import map_coverage
 from brain.navigate import CloudUnavailable
 from brain.room_labels import RoomLabeller, frame_room
 from brain.vision_agent import VisionAgent
-from robot.interface import DRIVER_MANUAL, Preempted, RobotInterface, driver_priority
+from robot.interface import (DRIVER_MANUAL, PERSON_STOP, Preempted, RobotInterface,
+                             StoppedByPerson, driver_priority)
 from robot.safety import SafetyViolation
 from world.interface import NullWorld, WorldInterface
 
@@ -297,6 +298,9 @@ class _GatedNavigator:
             with self._lock:
                 self._in_flight -= 1
             self._close_if_done()
+        if reply.get("reason") == PERSON_STOP and not reply.get("accepted"):
+            # 3.84: a person's Stop latched autonomy off; the mission ends.
+            raise StoppedByPerson(reply.get("detail") or "a person pressed Stop")
         if reply.get("reason") == "preempted" and not reply.get("accepted"):
             holder = _PREEMPTED_BY.match(reply.get("detail") or "")
             if holder and driver_priority(holder.group(1)) == DRIVER_MANUAL:
@@ -1087,6 +1091,11 @@ class MissionRunner:
         `failed`. A refusal that names no holder reads as a person, as every
         preemption did before 3.70."""
         detail = str(error)
+        if isinstance(error, StoppedByPerson):
+            # 3.84: the brain was refused because a person pressed Stop (the
+            # D-pad's, not only the brain panel's): ended by that Stop.
+            self._finish(CANCELLED, f"stopped by a person: {detail}", cancelled_by="stop")
+            return
         holder = _PREEMPTED_BY.match(detail)
         if holder and driver_priority(holder.group(1)) != DRIVER_MANUAL:
             self._finish(FAILED, f"preempted by an autonomous driver: {detail}")

@@ -30,7 +30,9 @@ class RemoteNavigator:
                  timeout: float = DEFAULT_TIMEOUT_S,
                  client: Optional[httpx.Client] = None):
         self.base_url = base_url.rstrip("/")
-        self.headers = {"x-app-secret": secret} if secret else {}
+        # 3.84: explore's goals name the brain, so the robot server can tell
+        # them from a script's and refuse them after a person's Stop.
+        self.headers = {"x-driver": "brain", **({"x-app-secret": secret} if secret else {})}
         # An injected client is how tests mount the app in-process.
         self._owns_client = client is None
         self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout)

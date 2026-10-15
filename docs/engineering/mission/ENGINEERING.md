@@ -109,7 +109,11 @@ threads; where it and this file disagree, check the code.
    outside the lock, never raising), in the same locked step as the outcome.
    A failure that lands after `stop()`/`abort()` returns at once: not
    counted, not logged, nothing written. Otherwise `failed`; `Preempted` ->
-   `_finish_preempted()` (3.70 E5): `cancelled` with `cancelled_by: "dpad"`,
+   `_finish_preempted()` (3.70 E5): `cancelled` with `cancelled_by: "dpad"`;
+   a `StoppedByPerson` (the robot server refused the brain `person_stop`: a
+   person pressed Stop, the D-pad's included; 3.84) ends `cancelled` with
+   `cancelled_by: "stop"` and `end_reason` `stopped by a person: <detail>`;
+   otherwise `dpad`,
    unless the refusal names an autonomous holder (`"<holder> is driving"`,
    or `"<holder> took over"` for a verb cut off under `drive: ros`, 3.76,
    holder `brain` or `ros`) -- then `failed`, an arbitration fault. A goal in
@@ -381,7 +385,7 @@ otherwise). CORS allows any origin.
 
 | Method, path | Body | Success | Errors |
 |---|---|---|---|
-| `POST /mission/start` | `MissionStartRequest` (below) | `{"started": true, "status": {...}}` | 409 `"A mission is already running."` (also while another start is still building its runner, 3.76 C2); 409 `"Stopped while the mission was being set up."` when a Stop landed during the build (the runner is discarded, never started); 400 config or validation error with its message (explore: an unreachable robot server or a refused secret is named as such, 3.76); 403 drill on a brain with drills off; 422 an unknown field or a bad type |
+| `POST /mission/start` | `MissionStartRequest` (below); first, after the 409 check and before the build, `robot().resume_autonomy()` (`POST /autonomy/resume` on the robot server) lifts a person's Stop's latch (3.84) -- a failure is logged, never a refusal | `{"started": true, "status": {...}}` | 409 `"A mission is already running."` (also while another start is still building its runner, 3.76 C2); 409 `"Stopped while the mission was being set up."` when a Stop landed during the build (the runner is discarded, never started); 400 config or validation error with its message (explore: an unreachable robot server or a refused secret is named as such, 3.76); 403 drill on a brain with drills off; 422 an unknown field or a bad type |
 | `POST /mission/stop` | none | `{"stopped": true, "status": {...}}` -- cancels the loop task, then `runner.stop()`; with no mission ever run, stops the robot anyway and returns the idle status | -- |
 | `GET /mission/status` | none | `MissionRunner.status()` plus `fault`; before any mission `{"running": false, "outcome": "idle", "step": 0, "log_tail": [], "fault": "none"}` | -- |
 | `GET /mission/inventory` | none | `{"inventory": null}` before any mission; else the current or last mission's object inventory (3.46; shape in the [perception engineering spec](../perception/ENGINEERING.md), "Inventory"). On mission end the report is also saved by `control/inventory_store.py` on a daemon thread | -- |

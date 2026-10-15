@@ -104,7 +104,8 @@ from pydantic import BaseModel
 from robot.factory import get_robot, load_config
 from robot.identity import configure_logging, log_identity
 from robot.interface import (
-    DRIVER_AUTONOMOUS, DRIVER_MANUAL, DRIVER_UNKNOWN, WheelFeedbackLost, driver_priority)
+    DRIVER_AUTONOMOUS, DRIVER_MANUAL, DRIVER_UNKNOWN, PERSON_STOP, WheelFeedbackLost,
+    driver_priority)
 
 # The ROS container's driver name on POST /wheels (R2b, R4).
 DRIVER_ROS = "ros"
@@ -431,14 +432,36 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # and whether nav2's wheel commands are held at zero meanwhile.
     # `stops` counts the stops that end a goal -- every stop but the brain's
     # (3.82): a goal one overtook while it waited is never sent; `gen` also
-    # moves on an accepted goal.
-    goal_stop = {"gen": 0, "hold": False, "stops": 0}
+    # moves on an accepted goal. `autonomy_stopped` is a person's Stop's
+    # latch (3.84): who pressed it and when, until a mission starts.
+    goal_stop = {"gen": 0, "hold": False, "stops": 0, "autonomy_stopped": None}
     # Serialises the bridge calls that start or end a goal: held ACROSS them.
     goal_stop_lock = threading.Lock()
     # Guards `goal_stop` itself and is never held across a bridge call, so
     # /stop takes only this one and never waits on the bridge (3.76 A8).
     goal_gen_lock = threading.Lock()
     verbs_lock = threading.Lock()       # guards state["verbs_running"] (3.76 A1)
+
+    def is_autonomy(driver: str) -> bool:
+        """The brain (or `teleop`): an autonomous driver other than ROS's
+        actuator, whose wheel commands the Stop's hold governs instead."""
+        return driver != DRIVER_ROS and driver_priority(driver) == DRIVER_AUTONOMOUS
+
+    def autonomy_latch():
+        with goal_gen_lock:
+            return goal_stop["autonomy_stopped"]
+
+    def person_stop_refusal(driver: str, latch):
+        """3.84: a person's Stop is the last word over autonomy. While its
+        latch is set, every command from the brain is refused by name, so the
+        mission ends `cancelled` by the Stop rather than driving on; a
+        person's commands never are. `latch` is read by the caller, under
+        `goal_gen_lock` or not, as its own order needs."""
+        if latch is None or not is_autonomy(driver):
+            return None
+        return refuse(PERSON_STOP,
+                      f"{latch['by']} pressed Stop -- autonomy stays stopped until a new "
+                      f"mission starts, so {driver} was refused", driver)
 
     async def wheel_loop():
         """Vet and (in the sim) integrate a standing wheel command -- R2b.
@@ -592,6 +615,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     def do_action(req: ActionRequest, x_driver: str = Header(default="")):
         now = time.monotonic()
         driver = (x_driver or "").strip() or DRIVER_UNKNOWN
+        # 3.84: after a person's Stop the brain is refused by name, before
+        # arbitration could answer it anything else.
+        refused = person_stop_refusal(driver, autonomy_latch())
+        if refused:
+            return refused
 
         # Phase M4 -- arbitration, before anything moves. A decided order,
         # not last-writer-wins: see robot/interface.py's DRIVER_PRIORITY and
@@ -770,7 +798,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     robot.set_wheel_velocity(0.0, 0.0)
                 return {"executed": True, "driver": driver,
                         "applied": {"left_rad_s": 0.0, "right_rad_s": 0.0}, "clamped": None}
-            refused = arbitrate(driver, now)
+            refused = person_stop_refusal(driver, autonomy_latch()) or arbitrate(driver, now)
             if refused:
                 return refused
             state["last_command_at"] = now
@@ -823,8 +851,15 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         the very goal that won."""
         state["last_command_at"] = time.monotonic()
         driver = (x_driver or "").strip() or DRIVER_UNKNOWN
+        if driver_priority(driver) == DRIVER_MANUAL:
+            # 3.84: a PERSON's Stop (the D-pad, teleop's operator, anyone
+            # unnamed) is the last word over autonomy: latched before the
+            # wheels stop, so no brain command slips in between, and lifted
+            # only when a mission starts (POST /autonomy/resume).
+            with goal_gen_lock:
+                goal_stop["autonomy_stopped"] = {"by": driver, "at": time.monotonic()}
         result = robot.stop()
-        spares_goal = driver != DRIVER_ROS and driver_priority(driver) == DRIVER_AUTONOMOUS
+        spares_goal = is_autonomy(driver)
         if hasattr(world_model, "cancel_goal") and not spares_goal:
             with goal_gen_lock:
                 goal_stop["gen"] += 1
@@ -834,6 +869,21 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             threading.Thread(target=_end_goal_after_stop, args=(gen,), daemon=True,
                              name="stop-end-goal").start()
         return {"executed": True, "result": result, "driver": driver}
+
+    @app.post(prefix + "/autonomy/resume", dependencies=[Depends(require_secret)])
+    def autonomy_resume(x_driver: str = Header(default="")):
+        """Lift a person's Stop's latch (3.84). Called by the brain when a
+        mission STARTS -- a person pressed Start -- and by nothing else: a
+        person's own verbs and goals are never refused by the latch, and a
+        mission the Stop interrupted must end, not resume when the person
+        next drives."""
+        driver = (x_driver or "").strip() or DRIVER_UNKNOWN
+        with goal_gen_lock:
+            was = goal_stop["autonomy_stopped"]
+            goal_stop["autonomy_stopped"] = None
+        if was is not None:
+            logger.info(f"autonomy resumed by {driver} (stopped by {was['by']})")
+        return {"resumed": was is not None, "driver": driver}
 
     def _end_goal_after_stop(gen: int):
         """Make the stop's "the goal is ended" true, not merely attempted
@@ -1057,9 +1107,17 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         # (3.82): a stop pressed after the tap was sent overtakes it.
         with goal_gen_lock:
             stops = goal_stop["stops"]
+            latch = goal_stop["autonomy_stopped"]
         world = _goals()
         now = time.monotonic()
         person = (x_driver or "").strip()
+        # 3.84: explore names itself (`brain`); after a person's Stop its
+        # goals are refused by name. A goal naming no one keeps 3.23's rank
+        # and today's behaviour: scripts and the nav suites post those.
+        autonomy = is_autonomy(person)
+        refused = person_stop_refusal(person, latch)
+        if refused:
+            return {"accepted": False, **refused}
         claim = None
         if person and driver_priority(person) == DRIVER_MANUAL:
             refused = arbitrate(person, now)
@@ -1095,6 +1153,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 with goal_stop_lock:
                     with goal_gen_lock:
                         stale = goal_stop["stops"] != stops
+                        latch = goal_stop["autonomy_stopped"]
+                    if stale and autonomy and latch is not None:
+                        return {"accepted": False, **person_stop_refusal(person, latch)}
                     if stale:
                         # A stop was pressed while this waited: never sent.
                         return {"accepted": False, "reason": "stopped",
@@ -1123,6 +1184,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                             if accepted:
                                 goal_stop["gen"] += 1
                                 goal_stop["hold"] = False
+                            latch = goal_stop["autonomy_stopped"]
+                        if not accepted and autonomy and latch is not None:
+                            return {"accepted": False, **person_stop_refusal(person, latch)}
                         if not accepted:
                             # Said so, and the claim given back: the stop's
                             # loop ends this goal.
