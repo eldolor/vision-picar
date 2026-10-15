@@ -92,7 +92,7 @@ import time
 import httpx
 import asyncio
 import logging
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from pathlib import Path
 from typing import List, Optional
 
@@ -1066,42 +1066,46 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         # ending loop, which must never cancel this new goal -- but only once
         # the bridge has taken it (3.82; nav2 may still reject it, and the
         # bridge cancelled the old goal before sending it). A refused goal
-        # never existed, so the stop's
-        # loop keeps ending the goal the stop was for, and keeps its hold.
+        # never existed, so the stop's loop keeps ending the goal the stop
+        # was for, and keeps its hold.
         def give_back():
             # Only if nobody has driven since: a person's later press, or the
             # brain after the claim lapsed, keeps what it took.
             if claim is not None and state["driver"] == person and state["driver_at"] == now:
                 state["driver"], state["driver_at"] = claim
 
-        with goal_stop_lock:
-            with goal_gen_lock:
-                gen = goal_stop["gen"]
-            try:
-                reply = world.set_goal(req.x_m, req.y_m)
-            except httpx.HTTPError as e:
-                give_back()
-                # Handoff 4d: refused by name, not a 500. 3.82: and whether
-                # waiting can help, as a field rather than prose -- the
-                # bridge refusing our secret (a 401) is a fault no wait
-                # mends; a transport error or a 5xx may pass.
-                return {"accepted": False, "reason": "ros_unavailable",
-                        "detail": f"the ROS bridge did not take the goal: {e}",
-                        **bridge_fault(e)}
-            except Exception:
-                give_back()
-                raise
-            if reply.get("accepted") is not True:
-                give_back()
-            else:
+        accepted = False
+        # The person's claim is held for as long as the bridge takes, however
+        # long (3.82, as a verb in progress is: 3.76 A1), and re-stamped at
+        # the end, so an accepted goal starts its own lapse clock then.
+        with (verb_running(person) if claim is not None else nullcontext()):
+            with goal_stop_lock:
                 with goal_gen_lock:
-                    # A stop that landed while set_goal() was in flight owns
-                    # a newer generation: its loop, waiting on goal_stop_lock,
-                    # ends the goal just taken. Never supersede it.
-                    if goal_stop["gen"] == gen:
-                        goal_stop["gen"] += 1
-                        goal_stop["hold"] = False
-            return reply
+                    gen = goal_stop["gen"]
+                try:
+                    try:
+                        reply = world.set_goal(req.x_m, req.y_m)
+                    except httpx.HTTPError as e:
+                        # Handoff 4d: refused by name, not a 500. 3.82: and
+                        # whether waiting can help, as fields rather than
+                        # prose -- a 401 from the bridge is no outage.
+                        return {"accepted": False, "reason": "ros_unavailable",
+                                "detail": f"the ROS bridge did not take the goal: {e}",
+                                **bridge_fault(e)}
+                    accepted = isinstance(reply, dict) and reply.get("accepted") is True
+                    if accepted:
+                        with goal_gen_lock:
+                            # A stop that landed while set_goal() was in
+                            # flight owns a newer generation: its loop, waiting
+                            # on goal_stop_lock, ends the goal just taken.
+                            # Never supersede it.
+                            if goal_stop["gen"] == gen:
+                                goal_stop["gen"] += 1
+                                goal_stop["hold"] = False
+                    return reply
+                finally:
+                    if not accepted:
+                        give_back()
 
     def _bridge_call(fn):
         """A goal read or cancel against a bridge that is down answers 503

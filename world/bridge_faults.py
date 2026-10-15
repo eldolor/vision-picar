@@ -7,13 +7,14 @@ as fields and headers -- never as prose a caller must match -- to
 `RemoteNavigator` and `brain/explore.py`, which wait on a transient fault
 and end the mission on any other. Before this each had its own rule.
 
-A transport error (or any other error with no reply) or a 5xx may pass,
+A transport error or a 5xx may pass,
 and so may 408, 409 and 429: the split `brain/navigate.py`'s
 `CloudUnavailable` uses, plus 409, which the bridge answers while its SLAM
 session changes. Any other 4xx -- a 401 for a mismatched secret, a 404
 from a bridge without the route -- and a 200 that is not a JSON object (a
-proxy's page; `httpx.DecodingError`) are faults in how the two are set
-up, which no wait mends; `hint()` says what to check.
+proxy's page; `httpx.DecodingError`), like a bridge URL with no scheme,
+are faults in how the two are set up, which no wait mends; `hint()` says
+what to check.
 """
 
 from typing import Optional
@@ -38,9 +39,11 @@ def classify(exc: Exception) -> dict:
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code
         return {"bridge_status": status, "retryable": retryable_status(status)}
-    if isinstance(exc, httpx.DecodingError):
-        return {"bridge_status": None, "retryable": False}
-    return {"bridge_status": None, "retryable": True}
+    if isinstance(exc, httpx.TransportError) and not isinstance(exc, httpx.UnsupportedProtocol):
+        return {"bridge_status": None, "retryable": True}
+    # A 200 that is not JSON (DecodingError), a URL with no scheme
+    # (UnsupportedProtocol), a redirect loop: how the two are set up.
+    return {"bridge_status": None, "retryable": False}
 
 
 def headers_for(fault: dict) -> dict:
@@ -51,12 +54,35 @@ def headers_for(fault: dict) -> dict:
     return out
 
 
+def fault_from_headers(headers) -> Optional[dict]:
+    """The robot server's verdict from its headers, or None when it sent
+    none. A status header that is not a number is kept as None."""
+    verdict = (headers or {}).get(RETRYABLE_HEADER)
+    if verdict not in ("true", "false"):
+        return None
+    raw = (headers or {}).get(STATUS_HEADER)
+    try:
+        status = int(raw) if raw else None
+    except ValueError:
+        status = None
+    return {"bridge_status": status, "retryable": verdict == "true"}
+
+
 def hint(status: Optional[int]) -> str:
     """What an operator should check for a fault no wait mends."""
     if status in (401, 403):
         return "check that the robot server and the ROS container share APP_SHARED_SECRET"
     if status is None:
-        return ("the bridge's reply is not JSON -- check that ROS_BRIDGE_URL points at the "
-                "bridge itself")
-    return ("the bridge does not serve this request -- check ROS_BRIDGE_URL, and rebuild "
-            "vision-picar-ros:latest from dev if the image is old")
+        return ("check ROS_BRIDGE_URL: it must be the bridge's own http:// address, "
+                "and its reply must be JSON")
+    return ("check ROS_BRIDGE_URL, and rebuild vision-picar-ros:latest from dev if the "
+            "image is older than the robot server")
+
+
+def setup_fault_message(what: str, fault: dict, detail: Optional[str] = None) -> str:
+    """One wording for a fault no wait mends, wherever it is reported."""
+    status = fault.get("bridge_status")
+    why = f"HTTP {status}" if status is not None else "no usable reply"
+    tail = f": {detail}" if detail else ""
+    return (f"the ROS bridge refused {what} ({why}), a setup fault no wait mends -- "
+            f"{hint(status)}{tail}")

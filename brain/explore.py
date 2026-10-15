@@ -53,7 +53,7 @@ from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
 from robot.interface import ZONE_UNUSABLE, Preempted, RobotInterface
 from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation
-from world.bridge_faults import RETRYABLE_HEADER, STATUS_HEADER, hint
+from world.bridge_faults import fault_from_headers, setup_fault_message
 
 logger = logging.getLogger("explore")
 
@@ -118,11 +118,17 @@ BRIDGE_BLIPS_MAX = 40
 def _setup_fault(what: str, reply: dict) -> RuntimeError:
     """3.82: a bridge fault no wait mends, as the error that ends the
     mission `failed` with its status named."""
-    status = reply.get("bridge_status")
-    why = f"HTTP {status}" if status is not None else "a reply that is not JSON"
-    detail = f": {reply['detail']}" if reply.get("detail") else ""
-    return RuntimeError(f"the ROS bridge refused {what} ({why}), a setup fault no wait "
-                        f"mends -- {hint(status)}{detail}")
+    return RuntimeError(setup_fault_message(what, reply, reply.get("detail")))
+
+
+def _reply_detail(response) -> Optional[str]:
+    """The robot server's own `detail` -- the bridge's text -- not httpx's
+    wording of the 503 that carried it."""
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    return str(body["detail"]) if isinstance(body, dict) and body.get("detail") else None
 
 
 def leave_clearance_m(min_distance_cm: float) -> float:
@@ -379,12 +385,11 @@ class ExploreAgent(MissionAgent):
         status = getattr(response, "status_code", None)
         # 3.82: the robot server says, in a header, whether its bridge's
         # error can pass; else world/bridge_faults.py's one rule decides.
-        headers = getattr(response, "headers", None) or {}
-        if headers.get(RETRYABLE_HEADER) == "false":
+        fault = fault_from_headers(getattr(response, "headers", None))
+        if fault is not None and not fault["retryable"]:
             # Named as the setup fault it is, not as the robot server's 503.
-            bridge = headers.get(STATUS_HEADER)
-            raise _setup_fault("a goal call", {"bridge_status": int(bridge) if bridge else None,
-                                               "detail": str(exc)}) from exc
+            raise _setup_fault("a goal call",
+                               {**fault, "detail": _reply_detail(response)}) from exc
         transient = (isinstance(exc, (httpx.TransportError, ConnectionError, TimeoutError))
                      or (status is not None and status >= 500))
         self._blips += 1

@@ -436,3 +436,58 @@ def test_a_secret_fault_on_a_goal_read_is_named_as_one(monkeypatch):
     assert status["outcome"] == FAILED, status
     assert "HTTP 401" in str(status["end_reason"]), status
     assert "APP_SHARED_SECRET" in str(status["end_reason"]), status
+
+
+# ---------- review round 3 ----------
+
+from world.bridge_faults import classify, fault_from_headers  # noqa: E402
+
+
+def test_a_tap_held_up_longer_than_the_watchdog_still_holds_the_robot(monkeypatch):
+    """Round 2's claim was stamped once: a bridge slower than
+    `watchdog_timeout_s` (1.0 s) let it lapse mid-call, and again the
+    moment a slow goal was accepted."""
+    client, bridge = _server_over(monkeypatch, None)
+    bridge.post_gate = threading.Event()
+    reply = {}
+    tap = threading.Thread(target=lambda: reply.setdefault("r", client.post(
+        "/world/goal", json={"x_m": 2.0, "y_m": 1.0}, headers={"x-driver": "twin-dpad"}).json()))
+    tap.start()
+    try:
+        assert bridge.post_entered.wait(5.0)
+        time.sleep(1.3)                               # past the 1.0 s watchdog
+        verb = client.post("/action", json={"action": "LOOK_LEFT"},
+                           headers={"x-driver": "brain"}).json()
+        assert verb.get("reason") == "preempted", verb
+    finally:
+        bridge.post_gate.set()
+    tap.join(5.0)
+    assert reply["r"]["accepted"] is True, reply
+    verb = client.post("/action", json={"action": "LOOK_LEFT"}, headers={"x-driver": "brain"}).json()
+    assert verb.get("reason") == "preempted", f"the accepted goal held nothing: {verb}"
+
+
+def test_a_secret_fault_on_a_goal_read_carries_the_bridges_own_words(monkeypatch):
+    client, bridge = _server_over(monkeypatch, None)
+    runner = _explore_over_http(client)
+    runner.start()
+    for _ in range(400):
+        if bridge.goal is not None or not runner.tick():
+            break
+    bridge.refuse_reads = True
+    for _ in range(5):
+        if not runner.tick():
+            break
+    reason = str(runner.status()["end_reason"])
+    assert "bad or missing x-app-secret" in reason and "503" not in reason, reason
+
+
+def test_a_bridge_url_with_no_scheme_is_a_setup_fault():
+    assert classify(httpx.UnsupportedProtocol("no scheme"))["retryable"] is False
+    assert classify(httpx.ConnectError("refused"))["retryable"] is True
+
+
+def test_a_mangled_status_header_never_raises():
+    assert fault_from_headers({"x-bridge-retryable": "false", "x-bridge-status": "abc"}) == \
+        {"bridge_status": None, "retryable": False}
+    assert fault_from_headers({}) is None
