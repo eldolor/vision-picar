@@ -104,7 +104,7 @@ from pydantic import BaseModel
 from robot.factory import get_robot, load_config
 from robot.identity import configure_logging, log_identity
 from robot.interface import (
-    DRIVER_AUTONOMOUS, DRIVER_MANUAL, DRIVER_UNKNOWN, PERSON_STOP, VERB_STOP_BASELINE,
+    DRIVER_AUTONOMOUS, DRIVER_MANUAL, DRIVER_UNKNOWN, PERSON_STOP, STOPPED, VERB_STOP_BASELINE,
     WheelFeedbackLost, driver_priority)
 
 # The ROS container's driver name on POST /wheels (R2b, R4).
@@ -643,30 +643,33 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         state["last_command_at"] = now
         state["driver"] = driver
         state["driver_at"] = now
-        autonomous_was = state["autonomous_at"]
         if driver_priority(driver) == DRIVER_AUTONOMOUS:
             state["autonomous_at"] = now
-        with verb_running(driver):
+        stamp = {}
+        with verb_running(driver, stamped=stamp):
             outcome = _carry_out(req, driver, now, stops)
-        if is_autonomy(driver) and isinstance(outcome, dict) and outcome.get("executed"):
-            # 3.84: a person's Stop that landed while this verb ran (or just
-            # before its first motion, which then never came) cut it: the
-            # brain hears the Stop, not a move that was made.
+        if is_autonomy(driver) and isinstance(outcome, dict):
+            # 3.84: a person's Stop latched by the time the brain's verb
+            # ended -- it cut the verb, ended it before its first motion, or
+            # broke its bridge call -- is the answer, whatever else came
+            # back: the brain hears the Stop and ends its mission. (One that
+            # landed in the microseconds after a whole move reads the same;
+            # the mission ends `cancelled` either way.)
             latch = autonomy_latch()
-            if latch is not None:
+            if latch is not None and outcome.get("reason") != PERSON_STOP:
                 outcome = person_stop_refusal(driver, latch)
-        if (is_autonomy(driver) and isinstance(outcome, dict)
-                and outcome.get("reason") in (PERSON_STOP, "stopped")):
-            return lapse_refused_claim(driver, outcome, autonomous_was, now)  # refused at execution
+            if outcome.get("reason") in (PERSON_STOP, STOPPED):
+                return lapse_refused_claim(driver, outcome, stamp.get("at", now))
         return outcome
 
     @contextmanager
-    def verb_running(driver: str, restamp=lambda: True):
+    def verb_running(driver: str, restamp=lambda: True, stamped=None):
         """Hold the robot for `driver` while its verb runs (3.76 A1), and
         restart its lapse clock at the verb's END: the end is the driver's
         last word, not its start. A person's goal holds it the same way
         while it waits and the bridge answers, and restarts the clock only if
-        the goal was accepted (`restamp`, 3.82)."""
+        the goal was accepted (`restamp`, 3.82). `stamped`, a dict, gets the
+        stamp written (3.84: a lapse clears only its own command's claim)."""
         with verbs_lock:     # threadpool threads: a lost update would never lapse
             state["verbs_running"] += 1
         try:
@@ -677,19 +680,21 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 # never reads as lapsed in between.
                 if state["driver"] == driver and restamp():
                     state["driver_at"] = time.monotonic()
+                    if stamped is not None:
+                        stamped["at"] = state["driver_at"]
                 state["verbs_running"] -= 1
 
-    def lapse_refused_claim(driver: str, refused: dict, autonomous_was, stamped: float) -> dict:
+    def lapse_refused_claim(driver: str, refused: dict, stamped: float) -> dict:
         """3.84: a brain command refused at execution (`person_stop`, or
         `stopped`: a Stop overtook it) had already been given the robot by
         arbitration; its claim lapses at once rather than holding the slot
-        against a script's goal for `watchdog_timeout_s`, and the house-swap
-        clock (`autonomous_at`) goes back to before it."""
+        against a script's goal for `watchdog_timeout_s` -- only if the
+        claim is still this command's own stamp, never a newer command's.
+        The house-swap clock (`autonomous_at`) keeps it: a refused brain
+        command still counts as the brain at work, the safe side."""
         with verbs_lock:
-            if state["driver"] == driver:
+            if state["driver"] == driver and state["driver_at"] == stamped:
                 state["driver_at"] = 0.0
-            if state["autonomous_at"] == stamped:     # still this command's own stamp
-                state["autonomous_at"] = autonomous_was
         return refused
 
     def lift_hold_for_verb(driver: str, stops: int):
@@ -708,7 +713,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             if latch is not None and is_autonomy(driver):
                 return PERSON_STOP, latch
             if goal_stop["stops"] != stops:
-                return "stopped", None
+                return STOPPED, None
             goal_stop["hold"] = False
             lifted = goal_stop["lifted"]
             if lifted["stops"] != stops:
@@ -776,7 +781,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     VERB_STOP_BASELINE.reset(baseline)
                     if why == PERSON_STOP:
                         return person_stop_refusal(driver, latch)
-                    return refuse("stopped", f"a stop was pressed after this {req.action} "
+                    return refuse(STOPPED, f"a stop was pressed after this {req.action} "
                                   "was sent; it was not carried out", driver)
                 try:
                     with robot.driving_as(driver):
@@ -905,7 +910,6 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             state["last_command_at"] = now
             state["driver"] = driver
             state["driver_at"] = now
-            autonomous_was = state["autonomous_at"]
             if driver_priority(driver) == DRIVER_AUTONOMOUS:
                 state["autonomous_at"] = now
         brain = is_autonomy(driver)
@@ -917,18 +921,16 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             stops0 = getattr(robot, "stop_count", 0)
             refused = brain and person_stop_refusal(driver, autonomy_latch())
             if refused:
-                return lapse_refused_claim(driver, refused, autonomous_was, now)
+                return lapse_refused_claim(driver, refused, now)
             left, right, reason = safety.vet_wheel_velocity(req.left_rad_s, req.right_rad_s)
             try:
                 robot.set_wheel_velocity(left, right)
                 if not by_velocity and getattr(robot, "stop_count", 0) != stops0:
                     robot.set_wheel_velocity(0.0, 0.0)
-                    refused = brain and person_stop_refusal(driver, autonomy_latch())
-                    if refused:
-                        return lapse_refused_claim(driver, refused, autonomous_was, now)
-                    stopped = {"executed": False, "reason": "stopped", "driver": driver,
-                               "detail": "a stop landed while this command was applied"}
-                    return lapse_refused_claim(driver, stopped, autonomous_was, now) if brain else stopped
+                    stopped = ((brain and person_stop_refusal(driver, autonomy_latch()))
+                               or {"executed": False, "reason": STOPPED, "driver": driver,
+                                   "detail": "a stop landed while this command was applied"})
+                    return lapse_refused_claim(driver, stopped, now) if brain else stopped
             except NotImplementedError as e:
                 return refuse("unsupported", str(e), driver)
             except WheelFeedbackLost as e:

@@ -110,6 +110,8 @@ class Preempted(Exception):
 
 # 3.84: the refusal a person's Stop latches on autonomy, by name.
 PERSON_STOP = "person_stop"
+# 3.82/3.84: a command a stop overtook after it was sent, not carried out.
+STOPPED = "stopped"
 
 # 3.84: the robot's `stop_count` as robot/server.py read it, just before it
 # last checked a person's Stop for this verb. A verb takes it as its stop

@@ -244,10 +244,11 @@ class RosDriveRobot(RobotInterface):
 
     @property
     def stop_count(self) -> int:
-        """3.84: every stop -- this wrapper's (counted under `_gen_lock`, so
-        `_begin()` sees it before the inner robot's) and any made on the
-        inner robot directly (`fallback_safety`, a house load) -- so the
-        server's stop guards and a verb's baseline see them all."""
+        """3.84: changes on every stop -- this wrapper's (counted under
+        `_gen_lock`, so `_begin()` sees it before the inner robot's) and any
+        made on the inner robot directly (`fallback_safety`, a house load) --
+        so the server's stop guards and a verb's baseline see them all. Not a
+        count of stops (one `stop()` moves it by 2): compare it, never count."""
         return self._stops + getattr(self.inner, "stop_count", 0)
 
     def _begin(self) -> int:
