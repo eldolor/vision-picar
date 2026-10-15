@@ -1,0 +1,29 @@
+{
+ "cloud": "standin",
+ "house": "home_first_floor",
+ "outcome": "out_of_budget",
+ "seconds": 1202,
+ "steps": 3767,
+ "cloud_calls_proxy": 628,
+ "refused_over_budget": 0,
+ "cloud_calls_brain": 628,
+ "triggers": {
+  "mission_start": 1,
+  "cold_search": 627
+ },
+ "frames": 3767,
+ "tokens_in_mean": null,
+ "tokens_out_mean": null,
+ "cost_usd": 0,
+ "visible_answers": 0,
+ "model_ids": [
+  "None"
+ ],
+ "log_tail": [
+  "step 3765: RIGHT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal RIGHT",
+  "step 3766: RIGHT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal RIGHT",
+  "inventory: 11 reported, 4 candidates from 3767 frames -- armchair x3, chair x3, dining table x2, coffee table, sectional sofa, staircase",
+  "mission ended (out_of_budget): time limit of 1200 s reached (1200.1 s)"
+ ],
+ "logs": "/var/folders/4m/90g11pps7z52mxb1k0ps3pjm0000gr/T/pilot-380E-standin-1792024127"
+}
