@@ -166,26 +166,29 @@ strongest candidate has that label and P >= `local_band_low` into
 `Perception.promoted()` (status `detected`), so it steers, triggers and is
 judged at arrival as a detection, until a frame with neither a band
 candidate nor a detection clears the label (a label is stored only from a
-candidate that was in the band on the frame asked about). The unable count
-belongs to one question (`_unable_for`): asking a different question starts
-it at 0. Unable sets `_pending_question` and adds one to `_sight_unable`;
-absent sets it to `local_max_unable`. If a newer question is already
-pending, the failed one is superseded instead (`_rearm()`: a spent
-`candidate_sighting` edge or the band fires again) and nothing is counted. A
-pending `uncertain_candidate` whose candidate has left the band is dropped,
-with its count. A fresh question that displaces a waiting one re-arms the
-waiting one's edge (`_rearm()`).
-When the pending question is the counted one and `_sight_unable >=
-local_max_unable`, it takes the cloud path as before (cap, one cloud call in
-flight, `_dispatch`) under its own trigger; a fresh question on that frame
-becomes the next local one (a spent candidate edge is re-armed while a cloud
-call is out). Sent, it counts in `escalations` and the count is forgotten; at
-the cap the count is forgotten and the fresh question kept for the local
-tier; with a cloud call out it waits. A landing (`_collect_inflight`)
-answers a waiting question of the same trigger or a navigation one
-(`NAVIGATION_QUESTIONS`: start, cold search, staleness -- the cloud is asked
-one navigate question whatever the trigger), so no paid call follows
-straight behind; a candidate's or the band's still goes up. A cloud yes to `uncertain_candidate`
+candidate that was in the band on the frame asked about). **One rule for
+the one waiting slot, `_pending_question`: the older question keeps it.** A
+waiting question is asked again, or handed up, before any fresh one; a fresh
+one that cannot be asked (`_hold()` with the slot taken, or a waiting
+question first) is re-armed (`_rearm()`: a spent `candidate_sighting` edge
+or the band fires again; `cold_search` and `staleness` fire again on their
+own counts) and asked later. An unable or absent answer that lands while a
+newer question waits takes the slot back and re-arms the newer. The unable
+count belongs to one question (`_unable_for`): asking a different question
+starts it at 0. Unable adds one to `_sight_unable`; absent sets it to
+`local_max_unable`. A waiting `uncertain_candidate` whose candidate is gone,
+or now has another label than the one asked about (`_band_asked_label`), is
+dropped with its count (`_drop_pending()`); an unavailable frame drops
+nothing. A label change also starts a new band run, armed. When the waiting
+question is the counted one at `local_max_unable`, it takes the cloud path as
+before (cap, one cloud call in flight, `_dispatch`) under its own trigger.
+Sent, it counts in `escalations` and the count is forgotten; at the cap it is
+dropped and re-armed for the local tier; with a cloud call out it waits. A
+landing (`_collect_inflight`) answers a waiting question of the same trigger
+or a navigation one (`NAVIGATION_QUESTIONS`: start, cold search, staleness
+-- the cloud is asked one navigate question whatever the trigger), so no
+paid call follows straight behind; a candidate's or the band's still goes
+up. A cloud yes to `uncertain_candidate`
 promotes as a local yes does (`_cloud_answered_band`). With a local tier
 every cloud call is an escalation: `confirm_cloud()` counts the arrival's
 too, whether the local tier was spent or absent. `confirm_local()` waits on

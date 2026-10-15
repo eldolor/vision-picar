@@ -583,19 +583,23 @@ def test_review_an_arrival_handed_up_by_an_absent_tier_is_an_escalation():
 
 # ---------- bug pass fixes (2026-10-15) ----------
 
-def test_bugpass_an_older_questions_failure_is_not_counted_against_a_newer_one():
+def test_bugpass_the_older_question_keeps_the_slot_and_the_newer_is_asked_after():
+    """One rule for the waiting slot (third review): the start's absent
+    answer lands while a candidate question waits; the start is the older,
+    keeps the slot and goes up; the candidate fires again and gets its own
+    local try -- its count never shared with the start's."""
     gate = threading.Event()
     local, cloud = Local(LocalVLMAbsent("blip"), no(), gate=gate), Cloud()
-    tier = tier_for(Script(absent(), *([detected()] * 6)), local, cloud)
+    tier = tier_for(Script(absent(), *([detected()] * 8)), local, cloud)
     tier({})                                   # start, held
     tier({}), tier({})                         # candidate_sighting waits behind it
     gate.set()
     settle(tier)
-    for _ in range(3):
+    for _ in range(4):
         tier({})
         settle(tier)
-    assert cloud.calls == 0, "the candidate got its own local try"
-    assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE) == 1
+    assert tier.stats.triggers == {TRIGGER_START: 1}, tier.stats.triggers
+    assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE) == 1, tier.stats.local_triggers
 
 
 def test_bugpass_a_cloud_landing_answers_only_its_own_escalated_question():
@@ -684,15 +688,14 @@ def test_review2_no_paid_call_straight_behind_a_landing_for_a_navigation_questio
 def test_review2_a_new_question_does_not_inherit_the_old_ones_count():
     u = {"status": "unparsed", "score": None}
     local, cloud = Local(u), Cloud()
-    tier = tier_for(Script(absent(), *([detected()] * 4)), local, cloud,
+    tier = tier_for(Script(absent(), *([detected()] * 8)), local, cloud,
                     consecutive_frames=1)
-    scenes = run(tier, 4)
-    # Frame 1 start (unable); frame 2 the candidate (unable, its first);
-    # frame 3 asks the candidate again locally, not the cloud; after its own
-    # second unable answer, frame 4 hands it up.
-    assert scenes[2]["_tier"].get("local_dispatched") == TRIGGER_CANDIDATE
-    assert scenes[3]["_tier"]["cloud_called"] and scenes[3]["_tier"]["trigger"] == TRIGGER_CANDIDATE
-    assert cloud.calls == 1
+    run(tier, 7)
+    # The start: two local tries, then the cloud; then the candidate: its own
+    # two local tries, then the cloud.
+    assert tier.stats.local_triggers == {TRIGGER_START: 2, TRIGGER_CANDIDATE: 2}, \
+        tier.stats.local_triggers
+    assert tier.stats.triggers == {TRIGGER_START: 1, TRIGGER_CANDIDATE: 1}, tier.stats.triggers
 
 
 def test_review2_a_superseded_candidate_question_fires_again():
@@ -756,6 +759,69 @@ def test_bugpass2_a_band_question_displaced_by_a_fresh_trigger_is_asked_again():
     gate.set()
     settle(tier)
     s9 = tier({})                              # its unable lands as cold_search fires
-    assert s9["_tier"]["local_dispatched"] == TRIGGER_COLD_SEARCH
-    run(tier, 4)
+    # The band question is the older: asked again; the cold search after.
+    assert s9["_tier"]["local_dispatched"] == TRIGGER_UNCERTAIN
+    run(tier, 8)                               # paced from the band question asked instead
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 2, tier.stats.local_triggers
+    assert tier.stats.local_triggers.get(TRIGGER_COLD_SEARCH) == 1, tier.stats.local_triggers
+
+
+
+# ---------- third review: one rule for the waiting slot (2026-10-15) ----------
+
+def test_review3_a_slow_always_unable_tier_still_reaches_the_cloud():
+    """Two questions alternating behind a slow local tier never swap for
+    ever: the older keeps the slot, so its count reaches the max. A property
+    pin: this schedule does not reproduce the third review's swap under the
+    old rule (it needed a latency matching the cold-search bar), which the
+    one-slot rule now excludes by construction."""
+    u = {"status": "unparsed", "score": None}
+    gate = threading.Event()
+    gate.set()
+    b = absent(cand(0.6))
+    local, cloud = Local(no(), u, gate=gate), Cloud()
+    tier = tier_for(Script(absent(), *([b] * 80)), local, cloud, cold_search_after=2)
+    run(tier, 2)
+    for _ in range(12):                        # each answer lands three frames late
+        gate.clear()
+        for _ in range(3):
+            tier({})
+        gate.set()
+        settle(tier)
+        if cloud.calls:
+            break
+    assert cloud.calls >= 1, (tier.stats.local_triggers, tier.stats.triggers)
+
+
+def test_review3_an_adjacent_candidate_of_another_label_is_a_new_question():
+    u = {"status": "unparsed", "score": None}
+    bag, chair = absent(cand(0.6, "bag")), absent(cand(0.6, "chair"))
+    local, cloud = Local(no(), u, u, u, u), Cloud()
+    tier = tier_for(Script(absent(), bag, bag, bag, chair, chair, chair, chair), local, cloud)
+    run(tier, 8)
+    # The bag: two unable tries; dropped when the chair replaces it, its
+    # count with it. The chair: its own two local tries, then the cloud.
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 4, tier.stats.local_triggers
+    assert cloud.calls == 1, tier.stats.triggers
+
+
+def test_review3_an_unavailable_frame_keeps_the_waiting_band_question():
+    u = {"status": "unparsed", "score": None}
+    b = absent(cand(0.6))
+    local, cloud = Local(no(), u), Cloud()
+    tier = tier_for(Script(absent(), b, b, b, Perception(status=UNAVAILABLE), b, b, b),
+                    local, cloud)
+    run(tier, 5)
+    # Asked on 3 and 4 (unable twice); the dropout on 5 neither drops it nor
+    # restarts its count: it goes up on 5.
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 2, tier.stats.local_triggers
+    assert cloud.calls == 1
+
+
+def test_review3_at_the_cap_the_dropped_question_fires_again_locally():
+    b = absent(cand(0.6))
+    local, cloud = Local(no(), LocalVLMAbsent("blip"), no()), Cloud()
+    tier = tier_for(Script(absent(), *([b] * 8)), local, cloud, max_calls=0)
+    run(tier, 8)
+    assert cloud.calls == 0
     assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 2, tier.stats.local_triggers
