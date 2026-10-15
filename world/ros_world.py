@@ -31,6 +31,8 @@ from typing import NamedTuple, Optional, Tuple
 
 import httpx
 
+from world.bridge_faults import classify
+
 from world.interface import (
     CELL_FREE, CELL_OCCUPIED, CELL_UNKNOWN, WorldInterface, unusable_map,
     unusable_pose, unusable_truth)
@@ -309,8 +311,10 @@ class RosWorld(WorldInterface):
                 self._ensure_session(self._fetch_pose())
             r = self._http.get("/slam/map")
             m = _json_object(r)
-        except httpx.HTTPError:
-            return unusable_map()
+        except httpx.HTTPError as e:
+            # No map, and whether waiting can bring one (3.82): explore ends
+            # its mission on `retryable: false` instead of waiting it out.
+            return {**unusable_map(), **classify(e)}
         anchor = self._anchor
         if m.get("session") != anchor.session or not m.get("data"):
             return unusable_map()
@@ -393,8 +397,11 @@ class RosWorld(WorldInterface):
         # there was never a session, which is said by name.
         try:
             reply = self._fetch_pose()
-        except httpx.HTTPError:
-            if self._session is not None:
+        except httpx.HTTPError as e:
+            # 3.82: a fault no wait mends (a 401: the secrets differ) is
+            # raised even before a session -- read as "no session yet", it
+            # was waited on for the whole mission.
+            if self._session is not None or not classify(e)["retryable"]:
                 raise
             reply = None
         # A session's anchor never changes (round 5), so the point the brain

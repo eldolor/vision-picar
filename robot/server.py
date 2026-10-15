@@ -109,6 +109,7 @@ from robot.interface import (
 # The ROS container's driver name on POST /wheels (R2b, R4).
 DRIVER_ROS = "ros"
 from robot.safety import SafetyController, SafetyViolation, path_zone_indices
+from world.bridge_faults import classify as bridge_fault, headers_for
 from world.factory import get_world
 
 logger = logging.getLogger("server")
@@ -186,15 +187,6 @@ def _held(lock):
         yield
     finally:
         lock.release()
-
-
-def _bridge_retryable(status: Optional[int]) -> bool:
-    """3.82: can waiting mend a bridge error on a goal? A transport error
-    (no status) or a 5xx may pass; so may 408, 409 and 429. Any other 4xx --
-    a 401 for a mismatched secret, a 404 from a bridge without the route --
-    is a fault in how the two are set up. The same split as
-    brain/navigate.py's CloudUnavailable."""
-    return status is None or status >= 500 or status in (408, 409, 429)
 
 
 def watchdog_should_stop(last_command_at: float, now: float, timeout_s: float) -> bool:
@@ -1060,14 +1052,15 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             refused = arbitrate(person, now)
             if refused:
                 return {"accepted": False, **refused}
-            state["driver"], state["driver_at"] = person, now
         else:
             refused = arbitrate(DRIVER_ROS, now)
             if refused:
                 return {"accepted": False, **refused}
         # A person re-sending a goal after a stop: it supersedes the stop's
         # ending loop, which must never cancel this new goal -- but only once
-        # nav2 has it (3.82). A refused goal never existed, so the stop's
+        # the bridge has taken it (3.82; nav2 may still reject it, and the
+        # bridge cancelled the old goal before sending it). A refused goal
+        # never existed, so the stop's
         # loop keeps ending the goal the stop was for, and keeps its hold.
         with goal_stop_lock:
             with goal_gen_lock:
@@ -1079,11 +1072,14 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 # waiting can help, as a field rather than prose -- the
                 # bridge refusing our secret (a 401) is a fault no wait
                 # mends; a transport error or a 5xx may pass.
-                status = getattr(getattr(e, "response", None), "status_code", None)
                 return {"accepted": False, "reason": "ros_unavailable",
                         "detail": f"the ROS bridge did not take the goal: {e}",
-                        "bridge_status": status, "retryable": _bridge_retryable(status)}
+                        **bridge_fault(e)}
             if reply.get("accepted") is True:
+                if person and driver_priority(person) == DRIVER_MANUAL:
+                    # Only a goal nav2 was given takes the robot from the
+                    # brain (3.82): a refused one never existed.
+                    state["driver"], state["driver_at"] = person, time.monotonic()
                 with goal_gen_lock:
                     # A stop that landed while set_goal() was in flight owns
                     # a newer generation: its loop, waiting on goal_stop_lock,
@@ -1099,8 +1095,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         try:
             return fn()
         except httpx.HTTPError as e:
+            # 3.82: whether waiting can help, as headers (the body stays the
+            # detail the twin shows): a 401 from the bridge is no outage.
             raise HTTPException(status_code=503,
-                                detail=f"ros_unavailable: the ROS bridge did not answer: {e}")
+                                detail=f"ros_unavailable: the ROS bridge did not answer: {e}",
+                                headers=headers_for(bridge_fault(e)))
 
     @app.get(prefix + "/world/goal", dependencies=[Depends(require_secret)])
     def world_goal_get():

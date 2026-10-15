@@ -17,7 +17,16 @@ from typing import Optional
 
 import httpx
 
+from world.bridge_faults import RETRYABLE_HEADER, STATUS_HEADER
+
 DEFAULT_TIMEOUT_S = 10.0
+
+
+def _detail(r: httpx.Response) -> str:
+    try:
+        return str(r.json().get("detail"))
+    except (ValueError, AttributeError):
+        return r.text[:200]
 
 
 class RemoteNavigator:
@@ -43,6 +52,13 @@ class RemoteNavigator:
             # 3.76: a wrong secret read as "this world has no nav2".
             raise PermissionError(f"the robot server refused the brain's secret "
                                   f"(HTTP {r.status_code}) -- check APP_SHARED_SECRET")
+        if r.status_code == 503 and r.headers.get(RETRYABLE_HEADER) == "false":
+            # 3.82: the robot server's bridge refused it for a fault no wait
+            # mends (a 401: the two secrets differ), which read as "no nav2".
+            raise PermissionError(
+                f"the robot server's ROS bridge refused it (HTTP "
+                f"{r.headers.get(STATUS_HEADER, '?')}) -- check that the robot server and "
+                f"the ROS container share APP_SHARED_SECRET: {_detail(r)}")
         return r.status_code == 200
 
     def set_goal(self, x_m: float, y_m: float) -> dict:

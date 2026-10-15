@@ -42,6 +42,8 @@ class RefusingBridge(SlowBridge):
                 self.post_gate.wait(5.0)
             if self.refuse_post == "transport":
                 raise httpx.ConnectError("bridge unreachable", request=request)
+            if self.refuse_post == "html":
+                return httpx.Response(200, text="<html>a proxy's page</html>")
             if self.refuse_post is not None:
                 status, body = self.refuse_post
                 return httpx.Response(status, json=body)
@@ -262,3 +264,112 @@ def test_a_transient_bridge_fault_is_still_waited_on(monkeypatch, fault):
     assert ticks == 20, ticks
     assert runner.is_running(), runner.status()
     runner.stop()
+
+
+# ---------- review round 1: a real mismatched secret refuses EVERY route ----------
+# Both reviewers: the bridge checks the secret on every route but /health,
+# so before a goal is ever sent the map and pose reads are refused too --
+# explore waited on "no map yet", the goal route answered "no SLAM session
+# yet", and the start check blamed a missing nav2.
+
+from control.remote_world import RemoteWorld  # noqa: E402
+from world.bridge_faults import RETRYABLE_HEADER, STATUS_HEADER  # noqa: E402
+
+
+class SecretBridge(RefusingBridge):
+    """A bridge whose every route but /health refuses (or cannot be reached)."""
+
+    def __init__(self, everything, **kw):
+        super().__init__(**kw)
+        self.everything = everything   # "401" or "transport"
+
+    def handler(self, request):
+        if request.url.path != "/health":
+            if self.everything == "transport":
+                raise httpx.ConnectError("bridge unreachable", request=request)
+            return httpx.Response(401, json={"error": "bad or missing x-app-secret"})
+        return super().handler(request)
+
+
+def _server_with_secret_fault(monkeypatch, everything):
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    bridge = SecretBridge(everything, start_truth=START)
+    world, _ = world_with(truth=FakeTruth(1.0, 1.0, 90.0), bridge=bridge)
+    monkeypatch.setattr(server, "get_world", lambda *a, **kw: world)
+    return asgi_client(server.create_app())
+
+
+def test_a_mismatched_bridge_secret_is_named_at_the_missions_start(monkeypatch):
+    """`available()` read the goal route's 503 as "this world has no nav2"."""
+    client = _server_with_secret_fault(monkeypatch, "401")
+    with pytest.raises(PermissionError, match="HTTP 401"):
+        RemoteNavigator(ASGI_BASE_URL, client=client).available()
+
+
+@pytest.mark.parametrize("everything", ["401", "transport"])
+def test_goal_reads_say_whether_waiting_can_help(monkeypatch, everything):
+    client = _server_with_secret_fault(monkeypatch, everything)
+    r = client.get("/world/goal")
+    assert r.status_code == 503 and "ros_unavailable" in r.text, r.text
+    assert r.headers.get(RETRYABLE_HEADER) == ("false" if everything == "401" else "true")
+    assert r.headers.get(STATUS_HEADER) == ("401" if everything == "401" else None)
+
+
+def test_a_goal_before_any_session_is_refused_as_a_setup_fault_not_no_session(monkeypatch):
+    client = _server_with_secret_fault(monkeypatch, "401")
+    r = client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()
+    assert r["accepted"] is False and r.get("retryable") is False, r
+    assert r.get("bridge_status") == 401, r
+
+
+def _explore_world_over_http(client):
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    return MissionRunner(robot, target_object="red backpack", policy="explore",
+                         navigator=RemoteNavigator(ASGI_BASE_URL, client=client),
+                         world=RemoteWorld(ASGI_BASE_URL, client=client), max_steps=400,
+                         clock=lambda: grid.sim_time, idle=robot.pass_time)
+
+
+def test_a_mismatched_bridge_secret_ends_explore_on_the_map_read(monkeypatch):
+    """With every route refused, explore never reached a goal: it waited on
+    "no map yet" for the whole time limit."""
+    client = _server_with_secret_fault(monkeypatch, "401")
+    runner = _explore_world_over_http(client)
+    runner.start()
+    ticks = 0
+    while ticks < 20 and runner.tick():
+        ticks += 1
+    status = runner.status()
+    assert status["outcome"] == FAILED, status
+    assert ticks <= 3, ticks
+    assert "HTTP 401" in str(status.get("end_reason")), status
+
+
+def test_an_unreachable_bridge_is_still_waited_on_at_the_map(monkeypatch):
+    client = _server_with_secret_fault(monkeypatch, "transport")
+    runner = _explore_world_over_http(client)
+    runner.start()
+    for _ in range(20):
+        assert runner.tick(), runner.status()
+    assert runner.is_running()
+    runner.stop()
+
+
+def test_a_refused_tap_to_goal_does_not_take_the_robot_from_the_brain(monkeypatch):
+    """code-review: a person's goal took the driver slot before `set_goal()`
+    answered, so a goal the bridge refused still preempted the brain."""
+    client, _ = _server_over(monkeypatch, REFUSALS["nav2 down"])
+    r = client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0},
+                    headers={"x-driver": "twin-dpad"}).json()
+    assert r["accepted"] is False, r
+    a = client.post("/action", json={"action": "LOOK_LEFT"}, headers={"x-driver": "brain"}).json()
+    assert a.get("reason") != "preempted", a
+
+
+def test_a_goal_reply_that_is_not_json_is_a_setup_fault(monkeypatch):
+    """code-review: a 200 that is not a JSON object (a proxy's page) was
+    classed retryable and waited on."""
+    client, _ = _server_over(monkeypatch, "html")
+    r = client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()
+    assert r["accepted"] is False and r.get("retryable") is False, r
