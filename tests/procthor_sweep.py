@@ -5,10 +5,15 @@ first N usable ProcTHOR houses, in process, with `tests/test_explore.py`'s
 it). A statement about the policy's decisions in houses it was not tuned
 in, not about driving.
 
-    python -m tests.procthor_sweep [N]          # default 100
+    python -m tests.procthor_sweep [N] [START]  # default 100 from usable house 0
+
+3.70 M5 sweeps usable houses 200-299 (`100 200`) and records the median
+goals to Found beside them. Not time: FakeNav moves the robot in one hop and
+charges 2 s a goal, so the sim clock here is no driving time.
 """
 
 import json
+import statistics
 import sys
 import time
 
@@ -45,19 +50,23 @@ def run_house(index: int) -> dict:
     return row
 
 
-def sweep(n: int = 100) -> list:
-    return [run_house(i) for i in usable()[:n]]
+def sweep(n: int = 100, start: int = 0) -> list:
+    return [run_house(i) for i in usable()[start:start + n]]
 
 
 def main(argv):
     n = int(argv[0]) if argv else 100
+    start = int(argv[1]) if len(argv) > 1 else 0
     t = time.time()
-    rows = sweep(n)
+    rows = sweep(n, start)
     found = sum(r["outcome"] == FOUND for r in rows)
     clean = sum(r["outcome"] not in ("exception", "running") and not r.get("capped") for r in rows)
     print(json.dumps([r for r in rows if r["outcome"] != FOUND], indent=1))
     print(f"5a ended cleanly: {clean}/{len(rows)}   5b found: {found}/{len(rows)}   "
           f"({time.time() - t:.0f} s)")
+    goals = [r["goals"] for r in rows if r["outcome"] == FOUND and r.get("goals") is not None]
+    if goals:
+        print(f"median goals to found: {statistics.median(goals)}")
 
 
 if __name__ == "__main__":

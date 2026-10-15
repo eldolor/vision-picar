@@ -187,3 +187,47 @@ def test_cancelled_by_is_stop_or_dpad(client):
     r = tc.post("/metrics/runs", json=a_run(run_id="r-bad", outcome="cancelled",
                                              cancelled_by="operator"))
     assert r.status_code == 422
+
+
+def test_c9_review_cancelled_by_only_rides_a_cancelled_row():
+    """row_for took the field from any status that carried it."""
+    assert "cancelled_by" not in row_for({"outcome": "failed", "cancelled_by": "stop"})
+
+
+def _poster(sent, refuse):
+    import httpx
+
+    def post(url, json=None, headers=None, timeout=None):
+        sent.append(dict(json))
+        if "cancelled_by" in json and refuse:
+            return httpx.Response(422, json={"detail": [refuse]})
+        return httpx.Response(200, json={"stored": True})
+    return post
+
+
+def test_c9_review_a_walks_function_that_does_not_know_the_field_still_gets_the_row(monkeypatch):
+    """An older walks function (`extra: forbid`) answered 422 and the whole
+    cancelled run was dropped; now it is sent again without the label."""
+    import httpx
+    sent = []
+    monkeypatch.setattr(httpx, "post", _poster(sent, {
+        "type": "extra_forbidden", "loc": ["body", "cancelled_by"], "msg": "Extra inputs are not permitted"}))
+    row = row_for({"outcome": "cancelled", "cancelled_by": "stop", "policy": "explore"})
+    assert ship_run("http://walks.test", row) is True
+    assert sent[0]["cancelled_by"] == "stop"
+    assert len(sent) == 2 and "cancelled_by" not in sent[1]
+
+
+@pytest.mark.parametrize("refuse", [
+    {"type": "literal_error", "loc": ["body", "cancelled_by"], "msg": "Input should be 'stop' or 'dpad'"},
+    {"type": "missing", "loc": ["body", "run_id"], "input": {"cancelled_by": "stop"}},
+])
+def test_c9_review_any_other_refusal_is_not_retried(monkeypatch, refuse):
+    """A refused VALUE (contract drift) or another field's error mentioning
+    cancelled_by in its echoed input: one POST, reported as not shipped."""
+    import httpx
+    sent = []
+    monkeypatch.setattr(httpx, "post", _poster(sent, refuse))
+    row = row_for({"outcome": "cancelled", "cancelled_by": "stop", "policy": "explore"})
+    assert ship_run("http://walks.test", row) is False
+    assert len(sent) == 1

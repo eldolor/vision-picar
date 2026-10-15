@@ -190,6 +190,14 @@
     // "tiered" runs YOLO + CLIP inside the brain process on every frame and
     // spends a call only on a trigger (PLAN-onboard-perception.md 2.4, P2).
     brainPolicy: "frontier",
+    // 3.70 S5: the panel's job -- "find" (a target) or "survey" (no target,
+    // explore only). Not remembered across loads: a survey on the car spends
+    // paid room-name calls, so it is chosen each time. brainLabelCap is the
+    // brain's own cap on those calls (its /health): null for no cap,
+    // undefined when not known.
+    // brainJobChosen is this phone's own pick, which a watched mission's job
+    // overrides only while that mission runs.
+    brainJob: "find", brainJobChosen: "find", brainLabelCap: undefined,
     // What the connected brain says about its own perception models --
     // whether they are installed at all, and which two would load. Null
     // until a brain has been asked: "not known yet" and "not available"
@@ -1606,6 +1614,40 @@
     return null;
   }
 
+  // 3.70 S5: a survey has no target, so running and Exhausted -- no
+  // reachable frontier left, its success -- are worded as its own. Every
+  // other ending (Out of budget, Cancelled, a fault) keeps the find's words.
+  function surveyDone(status) {
+    return status.job === "survey" && !status.running
+      && readOutcome(status).outcome === "exhausted";
+  }
+
+  function surveyStateText(status) {
+    if (status.job !== "survey") return null;
+    if (status.running) return "Surveying the house";
+    if (readOutcome(status).outcome === "exhausted") {
+      return "Survey done \u2014 every reachable part mapped";
+    }
+    return null;
+  }
+
+  // 3.70 S5: the rooms a survey has named, against its call cap. Hidden for
+  // a find, and for a brain too old to report a survey.
+  function renderSurveyRow(survey) {
+    const row = document.getElementById("brain-survey-row");
+    if (!row) return;
+    row.style.display = survey ? "" : "none";
+    if (!survey) return;
+    const named = (survey.rooms_named || []).length
+      ? survey.rooms_named.join(", ") : "none yet";
+    const calls = survey.label_calls + (survey.label_call_limit
+      ? " of " + survey.label_call_limit : "") + " room-name calls";
+    const note = survey.no_source ? " \u2014 nothing can name rooms here"
+      : survey.capped ? " \u2014 cap reached, the rest stay unnamed" : "";
+    setBrainText("brain-tel-survey", named + " \u00B7 " + calls + note,
+      survey.no_source ? "alert" : survey.capped ? "warn" : null);
+  }
+
   // 3.70 E4/E5: "where it looked", from the brain's report. "" without one.
   // The floor is said as AREA MAPPED, never the report's `coverage` share:
   // that estimate cannot count floor the map has not reached, and read
@@ -1677,11 +1719,19 @@
   function renderBrainStatus(status) {
     const outcome = readOutcome(status).outcome;
     const late = outcome === "arrived_unconfirmed" ? lateWords(status) : "";
+    const survey = status.job === "survey";
+    // 3.70 S5: a running mission's job is the picker's, whoever started it;
+    // once nothing runs, the picker is this phone's own choice again.
+    const job = status.running && (status.job === "survey" || status.job === "find")
+      ? status.job : state.brainJobChosen;
+    state.brainJob = job;
+    document.getElementById("brain-job").value = job;
+    renderBrainJob();   // every caller, not only those that also update controls
     setBrainText("brain-tel-outcome",
-      (endStateText(status) || outcome)
+      (surveyStateText(status) || endStateText(status) || outcome)
         + (status.fault && status.fault !== "none" ? " (" + status.fault + " drill)" : "")
         + (late ? " — " + late : ""),
-      BRAIN_OUTCOME_CLASS[outcome]);
+      surveyDone(status) ? "safe" : BRAIN_OUTCOME_CLASS[outcome]);
     // 3.70 E6: where an Out of budget or Cancelled mission looked.
     setBrainText("brain-tel-report",
       (outcome === "out_of_budget" || outcome === "cancelled" || outcome === "exhausted")
@@ -1706,6 +1756,7 @@
       status.vision_failures ? "alert" : null);
     setBrainText("brain-tel-rooms",
       (status.rooms_searched && status.rooms_searched.length) ? status.rooms_searched.join(", ") : null);
+    renderSurveyRow(survey ? status.survey : null);
     const unconfirmed = status.outcome === "arrived_unconfirmed";
     // 3.70: an ended mission's Why is why it ENDED, not its last decision.
     const ending = !status.running && endStateText(status) ? status.end_reason : null;
@@ -2230,7 +2281,9 @@
 
     if (wasRunning && !status.running) {
       const outcome = readOutcome(status).outcome;
-      const ok = outcome === "found" || outcome === "room_reached";
+      // 3.70 S5: a survey's Exhausted is its success, said in its own words.
+      const done = surveyDone(status);
+      const ok = outcome === "found" || outcome === "room_reached" || done;
       const ended = endStateText(status);
       if (outcome === "idle") {
         // 3.76: "idle" after a running mission is a brain that restarted
@@ -2240,6 +2293,8 @@
           + "is still running it, stop it there.", "warn");
       } else if (outcome === "arrived_unconfirmed") {
         showToast("Mission arrived_unconfirmed: " + unconfirmedText(status), "warn");
+      } else if (done) {
+        showToast(surveyStateText(status) + ".", "ok");
       } else if (ended) {
         // 3.70 E6: an end state is never an error toast.
         showToast("Mission " + ended, ok ? "ok" : BRAIN_OUTCOME_CLASS[outcome] === "warn" ? "warn" : "info");
@@ -2402,6 +2457,8 @@
     document.getElementById("brain-fault").disabled = state.brainMissionRunning;
     document.getElementById("brain-target").disabled = state.brainMissionRunning;
     document.getElementById("brain-policy").disabled = state.brainMissionRunning;
+    document.getElementById("brain-job").disabled = state.brainMissionRunning;
+    renderBrainJob();
     updateHouseButton();
     if (hint) {
       hint.style.display = state.brainConnected ? "none" : "";
@@ -2438,7 +2495,7 @@
   function renderBrainPolicyHint() {
     const hint = document.getElementById("brain-policy-hint");
     if (!hint) return;
-    if (!isCloudPolicy(state.brainPolicy)) {
+    if (state.brainJob === "survey" || !isCloudPolicy(state.brainPolicy)) {
       hint.style.display = "none";
       return;
     }
@@ -2493,8 +2550,36 @@
 
   function updateBrainPickersRow() {
     const row = document.getElementById("brain-policy-pickers-row");
-    if (row) row.style.display = isCloudPolicy(state.brainPolicy) ? "" : "none";
+    if (row) row.style.display = state.brainJob !== "survey"
+      && isCloudPolicy(state.brainPolicy) ? "" : "none";
   }
+
+  // 3.70 S5: a survey has no target and runs explore only (MissionRunner
+  // refuses anything else), so the find's target box, policy and drills
+  // hide, and the hint says what a survey does and what it may spend.
+  function renderBrainJob() {
+    const survey = state.brainJob === "survey";
+    document.getElementById("brain-target").style.display = survey ? "none" : "";
+    document.getElementById("brain-policy-row").style.display = survey ? "none" : "";
+    document.getElementById("brain-fault-row").style.display = survey ? "none" : "";
+    renderBrainPolicyHint();   // both read the job: one redraw for all its controls
+    updateBrainPickersRow();
+    const hint = document.getElementById("brain-job-hint");
+    hint.style.display = survey ? "" : "none";
+    if (!survey) return;
+    const cap = state.brainLabelCap ? "at most <b>" + state.brainLabelCap + "</b> a survey"
+      : state.brainLabelCap === null ? "with no cap set on this brain"
+      : "up to the brain's own cap";
+    hint.innerHTML = "Drives to every reachable frontier with nav2 "
+      + "(<code>WORLD_MODE=ros</code>) and names rooms as it goes, then ends. "
+      + "In the simulator its floor plan names them, free. On the car each "
+      + "name will be a paid cloud call, " + cap + ".";
+  }
+
+  document.getElementById("brain-job").addEventListener("change", function () {
+    state.brainJob = state.brainJobChosen = this.value;
+    updateBrainControls();
+  });
 
   // The two pickers live on the Guide tab, next to Robot view -- the flow
   // they were built for. The vision policy is their second consumer, and a
@@ -2518,16 +2603,19 @@
     // a brain that dies with a browser tab was never going to be it. The
     // server's own 409 and M4's authority order are what enforce it now.
     const target = document.getElementById("brain-target").value.trim() || "red backpack";
-    const fault = document.getElementById("brain-fault").value;
-    saveTargetToHistory(target);
+    const survey = state.brainJob === "survey";
+    // A survey sends no drill: its picker is hidden, and may still hold one.
+    const fault = survey ? "none" : document.getElementById("brain-fault").value;
+    if (!survey) saveTargetToHistory(target);
     const btn = document.getElementById("btn-brain-mission");
     setButtonBusy(btn, true, "Starting\u2026");
-    const body = { target_object: target, fault: fault, policy: state.brainPolicy };
+    const body = survey ? { job: "survey", policy: "explore" }
+      : { target_object: target, fault: fault, policy: state.brainPolicy };
     // Sent only on the policy that reads them, and only when actually
     // picked: an absent field means "whatever the brain, and then the vision
     // service, defaults to". Sending null instead would be the same value
     // with a worse story about where it came from.
-    if (isCloudPolicy(state.brainPolicy)) {
+    if (!survey && isCloudPolicy(state.brainPolicy)) {
       if (state.navigateModelId) body.model_id = state.navigateModelId;
       if (state.navigatePromptVariant) body.prompt_variant = state.navigatePromptVariant;
     }
@@ -2536,9 +2624,10 @@
       await brainApi("POST", "/mission/start", body);
       resetSightings();   // 3.76: only once the brain took it; a refused start leaves the watched one's
       state.brainMissionRunning = true;
-      state.brainTarget = target.toLowerCase();
+      state.brainTarget = survey ? null : target.toLowerCase();
       state.brainLogSignature = "";
-      showToast(fault === "none" ? "Mission started on the robot."
+      showToast(survey ? "Survey started on the robot."
+        : fault === "none" ? "Mission started on the robot."
         : "Failsafe drill started: " + fault, fault === "none" ? "ok" : "info");
       startBrainPolling();
     } catch (e) {
@@ -2609,6 +2698,11 @@
       // default applies" -- resolved for display in brainModelLabel().
       state.brainNavigateModelId = health.navigate_model_id || null;
       state.brainNavigatePromptVariant = health.navigate_prompt_variant || null;
+      // 3.70 S5: null is "no cap"; undefined, a brain too old to say.
+      // Only a positive number is a cap: it is drawn into the hint's markup.
+      const cap = health.room_label_max_calls;
+      state.brainLabelCap = cap === null ? null
+        : (typeof cap === "number" && cap > 0) ? Math.floor(cap) : undefined;
       // Phase P2. A brain older than this simply omits the field, and the
       // absence has to stay "not known" rather than becoming "not
       // available" -- the stacks are redeployed one at a time, and greying

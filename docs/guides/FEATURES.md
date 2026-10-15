@@ -654,6 +654,18 @@ finished map at mission start; N1's discovered map replaced it.)
   Settings. Only a brain that does not answer (or a 502/503/504 from the
   tunnel's proxy) counts as lost; one that answers with an error stays
   connected so the error is shown.
+- **Job picker** (3.70 S5) -- **Find an object** (the target box, policy
+  and drill pickers below) or **Survey the house**: no target, explore's
+  frontier loop over nav2 (`WORLD_MODE=ros`) until no reachable frontier is
+  left, naming rooms as it goes. For a survey the target box, policy and
+  drill pickers hide and a hint says the brain's cap on room-name calls
+  (its `/health` `room_label_max_calls`; free in the simulator, a paid
+  cloud call each on the car once that is built). While a survey runs the
+  outcome reads **Surveying the house**, **Rooms named** lists the rooms
+  and `7 of 60 room-name calls` (yellow at the cap, red when nothing can
+  name rooms), and its Exhausted ending reads **Survey done -- every
+  reachable part mapped**. A survey started from another phone sets the
+  picker. The D-pad still takes over (M4).
 - **Policy picker** -- the free rule-based explorer (`brain/agent.py`, which
   since the ROS alignment explores by the WORLD's pose in metres and builds
   its scene from the depth grid -- no grid cells), the **vision policy** (one

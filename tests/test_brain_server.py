@@ -1001,6 +1001,23 @@ def test_health_reports_the_model_a_vision_mission_would_run(tmp_path):
         assert client.get("/health").json()["navigate_model_id"] == "qwen.qwen3-vl-235b-a22b"
 
 
+def test_health_reports_the_survey_label_call_cap(tmp_path):
+    """3.70 S5: the phone says how many paid room-name calls a survey may
+    make before it starts one -- read from the brain, never a second copy.
+    0 in the config is "no cap", reported as null."""
+    import control.brain_server as bs
+
+    app = bs.create_app(config_path=vision_config(tmp_path, room_label_max_calls=25),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        assert client.get("/health").json()["room_label_max_calls"] == 25
+
+    app = bs.create_app(config_path=vision_config(tmp_path, room_label_max_calls=0),
+                        robot_factory=lambda: RecordingRobot(fresh_mock_robot()))
+    with TestClient(app) as client:
+        assert client.get("/health").json()["room_label_max_calls"] is None
+
+
 def test_health_reports_null_when_the_brain_pins_nothing(tmp_path):
     """null means "the vision service's default applies" -- deliberately not
     resolved here, which would put an HTTP call in a polled health check."""
