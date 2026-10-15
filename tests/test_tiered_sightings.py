@@ -722,3 +722,40 @@ def test_review2_at_the_cap_the_fresh_question_is_kept_for_the_local_tier():
     run(tier, 3)
     assert cloud.calls == 0
     assert tier.stats.local_triggers.get(TRIGGER_CANDIDATE) == 1, tier.stats.local_triggers
+
+
+
+# ---------- bug pass, second round (2026-10-15) ----------
+
+def test_bugpass2_a_new_band_candidate_starts_its_own_count():
+    u = {"status": "unparsed", "score": None}
+    bag, chair = absent(cand(0.6, "bag")), absent(cand(0.6, "chair"))
+    local, cloud = Local(no(), u, u, u), Cloud()
+    # The bag: asked, unable twice; it leaves before the cloud is asked. The
+    # chair's question then gets its own two local tries.
+    tier = tier_for(Script(absent(), bag, bag, bag, absent(), chair, chair, chair, chair),
+                    local, cloud)
+    scenes = run(tier, 8)
+    assert cloud.calls == 0, [s["_tier"].get("trigger") for s in scenes]
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 4
+
+
+def test_bugpass2_a_band_question_displaced_by_a_fresh_trigger_is_asked_again():
+    u = {"status": "unparsed", "score": None}
+    gate = threading.Event()
+    gate.set()
+    b = absent(cand(0.6))
+    local = Local(no(), u, no(), gate=gate)
+    tier = tier_for(Script(absent(), *([b] * 20)), local, Cloud())
+    run(tier, 2)                               # the start, answered; band frame 2
+    gate.clear()
+    tier({})                                   # frame 3: the band asked, held (slow)
+    assert tier._sight_call[1] == TRIGGER_UNCERTAIN
+    for _ in range(5):                         # frames 4-8: absent 1-5
+        tier({})
+    gate.set()
+    settle(tier)
+    s9 = tier({})                              # its unable lands as cold_search fires
+    assert s9["_tier"]["local_dispatched"] == TRIGGER_COLD_SEARCH
+    run(tier, 4)
+    assert tier.stats.local_triggers.get(TRIGGER_UNCERTAIN) == 2, tier.stats.local_triggers

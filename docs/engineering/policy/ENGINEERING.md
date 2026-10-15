@@ -172,7 +172,9 @@ it at 0. Unable sets `_pending_question` and adds one to `_sight_unable`;
 absent sets it to `local_max_unable`. If a newer question is already
 pending, the failed one is superseded instead (`_rearm()`: a spent
 `candidate_sighting` edge or the band fires again) and nothing is counted. A
-pending `uncertain_candidate` whose candidate has left the band is dropped.
+pending `uncertain_candidate` whose candidate has left the band is dropped,
+with its count. A fresh question that displaces a waiting one re-arms the
+waiting one's edge (`_rearm()`).
 When the pending question is the counted one and `_sight_unable >=
 local_max_unable`, it takes the cloud path as before (cap, one cloud call in
 flight, `_dispatch`) under its own trigger; a fresh question on that frame

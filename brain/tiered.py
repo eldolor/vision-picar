@@ -834,6 +834,10 @@ class TieredVision:
                 # Its candidate is out of view: nothing is left to ask about,
                 # and a yes now would be about something else (review).
                 pending = self._pending_question = None
+                if self._unable_for == TRIGGER_UNCERTAIN:
+                    # Its count goes with it: the next band candidate is a
+                    # new question (bug pass 2).
+                    self._forget_unable()
             if (pending is not None and pending == self._unable_for
                     and self._sight_unable >= self.local_max_unable):
                 # The question the local tier could not answer is the
@@ -843,6 +847,10 @@ class TieredVision:
                 trigger, escalated = pending, True
             else:
                 question = trigger or band or pending
+                if pending is not None and question != pending:
+                    # A fresh question displaces the waiting one: an edge it
+                    # spent fires again (bug pass 2).
+                    self._rearm(pending)
                 if question is not None:
                     return self._ask_local(frame, question, perception, frame_epoch)
         if trigger is None:
