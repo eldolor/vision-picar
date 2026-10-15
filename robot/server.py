@@ -429,8 +429,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     motion_lock = threading.Lock()
     # A stop ending a nav2 goal (see _end_goal_after_stop): the generation,
     # and whether nav2's wheel commands are held at zero meanwhile.
-    # `stops` counts person stops alone (3.82): a goal that one overtook
-    # while it waited is never sent; `gen` also moves on an accepted goal.
+    # `stops` counts the stops that end a goal -- every stop but the brain's
+    # (3.82): a goal one overtook while it waited is never sent; `gen` also
+    # moves on an accepted goal.
     goal_stop = {"gen": 0, "hold": False, "stops": 0}
     # Serialises the bridge calls that start or end a goal: held ACROSS them.
     goal_stop_lock = threading.Lock()
@@ -1108,8 +1109,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                         return {"accepted": False, "reason": "ros_unavailable",
                                 "detail": f"the ROS bridge did not take the goal: {e}",
                                 **bridge_fault(e)}
-                    accepted = isinstance(reply, dict) and reply.get("accepted") is True
-                    if accepted:
+                    taken = isinstance(reply, dict) and reply.get("accepted") is True
+                    if taken:
                         with goal_gen_lock:
                             # A stop pressed while set_goal() was in flight
                             # owns a newer loop, which, waiting on
@@ -1117,9 +1118,16 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                             # supersede it. (Another goal accepted meanwhile
                             # moved `gen` on; this one supersedes the loop
                             # all the same.)
-                            if goal_stop["stops"] == stops:
+                            accepted = goal_stop["stops"] == stops
+                            if accepted:
                                 goal_stop["gen"] += 1
                                 goal_stop["hold"] = False
+                        if not accepted:
+                            # Said so, and the claim given back: the stop's
+                            # loop ends this goal.
+                            return {"accepted": False, "reason": "stopped",
+                                    "detail": "a stop was pressed while the bridge took this "
+                                              "goal; the stop ends it"}
                     return reply
         finally:
             if not accepted:

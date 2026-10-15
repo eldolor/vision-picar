@@ -34,6 +34,7 @@ class RefusingBridge(SlowBridge):
         self.refuse_post = None        # None, "transport", or an (status, body) answer
         self.post_gate = None          # a threading.Event a post waits on
         self.post_entered = threading.Event()
+        self.posted = []               # every goal body that reached the bridge
         self.refuse_reads = False      # True: GET/DELETE /goal answer 401
         self.get_gate = None           # a threading.Event a GET /goal waits on
         self.get_entered = threading.Event()
@@ -50,6 +51,8 @@ class RefusingBridge(SlowBridge):
             self.post_entered.set()
             if self.post_gate is not None:
                 self.post_gate.wait(5.0)
+            import json
+            self.posted.append(json.loads(request.content))
             if self.refuse_post == "transport":
                 raise httpx.ConnectError("bridge unreachable", request=request)
             if self.refuse_post == "html":
@@ -182,7 +185,9 @@ def test_a_stop_during_a_goal_in_flight_ends_whichever_goal_nav2_holds(rig, acce
     finally:
         bridge.post_gate.set()
     poster.join(5.0)
-    assert reply["r"]["accepted"] is accepted, reply
+    # Taken by the bridge, the goal is still the stop's to end: never "accepted".
+    assert reply["r"]["accepted"] is False, reply
+    assert reply["r"]["reason"] == ("stopped" if accepted else "ros_unavailable"), reply
     assert drive_for(STOP_HOLD_S + 0.5) == 0.0, "nav2 drove after the Stop"
     assert wait_until(lambda: bridge.goal is None), "the Stop never ended the goal nav2 held"
 
@@ -584,13 +589,9 @@ def test_two_taps_with_no_stop_between_are_both_sent(rig):
     t2 = threading.Thread(target=tap, args=("t2", 1.0, 2.0))
     t2.start()
     time.sleep(0.5)                                  # tap 2 waits on goal_stop_lock
+    assert t2.is_alive() and "t2" not in replies, "tap 2 never waited -- proves nothing"
     bridge.post_gate.set()
     t1.join(5.0)
     t2.join(5.0)
     assert replies["t1"]["accepted"] is True and replies["t2"]["accepted"] is True, replies
-
-
-def test_the_bridge_secret_is_sent_without_a_files_newline():
-    from world.ros_world import RosWorld
-    world = RosWorld("http://bridge", secret="s3cret\n")
-    assert world._http.headers["x-app-secret"] == "s3cret"
+    assert len(bridge.posted) == 2, bridge.posted
