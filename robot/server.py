@@ -92,7 +92,7 @@ import time
 import httpx
 import asyncio
 import logging
-from contextlib import asynccontextmanager, contextmanager, nullcontext
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import List, Optional
 
@@ -844,8 +844,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 with goal_stop_lock:
                     if goal_stop["gen"] != gen:
                         return
-                    goal = (world_model.get_goal() or {}).get("goal") if settled_at is None else None
-                    if settled_at is None and goal and goal.get("state") in ("pending", "active"):
+                    # Read while settling too (3.82): a goal taken after the
+                    # first cancel landed -- a tap that waited on this lock --
+                    # is ended as well, never waited out.
+                    goal = (world_model.get_goal() or {}).get("goal")
+                    if goal and goal.get("state") in ("pending", "active"):
+                        settled_at = None
                         world_model.cancel_goal()
                     elif settled_at is None:
                         settled_at = time.monotonic()
@@ -1074,38 +1078,50 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             if claim is not None and state["driver"] == person and state["driver_at"] == now:
                 state["driver"], state["driver_at"] = claim
 
+        # The generation as the request ARRIVED, before any wait on the lock
+        # (3.82): a stop pressed after the tap -- while it waited behind a
+        # stop's loop -- is newer, and its loop ends the goal the tap takes.
+        with goal_gen_lock:
+            gen = goal_stop["gen"]
         accepted = False
-        # The person's claim is held for as long as the bridge takes, however
-        # long (3.82, as a verb in progress is: 3.76 A1), and re-stamped at
-        # the end, so an accepted goal starts its own lapse clock then.
-        with (verb_running(person) if claim is not None else nullcontext()):
+        if claim is not None:
+            # The person's claim is held for as long as the bridge takes,
+            # however long, as a verb in progress is (3.82; 3.76 A1).
+            with verbs_lock:
+                state["verbs_running"] += 1
+        try:
             with goal_stop_lock:
-                with goal_gen_lock:
-                    gen = goal_stop["gen"]
                 try:
-                    try:
-                        reply = world.set_goal(req.x_m, req.y_m)
-                    except httpx.HTTPError as e:
-                        # Handoff 4d: refused by name, not a 500. 3.82: and
-                        # whether waiting can help, as fields rather than
-                        # prose -- a 401 from the bridge is no outage.
-                        return {"accepted": False, "reason": "ros_unavailable",
-                                "detail": f"the ROS bridge did not take the goal: {e}",
-                                **bridge_fault(e)}
-                    accepted = isinstance(reply, dict) and reply.get("accepted") is True
-                    if accepted:
-                        with goal_gen_lock:
-                            # A stop that landed while set_goal() was in
-                            # flight owns a newer generation: its loop, waiting
-                            # on goal_stop_lock, ends the goal just taken.
-                            # Never supersede it.
-                            if goal_stop["gen"] == gen:
-                                goal_stop["gen"] += 1
-                                goal_stop["hold"] = False
-                    return reply
-                finally:
-                    if not accepted:
-                        give_back()
+                    reply = world.set_goal(req.x_m, req.y_m)
+                except httpx.HTTPError as e:
+                    # Handoff 4d: refused by name, not a 500. 3.82: and
+                    # whether waiting can help, as fields rather than prose --
+                    # a 401 from the bridge is no outage.
+                    return {"accepted": False, "reason": "ros_unavailable",
+                            "detail": f"the ROS bridge did not take the goal: {e}",
+                            **bridge_fault(e)}
+                accepted = isinstance(reply, dict) and reply.get("accepted") is True
+                if accepted:
+                    with goal_gen_lock:
+                        # A stop that landed since the request arrived owns a
+                        # newer generation: its loop, waiting on
+                        # goal_stop_lock, ends the goal just taken. Never
+                        # supersede it.
+                        if goal_stop["gen"] == gen:
+                            goal_stop["gen"] += 1
+                            goal_stop["hold"] = False
+                return reply
+        finally:
+            if claim is not None:
+                if accepted and state["driver"] == person:
+                    # The accepted goal's lapse clock starts now.
+                    state["driver_at"] = time.monotonic()
+                with verbs_lock:
+                    state["verbs_running"] -= 1
+                if not accepted:
+                    # After the count drops, so a stale claim given back is
+                    # never held up by it.
+                    give_back()
 
     def _bridge_call(fn):
         """A goal read or cancel against a bridge that is down answers 503
@@ -1116,7 +1132,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # 3.82: whether waiting can help, as headers (the body stays the
             # detail the twin shows): a 401 from the bridge is no outage.
             raise HTTPException(status_code=503,
-                                detail=f"ros_unavailable: the ROS bridge did not answer: {e}",
+                                detail=f"ros_unavailable: {e}",
                                 headers=headers_for(bridge_fault(e)))
 
     @app.get(prefix + "/world/goal", dependencies=[Depends(require_secret)])

@@ -53,7 +53,7 @@ from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
 from robot.interface import ZONE_UNUSABLE, Preempted, RobotInterface
 from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation
-from world.bridge_faults import fault_from_headers, setup_fault_message
+from world.bridge_faults import fault_from_headers, response_detail, setup_fault_message
 
 logger = logging.getLogger("explore")
 
@@ -119,16 +119,6 @@ def _setup_fault(what: str, reply: dict) -> RuntimeError:
     """3.82: a bridge fault no wait mends, as the error that ends the
     mission `failed` with its status named."""
     return RuntimeError(setup_fault_message(what, reply, reply.get("detail")))
-
-
-def _reply_detail(response) -> Optional[str]:
-    """The robot server's own `detail` -- the bridge's text -- not httpx's
-    wording of the 503 that carried it."""
-    try:
-        body = response.json()
-    except ValueError:
-        return None
-    return str(body["detail"]) if isinstance(body, dict) and body.get("detail") else None
 
 
 def leave_clearance_m(min_distance_cm: float) -> float:
@@ -389,7 +379,7 @@ class ExploreAgent(MissionAgent):
         if fault is not None and not fault["retryable"]:
             # Named as the setup fault it is, not as the robot server's 503.
             raise _setup_fault("a goal call",
-                               {**fault, "detail": _reply_detail(response)}) from exc
+                               {**fault, "detail": response_detail(response)}) from exc
         transient = (isinstance(exc, (httpx.TransportError, ConnectionError, TimeoutError))
                      or (status is not None and status >= 500))
         self._blips += 1

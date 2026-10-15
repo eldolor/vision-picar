@@ -35,8 +35,13 @@ class RefusingBridge(SlowBridge):
         self.post_gate = None          # a threading.Event a post waits on
         self.post_entered = threading.Event()
         self.refuse_reads = False      # True: GET/DELETE /goal answer 401
+        self.get_gate = None           # a threading.Event a GET /goal waits on
+        self.get_entered = threading.Event()
 
     def handler(self, request):
+        if request.url.path == "/goal" and request.method == "GET" and self.get_gate is not None:
+            self.get_entered.set()
+            self.get_gate.wait(5.0)
         if (request.url.path == "/goal" and request.method in ("GET", "DELETE")
                 and self.refuse_reads):
             return httpx.Response(401, json={"error": "bad or missing x-app-secret"})
@@ -463,8 +468,10 @@ def test_a_tap_held_up_longer_than_the_watchdog_still_holds_the_robot(monkeypatc
         bridge.post_gate.set()
     tap.join(5.0)
     assert reply["r"]["accepted"] is True, reply
+    bridge.goal = None          # so goal_in_progress() cannot be what refuses the brain
     verb = client.post("/action", json={"action": "LOOK_LEFT"}, headers={"x-driver": "brain"}).json()
-    assert verb.get("reason") == "preempted", f"the accepted goal held nothing: {verb}"
+    assert verb.get("reason") == "preempted" and "twin-dpad" in verb.get("detail", ""), \
+        f"the accepted goal's claim had already lapsed: {verb}"
 
 
 def test_a_secret_fault_on_a_goal_read_carries_the_bridges_own_words(monkeypatch):
@@ -480,10 +487,12 @@ def test_a_secret_fault_on_a_goal_read_carries_the_bridges_own_words(monkeypatch
             break
     reason = str(runner.status()["end_reason"])
     assert "bad or missing x-app-secret" in reason and "503" not in reason, reason
+    assert "did not answer" not in reason, reason
 
 
 def test_a_bridge_url_with_no_scheme_is_a_setup_fault():
     assert classify(httpx.UnsupportedProtocol("no scheme"))["retryable"] is False
+    assert classify(httpx.LocalProtocolError("illegal header value"))["retryable"] is False
     assert classify(httpx.ConnectError("refused"))["retryable"] is True
 
 
@@ -491,3 +500,31 @@ def test_a_mangled_status_header_never_raises():
     assert fault_from_headers({"x-bridge-retryable": "false", "x-bridge-status": "abc"}) == \
         {"bridge_status": None, "retryable": False}
     assert fault_from_headers({}) is None
+
+
+
+# ---------- review round 4 ----------
+
+
+def test_a_stop_pressed_while_a_tap_waits_for_the_lock_still_ends_the_tapped_goal(rig):
+    """The goal route read the stop generation only once it held
+    `goal_stop_lock`. A tap waiting behind a Stop's loop, then a second Stop:
+    if the tap got the lock first it took the second Stop's generation as
+    its own, superseded it, and nav2 drove after that Stop."""
+    client, bridge, world, nav2_tick, wheel_speeds, drive_for, wait_until = rig
+    _goal_a_driving(client, bridge, nav2_tick, wheel_speeds)
+    bridge.get_gate = threading.Event()
+    client.post("/stop", headers={"x-driver": "twin-dpad"})       # its loop blocks in get_goal
+    assert bridge.get_entered.wait(5.0)
+    reply = {}
+    tap = threading.Thread(target=lambda: reply.setdefault("r", client.post(
+        "/world/goal", json={"x_m": 1.0, "y_m": 2.0}).json()))
+    tap.start()
+    time.sleep(0.2)                                   # the tap waits on goal_stop_lock
+    client.post("/stop", headers={"x-driver": "twin-dpad"})       # pressed after the tap
+    bridge.get_gate.set()
+    bridge.get_gate = None
+    tap.join(5.0)
+    assert reply["r"]["accepted"] is True, reply
+    assert drive_for(STOP_HOLD_S + 1.5) == 0.0, "nav2 drove the tapped goal after the later Stop"
+    assert wait_until(lambda: bridge.goal is None), "the later Stop never ended the tapped goal"

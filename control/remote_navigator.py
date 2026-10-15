@@ -17,19 +17,9 @@ from typing import Optional
 
 import httpx
 
-from world.bridge_faults import fault_from_headers, setup_fault_message
+from world.bridge_faults import fault_from_headers, response_detail, setup_fault_message
 
 DEFAULT_TIMEOUT_S = 10.0
-
-
-def _detail(r: httpx.Response) -> str:
-    try:
-        body = r.json()
-    except ValueError:
-        body = None
-    if isinstance(body, dict) and body.get("detail"):
-        return str(body["detail"])
-    return r.text[:200]
 
 
 class RemoteNavigator:
@@ -59,7 +49,7 @@ class RemoteNavigator:
         if fault is not None and not fault["retryable"]:
             # 3.82: the robot server's bridge refused it for a fault no wait
             # mends (a 401: the two secrets differ), which read as "no nav2".
-            raise PermissionError(setup_fault_message("the goal route", fault, _detail(r)))
+            raise PermissionError(setup_fault_message("the goal route", fault, response_detail(r)))
         return r.status_code == 200
 
     def set_goal(self, x_m: float, y_m: float) -> dict:
