@@ -295,6 +295,8 @@ Resources:
             - /teleop-robot/sim/objects/move
             # 3.72's house swap; answers 409 here, reachable to be read.
             - /teleop-robot/sim/house/random
+            # 3.84: a new mission lifts a person's Stop's latch.
+            - /teleop-robot/autonomy/resume
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup

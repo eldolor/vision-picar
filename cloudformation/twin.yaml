@@ -265,6 +265,22 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
 
+  # 3.84: a new mission lifts a person's Stop's latch (the brain calls it);
+  # rule 13 is full.
+  AlbListenerRuleAutonomy:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !ImportValue
+        Fn::Sub: "${ServiceStackName}-AlbListenerArn"
+      Priority: 14
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /autonomy/resume
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:

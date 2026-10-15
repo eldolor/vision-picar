@@ -698,8 +698,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 state["verbs_running"] -= 1
 
     def lapse_refused_claim(driver: str, refused: dict, stamped: float) -> dict:
-        """3.84: a brain command refused at execution (`person_stop`, or
-        `stopped`: a Stop overtook it) had already been given the robot by
+        """3.84: a brain command refused at execution (`person_stop`,
+        `stopped`: a Stop overtook it, or any answer that is not a move while
+        a person's Stop is latched, a fault included) had already been given the robot by
         arbitration; its claim lapses at once rather than holding the slot
         against a script's goal for `watchdog_timeout_s` -- only if the
         claim is still this command's own stamp, never a newer command's.
