@@ -899,3 +899,47 @@ def test_a_goal_is_not_cut_before_stall_s():
     while grid.sim_time - t0 < STALL_S - 4.0:
         agent.step()
     assert agent._goal is not None
+
+
+def test_an_outage_longer_than_stall_s_is_not_read_as_a_stall():
+    """3.83 review: with the pose unusable for longer than STALL_S, the
+    first tick back must not cut the goal -- an outage is not a wedge
+    (3.76: not the place's failure either). The window starts again."""
+    from brain.explore import STALL_S
+    grid, nav, agent = _slow_agent(0.0)
+    assert agent.step().action == "GOAL"
+    real = agent.world.get_pose
+    t0 = grid.sim_time
+    agent.world.get_pose = lambda: {"usable": False}
+    while grid.sim_time - t0 < STALL_S + 10:
+        agent.step()
+    agent.world.get_pose = real
+    agent.step()
+    assert agent._goal is not None, [e for e in agent.events if e["event"] == "goal_ended"]
+
+
+def test_a_stall_back_out_does_not_spend_the_boxed_in_budget():
+    """3.83 review: escapes after a stall cut must not use up MAX_ESCAPES,
+    or a robot still boxed in under the table ends the search `exhausted`
+    instead of backing out again."""
+    from brain.explore import MAX_ESCAPES
+    grid, nav, agent = _slow_agent(0.0)
+    for _ in range(MAX_ESCAPES + 1):
+        assert agent.step().action == "GOAL" or agent._goal is not None
+        t0 = grid.sim_time
+        while agent._goal is not None and grid.sim_time - t0 < 60:
+            agent.step()
+        while agent._pending:
+            agent.step()
+    assert agent.escapes >= MAX_ESCAPES
+    assert agent.escapes_charged == 0
+
+
+def test_a_stall_after_moving_says_so():
+    grid, nav, agent = _slow_agent(0.0)
+    assert agent.step().action == "GOAL"
+    agent._goal["from"] = (agent._goal["from"][0] - 2.0, agent._goal["from"][1])
+    t0 = grid.sim_time
+    while agent._goal is not None and grid.sim_time - t0 < 60:
+        agent.step()
+    assert "without moving" not in agent.last_event and "stalled" in agent.last_event

@@ -467,7 +467,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # Held across the send: the bridge replaces its whole set on each
             # post, so two marks sent out of order would drop the newer spot.
             with spot_lock:
-                spots = spot_book.add(time.monotonic(), x, y)
+                spots = spot_book.add(time.monotonic(), x, y,
+                                      session=getattr(world_model, "map_id", None))
                 if spots is None:
                     return          # 3.83: this spot is already marked
                 try:

@@ -268,6 +268,10 @@ class ExploreAgent(MissionAgent):
         # and the search ended (`searched`, now `exhausted`) with the robot
         # simply stuck.
         self.escapes = 0
+        # Escapes charged to the boxed-in budget (MAX_ESCAPES). A back-out
+        # after a stall cut is not (3.83 review): under the dining table
+        # three of them would have ended the search `exhausted` while boxed in.
+        self.escapes_charged = 0
         self._wedged: list = []        # goals that failed without the robot moving
         self.seen_res: Optional[float] = None
         self.goals_sent = 0
@@ -353,6 +357,8 @@ class ExploreAgent(MissionAgent):
 
         state = self._goal_state()
         ended = None
+        if self._goal is not None and state == "unreadable":
+            self._goal["gap"] = True        # 3.83: an outage is not a stall
         if self._goal is not None:
             if state in TERMINAL_STATES or state is None:
                 self._goal_ended(state or "lost", now)
@@ -855,7 +861,7 @@ class ExploreAgent(MissionAgent):
         room_goal = self._room_goal(m, rch, now, known)
         if room_goal is not None:
             return room_goal
-        if len(rch) < BOXED_CELLS and self.escapes < MAX_ESCAPES:
+        if len(rch) < BOXED_CELLS and self.escapes_charged < MAX_ESCAPES:
             # Nowhere reachable to stop -- from HERE. Boxed in, not done.
             self._decided()             # the escape move is not choice time
             self._queue_escape("boxed", reachable_cells=len(rch))
@@ -1004,6 +1010,12 @@ class ExploreAgent(MissionAgent):
         nothing."""
         g = self._goal
         if not pose.get("usable"):
+            g["gap"] = True
+            return False
+        if g.pop("gap", False):
+            # Back from a bridge or pose outage (3.83 review): the window
+            # starts again here, or a gap over STALL_S would read as a wedge.
+            g["anchor"] = (pose["x_m"], pose["y_m"], now)
             return False
         anchor = g.get("anchor")
         if anchor is None:
@@ -1068,9 +1080,11 @@ class ExploreAgent(MissionAgent):
                 # the robot every time must still run out of tries.)
                 self.retry.fail(target[0], target[1], now, known=self._known_at)
                 self._room_failed(g)
-            self._queue_escape("wedged", goal=[round(g["x_m"], 2), round(g["y_m"], 2)],
-                               again=again)
-            self.last_event = f"{g['kind']} goal {state} without moving; backing out"
+            self._queue_escape("wedged", charged=state != "stalled",
+                               goal=[round(g["x_m"], 2), round(g["y_m"], 2)], again=again)
+            self.last_event = (f"{g['kind']} goal stalled ({moved} m from its start); backing out"
+                               if state == "stalled" else
+                               f"{g['kind']} goal {state} without moving; backing out")
             logger.info(self.last_event)
             return
         n = self.retry.fail(target[0], target[1], now, known=self._known_at)
@@ -1104,8 +1118,10 @@ class ExploreAgent(MissionAgent):
                 logger.warning("goal cancel failed", exc_info=True)
             self._goal = None
 
-    def _queue_escape(self, why: str, **info) -> None:
+    def _queue_escape(self, why: str, charged: bool = True, **info) -> None:
         self.escapes += 1
+        if charged:
+            self.escapes_charged += 1
         self._event("escape", why=why, n=self.escapes, **info)
         self._pending = ["REVERSE", ("CREEP",), ("OPEN",)]
 

@@ -440,15 +440,24 @@ class RosWorld(WorldInterface):
         ({x_m, y_m, r_m, ttl_s}, house frame), replacing the last. The
         robot server decides them (robot/wedge_watch.py); the bridge only
         publishes them as a mask for nav2's KeepoutFilter."""
-        if self._session is None:
-            self.get_pose()                  # anchor first
-        if self._session is None:
+        # The bridge's CURRENT session and its anchor, as set_goal (3.76
+        # H1-12, 3.83 review): discs converted on an old session's anchor
+        # would be drawn into a new map wherever that began.
+        reply = self._fetch_pose()
+        anchor = self._ensure_session(reply)
+        if anchor is None:
             return {"accepted": False, "reason": "no SLAM session yet"}
         out = []
         for s in spots:
-            rx, ry = _ours_to_ros(*self._unapply(s["x_m"], s["y_m"]))
+            rx, ry = _ours_to_ros(*self._unapply(s["x_m"], s["y_m"], anchor))
             out.append({"x_m": rx, "y_m": ry, "r_m": s["r_m"], "ttl_s": s["ttl_s"]})
-        r = self._http.post("/nav/keepout", json={"spots": out})
+        r = self._http.post("/nav/keepout", json={"spots": out, "session": anchor.session})
+        if r.status_code == 409:
+            body = _body(r)
+            return {"accepted": False, "reason": "no SLAM session yet",
+                    "detail": (f"the SLAM session changed between the pose read and the mark "
+                               f"(converted for {anchor.session}, the bridge is on "
+                               f"{body.get('session') if body else None})")}
         r.raise_for_status()
         return {"accepted": True, **r.json()}
 

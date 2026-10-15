@@ -147,9 +147,14 @@ world with `set_keepout`, reads the pose and adds a disc of `SPOT_R_M`
 300 s, at most `MAX_SPOTS` 8), then sends the whole live set through
 `RosWorld.set_keepout` to the bridge's `POST /nav/keepout`. Since 3.83 a
 spot within `SPOT_DEDUPE_M` (0.30 m) of a live one sends nothing (3.68 had
-re-marked one spot up to 30 times), and a spot the bridge did not take
-(an error, or `accepted: false`) is dropped from the book again, so the
-next wedge there can still mark it. It logs one
+re-marked one spot up to 30 times), a spot the bridge did not take
+(an error, or `accepted: false`) is undone (`drop_last` restores the book
+as it was, including a spot the add trimmed), so the next wedge there can
+still mark it, and a new SLAM session (`map_id`; a restarted bridge has no
+spots) starts the book empty. `RosWorld.set_keepout` converts on the
+bridge's current session's anchor and names that session; a bridge on
+another one answers 409, read as `accepted: false` (as `set_goal`, 3.76
+H1-12). It logs one
 `keepout: marked ...` warning a mark, or `keepout: not marked (...)` on a
 failure, including a reply with `accepted: false`. Marks from one server
 are sent one at a time (`spot_lock` is held across the post), so a slow

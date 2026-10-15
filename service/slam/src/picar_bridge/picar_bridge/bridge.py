@@ -577,6 +577,11 @@ class Bridge(Node):
     # ---------- 3.68: keepout spots ----------
 
     def set_keepout(self, body):
+        # 3.83 review: as POST /goal, spots converted for another session
+        # (this bridge restarted since the robot server's pose read) are
+        # refused, not drawn into this map.
+        if body.get("session") not in (None, self.session):
+            return 409, {"error": "the SLAM session changed", "session": self.session}
         try:
             spots = keepout.parse(body.get("spots") or [], time.time())
         except (KeyError, TypeError, ValueError) as e:

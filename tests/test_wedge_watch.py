@@ -127,6 +127,16 @@ def test_a_spot_near_a_live_one_is_not_marked_again():
     assert [s["x_m"] for s in far] == [1.0, pytest.approx(1.0 + ww.SPOT_DEDUPE_M * 1.1)]
 
 
+def test_a_new_slam_session_forgets_the_old_marks():
+    """3.83 review: a restarted bridge (a new SLAM session) starts with no
+    spots; a book still holding them would dedupe the next wedge there
+    against a mark nav2 no longer has, for up to SPOT_TTL_S."""
+    book = ww.SpotBook(ttl_s=300.0)
+    assert book.add(0.0, 1.0, 1.0, session="slam-a") is not None
+    live = book.add(5.0, 1.0, 1.0, session="slam-b")
+    assert live is not None and len(live) == 1
+
+
 def test_an_expired_spot_does_not_block_a_new_mark():
     book = ww.SpotBook(ttl_s=10.0)
     book.add(0.0, 1.0, 1.0)
@@ -149,10 +159,17 @@ class KeepoutBridge(GoalBridge):
         super().__init__(**kw)
         self.keepout = None
         self.keepout_posts = 0
+        self.keepout_session = None
+        self.restarted_before_post = False
 
     def handler(self, request):
         if request.url.path == "/nav/keepout":
-            self.keepout = json.loads(request.content)["spots"]
+            body = json.loads(request.content)
+            self.keepout_session = body.get("session")
+            if self.restarted_before_post:
+                return httpx.Response(409, json={"error": "the SLAM session changed",
+                                                 "session": "a-new-one"})
+            self.keepout = body["spots"]
             self.keepout_posts += 1
             return httpx.Response(200, json={"spots": len(self.keepout)})
         return super().handler(request)
@@ -249,6 +266,31 @@ def test_a_wedge_during_a_goal_marks_a_spot_ahead(wedged_server):
     s = bridge.keepout[0]
     assert (s["x_m"], s["y_m"]) == pytest.approx((ww.SPOT_AHEAD_M, 0.0), abs=1e-3)
     assert s["r_m"] == ww.SPOT_R_M
+
+
+def test_a_mark_names_the_session_it_was_converted_for():
+    """3.83 review: as set_goal does (3.76 H1-12), so a bridge that
+    restarted between the pose read and the post refuses the set rather
+    than draw discs converted on the old session's anchor."""
+    world, bridge = world_with(truth=FakeTruth(1.0, 1.0, 90.0), bridge=KeepoutBridge(
+        start_truth={"x_m": 1.0, "y_m": 1.0, "heading_deg": 90.0}))
+    spot = [{"x_m": 1.0, "y_m": 0.5, "r_m": 0.15, "ttl_s": 300}]
+    assert world.set_keepout(spot)["accepted"]
+    assert bridge.keepout_session == bridge.session
+    bridge.restarted_before_post = True
+    reply = world.set_keepout(spot)
+    assert reply["accepted"] is False and "session" in reply["detail"]
+
+
+def test_a_refused_mark_does_not_lose_the_spot_it_trimmed():
+    """3.83 review: at MAX_SPOTS, add() trims the oldest before the post;
+    undoing a refused post must bring that one back, not only drop the new."""
+    book = ww.SpotBook(ttl_s=300.0, max_spots=2)
+    book.add(0.0, 1.0, 1.0)
+    book.add(1.0, 2.0, 2.0)
+    book.add(2.0, 3.0, 3.0)                  # trims (1, 1)
+    book.drop_last()
+    assert [s["x_m"] for s in book.live(2.0)] == [1.0, 2.0]
 
 
 def test_a_mark_without_a_slam_session_is_not_logged_as_marked(wedged_server, monkeypatch, caplog):
