@@ -93,6 +93,10 @@ class SpotBook:
         self.spots = self.spots[-self.max_spots:]
         return self.live(now)
 
+    def accepted(self) -> None:
+        """The bridge took the last set: it can no longer be undone."""
+        self._before = None
+
     def drop_last(self) -> None:
         """Undo the last add: the bridge did not take it, so a later wedge
         there must be able to mark it, and a spot it trimmed is kept -- and so is

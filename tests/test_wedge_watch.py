@@ -149,6 +149,16 @@ def test_undoing_a_stale_session_mark_restores_the_newer_book():
     assert [s["x_m"] for s in book.live(1.0)] == [1.0]
 
 
+def test_an_accepted_mark_cannot_be_undone_later():
+    """3.83 bug pass round 2: once the bridge took a set, a stray
+    drop_last must not roll the book back over it."""
+    book = ww.SpotBook(ttl_s=300.0)
+    book.add(0.0, 1.0, 1.0)
+    book.accepted()
+    book.drop_last()
+    assert [s["x_m"] for s in book.live(0.0)] == [1.0]
+
+
 def test_an_expired_spot_does_not_block_a_new_mark():
     book = ww.SpotBook(ttl_s=10.0)
     book.add(0.0, 1.0, 1.0)

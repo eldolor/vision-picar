@@ -480,13 +480,16 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 except Exception:
                     spot_book.drop_last()
                     raise
-                if not reply.get("accepted"):
+                if reply.get("accepted"):
+                    spot_book.accepted()
+                else:
                     spot_book.drop_last()
         except Exception as e:  # noqa: BLE001 -- a lost mark costs a replan, not safety
             logger.warning(f"keepout: not marked ({e})")
             return
         if not reply.get("accepted"):
-            logger.warning(f"keepout: not marked ({reply.get('reason')})")
+            logger.warning(f"keepout: not marked ({reply.get('reason')}"
+                           f"{': ' + reply['detail'] if reply.get('detail') else ''})")
             return
         logger.warning(
             f"keepout: marked ({x:.2f}, {y:.2f}) r {SPOT_R_M:g} m after {HOLD_S:g} s of "

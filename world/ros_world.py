@@ -459,7 +459,7 @@ class RosWorld(WorldInterface):
         r = self._http.post("/nav/keepout", json={"spots": out, "session": anchor.session})
         if r.status_code == 409:
             body = _body(r)
-            return {"accepted": False, "reason": "no SLAM session yet",
+            return {"accepted": False, "reason": "the SLAM session changed",
                     "detail": (f"the SLAM session changed between the pose read and the mark "
                                f"(converted for {anchor.session}, the bridge is on "
                                f"{body.get('session') if body else None})")}
