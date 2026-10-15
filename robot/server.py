@@ -615,8 +615,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         """Hold the robot for `driver` while its verb runs (3.76 A1), and
         restart its lapse clock at the verb's END: the end is the driver's
         last word, not its start. A person's goal holds it the same way
-        while the bridge answers, and restarts the clock only if the bridge
-        took the goal (`restamp`, 3.82)."""
+        while it waits and the bridge answers, and restarts the clock only if
+        the goal was accepted (`restamp`, 3.82)."""
         with verbs_lock:     # threadpool threads: a lost update would never lapse
             state["verbs_running"] += 1
         try:
@@ -1076,7 +1076,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 return {"accepted": False, **refused}
         # A person re-sending a goal after a stop: it supersedes the stop's
         # ending loop, which must never cancel this new goal -- but only once
-        # the bridge has taken it (3.82; nav2 may still reject it, and the
+        # the bridge has taken it with no stop pressed since it arrived (3.82; nav2 may still reject it, and the
         # bridge cancelled the old goal before sending it). A refused goal
         # never existed, so the stop's loop keeps ending the goal the stop
         # was for, and keeps its hold.
@@ -1115,9 +1115,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                             # A stop pressed while set_goal() was in flight
                             # owns a newer loop, which, waiting on
                             # goal_stop_lock, ends the goal just taken. Never
-                            # supersede it. (Another goal accepted meanwhile
-                            # moved `gen` on; this one supersedes the loop
-                            # all the same.)
+                            # supersede it. (Another goal accepted since this
+                            # request arrived, before it got the lock, moved
+                            # `gen` on; this one supersedes the loop all the
+                            # same.)
                             accepted = goal_stop["stops"] == stops
                             if accepted:
                                 goal_stop["gen"] += 1

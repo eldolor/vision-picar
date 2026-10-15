@@ -10,6 +10,7 @@ nav2 (nav2 drives while the bridge holds an active goal, posting `ros`
 wheel commands the way `picar_sim_hardware` relays them).
 """
 
+import json
 import threading
 import time
 
@@ -34,7 +35,7 @@ class RefusingBridge(SlowBridge):
         self.refuse_post = None        # None, "transport", or an (status, body) answer
         self.post_gate = None          # a threading.Event a post waits on
         self.post_entered = threading.Event()
-        self.posted = []               # every goal body that reached the bridge
+        self.posted = []               # every goal body the bridge took
         self.refuse_reads = False      # True: GET/DELETE /goal answer 401
         self.get_gate = None           # a threading.Event a GET /goal waits on
         self.get_entered = threading.Event()
@@ -51,8 +52,6 @@ class RefusingBridge(SlowBridge):
             self.post_entered.set()
             if self.post_gate is not None:
                 self.post_gate.wait(5.0)
-            import json
-            self.posted.append(json.loads(request.content))
             if self.refuse_post == "transport":
                 raise httpx.ConnectError("bridge unreachable", request=request)
             if self.refuse_post == "html":
@@ -60,6 +59,7 @@ class RefusingBridge(SlowBridge):
             if self.refuse_post is not None:
                 status, body = self.refuse_post
                 return httpx.Response(status, json=body)
+            self.posted.append(json.loads(request.content))
         return super().handler(request)
 
 
@@ -595,3 +595,28 @@ def test_two_taps_with_no_stop_between_are_both_sent(rig):
     t2.join(5.0)
     assert replies["t1"]["accepted"] is True and replies["t2"]["accepted"] is True, replies
     assert len(bridge.posted) == 2, bridge.posted
+
+
+
+# ---------- review round 8 ----------
+
+
+def test_a_tap_taken_while_a_stop_was_pressed_gives_the_robot_back(rig):
+    """Round 7's 'stopped' answer for a goal the bridge took during a Stop
+    must also give the person's claim back, not re-stamp it: the goal is the
+    Stop's to end, and the brain must not stay locked out by it."""
+    client, bridge, world, nav2_tick, wheel_speeds, drive_for, wait_until = rig
+    client.post("/action", json={"action": "LOOK_LEFT"}, headers={"x-driver": "brain"})
+    bridge.post_gate, bridge.post_entered = threading.Event(), threading.Event()
+    reply = {}
+    tap = threading.Thread(target=lambda: reply.setdefault("r", client.post(
+        "/world/goal", json={"x_m": 1.0, "y_m": 2.0}, headers={"x-driver": "twin-dpad"}).json()))
+    tap.start()
+    assert bridge.post_entered.wait(5.0)
+    client.post("/stop", headers={"x-driver": "twin-dpad"})
+    bridge.post_gate.set()
+    tap.join(5.0)
+    assert reply["r"]["reason"] == "stopped", reply
+    assert wait_until(lambda: bridge.goal is None, 2.0), "the Stop never ended the taken goal"
+    verb = client.post("/action", json={"action": "LOOK_RIGHT"}, headers={"x-driver": "brain"}).json()
+    assert "twin-dpad" not in str(verb.get("detail", "")), f"the stopped tap kept the robot: {verb}"
