@@ -539,7 +539,8 @@ def create_app(
             navigator = RemoteNavigator(
                 config.get("world_url") or getattr(robot, "base_url", None)
                 or config["robot_url"],
-                secret=robot_secret, timeout=config["request_timeout_s"])
+                secret=robot_secret, timeout=config["request_timeout_s"],
+                driver=getattr(robot, "driver", "brain"))   # its goals named as its verbs (3.84)
             try:
                 ok = navigator.available()
             except httpx.HTTPError as e:

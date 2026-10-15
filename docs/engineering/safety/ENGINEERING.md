@@ -200,10 +200,12 @@ clears the hold only if its generation is still current (and then sets
 allowed through on the ROS drive path lifts the hold, as it lifts
 `RosDriveRobot`'s own stop hold (`lift_hold_for_verb()`, 3.84): under
 `goal_gen_lock`, and only if `goal_stop["stops"]` is still the count `/action`
-read as the request arrived -- a stop pressed after the verb was arbitrated
-keeps its hold. When the verb ends (`rehold_after_verb()`, in a `finally`),
-the hold is set again if a stop's loop is still ending a goal and is the
-current one (`ending == gen`), so nav2's `ros` commands for the stopped goal
+read as the request arrived -- a verb a stop overtook is not run and is
+refused `stopped`, and the stop keeps its hold. `goal_stop["lifted_verbs"]`
+counts the verbs running with the hold lifted; when the LAST ends
+(`rehold_after_verb()`, in a `finally`), the hold is set again if a stop's
+loop is still ending a goal and is the current one (`ending == gen`; an
+accepted goal clears `ending`), so nav2's `ros` commands for the stopped goal
 stay at zero after a person's move; the loop keeps cancelling and lifts it
 when it settles. The `/action` STOP verb and the watchdog do none of this; they
 call `robot.stop()`.
@@ -218,7 +220,12 @@ an autonomous driver other than `ros` (`is_autonomy()`: `brain`, `teleop`)
 with `reason: "person_stop"`, before arbitration: `/action`, a non-zero
 direct `/wheels`, and a `POST /world/goal` naming `brain` (explore names
 itself since 3.84; the latch is re-read where 3.82 answers `stopped`, so a
-brain goal a person's Stop overtook answers `person_stop`). Never refused:
+brain goal a person's Stop overtook answers `person_stop`). It is read again
+at execution, because an autonomous verb's arbitration can wait on the
+bridge: a direct verb under `motion_lock`, a ROS verb in
+`lift_hold_for_verb()` under `goal_gen_lock`, and a direct `/wheels` after
+its write (a latch seen then zeroes the wheels again: the Stop latches
+before its `robot.stop()`). Never refused:
 any `/stop`, `DELETE /world/goal`, a person's verbs and goals, unnamed
 goals (ranked `ros`, today's behaviour), and `ros`'s `/wheels` (the hold
 governs those). `brain`, `teleop` and `ros` stops set nothing. Only

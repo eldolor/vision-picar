@@ -436,8 +436,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # latch (3.84): who pressed it and when, until a mission starts.
     # `ending` is the generation of the stop loop still ending a goal, None
     # once it settled (3.84: a verb's hold lift lasts only as long as the verb).
+    # `lifted_verbs` counts the verbs running with the hold lifted for them.
     goal_stop = {"gen": 0, "hold": False, "stops": 0, "autonomy_stopped": None,
-                 "ending": None}
+                 "ending": None, "lifted_verbs": 0}
     # Serialises the bridge calls that start or end a goal: held ACROSS them.
     goal_stop_lock = threading.Lock()
     # Guards `goal_stop` itself and is never held across a bridge call, so
@@ -665,23 +666,35 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     state["driver_at"] = time.monotonic()
                 state["verbs_running"] -= 1
 
-    def lift_hold_for_verb(stops: int) -> bool:
+    def lift_hold_for_verb(driver: str, stops: int):
         """3.84: a verb allowed to drive under `drive: ros` lifts the stop's
         goal hold -- its twists come back as `ros` wheel posts -- under
         `goal_gen_lock`, and only if no stop was counted since the verb
-        arrived: a later Stop's hold is that Stop's."""
+        arrived: a later Stop's hold is that Stop's. The person's Stop's
+        latch is read again here, at execution: arbitration can wait on the
+        bridge (`goal_in_progress`), and a Stop meanwhile ends the brain's
+        verb before it moves. Returns `(why it may not run or None, lifted)`:
+        the latch, or "stopped" for a verb a Stop overtook (as 3.82's goal)."""
         with goal_gen_lock:
+            latch = goal_stop["autonomy_stopped"]
+            if latch is not None and is_autonomy(driver):
+                return latch, False
             if goal_stop["stops"] != stops:
-                return False
+                return "stopped", False
             goal_stop["hold"] = False
-            return True
+            goal_stop["lifted_verbs"] += 1
+            return None, True
 
     def rehold_after_verb():
-        """3.84: the hold a verb lifted comes back when it ends while a
-        stop's loop is still ending a goal (that loop the current one), so
-        nav2 never drives the stopped goal after a person's move."""
+        """3.84: the hold the verbs lifted comes back when the LAST of them
+        ends (a person's second press must not be muted by the first one's
+        end) while a stop's loop is still ending a goal (that loop the
+        current one), so nav2 never drives the stopped goal after a person's
+        move."""
         with goal_gen_lock:
-            if goal_stop["ending"] is not None and goal_stop["ending"] == goal_stop["gen"]:
+            goal_stop["lifted_verbs"] -= 1
+            if (goal_stop["lifted_verbs"] == 0 and goal_stop["ending"] is not None
+                    and goal_stop["ending"] == goal_stop["gen"]):
                 goal_stop["hold"] = True
 
     def _carry_out(req: ActionRequest, driver: str, now: float, stops: int):
@@ -719,7 +732,14 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 # twists come back as `ros` wheel posts. Under the lock and
                 # only if no stop came since it arrived, and for the verb's
                 # length only (3.84). The ending loop keeps cancelling.
-                lifted = lift_hold_for_verb(stops)
+                latch, lifted = lift_hold_for_verb(driver, stops)
+                if latch == "stopped":
+                    # A Stop overtook it after arbitration: its twists would
+                    # be held at zero, so it is not run, and says so.
+                    return refuse("stopped", f"a stop was pressed after this {req.action} "
+                                  "was sent; it was not carried out", driver)
+                if latch is not None:
+                    return person_stop_refusal(driver, latch)
                 try:
                     with robot.driving_as(driver):
                         result = safety.check_and_execute(
@@ -750,6 +770,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                         rehold_after_verb()
             else:
                 with motion_lock:
+                    # 3.84: read again at execution (see lift_hold_for_verb).
+                    refused = person_stop_refusal(driver, autonomy_latch())
+                    if refused:
+                        return refused
                     state["verb_active"] = True
                     try:
                         result = safety.check_and_execute(
@@ -829,7 +853,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     robot.set_wheel_velocity(0.0, 0.0)
                 return {"executed": True, "driver": driver,
                         "applied": {"left_rad_s": 0.0, "right_rad_s": 0.0}, "clamped": None}
-            refused = person_stop_refusal(driver, autonomy_latch()) or arbitrate(driver, now)
+            refused = ((is_autonomy(driver) and person_stop_refusal(driver, autonomy_latch()))
+                       or arbitrate(driver, now))
             if refused:
                 return refused
             state["last_command_at"] = now
@@ -837,10 +862,22 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             state["driver_at"] = now
             if driver_priority(driver) == DRIVER_AUTONOMOUS:
                 state["autonomous_at"] = now
+        brain = is_autonomy(driver)
         with motion_lock:
+            refused = brain and person_stop_refusal(driver, autonomy_latch())   # 3.84, at execution
+            if refused:
+                return refused
             left, right, reason = safety.vet_wheel_velocity(req.left_rad_s, req.right_rad_s)
             try:
                 robot.set_wheel_velocity(left, right)
+                # 3.84: a person's Stop latches BEFORE its robot.stop(), so a
+                # latch seen now is a Stop whose zero this command may have
+                # overwritten: zero it again. One latched after this read
+                # stops the wheels itself.
+                refused = brain and person_stop_refusal(driver, autonomy_latch())
+                if refused:
+                    robot.set_wheel_velocity(0.0, 0.0)
+                    return refused
             except NotImplementedError as e:
                 return refuse("unsupported", str(e), driver)
             except WheelFeedbackLost as e:
@@ -885,7 +922,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         if driver_priority(driver) == DRIVER_MANUAL:
             # 3.84: a PERSON's Stop (the D-pad, teleop's operator, anyone
             # unnamed) is the last word over autonomy: latched before the
-            # wheels stop, so no brain command slips in between, and lifted
+            # wheels stop, and read again as each brain command executes, so
+            # one arbitrated before it does not move after it; lifted
             # only when a mission starts (POST /autonomy/resume).
             with goal_gen_lock:
                 goal_stop["autonomy_stopped"] = {"by": driver, "at": time.monotonic()}
@@ -1217,6 +1255,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                             if accepted:
                                 goal_stop["gen"] += 1
                                 goal_stop["hold"] = False
+                                goal_stop["ending"] = None     # that loop is superseded
                             latch = goal_stop["autonomy_stopped"]
                         if not accepted and autonomy and latch is not None:
                             return {"accepted": False, **person_stop_refusal(person, latch)}

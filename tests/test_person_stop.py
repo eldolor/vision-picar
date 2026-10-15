@@ -319,6 +319,8 @@ def test_a_verb_arbitrated_before_a_stop_does_not_lift_its_hold(ros_goals, monke
     finally:
         release.set()
     verb.join(10.0)
+    # Review round 1: not run, and said so (its twists would be held at zero).
+    assert reply["r"]["executed"] is False and reply["r"]["reason"] == "stopped", reply
     assert _nav2_for(stack, 0.5) == 0.0, "a verb from before the Stop lifted its hold"
     assert bridge.goal is not None, "the goal was cancelled anyway -- the test proves nothing"
 
@@ -343,3 +345,79 @@ def test_a_persons_verb_during_the_stops_loop_drives_then_the_hold_returns(ros_g
         time.sleep(0.05)
     assert bridge.goal is None, "the Stop's loop never ended the goal"
     assert lifted, "the hold was never lifted after the Stop's loop ended the goal"
+
+
+# ---------- review round 1 ----------
+
+
+def test_a_brain_verb_waiting_in_arbitration_is_refused_by_a_stop_meanwhile(monkeypatch):
+    """Thermos 1: the latch was read once, as the request arrived; an
+    autonomous verb's arbitration then reads the bridge (`goal_in_progress`),
+    and a person's Stop landing during that read did not stop the verb, which
+    then ran its whole move after the Stop."""
+    import threading
+
+    client, bridge = _server_over(monkeypatch, None)
+    bridge.get_gate, bridge.get_entered = threading.Event(), threading.Event()
+    reply = {}
+    verb = threading.Thread(target=lambda: reply.setdefault("r", client.post(
+        "/action", json={"action": "LEFT", "angle": 30}, headers={"x-driver": "brain"}).json()))
+    verb.start()
+    try:
+        assert bridge.get_entered.wait(5.0), "the verb never read the bridge"
+        assert client.post("/stop", headers={"x-driver": "twin-dpad"}).json()["executed"]
+    finally:
+        bridge.get_gate.set()
+    verb.join(10.0)
+    assert reply["r"]["executed"] is False and reply["r"]["reason"] == "person_stop", reply
+
+
+def test_a_persons_second_press_is_not_muted_by_the_first_ones_end(ros_goals):
+    """Thermos 2: each lifted verb re-held the Stop's hold when it ended. A
+    person's first press, superseded by their second, re-held it while the
+    second ran, and the second's twists were applied as zero."""
+    import threading
+
+    stack, bridge = ros_goals
+    assert stack.client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()["accepted"]
+    bridge.cancel_fails = True
+    assert stack.client.post("/stop", headers={"x-driver": "twin-dpad"}).json()["executed"]
+    time.sleep(0.3)
+    first = threading.Thread(target=lambda: stack.act("RIGHT", angle=90))
+    first.start()
+    time.sleep(0.2)
+    r = stack.act("LEFT", angle=45)
+    first.join(10.0)
+    assert r["executed"] is True, r
+    assert abs(r["result"]["turned_deg"]) > 30, f"the second press was held at zero: {r}"
+    assert _nav2_for(stack, 0.5) == 0.0, "nav2 drove the stopped goal after the presses"
+
+
+def test_a_brain_wheel_command_racing_a_persons_stop_is_zeroed(monkeypatch):
+    """Review round 1: a direct `/wheels` from the brain that passed the latch
+    check, then a person's Stop (latch, then `robot.stop()`), then the
+    command's own `set_wheel_velocity`: the standing command outlived the
+    Stop until the watchdog."""
+    import threading
+
+    from tests.test_review_376a import _keep_robot, _wheels
+
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    built = _keep_robot(monkeypatch)
+    client = asgi_client(server.create_app())
+    robot = built["robot"]
+    real, armed = robot.set_wheel_velocity, {"on": True}
+
+    def set_wheels(left, right):
+        if armed.pop("on", False) and (left or right):
+            t = threading.Thread(target=lambda: client.post(
+                "/stop", headers={"x-driver": "twin-dpad"}))
+            t.start()
+            t.join(5.0)                              # the Stop lands just before the write
+        return real(left, right)
+
+    monkeypatch.setattr(robot, "set_wheel_velocity", set_wheels)
+    r = client.post("/wheels", json={"left_rad_s": 2.0, "right_rad_s": 2.0},
+                    headers={"x-driver": "brain"}).json()
+    assert r["reason"] == "person_stop", r
+    assert _wheels(robot) == (0.0, 0.0), "the brain's command outlived the person's Stop"

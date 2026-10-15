@@ -115,16 +115,11 @@ class RemoteRobot(RobotInterface):
         mission STARTS, never otherwise. True if a latch was lifted; a robot
         server older than 3.84 has no such route and nothing to lift."""
         try:
-            response = self._client.request("POST", f"{self.base_url}/autonomy/resume",
-                                            headers=self.headers)
-        except httpx.HTTPError as e:
-            raise RobotTransportError(f"POST /autonomy/resume failed: {e}") from e
-        if response.status_code == 404:
-            return False
-        if response.status_code >= 400:
-            raise RobotTransportError(f"POST /autonomy/resume -> HTTP "
-                                      f"{response.status_code}: {response.text[:200]}")
-        return bool(response.json().get("resumed"))
+            return bool(self._request("POST", "/autonomy/resume").get("resumed"))
+        except RobotTransportError as e:
+            if "HTTP 404" in str(e):
+                return False
+            raise
 
     # ---------- camera pan ----------
 
