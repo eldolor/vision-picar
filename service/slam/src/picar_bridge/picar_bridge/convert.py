@@ -76,3 +76,17 @@ def odometry_at(odom, t):
     return {"x_m": odom["x_m"] + v * dt * math.cos(mid),
             "y_m": odom["y_m"] + v * dt * math.sin(mid),
             "yaw_rad": yaw + w * dt}
+
+
+def grid_record(session, version, resolution, width, height, origin_x, origin_y,
+                origin_yaw, data, at):
+    """An OccupancyGrid as the bridge serves it -- `/slam/map` and (3.83)
+    `/nav/costmap` alike: ROS's own frame and values, tagged with the
+    bridge's session and a version that moves on every message, so the
+    consumer can tell a new grid, and a new container, from the last one.
+    One shape for both, because world/ros_world.py places both with one
+    resampler."""
+    return {"session": session, "version": version,
+            "resolution_m": resolution, "width": width, "height": height,
+            "origin_x_m": origin_x, "origin_y_m": origin_y,
+            "origin_yaw_rad": origin_yaw, "data": list(data), "at": at}

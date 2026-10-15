@@ -68,7 +68,10 @@ CONSUMER_DIRS = PROJECT_DIRS + ("tests", "web-twin")
 # both read one env var at start-up, and this pins their defaults.
 MAX_DUPLICATES = 12
 # 2026-09-27: thirteen method+path pairs (R4-R6). A fourteenth is a decision.
-MAX_BRIDGE_ROUTES = 13
+# 2026-10-15 (3.83): fourteen -- GET /nav/costmap, nav2's global costmap for
+# the twin's costmap layer (the user asked to see it on the phone). Read-only,
+# one fixed topic, the same shape as /slam/map; Foxglove was the only view.
+MAX_BRIDGE_ROUTES = 14
 
 
 # ---------- reading both sides ----------

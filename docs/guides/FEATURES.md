@@ -744,7 +744,13 @@ Every readout here is a route the robot serves:
   since R0.
 - **World map** (N1) -- `GET /world/map`, discovered as the robot drives:
   free, wall and never-seen in three tones, with the robot drawn at
-  `GET /world/pose`.
+  `GET /world/pose`. On the Sim tab it is re-read every second whoever
+  drives (3.83; before, only when this page fetched a frame).
+- **nav2 costmap** (3.83) -- a switch under a SLAM map draws nav2's global
+  costmap over it (`GET /world/costmap`), live: inflation shaded in violet
+  by cost, strongest where nav2 counts a cell lethal. It shows why nav2
+  plans where it does -- the 0.35 m inflation around every wall and piece
+  of furniture. Off by default; off, nothing is fetched.
 - **SLAM error** (R5) -- under `WORLD_MODE=ros`, `GET /world/error` gives
   how far SLAM's pose and odometry alone are from the simulator's truth;
   the truth is drawn as an outlined ghost and both errors are printed

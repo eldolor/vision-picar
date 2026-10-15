@@ -30,6 +30,7 @@ import time
 from typing import NamedTuple, Optional, Tuple
 
 import httpx
+import numpy as np
 
 from world.bridge_faults import classify
 
@@ -90,6 +91,21 @@ def _body(r: httpx.Response):
     return body if isinstance(body, dict) else None
 
 
+def _whole_grid(g: dict) -> bool:
+    """A grid record that can be placed: its geometry present and its data
+    exactly width x height. A short or malformed one is no grid, never a
+    500 or a grid read out of bounds."""
+    try:
+        w, h = int(g["width"]), int(g["height"])
+        float(g["resolution_m"]), float(g["origin_x_m"]), float(g["origin_y_m"])
+        float(g["origin_yaw_rad"]), int(g["version"])
+        data = g["data"]
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (isinstance(data, list) and w > 0 and h > 0 and len(data) == w * h
+            and g["resolution_m"] > 0)
+
+
 def _json_object(r: httpx.Response) -> dict:
     """A bridge reply as a dict, or an httpx.HTTPError -- the one exception
     every caller already catches. Anything but a 2xx raises, naming the
@@ -125,6 +141,7 @@ class RosWorld(WorldInterface):
         # R8): a late reply from an older session must not re-install it.
         self._anchor_at: Optional[float] = None
         self._map_cache = None
+        self._costmap_cache = None
         # The last first-contact truth read, (session, monotonic time), so an
         # unanchored session asks the truth at most every TRUTH_RETRY_S
         # rather than on every pose read on the motion path (round 7), and
@@ -316,7 +333,7 @@ class RosWorld(WorldInterface):
             # its mission on `retryable: false` instead of waiting it out.
             return {**unusable_map(), **classify(e)}
         anchor = self._anchor
-        if m.get("session") != anchor.session or not m.get("data"):
+        if m.get("session") != anchor.session or not _whole_grid(m):
             return unusable_map()
         key = (m["session"], m["version"], anchor)
         cache = self._map_cache
@@ -329,50 +346,96 @@ class RosWorld(WorldInterface):
     def _resample(self, m: dict, anchor=None) -> dict:
         """SLAM's grid, re-expressed in the house frame at the same
         resolution. Nearest-neighbour: every output cell asks which SLAM
-        cell its centre falls in. Exact for the rotations the anchor makes
-        at a cardinal start, and honest (never invents a state) otherwise."""
+        cell its centre falls in (`_sample_index()`). Exact for the
+        rotations the anchor makes at a cardinal start, and honest (never
+        invents a state) otherwise."""
+        anchor = anchor or self._anchor
+        geo, idx = self._sample_index(m, anchor)
+        data = np.asarray(m["data"], dtype=np.int16)
+        v = data[np.maximum(idx, 0)]
+        cells = np.where(v < 0, CELL_UNKNOWN,
+                         np.where(v >= OCCUPIED_AT, CELL_OCCUPIED,
+                                  np.where(v < FREE_BELOW, CELL_FREE, CELL_UNKNOWN)))
+        cells = np.where(idx >= 0, cells, CELL_UNKNOWN)
+        return {"usable": True, "map_id": f"slam-{anchor.session}",
+                "map_version": m["version"] + anchor.epoch, **geo,
+                "cells": cells.tolist()}
+
+    # ---------- 3.83: nav2's global costmap (not part of WorldInterface) ----------
+    #
+    # For the twin's costmap layer. A costmap is nav2's, so like goals it
+    # lives on this backend alone and the robot server reaches it by duck
+    # typing. It is in SLAM's map frame, so it is placed with the map's own
+    # anchor and resampled cell for cell the way the map is.
+
+    def get_costmap(self) -> dict:
+        """nav2's global costmap in the house frame: `usable`, `map_id`,
+        `costmap_version`, the grid geometry, and `costs` -- one per cell,
+        row-major, as nav2 publishes them (-1 unknown, 0 free, 1-98
+        inflation, 99 inscribed, 100 lethal). `usable: false` when there is
+        none to place: before nav2's first publish, from another session,
+        or when the bridge cannot answer (with 3.82's `retryable`)."""
+        try:
+            if self._session is None:
+                self._ensure_session(self._fetch_pose())
+            c = _json_object(self._http.get("/nav/costmap"))
+        except httpx.HTTPError as e:
+            return {**unusable_map(), **classify(e)}
+        anchor = self._anchor
+        if c.get("session") != anchor.session or not _whole_grid(c):
+            return unusable_map()
+        key = (c["session"], c["version"], anchor)
+        cache = self._costmap_cache
+        if cache and cache[0] == key:
+            return cache[1]
+        geo, idx = self._sample_index(c, anchor)
+        data = np.asarray(c["data"], dtype=np.int16)
+        costs = np.where(idx >= 0, data[np.maximum(idx, 0)], -1)
+        out = {"usable": True, "map_id": f"slam-{anchor.session}",
+               "costmap_version": c["version"] + anchor.epoch, **geo,
+               "costs": costs.tolist()}
+        self._costmap_cache = (key, out)
+        return out
+
+    def _sample_index(self, m: dict, anchor):
+        """The one placement of a SLAM-frame grid on the house: the
+        house-frame grid's geometry and, for each of its cells, the index of
+        the SLAM-frame cell its centre falls in (-1 outside). The map and
+        the costmap both read through it, so the two layers cannot disagree
+        by a cell (inflation drawn inside a wall). Vectorised in 3.83 with
+        the old per-cell loop's arithmetic in the same order: 0 differences
+        against the frozen copy in tests/ros_resample_reference.py."""
         res, w, h = m["resolution_m"], m["width"], m["height"]
         ox, oy, oyaw = m["origin_x_m"], m["origin_y_m"], m["origin_yaw_rad"]
-        data = m["data"]
-        anchor = anchor or self._anchor
-        session, alpha, t = anchor.session, anchor.alpha, anchor.t
+        alpha, t = anchor.alpha, anchor.t
         cyaw, syaw = math.cos(oyaw), math.sin(oyaw)
 
-        def slam_cell_to_ours_world(i, j):
-            # centre of grid cell (i col, j row) in ROS map frame
+        def corner(i, j):
             gx, gy = (i + 0.5) * res, (j + 0.5) * res
             rx, ry = ox + cyaw * gx - syaw * gy, oy + syaw * gx + cyaw * gy
             x, y, _ = _ros_to_ours(rx, ry, 0.0)
             wx, wy, _ = self._apply(x, y, 0.0, anchor)
             return wx, wy
 
-        corners = [slam_cell_to_ours_world(i, j) for i in (-0.5, w - 0.5) for j in (-0.5, h - 0.5)]
+        corners = [corner(i, j) for i in (-0.5, w - 0.5) for j in (-0.5, h - 0.5)]
         min_x = min(c[0] for c in corners)
         min_y = min(c[1] for c in corners)
         out_w = int(math.ceil((max(c[0] for c in corners) - min_x) / res))
         out_h = int(math.ceil((max(c[1] for c in corners) - min_y) / res))
         ca, sa = math.cos(math.radians(alpha)), math.sin(math.radians(alpha))
-        cells = [CELL_UNKNOWN] * (out_w * out_h)
-        for row in range(out_h):
-            for col in range(out_w):
-                wx, wy = min_x + (col + 0.5) * res, min_y + (row + 0.5) * res
-                # undo the anchor, then ours -> ROS (flip y), then the origin
-                dx, dy = wx - t[0], wy - t[1]
-                x, y = ca * dx + sa * dy, -sa * dx + ca * dy
-                rx, ry = _ours_to_ros(x, y)
-                rx, ry = rx - ox, ry - oy
-                gx, gy = cyaw * rx + syaw * ry, -syaw * rx + cyaw * ry
-                i, j = int(math.floor(gx / res)), int(math.floor(gy / res))
-                if 0 <= i < w and 0 <= j < h:
-                    v = data[j * w + i]
-                    cells[row * out_w + col] = (
-                        CELL_UNKNOWN if v < 0 else CELL_OCCUPIED if v >= OCCUPIED_AT
-                        else CELL_FREE if v < FREE_BELOW else CELL_UNKNOWN)
-        return {"usable": True, "map_id": f"slam-{session}",
-                "map_version": m["version"] + anchor.epoch,
-                "resolution_m": res, "width": out_w, "height": out_h,
-                "origin_x_m": min_x, "origin_y_m": min_y, "cells": cells}
-
+        rows, cols = np.mgrid[0:out_h, 0:out_w].astype(np.float64)
+        wx, wy = min_x + (cols + 0.5) * res, min_y + (rows + 0.5) * res
+        dx, dy = wx - t[0], wy - t[1]
+        x, y = ca * dx + sa * dy, -sa * dx + ca * dy
+        rx, ry = x, -y                                   # _ours_to_ros
+        rx, ry = rx - ox, ry - oy
+        gx, gy = cyaw * rx + syaw * ry, -syaw * rx + cyaw * ry
+        i, j = np.floor(gx / res).astype(np.int64), np.floor(gy / res).astype(np.int64)
+        inside = (i >= 0) & (i < w) & (j >= 0) & (j < h)
+        idx = np.where(inside, j * w + i, -1).ravel()
+        geo = {"resolution_m": res, "width": out_w, "height": out_h,
+               "origin_x_m": min_x, "origin_y_m": min_y}
+        return geo, idx
 
     # ---------- R6: goals (not part of WorldInterface) ----------
     #

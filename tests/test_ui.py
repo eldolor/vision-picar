@@ -3574,6 +3574,188 @@ def test_a_sim_map_is_not_tappable(browser, twin_server):
     page.close()
 
 
+# ---------- 3.83: nav2's costmap over the SLAM map ----------
+
+def _stub_costmap(lethal_col=15, version=1):
+    """The stub SLAM map's own 20 x 10 grid: one lethal cell at row 5,
+    an inflated one beside it, free elsewhere."""
+    costs = [0] * 200
+    costs[5 * 20 + lethal_col] = 100
+    costs[5 * 20 + lethal_col - 1] = 50
+    return {"usable": True, "map_id": "slam-t1", "costmap_version": version,
+            "resolution_m": 0.05, "width": 20, "height": 10, "origin_x_m": 0.0,
+            "origin_y_m": 0.0, "costs": costs}
+
+
+def _cell_rgb(page, col, row):
+    """The map canvas's colour at a cell's centre (the stub map is 20 cells
+    wide, so the twin scales each cell to 14 px)."""
+    return page.evaluate(
+        "([c, r]) => { const k = document.getElementById('world-map');"
+        " const s = Math.max(4, Math.min(16, Math.floor(280 / 20)));"
+        " const d = k.getContext('2d').getImageData(c * s + s / 2, r * s + s / 2, 1, 1).data;"
+        " return [d[0], d[1], d[2]]; }", [col, row])
+
+
+def _violet(rgb):
+    """Tinted by --map-cost (#C86BFA) at any of the layer's opacities: a
+    free cell (#35505F), an unknown one and a wall (#8FA0B8) all fail."""
+    r, g, b = rgb
+    return b > 130 and r > 90 and b > g + 40
+
+
+def _open_slam_map(browser, twin_server, costmap_route):
+    page, errors = open_twin(browser, twin_server)
+    _stub_world(page, _SLAM_MAP, _SLAM_POSE, _SLAM_ERROR)
+    page.route("**/world/goal", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps({"goal": None, "plan": []})))
+    page.route("**/world/costmap", costmap_route)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => (document.getElementById('map-readout') || {}).textContent.includes('cells seen')",
+        timeout=8000)
+    return page, errors
+
+
+def _fulfil_json(body, hits=None):
+    def handler(route):
+        if hits is not None:
+            hits.append(route.request.url)
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+    return handler
+
+
+def test_the_costmap_switch_draws_nav2s_costmap_over_a_slam_map(browser, twin_server):
+    """3.83 criterion 5a: the switch shows on a SLAM map; on, lethal and
+    inflated cells are drawn in the costmap's colour and free cells are
+    not; off, the layer is gone."""
+    page, errors = _open_slam_map(browser, twin_server, _fulfil_json(_stub_costmap()))
+    page.wait_for_selector("#map-costmap", state="visible", timeout=4000)
+    assert not _violet(_cell_rgb(page, 15, 5)), "drawn before the switch was on"
+    page.click("#map-costmap")
+    page.wait_for_function(
+        "() => document.getElementById('map-readout').textContent.includes('costmap v1')",
+        timeout=4000)
+    assert _violet(_cell_rgb(page, 15, 5)), _cell_rgb(page, 15, 5)
+    assert _violet(_cell_rgb(page, 14, 5)), _cell_rgb(page, 14, 5)
+    assert not _violet(_cell_rgb(page, 2, 2)), _cell_rgb(page, 2, 2)
+    page.screenshot(path=str(Path(os.environ.get("PICAR_SHOTS", "/tmp")) / "costmap-on.png"),
+                    full_page=False)
+    page.click("#map-costmap")
+    page.wait_for_function(
+        "() => !document.getElementById('map-readout').textContent.includes('costmap')",
+        timeout=4000)
+    assert not _violet(_cell_rgb(page, 15, 5)), "still drawn with the switch off"
+    assert not errors, errors
+    page.close()
+
+
+def test_with_the_switch_off_the_costmap_is_never_fetched(browser, twin_server):
+    """3.83 criterion 5b: the default costs the tunnel nothing."""
+    hits = []
+    page, errors = _open_slam_map(browser, twin_server, _fulfil_json(_stub_costmap(), hits))
+    page.wait_for_timeout(2500)
+    assert hits == [], hits
+    assert not page.locator("#map-costmap").is_checked()
+    assert not errors, errors
+    page.close()
+
+
+def test_no_costmap_switch_on_a_sim_map_or_a_world_without_one(browser, twin_server):
+    """3.83 criterion 5c: a sim map hides the switch; a server answering
+    501 hides it once asked, and nothing is drawn."""
+    page, errors = open_twin(browser, twin_server)
+    _stub_world(page, dict(_SLAM_MAP, map_id="sim-grid"), dict(_SLAM_POSE, map_id="sim-grid"),
+                dict(_SLAM_ERROR, source="sim-grid"))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => (document.getElementById('map-readout') || {}).textContent.includes('cells seen')",
+        timeout=8000)
+    assert not page.locator("#map-costmap").is_visible()
+    page.close()
+
+    page, errors = _open_slam_map(browser, twin_server,
+                                  lambda r: r.fulfill(status=501, body='{"detail": "no"}'))
+    page.wait_for_selector("#map-costmap", state="visible", timeout=4000)
+    page.click("#map-costmap")
+    page.wait_for_selector("#map-costmap", state="hidden", timeout=4000)
+    assert not _violet(_cell_rgb(page, 15, 5))
+    assert "costmap" not in page.locator("#map-readout").text_content()
+    assert not [e for e in errors if "501" not in e], errors
+    page.close()
+
+
+def test_a_costmap_the_bridge_refuses_is_not_said_as_not_yet(browser, twin_server):
+    """3.82's split, to the last step: a 401 from the bridge is no outage."""
+    page, errors = _open_slam_map(browser, twin_server, _fulfil_json(
+        {"usable": False, "retryable": False, "bridge_status": 401}))
+    page.wait_for_selector("#map-costmap", state="visible", timeout=4000)
+    page.click("#map-costmap")
+    page.wait_for_function(
+        "() => document.getElementById('map-readout').textContent.includes('refused (401)')",
+        timeout=4000)
+    assert not _violet(_cell_rgb(page, 15, 5))
+    assert not errors, errors
+    page.close()
+
+
+def test_a_slam_map_follows_the_robot_while_nobody_drives_from_the_page(browser, twin_server):
+    """3.83: the map was re-read only with a camera frame (a D-pad press or
+    a brain mission's poll), so a robot driven by nav2 built its map
+    unseen. A new map version must reach the canvas within 2.5 s with no
+    press and no brain."""
+    current = {"map": dict(_SLAM_MAP, map_version=3)}
+    page, errors = open_twin(browser, twin_server)
+    _stub_world(page, _SLAM_MAP, _SLAM_POSE, _SLAM_ERROR)
+    page.route("**/world/map", lambda r: r.fulfill(status=200, content_type="application/json",
+                                                   body=json.dumps(current["map"])))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.wait_for_function(
+        "() => (document.getElementById('map-readout') || {}).textContent.includes('slam-t1 v3')",
+        timeout=8000)
+    cells = [0] * 200
+    cells[5 * 20 + 3] = 1
+    current["map"] = dict(_SLAM_MAP, map_version=4, cells=cells)
+    page.wait_for_function(
+        "() => document.getElementById('map-readout').textContent.includes('slam-t1 v4')",
+        timeout=2500)
+    assert not errors, errors
+    page.close()
+
+
+def test_a_new_costmap_version_is_redrawn(browser, twin_server):
+    """3.83 criterion 5d: the layer follows nav2 -- a new version is on the
+    canvas within 2.5 s."""
+    current = {"body": _stub_costmap(lethal_col=15, version=1)}
+    page, errors = _open_slam_map(browser, twin_server,
+                                  lambda r: r.fulfill(status=200, content_type="application/json",
+                                                      body=json.dumps(current["body"])))
+    page.wait_for_selector("#map-costmap", state="visible", timeout=4000)
+    page.click("#map-costmap")
+    page.wait_for_function(
+        "() => document.getElementById('map-readout').textContent.includes('costmap v1')",
+        timeout=4000)
+    current["body"] = _stub_costmap(lethal_col=4, version=2)
+    t0 = time.monotonic()
+    page.wait_for_function(
+        "() => document.getElementById('map-readout').textContent.includes('costmap v2')",
+        timeout=2500)
+    took = time.monotonic() - t0
+    assert _violet(_cell_rgb(page, 4, 5)) and not _violet(_cell_rgb(page, 15, 5))
+    assert took < 2.5, took
+    assert not errors, errors
+    page.close()
+
+
 # ---------- 3.56: is the cloud reachable? ----------
 
 def test_the_panel_says_whether_the_cloud_is_reachable(browser, twin_server):

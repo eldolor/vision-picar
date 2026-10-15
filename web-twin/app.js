@@ -130,6 +130,9 @@
     // else -- which is why `map_version` exists and why the two are
     // fetched on different clocks (see refreshWorld).
     lastPose: null, lastMap: null, worldUnsupported: false, lastMapFetchAt: 0,
+    // 3.83: nav2's costmap, as big as the map and fetched on its clock --
+    // only while the switch under the map is on.
+    lastCostmap: null, costmapUnsupported: false, showCostmap: false,
     searchedRooms: new Set(),
     sightings: [], found: false, foundSighting: null,
     log: [], step: 0,
@@ -252,6 +255,7 @@
     navigateModelId: "vp_navigate_model_id",
     navigatePromptVariant: "vp_navigate_prompt_variant",
     brainPolicy: "vp_brain_policy",
+    showCostmap: "vp_show_costmap",
   };
   function prefGet(key) {
     try { return localStorage.getItem(key); } catch (e) { return null; }
@@ -632,6 +636,7 @@
 
   async function refreshWorld() {
     if (state.worldUnsupported) return;
+    state.lastWorldRefreshAt = Date.now();
     // 3.72: a fetch begun before a house swap must not draw the old house
     // after it -- each result is kept only if no swap happened meanwhile.
     var epoch = state.houseEpoch || 0;
@@ -669,6 +674,7 @@
         // a swap skips its map fetch and the panel stays blank (review 3).
         if (stale()) { state.lastMapFetchAt = 0; return; }
         state.lastMap = map;
+        await refreshCostmap(stale);
       }
     } catch (e) {
       if (e.status === 404) {
@@ -681,6 +687,85 @@
       // canvas on one dropped request -- same rule as the depth strip.
     }
     renderMap();
+  }
+
+  // 3.83: its own try, because the catch around it reads a 404 as "no
+  // world at all". 404 (a server older than 3.83) and 501 (a world without
+  // nav2) both mean no costmap here, and hide the switch.
+  // `costmapGen` moves when the switch goes off or the page reconnects, so
+  // a reply that was in flight then is dropped rather than drawn.
+  var costmapGen = 0;
+  async function refreshCostmap(stale) {
+    if (!state.showCostmap || state.costmapUnsupported || !isSlamMap(state.lastMap)) {
+      state.lastCostmap = null;
+      return;
+    }
+    var gen = costmapGen;
+    try {
+      var cm = await apiGet("/world/costmap");
+      if (stale() || gen !== costmapGen) return;
+      state.lastCostmap = cm;
+    } catch (err) {
+      if (gen !== costmapGen) return;
+      if (err.status === 404 || err.status === 501) state.costmapUnsupported = true;
+      // Anything else keeps the last one up, as the map does.
+    }
+  }
+
+  // One cell per pixel, painted once per costmap version and scaled onto
+  // the map by drawImage: a furnished house's inflation is tens of
+  // thousands of cells, and the map redraws on every frame.
+  var costmapRaster = { costmap: null, canvas: null };
+  function costmapCanvas(cm) {
+    if (costmapRaster.costmap === cm) return costmapRaster.canvas;
+    var css = getComputedStyle(document.documentElement);
+    var hex = (css.getPropertyValue("--map-cost") || "#C86BFA").trim().replace("#", "");
+    var rgb = [0, 2, 4].map(function (i) { return parseInt(hex.substr(i, 2), 16) || 0; });
+    var c = document.createElement("canvas");
+    c.width = cm.width; c.height = cm.height;
+    var cctx = c.getContext("2d");
+    var img = cctx.createImageData(cm.width, cm.height);
+    for (var k = 0; k < cm.costs.length; k++) {
+      var v = cm.costs[k];
+      if (!(v > 0)) continue;
+      var a = v >= 100 ? 0.85 : v >= 99 ? 0.65 : 0.12 + 0.43 * (v / 98);
+      img.data[4 * k] = rgb[0]; img.data[4 * k + 1] = rgb[1]; img.data[4 * k + 2] = rgb[2];
+      img.data[4 * k + 3] = Math.round(255 * a);
+    }
+    cctx.putImageData(img, 0, 0);
+    costmapRaster = { costmap: cm, canvas: c };
+    return c;
+  }
+
+  // nav2's costmap over the cells, by opacity: free and unknown are not
+  // drawn, inflation is shaded by cost, inscribed (99) and lethal (100)
+  // strongest. Placed by its own origin and resolution, which RosWorld
+  // shares with the map's whenever nav2's grid matches slam_toolbox's.
+  function drawCostmap(ctx, grid, scale) {
+    var cm = state.lastCostmap;
+    if (!state.showCostmap || !cm || !cm.usable || cm.map_id !== grid.map_id) return;
+    var px = scale * cm.resolution_m / grid.resolution_m;
+    var ox = ((cm.origin_x_m - grid.origin_x_m) / grid.resolution_m) * scale;
+    var oy = ((cm.origin_y_m - grid.origin_y_m) / grid.resolution_m) * scale;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;      // a cell stays a cell, as on the map
+    ctx.drawImage(costmapCanvas(cm), ox, oy, cm.width * px, cm.height * px);
+    ctx.restore();
+  }
+
+  function costmapText(grid) {
+    if (!state.showCostmap || !isSlamMap(grid) || state.costmapUnsupported) return "";
+    var cm = state.lastCostmap;
+    // 3.82's split: a refusal no wait mends (a 401, an image older than
+    // 3.83) is said as such, not as "not yet".
+    var what = cm && cm.usable && cm.map_id === grid.map_id
+      ? "costmap v" + cm.costmap_version + " \u00b7 shade = nav2's cost, strongest = lethal"
+      : cm && cm.retryable === false
+        ? "costmap: the ROS bridge refused" +
+          (cm.bridge_status ? " (" + Number(cm.bridge_status) + ")" : "") +
+          " \u2014 check its secret and image"
+        : "costmap: not reported yet";
+    return '<br><span class="costmap-line">' + what + "</span>";
   }
 
   function isSlamMap(grid) {
@@ -768,6 +853,11 @@
 
     var ctx = canvas.getContext("2d");
     var grid = state.lastMap;
+    var costmapRow = document.getElementById("costmap-row");
+    if (costmapRow) {
+      costmapRow.style.display =
+        grid && grid.usable && isSlamMap(grid) && !state.costmapUnsupported ? "" : "none";
+    }
 
     if (state.worldUnsupported) {
       canvas.width = 0; canvas.height = 0;
@@ -808,6 +898,7 @@
         ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
       }
     }
+    drawCostmap(ctx, grid, SCALE);
 
     // R5: when the map is SLAM's, draw the TRUTH as an outlined ghost
     // under the estimate. The gap between the two is the error; on a sim
@@ -829,7 +920,7 @@
     readout.innerHTML = "map: " + seen + "/" + grid.cells.length + " cells seen (" +
       pct + "%) \u00b7 " + Math.round(grid.resolution_m * 100) + "cm cells \u00b7 " +
       '<span class="src">' + grid.map_id + " v" + grid.map_version + "</span>" +
-      slamErrorText(slam ? werr : null) + goalText(grid);
+      slamErrorText(slam ? werr : null) + goalText(grid) + costmapText(grid);
   }
 
   // "SLAM error 4.2 cm / 1.1° · odometry alone 45 cm / 39°" -- the one
@@ -1228,6 +1319,9 @@
     state.odometryUnsupported = false;
     state.worldErrorUnsupported = false;
     state.goalsUnsupported = false;
+    state.costmapUnsupported = false;
+    state.lastCostmap = null;
+    costmapGen++;
     state.lastWorldError = null;
     state.lastGoal = null;
     state.serverSecret = document.getElementById("cfg-server-secret").value.trim();
@@ -1501,6 +1595,23 @@
   document.getElementById("btn-look-right").onclick = function () { manualAction("LOOK_RIGHT"); };
   document.getElementById("btn-look-center").onclick = function () { manualAction("LOOK_CENTER"); };
   document.getElementById("btn-random-house").onclick = randomHouse;
+  // 3.83: the costmap switch, remembered per phone. Turning it on fetches
+  // at once rather than on the map's next tick; turning it off drops any
+  // reply still in flight.
+  (function () {
+    var box = document.getElementById("map-costmap");
+    state.showCostmap = prefGet(PREF.showCostmap) === "1";
+    box.checked = state.showCostmap;
+    box.onchange = function () {
+      state.showCostmap = box.checked;
+      prefSet(PREF.showCostmap, box.checked ? "1" : "0");
+      if (!box.checked) { state.lastCostmap = null; costmapGen++; }
+      state.lastMapFetchAt = 0;
+      state.lastWorldRefreshAt = 0;
+      renderMap();
+      if (box.checked) followWorld();
+    };
+  })();
   document.querySelectorAll(".turn-step-btn").forEach(function (btn) {
     btn.onclick = function () { setTurnStep(Number(btn.dataset.turnDeg)); };
   });
@@ -2011,8 +2122,24 @@
       // request every half second.
       if ((document.body.dataset.tab || "guide") !== "sim") return;
       renderWatchdog();
+      followWorld();
     }, WATCHDOG_POLL_MS);
     renderWatchdog();
+  }
+  // 3.83: the map (and the costmap on it) used to be re-read only with a
+  // camera frame -- a D-pad press here, or a brain mission's poll -- so a
+  // robot driven by anyone else (a nav2 goal tapped on this map, a script,
+  // another phone) built its map unseen. On the Sim tab the world is now
+  // followed on the map's own clock whenever nothing else has read it.
+  var worldFollowInFlight = false;
+  async function followWorld() {
+    // A SLAM map only: the simulator's own map changes only when this page
+    // or a brain mission drives, and both already fetch frames.
+    if (!state.connected || state.worldUnsupported || worldFollowInFlight) return;
+    if (!isSlamMap(state.lastMap)) return;
+    if (Date.now() - (state.lastWorldRefreshAt || 0) < MAP_FETCH_INTERVAL_MS) return;
+    worldFollowInFlight = true;
+    try { await refreshWorld(); } finally { worldFollowInFlight = false; }
   }
   function stopWatchdogPolling() {
     if (state.watchdogTimerId) clearInterval(state.watchdogTimerId);

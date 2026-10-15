@@ -78,6 +78,7 @@ Actions: `FORWARD`, `REVERSE`, `LEFT`, `RIGHT`, `STOP`, `LOOK_LEFT`,
 | `GET /world/error` | `{"usable", "source", "position_error_m", "heading_error_deg", "odom_position_error_m", "odom_heading_error_deg", "truth"}` |
 | `POST /world/goal` | `{"x_m", "y_m"}` -> the world's `set_goal()`, or `{"accepted": false, "executed": false, "reason": "preempted", ...}`. Arbitrated as driver `ros` |
 | `GET` / `DELETE /world/goal` | `get_goal()` / `cancel_goal()` |
+| `GET /world/costmap` | 3.83: pass-through of `get_costmap()`, nav2's global costmap in the house frame; **501** on a world without one |
 
 Goal routes answer **501** on a world without `set_goal` (anything but
 `WORLD_MODE=ros`).

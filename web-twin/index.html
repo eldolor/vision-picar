@@ -38,6 +38,9 @@
     --map-truth: #F5F7FA;
     /* R6: a nav2 goal and its planned route. */
     --map-goal: #39D98A;
+    /* 3.83: nav2's costmap, drawn over the map by opacity (cost). Violet:
+       apart from every map state, the goal's green and the alert orange. */
+    --map-cost: #C86BFA;
     --door: #3A4250;
     /* Brand/primary (interactive default, active states) is distinct
        from the semantic accents below -- a single green doing double
@@ -510,6 +513,7 @@
   /* N1. Sized like the FPV canvas above it so the two read as one
      instrument: what the robot sees, and where it has been. */
   .map-wrap { display: flex; flex-direction: column; align-items: center; margin-top: 6px; }
+  .costmap-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; cursor: pointer; }
   .house-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
   #world-map.tappable { cursor: crosshair; touch-action: manipulation; }
   #world-map {
@@ -1581,6 +1585,14 @@
         <canvas id="world-map" role="img"
                 aria-label="Occupancy map of the house as discovered so far"></canvas>
         <div class="depth-readout" id="map-readout">map: not connected</div>
+        <!-- 3.83: nav2's global costmap over the SLAM map -- inflation
+             shaded by cost, lethal strongest. Only on a SLAM map whose
+             server has /world/costmap; off by default, so nothing is
+             fetched until it is wanted. -->
+        <label class="costmap-row" for="map-costmap" id="costmap-row" style="display: none">
+          <input type="checkbox" id="map-costmap" class="switch">
+          <span class="depth-readout">nav2 costmap</span>
+        </label>
         <!-- 3.72: a random one of the 100 ProcTHOR houses, swapped in on the
              robot server in place -- no restart. Off while a mission runs. -->
         <div class="house-row" style="display: none">

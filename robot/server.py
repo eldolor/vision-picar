@@ -84,6 +84,7 @@ README), not in the automated unit suite.
 """
 
 import gc
+import json
 import os
 import threading
 import math
@@ -98,7 +99,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from robot.factory import get_robot, load_config
@@ -1155,6 +1156,23 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     @app.delete(prefix + "/world/goal", dependencies=[Depends(require_secret)])
     def world_goal_cancel():
         return _bridge_call(_goals().cancel_goal)
+
+    @app.get(prefix + "/world/costmap", dependencies=[Depends(require_secret)])
+    def world_costmap():
+        """3.83: nav2's global costmap in the house frame, for the twin's
+        costmap layer -- a pass-through like `/world/map`, and as big. Only
+        a world with nav2 has one (world/ros_world.py); every other answers
+        501, as goals do. A bridge that cannot answer is `usable: false`,
+        not an error: the layer just has nothing to draw.
+
+        Encoded here with `json.dumps` and returned as bytes: FastAPI's own
+        encoder walks ~10^5 ints in Python, on the process that runs the
+        wheel loop."""
+        if not hasattr(world_model, "get_costmap"):
+            raise HTTPException(status_code=501, detail=(
+                "this world has no costmap -- costmaps are nav2's (WORLD_MODE=ros, "
+                "PLAN-ros-alignment.md 3.83)"))
+        return Response(json.dumps(world_model.get_costmap()), media_type="application/json")
 
     @app.get(prefix + "/world/error", dependencies=[Depends(require_secret)])
     def world_error():

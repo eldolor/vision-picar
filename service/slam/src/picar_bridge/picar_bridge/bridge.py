@@ -14,6 +14,9 @@ and the other direction:
     GET /tf?target=&source=   a tf2 lookup, for R3's measurements
     GET /slam/pose       map -> base_footprint (SLAM) and odom -> base_footprint
     GET /slam/map        slam_toolbox's OccupancyGrid, as ROS publishes it
+    GET /nav/costmap     3.83: nav2's GLOBAL costmap, the same shape (map frame;
+                         -1 unknown, 0 free, 1-98 inflation, 99 inscribed,
+                         100 lethal), for the twin's costmap layer
     POST /goal {x_m, y_m, yaw_rad}   R6: a nav2 NavigateToPose goal, map frame
     GET /goal            its state and the planned path (map frame)
     DELETE /goal         cancel it
@@ -180,6 +183,15 @@ class Bridge(Node):
             OccupancyGrid, "/map", self._on_map,
             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                        reliability=ReliabilityPolicy.RELIABLE))
+        # 3.83: the global costmap, for the twin. costmap_2d publishes it
+        # transient local and reliable, depth 1, whole every time
+        # (always_send_full_costmap), so the latest message is the costmap.
+        self.last_costmap = None
+        self.costmap_version = 0
+        self.create_subscription(
+            OccupancyGrid, "/global_costmap/costmap", self._on_costmap,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                       reliability=ReliabilityPolicy.RELIABLE))
         # ---- R6 ----
         self.nav = ActionClient(self, NavigateToPose, "navigate_to_pose")
         self.goal_handle = None
@@ -302,16 +314,28 @@ class Bridge(Node):
                 "yaw_rad": yaw, "linear_m_s": msg.twist.twist.linear.x,
                 "angular_rad_s": msg.twist.twist.angular.z, "at": time.time()}
 
-    def _on_map(self, msg):
+    def _grid(self, msg, version):
         info = msg.info
         yaw, _, _ = _yaw_pitch_roll(info.origin.orientation)
+        return convert.grid_record(
+            self.session, version, info.resolution, info.width, info.height,
+            info.origin.position.x, info.origin.position.y, yaw, msg.data, time.time())
+
+    # Each grid is copied OUTSIDE the lock (3.76 H1-6: /cmd_vel and the scan
+    # poll take it): only the version and the swap are inside.
+    def _on_map(self, msg):
+        record = self._grid(msg, 0)
         with self.lock:
             self.map_version += 1
-            self.last_map = {
-                "session": self.session, "version": self.map_version,
-                "resolution_m": info.resolution, "width": info.width, "height": info.height,
-                "origin_x_m": info.origin.position.x, "origin_y_m": info.origin.position.y,
-                "origin_yaw_rad": yaw, "data": list(msg.data), "at": time.time()}
+            record["version"] = self.map_version
+            self.last_map = record
+
+    def _on_costmap(self, msg):
+        record = self._grid(msg, 0)
+        with self.lock:
+            self.costmap_version += 1
+            record["version"] = self.costmap_version
+            self.last_costmap = record
 
     # ---------- R6: goals ----------
 
@@ -826,7 +850,8 @@ def _handler(bridge):
             # Each of these is copied under the lock and serialised and
             # written OUTSIDE it (3.76 H1-6): every callback, the scan poll
             # and /cmd_vel take that lock, and a slow reader held them all.
-            # last_odom/last_scan/last_map are replaced whole, never mutated.
+            # last_odom/last_scan/last_map/last_costmap are replaced whole,
+            # never mutated.
             if url.path == "/odom":
                 with bridge.lock:
                     reply = bridge.last_odom or {"usable": False}
@@ -841,6 +866,11 @@ def _handler(bridge):
                 with bridge.lock:
                     reply = bridge.last_map or {"session": bridge.session,
                                                 "version": 0, "usable": False}
+                return self._send(200, reply)
+            if url.path == "/nav/costmap":
+                with bridge.lock:
+                    reply = bridge.last_costmap or {"session": bridge.session,
+                                                    "version": 0, "usable": False}
                 return self._send(200, reply)
             if url.path == "/goal":
                 return self._send(*bridge.goal_state())
