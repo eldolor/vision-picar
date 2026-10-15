@@ -4,10 +4,12 @@ inflated from it with nav2's formula and this repo's parameters (0.35 m,
 scaling 5.0). Illustration only -- not a nav2 measurement."""
 # Run: pytest evaluations/costmap-383/screenshot_house.py (from the repo root).
 import json, math
+from pathlib import Path
 import numpy as np
 from sim.maps import build_world
 from tests.test_ui import browser, twin_server, open_twin, _stub_world  # noqa: F401
 
+HERE = Path(__file__).resolve().parent
 RES, K = 0.05, 6          # 0.30 m sim cells -> 6 x 6 cells of 5 cm
 
 
@@ -63,8 +65,8 @@ def test_demo(browser, twin_server):
     page.wait_for_function("() => document.getElementById('map-readout').textContent.includes('costmap v17')", timeout=5000)
     page.locator(".map-wrap").scroll_into_view_if_needed()
     page.wait_for_timeout(300)
-    page.screenshot(path="evaluations/costmap-383/costmap-house.png")
+    page.screenshot(path=str(HERE / "costmap-house.png"))
     page.locator("#map-costmap").click()
     page.wait_for_timeout(600)
-    page.screenshot(path="evaluations/costmap-383/costmap-house-off.png")
+    page.screenshot(path=str(HERE / "costmap-house-off.png"))
     assert not errors, errors

@@ -107,21 +107,26 @@ def _whole_grid(g: dict) -> bool:
     whole = lambda v: isinstance(v, int) and not isinstance(v, bool)   # noqa: E731
     real = lambda v: (isinstance(v, (int, float)) and not isinstance(v, bool)   # noqa: E731
                       and math.isfinite(v))
-    return (whole(w) and whole(h) and whole(version) and w > 0 and h > 0
-            and all(real(v) for v in geometry) and geometry[0] > 0
+    # Bounds no real grid comes near (a 1 mm-1 m cell, a 10 km origin,
+    # 2000 x 2000 cells), so the placement's arithmetic cannot overflow.
+    return (whole(w) and whole(h) and whole(version) and 0 < w <= 2000 and 0 < h <= 2000
+            and all(real(v) for v in geometry) and 0.001 <= geometry[0] <= 1.0
+            and all(abs(v) <= 1e4 for v in geometry[1:3])
             and isinstance(data, list) and len(data) == w * h)
 
 
-def _cells_in_range(data: list) -> bool:
-    """Every cell an integer in -1..100, OccupancyGrid's range for a map and
-    for nav2's published costmap alike. Checked before placing, so a bad
-    cell is no grid and a bug in the placement still raises."""
+def _cells(data: list):
+    """The cells as an int16 array if every one is an integer in -1..100
+    (OccupancyGrid's range, for a map and nav2's costmap alike), else None.
+    Checked before placing, so a bad cell is no grid and a bug in the
+    placement still raises."""
     try:
         a = np.asarray(data)
     except (TypeError, ValueError):
-        return False
-    return (a.dtype.kind in "iu" and a.ndim == 1
-            and bool(a.size == 0 or (a.min() >= -1 and a.max() <= 100)))
+        return None
+    if a.dtype.kind not in "iu" or a.ndim != 1 or a.min() < -1 or a.max() > 100:
+        return None
+    return a.astype(np.int16)
 
 
 def _json_object(r: httpx.Response) -> dict:
@@ -367,9 +372,10 @@ class RosWorld(WorldInterface):
         cache = getattr(self, cache_attr)
         if cache and cache[0] == key:
             return cache[1]
-        if not _cells_in_range(g["data"]):
+        cells = _cells(g["data"])
+        if cells is None:
             return unusable_map()
-        out = place(g, anchor)
+        out = place(dict(g, data=cells), anchor)
         setattr(self, cache_attr, (key, out))
         return out
 

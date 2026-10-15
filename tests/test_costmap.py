@@ -219,6 +219,8 @@ def test_a_bridge_that_cannot_answer_is_unusable_and_says_whether_to_wait(status
     lambda b: b["data"].__setitem__(3, 250),
     lambda b: b["data"].__setitem__(3, 3.7),
     lambda b: b["data"].__setitem__(3, None),
+    lambda b: b.__setitem__("origin_x_m", 1e308),
+    lambda b: b.__setitem__("resolution_m", 1e-300),
 ])
 def test_a_malformed_costmap_is_unusable_not_a_500(break_it, monkeypatch):
     world, bridge = costmap_world(truth=FakeTruth(1.0, 1.0, 90.0))

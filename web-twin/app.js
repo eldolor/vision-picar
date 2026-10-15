@@ -669,17 +669,16 @@
       var now = Date.now();
       if (now - state.lastMapFetchAt >= MAP_FETCH_INTERVAL_MS) {
         state.lastMapFetchAt = now;
+        var seq = ++mapFetchSeq;
         var map = await apiGet("/world/map");
         // Stale: give the fetch slot back, or the fresh refresh right after
         // a swap skips its map fetch and the panel stays blank (review 3).
         if (stale()) { state.lastMapFetchAt = 0; return; }
-        // A frame's refresh and followWorld's can overlap: an older version
-        // of the same map landing second is dropped.
-        var had = state.lastMap;
-        if (!(had && had.usable && map && map.usable && had.map_id === map.map_id &&
-              map.map_version < had.map_version)) {
-          state.lastMap = map;
-        }
+        // 3.83: a frame's refresh and followWorld's can overlap; a reply to
+        // an older request landing second is dropped, whatever it holds.
+        if (seq < mapLandedSeq) return;
+        mapLandedSeq = seq;
+        state.lastMap = map;
         await refreshCostmap(stale);
       }
     } catch (e) {
@@ -701,20 +700,21 @@
   // `costmapGen` moves when the switch goes off or the page reconnects, so
   // a reply that was in flight then is dropped rather than drawn.
   var costmapGen = 0;
+  var mapFetchSeq = 0, mapLandedSeq = 0, costmapFetchSeq = 0, costmapLandedSeq = 0;
   async function refreshCostmap(stale) {
     if (!state.showCostmap || state.costmapUnsupported || !isSlamMap(state.lastMap)) {
       state.lastCostmap = null;
       return;
     }
     var gen = costmapGen;
+    var seq = ++costmapFetchSeq;
     try {
       var cm = await apiGet("/world/costmap");
       if (stale() || gen !== costmapGen) return;
-      // Two refreshes can overlap (a frame's and followWorld's): an older
-      // version landing second must not replace the newer one.
-      var prev = state.lastCostmap;
-      if (prev && prev.usable && cm && cm.usable && prev.map_id === cm.map_id &&
-          cm.costmap_version < prev.costmap_version) return;
+      // Two refreshes can overlap (a frame's and followWorld's): a reply to
+      // an older request landing second must not replace the newer one.
+      if (seq < costmapLandedSeq) return;
+      costmapLandedSeq = seq;
       state.lastCostmap = cm;
     } catch (err) {
       if (gen !== costmapGen) return;
