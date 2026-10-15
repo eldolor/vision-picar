@@ -98,7 +98,7 @@ def test_only_a_refused_forward_move_counts(left, right, reason):
 # ---------- the spot ----------
 
 @pytest.mark.parametrize("heading,expected", [
-    (0.0, (1.0, 0.75)), (90.0, (1.25, 1.0)), (180.0, (1.0, 1.25)), (270.0, (0.75, 1.0))])
+    (0.0, (1.0, 0.7)), (90.0, (1.3, 1.0)), (180.0, (1.0, 1.3)), (270.0, (0.7, 1.0))])
 def test_the_spot_is_ahead_on_the_compass(heading, expected):
     assert ww.spot_ahead(1.0, 1.0, heading) == pytest.approx(expected)
 
@@ -111,6 +111,16 @@ def test_spots_expire_and_are_capped():
     assert [s["x_m"] for s in live] == [2.0, 3.0]        # the oldest dropped
     assert [s["x_m"] for s in book.live(11.5)] == [3.0]  # the second expired
     assert book.live(11.5)[0]["ttl_s"] == pytest.approx(0.5)
+    assert book.live(11.98)[0]["ttl_s"] == 0.1             # never 0: the bridge refuses it
+
+
+def test_the_spot_clears_the_chassis_it_is_marked_for():
+    """The disc must not reach under the robot's own footprint, or the
+    robot stands on lethal cells the moment it is marked."""
+    half_len, half_w = 0.1265, 0.1155
+    nearest = math.hypot(ww.SPOT_AHEAD_M - half_len, 0.0)      # the nose's centre
+    corner = math.hypot(ww.SPOT_AHEAD_M - half_len, half_w)
+    assert min(nearest, corner) > ww.SPOT_R_M
 
 
 # ---------- the wall ----------
@@ -218,6 +228,18 @@ def test_a_wedge_during_a_goal_marks_a_spot_ahead(wedged_server):
     s = bridge.keepout[0]
     assert (s["x_m"], s["y_m"]) == pytest.approx((ww.SPOT_AHEAD_M, 0.0), abs=1e-3)
     assert s["r_m"] == ww.SPOT_R_M
+
+
+def test_a_mark_without_a_slam_session_is_not_logged_as_marked(wedged_server, monkeypatch, caplog):
+    client, bridge = wedged_server
+    assert client.post("/world/goal", json={"x_m": 3.0, "y_m": 1.0}).json()["accepted"]
+    world = server.get_world()
+    monkeypatch.setattr(world, "set_keepout", lambda spots: {"accepted": False,
+                                                             "reason": "no SLAM session yet"})
+    with caplog.at_level("WARNING", logger="server"):
+        drive_refused(client, 0.5)
+        assert wait_for(lambda: "keepout: not marked" in caplog.text)
+    assert "keepout: marked" not in caplog.text
 
 
 def test_no_goal_in_progress_marks_nothing(wedged_server):

@@ -143,12 +143,15 @@ between and no silence over `GAP_S` (1.0 s), is a wedge; it re-arms for
 another `HOLD_S`. On a wedge the server starts a thread (`mark_wedge`, so
 the 20 Hz post never waits) that, only while `goal_in_progress()` and on a
 world with `set_keepout`, reads the pose and adds a disc of `SPOT_R_M`
-(0.15 m) centred `SPOT_AHEAD_M` (0.25 m) ahead to `SpotBook` (`SPOT_TTL_S`
+(0.15 m) centred `SPOT_AHEAD_M` (0.30 m) ahead -- clear of the chassis' own nose and corners -- to `SpotBook` (`SPOT_TTL_S`
 300 s, at most `MAX_SPOTS` 8), then sends the whole live set through
 `RosWorld.set_keepout` to the bridge's `POST /nav/keepout`. It logs one
 `keepout: marked ...` warning a mark, or `keepout: not marked (...)` on a
-failure. It moves nothing and changes no vetting: a mark only takes effect
-if nav2's costmaps list the `KeepoutFilter`.
+failure, including a reply with `accepted: false`. Marks from one server
+are sent one at a time (`spot_lock` is held across the post), so a slow
+bridge cannot receive an older set after a newer one. It moves nothing and
+changes no vetting: a mark only takes effect if nav2's global costmap lists
+the `KeepoutFilter`.
 
 ## Parameters and configuration
 

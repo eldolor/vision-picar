@@ -581,18 +581,19 @@ class Bridge(Node):
             spots = keepout.parse(body.get("spots") or [], time.time())
         except (KeyError, TypeError, ValueError) as e:
             return 400, {"error": str(e)}
+        # Published under the lock, as is each expiry: a set and an expiry
+        # publishing in the other order would latch a stale mask.
         with self.lock:
             self.keepout_spots = spots
-        self._publish_keepout(spots)
+            self._publish_keepout(spots)
         return 200, {"spots": len(spots)}
 
     def _expire_keepout(self):
         with self.lock:
             kept = keepout.live(self.keepout_spots, time.time())
-            changed = len(kept) != len(self.keepout_spots)
-            self.keepout_spots = kept
-        if changed:
-            self._publish_keepout(kept)
+            if len(kept) != len(self.keepout_spots):
+                self.keepout_spots = kept
+                self._publish_keepout(kept)
 
     def _publish_keepout(self, spots):
         m = keepout.mask(spots)

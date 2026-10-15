@@ -22,8 +22,9 @@ import math
 
 HOLD_S = 3.0          # forward clamps this long, unbroken, is a wedge
 GAP_S = 1.0           # a silence longer than this ends a run
-SPOT_AHEAD_M = 0.25   # the spot's centre, ahead of the robot's centre
-SPOT_R_M = 0.15       # covers the centre's next 0.10-0.40 m, not its own cell
+SPOT_AHEAD_M = 0.30   # the spot's centre, ahead of the robot's centre
+SPOT_R_M = 0.15       # the centre's next 0.15-0.45 m: clear of the chassis'
+                      # own front (0.1265 m) and corners (0.208 m from the centre)
 SPOT_TTL_S = 300.0    # a wrong mark blocks a real passage only this long
 MAX_SPOTS = 8         # the oldest is dropped first
 
@@ -79,6 +80,8 @@ class SpotBook:
         return self.live(now)
 
     def live(self, now: float) -> list:
+        # A spot about to expire is sent with 0.1 s left, never 0: the bridge
+        # refuses a ttl_s <= 0, and with it the whole set.
         return [{"x_m": round(s["x_m"], 3), "y_m": round(s["y_m"], 3), "r_m": s["r_m"],
-                 "ttl_s": round(s["until"] - now, 1)}
+                 "ttl_s": max(round(s["until"] - now, 1), 0.1)}
                 for s in self.spots if s["until"] > now]

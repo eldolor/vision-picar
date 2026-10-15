@@ -464,11 +464,16 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             if not pose.get("usable") or pose.get("heading_deg") is None:
                 return
             x, y = spot_ahead(pose["x_m"], pose["y_m"], pose["heading_deg"])
+            # Held across the send: the bridge replaces its whole set on each
+            # post, so two marks sent out of order would drop the newer spot.
             with spot_lock:
                 spots = spot_book.add(time.monotonic(), x, y)
-            world_model.set_keepout(spots)
+                reply = world_model.set_keepout(spots)
         except Exception as e:  # noqa: BLE001 -- a lost mark costs a replan, not safety
             logger.warning(f"keepout: not marked ({e})")
+            return
+        if not reply.get("accepted"):
+            logger.warning(f"keepout: not marked ({reply.get('reason')})")
             return
         logger.warning(
             f"keepout: marked ({x:.2f}, {y:.2f}) r {SPOT_R_M:g} m after {HOLD_S:g} s of "
@@ -965,8 +970,6 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             if refused:
                 return lapse_refused_claim(driver, refused, now)
             left, right, reason = safety.vet_wheel_velocity(req.left_rad_s, req.right_rad_s)
-            wedged = driver == DRIVER_ROS and wedge.wheel(now, req.left_rad_s,
-                                                          req.right_rad_s, reason)
             try:
                 robot.set_wheel_velocity(left, right)
                 if not by_velocity and getattr(robot, "stop_count", 0) != stops0:
@@ -983,6 +986,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     # (as for a dead bridge above).
                     return {"executed": False, "reason": "no_feedback", "detail": str(e)}
                 return refuse("no_feedback", str(e), driver)
+            # Fed only once the command was applied, so a wedge is never
+            # counted on a post that then failed and marked nothing.
+            wedged = driver == DRIVER_ROS and wedge.wheel(now, req.left_rad_s,
+                                                          req.right_rad_s, reason)
         if reason:
             refuse("safety_distance", reason, driver)
         if wedged:
