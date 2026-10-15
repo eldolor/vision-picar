@@ -7,6 +7,7 @@ docs/plans/ros-alignment/3.83-costmap-overlay.md that need no ROS. The
 twin's half is in tests/test_ui.py; the live half needs the container.
 """
 
+import json
 import math
 import statistics
 import sys
@@ -215,6 +216,9 @@ def test_a_bridge_that_cannot_answer_is_unusable_and_says_whether_to_wait(status
     lambda b: b.__setitem__("origin_x_m", float("nan")),
     lambda b: b["data"].__setitem__(3, "lethal"),
     lambda b: b["data"].__setitem__(3, 10 ** 9),
+    lambda b: b["data"].__setitem__(3, 250),
+    lambda b: b["data"].__setitem__(3, 3.7),
+    lambda b: b["data"].__setitem__(3, None),
 ])
 def test_a_malformed_costmap_is_unusable_not_a_500(break_it, monkeypatch):
     world, bridge = costmap_world(truth=FakeTruth(1.0, 1.0, 90.0))
@@ -226,8 +230,7 @@ def test_a_malformed_costmap_is_unusable_not_a_500(break_it, monkeypatch):
             body = convert.grid_record(bridge.session, 1, 0.1, 10, 10, -0.5, -0.5, 0.0,
                                        bridge.costs, 0.0)
             break_it(body)
-            import json as _json
-            return httpx.Response(200, content=_json.dumps(body).encode(),
+            return httpx.Response(200, content=json.dumps(body).encode(),
                                   headers={"content-type": "application/json"})
         return orig(request)
 

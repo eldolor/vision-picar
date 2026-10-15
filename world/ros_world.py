@@ -112,6 +112,18 @@ def _whole_grid(g: dict) -> bool:
             and isinstance(data, list) and len(data) == w * h)
 
 
+def _cells_in_range(data: list) -> bool:
+    """Every cell an integer in -1..100, OccupancyGrid's range for a map and
+    for nav2's published costmap alike. Checked before placing, so a bad
+    cell is no grid and a bug in the placement still raises."""
+    try:
+        a = np.asarray(data)
+    except (TypeError, ValueError):
+        return False
+    return (a.dtype.kind in "iu" and a.ndim == 1
+            and bool(a.size == 0 or (a.min() >= -1 and a.max() <= 100)))
+
+
 def _json_object(r: httpx.Response) -> dict:
     """A bridge reply as a dict, or an httpx.HTTPError -- the one exception
     every caller already catches. Anything but a 2xx raises, naming the
@@ -355,11 +367,9 @@ class RosWorld(WorldInterface):
         cache = getattr(self, cache_attr)
         if cache and cache[0] == key:
             return cache[1]
-        try:
-            out = place(g, anchor)
-        except (TypeError, ValueError, OverflowError):
-            # Cells that are not small integers: no grid, never a 500.
+        if not _cells_in_range(g["data"]):
             return unusable_map()
+        out = place(g, anchor)
         setattr(self, cache_attr, (key, out))
         return out
 

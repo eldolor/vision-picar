@@ -673,7 +673,13 @@
         // Stale: give the fetch slot back, or the fresh refresh right after
         // a swap skips its map fetch and the panel stays blank (review 3).
         if (stale()) { state.lastMapFetchAt = 0; return; }
-        state.lastMap = map;
+        // A frame's refresh and followWorld's can overlap: an older version
+        // of the same map landing second is dropped.
+        var had = state.lastMap;
+        if (!(had && had.usable && map && map.usable && had.map_id === map.map_id &&
+              map.map_version < had.map_version)) {
+          state.lastMap = map;
+        }
         await refreshCostmap(stale);
       }
     } catch (e) {
