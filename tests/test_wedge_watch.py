@@ -348,6 +348,22 @@ def test_a_mark_the_bridge_did_not_take_is_tried_again(wedged_server, monkeypatc
     assert len(bridge.keepout) == 1
 
 
+def test_a_mark_is_tagged_with_the_session_its_pose_came_from(wedged_server, monkeypatch):
+    """3.83 review round 3: the session is the one the pose was read on
+    (`pose["map_id"]`), never `world.map_id` read again after it -- another
+    request may have anchored a new session in between."""
+    client, bridge = wedged_server
+    assert client.post("/world/goal", json={"x_m": 3.0, "y_m": 1.0}).json()["accepted"]
+    world = server.get_world()
+    real_pose, seen = world.get_pose, []
+    monkeypatch.setattr(world, "get_pose", lambda: {**real_pose(), "map_id": "slam-the-pose-one"})
+    monkeypatch.setattr(world, "set_keepout",
+                        lambda spots, **kw: seen.append(kw.get("map_id")) or {"accepted": True})
+    drive_refused(client, 0.5)
+    assert wait_for(lambda: seen)
+    assert seen[0] == "slam-the-pose-one"
+
+
 def test_no_goal_in_progress_marks_nothing(wedged_server):
     client, bridge = wedged_server
     drive_refused(client, 0.5)

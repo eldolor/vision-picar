@@ -464,9 +464,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             if not pose.get("usable") or pose.get("heading_deg") is None:
                 return
             x, y = spot_ahead(pose["x_m"], pose["y_m"], pose["heading_deg"])
-            # The session this pose (so this spot) is on; the book is tagged
-            # with it and set_keepout refuses if the bridge has moved on.
-            map_id = getattr(world_model, "map_id", None)
+            # The session this pose (so this spot) is on, as the pose itself
+            # names it -- never re-read from the world, which another request
+            # may have re-anchored since. The book is tagged with it and
+            # set_keepout refuses if the bridge has moved on.
+            map_id = pose.get("map_id") or getattr(world_model, "map_id", None)
             # Held across the send: the bridge replaces its whole set on each
             # post, so two marks sent out of order would drop the newer spot.
             with spot_lock:

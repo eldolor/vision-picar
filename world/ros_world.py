@@ -450,7 +450,7 @@ class RosWorld(WorldInterface):
         if map_id is not None and map_id != f"slam-{anchor.session}":
             # The spots were placed on another session's pose (3.83 review
             # round 2): on this anchor they would land in the wrong place.
-            return {"accepted": False, "reason": "no SLAM session yet",
+            return {"accepted": False, "reason": "the SLAM session changed",
                     "detail": f"the spots are for {map_id}, the bridge is on slam-{anchor.session}"}
         out = []
         for s in spots:
